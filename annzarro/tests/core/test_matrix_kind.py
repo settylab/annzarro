@@ -163,3 +163,25 @@ def test_counts_without_a_named_layer_have_no_suggestion(stores):
     path = stores["zarr", "csc"]
     got = gs.matrix_kinds(get_reader(path), path, "X")
     assert got["kind"] == "counts" and got["suggest"] is None and got["checked"] == {"counts": "normalised"}
+
+
+# --- the share of values above a threshold, for grading fraction detected --------------------------------------
+
+def test_the_sample_reports_the_density_and_the_quantiles_of_its_values():
+    v = np.concatenate([np.zeros(3000), np.linspace(1, 100, 1000)])
+    d = mk.distribution(v)
+    assert d["density"] == pytest.approx(0.25) and len(d["quantiles"]) == mk.QUANTILES
+    assert d["quantiles"][0] == 1.0 and d["quantiles"][-1] == 100.0 and d["quantiles"] == sorted(d["quantiles"])
+    # stored values only (a sparse matrix): the stored fraction scales the share of non-zero elements
+    assert mk.distribution(np.linspace(1, 100, 1000), stored_fraction=0.1)["density"] == pytest.approx(0.1)
+    assert mk.distribution(np.zeros(2000)) == {"density": None, "quantiles": None}
+    assert mk.distribution(np.arange(1, 10)) == {"density": None, "quantiles": None}
+
+
+@pytest.mark.parametrize("backend,layout", list(itertools.product(BACKENDS, LAYOUTS)))
+def test_every_layout_reports_the_same_density(stores, backend, layout):
+    path = stores[backend, layout]
+    stats = gs.kind_of(get_reader(path), path, "X")
+    nonzero = float(np.count_nonzero(RAW)) / RAW.size
+    assert stats["density"] == pytest.approx(nonzero, rel=0.02)
+    assert stats["quantiles"][0] == 1.0 and stats["quantiles"][-1] == 120.0

@@ -15,7 +15,7 @@
  */
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
-import { createKindClient, warningFor } from '../../utils/matrix-kind-client.js';
+import { createKindClient } from '../../utils/matrix-kind-client.js';
 import { layerKeys } from '../../utils/structure-keys.js';
 import { aggregationsInUse, layersInUse, signatureChanged, signatureRenamed } from '../../utils/score-source.js';
 import { offeredOptions } from '../../utils/signature-options.js';
@@ -26,7 +26,7 @@ import { createInspect } from './inspect-section.js';
 const KIND_CLIENT = createKindClient({ url: Config.API.MATRIX_KIND });
 
 /** The edits that change what plots and tables may pick: their menus and titles follow. */
-const MENU_KEYS = ['offered', 'layers', 'input', 'method'];
+const MENU_KEYS = ['offered', 'layers', 'input', 'method', 'detect_above'];
 
 /**
  * @param {Object} o
@@ -59,16 +59,16 @@ export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, fo
         getInputs: async () => layerKeys(await DataManager.getDatasetStructure(DataManager.getCurrentDataset())),
         getKind: (input, opts) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), input, opts),
         onKinds: () => { signatureRenamed(id); }, directions,
-        getInUse: () => aggregationsInUse(id), getLayersInUse: () => layersInUse(id), warningFor
+        getInUse: () => aggregationsInUse(id), getLayersInUse: () => layersInUse(id)
     });
-    const inspect = withInspect ? createInspect({ id, D, getTitle, getRecipe: getOptions, getOptions: () => offeredOptions(getOptions(), null, scoring.getKinds()), focusGene }) : null;
+    const inspect = withInspect ? createInspect({ id, D, getTitle, getRecipe: getOptions, getOptions: () => offeredOptions(getOptions(), null, scoring.getKinds(), scoring.getStats()), focusGene }) : null;
 
     return {
         scoring,
         inspect,
         warning: scoring.warning,
         /** What plots and tables are offered: every offered method of every offered layer that can be computed. */
-        getOfferedOptions: () => offeredOptions(getOptions(), null, scoring.getKinds()),
+        getOfferedOptions: () => offeredOptions(getOptions(), null, scoring.getKinds(), scoring.getStats()),
         /** The dataset is there: read the layers and what the chosen ones look like. */
         load() {
             scoring.refreshInputs();

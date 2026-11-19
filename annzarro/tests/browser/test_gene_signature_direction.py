@@ -378,7 +378,7 @@ ALL = ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_o
 
 
 def test_methods_without_a_signed_version_are_graded_cannot_with_the_reason(page, served):
-    _panel(page, served, genes=["GENE0001"], down=["GENE0002"], offered=ALL)
+    _panel(page, served, genes=["GENE0001"], down=["GENE0002"], offered=ALL, detect_above=1)
     _expand(page)
     for method, words in (("sum", "depends on how many genes each side has"), ("detected", "not a fraction"),
                           ("fraction_of_total", "not a share")):

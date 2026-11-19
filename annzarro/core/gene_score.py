@@ -318,6 +318,10 @@ class _Source:
         """A few thousand stored values spread over the whole matrix (``core/matrix_kind.py`` classifies them)."""
         raise NotImplementedError
 
+    def stored_fraction(self) -> float:
+        """The share of the matrix's elements that are stored (1 for a dense array, whose sample holds its zeros)."""
+        return 1.0
+
     def column_stat(self, kind: str, should_stop: Optional[Callable[[], bool]] = None) -> np.ndarray:
         """One figure per gene, for every gene: ``detection`` (stored non-zero values over cells) or ``mean``
         (over the finite values, zeros included; NaN for a gene with none). Float64, length ``n_var``."""
@@ -401,6 +405,9 @@ class _CscSource(_Source):
     def sample(self):
         return _sample_stored(self.data)
 
+    def stored_fraction(self):
+        return float(self.indptr[-1]) / max(self.n_obs * self.n_var, 1)
+
     def row_totals(self, should_stop=None):
         total = int(self.indptr[-1])
         step = int(min(max(STAT_CHUNK, 2 * self.n_obs), 1 << 26))
@@ -468,6 +475,9 @@ class _CsrSource(_Source):
 
     def sample(self):
         return _sample_stored(self.group["data"])
+
+    def stored_fraction(self):
+        return float(self.nnz) / max(self.n_obs * self.n_var, 1)
 
     def row_totals(self, should_stop=None):
         ptr = np.asarray(self.group["indptr"][:], dtype=np.int64)
@@ -727,7 +737,10 @@ MAX_ALTERNATIVES = 12
 def kind_of(reader, dataset_path: str, name: str) -> Dict[str, Any]:
     """``matrix_kind.classify`` of a sample of the matrix ``name`` (``X`` or a layer)."""
     with open_source(reader, dataset_path, name) as source:
-        return matrix_kind.classify(source.sample())
+        sample = source.sample()
+        stats = matrix_kind.classify(sample)
+        stats.update(matrix_kind.distribution(sample, source.stored_fraction()))
+        return stats
 
 
 def matrix_kinds(reader, dataset_path: str, name: str, suggest: bool = True) -> Dict[str, Any]:

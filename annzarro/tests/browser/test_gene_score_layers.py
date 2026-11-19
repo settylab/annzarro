@@ -289,7 +289,10 @@ def test_plot_hover_and_table_menus_leave_out_a_combination_that_cannot_be_compu
     from annzarro.tests.browser import test_gene_score_tables as T
     def handler(route):
         want = urllib.parse.parse_qs(urllib.parse.urlparse(route.request.url).query).get("input", ["X"])[0]
-        body = {"input": want, "kind": "signed" if want == "X" else "counts", "stats": {"max": 5}, "suggest": None, "checked": {}}
+        q = [0.01 + 3.39 * i / 50 for i in range(51)]                  # every value of X is above 0: fraction detected is constant there
+        stats = {"max": 3.4, "min": 0.01, "density": 1.0, "quantiles": q} if want == "X" else \
+            {"max": 5, "min": 1, "density": 0.05, "quantiles": [1 + 4 * i / 50 for i in range(51)]}
+        body = {"input": want, "kind": "signed" if want == "X" else "counts", "stats": stats, "suggest": None, "checked": {}}
         route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
     page.route("**/api/v1/data/matrix_kind*", handler)
     sig = {**TWO, "offered": ["zscore_mean", "detected", "fraction_of_total"], "layers": ["X", "counts"]}

@@ -268,28 +268,98 @@ def test_switching_off_an_option_in_use_says_who_keeps_it_and_undo_puts_it_back(
     assert page.is_hidden(f"{S} .gsig-scoring__notice")
 
 
-def test_a_combination_that_cannot_be_computed_is_left_out_of_the_menu_and_the_panel_says_why(page, served):
+def _quant(lo, hi):
+    return [lo + (hi - lo) * i / 50 for i in range(51)]
+
+
+def _kinds_route(page, table):
+    """The kind route answers from `table`: layer -> (kind, stats)."""
     def handler(route):
         want = urllib.parse.parse_qs(urllib.parse.urlparse(route.request.url).query).get("input", ["X"])[0]
-        body = {"input": want, "kind": "signed" if want == "X" else "counts", "stats": {"max": 5}, "suggest": None, "checked": {}}
-        route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+        kind, stats = table.get(want, ("log", {"min": 0.1, "max": 5, "density": 0.3, "quantiles": _quant(0.1, 5)}))
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(
+            {"input": want, "kind": kind, "stats": {"kind": kind, "max": stats["max"], **stats}, "suggest": None, "checked": {}}))
     page.route("**/api/v1/data/matrix_kind*", handler)
+
+
+SMOOTH = {"min": 0.01, "max": 3.4, "density": 1.0, "quantiles": _quant(0.01, 3.4)}          # every value above 0
+SCALED = {"min": -2.1, "max": 3.4, "density": 1.0, "quantiles": _quant(-2.1, 3.4)}
+SPARSE = {"min": 1, "max": 557, "density": 0.05, "quantiles": _quant(1, 557)}
+
+
+def _option_ids(page):
+    return page.evaluate("(id) => window.PanelManager.getPanel(id).getOfferedOptions().map(o => o.id)", SIG)
+
+
+def test_a_combination_that_cannot_be_computed_is_left_out_of_the_menu_and_the_panel_says_why_once(page, served):
+    _kinds_route(page, {"X": ("signed", SMOOTH), "counts": ("counts", SPARSE)})
     _open(page, served, plots=(("cell-plot-D", _cell("cell-plot-D", color=MEAN)),),
           sig=_sig(offered=["zscore_mean", "mean", "detected", "fraction_of_total"], layers=["X", "counts"]), sig_open=True, wait=False)
     page.wait_for_selector(f"{D} .js-plotly-plot", timeout=30000)
     until(page, "(id) => window.PanelManager.getPanel(id).getOfferedOptions().length === 6", SIG)
-    ids = page.evaluate("(id) => window.PanelManager.getPanel(id).getOfferedOptions().map(o => o.id)", SIG)
+    ids = _option_ids(page)
     assert "detected@X" not in ids and "fraction_of_total@X" not in ids
     assert "detected@counts" in ids and "fraction_of_total@counts" in ids and "zscore_mean@X" in ids
     _expand(page)
-    text = page.inner_text(f"{S} [data-method='detected']")
-    assert "Not offered on X: almost every value is non-zero, so every gene counts as detected." in text
-    assert "Not offered on X: X has negative values." in page.inner_text(f"{S} [data-method='fraction_of_total']")
+    x_row = page.inner_text(f"{S} [data-layer='X']")
+    assert "On 'X' almost every value is above 0. Raise Detected above (values here range from 0.01 to 3.4)." in x_row
+    assert "Has negative values: % of total is not offered here." in x_row
     assert "scaled" in page.inner_text(f"{S} [data-layer='X'] .gsig-scoring__kind")
     assert "counts" in page.inner_text(f"{S} [data-layer='counts'] .gsig-scoring__kind")
-    assert "follows sequencing depth" in page.inner_text(f"{S} [data-method='mean']"), "said once, under the method"
+    counts_row = page.inner_text(f"{S} [data-layer='counts']")
+    assert "Raw counts: z-score mean and mean follow sequencing depth." in counts_row, "one line, naming only what is offered"
+    # under a method: nothing, because X and counts do not share the issue
+    for method in ("mean", "zscore_mean", "detected", "fraction_of_total"):
+        assert page.query_selector(f"{S} [data-method='{method}'] .gsig-scoring__grade") is None, method
     values = [v for v, _ in page.eval_on_selector_all(f"{D} select.axis-column-select[data-axis='color'] option", "els => els.map(e => [e.value, e.textContent])")]
     assert "detected@counts" in values, "counts is offered, so the plot may pick it"
+
+
+def test_warnings_are_said_once_on_the_layer_row_and_under_a_method_only_when_every_offered_layer_shares_them(page, served):
+    _kinds_route(page, {"X": ("log", SPARSE), "counts": ("counts", SPARSE)})
+    _sig_open(page, served, offered=["zscore_mean", "mean", "sum"], layers=["X", "counts"])
+    _expand(page)
+    page.wait_for_selector(f"{S} [data-layer='counts'] [data-input-warning='layer']")
+    assert page.locator(f"{S} [data-input-warning='layer']").count() == 1, "one line on the whole list"
+    assert page.inner_text(f"{S} [data-layer='counts'] [data-input-warning='layer']").startswith("⚠ Raw counts: z-score mean, mean and sum follow sequencing depth.")
+    assert page.locator(f"{S} .gsig-scoring__grade").count() == 0, "X is fine, so no method says anything"
+    # take X away: raw counts is the only layer, so every method it applies to says so, once
+    _layer_offer(page, "X")
+    assert page.locator(f"{S} [data-method='mean'] .gsig-scoring__grade").count() == 1
+    assert page.inner_text(f"{S} [data-method='mean'] .gsig-scoring__grade") == "⚠ On 'counts' this follows sequencing depth."
+    assert page.locator(f"{S} [data-method='sum'] .gsig-scoring__grade").count() == 1
+    assert page.locator(f"{S} [data-method='fraction_of_total'] .gsig-scoring__grade").count() == 0, "not offered, nothing to say"
+    # the menu carries it as a note, not a notice
+    note = page.evaluate("(id) => window.PanelManager.getPanel(id).getOfferedOptions().map(o => o.note)", SIG)
+    assert set(note) == {"On 'counts' this follows sequencing depth."}
+
+
+def test_fraction_detected_follows_the_threshold_and_the_menus_follow_it(page, served):
+    _kinds_route(page, {"X": ("signed", SMOOTH)})
+    _open(page, served, plots=(("cell-plot-D", _cell("cell-plot-D", color=MEAN)),),
+          sig=_sig(offered=["zscore_mean", "mean", "detected"]), sig_open=True, wait=False)
+    page.wait_for_selector(f"{D} .js-plotly-plot", timeout=30000)
+    until(page, "(id) => window.PanelManager.getPanel(id).getRecipe().layers.length === 1 && window.PanelManager.getPanel(id).getOfferedOptions().length === 2", SIG)
+    assert "detected@X" not in _option_ids(page), "at 0 every value here is above it: constant"
+    _expand(page)
+    assert "almost every value is above 0" in page.inner_text(f"{S} [data-layer='X']")
+    _enter(page, _sel("detect"), "1")                                    # raised: about 70% of the values are above 1
+    until(page, "(id) => window.PanelManager.getPanel(id).getOfferedOptions().some(o => o.id === 'detected@X')", SIG)
+    assert page.query_selector(f"{S} [data-layer='X'] [data-input-warning='layer']") is None, "the line goes with the problem"
+    until(page, "(t) => !!document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"] option[value=\"detected@X\"]')", D)
+    _enter(page, _sel("detect"), "3.39")                                 # raised too far: almost nothing is above it
+    until(page, "(id) => !window.PanelManager.getPanel(id).getOfferedOptions().some(o => o.id === 'detected@X')", SIG)
+    assert "almost no value is above 3.39. Lower Detected above" in page.inner_text(f"{S} [data-layer='X']")
+    _enter(page, _sel("detect"), "0")
+    until(page, "(id) => !window.PanelManager.getPanel(id).getOfferedOptions().some(o => o.id === 'detected@X')", SIG)
+    assert "almost every value is above 0" in page.inner_text(f"{S} [data-layer='X']")
+
+
+def test_fraction_detected_on_a_scaled_layer_is_offered_where_half_the_values_are_above_the_threshold(page, served):
+    _kinds_route(page, {"X": ("signed", SCALED)})
+    _sig_open(page, served, offered=["zscore_mean", "detected"])
+    until(page, "(id) => window.PanelManager.getPanel(id).getOfferedOptions().length === 2", SIG)
+    assert "detected@X" in _option_ids(page), "negative values are below 0, so about 62% are above it"
 
 
 def test_reset_to_defaults_puts_every_setting_back(page, served):
@@ -344,9 +414,9 @@ def test_a_plot_is_offered_what_the_panel_offers_and_a_switched_off_option_is_ke
     values = [v for v, _ in _agg_options(page, D)]
     assert values == ["zscore_mean@X", "mean@X", "sum@X"]
     _expand(page)
-    _offer(page, "detected")
+    _offer(page, "control_adjusted")
     until(page, "(t) => document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option').length === 5", D)
-    assert [v for v, _ in _agg_options(page, D)] == ["zscore_mean@X", "mean@X", "sum@X", "detected@X"]
+    assert [v for v, _ in _agg_options(page, D)] == ["zscore_mean@X", "mean@X", "sum@X", "control_adjusted@X"]
     _offer(page, "mean", False)                                          # the plot reads the mean
     until(page, "(t) => /no longer offered/.test(document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').textContent)", D)
     options = _agg_options(page, D)
@@ -360,10 +430,10 @@ def test_a_plot_is_offered_what_the_panel_offers_and_a_switched_off_option_is_ke
 
 
 def test_the_hover_picker_lists_only_what_is_offered(page, served):
-    _open(page, served, plots=(("cell-plot-C", None),), sig=_sig(offered=["zscore_mean", "detected"]), sig_open=True)
+    _open(page, served, plots=(("cell-plot-C", None),), sig=_sig(offered=["zscore_mean", "control_adjusted"]), sig_open=True)
     _wait_coloured(page)
     opts = page.eval_on_selector_all(f"{C} select.hover-columns-select optgroup[label='Gene scores'] option", "els => els.map(e => e.value)")
-    assert opts == [f"gene-score:{SIG}:zscore_mean:X", f"gene-score:{SIG}:detected:X"]
+    assert opts == [f"gene-score:{SIG}:zscore_mean:X", f"gene-score:{SIG}:control_adjusted:X"]
 
 
 def test_the_section_shows_which_options_plots_use(page, served):
@@ -595,13 +665,12 @@ def test_the_raw_count_warning_appears_names_a_layer_and_clears_when_it_is_chose
     status = f"{S} .gsig-inputwarn[data-input-warning='status']"
     page.wait_for_selector(status, state="visible")
     text = page.inner_text(status)
-    assert "X looks like raw counts (whole numbers up to 557)." in text
-    assert "Scores should be computed on normalised, log-transformed data" in text
-    assert "counts_log looks log-normalised." in text
+    assert "Raw counts: z-score mean, mean and sum follow sequencing depth." in text
+    assert "Offer counts_log instead" in text
     _expand(page)
     page.wait_for_selector(f"{S} .gsig-inputwarn[data-input-warning='layer'][data-layer='X']", state="visible")
     assert page.is_hidden(status), "open: the warning is under the layer"
-    assert "looks like raw counts" in page.inner_text(f"{S} [data-layer='X']")
+    assert "Raw counts: z-score mean, mean and sum follow sequencing depth." in page.inner_text(f"{S} [data-layer='X']")
     assert page.inner_text(f"{S} [data-layer='X'] [data-use-input='counts_log']") == "Offer counts_log instead"
     page.click(f"{S} [data-layer='X'] [data-use-input='counts_log']")
     until(page, "(id) => window.PanelManager.getPanel(id).getRecipe().input === 'counts_log'", SIG)
@@ -625,7 +694,7 @@ def test_each_offered_layer_is_checked_where_it_is_offered(page, served):
     _layer_offer(page, "counts")
     page.wait_for_selector(f"{S} .gsig-inputwarn[data-input-warning='layer'][data-layer='counts']", state="visible")
     text = page.inner_text(f"{S} [data-input-warning='layer'][data-layer='counts']")
-    assert text.startswith("⚠ Layer counts looks like raw counts") and "looks log-normalised" not in text
+    assert text.startswith("⚠ Raw counts: z-score mean, mean and sum follow sequencing depth.") and "Offer" not in text
     assert page.query_selector(f"{S} [data-input-warning='layer'][data-layer='X']") is None
 
 

@@ -201,10 +201,17 @@ another layer looks log-normalised and is named that way, offers **Offer logged_
 and stops offering the raw one, unless a plot or table reads the raw layer, which then stays. The same goes
 for values that are normalised but not log-transformed. It is a warning, not a block.
 
-Some combinations are meaningless and are left out of every menu, with the reason in the panel: fraction detected
-and % of total on a scaled layer (almost every value is non-zero; the values are negative). Others are allowed with
-a warning under the method, said once: the mean, sum, z-score mean and control-adjusted on raw counts follow
-sequencing depth, and % of total on log values is compressed.
+A layer says what matters about it once, on its own row, in one short line and only for what is offered ("Raw counts:
+sum and mean follow sequencing depth."; "Has negative values: % of total is not offered here."). A method says
+something only when every offered layer shares the issue, for instance when raw counts is the only layer offered. In
+a plot's menu a combination that misleads carries the sentence as a note, not a notice.
+
+Some combinations are left out of every menu, with the reason on the layer's row. % of total on a scaled layer is
+one: the values are negative. **Fraction detected** is judged by the numbers: the panel reads a sample of the layer,
+and when the threshold makes the score constant (almost every value is above **Detected above**, or almost none)
+it says so ("On 'X' almost every value is above 0. Raise Detected above (values here range from 0.01 to 3.4).") and
+leaves it out. Change the threshold and the panel judges again at once; the combination returns to the menus when it
+means something. On a scaled layer, where about half the values are below 0, it is offered at 0.
 
 Each option and layer says who uses it ("1 plot", "2 plots, 1 table"). Switching an option off never breaks a
 plot or table that uses it: it keeps its setting, is marked "(no longer offered)" in its menu and keeps drawing, and the panel says who

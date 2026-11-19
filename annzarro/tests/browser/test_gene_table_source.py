@@ -243,7 +243,7 @@ def test_a_table_filtered_by_a_table_that_reads_its_score_is_a_cycle_and_asks_fo
 # ------------------------------------------------------------------ 5. Scores offered on the table
 
 OFFER = {"offered": ["zscore_mean", "mean", "detected"], "layers": ["X", "counts"], "input": "X", "method": "zscore_mean",
-         "clip": 3, "bins": 25, "controls": 50, "seed": None, "detect_above": 0}
+         "clip": 3, "bins": 25, "controls": 50, "seed": None, "detect_above": 1}
 
 
 def _summary(page):
@@ -267,14 +267,16 @@ def test_a_table_offers_what_its_section_says_and_stores_recipe_fields_only(page
     _wait_coloured(page)
     page.click(f"{G} .gsig-scoring__toggle")
     page.click(f"{G} [data-offer-method='detected']")
+    page.fill(f"#gsig-scoring-detect-{TAB}", "1")            # every value of the store is above 0: only a higher threshold means something
+    page.press(f"#gsig-scoring-detect-{TAB}", "Enter")
     page.click(f"{G} [data-offer-method='sum']")
     page.fill(f"#gsig-scoring-clip-{TAB}", "3")
     page.press(f"#gsig-scoring-clip-{TAB}", "Enter")
     page.click(f"{G} [data-layer-offer='counts']")
     cfg = page.evaluate("(id) => PanelManager.getPanel(id).getConfig().scoreOptions", TAB)
-    assert cfg == {**OFFER, "detect_above": 0}, cfg
+    assert cfg == OFFER, cfg
     assert set(cfg) == {"input", "method", "offered", "layers", "clip", "seed", "bins", "controls", "detect_above"}
-    assert _summary(page) == "z-score mean (clip ±3), mean, fraction detected · X, counts"
+    assert _summary(page) == "z-score mean (clip ±3), mean, fraction detected (above 1) · X, counts"
     # the plot's menu follows: the colour's option list is the table's offer
     labels = page.eval_on_selector_all(f"{C} select.axis-column-select[data-axis='color'] option", "els => els.map(e => e.textContent)")
     assert any(x.startswith("fraction detected") for x in labels) and not any(x.startswith("sum") for x in labels), labels
@@ -284,7 +286,7 @@ def test_a_table_offers_what_its_section_says_and_stores_recipe_fields_only(page
 def test_the_table_offer_round_trips_through_a_link_and_a_panel_set(page, served):
     _open_table_link(page, served, table=_table(scoreOptions=OFFER))
     _wait_coloured(page)
-    assert _summary(page) == "z-score mean (clip ±3), mean, fraction detected · X, counts"
+    assert _summary(page) == "z-score mean (clip ±3), mean, fraction detected (above 1) · X, counts"
     root, store = served
     view = page.evaluate("() => (window.SessionManager || window.sessionManager).captureView()")
     cfg = view["layout"]["panelConfigs"][TAB]
@@ -337,6 +339,9 @@ def test_offer_other_scores_opens_the_table_and_expands_what_it_offers(page, ser
     assert page.evaluate("(id) => PanelManager.getActivePanels().includes(PanelManager.getPanel(id))", TAB)
     # offering another score from the table's section reaches the plot's menu at once
     page.click(f"{G} [data-offer-method='detected']")
+    page.fill(f"#gsig-scoring-detect-{TAB}", "1")
+    page.press(f"#gsig-scoring-detect-{TAB}", "Enter")
+    page.wait_for_function("(t) => [...document.querySelectorAll(t + \" select.axis-column-select[data-axis='color'] option\")].some(o => o.textContent === 'fraction detected')", arg=C)
     labels = page.eval_on_selector_all(f"{C} select.axis-column-select[data-axis='color'] option", "els => els.map(e => e.textContent)")
     assert "fraction detected" in labels, labels
     # the notice's one-click "offer again" goes through the table's own API

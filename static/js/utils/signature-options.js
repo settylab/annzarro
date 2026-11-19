@@ -90,31 +90,143 @@ export function kindWord(kind) {
     return { counts: 'counts', normalised: 'normalised', log: 'log-normalised', signed: 'scaled', other: 'other' }[kind] || '';
 }
 
+/** Methods whose score follows how deeply a cell was sequenced when the layer holds raw counts. */
+const DEPTH_METHODS = Object.freeze(['zscore_mean', 'mean', 'sum', 'control_adjusted']);
+/** A detection threshold leaves a score constant when this share (or its complement) of the values are on one side of it. */
+export const DETECT_TOO_MANY = 0.99;
+export const DETECT_TOO_FEW = 0.01;
+
+/** A figure in the panel's words: 3 significant digits, a true minus sign. */
+function figure(x) {
+    return String(Number(Number(x).toPrecision(3))).replace('-', '\u2212');
+}
+
 /**
- * How one method reads one layer, from what the layer looks like: `ok`, `warn` (said once, in the panel) or `cannot`
- * (left out of every menu, and the panel says why).
+ * The share of ALL the values of a layer that are above `threshold`, from the sample the server read (`stats.density`:
+ * the share of values that are non-zero, `stats.quantiles`: the non-zero values at every 2 percent). A threshold of 0
+ * or more is never exceeded by a zero, so only the non-zero values count. null when the sample says nothing.
+ * @param {{density?: (number|null), quantiles?: (number[]|null)}} [stats]
+ * @param {number} threshold - 0 or more
+ * @returns {number|null}
+ */
+export function shareAbove(stats, threshold) {
+    const q = stats && stats.quantiles;
+    if (!Array.isArray(q) || q.length < 2 || typeof stats.density !== 'number') return null;
+    const last = q.length - 1;
+    let below;                                     // the share of the non-zero values at or below the threshold
+    if (threshold < q[0]) below = 0;
+    else if (threshold >= q[last]) below = 1;
+    else {
+        let k = 0;
+        while (k < last - 1 && q[k + 1] <= threshold) k++;
+        const span = q[k + 1] - q[k];
+        below = (k + (span > 0 ? (threshold - q[k]) / span : 1)) / last;
+    }
+    return stats.density * (1 - below);
+}
+
+/**
+ * How one method reads one layer: `ok`, `warn` (a property of the layer, said once on its row) or `cannot` (left out
+ * of every menu, and the panel says why). From what the layer looks like and, for fraction detected, from how many of
+ * its values are above the threshold: that is a measure, not a kind, so it follows the parameter.
  * @param {string} method
  * @param {string} layer
  * @param {string} [kind] - counts, normalised, log, signed, other or unknown (unknown: nothing is known, so ok)
  * @param {boolean} [hasDown] - the signature has down genes; the methods without a signed version then cannot
- * @returns {{grade: 'ok'|'warn'|'cannot', reason: string, down?: boolean}} `down`: the reason is the down genes, whatever the layer
+ * @param {{stats?: Object, detectAbove?: number, label?: string}} [ctx] - the layer's sample, the threshold, and what to
+ *   call the layer in the sentence (default `'name'`; the panel says "every offered layer" when all share the issue)
+ * @returns {{grade: 'ok'|'warn'|'cannot', code: string, reason: string, down?: boolean}} `code` names the cause:
+ *   depth, log, negative, detect_high, detect_low or down; `down`: the reason is the down genes, whatever the layer
  */
-export function gradeOption(method, layer, kind, hasDown = false) {
-    const ok = { grade: 'ok', reason: '' };
+export function gradeOption(method, layer, kind, hasDown = false, ctx = {}) {
+    const ok = { grade: 'ok', code: '', reason: '' };
+    const name = ctx.label || `'${layer}'`;
     if (hasDown && !canScoreDown(method)) {
-        return { grade: 'cannot', down: true, reason: `Not offered with down genes. ${DOWN_REASONS[method] || ''}`.trim() };
+        return { grade: 'cannot', code: 'down', down: true, reason: `Not offered with down genes. ${DOWN_REASONS[method] || ''}`.trim() };
     }
-    if (method === 'detected' && kind === 'signed') {
-        return { grade: 'cannot', reason: `Not offered on ${layer}: almost every value is non-zero, so every gene counts as detected.` };
+    if (method === 'detected') {
+        const t = typeof ctx.detectAbove === 'number' ? ctx.detectAbove : 0;
+        const share = shareAbove(ctx.stats, t);
+        if (share === null) return ok;
+        const range = ctx.stats && Number.isFinite(ctx.stats.min) && Number.isFinite(ctx.stats.max)
+            ? ` (values here range from ${figure(ctx.stats.min)} to ${figure(ctx.stats.max)})` : '';
+        if (share > DETECT_TOO_MANY) {
+            return { grade: 'cannot', code: 'detect_high', reason: `On ${name} almost every value is above ${figure(t)}. Raise Detected above${range}.` };
+        }
+        if (share < DETECT_TOO_FEW) {
+            return { grade: 'cannot', code: 'detect_low',
+                reason: `On ${name} almost no value is above ${figure(t)}.${t > 0 ? ' Lower Detected above' : ' Fraction detected'}${range}.` };
+        }
+        return ok;
     }
     if (method === 'fraction_of_total') {
-        if (kind === 'signed') return { grade: 'cannot', reason: `Not offered on ${layer}: ${layer} has negative values.` };
-        if (kind === 'log') return { grade: 'warn', reason: '% of total on log values is compressed. It is usually read from counts.' };
+        if (kind === 'signed') return { grade: 'cannot', code: 'negative', reason: `Not offered on ${name}: it has negative values.` };
+        if (kind === 'log') return { grade: 'warn', code: 'log', reason: `On ${name} % of total is compressed by the log. It is usually read from counts.` };
     }
-    if (kind === 'counts' && ['zscore_mean', 'mean', 'sum', 'control_adjusted'].includes(method)) {
-        return { grade: 'warn', reason: `On '${layer}' this follows sequencing depth.` };
+    if (kind === 'counts' && DEPTH_METHODS.includes(method)) {
+        return { grade: 'warn', code: 'depth', reason: `On ${name} this follows sequencing depth.` };
     }
     return ok;
+}
+
+/** "a", "a and b", "a, b and c". */
+const andList = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
+
+/**
+ * What to say on a LAYER's row: its properties, each once and short, only when they matter for a method that is offered.
+ * "Raw counts: sum and mean follow sequencing depth." Several lines at most one per property.
+ * @param {string} layer
+ * @param {Object} recipe - from normalizeRecipe
+ * @param {string} [kind]
+ * @param {Object} [stats] - what the server sampled of the layer
+ * @returns {Array<{grade: string, code: string, text: string}>}
+ */
+export function layerLines(layer, recipe, kind, stats) {
+    const offered = cleanOffered(recipe.offered, recipe.method);
+    const lines = [];
+    const depth = offered.filter(m => DEPTH_METHODS.includes(m));
+    if (kind === 'counts' && depth.length) {
+        lines.push({ grade: 'warn', code: 'depth', text: `Raw counts: ${andList(depth.map(methodShort))} follow${depth.length === 1 ? 's' : ''} sequencing depth.` });
+    }
+    if (kind === 'normalised' && depth.length) {
+        lines.push({ grade: 'warn', code: 'normalised', text: 'Normalised but not log-transformed: one highly expressed gene can dominate.' });
+    }
+    if (offered.includes('fraction_of_total')) {
+        if (kind === 'log') lines.push({ grade: 'warn', code: 'log', text: 'Log values: % of total is compressed. It is usually read from counts.' });
+        if (kind === 'signed') lines.push({ grade: 'cannot', code: 'negative', text: 'Has negative values: % of total is not offered here.' });
+    }
+    if (offered.includes('detected')) {
+        const g = gradeOption('detected', layer, kind, false, { stats, detectAbove: recipe.detect_above });
+        if (g.grade === 'cannot') lines.push({ grade: 'cannot', code: g.code, text: g.reason });
+    }
+    return lines;
+}
+
+/**
+ * What to say under a METHOD: only what holds whatever the layer. A property of some layers is said on their rows,
+ * not here; one that every offered layer has is said here too, once; the down genes' reason always, once.
+ * @param {string} method
+ * @param {string[]} layers - the offered layers
+ * @param {Object} recipe
+ * @param {Object<string, string>} [kinds]
+ * @param {Object<string, Object>} [stats]
+ * @returns {Array<{grade: string, code: string, text: string, down?: boolean}>}
+ */
+export function methodLines(method, layers, recipe, kinds = {}, stats = {}) {
+    const hasDown = Array.isArray(recipe.down) && recipe.down.length > 0;
+    if (!layers.length) return [];
+    const grade = (layer, label) => gradeOption(method, layer, kinds[layer], hasDown,
+        { stats: stats[layer], detectAbove: recipe.detect_above, label });
+    const first = grade(layers[0]);
+    if (first.down) return [{ grade: first.grade, code: first.code, text: first.reason, down: true }];
+    if (first.grade === 'ok') return [];
+    const all = layers.every(l => grade(l).code === first.code);
+    if (!all) return [];
+    if (layers.length === 1) return [{ grade: first.grade, code: first.code, text: first.reason }];
+    // a threshold's message names figures of one layer: with several it stays on the rows
+    if (first.code.startsWith('detect_')) return [];
+    const every = grade(layers[0], 'every offered layer');
+    return [{ grade: every.grade, code: every.code, text: every.reason }];
 }
 
 /**
@@ -155,12 +267,13 @@ export function isOffered(recipe, method, layer) {
  * @param {Object} recipe - from normalizeRecipe
  * @param {string[]} [datasetLayers] - the matrices the dataset has, X first; an offered layer it lacks is left out
  * @param {Object<string, string>} [kinds] - layer -> what it looks like; a layer not listed is not graded
+ * @param {Object<string, Object>} [stats] - layer -> what the server sampled of it (`detected` is graded against the threshold)
  * @returns {Array<{id: string, method: string, layer: string, label: string, fullLabel: string, definition: string,
  *   grade: string, reason: string}>}
  *   `id` is always `method@layer`, however many layers are offered, but a consumer stores `{column: method, layer}`,
  *   never the id. `label` names the layer only when several are offered; `fullLabel` always does.
  */
-export function gradedOptions(recipe, datasetLayers, kinds = {}) {
+export function gradedOptions(recipe, datasetLayers, kinds = {}, stats = {}) {
     const methods = cleanOffered(recipe.offered, recipe.method);
     let layers = cleanLayers(recipe.layers, recipe.input);
     if (Array.isArray(datasetLayers) && datasetLayers.length) {
@@ -173,10 +286,13 @@ export function gradedOptions(recipe, datasetLayers, kinds = {}) {
     for (const method of methods) {
         for (const layer of layers) {
             const info = methodInfo(method);
-            const { grade, reason } = gradeOption(method, layer, kinds[layer], hasDown);
+            const { grade, reason, code } = gradeOption(method, layer, kinds[layer], hasDown,
+                { stats: stats[layer], detectAbove: recipe.detect_above });
             out.push({
                 id: `${method}@${layer}`, method, layer, label: several ? `${info.menu} · ${layer}` : info.menu,
-                fullLabel: `${info.menu} · ${layer}`, definition: info.definition, grade, reason
+                fullLabel: `${info.menu} · ${layer}`, definition: info.definition, grade, reason, code,
+                // a combination that can be computed but misleads says so in a title, not in a notice
+                note: grade === 'warn' ? reason : ''
             });
         }
     }
@@ -184,8 +300,8 @@ export function gradedOptions(recipe, datasetLayers, kinds = {}) {
 }
 
 /** The menu a consumer shows: `gradedOptions` without the combinations that cannot be computed. */
-export function offeredOptions(recipe, datasetLayers, kinds) {
-    return gradedOptions(recipe, datasetLayers, kinds).filter(o => o.grade !== 'cannot');
+export function offeredOptions(recipe, datasetLayers, kinds, stats) {
+    return gradedOptions(recipe, datasetLayers, kinds, stats).filter(o => o.grade !== 'cannot');
 }
 
 const nonDefault = (recipe, key, fallback) => (recipe[key] === undefined || recipe[key] === null ? fallback : recipe[key]);

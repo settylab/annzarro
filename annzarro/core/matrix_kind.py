@@ -63,6 +63,25 @@ def classify(values: Sequence[float]) -> Dict[str, Any]:
             "negative": round(negative, 4)}
 
 
+#: Quantiles reported (every 2 percent, 0 to 100): enough to read the share of values above any threshold.
+QUANTILES = 51
+
+
+def distribution(values: Sequence[float], stored_fraction: float = 1.0) -> Dict[str, Any]:
+    """What a client needs to say how many values are above a threshold, without asking again: ``density`` is the
+    share of ALL elements of the matrix that are non-zero (the stored fraction times the share of the sampled values that
+    are non-zero), and ``quantiles`` the values of the non-zero finite sample at 0, 2, ... 100 percent.
+    A threshold at or above 0 is never exceeded by a zero, so the share of elements above it is
+    ``density`` times the share of the quantiles above it. ``None`` for both when the sample says nothing."""
+    v = np.asarray(values, dtype=np.float64).ravel()
+    v = v[np.isfinite(v)]
+    nonzero = v[v != 0]
+    if v.size < MIN_SAMPLE or nonzero.size < MIN_SAMPLE:
+        return {"density": None, "quantiles": None}
+    return {"density": round(float(stored_fraction) * nonzero.size / v.size, 6),
+            "quantiles": [float(q) for q in np.quantile(nonzero, np.linspace(0.0, 1.0, QUANTILES))]}
+
+
 def piece_starts(total: int, pieces: int = SAMPLE_PIECES, size: int = SAMPLE_PIECE) -> list:
     """Where the sampled pieces of a stored array of ``total`` values begin, evenly spread."""
     if total <= pieces * size:

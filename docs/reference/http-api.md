@@ -442,11 +442,11 @@ Nothing is cached or kept: the server holds a score only while it computes it.
 look like, so a client can warn before a score is read from raw counts:
 
 ```json
-{"input": "X", "kind": "counts", "stats": {"kind": "counts", "n": 65536, "whole": 1.0, "min": 1.0, "max": 267.0, "negative": 0.0},
+{"input": "X", "kind": "counts", "stats": {"kind": "counts", "n": 65536, "whole": 1.0, "min": 1.0, "max": 267.0, "negative": 0.0, "density": 0.0412, "quantiles": [1.0, 1.0, "...", 267.0]},
  "suggest": "logged_counts", "checked": {"logged_counts": "log", "MAGIC_imputed_data": "log"}}
 ```
 
-It reads a sample of a few thousand stored values spread over the whole matrix, never the matrix. `kind` is
+It reads a sample of a few thousand stored values spread over the whole matrix, never the matrix. `stats.density` is the share of all elements that are non-zero and `stats.quantiles` the 51 values of the non-zero sample at 0, 2, ... 100 percent, which is enough to say what share of a layer lies above any threshold of 0 or more: density times the share of the quantiles above it (`null` when the sample says nothing). `kind` is
 `counts` (at least 99% whole numbers, none negative, reaching 10 or more), `normalised` (not whole, none negative,
 reaching 50 or more: normalised but not log-transformed), `log` (not whole, none negative, below 50),
 `signed` (1% or more negative values: scaled, centred, fold changes), `other` (whole numbers that stay small)

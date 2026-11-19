@@ -22,7 +22,7 @@ import {
 } from '../../utils/gene-signature.js';
 import { directionFormula } from '../../utils/gene-signature.js';
 import {
-    DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, canScoreDown, PARAM_DEFAULTS, cleanLayers, cleanOffered, gradeOption, isMethodDefault, kindWord,
+    DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, canScoreDown, PARAM_DEFAULTS, cleanLayers, cleanOffered, isMethodDefault, kindWord, layerLines, methodLines,
     methodShort, offeredSummary, offeredSummaryShort, useText
 } from '../../utils/signature-options.js';
 
@@ -52,14 +52,13 @@ const LAYERS_SHOWN = 5;
  * @param {(input: string, opts?: Object) => Promise<(Object|null)>} options.getKind - what a layer looks like (matrix-kind-client.js)
  * @param {() => Array<{value: string, plots: number, tables: number}>} [options.getInUse] - options plots and tables use
  * @param {() => Array<{value: (string|null), plots: number, tables: number}>} [options.getLayersInUse] - layers they use
- * @param {(reply: Object) => (Object|null)} options.warningFor - the warning for one kind reply
  * @param {() => void} [options.onKinds] - what a layer looks like became known: menus may change
  * @param {{countAsUp: () => void}|null} [options.directions] - the source can score genes as down (a signature can, a gene
  *   table cannot): the section then has the switch "Score some genes as down" and the formula. `countAsUp` moves every
  *   down gene to up as one undoable step, for the switch turned off while down genes exist.
  */
 export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKind, getInUse = () => [],
-    getLayersInUse = () => [], warningFor, onKinds = () => {}, directions = null }) {
+    getLayersInUse = () => [], onKinds = () => {}, directions = null }) {
     const { el } = D;
     const sid = (x) => `gsig-scoring-${x}-${id}`;
     let open = false;
@@ -69,8 +68,9 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     let destroyed = false;
     let notice = null;                  // {text, undo: patch} after an option in use was switched off
     let confirmReset = null;            // the sentence asking before a reset removes options in use
-    const warnings = new Map();         // layer -> {kind, text, suggest}
+    const suggestions = new Map();      // layer -> a layer that looks log-normalised, offered instead of this one
     const kinds = new Map();            // layer -> what it looks like
+    const stats = new Map();            // layer -> what the server sampled of it (the share above a threshold follows from it)
     const asked = new Map();            // layer -> token of the question in flight
 
     const toggle = el('button', { type: 'button', class: 'gsig-scoring__toggle', id: sid('toggle'),
@@ -281,17 +281,10 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
 
     // ------------------------------------------------------------ painting
 
-    /** The sentences that grade one method on the offered layers: said once, here, never in a plot. */
+    /** What to say under a method: only what holds whatever the layer. Properties of a layer are said on its row. */
     function gradeLines(method, layers, recipe) {
-        const lines = [];
-        for (const layer of layers) {
-            const g = gradeOption(method, layer, kinds.get(layer), !!(recipe.down && recipe.down.length));
-            if (g.grade === 'ok') continue;
-            // a reason that holds whatever the layer (down genes) is said once
-            if (g.down) { if (!lines.some(l => l.down)) lines.push({ grade: g.grade, text: g.reason, layer: '', down: true }); }
-            else lines.push({ grade: g.grade, text: g.reason, layer });
-        }
-        return lines;
+        return methodLines(method, layers, recipe, Object.fromEntries(kinds), Object.fromEntries(stats))
+            .map(l => ({ ...l, layer: '' }));
     }
 
     function paintMethods(recipe) {
@@ -352,17 +345,19 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
                 title: last ? SCORING_HELP.lastLayer : '', on: { change: () => toggleLayer(name, box.checked) } });
             const word = kindWord(kinds.get(name));
             const use = useText(usesOf(used.map(u => ({ ...u, value: u.value === null ? recipe.input : u.value })), name));
-            const warning = warnings.get(name);
+            // a layer says its properties once, short, and only while it is offered (they matter to what is offered)
+            const lines = layers.has(name) ? layerLines(name, recipe, kinds.get(name), stats.get(name)) : [];
+            const suggest = suggestions.get(name);
             layerRows.append(el('div', { class: 'gsig-scoring__layer', data: { layer: name } },
                 el('div', { class: 'gsig-scoring__optionhead' }, box,
                     el('label', { for: sid(`layer-offer-${name}`), class: 'gsig-scoring__optionname', text: known ? name : `${name} (not in this dataset)` }),
                     word ? el('span', { class: 'gsig-scoring__kind', data: { kind: kinds.get(name) }, text: word }) : null,
                     use ? el('span', { class: 'gsig-scoring__use', text: use }) : null),
-                warning ? el('div', { class: 'gsig-inputwarn', role: 'status', data: { inputWarning: 'layer', layer: name } },
-                    el('span', { 'aria-hidden': 'true', text: '⚠ ' }), warning.text,
-                    warning.suggest ? [' ', el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link',
-                        data: { useInput: warning.suggest }, on: { click: () => offerInstead(name, warning.suggest) } },
-                    `Offer ${warning.suggest} instead`)] : null) : null));
+                ...lines.map(line => el('div', { class: `gsig-inputwarn gsig-inputwarn--${line.grade}`, role: 'status',
+                    data: { inputWarning: 'layer', layer: name, code: line.code } },
+                el('span', { 'aria-hidden': 'true', text: '⚠ ' }), line.text,
+                suggest && ['depth', 'normalised'].includes(line.code) ? [' ', el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link',
+                    data: { useInput: suggest }, on: { click: () => offerInstead(name, suggest) } }, `Offer ${suggest} instead`)] : null))));
         }
     }
 
@@ -382,16 +377,19 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         askKind(better);
     }
 
+    /** With the section closed: what a first layer that is raw or unlogged says, since it changes what the user would pick. */
     function paintWarning(recipe) {
         D.clear(warningLine);
-        const warning = warnings.get(recipe.input);
-        warningLine.hidden = !warning || open;
-        if (!warning) return;
-        warningLine.dataset.kind = warning.kind;
-        warningLine.append(el('span', { text: warning.text }));
-        if (warning.suggest) {
-            warningLine.append(' ', el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { useInput: warning.suggest },
-                on: { click: () => offerInstead(recipe.input, warning.suggest) } }, `Offer ${warning.suggest} instead`));
+        const line = layerLines(recipe.input, recipe, kinds.get(recipe.input), stats.get(recipe.input))
+            .find(l => ['depth', 'normalised'].includes(l.code));
+        warningLine.hidden = !line || open;
+        if (!line) return;
+        warningLine.dataset.kind = kinds.get(recipe.input) || '';
+        warningLine.append(el('span', { text: line.text }));
+        const suggest = suggestions.get(recipe.input);
+        if (suggest) {
+            warningLine.append(' ', el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { useInput: suggest },
+                on: { click: () => offerInstead(recipe.input, suggest) } }, `Offer ${suggest} instead`));
         }
     }
 
@@ -469,10 +467,11 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         if (destroyed || asked.get(layer) !== mine) return;
         const before = kinds.get(layer);
         if (reply && reply.kind) kinds.set(layer, reply.kind);
-        const warning = reply && warningFor ? warningFor(reply) : null;
-        if (warning) warnings.set(layer, warning); else warnings.delete(layer);
+        if (reply && reply.stats) stats.set(layer, reply.stats);
+        if (reply && reply.suggest && ['counts', 'normalised'].includes(reply.kind)) suggestions.set(layer, reply.suggest);
+        else suggestions.delete(layer);
         paint();
-        if (reply && reply.kind && before !== reply.kind) onKinds();
+        if (reply && reply.kind && before === undefined) onKinds();          // grades follow what is now known
     }
 
     /** What every listed layer looks like (one sample each, no look at the others): for the kind word and the grades. */
@@ -495,7 +494,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     /** Ask what every offered layer looks like (answers are kept per dataset and layer). */
     function refreshKind() {
         const recipe = getRecipe();
-        warnings.clear();
+        suggestions.clear();
         return Promise.all(cleanLayers(recipe.layers, recipe.input).map(l => askKind(l)));
     }
 
@@ -509,8 +508,9 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         /** Open the section and put the cursor on it: where a consumer's "Offer other scores…" leads. */
         reveal() { if (destroyed) return; open = true; paint(); toggle.focus(); },
         getKinds: () => Object.fromEntries(kinds),
+        getStats: () => Object.fromEntries(stats),
         destroy() { destroyed = true; },
         /** For tests. */
-        state: () => ({ open, inputs: [...inputs], warnings: [...warnings.keys()], kinds: Object.fromEntries(kinds), lastClip })
+        state: () => ({ open, inputs: [...inputs], warnings: [...suggestions.keys()], kinds: Object.fromEntries(kinds), lastClip })
     };
 }
