@@ -106,7 +106,7 @@ function tableMap(tableId) {
  * @param {string} tableId
  * @param {Object} column - `{type: 'gene-score', key, column, label}`
  */
-function ensure(tableId, column) {
+function ensure(tableId, column, visible = null) {
     const key = getColumnKey(column);
     const map = tableMap(tableId);
     let entry = map.get(key);
@@ -116,7 +116,7 @@ function ensure(tableId, column) {
     }
     if (!entry) {
         entry = { tableId, key, column, sub: subOf(column), handle: null, snap: null, title: '', sig: '',
-            reader: makeReader(), visible: () => tileOnScreen(tableId) };
+            reader: makeReader(), visible: visible || (() => tileOnScreen(tableId)) };
         entry.handle = scores().sources.watch(column.key, {
             sub: entry.sub, host: tableId, role: 'column', visible: () => entry.visible(),
             onChange: (snap) => update(entry, snap)
@@ -125,6 +125,10 @@ function ensure(tableId, column) {
         update(entry, entry.handle.read(), true);
     } else {
         entry.column = column;
+        if (visible && entry.visible !== visible) {
+            entry.visible = visible;
+            scores().sources.visibilityChanged();
+        }
         // the cells may have changed since the table last built its rows: read where the score stands now
         update(entry, entry.handle.read(), true);
     }
@@ -209,8 +213,7 @@ export const TableScores = {
         const used = usedScoreColumns(config.columns, config.searchBuilderConfig, getColumnKey);
         if (!used.length) return null;
         const items = used.map((column) => {
-            const entry = ensure(tableId, column);
-            if (visible) entry.visible = visible;
+            const entry = ensure(tableId, column, visible);
             return { title: entry.title, view: entry.reader.view, snap: entry.snap };
         });
         return filterGate(items);

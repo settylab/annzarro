@@ -22,7 +22,7 @@ else:
     playwright = pytest.importorskip("playwright.sync_api")
 
 from annzarro.tests.browser.test_gene_score_plots import (  # noqa: E402,F401
-    INIT, N_OBS, RAMP, SIG, UMAP_X, UMAP_Y, _cell, _finish, _frame, _new_page, _served, _sig, _slow, _url, served,
+    INIT, N_OBS, RAMP, S, SIG, UMAP_X, UMAP_Y, _cell, _finish, _frame, _new_page, _served, _set_subset, _sig, _slow, _url, served,
 )
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
@@ -385,3 +385,246 @@ def test_export_writes_the_score_column_when_it_is_ready(page, served, tmp_path)
     assert float(row["c3"][2]) == pytest.approx(1.0, abs=1e-6)
     assert row["c3"][2] == "1", "float32 noise is not written: " + row["c3"][2]
     assert float(row["c10"][2]) == pytest.approx(10 / 3, abs=1e-5)
+
+
+# ------------------------------------------------------------ the chain: plot <- table <- score
+
+P = '.tile[data-tile-id="cell-plot-C"]'
+PLAIN = {"type": "obs", "key": "score", "column": ""}
+FILTERED = {"condition": ">", "data": "T cell score", "origData": "gene-score_" + SIG + "_zscore_mean", "type": "num", "value": ["49.5"]}
+
+
+def _plot(table=TID, **extra):
+    return ("cell-plot-C", _cell("cell-plot-C", color=PLAIN, tableFilter=table, removeNonTableEntries=True, **extra))
+
+
+def _plot_state(page):
+    return page.evaluate("""(P) => {
+        const gd = document.querySelector(P + ' .js-plotly-plot');
+        const names = gd && gd.data ? gd.data.flatMap(t => Array.from(t.customdata || [])).map(v => Array.isArray(v) ? v[0] : v).map(String) : null;
+        const tag = document.querySelector(P + ' .ps-tag[data-tag="table-unresolved"]');
+        const notice = document.querySelector(P + ' .filter-notice');
+        return { names, tag: tag ? tag.textContent.trim() : null, state: notice ? notice.dataset.state : null,
+                 text: notice ? notice.textContent.replace(/\\s+/g, ' ').trim() : null,
+                 actions: [...document.querySelectorAll(P + ' .filter-notice [data-ps-action]')].map(b => b.dataset.psAction + '|' + b.textContent.trim()),
+                 calls: window.__scoreCalls.length };
+    }""", P)
+
+
+def _wait_plot(page, n):
+    until(page, """([P, n]) => { const gd = document.querySelector(P + ' .js-plotly-plot');
+        if (!gd || !gd.data || document.querySelector(P + ' .filter-notice')) return false;
+        return gd.data.flatMap(t => Array.from(t.customdata || [])).length === n; }""", [P, n])
+
+
+def test_a_plot_filtered_by_a_table_whose_filter_waits_for_a_score_waits_and_draws_no_cells(page, served):
+    sb = {"logic": "AND", "criteria": [FILTERED]}
+    _slow(page, "auto", 3)
+    _open(page, served, table=_table(searchBuilderConfig=sb), plots=(_plot(),))
+    until(page, "() => window.__ctls.length === 1")
+    page.wait_for_selector(f"{P} .filter-notice[data-state='unresolved']", timeout=30000)
+    st = _plot_state(page)
+    assert st["tag"] == "Waiting for score", st
+    assert "Filtering by 'Cell Table 1' needs 'T cell score', which is not ready yet. No cells are drawn until it is." in st["text"]
+    assert st["names"] in (None, []), "an unresolved filter draws no points, not the unfiltered cells"
+    assert page.evaluate("(id) => window.PanelManager.getPanel(id).isReady()", TID) is False
+    assert [a.split("|")[0] for a in st["actions"]][0] == "table-score-cancel"
+    # the table holds its rows too
+    assert page.evaluate("(box) => document.querySelector(box).classList.contains('az-score-held')", BOX)
+    _finish(page, 0)
+    _wait_plot(page, 10)
+    st = _plot_state(page)
+    assert sorted(st["names"]) == sorted(f"c{i}" for i in range(50, 60)), "the cells of the table's filter, and only those"
+    assert st["tag"] is None and st["state"] is None
+    assert page.evaluate("(id) => window.PanelManager.getPanel(id).isReady()", TID) is True
+    assert len(_calls(page, "compute")) == 1
+
+
+def test_a_failed_score_leaves_the_table_and_its_plot_not_applied_with_the_reason_and_a_way_out(page, served):
+    sb = {"logic": "AND", "criteria": [FILTERED]}
+    _slow(page, "auto", 3)
+    _open(page, served, table=_table(searchBuilderConfig=sb), plots=(_plot(),))
+    until(page, "() => window.__ctls.length === 1")
+    page.evaluate("() => window.__error(0, 'read_failed', 'the server stopped responding')")
+    page.wait_for_selector(f"{P} .filter-notice[data-state='unresolved']", timeout=30000)
+    until(page, "(P) => { const t = document.querySelector(P + ' .ps-tag[data-tag=\"table-unresolved\"]'); return !!t && t.textContent.trim() === 'Filter not applied'; }", P)
+    st = _plot_state(page)
+    assert "'T cell score' could not be computed: the server stopped responding." in st["text"] and "No cells are drawn." in st["text"]
+    assert [a.split("|")[0] for a in st["actions"]] == ["table-score-retry", "table-filter-off"], st["actions"]
+    held = page.inner_text(f"{BOX} .az-score-held-note")
+    assert "Filter on 'T cell score' not applied." in held and "could not be computed" in held
+    assert st["names"] in (None, [])
+    # Retry asks again, and everything resolves
+    page.click(f"{P} .filter-notice [data-ps-action='table-score-retry']")
+    until(page, "() => window.__ctls.length === 2")
+    _finish(page, 1)
+    _wait_plot(page, 10)
+
+
+def test_a_score_that_asks_first_is_computed_by_a_click_in_the_plot(page, served):
+    sb = {"logic": "AND", "criteria": [FILTERED]}
+    _slow(page, "confirm", 130)
+    _open(page, served, table=_table(searchBuilderConfig=sb), plots=(_plot(),))
+    page.wait_for_selector(f"{P} .filter-notice[data-state='unresolved']", timeout=30000)
+    st = _plot_state(page)
+    assert "which has not been computed" in st["text"]
+    assert [a.split("|")[0] for a in st["actions"]][0] == "table-score-compute"
+    assert len(_calls(page, "compute")) == 0
+    page.click(f"{P} .filter-notice [data-ps-action='table-score-compute']")
+    until(page, "() => window.__ctls.length === 1")
+    _finish(page, 0)
+    _wait_plot(page, 10)
+
+
+def test_a_closed_table_restored_from_a_link_resolves_its_score_first_then_its_filter(page, served):
+    sb = {"logic": "AND", "criteria": [FILTERED]}
+    _slow(page, "auto", 3)
+    _open(page, served, table=_table(searchBuilderConfig=sb), plots=(_plot(),), table_open=False, wait=False)
+    page.wait_for_selector(f"{P} .filter-notice[data-state='unresolved']", timeout=30000)
+    until(page, "() => window.__ctls.length === 1")
+    assert page.evaluate("() => window.PanelManager.getActivePanels().map(p => p.getId())") == ["cell-plot-C"], "the table is closed"
+    until(page, "(P) => { const t = document.querySelector(P + ' .ps-tag[data-tag=\"table-unresolved\"]'); return !!t && t.textContent.trim() === 'Waiting for score'; }", P)
+    st = _plot_state(page)
+    assert st["names"] in (None, [])
+    assert "Filtering by 'Cell Table 1' needs 'T cell score'" in st["text"]
+    _finish(page, 0)
+    _wait_plot(page, 10)
+    st = _plot_state(page)
+    assert sorted(st["names"]) == sorted(f"c{i}" for i in range(50, 60))
+    # one estimate and one computation for the score; the table was never opened
+    assert [c["kind"] for c in _calls(page)] == ["estimate", "compute"]
+    assert page.evaluate("() => window.PanelManager.getActivePanels().map(p => p.getId())") == ["cell-plot-C"]
+    # the selection is names (the closed table's), never the score's values
+    sel = page.evaluate("(id) => { const c = window.PanelManager.getPanel(id).getConfig().closedSelection; return c ? Array.from(c.passing).length : null; }", TID)
+    assert sel == 10
+
+
+def test_a_closed_table_follows_an_edit_of_the_signature_it_filters_on(page, served):
+    sb = {"logic": "AND", "criteria": [FILTERED]}
+    _slow(page, "auto", 3)
+    _open(page, served, table=_table(searchBuilderConfig=sb), plots=(_plot(),), table_open=False, sig_open=True, wait=False)
+    until(page, "() => window.__ctls.length === 1")
+    _finish(page, 0)
+    _wait_plot(page, 10)
+    # the edit makes a new score (the cells ranked the other way): the plot's cells change with it
+    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').addGenes(['GENE0100'])")
+    until(page, "() => window.__ctls.length === 2")
+    _finish(page, 1, [float(N_OBS - 1 - i) for i in range(N_OBS)])
+    until(page, """(P) => { const gd = document.querySelector(P + ' .js-plotly-plot'); if (!gd || !gd.data) return false;
+        const n = gd.data.flatMap(t => Array.from(t.customdata || [])).map(v => Array.isArray(v) ? v[0] : v).map(String);
+        return n.length === 10 && n.includes('c0') && n.includes('c9') && !n.includes('c59'); }""", P)
+
+
+def test_a_cycle_through_a_table_with_a_score_filter_stops_resolution_and_computes_nothing(page, served):
+    sb = {"logic": "AND", "criteria": [FILTERED]}
+    other = {"id": "cell-table-U", "title": "Cell Table 2", "columns": [OBS], "tableFilter": TID}
+    _slow(page, "auto", 3)
+    _open(page, served, table=_table(searchBuilderConfig=sb, tableFilter="cell-table-U"), plots=(_plot(),), table_open=False,
+          extra={"cell-table-U": other}, wait=False)
+    page.wait_for_selector(f"{P} .filter-notice[data-state='unresolved']", timeout=30000)
+    until(page, "(P) => { const t = document.querySelector(P + ' .ps-tag[data-tag=\"table-unresolved\"]'); return !!t && t.textContent.trim() === 'Filter not applied'; }", P)
+    st = _plot_state(page)
+    assert "'Cell Table 1' and 'Cell Table 2' depend on each other. No cells are drawn." in st["text"], st["text"]
+    page.wait_for_timeout(500)
+    assert page.evaluate("() => window.__scoreCalls.length") == 0, "a cycle asks for no score"
+    assert page.evaluate("() => window.__ctls.length") == 0
+
+
+def test_a_link_keeps_the_column_reference_and_no_value(page, served):
+    sb = {"logic": "AND", "criteria": [FILTERED]}
+    _ready_table(page, served, table=_table(searchBuilderConfig=sb))
+    view = page.evaluate("() => (window.SessionManager || window.sessionManager).captureView()")
+    text = json.dumps(view)
+    cfg = view["layout"]["panelConfigs"][TID]
+    assert [(c["type"], c["key"], c["column"]) for c in cfg["columns"]] == [("obs", "score", ""), ("gene-score", SIG, "zscore_mean")]
+    assert cfg["searchBuilderConfig"]["criteria"][0]["origData"] == "gene-score_" + SIG + "_zscore_mean"
+    assert "Float32" not in text and '"values"' not in text
+    assert "currentEntries" not in text and "closedSelection" not in text
+    assert len(text) < 5000, "sixty scores would be hundreds of digits more"
+    # a new page opens it: the column is there and computes again; the values did not travel
+    other = page.context.browser.new_page(viewport={"width": 1500, "height": 1000})
+    other.add_init_script(INIT)
+    other.add_init_script("window.__slow('auto', 3, {})")
+    try:
+        other.goto(page.url)
+        other.wait_for_selector(f"{BOX} .dataTables_scrollBody", state="attached", timeout=30000)
+        until(other, "() => window.__ctls.length === 1")
+        assert _headers(other)[2] == "T cell score (computing)"
+        assert [c["kind"] for c in _calls(other)] == ["estimate", "compute"]
+        _finish(other, 0)
+        _wait_ready(other)
+        assert _api(other, "dt.rows({search: 'applied'}).count()") == 10
+    finally:
+        other.close()
+
+
+def test_a_closed_table_with_a_score_column_comes_back_from_a_link_and_opens_with_its_column(page, served):
+    sb = {"logic": "AND", "criteria": [FILTERED]}
+    _slow(page, "auto", 3)
+    _open(page, served, table=_table(searchBuilderConfig=sb), plots=(_plot(),))
+    until(page, "() => window.__ctls.length === 1")
+    _finish(page, 0)
+    _wait_plot(page, 10)
+    page.evaluate("(id) => window.PanelManager.closePanel(id)", TID)
+    page.wait_for_timeout(300)
+    view = page.evaluate("() => (window.SessionManager || window.sessionManager).captureView()")
+    assert TID not in json.dumps(view["layout"]["hierarchy"]), "closed"
+    cfg = view["layout"]["panelConfigs"][TID]
+    assert cfg["columns"][1]["type"] == "gene-score" and "closedSelection" not in cfg
+    # the link: the table is closed there too, and the plot resolves through the score, with no table open
+    fresh = page.context.browser.new_page(viewport={"width": 1500, "height": 1000})
+    fresh.add_init_script(INIT)
+    fresh.add_init_script("window.__slow('auto', 3, {})")
+    try:
+        fresh.goto(page.url)
+        fresh.wait_for_selector(f"{P} .filter-notice[data-state='unresolved']", timeout=30000)
+        until(fresh, "() => window.__ctls.length === 1")
+        _finish(fresh, 0)
+        _wait_plot(fresh, 10)
+        # opening it shows the column, filled from the score the plot already needed (one computation)
+        fresh.evaluate("(id) => window.PanelManager.reopenClosedPanel(id, { nextTo: 'cell-plot-C' })", TID)
+        fresh.wait_for_selector(f"{BOX} .dataTables_scrollBody", state="attached", timeout=30000)
+        _wait_ready(fresh)
+        assert len(_calls(fresh, "compute")) == 1
+        assert _headers(fresh)[2] == "T cell score"
+    finally:
+        fresh.close()
+
+
+def test_use_in_adds_the_score_to_a_cell_table_and_a_table_that_has_it_says_so(page, served):
+    _slow(page, "auto", 3)
+    _open(page, served, table=_table(columns=[OBS]), sig_open=True)
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    page.click(f"{S} .gsig-usein")
+    labels = page.locator(f"{S} .gsig-menu [role=menuitem]").all_inner_texts()
+    assert "Add to Cell Table 1" in labels, labels
+    page.click(f"{S} .gsig-menu [role=menuitem]:has-text('Add to Cell Table 1')")
+    until(page, "(box) => document.querySelectorAll(box + ' .dataTables_scrollHead th').length === 3", BOX)
+    assert _headers(page)[2] == "T cell score (computing)"
+    cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns", TID)
+    assert [(c["type"], c["key"], c["column"]) for c in cfg] == [("obs", "score", ""), ("gene-score", SIG, "zscore_mean")]
+    assert page.evaluate(f"() => document.getElementById('checkbox-gene-score-{SIG}-zscore_mean-{TID}').checked") is True
+    until(page, "() => window.__ctls.length === 1")
+    _finish(page, 0)
+    _wait_ready(page)
+    # the table has it now: the menu says so and does not add it twice
+    page.click(f"{S} .gsig-usein")
+    item = page.locator(f"{S} .gsig-menu [role=menuitem]:has-text('Add to Cell Table 1')")
+    assert item.get_attribute("aria-disabled") == "true" or item.is_disabled()
+
+
+def test_new_cells_keep_the_table_and_the_column_asks_for_its_own_score(page, served):
+    _ready_table(page, served)
+    page.evaluate("""(box) => { const dt = $(box + ' .dataTables_scrollBody table').DataTable(); dt.page.len(10).draw(); dt.order([1, 'desc']).draw(); }""", BOX)
+    _set_subset(page, True, 30)
+    until(page, "() => window.__ctls.length === 2")
+    until(page, "(box) => document.querySelectorAll(box + ' .dataTables_scrollBody tbody tr').length > 0", BOX)
+    assert _api(page, "dt.rows().count()") == 30
+    assert _headers(page)[2] == "T cell score (computing)", "the old score is for the other cells"
+    assert set(_column(page, 2)) == {"computing\u2026"}
+    assert _api(page, "dt.page.len()") == 10 and _api(page, "dt.order()[0][0]") == 1, "the table was kept, not rebuilt"
+    computes = _calls(page, "compute")
+    assert len(computes) == 2 and computes[1]["subset"] is not None and computes[0]["subset"] is None
+    _finish(page, 1, [float(i) for i in range(30)])
+    _wait_ready(page)
+    assert max(float(v) for v in _column(page, 2)) <= 29.0

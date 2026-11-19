@@ -101,7 +101,13 @@ export function bindScoreColumns(dataTable, settings, container) {
         }
     };
 
-    /** The cached sort and filter data of the column, and the cells already built. */
+    /**
+     * The cached sort and filter data of the column, and the cells already built. Only this column's
+     * slot of each row's caches is touched (the other columns' stay): the sort data is dropped, to
+     * be read again if the table is sorted, and the filter text is written in place, so the draw
+     * that follows does not read every column of every row again. A million rows is a loop of a
+     * million small steps.
+     */
     const invalidate = (entry) => {
         const idx = indexOf(entry);
         if (idx < 0) return;
@@ -109,8 +115,13 @@ export function bindScoreColumns(dataTable, settings, container) {
         const reader = entry.reader;
         for (let r = 0; r < rows.length; r++) {
             const row = rows[r];
-            if (row._aSortData) row._aSortData[idx] = null;
-            row._aFilterData = null;
+            const sortData = row._aSortData;
+            if (sortData && sortData.length > idx) sortData[idx] = null;
+            const filterData = row._aFilterData;
+            if (filterData && filterData.length > idx) {
+                filterData[idx] = String(reader.render('filter', r));
+                row._sFilterRow = filterData.join('  ');
+            }
             const cells = row.anCells;
             if (cells && cells[idx]) cells[idx].innerHTML = reader.render('display', r);
         }
