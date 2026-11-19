@@ -398,7 +398,8 @@ def test_the_cost_tiers_are_read_from_the_estimate(page, served):
     _slow(page, "auto", 59)
     _open(page, served, wait=False)
     until(page, "() => window.__ctls.length === 1")
-    assert _notice(page)["state"] == "computing"
+    # the notice is drawn a moment after the state changes (a repaint is batched): wait for it
+    until(page, "(t) => { const n = document.querySelector(t + ' .score-notice'); return !!n && n.dataset.state === 'computing'; }", C)
     _finish(page, 0)
     _wait_coloured(page)
 

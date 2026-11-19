@@ -110,6 +110,20 @@ USE_IN.push(({ id, title }) => PanelManager.getActivePanels()
     ].map(([axis, label]) => ({ id: `${axis}:${panel.getId()}`, label,
         run: () => { useAs(panel, axis, id, title).catch((error) => console.error(`Use as ${axis} failed:`, error)); } }))));
 
+/**
+ * For each open Cell Table: Add to <Cell Table>. The score becomes a column (the signature's
+ * z-score mean, the default aggregation; others are ticked in the table's own chooser), filled
+ * in when the score is there. A table that has the column already says so.
+ */
+USE_IN.push(({ id, title }) => PanelManager.getActivePanels()
+    .filter(panel => panel.getType() === 'cell-table' && typeof panel.addColumn === 'function' && typeof panel.hasColumn === 'function')
+    .map(panel => {
+        const has = panel.hasColumn({ type: 'gene-score', key: id, column: 'zscore_mean' });
+        return { id: `table:${panel.getId()}`, label: `Add to ${panel.getTitle()}`,
+            disabled: has ? `${panel.getTitle()} has this column` : undefined,
+            run: () => { panel.addColumn({ type: 'gene-score', key: id, column: 'zscore_mean', label: title }).catch((error) => console.error('Add to table failed:', error)); } };
+    }));
+
 /** The dataset's gene index, shared by every signature (a Map of name -> position), rebuilt when the genes change. */
 let _indexCache = { key: null, index: null };
 

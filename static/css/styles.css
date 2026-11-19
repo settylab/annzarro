@@ -4967,3 +4967,15 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .gsig-panel.gsig-flowing > .gsig-grid { display: none; }
 .gsig-flow { padding: 4px 0; }
 .gsig-flow[hidden] { display: none; }
+
+/* A Cell Table's gene-signature score columns (panels/table-utilities/table-score-ui.js) */
+.az-score-state { font-weight: normal; opacity: 0.75; white-space: nowrap; }
+.az-sort-off.sorting, .az-sort-off.sorting_asc, .az-sort-off.sorting_desc { cursor: default; }
+.az-sort-off.sorting::before, .az-sort-off.sorting::after,
+.az-sort-off.sorting_asc::before, .az-sort-off.sorting_asc::after,
+.az-sort-off.sorting_desc::before, .az-sort-off.sorting_desc::after { opacity: 0.12 !important; }
+.az-score-wait { font-style: italic; }
+/* A filter that reads a score that is not ready holds the rows: nothing is shown, nothing is counted */
+.az-score-held .dataTables_wrapper > .row:not(.az-sb-row):not(.az-search-row) { display: none; }
+.az-score-held-note { margin: 0.5rem 0; padding: 0.5rem 0.75rem; font-size: 0.875rem; }
+.az-score-group-title { font-size: 0.8125rem; margin-top: 0.25rem; }

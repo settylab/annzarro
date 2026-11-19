@@ -386,8 +386,22 @@ function shownRecord(host) {
     return map.get(host.__scoreShown) || [...map.values()][0] || null;
 }
 
+/**
+ * Hosts other than plots (a Cell Table's score columns) run the same actions: each registers a
+ * provider `{available(action, host) -> boolean|undefined, run(action, host) -> boolean}` that
+ * answers for its own containers and says nothing (undefined, false) for the rest.
+ */
+const HOST_ACTIONS = new Set();
+export function registerHostActions(provider) {
+    HOST_ACTIONS.add(provider);
+}
+
 /** Whether a score action applies to this plot now. */
 export function scoreActionAvailable(action, host) {
+    for (const provider of HOST_ACTIONS) {
+        const answer = provider.available(action, host);
+        if (answer !== undefined) return answer;
+    }
     if (!SCORE_ACTIONS.includes(action)) return false;
     const rec = shownRecord(host);
     if (!rec) return false;
@@ -398,6 +412,7 @@ export function scoreActionAvailable(action, host) {
 
 /** Run a score action for a plot. */
 export function runScoreAction(action, host) {
+    for (const provider of HOST_ACTIONS) if (provider.run(action, host)) return;
     const rec = shownRecord(host);
     if (!rec) return;
     const { sources } = scores();

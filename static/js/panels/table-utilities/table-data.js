@@ -10,8 +10,13 @@ import { DataManager } from '../../data-manager.js';
 import { RemoteNames } from '../../utils/remote-names.js';
 import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents, syncSelectedColumns } from './table-ui-make.js'
 import { freezeSelection } from '../../utils/closed-table.js';
+import { getColumnKey } from '../../utils/column-key.js';
 import { TableResolver } from '../../utils/table-resolver.js';
 import { lineSelectButton } from './line-select-ui.js';
+import { isScoreColumn } from '../../utils/score-column.js';
+import { scoreLabel } from '../../utils/score-source.js';
+import { TableScores } from './table-scores.js';
+import { bindScoreColumns } from './table-score-ui.js';
 import {
     Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
     classifyError, missingEntity, unreadableCell, classifyFocusRow
@@ -98,6 +103,17 @@ export async function loadTableData(settings, entityType, signal = null) {
                     throw new DOMException(`Table data loading aborted before loading column ${getColumnKey(column)}`, 'AbortError');
                 }
                 
+                // A gene-signature score is not loaded here: the table is built at once and the column
+                // fills in place when the score is there (panels/table-utilities/table-score-ui.js).
+                // Its cells are read from the score's Float32Array by row, so no row object gets a
+                // property for it.
+                if (isScoreColumn(column) && entityType === 'cells') {
+                    columnCoverages.push(Coverage.complete(entityIndex.length, entityType));
+                    columnDefinitions.push(scoreColumnDefinition(column, getColumnKey(column),
+                        TableScores.readerOf(settings.id || settings._tableId || '', column)));
+                    continue;
+                }
+
                 // Load data based on column type
                 const loaded = await loadColumnData(column, entityType, signal);
                 const columnData = loaded.values;
@@ -183,6 +199,7 @@ export async function loadTableData(settings, entityType, signal = null) {
         // typing: SearchBuilder's "Equals" dropdown would hold one option per
         // row. A numeric one keeps the number conditions (manyValuesType).
         columnDefinitions.forEach(def => {
+            if (def.searchBuilderType) return;       // a score column: numbers, filtered by typing
             const values = def.data === '_index' ? entityIndex : data.map(row => row[def.data]);
             const type = manyValuesType(values, VALUE_LIST_MAX);
             if (type) def.searchBuilderType = type;
@@ -210,6 +227,26 @@ export async function loadTableData(settings, entityType, signal = null) {
         }
         throw error;
     }
+}
+
+/**
+ * The DataTables column of a gene-signature score. Its `data` is a key no row has (the row
+ * objects stay as they are); the cell is the reader's: the score at the row's position, or the
+ * word for the state the score is in (utils/score-column.js).
+ * @param {Object} column - `{type: 'gene-score', key, column, label}`
+ * @param {string} columnKey
+ * @param {{render: Function}} reader - panels/table-utilities/table-scores.js
+ */
+function scoreColumnDefinition(column, columnKey, reader) {
+    return {
+        title: getColumnDisplayName(column),
+        data: columnKey,
+        defaultContent: '',
+        className: 'dt-center az-score-col',
+        type: 'num',
+        searchBuilderType: TEXT_ONLY_NUM_TYPE,
+        render: (data, type, row, meta) => reader.render(type, meta.row)
+    };
 }
 
 /**
@@ -650,25 +687,7 @@ export function pinPanelFocusPlaceholders(settings, title = 'Table') {
     return r;
 }
 
-/**
- * Characters DataTables reads in a column's `data` string: "." nests, "[...]" indexes an
- * array, "()" calls a function, and "\\" escapes. A column named orig.ident was looked up as
- * row.obs_orig -> .ident_main and showed N/A (or a DataTables warning).
- */
-const DATATABLES_SPECIAL = /[.[\]()\\]/g;
-
-/**
- * Get a unique key for a column. It is the row property and the DataTables `data` of the
- * column, so it holds none of the characters DataTables reads as a path: each is replaced by
- * its code between two U+241E marks (the name shown for the column is not this key).
- * @param {Object} column - The column object
- * @returns {string} - The column key
- */
-export function getColumnKey(column) {
-    const { type, key, column: columnName } = column;
-    return `${type}_${key}_${columnName || 'main'}`.replace(/\s+/g, '_')
-        .replace(DATATABLES_SPECIAL, c => `\u241e${c.charCodeAt(0).toString(16)}\u241e`);
-}
+export { getColumnKey };
 
 /**
  * Get display name for a column
@@ -683,6 +702,8 @@ export function getColumnKey(column) {
 export function getColumnDisplayName(column) {
     if (isDerived(column)) {
         return column.key;
+    } else if (isScoreColumn(column)) {
+        return scoreLabel(column);
     } else if (column.type === 'obs' || column.type === 'var') {
         return `${column.key}`;
     } else if (column.type === 'obsm' || column.type === 'varm') {
@@ -839,7 +860,7 @@ export function releaseTable(dataTable, settings, opts = {}) {
             ownedResize.delete(st);
             if (st._azOptions) for (const key of ['data', 'columns']) st._azOptions[key] = null;
             if (st._azBox) $(st._azBox).off('.azDerived');
-            st._azOptions = st._azBox = null;
+            st._azOptions = st._azBox = st._azScoreSync = null;
             for (const key of Object.keys(st)) {
                 if (/^ao.*Callback$/.test(key) && Array.isArray(st[key])) st[key].length = 0;
             }
@@ -1370,6 +1391,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     // Initialize previousEntries with a deep copy
     previousEntries = [...settings.currentEntries];
 
+    // The gene-signature score columns say what state they are in, and fill in place from here on
+    bindScoreColumns(dataTable, settings, tableContainer);
+
     // The opened table has its rows and its filter: the plots that read it may stop waiting
     // (utils/table-resolver.js), and are told next
     if (settings.id) TableResolver.panelPublished(settings.id);
@@ -1609,7 +1633,8 @@ export async function refreshColumnChooser(panelSettings, tableRows) {
         { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
         { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
         { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
-        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
+        { id: 'layer', name: 'layer', label: 'layers' }, // Expression Layers
+        { id: 'gene-score', name: 'gene-score', label: 'gene-score' } // Gene signature scores
     ] : [
         { id: 'var', name: 'var', label: 'var' }, // Gene Annotations
         { id: 'varm', name: 'varm', label: 'varm' }, // Gene Matrices
@@ -1688,6 +1713,14 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType, ta
  */
 export async function exportTableToCsv(dataTable, tableTitle) {
     try {
+        // a score column that is not ready has no values to write: say which, and write nothing
+        const live = typeof dataTable.api === 'function' ? dataTable.api() : dataTable;
+        const owner = live.settings()[0]._panelSettings;
+        const blocked = owner && owner.id ? TableScores.entries(owner.id).find(e => !e.reader.view.exportable) : null;
+        if (blocked) {
+            notify('CSV export is not available', blocked.reader.view.exportNote, 'warning');
+            return;
+        }
         // the file names every row: the names of cells fetched when needed
         // are loaded for it
         let table = dataTable;

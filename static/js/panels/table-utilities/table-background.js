@@ -17,6 +17,8 @@ import { referencedKeys } from '../../utils/line-select.js';
 import { freezeSelection } from '../../utils/closed-table.js';
 import { tableCheck, refusalPanel } from '../../utils/memory-guard-ui.js';
 import { loadTableData, initializeDataTable, releaseTable, getColumnKey } from './table-data.js';
+import { TableScores, tileOnScreen } from './table-scores.js';
+import { usedScoreColumns } from '../../utils/score-column.js';
 
 const TABLE_KINDS = new Set(['cell-table', 'gene-table']);
 
@@ -44,9 +46,11 @@ export function filters(config) {
  * @param {{kind: string, config: Object, signal: AbortSignal, check: Function}} job
  * @returns {Promise<{passing, seen}>} (utils/closed-table.js)
  */
-export async function buildSelection({ kind, config, signal, check, enter }) {
+export async function buildSelection({ id, kind, config, signal, check, enter }) {
     const entityType = kind === 'cell-table' ? 'cells' : 'genes';
     const settings = {
+        // the scores the filter reads are the table's own (panels/table-utilities/table-scores.js)
+        _tableId: id,
         columns: neededColumns(config),
         searchBuilderConfig: config.searchBuilderConfig,
         searchText: config.searchText || '',
@@ -55,6 +59,11 @@ export async function buildSelection({ kind, config, signal, check, enter }) {
         searchCaseInsensitive: config.searchCaseInsensitive !== false
     };
     const tableData = await loadTableData(settings, entityType, signal);
+    // a score the filter reads must be there: the resolver builds only when every one is ready
+    for (const column of usedScoreColumns(settings.columns, settings.searchBuilderConfig, getColumnKey)) {
+        const entry = TableScores.entry(id, column);
+        if (!entry || !entry.reader.vec) throw new Error(`the score '${column.label || column.key}' is not ready`);
+    }
     // the step below cannot be interrupted: last look at whether anyone still wants it
     // the last step cannot be interrupted: the resolver says so first and lets the page paint it
     if (enter) await enter(); else check();
@@ -95,13 +104,7 @@ function isActive(panel) {
     return window.PanelManager.getActivePanels().includes(panel);
 }
 
-function onScreen(id) {
-    const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
-    if (!tile) return false;
-    const r = tile.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0
-        && r.top < window.innerHeight && r.left < window.innerWidth;
-}
+const onScreen = tileOnScreen;
 
 const host = {
     panel(id) {
@@ -149,6 +152,15 @@ const host = {
         const upstream = config && config.tableFilter;
         return typeof upstream === 'string' && upstream && upstream !== 'none' && panelOf(upstream) ? [upstream] : [];
     },
+    scoreGate(id, { open }) {
+        const found = panelOf(id);
+        if (!found || found.kind !== 'cell-table' || typeof found.panel.scoreGate !== 'function') return null;
+        // a closed table's scores are computed for the dependants that can be seen
+        return found.panel.scoreGate(open ? {} : { visible: () => TableResolver.wantedBy(id).some(onScreen) });
+    },
+    releaseScores(id) {
+        TableScores.release(id);
+    },
     build: buildSelection,
     publish(id, selection) {
         const found = panelOf(id);
@@ -163,6 +175,13 @@ const host = {
 };
 
 TableResolver.host = host;
+
+// A score a closed table's filter reads arrived or changed: what was built from the old one is void
+TableScores.on((tableId, entry, changed) => {
+    if (!changed) return;
+    const found = panelOf(tableId);
+    if (found && !isActive(found.panel)) TableResolver.scoreChanged(tableId);
+});
 
 // Tests hold or tune the limits before the app loads (the browser tests set window.__azTableLimits)
 if (typeof window !== 'undefined' && window.__azTableLimits) TableResolver.setLimits(window.__azTableLimits);

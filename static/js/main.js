@@ -32,6 +32,7 @@ import { SubsetControl } from './subset-dialog.js';
 import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/subset-loading.js';
 import { registerStatusActions, setStatusTag } from './utils/panel-surface.js';
 import { scoreActionAvailable, runScoreAction } from './utils/score-source.js';
+import { TableScores } from './panels/table-utilities/table-scores.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
 import { overrideOnce, maxSubsetCells, resetLearned } from './utils/memory-guard-ui.js';
@@ -1954,7 +1955,8 @@ const App = (function() {
             case 'close-others': return _otherPlots(id).length > 0;
             case 'reopen-table': return !!document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
             case 'table-filter-off': return !!_tableFilterSelect(id);
-            case 'build-filter': case 'retry-filter': case 'cancel-filter': return !!_tableFilterOf(id);
+            case 'build-filter': case 'retry-filter': case 'cancel-filter':
+            case 'table-score-compute': case 'table-score-cancel': case 'table-score-retry': return !!_tableFilterOf(id);
             default: return scoreActionAvailable(action, host);
         }
     }
@@ -2060,6 +2062,12 @@ const App = (function() {
             case 'retry-filter': {
                 const table = _tableFilterOf(id);
                 if (table) TableResolver.retry(table);
+                break;
+            }
+            case 'table-score-compute': case 'table-score-cancel': case 'table-score-retry': {
+                // the score a table's filter reads, asked of its own handles (panels/table-utilities/table-scores.js)
+                const table = _tableFilterOf(id);
+                if (table) TableScores[action === 'table-score-compute' ? 'compute' : action === 'table-score-cancel' ? 'cancel' : 'retry'](table);
                 break;
             }
             case 'table-filter-off': {
