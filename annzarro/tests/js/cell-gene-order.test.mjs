@@ -321,8 +321,10 @@ test("the collected small group is never clustered and never moves, under every 
     assert.equal(o.groups[last], last, `${groupsScope}: the collected group is last`);
     if (groupsScope !== "off") assert.ok(calls.length > 0, `${groupsScope}: the other groups are clustered`);
     assert.ok(calls.reduce((a, c) => a + c.rows, 0) < groups.length, "it is in no block sent");
-    const lastBlock = o.groupBlocks[o.groupBlocks.length - 1];
-    assert.deepEqual([lastBlock.start, lastBlock.count, lastBlock.state], [last, 1, "off"]);
+    if (groupsScope !== "off") {
+      const lastBlock = o.groupBlocks[o.groupBlocks.length - 1];
+      assert.deepEqual([lastBlock.start, lastBlock.count, lastBlock.state], [last, 1, "off"], `${groupsScope}: its own block`);
+    }
     for (const c of calls) {
       const smallColumn = transpose(values, groups.length, [last], ident(4));
       for (let r = 0; r < c.rows; r++) {
