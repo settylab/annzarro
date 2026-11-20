@@ -55,6 +55,15 @@ test('a fake vocabulary gives its own nouns: "Grouping \'G1\' was deleted."', ()
     }
 });
 
+test('a cycle is named by the vocabulary, not "Circular tables"', () => {
+    const snap = { state: 'cycle', title: 'G1', cycle: ['G1', 'Genes A', 'G1'] };
+    const note = SN.describeSource(snap, { role: 'x' }, GROUPING);
+    assert.equal(note.tag.text, 'Circular dependency');
+    assert.equal(note.headline, "'G1' and 'Genes A' depend on each other.");
+    assert.equal(SN.describeSource(snap, { role: 'x' }, { ...GROUPING, tags: { cycle: 'Circular groupings' } }).tag.text, 'Circular groupings');
+    assert.equal(N.describeScore({ ...snap, kind: 'table' }, { role: 'x' }).tag.text, 'Circular tables', 'the table-only wording is as before');
+});
+
 test('a vocabulary may say a state of its own, and an unknown state says nothing', () => {
     const own = { ...GROUPING, states: { nolevels: (snap, f) => f.out('nolevels', 'warning', 'No levels', `${f.t} has no levels.`, '', [f.choose]) } };
     assert.equal(SN.describeSource({ state: 'nolevels', title: 'G1' }, {}, own).headline, "'G1' has no levels.");

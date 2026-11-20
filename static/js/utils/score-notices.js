@@ -9,20 +9,15 @@ import { describeSource } from './source-notices.js';
 
 export { durationText, worstNotice, PRIORITY } from './source-notices.js';
 
+const TAGS = { cycle: 'Circular tables' };
+
 const VOCABULARY = {
-    signature: { thing: 'signature', source: 'source', result: 'score', Computing: 'Computing', off: 'Gene signatures are turned off on this server.' },
-    table: { thing: 'table', source: 'source', result: 'score', Computing: 'Computing', off: 'Gene tables are turned off on this server.' }
+    signature: { thing: 'signature', source: 'source', result: 'score', Computing: 'Computing', tags: TAGS, off: 'Gene signatures are turned off on this server.' },
+    table: { thing: 'table', source: 'source', result: 'score', Computing: 'Computing', tags: TAGS, off: 'Gene tables are turned off on this server.' }
 };
 
 /** The states only a gene score has: layers, down genes, a table's filter. Each returns undefined to leave the state generic. */
 const OWN_STATES = {
-    cycle(snap, f) {
-        // a table's genes depend on a table that depends on this score, so none of them can be settled
-        const names = (snap.cycle || []).slice(0, -1).map(x => `'${x}'`);
-        const ring = names.length === 2 ? `${names[0]} and ${names[1]} depend on each other.`
-            : `${names.join(', ')} depend on each other in a circle.`;
-        return f.out('cycle', 'warning', 'Circular tables', `${ring}${f.none}`, '', [f.open, f.choose]);
-    },
     building(snap, f) {
         const opening = snap.gate && snap.gate.reason === 'opening';
         return f.out('building', 'notice', opening ? 'Opening table' : 'Building filter',

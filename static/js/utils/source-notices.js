@@ -93,6 +93,13 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
                 snap.title ? `${capital(thing)} ${t} was deleted.` : `The ${thing} was deleted.`, '', [choose]);
         case 'off':
             return out('off', 'warning', 'Turned off', vocabulary.off, '', [choose]);
+        case 'cycle': {
+            // sources that depend on each other, through whatever panels (a table, a grouping)
+            const names = (snap.cycle || []).slice(0, -1).map(x => `'${x}'`);
+            const ring = names.length === 2 ? `${names[0]} and ${names[1]} depend on each other.`
+                : `${names.join(', ')} depend on each other in a circle.`;
+            return out('cycle', 'warning', tagOf('cycle', 'Circular dependency'), `${ring}${none}`, '', [open, choose]);
+        }
         case 'failed':
             return out('failed', 'error', tagOf('failed', `${Result} failed`),
                 `${t} could not be computed${snap.message ? `: ${trimStop(snap.message)}` : ''}.`, '', [['score-retry', 'Retry'], open]);
