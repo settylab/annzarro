@@ -439,7 +439,7 @@ function recordFor(host, role, setting) {
         const { sources } = scores();
         rec = { role, sigId: setting.key, sub, layer: setting.layer || null, setting, panelId: panelIdOf(host), drawnKey: undefined, handle: null };
         rec.handle = sources.watch(setting.key, {
-            host, role, sub, layer: setting.layer || null, dependant: rec.panelId, visible: () => isVisible(host),
+            kind: 'plot', host, role, sub, layer: setting.layer || null, dependant: rec.panelId, visible: () => isVisible(host),
             onChange: (snap) => onChange(host, rec, snap)
         });
         recordsOf(host).set(role, rec);

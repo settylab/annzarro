@@ -1,0 +1,17 @@
+{
+  "versions": {
+    "scanpy": "1.12.6",
+    "anndata": "0.13.4",
+    "scipy": "1.18.1",
+    "numpy": "2.5.5",
+    "pandas": "3.1.1"
+  },
+  "python": "3.12.12",
+  "fixture_digest": "b6e65291bb30ea8a615e4a0723300e8a43a2b5362019b8d0d2fe493a0f276b19",
+  "scripts": {
+    "make_dotplot_matrixplot.py": "dotplot_matrixplot.npz",
+    "make_num_categories.py": "num_categories.npz",
+    "make_linkage.py": "linkage.npz",
+    "make_kde.py": "kde.npz"
+  }
+}
