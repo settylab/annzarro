@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+import zlib
 
 import numpy as np
 import pytest
@@ -75,7 +76,11 @@ def finite(x, zero_bin=False):
 @pytest.mark.parametrize("zero_bin", [False, True])
 def test_equal_count_edges_are_numpy_quantile_bit_for_bit(kind, dtype, zero_bin):
     n = 20_011
-    x = column(kind, n, seed=hash(kind) % 1000).astype(dtype)
+    x = column(kind, n, seed=zlib.crc32(kind.encode()) % 1000).astype(dtype)
+    if zero_bin and (finite(x) < 0).any():
+        with pytest.raises(BinningError):                     # the zero bin is offered only without negatives
+            binning.edges(slabs_of(x), make("equal_count", bins=4, zero_bin=True))
+        x = np.abs(x)
     v = finite(x, zero_bin)
     for k in list(range(2, 41)) + [100, 999, 1000]:
         # a slab size that does not divide n, so the chunk boundary moves with k
@@ -114,11 +119,15 @@ def test_select_paths_with_tiny_buckets_and_caps(monkeypatch):
 
 def test_select_with_a_huge_run_of_one_value(monkeypatch):
     monkeypatch.setattr(binning, "SELECT_COLLECT_CAP", 100)
+    depths = []
+    real = binning._select
+    monkeypatch.setattr(binning, "_select", lambda *a: depths.append(a[-1]) or real(*a))
     x = np.concatenate((np.full(5000, 3.5), np.linspace(0, 10, 500)))
     np.random.default_rng(0).shuffle(x)
     e = binning.edges(slabs_of(x, 333), make("equal_count", bins=5))
     want = np.quantile(x, np.arange(6) / 5)
     assert np.array_equal(e.edges, want[np.concatenate(([True], want[1:] != want[:-1]))])
+    assert max(depths) >= 1                                   # the crowded bucket was split again
 
 
 def test_equal_edges_are_merged_and_bins_made_is_reported():
@@ -138,6 +147,8 @@ def test_equal_edges_are_merged_and_bins_made_is_reported():
 @pytest.mark.parametrize("zero_bin", [False, True])
 def test_equal_width_matches_histogram_bin_edges(kind, zero_bin):
     x = column(kind, 4000, 5)
+    if zero_bin:
+        x = np.abs(x)
     v = finite(x, zero_bin)
     for k in (2, 3, 10, 57, 1000):
         e = binning.edges(slabs_of(x, 311), make("equal_width", bins=k, zero_bin=zero_bin))
