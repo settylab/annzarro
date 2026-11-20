@@ -11,9 +11,8 @@ import pytest
 
 from annzarro.core import gene_score as gs
 from annzarro.core import get_reader
-from annzarro.tests.core.gene_score_store import BACKENDS, LAYOUTS, gene, make_matrix, make_store, wide_matrix, wide_names
+from annzarro.tests.core.gene_score_store import BACKENDS, LAYOUTS, make_store, wide_matrix, wide_names
 
-GENES = [gene(i) for i in (0, 4, 8, 9, 10, 12, 15)]
 CASES = [("zscore_mean", "detection"), ("mean", "detection"), ("sum", "detection"), ("detected", "detection"),
          ("fraction_of_total", "detection"), ("control_adjusted", "detection"), ("control_adjusted", "mean")]
 
@@ -74,9 +73,8 @@ def test_the_entries_reported_add_up_to_entries_done(stores, backend, layout, me
 
 def test_each_read_is_reported_before_the_progress_event_that_counts_it(stores):
     log = []
-    reader = get_reader(stores["zarr", "csc"][0] if False else stores["zarr", "csc"])
     path = stores["zarr", "csc"]
-    p = gs.plan(reader, path, gs.parse_recipe({"genes": GENES[:3] and [f"W{i:04d}" for i in (0, 4, 8, 9, 10)]}))
+    p = gs.plan(get_reader(path), path, gs.parse_recipe({"genes": [f"W{i:04d}" for i in (0, 4, 8, 9, 10)]}))
     for kind, payload in gs.compute(p, None, None, on_entries=lambda n: log.append(("entries", n))):
         if kind == "progress":
             log.append(("progress", payload[0]))
