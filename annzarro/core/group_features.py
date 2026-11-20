@@ -238,8 +238,7 @@ def _vector_key(source: Dict[str, Any]) -> str:
     return json.dumps(what, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def plan_work(reader, dataset_path: str, features: Sequence[Feature] = (), measures: Sequence[Measure] = (),
-              request: Optional[cg.Request] = None) -> Work:
+def plan_work(reader, dataset_path: str, features: Sequence[Feature] = (), measures: Sequence[Measure] = ()) -> Work:
     """Resolve the genes and sources against the store and estimate the reads (CMP-1). Reads no gene.
 
     A gene costs its stored entries (a CSR or dense matrix the entries its batches decode) at the score engine's
@@ -249,7 +248,7 @@ def plan_work(reader, dataset_path: str, features: Sequence[Feature] = (), measu
     remote = is_remote_path(dataset_path)
     with cs._root(reader, dataset_path) as root:
         n_cells = cs._n_cells(root)
-    request = request or cg.Request(shape="grouping", grouping=cg.Grouping(()), sets={}, set_hashes={})
+    request = cg.Request(shape="grouping", grouping=cg.Grouping(()), sets={}, set_hashes={})   # no nested grouping
     reads: List[_MatrixRead] = []
     gene_target: Dict[str, Tuple[int, int, float]] = {}
     missing: List[str] = []
@@ -329,7 +328,7 @@ def plan(reader, dataset_path: str, request: cg.Request) -> Plan:
     CSR or dense matrix, a score, or a source that does (SHR-41). A gene of a CSC matrix inside the live tier is light.
     """
     groups = cg.plan(reader, dataset_path, request)
-    work = plan_work(reader, dataset_path, parse_features(request.features), parse_measures(request.measures), request)
+    work = plan_work(reader, dataset_path, parse_features(request.features), parse_measures(request.measures))
     if not work.features and not work.measures:
         return Plan(groups, work)
     seconds = groups.seconds + work.seconds
@@ -398,25 +397,27 @@ class _Sums:
             above = v > t
             if finite is not None and t < 0:
                 above &= finite
-            self.n_above[i] += np.bincount(b[above], minlength=n)
-            self.sum_above[i] += np.bincount(b[above], weights=v[above], minlength=n)
+            b_above = b[above]
+            self.n_above[i] += np.bincount(b_above, minlength=n)
+            self.sum_above[i] += np.bincount(b_above, weights=v[above], minlength=n)
 
-    def moments(self, sizes: np.ndarray) -> List[np.ndarray]:
-        """``[k, 5]`` per threshold; ``sizes`` are the cells per group. A cell given no value (a sparse gene's
-        implicit zero) is a finite zero."""
+    def write(self, sizes: np.ndarray, outs: Sequence[Sequence[np.ndarray]]) -> None:
+        """The moments at threshold ``i`` into each ``[k, 5]`` array of ``outs[i]``; ``sizes`` are the cells per
+        code. A cell given no value (a sparse gene's implicit zero) is a finite zero."""
         k = sizes.size
-        implicit = sizes - self.seen[:k]
-        n = sizes - self.bad[:k]
-        out = []
         for i, t in enumerate(self.thresholds):
-            m = np.empty((k, 5), dtype=np.float64)
-            m[:, 0] = n
+            if not outs[i]:
+                continue
+            m = outs[i][0]
+            m[:, 0] = sizes - self.bad[:k]
             m[:, 1] = self.sum[:k]
             m[:, 2] = self.sumsq[:k]
-            m[:, 3] = self.n_above[i][:k] + (implicit if 0.0 > t else 0.0)
+            m[:, 3] = self.n_above[i][:k]
+            if 0.0 > t:
+                m[:, 3] += sizes - self.seen[:k]
             m[:, 4] = self.sum_above[i][:k]
-            out.append(m)
-        return out
+            for other in outs[i][1:]:
+                other[...] = m
 
 
 def _segments(n: int) -> Iterator[Tuple[int, int]]:
@@ -426,9 +427,9 @@ def _segments(n: int) -> Iterator[Tuple[int, int]]:
 
 
 def _gene_moments(bins: _Bins, sizes: np.ndarray, rows: Optional[np.ndarray], values: np.ndarray,
-                  thresholds: Sequence[float]) -> List[np.ndarray]:
-    """One gene's moments per group and threshold: its stored entries (``rows`` the dataset rows) or its whole
-    column (``rows`` None), ``SEGMENT_ENTRIES`` at a time (CMP-2)."""
+                  thresholds: Sequence[float], outs: Sequence[Sequence[np.ndarray]]) -> None:
+    """One gene's moments per code at each threshold, into ``outs`` (as ``_Sums.write``): its stored entries
+    (``rows`` the dataset rows) or its whole column (``rows`` None), ``SEGMENT_ENTRIES`` at a time (CMP-2)."""
     sums = _Sums(bins.n_bins, thresholds)
     if rows is None:
         for a, b in _segments(values.size):
@@ -437,7 +438,7 @@ def _gene_moments(bins: _Bins, sizes: np.ndarray, rows: Optional[np.ndarray], va
         rows, values = gs._canonical(np.asarray(rows), np.asarray(values))
         for a, b in _segments(values.size):
             sums.add(bins.index(bins.by_row[rows[a:b]]), values[a:b])
-    return sums.moments(sizes)
+    sums.write(sizes, outs)
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -476,8 +477,18 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
         for a, b in cs._spans(bins.codes.size):
             sizes += np.bincount(bins.index(bins.codes[a:b]), minlength=bins.n_bins)[:n_codes]
     sizes = np.asarray(sizes, dtype=np.float64)
-    gene_moments: List[Dict[Tuple[int, float], np.ndarray]] = [{} for _ in work.reads]
-    vector_moments: List[Dict[float, np.ndarray]] = [{} for _ in work.vectors]
+    features = np.zeros((len(work.features), int(n_codes), 5)) if work.features else None
+    measures = np.zeros((len(work.measures), int(n_codes), 5)) if work.measures else None
+    # where each sum goes: (read, column, threshold) and (vector, threshold) -> rows of the blocks
+    gene_rows: Dict[Tuple[int, int, float], List[np.ndarray]] = {}
+    vector_rows: Dict[Tuple[int, float], List[np.ndarray]] = {}
+    for i, f in enumerate(work.features):
+        if f.kind == "score":
+            vector_rows.setdefault((work.vector_of[("feature", f.id)], f.threshold), []).append(features[i])
+        elif f.id in work.gene_target:
+            gene_rows.setdefault(work.gene_target[f.id], []).append(features[i])
+    for i, m in enumerate(work.measures):
+        vector_rows.setdefault((work.vector_of[("measure", m.id)], m.threshold), []).append(measures[i])
     vector_status: List[Dict[str, Any]] = [{"status": "ok"} for _ in work.vectors]
     progress = {"stage": "features", "done": 0, "total": work.items, "entries_done": 0,
                 "entries_total": work.entries}
@@ -497,8 +508,7 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
                 gs._checkpoint(should_stop, None)
                 for col, at, values in rows_values:
                     ts = read.thresholds[col]
-                    for t, m in zip(ts, _gene_moments(bins, sizes, at, np.asarray(values), ts)):
-                        gene_moments[r][(col, t)] = m
+                    _gene_moments(bins, sizes, at, np.asarray(values), ts, [gene_rows[(r, col, t)] for t in ts])
                 told(task.entries)
                 progress["done"] += len(task.cols)
                 yield "progress", dict(progress)
@@ -530,39 +540,12 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
                 sums.add(bins.index(bins.codes[slab.start:slab.start + slab.values.size]), slab.values)
             told(part.entries)
             progress["done"] += 1
-        vector_moments[v] = dict(zip(vec.thresholds, sums.moments(sizes)))
+        sums.write(sizes, [vector_rows.get((v, t), []) for t in vec.thresholds])
         yield "progress", dict(progress)
-
-    def block(items, value_of):
-        if not items:
-            return None
-        out = np.zeros((len(items), int(n_codes), 5), dtype=np.float64)
-        for i, item in enumerate(items):
-            m = value_of(item)
-            if m is not None:
-                out[i] = m
-        return out
-
-    feature_status: List[Dict[str, Any]] = []
-
-    def feature_value(f: Feature):
-        if f.kind == "gene":
-            target = work.gene_target.get(f.id)
-            feature_status.append({"id": f.id, "status": "ok" if target else "missing"})
-            return gene_moments[target[0]][(target[1], target[2])] if target else None
-        v = work.vector_of[("feature", f.id)]
-        feature_status.append({"id": f.id, **vector_status[v]})
-        return vector_moments[v].get(f.threshold)
-
-    measure_status: List[Dict[str, Any]] = []
-
-    def measure_value(m: Measure):
-        v = work.vector_of[("measure", m.id)]
-        measure_status.append({"id": m.id, **vector_status[v]})
-        return vector_moments[v].get(m.threshold)
-
-    features = block(work.features, feature_value)
-    measures = block(work.measures, measure_value)
+    feature_status = [{"id": f.id, **({"status": "ok" if f.id in work.gene_target else "missing"} if f.kind == "gene"
+                                      else vector_status[work.vector_of[("feature", f.id)]])}
+                      for f in work.features]
+    measure_status = [{"id": m.id, **vector_status[work.vector_of[("measure", m.id)]]} for m in work.measures]
     yield "result", Moments(features, feature_status, measures, measure_status)
 
 

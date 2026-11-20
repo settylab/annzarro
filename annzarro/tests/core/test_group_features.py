@@ -508,9 +508,10 @@ def test_one_gene_is_accumulated_in_segments(monkeypatch):
     monkeypatch.setattr(gsc, "SEGMENT_ENTRIES", 1 << 18)
     bins = gf._Bins(codes, 50, None, n)
     sizes = np.bincount(codes, minlength=50)
+    out = [np.empty((50, 5)), np.empty((50, 5))]
     tracemalloc.start()
     try:
-        out = gf._gene_moments(bins, sizes, rows, values, [0.0, 2.0])
+        gf._gene_moments(bins, sizes, rows, values, [0.0, 2.0], [[out[0]], [out[1]]])
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
@@ -520,7 +521,9 @@ def test_one_gene_is_accumulated_in_segments(monkeypatch):
     close(out[0], ref0)
     close(out[1], ref2)
     monkeypatch.setattr(gsc, "SEGMENT_ENTRIES", 1 << 30)
-    close(gf._gene_moments(bins, sizes, rows, values, [0.0, 2.0])[0], out[0])
+    whole = np.empty((50, 5))
+    gf._gene_moments(bins, sizes, rows, values, [0.0], [[whole]])
+    close(whole, out[0])
 
 
 @pytest.mark.parametrize("segment", [1, 7, 1 << 10])
