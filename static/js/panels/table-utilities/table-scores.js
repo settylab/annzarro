@@ -120,7 +120,7 @@ function ensure(tableId, column, visible = null) {
         entry = { tableId, key, column, sub: subOf(column), handle: null, snap: null, title: '', sig: '',
             reader: makeReader(), visible: visible || (() => tileOnScreen(tableId)) };
         entry.handle = scores().sources.watch(column.key, {
-            sub: entry.sub, layer: column.layer || '', host: tableId, role: 'column', visible: () => entry.visible(),
+            kind: 'table', sub: entry.sub, layer: column.layer || '', host: tableId, role: 'column', visible: () => entry.visible(),
             onChange: (snap) => update(entry, snap)
         });
         map.set(key, entry);

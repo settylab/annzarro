@@ -199,7 +199,7 @@ function world({ seconds = 2 } = {}) {
 test('a plot\'s colour by a table: the score is asked for the passing genes, once, and shared', async () => {
     const w = world();
     const states = [];
-    const h = w.sources.watch(w.t.id, { onChange: (s) => states.push(s), dependant: 'plot-1', sub: 'zscore_mean' });
+    const h = w.sources.watch(w.t.id, { kind: 'plot', onChange: (s) => states.push(s), dependant: 'plot-1', sub: 'zscore_mean' });
     assert.equal(h.read().kind, 'table');
     await until(() => w.waiting.length === 1, 'the score request');
     assert.deepEqual(w.calls.estimate, [['A1', 'B2']]);
@@ -210,7 +210,7 @@ test('a plot\'s colour by a table: the score is asked for the passing genes, onc
 
 test('a filter change is an edit: applied at once when cheap, held behind Update score when the estimate is 5 s or more', async () => {
     const cheap = world({ seconds: 1 });
-    const h = cheap.sources.watch(cheap.t.id, { onChange: () => {}, dependant: 'p' });
+    const h = cheap.sources.watch(cheap.t.id, { kind: 'plot', onChange: () => {}, dependant: 'p' });
     h.read();                 // a dependant reads when it is told or draws: that asks for the score
     await until(() => cheap.waiting.length === 1, 'the first request');
     cheap.waiting[0].resolve({ header: { n_used: 2 }, values: new Float32Array(3) });
@@ -222,7 +222,7 @@ test('a filter change is an edit: applied at once when cheap, held behind Update
     assert.deepEqual(cheap.calls.estimate.at(-1), ['A1', 'B2', 'C3'], 'the new genes were asked for');
 
     const slow = world({ seconds: 12 });
-    const hs = slow.sources.watch(slow.t.id, { onChange: () => {}, dependant: 'p' });
+    const hs = slow.sources.watch(slow.t.id, { kind: 'plot', onChange: () => {}, dependant: 'p' });
     hs.read();
     await until(() => slow.waiting.length === 1, 'the first request');
     slow.waiting[0].resolve({ header: { n_used: 2 }, values: new Float32Array(3) });
@@ -242,7 +242,7 @@ test('a filter change is an edit: applied at once when cheap, held behind Update
 
 test('the same filter again changes nothing; the cache key includes the gene set', async () => {
     const w = world();
-    w.sources.watch(w.t.id, { onChange: () => {}, dependant: 'p' }).read();
+    w.sources.watch(w.t.id, { kind: 'plot', onChange: () => {}, dependant: 'p' }).read();
     await until(() => w.calls.estimate.length === 1, 'the estimate');
     const n = w.calls.estimate.length;
     w.sources.recipeChanged(w.t.id);
@@ -261,7 +261,7 @@ test('a closed table with no rows: its dependants wait on the resolver\'s states
     w.open.clear();
     w.t.cfg.closedSelection = null;
     w.resolver.status = { state: 'waiting' };
-    const h = w.sources.watch(w.t.id, { onChange: () => {}, dependant: 'plot-1' });
+    const h = w.sources.watch(w.t.id, { kind: 'plot', onChange: () => {}, dependant: 'plot-1' });
     assert.equal(h.read().state, 'building');
     assert.equal(w.calls.estimate.length, 0, 'nothing is asked of the score before the genes are known');
     w.resolver.status = { state: 'ask', rows: 300000 };
@@ -288,7 +288,7 @@ test('a closed table with no rows: its dependants wait on the resolver\'s states
 test('a cycle stops the dependants: the cycle state, with no request', async () => {
     const w = world();
     w.resolver.cycleOf = () => ['gene-table-1', 'cell-table-2', 'gene-table-1'];
-    const h = w.sources.watch(w.t.id, { onChange: () => {}, dependant: 'plot-1' });
+    const h = w.sources.watch(w.t.id, { kind: 'plot', onChange: () => {}, dependant: 'plot-1' });
     const snap = h.read();
     assert.equal(snap.state, 'cycle');
     await new Promise(r => setTimeout(r, 10));
