@@ -164,8 +164,9 @@ test('a source type whose key is a panel is followed in plot axes, colour, hover
 });
 
 test('a declaration that names an unknown reference kind throws; so does a type registered twice or a bad declaration', () => {
-    registerReferences('fake-typo', () => [{ id: 'x', via: 'axes', get: () => 'x', set: () => {} }]);
-    assert.throws(() => referencesOf({}, 'fake-typo'), /axes/);
+    // only a config that has the field: every declaration is asked for a config of no type
+    registerReferences('fake-typo', (cfg) => (cfg.typo ? [{ id: 'x', via: 'axes', get: () => 'x', set: () => {} }] : []));
+    assert.throws(() => referencesOf({ typo: true }, 'fake-typo'), /axes/);
     assert.throws(() => registerReferences('fake-typo', () => []), /already/);
     assert.throws(() => registerReferences('fake-bad', null), /function/);
     assert.throws(() => registerReferences('cell-plot', () => []), /already/);

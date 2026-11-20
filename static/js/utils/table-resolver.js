@@ -12,13 +12,15 @@
  * - A build starts only when a dependant that is on the page asks for it (`need`), never for every
  *   closed table, and never for a plot in large-plot mode (the caller does not ask).
  * - One build at a time; the queue runs dependants on screen first, then tables with fewer tables
- *   upstream, then in the order asked. Control returns to the browser between builds.
+ *   upstream (of any kind: utils/panel-references.js), then in the order asked. Control returns to the browser between builds.
  * - One owner per table id (`none`, `background`, `panel`) and an `epoch` that rises on every
  *   change of owner or input. A result is published only if its epoch is still current, so a late
  *   background result never overwrites an opened table.
  * - Size tiers (TABLE_LIMITS): automatic, one click ("Build filter"), refused. The browser memory
  *   guard (host.mayLoad) decides first; refused means nothing loads.
- * - A chain of tables is resolved upstream first; a cycle stops resolution and says so.
+ * - A chain is resolved upstream first; a cycle stops resolution and says so. The chain may pass
+ *   through panels that are not tables (a signature, a grouping): `host.depends` is the page's
+ *   whole dependency graph.
  *
  * The browser (DataTables, PanelManager, the memory guard) is reached only through `host`, so Node
  * tests cover every rule here with a fake one.
@@ -74,20 +76,25 @@ export function findCycle(id, depends) {
 }
 
 /**
- * How many tables sit upstream of `id` (the longest chain). 0 for a table that needs no other.
- * A cycle counts as no more than its length: it never loops.
+ * How many panels sit upstream of `id` (the longest chain). 0 for one that needs no other.
+ * Each panel is walked once, whatever a crafted link says: a panel already walked gives its depth
+ * again, and a step back onto the path (a cycle) counts as 0, so a cycle counts as no more than its
+ * length and a dense graph costs one `depends` call per panel.
  * @param {string} id
  * @param {(id: string) => string[]} depends
  * @returns {number}
  */
 export function depthOf(id, depends) {
-    const seen = new Set();
+    const depth = new Map();
+    const onPath = new Set();
     const walk = (node) => {
-        if (seen.has(node)) return 0;
-        seen.add(node);
+        if (depth.has(node)) return depth.get(node);
+        if (onPath.has(node)) return 0;
+        onPath.add(node);
         let deepest = 0;
         for (const next of depends(node) || []) deepest = Math.max(deepest, 1 + walk(next));
-        seen.delete(node);
+        onPath.delete(node);
+        depth.set(node, deepest);
         return deepest;
     };
     return walk(id);
@@ -188,7 +195,7 @@ function abortError(why) {
  * - cellsKey(kind) -> string: identity of the cells (or genes) the rows would be for
  * - rowCount(kind) -> number
  * - mayLoad(id, kind, rows) -> {ok: boolean, detail?: string}: the browser memory guard
- * - depends(id) -> string[]: tables this table needs first
+ * - depends(id) -> string[]: the panels this panel is computed from (tables or not)
  * - build({id, kind, config, signal, check}) -> Promise<selection>: the background build. It calls
  *   `check()` before its uninterrupted step, which throws if the job was replaced or is not wanted.
  * - publish(id, selection): puts the result where plots read it
