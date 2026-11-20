@@ -1252,7 +1252,8 @@ def pipeline(tasks: List[_Task], threads: int, budget: int, pause=None) -> Itera
 
 def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
             should_stop: Optional[Callable[[], bool]] = None, pause=None,
-            on_entries: Optional[Callable[[int], None]] = None) -> Iterator[Tuple[str, Any]]:
+            on_entries: Optional[Callable[[int], None]] = None,
+            on_read: Optional[Callable[[list], None]] = None) -> Iterator[Tuple[str, Any]]:
     """Score the cells ``shown_rows`` (sorted dataset rows; None: all cells).
 
     A generator of ``("progress", (genes_done, genes_total))`` events and a final
@@ -1268,6 +1269,12 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
     just before the progress event that counts that read, and ``plan.stat_entries`` once each whole-matrix pass ends.
     The calls add up to ``result.entries_done``, and to ``plan.entries`` less what the plan estimated and
     ``compute`` did not need to read.
+
+    ``on_read(rows_values)`` (None: never called) is handed each gene read once the score has taken it: the read's
+    ``[(column, rows | None, values)]`` as stored, every column of it (controls included), before ``on_entries`` and
+    the progress event of that read. It lets another consumer of the same genes (``core/group_features.py``) ride on
+    this read instead of reading them again; it must not change the arrays. It runs in this generator, between the
+    pipeline's hand-outs, so the read-ahead, a pause and ``on_entries`` are as without it.
     """
     started = time.perf_counter()
     recipe = plan_.recipe
@@ -1337,6 +1344,8 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
                 if col in down_ctrl:
                     down_control_acc.add(f"#{col}", col, rows, values)
                 result.entries_read += int(values.size)
+            if on_read is not None:
+                on_read(rows_values)
             result.max_in_flight_entries = max(result.max_in_flight_entries, peak)
             if on_entries is not None:
                 on_entries(task.entries)

@@ -480,8 +480,7 @@ def test_give_way_between_batches_with_nothing_in_flight_and_the_same_result(sto
     assert len(pause.waits) >= 5 and all(n == 0 for n in pause.waits)
     assert np.array_equal(plain.feature_moments, paused.feature_moments)
     assert np.array_equal(plain.measure_moments, paused.measure_moments)
-    for c in range(30):                                            # no gene read twice: the feature's read, and the
-        assert counter.genes.count(c) == (2 if gs.gene(c) in SIG["genes"] else 1)     # score's own for its genes
+    assert sorted(counter.genes) == list(range(30))                 # each gene read once: SIG's ride on the score's
 
 
 def test_should_stop_cancels_between_reads(store, monkeypatch):
@@ -733,3 +732,198 @@ def test_gene_reads_run_ahead_by_the_feature_read_ahead_only(store, monkeypatch)
 
 def test_the_feature_read_ahead_is_within_the_score_engines():
     assert 0 < gf.READ_AHEAD_ENTRIES <= gsc.READ_AHEAD_ENTRIES
+
+
+# --------------------------------------------------------------------------------------------- one read for score and genes
+
+ROW = [{"source": {"type": "obs", "key": "cell_type"}}]
+B_GENES = [gs.gene(i) for i in range(12)]                          # SIG's genes
+
+
+def _mixed(recipe, threshold=0.5, extra=(gs.gene(20),)):
+    """A row whose colour is a score and whose size is its genes' summary (OD 15): the score and the same genes."""
+    genes = [gene_feature(f"g{i}", name, recipe.get("input", "X"), threshold) for i, name in enumerate(B_GENES)]
+    genes += [gene_feature(f"x{i}", name, recipe.get("input", "X"), threshold) for i, name in enumerate(extra)]
+    return genes + [{"id": "score", "kind": "score", "recipe": recipe, "above": 0.25}]
+
+
+def _apart(path, feats, rows=None, parts=ROW, **kw):
+    """The same features without the shared read: the genes alone, and the score alone."""
+    genes = run(path, parts, [f for f in feats if f["kind"] == "gene"], rows=rows, **kw)
+    score = run(path, parts, [f for f in feats if f["kind"] == "score"], rows=rows, **kw)
+    return genes.feature_moments, score.feature_moments
+
+
+METHOD_RECIPES = {
+    "zscore_mean": {"genes": B_GENES, "method": "zscore_mean", "input": "logged"},
+    "zscore_clip": {"genes": B_GENES, "method": "zscore_mean", "input": "X", "clip": 0.5},
+    "mean": {"genes": B_GENES[:8], "down": B_GENES[8:], "method": "mean", "input": "logged"},
+    "sum": {"genes": B_GENES, "method": "sum", "input": "counts"},
+    "control_adjusted": {"genes": B_GENES[:6], "method": "control_adjusted", "input": "logged", "bins": 4,
+                         "controls": 3},
+    "detected": {"genes": B_GENES, "method": "detected", "input": "counts", "detect_above": 1},
+    "fraction_of_total": {"genes": B_GENES, "method": "fraction_of_total", "input": "counts"},
+}
+
+
+@pytest.mark.parametrize("layout,backend", [("csc", "zarr"), ("csr", "zarr"), ("dense", "zarr"), ("csc", "h5ad")])
+@pytest.mark.parametrize("method", sorted(METHOD_RECIPES))
+def test_the_shared_read_gives_bit_identical_results(stores, layout, backend, method):
+    """(a) the genes reach the features as stored, before any transform of the score (clip, z-score, threshold)."""
+    path = stores[layout, backend]
+    feats = _mixed(METHOD_RECIPES[method])
+    together = run(path, ROW, feats)
+    genes, score = _apart(path, feats)
+    assert np.array_equal(together.feature_moments[:-1], genes)
+    assert np.array_equal(together.feature_moments[-1:], score)
+    assert [f["status"] for f in together.features] == ["ok"] * len(feats)
+
+
+@pytest.mark.parametrize("case", ["subset", "excluded", "subset_and_excluded"])
+def test_the_shared_read_counts_the_grouped_cells_only(store, data, case):
+    """(b) the score reads the cells shown; the features take the grouped cells of those, by their codes."""
+    rows = np.sort(np.random.default_rng(3).choice(gs.N_OBS, 700, replace=False)) if "subset" in case else None
+    parts = [{"source": {"type": "obs", "key": "cell_type"}, "levels": ["c:T cell", "c:B cell"], "rest": "exclude"}] \
+        if "excluded" in case else ROW
+    feats = _mixed(METHOD_RECIPES["zscore_mean"])
+    together = run(store, parts, feats, rows=rows, small={"threshold": 10, "mode": "hide"})
+    genes, score = _apart(store, feats, rows=rows, parts=parts, small={"threshold": 10, "mode": "hide"})
+    assert np.array_equal(together.feature_moments[:-1], genes)
+    assert np.array_equal(together.feature_moments[-1:], score)
+    cell_group = group_of_cells(together)
+    shown = np.arange(gs.N_OBS) if rows is None else rows
+    k = len(together.grouping.groups)
+    for i, name in enumerate(B_GENES):
+        col = data.logged[shown, data.var_names.index(name)].astype(np.float64)
+        close(together.feature_moments[i], ref_moments(col, cell_group, k, 0.5))
+
+
+@pytest.mark.parametrize("layout", gs.LAYOUTS)
+def test_a_mixed_row_reads_each_gene_exactly_once(stores, monkeypatch, layout):
+    counter = ReadCounter(monkeypatch)
+    feats = _mixed(METHOD_RECIPES["zscore_mean"])
+    run(stores[layout, "zarr"], ROW, feats)
+    want = sorted(gs.make_data().var_names.index(n) for n in B_GENES + [gs.gene(20)])
+    assert sorted(counter.genes) == want
+
+
+@pytest.mark.parametrize("layout", gs.LAYOUTS)
+def test_a_shared_gene_is_counted_once_in_the_estimate_and_the_entries(stores, layout):
+    path = stores[layout, "zarr"]
+    feats = _mixed(METHOD_RECIPES["zscore_mean"])
+    p = plan(path, ROW, feats)
+    sp = gsc.plan(get_reader(path), path, gsc.parse_recipe(METHOD_RECIPES["zscore_mean"]))
+    with gsc.open_source(get_reader(path), path, "logged") as source:
+        own = source.entries([20])                                   # the one gene the score does not read
+    assert p.work.entries == sp.entries + own
+    told = []
+    events = list(gf.compute(p, None, on_entries=told.append))
+    last = [e for k, e in events if k == "progress" and e["stage"] == "features"][-1]
+    assert last["entries_done"] == last["entries_total"]          # what was read, once
+    assert last["done"] == last["total"]
+    assert sum(told) == last["entries_done"] + (p.groups.entries - p.work.entries)
+
+
+def test_a_score_that_stops_before_reading_leaves_the_genes_to_their_own_read(store, monkeypatch):
+    """A score with no control gene to draw reads nothing: the features read their genes after it."""
+    every = [gs.gene(i) for i in range(gs.N_VAR)]
+    recipe = {"genes": every, "method": "control_adjusted", "input": "logged"}
+    feats = [gene_feature(f"g{i}", n, "logged", 0.5) for i, n in enumerate(B_GENES)] + \
+        [{"id": "score", "kind": "score", "recipe": recipe}]
+    counter = ReadCounter(monkeypatch)
+    p = plan(store, ROW, feats)
+    events = list(gf.compute(p, None))
+    res = events[-1][1]
+    assert res.features[-1] == {"id": "score", "status": "no_score", "reason": "no_control_genes"}
+    assert sorted(counter.genes) == list(range(12))
+    genes = run(store, ROW, feats[:-1])
+    assert np.array_equal(res.feature_moments[:-1], genes.feature_moments)
+    last = [e for k, e in events if k == "progress" and e["stage"] == "features"][-1]
+    assert last["entries_done"] == last["entries_total"] and last["done"] == last["total"]
+
+
+@pytest.mark.parametrize("layout", gs.LAYOUTS)
+def test_pause_and_cancel_midway_through_a_shared_read(stores, monkeypatch, layout):
+    monkeypatch.setattr(gsc, "MAX_GROUP_ENTRIES", 1)
+    monkeypatch.setattr(gsc, "MAX_BATCH_GENES", 2)
+    path = stores[layout, "zarr"]
+    feats = _mixed(METHOD_RECIPES["zscore_mean"])
+    plain = run(path, ROW, feats)
+    counter = ReadCounter(monkeypatch)
+    pause = Pause(2, counter)
+    paused = run(path, ROW, feats, pause=pause)
+    assert pause.waits and all(n == 0 for n in pause.waits)
+    assert np.array_equal(plain.feature_moments, paused.feature_moments)
+    asked = []
+
+    def stop():
+        asked.append(1)
+        return len(asked) > 6
+    with pytest.raises(gsc.ScoreCancelled):
+        run(path, ROW, feats, should_stop=stop)
+
+
+def test_the_score_engine_hands_each_read_over_once_as_stored(store):
+    """The hook itself: every read of the score, every column, once, the arrays as the matrix holds them."""
+    recipe = METHOD_RECIPES["zscore_clip"]
+    p = gsc.plan(get_reader(store), store, gsc.parse_recipe(recipe))
+    seen = []
+    told = []
+    with_hook = [r for e, r in gsc.compute(p, None, on_entries=told.append, on_read=seen.extend) if e == "result"][0]
+    without = [r for e, r in gsc.compute(p, None) if e == "result"][0]
+    assert np.array_equal(with_hook.values, without.values) and sum(told) == with_hook.entries_done
+    assert sorted(c for c, _, _ in seen) == sorted(p.columns)
+    x = gs.make_data().x
+    for col, rows, values in seen:
+        dense = np.zeros(gs.N_OBS, dtype=np.float32)
+        dense[rows] = values
+        assert np.array_equal(dense, x[:, col])
+
+
+def test_an_exception_in_the_shared_read_ends_the_request_and_frees_everything(store, monkeypatch):
+    """(c) A consumer that raises mid-stream: the lane, the ledger and the read guard are all given back."""
+    from annzarro.core import read_guard
+    from annzarro.server.routes import compute_stream as cst
+    lanes, ledger = cst.Lanes(), cst.Ledger(1 << 30)
+    inner = gf._gene_moments
+    calls = []
+
+    def raising(*a, **k):
+        calls.append(1)
+        if len(calls) == 4:
+            raise RuntimeError("a consumer fails")
+        return inner(*a, **k)
+
+    def request(feats):
+        p = plan(store, ROW, feats)
+
+        def work(job):
+            try:
+                for event, payload in gf.compute(p, None, pause=job):
+                    if event == "result":
+                        yield cst.frame({"type": "result"})
+            except RuntimeError as exc:
+                yield cst.frame({"type": "error", "reason": "failed", "message": str(exc)})
+
+        def admit():
+            admitted = read_guard.admit(1 << 20)
+            admitted.__enter__()
+            return lambda: admitted.__exit__(None, None, None)
+        response = cst.respond("heavy", nbytes=1 << 20, keep_bytes=1 << 10, what="features", wait_s=5.0,
+                               admit=admit, work=work, queued_frame=lambda job: {"type": "progress", "queue": {}},
+                               mimetype="application/x-test", lanes=lanes, ledger=ledger)
+        try:
+            return b"".join(response.response)
+        finally:
+            response.close()
+    before = read_guard.in_flight_bytes()
+    monkeypatch.setattr(gf, "_gene_moments", raising)
+    failed = request(_mixed(METHOD_RECIPES["zscore_mean"]))
+    assert b'"error"' in failed and len(calls) == 4
+    assert ledger.held() == 0 and read_guard.in_flight_bytes() == before
+    monkeypatch.setattr(gf, "_gene_moments", inner)
+    job = lanes.enter("heavy")
+    assert job.running                                              # the lane is free again
+    job.leave()
+    assert b'"result"' in request(_mixed(METHOD_RECIPES["zscore_mean"]))
+    assert ledger.held() == 0 and read_guard.in_flight_bytes() == before
