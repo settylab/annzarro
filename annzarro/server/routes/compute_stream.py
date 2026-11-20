@@ -38,9 +38,9 @@ from ...core import read_guard
 WRITE_CHUNK = 1 << 20
 #: Light jobs a worker runs at once (SHR-41).
 LIGHT_WIDTH = 2
-#: The ledger's default bound per worker (CMP-15: the heavy slot 2.3 GB, one resolve 1.5 GB, the code cache 0.5 GB,
-#: jobs that have given way under 0.1 GB).
-DEFAULT_LEDGER_BYTES = 4_500_000_000
+#: The ledger's default bound per worker, the default of the server setting ``compute_budget_mb`` (4608 MiB, 4.5 GB;
+#: CMP-15: the heavy slot 2.3 GB, one resolve 1.5 GB, the code cache 0.5 GB, jobs that have given way under 0.1 GB).
+DEFAULT_LEDGER_BYTES = 4608 << 20
 #: The lanes, in the words of the frames.
 LANE_NAMES = ("light", "heavy")
 
@@ -207,9 +207,9 @@ class Ledger:
                     continue
                 left = deadline - self._clock()
                 if left <= 0:
-                    raise Busy(f"The server is holding {self._held / 1e9:.1f} GB of computations of the "
-                               f"{self.bound / 1e9:.1f} GB it may hold at once, and {reservation.what} needs "
-                               f"{(want - reservation.nbytes) / 1e9:.2f} GB more; try again in a moment.", wait_s)
+                    raise Busy(f"The server is holding {self._held / 2 ** 30:.1f} GB of computations of the "
+                               f"{self.bound / 2 ** 30:.1f} GB it may hold at once, and {reservation.what} needs "
+                               f"{(want - reservation.nbytes) / 2 ** 30:.2f} GB more; try again in a moment.", wait_s)
                 self._cond.wait(left)
             self._held += want - reservation.nbytes
             reservation.nbytes = want

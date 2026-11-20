@@ -90,7 +90,7 @@ def test_a_frame_refuses_numbers_that_are_not_finite():
 # --- the ledger ------------------------------------------------------------------------------------------------
 
 def test_the_bound_is_a_constructor_argument_with_the_default_of_4_5_gb():
-    assert cs.Ledger().bound == cs.DEFAULT_LEDGER_BYTES == 4_500_000_000
+    assert cs.Ledger().bound == cs.DEFAULT_LEDGER_BYTES == 4608 * 2 ** 20      # compute_budget_mb's default
     assert cs.Ledger(1000).bound == 1000
     with pytest.raises(ValueError):
         cs.Ledger(0)
