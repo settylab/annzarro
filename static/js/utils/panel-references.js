@@ -179,6 +179,47 @@ export function usersOf(id) {  // export-unused-ok: G9a: a grouping deleted from
 }
 
 /**
+ * Whether naming `candidateId` as a reference of `panelId` would close a cycle (operator decision 15): true when the
+ * candidate is the panel or is computed from it, at any distance, so a menu can show that option as unavailable
+ * before the cycle state ever has to. The walk follows the edges the cycle state reads (`dependsOn`): a column a
+ * table only shows is no edge, so it never makes an option unavailable. Ask it for a choice that would be an edge (a
+ * factor's source, a filter, a plot's grouping), not for a column shown. One pass over the page's references, then
+ * one walk of the panels computed from `panelId`.
+ * @param {string} panelId - the panel whose menu is open
+ * @param {string} candidateId - an option of that menu
+ * @returns {boolean}
+ */
+export function wouldLoop(panelId, candidateId) {  // export-unused-ok: G9a: reference menus disable options that close a loop
+    if (typeof panelId !== 'string' || typeof candidateId !== 'string' || !panelId || !candidateId) return false;
+    if (panelId === candidateId) return !!host.panel(panelId);
+    const computedFrom = new Map();          // id -> the panels computed from it
+    for (const id of host.ids()) {
+        for (const from of dependsOn(id)) {
+            if (!computedFrom.has(from)) computedFrom.set(from, []);
+            computedFrom.get(from).push(id);
+        }
+    }
+    const seen = new Set([panelId]);
+    const next = [panelId];
+    while (next.length) {
+        for (const user of computedFrom.get(next.pop()) || []) {
+            if (user === candidateId) return true;
+            if (!seen.has(user)) { seen.add(user); next.push(user); }
+        }
+    }
+    return false;
+}
+
+/**
+ * Why an option is unavailable when wouldLoop says so: "Uses Grouping 1, which depends on this table".
+ * @param {string} candidateTitle - the option's panel
+ * @param {string} panelNoun - what the panel whose menu is open is: 'table', 'grouping', 'plot'
+ */
+export function loopReason(candidateTitle, panelNoun) {  // export-unused-ok: G9a: the tooltip of an option that would close a loop
+    return `Uses ${candidateTitle}, which depends on this ${panelNoun}`;
+}
+
+/**
  * The closed panels that Clear closed panels keeps: those that an open panel uses, and those that a kept
  * panel uses, and so on. Closed panels that only use each other are not kept.
  * @param {Iterable<string>} closedIds - the closed panels

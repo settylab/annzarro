@@ -290,10 +290,11 @@ test('the last consumer leaving stops the request', async () => {
 });
 
 test('an evicted feature is asked for again, alone', async () => {
-    const w = world({ budget: GROUPS * 5 * 8 * 2 });            // two features' moments
-    w.consume(need({ features: [gene('Aa'), gene('Bb')] }));
+    const w = world({ budget: GROUPS * 5 * 8 * 2 + 256 });      // two features' moments and the group table (under 256 bytes)
+    const first = w.consume(need({ features: [gene('Aa'), gene('Bb')] }));
     await settle();
     await w.finish(0);
+    first.leave();
     w.consume(need({ features: [gene('Cc')] }));
     await settle();
     await w.finish(1);                                        // Aa goes

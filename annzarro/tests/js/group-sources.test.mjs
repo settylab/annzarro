@@ -88,6 +88,7 @@ function world({ cells = 6, seconds = () => 1 } = {}) {
         const handle = sources.watch(id, { consumer: { kind: 'plot', panelId: 'p1', ...consumer }, option,
             onChange: (snap) => states.push(snap.state) });
         handle.states = states;
+        handle.read();              // a consumer reads its handle when it draws: that asks for the groups
         return handle;
     };
     return { sources, store, calls, waiting, panels, ports, cycles, ctx, fire, finish, grouping, watch,
