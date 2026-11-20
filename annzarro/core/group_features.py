@@ -254,8 +254,8 @@ def plan_work(reader, dataset_path: str, features: Sequence[Feature] = (), measu
     it costs, the pass over its cells included. Such a pass is charged to a score too.
     """
     remote = is_remote_path(dataset_path)
-    with cs._root(reader, dataset_path) as root:
-        n_cells = cs._n_cells(root)
+    with cs.root(reader, dataset_path) as root:
+        n_cells = cs.n_cells(root)
     request = cg.Request(shape="grouping", grouping=cg.Grouping(()), sets={}, set_hashes={})   # no nested grouping
     reads: List[_MatrixRead] = []
     gene_target: Dict[str, Tuple[int, int, float]] = {}
