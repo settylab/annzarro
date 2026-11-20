@@ -64,7 +64,7 @@ def run_pipeline(n, pause_on, threads=4, budget=1_000):
 @pytest.mark.parametrize("pause_on", [(), (1,), (2,), (3, 6), (1, 2, 3, 4, 5, 6, 7, 8), tuple(range(1, 60))])
 def test_nothing_is_in_flight_when_a_pause_waits(pause_on):
     tracker, pause, out = run_pipeline(30, pause_on)
-    assert pause.waits, "a wanted pause must wait"
+    assert bool(pause.waits) == bool(pause_on), "a wanted pause must wait, and only then"
     assert all(n == 0 for n in pause.waits)
     assert tracker.started == [1] * 30                    # no task read twice, none skipped
     assert out == [(i, float(i)) for i in range(30)]     # order kept
