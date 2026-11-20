@@ -95,6 +95,7 @@ def test_a_second_score_starts_within_one_batch_of_a_long_one(client, layout, mo
     longer than QUEUE_WAIT_S."""
     started = []
     _slow_reads(monkeypatch, 0.1, started)
+    monkeypatch.setattr(gs, "MAX_GROUP_ENTRIES", 0)                 # one read per gene, neighbours or not
     monkeypatch.setattr(route, "QUEUE_WAIT_S", 0.5)
     long_genes = [gene(i) for i in range(16)]
     short_genes = [gene(17), gene(18)]
@@ -108,7 +109,7 @@ def test_a_second_score_starts_within_one_batch_of_a_long_one(client, layout, mo
         while len(started) < 3 and time.monotonic() < deadline:
             time.sleep(0.01)
         at_arrival = len(started)
-        assert 0 < at_arrival < 16, "the long score did not start, or ended before the second was sent"
+        assert 0 < at_arrival < 6, "the long score did not start, or ran too far before the second was sent"
         spawn(run, "short", short_genes)
     long_status, (long_frames, long_vector) = out["long"]
     short_status, (short_frames, short_vector) = out["short"]
@@ -118,6 +119,7 @@ def test_a_second_score_starts_within_one_batch_of_a_long_one(client, layout, mo
     short_cols = {17, 18}
     first_short = next(i for i, col in enumerate(started) if col in short_cols)
     long_between = sum(1 for col in started[at_arrival:first_short] if col not in short_cols)
+    assert len(started) == 18, "a gene was read twice, or not at all"
     assert long_between <= 2, f"the long score read {long_between} more genes before the short one started"
     assert any(f.get("queue", {}).get("sharing") == 1 for f in long_frames[:-1]), "the long score never shared"
     running = [f["running_s"] for f in long_frames[:-1]]
