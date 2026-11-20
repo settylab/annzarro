@@ -205,7 +205,7 @@ DRAW = """async (spec) => {
   await Plotly.newPlot(div, [spec]);
   const t = div._fullData[0];
   const out = {type: t.type, module: !!(t._module && t._module.name === spec.type), visible: t.visible !== false,
-               nodes: div.querySelectorAll('.trace').length};
+               nodes: div.querySelectorAll('.trace, .hm, .contour, .imagelayer image, .maplayer').length};
   const png = await Plotly.toImage(div, {format: 'png', width: 300, height: 200});
   const svg = await Plotly.toImage(div, {format: 'svg', width: 300, height: 200});
   out.png = png.startsWith('data:image/png'); out.svg = decodeURIComponent(svg).includes('<svg');
