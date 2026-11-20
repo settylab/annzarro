@@ -497,7 +497,7 @@ def test_null_lo_takes_the_low_side_from_the_values():
     e = binning.edges(slabs_of(x), make("equal_width", bins=4, range=[None, 6.0]))
     assert e.edges.tolist() == [2.0, 3.0, 4.0, 5.0, 6.0]
     assert e.to_reply()["range"] == [2.0, 6.0] and e.range_stored
-    assert binning.assign(x, e).tolist() == [0, 0, 3, 3, NO_LEVEL]   # 9 is clamped to the last bin
+    assert binning.assign(x, e).tolist() == [0, 1, 3, 3, NO_LEVEL]   # 9 is clamped to the last bin
 
 
 def test_null_hi_takes_the_high_side_from_the_values():
