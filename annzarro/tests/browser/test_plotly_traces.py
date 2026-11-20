@@ -1,7 +1,7 @@
 """Every plot type AnnZarro draws is in the bundled Plotly build.
 
-static/vendor/js/plotly-2.35.3-annzarro.min.js holds only the scatter, scattergl
-and scatter3d traces (scripts/build-plotly-bundle.sh). A trace type missing from
+static/vendor/js/plotly-2.35.3-annzarro.min.js holds only the scatter, scattergl,
+scatter3d, heatmap, bar, pie and contour traces (scripts/build-plotly-bundle.sh). A trace type missing from
 it does not fail loudly: plotly.js warns "Unrecognized trace type" and draws
 nothing, or falls back to a scatter. This opens each kind of plot the app makes
 
@@ -19,6 +19,7 @@ Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1, where a missing Playwright is an error.
 """
 import base64
+import gzip
 import json
 import os
 import socket
@@ -183,3 +184,67 @@ def test_every_trace_type_the_app_draws_is_in_the_bundle(server, case):
             assert not bad, bad
         finally:
             browser.close()
+
+
+# ---- the traces added for the Cell-Gene and Cell Count plots (SHR-30, plan 1.7) -------------------------------------
+
+BUNDLE = os.path.join(REPO, "scripts", "plotly", "plotly-2.35.3-annzarro.min.js")
+MAX_BYTES, MAX_GZIP = 2_060_000, 655_000
+
+NEW_TRACES = {
+    "heatmap": {"z": [[0, 1, 2], [3, 4, 5]], "x": ["a", "b", "c"], "y": ["r1", "r2"], "colorscale": "Viridis"},
+    "bar": {"x": ["a", "b", "c"], "y": [3, 1, 2], "marker": {"color": ["#1b9e77", "#d95f02", "#7570b3"]}},
+    "pie": {"labels": ["a", "b", "c"], "values": [3, 1, 2]},
+    "contour": {"z": [[0, 1, 2], [3, 4, 5], [2, 1, 0]], "colorscale": "Viridis"},
+}
+
+DRAW = """async (spec) => {
+  const div = document.createElement('div');
+  div.style.width = '400px'; div.style.height = '300px';
+  document.body.appendChild(div);
+  await Plotly.newPlot(div, [spec]);
+  const t = div._fullData[0];
+  const out = {type: t.type, module: !!(t._module && t._module.name === spec.type), visible: t.visible !== false,
+               nodes: div.querySelectorAll('.trace').length};
+  const png = await Plotly.toImage(div, {format: 'png', width: 300, height: 200});
+  const svg = await Plotly.toImage(div, {format: 'svg', width: 300, height: 200});
+  out.png = png.startsWith('data:image/png'); out.svg = decodeURIComponent(svg).includes('<svg');
+  Plotly.purge(div); div.remove();
+  return out;
+}"""
+
+
+@pytest.mark.parametrize("kind", sorted(NEW_TRACES))
+def test_new_trace_types_draw_as_themselves(server, kind):
+    root, store = server
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 800, "height": 600})
+            problems = []
+            page.on("pageerror", lambda e: problems.append(f"pageerror: {e}"))
+            page.on("console", lambda m: problems.append(f"{m.type}: {m.text}")
+                    if m.type in ("warning", "error") else None)
+            page.goto(root + "/?dataset_path=" + urllib.parse.quote(store, safe="/"))
+            page.wait_for_function("typeof Plotly !== 'undefined'")
+            got = page.evaluate(DRAW, dict(NEW_TRACES[kind], type=kind))
+            assert got["type"] == kind and got["module"] and got["visible"], got
+            assert got["nodes"] >= 1 and got["png"] and got["svg"], got
+            bad = [m for m in problems if "nrecognized" in m or m.startswith(("pageerror", "error"))]
+            bad = [m for m in bad if "favicon" not in m and "GPU stall" not in m]
+            assert not bad, bad
+        finally:
+            browser.close()
+
+
+def test_bundle_stays_within_its_size_budget():
+    raw = open(BUNDLE, "rb").read()
+    assert len(raw) <= MAX_BYTES, len(raw)
+    assert len(gzip.compress(raw, 9)) <= MAX_GZIP, len(gzip.compress(raw, 9))
+
+
+def test_build_script_lists_exactly_the_traces_the_app_draws():
+    text = open(os.path.join(REPO, "scripts", "build-plotly-bundle.sh")).read()
+    line = next(l for l in text.splitlines() if l.startswith("TRACES="))
+    assert set(line.split("=", 1)[1].split(",")) == {"scatter", "scattergl", "scatter3d",
+                                                    "heatmap", "bar", "pie", "contour"}
