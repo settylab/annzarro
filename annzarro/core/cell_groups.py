@@ -669,6 +669,7 @@ class _Levels:
         self.absent: List[str] = []
         self.info: Dict[str, Any] = {}
         self.counts: Optional[np.ndarray] = None
+        self.count = True
         self._slabs: Iterator[Tuple[int, np.ndarray]] = iter(())
 
     # -- the reply --------------------------------------------------------------------------------------------
@@ -701,12 +702,16 @@ class _Levels:
     # -- reading ----------------------------------------------------------------------------------------------
 
     def __iter__(self):
+        """The level slabs. Cells per slot are counted here only when ``count`` is set: when no partitioning
+        leaves a cell in no group, every cell is in a group and the groups' counts give the levels' for free."""
         counts = np.zeros(NONE16 + 1, dtype=np.int64)
         for start, lv in self._slabs:
             self.ctx.check()
-            counts += np.bincount(lv, minlength=NONE16 + 1)          # a uint16 slot: NONE16 has its own bin
+            if self.count:
+                counts += np.bincount(lv, minlength=NONE16 + 1)      # a uint16 slot: NONE16 has its own bin
             yield start, lv
-        self.counts = counts[:len(self.slots)]
+        if self.count:
+            self.counts = counts[:len(self.slots)]
 
     def _column(self, rows) -> Iterator[cs.Slab]:
         req = self.ctx.request
@@ -1197,10 +1202,12 @@ def _resolving(gp: GroupingPlan, ctx: _Ctx) -> Iterator[int]:
     result = GroupingResult(n_shown=ctx.n_shown)
     fold = _Fold(ctx.n_shown)
     made: List[_Levels] = []
+    every_cell_grouped = not any(p.spec.rest == "exclude" and p.member is None for p in gp.parts)
     try:
         for i, part in enumerate(gp.parts):
             ctx.check()
             levels = _Levels(part, ctx, i)
+            levels.count = not every_cell_grouped
             levels.prepare()
             fold.fold(levels)
             made.append(levels)
@@ -1211,6 +1218,9 @@ def _resolving(gp: GroupingPlan, ctx: _Ctx) -> Iterator[int]:
     except _Refused as r:
         result.refused = {**r.refused, "levels": [lv.n_levels for lv in made]}
         return result
+    if every_cell_grouped:
+        for p, lv in enumerate(made):
+            lv.counts = np.bincount(fold.keys[:, p], weights=counts, minlength=len(lv.slots)).astype(np.int64)
     result.partitionings = [lv.reply() for lv in made]
     keys = [[made[p].slots[s] for p, s in enumerate(row)] for row in fold.keys.tolist()]
     result.groups, result.codes, result.small = _small_groups(fold, keys, counts, gp.grouping)
