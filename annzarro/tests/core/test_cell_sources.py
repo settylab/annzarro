@@ -85,8 +85,8 @@ def test_obs_boolean_and_text(stores, backend, rows):
     assert values.dtype == bool
     np.testing.assert_array_equal(values, pick(e["flag"], rows))
     values, slabs = read(path, {"type": "obs", "key": "note"}, rows)
-    assert {s.kind for s in slabs} == {"text"}
-    assert list(values) == list(pick(e["note"], rows))
+    assert {s.kind for s in slabs} == {"category"}           # plain text is factorised: sorted categories and codes
+    assert list(np.asarray(slabs[0].categories, dtype=object)[values]) == list(pick(e["note"], rows))
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
