@@ -62,7 +62,7 @@ function world({ estimateSeconds = () => 2, tierOf = () => 'auto', cells = 3 } =
 
 const watch = (w, id, extra = {}) => {
     const states = [];
-    const handle = w.sources.watch(id, { onChange: (s) => states.push(s), ...extra });
+    const handle = w.sources.watch(id, { onChange: (s) => states.push(s), kind: 'plot', ...extra });
     return { handle, states };
 };
 
@@ -270,7 +270,7 @@ test('a signature turned off by the administrator says so', async () => {
     const store = S.createScoreStore({ api: { estimate: async () => ({}), compute: async () => ({}) } });
     const sources = D.createScoreSources({ store, signatures: { get: () => null, off: () => true },
         context: () => ({ dataset: 'd', subset: null }) });
-    const handle = sources.watch('S1', { onChange() {} });
+    const handle = sources.watch('S1', { onChange() {}, kind: 'plot' });
     assert.equal(handle.read().state, 'off');
 });
 
@@ -333,13 +333,13 @@ test('of several scores a plot states the worst', () => {
 test('who uses a source: plots and tables by method and by layer; Inspect and its export are not consumers', () => {
     const w = world();
     w.add('S1', 'T', ['A']);
-    const watchAs = (role, sub, layer) => w.sources.watch('S1', { onChange: () => {}, role, sub, layer });
-    watchAs('color', 'mean', 'X');
-    watchAs('x', 'mean', 'counts');
-    watchAs('column', 'mean', 'X');
-    watchAs('hover:S1:zscore_mean:', 'zscore_mean', null);
-    const inspect = watchAs('inspect', 'sum', 'X');
-    const exporting = watchAs('inspect-export', 'detected', 'X');
+    const watchAs = (kind, role, sub, layer) => w.sources.watch('S1', { onChange: () => {}, kind, role, sub, layer });
+    watchAs('plot', 'color', 'mean', 'X');
+    watchAs('plot', 'x', 'mean', 'counts');
+    watchAs('table', 'column', 'mean', 'X');
+    watchAs('plot', 'hover:S1:zscore_mean:', 'zscore_mean', null);
+    const inspect = watchAs('inspect', 'inspect', 'sum', 'X');
+    const exporting = watchAs('inspect-export', 'inspect-export', 'detected', 'X');
     const byValue = (rows) => Object.fromEntries(rows.map(r => [r.value, [r.plots, r.tables]]));
     assert.deepEqual(byValue(w.sources.usage('S1', 'method')), { mean: [2, 1], zscore_mean: [1, 0] });
     assert.deepEqual(byValue(w.sources.usage('S1', 'layer')), { X: [1, 1], counts: [1, 0], null: [1, 0] });
@@ -347,6 +347,29 @@ test('who uses a source: plots and tables by method and by layer; Inspect and it
     inspect.release();
     exporting.release();
     assert.deepEqual(w.sources.usage('nobody', 'method'), []);
+});
+
+test('a grouping is a consumer counted apart from plots and tables', () => {
+    const w = world();
+    w.add('S1', 'T', ['A']);
+    const as = (kind, sub, layer) => w.sources.watch('S1', { onChange: () => {}, kind, sub, layer });
+    as('plot', 'mean', 'X');
+    as('table', 'mean', 'X');
+    const g1 = as('grouping', 'mean', 'X');
+    as('grouping', 'sum', 'counts');
+    const rows = Object.fromEntries(w.sources.usage('S1', 'method').map(r => [r.value, [r.plots, r.tables, r.groupings]]));
+    assert.deepEqual(rows, { mean: [1, 1, 1], sum: [0, 0, 1] });
+    assert.equal(w.sources.consumersOf('S1').length, 4);
+    g1.release();
+    assert.equal(w.sources.consumersOf('S1').length, 3);
+});
+
+test('watch requires a known consumer kind', () => {
+    const w = world();
+    w.add('S1', 'T', ['A']);
+    assert.throws(() => w.sources.watch('S1', { onChange() {} }), /Unknown consumer kind 'undefined'/);
+    assert.throws(() => w.sources.watch('S1', { onChange() {}, kind: 'heatmap' }), /Unknown consumer kind 'heatmap'/);
+    assert.equal(w.sources.handlesOf('S1').length, 0, 'a refused watch leaves no handle behind');
 });
 
 test('each aggregation of a signature is its own score; the same aggregation is shared; an edit follows both', async () => {
@@ -456,7 +479,7 @@ test('a consumer on an option the signature no longer offers keeps drawing it, s
     let offered = true;
     const sources = D.createScoreSources({ store, signatures: { get: (id) => w.sigs.get(id) || null, off: () => false, offers: () => offered },
         context: () => ({ ...w.ctx }) });
-    const handle = sources.watch('S1', { onChange() {}, sub: 'mean', layer: 'counts' });
+    const handle = sources.watch('S1', { onChange() {}, kind: 'plot', sub: 'mean', layer: 'counts' });
     handle.read();
     await settle();
     w.finish(0);

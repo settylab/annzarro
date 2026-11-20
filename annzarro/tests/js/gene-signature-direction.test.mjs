@@ -173,7 +173,7 @@ test('a consumer on a method that cannot score down genes asks nothing of the se
     const sig = { title: 'T', recipe: () => recipe({ genes: sig.genes, down: sig.down }), genes: ['A'], down: ['B'] };
     sigs.set('S1', sig);
     const sources = S.createScoreSources({ store, signatures: { get: (id) => sigs.get(id), off: () => false }, context: () => ({ dataset: 'd', subset: null }) });
-    const sum = sources.watch('S1', { onChange() {}, sub: 'sum', layer: 'X' });
+    const sum = sources.watch('S1', { onChange() {}, kind: 'plot', sub: 'sum', layer: 'X' });
     const snap = sum.read();
     assert.equal(snap.state, 'nodown');
     assert.equal(snap.method, 'sum');
@@ -182,7 +182,7 @@ test('a consumer on a method that cannot score down genes asks nothing of the se
     assert.match(notice.headline, /has down genes, which sum cannot score/);
     await new Promise(r => setTimeout(r, 5));
     assert.equal(asked, 0, 'no request');
-    const mean = sources.watch('S1', { onChange() {}, sub: 'mean', layer: 'X' });
+    const mean = sources.watch('S1', { onChange() {}, kind: 'plot', sub: 'mean', layer: 'X' });
     assert.notEqual(mean.read().state, 'nodown', 'a method that can goes on');
     // dropping the down genes brings the sum back
     sig.down = [];
