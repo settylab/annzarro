@@ -24,7 +24,7 @@ import { describeScore, worstNotice } from './score-notices.js';
 import { registerSource, subKeyOf, layerOf } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
-import { DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
+import { DEFAULT_INPUT, DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
 import { createSourceAdapter, isSourceType, kindOfType, optionFieldsOf } from './score-source-panels.js';
 import { findCycle, TableResolver } from './table-resolver.js';
 
@@ -174,52 +174,55 @@ export function signatureList() {
             input: optionFieldsOf(p).input, options: scoreOptions(p.getId()) }));
 }
 
-/** The title of the signature a setting names, or what it was called when last seen. */
-export function scoreTitle(setting) {
-    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    const base = isSource(panel) ? panel.getTitle()
-        : (setting && setting.label) || (setting && setting.key) || '';
-    return base;
+/** The source panel (a signature or a gene table) with this id, or null. */
+function sourcePanel(id) {
+    const panel = id ? PanelManager.getPanel(id) : null;
+    return isSource(panel) ? panel : null;
 }
 
-/** The name a consumer shows for a score: the signature's title, and the aggregation when it is not the default. */
+/**
+ * The layer a source reads when a consumer names none: its first offered layer now. Null when there is no such source.
+ * @param {string} id - a source's panel id
+ * @returns {string|null}
+ */
+export function sourceInput(id) {
+    const panel = sourcePanel(id);
+    return panel ? optionFieldsOf(panel).input : null;
+}
+
+/** The title of the source a setting names, or what it was called when last seen (the setting's `label`). */
+export function scoreTitle(setting) {
+    const panel = sourcePanel(setting && setting.key);
+    return panel ? panel.getTitle() : (setting && (setting.label || setting.key)) || '';
+}
+
+/** The name a consumer shows for a score: the source's title, the method when it is not the default, the layer when it is not the source's own. */
 export function scoreLabel(setting) {
     const sub = subKeyOf(setting);
-    const title = scoreTitle(setting).replace(new RegExp(`( · (${METHODS.map(m => SUB_LABELS[m]).join('|')}))?( · of .+)?$`), '');
     const layer = layerOf(setting);
-    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    const own = panel && isSource(panel) ? optionFieldsOf(panel).input : 'X';
-    const out = !sub || sub === DEFAULT_METHOD ? title : `${title} · ${SUB_LABELS[sub] || sub}`;
-    // the layer is named when it is not the one the signature itself reads
-    return layer && layer !== own ? `${out} · ${layer}` : out;
+    const parts = [scoreTitle(setting)];
+    if (sub && sub !== DEFAULT_METHOD) parts.push(SUB_LABELS[sub] || sub);
+    if (layer && layer !== (sourceInput(setting.key) || DEFAULT_INPUT)) parts.push(layer);
+    return parts.join(' · ');
 }
 
 /**
  * The two lines a score is named by wherever it leaves the app (the colour bar, an axis title, a legend,
- * a CSV header): the signature's title, then the method and the layer it was computed over, always.
+ * a CSV header): the source's title, then the method and the layer it was computed over, always.
  * @returns {[string, string]}
  */
 export function scoreLabelLines(setting) {
-    const title = scoreTitle(setting).replace(new RegExp(`( · (${METHODS.map(m => SUB_LABELS[m]).join('|')}))?( · of .+)?$`), '');
-    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    const own = panel && isSource(panel) ? optionFieldsOf(panel).input : 'X';
+    const panel = sourcePanel(setting && setting.key);
     const sub = subKeyOf(setting);
     // down genes weighed by side (not the default) change the numbers, so the name says so wherever the score leaves the app
-    const recipe = panel && isSource(panel) && typeof panel.getRecipe === 'function' ? panel.getRecipe() : null;
+    const recipe = panel && typeof panel.getRecipe === 'function' ? panel.getRecipe() : null;
     const by = recipe && effectiveDownWeight(recipe, sub) === 'side' ? ', each side weighs equally' : '';
-    return [title, `${SUB_LABELS[sub] || sub}${by} · ${layerOf(setting) || own}`];
+    return [scoreTitle(setting), `${SUB_LABELS[sub] || sub}${by} · ${layerOf(setting) || sourceInput(setting.key) || DEFAULT_INPUT}`];
 }
 
 /** The one-line form of scoreLabelLines: "T cell score · z-score mean · X". */
 export function scoreFullLabel(setting) {
     return scoreLabelLines(setting).join(' · ');
-}
-
-/** A signature's input now, or null when there is no such signature. */
-function inputOfSignature(id) {
-    const panel = id ? PanelManager.getPanel(id) : null;
-    // any source panel: a signature or a gene table (utils/score-source-panels.js)
-    return panel && panel.getType && isSourceType(panel.getType()) ? optionFieldsOf(panel).input : null;
 }
 
 /**
@@ -231,7 +234,7 @@ function inputOfSignature(id) {
  * @returns {boolean}
  */
 export function pinLayers(settings, keyOf) {
-    return pinScoreLayers(settings, inputOfSignature, keyOf);
+    return pinScoreLayers(settings, sourceInput, keyOf);
 }
 
 /** Before a signature's input or layers change: every panel pins what it holds with no layer. */
@@ -239,6 +242,20 @@ export function pinConsumersOf() {
     for (const panel of PanelManager.getAllPanels()) {
         if (panel && typeof panel.pinScoreLayers === 'function') panel.pinScoreLayers();
     }
+}
+
+/**
+ * Write into a consumer's setting what it is called: `label`, the source's title (kept for when the source is
+ * deleted), and `labelFull`, the two lines of scoreLabelLines (what plot-titles.js reads, which cannot reach the page).
+ * @returns {boolean} whether either changed
+ */
+function nameSetting(setting) {
+    const title = scoreTitle(setting);
+    const lines = scoreLabelLines(setting).join('\n');
+    const changed = (!!title && setting.label !== title) || setting.labelFull !== lines;
+    if (title) setting.label = title;
+    setting.labelFull = lines;
+    return changed;
 }
 
 /** A custom error: the series cannot be drawn yet, and why. */
@@ -456,18 +473,17 @@ function recordFor(host, role, setting) {
  * @throws {ScoreUnavailable} when no score can be drawn
  */
 export function loadScoreSeries(setting, { host, role, expected, unit = 'cells', array = true, quiet = false }) {
+    // the setting keeps the source's title (for when the source is deleted) and what the colour bar, axis titles and
+    // legends say (two lines for the bar), both refreshed whenever the score is read
+    nameSetting(setting);
     const title = scoreLabel(setting);
-    if (title && setting.label !== title) setting.label = title;
-    // what the colour bar, axis titles and legends say (two lines for the bar), refreshed with the label
-    const lines = scoreLabelLines(setting).join('\n');
-    if (setting.labelFull !== lines) setting.labelFull = lines;
     if (!host || !setting.key) {
         const notice = describeScore({ state: 'unset', title: '' }, { role });
         throw new ScoreUnavailable(notice.headline, notice,
             Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected }));
     }
     // an entry with no layer (an old link) is resolved now, once, to the signature's input
-    if (!setting.layer) { const input = inputOfSignature(setting.key); if (input) setting.layer = input; }
+    if (!setting.layer) { const input = sourceInput(setting.key); if (input) setting.layer = input; }
     const rec = recordFor(host, role, setting);
     rec.quiet = quiet;
     const snap = rec.handle.read();
@@ -551,9 +567,7 @@ export function scoreActionAvailable(action, host) {
     if (!SCORE_ACTIONS.includes(action)) return false;
     const rec = shownRecord(host);
     if (!rec) return false;
-    const panel = PanelManager.getPanel(rec.sigId);
-    if (action === 'score-open') return isSource(panel);
-    return true;
+    return action !== 'score-open' || !!sourcePanel(rec.sigId);
 }
 
 /** Run a score action for a plot. */
@@ -600,8 +614,8 @@ export function runScoreAction(action, host) {
  * @returns {Object|null} the open panel, or null
  */
 export function openSignature(id, nextTo = null) {
-    const panel = PanelManager.getPanel(id);
-    if (!isSource(panel)) return null;
+    const panel = sourcePanel(id);
+    if (!panel) return null;
     if (PanelManager.getActivePanels().includes(panel)) {
         const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(id)}"]`);
         if (tile && tile.scrollIntoView) tile.scrollIntoView({ block: 'nearest' });
@@ -637,12 +651,7 @@ export function signatureRenamed(id) {
     for (const host of LIVE_HOSTS) {
         for (const rec of recordsOf(host).values()) {
             if (rec.sigId !== id) continue;
-            const title = scoreLabel(rec.setting);
-            if (rec.setting.label !== title) {
-                rec.setting.label = title;
-                rec.setting.labelFull = scoreLabelLines(rec.setting).join('\n');
-                if (rec.drawnKey) refreshPanel(host);
-            }
+            if (nameSetting(rec.setting) && rec.drawnKey) refreshPanel(host);
         }
     }
 }
@@ -695,8 +704,8 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     // for a signature that is edited (at once when the score is cheap, behind Update score when it is not)
     document.addEventListener('annzarro:table-filtered', (event) => {
         const id = event && event.detail && event.detail.id;
-        const panel = id ? PanelManager.getPanel(id) : null;
-        if (isSource(panel) && panel.getType() === 'gene-table') signatureChanged(id);
+        const panel = sourcePanel(id);
+        if (panel && panel.getType() === 'gene-table') signatureChanged(id);
     });
 }
 
@@ -714,8 +723,8 @@ registerSource({
     entities: () => signatureList(),
     /** The aggregations the server computes, z-score mean first; a new method is a new entry in METHODS. */
     subKeys: (id) => {
-        const panel = id ? PanelManager.getPanel(id) : null;
-        if (isSource(panel)) return offeredSubs(panel);
+        const panel = sourcePanel(id);
+        if (panel) return offeredSubs(panel);
         // no id: every aggregation; an id nothing answers to (a deleted signature): the ones offered by default
         return (id ? DEFAULT_OFFERED : METHODS).map(value => ({ value, label: SUB_LABELS[value] || value }));
     },
@@ -730,8 +739,8 @@ registerSource({
  * @returns {Array<{id: string, value: string, method: string, layer: string, label: string, short: string}>}
  */
 export function scoreOptions(id) {
-    const panel = id ? PanelManager.getPanel(id) : null;
-    if (!isSource(panel)) return [];
+    const panel = sourcePanel(id);
+    if (!panel) return [];
     const recipe = optionFieldsOf(panel);
     // the panel's own graded list: a combination that cannot be computed (a share on a log layer) is left out
     const list = typeof panel.getOfferedOptions === 'function' ? panel.getOfferedOptions() : offeredOptions(recipe, _datasetLayers);
@@ -750,19 +759,18 @@ export function noteDatasetLayers(list) {
 /** The entry a consumer's setting stands for in a signature's options, or null when it is not offered. */
 export function optionOf(setting) {
     const sub = subKeyOf(setting);
-    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
     // no layer: the setting follows the signature's default layer (a link made before the layer was stored)
-    const layer = layerOf(setting) || (isSource(panel) ? optionFieldsOf(panel).input : 'X');
+    const layer = layerOf(setting) || sourceInput(setting.key) || DEFAULT_INPUT;
     return scoreOptions(setting.key).find(o => o.method === sub && o.layer === layer) || null;
 }
 
 /** The label of an option a consumer holds that the signature no longer offers. */
 export function lapsedLabel(setting) {
-    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    const several = isSource(panel) ? new Set(offeredOptions(optionFieldsOf(panel), _datasetLayers).map(o => o.layer)).size > 1 : false;
+    const panel = sourcePanel(setting && setting.key);
+    const several = panel ? new Set(offeredOptions(optionFieldsOf(panel), _datasetLayers).map(o => o.layer)).size > 1 : false;
     const layer = layerOf(setting);
     const base = methodShort(subKeyOf(setting));
-    return `${several || layer ? `${base} · ${layer || (isSource(panel) ? optionFieldsOf(panel).input : 'X')}` : base} (no longer offered)`;
+    return `${several || layer ? `${base} · ${layer || sourceInput(setting.key) || DEFAULT_INPUT}` : base} (no longer offered)`;
 }
 
 /**
@@ -787,8 +795,8 @@ export function offerOtherScores(id, nextTo = null) {
  * @returns {boolean} whether the source took it
  */
 export function offerAgain(setting) {
-    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
-    if (!isSource(panel)) return false;
+    const panel = sourcePanel(setting && setting.key);
+    if (!panel) return false;
     const method = subKeyOf(setting);
     const layer = layerOf(setting);
     const recipe = optionFieldsOf(panel);

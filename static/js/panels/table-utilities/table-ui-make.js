@@ -14,10 +14,10 @@ import { getColumnDisplayName } from './table-data.js';
 import { isDerived } from '../../utils/line-select.js';
 import { isScoreColumn } from '../../utils/score-column.js';
 import { getSource } from '../../utils/source-registry.js';
-import { DEFAULT_METHOD } from '../../utils/gene-signature.js';
-import { scoreOptions, lapsedLabel, noteDatasetLayers, offerOtherScores } from '../../utils/score-source.js';
+import { DEFAULT_METHOD, DEFAULT_INPUT } from '../../utils/gene-signature.js';
+import { scoreOptions, lapsedLabel, noteDatasetLayers, offerOtherScores, sourceInput } from '../../utils/score-source.js';
 import { layerKeys } from '../../utils/structure-keys.js';
-import { entityLabel, optionFieldsOf } from '../../utils/score-source-panels.js';
+import { entityLabel } from '../../utils/score-source-panels.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -330,8 +330,7 @@ async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, i
 function checkboxIdFor(column, panelId) {
     // a score's layer is always named: there is no default layer, and a column stored without one (an old
     // link) is read on the signature's input at the time
-    const sig = column.type === 'gene-score' && window.PanelManager ? window.PanelManager.getPanel(column.key) : null;
-    const layer = column.type === 'gene-score' ? (column.layer || (sig && (sig.getScoreOptions || sig.getRecipe) ? optionFieldsOf(sig).input : 'X')) : '';
+    const layer = column.type === 'gene-score' ? (column.layer || sourceInput(column.key) || DEFAULT_INPUT) : '';
     return `checkbox-${column.type}-${column.key}-${column.column}${layer ? `-of-${layer}` : ''}-${panelId}`.replace(/\s+/g, '_');
 }
 
@@ -884,8 +883,7 @@ function updateSelectedColumnsList(id, settings) {
             entry.label = checkbox.getAttribute('data-label') || undefined;
             const layer = checkbox.getAttribute('data-layer');
             if (layer) entry.layer = layer;
-            const sig = window.PanelManager ? window.PanelManager.getPanel(key) : null;
-            const input = sig && (sig.getScoreOptions || sig.getRecipe) ? optionFieldsOf(sig).input : 'X';
+            const input = sourceInput(key) || DEFAULT_INPUT;
             const had = before.find(c => c.key === key && (c.column || DEFAULT_METHOD) === column && (c.layer || input) === layer);
             if (had) { delete entry.layer; if (had.layer) entry.layer = had.layer; }
         }
