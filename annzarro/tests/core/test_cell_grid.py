@@ -459,6 +459,25 @@ def test_the_cap_itself_is_allowed(store):
     assert p.estimate()["cells"] == 512 * 512 * 8 == cgr.MAX_GRID_MEASURE_CELLS
 
 
+def test_the_measure_grid_is_numbered_over_the_listed_levels(store, data):
+    """No @na listed: a measure over a grid at the cap is taken, though @na slots would have made it larger."""
+    split = obs("depth", binning={"method": "equal_width", "bins": 7, "zero_bin": True})
+    m = [{"id": "m0", "source": {"type": "obs", "key": "score"}}]
+    res = run(store, "2d", [width("score", 512), width("signed", 512), split], measures=m)
+    head, blocks = reply(res)
+    assert res.refused is None and blocks["measure_moments"].shape == (1, cgr.MAX_GRID_MEASURE_CELLS, 5)
+    assert blocks["measure_moments"][0, :, 0].tolist() == blocks["counts"].tolist()
+
+
+def test_a_measure_over_a_grid_past_the_cap_once_read_is_refused_in_the_result(store):
+    # 512 x 512 x 8 declared; pseudotime's @na makes it 513 x 512 x 8 once read
+    split = obs("depth", binning={"method": "equal_width", "bins": 7, "zero_bin": True})
+    m = [{"id": "m0", "source": {"type": "obs", "key": "score"}}]
+    res = run(store, "2d", [width("pseudotime", 512), width("signed", 512), split], measures=m)
+    assert res.refused["reason"] == "grid_too_large" and res.refused["count"] == 513 * 512 * 8
+    assert run(store, "2d", [width("pseudotime", 512), width("signed", 512), split]).refused is None
+
+
 def test_a_level_count_known_only_after_reading_is_refused_in_the_result(store):
     # batch split by its values has 12 levels: over the 2d split limit of 8, known once the column is read
     res = run(store, "2d", [width("score", 4), width("signed", 4), obs("batch", binning={"method": "categories"})])

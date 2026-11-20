@@ -489,38 +489,41 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, should_stop
         return
     widths = [len(a.slots) for a in made]
     space = int(np.prod(widths, dtype=np.int64))
-    flat = np.zeros(space + 1, dtype=np.int64)
-    for a, b in cg._spans(n_shown):
-        c = codes[a:b]
-        np.minimum(c, space, out=c)                     # every cell left out is now ``space``, past the grid
-        flat += np.bincount(c, minlength=space + 1)
-    flat = flat[:space]
-    moments = None
-    if req.measures:
-        for event, payload in gf.accumulate(plan_.work, plan_.reader, plan_.dataset_path, rows, codes, space,
-                                            sizes=flat, sets=req.sets, should_stop=should_stop, pause=pause):
-            if event == "progress":
-                yield event, payload
-            else:
-                moments, result.measure_status = payload.measures, payload.measure_status
-    del codes
-    result.axes = []
-    keeps = []
+    # The reserved levels no cell is in are not listed (an axis's occupancy is known once it was read): the grid
+    # is numbered over the listed levels only, so a 512 x 512 x 8 grid stays one, whatever @na it might have had.
+    result.axes, keeps = [], []
     for axis, out in zip(made, outside):
         info = axis.reply()
         info["n_outside"] = out
         listed = set(info["levels"])
         keeps.append(np.asarray([k for k, sid in enumerate(axis.slots) if sid in listed], dtype=np.int64))
         result.axes.append(info)
-    trim = any(k.size != w for k, w in zip(keeps, widths))
-    if trim:
-        index = np.ix_(*keeps)
-        flat = flat.reshape(widths)[index].reshape(-1)
-        if moments is not None:
-            moments = moments.reshape([moments.shape[0]] + widths + [5])[(slice(None),) + index + (slice(None),)]
-            moments = moments.reshape(moments.shape[0], -1, 5)
+    cells = int(np.prod([k.size for k in keeps], dtype=np.int64))
+    if req.measures and cells > MAX_GRID_MEASURE_CELLS:
+        result.refused = {"reason": "grid_too_large", "count": cells, "limit": MAX_GRID_MEASURE_CELLS,
+                          "mode": req.mode, "levels": [k.size for k in keeps]}
+        yield "result", result
+        return
+    lut = None
+    if cells != space:
+        lut = np.full(space + 1, cells, dtype=np.uint32)
+        lut[np.arange(space, dtype=np.int64).reshape(widths)[np.ix_(*keeps)].reshape(-1)] = np.arange(cells)
+    flat = np.zeros(cells + 1, dtype=np.int64)
+    for a, b in cg._spans(n_shown):
+        c = codes[a:b]
+        np.minimum(c, space, out=c)                     # every cell left out is now ``space``, past the grid
+        if lut is not None:
+            c[:] = lut[c]                               # and then ``cells``
+        flat += np.bincount(c, minlength=cells + 1)
+    flat = flat[:cells]
+    if req.measures:
+        for event, payload in gf.accumulate(plan_.work, plan_.reader, plan_.dataset_path, rows, codes, cells,
+                                            sizes=flat, sets=req.sets, should_stop=should_stop, pause=pause):
+            if event == "progress":
+                yield event, payload
+            else:
+                result.moments, result.measure_status = np.ascontiguousarray(payload.measures), payload.measure_status
+    del codes
     result.counts = flat.astype(np.uint32)
     result.n_counted = int(flat.sum())
-    if moments is not None:
-        result.moments = np.ascontiguousarray(moments)
     yield "result", result
