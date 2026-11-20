@@ -103,7 +103,7 @@ def test_a_second_score_starts_within_one_batch_of_a_long_one(client, layout, mo
     with _streams() as (open_, spawn):
         def run(name, genes):
             resp = open_(post(client, layout, {"recipe": {"genes": genes}}, buffered=False))
-            out[name] = (resp.status_code, parse(resp.get_data()))
+            out[name] = (resp.status_code, resp.get_data())
         spawn(run, "long", long_genes)
         deadline = time.monotonic() + 10
         while len(started) < 3 and time.monotonic() < deadline:
@@ -111,9 +111,9 @@ def test_a_second_score_starts_within_one_batch_of_a_long_one(client, layout, mo
         at_arrival = len(started)
         assert 0 < at_arrival < 6, "the long score did not start, or ran too far before the second was sent"
         spawn(run, "short", short_genes)
-    long_status, (long_frames, long_vector) = out["long"]
-    short_status, (short_frames, short_vector) = out["short"]
-    assert long_status == short_status == 200
+    (long_status, long_data), (short_status, short_data) = out["long"], out["short"]
+    assert long_status == short_status == 200, (long_status, short_status, short_data[:200])
+    (long_frames, long_vector), (short_frames, short_vector) = parse(long_data), parse(short_data)
     assert long_frames[-1]["type"] == "result" and short_frames[-1]["type"] == "result", (long_frames[-1], short_frames[-1])
     assert long_vector is not None and short_vector is not None
     short_cols = {17, 18}
