@@ -127,6 +127,15 @@ test('the hash changes with each thing a score depends on', () => {
     assert.equal(new Set(changed).size, changed.length, 'every change makes its own key');
 });
 
+test('a hasher of one recipe gives each variant the hash it has on its own', () => {
+    const r = recipe({ genes: ['A', 'B', 'C'], down: ['D'], clip: 4, seed: 2 });
+    const hash = G.recipeHasher(r);
+    for (const variant of [r, { ...r, method: 'mean' }, { ...r, method: 'control_adjusted', input: 'counts' }, { ...r, down_weight: 'side' },
+        { ...r, method: 'detected', detect_above: 0.5 }]) {
+        assert.equal(hash(variant), G.recipeHash(variant));
+    }
+});
+
 test('a change that cannot change a number does not change the key', () => {
     // only the z-score mean clips
     const mean = (clip) => G.recipeHash({ ...recipe({ genes: ['A'], clip }), method: 'mean' });
@@ -177,6 +186,20 @@ test('adding only genes already in the list changes nothing', () => {
     assert.deepEqual(plan.added, []);
     assert.equal(plan.already, 2);
     assert.deepEqual(plan.genes, ['A', 'B']);
+});
+
+test('the settings of a recipe normalise alone to what the whole recipe gives', () => {
+    for (const raw of [{}, { genes: ['B', 'A'], clip: null, offered: ['mean'], layers: ['counts', 'X'], input: 'counts' },
+        { genes: ['A'], down: ['B'], down_weight: 'side', seed: 4, bins: 10, detect_above: 0.5 }, { genes: ['A'], directions: true },
+        { genes: ['A'], down_weight: 'nonsense', clip: -1, bins: 1, offered: [] }]) {
+        const { recipe } = G.normalizeRecipe(raw);
+        const { genes, down, ...settings } = recipe;
+        assert.deepEqual(G.normalizeSettings(raw, down.length > 0), settings);
+        assert.deepEqual(Object.keys(recipe), ['genes', 'down', ...Object.keys(settings)], 'the key order links are written in');
+        // a patch of settings on a recipe gives the recipe normalised with the patch
+        const patch = { clip: 3, offered: ['sum', 'mean'], down_weight: 'side' };
+        assert.deepEqual({ genes, down, ...G.normalizeSettings({ ...recipe, ...patch }, down.length > 0) }, G.normalizeRecipe({ ...recipe, ...patch }).recipe);
+    }
 });
 
 test('mergeSorted of two sorted lists is sorted and distinct', () => {

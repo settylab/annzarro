@@ -67,17 +67,24 @@ export function normalizeRecipe(raw) {
         down = down.filter(name => !up.has(name));
         notes.push(`${both.length} gene${both.length === 1 ? ' was' : 's were'} on both sides and now count as up.`);
     }
-    // how to score and what to offer: one schema, shared with the gene table (utils/signature-options.js)
-    const options = normalizeOptions(src);
+    return { recipe: { genes, down, ...normalizeSettings(src, down.length > 0) }, notes };
+}
+
+/**
+ * The settings of a recipe, everything but its two gene lists, every one valid. A change of settings alone uses this,
+ * so the lists (already clean and sorted) are not walked and sorted again.
+ * @param {Object} src - a saved config or a recipe
+ * @param {boolean} hasDown - the recipe has down genes
+ */
+export function normalizeSettings(src, hasDown) {
     return {
-        recipe: {
-            genes, down, down_weight: cleanDownWeight(src.down_weight), ...options,
-            // the panel's own switch (Score some genes as down): on whenever there are down genes, and kept on when
-            // it was left on with none. Not a score setting: it is in no cache key and not sent to the server.
-            directions: src.directions === true || down.length > 0,
-            version: RECIPE_VERSION
-        },
-        notes
+        down_weight: cleanDownWeight(src.down_weight),
+        // how to score and what to offer: one schema, shared with the gene table (utils/signature-options.js)
+        ...normalizeOptions(src),
+        // the panel's own switch (Score some genes as down): on whenever there are down genes, and kept on when
+        // it was left on with none. Not a score setting: it is in no cache key and not sent to the server.
+        directions: src.directions === true || hasDown,
+        version: RECIPE_VERSION
     };
 }
 
@@ -115,6 +122,21 @@ export function storedRecipe(recipe) {
  * @returns {string}
  */
 export function recipeHash(recipe) {
+    return hashWith(recipe, { up: setHash(recipe.genes), down: setHash(recipe.down) });
+}
+
+/**
+ * recipeHash for variants of one recipe that keep its gene lists (another method, layer or parameter): the lists are
+ * walked once, however many variants are hashed. `recipeHasher(r)(v) === recipeHash(v)` for such a variant `v`.
+ * @param {Object} recipe
+ * @returns {(variant: Object) => string}
+ */
+export function recipeHasher(recipe) {
+    const sets = { up: setHash(recipe.genes), down: setHash(recipe.down) };
+    return (variant) => hashWith(variant, sets);
+}
+
+function hashWith(recipe, sets) {
     const params = paramsOf(recipe, recipe.method);        // only what this method reads: the others change no number
     return stableStringify({
         v: recipe.version,
@@ -125,8 +147,8 @@ export function recipeHash(recipe) {
         bins: 'bins' in params ? params.bins : null,
         controls: 'controls' in params ? params.controls : null,
         detect_above: 'detect_above' in params ? params.detect_above : null,
-        up: setHash(recipe.genes),
-        down: setHash(recipe.down),
+        up: sets.up,
+        down: sets.down,
         // only where it changes a number: the two means with down genes
         ...(effectiveDownWeight(recipe, recipe.method) ? { dw: effectiveDownWeight(recipe, recipe.method) } : {})
     });

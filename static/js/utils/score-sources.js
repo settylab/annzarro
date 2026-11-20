@@ -21,7 +21,7 @@
  * reply), and otherwise the edits collect (`held`) until `update(id)` -
  * "Update score". Dependants keep the previous score meanwhile.
  */
-import { recipeHash, DEFAULT_METHOD, METHODS, canScoreDown } from './gene-signature.js';
+import { recipeHasher, DEFAULT_METHOD, METHODS, canScoreDown } from './gene-signature.js';
 import { scoreKey } from './score-store.js';
 
 /** Seconds the estimate may be to apply an edit at once, when the reply does not say. */
@@ -66,7 +66,6 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     const signatureListeners = new Map();
     let token = 0;
 
-    const hashOf = (recipe) => recipeHash(recipe);
     // The aggregation belongs to the consumer, not the signature: a score is the signature's genes and
     // shared settings read with one method. Edits are compared without it.
     const withMethod = (recipe, sub, layer) => ({ ...recipe, method: sub || DEFAULT_METHOD, input: layer || recipe.input });
@@ -86,12 +85,15 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     /** The recipe a consumer's option reads of an applied recipe, with its hash: {recipe, hash}. */
     const scoredAs = (applied, sub, layer) => memo(applied, `${sub || ''}\u0001${layer || ''}`, () => {
         const recipe = withMethod(applied, sub, layer);
-        return { recipe, hash: hashOf(recipe) };
+        return { recipe, hash: hasherOf(applied)(recipe) };
     });
+    /** The hasher of an applied recipe's variants: its gene lists are walked once for every method and layer. */
+    const hasherOf = (applied) => memo(applied, 'hasher', () => recipeHasher(applied));
     // An edit is a change to any score the signature could give: the genes and every shared setting. The clip only
-    // reaches the z-score mean and the seed only the control-adjusted score, so the hash covers each method.
-    const editHash = (recipe) => METHODS.map(m => hashOf(withMethod(recipe, m))).join('|');
-    const appliedEditHash = (applied) => memo(applied, 'edit', () => editHash(applied));
+    // reaches the z-score mean and the seed only the control-adjusted score, so the hash covers each method. The
+    // gene lists are the same under every method and layer, so they are hashed once (`hash`: a recipeHasher).
+    const editHash = (recipe, hash) => METHODS.map(m => hash(withMethod(recipe, m))).join('|');
+    const appliedEditHash = (applied) => memo(applied, 'edit', () => editHash(applied, hasherOf(applied)));
     /** The aggregations the dependants of a signature read, each once. */
     const pairsUsed = (id) => {
         const seen = new Map();
@@ -99,7 +101,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         return [...seen.values()];
     };
     /** Whether the live recipe is a different score from the applied one for any (aggregation, layer) a dependant of `id` reads. */
-    const changesScore = (id, live, was) => pairsUsed(id).some(p => hashOf(withMethod(live, p.sub, p.layer)) !== scoredAs(was, p.sub, p.layer).hash);
+    const changesScore = (id, live, was, hash) => pairsUsed(id).some(p => hash(withMethod(live, p.sub, p.layer)) !== scoredAs(was, p.sub, p.layer).hash);
     const genesIn = (recipe) => recipe.genes.length + (recipe.down ? recipe.down.length : 0);
 
     /** The gate of a source for a dependant: the state its genes are in, or null when they can be read. */
@@ -295,10 +297,11 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         const edited = copyRecipe(sig.recipe());
         if (genesIn(edited) === 0) { apply(id); return; }
         const ctx = context();
+        const hash = recipeHasher(edited);
         // the slowest of the scores the dependants read decides whether the edit is applied at once
         const replies = await Promise.all(pairsUsed(id).map((p) => {
             const live = withMethod(edited, p.sub, p.layer);
-            return store.estimateFor(live, ctx.dataset, hashOf(live))
+            return store.estimateFor(live, ctx.dataset, hash(live))
                 .catch(() => null);   // the failure shows when the edit is applied and computed
         }));
         const now = pending.get(id);
@@ -381,17 +384,18 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             const was = applied.get(id);
             if (!was) { appliedOf(id, sig); notifySource(id); return; }
             const p = pending.get(id);
-            if (!changesScore(id, live, was)) {
+            const hash = recipeHasher(live);           // the live recipe's lists, walked once for every hash below
+            if (!changesScore(id, live, was, hash)) {
                 // edited back to what is shown, or changed only what no dependant reads (the clip, for a plain mean):
                 // the settings are kept, and no score is asked for
                 if (p && p.timer) clearTimer(p.timer);
                 pending.delete(id);
-                if (editHash(live) !== appliedEditHash(was)) applied.set(id, copyRecipe(live));
+                if (editHash(live, hash) !== appliedEditHash(was)) applied.set(id, copyRecipe(live));
                 notifySource(id);
                 return;
             }
             // told again of a recipe it already knows (the page rechecks after panels change): not another edit
-            const liveHash = editHash(live);
+            const liveHash = editHash(live, hash);
             if (p && p.lastHash === liveHash) { notifySource(id); return; }
             const next = p || { edits: 0, seconds: null, held: false, timer: null, token: 0, lastHash: null };
             next.lastHash = liveHash;

@@ -43,7 +43,7 @@ import { createScoreOptions } from './score-options/score-options.js';
 import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
-    normalizeRecipe, recipeHash, searchNames, enterTarget,
+    normalizeRecipe, normalizeSettings, recipeHash, searchNames, enterTarget,
     UndoStack, fmtCount, inDatasetNames, compareNames, storedRecipe,
     selectedNames, planDirection, planAddAs, directionCounts, mergeSorted
 } from '../utils/gene-signature.js';
@@ -180,6 +180,11 @@ const GeneSignaturePanel = (function() {
         function setRecipe(next) {
             // consumers with no layer take the input as it is now, before it changes: they never move with it
             if (('input' in next && next.input !== _recipe.input) || ('layers' in next && JSON.stringify(next.layers) !== JSON.stringify(_recipe.layers))) pinConsumersOf();
+            if (!('genes' in next) && !('down' in next)) {
+                // settings only: the lists stay as they are
+                Object.assign(_recipe, normalizeSettings({ ..._recipe, ...next }, _recipe.down.length > 0));
+                return;
+            }
             const { recipe, notes } = normalizeRecipe({ ..._recipe, ...next });
             Object.assign(_recipe, recipe);
             if (notes.length) _message = notes.join(' ');
