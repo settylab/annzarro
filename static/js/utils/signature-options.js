@@ -189,7 +189,7 @@ const andList = (items) => (items.length < 2 ? items.join('') : `${items.slice(0
  * @returns {Array<{grade: string, code: string, text: string}>}
  */
 export function layerLines(layer, recipe, kind, stats) {
-    const offered = cleanOffered(recipe.offered, recipe.method);
+    const offered = offeredMethods(recipe);
     const lines = [];
     const depth = offered.filter(m => DEPTH_METHODS.includes(m));
     if (kind === 'counts' && depth.length) {
@@ -261,10 +261,15 @@ export function cleanLayers(value, input) {
     return [...seen];
 }
 
+/** The methods a recipe (or a source's option fields) offers, in menu order. */
+export const offeredMethods = (recipe) => cleanOffered(recipe.offered, recipe.method);
+/** The layers it offers, in the order they were offered: the first is where a new consumer starts. */
+export const offeredLayers = (recipe) => cleanLayers(recipe.layers, recipe.input);
+
 /** Whether a consumer may pick `method` (and `layer`, when given) of this signature now. */
 export function isOffered(recipe, method, layer) {
-    if (!cleanOffered(recipe.offered, recipe.method).includes(method)) return false;
-    return layer === undefined || layer === null || layer === '' || cleanLayers(recipe.layers, recipe.input).includes(layer);
+    if (!offeredMethods(recipe).includes(method)) return false;
+    return layer === undefined || layer === null || layer === '' || offeredLayers(recipe).includes(layer);
 }
 
 /**
@@ -281,8 +286,8 @@ export function isOffered(recipe, method, layer) {
  *   never the id. `label` names the layer only when several are offered; `fullLabel` always does.
  */
 export function gradedOptions(recipe, datasetLayers, kinds = {}, stats = {}) {
-    const methods = cleanOffered(recipe.offered, recipe.method);
-    let layers = cleanLayers(recipe.layers, recipe.input);
+    const methods = offeredMethods(recipe);
+    let layers = offeredLayers(recipe);
     if (Array.isArray(datasetLayers) && datasetLayers.length) {
         const have = new Set(datasetLayers);
         layers = layers.filter(name => have.has(name));
@@ -334,18 +339,18 @@ function paramNotes(recipe, method) {
  * "z-score mean, mean, sum · X"; "z-score mean (not clipped), control-adjusted (seed 3) · X, logged_counts (default X)".
  */
 export function offeredSummary(recipe) {
-    const methods = cleanOffered(recipe.offered, recipe.method).map((m) => {
+    const methods = offeredMethods(recipe).map((m) => {
         const notes = paramNotes(recipe, m);
         return notes.length ? `${methodShort(m)} (${notes.join(', ')})` : methodShort(m);
     }).join(', ');
-    const layers = cleanLayers(recipe.layers, recipe.input);
+    const layers = offeredLayers(recipe);
     return `${methods} · ${layers.join(', ')}`;
 }
 
 /** The narrow form of the collapsed row: "3 methods · X". */
 export function offeredSummaryShort(recipe) {
-    const n = cleanOffered(recipe.offered, recipe.method).length;
-    const layers = cleanLayers(recipe.layers, recipe.input);
+    const n = offeredMethods(recipe).length;
+    const layers = offeredLayers(recipe);
     return `${n} method${n === 1 ? '' : 's'} · ${layers.length > 1 ? `${layers.length} layers` : layers[0]}`;
 }
 

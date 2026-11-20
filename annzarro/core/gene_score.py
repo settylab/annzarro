@@ -642,19 +642,30 @@ def _unsupported(node_name: str, encoding):
                                     f"csc_matrix matrices.")
 
 
+def _input_node(root, input_name: str):
+    """The node of the matrix ``input_name`` in an open store (zarr group or HDF5 file) and what to call it in a
+    message: ``X``, or a layer. ScoreError 404 ``key_not_found`` when the store has no such matrix."""
+    layers = root["layers"] if "layers" in root else None
+    if input_name == "X" and "X" in root and (layers is None or "X" not in layers):
+        return root["X"], "X"
+    if layers is not None and input_name in layers:
+        return layers[input_name], f"layer '{input_name}'"
+    what = "X matrix" if input_name == "X" else f"layer '{input_name}'"
+    raise ScoreError(404, "key_not_found", f"This dataset has no {what}.")
+
+
+def _listed_inputs(root) -> List[str]:
+    """``X`` (when the store has one), then its layers by name."""
+    layers = sorted(root["layers"].keys()) if "layers" in root else []
+    return (["X"] if "X" in root else []) + [n for n in layers if n != "X"]
+
+
 def _open_zarr(reader, dataset_path: str, input_name: str) -> _OpenSource:
     from .remote import is_remote_path
     root = reader._get_root(dataset_path=dataset_path)
     if root is None:
         raise FileNotFoundError(f"Dataset path does not exist: {dataset_path}")
-    layers = root["layers"] if "layers" in root else None
-    if input_name == "X" and "X" in root and (layers is None or "X" not in layers):
-        node, label = root["X"], "X"
-    elif layers is not None and input_name in layers:
-        node, label = layers[input_name], f"layer '{input_name}'"
-    else:
-        what = "X matrix" if input_name == "X" else f"layer '{input_name}'"
-        raise ScoreError(404, "key_not_found", f"This dataset has no {what}.")
+    node, label = _input_node(root, input_name)
     remote = is_remote_path(dataset_path)
     is_sparse, fmt = reader._is_sparse_matrix(node)
     if is_sparse:
@@ -688,14 +699,7 @@ def _open_h5ad(dataset_path: str, input_name: str) -> _OpenSource:
     from . import h5ad_reader as h5
     f = h5._open(dataset_path)
     try:
-        layers = f["layers"] if "layers" in f else None
-        if input_name == "X" and "X" in f and (layers is None or "X" not in layers):
-            node, label = f["X"], "X"
-        elif layers is not None and input_name in layers:
-            node, label = layers[input_name], f"layer '{input_name}'"
-        else:
-            what = "X matrix" if input_name == "X" else f"layer '{input_name}'"
-            raise ScoreError(404, "key_not_found", f"This dataset has no {what}.")
+        node, label = _input_node(f, input_name)
         if isinstance(node, h5py.Group):
             fmt, shape = h5._encoding(node), h5._sparse_group_shape(node)
             if fmt not in ("csr_matrix", "csc_matrix") or shape is None:
@@ -737,15 +741,13 @@ def input_names(reader, dataset_path: str) -> List[str]:
         from . import h5ad_reader as h5
         f = h5._open(dataset_path)
         try:
-            layers = sorted(f["layers"].keys()) if "layers" in f else []
-            return (["X"] if "X" in f else []) + [n for n in layers if n != "X"]
+            return _listed_inputs(f)
         finally:
             f.close()
     root = reader._get_root(dataset_path=dataset_path)
     if root is None:
         raise FileNotFoundError(f"Dataset path does not exist: {dataset_path}")
-    layers = sorted(root["layers"].keys()) if "layers" in root else []
-    return (["X"] if "X" in root else []) + [n for n in layers if n != "X"]
+    return _listed_inputs(root)
 
 
 #: Matrices looked at when the one asked about looks like raw counts, to name one that does not.
@@ -818,6 +820,17 @@ def choose_controls(stat: np.ndarray, signature_cols: Sequence[int], seed: int,
             members = members[np.argsort(keys[members], kind="stable")[:ctrl_size]]
         out.append(members)
     return np.sort(np.concatenate(out)) if out else np.empty(0, dtype=np.int64)
+
+
+def _side_controls(stat: np.ndarray, recipe: "Recipe", up_columns: Sequence[int],
+                   down_columns: Sequence[int]) -> Tuple[List[int], List[int]]:
+    """The controls of each side of a control-adjusted recipe, drawn outside that side's own genes: (up, down).
+    A side with no gene has none."""
+    def draw(columns):
+        if not columns:
+            return []
+        return [int(c) for c in choose_controls(stat, columns, recipe.effective_seed, recipe.bins, recipe.controls)]
+    return draw(up_columns), draw(down_columns)
 
 
 # ---------------------------------------------------------------------------
@@ -924,10 +937,7 @@ def plan(reader, dataset_path: str, recipe: Recipe, binning: str = "detection") 
             stat_entries = source.stat_entries(binning)
             if stat_entries == 0:
                 stat = source.column_stat(binning)
-                controls = [int(c) for c in choose_controls(stat, up_columns, recipe.effective_seed,
-                                                            recipe.bins, recipe.controls)] if up_columns else []
-                down_controls = [int(c) for c in choose_controls(stat, down_columns, recipe.effective_seed,
-                                                                 recipe.bins, recipe.controls)] if down_columns else []
+                controls, down_controls = _side_controls(stat, recipe, up_columns, down_columns)
                 reads = sorted(set(columns) | set(controls) | set(down_controls))
             else:
                 taken = set(columns)
@@ -1264,10 +1274,7 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
             result.input_kind = matrix_kind.classify(source.sample())["kind"]
         if adjusted and controls is None:
             stat = source.column_stat(plan_.binning, should_stop)
-            controls = [int(c) for c in choose_controls(stat, up_cols, recipe.effective_seed,
-                                                        recipe.bins, recipe.controls)] if up_cols else []
-            down_controls = [int(c) for c in choose_controls(stat, down_cols, recipe.effective_seed,
-                                                             recipe.bins, recipe.controls)] if down_cols else []
+            controls, down_controls = _side_controls(stat, recipe, up_cols, down_cols)
         if adjusted:
             down_controls = down_controls or []
             result.controls = sorted(set(controls) | set(down_controls))

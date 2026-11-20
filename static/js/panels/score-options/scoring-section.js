@@ -17,14 +17,12 @@
  * `makeDom(document)` and the callbacks are injected, so the section touches no page state of its own.
  */
 import {
-    BINS_RANGE, CONTROLS_RANGE, DEFAULT_BINS, DEFAULT_CLIP, DEFAULT_CONTROLS, DEFAULT_INPUT, DEFAULT_SEED, parseClipText,
-    parseSeedText, parseThresholdText, parseWholeText
+    BINS_RANGE, CONTROLS_RANGE, DEFAULT_BINS, DEFAULT_CLIP, DEFAULT_CONTROLS, DEFAULT_DOWN_WEIGHT, DEFAULT_INPUT, DEFAULT_SEED,
+    cleanDownWeight, directionFormula, downDefinition, parseClipText, parseSeedText, parseThresholdText, parseWholeText
 } from '../../utils/gene-signature.js';
-import { directionFormula, downDefinition, DEFAULT_DOWN_WEIGHT, cleanDownWeight } from '../../utils/gene-signature.js';
 import {
-    DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, WEIGHTED_METHODS, canScoreDown, PARAM_DEFAULTS, cleanLayers, cleanOffered, isMethodDefault, kindWord,
-    layerLines, methodLines,
-    methodShort, offeredSummary, offeredSummaryShort, useText
+    DEFAULT_METHOD, DEFAULT_OFFERED, METHOD_INFO, WEIGHTED_METHODS, canScoreDown, PARAM_DEFAULTS, cleanOffered, isMethodDefault, kindWord,
+    layerLines, methodLines, methodShort, offeredLayers, offeredMethods, offeredSummary, offeredSummaryShort, useText
 } from '../../utils/signature-options.js';
 
 /** The help texts, so the page and its tests say the same thing. */
@@ -194,7 +192,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         if (!dirBlock) return;
         const n = recipe.down.length;
         dirBox.checked = !!recipe.directions;
-        const signed = cleanOffered(recipe.offered, recipe.method).some(canScoreDown);
+        const signed = offeredMethods(recipe).some(canScoreDown);
         dirFormula.textContent = [directionFormula(recipe),
             n && !signed ? 'None of the offered methods can score down genes. Offer z-score mean, mean or control-adjusted.' : ''].filter(Boolean).join(' ');
         dirFormula.hidden = !dirFormula.textContent;
@@ -223,7 +221,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
 
     function toggleMethod(method, on) {
         const recipe = getRecipe();
-        const before = { offered: cleanOffered(recipe.offered, recipe.method), method: recipe.method };
+        const before = { offered: offeredMethods(recipe), method: recipe.method };
         const next = new Set(before.offered);
         if (on) next.add(method); else next.delete(method);
         const nextList = cleanOffered([...next], recipe.method);
@@ -240,7 +238,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
 
     function toggleLayer(layer, on) {
         const recipe = getRecipe();
-        const before = { layers: cleanLayers(recipe.layers, recipe.input), input: recipe.input };
+        const before = { layers: offeredLayers(recipe), input: recipe.input };
         const next = new Set(before.layers);
         if (on) next.add(layer); else next.delete(layer);
         applyLayers([...next]);
@@ -259,8 +257,8 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     function resetAll(confirmed) {
         const recipe = getRecipe();
         const keep = new Set(cleanOffered(DEFAULT_OFFERED, DEFAULT_METHOD));
-        const removed = cleanOffered(recipe.offered, recipe.method).filter(m => !keep.has(m)).concat(
-            cleanLayers(recipe.layers, recipe.input).filter(l => l !== DEFAULT_INPUT));
+        const removed = offeredMethods(recipe).filter(m => !keep.has(m)).concat(
+            offeredLayers(recipe).filter(l => l !== DEFAULT_INPUT));
         const inUse = getInUse().filter(u => removed.includes(u.value)).reduce((n, u) => n + u.plots + u.tables, 0)
             + getLayersInUse().filter(u => u.value && removed.includes(u.value)).reduce((n, u) => n + u.plots + u.tables, 0);
         if (inUse && !confirmed) {
@@ -281,8 +279,8 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         return recipe.input === DEFAULT_INPUT && recipe.clip === DEFAULT_CLIP && (recipe.seed === null || recipe.seed === DEFAULT_SEED)
             && recipe.bins === DEFAULT_BINS && recipe.controls === DEFAULT_CONTROLS && recipe.detect_above === 0
             && recipe.method === DEFAULT_METHOD && (!recipe.down_weight || recipe.down_weight === DEFAULT_DOWN_WEIGHT)
-            && cleanOffered(recipe.offered, recipe.method).join() === DEFAULT_OFFERED.join()
-            && cleanLayers(recipe.layers, recipe.input).join() === DEFAULT_INPUT;
+            && offeredMethods(recipe).join() === DEFAULT_OFFERED.join()
+            && offeredLayers(recipe).join() === DEFAULT_INPUT;
     }
 
     // ------------------------------------------------------------ painting
@@ -314,8 +312,8 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         usageShown = usageNow();
         makeBoxes();
         D.clear(methodRows);
-        const offered = new Set(cleanOffered(recipe.offered, recipe.method));
-        const layers = cleanLayers(recipe.layers, recipe.input);
+        const offered = new Set(offeredMethods(recipe));
+        const layers = offeredLayers(recipe);
         const used = getInUse();
         for (const info of METHOD_INFO) {
             const on = offered.has(info.value);
@@ -354,7 +352,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
 
     function paintLayers(recipe) {
         D.clear(layerRows);
-        const layers = new Set(cleanLayers(recipe.layers, recipe.input));
+        const layers = new Set(offeredLayers(recipe));
         const names = [...new Set([...inputs, ...layers])];
         // the offered layers and the first few others; the rest behind "Show more"
         const shown = [];
@@ -396,7 +394,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
      */
     function offerInstead(raw, better) {
         const recipe = getRecipe();
-        const layers = cleanLayers(recipe.layers, recipe.input);
+        const layers = offeredLayers(recipe);
         const inUse = getLayersInUse().some(u => (u.value === null ? recipe.input : u.value) === raw && (u.plots || u.tables));
         let next;
         if (layers.includes(better)) next = inUse ? [...layers] : layers.filter(l => l !== raw);
@@ -505,7 +503,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
 
     /** What every listed layer looks like (one sample each, no look at the others): for the kind word and the grades. */
     function askAllKinds() {
-        const offered = new Set(cleanLayers(getRecipe().layers, getRecipe().input));
+        const offered = new Set(offeredLayers(getRecipe()));
         for (const name of inputs) if (!offered.has(name) && !kinds.has(name)) askKind(name, { suggest: false });
     }
 
@@ -524,7 +522,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
     function refreshKind() {
         const recipe = getRecipe();
         suggestions.clear();
-        return Promise.all(cleanLayers(recipe.layers, recipe.input).map(l => askKind(l)));
+        return Promise.all(offeredLayers(recipe).map(l => askKind(l)));
     }
 
     return {

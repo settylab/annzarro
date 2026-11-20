@@ -769,8 +769,17 @@ export function freezeTableState(settings, { rowNames = null, rows = 0 } = {}) {
     // (utils/closed-table.js); never copied into a config (toJSON)
     if (rowNames) {
         const selection = freezeSelection(settings.currentEntries, rowNames, rows);
-        settings.closedSelection = selection ? { ...selection, toJSON: () => undefined } : null;
+        settings.closedSelection = keptSelection(selection);
     }
+}
+
+/**
+ * A closed table's selection as its settings hold it (utils/closed-table.js): the rows that passed, by name, for
+ * whoever filters by the table. Derived, so it is never copied into a config, a link or a panel set (toJSON).
+ * @param {{passing, seen}|null} selection
+ */
+export function keptSelection(selection) {
+    return selection ? { ...selection, toJSON: () => undefined } : null;
 }
 
 /**

@@ -7,7 +7,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
-import { loadTableData, initializeDataTable, releaseTable, applyLineToSettings, settleColumnChooser, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
+import { loadTableData, initializeDataTable, releaseTable, keptSelection, applyLineToSettings, settleColumnChooser, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder, showCancelled } from '../utils/panel-surface.js';
 import { beginLoad, endLoad, cancelLoads, wasCancelled } from '../utils/load-scope.js';
@@ -561,7 +561,7 @@ const GeneTablePanel = (function() {
          */
         function setClosedSelection(selection) {
             if (_dataTable) return false;
-            _settings.closedSelection = selection ? { ...selection, toJSON: () => undefined } : null;
+            _settings.closedSelection = keptSelection(selection);
             return true;
         }
 

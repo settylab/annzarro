@@ -1,4 +1,4 @@
-import { methodShort as methodLabel } from './signature-options.js';
+import { DEFAULT_METHOD, methodShort as methodLabel } from './signature-options.js';
 
 /**
  * What a dependant of a gene-signature score says in each state (design 7.3,
@@ -150,7 +150,7 @@ export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
 
 /** An option the signature stopped offering: kept, still drawing, said so, with the way back. */
 function noLongerOffered(snap, t, out) {
-    const m = methodLabel(snap.sub || 'zscore_mean');
+    const m = methodLabel(snap.sub || DEFAULT_METHOD);
     const what = snap.layer && snap.layer !== snap.ownInput ? `${m} · ${snap.layer}` : m;
     const note = out('notoffered', 'warning', 'Not offered', `${t} no longer offers ${what}.`, '',
         [['score-offer', 'Offer it again'], ['score-choose', 'Choose another']]);
