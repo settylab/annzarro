@@ -486,3 +486,77 @@ def test_edges_time_grows_no_faster_than_the_data():
         return min(t)
 
     assert best(5_000_000) <= 15 * best(500_000)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# a range with one side automatic (plan 1.6): [null, hi] and [lo, null]
+
+
+def test_null_lo_takes_the_low_side_from_the_values():
+    x = np.array([2.0, 3.0, 5.0, 9.0, np.nan])
+    e = binning.edges(slabs_of(x), make("equal_width", bins=4, range=[None, 6.0]))
+    assert e.edges.tolist() == [2.0, 3.0, 4.0, 5.0, 6.0]
+    assert e.to_reply()["range"] == [2.0, 6.0] and e.range_stored
+    assert binning.assign(x, e).tolist() == [0, 1, 3, 3, NO_LEVEL]   # 9 is clamped to the last bin
+
+
+def test_null_hi_takes_the_high_side_from_the_values():
+    x = np.array([2.0, 3.0, 5.0, 10.0])
+    e = binning.edges(slabs_of(x), make("equal_width", bins=2, range=[4.0, None]))
+    assert e.edges.tolist() == [4.0, 7.0, 10.0]
+    assert e.to_reply()["range"] == [4.0, 10.0]
+    c = Counts()
+    assert binning.assign(x, e, c).tolist() == [0, 0, 0, 1] and c.n_below == 2
+
+
+def test_both_null_equals_no_range():
+    x = column("normal", 2000, 3)
+    a = binning.edges(slabs_of(x), make("equal_width", bins=7, range=[None, None]))
+    b = binning.edges(slabs_of(x), make("equal_width", bins=7))
+    assert np.array_equal(a.edges, b.edges) and not a.range_stored
+    assert binning.parse({"method": "equal_width", "range": [None, None]}, numeric=True).range is None
+    assert "range" not in binning.parse({"method": "equal_width", "range": [None, None]}, numeric=True).to_dict()
+
+
+def test_the_automatic_side_follows_the_zero_bin_and_log_rules():
+    x = np.array([0.0, 0.0, 0.5, 1.0, 8.0])
+    e = binning.edges(slabs_of(x), make("equal_width", bins=2, zero_bin=True, range=[None, 4.5]))
+    assert e.to_reply()["range"] == [0.5, 4.5]                              # the zeros are in the zero bin
+    z = np.array([-3.0, 0.0, 0.01, 1.0, 100.0])
+    el = binning.edges(slabs_of(z), make("log", bins=2, range=[None, 10.0]))
+    assert el.to_reply()["range"] == [0.01, 10.0]                           # the least positive value
+    eh = binning.edges(slabs_of(z), make("log", bins=2, range=[0.1, None]))
+    assert eh.to_reply()["range"] == [0.1, 100.0]
+
+
+def test_a_stored_side_that_meets_the_values_is_degenerate_and_one_that_crosses_is_refused():
+    x = np.array([5.0, 6.0, 7.0])
+    e = binning.edges(slabs_of(x), make("equal_width", bins=3, range=[None, 5.0]))
+    assert e.degenerate and e.degenerate_value == 5.0
+    with pytest.raises(BinningError) as err:
+        binning.edges(slabs_of(x), make("equal_width", bins=3, range=[None, 4.0]))
+    assert err.value.reason == "bad_range"
+    nothing = binning.edges(slabs_of(np.array([np.nan])), make("equal_width", bins=3, range=[1.0, None]))
+    assert nothing.degenerate
+
+
+def test_the_reply_reports_the_range_used_only_for_range_methods():
+    x = np.linspace(0, 10, 100)
+    assert binning.edges(slabs_of(x), make("equal_width", bins=4)).to_reply()["range"] == [0.0, 10.0]
+    assert "range" not in binning.edges(slabs_of(x), make("equal_count", bins=4)).to_reply()
+    assert "range" not in binning.edges(slabs_of(x), make("manual", thresholds=[1, 2])).to_reply()
+    assert make("equal_width", range=[None, 3]).to_dict()["range"] == [None, 3.0]
+
+
+@pytest.mark.parametrize("raw,reason", [
+    ([None, "a"], "bad_number"), (["a", None], "bad_number"), ([True, None], "bad_number"),
+    ([None, float("nan")], "bad_number"), ([float("inf"), None], "bad_number"),
+    ([None], "bad_range"), ([2.0, 1.0], "bad_range"), ("ab", "bad_range"),
+])
+def test_a_null_side_is_accepted_but_a_non_number_is_still_refused(raw, reason):
+    with pytest.raises(BinningError) as err:
+        binning.parse({"method": "equal_width", "range": raw}, numeric=True)
+    assert err.value.reason == reason
+    assert binning.parse({"method": "equal_width", "range": [None, 1]}, numeric=True).range == (None, 1.0)
+    with pytest.raises(BinningError):
+        binning.parse({"method": "log", "range": [0, None]}, numeric=True)
