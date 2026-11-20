@@ -36,7 +36,7 @@ const withContract = (reply, extra = {}) => ({ n_shown: reply.n_counted + (extra
     axes: reply.axes.map((a, i) => {
         const bins = a.levels.filter((id) => id.startsWith('bin:')).length;
         const binned = bins ? { edges: Array.from({ length: bins + 1 }, (_, k) => k), bins_made: bins, degenerate: false } : {};
-        return { n_outside: i === 0 ? (extra.outside || 0) : 0, ...binned, ...a };
+        return { n_outside: i === 0 ? [extra.outside || 0, 0] : [0, 0], ...binned, ...a };
     }) });
 const gridOf = (name, extra) => M.readGrid(withContract(expected.grid[name], extra));
 
@@ -225,7 +225,8 @@ test('most frequent level adds its factor as the last axis; sets send their memb
         { source: { type: 'obs', key: 'depth' }, member: { op: '>', value: 2 } }];
     const plan = planOf({ mode: 'venn', sets }, ctxOf({ bitsetFor: (s) => (s.type === 'table' ? flags : null), memberFor: (s) => s.member }));
     assert.equal(plan.request.mode, 'sets');
-    assert.deepEqual(plan.request.partitionings[0].bitset, { encoding: 'bitset-base64', length: 3, data: 'BQ==' });
+    assert.deepEqual(plan.request.partitionings[0].source, { type: 'table', ref: 's0' });
+    assert.deepEqual(plan.request.sets, { s0: { encoding: 'bitset-base64', length: 3, data: 'BQ==' } });
     assert.deepEqual(plan.request.partitionings[1].member, { op: '>', value: 2 });
     assert.deepEqual(plan.request.partitionings[0].member, { levels: ['@in'] });
 });
@@ -445,10 +446,10 @@ test('the strip is made of the reply: cells shown, counted, without a value per 
     assert.deepEqual(M.stripNumbers(table), { shown: 1250, counted: 1200 - table.noValue.x, noValue: { x: table.noValue.x, y: 0 }, outside: 50 });
 });
 
-test('an axis may report its outside cells as the grouping reply does, below and above', () => {
+test('an axis reports its outside cells as the grouping reply does, below and above, and the strip sums them', () => {
     const reply = withContract(expected.grid.kept_other_x_condition);
     reply.axes[0].n_outside = [3, 4];
-    reply.axes[1].n_outside = 2;
+    reply.axes[1].n_outside = [1, 1];
     const table = M.countTable({ version: 1, mode: 'bar', x: obs('a') }, M.readGrid(reply), [{ input: 'x' }, { input: 'split' }]);
     assert.equal(M.stripNumbers(table).outside, 9);
 });
@@ -460,7 +461,9 @@ test('a reply without n_shown or an axis\'s n_outside is a contract error, not a
     const noOutside = withContract(expected.grid.three_axes);
     delete noOutside.axes[1].n_outside;
     assert.throws(() => M.readGrid(noOutside), (e) => e.reason === 'bad_grid_reply');
-    noOutside.axes[1].n_outside = -1;
+    noOutside.axes[1].n_outside = 3;
+    assert.throws(() => M.readGrid(noOutside), (e) => e.reason === 'bad_grid_reply', 'one integer is not the form');
+    noOutside.axes[1].n_outside = [-1, 0];
     assert.throws(() => M.readGrid(noOutside), (e) => e.reason === 'bad_grid_reply');
 });
 
@@ -522,4 +525,16 @@ test('the binning options widen the limit and keep a default bin count; without 
     assert.deepEqual(normalizeBinning(raw, { keepDefault: true }).binning, raw);
     assert.equal(normalizeBinning({ method: 'equal_width', bins: 1500 }).problems[0].reason, 'bad_bins');
     assert.equal(normalizeBinning({ method: 'equal_width', bins: 1500 }, { max: 2000 }).binning.bins, 1500);
+});
+
+test('the levels are labelled from the reply: closed ranges for the bins, plain names for the categories', () => {
+    const grid = gridOf('pseudotime_x_cell_type');
+    const config = { version: 1, mode: 'heatmap', x: obs('pseudotime', { binning: { method: 'equal_width', bins: 5 } }), y: obs('cell_type') };
+    const table = M.countTable(config, grid, [{ input: 'x' }, { input: 'y' }]);
+    const [x, y] = M.levelLabelsOf(config, table);
+    assert.deepEqual([x.get('bin:0'), x.get('bin:2'), x.get('bin:4')], ['pseudotime 0 to 1', 'pseudotime 2 to 3', 'pseudotime 4 to 5']);
+    assert.equal(y.get('c:T cell'), 'T cell');
+    const pie = M.countTable({ version: 1, mode: 'pie', x: obs('k') }, M.readGrid(withContract({ axes: [{ levels: Array.from({ length: 14 }, (_, i) => `c:L${i}`) }],
+        counts: Array.from({ length: 14 }, (_, i) => 20 - i), n_counted: 1 })), [{ input: 'x' }]);
+    assert.equal(M.levelLabelsOf({ version: 1, mode: 'pie', x: obs('k') }, pie)[0].get('@other'), 'k other');
 });

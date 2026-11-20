@@ -16,7 +16,7 @@
  *
  * Pure, so Node tests cover it.
  */
-import { normalizePartitioning, serverRequest } from './cell-grouping.js';
+import { normalizePartitioning, serverRequest, defaultLabelMaps } from './cell-grouping.js';
 import { csvField } from './score-inspect.js';
 import { RESERVED } from './level-id.js';
 
@@ -331,8 +331,9 @@ export function planGrid(config, ctx) {
         inputs = plan.map((e) => ({ input: e.input }));
         partitionings = plan.map((e) => e.partitioning);
     }
-    const body = serverRequest({ partitionings }, ctx, []);
+    const body = serverRequest({ partitionings }, ctx, {});
     const request = { shape: 'grid', mode: mode.wire, partitionings: body.partitionings, subset: body.subset };
+    if (body.sets) request.sets = body.sets;
     if (mode.density) request.density = true;
     if (members) members.forEach((member, i) => { request.partitionings[i].member = member; });
     if (config.value && config.value.kind === 'measure' && config.measure) {
@@ -353,10 +354,9 @@ function gridError(message) {
     return Object.assign(new Error(message), { reason: 'bad_grid_reply' });
 }
 
-/** Cells an axis left out under `outside: 'exclude'`: a number, or the grouping reply's `[below, above]`; null when it is neither. */
+/** Cells an axis left out under `outside: 'exclude'`, from the grouping reply's `[below, above]`; null when it is not that. */
 function outsideOf(axis) {
     const v = axis.n_outside;
-    if (Number.isInteger(v) && v >= 0) return v;
     return Array.isArray(v) && v.length === 2 && v.every((n) => Number.isInteger(n) && n >= 0) ? v[0] + v[1] : null;
 }
 
@@ -503,6 +503,33 @@ function project(grid, inputs, pie, wantTop) {
     for (let r = 0; r < rows; r++) total += count[r];
     return { rows, axes: kept.map((a) => ({ ...inputs[a], levels: maps[a].levels, info: grid.axes[a] })), dims, stride, count, moments, top, total, counted: grid.counted, shown: grid.shown, outside: grid.outside,
         noValue, pooled: grid.pooled, shares: new Map(), measures: new Map() };
+}
+
+/** The partitioning an axis of the table was made from. */
+function inputOf(config, axis) {
+    if (axis.input === 'sets') return { source: config.sets[axis.set].source };
+    return axis.input === 'factor' ? config.value.factor : config[axis.input];
+}
+
+/**
+ * The default label of each level of each axis (SHR-9, SHR-45): `[Map level id -> label]`, one per axis of the table.
+ * A binned axis is labelled from the reply's own `edges`, `bins_made`, `degenerate` and `value`, with the end bins
+ * closed ranges since a count plot excludes what lies outside. A user's rename is the caller's to apply.
+ * @param {Object} config
+ * @param {Object} table - from countTable
+ * @param {(source: Object) => (string|undefined)} [titleOf] - the title of the panel behind a source
+ */
+// export-unused-ok: C3 labels the axes, the hover and the export
+export function levelLabelsOf(config, table, titleOf) {
+    const partitionings = table.axes.map((axis) => {
+        const p = inputOf(config, axis);
+        if (!isBinnedAxis(axis.info.levels)) return p;
+        const stored = p.binning || { method: 'equal_width' };
+        const exclude = stored.method !== 'manual' && stored.method !== 'categories';
+        return { ...p, binning: exclude ? { ...stored, outside: 'exclude' } : stored };
+    });
+    const reply = { partitionings: table.axes.map((axis) => ({ ...axis.info, levels: axis.levels })) };
+    return defaultLabelMaps({ partitionings }, reply, titleOf);
 }
 
 /** The level ids of row `r`, one per axis of the table. */
