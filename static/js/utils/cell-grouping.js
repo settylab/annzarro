@@ -29,7 +29,7 @@ const GROUPING_VERSION = 1;
 export const GROUPING_LIMITS = Object.freeze({ partitionings: 8, levels: 2000, groups: 2000 });
 
 /** The statistic ids a grouping can offer to its consumers (plan 1.6). */
-const STATISTIC_IDS = Object.freeze(['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+export const STATISTIC_IDS = Object.freeze(['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
 const SMALL_MODES = Object.freeze(['keep', 'collect', 'hide']);
 const DEFAULT_SMALL = Object.freeze({ threshold: 10, mode: 'keep' });
 const DEFAULT_SEPARATOR = ' | ';
