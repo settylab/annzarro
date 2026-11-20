@@ -32,11 +32,11 @@ const ctxOf = (extra = {}) => ({
     ...extra
 });
 
-const withContract = (reply, extra = {}) => ({ n_shown: reply.n_counted + (extra.left || 0), ...reply,
+const withContract = (reply, extra = {}) => ({ ...reply, n_shown: reply.n_counted + (extra.left || 0),
     axes: reply.axes.map((a, i) => {
         const bins = a.levels.filter((id) => id.startsWith('bin:')).length;
         const binned = bins ? { edges: Array.from({ length: bins + 1 }, (_, k) => k), bins_made: bins, degenerate: false } : {};
-        return { n_outside: i === 0 ? [extra.outside || 0, 0] : [0, 0], ...binned, ...a };
+        return { ...binned, ...a, n_outside: i === 0 ? [extra.outside || 0, 0] : [0, 0] };
     }) });
 const gridOf = (name, extra) => M.readGrid(withContract(expected.grid[name], extra));
 
