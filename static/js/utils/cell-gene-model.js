@@ -19,6 +19,10 @@
  * A row is a gene, or one aggregated row of a section.
  */
 import { csvField } from './score-inspect.js';
+import { VOCABULARY } from './vocabulary.js';
+import { STATISTIC_IDS } from './cell-grouping.js';
+
+const W = VOCABULARY.cellGene;
 
 /** Fields per group in a feature's moments. */
 // export-unused-ok: consumed by X3a (it slices a feature out of the stream's moments block)
@@ -100,6 +104,7 @@ function valueOf(stat, m, o) {
  */
 // export-unused-ok: consumed by X3a (the cell-gene panel) and X4a (hover and drawing)
 export function statisticColumn(stat, moments, groups, sizes) {
+    if (!STATISTIC_IDS.includes(stat)) throw new Error(`unknown statistic ${stat}`);
     const out = new Float64Array(groups);
     if (stat === 'count') {
         if (!sizes || sizes.length !== groups) throw new Error('count needs the groups\' cell counts');
@@ -316,15 +321,14 @@ export function matrixLimits({ groups, sections }) {
 /**
  * A column's header: statistic, layer and scaling, with the section first for a section's own aggregated quantity.
  * @param {{stat: string, layer?: string, scaling: string, section?: string}} column
- * @param {{statistic: Object<string,string>, scaling: Object<string,string>, layer: function(string): string}} names
  */
 // export-unused-ok: consumed by X4a (colour bar and legend titles name statistic, layer and scaling the same way)
-export function columnHeader({ stat, layer, scaling, section }, names) {
+export function columnHeader({ stat, layer, scaling, section }) {
     const parts = [];
     if (section) parts.push(section);
-    parts.push(names.statistic[stat]);
-    if (layer) parts.push(names.layer(layer));
-    parts.push(names.scaling[scaling]);
+    parts.push(W.statistic[stat]);
+    if (layer) parts.push(layer);
+    parts.push(W.scaled[scaling]);
     return parts.join(' · ');
 }
 
@@ -334,23 +338,22 @@ const figure = (v) => (Number.isFinite(v) ? String(v) : '');
  * The matrix in long form: one row per matrix row and group, one column per statistic, a missing value an empty
  * field. A column whose `noExpressing` flags a cell adds a final note column saying so (P3).
  * @param {{groups: {label: string, n: number}[], rows: {section: string, label: string}[],
- *   columns: {stat: string, layer?: string, scaling: string, section?: string, values: Float64Array, noExpressing?: Uint8Array}[],
- *   header: {section: string, row: string, group: string, cells: string}}} table - `values[row * groups + group]`
- * @param {Object} names - as for columnHeader, plus `noExpressingCells` and `note`
+ *   columns: {stat: string, layer?: string, scaling: string, section?: string, values: Float64Array, noExpressing?: Uint8Array}[]}} table
+ *   - `values[row * groups + group]`
  * @returns {string}
  */
 // export-unused-ok: consumed by X5 (the export menu)
-export function longCsv({ groups, rows, columns, header }, names) {
+export function longCsv({ groups, rows, columns }) {
     const noted = columns.some((c) => c.noExpressing);
-    const head = [header.section, header.row, header.group, header.cells, ...columns.map((c) => columnHeader(c, names))];
-    if (noted) head.push(names.note);
+    const head = [W.csv.section, W.csv.row, W.csv.group, W.csv.cells, ...columns.map(columnHeader)];
+    if (noted) head.push(W.csv.note);
     const lines = [head.map((h) => csvField(h)).join(',')];
     for (let r = 0; r < rows.length; r++) {
         for (let g = 0; g < groups.length; g++) {
             const i = r * groups.length + g;
             const fields = [csvField(rows[r].section, { text: true }), csvField(rows[r].label, { text: true }),
                 csvField(groups[g].label, { text: true }), String(groups[g].n), ...columns.map((c) => figure(c.values[i]))];
-            if (noted) fields.push(columns.some((c) => c.noExpressing && c.noExpressing[i]) ? csvField(names.noExpressingCells) : '');
+            if (noted) fields.push(columns.some((c) => c.noExpressing && c.noExpressing[i]) ? csvField(W.noExpressingCells) : '');
             lines.push(fields.join(','));
         }
     }

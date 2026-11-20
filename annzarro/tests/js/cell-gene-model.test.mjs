@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const oracle = JSON.parse(fs.readFileSync(path.join(here, '..', 'data', 'oracle', 'dotplot_matrixplot.json'), 'utf8'));
 const M = await import('../../../static/js/utils/cell-gene-model.js');
+const { VOCABULARY: V } = await import('../../../static/js/utils/vocabulary.js');
 
 const REL = 1e-9;
 const ABS = 1e-12;
@@ -36,7 +37,6 @@ const matrixOf = (columns, groups) => {
 };
 /** scanpy writes groups x genes; the model's rows are genes. */
 const transpose = (byGroup) => byGroup[0].map((_, j) => byGroup.map((row) => row[j]));
-const sizesOf = (groupby) => Float64Array.from(oracle.groupby[groupby].n_cells);
 
 const CASES = [];
 for (const layer of oracle.layers) for (const groupby of oracle.groupbys) CASES.push([layer, groupby]);
@@ -301,18 +301,10 @@ test('the matrix limit is 400,000 cells and 2,000 genes per section; above, the 
 
 // --- CSV (CXG-20) -----------------------------------------------------------------------------------------------
 
-const NAMES = {
-    statistic: { mean: 'Mean', pct_expressing: '% expressing' },
-    scaling: { none: 'no scaling', var: 'scaled 0 to 1 per gene' },
-    layer: (l) => l,
-    noExpressingCells: 'no expressing cells',
-    note: 'Note'
-};
-
 test('a column header names statistic, layer and scaling', () => {
-    assert.equal(M.columnHeader({ stat: 'mean', layer: 'X', scaling: 'var' }, NAMES), 'Mean · X · scaled 0 to 1 per gene');
-    assert.equal(M.columnHeader({ stat: 'pct_expressing', layer: 'logged', scaling: 'none' }, NAMES), '% expressing · logged · no scaling');
-    assert.equal(M.columnHeader({ stat: 'mean', layer: 'X', scaling: 'none', section: 'B markers' }, NAMES), 'B markers · Mean · X · no scaling');
+    assert.equal(M.columnHeader({ stat: 'mean', layer: 'X', scaling: 'var' }), 'Mean · X · scaled 0 to 1 per gene');
+    assert.equal(M.columnHeader({ stat: 'pct_expressing', layer: 'logged', scaling: 'none' }), '% expressing · logged · not scaled');
+    assert.equal(M.columnHeader({ stat: 'mean', layer: 'X', scaling: 'none', section: 'B markers' }), 'B markers · Mean · X · not scaled');
 });
 
 test('the long CSV has one row per row and group, one column per statistic, an empty field for a missing value', () => {
@@ -322,11 +314,10 @@ test('the long CSV has one row per row and group, one column per statistic, an e
         columns: [
             { stat: 'mean', layer: 'X', scaling: 'none', values: Float64Array.of(1.5, NaN, 0.25, 2) },
             { stat: 'pct_expressing', layer: 'X', scaling: 'none', values: Float64Array.of(10, 20, 30, 40) }
-        ],
-        header: { section: 'Section', row: 'Row', group: 'Group', cells: 'Cells' }
-    }, NAMES);
+        ]
+    });
     assert.deepEqual(csv.split('\n'), [
-        'Section,Row,Group,Cells,Mean · X · no scaling,% expressing · X · no scaling',
+        'Section,Row,Group,Cells,Mean · X · not scaled,% expressing · X · not scaled',
         'Markers,GENE000,B cell,500,1.5,10',
         'Markers,GENE000,"T, cell",3,,20',
         "Markers,'=SUM,B cell,500,0.25,30",
@@ -339,9 +330,8 @@ test('the CSV says "no expressing cells" on the row of a group whose mean of exp
     const csv = M.longCsv({
         groups: [{ label: 'A', n: 2 }, { label: 'B', n: 2 }],
         rows: [{ section: 'S', label: 'g' }],
-        columns: [{ stat: 'mean', layer: 'X', scaling: 'none', values: Float64Array.of(0, 3), noExpressing: Uint8Array.of(1, 0) }],
-        header: { section: 'Section', row: 'Row', group: 'Group', cells: 'Cells' }
-    }, NAMES).split('\n');
+        columns: [{ stat: 'mean', layer: 'X', scaling: 'none', values: Float64Array.of(0, 3), noExpressing: Uint8Array.of(1, 0) }]
+    }).split('\n');
     assert.equal(csv[0].split(',').at(-1), 'Note');
     assert.equal(csv[1].split(',').at(-1), 'no expressing cells');
     assert.equal(csv[2].split(',').at(-1), '');
@@ -349,11 +339,55 @@ test('the CSV says "no expressing cells" on the row of a group whose mean of exp
 
 // --- size of the work -------------------------------------------------------------------------------------------
 
-test('a section at the limit (2,000 genes in 200 groups) is derived from its moments in one pass per statistic', () => {
+test('a section at the limit (2,000 genes in 200 groups): statistics, every scaling and a set row, in linear time', () => {
     const G = 200;
     const genes = Array.from({ length: 2000 }, (_, i) => Float64Array.from({ length: G * 5 }, (_, k) => (k % 5 === 0 ? 10 : (i + k) % 7)));
-    const columns = genes.map((m) => M.statisticColumn('mean', m, G));
-    const out = M.scale(matrixOf(columns, G), 'var');
-    assert.equal(out.length, 2000 * G);
-    assert.equal(M.setRow('mean_of_means', genes, G).length, G);
+    const started = performance.now();
+    for (const stat of ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']) genes.forEach((m) => M.statisticColumn(stat, m, G));
+    const matrix = matrixOf(genes.map((m) => M.statisticColumn('mean', m, G)), G);
+    const refs = genes.map((m) => M.pooledReference(m, G));
+    for (const s of M.SCALINGS) assert.equal(M.scale(matrix, s, refs).length, 2000 * G);
+    for (const agg of ['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_pct_expressing']) assert.equal(M.setRow(agg, genes, G).length, G);
+    const took = performance.now() - started;
+    // about 15 ms here: five statistics, five scalings and four set rows over 400,000 values. A quadratic slip is seconds.
+    assert.ok(took < 1500, `${took.toFixed(0)} ms`);
+});
+
+// --- the words (vocabulary.js, UX 3.2 to 3.3) --------------------------------------------------------------------
+
+test('this module writes no interface word as a literal', () => {
+    const source = fs.readFileSync(path.join(here, '..', '..', '..', 'static', 'js', 'utils', 'cell-gene-model.js'), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const strings = source.match(/(['"`])(?:\\.|(?!\1)[^\\\n])*\1/g) || [];
+    for (const literal of strings) {
+        for (const word of ['no expressing', '% expressing', 'Mean', 'Sum', 'scaled', 'z-score', 'Note', 'Section', 'From the']) {
+            assert.ok(!literal.includes(word), `writes ${literal}`);
+        }
+    }
+});
+
+test('the statistic, scaling and aggregation words of UX 3.2 and 3.3', () => {
+    const W = V.cellGene;
+    assert.deepEqual(Object.keys(W.statistic), ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.equal(W.statistic.pct_expressing, V.word.percentExpressing);
+    assert.deepEqual(Object.keys(W.scaling), M.SCALINGS);
+    assert.deepEqual(Object.keys(W.scaled), M.SCALINGS);
+    assert.equal(W.scaling.var, '0 to 1 per gene');
+    assert.equal(W.scaled.var, 'scaled 0 to 1 per gene');
+    assert.equal(W.scaling.z_pooled, 'z-score per gene, against all grouped cells');
+    assert.deepEqual(W.aggregationHeading, { summary: 'From the genes', score: 'From the score' });
+    for (const [id, a] of Object.entries(M.ROW_AGGREGATIONS)) {
+        assert.ok(W.aggregationHelp[id], id);
+        assert.equal(a.kind === 'summary', id in W.aggregation, id);
+        assert.equal(a.kind === 'score', id in W.scoreAggregation, id);
+    }
+    assert.equal(W.aggregation.mean_of_zscores, "Mean of the genes' z-scores");
+    assert.equal(W.scoreAggregation.score_mean('z-score mean · X'), 'z-score mean · X, averaged');
+    assert.equal(W.scoreAggregation.score_pct_above('z-score mean · X'), '% of cells with z-score mean · X above');
+    assert.equal(W.noExpressingCells, 'no expressing cells');
+    assert.equal(W.csv.note, 'Note');
+});
+
+test('an unknown statistic is refused by the one list of the grouping', () => {
+    assert.throws(() => M.statisticColumn('median', Float64Array.of(1, 1, 1, 1, 1), 1), /statistic/);
 });
