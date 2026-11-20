@@ -29,7 +29,7 @@ const GROUPING_VERSION = 1;
 export const GROUPING_LIMITS = Object.freeze({ partitionings: 8, levels: 2000, groups: 2000 });
 
 /** The statistic ids a grouping can offer to its consumers (plan 1.6). */
-const STATISTIC_IDS = Object.freeze(['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+export const STATISTIC_IDS = Object.freeze(['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
 const SMALL_MODES = Object.freeze(['keep', 'collect', 'hide']);
 const DEFAULT_SMALL = Object.freeze({ threshold: 10, mode: 'keep' });
 const DEFAULT_SEPARATOR = ' | ';
@@ -59,10 +59,11 @@ function normalizeSource(raw, problems) {
 /**
  * A partitioning in its stored form: the grouping's factor and every count-plot input.
  * @param {*} raw
+ * @param {Object} [binning] - options of normalizeBinning (`max`, `keepDefault`), for a caller whose bin limits differ
  * @returns {{partitioning: Object|null, problems: {field: string, reason: string}[]}} null when it has no usable source
  */
 // export-unused-ok: C1 normalises the inputs of a count plot, which are partitionings too
-export function normalizePartitioning(raw) {
+export function normalizePartitioning(raw, binning) {
     const problems = [];
     const bad = (field, reason) => problems.push({ field, reason });
     if (!isObject(raw)) {
@@ -98,7 +99,7 @@ export function normalizePartitioning(raw) {
         }
     }
     if (raw.binning !== undefined) {
-        const bin = normalizeBinning(raw.binning);
+        const bin = normalizeBinning(raw.binning, binning);
         out.binning = bin.binning;
         for (const p of bin.problems) bad(`binning.${p.field}`, p.reason);
     }
@@ -281,7 +282,7 @@ function plainLabel(id, name, info) {
 }
 
 /** One Map per partitioning: level id to its default label (SHR-9), the same label in two partitionings qualified. */
-function defaultLabelMaps(recipe, reply, titleOf) {
+export function defaultLabelMaps(recipe, reply, titleOf) {
     const maps = recipe.partitionings.map((p, i) => {
         const info = (reply.partitionings && reply.partitionings[i]) || { levels: [] };
         const name = sourceName(p.source, titleOf);
@@ -374,43 +375,63 @@ export function packBitset(flags) {
     return { encoding: 'bitset-base64', length: flags.length, data: btoa(binary) };
 }
 
-/** A grouping nested in a source stops here: a grouping that uses a grouping that uses ... */
+/** Groupings nested below the top one in a request: a grouping that uses a grouping that uses ... (SHR-29). */
 const MAX_NESTING = 4;
 
-function wirePartitions(recipe, ctx, depth) {
-    if (depth > MAX_NESTING) throw new Error(`Groupings nest at most ${MAX_NESTING} deep.`);
+/** The tables of a request, each packed once and named `s0`, `s1`, ... by the table panel that makes it. */
+function tableSets() {
+    const refs = new Map();
+    const data = {};
+    return {
+        data,
+        refFor(key, flags) {
+            if (!refs.has(key)) {
+                refs.set(key, `s${refs.size}`);
+                data[refs.get(key)] = packBitset(flags);
+            }
+            return refs.get(key);
+        }
+    };
+}
+
+function wirePartitions(recipe, ctx, depth, sets) {
+    if (depth > MAX_NESTING + 1) throw new Error(`Groupings nest at most ${MAX_NESTING} deep.`);
     return recipe.partitionings.map((p) => {
         const wire = computed(p);
-        const source = Object.fromEntries(SOURCE_FIELDS.filter((f) => wire.source[f] !== undefined).map((f) => [f, wire.source[f]]));
+        let source = Object.fromEntries(SOURCE_FIELDS.filter((f) => wire.source[f] !== undefined).map((f) => [f, wire.source[f]]));
+        const flags = ctx && ctx.bitsetFor && p.source.type === 'table' ? ctx.bitsetFor(p.source) : null;
+        if (flags) source = { type: p.source.type, ref: sets.refFor(p.source.key, flags) };
         const inline = ctx && ctx.inlineRecipe ? ctx.inlineRecipe(p.source) : null;
         if (inline && inline.recipe) source.recipe = inline.recipe;
         if (inline && inline.grouping) {
-            source.recipe = { partitionings: wirePartitions(inline.grouping, ctx, depth + 1), small: effectiveSmall(inline.grouping) };
+            source.recipe = { partitionings: wirePartitions(inline.grouping, ctx, depth + 1, sets), small: effectiveSmall(inline.grouping) };
         }
         const body = { source };
         if (wire.levels) body.levels = wire.levels;
         if (p.rest === 'exclude') body.rest = 'exclude';
         if (wire.binning) body.binning = wire.binning;
-        const flags = ctx && ctx.bitsetFor ? ctx.bitsetFor(p.source) : null;
-        if (flags) body.bitset = packBitset(flags);
         return body;
     });
 }
 
 /**
- * The body of a request for the groups of a recipe (SHR-29): what the server computes from, with no label, separator or
- * statistic offered, and every default filled in so the body says what the engine does.
+ * The body of a request for the groups of a recipe (SHR-29, plan 1.2): what the server computes from, with no label,
+ * separator or statistic offered, and every default filled in so the body says what the engine does. A table source is
+ * `{type: 'table', ref}` and its cells are one entry of the top-level `sets`, whichever partitionings use the table.
  * @param {Object} recipe - from normalizeGrouping
  * @param {{subset?: Object, features?: Object[], bitsetFor?: (source: Object) => (ArrayLike<*>|null),
  *   inlineRecipe?: (source: Object) => ({recipe: Object}|{grouping: Object}|null)}} ctx
  *   `bitsetFor` gives, per cell shown, whether a table source passes it; `inlineRecipe` gives the recipe a score source
  *   (the score route's) or a grouping source (a normalised grouping) carries in the request
- * @param {string[]} want - what comes back (`groups`, `codes`, ...)
+ * @param {{codes?: boolean, histograms?: number[]}} want - what comes back besides the groups: the codes, and the
+ *   histograms of the partitionings it names (by index)
  */
 // export-unused-ok: G7's client sends this body
 export function serverRequest(recipe, ctx, want) {
-    const request = { shape: 'grouping', partitionings: wirePartitions(recipe, ctx, 1), small: effectiveSmall(recipe),
-        subset: (ctx && ctx.subset) || null, want: [...want] };
+    const sets = tableSets();
+    const request = { shape: 'grouping', partitionings: wirePartitions(recipe, ctx, 1, sets), small: effectiveSmall(recipe),
+        subset: (ctx && ctx.subset) || null, want: { codes: !!want.codes, histograms: [...(want.histograms || [])] } };
+    if (Object.keys(sets.data).length) request.sets = sets.data;
     if (ctx && ctx.features) request.features = ctx.features;
     return request;
 }
