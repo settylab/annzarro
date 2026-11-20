@@ -1,0 +1,24 @@
+{
+ "version": 1,
+ "partitionings": [
+  {
+   "source": {
+    "type": "obs",
+    "key": "cell_type"
+   }
+  }
+ ],
+ "small": {
+  "mode": "collect"
+ },
+ "offered": [
+  "mean",
+  "pct_expressing",
+  "mean_expressing",
+  "count"
+ ],
+ "layers": [
+  "logged",
+  "counts"
+ ]
+}

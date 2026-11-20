@@ -1,0 +1,79 @@
+{
+ "version": 1,
+ "cellAxis": {
+  "type": "cell-group",
+  "key": "cell-grouping-1718000000001"
+ },
+ "mode": "heatmap",
+ "sections": [
+  {
+   "source": "signature-1718000000010",
+   "rows": "genes"
+  },
+  {
+   "source": "signature-1718000000011",
+   "rows": "set",
+   "color": {
+    "agg": "mean_of_means"
+   },
+   "size": {
+    "agg": "score_pct_above",
+    "column": "zscore_mean",
+    "layer": "logged",
+    "above": 1
+   }
+  },
+  {
+   "source": "signature-1718000000012",
+   "rows": "genes"
+  },
+  {
+   "source": "signature-1718000000013",
+   "rows": "set",
+   "color": {
+    "agg": "mean_of_means"
+   },
+   "size": {
+    "agg": "score_pct_above",
+    "column": "zscore_mean",
+    "layer": "logged",
+    "above": 1
+   }
+  },
+  {
+   "source": "signature-1718000000014",
+   "rows": "genes"
+  },
+  {
+   "source": "signature-1718000000015",
+   "rows": "set",
+   "color": {
+    "agg": "mean_of_means"
+   },
+   "size": {
+    "agg": "score_pct_above",
+    "column": "zscore_mean",
+    "layer": "logged",
+    "above": 1
+   }
+  }
+ ],
+ "color": {
+  "stat": "mean",
+  "layer": "logged"
+ },
+ "size": {
+  "stat": "pct_expressing",
+  "layer": "logged",
+  "detect_above": 0.5
+ },
+ "scale": "var",
+ "swap": true,
+ "cluster": {
+  "genes": "sections",
+  "groups": "all",
+  "linkage": "average",
+  "distance": "euclidean",
+  "dendrograms": true
+ }
+}

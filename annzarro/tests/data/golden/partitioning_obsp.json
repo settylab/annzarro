@@ -1,0 +1,11 @@
+{
+ "source": {
+  "type": "obsp",
+  "key": "connectivities",
+  "column": "HSPC_Young_1"
+ },
+ "binning": {
+  "method": "equal_count",
+  "zero_bin": true
+ }
+}
