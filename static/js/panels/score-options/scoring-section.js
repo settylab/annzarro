@@ -285,12 +285,6 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
 
     // ------------------------------------------------------------ painting
 
-    /** What to say under a method: only what holds whatever the layer. Properties of a layer are said on its row. */
-    function gradeLines(method, layers, recipe) {
-        return methodLines(method, layers, recipe, Object.fromEntries(kinds), Object.fromEntries(stats))
-            .map(l => ({ ...l, layer: '' }));
-    }
-
     /** "Down genes: (o) each gene weighs equally ( ) each side weighs equally", the same setting under each method it applies to. */
     function weightControl(recipe, method) {
         const now = cleanDownWeight(recipe.down_weight);
@@ -315,6 +309,7 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         const offered = new Set(offeredMethods(recipe));
         const layers = offeredLayers(recipe);
         const used = getInUse();
+        const known = { kinds: Object.fromEntries(kinds), stats: Object.fromEntries(stats) };
         for (const info of METHOD_INFO) {
             const on = offered.has(info.value);
             const last = on && offered.size === 1;
@@ -341,9 +336,10 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
                 row.append(block);
             }
             if (on) {
-                for (const line of gradeLines(info.value, layers, recipe)) {
+                // only what holds whatever the layer: a property of some layers is said on their rows
+                for (const line of methodLines(info.value, layers, recipe, known.kinds, known.stats)) {
                     row.append(el('div', { class: `gsig-scoring__grade gsig-scoring__grade--${line.grade}`, role: 'status',
-                        data: { grade: line.grade, gradeLayer: line.layer } }, el('span', { 'aria-hidden': 'true', text: '⚠ ' }), line.text));
+                        data: { grade: line.grade } }, el('span', { 'aria-hidden': 'true', text: '⚠ ' }), line.text));
                 }
             }
             methodRows.append(row);
