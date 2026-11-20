@@ -43,7 +43,7 @@ import { readTableSelection as readSelection } from './gene-set-utilities/state.
 import {
     normalizeRecipe, recipeHash, searchNames, enterTarget,
     UndoStack, fmtCount, inDatasetNames, compareNames, storedRecipe,
-    selectedNames, directionOf, planDirection, planAddAs, directionCounts, mergeSorted
+    selectedNames, planDirection, planAddAs, directionCounts, mergeSorted
 } from '../utils/gene-signature.js';
 
 /** Search runs this long after the last key, so a long list is not searched on every key. */
@@ -371,7 +371,7 @@ const GeneSignaturePanel = (function() {
                 if (plan.added.length) commitLists(plan.genes, plan.down, `tick ${name}`, { tick: true });
                 say(`${name} selected.`);
             } else {
-                const side = directionOf(_recipe, name);
+                const side = sideOf(name);
                 if (!side) return;
                 commitLists(side === 'up' ? _recipe.genes.filter(g => g !== name) : _recipe.genes,
                     side === 'down' ? _recipe.down.filter(g => g !== name) : _recipe.down, `untick ${name}`, { tick: true });
@@ -478,8 +478,17 @@ const GeneSignaturePanel = (function() {
             paint();
         }
 
+        /** 'up', 'down' or null for a gene, from sets kept while the lists are the same arrays (every change replaces them). */
+        let _sides = { genes: null, down: null, up: null, dn: null };
+        function sideOf(name) {
+            if (_sides.genes !== _recipe.genes || _sides.down !== _recipe.down) {
+                _sides = { genes: _recipe.genes, down: _recipe.down, up: new Set(_recipe.genes), dn: new Set(_recipe.down) };
+            }
+            return _sides.up.has(name) ? 'up' : _sides.dn.has(name) ? 'down' : null;
+        }
+
         function stateOf(name) {
-            const side = directionOf(_recipe, name);
+            const side = sideOf(name);
             const checked = side !== null;
             return {
                 checked,
@@ -810,7 +819,7 @@ const GeneSignaturePanel = (function() {
                     if (_rows.length > 1 && !_search.invalid) say(`${fmtCount(_rows.length)} genes match. Use Tick all ${fmtCount(_rows.length)}, or type the whole name.`);
                     return;
                 }
-                if (directionOf(_recipe, target)) say(`${target} is already selected.`);
+                if (sideOf(target)) say(`${target} is already selected.`);
                 else toggleGene(target, true);
                 // the box is cleared and keeps the focus, so genes can be typed in a row
                 clearSearch();
@@ -1046,7 +1055,7 @@ const GeneSignaturePanel = (function() {
             if (!gene) return;
             let reason = '';
             if (_nameSet.size && !_nameSet.has(gene)) reason = `${gene} is not in this dataset`;
-            else if (_recipe.genes.includes(gene) || _recipe.down.includes(gene)) reason = `${gene} is already in the list`;
+            else if (sideOf(gene)) reason = `${gene} is already in the list`;
             const as = _recipe.directions && _addAs === 'down' ? ' as down' : '';
             btn.textContent = `+ ${gene}${as} (focused)`;
             btn.disabled = !!reason;

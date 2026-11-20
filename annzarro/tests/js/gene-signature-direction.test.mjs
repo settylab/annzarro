@@ -97,6 +97,22 @@ test('planAddAs adds on a side and leaves genes already in the signature where t
     assert.deepEqual([p.genes, p.down], [['A', 'C'], ['B']]);
 });
 
+test('a bulk change of direction on a long list says exactly what moved', () => {
+    // no gene limit: 20,000 genes on each side, every other one moved (a quadratic walk here would take seconds)
+    const pad = (i) => `G${String(i).padStart(6, '0')}`;
+    const up = Array.from({ length: 20000 }, (_, i) => pad(2 * i));
+    const down = Array.from({ length: 20000 }, (_, i) => pad(2 * i + 1));
+    const r = recipe({ genes: up, down });
+    const asked = [...up.filter((_, i) => i % 2 === 0), ...down.slice(0, 5), 'NOT_IN_IT', up[0]];
+    const p = G.planDirection(r, asked, 'down');
+    assert.equal(p.changed.length, 10000);
+    assert.equal(p.same, 5);
+    assert.equal(p.genes.length, 10000);
+    assert.equal(p.down.length, 30000);
+    assert.deepEqual(p.down.slice(0, 4), [pad(0), pad(1), pad(3), pad(4)], 'merged in name order');
+    assert.deepEqual(G.planDirection(r, ['NOT_IN_IT'], 'up'), { genes: r.genes, down: r.down, changed: [], same: 0 });
+});
+
 test('the Selected view lists both sides in name order; the counts and formula are in plain words', () => {
     const r = recipe({ genes: ['A', 'C'], down: ['B', 'D'] });
     assert.deepEqual(G.selectedNames(r), ['A', 'B', 'C', 'D']);

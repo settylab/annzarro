@@ -175,20 +175,20 @@ export function directionOf(recipe, name) {
  */
 export function planDirection(recipe, names, direction) {
     const target = direction === 'down' ? 'down' : 'up';
+    const from = target === 'up' ? recipe.down : recipe.genes;       // the side a gene would leave
+    const leaving = new Set(from);
+    const there = new Set(target === 'up' ? recipe.genes : recipe.down);
     const move = new Set();
     let same = 0;
     for (const name of new Set(names)) {
-        const now = directionOf(recipe, name);
-        if (now === null) continue;
-        if (now === target) same++;
-        else move.add(name);
+        if (there.has(name)) same++;
+        else if (leaving.has(name)) move.add(name);
     }
     if (!move.size) return { genes: recipe.genes, down: recipe.down, changed: [], same };
-    const from = target === 'up' ? recipe.down : recipe.genes;
     const stay = from.filter(n => !move.has(n));
     const moved = [...move].sort(compareNames);
     return {
-        genes: target === 'up' ? mergeSorted(recipe.genes, moved) : recipe.genes.filter(n => !move.has(n)),
+        genes: target === 'up' ? mergeSorted(recipe.genes, moved) : stay,
         down: target === 'up' ? stay : mergeSorted(recipe.down, moved),
         changed: moved, same
     };
