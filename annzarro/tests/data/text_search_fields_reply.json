@@ -1,0 +1,6 @@
+{"results": [{"...": "the existing fields",
+   "matched": ["description", "obs", "uns"],
+   "fields": [{"kind": "obs", "names": ["donor_id", "donor_sex"], "more": 0, "cut": false},
+              {"kind": "uns", "names": ["donor_metadata/age"], "more": 3, "cut": false}]}],
+ "more": 0, "partial": false,
+ "index": {"complete": false, "names": {"state": "building", "read": 41, "total": 212}}}
