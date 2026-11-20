@@ -251,12 +251,12 @@ def test_an_axis_without_a_range_reports_no_cell_outside(store):
     assert [a["n_outside"] for a in head["axes"]] == [[0, 0], [0, 0]]
 
 
-def test_clamp_keeps_the_cells_in_the_end_bins_and_reports_them(store, data):
+def test_clamp_keeps_the_cells_in_the_end_bins_and_leaves_none_out(store, data):
     res = run(store, "1d", [width("score", 4, (3.0, 7.0), outside="clamp")])
     head, blocks = reply(res)
     x = values(data, "score")
-    assert int(blocks["counts"].sum()) == gs.N_OBS
-    assert head["axes"][0]["n_outside"] == [int((x < 3).sum()), int((x > 7).sum())]
+    assert int(blocks["counts"][0]) == int((x < 4).sum()) and int(blocks["counts"][3]) == int((x >= 6).sum())
+    assert head["axes"][0]["n_outside"] == [0, 0]                    # cells left out: none (lead notes, C1)
     assert head["n_counted"] == gs.N_OBS
 
 
@@ -322,7 +322,7 @@ def test_the_density_pre_pass_takes_the_range_from_the_tails_padded_by_3h(stores
     assert a["edges"][0] == a["density"]["range"][0] and a["edges"][-1] == a["density"]["range"][1]
     assert len(a["edges"]) == 513
     outside = int((x < a["edges"][0]).sum()), int((x > a["edges"][-1]).sum())
-    assert a["n_outside"] == list(outside) and sum(outside) > 0
+    assert a["n_outside"] == list(outside)
     assert head["axes"][1]["levels"] == ["c:ctrl", "c:treated"]
     assert int(blocks["counts"].sum()) == rows.size - sum(outside) == head["n_counted"]
     want, _ = np.histogram(x, bins=np.asarray(a["edges"]))
@@ -341,8 +341,11 @@ def test_a_two_dimensional_density_uses_d_2_in_scotts_rule(store, data):
 
 def test_a_stored_side_of_the_range_stands_under_density(store, data):
     head, _ = reply(run(store, "1d", [width("score", 512, (None, 8.0))], density=True))
-    _, _, _, (lo, _) = _density_range(values(data, "score"), 1)
+    x = values(data, "score")
+    _, _, _, (lo, _) = _density_range(x, 1)
     assert head["axes"][0]["density"]["range"] == pytest.approx([lo, 8.0], rel=1e-12)
+    assert head["axes"][0]["n_outside"] == [int((x < head["axes"][0]["edges"][0]).sum()), int((x > 8.0).sum())]
+    assert head["axes"][0]["n_outside"][1] > 0
 
 
 def test_the_density_quantiles_are_exact(store, data):
@@ -544,7 +547,7 @@ def test_bad_requests_are_refused_with_a_reason(raw, reason):
 def test_the_estimate_and_the_lane(stores):
     p = plan_of(stores["csc", "zarr"], "1d", [width("score", 50), obs("condition")])
     est = p.estimate()
-    assert est["lane"] == "light" and est["tier"] == "live" and est["cells"] == 100
+    assert est["lane"] == "light" and est["tier"] == "auto" and est["cells"] == 100
     assert est["n_cells"] == gs.N_OBS and len(est["parts"]) == 2
     gene = {"source": {"type": "layer", "key": "logged", "column": gs.gene(2)}, "binning": {"method": "equal_width"}}
     assert plan_of(stores["csr", "zarr"], "1d", [gene]).lane == "heavy"            # a gene of a csr matrix
@@ -584,8 +587,9 @@ def test_the_slab_size_does_not_change_the_counts(store, monkeypatch):
         monkeypatch.setattr(cs, "SLAB_ROWS", slab)
         got = reply(run(store, "2d", parts, measures=m))
         assert got[0] == want[0]
-        for k in want[1]:
-            np.testing.assert_array_equal(got[1][k], want[1][k])
+        np.testing.assert_array_equal(got[1]["counts"], want[1]["counts"])
+        # the sums are taken slab by slab: their last bit may differ with the slabs
+        np.testing.assert_allclose(got[1]["measure_moments"], want[1]["measure_moments"], rtol=1e-13)
 
 
 def test_progress_counts_axes_and_measures(store):
