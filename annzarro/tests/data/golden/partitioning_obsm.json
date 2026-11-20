@@ -1,0 +1,11 @@
+{
+ "source": {
+  "type": "obsm",
+  "key": "X_pca",
+  "column": "3"
+ },
+ "binning": {
+  "method": "log",
+  "bins": 8
+ }
+}
