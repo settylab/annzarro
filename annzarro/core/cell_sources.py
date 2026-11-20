@@ -44,6 +44,10 @@ from .zarr_reader import MissingKeyError
 #: Most cells in one slab. A float32 slab is 16 MB; a stored column is read and cut into slabs of this size.
 SLAB_ROWS = 1 << 22
 
+#: Read a contiguous run of cells (all cells, every slab of a full read) with a slice. Zarr turns a list of indices
+#: into a fancy selection, about a quarter of the time of a 100M cell grouping; tests switch it off to compare.
+USE_SLICES = True
+
 #: Source types that are columns of the store, and the two that are not.
 STORED = ("obs", "obsm", "layer", "obsp")
 NOT_STORED = ("gene-score", "cell-group")
@@ -142,6 +146,26 @@ def _index(rows: Optional[np.ndarray], a: int, b: int) -> np.ndarray:
     return np.arange(a, b, dtype=np.int64) if rows is None else rows[a:b]
 
 
+def _run(rows: Optional[np.ndarray], a: int, b: int) -> Optional[tuple]:
+    """``(lo, hi)`` when the cells of slab ``a:b`` are the contiguous dataset rows ``lo:hi``, else None."""
+    if not USE_SLICES or b <= a:
+        return None
+    if rows is None:
+        return a, b
+    lo, hi = int(rows[a]), int(rows[b - 1]) + 1           # rows are sorted and unique
+    return (lo, hi) if hi - lo == b - a else None
+
+
+def _is_zarr(reader) -> bool:
+    from .h5ad_reader import h5adReader
+    return not isinstance(reader, h5adReader)
+
+
+def _plain_array(node, ndim: int) -> bool:
+    return (not _is_group(node) and getattr(node, "shape", None) is not None and len(node.shape) == ndim
+            and np.dtype(node.dtype).kind in "biuf")
+
+
 def _guard(should_stop) -> None:
     if should_stop is not None and should_stop():
         raise gs.ScoreCancelled()
@@ -214,6 +238,28 @@ def _as_obs(reader, dataset_path: str, key: str, idx: np.ndarray, kind: Optional
     return "text", np.asarray(values, dtype=object), None
 
 
+class _Direct(NamedTuple):
+    array: Any = None                   # a plain numeric or boolean column
+    codes: Any = None                   # the codes of a categorical column
+    dtype: Any = None                   # None for codes
+
+
+def _direct_obs(reader, dataset_path: str, key: str):
+    """``(_Direct, categories)`` when a zarr obs column can be sliced as stored, else ``(None, None)``."""
+    if not USE_SLICES or not _is_zarr(reader):
+        return None, None
+    with _root(reader, dataset_path) as root:
+        node = root["obs"][key]
+        if _plain_array(node, 1):
+            return _Direct(array=node, dtype=node.dtype), None
+        if (_is_group(node) and node.attrs.get("encoding-type") == "categorical" and "codes" in node
+                and "categories" in node and _plain_array(node["codes"], 1)):
+            got = reader.get_obs_var_codes("cells", dataset_path, key, np.zeros(1, dtype=np.int64))
+            if got is not None:
+                return _Direct(codes=node["codes"]), got[1]
+    return None, None
+
+
 def _obs_slabs(reader, dataset_path, source, rows, total, should_stop) -> Iterator[Slab]:
     key = source.get("key")
     with _root(reader, dataset_path) as root:
@@ -227,11 +273,21 @@ def _obs_slabs(reader, dataset_path, source, rows, total, should_stop) -> Iterat
         raise CellSourceError(422, "too_many_categories",
                               f"Column '{key}' has {n_categories} categories; the most a source can read is "
                               f"{category_rules.READ_ALL_MAX}.", count=n_categories, limit=category_rules.READ_ALL_MAX)
+    direct, categories = _direct_obs(reader, dataset_path, key)
     kind = None
     for a, b in _spans(total):
         _guard(should_stop)
-        kind, values, categories = _as_obs(reader, dataset_path, key, _index(rows, a, b), kind)
-        yield Slab(a, values, kind, categories)
+        run = _run(rows, a, b) if direct is not None else None
+        if run is not None:
+            lo, hi = run
+            if direct.dtype is None:                      # categorical: the stored codes
+                yield Slab(a, np.asarray(direct.codes[lo:hi]), "category", categories)
+            else:
+                values = np.asarray(direct.array[lo:hi])
+                yield Slab(a, values, "bool" if values.dtype.kind == "b" else "number")
+            continue
+        kind, values, categories_ = _as_obs(reader, dataset_path, key, _index(rows, a, b), kind)
+        yield Slab(a, values, kind, categories_)
 
 
 def _column_name(source) -> str:
@@ -241,8 +297,22 @@ def _column_name(source) -> str:
 
 def _obsm_slabs(reader, dataset_path, source, rows, total, should_stop) -> Iterator[Slab]:
     key, column = source.get("key"), _column_name(source)
+    member = position = None
+    if USE_SLICES and _is_zarr(reader):
+        with _root(reader, dataset_path) as root:
+            if "obsm" in root and key in root["obsm"] and _plain_array(root["obsm"][key], 2):
+                member = root["obsm"][key]
+        if member is not None:
+            try:
+                position = reader._column_position(column, member.shape[1], "obsm", key)
+            except MissingKeyError as e:
+                raise CellSourceError(404, "key_not_found", str(e)) from e
     for a, b in _spans(total):
         _guard(should_stop)
+        run = _run(rows, a, b) if member is not None else None
+        if run is not None:
+            yield Slab(a, np.asarray(member[run[0]:run[1], position]), "number")
+            continue
         try:
             got = reader.get_obsm_varm("cells", key, dataset_path, indices=_index(rows, a, b), column_name=column)
         except MissingKeyError as e:
@@ -260,8 +330,17 @@ def _obsp_slabs(reader, dataset_path, source, rows, total, should_stop) -> Itera
             raise _key_not_found(f"obsp '{key}'")
         n = _n_cells(root)
     cell = _cell_row(reader, dataset_path, source.get("column"), n)
+    member = None
+    if USE_SLICES and _is_zarr(reader):
+        with _root(reader, dataset_path) as root:
+            if _plain_array(root["obsp"][key], 2):
+                member = root["obsp"][key]
     for a, b in _spans(total):
         _guard(should_stop)
+        run = _run(rows, a, b) if member is not None else None
+        if run is not None:
+            yield Slab(a, np.asarray(member[cell, run[0]:run[1]]), "number")
+            continue
         got = np.asarray(reader.get_obsp_varp(key, "cells", dataset_path, row_indices=[cell],
                                               col_indices=_index(rows, a, b)))
         if got.size == 0:
