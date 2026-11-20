@@ -368,11 +368,17 @@ class _Axis(cg._Levels):
         return out
 
 
-def _fold(codes: np.ndarray, axis: _Axis, outside_before: bool) -> Tuple[int, int]:
+def _fold(codes: np.ndarray, axis: _Axis, outside_before: bool,
+          space: Optional[int] = None) -> Tuple[int, int, Optional[np.ndarray]]:
     """Fold one axis into the grid codes (first axis slowest); returns the cells it excludes ``[below, above]``,
-    counting only those no earlier axis excluded. ``outside_before``: an earlier axis may have excluded a cell."""
+    counting only those no earlier axis excluded. ``outside_before``: an earlier axis may have excluded a cell.
+
+    ``space`` is given for the last axis: no later axis needs to know why a cell was left out, so every such cell
+    becomes ``space``, past the grid, and the cells per grid code are counted in the same pass (returned third).
+    """
     width = np.uint32(len(axis.slots))
     below_n = above_n = 0
+    flat = None if space is None else np.zeros(space + 1, dtype=np.int64)
     for start, lv in axis:
         r = codes[start:start + lv.size]
         bad = r >= _OUT32                               # in no level, or outside, already
@@ -392,14 +398,20 @@ def _fold(codes: np.ndarray, axis: _Axis, outside_before: bool) -> Tuple[int, in
         bad |= lv >= cg.OUT_ABOVE                          # OUT_ABOVE, OUT_BELOW and NONE16
         r *= width
         r += lv
-        np.copyto(r, cg.NONE32, where=bad)
         if earlier is not None and out is not None:
             out |= earlier
         elif out is None:
             out = earlier
+        if flat is not None:
+            if out is not None:
+                bad |= out
+            np.copyto(r, space, where=bad)
+            flat += np.bincount(r, minlength=space + 1)
+            continue
+        np.copyto(r, cg.NONE32, where=bad)
         if out is not None:
             np.copyto(r, _OUT32, where=out)
-    return below_n, above_n
+    return below_n, above_n, None if flat is None else flat[:space]
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -469,6 +481,7 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, should_stop
     codes = np.zeros(n_shown, dtype=np.uint32)
     sizes = list(plan_.declared)
     made: List[_Axis] = []
+    widths: List[int] = []
     outside: List[List[int]] = []
     density_d = DENSITY_AXES.get(req.mode, 0) if req.density else 0
     try:
@@ -477,7 +490,11 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, should_stop
             axis = _Axis(part, ctx, i, density_d if i < density_d else 0)
             axis.prepare()
             _check_axis(req.mode, i, axis, sizes)
-            outside.append(list(_fold(codes, axis, any(a.ranged for a in made))))
+            last = i == len(plan_.axes) - 1
+            space = int(np.prod(widths + [len(axis.slots)], dtype=np.int64)) if last else None
+            below, above, flat = _fold(codes, axis, any(a.ranged for a in made), space)
+            outside.append([below, above])
+            widths.append(len(axis.slots))
             made.append(axis)
             yield "progress", {"stage": "grid", "done": i + 1, "total": total}
     except cg._Refused as r:
@@ -487,7 +504,6 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, should_stop
         result.refused = {**refused, "levels": [a.n_levels for a in made]}
         yield "result", result
         return
-    widths = [len(a.slots) for a in made]
     space = int(np.prod(widths, dtype=np.int64))
     # The reserved levels no cell is in are not listed (an axis's occupancy is known once it was read): the grid
     # is numbered over the listed levels only, so a 512 x 512 x 8 grid stays one, whatever @na it might have had.
@@ -504,18 +520,15 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, should_stop
                           "mode": req.mode, "levels": [k.size for k in keeps]}
         yield "result", result
         return
-    lut = None
     if cells != space:
-        lut = np.full(space + 1, cells, dtype=np.uint32)
-        lut[np.arange(space, dtype=np.int64).reshape(widths)[np.ix_(*keeps)].reshape(-1)] = np.arange(cells)
-    flat = np.zeros(cells + 1, dtype=np.int64)
-    for a, b in cg._spans(n_shown):
-        c = codes[a:b]
-        np.minimum(c, space, out=c)                     # every cell left out is now ``space``, past the grid
-        if lut is not None:
-            c[:] = lut[c]                               # and then ``cells``
-        flat += np.bincount(c, minlength=cells + 1)
-    flat = flat[:cells]
+        listed = np.arange(space, dtype=np.int64).reshape(widths)[np.ix_(*keeps)].reshape(-1)
+        flat = flat[listed]
+        if req.measures:                                # the codes, too: a cell left out becomes ``cells``
+            lut = np.full(space + 1, cells, dtype=np.uint32)
+            lut[listed] = np.arange(cells, dtype=np.uint32)
+            for a, b in cg._spans(n_shown):
+                c = codes[a:b]
+                c[:] = lut[c]
     if req.measures:
         for event, payload in gf.accumulate(plan_.work, plan_.reader, plan_.dataset_path, rows, codes, cells,
                                             sizes=flat, sets=req.sets, should_stop=should_stop, pause=pause):
