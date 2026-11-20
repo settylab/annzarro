@@ -227,6 +227,32 @@ def test_a_table_column_that_is_no_longer_offered_is_offered_again_in_one_click(
     assert len(_calls(page, "compute")) == 1, "served from the store: nothing was recomputed"
 
 
+def test_a_table_built_before_its_signature_existed_pins_its_column_when_the_signature_appears(page, served):
+    """A score column with no layer (an old link) is resolved once, to the signature's layer at that moment. A table
+    that was built while the signature was missing resolves it when the signature comes, with the filter condition
+    that names the column, and never moves with the signature's first layer afterwards."""
+    from annzarro.tests.browser import test_gene_score_tables as T
+    old_key = "gene-score_" + SIG + "_zscore_mean"
+    cond = {"condition": ">", "data": "T cell score", "origData": old_key, "type": "num", "value": ["0"]}
+    table = T._table(columns=[T.SCORE_COL, T.OBS], searchBuilderConfig={"logic": "AND", "criteria": [cond]})
+    T._open(page, served, table=table, sig=False)
+    T._wait_notice(page, "deleted")
+    # the signature comes (Back or Forward puts a closed one back; a panel set adds one)
+    page.evaluate("(cfg) => { window.PanelManager.restoreClosedPanels([{ id: cfg.id, type: 'gene-signature', config: cfg }]); }", TWO)
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 1")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().columns.some(c => c.type === 'gene-score' && c.layer === 'X')", T.TID)
+    cfg = page.evaluate("(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return { cols: c.columns, sb: c.searchBuilderConfig }; }", T.TID)
+    assert [c.get("layer") for c in cfg["cols"] if c["type"] == "gene-score"] == ["X"]
+    assert [c["origData"] for c in cfg["sb"]["criteria"]] == [old_key + "__of_X"], "the condition follows the column's key"
+    T._wait_no_notice(page)
+    # the signature's first layer changes: the column stays on X, says so, and asks for nothing on counts
+    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ layers: ['counts'], input: 'counts' })")
+    T._wait_notice(page, "notoffered")
+    assert _inputs(page) == ["X"], "never moved to the new first layer"
+    cols = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score')", T.TID)
+    assert [(c["column"], c.get("layer")) for c in cols] == [("zscore_mean", "X")]
+
+
 def test_offer_other_scores_opens_the_signature_and_expands_what_it_offers(page, served):
     _open(page, served, plots=(("cell-plot-C", _cell()),))
     _wait_coloured(page)

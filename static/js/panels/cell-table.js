@@ -18,9 +18,9 @@ import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-
 import { tableMayLoad } from './table-utilities/table-memory.js';
 import { TableScores } from './table-utilities/table-scores.js';
 import { bindScoreColumns } from './table-utilities/table-score-ui.js';
-import { sameScoreColumn } from '../utils/score-column.js';
-import { pinLayers } from '../utils/score-source.js';
-import { removeColumnFromChooser, buildScoreTab, syncSelectedColumns } from './table-utilities/table-ui-make.js';
+import { isScoreColumn, sameScoreColumn } from '../utils/score-column.js';
+import { pinLayers, sourceInput } from '../utils/score-source.js';
+import { removeColumnFromChooser } from './table-utilities/table-ui-make.js';
 import { TableResolver } from '../utils/table-resolver.js';
 import './table-utilities/table-background.js';
 
@@ -162,7 +162,7 @@ const CellTablePanel = (function() {
          */
         async function refreshTable(signal, { inPlace = false } = {}) {
             // a score column with no layer (an old link) is resolved now, once, with its filter conditions
-            pinLayers(_settings, getColumnKey);
+            pinScoreColumns();
             // One signal per load (utils/load-scope.js): a newer load of this
             // table, closing it and the Cancel button abort it. `signal` is
             // the one of the update that asks for it.
@@ -499,22 +499,26 @@ const CellTablePanel = (function() {
         }
 
         /**
-         * Add a column from outside the chooser (a signature's Use in > Add to this table): it is
-         * ticked in the chooser and the table is built again with it. The score is not waited
-         * for: the column says it is computing and fills in when the score arrives.
-         * @param {Object} column - `{type, key, column, label}`
+         * Resolve the score columns that carry no layer (a link made before layers were stored) to the layer their
+         * source reads now, once: afterwards a column never moves with its source's first layer. A column's data key
+         * names its layer, and the conditions of the filter name the column by that key, so both are rewritten. The
+         * filter of a table that is shown is a view of its DataTable: the table is frozen first (its state kept as
+         * values) and the caller builds it again.
+         * @returns {boolean} whether a column was resolved
          */
-        function hasColumn(column) {
-            return (_settings.columns || []).some(c => c.type === column.type && c.key === column.key
-                && (c.column || (c.type === 'gene-score' ? 'zscore_mean' : '')) === (column.column || ''));
+        function pinScoreColumns() {
+            const open = (_settings.columns || []).some(c => isScoreColumn(c) && !c.layer && sourceInput(c.key));
+            if (!open) return false;
+            if (_dataTable) {
+                releaseTable(_dataTable, _settings);
+                _dataTable = null;
+            }
+            return pinLayers(_settings, getColumnKey);
         }
 
-        async function addColumn(column) {
-            const have = hasColumn(column);
-            if (!have) _settings.columns = [...(_settings.columns || []), { ...column }];
-            buildScoreTab(_id, _settings);
-            syncSelectedColumns(_id, _settings);
-            await refreshTable();
+        /** Sources came or went: a column that waited for its source to exist is resolved, and the table built with it. */
+        function onPanelsChanged() {
+            if (_dataTable && pinScoreColumns()) refreshTable();
         }
 
         /**
@@ -552,11 +556,11 @@ const CellTablePanel = (function() {
             isReady,
             scoreGate,
             removeColumn,
-            addColumn,
-            hasColumn,
             setClosedSelection,
             refreshTable,
-            pinScoreLayers: () => pinLayers(_settings, getColumnKey),
+            // before a source's first layer changes: a column with no layer takes the layer it reads now
+            pinScoreLayers: () => { const shown = !!_dataTable; if (pinScoreColumns() && shown) refreshTable(); },
+            onPanelsChanged,
             applyLine,
             cleanup,
             destroy,
