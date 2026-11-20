@@ -13,8 +13,8 @@
  *   dependant like any other), so a score a plot already holds is not asked
  *   for again; a score nothing holds is computed under the store's cost tiers
  *   and states (computing with Cancel, asks first, refused, failed).
- * - CSV of the gene figures and of the score per cell, built here from the
- *   held Float32Array.
+ * - CSV of the gene figures, for the combinations the user picks
+ *   (export-chooser.js). Scores per cell are exported by a Cell Table.
  *
  * Nothing is computed, and nothing is watched, until the section is opened.
  * Closing it lets go of the score (a score a plot still needs stays).
@@ -159,7 +159,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
     function firstOption() {
         const { sources } = scores();
         const own = getRecipe().input;
-        const used = sources.handlesOf(id).filter(h => h.role !== 'inspect' && h.sub);
+        const used = sources.consumersOf(id).filter(h => h.sub);
         const ready = used.find(h => { try { return h.read().state === 'ready'; } catch { return false; } });
         const pick = ready || used[0];
         if (pick) return { method: pick.sub, layer: pick.layer || own };

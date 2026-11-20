@@ -27,6 +27,9 @@ import { scoreKey } from './score-store.js';
 /** Seconds the estimate may be to apply an edit at once, when the reply does not say. */
 const LIVE_MAX_S = 5;
 
+/** Inspect and its export hold handles like a plot does, to share its scores; they are not consumers of the source. */
+const isInspector = (handle) => typeof handle.role === 'string' && handle.role.startsWith('inspect');
+
 /** A recipe copied, so a later edit of the signature cannot change what was applied. */
 function copyRecipe(recipe) {
     return { ...recipe, genes: [...recipe.genes], down: [...(recipe.down || [])] };
@@ -436,6 +439,27 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         },
 
         handlesOf(id) { return [...handles].filter(h => h.sigId === id); },
+
+        /** The plots and tables that read a source. Inspect and its export read it too, but are not consumers. */
+        consumersOf(id) { return [...handles].filter(h => h.sigId === id && !isInspector(h)); },
+
+        /**
+         * Who uses a source, by the method or by the layer its consumers read.
+         * @param {string} id
+         * @param {'method'|'layer'} by - a consumer with no layer of its own counts under `null`
+         * @returns {Array<{value: (string|null), plots: number, tables: number}>}
+         */
+        usage(id, by) {
+            const rows = new Map();
+            for (const handle of handles) {
+                if (handle.sigId !== id || isInspector(handle)) continue;
+                const value = by === 'layer' ? handle.layer || null : handle.sub || DEFAULT_METHOD;
+                const row = rows.get(value) || { value, plots: 0, tables: 0 };
+                if (handle.role === 'column') row.tables++; else row.plots++;
+                rows.set(value, row);
+            }
+            return [...rows.values()];
+        },
         pendingOf: heldOf,
 
         /** For tests. */

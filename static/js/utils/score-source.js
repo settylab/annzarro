@@ -670,28 +670,14 @@ export function onSignatureStatus(id, fn) {
     return scores().sources.onSignature(id, fn);
 }
 
-/** The aggregations in use for a signature, each with how many plots or tables read it: [{value, count}]. */
+/** The methods in use for a source, each with how many plots and tables read it: [{value, plots, tables}]. */
 export function aggregationsInUse(id) {
-    return tally(id, (handle) => handle.sub || DEFAULT_METHOD);
+    return scores().sources.usage(id, 'method');
 }
 
-/** Who reads a signature, grouped by `keyOf(handle)`: [{value, plots, tables, count}]. The inspector is not a consumer. */
-function tally(id, keyOf) {
-    const counts = new Map();
-    for (const handle of scores().sources.handlesOf(id)) {
-        if (handle.role === 'inspect') continue;
-        const value = keyOf(handle);
-        const row = counts.get(value) || { value, plots: 0, tables: 0, count: 0 };
-        if (handle.role === 'column') row.tables++; else row.plots++;
-        row.count++;
-        counts.set(value, row);
-    }
-    return [...counts.values()];
-}
-
-/** The layers in use for a signature, each with how many plots or tables read it: [{value, count}]; `null` layer is the default. */
+/** The layers in use for a source, likewise; a `null` value is a consumer with no layer of its own. */
 export function layersInUse(id) {
-    return tally(id, (handle) => handle.layer || null);
+    return scores().sources.usage(id, 'layer');
 }
 
 /** The plots and other dependants that use a signature: hosts and roles. */

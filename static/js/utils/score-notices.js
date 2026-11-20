@@ -173,7 +173,8 @@ export function worstNotice(notices) {
     let rank = Infinity;
     for (const n of notices) {
         if (!n) continue;
-        const r = PRIORITY.indexOf(n.state);
+        const at = PRIORITY.indexOf(n.state);
+        const r = at < 0 ? PRIORITY.length : at;       // a state the list does not rank is the least urgent
         if (r < rank) { best = n; rank = r; }
     }
     return best;

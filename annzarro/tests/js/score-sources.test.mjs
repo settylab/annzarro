@@ -325,6 +325,28 @@ test('of several scores a plot states the worst', () => {
     assert.equal(N.worstNotice([t('computing'), t('failed'), null]).state, 'failed');
     assert.equal(N.worstNotice([null, null]), null);
     assert.equal(N.worstNotice([t('updating'), t('computing')]).state, 'computing');
+    // a state the list does not rank is the least urgent, never the most
+    assert.equal(N.worstNotice([{ state: 'someday' }, t('updating')]).state, 'updating');
+    assert.equal(N.worstNotice([{ state: 'someday' }]).state, 'someday');
+});
+
+test('who uses a source: plots and tables by method and by layer; Inspect and its export are not consumers', () => {
+    const w = world();
+    w.add('S1', 'T', ['A']);
+    const watchAs = (role, sub, layer) => w.sources.watch('S1', { onChange: () => {}, role, sub, layer });
+    watchAs('color', 'mean', 'X');
+    watchAs('x', 'mean', 'counts');
+    watchAs('column', 'mean', 'X');
+    watchAs('hover:S1:zscore_mean:', 'zscore_mean', null);
+    const inspect = watchAs('inspect', 'sum', 'X');
+    const exporting = watchAs('inspect-export', 'detected', 'X');
+    const byValue = (rows) => Object.fromEntries(rows.map(r => [r.value, [r.plots, r.tables]]));
+    assert.deepEqual(byValue(w.sources.usage('S1', 'method')), { mean: [2, 1], zscore_mean: [1, 0] });
+    assert.deepEqual(byValue(w.sources.usage('S1', 'layer')), { X: [1, 1], counts: [1, 0], null: [1, 0] });
+    assert.deepEqual(w.sources.consumersOf('S1').map(h => h.role), ['color', 'x', 'column', 'hover:S1:zscore_mean:']);
+    inspect.release();
+    exporting.release();
+    assert.deepEqual(w.sources.usage('nobody', 'method'), []);
 });
 
 test('each aggregation of a signature is its own score; the same aggregation is shared; an edit follows both', async () => {
