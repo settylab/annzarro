@@ -1,0 +1,203 @@
+{
+ "comment": "Plan 1.6 (revision 2.4, signed), canonical text of a category. canonical_label(value) in core/cell_groups.py and canonLabel(value) in utils/level-id.js return the whole id (the 'c:' prefix, or '@na'). kind: bool, int (value is decimal text), float (a JSON number, or the text Infinity, -Infinity, NaN), float32 (python only), string, null. 'only: python' vectors are not run by the JavaScript test. group_keys: canonical JSON of a group key.",
+ "categories": [
+  {
+   "name": "true",
+   "kind": "bool",
+   "value": true,
+   "id": "c:true"
+  },
+  {
+   "name": "false",
+   "kind": "bool",
+   "value": false,
+   "id": "c:false"
+  },
+  {
+   "name": "int 3",
+   "kind": "int",
+   "value": "3",
+   "id": "c:3"
+  },
+  {
+   "name": "float 3.0",
+   "kind": "float",
+   "value": 3.0,
+   "id": "c:3"
+  },
+  {
+   "name": "int -12",
+   "kind": "int",
+   "value": "-12",
+   "id": "c:-12"
+  },
+  {
+   "name": "float -0.0",
+   "kind": "float",
+   "value": -0.0,
+   "id": "c:0"
+  },
+  {
+   "name": "float 0.1",
+   "kind": "float",
+   "value": 0.1,
+   "id": "c:0.1"
+  },
+  {
+   "name": "int 9223372036854775807",
+   "kind": "int",
+   "value": "9223372036854775807",
+   "id": "c:9223372036854775807",
+   "only": "python"
+  },
+  {
+   "name": "string other",
+   "kind": "string",
+   "value": "other",
+   "id": "c:other"
+  },
+  {
+   "name": "empty string",
+   "kind": "string",
+   "value": "",
+   "id": "c:"
+  },
+  {
+   "name": "string true",
+   "kind": "string",
+   "value": "true",
+   "id": "c:true"
+  },
+  {
+   "name": "float 1e21",
+   "kind": "float",
+   "value": 1e+21,
+   "id": "c:1e+21"
+  },
+  {
+   "name": "float 1.2345678901234568e20",
+   "kind": "float",
+   "value": 1.2345678901234568e+20,
+   "id": "c:123456789012345680000"
+  },
+  {
+   "name": "float 1e-6",
+   "kind": "float",
+   "value": 1e-06,
+   "id": "c:0.000001"
+  },
+  {
+   "name": "float 1e-7",
+   "kind": "float",
+   "value": 1e-07,
+   "id": "c:1e-7"
+  },
+  {
+   "name": "float 5e-324",
+   "kind": "float",
+   "value": 5e-324,
+   "id": "c:5e-324"
+  },
+  {
+   "name": "float 1.7976931348623157e308",
+   "kind": "float",
+   "value": 1.7976931348623157e+308,
+   "id": "c:1.7976931348623157e+308"
+  },
+  {
+   "name": "float32 0.1",
+   "kind": "float32",
+   "value": 0.1,
+   "id": "c:0.1",
+   "only": "python"
+  },
+  {
+   "name": "inf",
+   "kind": "float",
+   "value": "Infinity",
+   "id": "c:Infinity"
+  },
+  {
+   "name": "-inf",
+   "kind": "float",
+   "value": "-Infinity",
+   "id": "c:-Infinity"
+  },
+  {
+   "name": "null",
+   "kind": "null",
+   "value": null,
+   "id": "@na"
+  },
+  {
+   "name": "NaN",
+   "kind": "float",
+   "value": "NaN",
+   "id": "@na"
+  },
+  {
+   "name": "string with spaces",
+   "kind": "string",
+   "value": " T cell ",
+   "id": "c: T cell "
+  },
+  {
+   "name": "e acute U+00E9",
+   "kind": "string",
+   "value": "é",
+   "id": "c:é"
+  },
+  {
+   "name": "e + combining acute U+0065 U+0301",
+   "kind": "string",
+   "value": "é",
+   "id": "c:é"
+  }
+ ],
+ "group_keys": [
+  {
+   "name": "two partitionings",
+   "key": [
+    "c:B cell",
+    "bin:0"
+   ],
+   "json": "[\"c:B cell\",\"bin:0\"]"
+  },
+  {
+   "name": "double quote in a label",
+   "key": [
+    "c:say \"hi\""
+   ],
+   "json": "[\"c:say \\\"hi\\\"\"]"
+  },
+  {
+   "name": "backslash in a label",
+   "key": [
+    "c:a\\b"
+   ],
+   "json": "[\"c:a\\\\b\"]"
+  },
+  {
+   "name": "line break in a label",
+   "key": [
+    "c:a\nb"
+   ],
+   "json": "[\"c:a\\nb\"]"
+  },
+  {
+   "name": "non-ASCII as itself",
+   "key": [
+    "c:é",
+    "c:日本"
+   ],
+   "json": "[\"c:é\",\"c:日本\"]"
+  },
+  {
+   "name": "collected small group",
+   "key": [
+    "@small"
+   ],
+   "json": "[\"@small\"]"
+  }
+ ]
+}
