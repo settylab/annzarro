@@ -121,6 +121,16 @@ function _observed() {
  * so the panel can say so and offer to reset it.
  */
 function _check(need, heldNow, panels, buffers = null, n = null) {
+    const r = _checkHeld(need, heldNow, panels, buffers, n);
+    if (r.fits || !ledger.evictable()) return r;
+    // holdings no consumer on screen pins (a grouping's codes held by hidden plots, CAT-4) give way before the guard
+    // warns or refuses; their owners are told, and ask again when shown
+    const freed = ledger.evict();
+    return _checkHeld(need, { ...heldNow, off: Math.max(0, heldNow.off - freed) }, panels,
+        buffers ? { ...buffers, held: Math.max(0, buffers.held - freed) } : null, n);
+}
+
+function _checkHeld(need, heldNow, panels, buffers, n) {
     const opts = { observed: _observed(), panels, ...(buffers ? { buffers } : {}) };
     const r = check(need, heldNow, limits(n), settings(n), opts);
     if (r.fits || n === null) return r;

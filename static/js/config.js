@@ -110,6 +110,7 @@ const Config = (function() {
         LAYER: `${API_BASE}/data/layer`,
         X: `${API_BASE}/data/X`,
         GENE_SCORE: `${API_BASE}/data/gene_score`,
+        CELL_GROUPS: `${API_BASE}/data/cell_groups`,
         MATRIX_KIND: `${API_BASE}/data/matrix_kind`,
         BY_PATH: `${API_BASE}/data/by_path`,
         UNS: `${API_BASE}/data/uns`,
