@@ -228,11 +228,11 @@ Some signatures have genes that should count against the score, such as an exhau
 signature. Tick **Score some genes as down** in **Scores offered** and every selected gene gets a direction button,
 **↑ Up** or **↓ Down**; one press flips it. Until you tick it nothing about direction appears.
 
-- **The score** is the average of the up genes minus the average of the down genes, each side scored on its own.
-  For the z-score mean and the mean that is the difference of two means. For **control-adjusted**, each side
-  subtracts the mean of its own control genes, as two calls of scanpy's `score_genes` would, and the two are subtracted.
-  The panel states the formula with your numbers ("Score = average of the 42 up genes minus average of the 8 down
-  genes"), and the summary line says "50 genes selected: 42 up, 8 down".
+- **The score** is the up genes minus the down genes. By default every gene weighs equally: the signs of the down
+  genes are flipped and all genes are averaged. For **control-adjusted**, each side subtracts the mean of its own
+  control genes, as two calls of scanpy's `score_genes` would, and the two are subtracted.
+  The panel states the formula with your numbers ("Score = the 42 up genes minus the 8 down genes, averaged over all
+  50 genes: each gene weighs equally"), and the summary line says "50 genes selected: 42 up, 8 down".
 - **How down genes weigh.** For the z-score mean and the mean, **Down genes** under the method chooses between **each
   gene weighs equally** (the default) and **each side weighs equally**. By gene, the signs of the down genes are
   flipped and every usable gene is averaged: (sum of up - sum of down) / (number of up + number of down), so 40 up

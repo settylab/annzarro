@@ -113,7 +113,7 @@ def test_the_first_view_has_nothing_about_direction(page, served):
     _expand(page)
     assert page.locator(SWITCH).count() == 1 and not page.is_checked(SWITCH)
     assert page.inner_text(f"{S} [data-direction-block] .gsig-scoring__optionname") == "Score some genes as down"
-    assert "Score = average of up genes minus average of down genes." in page.inner_text(f"{S} [data-direction-block]")
+    assert "Down genes count against the score. How they weigh is chosen under each method." in page.inner_text(f"{S} [data-direction-block]")
     assert page.locator(f"{S} [data-grade='cannot']").count() == 0
     cfg = page.evaluate("() => window.sessionManager.captureView().layout.panelConfigs['gene-signature-S']")
     assert cfg["down"] == [] and "directions" not in cfg, "an old link is what it was"
@@ -392,7 +392,7 @@ def test_methods_without_a_signed_version_are_graded_cannot_with_the_reason(page
         assert "Not offered with down genes." in line.inner_text() and words in line.inner_text(), method
     for method in ("zscore_mean", "mean", "control_adjusted"):
         assert page.locator(f"{S} [data-method='{method}'] [data-grade='cannot']").count() == 0, method
-    assert page.inner_text(f"{S} [data-direction-formula]").startswith("Score = average of the 1 up genes minus average of the 1 down genes.")
+    assert page.inner_text(f"{S} [data-direction-formula]").startswith("Score = the 1 up gene minus the 1 down gene, averaged over both genes: each gene weighs equally.")
     offered = page.evaluate("(id) => window.PanelManager.getPanel(id).getOfferedOptions().map(o => o.method)", SIG)
     assert offered == ["zscore_mean", "mean", "control_adjusted"], "the menus leave them out"
     # drop the down gene: they are back

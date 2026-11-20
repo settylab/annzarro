@@ -219,14 +219,19 @@ export function directionCounts(recipe) {
 }
 
 /**
- * The formula in plain words, for Scores offered. Empty when the signature has no down genes (nothing to say).
+ * The formula in plain words, for Scores offered, with the weighting in force (the z-score mean and the mean have one;
+ * control-adjusted is always by side). Empty when the signature has no down genes (nothing to say).
  * @param {Object} recipe - from normalizeRecipe
  */
 export function directionFormula(recipe) {
     if (!recipe.down.length) return '';
     if (!recipe.genes.length) return 'All genes are down, so the score is the negative of their average.';
-    return `Score = average of the ${fmtCount(recipe.genes.length)} up genes minus average of the ${fmtCount(recipe.down.length)} down genes.`
-        + ' Control-adjusted takes each side minus its own control genes.';
+    const up = recipe.genes.length, down = recipe.down.length;
+    const side = (n, name) => `the ${fmtCount(n)} ${name} gene${n === 1 ? '' : 's'}`;
+    const formula = cleanDownWeight(recipe.down_weight) === 'side'
+        ? `Score = average of ${side(up, 'up')} minus average of ${side(down, 'down')}: each side weighs equally.`
+        : `Score = ${side(up, 'up')} minus ${side(down, 'down')}, averaged over ${up + down === 2 ? 'both' : `all ${fmtCount(up + down)}`} genes: each gene weighs equally.`;
+    return `${formula} Control-adjusted takes each side minus its own control genes.`;
 }
 
 /** How the score is defined, in words (the Scoring row states it whatever is collapsed). */

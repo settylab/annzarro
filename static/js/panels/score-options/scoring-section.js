@@ -37,7 +37,7 @@ export const SCORING_HELP = Object.freeze({
     layers: 'Plots and tables choose among the offered layers.',
     lastLayer: 'At least one layer stays offered.',
     lastMethod: 'At least one option stays offered.',
-    directions: 'Score = average of up genes minus average of down genes.',
+    directions: 'Down genes count against the score. How they weigh is chosen under each method.',
     downWeight: 'Down genes',
     downWeightGene: 'each gene weighs equally',
     downWeightSide: 'each side weighs equally',

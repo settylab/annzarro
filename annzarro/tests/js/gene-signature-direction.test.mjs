@@ -105,7 +105,13 @@ test('the Selected view lists both sides in name order; the counts and formula a
     assert.equal(G.directionOf(r, 'Z'), null);
     assert.equal(G.directionCounts(r), '2 up, 2 down');
     assert.equal(G.directionCounts(recipe({ genes: ['A'] })), '', 'nothing to say without down genes');
-    assert.match(G.directionFormula(r), /average of the 2 up genes minus average of the 2 down genes/);
+    // the formula follows the weighting in force: by gene is the default, by side is the difference of two means
+    assert.equal(G.directionFormula(r), 'Score = the 2 up genes minus the 2 down genes, averaged over all 4 genes: each gene weighs equally.'
+        + ' Control-adjusted takes each side minus its own control genes.');
+    assert.equal(G.directionFormula({ ...r, down_weight: 'side' }), 'Score = average of the 2 up genes minus average of the 2 down genes: each side weighs equally.'
+        + ' Control-adjusted takes each side minus its own control genes.');
+    assert.equal(G.directionFormula(recipe({ genes: ['A'], down: ['B'] })), 'Score = the 1 up gene minus the 1 down gene, averaged over both genes: each gene weighs equally.'
+        + ' Control-adjusted takes each side minus its own control genes.');
     assert.match(G.directionFormula(recipe({ down: ['A'] })), /negative of their average/);
     assert.equal(G.directionFormula(recipe({ genes: ['A'] })), '');
 });
@@ -176,11 +182,12 @@ test('a consumer on a method that cannot score down genes asks nothing of the se
 test('Inspect names each gene\'s side only when there are down genes, and the CSV keeps its header otherwise', async () => {
     const I = await import('../../../static/js/utils/score-inspect.js');
     const up = [{ name: 'A', status: 'used', detected: 0.5, mean: 1, sd: 1, clipped: 0, direction: 'up' }];
-    assert.equal(I.geneCsv(up).split('\r\n')[0], 'gene,status,detected_fraction,mean,sd,clipped_fraction');
+    assert.equal(I.longGeneCsv([{ label: 'T', genes: up }]).split('\r\n')[0], 'combination,gene,status,detected_fraction,mean,sd,clipped_fraction');
     const both = [...up, { name: 'B', status: 'used', detected: 0.25, mean: 2, sd: 1, clipped: 0, direction: 'down' }];
-    const lines = I.geneCsv(both).split('\r\n');
-    assert.equal(lines[0], 'gene,direction,status,detected_fraction,mean,sd,clipped_fraction');
-    assert.deepEqual(lines.slice(1, 3).map(l => l.split(',').slice(0, 2).join(',')), ['A,up', 'B,down']);
+    // one header for the whole file: a combination without down genes says up in every row
+    const lines = I.longGeneCsv([{ label: 'T', genes: both }, { label: 'U', genes: up }]).split('\r\n');
+    assert.equal(lines[0], 'combination,gene,direction,status,detected_fraction,mean,sd,clipped_fraction');
+    assert.deepEqual(lines.slice(1, 4).map(l => l.split(',').slice(0, 3).join(',')), ['T,A,up', 'T,B,down', 'U,A,up']);
     assert.equal(I.geneRows(both, 'mean').find(r => r.name === 'B').direction, 'down');
     assert.equal(I.geneRows([{ name: 'C', status: 'used', detected: 0.1, mean: 1, sd: 1, clipped: 0 }], 'mean')[0].direction, 'up', 'an older reply has none: up');
 });
