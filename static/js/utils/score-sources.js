@@ -23,12 +23,13 @@
  */
 import { recipeHasher, DEFAULT_METHOD, METHODS, canScoreDown } from './gene-signature.js';
 import { scoreKey } from './score-store.js';
+import { countsAs, isConsumer, emptyUsage } from './consumer-kinds.js';
 
 /** Seconds the estimate may be to apply an edit at once, when the reply does not say. */
 const LIVE_MAX_S = 5;
 
-/** Inspect and its export hold handles like a plot does, to share its scores; they are not consumers of the source. */
-const isInspector = (handle) => typeof handle.role === 'string' && handle.role.startsWith('inspect');
+/** Inspect and its export hold handles like a plot does, to share its scores; they are not consumers of the source (utils/consumer-kinds.js). */
+const isInspector = (handle) => !isConsumer(handle.consumerKind);
 
 /** A recipe copied, so a later edit of the signature cannot change what was applied. */
 function copyRecipe(recipe) {
@@ -323,11 +324,13 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         /**
          * A dependant needs the score of signature `id`.
          * @param {string} id
-         * @param {{onChange: (state: Object) => void, visible?: () => boolean, host?: any, role?: string}} spec
+         * @param {{kind: string, onChange: (state: Object) => void, visible?: () => boolean, host?: any, role?: string}} spec
+         *   `kind`: one of utils/consumer-kinds.js; an unknown or missing kind throws. `role`: the slot in the consumer.
          */
-        watch(id, { onChange, visible = () => true, host = null, role = '', sub = null, layer = null, dependant = null }) {
+        watch(id, { kind, onChange, visible = () => true, host = null, role = '', sub = null, layer = null, dependant = null }) {
+            countsAs(kind);   // throws for an unknown kind, before anything is registered
             const handle = {
-                sigId: id, sub, layer, dependant: dependant || (typeof host === 'string' ? host : null), key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
+                consumerKind: kind, sigId: id, sub, layer, dependant: dependant || (typeof host === 'string' ? host : null), key: null, shown: null, lastTitle: '', released: false, host, role, visible, onChange,
                 read() { return read(handle); },
                 release() {
                     if (handle.released) return;
@@ -466,22 +469,22 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
 
         handlesOf(id) { return [...handles].filter(h => h.sigId === id); },
 
-        /** The plots and tables that read a source. Inspect and its export read it too, but are not consumers. */
+        /** The plots, tables and groupings that read a source. Inspect and its export read it too, but are not consumers. */
         consumersOf(id) { return [...handles].filter(h => h.sigId === id && !isInspector(h)); },
 
         /**
          * Who uses a source, by the method or by the layer its consumers read.
          * @param {string} id
          * @param {'method'|'layer'} by - a consumer with no layer of its own counts under `null`
-         * @returns {Array<{value: (string|null), plots: number, tables: number}>}
+         * @returns {Array<{value: (string|null), plots: number, tables: number, groupings: number}>}
          */
         usage(id, by) {
             const rows = new Map();
             for (const handle of handles) {
                 if (handle.sigId !== id || isInspector(handle)) continue;
                 const value = by === 'layer' ? handle.layer || null : handle.sub || DEFAULT_METHOD;
-                const row = rows.get(value) || { value, plots: 0, tables: 0 };
-                if (handle.role === 'column') row.tables++; else row.plots++;
+                const row = rows.get(value) || emptyUsage(value);
+                row[countsAs(handle.consumerKind)]++;
                 rows.set(value, row);
             }
             return [...rows.values()];

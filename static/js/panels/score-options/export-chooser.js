@@ -202,7 +202,7 @@ export function createExportChooser({ D, id, getTitle, getOptions, getCurrent, d
             }
         };
         for (const [k, o] of options) {
-            const h = scores().sources.watch(id, { host: element, role: 'inspect-export', sub: o.method, layer: o.layer,
+            const h = scores().sources.watch(id, { kind: 'inspect-export', host: element, role: 'inspect-export', sub: o.method, layer: o.layer,
                 visible: () => true, onChange: () => { settle().catch(fail); } });
             run.handles.set(k, h);
         }
