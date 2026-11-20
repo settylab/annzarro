@@ -189,3 +189,14 @@ def test_the_store_helpers_are_public(stores):
         assert cs.n_cells(store) == N_OBS
         assert cs.is_group(store["obs"]) and not cs.is_group(store["obs"]["depth"])
     assert not any(hasattr(cs, n) for n in ("_root", "_n_cells", "_is_group"))
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("key,lane", [("note", "heavy"), ("flag", "light"), ("depth", "light"), ("ctype", "light")])
+def test_a_plain_text_obs_partitioning_is_planned_on_the_heavy_lane(stores, backend, key, lane):
+    from annzarro.core import cell_groups as cg
+    path, _ = stores[backend]
+    req = cg.parse_request({"shape": "grouping", "partitionings": [{"source": {"type": "obs", "key": key}}] if
+                            key != "depth" else [{"source": {"type": "obs", "key": key},
+                                                  "binning": {"method": "equal_width", "bins": 4}}]})
+    assert cg.plan(get_reader(path), path, req).lane == lane

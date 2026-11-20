@@ -530,6 +530,7 @@ def _plan_part(reader, dataset_path: str, p: Partitioning, request: Request, n_c
     if t == "obs":
         kind, integer = _obs_node_kind(reader, dataset_path, p.source["key"])
         part = PartPlan(spec=p, kind=kind or "number", integer=integer)
+        part.whole_matrix = cs.cost(reader, dataset_path, p.source).heavy    # a text column: a pass over every string
     elif t in ("obsm", "layer", "obsp"):
         c = cs.cost(reader, dataset_path, p.source)
         part = PartPlan(spec=p, kind="number", entries=c.entries, layout=c.layout,
