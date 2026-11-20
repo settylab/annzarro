@@ -705,9 +705,7 @@ def crawl(config):
 
     def job(store):
         began[store["real"]] = clock()
-        names, names_cut = read_names(store["real"], trust_listing=True)      # a metadata read: first, the README read is the long one
-        about, readme, cut = read_text(store["real"], readme_bytes)
-        return about, readme, cut, names, names_cut
+        return read_text(store["real"], readme_bytes)
 
     # A read past the timeout cannot be stopped, so it keeps its thread: the pool has spare threads, and a
     # store that is late hands its place to the next one. The spares are ``workers`` per PROCESS, not per
@@ -819,10 +817,13 @@ def _entry(store, sig, about=None, readme="", cut=False, error=None, names=None,
 
 def _result_entry(store, sig, future):
     try:
-        about, readme, cut, names, names_cut = future.result()
+        about, readme, cut = future.result()
     except Exception as exc:
         logger.debug(f"Text index: {store['real']} not read: {exc}")
         return _entry(store, sig, error="unreadable")
+    # the names are a metadata read, made here in the crawl's own thread once the text is in: the pooled read
+    # (the long one, the one that can hang) is only the text, and its timing is what it was
+    names, names_cut = read_names(store["real"], trust_listing=True)
     return _entry(store, sig, about, readme, cut, names=names, names_cut=names_cut)
 
 
