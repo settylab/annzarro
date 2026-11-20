@@ -486,7 +486,7 @@ class Plan:
 
 def _obs_node_kind(reader, dataset_path: str, key: str) -> Tuple[Optional[str], bool]:
     """``(kind, integer)`` of an obs column from the store's metadata, or ``(None, False)`` when it cannot tell."""
-    with cs._root(reader, dataset_path) as root:
+    with cs.root(reader, dataset_path) as root:
         if "obs" not in root:
             raise cs.CellSourceError(404, "key_not_found", "This dataset has no obs table.")
         obs = root["obs"]
@@ -498,7 +498,7 @@ def _obs_node_kind(reader, dataset_path: str, key: str) -> Tuple[Optional[str], 
         if key not in obs:
             raise cs.CellSourceError(404, "key_not_found", f"This dataset has no obs column '{key}'.")
         node = obs[key]
-        if cs._is_group(node):
+        if cs.is_group(node):
             enc = str(node.attrs.get("encoding-type", ""))
             if enc == "categorical" or ("codes" in node and "categories" in node):
                 return "category", False
@@ -530,6 +530,7 @@ def _plan_part(reader, dataset_path: str, p: Partitioning, request: Request, n_c
     if t == "obs":
         kind, integer = _obs_node_kind(reader, dataset_path, p.source["key"])
         part = PartPlan(spec=p, kind=kind or "number", integer=integer)
+        part.whole_matrix = cs.cost(reader, dataset_path, p.source).heavy    # a text column: a pass over every string
     elif t in ("obsm", "layer", "obsp"):
         c = cs.cost(reader, dataset_path, p.source)
         part = PartPlan(spec=p, kind="number", entries=c.entries, layout=c.layout,
@@ -598,8 +599,8 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
     rates (an obsm column charged its whole matrix at the dense rate, CMP-13) and each score's own estimate. The
     lane is light when the estimate is live and no source reads a whole matrix (SHR-41).
     """
-    with cs._root(reader, dataset_path) as root:
-        n_cells = cs._n_cells(root)
+    with cs.root(reader, dataset_path) as root:
+        n_cells = cs.n_cells(root)
     remote = is_remote_path(dataset_path)
     top = _plan_grouping(reader, dataset_path, request.grouping, request, n_cells, remote)
     parts = list(top.all_parts())
@@ -985,8 +986,8 @@ class _Levels:
         """``colors``, ``{id: css}``, from ``uns/<key>_colors`` when it has one entry per category (SHR-11), in the
         column's category order (a boolean's is [False, True], as scanpy writes it)."""
         name = f"{self.part.spec.source['key']}_colors"
-        with cs._root(self.ctx.reader, self.ctx.dataset_path) as root:
-            if "uns" not in root or name not in root["uns"] or cs._is_group(root["uns"][name]):
+        with cs.root(self.ctx.reader, self.ctx.dataset_path) as root:
+            if "uns" not in root or name not in root["uns"] or cs.is_group(root["uns"][name]):
                 return
             values = np.asarray(root["uns"][name][...]).reshape(-1).tolist()
         values = [v.decode("utf-8") if isinstance(v, bytes) else v for v in values]
