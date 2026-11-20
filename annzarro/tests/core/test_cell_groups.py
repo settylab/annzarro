@@ -325,7 +325,7 @@ def test_two_categories_with_one_text_are_refused_as_ambiguous(store, tmp_path):
     head, blocks = res.to_reply(True)
     assert head["refused"]["reason"] == "ambiguous_categories" and blocks == []
     # duplicated cell names, too
-    res = run(path, [{"source": {"type": "obs", "key": "_index"}}], rows=np.arange(1090, 1110))
+    res = run(path, [{"source": {"type": "obs", "key": "_index"}}], rows=np.array([3, 5, 1105]))   # 5 and 1105 share a name
     assert res.refused["reason"] == "ambiguous_categories"
 
 
@@ -602,6 +602,8 @@ def test_more_than_eight_partitionings_and_nesting_too_deep_are_refused():
     recipe = {"partitionings": [{"source": {"type": "obs", "key": "a"}}]}
     for _ in range(cg.MAX_NESTING):
         recipe = {"partitionings": [{"source": {"type": "cell-group", "recipe": recipe}}]}
+    cg.parse_request(body(recipe["partitionings"]))                       # MAX_NESTING deep is allowed
+    recipe = {"partitionings": [{"source": {"type": "cell-group", "recipe": recipe}}]}
     with pytest.raises(cg.GroupError) as e:
         cg.parse_request(body(recipe["partitionings"]))
     assert e.value.reason == "nested_too_deep"
