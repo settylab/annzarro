@@ -66,7 +66,7 @@ def cell_groups(res):
     return [None if c == none else keys[c] for c in res.codes.tolist()]
 
 
-def same_as_reference(res, ref, rows, n_obs=gs.N_OBS, check_edges_n=True):
+def same_as_reference(res, ref, rows, n_obs=gs.N_OBS):
     if "refused" in ref:
         assert res.refused is not None and res.refused["reason"] == ref["refused"]["reason"]
         for k in ("count", "limit"):
@@ -83,8 +83,7 @@ def same_as_reference(res, ref, rows, n_obs=gs.N_OBS, check_edges_n=True):
         if "edges" in theirs:
             np.testing.assert_allclose(mine["edges"], theirs["edges"], rtol=1e-12)
             assert mine["bins_made"] == theirs["bins_made"]
-            if check_edges_n:
-                assert mine["edges_n"] == theirs["edges_n"]
+            assert mine["edges_n"] == theirs["edges_n"]
     if "codes" in ref:
         shown = np.arange(n_obs) if rows is None else np.asarray(rows)
         want = [None if c < 0 else tuple(ref["groups"][c]["key"]) for c in ref["codes"][shown]]
@@ -128,9 +127,7 @@ def test_named_recipes_match_the_expected_file(stores, layout, backend, name):
     rows = gs.recipe_rows(r)
     kw = {"small": r["small"]} if "small" in r else {}
     res = run(stores[layout, backend], r["partitionings"], rows, **kw)
-    zero_bin = any((p.get("binning") or {}).get("zero_bin") for p in r["partitionings"])
-    # F0 counts edges_n without the exact zeros under the zero bin; core/binning.py (E1) counts every finite value
-    same_as_reference(res, exp, rows, check_edges_n=not zero_bin)
+    same_as_reference(res, exp, rows)
 
 
 def test_edges_n_under_the_zero_bin_counts_every_finite_value(store, data):
@@ -182,8 +179,12 @@ def random_part(rng, data):
     else:
         source = {"type": "obsm", "key": "X_umap", "column": str(rng.integers(2))}
     values = gs._source_values(data, source).to_numpy(dtype=np.float64)
-    b = {"method": ["equal_width", "equal_count"][rng.integers(2)], "bins": int(rng.integers(2, 9)),
-         "edges_from": ["shown", "all"][rng.integers(2)]}
+    method = ["equal_width", "equal_count", "manual"][rng.integers(3)]
+    if method == "manual":
+        finite = values[np.isfinite(values)]
+        b = {"method": "manual", "thresholds": [float(np.quantile(finite, q)) for q in rng.random(rng.integers(1, 5))]}
+    else:
+        b = {"method": method, "bins": int(rng.integers(2, 9)), "edges_from": ["shown", "all"][rng.integers(2)]}
     if rng.random() < 0.5 and not (values[np.isfinite(values)] < 0).any():
         b["zero_bin"] = True
     part = {"source": source, "binning": b}
@@ -209,7 +210,7 @@ def _bins_with_values(data, parts, rows):
     shown = np.arange(gs.N_OBS) if rows is None else np.asarray(rows)
     for p in parts:
         b = p.get("binning")
-        if not b or b["method"] == "categories":
+        if not b or b["method"] in ("categories", "manual"):
             continue
         v = gs._source_values(data, p["source"]).to_numpy(dtype=np.float64)
         pop = v if b.get("edges_from") == "all" else v[shown]
@@ -229,8 +230,7 @@ def test_seeded_recipes_match_the_brute_force_reference(stores, data, seed):
     ref = gs.reference_groups(data, parts, rows, small)
     lay, be = LAYOUT_BACKEND[seed % len(LAYOUT_BACKEND)]
     res = run(stores[lay, be], parts, rows, **({"small": small} if small else {}))
-    zero_bin = any((p.get("binning") or {}).get("zero_bin") for p in parts)
-    same_as_reference(res, ref, rows, check_edges_n=not zero_bin)
+    same_as_reference(res, ref, rows)
 
 
 @pytest.mark.parametrize("slab", [1, 7, 64, 400, 1199, 1200, 5000])
@@ -728,3 +728,20 @@ def test_colors_come_from_the_uns_palette_when_it_has_one_per_category(store, tm
     assert res.partitionings[0]["colors"] == {"c:" + n: c for (n, _), c in zip(gs.CELL_TYPES, palette)}
     assert "colors" not in res.partitionings[1]
     assert res.partitionings[2]["colors"] == {"c:false": "#000000", "c:true": "#ffffff"}
+
+
+@pytest.mark.parametrize("rng_", [[None, 6.0], [3.0, None]], ids=["low-automatic", "high-automatic"])
+def test_a_range_with_one_automatic_side_takes_it_from_the_values(store, data, rng_):
+    res = run(store, [{"source": {"type": "obs", "key": "score"},
+                       "binning": {"method": "equal_width", "bins": 3, "range": rng_}}])
+    v = data.obs["score"].to_numpy()
+    lo = v.min() if rng_[0] is None else rng_[0]
+    hi = v.max() if rng_[1] is None else rng_[1]
+    p = res.partitionings[0]
+    assert p["range"] == [lo, hi]
+    np.testing.assert_allclose(p["edges"], np.linspace(lo, hi, 4), rtol=1e-12)
+    assert p["n_outside"] == [int((v < lo).sum()), int((v > hi).sum())] and res.n_grouped == gs.N_OBS
+    with pytest.raises(cg.GroupError) as e:
+        run(store, [{"source": {"type": "obs", "key": "score"},
+                     "binning": {"method": "equal_width", "range": [float(v.max()) + 1, None]}}])
+    assert (e.value.status, e.value.reason) == (422, "bad_range")
