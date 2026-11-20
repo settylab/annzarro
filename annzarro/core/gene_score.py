@@ -6,7 +6,7 @@ reference statistics, and returns the values of the cells the caller shows.
 
 Recipe (``version`` 1), a JSON object::
 
-    {"genes": ["CD3E", "CD8A"],   # up genes, the signature; at most 2,000 distinct names
+    {"genes": ["CD3E", "CD8A"],   # up genes, the signature; any number of names (the cost estimate is the guard)
      "down": [],                  # down genes: the score is the up side minus the down side (methods zscore_mean, mean,
                                   # control_adjusted only); a gene named on both sides counts as up
      "input": "X",                # "X" or the name of a layer
@@ -917,7 +917,8 @@ def plan(reader, dataset_path: str, recipe: Recipe, binning: str = "detection") 
         columns = sorted(set(by_name.values()))
         down_columns = sorted({by_name[n] for n in down_names if n in by_name})
         up_columns = sorted({by_name[n] for n in up_names if n in by_name})
-        missing_down = [n for n in missing if n in set(down_names)]
+        down_set = set(down_names)
+        missing_down = [n for n in missing if n in down_set]
         controls, down_controls, stat_entries = None, None, 0
         if recipe.method == "control_adjusted" and columns:
             stat_entries = source.stat_entries(binning)
@@ -1052,7 +1053,7 @@ class _Accumulator:
         else:
             self._add_sparse(name, col, *_canonical(np.asarray(rows), np.asarray(values)))
 
-    def _gene(self, name, col, n_finite, mean, sd, lo, hi, nonzero) -> Optional["GeneStat"]:
+    def _gene(self, name, col, mean, sd, lo, hi, nonzero) -> Optional["GeneStat"]:
         """Record a gene's figures; the stat when it enters the score, None when it does not."""
         constant = lo == hi or not (sd > 0 and math.isfinite(sd))
         stat = GeneStat(name, col, "constant" if constant else "used", mean, 0.0 if constant else sd,
@@ -1074,7 +1075,7 @@ class _Accumulator:
         mean = float(vf.sum()) / n_finite
         centred = vf - mean
         sd = math.sqrt(float((centred * centred).sum()) / n_finite)
-        stat = self._gene(name, col, n_finite, mean, sd, float(vf.min()), float(vf.max()), int(np.count_nonzero(vf)))
+        stat = self._gene(name, col, mean, sd, float(vf.min()), float(vf.max()), int(np.count_nonzero(vf)))
         if stat is None:
             return
         if self.zscore:
@@ -1100,13 +1101,25 @@ class _Accumulator:
         n = self.n_obs
         seg = SEGMENT_ENTRIES
         bounds = [(i, min(i + seg, values.size)) for i in range(0, values.size, seg)]
+        kept: Dict[Tuple[int, int], tuple] = {}
+
+        def segment(i, j):
+            """(float64 values, finite mask or None when every value is finite, the finite values) of a segment.
+            A gene of one segment, which is nearly every gene, is converted and masked once for the three passes."""
+            if (i, j) in kept:
+                return kept[(i, j)]
+            v = values[i:j].astype(np.float64)
+            finite = np.isfinite(v)
+            out = (v, None, v) if finite.all() else (v, finite, v[finite])
+            if len(bounds) == 1:
+                kept[(i, j)] = out
+            return out
+
         total, n_nan, nonzero = 0.0, 0, 0
         lo, hi = math.inf, -math.inf
         for i, j in bounds:                                       # pass 1: sum, range, count
-            v = values[i:j].astype(np.float64)
-            finite = np.isfinite(v)
-            n_nan += int(v.size - finite.sum())
-            vf = v[finite]
+            v, _, vf = segment(i, j)
+            n_nan += int(v.size - vf.size)
             if vf.size:
                 total += float(vf.sum())
                 lo, hi = min(lo, float(vf.min())), max(hi, float(vf.max()))
@@ -1121,11 +1134,10 @@ class _Accumulator:
         mean = total / n_finite
         squares = implicit * mean * mean
         for i, j in bounds:                                       # pass 2: spread
-            v = values[i:j].astype(np.float64)
-            d = v[np.isfinite(v)] - mean
+            d = segment(i, j)[2] - mean
             squares += float((d * d).sum())
         sd = math.sqrt(squares / n_finite)
-        stat = self._gene(name, col, n_finite, mean, sd, lo, hi, nonzero)
+        stat = self._gene(name, col, mean, sd, lo, hi, nonzero)
         if stat is None:
             return
         # every cell holds z0; a stored entry adds what it differs by, a missing one cancels z0
@@ -1136,23 +1148,27 @@ class _Accumulator:
             z0, over = 0.0, 0
         self.baseline += z0
         for i, j in bounds:                                       # pass 3: the cells' share
-            v = values[i:j].astype(np.float64)
-            finite = np.isfinite(v)
-            correction = np.full(v.size, -z0, dtype=np.float64)
+            v, finite, vf = segment(i, j)
             if self.zscore:
-                z = (v[finite] - mean) / sd
+                z = (vf - mean) / sd
                 if self.clip is not None:
                     over += int((np.abs(z) > self.clip).sum())
-                correction[finite] = self._clip(z) - z0
+                share = self._clip(z) - z0
             elif self.indicator:
-                correction[finite] = (v[finite] > self.detect_above).astype(np.float64)
+                share = (vf > self.detect_above).astype(np.float64)
             else:
-                correction[finite] = v[finite]
+                share = vf
+            if finite is None:
+                correction = share
+            else:
+                correction = np.full(v.size, -z0, dtype=np.float64)
+                correction[finite] = share
             pos, hit = self._positions(rows[i:j].astype(np.int64))
             self.acc[pos] += correction if hit is None else correction[hit]
-            bad = ~finite if hit is None else ~finite[hit]
-            if bad.any():
-                self._mark_missing(pos[bad])
+            if finite is not None:
+                bad = ~finite if hit is None else ~finite[hit]
+                if bad.any():
+                    self._mark_missing(pos[bad])
         if self.zscore and self.clip is not None:
             stat.clipped = over / n
 
