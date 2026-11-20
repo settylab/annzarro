@@ -9,9 +9,9 @@
  * with the page position held, where the user is (sort order, page, search and scroll stay). Utils/score-column.js holds the
  * wording; panels/table-utilities/table-scores.js the handles.
  */
-import { scoreFullLabel } from '../../utils/score-source.js';
-import { worstNotice } from '../../utils/score-notices.js';
-import { registerHostActions, openSignature, offerAgain, showNotice } from '../../utils/score-source.js';
+import { scoreFullLabel, openSignature, offerAgain, canOfferAgain } from '../../utils/score-source.js';
+import { worstNotice, paintNotice } from '../../utils/source-notices.js';
+import { actions } from '../../utils/source-actions.js';
 import { describeColumn, describeHeldRows } from '../../utils/score-column.js';
 import { TableScores } from './table-scores.js';
 
@@ -182,7 +182,7 @@ export function bindScoreColumns(dataTable, settings, container) {
         const worst = worstNotice(items.map(i => i.notice));
         const shown = items.find(i => i.notice === worst);
         container.__scoreWorst = shown ? shown.entry : null;
-        showNotice(container, worst);
+        paintNotice(container, worst);
     };
 
     const schedulePaint = () => {
@@ -216,7 +216,7 @@ export function bindScoreColumns(dataTable, settings, container) {
         const note = container.querySelector('.az-score-held-note');
         if (note) note.remove();
         container.classList.remove('az-score-held');
-        showNotice(container, null);
+        paintNotice(container, null);
     });
     // a condition added or removed in the filter changes whether the rows are held
     dataTable.on('draw.dt', () => {
@@ -233,42 +233,49 @@ export function bindScoreColumns(dataTable, settings, container) {
 }
 
 // ---------------------------------------------------------------------------
-// the notice's actions, for the table container as a host (utils/score-source.js runScoreAction)
+// the notice's actions, for the table container as a host (utils/source-actions.js)
 
 function tableIdOf(host) {
     const m = host && typeof host.id === 'string' ? /^table-container-(.+)$/.exec(host.id) : null;
     return m ? m[1] : null;
 }
 
-registerHostActions({
-    available(action, host) {
-        const id = tableIdOf(host);
-        if (!id || !TableScores.entries(id).length) return undefined;
-        if (action === 'score-remove' || action === 'score-offer') return !!host.__scoreWorst;
-        if (action === 'score-open') return !!host.__scoreWorst && !!panelOf(host.__scoreWorst.column.key);
-        return true;
-    },
-    run(action, host) {
-        const id = tableIdOf(host);
-        if (!id || !TableScores.entries(id).length) return false;
-        const worst = host.__scoreWorst;
-        switch (action) {
-            case 'score-compute': TableScores.compute(id); return true;
-            case 'score-cancel': TableScores.cancel(id); return true;
-            case 'score-retry': TableScores.retry(id); return true;
-            case 'score-update': TableScores.update(id); return true;
-            case 'score-offer':
-                if (worst) offerAgain(worst.column);
-                return true;
-            case 'score-open':
-                if (worst) openSignature(worst.column.key, id);
-                return true;
-            case 'score-remove': {
-                const panel = panelOf(id);
-                if (worst && panel && typeof panel.removeColumn === 'function') panel.removeColumn(worst.column);
-                return true;
-            }
-            default: return false;
+/**
+ * The tables' provider of the notice actions. Every dependency is given, so a Node test can hold every state of a host
+ * against every action. A table has no other source to choose, so it has no "Choose another": it removes the column.
+ * @param {Object} deps
+ */
+export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compute, cancel, retry, update, canOffer, offerAgain: offer, panelOf: panel,
+    openSource }) {
+    const table = (host) => { const id = idOf(host); return id && hasColumns(id) ? id : null; };
+    const all = (run) => ({ target: table, run: (id) => { run(id); } });
+    const worst = (test) => (host) => { const w = table(host) && worstOf(host); return w && test(w, host) ? w : null; };
+    return {
+        id: 'table-score',
+        owns: (host) => !!table(host),
+        actions: {
+            'score-compute': all(compute),
+            'score-cancel': all(cancel),
+            'score-retry': all(retry),
+            'score-update': all(update),
+            'score-offer': { target: worst((w) => canOffer(w.column)), run: (w) => { offer(w.column); } },
+            'score-open': { target: worst((w) => !!panel(w.column.key)), run: (w, host) => { openSource(w.column.key, idOf(host)); } },
+            'score-remove': { target: worst((w, host) => { const p = panel(idOf(host)); return !!p && typeof p.removeColumn === 'function'; }),
+                run: (w, host) => { panel(idOf(host)).removeColumn(w.column); } }
         }
-    }
-});
+    };
+}
+
+actions.register(createTableActions({
+    tableIdOf,
+    hasColumns: (id) => TableScores.entries(id).length > 0,
+    worstOf: (host) => host.__scoreWorst,
+    compute: (id) => TableScores.compute(id),
+    cancel: (id) => TableScores.cancel(id),
+    retry: (id) => TableScores.retry(id),
+    update: (id) => TableScores.update(id),
+    canOffer: canOfferAgain,
+    offerAgain,
+    panelOf,
+    openSource: openSignature
+}));
