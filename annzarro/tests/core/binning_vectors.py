@@ -33,6 +33,11 @@ RECIPES = [
     {"method": "equal_width", "bins": 1000, "zero_bin": True, "edges_from": "all"},
     {"method": "log"},
     {"method": "log", "bins": 5, "range": [0.5, 500]},
+    {"method": "equal_width", "bins": 4, "range": [None, 6]},
+    {"method": "equal_width", "bins": 4, "range": [1, None]},
+    {"method": "equal_width", "bins": 4, "range": [None, None]},
+    {"method": "log", "bins": 4, "range": [None, 100]},
+    {"method": "log", "bins": 4, "range": [2, None], "outside": "exclude"},
     {"method": "manual", "thresholds": [2, 0.5, 1.75, 2]},
     {"method": "manual", "thresholds": [1], "zero_bin": True},
     {"method": "manual", "thresholds": [1], "bins": 9, "range": [0, 5], "edges_from": "all"},
@@ -48,6 +53,8 @@ RECIPES = [
     {"method": "equal_width", "range": [4, 3]},
     {"method": "log", "range": [0, 10]},
     {"method": "log", "range": [-1, 10]},
+    {"method": "log", "range": [0, None]},
+    {"method": "equal_width", "range": [5, 3]},
     {"method": "manual"},
     {"method": "manual", "thresholds": []},
     {"method": "manual", "thresholds": [1, "x"]},
@@ -84,6 +91,10 @@ DATA = [
     ({"method": "equal_count", "bins": 4}, [float("nan"), float("inf")]),
     ({"method": "equal_count", "bins": 8}, [1, 1, 1, 1, 1, 1, 2, 3]),
     ({"method": "categories"}, [3, 1, 2, 3, 12, 7]),
+    ({"method": "equal_width", "bins": 3, "range": [None, 6]}, [0, 1, 2, 3, 4, 5, 9]),
+    ({"method": "equal_width", "bins": 3, "range": [2, None]}, [0, 1, 2, 3, 4, 5, 8]),
+    ({"method": "equal_width", "bins": 3, "range": [None, None]}, [0, 1, 2, 3, 4, 5, 6]),
+    ({"method": "log", "bins": 3, "range": [None, 100]}, [1, 3, 10, 30, 100, 300]),
 ]
 
 

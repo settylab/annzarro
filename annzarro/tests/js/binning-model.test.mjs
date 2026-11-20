@@ -205,3 +205,33 @@ test('freezing a manual binning, or one with no edges, offers nothing', () => {
     assert.equal(B.freezeThresholds({ method: 'manual', thresholds: [1] }, { edges: [1] }), null);
     assert.equal(B.freezeThresholds({ method: 'equal_count' }, null), null);
 });
+
+// --- a range with one side automatic (the engine fills it from the data and reports the sides used) ---------------
+
+test('a null side stays in the recipe and the request; both null is no range', () => {
+    const rows = vectors.recipes.filter((r) => r.ok && r.raw.range && r.raw.range.includes(null));
+    assert.ok(rows.length >= 5);
+    for (const r of rows) {
+        const { binning } = B.normalizeBinning(r.raw);
+        assert.deepEqual(B.effectiveBinning(binning).range, r.effective.range, JSON.stringify(r.raw));
+    }
+    assert.equal(B.normalizeBinning({ method: 'equal_width', range: [null, null] }).binning.range, undefined);
+    assert.equal(B.recipeEdges(B.normalizeBinning({ method: 'equal_width', range: [null, 6] }).binning), null);
+});
+
+test('the sides the engine used come back in the reply, and the labels read from the reply\'s edges', () => {
+    const rows = vectors.data.filter((d) => d.binning.range && d.binning.range.includes(null) && !d.binning.range.every((v) => v === null));
+    assert.equal(rows.length, 3);
+    for (const d of rows) {
+        assert.equal(d.reply.range.length, 2);
+        assert.equal(d.reply.edges[0], d.reply.range[0]);
+        assert.equal(d.reply.edges[d.reply.edges.length - 1], d.reply.range[1]);
+        const binning = B.normalizeBinning(d.binning).binning;
+        assert.deepEqual(B.levelIds(binning, d.reply), d.ids);
+        const labels = B.levelLabels(binning, d.reply, 'x').map((l) => l.label);
+        assert.ok(labels[0].startsWith('x < ') && labels[labels.length - 1].startsWith('x ≥ '), labels.join(' / '));
+    }
+    const both = vectors.data.find((d) => d.binning.range && d.binning.range.every((v) => v === null));
+    assert.equal(both.reply.range.length, 2);
+    assert.equal(B.effectiveBinning(B.normalizeBinning(both.binning).binning).range, undefined);
+});

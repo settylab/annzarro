@@ -227,8 +227,9 @@ export function groupingHasher(recipe, upstream) {
         }
         const up = upstream ? upstream(partitioning.source) : null;
         if (typeof up !== 'string') return found;
-        const { key, ...rest } = found.source;
-        return { ...found, source: { ...rest, upstream: up } };
+        const source = { ...found.source, upstream: up };
+        delete source.key;
+        return { ...found, source };
     };
     recipe.partitionings.forEach((p) => body(p));
     return (variant) => stableStringify({
