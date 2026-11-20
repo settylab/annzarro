@@ -358,11 +358,43 @@ test('the request carries what the server computes from, and not a label, a sepa
     assert.equal(JSON.stringify(body).includes('labels'), false);
 });
 
-test('a table factor sends its bitset, and the request is the same whichever labels the recipe holds', () => {
+test('a bitset packs the cells shown least significant bit first, standard base64 with padding (the vector E3 asserts too)', () => {
+    const flags = Array.from({ length: 13 }, (_, i) => [0, 2, 3, 7, 8, 12].includes(i));
+    assert.deepEqual(G.packBitset(flags), { encoding: 'bitset-base64', length: 13, data: 'jRE=' });
+    assert.deepEqual(G.packBitset([]), { encoding: 'bitset-base64', length: 0, data: '' });
+    assert.equal(G.packBitset(new Uint8Array(8).fill(1)).data, '/w==');
+    assert.equal(G.packBitset([1, 0, 0, 0, 0, 0, 0, 0, 0]).data, 'AQA=');
+});
+
+test('a table factor sends its packed bitset; the request is the same whichever labels the recipe holds', () => {
     const recipe = { version: 1, partitionings: [{ source: { type: 'table', key: 'cell-table-1' }, rest: 'exclude' }] };
-    const body = G.serverRequest(recipe, { bitsetFor: (s) => `bits-of-${s.key}` }, ['groups']);
-    assert.equal(body.partitionings[0].bitset, 'bits-of-cell-table-1');
+    const body = G.serverRequest(recipe, { bitsetFor: () => [true, false, true] }, ['groups']);
+    assert.deepEqual(body.partitionings[0].bitset, { encoding: 'bitset-base64', length: 3, data: 'BQ==' });
     const a = G.serverRequest({ version: 1, partitionings: [obs('x')] }, {}, ['groups']);
     const b = G.serverRequest({ version: 1, partitionings: [obs('x', { labels: { 'c:q': 'Q' } })], separator: '-' }, {}, ['groups']);
     assert.deepEqual(a, b);
+});
+
+test('a score or a grouping used as a factor carries its recipe inline, nested at most 4 deep', () => {
+    const score = { type: 'gene-score', key: 'sig-1', column: 'zscore_mean', layer: 'logged' };
+    const inner = { version: 1, partitionings: [obs('cell_type')], small: { mode: 'collect' }, separator: ' / ' };
+    const ctx = {
+        inlineRecipe: (s) => (s.key === 'sig-1' ? { recipe: { genes: ['A'], method: 'zscore_mean' } }
+            : s.key === 'g-1' ? { grouping: inner } : null)
+    };
+    const body = G.serverRequest({ version: 1, partitionings: [{ source: score }, { source: { type: 'cell-group', key: 'g-1' } }] }, ctx, ['groups']);
+    assert.deepEqual(body.partitionings[0].source.recipe, { genes: ['A'], method: 'zscore_mean' });
+    assert.deepEqual(body.partitionings[1].source.recipe, {
+        partitionings: [{ source: { type: 'obs', key: 'cell_type' } }], small: { threshold: 10, mode: 'collect' }
+    });
+    const loop = { inlineRecipe: () => ({ grouping: { version: 1, partitionings: [{ source: { type: 'cell-group', key: 'again' } }] } }) };
+    assert.throws(() => G.serverRequest({ version: 1, partitionings: [{ source: { type: 'cell-group', key: 'again' } }] }, loop, ['groups']), /nest/);
+});
+
+test('a grouping always clamps: outside exclude is reported and dropped, a count plot input keeps it', () => {
+    const raw = { source: { type: 'obs', key: 'x' }, binning: { method: 'equal_width', range: [0, 5], outside: 'exclude' } };
+    const { recipe, problems } = G.normalizeGrouping({ version: 1, partitionings: [raw] });
+    assert.equal(recipe.partitionings[0].binning.outside, undefined);
+    assert.ok(problems.some((p) => p.reason === 'exclude_in_grouping'));
+    assert.equal(G.normalizePartitioning(raw).partitioning.binning.outside, 'exclude');
 });
