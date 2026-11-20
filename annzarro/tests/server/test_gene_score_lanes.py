@@ -79,7 +79,9 @@ def test_a_queued_score_is_told_its_place_at_once_and_on_each_change(client, lay
             frames, vector = parse(rest)
             assert frames[-1]["type"] == "result" and vector is not None
             assert all(f["queue"] == {"ahead": 0, "sharing": 0} for f in frames[:-1])
-            assert frames[-2]["entries_total"] == entries
+            assert frames[-2]["entries_total"] == entries and frames[-2]["entries_done"] == entries
+            done = [f["entries_done"] for f in frames[:-1]]
+            assert done == sorted(done) and done[0] == 0
     finally:
         if held:
             route._slot.release()

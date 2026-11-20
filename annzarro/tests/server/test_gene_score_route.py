@@ -292,8 +292,8 @@ def test_only_post_is_allowed(client, layout):
 def test_a_failure_after_the_stream_began_is_an_error_frame(client, layout, monkeypatch):
     real = gs.compute
 
-    def broken(plan, rows=None, should_stop=None):
-        events = real(plan, rows, should_stop)
+    def broken(plan, rows=None, should_stop=None, **kw):
+        events = real(plan, rows, should_stop, **kw)
         yield next(events)
         raise OSError("disk gone")
     monkeypatch.setattr(gs, "compute", broken)
@@ -584,8 +584,8 @@ def test_a_refused_or_failed_control_adjusted_request_leaves_the_slot_and_the_bu
     free()                                                             # no control genes
     real = gs.compute
 
-    def broken(plan, rows=None, should_stop=None):
-        events = real(plan, rows, should_stop)
+    def broken(plan, rows=None, should_stop=None, **kw):
+        events = real(plan, rows, should_stop, **kw)
         yield next(events)
         raise OSError("disk gone")
     monkeypatch.setattr(gs, "compute", broken)
