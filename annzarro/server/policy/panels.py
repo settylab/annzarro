@@ -3,7 +3,9 @@ hosts the browser may contact for them.
 
 ``panel.<type>.enabled`` is declared for every entry of
 ``static/js/panels/panel-types.json`` (the panel registry the client reads), so
-a new panel type gets its switch without a line here. The Gene Set Analysis
+a new panel type gets its switch without a line here, once it is released: an entry with
+``"released": false`` (registered, not offered) or ``"reserved": true`` (an id kept free) has no switch yet.
+The Gene Set Analysis
 panel is the one panel that sends data out: its keys say how (``external_requests``),
 to whom (``services``, ``species_search``) and whether it links out (``links``).
 ``outbound.allow_external`` is the "Gene Set Analysis: no external services" switch (it does not
@@ -114,6 +116,8 @@ def _default_services(config) -> List[str]:
 
 def _declare_panel_keys() -> None:
     for entry in panel_types():
+        if entry.get("reserved") or entry.get("released") is False:
+            continue
         declare(Key(
             name=f"panel.{entry['type']}.enabled", type=Bool(), default=True, scope="user", combine="restrict",
             description=f"Whether users may open the {entry.get('label', entry['type'])} panel. On by default. Off removes it from the "

@@ -53,18 +53,19 @@ test('every registerPanelType has an entry in panel-types.json', () => {
         for (const m of text.matchAll(/\bregisterPanelType\(\s*['"]([^'"]+)['"]/g)) registered.push(m[1]);
     }
     assert.ok(registered.length >= 5, `found ${registered.length} registerPanelType calls`);
-    const known = new Set(REGISTRY.map(e => e.type));
+    const known = new Set(REGISTRY.filter(e => !e.reserved).map(e => e.type)); // a reserved id is kept free, never registered
     for (const type of registered) assert.ok(known.has(type), `panel type "${type}" has no entry in panels/panel-types.json`);
     for (const type of known) assert.ok(registered.includes(type), `panel-types.json lists "${type}" but nothing registers it`);
 });
 
 test('panel-types.json entries are complete, and config.js serves them', () => {
     for (const e of REGISTRY) {
-        for (const field of ['type', 'label', 'icon']) assert.equal(typeof e[field], 'string', `${e.type}.${field}`);
         assert.match(e.type, /^[a-z]+(-[a-z]+)*$/);
+        if (e.reserved) continue;
+        for (const field of ['type', 'label', 'icon']) assert.equal(typeof e[field], 'string', `${e.type}.${field}`);
     }
     assert.equal(new Set(REGISTRY.map(e => e.type)).size, REGISTRY.length);
-    assert.deepEqual(Config.PANEL_TYPES, REGISTRY);
+    assert.deepEqual(Config.PANEL_TYPES, REGISTRY.filter(e => !e.reserved && e.released !== false));
     assert.deepEqual(Config.PANEL_TYPES.map(p => p.type), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set', 'gene-signature']);
 });
 
@@ -73,7 +74,7 @@ const menu = () => Object.getOwnPropertyDescriptor(SelectionTile.prototype, 'pan
 test('the panel menu offers every type when the server has no policy', async () => {
     policyReply = { status: 404 };
     await Policy.load();
-    assert.deepEqual(menu(), REGISTRY.map(e => e.type));
+    assert.deepEqual(menu(), REGISTRY.filter(e => !e.reserved && e.released !== false).map(e => e.type));
 });
 
 test('the panel menu leaves out the types the policy disables', async () => {

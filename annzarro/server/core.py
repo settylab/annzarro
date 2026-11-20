@@ -78,6 +78,8 @@ DEFAULT_CONFIG = {
     "read_user_share_percent": 50,        # % of read_budget_mb one user (else one address) may hold at once; 0 = no share
     "subset_budget_mb": None,             # MB the cell subsets one worker computes at once may hold (55 B a cell); None = 15% of RAM
     "subset_wait_s": 30,                  # seconds a subset waits for that budget before a 503
+    "compute_budget_mb": 4608,            # MB all compute jobs (scores, groupings) in one worker may hold at once; they wait when it is full
+    "group_code_cache_mb": 512,           # MB of group codes one worker keeps; counted in compute_budget_mb, emptied first
     "max_requests": 20000,                # gunicorn: requests a worker serves before it is replaced (frees creeping memory); 0 = never
     "max_requests_jitter": 2000,          # gunicorn: up to this many extra requests, random per worker, so workers do not restart together
     "limit_request_line": 0,              # gunicorn: longest request line in bytes; 0 = unlimited (the proxy bounds it); gunicorn caps any other value at 8190

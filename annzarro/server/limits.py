@@ -48,6 +48,8 @@ LIMITS: Dict[str, Limit] = {limit.key: limit for limit in (
     Limit("read_user_share_percent", 50, integer=False, zero_off=True),
     Limit("subset_budget_mb", None, integer=False, nullable=True),
     Limit("subset_wait_s", 30, integer=False, zero_off=True),
+    Limit("compute_budget_mb", 4608, integer=False),
+    Limit("group_code_cache_mb", 512, integer=False),
     Limit("max_requests", 20000, zero_off=True),
     Limit("max_requests_jitter", 2000, zero_off=True),
     Limit("limit_request_line", 0, zero_off=True),
@@ -94,8 +96,8 @@ def validate_limits(server: Optional[Dict[str, Any]]) -> List[str]:
     return errors
 
 
-#: Limits gunicorn (or the request-size setting) reads once, when the server starts
-_RESTART = {"max_requests", "max_requests_jitter", "limit_request_line", "limit_request_fields",
+#: Limits read once, when the server starts: gunicorn's, the request size, and the worker's memory ledger and code cache
+_RESTART = {"compute_budget_mb", "group_code_cache_mb", "max_requests", "max_requests_jitter", "limit_request_line", "limit_request_fields",
             "limit_request_field_size", "max_request_mb"}
 
 
@@ -119,6 +121,8 @@ _HELP = {
     "text_index_ttl_s": "Seconds after which the server reads the datasets again for changes and refreshes the description index; it also continues a crawl that stopped partway.",
     "read_user_share_percent": "Percentage of the shared read and subset memory budgets that one user may hold while another waits, so one user cannot make everyone else's requests fail with 503 read_busy. 0 gives a user the whole budgets. Applies to a server that other people can reach.",
     "subset_wait_s": "Seconds a cell subset waits for its memory budget before it is answered 503 read_busy. 0 turns the limit off.",
+    "compute_budget_mb": "Megabytes all compute jobs in flight in one worker (gene scores and cell groupings, with the reads behind them) may hold together; a job that does not fit waits, after the group code cache has been emptied. Read when the server starts.",
+    "group_code_cache_mb": "Megabytes of group codes one worker keeps for reuse, part of compute_budget_mb and emptied first when a job needs room. Read when the server starts.",
     "max_requests": "Requests a gunicorn worker serves before it is replaced, which returns memory that crept and empties its caches. 0 never replaces it. Read when the server starts.",
     "max_requests_jitter": "Random number of requests, up to this, added to each worker's max_requests so the workers do not restart together. 0 turns it off. Read when the server starts.",
     "limit_request_line": "Longest request line gunicorn accepts, in bytes; 0 is unlimited, and then the reverse proxy should bound it. Read when the server starts.",
@@ -149,6 +153,8 @@ _LABEL = {
     "read_user_share_percent": "Per-user share of read budgets (%)",
     "subset_budget_mb": "Cell subset memory (MB)",
     "subset_wait_s": "Cell subset wait (s)",
+    "compute_budget_mb": "Compute memory per worker (MB)",
+    "group_code_cache_mb": "Group code cache per worker (MB)",
     "max_requests": "Requests per worker",
     "max_requests_jitter": "Worker restart jitter (requests)",
     "limit_request_line": "Longest request line (bytes)",

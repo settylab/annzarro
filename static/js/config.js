@@ -124,8 +124,13 @@ const Config = (function() {
         AUTH_ME: `${API_BASE}/auth/me`
     };
     
-    // Panel types definition: panels/panel-types.json
-    const PANEL_TYPES = panelTypes;
+    // Panel types definition: panels/panel-types.json. PANEL_TYPES is what a user can open: the chooser and the
+    // icons read it. A type with "released": false is registered (a link that names it keeps its settings) but
+    // not offered; a "reserved" id is only kept free, and a link that names it is skipped without an error.
+    const PANEL_TYPES = panelTypes.filter(entry => !entry.reserved && entry.released !== false);
+    /** The registry entry of a panel type, released or not (its label and icon); undefined for a reserved or unknown id. */
+    const panelTypeInfo = (type) => panelTypes.find(entry => entry.type === type && !entry.reserved);
+    const isReservedPanelType = (type) => panelTypes.some(entry => entry.type === type && entry.reserved === true);
     
     // Configure Plotly.js defaults if available
     if (typeof Plotly !== 'undefined') {
@@ -194,7 +199,7 @@ const Config = (function() {
             '9031': 'Gallus gallus'
         },
         // Enable/disable specific panel types in the selection tile
-        ENABLED_PANEL_TYPES: ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set', 'gene-signature'],
+        ENABLED_PANEL_TYPES: PANEL_TYPES.map(entry => entry.type),
         
         // Plot aesthetics defaults
         PLOT_AESTHETICS: {
@@ -454,6 +459,8 @@ const Config = (function() {
         STRING_DB,
         INTEGRATIONS,
         PANEL_TYPES,
+        panelTypeInfo,
+        isReservedPanelType,
         KEYBOARD_SHORTCUTS,
         SERVER_CONFIG,
         ready,
