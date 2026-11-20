@@ -10,8 +10,13 @@
  *   threshold). Both are kept in one cache of 256 MiB, least recently used first. Everything in it can be computed
  *   again.
  * - The CODES, one per cell shown (1 byte up to 255 groups, 2 above). They are never in that cache: they are held per
- *   grouping key while a consumer holding them is attached, told to the memory guard's ledger (`codes.hold`), and
- *   released with the last one (`codes.release`).
+ *   grouping key while a consumer holding them is attached, on the memory guard's ledger (memory-guard.js
+ *   `Ledger.hold`), PINNED while one of those consumers is on screen (`pin`), and released with the last one
+ *   (`release`). Held by hidden consumers only, the guard may evict them; those consumers then ask again, which
+ *   starts when one of them is shown.
+ *
+ * A result refused for its size (too many levels or groups) is the state `refused`, with the server's figures in
+ * `header.refused`, as a refusal by cost (413) is; it is never confused with a reply that has no groups.
  *
  * A consumer asks for a NEED (`groupNeed`): a request, the grouping's key, whether it wants the codes, and its
  * features. Its store key names what it gets, so what it gets never changes: it is put together once, when every part
@@ -36,7 +41,7 @@ const ROW_BYTES = 48;
 /** The value of a request whose parts went into the cache: nothing else holds them. */
 const ABSORBED = Object.freeze({});
 
-const NO_LEDGER = Object.freeze({ hold() {}, release() {} });
+const NO_LEDGER = Object.freeze({ hold() {}, pin() {}, release() {} });
 
 /**
  * The bytes of the codes of `cells` cells in `groups` groups (CAT-4): what the memory guard is asked before a plot
@@ -99,8 +104,9 @@ function partBytes(values) {
  * @param {import('./derived-store.js').DerivedApi} options.api - utils/cell-groups-client.js createGroupsApi
  * @param {number} [options.budget] - bytes of group tables and moments
  * @param {ReturnType<import('./derived-store.js').createLimiter>} [options.limiter] - the page's (score-source.js pageLimiter)
- * @param {{hold: (key: string, bytes: number) => void, release: (key: string) => void}} [options.codes] - the memory
- *   guard's ledger of the codes held
+ * @param {{hold: (key: string, bytes: number, opts: {pinned: boolean, evict: () => void}) => void,
+ *   pin: (key: string, pinned: boolean) => void, release: (key: string) => void}} [options.codes] - the memory guard's
+ *   ledger (memory-guard.js Ledger), where the codes held are counted
  */
 // export-unused-ok: G8a makes the page's group store
 export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, codes: ledger = NO_LEDGER }) {
@@ -134,18 +140,47 @@ export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, c
         }
     }
 
+    /** Codes are pinned while a holder is on screen; held by hidden holders only, the guard may evict them. */
+    const onScreen = (h) => [...h.holders].some((e) => e.proxy.visible());
+
+    function pinCodes(codesKey, h) {
+        const pinned = onScreen(h);
+        if (pinned === h.pinned) return;
+        h.pinned = pinned;
+        ledger.pin(codesKey, pinned);
+    }
+
     function holdCodes(entry) {
         const h = held.get(entry.codesKey);
         if (!h || h.holders.has(entry)) return;
         h.holders.add(entry);
-        if (h.holders.size === 1) ledger.hold(entry.codesKey, h.codes.byteLength);
+        if (h.holders.size === 1) {
+            h.pinned = onScreen(h);
+            ledger.hold(entry.codesKey, h.codes.byteLength, { pinned: h.pinned, evict: () => evicted(entry.codesKey, h) });
+        } else {
+            pinCodes(entry.codesKey, h);
+        }
     }
 
     function releaseCodes(entry) {
         const h = entry.need.codes ? held.get(entry.codesKey) : null;
-        if (!h || !h.holders.delete(entry) || h.holders.size) return;
+        if (!h || !h.holders.delete(entry)) return;
+        if (h.holders.size) { pinCodes(entry.codesKey, h); return; }
         held.delete(entry.codesKey);
         ledger.release(entry.codesKey);
+    }
+
+    /** The guard evicted codes no consumer on screen held: their holders ask again, which starts once one is shown. */
+    function evicted(codesKey, h) {
+        if (held.get(codesKey) !== h) return;
+        held.delete(codesKey);
+        for (const entry of h.holders) {
+            if (entries.get(entry.key) !== entry) continue;
+            entry.values = null;
+            entry.ready = null;
+            if (!entry.r) plan(entry);
+            emit(entry);
+        }
     }
 
     /** The values of an entry from the parts held, or null when one is missing. Builds the entry's snapshot once. */
@@ -247,6 +282,11 @@ export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, c
         if (entry.values) return entry.ready;
         if (!entry.r) return { key, state: 'idle', values: null, header: null, owners: entry.owners.size };
         const snap = inner.snapshot(entry.r);
+        // too many levels or groups: a refusal of its own (SHR-35), never the state of a reply with nothing in it
+        if (snap.state === 'noscore' && snap.header && snap.header.refused) {
+            return { ...snap, key, state: 'refused', reason: snap.header.refused.reason, message: snap.header.message || null,
+                values: null, owners: entry.owners.size };
+        }
         // answered, and its parts not all there: what is missing is asked for at once
         const state = snap.state === 'ready' ? 'computing' : snap.state;
         return { ...snap, key, state, values: null, owners: entry.owners.size };
@@ -340,7 +380,11 @@ export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, c
             return inner.estimateFor({ request }, dataset, hash);
         },
 
-        poke: () => inner.poke(),
+        /** Consumers came on screen or left it: codes are pinned or unpinned, and what may start, starts. */
+        poke() {
+            for (const [codesKey, h] of [...held]) if (h.holders.size) pinCodes(codesKey, h);
+            inner.poke();
+        },
 
         /** Stop every request (a new link opens, the dataset closes). */
         abortAll: () => inner.abortAll(),

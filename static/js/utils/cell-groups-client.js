@@ -10,7 +10,7 @@
  * or, for moments and grids, by its `shape`.
  *
  * A result that is refused for its size (too many levels or groups) has no blocks and is no error: its reason is
- * lifted to the header, where the store reads a reply with nothing in it.
+ * lifted to the header, and the store states it as `refused`.
  *
  * `fetchImpl` is injected so Node tests drive it with a fake server.
  */
