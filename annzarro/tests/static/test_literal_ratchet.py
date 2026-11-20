@@ -17,24 +17,19 @@ PROVIDER_FILES = {"utils/score-source.js", "utils/cell-group-source.js"}
 #: the base run (59b13127): 53 occurrences in 18 files, provider files left out; the ceiling may only fall from it
 BASE_TOTAL, BASE_FILES = 53, 18
 
-#: occurrences allowed per file now; F4 took utils/deeplink.js from 2 to 0
+#: occurrences allowed per file now; F4 took utils/deeplink.js from 2 to 0; F3c-1 took the menus, loads, titles, view
+#: descriptor and panel-set follow to the provider (hover and the large plot are F3c-2's, tables F3d's)
 CEILING = {
-    "panels/plot-utilities/panel-ui-update.js": 9,
     "panels/table-utilities/table-ui-make.js": 8,
-    "panels/plot-utilities/listeners.js": 5,
     "panels/table-utilities/table-data.js": 4,
-    "session-manager.js": 3,
     "panels/plot-utilities/large-plot-controls.js": 3,
-    "panels/plot-utilities/plot-make.js": 3,
     "panels/plot-utilities/hover-columns.js": 3,
     "utils/score-column.js": 3,
     "panels/plot-utilities/large-interact.js": 2,
-    "utils/view-descriptor.js": 2,
+    "panels/plot-utilities/listeners.js": 1,
+    "panels/plot-utilities/plot-make.js": 1,
     "panels/plot-utilities/large-plot.js": 1,
-    "panels/plot-utilities/plot-make-helper.js": 1,
     "panels/table-utilities/table-scores.js": 1,
-    "utils/plot-titles.js": 1,
-    "utils/score-source-panels.js": 1,
     "utils/column-key.js": 1,
 }
 
@@ -80,4 +75,4 @@ def test_planted_literal_is_found(tmp_path):
     (tmp_path / "session-manager.js").write_text("a('gene-score'); b('gene-score'); c(\"gene-score\"); d('gene-score');\n")
     found = counts(tmp_path)
     assert found == {"panels/new.js": 2, "session-manager.js": 4}
-    assert over(found, CEILING) == ["panels/new.js: 2 literals, ceiling 0", "session-manager.js: 4 literals, ceiling 3"]
+    assert over(found, CEILING) == ["panels/new.js: 2 literals, ceiling 0", "session-manager.js: 4 literals, ceiling 0"]

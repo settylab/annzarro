@@ -1,5 +1,5 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes, showPointStyle, showScalePreview } from './panel-ui-update.js';
+import { setupAxisSelector, typeChoices, updateTableFilterSelect, chooseDefaultAxes, showPointStyle, showScalePreview } from './panel-ui-update.js';
 import { scaleOptionLabel } from '../../utils/color-scales.js';
 import { colorBoundToData } from '../../utils/array-stats.js';
 import { Config } from '../../config.js';
@@ -9,8 +9,8 @@ import * as $ from '../../utils/jquery-helpers.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { populateHoverSelect } from './hover-columns.js';
 import { sourceList } from '../../utils/score-source.js';
-import { sourcesFor } from '../../utils/source-registry.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
+import { escapeHtml } from '../../utils/safe-markdown.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, trackValue } from '../../utils/slider-scales.js';
 
 // Create array of discrete color scales
@@ -49,16 +49,25 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
 
 /**
  * One axis row of the plot controls: its label and the type, key and column
- * selects (setupAxisSelector fills them and appends the lock/refocus buttons).
+ * selects. The type menu lists what `consumer` accepts for `roles`; setupAxisSelector
+ * fills the key and column selects and appends the lock/refocus buttons.
+ * @param {string} axis - 'x', 'y', 'z' or 'color'
+ * @param {string} label
+ * @param {string} id - the panel's id
+ * @param {{plotType: 'cells'|'genes', consumer: string, roles: string[]}} use - the entity a value belongs to,
+ *   the panel type, and the roles the row's source fills (['x'], ['color'])
+ * @param {string} [attrs]
  */
-function axisRow(axis, label, id, attrs = 'class="axis-selector-container ctl-row"') {
+function axisRow(axis, label, id, { plotType, consumer, roles }, attrs = 'class="axis-selector-container ctl-row"') {
   const rowAttrs = attrs.startsWith('class=') ? attrs : `class="axis-selector-container ctl-row" ${attrs}`;
+  const types = typeChoices(plotType, consumer, roles)
+    .map(c => `<option value="${escapeHtml(c.value)}">${escapeHtml(c.text)}</option>`).join('');
   return `
             <div ${rowAttrs}>
               <label class="axis-selector-label ctl-label" for="${axis}-type-select-${id}">${label}</label>
               <div class="axis-selector">
                 <select class="form-select form-select-sm axis-type-select" data-axis="${axis}" id="${axis}-type-select-${id}">
-                  <option value="">Loading...</option>
+                  ${types}
                 </select>
                 <select class="form-select form-select-sm axis-key-select" data-axis="${axis}" disabled>
                   <option value="">Loading...</option>
@@ -82,9 +91,11 @@ function axisRow(axis, label, id, attrs = 'class="axis-selector-container ctl-ro
  * @param {string} settings.categoryPalette - Default discrete palette name.
  * @param {number} [settings.colorMin=0] - Minimum value for color range.
  * @param {number} [settings.colorMax=100] - Maximum value for color range.
+ * @param {{plotType: 'cells'|'genes', consumer: string}} panel - the entity a point is and the panel type, which
+ *   the axis rows' type menus list sources for
  * @returns {{ plotContainer: HTMLElement, controlsContainer: HTMLElement, loadingScreen: HTMLElement }}
  */
-export function createPanelStructure(container, id, settings) {
+export function createPanelStructure(container, id, settings, { plotType, consumer }) {
   const $container = jQuery(container);
   
   $container.html(`
@@ -97,24 +108,9 @@ export function createPanelStructure(container, id, settings) {
         <div class="ctl-grid ctl-no-colour">
           <!-- What is plotted: the axes and the colour source -->
           <div class="ctl-group ctl-axes" role="group" aria-label="Axes and colour">
-            ${['x', 'y'].map(axis => axisRow(axis, axis.toUpperCase(), id)).join('')}
-            ${axisRow('z', 'Z', id, `id="z-axis-container-${id}" style="display:none;"`)}
-            <div class="color-selector-container ctl-row">
-              <label class="axis-selector-label ctl-label" for="color-type-select-${id}">Color</label>
-              <div class="axis-selector">
-                <select class="form-select form-select-sm axis-type-select" data-axis="color" id="color-type-select-${id}">
-                  <option value="">Loading...</option>
-                  <option value="none">None (constant)</option>
-                  <!-- Other options will be set based on plot type -->
-                </select>
-                <select class="form-select form-select-sm axis-key-select" data-axis="color" disabled>
-                  <option value="">Loading...</option>
-                </select>
-                <select class="form-select form-select-sm axis-column-select" data-axis="color" disabled>
-                  <option value="">Loading...</option>
-                </select>
-              </div>
-            </div>
+            ${['x', 'y'].map(axis => axisRow(axis, axis.toUpperCase(), id, { plotType, consumer, roles: [axis] })).join('')}
+            ${axisRow('z', 'Z', id, { plotType, consumer, roles: ['z'] }, `id="z-axis-container-${id}" style="display:none;"`)}
+            ${axisRow('color', 'Color', id, { plotType, consumer, roles: ['color'] }, 'class="color-selector-container ctl-row"')}
           </div>
 
           <!-- How the colour is drawn; hidden for a constant colour -->
@@ -333,61 +329,16 @@ export function checkDatasetLoadingStatus(id) {
  * @param {Function} datasetStructure - The dataset structure object.
  * @param {string} plotType - Type of plot ('cells' or 'genes').
  * @param {HTMLElement} controlsContainer - The container for the plot controls.
+ * @param {string} consumer - the panel type ('cell-plot', 'gene-plot'): what its type menus list
  * @returns {Promise<void>} Resolves when UI state is initialized, or rejects with an error
  */
-export async function initializeUIState(id, settings, datasetStructure, plotType, controlsContainer) {
+export async function initializeUIState(id, settings, datasetStructure, plotType, controlsContainer, consumer) {
   console.log('Initializing UI state with settings:', settings);
 
   if (!datasetStructure) throw new Error('Failed to load dataset structure');
   
-  // Configure the axis type selectors based on plot type
   const isGenePlot = plotType === 'genes';
   const $container = jQuery(controlsContainer).closest('.plot-panel');
-  
-  // Set up the correct axis options based on plot type
-  for (const axis of ['x', 'y', 'z', 'color']) {
-    const $selector = $container.find(`#${axis}-type-select-${id}`);
-    if (!$selector.length) continue;
-    
-    // Clear existing options
-    $selector.empty();
-    
-    // Add 'none' option for color only
-    if (axis === 'color') {
-      $selector.append(new Option('None (constant)', 'none'));
-    }
-    
-    // Add appropriate options based on plot type
-    if (isGenePlot) {
-      // Gene plot: var, varm, varp, layer
-      const options = [
-        { value: 'var', text: 'var' },
-        { value: 'varm', text: 'varm', selected: true },
-        { value: 'varp', text: 'varp' },
-        { value: 'layer', text: 'layer' }
-      ];
-      
-      options.forEach(opt => {
-        $selector.append(new Option(opt.text, opt.value, opt.selected, opt.selected));
-      });
-    } else {
-      // Cell plot: obs, obsm, obsp, layer
-      const options = [
-        { value: 'obs', text: 'obs' },
-        { value: 'obsm', text: 'obsm', selected: true },
-        { value: 'obsp', text: 'obsp' },
-        { value: 'layer', text: 'layer' },
-        // the sources with three levels that a cell plot accepts for this axis (utils/source-registry.js)
-        ...sourcesFor('cell-plot', axis === 'color' ? 'color' : axis).map(p => ({ value: p.type, text: p.label }))
-      ];
-      
-      options.forEach(opt => {
-        $selector.append(new Option(opt.text, opt.value, opt.selected, opt.selected));
-      });
-    }
-    
-    $selector.prop('disabled', false); // Enable the selector
-  }
   
   // Show the appropriate highlight button
   const $highlightFocusedCellButton = $container.find(`#highlight-focused-cell-${id}`);
@@ -506,8 +457,8 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   initializeAestheticsSettings(settings);
 
   // Axis selectors
-  setupAxisSelector(controlsContainer, 'x', settings.x, plotType, datasetStructure);
-  setupAxisSelector(controlsContainer, 'y', settings.y, plotType, datasetStructure);
+  setupAxisSelector(controlsContainer, 'x', settings.x, plotType, datasetStructure, { consumer, roles: ['x'] });
+  setupAxisSelector(controlsContainer, 'y', settings.y, plotType, datasetStructure, { consumer, roles: ['y'] });
 
   if (settings.z) {
     const $toggle = jQuery(`#z-axis-toggle-${id}`);
@@ -516,12 +467,12 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
 
     const $zContainer = jQuery(`#z-axis-container-${id}`);
     $zContainer.show();
-    setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure);
+    setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure, { consumer, roles: ['z'] });
   } else if (settings.z === undefined) {
     settings.z = null; // ensure no legacy 3D state
   }
 
-  setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure);
+  setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure, { consumer, roles: ['color'] });
 
   // Point controls - ensure sliders reflect the panel's settings
   showPointStyle(id, settings);

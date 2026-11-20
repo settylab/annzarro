@@ -29,8 +29,8 @@ import { TableResolver, describeUnresolved } from '../../utils/table-resolver.js
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
 import { NO_HOVER } from './hover-columns.js';
-import { describeScore } from '../../utils/score-notices.js';
-import { loadScoreSeries, loadScoreSeriesWhenReady, scoreTitle, scoreLabel, drawScorePlaceholder, ScoreUnavailable } from '../../utils/score-source.js';
+import { loadScoreSeries, scoreLabel } from '../../utils/score-source.js';
+import { getSource, plotSeries } from '../../utils/source-registry.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
@@ -768,24 +768,16 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         }
         break;
       }
-      case 'gene-score': {
-        // a signature's score, one value per cell shown (utils/score-source.js); a score that is not
-        // ready throws ScoreUnavailable, and the plot draws neutral points or a placeholder with the
-        // notice over it
-        if (plotType === 'genes') {
-          // a link can name one in a Gene Plot: that axis says so, and the rest of the link works
-          const notice = describeScore({ state: 'notcells', title: '' }, { role: role === 'colour' ? 'colour' : (axis || 'x') });
-          throw new ScoreUnavailable(notice.headline, notice,
-            Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected }));
-        }
-        const scored = await loadScoreSeriesWhenReady(settings, {
-          host: plotContainer, role: role === 'colour' ? 'color' : (axis || role || 'x'), expected, unit
-        }, signal);
-        return { values: scored.values, type: 'numerical', categories: null, coverage: scored.coverage, rankOf: null,
-          ranked: false, groupNames: null };
+      default: {
+        // a provider's source (a signature's score, a grouping; utils/source-registry.js), one value per entity
+        // shown. One that cannot be drawn yet throws SourceUnavailable, and the plot draws neutral points or the
+        // provider's placeholder with the notice over it
+        const provider = getSource(type);
+        if (!provider) throw new Error(`Unknown data type: ${type}`);
+        return plotSeries(await provider.load(settings, {
+          host: plotContainer, role: role === 'colour' ? 'color' : (axis || role || 'x'), axis, expected, unit, signal
+        }));
       }
-      default:
-        throw new Error(`Unknown data type: ${type}`);
     }
 
     // Reconcile length against the entity count even on the success path: a
@@ -819,7 +811,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     return { values, type: dataType, categories, coverage, rankOf, ranked: false, groupNames };
   } catch (error) {
     // a load that was stopped is not a failed read
-    if (error && (error.name === 'AbortError' || error.name === 'ScoreUnavailable')) throw error;
+    if (error && (error.name === 'AbortError' || error.name === 'SourceUnavailable')) throw error;
     console.error('Error loading data for settings', settings, 'error:', error);
     const wrapped = new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
     // Carry the classification with the error so the panel can state a REASON
@@ -1194,6 +1186,8 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           data.colorType = colorData.type;
           applyLogColor(data, settings);
           data.colorCategories = colorData.categories;
+          // a provider's own colours, one per category (a grouping's); the dataset's are read from uns at the draw
+          data.colorColours = colorData.colours || null;
           data.colorRankOf = colorData.rankOf || null;
           data.colorRanked = !!colorData.ranked;
           data.colorGroupNames = colorData.groupNames || null;
@@ -1295,9 +1289,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       if (window.Config && window.Config.DEBUG_MODE) {
         console.debug('Plot loading was aborted:', error.message);
       }
-    } else if (error && error.name === 'ScoreUnavailable' && error.scoreNotice) {
-      // an axis from a gene score that cannot be drawn yet: the placeholder says why, with the way out
-      drawScorePlaceholder(plotContainer, error.scoreNotice);
+    } else if (error && error.name === 'SourceUnavailable' && error.notice && getSource(error.type)) {
+      // an axis from a provider (a gene score) that cannot be drawn yet: its placeholder says why, with the way out
+      getSource(error.type).placeholder(plotContainer, error.notice);
     } else {
       console.error('Error loading plot data:', error);
 
@@ -1538,7 +1532,8 @@ export function knownMissingSource(structure, series, { unit, total }) {
  * @param {{type: string, key: string, column?: string}} series
  */
 export function seriesSource(series) {
-  if (series.type === 'gene-score') return `gene score ${scoreTitle(series)}`;
+  const provider = getSource(series.type);
+  if (provider) return provider.titleOf(series);
   return `${series.type}.${series.key}` + (series.column ? `.${series.column}` : '');
 }
 
@@ -1680,7 +1675,7 @@ export async function loadHoverColumns(settings, plotType, plotContainer = null,
       }
     } catch (err) {
       if (err && err.name === 'AbortError') throw err;
-      if (err && err.name === 'ScoreUnavailable') continue;     // the plot draws again when the score is ready
+      if (err && err.name === 'SourceUnavailable') continue;     // the plot draws again when the score is ready
       console.warn(`Hover column ${h.type}.${h.key} not loaded:`, err && err.message);
     }
   }
@@ -2942,13 +2937,12 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     const datasetPath = DataManager.getCurrentDataset();
     
     try {
-      // Load custom colors from uns
-      const response = await DataManager.loadUns({
+      // a provider's colours are its own; a column's are stored in uns
+      let customColors = filteredData.colorColours || null;
+      const response = customColors ? null : await DataManager.loadUns({
         datasetPath: datasetPath,
         unsKey: colorKey
       });
-      
-      let customColors = null;
       if (response && response.data) {
         customColors = Array.isArray(response.data)
           ? response.data
@@ -3000,7 +2994,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         panelCoverage,
         unit
       );
-      if (settings.categoryPalette === 'uns') {
+      if (settings.categoryPalette === 'uns' && !filteredData.colorColours) {
         setStatusTag(plotContainer, UNS_PALETTE_TAG,
           unsPaletteTag(settings.color.key, customColors, categoricalTraces.categoryCount));
       }

@@ -19,8 +19,7 @@ import { tableCheck, refusalPanel } from '../../utils/memory-guard-ui.js';
 import { loadTableData, initializeDataTable, releaseTable, getColumnKey } from './table-data.js';
 import { TableScores, tileOnScreen } from './table-scores.js';
 import { usedScoreColumns } from '../../utils/score-column.js';
-import { readsScoreOf } from '../../utils/score-source-panels.js';
-import { dependsOn, setReferenceHost } from '../../utils/panel-references.js';
+import { dependsOn, usersOf, setReferenceHost } from '../../utils/panel-references.js';
 
 const TABLE_KINDS = new Set(['cell-table', 'gene-table']);
 
@@ -122,9 +121,9 @@ const host = {
         const pm = window.PanelManager;
         const panel = pm.getPanel(dependantId);
         if (!panel || !isActive(panel)) return false;
-        const config = panel.getConfig ? panel.getConfig() : null;
-        // filtered by the table, or coloured, drawn or columned by its score (a gene table is a source of a gene score)
-        return !!config && (config.tableFilter === tableId || readsScoreOf(config, tableId));
+        // filtered by the table, or coloured, drawn or columned by its score (a gene table is a source of a gene
+        // score): it uses the table (utils/panel-references.js)
+        return usersOf(tableId).some(user => user.panelId === dependantId);
     },
     visible: onScreen,
     cellsKey(kind) {
