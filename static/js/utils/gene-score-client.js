@@ -2,21 +2,18 @@
  * The browser's side of `POST /api/v1/data/gene_score` (annzarro/server/routes/gene_score.py).
  *
  * The body carries the recipe, because a long list of gene names does not fit
- * a request line. The reply to a computation is one stream: JSON lines (`progress`
- * frames, then a `result` frame with the vector's header, the gene figures and
- * the warnings, or an `error` frame when the work fails after the stream has
- * begun), followed by `byte_length` bytes of little-endian float32, one value
- * per cell shown. A stream that ends without a `result` frame has failed.
+ * a request line. The reply to a computation is one stream (frame-stream-client.js):
+ * JSON lines (`progress` frames, then a `result` frame with the vector's header, the
+ * gene figures and the warnings, or an `error` frame when the work fails after the
+ * stream has begun, `read_busy` when the server stayed busy past its wait), followed
+ * by `byte_length` bytes of little-endian float32, one value per cell shown. A stream
+ * that ends without a `result` frame has failed.
  *
  * `fetchImpl` is injected so Node tests drive the parser with a fake stream.
  */
 import { csrfFetch } from './csrf.js';
+import { readFrameStream } from './frame-stream-client.js';
 import { serverRecipe } from './gene-signature.js';
-
-/** The bytes of the float32 values are little-endian; a big-endian host would need them swapped. */
-const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
-
-const NEWLINE = 10;
 
 /** An error carrying what the server said: `status`, `reason`, `message` and, for 409/413, `estimate`. */
 export function scoreError(message, fields = {}) {
@@ -46,79 +43,25 @@ export async function errorOf(response) {
 
 /**
  * Read a score stream.
+ *
+ * `onProgress(done, total, frame)` is told of every progress frame: genes done and in all, and the
+ * frame itself with `entries_done`, `entries_total`, `running_s` and `queue: {ahead, sharing}`. A score
+ * that waits for the server's heavy lane is sent one at once (`done` 0) and another when its place
+ * changes, so the frame tells a queued score from a computing one.
  * @param {Response} response - a 200 reply
- * @param {{onProgress?: (done: number, total: number) => void}} [opts]
+ * @param {{onProgress?: (done: number, total: number, frame: Object) => void}} [opts]
  * @returns {Promise<{header: Object, values: (Float32Array|null)}>}
  */
 export async function readScoreStream(response, { onProgress = () => {} } = {}) {
-    const reader = response.body.getReader();
-    let line = [];                  // chunks of the JSON line being read
-    let header = null;
-    let out = null;                 // the Uint8Array the values fill
-    let filled = 0;
-    const ended = () => scoreError('The score stream ended before the score was complete.', { reason: 'stream_cut' });
-
-    const frame = (bytes) => {
-        try {
-            return JSON.parse(new TextDecoder().decode(bytes));
-        } catch {
-            throw scoreError('The server sent a frame that is not JSON.', { reason: 'bad_frame' });
-        }
-    };
-
-    for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        let at = 0;
-        while (at < value.length && !header) {
-            const nl = value.indexOf(NEWLINE, at);
-            if (nl < 0) {
-                line.push(value.subarray(at));
-                at = value.length;
-                break;
-            }
-            line.push(value.subarray(at, nl));
-            at = nl + 1;
-            const joined = line.length === 1 ? line[0] : concat(line);
-            line = [];
-            if (!joined.length) continue;
-            const f = frame(joined);
-            if (f.type === 'progress') onProgress(f.done, f.total);
-            else if (f.type === 'error') throw scoreError(f.message || 'The score could not be computed.', { reason: f.reason || 'failed' });
-            else if (f.type === 'result') {
-                header = f;
-                const bytes = Number(f.byte_length) || 0;
-                out = bytes ? new Uint8Array(new ArrayBuffer(bytes)) : null;
-            }
-        }
-        if (header && at < value.length && out) {
-            const take = Math.min(value.length - at, out.length - filled);
-            out.set(value.subarray(at, at + take), filled);
-            filled += take;
-        }
-        if (header && (!out || filled >= out.length)) {
-            await reader.cancel().catch(() => {});
-            break;
-        }
-    }
-    if (!header) throw ended();
-    if (!out) return { header, values: null };
-    if (filled < out.length) throw ended();
-    const values = new Float32Array(out.buffer);
-    if (!LITTLE_ENDIAN) {
-        const view = new DataView(out.buffer);
-        for (let i = 0; i < values.length; i++) values[i] = view.getFloat32(i * 4, true);
-    }
-    return { header, values };
-}
-
-function concat(chunks) {
-    let n = 0;
-    for (const c of chunks) n += c.length;
-    const all = new Uint8Array(n);
-    let at = 0;
-    for (const c of chunks) { all.set(c, at); at += c.length; }
-    return all;
+    const { header, blocks } = await readFrameStream(response, {
+        onFrame: (f) => { if (f.type === 'progress') onProgress(f.done, f.total, f); },
+        blocksOf: (h) => {
+            const bytes = Number(h.byte_length) || 0;
+            return bytes ? [{ name: 'values', dtype: 'float32', bytes }] : [];
+        },
+        words: { cut: 'The score stream ended before the score was complete.', failed: 'The score could not be computed.' }
+    });
+    return { header, values: blocks.values || null };
 }
 
 /**
