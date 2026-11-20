@@ -270,6 +270,8 @@ def _source_values(data, source):
 def _edges(values, binning):
     """Edges over the finite ``values`` (already without the zeros when the zero bin is on)."""
     method, k = binning["method"], int(binning.get("bins", 4))
+    if method == "manual":
+        return sorted(set(float(t) for t in binning["thresholds"]))
     lo, hi = float(values.min()), float(values.max())
     if lo == hi:
         return [lo, hi]
@@ -277,8 +279,6 @@ def _edges(values, binning):
         e = [lo + i * (hi - lo) / k for i in range(k + 1)]
     elif method == "equal_count":
         e = [float(q) for q in np.quantile(values.astype(np.float64), [i / k for i in range(k + 1)])]
-    elif method == "manual":
-        return sorted(set(float(t) for t in binning["thresholds"]))
     else:
         raise ValueError(f"the reference does not make {method!r} bins")
     return sorted(set(e))                              # equal edges are merged
@@ -314,7 +314,6 @@ def ref_partition(data, part, shown):
         ids = [ref_label(c) for c in cats]
         if len(set(ids)) != len(ids):
             return None, None, {"refused": "ambiguous_categories"}
-        info["n_levels"] = len(cats)
         if part.get("levels") is not None:
             kept = list(part["levels"])
             unknown = [i for i in kept if i not in ids]
@@ -322,6 +321,7 @@ def ref_partition(data, part, shown):
                 raise ValueError(f"levels not in the column: {unknown}")
         else:
             kept = ids
+        info["n_levels"] = len(kept)                     # kept levels are what count for the limit (SHR-6)
         pos = {i: k for k, i in enumerate(kept)}
         other_at, na_at = len(kept), len(kept) + 1
         codes = np.full(n, -1)
@@ -344,19 +344,22 @@ def ref_partition(data, part, shown):
     pop = in_shown if b.get("edges_from", "shown") == "shown" else np.ones(n, dtype=bool)
     zero_on = bool(b.get("zero_bin"))
     base = finite & ~(zero_on & (v == 0))
+    manual = b["method"] == "manual"
     edge_vals = v[pop & base]
-    if len(edge_vals) == 0:
+    if len(edge_vals) == 0 and not manual:
         raise ValueError("no finite value to bin")
     edges = _edges(edge_vals, b)
-    n_bins = max(1, len(edges) - 1)
-    info.update(edges=edges, bins_made=n_bins, edges_n=int((pop & base).sum()))
+    # manual: thresholds t1 < ... < tm give m + 1 bins, the first and last open (SHR, section 2.4), read from nothing
+    n_bins = len(edges) + 1 if manual else max(1, len(edges) - 1)
+    # edges_n: the finite values of the population the edges came from, zeros included (core/binning.py's to_reply)
+    info.update(edges=edges, bins_made=n_bins, edges_n=0 if manual else int((pop & finite).sum()))
     zero_at = 0 if zero_on else None
     first = 1 if zero_on else 0
     na_at = first + n_bins
     levels = (["@zero"] if zero_on else []) + [f"bin:{i}" for i in range(n_bins)] + ["@na"]
     codes = np.full(n, -1)
-    interior = np.array(edges[1:-1])
-    flat_data = edges[0] == edges[-1]
+    interior = np.array(edges if manual else edges[1:-1])
+    flat_data = not manual and edges[0] == edges[-1]
     for r in np.flatnonzero(in_shown):
         if not finite[r]:
             codes[r] = -1 if rest == "exclude" else na_at
@@ -518,6 +521,8 @@ GROUPING_RECIPES = {
     "pseudotime_width4_shown_third_edges_all": {"partitionings": [_binned("pseudotime", "equal_width", 4, edges_from="all")],
                                                 "shown": "third"},
     "many_over_limit": {"partitionings": [_obs("many")]},
+    "many_kept_under_limit": {"partitionings": [_obs("many", levels=["c:m0005", "c:m0000"], rest="other")]},
+    "score_manual_3_thresholds": {"partitionings": [_obs("score", binning={"method": "manual", "thresholds": [7.0, 3.0, 5.0]})]},
 }
 FEATURES = [
     {"id": "f0", "name": gene(0), "layer": "logged", "detect_above": 0},
