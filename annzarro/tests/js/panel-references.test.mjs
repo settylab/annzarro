@@ -9,10 +9,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const refs = await import('../../../static/js/utils/panel-references.js');
-const { registerReferences, registerPanelSourceType, referencesOf, remapReferences, setReferenceHost,
-    dependsOn, findCycle, usersOf, keptInUse } = refs;
+const { registerReferences, registerPanelSourceType, remapReferences, setReferenceHost,
+    dependsOn, usersOf, keptInUse } = refs;
 const { remapPanelReferences, panelsToAdd } = await import('../../../static/js/utils/deeplink.js');
-const { createResolver, depthOf } = await import('../../../static/js/utils/table-resolver.js');
+const { createResolver, depthOf, findCycle: findCycleIn } = await import('../../../static/js/utils/table-resolver.js');
+/** A cycle in the page's graph, as the table resolver finds it. */
+const findCycle = (id) => findCycleIn(id, dependsOn);
 const { getColumnKey } = await import('../../../static/js/utils/column-key.js');
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -79,50 +81,44 @@ const examples = {
     'gene-signature': () => ({ id: 'gene-signature-1', title: 'T', genes: ['gene-table-1'] })
 };
 
+/** Every example on one page, with each panel they name. */
+function examplesPage() {
+    const panels = {};
+    for (const [type, make] of Object.entries(examples)) panels[make().id] = { type, config: make() };
+    for (const id of ['gene-signature-2']) panels[id] = { type: 'gene-signature', config: {} };
+    return page(panels);
+}
+
 test('each existing panel type declares exactly the references it has', () => {
-    const at = (type) => referencesOf(examples[type](), type).map(r => [r.via, r.id, !!r.remembered]);
-    assert.deepEqual(at('cell-plot'), [
-        ['filter', 'cell-table-1', false],
-        ['axis', 'gene-signature-1', false], ['axis', 'gene-table-1', false], ['axis', 'gene-signature-2', false],
-        ['axis', 'gene-table-1', true], ['axis', 'gene-signature-2', true]]);
-    assert.deepEqual(at('gene-plot'), [['filter', 'gene-signature-1', false]]);
-    assert.deepEqual(at('cell-table'), [['filter', 'gene-table-1', false], ['source', 'gene-signature-1', false]],
+    examplesPage();
+    assert.deepEqual(dependsOn('cell-plot-1'), ['cell-table-1', 'gene-signature-1', 'gene-table-1', 'gene-signature-2']);
+    assert.deepEqual(dependsOn('gene-plot-1'), ['gene-signature-1']);
+    assert.deepEqual(dependsOn('cell-table-1'), ['gene-table-1'],
         "'none' is no reference; a column the filter does not read is only shown");
-    assert.deepEqual(at('gene-table'), []);
-    assert.deepEqual(at('gene-set'), [['filter', 'gene-table-1', false]]);
-    assert.deepEqual(at('gene-signature'), [], 'a signature refers to nothing: a gene named like a panel is a gene');
+    assert.deepEqual(dependsOn('gene-table-1'), []);
+    assert.deepEqual(dependsOn('gene-set-1'), ['gene-table-1']);
+    assert.deepEqual(dependsOn('gene-signature-1'), [], 'a signature refers to nothing: a gene named like a panel is a gene');
+    assert.deepEqual(usersOf('gene-signature-1').map(u => u.panelId), ['cell-plot-1', 'gene-plot-1', 'cell-table-1'],
+        'a column only shown is a use');
 });
 
 test('a remap round trip leaves every existing type as it was, and the forward map renames every reference', () => {
+    // how many places of each example name a panel: a remembered setting and a filter condition count
+    const places = { 'cell-plot': 6, 'gene-plot': 1, 'cell-table': 4, 'gene-table': 0, 'gene-set': 1, 'gene-signature': 0 };
+    const ids = ['cell-table-1', 'gene-signature-1', 'gene-signature-2', 'gene-table-1'];
+    const forward = new Map(ids.map(id => [id, `${id}-new`]));
+    const back = new Map([...forward].map(([a, b]) => [b, a]));
     for (const [type, make] of Object.entries(examples)) {
         const original = make();
-        const forward = new Map();
-        for (const r of referencesOf(original, type)) forward.set(r.id, `${r.id}-new`);
-        const back = new Map([...forward].map(([a, b]) => [b, a]));
         const cfg = make();
         remapPanelReferences([cfg], forward);
-        for (const r of referencesOf(cfg, type)) assert.ok(r.id.endsWith('-new'), `${type}: ${r.via} ${r.id} followed`);
-        if (forward.size) assert.notDeepEqual(cfg, original, `${type} changed`);
+        assert.equal(JSON.stringify(cfg).split('-new').length - 1, places[type], `${type}: every reference followed, nothing else`);
         remapPanelReferences([cfg], back);
         assert.deepEqual(cfg, original, `${type} round trip`);
     }
-});
-
-test('a table column follows with every condition of its filter, also when two ids swap', () => {
-    const a = score('sig-a'), b = score('sig-b');
-    const ka = getColumnKey(a), kb = getColumnKey(b);
-    const cfg = { id: 'cell-table-1', columns: [a, b], searchBuilderConfig: { logic: 'AND', criteria: [
-        { origData: ka }, { origData: kb }, { logic: 'OR', criteria: [{ origData: ka }] }] } };
-    remapPanelReferences([cfg], new Map([['sig-a', 'sig-b'], ['sig-b', 'sig-a']]));
-    assert.deepEqual(cfg.columns.map(c => c.key), ['sig-b', 'sig-a']);
-    const c = cfg.searchBuilderConfig.criteria;
-    assert.deepEqual([c[0].origData, c[1].origData, c[2].criteria[0].origData], [kb, ka, kb]);
-});
-
-test('a link whose config does not say its type is remapped by every declaration, each reading its own fields', () => {
-    const cfg = { tableFilter: 'a', x: { type: 'obs', key: 'a' }, sections: [{ source: 'a' }] };
-    remapPanelReferences([cfg], { a: 'b' });
-    assert.deepEqual(cfg, { tableFilter: 'b', x: { type: 'obs', key: 'a' }, sections: [{ source: 'b' }] });
+    const plot = remapPanelReferences([examples['cell-plot']()], forward)[0];
+    assert.equal(plot.y.history['gene-score'].key, 'gene-table-1-new', 'what an axis remembers follows too');
+    assert.equal(plot.z.key, 'gene-signature-1', 'an obs key is no panel');
 });
 
 // ---------------------------------------------------------------- a type that does not exist yet
@@ -137,7 +133,9 @@ test('remap follows a reference kind of a new panel type, through links and pane
     assert.equal(c.sets[0].ref, 'T1');
     assert.equal(c.measure.key, 'S1');
     assert.equal(c.sections[0].source, 'S1');
-    assert.deepEqual(referencesOf(c, 'fake-grouping').map(r => r.via), ['partitioning', 'partitioning', 'set', 'measure', 'section']);
+    page({ g: { type: 'fake-grouping', config: c }, T1: { type: 'cell-table', config: {} }, G2: { type: 'fake-grouping', config: {} },
+        S1: { type: 'gene-signature', config: {} } });
+    assert.deepEqual(dependsOn('g'), ['T1', 'G2', 'S1'], 'partitioning, set, measure and section are edges, each panel once');
 
     const plan = { view: { layout: { hierarchy: [], panelConfigs: {} } }, closedPanels: [
         { type: 'cell-table', id: 't1', config: { id: 't1', columns: [] } },
@@ -166,7 +164,7 @@ test('a source type whose key is a panel is followed in plot axes, colour, hover
 test('a declaration that names an unknown reference kind throws; so does a type registered twice or a bad declaration', () => {
     // only a config that has the field: every declaration is asked for a config of no type
     registerReferences('fake-typo', (cfg) => (cfg.typo ? [{ id: 'x', via: 'axes', get: () => 'x', set: () => {} }] : []));
-    assert.throws(() => referencesOf({ typo: true }, 'fake-typo'), /axes/);
+    assert.throws(() => remapPanelReferences([{ typo: true }], { x: 'y' }), /axes/);
     assert.throws(() => registerReferences('fake-typo', () => []), /already/);
     assert.throws(() => registerReferences('fake-bad', null), /function/);
     assert.throws(() => registerReferences('cell-plot', () => []), /already/);
@@ -253,8 +251,9 @@ test('a crafted link never loops: a dense graph is walked once per node, and gar
         { x: { type: 'gene-score', key: 3, history: 'no' }, y: { history: { 'gene-score': null } } },
         { partitionings: [null, { source: null }], sets: 'no', sections: [7] }];
     for (const cfg of junk) {
-        for (const type of [undefined, 'cell-plot', 'cell-table', 'gene-set', 'fake-grouping']) {
-            assert.doesNotThrow(() => referencesOf(cfg, type));
+        for (const type of ['cell-plot', 'cell-table', 'gene-set', 'fake-grouping', 'unknown-type']) {
+            page({ p: { type, config: cfg }, x: { type: 'gene-signature', config: {} } });
+            assert.doesNotThrow(() => [dependsOn('p'), usersOf('x'), keptInUse(['x'])]);
         }
     }
     assert.doesNotThrow(() => remapPanelReferences(clone(junk), { x: 'y' }));

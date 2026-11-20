@@ -6,7 +6,7 @@
  *
  *   remapReferences   ids changed (a panel set added beside open panels): every reference follows
  *   dependsOn         the panels a panel is computed from: the edges of the dependency graph
- *   findCycle         a cycle through a panel in that graph, whatever kinds of panel are on it
+ *                     (the table resolver finds a cycle in it, whatever kinds of panel are on it)
  *   usersOf           the panels that use a panel ("in use", "used by")
  *   keptInUse         the closed panels in use, which Clear closed panels keeps
  *
@@ -29,7 +29,6 @@
  * with fakes. The declarations of the six panel types that exist before 0.8.0 are at the end of this
  * module; a new panel type declares its own in its panel module.
  */
-import { findCycle as findCycleIn } from './table-resolver.js';
 import { getColumnKey } from './column-key.js';
 import { isScoreColumn } from './score-column.js';
 
@@ -61,7 +60,7 @@ let host = { panel: () => null, ids: () => [] };
  *   reads only the fields that hold references (a table's configuration has lazy views of its rows)
  *   and must not throw on a configuration from a hand-edited link
  */
-export function registerReferences(panelType, declare) {  // export-unused-ok: G9a, X3a and C2a declare their panel types' references (plan 1.3)
+export function registerReferences(panelType, declare) {  // export-unused-ok: G9a, X3a, C2a: declare their panel types' references
     if (typeof declare !== 'function') throw new Error(`The references of '${panelType}' must be a function`);
     if (declarations.has(panelType)) throw new Error(`The references of '${panelType}' are declared already`);
     declarations.set(panelType, declare);
@@ -72,7 +71,7 @@ export function registerReferences(panelType, declare) {  // export-unused-ok: G
  * table's columns of that type then follow their panel, with no other change.
  * @param {string} type
  */
-export function registerPanelSourceType(type) {  // export-unused-ok: G8a registers cell-group (CAT-9)
+export function registerPanelSourceType(type) {  // export-unused-ok: G8a: registers cell-group, so its keys follow (CAT-9)
     panelSourceTypes.add(type);
 }
 
@@ -84,7 +83,7 @@ export function registerPanelSourceType(type) {  // export-unused-ok: G8a regist
  *   only its own fields
  * @returns {Array<{id: string, via: string, get: Function, set: Function, remembered?: boolean}>}
  */
-export function referencesOf(config, panelType) {  // export-unused-ok: plan 1.3 interface; the new panel types' remap round-trip tests and G9a read it
+function referencesOf(config, panelType) {
     if (!config || typeof config !== 'object' || Array.isArray(config)) return [];
     const own = declarations.get(panelType);
     const asked = own ? [own] : [...declarations.values()];
@@ -144,21 +143,12 @@ export function dependsOn(id) {
 }
 
 /**
- * The cycle through `id` in the graph of every panel on the page, or null. It never loops.
- * @param {string} id
- * @returns {string[]|null} the ids on the cycle, starting and ending at the one met twice
- */
-export function findCycle(id) {  // export-unused-ok: plan 1.3 interface; the grouping's cycle state (G9a, SHR-34) asks it
-    return findCycleIn(id, dependsOn);
-}
-
-/**
  * The panels that use `id`: each once, in the host's order, never `id` itself. A remembered setting is
  * no use.
  * @param {string} id
  * @returns {Array<{panelId: string, kind: string}>} kind is the user's panel type
  */
-export function usersOf(id) {  // export-unused-ok: plan 1.3 interface; a grouping's delete with its user count (GRP-13, G9a)
+export function usersOf(id) {  // export-unused-ok: G9a: a grouping deleted from the chooser with a count of its users (GRP-13)
     const out = [];
     for (const other of host.ids()) {
         if (other === id) continue;
