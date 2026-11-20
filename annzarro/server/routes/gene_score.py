@@ -21,23 +21,27 @@ confirmation_required``.
 Otherwise the reply is a stream of frames, ``application/x-annzarro-score-stream``: JSON objects,
 one per line, and after the ``result`` frame ``byte_length`` bytes of little-endian float32, one
 value per cell shown, in the order of the cells shown. Frames: ``progress``
-``{done, total}``, then ``result`` (the vector's header, gene figures, warnings), or ``error``
+``{done, total, entries_done, entries_total, running_s, queue}`` (genes, stored entries, the seconds the score has
+held its lane, and ``{ahead, sharing}``), then ``result`` (the vector's header, gene figures, warnings), or ``error``
 ``{reason, message}`` when the work fails after the stream began (the status is already 200, so a
 stream that ends without a ``result`` frame has failed). A closed connection stops the work after the
-read in progress. One score is computed at a time per worker; another request waits up to
-``QUEUE_WAIT_S`` seconds, then answers ``503 read_busy``.
+read in progress.
+
+A score takes the heavy lane of compute_stream (SHR-41). A score that has to wait for it is sent a ``progress``
+frame at once, with ``done`` and ``entries_done`` 0 and its ``queue``, and another whenever its place changes; a
+wait past ``QUEUE_WAIT_S`` ends in an ``error`` frame with reason ``read_busy``. A running score gives the lane way
+between read batches while another job waits, so a long score delays a later one by one batch at most.
 """
 import json
 import logging
-import threading
 
 import numpy as np
-from flask import Response, current_app as app, jsonify, request
+from flask import jsonify, request
 
 from .. import access
 from ...core import gene_score, get_reader, read_guard, remote
 from ...core import subset as cell_subset
-from . import data_routes
+from . import compute_stream, data_routes
 
 logger = logging.getLogger(__name__)
 
@@ -46,51 +50,21 @@ logger = logging.getLogger(__name__)
 #: with a subset spec and a few flags. It equals the server's own default for every request (server.max_request_mb),
 #: which answers first when it is set lower.
 MAX_BODY_BYTES = 16 << 20
-#: Seconds a request waits for the score being computed before it answers 503.
+#: Seconds a score waits for its lane and its memory before it ends with the ``read_busy`` error frame.
 QUEUE_WAIT_S = 30.0
 #: Seconds a remote store may be read for one score (the request deadline ends with the request itself).
 REMOTE_COMPUTE_S = 1800.0
 #: Seconds a remote store may be sampled for the kind of an input.
 REMOTE_KIND_S = 30.0
-#: Bytes of the vector written at once, so a closed connection is noticed between writes.
-WRITE_CHUNK = 1 << 20
-
 MIMETYPE = "application/x-annzarro-score-stream"
 _BODY_FIELDS = ("recipe", "subset", "estimate_only", "confirm", "dataset_path")
 
-#: One computation at a time in this process.
-_slot = threading.BoundedSemaphore(1)
+#: The heavy lane held like a semaphore (compute_stream.Holder), by what is not a score: a test keeps the lane busy
+#: through it.
+_slot = compute_stream.LANES.holder("heavy")
 
-
-def _error(status, reason, message, **extra):
-    return jsonify({"error": message, "reason": reason, **extra}), status
-
-
-def _body():
-    """The request body as an object, or a (status, reason, message) refusal."""
-    declared = request.content_length
-    if declared is not None and declared > MAX_BODY_BYTES:
-        return None, (413, "request_too_large", f"The request is over {MAX_BODY_BYTES // 2 ** 20} MB.")
-    raw = request.stream.read(MAX_BODY_BYTES + 1)
-    if len(raw) > MAX_BODY_BYTES:
-        return None, (413, "request_too_large", f"The request is over {MAX_BODY_BYTES // 2 ** 20} MB.")
-    try:
-        body = json.loads(raw.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
-        return None, (400, "bad_request", "The body must be a JSON object.")
-    if not isinstance(body, dict):
-        return None, (400, "bad_request", "The body must be a JSON object.")
-    unknown = sorted(set(body) - set(_BODY_FIELDS))
-    if unknown:
-        return None, (400, "bad_request", f"Unknown field(s): {', '.join(unknown)}.")
-    for flag in ("estimate_only", "confirm"):
-        if not isinstance(body.get(flag, False), bool):
-            return None, (400, "bad_request", f"{flag} must be true or false.")
-    return body, None
-
-
-def _frame(obj):
-    return json.dumps(obj, separators=(",", ":"), allow_nan=False).encode("utf-8") + b"\n"
+_error = compute_stream.error_response
+_frame = compute_stream.frame
 
 
 def _clean(value):
@@ -150,6 +124,8 @@ def _result_frame(plan, result):
 
 def _error_frame(exc):
     """The ``error`` frame for a failure after the stream began."""
+    if isinstance(exc, read_guard.ReadBusyError):
+        return compute_stream.busy_frame(exc)
     if isinstance(exc, gene_score.ScoreError):
         return {"type": "error", "reason": exc.reason, "message": exc.message}
     exceeded = remote.find_deadline_exceeded(exc)
@@ -161,23 +137,30 @@ def _error_frame(exc):
     return {"type": "error", "reason": "read_failed", "message": f"Failed to read the dataset: {exc}"}
 
 
-def _stream(plan, shown_rows, release):
-    """The response body. ``release`` is called once, when the response closes (also when it never started)."""
-    def frames():
+def _progress(job, plan, done, total, entries_done):
+    return {"type": "progress", "done": done, "total": total,
+            **compute_stream.progress_fields(job, entries_done, plan.entries)}
+
+
+def _work(plan, shown_rows):
+    """The frames and the vector of one score, given its job (the pause of ``compute``)."""
+    def frames(job):
         events = None
+        entries = [0]                                  # stored entries read so far (compute's on_entries)
+
+        def read(n):
+            entries[0] += n
         try:
             with remote.deadline(REMOTE_COMPUTE_S if plan.remote else None):
-                events = gene_score.compute(plan, shown_rows)
+                events = gene_score.compute(plan, shown_rows, pause=job, on_entries=read)
                 for kind, payload in events:
                     if kind == "progress":
                         done, total = payload
-                        yield _frame({"type": "progress", "done": done, "total": total})
+                        yield _frame(_progress(job, plan, done, total, entries[0]))
                     else:
                         yield _frame(_result_frame(plan, payload))
                         if payload.values is not None:
-                            data = memoryview(payload.values.astype("<f4", copy=False)).cast("B")
-                            for start in range(0, len(data), WRITE_CHUNK):
-                                yield bytes(data[start:start + WRITE_CHUNK])
+                            yield from compute_stream.block_bytes([payload.values.astype("<f4", copy=False)])
         except GeneratorExit:
             raise
         except Exception as exc:
@@ -185,8 +168,7 @@ def _stream(plan, shown_rows, release):
         finally:
             if events is not None:
                 events.close()
-            release()
-    return frames()
+    return frames
 
 
 def register_gene_score_routes(app_, api_version):
@@ -200,7 +182,7 @@ def register_gene_score_routes(app_, api_version):
             reader = get_reader(dataset_path)    # a missing store answers before the body is looked at, as on every route
         except Exception as exc:
             return data_routes._reader_error_response(exc, dataset_path)
-        body, refusal = _body()
+        body, refusal = compute_stream.read_body(_BODY_FIELDS, MAX_BODY_BYTES)
         if refusal:
             return _error(*refusal)
         named = body.get("dataset_path")
@@ -220,16 +202,16 @@ def register_gene_score_routes(app_, api_version):
             return jsonify({"estimate": estimate, "missing": plan.missing, "missing_down": plan.missing_down,
                             "duplicated": plan.duplicated,
                             "recipe": recipe.describe()})
-        if plan.tier == "refused":
-            hint = (" The matrix is stored by cell (CSR), which is slow to read by gene; a copy stored by gene "
-                    "(CSC) would be far faster." if plan.layout == "csr" else "")
-            return _error(413, "score_too_expensive",
-                          f"This score would take about {plan.seconds / 60:.0f} minutes; the limit is "
-                          f"{gene_score.CONFIRM_MAX_S / 60:.0f}. Use fewer genes.{hint}", estimate=estimate)
-        if plan.tier == "confirm" and not body.get("confirm", False):
-            return _error(409, "confirmation_required",
-                          f"This score would take about {plan.seconds:.0f} seconds. Send confirm: true to compute it.",
-                          estimate=estimate)
+        hint = (" The matrix is stored by cell (CSR), which is slow to read by gene; a copy stored by gene "
+                "(CSC) would be far faster." if plan.layout == "csr" else "")
+        refusal = compute_stream.tier_refusal(
+            plan.tier, body.get("confirm", False), estimate, too_expensive="score_too_expensive",
+            refused_message=f"This score would take about {plan.seconds / 60:.0f} minutes; the limit is "
+                            f"{gene_score.CONFIRM_MAX_S / 60:.0f}. Use fewer genes.{hint}",
+            confirm_message=f"This score would take about {plan.seconds:.0f} seconds. "
+                            "Send confirm: true to compute it.")
+        if refusal is not None:
+            return refusal
 
         shown_rows = None
         if body.get("subset") is not None:
@@ -243,37 +225,20 @@ def register_gene_score_routes(app_, api_version):
                 return data_routes._reader_error_response(exc, dataset_path)
             shown_rows = None if resolved is None else resolved.indices
 
-        # one computation at a time; the memory it holds is accounted with the other large reads
-        if not _slot.acquire(timeout=QUEUE_WAIT_S):
-            raise read_guard.ReadBusyError("Another gene score is being computed; try again in a moment.",
-                                           max(1, int(QUEUE_WAIT_S)))
-        released = []
-        admitted = None
+        # the heavy lane; the memory is held on the worker's ledger and with the other large reads
+        n_shown = plan.n_obs if shown_rows is None else int(shown_rows.size)
+        accumulators = n_shown * (8 + 2) * plan.vectors
+        need = accumulators + min(gene_score.READ_AHEAD_ENTRIES, plan.entries) * 12
 
-        def release():
-            if released:
-                return
-            released.append(True)
-            try:
-                if admitted is not None:
-                    admitted.__exit__(None, None, None)
-            finally:
-                _slot.release()
-        try:
-            n_shown = plan.n_obs if shown_rows is None else int(shown_rows.size)
-            need = n_shown * (8 + 2) * plan.vectors + min(gene_score.READ_AHEAD_ENTRIES, plan.entries) * 12
+        def admit():
             admitted = read_guard.admit(need)
             admitted.__enter__()
-        except BaseException:
-            admitted = None
-            release()
-            raise
-        response = Response(_stream(plan, shown_rows, release), mimetype=MIMETYPE)
-        response.call_on_close(release)
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["X-Accel-Buffering"] = "no"
-        response.headers["X-Annzarro-Score-Version"] = str(gene_score.ALGORITHM_VERSION)
-        return response
+            return lambda: admitted.__exit__(None, None, None)
+        return compute_stream.respond(
+            "heavy", nbytes=need, keep_bytes=accumulators, what="this score", wait_s=QUEUE_WAIT_S, admit=admit,
+            work=_work(plan, shown_rows),
+            queued_frame=lambda job: _progress(job, plan, 0, len(plan.columns), 0), mimetype=MIMETYPE,
+            headers={"X-Annzarro-Score-Version": str(gene_score.ALGORITHM_VERSION)})
 
 
 def register_matrix_kind_route(app_, api_version):

@@ -423,7 +423,10 @@ costs far more than one stored by gene (CSC), and a remote store is estimated at
 **The stream.** Otherwise the reply is `application/x-annzarro-score-stream`: JSON frames, one per line, then
 raw bytes.
 
-1. `{"type":"progress","done":k,"total":n}` as genes are read.
+1. `{"type":"progress","done":k,"total":n,"entries_done":e,"entries_total":E,"running_s":s,"queue":{"ahead":a,"sharing":m}}`
+   as genes are read: genes, stored entries, the seconds the score has held its lane (waits left out) and its
+   place. A score that has to wait is sent one at once, with `done` and `entries_done` 0, and another whenever
+   its place changes.
 2. `{"type":"result", ...}`, then `byte_length` bytes: little-endian float32, one value per cell shown, in the
    order the cells are shown (the `subset`'s order; all cells without one). The frame has `scored`, `reason`
    and `message` (why there is no score, and `byte_length: 0`), `n_cells` (the dataset), `n_shown`,
@@ -458,9 +461,12 @@ suggested on their looks alone. With `suggest=0` the other matrices are not look
 checks of every data route apply.
 
 A closed connection stops the work: the next progress write fails and the work ends after the read in
-progress. One score is computed at a time per worker; another request waits up to 30 s for it, then answers
-`503 read_busy` with `Retry-After`. The memory a score holds (the running sum for the cells shown, and the
-entries read ahead, at most about 48 million entries) counts against `server.read_budget_mb` while it runs.
+progress. Scores take a worker's heavy lane one at a time; a running score gives way between read batches
+while another waits, so a long score delays a later one by one batch at most. A score that waits more than
+30 s for the lane or its memory ends with the error frame `read_busy` (the stream has already begun, so it is
+not a 503). The memory a score holds (the running sum for the cells shown, and the entries read ahead, at most
+about 48 million entries) is held on the worker's compute ledger (4.5 GB by default) and counts against
+`server.read_budget_mb` while it runs.
 The request body is at most 1 MB (`413 request_too_large`). It only reads, but it is a POST, so the forgery
 check of every other POST applies.
 

@@ -292,8 +292,8 @@ def test_only_post_is_allowed(client, layout):
 def test_a_failure_after_the_stream_began_is_an_error_frame(client, layout, monkeypatch):
     real = gs.compute
 
-    def broken(plan, rows=None, should_stop=None):
-        events = real(plan, rows, should_stop)
+    def broken(plan, rows=None, should_stop=None, **kw):
+        events = real(plan, rows, should_stop, **kw)
         yield next(events)
         raise OSError("disk gone")
     monkeypatch.setattr(gs, "compute", broken)
@@ -312,10 +312,13 @@ def test_another_request_waits_for_the_slot_then_is_told_to_retry(client, layout
     assert route._slot.acquire(blocking=False)
     try:
         resp = post(client, layout, {"recipe": {"genes": NAMES}})
+        frames, vector = parse(resp.get_data())
     finally:
         route._slot.release()
-    assert resp.status_code == 503 and resp.get_json()["reason"] == "read_busy"
-    assert resp.headers["Retry-After"] == "1"
+    # queued, the stream began at once: the wait that outlasts QUEUE_WAIT_S is an error frame, not a 503
+    assert resp.status_code == 200 and [f["type"] for f in frames] == ["progress", "error"]
+    assert frames[0]["done"] == 0 and frames[0]["entries_done"] == 0 and frames[0]["queue"] == {"ahead": 1, "sharing": 0}
+    assert frames[1]["reason"] == "read_busy" and vector is None
     assert post(client, layout, {"recipe": {"genes": NAMES}}).status_code == 200      # and it is free after
 
 
@@ -325,7 +328,9 @@ def test_a_queued_request_runs_when_the_slot_frees(client, layout, monkeypatch):
     threading.Timer(0.3, route._slot.release).start()
     start = time.monotonic()
     resp = post(client, layout, {"recipe": {"genes": NAMES}})
+    frames, vector = parse(resp.get_data())                           # the stream begins at once, queued
     assert resp.status_code == 200 and time.monotonic() - start >= 0.25
+    assert frames[0]["queue"] == {"ahead": 1, "sharing": 0} and frames[-1]["type"] == "result" and vector is not None
 
 
 def test_the_memory_of_a_score_is_held_while_it_streams_and_released_after(client, layout):
@@ -581,8 +586,8 @@ def test_a_refused_or_failed_control_adjusted_request_leaves_the_slot_and_the_bu
     free()                                                             # no control genes
     real = gs.compute
 
-    def broken(plan, rows=None, should_stop=None):
-        events = real(plan, rows, should_stop)
+    def broken(plan, rows=None, should_stop=None, **kw):
+        events = real(plan, rows, should_stop, **kw)
         yield next(events)
         raise OSError("disk gone")
     monkeypatch.setattr(gs, "compute", broken)
