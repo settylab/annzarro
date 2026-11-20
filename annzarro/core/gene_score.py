@@ -328,7 +328,7 @@ class _Source:
         """Stored entries (matrix elements) ``column_stat(kind)`` reads."""
         raise NotImplementedError
 
-    def row_totals(self, should_stop: Optional[Callable[[], bool]] = None) -> np.ndarray:
+    def row_totals(self, should_stop: Optional[Callable[[], bool]] = None, pause=None) -> np.ndarray:
         """The sum of the finite values of every cell over all genes; float64, length ``n_obs``."""
         raise NotImplementedError
 
@@ -340,7 +340,7 @@ class _Source:
         """The share of the matrix's elements that are stored (1 for a dense array, whose sample holds its zeros)."""
         return 1.0
 
-    def column_stat(self, kind: str, should_stop: Optional[Callable[[], bool]] = None) -> np.ndarray:
+    def column_stat(self, kind: str, should_stop: Optional[Callable[[], bool]] = None, pause=None) -> np.ndarray:
         """One figure per gene, for every gene: ``detection`` (stored non-zero values over cells) or ``mean``
         (over the finite values, zeros included; NaN for a gene with none). Float64, length ``n_var``."""
         raise NotImplementedError
@@ -356,14 +356,22 @@ def _sample_stored(data) -> np.ndarray:
     return np.concatenate(pieces) if pieces else np.empty(0)
 
 
-def _sparse_stat(kind: str, n_obs: int, n_var: int, chunks, should_stop) -> np.ndarray:
+def _checkpoint(should_stop, pause) -> None:
+    """Between the chunks of a whole-matrix pass: stop when asked, and wait while a pause is wanted. Nothing is read
+    ahead in these passes, so nothing is in flight when ``pause.wait()`` is called."""
+    if should_stop is not None and should_stop():
+        raise ScoreCancelled()
+    if pause is not None and pause.wanted():
+        pause.wait()
+
+
+def _sparse_stat(kind: str, n_obs: int, n_var: int, chunks, should_stop, pause=None) -> np.ndarray:
     """``chunks`` yields ``(gene_of_each_entry, values or None)``; ``values`` only when the mean is asked for."""
     counts = np.zeros(n_var, dtype=np.float64)
     sums = np.zeros(n_var, dtype=np.float64)
     missing = np.zeros(n_var, dtype=np.float64)
     for genes, values in chunks:
-        if should_stop is not None and should_stop():
-            raise ScoreCancelled()
+        _checkpoint(should_stop, pause)
         if values is None:
             counts += np.bincount(genes, minlength=n_var)
             continue
@@ -426,20 +434,19 @@ class _CscSource(_Source):
     def stored_fraction(self):
         return float(self.indptr[-1]) / max(self.n_obs * self.n_var, 1)
 
-    def row_totals(self, should_stop=None):
+    def row_totals(self, should_stop=None, pause=None):
         total = int(self.indptr[-1])
         step = int(min(max(STAT_CHUNK, 2 * self.n_obs), 1 << 26))
         out = np.zeros(self.n_obs, dtype=np.float64)
         for lo in range(0, total, step):
-            if should_stop is not None and should_stop():
-                raise ScoreCancelled()
+            _checkpoint(should_stop, pause)
             hi = min(lo + step, total)
             v = np.asarray(self.data[lo:hi], dtype=np.float64)
             ok = np.isfinite(v)
             out += np.bincount(np.asarray(self.indices[lo:hi], dtype=np.int64)[ok], weights=v[ok], minlength=self.n_obs)
         return out
 
-    def column_stat(self, kind, should_stop=None):
+    def column_stat(self, kind, should_stop=None, pause=None):
         if kind == "detection":                      # the length of each gene's range: nothing is read
             return np.diff(self.indptr).astype(np.float64) / max(self.n_obs, 1)
         total = int(self.indptr[-1])
@@ -449,7 +456,7 @@ class _CscSource(_Source):
                 hi = min(lo + STAT_CHUNK, total)
                 genes = np.searchsorted(self.indptr, np.arange(lo, hi, dtype=np.int64), side="right") - 1
                 yield genes, np.asarray(self.data[lo:hi])
-        return _sparse_stat(kind, self.n_obs, self.n_var, chunks(), should_stop)
+        return _sparse_stat(kind, self.n_obs, self.n_var, chunks(), should_stop, pause)
 
     def tasks(self, cols):
         cols = np.sort(np.asarray(cols, dtype=np.int64))
@@ -497,14 +504,13 @@ class _CsrSource(_Source):
     def stored_fraction(self):
         return float(self.nnz) / max(self.n_obs * self.n_var, 1)
 
-    def row_totals(self, should_stop=None):
+    def row_totals(self, should_stop=None, pause=None):
         ptr = np.asarray(self.group["indptr"][:], dtype=np.int64)
         data = self.group["data"]
         out = np.zeros(self.n_obs, dtype=np.float64)
         r0 = 0
         while r0 < self.n_obs:
-            if should_stop is not None and should_stop():
-                raise ScoreCancelled()
+            _checkpoint(should_stop, pause)
             r1 = int(np.searchsorted(ptr, ptr[r0] + STAT_CHUNK, side="right")) - 1
             r1 = min(max(r1, r0 + 1), self.n_obs)
             lo, hi = int(ptr[r0]), int(ptr[r1])
@@ -516,7 +522,7 @@ class _CsrSource(_Source):
             r0 = r1
         return out
 
-    def column_stat(self, kind, should_stop=None):
+    def column_stat(self, kind, should_stop=None, pause=None):
         indices, data = self.group["indices"], self.group["data"]
 
         def chunks():
@@ -524,7 +530,7 @@ class _CsrSource(_Source):
                 hi = min(lo + STAT_CHUNK, self.nnz)
                 yield (np.asarray(indices[lo:hi], dtype=np.int64),
                        np.asarray(data[lo:hi]) if kind == "mean" else None)
-        return _sparse_stat(kind, self.n_obs, self.n_var, chunks(), should_stop)
+        return _sparse_stat(kind, self.n_obs, self.n_var, chunks(), should_stop, pause)
 
     def tasks(self, cols):
         cols = [int(c) for c in np.sort(np.asarray(cols, dtype=np.int64))]
@@ -578,12 +584,11 @@ class _DenseSource(_Source):
     def stat_entries(self, kind):
         return self.entries(range(self.n_var))
 
-    def row_totals(self, should_stop=None):
+    def row_totals(self, should_stop=None, pause=None):
         out = np.zeros(self.n_obs, dtype=np.float64)
         rows = int(max(1, min(self.n_obs, BATCH_ENTRIES // max(self.n_var, 1))))
         for r0 in range(0, self.n_obs, rows):
-            if should_stop is not None and should_stop():
-                raise ScoreCancelled()
+            _checkpoint(should_stop, pause)
             block = np.asarray(self.array[r0:r0 + rows], dtype=np.float64)
             block[~np.isfinite(block)] = 0.0
             out[r0:r0 + block.shape[0]] = block.sum(axis=1)
@@ -597,11 +602,10 @@ class _DenseSource(_Source):
             out.append(np.asarray(self.array[start:start + rows_per_piece]).ravel())
         return np.concatenate(out) if out else np.empty(0)
 
-    def column_stat(self, kind, should_stop=None):
+    def column_stat(self, kind, should_stop=None, pause=None):
         out = np.full(self.n_var, np.nan, dtype=np.float64)
         for batch in self._batches(range(self.n_var)):
-            if should_stop is not None and should_stop():
-                raise ScoreCancelled()
+            _checkpoint(should_stop, pause)
             block = np.asarray(self._take(batch))
             if block.ndim == 1:
                 block = block.reshape(-1, 1)
@@ -642,7 +646,7 @@ def _unsupported(node_name: str, encoding):
                                     f"csc_matrix matrices.")
 
 
-def _input_node(root, input_name: str):
+def input_node(root, input_name: str):
     """The node of the matrix ``input_name`` in an open store (zarr group or HDF5 file) and what to call it in a
     message: ``X``, or a layer. ScoreError 404 ``key_not_found`` when the store has no such matrix."""
     layers = root["layers"] if "layers" in root else None
@@ -665,7 +669,7 @@ def _open_zarr(reader, dataset_path: str, input_name: str) -> _OpenSource:
     root = reader._get_root(dataset_path=dataset_path)
     if root is None:
         raise FileNotFoundError(f"Dataset path does not exist: {dataset_path}")
-    node, label = _input_node(root, input_name)
+    node, label = input_node(root, input_name)
     remote = is_remote_path(dataset_path)
     is_sparse, fmt = reader._is_sparse_matrix(node)
     if is_sparse:
@@ -699,7 +703,7 @@ def _open_h5ad(dataset_path: str, input_name: str) -> _OpenSource:
     from . import h5ad_reader as h5
     f = h5._open(dataset_path)
     try:
-        node, label = _input_node(f, input_name)
+        node, label = input_node(f, input_name)
         if isinstance(node, h5py.Group):
             fmt, shape = h5._encoding(node), h5._sparse_group_shape(node)
             if fmt not in ("csr_matrix", "csc_matrix") or shape is None:
@@ -986,7 +990,8 @@ class ScoreResult:
     n_used: int = 0
     n_cells: int = 0                       # cells in the dataset (the reference population)
     n_shown: int = 0
-    entries_read: int = 0
+    entries_read: int = 0                  # stored values delivered by the gene reads
+    entries_done: int = 0                  # what ``on_entries`` was told: the reads' entries plus each whole-matrix pass
     max_in_flight_entries: int = 0
     seconds: float = 0.0
     controls: Optional[List[int]] = None   # control_adjusted: the control columns used
@@ -1203,26 +1208,39 @@ class _Accumulator:
         return np.ascontiguousarray(out, dtype=np.float32)
 
 
-def _pipeline(tasks: List[_Task], threads: int, budget: int) -> Iterator[Tuple[_Task, list, int]]:
+def pipeline(tasks: List[_Task], threads: int, budget: int, pause=None) -> Iterator[Tuple[_Task, list, int]]:
     """Yield each task with its result, in order, reading ahead by at most ``budget`` entries.
 
     Memory is bounded by the budget plus the task being worked on, however many genes there
     are; order is fixed, so the arithmetic does not depend on the number of threads.
     The third item is the peak entries in flight so far. A read runs in a copy of the caller's
     context, so a remote store's request deadline reaches the reader threads.
+
+    ``pause`` (None: never) has ``wanted()``, asked before each read is started, and ``wait()``. While a pause is wanted
+    no new read is started; the reads already in flight are handed out in order, and only then, with nothing in flight,
+    is ``wait()`` called. The read-ahead is therefore free for as long as the job waits (a heavy job giving way,
+    SHR-41). Afterwards reading resumes with the next task: none is read twice and the order is the same.
     """
     pending: deque = deque()
     in_flight = peak = 0
     queue = deque(tasks)
     window = max(2 * threads, 2)
+    draining = False
     with ThreadPoolExecutor(max_workers=max(threads, 1), thread_name_prefix="gene-score") as pool:
         try:
             while pending or queue:
-                while queue and len(pending) < window and (not pending or in_flight + queue[0].entries <= budget):
-                    task = queue.popleft()
-                    pending.append((task, pool.submit(contextvars.copy_context().run, task.read)))
-                    in_flight += task.entries
-                    peak = max(peak, in_flight)
+                if pause is not None and (draining or pause.wanted()):
+                    draining = True                      # a wanted pause stands until the reads in flight are handed out
+                    if not pending:
+                        draining = False
+                        pause.wait()
+                        continue
+                else:
+                    while queue and len(pending) < window and (not pending or in_flight + queue[0].entries <= budget):
+                        task = queue.popleft()
+                        pending.append((task, pool.submit(contextvars.copy_context().run, task.read)))
+                        in_flight += task.entries
+                        peak = max(peak, in_flight)
                 task, future = pending.popleft()
                 result = future.result()
                 in_flight -= task.entries
@@ -1233,12 +1251,23 @@ def _pipeline(tasks: List[_Task], threads: int, budget: int) -> Iterator[Tuple[_
 
 
 def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
-            should_stop: Optional[Callable[[], bool]] = None) -> Iterator[Tuple[str, Any]]:
+            should_stop: Optional[Callable[[], bool]] = None, pause=None,
+            on_entries: Optional[Callable[[int], None]] = None) -> Iterator[Tuple[str, Any]]:
     """Score the cells ``shown_rows`` (sorted dataset rows; None: all cells).
 
     A generator of ``("progress", (genes_done, genes_total))`` events and a final
     ``("result", ScoreResult)``. Closing it stops the work after the read in progress.
-    ``should_stop`` is asked between reads; true raises ``ScoreCancelled``.
+    ``should_stop`` is asked between reads; true raises ``ScoreCancelled``. ``pause`` is passed to ``pipeline``:
+    the gene reads stop and drain while it is wanted (the passes over the whole matrix that bin or total the genes
+    do not read through it). None keeps the behaviour of every other caller.
+
+    ``pause`` also stops the whole-matrix passes (the cells' totals, the genes' means) between their chunks; those
+    read nothing ahead, so nothing is in flight while they wait.
+
+    ``on_entries(n)`` (None: never called) reports progress in stored entries: ``task.entries`` for each gene read,
+    just before the progress event that counts that read, and ``plan.stat_entries`` once each whole-matrix pass ends.
+    The calls add up to ``result.entries_done``, and to ``plan.entries`` less what the plan estimated and
+    ``compute`` did not need to read.
     """
     started = time.perf_counter()
     recipe = plan_.recipe
@@ -1270,10 +1299,16 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
         controls, down_controls = plan_.controls, plan_.down_controls
         totals = None
         if share:
-            totals = source.row_totals(should_stop)
+            totals = source.row_totals(should_stop, pause)
+            if on_entries is not None:
+                on_entries(plan_.stat_entries)
+            result.entries_done += plan_.stat_entries
             result.input_kind = matrix_kind.classify(source.sample())["kind"]
         if adjusted and controls is None:
-            stat = source.column_stat(plan_.binning, should_stop)
+            stat = source.column_stat(plan_.binning, should_stop, pause)
+            if on_entries is not None:
+                on_entries(plan_.stat_entries)
+            result.entries_done += plan_.stat_entries
             controls, down_controls = _side_controls(stat, recipe, up_cols, down_cols)
         if adjusted:
             down_controls = down_controls or []
@@ -1288,7 +1323,7 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
         up_set, down_set = set(up_cols), set(down_cols)
         up_ctrl, down_ctrl = set(controls or ()), set(down_controls or ())
         tasks = source.tasks(sorted(up_set | down_set | up_ctrl | down_ctrl))
-        for task, rows_values, peak in _pipeline(tasks, source.threads, READ_AHEAD_ENTRIES):
+        for task, rows_values, peak in pipeline(tasks, source.threads, READ_AHEAD_ENTRIES, pause):
             if should_stop is not None and should_stop():
                 raise ScoreCancelled()
             for col, rows, values in rows_values:
@@ -1303,6 +1338,9 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
                     down_control_acc.add(f"#{col}", col, rows, values)
                 result.entries_read += int(values.size)
             result.max_in_flight_entries = max(result.max_in_flight_entries, peak)
+            if on_entries is not None:
+                on_entries(task.entries)
+            result.entries_done += task.entries
             done += len(task.cols)
             yield "progress", (done, total)
     for g in acc.stats:

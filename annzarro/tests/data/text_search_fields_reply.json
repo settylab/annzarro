@@ -1,0 +1,30 @@
+{
+  "results": [
+    {
+      "name": "donors.zarr",
+      "path": "/data/donors.zarr",
+      "rel_path": "donors.zarr",
+      "title": "Donor atlas",
+      "score": 21.0,
+      "matched": ["description", "obs", "uns"],
+      "snippet": {"field": "description", "text": "Cells from twelve donors.", "highlights": [[20, 26]]},
+      "cells": 1200,
+      "genes": 40,
+      "format": "zarr",
+      "modified": 1700000000.0,
+      "fields": [
+        {"kind": "obs", "names": ["donor_id", "donor_sex"], "more": 0, "cut": false},
+        {"kind": "uns", "names": ["donor_metadata/age"], "more": 3, "cut": false}
+      ]
+    }
+  ],
+  "more": 0,
+  "partial": false,
+  "index": {
+    "complete": false,
+    "capped": false,
+    "searched": 41,
+    "total": 212,
+    "names": {"state": "building", "read": 41, "total": 212}
+  }
+}
