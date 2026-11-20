@@ -4,10 +4,10 @@ import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
-import { signatureList, NEW_SIGNATURE, OFFER_MORE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers } from '../../utils/score-source.js';
-import { scoreValue, parseScoreValue } from './hover-columns.js';
-import { METHODS, methodShort } from '../../utils/signature-options.js';
-import { entityLabel, optionFieldsOf, scoreKeyOptions } from '../../utils/score-source-panels.js';
+import { signatureList, NEW_SIGNATURE, OFFER_MORE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers, sourceInput } from '../../utils/score-source.js';
+import { scoreHoverOptions, SCORE_GROUP } from './hover-columns.js';
+import { DEFAULT_INPUT, DEFAULT_METHOD, METHODS } from '../../utils/signature-options.js';
+import { scoreKeyOptions } from '../../utils/score-source-panels.js';
 import { getSource } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -184,19 +184,9 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         keyOptions = keys.map(key => ({ value: key, text: key }));
         break;
       }
-      case 'gene-score': {
-        // every signature, open or closed, by its title; the one this setting names stays listed when it
-        // is gone, so the plot can say it was deleted
-        const list = getSource('gene-score').entities();
-        keyOptions = scoreKeyOptions(list);
-        // (a key left over from another source type is not a deleted source: source ids are panel ids)
-        if (settings.key && /^gene-(signature|table)-/.test(settings.key) && !list.some(sig => sig.id === settings.key)) {
-          keyOptions.push({ value: settings.key, text: `${settings.label || settings.key} (deleted)` });
-        }
-        if (!list.length && !keyOptions.length) keyOptions = [{ value: '', text: 'No signatures or tables yet' }];
-        keyOptions.push({ value: NEW_SIGNATURE, text: 'New signature…' });
+      case 'gene-score':
+        keyOptions = scoreKeyEntries(getSource('gene-score').entities(), settings.key, settings.label);
         break;
-      }
       case 'var': {
         let columns = datasetStructure.var?.columns || Object.keys(datasetStructure.var || {});
         // Sort columns alphabetically if there are more than 10
@@ -266,75 +256,72 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
 
 
 /**
- * The signatures a `gene-score` key list offers, up to date: signatures were
- * added, removed or renamed. Every key select whose type select reads
- * gene-score keeps its value and has its options rebuilt.
+ * The key list of a gene score: every source, open or closed, by its title; the one held when it is gone, so the
+ * plot can say it was deleted; and the way to make a signature.
+ * @param {Array<{id: string, title: string, kind?: string}>} list - the sources
+ * @param {string} [held] - the key the consumer holds
+ * @param {string} [heldTitle] - what that source was called when last seen
+ */
+function scoreKeyEntries(list, held, heldTitle) {
+  const options = scoreKeyOptions(list);
+  // (a key left over from another source type is not a deleted source: source ids are panel ids)
+  if (held && /^gene-(signature|table)-/.test(held) && !list.some(source => source.id === held)) {
+    options.push({ value: held, text: `${heldTitle || held} (deleted)` });
+  }
+  if (!options.length) options.push({ value: '', text: 'No signatures or tables yet' });
+  options.push({ value: NEW_SIGNATURE, text: 'New signature…' });
+  return options;
+}
+
+/**
+ * The menus of every plot that read gene scores, up to date: sources were added, removed or renamed, or what one
+ * offers changed. Each key list, third menu and Hover picker keeps its choice and has its options rebuilt.
  */
 export function refreshScoreKeySelects() {
   if (typeof document === 'undefined') return;
   setTimeout(() => syncSelectTitles(), 60);
   const list = signatureList();
+  const isScoreAxis = (select) => {
+    const panel = select.closest('.plot-panel');
+    const type = panel && panel.querySelector(`select.axis-type-select[data-axis="${select.dataset.axis}"]`);
+    return !!type && type.value === 'gene-score';
+  };
   for (const keySelect of document.querySelectorAll('select.axis-key-select')) {
-    const axis = keySelect.dataset.axis;
-    const typeSelect = keySelect.closest('.plot-panel')
-      && keySelect.closest('.plot-panel').querySelector(`select.axis-type-select[data-axis="${axis}"]`);
-    if (!typeSelect || typeSelect.value !== 'gene-score') continue;
+    if (!isScoreAxis(keySelect)) continue;
     const current = keySelect.value;
-    const options = scoreKeyOptions(list);
-    if (current && !list.some(sig => sig.id === current)) {
-      const was = keySelect.selectedOptions[0];
-      options.push({ value: current, text: `${(was && was.textContent.replace(/ \(deleted\)$/, '')) || current} (deleted)` });
-    }
-    if (!options.length) options.push({ value: '', text: 'No signatures or tables yet' });
-    options.push({ value: NEW_SIGNATURE, text: 'New signature…' });
+    const was = keySelect.selectedOptions[0];
+    const options = scoreKeyEntries(list, current, was && was.textContent.replace(/ \(deleted\)$/, ''));
     const same = options.length === keySelect.options.length
       && options.every((o, i) => keySelect.options[i].value === o.value && keySelect.options[i].textContent === o.text);
     if (same) continue;
     $.createSelect(options, jQuery(keySelect));
     $.setSelectValue(jQuery(keySelect), current, false);
-    if (!list.length && !current) jQuery(keySelect).find('option[value=""]').prop('disabled', true);
+    jQuery(keySelect).find('option[value=""]').prop('disabled', true);
   }
-  // the third menu of every score axis follows what its signature offers (a lapsed choice stays, labelled)
+  // the third menu of every score axis follows what its source offers (a lapsed choice stays, labelled)
   for (const select of document.querySelectorAll('select.axis-column-select')) {
-    const axis = select.dataset.axis;
-    const panelEl = select.closest('.tile');
-    const typeSelect = select.closest('.plot-panel') && select.closest('.plot-panel').querySelector(`select.axis-type-select[data-axis="${axis}"]`);
-    if (!typeSelect || typeSelect.value !== 'gene-score' || !panelEl || !window.PanelManager) continue;
-    const plot = window.PanelManager.getPanel(panelEl.dataset.tileId);
-    const cfg = plot && plot.getConfig ? plot.getConfig() : null;
-    if (cfg && cfg[axis] && cfg[axis].type === 'gene-score') fillScoreColumnSelect(select, scoreColumnOptions(cfg[axis]));
+    const tile = select.closest('.tile');
+    if (!isScoreAxis(select) || !tile || !window.PanelManager) continue;
+    const plot = window.PanelManager.getPanel(tile.dataset.tileId);
+    const setting = plot && plot.getConfig ? plot.getConfig()[select.dataset.axis] : null;
+    if (setting && setting.type === 'gene-score') fillScoreColumnSelect(select, scoreColumnOptions(setting));
   }
-  // the Hover pickers list each score a signature offers, after the columns
+  // the Hover pickers list each score a source offers, after the columns
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
     // gene scores are a cell source: a Gene Plot's hover never lists them
     const owner = select.closest('.tile');
     if (owner && /^gene-plot/.test(owner.dataset.tileId || '')) continue;
-    const picked = new Set(Array.from(select.querySelectorAll('optgroup option')).filter(o => o.selected).map(o => o.value));
-    // what each signature offers, and a pick it no longer offers (kept, and marked)
-    const wanted = list.flatMap((sig) => {
-      const mine = (sig.options || []).map(o => [scoreValue(sig.id, o.method, o.layer), o.label]);
-      for (const value of picked) {
-        const got = parseScoreValue(value);
-        if (got.key === sig.id && !mine.some(m => m[0] === value)) mine.push([value, `${methodShort(got.column)}${got.layer ? ` · ${got.layer}` : ''} (no longer offered)`]);
-      }
-      return mine.map(([value, text], i) => [value, i === 0 ? entityLabel(sig) : `${entityLabel(sig)} · ${text}`]);
-    });
-    const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === 'Gene scores');
+    const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === SCORE_GROUP);
     const have = group ? Array.from(group.querySelectorAll('option')) : [];
     const chosen = new Set(have.filter(o => o.selected).map(o => o.value));
-    const same = have.length === wanted.length && wanted.every(([value, text], i) => have[i].value === value && have[i].textContent === text);
+    const wanted = scoreHoverOptions(list, chosen);
+    const same = have.length === wanted.length && wanted.every((o, i) => have[i].value === o.value && have[i].textContent === o.label);
     if (same) continue;
     if (group) group.remove();
     if (!wanted.length) continue;
     const next = document.createElement('optgroup');
-    next.label = 'Gene scores';
-    for (const [value, text] of wanted) {
-      const opt = document.createElement('option');
-      opt.value = value;
-      opt.textContent = text;
-      opt.selected = chosen.has(value);
-      next.appendChild(opt);
-    }
+    next.label = SCORE_GROUP;
+    for (const o of wanted) next.appendChild(new Option(o.label, o.value, false, chosen.has(o.value)));
     select.appendChild(next);
   }
 }
@@ -380,12 +367,11 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
       // (utils/score-source.js scoreOptions). The method is stored in `column`, the layer beside it.
       const built = scoreColumnOptions(settings);
       columnOptions = built.options;
-      let chosen = built.chosen;
       if (built.adopt) {
         settings.column = built.adopt.method;
         if (built.adopt.layer) settings.layer = built.adopt.layer; else delete settings.layer;
       }
-      scoreChosen = chosen;
+      scoreChosen = built.chosen;
       break;
     }
     case 'obs':
@@ -1205,10 +1191,6 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
     }
   }
 }
-// signatures were added, removed or renamed
-if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-  document.addEventListener('annzarro:panels-changed', () => refreshScoreKeySelects());
-}
 
 
 /**
@@ -1224,12 +1206,10 @@ export function scoreColumnOptions(settings) {
   let adopt = null;
   // a column left over from another source (an obsm dimension) is not a lapsed choice: only a method is
   if (!wanted && settings.key && offered.length && (METHODS.includes(settings.column) || settings.layer)) {
-    // the same id form as the offered entries: `method`, or `method@layer` when the signature offers several layers
-    const several = offered.some(o => o.value.includes('@'));
-    const source = window.PanelManager && window.PanelManager.getPanel(settings.key);
-    const own = source && (source.getScoreOptions || source.getRecipe) ? optionFieldsOf(source).input : 'X';
-    chosen = several ? `${settings.column || 'zscore_mean'}@${settings.layer || own}` : (settings.column || 'zscore_mean');
-    options.push({ value: chosen, text: lapsedLabel(settings), method: settings.column || 'zscore_mean', layer: settings.layer || '' });
+    // the id form of the offered entries: `method@layer`
+    const method = settings.column || DEFAULT_METHOD;
+    chosen = `${method}@${settings.layer || sourceInput(settings.key) || DEFAULT_INPUT}`;
+    options.push({ value: chosen, text: lapsedLabel(settings), method, layer: settings.layer || '' });
   } else if (!wanted && offered.length) {
     chosen = offered[0].value;
     adopt = { method: offered[0].method, layer: offered[0].layer };
@@ -1261,6 +1241,8 @@ function syncSelectTitles(root = document) {
   }
 }
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  // sources were added, removed or renamed, or what one offers changed
+  document.addEventListener('annzarro:panels-changed', () => refreshScoreKeySelects());
   document.addEventListener('change', (e) => {
     const select = e.target && e.target.closest ? e.target.closest('.axis-selector select') : null;
     if (select) setTimeout(() => syncSelectTitles(select.closest('.axis-selector').parentNode), 60);

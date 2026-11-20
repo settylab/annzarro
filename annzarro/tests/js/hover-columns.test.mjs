@@ -84,7 +84,12 @@ test('a cell plot lists each score a signature offers, the default first; a gene
     // a pick the signature no longer offers is kept and marked
     const lapsed = options('cells', structure, [{ type: 'gene-score', key: 'gene-signature-2', column: 'sum' }], false, sigs)
         .filter(o => o.group === 'Gene scores').map(o => [o.label, o.selected]);
-    assert.deepEqual(lapsed.at(-1), ['B cell score · sum (no longer offered)', true]);
+    assert.deepEqual(lapsed.at(-1), ['B cell score · sum · X (no longer offered)', true]);
+    // the same entries when the picker is rebuilt from what is selected in the page (panels came or went)
+    const { scoreHoverOptions } = await import('../../../static/js/panels/plot-utilities/hover-columns.js');
+    assert.deepEqual(scoreHoverOptions(sigs, [scoreValue('gene-signature-2', 'sum', 'X')]).map(o => o.label),
+        ['T cell score', 'T cell score · Mean', 'T cell score · Mean · counts', 'B cell score', 'B cell score · sum · X (no longer offered)']);
+    assert.equal(scoreHoverOptions([{ id: 'gene-table-1', title: 'DE genes', kind: 'table', options: offers.slice(0, 1) }], [])[0].label, 'DE genes (table)');
     // a pick stores the method in column and the layer beside it (none for the default)
     assert.deepEqual(parseScoreValue(scoreValue('gene-signature-1', 'mean', 'counts')), { key: 'gene-signature-1', column: 'mean', layer: 'counts' });
     assert.deepEqual(parseScoreValue(scoreValue('gene-signature-1', 'mean', '')), { key: 'gene-signature-1', column: 'mean' });
