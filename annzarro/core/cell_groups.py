@@ -79,6 +79,10 @@ _OPS = {">": np.greater, ">=": np.greater_equal, "<": np.less, "<=": np.less_equ
 #: Codes: the value of a cell in no group.
 NONE16 = 0xFFFF
 NONE32 = 0xFFFFFFFF
+#: Level slabs with ``allow_exclude`` (a count plot's axis): a cell outside the range, below or above it. In no
+#: level, like ``NONE16``, but told apart so the grid can say which axis left it out.
+OUT_BELOW = 0xFFFE
+OUT_ABOVE = 0xFFFD
 #: An intersection whose combinations number less than this is folded into the uint16 codes in place.
 _NARROW_MAX = NONE16
 #: Combinations up to which the occupied ones are marked in a table; beyond, they are collected sorted.
@@ -525,7 +529,9 @@ def _rate_seconds(layout: str, entries: int, remote: bool) -> float:
 
 
 def _plan_part(reader, dataset_path: str, p: Partitioning, request: Request, n_cells: int,
-               remote: bool) -> PartPlan:
+               remote: bool, *, allow_exclude: bool = False, max_bins: int = bn.BINS_MAX) -> PartPlan:
+    """One partitioning against the store. ``allow_exclude`` and ``max_bins`` are a count plot's: values outside a
+    range may be left out (a grouping clamps, SHR-45), and its axis's bin limit (a grouping's is 1,000)."""
     t = p.source["type"]
     if t == "obs":
         kind, integer = _obs_node_kind(reader, dataset_path, p.source["key"])
@@ -553,11 +559,11 @@ def _plan_part(reader, dataset_path: str, p: Partitioning, request: Request, n_c
                         seconds=sum(q.seconds for q in nested.parts),
                         whole_matrix=any(q.whole_matrix for q in nested.all_parts()))
     part.seconds += RESOLVE_SECONDS_PER_MCELL * n_cells / 1e6
-    _check_part(part)
+    _check_part(part, allow_exclude, max_bins)
     return part
 
 
-def _check_part(part: PartPlan) -> None:
+def _check_part(part: PartPlan, allow_exclude: bool = False, max_bins: int = bn.BINS_MAX) -> None:
     """Refuse what the source's kind rules out; parse the binning of a numeric source."""
     p, kind = part.spec, part.kind
     numeric = kind == "number"
@@ -575,10 +581,10 @@ def _check_part(part: PartPlan) -> None:
             raise _bad("Only a numeric source can be binned.", "not_numeric")
     if numeric:
         try:
-            part.binning = bn.parse(p.binning, numeric=True)
+            part.binning = bn.parse(p.binning, numeric=True, max_bins=max_bins)
         except bn.BinningError as e:
             raise GroupError(400, e.reason, e.message, **e.extra) from None
-        if part.binning.outside == "exclude" and part.binning.method != "categories":
+        if part.binning.outside == "exclude" and part.binning.method != "categories" and not allow_exclude:
             raise _bad("A grouping clamps values outside the range (outside: 'clamp'), so every cell has a level.",
                        "outside_exclude")
     if p.levels is not None and not part.categorical:
@@ -661,8 +667,10 @@ class _Levels:
     shown; ``counts`` holds the cells per slot afterwards. ``info`` holds the reply fields of the kind.
     """
 
-    def __init__(self, part: PartPlan, ctx: _Ctx, index: int):
+    def __init__(self, part: PartPlan, ctx: _Ctx, index: int, allow_exclude: bool = False):
         self.part, self.ctx, self.index = part, ctx, index
+        self.allow_exclude = allow_exclude      # a count plot's axis: OUT_BELOW, OUT_ABOVE for cells left out
+        self.bin_counts: Optional[bn.Counts] = None     # a binned partitioning's, once its slabs are read
         self.slots: List[str] = []
         self.bounds: Dict[int, Tuple[Optional[float], Optional[float]]] = {}
         self.categories: Optional[List[str]] = None
@@ -801,10 +809,16 @@ class _Levels:
                 yield start, np.where(inside, np.uint16(0), np.uint16(1)).astype(np.uint16)
         self._slabs = slabs()
 
+    def _binning_of(self, held: List[np.ndarray]) -> bn.Binning:
+        """The binning the edges are found with, given the held values. A count plot's density takes its range
+        from the values here (``core/cell_grid.py``)."""
+        return self.part.binning
+
     def _prepare_binned(self) -> None:
-        part, b = self.part, self.part.binning
-        from_all = b.edges_from == "all" and self.ctx.rows is not None
+        part = self.part
+        from_all = part.binning.edges_from == "all" and self.ctx.rows is not None
         held = self._numbers(None if from_all else self.ctx.rows)
+        b = self._binning_of(held)
         try:
             e = bn.edges(lambda: iter(held), b)
         except bn.BinningError as err:
@@ -817,14 +831,25 @@ class _Levels:
                 self.bounds[i] = (lo, hi)
         if self.index in self.ctx.request.histograms:
             self.info["histogram"] = bn.preview(lambda: iter(held))
-        counts = bn.Counts()
+        counts = self.bin_counts = bn.Counts()
         self.info.update(e.to_reply())
         na = NONE16 if exclude else len(ids)
+        # Left out (SHR-45): only a count plot's axis, and only where a cell can fall outside the edges.
+        drop = self.allow_exclude and b.outside == "exclude" and b.method in bn.DEFAULT_BINS and not e.degenerate
+        lo, hi = (float(e.edges[0]), float(e.edges[-1])) if drop else (0.0, 0.0)
+        log = b.method == "log"
 
         def slabs():
             for start, v in self._shown_values(held, from_all):
                 lv = bn.assign(v, e, counts)
-                if na != NONE16:
+                gone = lv == bn.NO_LEVEL if drop else None
+                if gone is not None and gone.any():
+                    x = np.asarray(v[gone], dtype=np.float64)
+                    below = x < lo                          # NaN compares false: it has no value
+                    if log:
+                        below &= x > 0                      # under log-spaced bins, <= 0 has no value
+                    lv[gone] = np.where(below, OUT_BELOW, np.where(x > hi, OUT_ABOVE, na))
+                elif na != NONE16:
                     np.minimum(lv, na, out=lv)          # every level is below na; only NO_LEVEL is above
                 yield start, lv
             self.info["n_no_value"] = counts.n_no_value
