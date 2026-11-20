@@ -172,7 +172,7 @@ def test_search_is_scoped_to_the_folder_shown_with_one_debounced_request(session
     page.fill("#dsb-search", "lung_v2")
     page.wait_for_timeout(900)
     assert browser_rows(page) == [], "lung_v2 is not below the folder shown"
-    assert "No dataset matches" in page.inner_text("#dsb-table-wrap")
+    assert "No dataset has a name, description or field matching" in page.inner_text("#dsb-table-wrap")
 
 
 def test_regex_is_sent_to_the_server_which_guards_it_and_says_why(session):

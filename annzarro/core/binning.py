@@ -79,7 +79,7 @@ class Binning:
     bins: Optional[int] = None
     thresholds: Optional[Tuple[float, ...]] = None
     zero_bin: bool = False
-    range: Optional[Tuple[float, float]] = None
+    range: Optional[Tuple[Optional[float], Optional[float]]] = None   # a side may be None: taken from the values
     outside: str = "clamp"
     edges_from: str = "shown"
 
@@ -92,7 +92,7 @@ class Binning:
         if self.zero_bin:
             out["zero_bin"] = True
         if self.range is not None:
-            out["range"] = list(self.range)
+            out["range"] = list(self.range)                 # a None side is written as null
         if self.method != "manual" and self.method != "categories":
             out["outside"] = self.outside
         if self.method != "manual":
@@ -149,7 +149,7 @@ def parse(raw: Optional[Mapping[str, Any]], *, numeric: bool) -> Binning:
 
     bins: Optional[int] = None
     thresholds: Optional[Tuple[float, ...]] = None
-    rng: Optional[Tuple[float, float]] = None
+    rng: Optional[Tuple[Optional[float], Optional[float]]] = None
 
     if method in DEFAULT_BINS:
         b = raw.get("bins")
@@ -165,12 +165,14 @@ def parse(raw: Optional[Mapping[str, Any]], *, numeric: bool) -> Binning:
         if r is not None:
             if not isinstance(r, (list, tuple)) or len(r) != 2:
                 raise BinningError("bad_range", "range must be [low, high].")
-            lo, hi = _finite_number(r[0], "range"), _finite_number(r[1], "range")
-            if not lo < hi:
+            lo = None if r[0] is None else _finite_number(r[0], "range")
+            hi = None if r[1] is None else _finite_number(r[1], "range")
+            if lo is not None and hi is not None and not lo < hi:
                 raise BinningError("bad_range", "range must have low below high.")
-            if method == "log" and lo <= 0:
+            if method == "log" and lo is not None and lo <= 0:
                 raise BinningError("bad_range", "A log-spaced range must start above 0.")
-            rng = (lo, hi)
+            if lo is not None or hi is not None:       # [null, null] is no range
+                rng = (lo, hi)
     if method == "manual":
         t = raw.get("thresholds")
         if not isinstance(t, (list, tuple)) or not t:
@@ -205,7 +207,8 @@ class Edges:
     degenerate: bool = False
     degenerate_value: Optional[float] = None
     bins_asked: Optional[int] = None
-    range_stored: bool = False        # the end bins are then the "<= lo" and ">= hi" bins of SHR-45
+    range_stored: bool = False        # a side was stored: that end bin is then the "<= lo" or ">= hi" bin of SHR-45
+    range_used: Optional[Tuple[float, float]] = None   # the low and high edge actually used, a null side resolved
     edges_n: int = 0                  # finite values the edges were computed over, zeros included
     n_zero: int = 0
     n_no_value: int = 0               # not finite, in the population the edges came from
@@ -233,6 +236,8 @@ class Edges:
             "degenerate": bool(self.degenerate),
             "outside": self.binning.outside,
         }
+        if self.range_used is not None:
+            out["range"] = [float(self.range_used[0]), float(self.range_used[1])]
         if self.degenerate:
             out["value"] = self.degenerate_value
         return out
@@ -380,34 +385,29 @@ def edges(slabs: Callable[[], Iterable[np.ndarray]], b: Binning) -> Edges:
         return Edges(edges=np.asarray([v, v] if v is not None else [], dtype=np.float64), n_bins=1, degenerate=True,
                      degenerate_value=v, **common)
 
-    if b.method == "equal_width":
-        if b.range is not None:
-            lo, hi = b.range
-        else:
-            if s.n == 0:
-                return degenerate(None)
-            lo, hi = s.vmin, s.vmax
-            if lo == hi:
-                return degenerate(lo)
-        # np.linspace is what numpy.histogram_bin_edges builds, so the two agree to the bit.
-        return Edges(edges=np.linspace(lo, hi, b.bins + 1, endpoint=True), n_bins=b.bins,
-                     range_stored=b.range is not None, **common)
-
-    if b.method == "log":
-        if b.range is not None:
-            lo, hi = b.range
-        else:
-            if s.n == 0:
-                return degenerate(None)
-            lo, hi = s.vmin, s.vmax
-            if lo == hi:
-                return degenerate(lo)
+    if b.method in ("equal_width", "log"):
+        # a stored side stands; a missing side comes from the values under the same rules as no range
+        slo, shi = b.range if b.range is not None else (None, None)
+        if (slo is None or shi is None) and s.n == 0:
+            return degenerate(None)
+        lo = s.vmin if slo is None else slo
+        hi = s.vmax if shi is None else shi
+        if lo > hi:
+            raise BinningError("bad_range", "The stored side of the range lies beyond all the values, so no bin is left.",
+                               lo=lo, hi=hi)
+        if lo == hi:
+            return degenerate(lo)
+        stored = b.range is not None
+        if b.method == "equal_width":
+            # np.linspace is what numpy.histogram_bin_edges builds, so the two agree to the bit.
+            return Edges(edges=np.linspace(lo, hi, b.bins + 1, endpoint=True), n_bins=b.bins,
+                         range_stored=stored, range_used=(lo, hi), **common)
         ed = lo * (hi / lo) ** (np.arange(b.bins + 1, dtype=np.float64) / b.bins)
         ed[0], ed[-1] = lo, hi
         ed = _merge(ed)
         if ed.size < 2:
             return degenerate(lo)
-        return Edges(edges=ed, n_bins=ed.size - 1, range_stored=b.range is not None, **common)
+        return Edges(edges=ed, n_bins=ed.size - 1, range_stored=stored, range_used=(lo, hi), **common)
 
     # equal_count
     if s.n == 0:
