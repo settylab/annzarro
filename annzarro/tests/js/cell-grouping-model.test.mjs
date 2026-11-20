@@ -347,10 +347,10 @@ test('the request carries what the server computes from, and not a label, a sepa
             obs('pseudotime', { binning: { method: 'equal_width', bins: 3, range: [0, 6] } })],
         small: { mode: 'collect' }
     };
-    const body = G.serverRequest(recipe, { subset: { kind: 'all' } }, ['groups', 'codes']);
+    const body = G.serverRequest(recipe, { subset: { kind: 'all' } }, { codes: true });
     assert.deepEqual(Object.keys(body).sort(), ['partitionings', 'shape', 'small', 'subset', 'want']);
     assert.equal(body.shape, 'grouping');
-    assert.deepEqual(body.want, ['groups', 'codes']);
+    assert.deepEqual(body.want, { codes: true, histograms: [] });
     assert.deepEqual(body.small, { threshold: 10, mode: 'collect' });
     assert.deepEqual(body.partitionings[0], { source: { type: 'obs', key: 'cell_type' }, levels: ['c:B cell'], rest: 'exclude' });
     assert.deepEqual(body.partitionings[1].binning, { method: 'equal_width', bins: 3, range: [0, 6], outside: 'clamp', edges_from: 'shown' });
@@ -366,12 +366,13 @@ test('a bitset packs the cells shown least significant bit first, standard base6
     assert.equal(G.packBitset([1, 0, 0, 0, 0, 0, 0, 0, 0]).data, 'AQA=');
 });
 
-test('a table factor sends its packed bitset; the request is the same whichever labels the recipe holds', () => {
+test('a table factor is a ref to a packed set; the request is the same whichever labels the recipe holds', () => {
     const recipe = { version: 1, partitionings: [{ source: { type: 'table', key: 'cell-table-1' }, rest: 'exclude' }] };
-    const body = G.serverRequest(recipe, { bitsetFor: () => [true, false, true] }, ['groups']);
-    assert.deepEqual(body.partitionings[0].bitset, { encoding: 'bitset-base64', length: 3, data: 'BQ==' });
-    const a = G.serverRequest({ version: 1, partitionings: [obs('x')] }, {}, ['groups']);
-    const b = G.serverRequest({ version: 1, partitionings: [obs('x', { labels: { 'c:q': 'Q' } })], separator: '-' }, {}, ['groups']);
+    const body = G.serverRequest(recipe, { bitsetFor: () => [true, false, true] }, {});
+    assert.deepEqual(body.partitionings[0].source, { type: 'table', ref: 's0' });
+    assert.deepEqual(body.sets, { s0: { encoding: 'bitset-base64', length: 3, data: 'BQ==' } });
+    const a = G.serverRequest({ version: 1, partitionings: [obs('x')] }, {}, {});
+    const b = G.serverRequest({ version: 1, partitionings: [obs('x', { labels: { 'c:q': 'Q' } })], separator: '-' }, {}, {});
     assert.deepEqual(a, b);
 });
 
@@ -382,13 +383,30 @@ test('a score or a grouping used as a factor carries its recipe inline, nested a
         inlineRecipe: (s) => (s.key === 'sig-1' ? { recipe: { genes: ['A'], method: 'zscore_mean' } }
             : s.key === 'g-1' ? { grouping: inner } : null)
     };
-    const body = G.serverRequest({ version: 1, partitionings: [{ source: score }, { source: { type: 'cell-group', key: 'g-1' } }] }, ctx, ['groups']);
+    const body = G.serverRequest({ version: 1, partitionings: [{ source: score }, { source: { type: 'cell-group', key: 'g-1' } }] }, ctx, {});
     assert.deepEqual(body.partitionings[0].source.recipe, { genes: ['A'], method: 'zscore_mean' });
     assert.deepEqual(body.partitionings[1].source.recipe, {
         partitionings: [{ source: { type: 'obs', key: 'cell_type' } }], small: { threshold: 10, mode: 'collect' }
     });
     const loop = { inlineRecipe: () => ({ grouping: { version: 1, partitionings: [{ source: { type: 'cell-group', key: 'again' } }] } }) };
-    assert.throws(() => G.serverRequest({ version: 1, partitionings: [{ source: { type: 'cell-group', key: 'again' } }] }, loop, ['groups']), /nest/);
+    assert.throws(() => G.serverRequest({ version: 1, partitionings: [{ source: { type: 'cell-group', key: 'again' } }] }, loop, {}), /nest/);
+});
+
+test('one table used twice is one set, and a different table is the next', () => {
+    const table = (key) => ({ source: { type: 'table', key }, rest: 'exclude' });
+    const flagsOf = { 'cell-table-1': [true, false], 'cell-table-2': [false, true] };
+    const body = G.serverRequest({ version: 1, partitionings: [table('cell-table-1'), table('cell-table-2'), table('cell-table-1')] },
+        { bitsetFor: (s) => flagsOf[s.key] }, {});
+    assert.deepEqual(body.partitionings.map((p) => p.source.ref), ['s0', 's1', 's0']);
+    assert.deepEqual(Object.keys(body.sets), ['s0', 's1']);
+    assert.ok(!('sets' in G.serverRequest({ version: 1, partitionings: [obs('x')] }, {}, {})));
+});
+
+test('groupings nest up to 4 below the top one, and a fifth is refused', () => {
+    const chain = (depth) => ({ inlineRecipe: (s) => (Number(s.key) < depth ? { grouping: { version: 1, partitionings: [{ source: { type: 'cell-group', key: String(Number(s.key) + 1) } }] } } : null) });
+    const top = { version: 1, partitionings: [{ source: { type: 'cell-group', key: '0' } }] };
+    assert.doesNotThrow(() => G.serverRequest(top, chain(4), {}));
+    assert.throws(() => G.serverRequest(top, chain(5), {}), /nest/);
 });
 
 test('a grouping always clamps: outside exclude is reported and dropped, a count plot input keeps it', () => {
