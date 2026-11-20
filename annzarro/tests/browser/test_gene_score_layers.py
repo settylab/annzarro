@@ -212,6 +212,21 @@ def test_turning_an_option_off_keeps_a_table_column_as_it_was(page, served):
     assert [(c["column"], c.get("layer")) for c in cfg] == [("mean", "X")], "kept on X (pinned when it was read)"
 
 
+def test_a_table_column_that_is_no_longer_offered_is_offered_again_in_one_click(page, served):
+    from annzarro.tests.browser import test_gene_score_tables as T
+    col = {"type": "gene-score", "key": SIG, "column": "mean", "layer": "X", "label": "T cell score"}
+    T._open(page, served, table=T._table(columns=[col]), sig=TWO)
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 1")
+    _switch_off(page, "zscore_mean")
+    note = T._wait_notice(page, "notoffered")
+    assert "'T cell score' no longer offers mean" in note["text"], note["text"]
+    assert "score-offer|Offer it again" in note["actions"], note["actions"]
+    page.click(f"{T.BOX} [data-ps-action='score-offer']")
+    T._wait_no_notice(page)
+    assert "mean" in page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getRecipe().offered")
+    assert len(_calls(page, "compute")) == 1, "served from the store: nothing was recomputed"
+
+
 def test_offer_other_scores_opens_the_signature_and_expands_what_it_offers(page, served):
     _open(page, served, plots=(("cell-plot-C", _cell()),))
     _wait_coloured(page)

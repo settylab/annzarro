@@ -12,7 +12,7 @@
 import { scoreFullLabel } from '../../utils/score-source.js';
 import { setScoreNotice, setStatusTag } from '../../utils/panel-surface.js';
 import { worstNotice } from '../../utils/score-notices.js';
-import { registerHostActions, openSignature } from '../../utils/score-source.js';
+import { registerHostActions, openSignature, offerAgain } from '../../utils/score-source.js';
 import { describeColumn, describeHeldRows } from '../../utils/score-column.js';
 import { TableScores } from './table-scores.js';
 
@@ -178,7 +178,7 @@ export function bindScoreColumns(dataTable, settings, container) {
     /** The worst notice among the columns: an overlay and a strip tag, never a resize. */
     const paint = () => {
         const items = TableScores.entries(id).map(entry => ({
-            entry, notice: describeColumn({ ...entry.snap, title: entry.title }, { sharers: entry.handle.sharers() })
+            entry, notice: describeColumn({ ...entry.snap, source: entry.snap && entry.snap.title, title: entry.title }, { sharers: entry.handle.sharers() })
         }));
         const worst = worstNotice(items.map(i => i.notice));
         const shown = items.find(i => i.notice === worst);
@@ -258,7 +258,7 @@ registerHostActions({
     available(action, host) {
         const id = tableIdOf(host);
         if (!id || !TableScores.entries(id).length) return undefined;
-        if (action === 'score-remove') return !!host.__scoreWorst;
+        if (action === 'score-remove' || action === 'score-offer') return !!host.__scoreWorst;
         if (action === 'score-open') return !!host.__scoreWorst && !!panelOf(host.__scoreWorst.column.key);
         return true;
     },
@@ -271,6 +271,9 @@ registerHostActions({
             case 'score-cancel': TableScores.cancel(id); return true;
             case 'score-retry': TableScores.retry(id); return true;
             case 'score-update': TableScores.update(id); return true;
+            case 'score-offer':
+                if (worst) offerAgain(worst.column);
+                return true;
             case 'score-open':
                 if (worst) openSignature(worst.column.key, id);
                 return true;

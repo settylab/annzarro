@@ -133,7 +133,8 @@ export function describeScore(snap, { role = 'colour', sharers = 1 } = {}) {
             return out('updating', 'notice', 'Score updating', `Showing the previous ${t}. Updating.`, '',
                 [['score-cancel', cancelLabel]]);
         case 'ready':
-            if (snap.lapsed) return noLongerOffered(snap, t, out);
+            // the source stopped offering it: named by its own title (a table column's name already holds the method)
+            if (snap.lapsed) return noLongerOffered(snap, snap.source ? `'${snap.source}'` : t, out);
             if (snap.held) {
                 const n = snap.held.edits;
                 const when = Number.isFinite(snap.held.seconds) ? ` ${durationText(snap.held.seconds).replace(/^about/, 'About')}.` : '';

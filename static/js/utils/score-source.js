@@ -567,8 +567,7 @@ export function runScoreAction(action, host) {
             for (const r of recordsOf(host).values()) r.handle.compute();
             break;
         case 'score-offer':
-            offerAgain(rec.sigId, rec.sub, rec.layer);
-            sources.recheck();
+            offerAgain(rec.setting);
             break;
         case 'score-cancel':
             rec.handle.cancel();
@@ -795,17 +794,25 @@ export function offerOtherScores(id, nextTo = null) {
     return panel;
 }
 
-/** Offer an option again in the signature's panel (the notice's one-click action). */
-function offerAgain(id, method, layer) {
-    const panel = id ? PanelManager.getPanel(id) : null;
+/**
+ * Offer again the option a consumer holds that its source stopped offering (the notice's one-click action, for a plot
+ * and a table column alike).
+ * @param {{key: string, column?: string, layer?: string}} setting - the consumer's setting
+ * @returns {boolean} whether the source took it
+ */
+export function offerAgain(setting) {
+    const panel = setting && setting.key ? PanelManager.getPanel(setting.key) : null;
     if (!isSource(panel)) return false;
+    const method = subKeyOf(setting);
+    const layer = layerOf(setting);
     const recipe = optionFieldsOf(panel);
     const offered = [...new Set([...(recipe.offered || []), method])];
     const layers = layer && !(recipe.layers || []).includes(layer) ? [...(recipe.layers || [recipe.input]), layer] : recipe.layers;
     const patch = { offered, ...(layers ? { layers } : {}) };
     // a gene table stores the option fields under one key; a signature keeps them in its recipe
-    if (typeof panel.setScoreOptions === 'function') { panel.setScoreOptions(patch); return true; }
-    if (!panel.updateConfig) return false;
-    panel.updateConfig(patch);
+    if (typeof panel.setScoreOptions === 'function') panel.setScoreOptions(patch);
+    else if (typeof panel.updateConfig === 'function') panel.updateConfig(patch);
+    else return false;
+    scores().sources.recheck();
     return true;
 }
