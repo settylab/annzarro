@@ -138,6 +138,7 @@ def _subset(page, n=None, part_step=False):
         page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
         page.click("#subset-apply")
         page.wait_for_selector("#subset-modal", state="hidden")
+    # let the subset change reach the plot before the ledger is read; the same cell count would pass at once
     page.wait_for_timeout(500)
     until(page, """async () => {
         const g = await import('/static/js/utils/memory-guard-ui.js');
@@ -145,11 +146,21 @@ def _subset(page, n=None, part_step=False):
         const e = g.ledger.get('cell-plot-B');
         return e && !g.ledger.pending.has('cell-plot-B') && e.n === DataManager.getCells().length;
     }""")
+    # let the redraw after the subset end; nothing observable marks it
     page.wait_for_timeout(500)
 
 
 def _cells_now(page):
     return page.evaluate("async () => Array.from((await import('/static/js/data-manager.js')).DataManager.getCells()).map(String)")
+
+
+def _wait_passing(page):
+    """Wait until the plot shows exactly the cells on screen that pass the table's filter."""
+    want = sorted(c for c in _cells_now(page) if PASS.match(c))
+    until(page, """async (want) => { const g = document.querySelector('%s .js-plotly-plot');
+        if (!g || !g.data) return false;
+        const names = g.data.flatMap(t => Array.from(t.customdata || [])).map(v => Array.isArray(v) ? v[0] : v).map(String).sort();
+        return names.length === want.length && names.every((n, i) => n === want[i]); }""" % B, want)
 
 
 def _never_wrong(s, allowed):
@@ -181,7 +192,7 @@ def test_closed_on_a_part_then_other_part_and_larger_is_built_again(page, server
     tag a closed table used to leave)."""
     page.goto(_link(server, {"n": 100, "seed": 0}))
     _filter_table(page)
-    page.wait_for_timeout(1500)
+    _wait_passing(page)
     part1 = _cells_now(page)
     passed1 = [c for c in part1 if PASS.match(c)]
     assert sorted(_state(page)["names"]) == sorted(passed1)
@@ -206,7 +217,7 @@ def test_closed_on_a_part_then_other_part_and_larger_when_held(held_page, server
     page = held_page
     page.goto(_link(server, {"n": 100, "seed": 0}))
     _filter_table(page)
-    page.wait_for_timeout(1500)
+    _wait_passing(page)
     part1 = _cells_now(page)
     passed1 = [c for c in part1 if PASS.match(c)]
     assert sorted(_state(page)["names"]) == sorted(passed1)
@@ -237,15 +248,15 @@ def test_closed_on_a_part_then_other_part_and_larger_when_held(held_page, server
 def test_open_table_still_filters_by_its_own_rows(page, server):
     page.goto(_link(server, {"n": 100, "seed": 0}))
     _filter_table(page)
-    page.wait_for_timeout(1500)
+    _wait_passing(page)
     _subset(page, part_step=True)
-    page.wait_for_timeout(1500)
+    _wait_passing(page)
     cells = _cells_now(page)
     s = _state(page)
     assert sorted(s["names"]) == sorted(c for c in cells if PASS.match(c))
     assert s["tag"] is None
     _subset(page, None)
-    page.wait_for_timeout(1500)
+    _wait_passing(page)
     s = _state(page)
     assert sorted(s["names"]) == [f"cell_01{i:02d}" for i in range(100)]
     assert s["tag"] is None

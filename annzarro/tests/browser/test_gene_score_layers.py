@@ -64,15 +64,16 @@ def test_the_third_menu_is_one_list_of_what_the_signature_offers_method_and_laye
     assert cfg["column"] == "mean" and cfg["layer"] == "counts"
     until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
     assert _inputs(page) == ["X", "counts"]
-    page.wait_for_timeout(1500)
-    bars = page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data
-        .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title)).filter(Boolean)""", C)
+    BARS = """(t) => document.querySelector(t + ' .js-plotly-plot').data
+        .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title)).filter(Boolean)"""
+    until(page, "(t) => JSON.stringify((" + BARS + ")(t)) === JSON.stringify(['T cell score<br>mean · counts'])", C)
+    bars = page.evaluate(BARS, C)
     assert bars == ["T cell score<br>mean · counts"]
     # the default layer is stored too: a choice is kept as made, whatever the signature offers later
     page.select_option(sel, "mean@X")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'X'")
     page.select_option(sel, "mean@counts")
-    page.wait_for_timeout(1500)
+    until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'counts'")
     page.screenshot(path="/private/tmp/claude-501/-Users-dotto-gits-annzarro/d0efd83a-6333-4a2b-8ec0-f428a26626fb/scratchpad/gs5c-layer-menu.png")
     # a source that is not a score has no such list
     page.select_option(f"{C} select.axis-type-select[data-axis='color']", "obs")
@@ -283,6 +284,7 @@ def test_a_gene_plot_offers_no_gene_score_in_its_hover_or_source_menus(page, ser
     _open(page, served, plots=(("gene-plot-G", _gene_plot()),), wait=False)
     page.wait_for_selector(f"{G} .js-plotly-plot", timeout=30000)
     page.evaluate("() => document.dispatchEvent(new CustomEvent('annzarro:panels-changed'))")
+    # time for a Gene Score option to appear, were one going to; none should
     page.wait_for_timeout(500)
     assert page.locator(f"{G} select.hover-columns-select optgroup").count() == 0, "no empty or full Gene scores group"
     assert page.locator(f"{G} select.hover-columns-select option:text('score')").count() == 0 or True
@@ -301,6 +303,7 @@ def test_the_selects_are_readable_at_820_and_1600_px_in_both_themes(page, served
             _open(page, served, plots=(("cell-plot-C", cfg),), sig=TWO)
             _wait_coloured(page)
             page.evaluate("(t) => { document.documentElement.setAttribute('data-theme', t); document.documentElement.setAttribute('data-bs-theme', t); }", theme)
+            # let the theme change repaint before the select widths are measured; nothing observable marks it
             page.wait_for_timeout(500)
             types = page.evaluate("(t) => { const s = document.querySelector(t + ' select.axis-type-select[data-axis=\"color\"]'); return [s.scrollWidth, s.clientWidth]; }", C)
             assert types[0] <= types[1] + 2, f"the type select shows 'gene-score' in full at {width}px: {types}"
@@ -325,6 +328,7 @@ def test_table_columns_store_their_layer_and_an_old_column_without_one_reads_the
     assert sorted(cfg) == [["mean", "X"], ["mean", "counts"], ["zscore_mean", "X"]], "every column stores its layer; the old one was resolved on load"
     # the signature stops offering X: the columns do not move to counts
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
+    # time for the columns to move, were they going to; they must stay on their layers
     page.wait_for_timeout(800)
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer])", T.TID)
     assert sorted(cfg) == [["mean", "X"], ["mean", "counts"], ["zscore_mean", "X"]]
@@ -384,8 +388,10 @@ def _watch_and_finish(page, before, ramp):
     for _ in range(8):
         seen.append(_sample(page))
         assert _colour_snapshot(page) == before, "the old colours stay while the score is on its way"
+        # sample the panel over time: the old colours must stay throughout
         page.wait_for_timeout(150)
     _frame(page, 0, type="progress", done=0, total=12)
+    # time for a colour change after the progress frame, were one going to; none should
     page.wait_for_timeout(300)
     seen.append(_sample(page))
     assert _colour_snapshot(page) == before
@@ -430,8 +436,10 @@ def test_a_pending_score_on_an_axis_keeps_the_old_plot_not_a_placeholder(page, s
         s = _sample(page)
         assert not s["placeholder"] and not s["notice"] and not s["genes"], s
         assert _drawn(page)
+        # sample the panel over time: nothing may appear while the score is on its way
         page.wait_for_timeout(150)
     _frame(page, 0, type="progress", done=0, total=12)
+    # time for a Gene Score notice after the progress frame, were one going to; none should
     page.wait_for_timeout(300)
     assert not _sample(page)["genes"] and _drawn(page)
     _finish(page, 0, [float(i) for i in range(60)])
@@ -465,6 +473,7 @@ def test_an_old_link_is_migrated_on_load_and_unticking_x_moves_nothing(page, ser
     assert "gene-score_" + SIG + "_zscore_mean__of_X" in cfg["crit"], "the filter follows the renamed column"
     # the user unticks X in the panel: counts becomes the signature's first layer
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
+    # time for the table and plot to move to counts, were they going to; they must stay on X
     page.wait_for_timeout(1000)
     after = page.evaluate("""() => { const t = window.PanelManager.getPanel('cell-table-T').getConfig(), p = window.PanelManager.getPanel('cell-plot-C').getConfig();
         return { cols: t.columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer]), crit: JSON.stringify(t.searchBuilderConfig), color: [p.color.column, p.color.layer] }; }""")
@@ -497,6 +506,7 @@ def test_a_sorted_table_with_a_hidden_column_keeps_both_after_its_score_column_i
     before = page.evaluate("() => window.PanelManager.getPanel('cell-table-T').getConfig().searchBuilderConfig")
     assert "gene-score_" + SIG + "_zscore_mean__of_X" in json.dumps(before), "pinned, and its condition with it"
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
+    # time for the table to move to counts or reset its sort, were it going to; it must not
     page.wait_for_timeout(1000)
     assert T._api(page, "dt.order()") == [[2, "desc"]], "the sort stays"
     assert T._api(page, "dt.column(1).visible()") is False, "the hidden column stays hidden"

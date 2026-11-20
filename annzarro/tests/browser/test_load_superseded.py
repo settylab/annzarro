@@ -47,6 +47,7 @@ def test_switching_dataset_mid_link_drops_the_links_panels(server):
             row.first.wait_for(timeout=60000)
             row.first.locator(".dsb-name").click()
             wait_for_open(page, "other_small.zarr", timeout=90000)
+            # time for the link's panels to be built on the other dataset, were they going to; they must not be
             page.wait_for_timeout(5000)
             assert page.evaluate(OPEN_TILES) == [], "the link's panels were built on the other dataset"
             assert page.evaluate("() => document.querySelectorAll('.js-plotly-plot').length") == 0
@@ -69,11 +70,13 @@ def test_back_during_a_switch_stops_the_older_load_and_shows_the_entry(server):
             page.goto(link)
             wait_for_open(page)
             page.wait_for_function("() => document.querySelectorAll('.js-plotly-plot').length >= 2", timeout=60000)
+            # let the opening plots finish their first redraws before the next change
             page.wait_for_timeout(1000)
             # a change that settles into a history entry of its own
             page.locator(".tile[data-tile-id='gene-plot-B'] .tile-close").first.click()
             page.wait_for_function("() => document.querySelectorAll('.tile-container .tile[data-tile-id]').length === 1")
             page.wait_for_function("() => (history.state && history.state.azIdx) >= 1", timeout=15000)
+            # let the history entry settle before the slow open starts
             page.wait_for_timeout(800)
             # start opening the other dataset, slowly, then step Back before it is open
             slow(page, 1500)
@@ -87,6 +90,7 @@ def test_back_during_a_switch_stops_the_older_load_and_shows_the_entry(server):
             page.wait_for_function("() => window.annzarro.getDataset().status === 'open' "
                                    "&& window.annzarro.getDataset().path.endsWith('fixture_small.zarr')", timeout=90000)
             page.wait_for_function("() => document.querySelectorAll('.js-plotly-plot').length >= 2", timeout=90000)
+            # time for a stray panel or error after Back, were one going to; the link's panels must be exactly those
             page.wait_for_timeout(4000)
             assert sorted(page.evaluate(OPEN_TILES)) == sorted(ids)
             assert page.evaluate("() => window.annzarro.getDataset().path").endswith("fixture_small.zarr")

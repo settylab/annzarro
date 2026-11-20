@@ -177,7 +177,7 @@ def test_bulk_change_acts_on_the_rows_shown_in_one_undo_step(page, served):
     # search narrows what is shown
     page.fill(f"{S} .gsig-search", "GENE000")
     until(page, "(t) => window.PanelManager.getPanel('gene-signature-S')._debugState().search.query === t", "GENE000")
-    page.wait_for_timeout(250)
+    until(page, "([sel, want]) => JSON.stringify([...document.querySelectorAll(sel)].map(e => e.querySelector('.gsig-name').textContent)) === JSON.stringify(want)", [ROWS, FIRST])
     assert _row_names(page) == FIRST
     up_btn, down_btn = page.locator(f"{S} [data-set-shown='up']"), page.locator(f"{S} [data-set-shown='down']")
     assert down_btn.inner_text() == "Set 6 shown to Down" and up_btn.is_disabled(), "every gene shown is already up"
@@ -362,6 +362,7 @@ def test_the_request_carries_the_down_genes_a_flip_asks_again_and_undo_does_not(
     assert sent[-1]["genes"] == ["GENE0001"] and sent[-1]["down"] == ["GENE0002", "GENE0003"]
     # undo goes back to a recipe whose score is cached: no request
     page.evaluate("(id) => window.PanelManager.getPanel(id).undo()", SIG)
+    # time for a request, were one going to; the score is cached
     page.wait_for_timeout(900)
     assert len(_calls(page, "compute")) == n + 1
     assert _sides(page) == (["GENE0001", "GENE0002"], ["GENE0003"])
@@ -373,6 +374,7 @@ def test_a_gene_table_has_no_direction(page, served):
     _open(page, served, plots=(("gene-table-T", table),), sig=_sig(["KLF1"]), sig_open=False, wait=False)
     page.wait_for_selector('.tile[data-tile-id="gene-table-T"] .dataTables_scrollBody tbody tr', timeout=30000)
     until(page, "() => window.PanelManager.getPanel('gene-table-T').getConfig().currentEntries.length === 10")
+    # time for a direction control to appear, were one going to; a gene table has none
     page.wait_for_timeout(300)
     assert page.locator('.tile[data-tile-id="gene-table-T"] [data-directions], .tile[data-tile-id="gene-table-T"] .gsig-dir').count() == 0
 

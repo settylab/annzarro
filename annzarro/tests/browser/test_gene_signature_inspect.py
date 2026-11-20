@@ -108,6 +108,7 @@ def test_inspect_is_closed_by_default_and_computes_nothing_until_opened(page, se
     assert page.get_attribute(TOGGLE, "aria-expanded") == "false"
     assert not page.is_visible(f"{I} .gsig-inspect__body")
     assert page.is_visible(f"{S} .gsig-grid"), "the first view stays the gene list"
+    # time for a score request, were one going to; nothing is asked until the section is opened
     page.wait_for_timeout(600)
     assert _calls(page) == [], "nothing is asked for a score that nobody opened"
     assert page.inner_text(f"{TOGGLE} .gsig-inspect__summary") == "Distribution and figures of each gene"
@@ -148,6 +149,7 @@ def test_a_plot_that_holds_the_score_means_no_second_request(page, served):
     assert [c["kind"] for c in before] == ["estimate", "compute"]
     _inspect(page)
     _wait_table(page)
+    # time for a second request, were one going to; the plot's score is the one inspected
     page.wait_for_timeout(500)
     assert _calls(page) == before, "the score the plot holds is the score inspected"
     # and what is inspected is the plot's own vector
@@ -172,6 +174,7 @@ def test_each_aggregation_is_offered_and_a_second_one_is_a_second_score_only_onc
     n = len(_calls(page))
     page.select_option(f"{I} select.gsig-inspect__select", "zscore_mean@X")
     until(page, "(I) => /Z-score mean/.test(document.querySelector(I + ' .gsig-inspect__definition').textContent)", I)
+    # time for a request, were one going to; the first score is held
     page.wait_for_timeout(400)
     assert len(_calls(page)) == n
 
@@ -572,11 +575,13 @@ def test_inspect_chooses_among_method_and_layer_labels_both_and_requests_a_new_l
     until(page, f"(n) => window.__scoreCalls.filter(c => c.kind === 'compute').length === n + 1", n)
     page.wait_for_function("(I) => document.querySelector(I + ' .gsig-inspect__heading').textContent.includes('z-score mean · counts')", arg=I)
     assert "Per-gene figures for z-score mean · counts" in page.inner_text(f"{I} .gsig-inspect__caption")
+    # time for a second request, were one going to; there should be one
     page.wait_for_timeout(500)
     assert len(_calls(page, "compute")) == n + 1, "once"
     assert page.evaluate("() => window.PanelManager.getPanel('gene-signature-S')._inspect()._debug().layer") == "counts"
     # back to X: held, no request
     page.select_option(f"{I} select.gsig-inspect__select", "zscore_mean@X")
+    # time for a request, were one going to; the first score is held
     page.wait_for_timeout(500)
     assert len(_calls(page, "compute")) == n + 1
 
@@ -588,6 +593,7 @@ def test_the_layer_a_plot_shows_is_the_one_inspected_first(page, served):
     until(page, "() => window.__scoreCalls.some(c => c.kind === 'compute')")
     _inspect(page)
     assert page.input_value(f"{I} select.gsig-inspect__select") == "mean@counts"
+    # time for a second request, were one going to; the plot's score is the one inspected
     page.wait_for_timeout(500)
     assert len(_calls(page, "compute")) == 1, "the plot's score is the one inspected"
 
@@ -651,6 +657,8 @@ def test_cancel_during_an_export_leaves_no_file(page, served):
     page.click(f"{I} [data-export-go]")
     page.wait_for_selector(f"{I} [data-export-cancel]", timeout=20000)
     page.click(f"{I} [data-export-cancel]")
+    page.wait_for_function("(I) => /Export cancelled. No file was made./.test(document.querySelector(I + ' .gsig-export__status')?.textContent || '')", arg=I)
+    # time for a download to start, were one going to; a cancelled export makes no file
     page.wait_for_timeout(500)
     assert "Export cancelled. No file was made." in page.inner_text(f"{I} .gsig-export__status")
     assert downloads == []

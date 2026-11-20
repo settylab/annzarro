@@ -133,11 +133,13 @@ def test_an_unchanged_filter_asks_for_nothing_and_a_table_that_passes_the_same_g
     _wait_coloured(page)
     n = len(_calls(page))
     _filter(page, 5)                       # the same rows
+    # time for a score request, were one going to; the same rows ask for nothing
     page.wait_for_timeout(1200)
     assert len(_calls(page)) == n
     _filter(page, 8)                       # other rows: asks
     until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
     _filter(page, 5)                       # back: the score of those five genes is held, so it is not computed again
+    # time for a score request, were one going to; the held score is used
     page.wait_for_timeout(1500)
     assert len(_calls(page, "compute")) == 2
     assert _asked(page)[0] == FIRST_FIVE
@@ -200,6 +202,7 @@ def test_closing_the_table_keeps_its_score_and_asks_for_nothing(page, served):
     shown = _numbers(page)
     page.evaluate("(id) => PanelManager.closePanel(id)", TAB)
     page.wait_for_function("(id) => !PanelManager.getActivePanels().includes(PanelManager.getPanel(id))", arg=TAB)
+    # time for a score request or a redraw, were one going to; a closed table changes nothing
     page.wait_for_timeout(1500)
     assert len(_calls(page, "compute")) == 1 and _numbers(page) == shown, "a closed table keeps the genes that passed"
     assert page.evaluate("(id) => PanelManager.getPanel(id).getConfig().closedSelection.passing.length", TAB) == 5
@@ -236,6 +239,7 @@ def test_a_table_filtered_by_a_table_that_reads_its_score_is_a_cycle_and_asks_fo
     ph = _notice(page) or _placeholder(page)
     assert ph["state"] == "cycle", ph
     assert "depend on each other" in ph["text"]
+    # time for a score request, were one going to; a cycle computes nothing
     page.wait_for_timeout(1000)
     assert not _calls(page), "a cycle computes nothing"
 
@@ -457,6 +461,7 @@ def test_a_gene_table_source_with_no_layer_is_pinned_like_a_signature(page, serv
     assert cfg["layer"] == "X", "resolved once, to the table's input, when the plot read it"
     # the table's input changes: consumers that carried no layer were pinned before it
     page.evaluate("() => window.PanelManager.getPanel('gene-table-G').setScoreOptions({ input: 'counts', layers: ['counts'] })")
+    # time for the plot to move to counts, were it going to; it was pinned to X before the change
     page.wait_for_timeout(800)
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer") == "X"
 

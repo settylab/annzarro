@@ -107,6 +107,7 @@ def _state(page, timeout=60):
     while time.time() < end:
         s = page.evaluate(STATE)
         if s:
+            # the first fit and its redraw end with no event of their own to wait for
             page.wait_for_timeout(1500)       # the first fit and its redraw settle
             return page.evaluate(STATE)
         page.wait_for_timeout(200)
@@ -155,6 +156,7 @@ def test_a_new_plot_on_an_embedding_opens_with_equal_aspect_at_any_size(server):
         assert s["anchor"] == "x", s
         for size in ((1900, 700), (800, 1200), (1400, 1000)):
             page.set_viewport_size({"width": size[0], "height": size[1]})
+            # let the resize redraw end before measuring; the old layout is also 1:1, so no condition tells them apart
             page.wait_for_timeout(2500)
             s = _state(page)
             assert s["anchor"] == "x", (size, s)
@@ -168,7 +170,7 @@ def test_a_new_plot_can_be_switched_off_and_stays_off(server):
         _new_plot(page)
         _state(page)
         page.click(BUTTON)
-        page.wait_for_timeout(1000)
+        page.wait_for_function("() => { const s = (" + STATE + ")(); return !!s && s.pressed === 'false' && s.saved === false && s.anchor === null; }")
         s = page.evaluate(STATE)
         assert s["pressed"] == "false" and s["saved"] is False and s["anchor"] is None, s
     _run(server, body)
@@ -178,6 +180,7 @@ def test_a_dataset_without_an_embedding_does_not_turn_it_on(server):
     def body(page):
         page.goto(_app(server, "noobsm"))
         _new_plot(page)
+        # time for the button to turn on, were it going to; this dataset has no embedding
         page.wait_for_timeout(3000)
         s = page.evaluate("""() => { const c = Object.values(PanelManager.saveLayout().panelConfigs)[0];
             const b = document.querySelector(".tile [id^='equal-aspect-']");
@@ -217,6 +220,7 @@ def test_changing_the_axes_does_not_flip_equal_aspect(server):
         assert _state(page)["pressed"] == "true"
         base = ".tile .axis-type-select[data-axis='y']"
         page.select_option(base, "obs")
+        # time for the button to switch off, were it going to; it must stay on
         page.wait_for_timeout(1500)
         assert page.get_attribute(BUTTON, "aria-pressed") == "true"
     _run(server, body)
@@ -246,6 +250,7 @@ def test_a_panel_set_and_a_link_keep_the_state(server):
         page.goto("about:blank")
         page.goto(link)
         page.wait_for_selector(".tile .js-plotly-plot", timeout=60000)
+        # let the restored plot finish its first fit; the state to check is the one after it settles
         page.wait_for_timeout(2500)
         assert page.get_attribute(BUTTON, "aria-pressed") == "true"
     _run(server, body)

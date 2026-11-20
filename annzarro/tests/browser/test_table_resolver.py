@@ -247,6 +247,7 @@ def test_a_build_starts_only_on_need(page, server):
     page.goto(_link(server, tables=(("cell_01", False), ("cell_00", False)), filters={0: None}))
     page.wait_for_selector(f"{tile(plot_id(0))} .js-plotly-plot", timeout=30000)
     until(page, f"() => document.querySelector('{tile(plot_id(0))} .js-plotly-plot')?.data?.length > 0")
+    # time for a build to start, were one going to; none should
     page.wait_for_timeout(1500)
     assert resolver(page, "(r) => r.buildsStarted") == 0
     assert closed_selection(page, table_id(0)) is None and closed_selection(page, table_id(1)) is None
@@ -271,6 +272,7 @@ def test_large_plot_mode_asks_for_no_build(large_server):
         try:
             page.goto(_link(large_server))
             page.wait_for_selector(f'{tile(plot_id(0))} .plot-status .ps-tag[data-tag="large"]', timeout=60000)
+            # time for a build to start, were one going to; none should
             page.wait_for_timeout(2000)
             s = shown(page)
             assert s["notice"] is None and s["unresolved"] is None
@@ -307,6 +309,7 @@ def test_size_tier_build_filter_one_click(page, server):
     assert s["names"] == [] and "Build filter" not in (s["notice"] or "") or True
     assert "build-filter" in s["actions"] and "reopen-table" in s["actions"] and "table-filter-off" in s["actions"]
     assert "will pause the page for a few seconds" in s["notice"]
+    # time for a build to start, were one going to; only the click should start one
     page.wait_for_timeout(1000)
     assert resolver(page, "(r) => r.buildsStarted") == 0, "nothing is built before the click"
     page.click(f'{tile(plot_id(0))} .filter-notice [data-ps-action="build-filter"]')
@@ -322,6 +325,7 @@ def test_size_tier_refused_offers_to_open_the_table(page, server):
     assert s["names"] == [] and "too large to build here" in s["notice"]
     assert "build-filter" not in s["actions"]
     assert "reopen-table" in s["actions"] and "table-filter-off" in s["actions"]
+    # time for a build to start, were one going to; none should
     page.wait_for_timeout(1000)
     assert resolver(page, "(r) => r.buildsStarted") == 0
     page.click(f'{tile(plot_id(0))} .filter-notice [data-ps-action="reopen-table"]')
@@ -347,6 +351,7 @@ def test_refused_by_the_memory_guard_loads_nothing(held, server):
     until(page, f"() => /Not enough browser memory/.test(document.querySelector('{tile(plot_id(0))} .filter-notice')?.innerText || '')")
     s = shown(page)
     assert s["names"] == [] and "reopen-table" in s["actions"] and "table-filter-off" in s["actions"]
+    # time for a build to start, were one going to; none should
     page.wait_for_timeout(800)
     assert builds(page)["started"] == 0, "refused: nothing loads"
     assert closed_selection(page, table_id(0)) is None
@@ -397,6 +402,7 @@ def test_race_a_result_after_the_build_cannot_overwrite_an_opened_table(page, se
     wait_names(page, PASS)
     page.evaluate("() => window.__openGate()")
     until(page, "() => window.__builds.done === 1")
+    # time for a late result to be published, were it going to; it must not be
     page.wait_for_timeout(500)
     assert builds(page)["published"] == [], "a late background result never overwrites an opened table"
     assert closed_selection(page, table_id(0)) is None
@@ -411,6 +417,7 @@ def test_race_open_after_the_build_keeps_the_plots_steady(page, server):
     watch(page)
     page.click('.panel-closed-btn[data-id="cell-table-t0"]')
     page.wait_for_selector(f"{tile(table_id(0))} .dataTables_scrollBody tbody tr", timeout=30000)
+    # time for the build to publish into the opened table, were it going to; the plot must not move
     page.wait_for_timeout(1500)
     s = wait_names(page, PASS)
     assert page.evaluate("() => window.__notices") == 0, "the plot never waited: a valid selection served it"
@@ -429,6 +436,7 @@ def test_race_dependants_update_once(page, server):
     page.evaluate("""() => { for (const i of [0, 1, 2]) window.PanelManager.getPanel('cell-plot-p' + i).onDataUpdate('tableFiltered', { id: 'cell-table-t0' }); }""")
     for i in range(3):
         wait_names(page, PASS, pid=plot_id(i))
+    # time for a second build to start, were one going to; there must be none
     page.wait_for_timeout(1000)
     assert builds(page)["started"] == 1, "one build for three plots"
     for i in range(3):
@@ -460,6 +468,7 @@ def test_race_delete(page, server):
     page.evaluate("() => window.PanelManager.getPanel('cell-plot-p0').onDataUpdate('tableFiltered', { id: 'cell-table-t0' })")
     until(page, "async () => (await import('/static/js/utils/table-resolver.js')).TableResolver.building === 'cell-table-t0'")
     page.evaluate("() => window.PanelManager.removePanel('cell-table-t0')")
+    # the slowed build would have ended by now; it must not publish
     page.wait_for_timeout(3500)
     b = builds(page)
     assert b["aborted"] == [True] and b["published"] == []
@@ -474,6 +483,7 @@ def test_race_dataset_switch(page, server):
     page.evaluate("() => window.PanelManager.getPanel('cell-plot-p0').onDataUpdate('tableFiltered', { id: 'cell-table-t0' })")
     until(page, "async () => (await import('/static/js/utils/table-resolver.js')).TableResolver.building === 'cell-table-t0'")
     page.evaluate("() => document.dispatchEvent(new CustomEvent('datasetChanged', { detail: {} }))")
+    # the slowed build would have ended by now; it must not publish
     page.wait_for_timeout(3500)
     b = builds(page)
     assert b["aborted"][0] is True and b["published"] == []
@@ -493,6 +503,7 @@ def _subset(page, n=None, part_step=False):
         page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
         page.click("#subset-apply")
         page.wait_for_selector("#subset-modal", state="hidden")
+    # let the subset change reach the resolver before the test reads the cells
     page.wait_for_timeout(800)
 
 
@@ -525,20 +536,26 @@ def test_race_back_and_forward_with_other_settings_rebuilds(page, server):
     dropped and the plot is built for the settings of that entry."""
     page.goto(_link(server))
     wait_names(page, PASS)
+    # outwait the history merge window (MERGE_MS) so the next change starts its own entry
     page.wait_for_timeout(2500)
     page.click('.panel-closed-btn[data-id="cell-table-t0"]')
     page.wait_for_selector(f"{tile(table_id(0))} .dataTables_scrollBody tbody tr", timeout=30000)
+    # outwait the history merge window (MERGE_MS) so the next change starts its own entry
     page.wait_for_timeout(2500)
     page.fill(f'{tile(table_id(0))} input[type="search"]', "cell_00")
     wait_names(page, PASS0)
+    # outwait the history merge window (MERGE_MS) so the next change starts its own entry
     page.wait_for_timeout(2500)
     page.click(f"{tile(table_id(0))} .tile-close")
     wait_names(page, PASS0)
+    # outwait the history merge window (MERGE_MS) so the next change starts its own entry
     page.wait_for_timeout(3000)
     n = page.evaluate("() => history.length")
     page.go_back()
+    # let the history step settle before going back again
     page.wait_for_timeout(1500)
     page.go_back()
+    # let the history step settle before going back again
     page.wait_for_timeout(1500)
     page.go_back()
     # the first entry: the table closed with "cell_01"
@@ -567,11 +584,12 @@ def test_race_back_and_forward_with_the_same_settings_does_nothing(page, server)
     page.goto(_link(server))
     wait_names(page, PASS)
     started = resolver(page, "(r) => r.buildsStarted")
+    # outwait the history merge window (MERGE_MS) so the next change starts its own entry
     page.wait_for_timeout(2500)
     before = page.evaluate("() => history.length")
     page.select_option(f"{tile(plot_id(0))} select.table-filter-select", "none")
     wait_names(page, re.compile(r"^cell_"), n=200)
-    page.wait_for_timeout(2500)
+    until(page, "(b) => history.length >= b + 1", before)
     assert page.evaluate("() => history.length") == before + 1
     page.go_back()
     wait_names(page, PASS)

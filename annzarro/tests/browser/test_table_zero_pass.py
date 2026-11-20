@@ -190,6 +190,7 @@ def test_no_point_keeps_the_colour_of_cells_that_pass(page, server, remove):
     page.fill(SEARCH, NONE)
     page.wait_for_function("(sel) => document.querySelector(sel + ' .dataTables_info').textContent.includes('0 to 0 of 0')"
                            " || document.querySelector(sel + ' .dataTables_empty')", arg=f'.tile[data-tile-id="{T}"]')
+    # time for a redraw that brings the old colours back, were it going to; none should
     page.wait_for_timeout(3000)
     drawn = page.evaluate(POINT_COLOURS)
     assert not [t for t in drawn if t["colour"] in in_table], (in_table, drawn)

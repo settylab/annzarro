@@ -114,6 +114,7 @@ def test_a_panel_set_load_closes_the_dialog_and_shows_its_tiles(server, page):
     page.goto(link)
     wait_for_open(page)
     page.wait_for_selector(".js-plotly-plot", timeout=60000)
+    # let the first draws end before the view is saved; nothing observable marks it
     page.wait_for_timeout(1500)
     page.click("#btn-save-session")
     page.fill("#session-name", "clarity-set")

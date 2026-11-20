@@ -536,6 +536,7 @@ def test_f4_close_the_signature_and_the_plot_keeps_its_colours_then_reopen_it(pa
     requests = len(_calls(page))
     page.click(f"{S} .tile-close, {S} [data-action='close'], {S} .close-panel-btn")
     until(page, "() => !window.PanelManager.getActivePanels().some(p => p.getId() === 'gene-signature-S')")
+    # time for a score request or a redraw, were one going to; closing the panel changes nothing
     page.wait_for_timeout(500)
     assert page.evaluate("() => window.PanelManager.getPanel('gene-signature-S') != null"), "closed, still a signature"
     assert _numbers(page) == before, "the plot keeps its colours"
@@ -744,6 +745,7 @@ def test_history_makes_no_request_when_the_key_is_unchanged(page, served):
     # close the plot (a history step), then Back: the plot is made again with the same recipe
     page.click(f"{C} .tile-close, {C} [data-action='close'], {C} .close-panel-btn")
     until(page, "() => !window.PanelManager.getActivePanels().some(p => p.getId() === 'cell-plot-C')")
+    # outwait the history merge window (MERGE_MS) so the close is its own entry, then go Back
     page.wait_for_timeout(1500)
     page.go_back()
     until(page, "() => window.PanelManager.getActivePanels().some(p => p.getId() === 'cell-plot-C')")
@@ -837,6 +839,7 @@ def test_at_most_two_scores_compute_at_once_and_a_shared_score_is_one_request(pa
     page.set_viewport_size({"width": 1700, "height": 1400})
     _open(page, served, plots=plots, sig=False, extra_cfgs=extra, wait=False)
     until(page, "() => window.__ctls.length === 2")
+    # time for a third request, were one going to; only two run at a time
     page.wait_for_timeout(800)
     assert page.evaluate("() => window.__ctls.length") == 2, "two at a time"
     assert len(_calls(page, "compute")) == 2
@@ -862,6 +865,7 @@ def test_a_score_off_screen_waits_until_its_plot_comes_into_view(page, served):
             disconnect() {} unobserve() {} };""")
     _open(page, served, plots=(("cell-plot-C", None), ("cell-plot-2", two)), extra_cfgs=extra, wait=False)
     until(page, "() => window.__ctls.length === 1")
+    # time for a request, were one going to; nothing starts for the plot off screen
     page.wait_for_timeout(800)
     assert len(_calls(page, "estimate")) == 1 and page.evaluate("() => window.__ctls.length") == 1, "nothing starts for the plot off screen"
     page.evaluate("""() => { window.__hold = false; for (const io of window.__io) if (io.el) io.cb([{ isIntersecting: true, target: io.el }]); }""")
@@ -943,6 +947,7 @@ def test_closing_the_last_plot_that_needs_a_score_stops_its_computation(page, se
     until(page, "() => window.__ctls.length === 1")
     page.click(f"{C} .tile-close, {C} [data-action='close'], {C} .close-panel-btn")
     until(page, "() => !window.PanelManager.getActivePanels().some(p => p.getId() === 'cell-plot-C')")
+    # time for an abort, were one going to; the other plot still needs the score
     page.wait_for_timeout(500)
     assert (page.evaluate("() => window.__aborted") or 0) == 0, "the other plot still needs it"
     page.click(f"{C2} .tile-close, {C2} [data-action='close'], {C2} .close-panel-btn")
@@ -1035,6 +1040,7 @@ def test_two_aggregations_of_one_signature_are_two_scores_and_one_aggregation_is
     # choosing the other aggregation in the menu moves the axis to it
     page.select_option(f"{C} select.axis-column-select[data-axis='x']", "mean@X")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().x.column === 'mean'")
+    # time for a second compute, were one going to; the mean was already in the store
     page.wait_for_timeout(800)
     assert len(_calls(page, "compute")) == 2, "the mean was already in the store"
     assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.xaxis.title.text", C) == "T cell score · mean · X"
@@ -1080,8 +1086,10 @@ def test_flipping_a_score_axis_and_zoom_are_kept(page, served):
     _ready_plot(page)
     assert page.evaluate("(t) => { const r = document.querySelector(t + ' .js-plotly-plot')._fullLayout.xaxis.range; return r[0] > r[1]; }", C), "flipped"
     page.evaluate("(t) => Plotly.relayout(document.querySelector(t + ' .js-plotly-plot'), {'xaxis.range': [3, 1]})", C)
+    # let the zoom be recorded by the plot before it is redrawn
     page.wait_for_timeout(400)
     page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').refreshPlot()")
+    # time for the redraw to move the zoom, were it going to; it must survive
     page.wait_for_timeout(1200)
     r = page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot')._fullLayout.xaxis.range", C)
     assert r[0] > r[1] and abs(r[0] - 3) < 1e-6, "the zoom the user chose survives a redraw"
@@ -1142,7 +1150,9 @@ def test_log_colour_scale_on_a_score_says_how_many_cells_sit_at_the_floor(page, 
     assert len(_calls(page, "compute")) == 1, "the scale is applied to the score the plot holds"
     # off again: the hint goes with the log scale, and the colours are the scores
     page.evaluate("() => document.getElementById('log-color-cell-plot-C').click()")
-    page.wait_for_timeout(600)
+    until(page, """(tile) => { const gd = document.querySelector(tile + ' .js-plotly-plot');
+        const t = gd.data.find(t => t.marker && (Array.isArray(t.marker.color) || ArrayBuffer.isView(t.marker.color)));
+        return !!t && Math.min(...Array.from(t.marker.color).map(Number)) === -3.0; }""", C)
     assert min(_numbers(page)) == -3.0
 
 
@@ -1194,6 +1204,7 @@ def test_an_open_signature_nobody_uses_states_its_genes_without_computing(page, 
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     until(page, "(s) => !!document.querySelector(s + ' .gsig-score') && !document.querySelector(s + ' .gsig-score').hidden", S)
     assert page.inner_text(f"{S} .gsig-score") == "Ready, 2 of 3 genes in this dataset."
+    # time for a score request, were one going to; nobody uses the score
     page.wait_for_timeout(800)
     assert _calls(page) == [], "no score is computed for a score nobody uses"
 

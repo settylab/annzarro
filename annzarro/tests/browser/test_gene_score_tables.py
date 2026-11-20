@@ -191,6 +191,7 @@ def _try_sort(page, index=2):
     """Click the header of a column and say what the table's order is afterwards."""
     before = _api(page, "JSON.stringify(dt.order())")
     page.click(f"{BOX} .dataTables_scrollHead th:nth-child({index + 1})", force=True)
+    # a click on a column that cannot sort changes no order; there is no event for that
     page.wait_for_timeout(150)
     return before, _api(page, "JSON.stringify(dt.order())")
 
@@ -212,7 +213,7 @@ def test_a_score_that_is_computing_says_so_and_turns_sort_and_export_off(page, s
     assert before == after, "a click on a column with no values sorts nothing"
     # the other columns still sort
     page.click(f"{BOX} .dataTables_scrollHead th:nth-child(2)")
-    page.wait_for_timeout(150)
+    until(page, "(box) => $(box + ' .dataTables_scrollBody table').DataTable().order()[0][0] === 1", BOX)
     assert _api(page, "dt.order()[0][0]") == 1
     assert _tag(page) == "Score computing"
 
@@ -307,7 +308,7 @@ def test_an_update_shows_the_previous_values_with_sort_on_and_export_off_until_i
     assert st["exportNote"] == "Available when 'T cell score' is updated"
     assert _column(page, 2) == before, "previous values stay"
     page.click(f"{BOX} .dataTables_scrollHead th:nth-child(3)")
-    page.wait_for_timeout(150)
+    until(page, "(box) => $(box + ' .dataTables_scrollBody table').DataTable().order()[0][0] === 2", BOX)
     assert _api(page, "dt.order()[0][0]") == 2, "sort works on the previous values"
     _finish(page, 1, [float(v) * 2 for v in RAMP])
     until(page, "([box, b]) => { const v = [...document.querySelectorAll(box + ' .dataTables_scrollBody tbody tr')].map(tr => tr.children[2].textContent.trim()); return v.join() !== b.join() && !v.some(x => x.includes('comp')); }", [BOX, before])
@@ -329,6 +330,7 @@ def test_sort_works_on_a_score_and_a_page_or_sort_change_asks_for_nothing(page, 
     assert down == sorted(down, reverse=True) and down[0] == 59.0
     _api(page, "dt.page(1).draw('page')")
     _api(page, "dt.page.len(10).draw()")
+    # time for a score request, were one going to; sorting and paging should ask for none
     page.wait_for_timeout(300)
     assert len(_calls(page)) == n, "sort, page and page length asked for no score"
     # the values cells show are the ones that came, by cell (row c0 has score 0 in the ramp)
@@ -365,10 +367,10 @@ def test_a_score_filters_by_a_searchbuilder_condition_and_by_the_search_box(page
     assert _column(page, 2) == ["57"]
     page.evaluate("(box) => { const dt = $(box + ' .dataTables_scrollBody table').DataTable(); dt.column(2).search('').draw(); }", BOX)
     page.fill(f"{BOX} .dataTables_filter input", "c5")
-    page.wait_for_timeout(200)
+    until(page, "(box) => $(box + ' .dataTables_scrollBody table').DataTable().rows({search: 'applied'}).count() === 10", BOX)
     assert _api(page, "dt.rows({search: 'applied'}).count()") == 10, "c50 to c59 pass both the score condition and the text"
     page.fill(f"{BOX} .dataTables_filter input", "57")
-    page.wait_for_timeout(200)
+    until(page, "(box) => $(box + ' .dataTables_scrollBody table').DataTable().rows({search: 'applied'}).count() === 1", BOX)
     assert _api(page, "dt.rows({search: 'applied'}).count()") == 1
 
 
@@ -548,6 +550,7 @@ def test_a_cycle_through_a_table_with_a_score_filter_stops_resolution_and_comput
     until(page, "(P) => { const t = document.querySelector(P + ' .ps-tag[data-tag=\"table-unresolved\"]'); return !!t && t.textContent.trim() === 'Filter not applied'; }", P)
     st = _plot_state(page)
     assert "'Cell Table 1' and 'Cell Table 2' depend on each other. No cells are drawn." in st["text"], st["text"]
+    # time for a score request, were one going to; a cycle asks for none
     page.wait_for_timeout(500)
     assert page.evaluate("() => window.__scoreCalls.length") == 0, "a cycle asks for no score"
     assert page.evaluate("() => window.__ctls.length") == 0
@@ -589,7 +592,7 @@ def test_a_closed_table_with_a_score_column_comes_back_from_a_link_and_opens_wit
     _finish(page, 0)
     _wait_plot(page, 10)
     page.evaluate("(id) => window.PanelManager.closePanel(id)", TID)
-    page.wait_for_timeout(300)
+    until(page, "(id) => !window.PanelManager.getActivePanels().some(p => p.getId() === id)", TID)
     view = page.evaluate("() => (window.SessionManager || window.sessionManager).captureView()")
     assert TID not in json.dumps(view["layout"]["hierarchy"]), "closed"
     cfg = view["layout"]["panelConfigs"][TID]
@@ -715,6 +718,7 @@ def test_a_subset_change_while_a_score_is_on_its_way_ends_with_the_score_of_the_
     assert len(_column(page, 2)) > 0 and max(float(v) for v in _column(page, 2)) <= 29.0
     # the late answer for the old cells changes nothing
     page.evaluate("() => { try { window.__finish(0, new Array(60).fill(7)); } catch (e) { /* aborted */ } }")
+    # time for the late answer to change the table, were it going to; it must not
     page.wait_for_timeout(300)
     assert max(float(v) for v in _column(page, 2)) <= 29.0
     assert _headers(page)[2] == "T cell score"
@@ -740,14 +744,17 @@ def test_a_score_column_on_a_table_the_memory_guard_refuses_asks_for_nothing_unt
     _slow(page, "auto", 3)
     _open(page, served, table=_table(columns=[OBS]))
     page.evaluate(SET_TABLE_ROWS_LIMIT, 45)
-    # the column is added to a table that no longer fits: the refusal is the table's answer
-    page.evaluate("(id) => window.PanelManager.getPanel(id).addColumn({ type: 'gene-score', key: 'gene-signature-S', column: 'zscore_mean', label: 'T cell score' })", TID)
+    # the column is added, in the chooser, to a table that no longer fits: the refusal is the table's answer
+    page.click(f"#gene-score-tab-{TID}")
+    page.check(f"#checkbox-gene-score-{SIG}-zscore_mean-of-X-{TID}")
+    page.click(f"#apply-columns-{TID}")
     page.wait_for_selector(f"{BOX} .coverage-placeholder", timeout=30000)
     text = page.inner_text(f"{BOX} .coverage-placeholder")
     assert text.startswith("Not loaded: not enough JS memory"), text
     actions = [a.get_attribute("data-ps-action") for a in page.locator(f"{BOX} .coverage-placeholder [data-ps-action]").all()]
     assert "subset-half" in actions and "subset" in actions, actions
     assert "Half the cells" in text
+    # time for a score request, were one going to; a refused table asks for none
     page.wait_for_timeout(500)
     assert _calls(page) == [], "a refused table makes no score request"
     assert page.evaluate("() => window.__ctls.length") == 0

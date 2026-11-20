@@ -119,6 +119,7 @@ def test_a_symbol_list_requests_no_column(page, served_ids):
     before = len(seen)
     _paste(page, "CD3D, CD3E KLF1 cd3d NOPE1")
     page.locator(f"{S} [data-testid=gp-counts]").wait_for()
+    # time for a request, were one going to; a symbol list asks for no column
     page.wait_for_timeout(500)
     after = seen[before:]
     assert [u for m, u in after if "/data/var" in u or "/data/structure" in u or "structure" in u] == []

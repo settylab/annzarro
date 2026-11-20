@@ -201,6 +201,7 @@ def test_copy_unmatched_copies_every_name(page):
 def test_names_are_text_not_markup(page):
     mount(page)
     paste(page, '<img src=x onerror="window.pwned=1"> CD3D')
+    # time for the markup to run, were it going to; names are text
     page.wait_for_timeout(200)
     assert page.evaluate("window.pwned") is None
     assert page.locator(".gene-paste img").count() == 0
@@ -426,5 +427,6 @@ def test_a_failed_or_missing_id_lookup_keeps_the_message(page):
     tid(page, "gp-back").click()
     paste(page, "CD3D CD4")
     page.evaluate("window.release()")
+    # time for the stale lookup to change the panel, were it going to; it must be ignored
     page.wait_for_timeout(200)
     assert tid(page, "gp-c-add").inner_text().split()[0] == "2" and tid(page, "gp-c-id").count() == 0

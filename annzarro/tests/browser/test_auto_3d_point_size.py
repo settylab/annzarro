@@ -31,6 +31,7 @@ def _markers(page):
         page.wait_for_timeout(300)
         m = page.evaluate(MARKERS)
         if m["n"]:
+            # the first fit and its redraw end with no event of their own to wait for
             page.wait_for_timeout(1500)
             return page.evaluate(MARKERS)
     pytest.fail("no 3D markers were drawn")

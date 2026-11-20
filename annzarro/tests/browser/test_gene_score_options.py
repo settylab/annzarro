@@ -528,7 +528,10 @@ def test_a_restored_config_moves_the_section_and_asks_what_the_new_input_looks_l
     _sig_open(page, served)
     page.evaluate("(id) => window.PanelManager.getPanel(id).updateConfig({ clip: 2, seed: 3, input: 'counts', offered: ['sum'] })", SIG)
     assert page.inner_text(f"{S} .gsig-scoring__summary") == "sum · counts, X"
-    page.wait_for_timeout(300)
+    for _ in range(300):
+        if any("input=counts" in u for u in calls):
+            break
+        page.wait_for_timeout(100)      # route handlers run only while Playwright waits
     assert any("input=counts" in u for u in calls)
     page.evaluate("(id) => window.PanelManager.getPanel(id).updateConfig({ clip: 10, seed: null, input: 'X', offered: null, layers: null })", SIG)
     assert page.inner_text(f"{S} .gsig-scoring__summary") == "z-score mean, mean, sum · X"
@@ -551,6 +554,7 @@ def test_the_score_key_changes_only_when_it_should(rec, served):
     before = _numbers(page, D)
     _enter(page, _sel("clip"), "3")
     _wait_computes(page, 4)
+    # time for a second request, were one going to; only the z-score mean should be asked
     page.wait_for_timeout(800)
     assert len(_recipes(page)) == 4, "one request: the z-score mean, with the new clip"
     last = _recipes(page)[-1]
@@ -560,6 +564,7 @@ def test_the_score_key_changes_only_when_it_should(rec, served):
 
     page.click(_sel("clipbox"))
     _wait_computes(page, 5)
+    # time for a further request to show up before the next step counts requests
     page.wait_for_timeout(500)
     assert _recipes(page)[-1]["clip"] is None and _recipes(page)[-1]["method"] == "zscore_mean"
 
@@ -567,6 +572,7 @@ def test_the_score_key_changes_only_when_it_should(rec, served):
     for key, value, n in (("seed", "9", 6), ("bins", "10", 7), ("controls", "20", 8)):
         _enter(page, _sel(key), value)
         _wait_computes(page, n)
+        # time for a second request, were one going to; only the control-adjusted score should be asked
         page.wait_for_timeout(400)
         assert len(_recipes(page)) == n
         last = _recipes(page)[-1]
@@ -575,17 +581,20 @@ def test_the_score_key_changes_only_when_it_should(rec, served):
     # what is offered changes no score
     _offer(page, "detected")
     _layer_offer(page, "counts")
+    # time for a request, were one going to; what is offered changes no score
     page.wait_for_timeout(600)
     assert len(_recipes(page)) == 8
 
     # a layer is stored by every consumer: unticking X moves nothing (they were pinned to X when it changed)
     _layer_offer(page, "X")                                              # counts is the first layer now
+    # time for a request, were one going to; no consumer should move
     page.wait_for_timeout(800)
     assert len(_recipes(page)) == 8, "no consumer moved to counts"
     assert {r["input"] for r in _recipes(page)} == {"X"}
 
     # entering a value that is already there asks nothing
     _enter(page, _sel("seed"), "9")
+    # time for a request, were one going to; none should be asked
     page.wait_for_timeout(600)
     assert len(_recipes(page)) == 8
 
@@ -599,6 +608,7 @@ def test_a_clip_edit_changes_nothing_a_plain_mean_shows_and_asks_the_server_noth
     n_compute, n_estimate = len(_recipes(page)), len(_recipes(page, "estimate"))
     _enter(page, _sel("clip"), "2")
     page.click(_sel("clipbox"))
+    # time for a request, were one going to; none should be asked
     page.wait_for_timeout(1000)
     assert len(_recipes(page)) == n_compute and len(_recipes(page, "estimate")) == n_estimate
     assert page.evaluate("() => window.__scoreCalls.length") == n_compute + n_estimate
@@ -630,6 +640,7 @@ def test_edits_of_five_seconds_or_more_collect_behind_update_score_whatever_the_
     assert "About 40 seconds" in page.inner_text(f"{S} .gsig-score")
     _enter(page, _sel("seed"), "4")
     until(page, "(s) => /2 changes are not applied/.test(document.querySelector(s + ' .gsig-score').textContent)", S)
+    # time for a request, were one going to; nothing is asked until the edits are applied
     page.wait_for_timeout(600)
     assert len(_recipes(page)) == 3, "nothing is asked until the edits are applied"
     assert _numbers(page, C) == before, "the plots keep the previous scores"
@@ -688,6 +699,7 @@ def test_each_offered_layer_is_checked_where_it_is_offered(page, served):
         route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
     page.route("**/api/v1/data/matrix_kind*", handler)
     _sig_open(page, served)
+    # time for the kind route to answer and a warning to show, were it going to; none should
     page.wait_for_timeout(400)
     assert page.is_hidden(f"{S} .gsig-inputwarn[data-input-warning='status']"), "X looks log-normalised here"
     _expand(page)
@@ -701,6 +713,7 @@ def test_each_offered_layer_is_checked_where_it_is_offered(page, served):
 def test_a_failing_kind_route_leaves_the_panel_quiet(page, served):
     page.route("**/api/v1/data/matrix_kind*", lambda route: route.fulfill(status=500, content_type="application/json", body="{}"))
     _sig_open(page, served)
+    # time for a warning to show, were one going to; the panel stays quiet
     page.wait_for_timeout(500)
     assert page.is_hidden(f"{S} .gsig-inputwarn[data-input-warning='status']")
     _expand(page)

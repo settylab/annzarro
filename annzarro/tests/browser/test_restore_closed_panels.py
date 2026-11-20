@@ -262,7 +262,7 @@ def test_a_regex_table_selects_the_same_rows_after_restore(page, server):
 
     # closed, then opened: the same rows
     page.evaluate("() => window.PanelManager.closePanel('cell-table-A')")
-    page.wait_for_timeout(300)
+    until(page, "() => !window.PanelManager.getActivePanels().some(p => p.getId() === 'cell-table-A')")
     link_closed = _captured_url(page, server)
     page.goto("about:blank")
     page.goto(link_closed)
@@ -355,6 +355,7 @@ def test_large_plot_mode_draws_every_cell_and_never_waits(large_server):
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(_link(large_server))
             page.wait_for_selector(f'{B} .plot-status .ps-tag[data-tag="large"]', timeout=60000)
+            # time for a notice or an unresolved tag to appear, were one going to; large-plot mode needs no build
             page.wait_for_timeout(1500)
             s = page.evaluate("""() => { const g = document.querySelector('%s .js-plotly-plot');
                 return { points: g._fullData.filter(t => !/Focused/.test(t.name || '') && !(t.x && t.x.length === 1 && t.x[0] === null))
@@ -373,12 +374,13 @@ def test_back_and_forward_bring_the_closed_panels_back_without_new_entries(page,
     page.goto(_link(server))
     _wait_plot(page)
     assert _state(page)["filter"] == "cell-table-A"
+    # outwait the history merge window (MERGE_MS) so the next change starts its own entry
     page.wait_for_timeout(2500)
     before = _history_length(page)
     # the user empties the closed list of the table (Clear closed panels): the view changes, an entry is written
     page.evaluate("() => { window.PanelManager.removePanel('cell-table-A'); window.PanelManager.updateSourcePanelSelection(); }")
     until(page, "() => document.querySelector('%s select.table-filter-select')?.value === 'none'" % B)
-    page.wait_for_timeout(2500)
+    until(page, "(b) => history.length >= b + 1", before)
     assert _history_length(page) == before + 1
     # Back: the entry lists the table closed, and the plot filtered by it
     page.go_back()
@@ -387,11 +389,13 @@ def test_back_and_forward_bring_the_closed_panels_back_without_new_entries(page,
     assert "cell-table-A" in panels and panels["cell-table-A"]["open"] is False
     assert panels["cell-table-A"]["config"]["searchText"] == "cell_01"
     assert _state(page)["filter"] == "cell-table-A"
+    # time for a second history entry, were one going to; there must be none
     page.wait_for_timeout(3500)
     assert _history_length(page) == before + 1                      # no duplicate entry
     # Forward: no filter again; nothing is thrown away, nothing is added to the history
     page.go_forward()
     until(page, "() => document.querySelector('%s select.table-filter-select')?.value === 'none'" % B)
+    # time for a history entry, were one going to; Forward adds none
     page.wait_for_timeout(3500)
     assert _history_length(page) == before + 1
     assert _state(page)["filter"] == "none"
@@ -401,10 +405,11 @@ def test_back_and_forward_over_a_table_closed_by_the_user(page, server):
     page.goto(_link(server, table_open=True, table_cfg={"searchText": "cell_01"}))
     page.wait_for_selector(f"{A} .dataTables_scrollBody tbody tr", timeout=30000)
     until(page, f"() => document.querySelector('{B} .js-plotly-plot')?.data?.some(t => t.customdata && t.customdata.length)")
+    # outwait the history merge window (MERGE_MS) so the next change starts its own entry
     page.wait_for_timeout(2500)
     before = _history_length(page)
     page.click(f"{A} .tile-close")
-    page.wait_for_timeout(2500)
+    until(page, "(b) => history.length >= b + 1", before)
     assert _history_length(page) == before + 1
     page.go_back()
     page.wait_for_selector(f"{A} .dataTables_scrollBody tbody tr", timeout=30000)
@@ -413,6 +418,7 @@ def test_back_and_forward_over_a_table_closed_by_the_user(page, server):
     page.go_forward()
     until(page, "() => !document.querySelector('%s')" % A)
     assert _panels(page)["cell-table-A"]["open"] is False
+    # time for a history entry, were one going to; Forward adds none
     page.wait_for_timeout(3500)
     assert _history_length(page) == before + 1
     assert _state(page)["filter"] == "cell-table-A"

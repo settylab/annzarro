@@ -130,6 +130,7 @@ def test_cancel_stops_the_load_and_returns_to_build_filter(page, server):
     assert page.evaluate("() => window.__builds.signals[0].aborted") is True
     s = shown(page)
     assert s["names"] == [] and "will pause the page" in s["notice"]
+    # time for a restart, were one going to; a cancelled build stays cancelled
     page.wait_for_timeout(1000)
     assert page.evaluate("() => window.__builds.started") == 1, "a cancelled build does not restart by itself"
     # Build filter builds again
@@ -175,6 +176,7 @@ def test_a_crafted_cyclic_link_shows_the_cycle_and_builds_nothing(page, server):
     assert "'Table 1' and 'Table 2' depend on each other." in s["notice"]
     assert "reopen-table" in s["actions"] and "table-filter-off" in s["actions"] and "build-filter" not in s["actions"]
     assert s["unresolved"].startswith("'Table 1' and 'Table 2' depend on each other.")
+    # time for a build to start, were one going to; a cycle builds nothing
     page.wait_for_timeout(1500)
     assert resolver(page, "(r) => r.buildsStarted") == 0
     assert resolver(page, "(r) => r.status('cell-table-t0').state") == "cycle"

@@ -171,17 +171,30 @@ def _search(page, text):
     page.fill(f"{S} .gsig-search", text)
     # the search runs after a short pause
     until(page, "(t) => window.PanelManager.getPanel('gene-signature-S')._debugState().search.query === t", text)
+    # the query is recorded at once but the rows are rebuilt after the panel's 90 ms pause, and nothing
+    # observable marks the rebuild
     page.wait_for_timeout(200)
 
 
-def _shown_on_plot(page):
-    """The genes drawn on the Gene Plot, once the plot has settled."""
-    page.wait_for_timeout(600)
-    return page.evaluate("""() => {
-        const gd = document.querySelector('%s .js-plotly-plot');
-        if (!gd || !gd.data) return null;
-        return gd.data.flatMap(t => Array.from(t.customdata || [])).map(v => Array.isArray(v) ? v[0] : v).map(String).sort();
-    }""" % P)
+PLOT_GENES = """() => {
+    const gd = document.querySelector('%s .js-plotly-plot');
+    if (!gd || !gd.data) return null;
+    return gd.data.flatMap(t => Array.from(t.customdata || [])).map(v => Array.isArray(v) ? v[0] : v).map(String).sort();
+}""" % P
+
+
+def _shown_on_plot(page, settle=True):
+    """The genes drawn on the Gene Plot. `settle`: give the plot time first, for a test that expects it
+    NOT to have changed; otherwise wait for the genes with _plot_shows."""
+    if settle:
+        # a plot that should not change has no event to wait for
+        page.wait_for_timeout(600)
+    return page.evaluate(PLOT_GENES)
+
+
+def _plot_shows(page, want):
+    """Wait until the Gene Plot has drawn exactly these genes."""
+    until(page, "(want) => { const got = (" + PLOT_GENES + ")(); return !!got && JSON.stringify(got) === JSON.stringify(want); }", want)
 
 
 def _add_from(page, label):
@@ -227,8 +240,8 @@ def test_f1_add_a_signature_type_a_gene_and_use_it(page, served):
     # the Gene Plot's own table filter lists the signature; choosing it filters the plot
     page.select_option(f"{P} select.table-filter-select", sig_id)
     until(page, "(id) => window.PanelManager.getPanel('gene-plot-P').getConfig().tableFilter === id", sig_id)
-    page.wait_for_timeout(800)
-    assert _shown_on_plot(page) == ["GENE0042", "KLF1"]
+    _plot_shows(page, ["GENE0042", "KLF1"])
+    assert _shown_on_plot(page, settle=False) == ["GENE0042", "KLF1"]
     assert "Used by 1 plot" in page.inner_text(f"{tile} .gsig-usedby")
 
 
@@ -250,6 +263,7 @@ def test_f3_add_the_genes_of_a_gene_table_and_undo(page, served):
 
     # a table add is a copy: the table changing later does not change the signature
     page.fill(f'{T} input[type="search"]', "GENE001")
+    # time for the table's change to reach the signature, were it going to; it must not
     page.wait_for_timeout(500)
     assert len(_genes(page)) == 101
 
@@ -343,7 +357,7 @@ def test_search_case_regex_and_tick_all(page, served):
     # Match case
     page.click(f"{S} .gsig-toggle[title='Match case']")
     until(page, "() => window.PanelManager.getPanel('gene-signature-S')._debugState().search.matchCase")
-    page.wait_for_timeout(250)
+    page.wait_for_selector(f"{S} .gsig-empty", state="visible")
     assert _rows(page) == [] and page.is_visible(f"{S} .gsig-empty")
     _search(page, "Cd3")
     assert [r["name"] for r in _rows(page)] == ["Cd3d"]
@@ -353,10 +367,10 @@ def test_search_case_regex_and_tick_all(page, served):
     _search(page, "^CD3[DE]$")
     assert [r["name"] for r in _rows(page)] == ["CD3D", "CD3E"]
     page.click(f"{S} .gsig-toggle[title='Match case']")
-    page.wait_for_timeout(250)
+    until(page, "(sel) => [...document.querySelectorAll(sel + ' .gsig-row .gsig-name')].map(e => e.textContent).join() === 'CD3D,CD3E,Cd3d'", S)
     assert [r["name"] for r in _rows(page)] == ["CD3D", "CD3E", "Cd3d"], "case ignored again"
     page.click(f"{S} .gsig-toggle[title='Match case']")
-    page.wait_for_timeout(250)
+    until(page, "(sel) => document.querySelector(sel + ' .gsig-tickall')?.innerText === 'Tick all 2'", S)
     assert page.inner_text(f"{S} .gsig-tickall") == "Tick all 2"
     # an invalid pattern says so and keeps the last results
     _search(page, "CD3(")
@@ -394,7 +408,7 @@ def test_unticking_in_selected_strikes_the_row_through_and_keeps_it(page, served
     assert [r["name"] for r in _rows(page)] == ["CD3D", "KLF1"]
     # genes not in this dataset stay in the recipe, greyed and labelled
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ genes: ['CD3D', 'NOTAGENE'] })")
-    page.wait_for_timeout(300)
+    page.wait_for_selector(f"{S} .gsig-row.is-missing")
     assert _genes(page) == ["CD3D", "NOTAGENE"]
     note = page.locator(f"{S} .gsig-row.is-missing")
     assert note.count() == 1 and "not in this dataset" in note.inner_text()
@@ -407,7 +421,8 @@ def test_a_gene_plot_and_a_gene_set_panel_follow_a_signature_open_and_closed(pag
                     extra_open=["gene-set-G"], extra_cfgs={"gene-set-G": gene_set})
     page.wait_for_selector(f"{G} .gs-controls", timeout=30000)
     until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().source.count === 3")
-    assert _shown_on_plot(page) == ["GENE0001", "GENE0002", "GENE0003"]
+    _plot_shows(page, ["GENE0001", "GENE0002", "GENE0003"])
+    assert _shown_on_plot(page, settle=False) == ["GENE0001", "GENE0002", "GENE0003"]
     src = page.evaluate("() => window.PanelManager.getPanel('gene-set-G')._debugState().source")
     assert src["status"] == "open" and src["title"] == "T cell score"
 
@@ -416,7 +431,8 @@ def test_a_gene_plot_and_a_gene_set_panel_follow_a_signature_open_and_closed(pag
     page.click(f"{S} .gsig-seg:has-text('All genes')")
     _row(page, "GENE0004").locator("input").check()
     until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().source.count === 4")
-    assert _shown_on_plot(page) == ["GENE0001", "GENE0002", "GENE0003", "GENE0004"]
+    _plot_shows(page, ["GENE0001", "GENE0002", "GENE0003", "GENE0004"])
+    assert _shown_on_plot(page, settle=False) == ["GENE0001", "GENE0002", "GENE0003", "GENE0004"]
 
     # the plot's and the analysis' menus list the signature, with no "(closed)" suffix when it closes
     page.click(f"{S} .tile-close")
@@ -449,7 +465,7 @@ def test_keyboard_use(page, served):
     _open_signature(page, served)
     page.focus(f"{S} .gsig-search")
     page.type(f"{S} .gsig-search", "gene000")
-    page.wait_for_timeout(300)
+    until(page, "(sel) => { const n = [...document.querySelectorAll(sel + ' .gsig-row .gsig-name')].map(e => e.textContent.toLowerCase()); return n.length > 0 && n.every(x => x.includes('gene000')); }", S)
     # Down moves into the list, on the first row's tick
     page.press(f"{S} .gsig-search", "ArrowDown")
     assert page.evaluate("() => document.activeElement.getAttribute('aria-label')") == "GENE0000"
@@ -516,7 +532,7 @@ def test_link_round_trip_carries_the_recipe_and_nothing_computed(page, served):
 
     # the plot's filter was saved by id; closed, the signature goes into the link too
     page.evaluate("() => window.PanelManager.closePanel('gene-signature-S')")
-    page.wait_for_timeout(300)
+    until(page, "() => !window.PanelManager.getActivePanels().some(p => p.getId() === 'gene-signature-S')")
     link = _captured_url(page, root, store)
     page.goto("about:blank")
     page.goto(link)
@@ -528,7 +544,8 @@ def test_link_round_trip_carries_the_recipe_and_nothing_computed(page, served):
     assert page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getRecipe().clip") == 4
     # the plot kept its filter (it was not reset to None) and shows the three genes, computed from the recipe alone
     assert page.evaluate("() => document.querySelector('%s select.table-filter-select').value" % P) == SIG
-    assert _shown_on_plot(page) == ["GENE0001", "GENE0002", "KLF1"]
+    _plot_shows(page, ["GENE0001", "GENE0002", "KLF1"])
+    assert _shown_on_plot(page, settle=False) == ["GENE0001", "GENE0002", "KLF1"]
     assert page.locator(f"{P} .filter-notice").count() == 0
     # and it is in the chooser's closed list, with its name
     closed = page.evaluate("() => [...document.querySelectorAll('.source-panel-option.closed-panel')].map(e => e.dataset.id)")
@@ -542,7 +559,7 @@ def test_panel_set_round_trip(page, served):
     for close in (False, True):
         if close:
             page.evaluate("() => window.PanelManager.closePanel('gene-signature-S')")
-            page.wait_for_timeout(300)
+            until(page, "() => !window.PanelManager.getActivePanels().some(p => p.getId() === 'gene-signature-S')")
         name = f"signature-set-{int(time.time())}-{close}"
         saved = page.evaluate("(n) => window.sessionManager.saveSession(n)", name)
         assert saved["status"] == "success", saved
@@ -554,27 +571,31 @@ def test_panel_set_round_trip(page, served):
         assert page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes") == ["GENE0001", "KLF1"]
         assert page.evaluate("() => window.PanelManager.getActivePanels().some(p => p.getId() === 'gene-signature-S')") is (not close)
         assert page.evaluate("() => document.querySelector('%s select.table-filter-select').value" % P) == SIG
-        assert _shown_on_plot(page) == ["GENE0001", "KLF1"]
+        _plot_shows(page, ["GENE0001", "KLF1"])
+        assert _shown_on_plot(page, settle=False) == ["GENE0001", "KLF1"]
         if not close:
             page.wait_for_selector(f"{S} .gsig-grid .gsig-row")
 
 
 def test_back_and_forward_restore_the_genes(page, served):
     _open_signature(page, served, ["GENE0001"], with_plot=True, plot_filtered=True)
+    # outwait the history merge window (MERGE_MS) so the next change starts its own entry
     page.wait_for_timeout(2500)
     before = page.evaluate("() => history.length")
     page.fill(f"{S} .gsig-search", "")
     page.click(f"{S} .gsig-seg:has-text('All genes')")
     _row(page, "GENE0002").locator("input").check()
     until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 2")
-    page.wait_for_timeout(2500)
+    until(page, "(b) => history.length >= b + 1", before)
     assert page.evaluate("() => history.length") == before + 1
     page.go_back()
     until(page, "() => JSON.stringify(window.PanelManager.getPanel('gene-signature-S')?.getRecipe().genes) === '[\"GENE0001\"]'")
-    assert _shown_on_plot(page) == ["GENE0001"]
+    _plot_shows(page, ["GENE0001"])
+    assert _shown_on_plot(page, settle=False) == ["GENE0001"]
     page.go_forward()
     until(page, "() => JSON.stringify(window.PanelManager.getPanel('gene-signature-S')?.getRecipe().genes) === '[\"GENE0001\",\"GENE0002\"]'")
-    assert _shown_on_plot(page) == ["GENE0001", "GENE0002"]
+    _plot_shows(page, ["GENE0001", "GENE0002"])
+    assert _shown_on_plot(page, settle=False) == ["GENE0001", "GENE0002"]
 
 
 # ---------------------------------------------------------- close and reopen
@@ -595,7 +616,8 @@ def test_close_then_reopen_with_the_reopen_call_and_no_chooser_tile(page, served
     # same id: the plot's filter still means it, and the tile sits beside the plot
     assert page.evaluate("() => document.querySelector('%s select.table-filter-select').value" % P) == SIG
     assert page.evaluate("() => !!document.querySelector('%s').closest('.split-container')" % S)
-    assert _shown_on_plot(page) == ["GENE0001", "KLF1"]
+    _plot_shows(page, ["GENE0001", "KLF1"])
+    assert _shown_on_plot(page, settle=False) == ["GENE0001", "KLF1"]
     # opened, it starts on Selected; a panel that is open cannot be reopened
     assert _state(page)["view"] == "selected"
     assert page.evaluate("() => window.PanelManager.reopenClosedPanel('gene-signature-S')") is None
