@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 const refs = await import('../../../static/js/utils/panel-references.js');
 const { registerReferences, registerPanelSourceType, referencesOf, remapReferences, setReferenceHost,
-    dependsOn, findCycle, usersOf } = refs;
+    dependsOn, findCycle, usersOf, keptInUse } = refs;
 const { remapPanelReferences, panelsToAdd } = await import('../../../static/js/utils/deeplink.js');
 const { createResolver, depthOf } = await import('../../../static/js/utils/table-resolver.js');
 const { getColumnKey } = await import('../../../static/js/utils/column-key.js');
@@ -277,4 +277,23 @@ test('usersOf names each panel that uses another once, with its type, and never 
         'a column only shown is a use; a setting only remembered is not');
     assert.deepEqual(usersOf('group'), []);
     assert.deepEqual(usersOf('plot'), []);
+});
+
+test('Clear closed panels keeps a closed panel an open one uses, and what a kept one uses, transitively', () => {
+    page({
+        plot: { type: 'cell-plot', config: { tableFilter: 'table' } },
+        table: { type: 'cell-table', config: { columns: [score('gtable')] } },
+        gtable: { type: 'gene-table', config: { tableFilter: 'sig' } },
+        sig: { type: 'gene-signature', config: {} },
+        lonely: { type: 'cell-plot', config: { color: score('sig2') } },
+        sig2: { type: 'gene-signature', config: {} },
+        loop1: { type: 'cell-table', config: { tableFilter: 'loop2' } },
+        loop2: { type: 'cell-table', config: { tableFilter: 'loop1' } },
+        remembering: { type: 'cell-plot', config: { x: { type: 'obs', key: 'a', history: { 'gene-score': { key: 'old' } } } } },
+        old: { type: 'gene-signature', config: {} }
+    });
+    const closed = ['table', 'gtable', 'sig', 'lonely', 'sig2', 'loop1', 'loop2', 'old'];
+    assert.deepEqual([...keptInUse(closed)].sort(), ['gtable', 'sig', 'table'],
+        'a closed plot keeps nothing; two closed tables using each other keep neither; a remembered setting is no use');
+    assert.deepEqual([...keptInUse([])], []);
 });
