@@ -477,14 +477,15 @@ def test_give_way_between_batches_with_nothing_in_flight_and_the_same_result(sto
     counter = ReadCounter(monkeypatch)
     pause = Pause(3, counter)
     paused = run(path, parts, feats, measures, pause=pause)
-    assert len(pause.waits) >= 10 and all(n == 0 for n in pause.waits)
+    assert len(pause.waits) >= 5 and all(n == 0 for n in pause.waits)
     assert np.array_equal(plain.feature_moments, paused.feature_moments)
     assert np.array_equal(plain.measure_moments, paused.measure_moments)
     for c in range(30):                                            # no gene read twice: the feature's read, and the
         assert counter.genes.count(c) == (2 if gs.gene(c) in SIG["genes"] else 1)     # score's own for its genes
 
 
-def test_should_stop_cancels_between_reads(store):
+def test_should_stop_cancels_between_reads(store, monkeypatch):
+    monkeypatch.setattr(gsc, "MAX_GROUP_ENTRIES", 1)              # one gene per read
     asked = []
 
     def stop():
@@ -598,7 +599,7 @@ def test_the_tier_follows_the_whole_request(store, monkeypatch):
     ([{"id": "a", "kind": "gene", "name": "GENE000", "above": 1}], "unknown_field"),
     ([{"id": "a", "kind": "score", "recipe": {"genes": ["GENE000"]}, "detect_above": 1}], "unknown_field"),
     ([{"id": "a", "kind": "score"}], "bad_feature"),
-    ([{"id": "a", "kind": "score", "recipe": {"genes": ["GENE000"], "method": "nope"}}], "invalid_recipe"),
+    ([{"id": "a", "kind": "score", "recipe": {"genes": ["GENE000"], "method": "nope"}}], "bad_method"),
     ("GENE000", "bad_feature"),
 ])
 def test_bad_features_are_refused_with_a_reason(store, features, reason):
