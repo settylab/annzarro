@@ -675,17 +675,14 @@ def crawl(config):
             status["reused"] += 1
         elif not has_text:
             bare.append((store, sig))
+            todo.append((store, sig, False))
         else:
-            todo.append((store, sig))
+            todo.append((store, sig, True))
     status["done"] = status["reused"]
     logger.info(f"Text index crawl started: {len(stores)} datasets found in {clock() - began_at:.1f} s, "
-                f"{len(todo)} to read, {status['reused']} unchanged, {len(bare)} without text; {workers} threads, {store_timeout:g} s per dataset")
-    for store, sig in bare:           # nothing to read but the names of their fields, a metadata read: in line
-        if clock() > deadline:
-            break
-        names, names_cut = read_names(store["real"], trust_listing=True)
-        results[store["real"]] = _entry(store, sig, names=names, names_cut=names_cut)
-    status["done"] += len(bare)
+                f"{len(todo) - len(bare)} to read, {status['reused']} unchanged, {len(bare)} without text; {workers} threads, {store_timeout:g} s per dataset")
+    # Stores without text have only their field names to read. They go through the pool with the others, so one
+    # per-store timeout, the heartbeat and the deadline cover every read of a store's files.
 
     last_beat = [0.0]
 
@@ -703,9 +700,13 @@ def crawl(config):
     enumerated = {s["real"] for s in stores}
     began = {}                       # real path: monotonic start of its read (the timeout counts from there, not from the submit)
 
+    texts = {}                       # real path: whether the store has text to read before its names
+
     def job(store):
         began[store["real"]] = clock()
-        return read_text(store["real"], readme_bytes)
+        about, readme, cut = read_text(store["real"], readme_bytes) if texts[store["real"]] else ({}, "", False)
+        names, names_cut = read_names(store["real"], trust_listing=True)
+        return about, readme, cut, names, names_cut
 
     # A read past the timeout cannot be stopped, so it keeps its thread: the pool has spare threads, and a
     # store that is late hands its place to the next one. The spares are ``workers`` per PROCESS, not per
@@ -715,6 +716,9 @@ def crawl(config):
         _late_reads.difference_update([f for f in _late_reads if f.done()])
         carried = len(_late_reads)
     max_late = max(0, workers - carried)
+    todo.sort(key=lambda item: item[2])         # the quick ones first: the stores without text, as before
+    for store, _sig, has_text in todo:
+        texts[store["real"]] = has_text
     starved = not max_late and bool(todo)
     if starved:
         logger.warning(f"Text index: {carried} reads of earlier crawls have not answered and hold their threads; "
@@ -728,7 +732,7 @@ def crawl(config):
 
     def submit():
         while queue and len(running) < workers:
-            store, sig = queue.pop()
+            store, sig, _has_text = queue.pop()
             future = pool.submit(job, store)
             info[future] = (store, sig)
             running.add(future)
@@ -737,7 +741,7 @@ def crawl(config):
         nonlocal since_checkpoint
         store = info[future][0]
         results[store["real"]] = entry
-        status["read"] += 1
+        status["read"] += texts[store["real"]]       # a store without text is not counted as read
         status["errors"] += bool(entry["error"])
         status["done"] += 1
         since_checkpoint += 1
@@ -817,13 +821,10 @@ def _entry(store, sig, about=None, readme="", cut=False, error=None, names=None,
 
 def _result_entry(store, sig, future):
     try:
-        about, readme, cut = future.result()
+        about, readme, cut, names, names_cut = future.result()
     except Exception as exc:
         logger.debug(f"Text index: {store['real']} not read: {exc}")
         return _entry(store, sig, error="unreadable")
-    # the names are a metadata read, made here in the crawl's own thread once the text is in: the pooled read
-    # (the long one, the one that can hang) is only the text, and its timing is what it was
-    names, names_cut = read_names(store["real"], trust_listing=True)
     return _entry(store, sig, about, readme, cut, names=names, names_cut=names_cut)
 
 
