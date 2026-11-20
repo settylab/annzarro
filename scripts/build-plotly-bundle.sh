@@ -29,7 +29,7 @@
 # those ids, a few dozen bytes; the same directory rebuilds identically), and plotly.js writes the
 # build year into the banner. The committed file is therefore the source of truth, pinned by the
 # sha256 in scripts/vendor-assets.json. --check compares the rebuild with it after dropping every
-# digit, which catches a changed trace list, tag or dependency but not the ids.
+# digit (and the exponent form of a large id), which catches a changed trace list, tag or dependency but not the ids.
 set -eu
 
 TAG=v2.35.3
@@ -59,7 +59,8 @@ node tasks/custom_bundle.js --out annzarro --traces "$TRACES" --transforms none 
 built=$src/dist/plotly-annzarro.min.js
 
 # Ids and the banner year depend on where and when it was built; the code does not.
-norm() { tr -d '0-9' < "$1" | shasum -a 256 | cut -d' ' -f1; }
+# A module id of 1000 or more is written 1e3 and so on, which leaves a stray "e" once the digits go.
+norm() { sed -E 's/[0-9]+e[0-9]+//g' "$1" | tr -d '0-9' | shasum -a 256 | cut -d' ' -f1; }
 if [ "$(norm "$built")" != "$(norm "$dest")" ]; then
   echo "rebuilt bundle differs from $dest" >&2
   [ "$check" = 1 ] && exit 1
