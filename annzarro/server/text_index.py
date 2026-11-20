@@ -705,8 +705,8 @@ def crawl(config):
 
     def job(store):
         began[store["real"]] = clock()
+        names, names_cut = read_names(store["real"], trust_listing=True)      # a metadata read: first, the README read is the long one
         about, readme, cut = read_text(store["real"], readme_bytes)
-        names, names_cut = read_names(store["real"], trust_listing=True)
         return about, readme, cut, names, names_cut
 
     # A read past the timeout cannot be stopped, so it keeps its thread: the pool has spare threads, and a
