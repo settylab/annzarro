@@ -342,7 +342,10 @@ def test_one_group_per_cell_up_to_the_limit(store, monkeypatch):
     assert res.refused == {"reason": "too_many_levels", "count": 1000, "limit": 999, "partitioning": 0, "levels": []}
 
 
-def test_too_many_groups_is_refused_with_the_count(store, monkeypatch):
+@pytest.mark.parametrize("narrow", [cg._NARROW_MAX, 20], ids=["in-place", "wide"])
+def test_too_many_groups_is_refused_with_the_count(store, monkeypatch, narrow):
+    """In place, and through the wide fold, which on the last partitioning counts the groups and writes no code."""
+    monkeypatch.setattr(cg, "_NARROW_MAX", narrow)
     monkeypatch.setitem(cg.GROUPING_LIMITS, "groups", 100)
     res = run(store, [{"source": {"type": "obs", "key": "sample"}}, {"source": {"type": "obs", "key": "cell_type"}}])
     want = len({(s, c) for s, c in zip(gs.make_data().obs["sample"], gs.make_data().obs["cell_type"])})

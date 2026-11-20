@@ -1031,19 +1031,22 @@ class _Fold:
         self.keys = np.zeros((1, 0), dtype=np.int32)    # slots of each compacted code
         self.radices: List[int] = []                    # partitionings folded in since the last compaction
         self.pending: Optional[np.ndarray] = None       # compact(apply=False): the numbering not yet applied
+        self.over = False                               # fold(last=True) found more groups than the limit
 
     @property
     def none(self) -> int:
         return NONE16 if self.codes.dtype == np.uint16 else NONE32
 
-    def fold(self, levels: _Levels) -> None:
+    def fold(self, levels: _Levels, last: bool = False) -> None:
+        """Fold one partitioning in. On the ``last`` one, a wide fold over the group limit only counts the groups
+        (``over`` is set) and writes no codes: the result is a refusal, which needs the count alone."""
         width = len(levels.slots)
         if self.codes.dtype == np.uint16 and self.k * width >= _NARROW_MAX and self.radices:
             self.compact()
         if self.codes.dtype == np.uint16 and self.k * width < _NARROW_MAX:
             self._narrow(levels, width)
         else:
-            self._wide(levels, width)
+            self._wide(levels, width, last)
 
     def _narrow(self, levels: _Levels, width: int) -> None:
         codes = self.codes
@@ -1069,20 +1072,25 @@ class _Fold:
             seen = np.union1d(seen, np.unique(c))
         return seen
 
-    def _wide(self, levels: _Levels, width: int) -> None:
+    def _wide(self, levels: _Levels, width: int, last: bool) -> None:
         """Fold through the full slot array: one pass for the occupied combinations, one to write their codes."""
         n = self.codes.size
-        lv_all = np.empty(n, dtype=np.uint16)
+        small = width < 0xFF                            # the slots in one byte each, 0xFF for no group
+        lv_none = 0xFF if small else NONE16
+        lv_all = np.empty(n, dtype=np.uint8 if small else np.uint16)
         for start, lv in levels:
-            lv_all[start:start + lv.size] = lv
+            lv_all[start:start + lv.size] = np.minimum(lv, lv_none) if small else lv
         none = self.none
 
         def combined():
             for a, b in _spans(n):
                 r, lv = self.codes[a:b].astype(np.int64), lv_all[a:b]
-                ok = (r != none) & (lv != NONE16)
+                ok = (r != none) & (lv != lv_none)
                 yield a, b, ok, r * width + lv
         occupied = self._occupied((c[ok] for _, _, ok, c in combined()), self.k * width)
+        if last and occupied.size > GROUPING_LIMITS["groups"]:
+            self.k, self.over = int(occupied.size), True
+            return
         new_dtype = np.uint16 if occupied.size < NONE16 else np.uint32
         new_none = NONE16 if new_dtype == np.uint16 else NONE32
         out = self.codes if new_dtype == self.codes.dtype else np.empty(n, dtype=new_dtype)
@@ -1209,10 +1217,10 @@ def _resolving(gp: GroupingPlan, ctx: _Ctx) -> Iterator[int]:
             levels = _Levels(part, ctx, i)
             levels.count = not every_cell_grouped
             levels.prepare()
-            fold.fold(levels)
+            fold.fold(levels, last=i == len(gp.parts) - 1)
             made.append(levels)
             yield i + 1
-        counts = fold.compact(apply=False)
+        counts = None if fold.over else fold.compact(apply=False)
         if fold.k > GROUPING_LIMITS["groups"]:
             raise _Refused(reason="too_many_groups", count=int(fold.k), limit=GROUPING_LIMITS["groups"])
     except _Refused as r:
