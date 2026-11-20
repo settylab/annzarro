@@ -710,3 +710,26 @@ def test_moments_are_float64_and_ids_keep_the_request_order(store):
     assert res.feature_moments.dtype == np.float64
     single = run(store, [{"source": {"type": "obs", "key": "condition"}}], [gene_feature("a", gs.gene(1))])
     close(res.feature_moments[1], single.feature_moments[0], rtol=0)
+
+
+def test_gene_reads_run_ahead_by_the_feature_read_ahead_only(store, monkeypatch):
+    """CMP-2: the reads in flight are bounded, whatever the number of genes (2,000 genes hold what 200 do)."""
+    monkeypatch.setattr(gsc, "MAX_GROUP_ENTRIES", 1)
+    monkeypatch.setattr(gf, "READ_AHEAD_ENTRIES", 1500)
+    budgets, peaks = [], []
+    original = gsc.pipeline
+
+    def watched(tasks, threads, budget, pause=None):
+        budgets.append(budget)
+        for task, result, peak in original(tasks, threads, budget, pause):
+            peaks.append(peak)
+            yield task, result, peak
+    monkeypatch.setattr(gsc, "pipeline", watched)
+    run(store, [{"source": {"type": "obs", "key": "cell_type"}}], [gene_feature(f"f{i}", gs.gene(i)) for i in range(40)])
+    assert budgets == [1500]
+    largest = max(int(np.count_nonzero(gs.make_data().x[:, i])) for i in range(40))
+    assert max(peaks) <= 1500 + largest
+
+
+def test_the_feature_read_ahead_is_within_the_score_engines():
+    assert 0 < gf.READ_AHEAD_ENTRIES <= gsc.READ_AHEAD_ENTRIES

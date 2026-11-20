@@ -22,7 +22,7 @@ always all five.
 Reads. Each matrix is opened once and each gene of it is read once, whatever number of features want it: the colour
 and the size of a row (OD 15), two thresholds, two sections. A score is computed once for every feature and measure
 that asks for it, through the score engine (``gene_score.compute``). Gene reads go through the score engine's
-``pipeline``, so memory is its read-ahead (``READ_AHEAD_ENTRIES``) whatever the number of genes, and one gene is worked
+``pipeline``, so memory is the read-ahead (``READ_AHEAD_ENTRIES``) whatever the number of genes, and one gene is worked
 through ``SEGMENT_ENTRIES`` entries at a time (CMP-2). A sparse gene costs its stored entries: a cell without an entry
 holds zero, which adds to ``n`` only (and to ``n_above`` under a negative threshold).
 
@@ -67,6 +67,11 @@ MOMENTS = ("n", "sum", "sumsq", "n_above", "sum_above")
 
 #: The most grid cells a measure is accumulated over: 512 x 512 x 8, the largest grid (SHR-39).
 MAX_GRID_MEASURE_CELLS = 2_097_152
+
+#: Entries a feature job reads ahead of its arithmetic: a quarter of the score engine's (``READ_AHEAD_ENTRIES``), so
+#: within CMP-2's bound. The arithmetic, not the read, is the slower side (it holds the GIL), so a deeper read-ahead
+#: only holds memory: at 1M cells it is as fast, and 2,000 genes then hold what 200 do.
+READ_AHEAD_ENTRIES = 12_000_000
 
 #: The most values (groups x features) one grouping request accumulates: CXG-17's matrix limit, which the browser
 #: keeps to, so the accumulators stay under 16 MB. A request over it is refused once its groups are known.
@@ -372,10 +377,12 @@ class _Bins:
 
 
 class _Sums:
-    """Running per-bin sums of values for several thresholds; ``seen`` counts the values given (finite or not)."""
+    """Running per-bin sums of values for several thresholds; ``seen`` counts the values given (finite or not),
+    which a negative threshold needs: a sparse gene's implicit zeros are above it."""
 
     def __init__(self, n_bins: int, thresholds: Sequence[float]):
         self.thresholds = list(thresholds)
+        self.count_seen = any(t < 0 for t in self.thresholds)       # implicit zeros matter only below 0
         z = lambda: np.zeros(n_bins, dtype=np.float64)                    # noqa: E731
         self.seen, self.bad, self.sum, self.sumsq = z(), z(), z(), z()
         self.n_above = [z() for _ in self.thresholds]
@@ -390,16 +397,29 @@ class _Sums:
         else:
             self.bad += np.bincount(b[~finite], minlength=n)
             v[~finite] = 0.0
-        self.seen += np.bincount(b, minlength=n)
-        self.sum += np.bincount(b, weights=v, minlength=n)
+        seen = np.bincount(b, minlength=n) if self.count_seen else None
+        if seen is not None:
+            self.seen += seen
+        total = np.bincount(b, weights=v, minlength=n)
+        self.sum += total
         self.sumsq += np.bincount(b, weights=v * v, minlength=n)
         for i, t in enumerate(self.thresholds):
             above = v > t
             if finite is not None and t < 0:
                 above &= finite
-            b_above = b[above]
-            self.n_above[i] += np.bincount(b_above, minlength=n)
-            self.sum_above[i] += np.bincount(b_above, weights=v[above], minlength=n)
+            if t >= 0 and 2 * np.count_nonzero(above) > above.size:
+                # most values are above (an expressed gene's stored entries): count the few that are not. A
+                # non-finite value, held as 0, is among them; the sums lose nothing to cancellation, as the part
+                # taken away is the smaller one
+                below = ~above
+                b_below = b[below]
+                seen = np.bincount(b, minlength=n) if seen is None else seen
+                self.n_above[i] += seen - np.bincount(b_below, minlength=n)
+                self.sum_above[i] += total - np.bincount(b_below, weights=v[below], minlength=n)
+            else:
+                b_above = b[above]
+                self.n_above[i] += np.bincount(b_above, minlength=n)
+                self.sum_above[i] += np.bincount(b_above, weights=v[above], minlength=n)
 
     def write(self, sizes: np.ndarray, outs: Sequence[Sequence[np.ndarray]]) -> None:
         """The moments at threshold ``i`` into each ``[k, 5]`` array of ``outs[i]``; ``sizes`` are the cells per
@@ -504,7 +524,7 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
             continue
         with gs.open_source(reader, dataset_path, read.layer) as source:
             for task, rows_values, _ in gs.pipeline(source.tasks(read.columns), source.threads,
-                                                    gs.READ_AHEAD_ENTRIES, pause):
+                                                    READ_AHEAD_ENTRIES, pause):
                 gs._checkpoint(should_stop, None)
                 for col, at, values in rows_values:
                     ts = read.thresholds[col]
