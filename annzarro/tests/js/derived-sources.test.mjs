@@ -290,6 +290,21 @@ test('nothing to ask, a deleted source, a gate and an option the provider does n
     assert.equal(odd.read().key, null);
 });
 
+test('a gate\'s own fields reach the snapshot unchanged: a mixed cycle keeps its ring and its kinds', () => {
+    const w = world();
+    const src = w.add('G1', 'Groups', ['x']);
+    const cycle = ['Table 1', 'Groups', 'Table 2'];
+    const cycleKinds = ['table', 'cell-grouping', 'table'];
+    src.gate = () => ({ state: 'cycle', cycle, cycleKinds });
+    const { handle } = w.watch('G1', 'a', { panelId: 'P1' });
+    const snap = handle.read();
+    assert.equal(snap.state, 'cycle');
+    assert.deepEqual(snap.cycle, cycle);
+    assert.deepEqual(snap.cycleKinds, cycleKinds);
+    assert.equal(snap.key, null, 'nothing is asked while gated');
+    assert.equal(w.calls.estimate.length, 0);
+});
+
 test('usage and consumers by role: viewers are not consumers; an unknown kind throws and leaves nothing', () => {
     const w = world();
     w.add('G1', 'Groups', ['x']);
