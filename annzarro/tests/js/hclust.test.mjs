@@ -60,15 +60,18 @@ test("a block over the limit is refused", () => {
 test("ties break by original order", () => {
   // Four equally spaced points, every neighbouring distance 1, in both directions: the order stays as given.
   for (const col of [[0, 1, 2, 3], [3, 2, 1, 0]]) {
-    const r = clusterRows(Float64Array.from(col), 4, 1, { distance: "euclidean" });
+    const r = clusterRows(Float64Array.from(col.flatMap((v) => [v, 0])), 4, 2, { distance: "euclidean" });
     assert.deepEqual(Array.from(r.order), [0, 1, 2, 3]);
     assert.deepEqual(Array.from(r.merges), [0, 1, 1, 2, 2, 3, 1, 2, 4, 5, 3, 4]);
   }
-  // Three identical rows: all distances 0.
+  // Three identical rows, all distances 0: rows 0 and 1 merge first (original order picks the pair), and the
+  // orientation is scipy's, the lower-numbered cluster to the left: the singleton 2 before the cluster of 0 and 1.
+  // scipy.cluster.hierarchy.linkage on this input gives Z = [[0, 1, 0, 2], [2, 3, 0, 3]] and leaves 2, 0, 1.
   const same = clusterRows(Float64Array.of(1, 2, 3, 1, 2, 3, 1, 2, 3), 3, 3, { distance: "euclidean" });
-  assert.deepEqual(Array.from(same.order), [0, 1, 2]);
+  assert.deepEqual(Array.from(same.order), [2, 0, 1]);
+  assert.deepEqual(Array.from(same.merges), [0, 1, 0, 2, 2, 3, 0, 3]);
   // The same input gives the same answer, however often it is asked.
-  const again = clusterRows(Float64Array.from([3, 2, 1, 0]), 4, 1, { distance: "euclidean" });
+  const again = clusterRows(Float64Array.from([3, 0, 2, 0, 1, 0, 0, 0]), 4, 2, { distance: "euclidean" });
   assert.deepEqual(Array.from(again.order), [0, 1, 2, 3]);
 });
 
