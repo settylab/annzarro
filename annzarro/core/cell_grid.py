@@ -59,15 +59,12 @@ MOMENTS = ("n", "sum", "sumsq", "n_above", "sum_above")
 
 _BODY_FIELDS = ("shape", "mode", "partitionings", "sets", "subset", "measures", "density", "estimate_only", "confirm")
 _MEASURE_FIELDS = ("id", "source", "above")
-#: Methods with a bin count and a range: the ones whose cells can fall outside.
+#: Methods with a bin count and a range: the ones a density can bin.
 _RANGED = tuple(bn.DEFAULT_BINS)
 
-#: Level slabs: a cell outside the axis's range, below or above. Above every level, below ``NONE16``.
-OUT_BELOW = 0xFFFE
-OUT_ABOVE = 0xFFFD
-#: Grid codes: a cell in no level of an axis (``NONE32``), or outside the range of an earlier axis (``_OUT32``).
-NONE32 = 0xFFFFFFFF
-_OUT32 = 0xFFFFFFFE
+#: Grid codes: a cell in no level of an axis is ``cell_groups.NONE32``; one outside the range of an earlier axis
+#: is ``_OUT32``.
+_OUT32 = cg.NONE32 - 1
 
 
 def _bad(message: str, reason: str = "bad_request", status: int = 400, **extra) -> cg.GroupError:
@@ -212,36 +209,6 @@ class Plan:
                            "layout": p.layout} for p in parts]}
 
 
-def _grid_bins(raw: Dict[str, Any], method: str) -> int:
-    """The bin count of a grid axis: a whole number from 2; the mode's limit is checked with the others."""
-    b = raw.get("bins")
-    if b is None:
-        return bn.DEFAULT_BINS[method]
-    if not bn._is_number(b) or float(b) != int(b) or int(b) < bn.BINS_MIN:
-        raise _bad(f"The number of bins must be a whole number from {bn.BINS_MIN}.", "bad_bins", minimum=bn.BINS_MIN)
-    return int(b)
-
-
-def _plan_axis(reader, dataset_path: str, p: cg.Partitioning, request: Request, n_cells: int,
-               remote: bool) -> cg.PartPlan:
-    """The partitioning planned as a grouping's would be, then given the grid's own bin count and ``outside``.
-
-    cell_groups checks the source and the binning as a grouping takes it (clamped, at most 1,000 bins); the two
-    fields it would refuse are taken out for that check and put back here, validated.
-    """
-    raw = p.binning
-    probe = p if raw is None else replace(p, binning={k: v for k, v in raw.items() if k not in ("bins", "outside")})
-    part = cg._plan_part(reader, dataset_path, probe, request.levels, n_cells, remote)
-    part.spec = p
-    if raw is not None and part.binning is not None and part.binning.method in _RANGED:
-        try:
-            parsed = bn.parse({k: v for k, v in raw.items() if k != "bins"}, numeric=True)
-        except bn.BinningError as e:
-            raise cg.GroupError(400, e.reason, e.message, **e.extra) from None
-        part.binning = replace(parsed, bins=_grid_bins(raw, parsed.method))
-    return part
-
-
 def _n_categories(reader, dataset_path: str, key: str) -> Optional[int]:
     """Categories of a categorical obs column, from the length of its stored list (no cell is read)."""
     with cs._root(reader, dataset_path) as root:
@@ -334,7 +301,9 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
     with cs._root(reader, dataset_path) as root:
         n_cells = cs._n_cells(root)
     remote = is_remote_path(dataset_path)
-    axes = [_plan_axis(reader, dataset_path, p, request, n_cells, remote) for p in request.partitionings]
+    axes = [cg._plan_part(reader, dataset_path, p, request.levels, n_cells, remote, allow_exclude=True,
+                          max_bins=_axis_limit(request.mode, i) or MAX_GRID_MEASURE_CELLS)
+            for i, p in enumerate(request.partitionings)]
     _check_kinds(request, axes)
     declared = [_declared(reader, dataset_path, a) for a in axes]
     _check_limits(request.mode, axes, declared)
@@ -365,61 +334,39 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
 
 
 class _Axis(cg._Levels):
-    """A partitioning's levels as a grid axis: a binned one marks its cells outside the range (``OUT_BELOW``,
-    ``OUT_ABOVE``) instead of folding them into ``@na``, and a density axis first takes its range (CNT-10)."""
+    """A partitioning's levels as a grid axis: cells outside a range are left out and marked (``cell_groups.OUT_BELOW``,
+    ``OUT_ABOVE``), and a density axis first takes its range from the values (CNT-10)."""
 
     def __init__(self, part: cg.PartPlan, ctx: cg._Ctx, index: int, density_d: int = 0):
-        super().__init__(part, ctx, index)
+        super().__init__(part, ctx, index, allow_exclude=True)
         self.density_d = density_d
         self.density: Optional[Dict[str, Any]] = None
-        self.ranged = False                 # its slabs may mark cells outside its range
 
-    def _prepare_binned(self) -> None:
-        part, b = self.part, self.part.binning
-        from_all = b.edges_from == "all" and self.ctx.rows is not None
-        held = self._numbers(None if from_all else self.ctx.rows)
-        if self.density_d:
-            b = self._density_binning(held, b)
-        try:
-            e = bn.edges(lambda: iter(held), b)
-        except bn.BinningError as err:
-            raise cg.GroupError(422, err.reason, err.message, axis=self.index, **err.extra) from None
-        ids = bn.level_ids(e)
-        exclude = part.spec.rest == "exclude"
-        self.slots = ids + ([] if exclude else ["@na"])
-        self.info.update(e.to_reply())
-        counts = bn.Counts()
-        na = cg.NONE16 if exclude else len(ids)
-        ranged = self.ranged = b.outside == "exclude" and b.method in _RANGED and not e.degenerate
-        lo, hi = (float(e.edges[0]), float(e.edges[-1])) if ranged else (0.0, 0.0)
-        log = b.method == "log"
-        # Only the reserved levels' occupancy is wanted (the bins are listed whatever their count), and assign()
-        # counts it already: the cells of @zero are the zeros, those of @na the cells without a value.
+    @property
+    def ranged(self) -> bool:
+        """Its slabs may mark cells outside its range."""
+        return self.bin_counts is not None and self.part.binning.outside == "exclude"
+
+    def __iter__(self):
+        """A binned axis lists every bin whatever its count, so only its reserved levels' occupancy is wanted, and
+        assign() has counted that already: the cells of ``@zero`` are the zeros, of ``@na`` those without a value."""
+        if self.bin_counts is None:
+            yield from super().__iter__()
+            return
         self.count = False
+        yield from super().__iter__()
+        self.counts = np.zeros(len(self.slots), dtype=np.int64)
+        if self.slots[0] == "@zero":
+            self.counts[0] = self.bin_counts.n_zero
+        if self.slots[-1] == "@na":
+            self.counts[-1] = self.bin_counts.n_no_value
 
-        def slabs():
-            for start, v in self._shown_values(held, from_all):
-                lv = bn.assign(v, e, counts)
-                gone = lv == bn.NO_LEVEL
-                if ranged and gone.any():
-                    x = np.asarray(v[gone], dtype=np.float64)
-                    below = x < lo                           # NaN compares false: it has no value
-                    if log:
-                        below &= x > 0                       # under log-spaced bins, <= 0 has no value
-                    lv[gone] = np.where(below, OUT_BELOW, np.where(x > hi, OUT_ABOVE, na))
-                elif na != cg.NONE16:
-                    np.minimum(lv, na, out=lv)               # every level is below na; only NO_LEVEL is above
-                yield start, lv
-            self.info["n_no_value"] = counts.n_no_value
-            self.counts = np.zeros(len(self.slots), dtype=np.int64)
-            if e.zero_bin:
-                self.counts[0] = counts.n_zero
-            if not exclude:
-                self.counts[-1] = counts.n_no_value
-        self._slabs = slabs()
-
-    def _density_binning(self, held: List[np.ndarray], b: bn.Binning) -> bn.Binning:
+    def _binning_of(self, held: List[np.ndarray]) -> bn.Binning:
         """The pre-pass of CNT-10 over the held values: ``n``, ``sigma``, the exact tails, the padded range."""
+        b = self.part.binning
+        if not self.density_d:
+            return b
+
         def finite() -> Iterator[np.ndarray]:
             for h in held:
                 for c in bn._chunks(h):
@@ -466,7 +413,7 @@ def _fold(codes: np.ndarray, axis: _Axis, outside_before: bool) -> Tuple[int, in
         earlier = r == _OUT32 if outside_before else None
         out = None
         if axis.ranged:
-            below, above = lv == OUT_BELOW, lv == OUT_ABOVE
+            below, above = lv == cg.OUT_BELOW, lv == cg.OUT_ABOVE
             out = below | above
             if out.any():
                 if earlier is not None:
@@ -476,10 +423,10 @@ def _fold(codes: np.ndarray, axis: _Axis, outside_before: bool) -> Tuple[int, in
                 above_n += int(np.count_nonzero(above))
             else:
                 out = None
-        bad |= lv >= OUT_ABOVE                          # OUT_ABOVE, OUT_BELOW and NONE16
+        bad |= lv >= cg.OUT_ABOVE                          # OUT_ABOVE, OUT_BELOW and NONE16
         r *= width
         r += lv
-        np.copyto(r, NONE32, where=bad)
+        np.copyto(r, cg.NONE32, where=bad)
         if earlier is not None and out is not None:
             out |= earlier
         elif out is None:

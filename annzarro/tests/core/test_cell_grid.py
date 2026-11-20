@@ -132,9 +132,10 @@ def test_named_recipes_match_the_expected_file(stores, layout, backend, name):
     res = run(stores[layout, backend], MODES_OF_RECIPES[name], recipe["partitionings"], gs.recipe_rows(recipe), **kw)
     head, blocks = reply(res)
     assert [a["levels"] for a in head["axes"]] == [a["levels"] for a in want["axes"]]
+    assert [a["n_outside"] for a in head["axes"]] == [a["n_outside"] for a in want["axes"]]
     assert blocks["counts"].tolist() == want["counts"]
     assert head["n_counted"] == want["n_counted"]
-    assert head["n_shown"] == gs.N_OBS
+    assert head["n_shown"] == want["n_shown"]
     if "measure" in want:
         got = blocks["measure_moments"]
         assert got.shape == (1, len(want["counts"]), 5)
@@ -389,22 +390,33 @@ def _refusal(store, mode, parts, **kw):
 
 
 @pytest.mark.parametrize("mode,parts,axis,count,limit,reason", [
-    ("1d", [width("score", 2001)], 0, 2001, 2000, "too_many_bins"),
     ("1d", [width("score", 50), obs("many")], 1, 2001, 200, "too_many_levels"),
-    ("2d", [width("score", 513), width("signed", 4)], 0, 513, 512, "too_many_bins"),
-    ("2d", [width("score", 4), width("signed", 513)], 1, 513, 512, "too_many_bins"),
     ("2d", [width("score", 4), width("signed", 4), obs("sample")], 2, 30, 8, "too_many_levels"),
     ("2d", [width("score", 4, zero_bin=False), width("signed", 4),
             obs("depth", binning={"method": "equal_width", "bins": 8, "zero_bin": True})], 2, 9, 8, "too_many_bins"),
     ("categorical", [obs("many")], 0, 2001, 200, "too_many_levels"),
     ("categorical", [obs("cell_type"), obs("many")], 1, 2001, 200, "too_many_levels"),
-    ("categorical", [obs("score", binning={"method": "manual", "thresholds": list(range(200))})], 0, 201, 200,
-     "too_many_bins"),
 ])
 def test_every_axis_limit_is_refused_before_any_read(store, no_reads, mode, parts, axis, count, limit, reason):
     e = _refusal(store, mode, parts)
     assert e.reason == reason
     assert (e.extra["axis"], e.extra["count"], e.extra["limit"], e.extra["mode"]) == (axis, count, limit, mode)
+
+
+@pytest.mark.parametrize("mode,parts,limit,reason", [
+    ("1d", [width("score", 2001)], 2000, "bad_bins"),
+    ("1d", [width("score", 4), width("signed", 201)], 200, "bad_bins"),
+    ("2d", [width("score", 513), width("signed", 4)], 512, "bad_bins"),
+    ("2d", [width("score", 4), width("signed", 513)], 512, "bad_bins"),
+    ("categorical", [obs("score", binning={"method": "manual", "thresholds": list(range(200))})], 199,
+     "bad_thresholds"),
+])
+def test_a_bin_count_over_its_axis_limit_is_refused_by_the_binning_before_any_read(store, no_reads, mode, parts,
+                                                                                  limit, reason):
+    with pytest.raises(cg.GroupError) as e:
+        plan_of(store, mode, parts)
+    assert e.value.status == 400 and e.value.reason == reason
+    assert e.value.extra.get("maximum", e.value.extra.get("limit")) == limit
 
 
 def test_the_limits_are_the_plans():
