@@ -60,7 +60,6 @@ MAX_NESTING = 4
 #: Seconds per million cells and partitioning for the resolve (CMP-1).
 RESOLVE_SECONDS_PER_MCELL = 0.012
 
-RESERVED = ("@zero", "@in", "@out", "@other", "@na")
 SHAPES = ("grouping", "grid")
 _BODY_FIELDS = ("shape", "partitionings", "sets", "small", "subset", "features", "measures", "want",
                 "estimate_only", "confirm")
@@ -702,13 +701,12 @@ class _Levels:
     # -- reading ----------------------------------------------------------------------------------------------
 
     def __iter__(self):
-        counts = np.zeros(len(self.slots) + 1, dtype=np.int64)
+        counts = np.zeros(NONE16 + 1, dtype=np.int64)
         for start, lv in self._slabs:
             self.ctx.check()
-            # NONE16 is counted in the extra last bin, so one bincount does it
-            counts += np.bincount(np.minimum(lv, len(self.slots)), minlength=len(self.slots) + 1)
+            counts += np.bincount(lv, minlength=NONE16 + 1)          # a uint16 slot: NONE16 has its own bin
             yield start, lv
-        self.counts = counts[:-1]
+        self.counts = counts[:len(self.slots)]
 
     def _column(self, rows) -> Iterator[cs.Slab]:
         req = self.ctx.request
@@ -1154,10 +1152,6 @@ class GroupingResult:
     refused: Optional[Dict[str, Any]] = None
     small: Dict[str, Any] = field(default_factory=dict)
 
-    @property
-    def nbytes(self) -> int:
-        return 0 if self.codes is None else int(self.codes.nbytes)
-
     def to_reply(self, want_codes: bool) -> Tuple[Dict[str, Any], List[Tuple[str, np.ndarray]]]:
         """The ``result`` frame's grouping fields and its blocks (only ``codes``, when asked)."""
         head: Dict[str, Any] = {"type": "result", "version": ALGORITHM_VERSION, "shape": "grouping",
@@ -1231,11 +1225,16 @@ def _small_groups(fold: _Fold, keys: List[List[str]], counts: np.ndarray, g: Gro
     none = 0xFF if dtype == np.uint8 else NONE16
     lut = np.where(new_of >= 0, new_of, none).astype(dtype)
     lut = np.append(lut, np.array([none], dtype=dtype))
-    codes = np.empty(fold.codes.size, dtype=dtype)
-    src_none = fold.none
-    for a, b in _spans(codes.size):
-        c = fold.codes[a:b]
-        codes[a:b] = lut[np.where(c == src_none, k, c)]
+    if dtype == fold.codes.dtype:                  # in place: the codes are never held twice (CMP-4)
+        if not np.array_equal(new_of, np.arange(k)):
+            fold.remap(lut)
+        codes = fold.codes
+    else:
+        codes = np.empty(fold.codes.size, dtype=dtype)
+        src_none = fold.none
+        for a, b in _spans(codes.size):
+            c = fold.codes[a:b]
+            codes[a:b] = lut[np.where(c == src_none, k, c)]
     groups = [{"key": key, "n": int(n)} for key, n in zip(out_keys, out_counts)]
     return groups, codes, info
 
