@@ -13,7 +13,20 @@ import pytest
 
 from annzarro.server.routes import compute_stream as cs
 
-JOIN_S = 20
+JOIN_S = 30
+
+
+def _no_survivors(threads):
+    """A thread still alive after its join deadline is a hang in the code under test: dump every stack and end the
+    process, so no thread (and no pytest) outlives the test and holds the bench."""
+    alive = [t for t in threads if t.is_alive()]
+    if alive:
+        import faulthandler
+        import os
+        import sys
+        sys.stderr.write(f"\n{len(alive)} thread(s) outlived the test; stacks follow, then the process ends.\n")
+        faulthandler.dump_traceback(all_threads=True)
+        os._exit(1)
 
 
 @contextlib.contextmanager
@@ -33,7 +46,7 @@ def _threads():
         for t in started:
             t.join(max(deadline - time.monotonic(), 0.01))
         alive = [t for t in started if t.is_alive()]
-        assert not alive, f"{len(alive)} thread(s) outlived the test"
+        _no_survivors(started)
 
 
 def _until(cond, timeout=5.0, what="the condition"):
@@ -258,7 +271,8 @@ def test_giving_way_passes_the_lane_and_comes_back_after_one_turn():
         _until(lambda: b.running, what="b's turn")
         assert a.state == "yielded" and order == ["a gives way"]
         assert a.queue() == {"ahead": 0, "sharing": 1} and b.queue() == {"ahead": 0, "sharing": 1}
-        assert b.wanted()                                     # a waits again: b gives way at its next batch
+        assert not b.wanted()                                 # its turn reads one batch first
+        assert b.wanted()                                     # then b gives way back to a
         b.leave()
         _until(lambda: order == ["a gives way", "a again"])
     assert a.running and a.queue() == {"ahead": 0, "sharing": 0}
@@ -267,20 +281,81 @@ def test_giving_way_passes_the_lane_and_comes_back_after_one_turn():
 
 def test_a_job_that_has_given_way_holds_its_accumulators_only():
     ledger = cs.Ledger(1000)
-    lanes = cs.Lanes()
-    a = lanes.enter("heavy")
-    a.hold(ledger.reserve(800, 0, "a"), keep_bytes=16, wait_s=5)
-    b = lanes.enter("heavy")
+    lanes = cs.Lanes(ledger=ledger)
+    a = lanes.enter("heavy", 800, 16)
+    a.hold(ledger.reserve(800, 0, "a"), wait_s=5)
+    b = lanes.enter("heavy", 900, 0)
     with _threads() as spawn:
         spawn(a.wait)
         _until(lambda: b.running)
         assert ledger.held() == 16                            # a's read-ahead is free while b runs
-        b.hold(ledger.reserve(900, 0, "b"), keep_bytes=0, wait_s=5)
+        b.hold(ledger.reserve(900, 0, "b"), wait_s=5)
         b.reservation.release()
         b.leave()
         _until(lambda: a.running and ledger.held() == 800, what="a grown back")
     a.reservation.release()
     a.leave()
+
+
+def test_a_job_joins_the_turns_only_if_every_turn_can_still_grow_back():
+    ledger = cs.Ledger(1000)
+    lanes = cs.Lanes(ledger=ledger)
+    a = lanes.enter("heavy", 600, 300)                       # running, accumulators 300
+    big = lanes.enter("heavy", 800, 100)                     # 300 + 100 + 700 > 1000: may not join a's turns
+    assert not a.wanted()
+    small = lanes.enter("heavy", 300, 100)                   # behind big: new jobs never pass each other
+    assert not a.wanted()
+    a.leave()
+    assert big.running                                        # alone, it fits
+    assert not big.wanted()                                   # its turn's first batch
+    assert big.wanted()                                       # 100 + 100 + 700 <= 1000: small may take turns
+    big.leave()
+    small.leave()
+
+
+def test_a_job_that_has_given_way_passes_a_new_job_that_does_not_fit():
+    ledger = cs.Ledger(1000)
+    lanes = cs.Lanes(ledger=ledger)
+    a = lanes.enter("heavy", 500, 200)
+    b = lanes.enter("heavy", 500, 200)                       # 200 + 200 + 300 fits: b takes turns with a
+    with _threads() as spawn:
+        spawn(a.wait)
+        _until(lambda: b.running)
+        late = lanes.enter("heavy", 900, 0)                   # 200 + 200 + 900: does not fit the turns
+        assert not b.wanted()                                 # its turn's first batch
+        assert b.wanted()                                     # a may come back, though late is not in the turns
+        spawn(b.wait)
+        _until(lambda: a.running, what="a's turn back")
+        assert not late.running
+        a.leave()
+        _until(lambda: b.running)
+        b.leave()
+        assert late.running
+        late.leave()
+
+
+def test_each_turn_reads_a_batch_before_it_gives_way_again():
+    """The pipeline asks ``wanted()`` before every read, the first after its turn came back included: two jobs that
+    each gave way at once would pass the lane to and fro and read nothing."""
+    lanes = cs.Lanes()
+    a = lanes.enter("heavy")
+    b = lanes.enter("heavy")
+    reads = []
+    with _threads() as spawn:
+        def job(j, name, batches):                            # the shape of gene_score.pipeline's loop
+            last = j.queue()
+            while (last := lanes.wait_turn(j, time.monotonic() + 10, last, 10)) is not None:
+                pass
+            while batches:
+                if j.wanted():
+                    j.wait()
+                    continue
+                reads.append(name)
+                batches -= 1
+            j.leave()
+        spawn(job, b, "b", 4)
+        spawn(job, a, "a", 4)
+    assert reads == ["a", "b"] * 4                            # a batch each, in turn, whichever thread ran first
 
 
 def test_running_s_stands_still_while_a_job_waits_or_has_given_way():
@@ -333,7 +408,8 @@ def test_two_hundred_requests_on_two_lanes_keep_every_bound_and_all_finish():
     """Heavy jobs of several batches giving way, light jobs, cancels while queued, under one ledger. Run under an
     outside watchdog (the step's report names the command); every thread is joined here."""
     rng = random.Random(7)
-    lanes, ledger = cs.Lanes(), cs.Ledger(1000)
+    ledger = cs.Ledger(1000)
+    lanes = cs.Lanes(ledger=ledger)
     lock = threading.Lock()
     now = {"heavy": 0, "light": 0}
     peak = {"heavy": 0, "light": 0, "held": 0}
@@ -346,17 +422,17 @@ def test_two_hundred_requests_on_two_lanes_keep_every_bound_and_all_finish():
             peak["held"] = max(peak["held"], ledger.held())
 
     def request(i, lane, batches, nbytes, cancel):
-        job = lanes.enter(lane)
+        job = lanes.enter(lane, nbytes, nbytes // 10)
         try:
             last = job.queue()
-            deadline = time.monotonic() + (0.01 if cancel else 30)
+            deadline = time.monotonic() + (0.01 if cancel else 5)
             try:
-                while (last := lanes.wait_turn(job, deadline, last, 30)) is not None:
+                while (last := lanes.wait_turn(job, deadline, last, 5)) is not None:
                     pass
             except cs.Busy:
                 cancelled.append(i)
                 return
-            job.hold(ledger.reserve(nbytes, 30, f"job {i}"), keep_bytes=nbytes // 10, wait_s=30)
+            job.hold(ledger.reserve(nbytes, 5, f"job {i}"), wait_s=5)
             for _ in range(batches):
                 inside(lane, 1)
                 time.sleep(0.0005)

@@ -21,6 +21,19 @@ from annzarro.tests.server.test_gene_score_route import (  # noqa: F401 - fixtur
 JOIN_S = 30
 
 
+def _no_survivors(threads):
+    """A thread still alive after its join deadline is a hang in the code under test: dump every stack and end the
+    process, so no thread (and no pytest) outlives the test and holds the bench."""
+    alive = [t for t in threads if t.is_alive()]
+    if alive:
+        import faulthandler
+        import os
+        import sys
+        sys.stderr.write(f"\n{len(alive)} thread(s) outlived the test; stacks follow, then the process ends.\n")
+        faulthandler.dump_traceback(all_threads=True)
+        os._exit(1)
+
+
 @contextlib.contextmanager
 def _streams():
     """Open streamed responses through ``open_``; each is closed, and each reader thread joined, on the way out."""
@@ -43,7 +56,7 @@ def _streams():
             t.join(max(deadline - time.monotonic(), 0.01))
         for resp in responses:
             resp.close()
-        assert not [t for t in threads if t.is_alive()], "a reader thread outlived the test"
+        _no_survivors(threads)
 
 
 def _frames(chunks):
