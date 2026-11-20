@@ -61,7 +61,7 @@ def names(cols):
 @pytest.mark.parametrize("backend,layout", list(itertools.product(BACKENDS, LAYOUTS)))
 @pytest.mark.parametrize("method", ["zscore_mean", "mean"])
 def test_the_score_is_the_up_mean_less_the_down_mean(stores, matrix, backend, layout, method):
-    _, result = run(stores[backend, layout], {"genes": names(UP), "down": names(DOWN), "method": method})
+    _, result = run(stores[backend, layout], {"genes": names(UP), "down": names(DOWN), "method": method, "down_weight": "side"})
     np.testing.assert_allclose(result.values, signed(matrix, UP, DOWN, method), equal_nan=True, **TOL)
     assert (result.n_used_up, result.n_used_down, result.n_used) == (4, 3, 7)
 
@@ -99,7 +99,7 @@ def test_each_gene_reports_its_direction(stores):
 def test_a_down_gene_changes_the_score_and_only_by_its_own_contribution(stores, matrix):
     path = stores["zarr", "csc"]
     base = run(path, {"genes": [gene(0), gene(8)]})[1].values
-    one = run(path, {"genes": [gene(0)], "down": [gene(8)]})[1].values
+    one = run(path, {"genes": [gene(0)], "down": [gene(8)], "down_weight": "side"})[1].values
     z0 = reference(matrix, [0])[0]
     z8 = reference(matrix, [8])[0]
     np.testing.assert_allclose(one, z0 - z8, **TOL)
@@ -138,7 +138,7 @@ def test_a_constant_down_gene_is_left_out_of_the_z_score_mean_but_not_of_the_mea
     z = run(path, {"genes": names(UP), "down": [gene(2)]})[1]            # gene 2 holds 3.0 everywhere
     np.testing.assert_allclose(z.values, reference(matrix, UP)[0], equal_nan=True, **TOL)
     assert z.n_used_down == 0 and [g.status for g in z.genes if g.name == gene(2)] == ["constant"]
-    m = run(path, {"genes": names(UP), "down": [gene(2)], "method": "mean"})[1]
+    m = run(path, {"genes": names(UP), "down": [gene(2)], "method": "mean", "down_weight": "side"})[1]
     np.testing.assert_allclose(m.values, reference(matrix, UP, "mean")[0] - 3.0, equal_nan=True, **TOL)
 
 
@@ -260,3 +260,119 @@ def test_the_estimate_reads_both_sides_controls(wide):
     two = gs.plan(get_reader(path), path, gs.parse_recipe({"genes": wnames(UP_W), "down": wnames(DOWN_W),
                                                            "method": "control_adjusted"}))
     assert two.entries > one.entries and two.vectors == 2 * one.vectors
+
+
+# --- how down genes weigh: each gene equally (default) or each side equally ---------------------------------
+
+def gene_weighted(x, up, down, method):
+    """(sum of the up genes' values less the down genes') / (genes with a value), per cell, on the dense matrix."""
+    x = np.asarray(x, dtype=np.float64)
+    total = np.zeros(x.shape[0])
+    count = np.zeros(x.shape[0])
+    for cols, sign in ((up, 1.0), (down, -1.0)):
+        for j in cols:
+            col = x[:, j]
+            ok = np.isfinite(col)
+            if not ok.any():
+                continue
+            if method == "zscore_mean":
+                if col[ok].min() == col[ok].max():
+                    continue
+                t = np.clip((col - col[ok].mean()) / col[ok].std(), -10.0, 10.0)
+            else:
+                t = col
+            total += sign * np.where(ok, t, 0.0)
+            count += ok
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(count > 0, total / np.maximum(count, 1), np.nan)
+
+
+def test_the_default_weighs_each_gene_equally():
+    assert gs.parse_recipe({"genes": ["A"], "down": ["B"]}).down_weight == "gene"
+    assert gs.parse_recipe({"genes": ["A"], "down": ["B"], "down_weight": "side"}).down_weight == "side"
+
+
+@pytest.mark.parametrize("bad", ["", "both", 1, None, True])
+def test_a_bad_down_weight_is_refused(bad):
+    with pytest.raises(gs.ScoreError) as caught:
+        gs.parse_recipe({"genes": ["A"], "down": ["B"], "down_weight": bad})
+    assert (caught.value.status, caught.value.reason) == (400, "bad_down_weight")
+
+
+@pytest.mark.parametrize("backend,layout", list(itertools.product(BACKENDS, LAYOUTS)))
+@pytest.mark.parametrize("method", ["zscore_mean", "mean"])
+def test_each_gene_weighs_equally_against_a_dense_reference(stores, matrix, backend, layout, method):
+    up, down = [0, 1, 6, 8, 11, 12], [9, 4]                    # unequal sides, gene 4 holds NaNs
+    _, result = run(stores[backend, layout], {"genes": names(up), "down": names(down), "method": method})
+    np.testing.assert_allclose(result.values, gene_weighted(matrix, up, down, method), equal_nan=True, **TOL)
+    _, side = run(stores[backend, layout], {"genes": names(up), "down": names(down), "method": method, "down_weight": "side"})
+    np.testing.assert_allclose(side.values, signed(matrix, up, down, method), equal_nan=True, **TOL)
+    assert not np.allclose(result.values, side.values, equal_nan=True), "unequal sides give two different scores"
+
+
+def test_forty_up_and_four_down_genes_weigh_by_gene_or_by_side(tmp_path):
+    rng = np.random.default_rng(4)
+    x = rng.gamma(2.0, 1.0, (200, 44)).astype(np.float32)
+    path = make_store(tmp_path / "u.zarr", x, "csc", var_names=[f"U{i:02d}" for i in range(44)])
+    up, down = list(range(40)), list(range(40, 44))
+    nm = lambda cols: [f"U{i:02d}" for i in cols]
+    for method in ("mean", "zscore_mean"):
+        gene_ = run(path, {"genes": nm(up), "down": nm(down), "method": method})[1].values
+        side = run(path, {"genes": nm(up), "down": nm(down), "method": method, "down_weight": "side"})[1].values
+        np.testing.assert_allclose(gene_, gene_weighted(x, up, down, method), **TOL)
+        np.testing.assert_allclose(side, signed(x, up, down, method), **TOL)
+        mu = reference(x, up, method)[0]
+        md = reference(x, down, method)[0]
+        # by gene: (40 up - 4 down) / 44; by side: up - down
+        np.testing.assert_allclose(gene_, (40 * mu - 4 * md) / 44, **TOL)
+
+
+def test_equal_sides_make_the_by_side_score_exactly_twice_the_by_gene_score(stores, matrix):
+    path = stores["zarr", "csc"]
+    for method in ("mean", "zscore_mean"):
+        up, down = [0, 8, 10], [6, 9, 11]
+        g = run(path, {"genes": names(up), "down": names(down), "method": method})[1].values
+        s = run(path, {"genes": names(up), "down": names(down), "method": method, "down_weight": "side"})[1].values
+        mask = np.isfinite(g) & np.isfinite(s) & (np.abs(g) > 1e-6)
+        np.testing.assert_allclose(s[mask] / g[mask], 2.0, rtol=1e-4)
+
+
+@pytest.mark.parametrize("weight", ["gene", "side"])
+def test_one_empty_side_is_the_same_under_both_weightings(stores, matrix, weight):
+    path = stores["zarr", "csc"]
+    up_only = run(path, {"genes": names(UP), "down": ["NOT_A_GENE"], "down_weight": weight})[1].values
+    np.testing.assert_allclose(up_only, reference(matrix, UP)[0], equal_nan=True, **TOL)
+    down_only = run(path, {"genes": [], "down": names(DOWN), "down_weight": weight})[1].values
+    np.testing.assert_allclose(down_only, -reference(matrix, DOWN)[0], equal_nan=True, **TOL)
+    absent_up = run(path, {"genes": ["NOT_A_GENE"], "down": names(DOWN), "down_weight": weight})[1].values
+    np.testing.assert_allclose(absent_up, down_only, equal_nan=True, **TOL)
+
+
+def test_missing_genes_are_left_out_of_n(stores, matrix):
+    path = stores["zarr", "csc"]
+    a = run(path, {"genes": names(UP) + ["NOPE"], "down": names(DOWN) + ["NOPE2"]})[1].values
+    b = run(path, {"genes": names(UP), "down": names(DOWN)})[1].values
+    np.testing.assert_array_equal(a, b)
+    # and a constant gene is out of n for the z-score mean
+    c = run(path, {"genes": names(UP) + [gene(2)], "down": names(DOWN)})[1].values
+    np.testing.assert_allclose(c, b, equal_nan=True, **TOL)
+
+
+def test_the_weighting_changes_nothing_without_down_genes_or_for_control_adjusted(stores, wide):
+    path = stores["zarr", "csc"]
+    a = run(path, {"genes": names(UP), "down_weight": "gene"})[1].values
+    b = run(path, {"genes": names(UP), "down_weight": "side"})[1].values
+    np.testing.assert_array_equal(a, b)
+    assert gs.parse_recipe({"genes": ["A"], "down_weight": "side"}).effective_down_weight is None
+    assert gs.parse_recipe({"genes": ["A"], "down": ["B"], "method": "control_adjusted", "down_weight": "side"}).effective_down_weight is None
+    _, wpath = wide
+    ca = {"genes": wnames(UP_W), "down": wnames(DOWN_W), "method": "control_adjusted", "seed": 5}
+    g = run(wpath, {**ca, "down_weight": "gene"})[1].values
+    s = run(wpath, {**ca, "down_weight": "side"})[1].values
+    np.testing.assert_array_equal(g, s)
+
+
+def test_the_weighting_is_reported_only_where_it_means_something():
+    d = lambda **kw: gs.parse_recipe({"genes": ["A"], "down": ["B"], **kw}).describe()["down_weight"]
+    assert d() == "gene" and d(method="mean", down_weight="side") == "side"
+    assert d(method="control_adjusted") is None

@@ -20,8 +20,10 @@ Recipe (``version`` 1), a JSON object::
 
 Every field but ``genes`` is optional.
 
-Up and down genes. With ``down`` non-empty the score is ``side(up) - side(down)``, each side scored on its own
-with the method: the mean of the z-scores (``zscore_mean``), the mean of the values (``mean``), or the
+Up and down genes. With ``down`` non-empty the score has a sign. For the z-score mean and the mean ``down_weight``
+says how: ``gene`` (the default) flips the sign of the down genes and averages every usable gene, (sum up - sum down) /
+(n up + n down); ``side`` is ``side(up) - side(down)``, each side averaged on its own (the scanpy practice of two
+``score_genes`` calls). With one side empty both are the same score. Each side is scored with the method: the mean of the z-scores (``zscore_mean``), the mean of the values (``mean``), or the
 control-adjusted mean (``control_adjusted``: each side subtracts the mean of ITS OWN controls, drawn outside that
 side's genes, as two calls of scanpy's ``score_genes`` would; a down gene may serve as an up gene's control).
 ``sum``, ``detected`` and ``fraction_of_total`` have no signed version that means anything: a signed sum depends on
@@ -29,7 +31,9 @@ how many genes each side has, a difference of two fractions is not a fraction, a
 share of anything. The engine refuses them with ``method_no_down``.
 Edge cases: a side with no usable gene (absent, constant for the z-score mean, no values) is left out and the score
 is the other side, negated when it is the down side; neither side usable gives no score; a gene in both lists
-counts as up (reported as ``overlap``); a cell with no finite value on a side that has usable genes is NaN.
+counts as up (reported as ``overlap``); a cell with no finite value on a side that has usable genes is NaN under
+``side`` and, under ``gene``, simply has fewer genes in its average (a missing value is left out of n). Control-adjusted
+ignores ``down_weight``: each side always subtracts its own controls.
 
 Methods
     zscore_mean  mean over genes of clip((x - mu) / sd, +-clip); mu and sd over all cells, zeros included
@@ -92,6 +96,10 @@ DEFAULT_METHOD = "zscore_mean"
 METHODS = ("zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total")
 #: Methods that can score a signature with down genes (see the module docstring).
 DOWN_METHODS = ("zscore_mean", "mean", "control_adjusted")
+#: How down genes weigh in the z-score mean and the mean: ``gene`` (each gene weighs equally: the signs of the down
+#: genes are flipped and every usable gene is averaged) or ``side`` (each side weighs equally: mean(up) - mean(down)).
+DOWN_WEIGHTS = ("gene", "side")
+DEFAULT_DOWN_WEIGHT = "gene"
 
 #: Control-adjusted scoring: gene bins and controls drawn per bin (scanpy's defaults).
 N_BINS = 25
@@ -156,13 +164,14 @@ class ScoreError(Exception):
 # The recipe
 # ---------------------------------------------------------------------------
 
-_FIELDS = ("genes", "down", "input", "method", "clip", "seed", "bins", "controls", "detect_above", "version", "title")
+_FIELDS = ("genes", "down", "down_weight", "input", "method", "clip", "seed", "bins", "controls", "detect_above", "version", "title")
 
 
 @dataclass(frozen=True)
 class Recipe:
     genes: Tuple[str, ...]
     down: Tuple[str, ...] = ()
+    down_weight: str = DEFAULT_DOWN_WEIGHT
     overlap: Tuple[str, ...] = ()          # named on both sides in the request; counted as up, dropped from ``down``
     input: str = "X"
     method: str = DEFAULT_METHOD
@@ -172,6 +181,12 @@ class Recipe:
     bins: int = N_BINS
     controls: int = CTRL_SIZE
     detect_above: float = 0.0
+
+    @property
+    def effective_down_weight(self) -> Optional[str]:
+        """The weighting that changes the numbers: only the two means with down genes have one (control-adjusted is per
+        side by construction, and without down genes both weightings are the plain mean)."""
+        return self.down_weight if self.down and self.method in ("zscore_mean", "mean") else None
 
     @property
     def effective_clip(self) -> Optional[float]:
@@ -201,7 +216,7 @@ class Recipe:
         return {"method": self.method, "input": self.input, "clip": self.effective_clip,
                 "seed": self.effective_seed, "bins": self.effective_bins, "controls": self.effective_controls,
                 "detect_above": self.effective_detect_above, "version": self.version, "genes": len(self.genes),
-                "down": len(self.down)}
+                "down": len(self.down), "down_weight": self.effective_down_weight}
 
 
 def _names(value, field_name: str) -> Tuple[str, ...]:
@@ -247,6 +262,9 @@ def parse_recipe(raw) -> Recipe:
     down = _names(raw.get("down", []), "down")
     # No gene limit: a score takes no more memory than a gene table, which has none. What bounds a request is its
     # size (the route's MAX_BODY_BYTES) and the cost estimate's tiers, which refuse what is too expensive.
+    down_weight = raw.get("down_weight", DEFAULT_DOWN_WEIGHT)
+    if down_weight not in DOWN_WEIGHTS:
+        raise ScoreError(400, "bad_down_weight", f"down_weight must be one of {', '.join(DOWN_WEIGHTS)}.")
     method = raw.get("method", DEFAULT_METHOD)
     if method not in METHODS:
         raise ScoreError(400, "bad_method", f"Unknown method {method!r}; use one of {', '.join(METHODS)}.")
@@ -275,7 +293,7 @@ def parse_recipe(raw) -> Recipe:
         raise ScoreError(400, "unsupported_version",
                          f"This server computes scores with algorithm version {ALGORITHM_VERSION}; "
                          f"the recipe asks for {version!r}.", supported=ALGORITHM_VERSION)
-    return Recipe(genes=genes, down=down, overlap=overlap, input=source, method=method, clip=clip, seed=seed, version=ALGORITHM_VERSION,
+    return Recipe(genes=genes, down=down, down_weight=down_weight, overlap=overlap, input=source, method=method, clip=clip, seed=seed, version=ALGORITHM_VERSION,
                   bins=bins, controls=controls, detect_above=float(detect_above))
 
 
@@ -1138,6 +1156,14 @@ class _Accumulator:
         if self.zscore and self.clip is not None:
             stat.clipped = over / n
 
+    def raw(self):
+        """(sum over the genes in each cell, genes with a value in each cell) in float64, for a combination of sides."""
+        total = (self.acc + self.baseline).astype(np.float64)
+        count = np.full(self.n_shown, self.n_used, dtype=np.int64)
+        if self.missing_count is not None:
+            count -= self.missing_count.astype(np.int64)
+        return total, count
+
     def result(self) -> Optional[np.ndarray]:
         if self.n_used == 0:
             return None
@@ -1295,8 +1321,14 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
                 else:
                     down_values = adjusted_values
         if result.reason is None:
-            # the signed combination: up minus down; a side with no usable gene is left out
-            if up_values is not None and down_values is not None:
+            # the signed combination; a side with no usable gene is left out
+            if recipe.effective_down_weight == "gene" and up_values is not None and down_values is not None:
+                # each gene weighs equally: (sum of up - sum of down) over the genes that have a value in the cell
+                (su, nu), (sd_, nd) = acc.raw(), down_acc.raw()
+                n = nu + nd
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    combined = np.where(n > 0, (su - sd_) / np.maximum(n, 1), np.nan)
+            elif up_values is not None and down_values is not None:
                 combined = up_values.astype(np.float64) - down_values.astype(np.float64)
             elif up_values is not None:
                 combined = up_values.astype(np.float64)

@@ -184,3 +184,52 @@ test('Inspect names each gene\'s side only when there are down genes, and the CS
     assert.equal(I.geneRows(both, 'mean').find(r => r.name === 'B').direction, 'down');
     assert.equal(I.geneRows([{ name: 'C', status: 'used', detected: 0.1, mean: 1, sd: 1, clipped: 0 }], 'mean')[0].direction, 'up', 'an older reply has none: up');
 });
+
+// ------------------------------------------------------------------ the sign column of a pasted table
+
+test('a sign column gives each gene the sign of its first row; zero, blank and text have none', async () => {
+    const P = await import('../../../static/js/utils/gene-paste.js');
+    const text = 'gene,logfc,other\nA,2.5,1\nB,-1,1\nC,0,1\nD,,1\nE,x,1\nA,-9,1\n';
+    const r = P.parseGeneInput(text, { readAs: 'table', header: true, column: 0, signColumn: 1 });
+    assert.deepEqual([...r.signs.entries()].map(([k, v]) => [k, Number.isNaN(v) ? 'none' : v]),
+        [['A', 1], ['B', -1], ['C', 'none'], ['D', 'none'], ['E', 'none']]);
+    assert.equal(P.parseGeneInput(text, { readAs: 'table', header: true, column: 0 }).signs, null, 'no sign column, no signs');
+    assert.equal(P.parseGeneInput(text, { readAs: 'table', header: true, column: 0, signColumn: 0 }).signs, null, 'the gene column is not a sign');
+    const m = P.matchGenes(['a', 'B'], { geneNames: ['A', 'B'], currentGenes: ['B'] });
+    assert.equal(m.inputOf.get('A'), 'a', 'a case match remembers what was pasted');
+    assert.deepEqual([m.toAdd, m.alreadyNames], [['A'], ['B']]);
+});
+
+
+// ------------------------------------------------------------------ how down genes weigh
+
+test('the weighting defaults to each gene, is stored only when it is by side, and a bad value reads as the default', () => {
+    assert.equal(recipe({ genes: ['A'], down: ['B'] }).down_weight, 'gene');
+    assert.equal(recipe({ genes: ['A'], down: ['B'], down_weight: 'side' }).down_weight, 'side');
+    assert.equal(recipe({ genes: ['A'], down: ['B'], down_weight: 'both' }).down_weight, 'gene');
+    assert.equal('down_weight' in G.storedRecipe(recipe({ genes: ['A'], down: ['B'] })), false, 'an old config with down genes reads as each gene');
+    assert.equal(G.storedRecipe(recipe({ genes: ['A'], down: ['B'], down_weight: 'side' })).down_weight, 'side');
+    assert.equal(G.serverRecipe(recipe({ genes: ['A'], down: ['B'], down_weight: 'side' })).down_weight, 'side');
+    assert.deepEqual(recipe(JSON.parse(JSON.stringify(G.storedRecipe(recipe({ genes: ['A'], down: ['B'], down_weight: 'side' }))))).down_weight, 'side');
+});
+
+test('the weighting is in the key where it changes a number, and nowhere else', () => {
+    const base = { genes: ['A', 'B'], down: ['C'] };
+    const hash = (extra, method = 'zscore_mean') => G.recipeHash({ ...recipe({ ...base, ...extra }), method });
+    for (const method of ['zscore_mean', 'mean']) assert.notEqual(hash({ down_weight: 'gene' }, method), hash({ down_weight: 'side' }, method), method);
+    assert.equal(hash({ down_weight: 'gene' }, 'control_adjusted'), hash({ down_weight: 'side' }, 'control_adjusted'), 'control-adjusted is per side');
+    const plain = { genes: ['A', 'B'] };
+    assert.equal(G.recipeHash(recipe({ ...plain, down_weight: 'gene' })), G.recipeHash(recipe({ ...plain, down_weight: 'side' })), 'no down genes, no weighting');
+    assert.equal(hash({}), hash({ down_weight: 'gene' }), 'absent reads as the default');
+    // the hash of a recipe with no down genes is what it was before this setting
+    assert.ok(!G.recipeHash(recipe(plain)).includes('"dw"'));
+});
+
+test('a method with down genes states its formula in plain words with the weighting in force', () => {
+    const r = recipe({ genes: ['A'], down: ['B'] });
+    assert.match(G.downDefinition(r, 'zscore_mean'), /averaged over all genes: each gene weighs equally/);
+    assert.match(G.downDefinition({ ...r, down_weight: 'side' }, 'mean'), /minus the mean of the down genes' values: each side weighs equally/);
+    assert.match(G.downDefinition(r, 'control_adjusted'), /no weighting to choose/);
+    assert.equal(G.downDefinition(r, 'sum'), '');
+    assert.equal(G.downDefinition(recipe({ genes: ['A'] }), 'mean'), '');
+});

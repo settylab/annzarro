@@ -102,7 +102,7 @@ def test_a_stream_is_progress_then_a_result_then_the_vector(client, layout, matr
     assert result["scored"] and result["dtype"] == "float32" and result["byte_length"] == 4 * N_OBS
     assert (result["n_cells"], result["n_shown"], result["n_used"]) == (N_OBS, N_OBS, len(GENES))
     assert result["recipe"] == {"method": "zscore_mean", "input": "X", "clip": 10.0, "seed": None, "bins": None,
-                                "controls": None, "detect_above": None, "version": 1, "genes": len(GENES), "down": 0}
+                                "controls": None, "detect_above": None, "version": 1, "genes": len(GENES), "down": 0, "down_weight": None}
     want, _ = reference(matrix, GENES)
     np.testing.assert_allclose(vector, want, rtol=2e-6, atol=2e-6)
     assert {g["name"]: g["status"] for g in result["genes"]}[gene(1)] == "used"
@@ -497,7 +497,7 @@ def test_a_control_adjusted_score_reports_its_seed_and_controls(client, big):
     frames, vector = run_big(client, big, recipe)
     result = frames[-1]
     assert result["recipe"] == {"method": "control_adjusted", "input": "X", "clip": None, "seed": 5, "bins": 25,
-                                "controls": 50, "detect_above": None, "version": 1, "genes": len(SIGNATURE), "down": 0}
+                                "controls": 50, "detect_above": None, "version": 1, "genes": len(SIGNATURE), "down": 0, "down_weight": None}
     assert result["binning"] == "detection" and result["n_controls"] == result["n_controls_used"] > 0
     assert result["scored"] and vector.shape == (200,)
     assert frames[0]["total"] == len(SIGNATURE) and frames[1]["total"] == len(SIGNATURE) + result["n_controls"]
@@ -617,7 +617,7 @@ def test_the_new_aggregations_stream_like_any_other(client, layout, matrix, meth
 # --- up and down genes -----------------------------------------------------------------------------------
 
 def test_down_genes_are_scored_and_the_400_is_gone(client, layout, matrix):
-    frames, vector = score(client, layout, {"genes": [gene(0), gene(8)], "down": [gene(9), gene(6)]})
+    frames, vector = score(client, layout, {"genes": [gene(0), gene(8)], "down": [gene(9), gene(6)], "down_weight": "side"})
     result = frames[-1]
     want = reference(matrix, [0, 8])[0] - reference(matrix, [9, 6])[0]
     np.testing.assert_allclose(vector, want, rtol=2e-6, atol=2e-6)
@@ -652,7 +652,7 @@ def test_the_result_names_a_missing_or_empty_side(client, layout):
 
 
 def test_a_gene_on_both_sides_counts_as_up_and_is_reported(client, layout, matrix):
-    frames, vector = score(client, layout, {"genes": [gene(0), gene(8)], "down": [gene(8), gene(9)]})
+    frames, vector = score(client, layout, {"genes": [gene(0), gene(8)], "down": [gene(8), gene(9)], "down_weight": "side"})
     result = frames[-1]
     assert result["overlap"] == [gene(8)] and "genes_on_both_sides" in {w["code"] for w in result["warnings"]}
     np.testing.assert_allclose(vector, reference(matrix, [0, 8])[0] - reference(matrix, [9])[0], rtol=2e-6, atol=2e-6)
@@ -663,3 +663,14 @@ def test_the_estimate_counts_the_down_genes(client, layout):
     body = resp.get_json()
     assert body["estimate"]["genes_requested"] == 3 and body["estimate"]["down_requested"] == 2
     assert body["missing"] == ["NOPE"] and body["missing_down"] == ["NOPE"]
+
+
+def test_the_weighting_is_validated_and_each_gene_weighs_equally_by_default(client, layout, matrix):
+    resp = post(client, layout, {"recipe": {"genes": [gene(0)], "down": [gene(9)], "down_weight": "both"}})
+    assert resp.status_code == 400 and resp.get_json()["reason"] == "bad_down_weight"
+    frames, vector = score(client, layout, {"genes": [gene(0), gene(8), gene(6)], "down": [gene(9)]})
+    assert frames[-1]["recipe"]["down_weight"] == "gene"
+    z = lambda cols: sum(reference(matrix, [c])[0] for c in cols)
+    np.testing.assert_allclose(vector, (z([0, 8, 6]) - z([9])) / 4, rtol=2e-6, atol=2e-6)
+    frames, _ = score(client, layout, {"genes": [gene(0)], "down": [gene(9)], "method": "control_adjusted"})
+    assert frames[-1]["recipe"]["down_weight"] is None

@@ -221,7 +221,7 @@ const GeneSignaturePanel = (function() {
             if (config.title && config.title !== _title) { _title = config.title; signatureRenamed(_id); }
             else if (config.title) _title = config.title;
             if (config.controlsVisible !== undefined) _controlsVisible = config.controlsVisible;
-            const recipeKeys = ['genes', 'down', 'directions', ...OPTION_KEYS];
+            const recipeKeys = ['genes', 'down', 'down_weight', 'directions', ...OPTION_KEYS];
             if (recipeKeys.some(k => k in config)) {
                 setRecipe(Object.fromEntries(recipeKeys.filter(k => k in config).map(k => [k, config[k]])));
                 if (_initialized) { rebuildRows(); paint(); if (_scoreOptions) _scoreOptions.changed(Object.keys(config)); }
@@ -317,23 +317,51 @@ const GeneSignaturePanel = (function() {
          * @param {{label?: string, noun?: string, outside?: number}} [opts] - `label`: where they come from ("DE genes")
          * @returns {{ok: boolean, added: number, already: number}}
          */
-        function addGenes(names, { label = '', outside = 0, step = '', direction = 'up' } = {}) {
+        function addGenes(names, { label = '', outside = 0, step = '', direction = 'up', move = false } = {}) {
             const list = [...names];
-            const down = direction === 'down';
-            const plan = planAddAs(_recipe, list, down ? 'down' : 'up');
-            if (!plan.added.length) {
-                say(list.length ? `Nothing new: ${plan.already === 1 ? 'that gene is' : 'those genes are'} already selected.` : 'No genes to add.');
-                return { ok: true, added: 0, already: plan.already };
+            return addDirected(direction === 'down' ? [] : list, direction === 'down' ? list : [], { label, outside, step, move, asked: list.length });
+        }
+
+        /**
+         * Add genes on both sides in one undoable step. A gene already in the signature keeps its side, unless `move`
+         * (the preview's "change them too"), which puts it on the side it is added as.
+         * @param {string[]} up
+         * @param {string[]} down
+         * @param {{label?: string, outside?: number, step?: string, move?: boolean, asked?: number}} [opts]
+         */
+        function addDirected(up, down, { label = '', outside = 0, step = '', move = false, asked = up.length + down.length } = {}) {
+            let r = { genes: _recipe.genes, down: _recipe.down };
+            const pu = planAddAs(r, up, 'up');
+            r = { genes: pu.genes, down: pu.down };
+            const pd = planAddAs(r, down, 'down');
+            r = { genes: pd.genes, down: pd.down };
+            let moved = 0;
+            if (move) {
+                const mu = planDirection(r, up, 'up');
+                r = { genes: mu.genes, down: mu.down };
+                const md = planDirection(r, down, 'down');
+                r = { genes: md.genes, down: md.down };
+                moved = mu.changed.length + md.changed.length;
             }
-            const n = plan.added.length;
+            const n = pu.added.length + pd.added.length;
+            const already = Math.max(0, pu.already + pd.already - moved);
+            if (!n && !moved) {
+                say(asked ? `Nothing new: ${already === 1 ? 'that gene is' : 'those genes are'} already selected.` : 'No genes to add.');
+                return { ok: true, added: 0, already };
+            }
             const from = label ? ` from ${label}` : '';
-            const as = down ? ' as down' : '';
-            commitLists(plan.genes, plan.down, step || `add ${fmtCount(n)} gene${n === 1 ? '' : 's'}${as}${from}`);
-            let text = n === 1 && !label ? `Added ${plan.added[0]}${as}.` : `Added ${fmtCount(n)} gene${n === 1 ? '' : 's'}${as}${from}.`;
-            if (plan.already) text += ` ${fmtCount(plan.already)} ${plan.already === 1 ? 'was' : 'were'} already selected.`;
+            const as = !down.length ? '' : !up.length ? ' as down' : ' as up and down';
+            const parts = [];
+            if (n) parts.push(`add ${fmtCount(n)} gene${n === 1 ? '' : 's'}${as}${from}`);
+            if (moved) parts.push(`change ${fmtCount(moved)} gene${moved === 1 ? '' : 's'} to ${down.length && !up.length ? 'down' : up.length && !down.length ? 'up' : 'the added side'}`);
+            commitLists(r.genes, r.down, step || parts.join(' and '));
+            let text = '';
+            if (n) text = n === 1 && !label && !moved && (pu.added[0] || pd.added[0]) ? `Added ${pu.added[0] || pd.added[0]}${as}.` : `Added ${fmtCount(n)} gene${n === 1 ? '' : 's'}${as}${from}.`;
+            if (moved) text += `${text ? ' ' : ''}${fmtCount(moved)} gene${moved === 1 ? '' : 's'} changed direction.`;
+            if (already) text += ` ${fmtCount(already)} ${already === 1 ? 'was' : 'were'} already selected.`;
             if (outside) text += ` ${fmtCount(outside)} ${outside === 1 ? 'is' : 'are'} not in this dataset.`;
             say(text);
-            return { ok: true, added: n, already: plan.already };
+            return { ok: true, added: n, already, moved };
         }
 
         /** Tick or untick one gene. */
@@ -500,10 +528,12 @@ const GeneSignaturePanel = (function() {
             const focusedBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary gsig-focused', hidden: true,
                 on: { click: addFocused } });
             // Score some genes as down is on: what Add from, Paste and the focused gene add as
-            const addAsSel = el('select', { class: 'form-select form-select-sm gsig-addas', id: sid('addas'), data: { addAs: '' },
-                aria: { label: 'Add as' }, on: { change: () => { _addAs = addAsSel.value === 'down' ? 'down' : 'up'; paint(); } } },
-            el('option', { value: 'up', text: 'Up' }), el('option', { value: 'down', text: 'Down' }));
-            const addAsWrap = el('label', { class: 'gsig-addas-wrap', hidden: true, for: sid('addas') }, el('span', { text: 'Add as ' }), addAsSel);
+            const addAsBtn = (value, text) => el('button', { type: 'button', role: 'radio', class: 'gsig-segopt', data: { addAsValue: value },
+                on: { click: () => { _addAs = value; paint(); } } }, text);
+            const addAsUp = addAsBtn('up', 'Up'), addAsDown = addAsBtn('down', 'Down');
+            const addAsSel = el('div', { class: 'gsig-addas', id: sid('addas'), role: 'radiogroup', data: { addAs: '' },
+                aria: { label: 'Add as' } }, addAsUp, addAsDown);
+            const addAsWrap = el('span', { class: 'gsig-addas-wrap', hidden: true }, el('span', { text: 'Add as ' }), addAsSel);
             const _flowHost = el('div', { class: 'gsig-flow', hidden: true });
             const controls = el('div', { class: 'gsig-controls' },
                 el('div', { class: 'gsig-search-row' }, search, regex, matchCase, tickAllBtn),
@@ -551,7 +581,7 @@ const GeneSignaturePanel = (function() {
             _container.appendChild(root);
             _dom = { root, controls, flowHost: _flowHost, status, summary, definition, usedBy, scoreLine, search, regex, matchCase, tickAllBtn, searchNote,
                 addFrom, addMenu, addMenuHome, focusedBtn, allBtn, selBtn, undoBtn, clearBtn, listbar, message, note, empty,
-                addAsWrap, addAsSel, dirBar, filterSel, setUpBtn, setDownBtn,
+                addAsWrap, addAsSel, addAsUp, addAsDown, dirBar, filterSel, setUpBtn, setDownBtn,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
         }
 
@@ -649,7 +679,11 @@ const GeneSignaturePanel = (function() {
         function paintDirections() {
             const on = !!_recipe.directions;
             _dom.addAsWrap.hidden = !on;
-            _dom.addAsSel.value = on ? _addAs : 'up';
+            for (const [btn, v] of [[_dom.addAsUp, 'up'], [_dom.addAsDown, 'down']]) {
+                const chosen = (on ? _addAs : 'up') === v;
+                btn.setAttribute('aria-checked', String(chosen));
+                btn.classList.toggle('active', chosen);
+            }
             const bar = on && _view === 'selected' && (_recipe.genes.length + _recipe.down.length) > 0;
             _dom.dirBar.hidden = !bar;
             if (!bar) return;
@@ -1089,6 +1123,7 @@ const GeneSignaturePanel = (function() {
             getRecipeHash: () => recipeHash(_recipe),
             revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
             addGenes,
+            addDirected,
             setDirection,
             getAddAs: () => currentAddAs(),
             directionsOn: () => !!_recipe.directions,

@@ -30,12 +30,18 @@ function openPaste(panel) {
         geneNames: panel.getDatasetGenes(),
         currentGenes: () => panel.getSelectedGenes(),
         directions: () => panel.directionsOn(),
+        currentDown: () => panel.getRecipe().down,
         defaultDirection: () => panel.getAddAs(),
         idLookup: (kind) => panel.loadIdMap(kind),
         onCancel: close,
         onAdd: (genes, info) => {
             close();
-            panel.addGenes(genes, { label: info.fileName ? `file ${info.fileName}` : 'pasted list', outside: info.unmatched, direction: info.direction });
+            const label = info.fileName ? `file ${info.fileName}` : 'pasted list';
+            if (info.up || info.down) {
+                panel.addDirected(info.up || [], info.down || [], { label, outside: info.unmatched, move: info.move });
+            } else {
+                panel.addGenes(genes, { label, outside: info.unmatched, direction: info.direction, move: info.move });
+            }
         }
     });
     open.set(panel, flow);
