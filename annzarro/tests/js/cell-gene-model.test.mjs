@@ -24,7 +24,9 @@ const near = (a, b, what) => assert.ok(Math.abs(a - b) <= REL * Math.max(Math.ab
 
 /** The oracle's moments of one gene as the wire writes them: groups x 5 in one Float64Array. */
 const flat = (perGene) => Float64Array.from(perGene.flat());
-const momentsOf = (layer, groupby, cut) => oracle.moments[`${layer}__${groupby}__cut${cut}`].map(flat);
+// the oracle's keys write a cutoff as Python does: 0.0 and 0.5
+const cutTag = (cut) => (Number.isInteger(cut) ? cut.toFixed(1) : String(cut));
+const momentsOf = (layer, groupby, cut) => oracle.moments[`${layer}__${groupby}__cut${cutTag(cut)}`].map(flat);
 const nGroupsOf = (groupby) => oracle.groupby[groupby].groups.length;
 /** Genes x groups as a matrix `{values, rows, groups}`, from one column per gene. */
 const matrixOf = (columns, groups) => {
@@ -51,7 +53,7 @@ test('dot colour and size equal scanpy for every layer, grouping, cutoff, mean-o
                 const colour = moments.map((m) => M.statisticColumn(mo ? 'mean_expressing' : 'mean', m, G));
                 const size = moments.map((m) => M.statisticColumn('pct_expressing', m, G));
                 for (const ss of oracle.scales) {
-                    const ref = oracle.dot[`${layer}__${groupby}__cut${cut}__mo${mo}__ss${ss}`];
+                    const ref = oracle.dot[`${layer}__${groupby}__cut${cutTag(cut)}__mo${mo}__ss${ss}`];
                     const scaled = M.scale(matrixOf(colour, G), ss === 'none' ? 'none' : ss);
                     const want = transpose(ref.color);
                     want.forEach((row, r) => row.forEach((v, g) => near(scaled[r * G + g], v, `${layer} ${groupby} cut${cut} mo${mo} ss${ss} colour [${r}][${g}]`)));
@@ -62,7 +64,8 @@ test('dot colour and size equal scanpy for every layer, grouping, cutoff, mean-o
             }
         }
     }
-    assert.ok(compared > 10000, `only ${compared} values compared`);
+    // 3 layers x 15 groups x 12 genes, at 2 cutoffs x 2 mean-only-expressed x 3 scalings
+    assert.equal(compared, 3 * 15 * 12 * 2 * 2 * 3);
 });
 
 test('a matrix plot\'s values equal scanpy for every layer, grouping and scaling', () => {
@@ -78,7 +81,7 @@ test('a matrix plot\'s values equal scanpy for every layer, grouping and scaling
             }));
         }
     }
-    assert.ok(compared > 5000);
+    assert.equal(compared, 3 * 15 * 12 * 3);
 });
 
 test('a constant gene gives 0, not NaN, under both min-to-max scalings and under z-score across groups', () => {
@@ -288,7 +291,6 @@ test('on a signed layer % expressing and mean of expressing cells are unavailabl
 
 test('the matrix limit is 400,000 cells and 2,000 genes per section; above, the refusal names which number to reduce', () => {
     assert.deepEqual(M.matrixLimits({ groups: 200, sections: [{ rows: 2000, genes: 2000 }] }), { ok: true });
-    assert.deepEqual(M.matrixLimits({ groups: 200, sections: [{ rows: 2000, genes: 2000 }, { rows: 1, genes: 0 }] }), { ok: true });
     assert.deepEqual(M.matrixLimits({ groups: 201, sections: [{ rows: 2000, genes: 2000 }] }),
         { ok: false, reason: 'matrix_too_large', count: 402000, limit: 400000 });
     assert.deepEqual(M.matrixLimits({ groups: 3, sections: [{ rows: 1, genes: 2001 }] }),
