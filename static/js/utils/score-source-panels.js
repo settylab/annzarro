@@ -12,6 +12,7 @@
  *   title      the panel's title
  *   kind       'signature' | 'table'
  *   recipe()   the recipe now: the genes, and the option fields (utils/signature-options.js: one schema)
+ *   options()  the option fields alone (what is offered, and how it is scored), without reading the genes
  *   gate()     null when the genes can be read; else why not yet: the table is opening, being built in the
  *              background (utils/table-resolver.js), waits for a click, is refused or failed, or is part of a cycle
  *   actions    what the notices' buttons do to a gate (build now, cancel, retry)
@@ -19,7 +20,7 @@
  * Pure (no DOM, no page state): the page supplies the panels, the dataset's gene names and the table resolver, so
  * Node tests cover every state with fakes.
  */
-import { readTableSelection } from '../panels/gene-set-utilities/state.js';
+import { readTableSelection, tableSelectionStatus } from '../panels/gene-set-utilities/state.js';
 import { normalizeRecipe } from './gene-signature.js';
 import { normalizeOptions, pickOptions } from './signature-options.js';
 
@@ -133,10 +134,10 @@ export function createSourceAdapter({ panel, active, geneNames, off = () => fals
         const id = p.getId();
         const cycle = resolver && resolver.cycleOf ? resolver.cycleOf(id) : null;
         if (cycle) return gateState({ state: 'cycle', cycle: cycle.map(titleOf) });
-        const open = active(p);
-        const selection = readTableSelection(p, { open, geneNames: geneNames() });
-        if (selection.status === 'waiting') return gateState({ state: 'waiting', reason: 'opening' });
-        if (selection.status === 'open' || selection.status === 'closed') return null;
+        // only whether the rows can be read: a gate is asked on every read of a dependant, the rows when they change
+        const rows = tableSelectionStatus(p, { open: active(p) }).status;
+        if (rows === 'waiting') return gateState({ state: 'waiting', reason: 'opening' });
+        if (rows === 'open' || rows === 'closed') return null;
         // a closed table with no rows kept (restored from a link or a panel set, or built for other cells): the
         // resolver builds its filter in the background when it may
         if (!resolver) return gateState({ state: 'failed', reason: 'the table has no rows to read' });
@@ -154,11 +155,12 @@ export function createSourceAdapter({ panel, active, geneNames, off = () => fals
             if (!isSourceType(type)) return null;
             if (type === SIGNATURE_TYPE) {
                 if (typeof p.getRecipe !== 'function') return null;
-                return { title: p.getTitle(), kind: 'signature', recipe: () => p.getRecipe(), gate: () => null, actions: null };
+                return { title: p.getTitle(), kind: 'signature', recipe: () => p.getRecipe(), options: () => p.getRecipe(), gate: () => null, actions: null };
             }
             return {
                 title: p.getTitle(), kind: 'table',
                 recipe: () => tableRecipe(p, { open: active(p), geneNames: geneNames() }),
+                options: () => optionsOf(p),
                 gate: (dependant) => tableGate(p, dependant),
                 actions: resolver ? {
                     accept: () => resolver.accept(p.getId()),

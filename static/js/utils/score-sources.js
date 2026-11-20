@@ -70,17 +70,36 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     // The aggregation belongs to the consumer, not the signature: a score is the signature's genes and
     // shared settings read with one method. Edits are compared without it.
     const withMethod = (recipe, sub, layer) => ({ ...recipe, method: sub || DEFAULT_METHOD, input: layer || recipe.input });
+    /**
+     * What an APPLIED recipe gives per consumer option, worked out once: a handle is read on every paint, progress
+     * frame and hover, and a hash walks every gene. An applied recipe is a private copy that is never edited
+     * (copyRecipe), so what follows from it never changes; an edit replaces it.
+     * @type {WeakMap<Object, Map<string, *>>}
+     */
+    const derived = new WeakMap();
+    const memo = (recipe, key, make) => {
+        let map = derived.get(recipe);
+        if (!map) derived.set(recipe, map = new Map());
+        if (!map.has(key)) map.set(key, make());
+        return map.get(key);
+    };
+    /** The recipe a consumer's option reads of an applied recipe, with its hash: {recipe, hash}. */
+    const scoredAs = (applied, sub, layer) => memo(applied, `${sub || ''}\u0001${layer || ''}`, () => {
+        const recipe = withMethod(applied, sub, layer);
+        return { recipe, hash: hashOf(recipe) };
+    });
     // An edit is a change to any score the signature could give: the genes and every shared setting. The clip only
     // reaches the z-score mean and the seed only the control-adjusted score, so the hash covers each method.
     const editHash = (recipe) => METHODS.map(m => hashOf(withMethod(recipe, m))).join('|');
+    const appliedEditHash = (applied) => memo(applied, 'edit', () => editHash(applied));
     /** The aggregations the dependants of a signature read, each once. */
     const pairsUsed = (id) => {
         const seen = new Map();
         for (const h of handles) if (h.sigId === id) seen.set(`${h.sub || DEFAULT_METHOD}\u0001${h.layer || ''}`, { sub: h.sub || DEFAULT_METHOD, layer: h.layer || '' });
         return [...seen.values()];
     };
-    /** Whether `b` is a different score from `a` for any (aggregation, layer) a dependant of `id` reads. */
-    const changesScore = (id, a, b) => pairsUsed(id).some(p => hashOf(withMethod(a, p.sub, p.layer)) !== hashOf(withMethod(b, p.sub, p.layer)));
+    /** Whether the live recipe is a different score from the applied one for any (aggregation, layer) a dependant of `id` reads. */
+    const changesScore = (id, live, was) => pairsUsed(id).some(p => hashOf(withMethod(live, p.sub, p.layer)) !== scoredAs(was, p.sub, p.layer).hash);
     const genesIn = (recipe) => recipe.genes.length + (recipe.down ? recipe.down.length : 0);
 
     /** The gate of a source for a dependant: the state its genes are in, or null when they can be read. */
@@ -104,6 +123,17 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         if (!actions || !gateOf(sig, handle)) return false;
         actions[action]();
         return true;
+    }
+
+    /**
+     * The recipe and hash of one option of a source as its dependants show it (the applied recipe, or the live one
+     * when nothing reads the source yet); null when the source is gone, gated or has no genes.
+     */
+    function optionOf(id, { sub, layer }) {
+        const sig = signatures.get(id);
+        if (!sig || gateOf(sig, { dependant: null })) return null;
+        const scored = scoredAs(applied.get(id) || copyRecipe(sig.recipe()), sub, layer);
+        return genesIn(scored.recipe) === 0 ? null : scored;
     }
 
     function ctxKeyOf(ctx) { return `${ctx.dataset}\u0001${ctx.subset || ''}`; }
@@ -134,7 +164,6 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         handle.key = null;
     }
 
-    /** What a handle shows and which key it stands on, rebinding when the key moved. */
     /**
      * Where the consumer's score stands. An option the signature no longer offers is kept and goes on drawing
      * what it has: the snapshot says `lapsed` and the consumer states it ("Not offered"), never moves to another.
@@ -142,11 +171,11 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
     function read(handle) {
         const snap = readOne(handle);
         const sig = signatures.get(handle.sigId);
-        if (sig && signatures.offers && !signatures.offers(sig.recipe(), handle.sub || DEFAULT_METHOD, handle.layer || '')) {
-            const own = sig.recipe().input;
-            return { ...snap, lapsed: true, sub: handle.sub || DEFAULT_METHOD, layer: handle.layer || own, ownInput: own };
-        }
-        return snap;
+        if (!sig || !signatures.offers) return snap;
+        // what is offered is in the option fields: the genes are not read for it (a table's would be read and sorted)
+        const options = sig.options ? sig.options() : sig.recipe();
+        if (signatures.offers(options, handle.sub || DEFAULT_METHOD, handle.layer || '')) return snap;
+        return { ...snap, lapsed: true, sub: handle.sub || DEFAULT_METHOD, layer: handle.layer || options.input, ownInput: options.input };
     }
 
     function readOne(handle) {
@@ -172,9 +201,8 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             const { state, ...rest } = gate;
             return { ...base, held: null, state, ...rest };
         }
-        const applied = appliedOf(handle.sigId, sig);
         const held = heldOf(handle.sigId);
-        const recipe = withMethod(applied, handle.sub, handle.layer);
+        const { recipe, hash } = scoredAs(appliedOf(handle.sigId, sig), handle.sub, handle.layer);
         if (genesIn(recipe) === 0) {
             dropKey(handle);
             return { ...base, held, state: 'nogenes' };
@@ -184,7 +212,6 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
             dropKey(handle);
             return { ...base, held, state: 'nodown', method: recipe.method, layer: recipe.input };
         }
-        const hash = hashOf(recipe);
         const key = scoreKey({ hash, dataset: ctx.dataset, subset: ctx.subset });
         if (key !== handle.key) {
             dropKey(handle);
@@ -359,14 +386,15 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
                 // the settings are kept, and no score is asked for
                 if (p && p.timer) clearTimer(p.timer);
                 pending.delete(id);
-                if (editHash(live) !== editHash(was)) applied.set(id, copyRecipe(live));
+                if (editHash(live) !== appliedEditHash(was)) applied.set(id, copyRecipe(live));
                 notifySource(id);
                 return;
             }
             // told again of a recipe it already knows (the page rechecks after panels change): not another edit
-            if (p && p.lastHash === editHash(live)) { notifySource(id); return; }
+            const liveHash = editHash(live);
+            if (p && p.lastHash === liveHash) { notifySource(id); return; }
             const next = p || { edits: 0, seconds: null, held: false, timer: null, token: 0, lastHash: null };
-            next.lastHash = editHash(live);
+            next.lastHash = liveHash;
             next.edits++;
             next.token = ++token;
             next.held = false;
@@ -387,13 +415,11 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         },
 
         /** Whether the score of one combination is held (ready in the store), without asking for anything. */
-        isReady(id, { sub, layer }) {
-            const sig = signatures.get(id);
-            if (!sig || gateOf(sig, { dependant: null })) return false;
-            const live = withMethod(applied.get(id) || copyRecipe(sig.recipe()), sub, layer);
-            if (genesIn(live) === 0) return false;
+        isReady(id, option) {
+            const scored = optionOf(id, option);
+            if (!scored) return false;
             const ctx = context();
-            return store.snapshot(scoreKey({ hash: hashOf(live), dataset: ctx.dataset, subset: ctx.subset })).state === 'ready';
+            return store.snapshot(scoreKey({ hash: scored.hash, dataset: ctx.dataset, subset: ctx.subset })).state === 'ready';
         },
 
         /**
@@ -401,13 +427,9 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
          * refused). Null when the source's genes are not known yet.
          * @returns {Promise<Object|null>} the estimate reply
          */
-        async estimate(id, { sub, layer }) {
-            const sig = signatures.get(id);
-            if (!sig || gateOf(sig, { dependant: null })) return null;
-            const live = withMethod(applied.get(id) || copyRecipe(sig.recipe()), sub, layer);
-            if (genesIn(live) === 0) return null;
-            const ctx = context();
-            return store.estimateFor(live, ctx.dataset, hashOf(live));
+        async estimate(id, option) {
+            const scored = optionOf(id, option);
+            return scored ? store.estimateFor(scored.recipe, context().dataset, scored.hash) : null;
         },
 
         /** "Update score": apply the held edits now. */

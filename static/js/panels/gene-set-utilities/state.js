@@ -98,27 +98,35 @@ export function inputKey(adapter, parts) {
  *   names: string[]|null, title: string}}
  */
 export function readTableSelection(table, { open, geneNames }) {
-    if (!table) return { status: 'missing', names: null, title: '' };
-    // a gene signature has no rows to freeze: its genes are its recipe, so closed it reads as open
-    if (table.selectionIsLive) open = true;
-    const title = (typeof table.getTitle === 'function' && table.getTitle()) || '';
-    if (open && typeof table.isReady === 'function' && !table.isReady()) {
-        return { status: 'waiting', names: null, title };
-    }
-    const cfg = (typeof table.getConfig === 'function' && table.getConfig()) || {};
-    if (open) {
+    const { status, title, cfg } = tableSelectionStatus(table, { open });
+    if (status === 'open') {
         const names = [];
         const entries = Array.isArray(cfg.currentEntries) ? cfg.currentEntries : [];
         for (const i of entries) {
             const name = geneNames && (typeof geneNames.at === 'function' ? geneNames.at(i) : geneNames[i]);
             if (typeof name === 'string' && name) names.push(name);
         }
-        return { status: 'open', names, title };
+        return { status, names, title };
     }
-    if (cfg.closedSelection && cfg.closedSelection.passing) {
-        return { status: 'closed', names: Array.from(cfg.closedSelection.passing), title };
-    }
-    return { status: 'closed-unknown', names: null, title };
+    return { status, names: status === 'closed' ? Array.from(cfg.closedSelection.passing) : null, title };
+}
+
+/**
+ * Whether a source table's selection can be read now, without reading it: readTableSelection's `status` and `title`
+ * (and the table's config, for the caller that goes on to read). A reader that only waits on the table asks this.
+ * @param {Object|null|undefined} table
+ * @param {{open: boolean}} ctx
+ * @returns {{status: 'missing'|'waiting'|'open'|'closed'|'closed-unknown', title: string, cfg: Object}}
+ */
+export function tableSelectionStatus(table, { open }) {
+    if (!table) return { status: 'missing', title: '', cfg: {} };
+    // a gene signature has no rows to freeze: its genes are its recipe, so closed it reads as open
+    if (table.selectionIsLive) open = true;
+    const title = (typeof table.getTitle === 'function' && table.getTitle()) || '';
+    if (open && typeof table.isReady === 'function' && !table.isReady()) return { status: 'waiting', title, cfg: {} };
+    const cfg = (typeof table.getConfig === 'function' && table.getConfig()) || {};
+    if (open) return { status: 'open', title, cfg };
+    return { status: cfg.closedSelection && cfg.closedSelection.passing ? 'closed' : 'closed-unknown', title, cfg };
 }
 
 /**
