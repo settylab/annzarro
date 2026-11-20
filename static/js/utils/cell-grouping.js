@@ -59,10 +59,11 @@ function normalizeSource(raw, problems) {
 /**
  * A partitioning in its stored form: the grouping's factor and every count-plot input.
  * @param {*} raw
+ * @param {Object} [binning] - options of normalizeBinning (`max`, `keepDefault`), for a caller whose bin limits differ
  * @returns {{partitioning: Object|null, problems: {field: string, reason: string}[]}} null when it has no usable source
  */
 // export-unused-ok: C1 normalises the inputs of a count plot, which are partitionings too
-export function normalizePartitioning(raw) {
+export function normalizePartitioning(raw, binning) {
     const problems = [];
     const bad = (field, reason) => problems.push({ field, reason });
     if (!isObject(raw)) {
@@ -98,7 +99,7 @@ export function normalizePartitioning(raw) {
         }
     }
     if (raw.binning !== undefined) {
-        const bin = normalizeBinning(raw.binning);
+        const bin = normalizeBinning(raw.binning, binning);
         out.binning = bin.binning;
         for (const p of bin.problems) bad(`binning.${p.field}`, p.reason);
     }

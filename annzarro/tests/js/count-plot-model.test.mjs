@@ -33,7 +33,11 @@ const ctxOf = (extra = {}) => ({
 });
 
 const withContract = (reply, extra = {}) => ({ n_shown: reply.n_counted + (extra.left || 0), ...reply,
-    axes: reply.axes.map((a, i) => ({ n_outside: i === 0 ? (extra.outside || 0) : 0, ...a })) });
+    axes: reply.axes.map((a, i) => {
+        const bins = a.levels.filter((id) => id.startsWith('bin:')).length;
+        const binned = bins ? { edges: Array.from({ length: bins + 1 }, (_, k) => k), bins_made: bins, degenerate: false } : {};
+        return { n_outside: i === 0 ? (extra.outside || 0) : 0, ...binned, ...a };
+    }) });
 const gridOf = (name, extra) => M.readGrid(withContract(expected.grid[name], extra));
 
 // --- the stored config ---------------------------------------------------------------------------------------------
@@ -460,6 +464,24 @@ test('a reply without n_shown or an axis\'s n_outside is a contract error, not a
     assert.throws(() => M.readGrid(noOutside), (e) => e.reason === 'bad_grid_reply');
 });
 
+test('a binned axis must carry edges, bins_made and degenerate, and a degenerate one its value', () => {
+    const fresh = () => withContract(expected.grid.pseudotime_x_cell_type);
+    for (const field of ['edges', 'bins_made', 'degenerate']) {
+        const reply = fresh();
+        delete reply.axes[0][field];
+        assert.throws(() => M.readGrid(reply), (e) => e.reason === 'bad_grid_reply' && e.message.includes(field), field);
+    }
+    const flat = fresh();
+    flat.axes[0].degenerate = true;
+    assert.throws(() => M.readGrid(flat), (e) => e.message.includes('value'));
+    flat.axes[0].value = 3;
+    assert.equal(M.readGrid(flat).axes[0].value, 3);
+    const categorical = withContract(expected.grid.three_axes);
+    assert.doesNotThrow(() => M.readGrid(categorical), 'a categorical axis carries no edges');
+    const table = M.countTable({ version: 1, mode: 'heatmap', x: obs('p'), y: obs('c') }, M.readGrid(fresh()), [{ input: 'x' }, { input: 'y' }]);
+    assert.deepEqual(table.axes[0].info.edges, [0, 1, 2, 3, 4, 5], 'the table keeps the axis info for the bin labels');
+});
+
 test('the CSV has the levels, count, share and measure of the plotted table, and the headers are the caller\'s', () => {
     const { config, table } = barTable();
     const rows = M.tableRows(config, table, { labelOf: (id) => id.replace(/^c:/, ''), inputNames: { x: 'type', split: 'cond' },
@@ -491,4 +513,13 @@ test('a large grid is projected once: the table, its shares and its measures are
 test('a grid whose blocks do not fit its axes is refused', () => {
     assert.throws(() => M.readGrid(withContract({ axes: [{ levels: ['c:a', 'c:b'] }], counts: [1], n_counted: 1 })), /counts/);
     assert.throws(() => M.readGrid(withContract({ axes: [{ levels: ['c:a'] }], counts: [1], n_counted: 1, measure: [[1, 2]] })), /measure/);
+});
+
+test('the binning options widen the limit and keep a default bin count; without them the grouping rules hold', async () => {
+    const { normalizeBinning } = await import('../../../static/js/utils/binning.js');
+    const raw = { method: 'equal_width', bins: 10 };
+    assert.deepEqual(normalizeBinning(raw).binning, { method: 'equal_width' });
+    assert.deepEqual(normalizeBinning(raw, { keepDefault: true }).binning, raw);
+    assert.equal(normalizeBinning({ method: 'equal_width', bins: 1500 }).problems[0].reason, 'bad_bins');
+    assert.equal(normalizeBinning({ method: 'equal_width', bins: 1500 }, { max: 2000 }).binning.bins, 1500);
 });

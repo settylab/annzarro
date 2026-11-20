@@ -19,7 +19,6 @@
 import { normalizePartitioning, serverRequest } from './cell-grouping.js';
 import { csvField } from './score-inspect.js';
 import { RESERVED } from './level-id.js';
-import { BINS_MAX } from './binning.js';
 
 const VERSION = 1;
 
@@ -83,23 +82,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure'];
 const INPUTS = ['x', 'y', 'split'];
 
-/**
- * An input as a partitioning. The grouping's normaliser keeps a bin count to 1,000 and drops one equal to its own
- * default; a count plot's bins go to 2,000 and its default differs by mode, so a bin count is kept as typed.
- */
+/** An input as a partitioning. Its bin count goes to 2,000 and is kept as typed, since the default differs by mode. */
 function normalizeInput(raw, field, bad) {
-    const bins = isObject(raw) && isObject(raw.binning) ? raw.binning.bins : undefined;
-    const widened = Number.isInteger(bins) && bins > BINS_MAX && bins <= BINS.one.max;
-    const given = widened ? { ...raw, binning: { ...raw.binning, bins: BINS_MAX } } : raw;
-    const { partitioning, problems } = normalizePartitioning(given);
+    const { partitioning, problems } = normalizePartitioning(raw, { max: BINS.one.max, keepDefault: true });
     if (!partitioning) {
         bad(field, 'bad_input');
         return null;
     }
     for (const p of problems) bad(`${field}.${p.field}`, p.reason);
-    const binning = partitioning.binning;
-    if (binning && ['equal_width', 'equal_count', 'log'].includes(binning.method) && Number.isInteger(bins)
-        && bins >= BINS.one.min && bins <= BINS.one.max) binning.bins = bins;
     return partitioning;
 }
 
@@ -370,6 +360,19 @@ function outsideOf(axis) {
     return Array.isArray(v) && v.length === 2 && v.every((n) => Number.isInteger(n) && n >= 0) ? v[0] + v[1] : null;
 }
 
+/**
+ * The first field an axis must carry that it does not, as the grouping reply's partitionings[i] carries it: every axis
+ * `n_outside`; a binned one also `edges`, `bins_made` and `degenerate`, and `value` when degenerate.
+ */
+function missingAxisField(axis) {
+    if (outsideOf(axis) === null) return 'n_outside';
+    if (!isBinnedAxis(axis.levels)) return null;
+    if (!Array.isArray(axis.edges)) return 'edges';
+    if (!Number.isInteger(axis.bins_made)) return 'bins_made';
+    if (typeof axis.degenerate !== 'boolean') return 'degenerate';
+    return axis.degenerate && !('value' in axis) ? 'value' : null;
+}
+
 const flatten = (rows) => {
     const out = new Float64Array(rows.length * MOMENTS);
     rows.forEach((row, i) => {
@@ -381,14 +384,17 @@ const flatten = (rows) => {
 
 /**
  * The reply of a grid request as a grid: the levels of each axis, the counts and the moments in the engine's order.
- * @param {{axes: {levels: string[]}[], counts: ArrayLike<number>, n_counted: number, measure?: ArrayLike<number>|number[][]}} reply
- *   `measure` is the block (flat, `cells × 5`) or a list of five-number rows
+ * @param {{n_shown: number, n_counted: number, axes: Object[], counts: ArrayLike<number>, measure?: ArrayLike<number>|number[][]}} reply
+ *   each axis is `{levels, n_outside}` and, when binned, `{edges, bins_made, degenerate, value?}` as the grouping reply's
+ *   partitionings are; a reply without them is refused (`reason: 'bad_grid_reply'`). `measure` is the block (flat, `cells × 5`) or a list of five-number rows
  */
 // export-unused-ok: C2a reads the reply of the grid request
 export function readGrid(reply) {
-    if (!Number.isInteger(reply.n_shown) || !reply.axes.every((a) => outsideOf(a) !== null)) {
-        throw gridError('The grid reply lacks n_shown or an axis\'s n_outside.');
-    }
+    if (!Number.isInteger(reply.n_shown)) throw gridError('The grid reply lacks n_shown.');
+    reply.axes.forEach((axis, i) => {
+        const field = missingAxisField(axis);
+        if (field) throw gridError(`The grid reply's axis ${i} lacks ${field}, or it is malformed.`);
+    });
     const dims = reply.axes.map((a) => a.levels.length);
     const cells = dims.reduce((p, d) => p * d, 1);
     if (reply.counts.length !== cells) throw new Error(`The grid's counts block has ${reply.counts.length} cells; its axes make ${cells}.`);
@@ -399,7 +405,7 @@ export function readGrid(reply) {
     }
     const pooled = measure ? [0, 0, 0] : null;
     if (measure) for (let c = 0; c < cells; c++) for (let k = 0; k < 3; k++) pooled[k] += measure[c * MOMENTS + k];
-    return { axes: reply.axes.map((a) => ({ levels: a.levels })), dims, cells, counts: reply.counts, measure, counted: reply.n_counted, shown: reply.n_shown, outside: reply.axes.reduce((n, a) => n + outsideOf(a), 0),
+    return { axes: reply.axes.map((a) => ({ ...a })), dims, cells, counts: reply.counts, measure, counted: reply.n_counted, shown: reply.n_shown, outside: reply.axes.reduce((n, a) => n + outsideOf(a), 0),
         pooled: pooled && { n: pooled[N], sum: pooled[SUM], sumsq: pooled[SUMSQ] }, tables: new Map() };
 }
 
@@ -413,7 +419,7 @@ const isBinnedAxis = (levels) => levels.some((id) => id.startsWith('bin:') || id
  * @param {Object} config
  * @param {Object} grid - from readGrid
  * @param {{input: string}[]} inputs - the grid's axes, in order (planGrid's `inputs`)
- * @returns {{rows: number, axes: {input: string, set?: number, levels: string[]}[], dims: number[], count: Float64Array,
+ * @returns {{rows: number, axes: {input: string, set?: number, levels: string[], info: Object}[], dims: number[], count: Float64Array,
  *   moments: Float64Array|null, top: Object|null, total: number, counted: number, noValue: Object, pooled: Object|null}}
  */
 // export-unused-ok: C3 draws the table and V1 reads the regions of a set grid
@@ -495,7 +501,7 @@ function project(grid, inputs, pie, wantTop) {
     if (top) for (let r = 0; r < rows; r++) if (top.level[r] >= 0) top.share[r] = best[r] / count[r];
     let total = 0;
     for (let r = 0; r < rows; r++) total += count[r];
-    return { rows, axes: kept.map((a) => ({ ...inputs[a], levels: maps[a].levels })), dims, stride, count, moments, top, total, counted: grid.counted, shown: grid.shown, outside: grid.outside,
+    return { rows, axes: kept.map((a) => ({ ...inputs[a], levels: maps[a].levels, info: grid.axes[a] })), dims, stride, count, moments, top, total, counted: grid.counted, shown: grid.shown, outside: grid.outside,
         noValue, pooled: grid.pooled, shares: new Map(), measures: new Map() };
 }
 

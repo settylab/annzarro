@@ -41,9 +41,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
  * A stored binning from whatever a link, a panel set or a control holds: every field valid, defaults left out, unknown
  * fields kept. A value that cannot be used is repaired to what the engine would use and reported.
  * @param {*} raw
+ * @param {{max?: number, keepDefault?: boolean}} [options] - `max` the most bins taken (the grouping's own limit by default);
+ *   `keepDefault` writes a bin count that equals the method's default, for a caller whose default differs (the count plot)
  * @returns {{binning: Object, problems: {field: string, reason: string}[]}} `reason` is the engine's own key
  */
-export function normalizeBinning(raw) {
+export function normalizeBinning(raw, { max = BINS_MAX, keepDefault = false } = {}) {
     const problems = [];
     const bad = (field, reason) => problems.push({ field, reason });
     if (raw === undefined || raw === null) raw = {};
@@ -59,8 +61,8 @@ export function normalizeBinning(raw) {
     const out = { method };
 
     if (method in DEFAULT_BINS && raw.bins !== undefined) {
-        if (Number.isInteger(raw.bins) && raw.bins >= BINS_MIN && raw.bins <= BINS_MAX) {
-            if (raw.bins !== DEFAULT_BINS[method]) out.bins = raw.bins;
+        if (Number.isInteger(raw.bins) && raw.bins >= BINS_MIN && raw.bins <= max) {
+            if (keepDefault || raw.bins !== DEFAULT_BINS[method]) out.bins = raw.bins;
         } else {
             bad('bins', 'bad_bins');
         }
