@@ -139,6 +139,49 @@ def test_a_second_score_starts_within_one_batch_of_a_long_one(client, layout, mo
     assert running == sorted(running)
 
 
+def test_a_second_score_starts_within_one_chunk_of_a_whole_matrix_pass(client, layout, monkeypatch):
+    """The share of the total on a CSR store first sums every cell over the whole matrix; a score sent during that
+    pass starts after at most two of its chunks."""
+    events = []
+    real_checkpoint = gs._checkpoint
+
+    def slow_checkpoint(should_stop, pause):
+        real_checkpoint(should_stop, pause)
+        events.append("chunk")
+        time.sleep(0.05)
+    monkeypatch.setattr(gs, "_checkpoint", slow_checkpoint)
+    monkeypatch.setattr(gs, "STAT_CHUNK", 50)
+    real_read = gs._CscSource._read
+
+    def recorded_read(self, lo, hi, spans):
+        events.append("short")
+        return real_read(self, lo, hi, spans)
+    monkeypatch.setattr(gs._CscSource, "_read", recorded_read)
+    monkeypatch.setattr(route, "QUEUE_WAIT_S", 0.5)
+    out = {}
+    with _streams() as (open_, spawn):
+        def run(name, body, dataset):
+            resp = open_(post(client, layout, body, name=dataset, buffered=False))
+            out[name] = (resp.status_code, resp.get_data())
+        spawn(run, "long", {"recipe": {"genes": NAMES, "method": "fraction_of_total"}}, "cells.h5ad")
+        deadline = time.monotonic() + 10
+        while events.count("chunk") < 3 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        at_arrival = len(events)
+        assert events.count("chunk") >= 3, "the whole-matrix pass did not start"
+        spawn(run, "short", {"recipe": {"genes": NAMES}}, "in.zarr")
+    (long_status, long_data), (short_status, short_data) = out["long"], out["short"]
+    assert long_status == short_status == 200, (long_status, short_status, short_data[:200])
+    long_frames, long_vector = parse(long_data)
+    short_frames, short_vector = parse(short_data)
+    assert long_frames[-1]["type"] == "result" and short_frames[-1]["type"] == "result"
+    assert long_vector is not None and short_vector is not None
+    first_short = events.index("short")
+    between = events[at_arrival:first_short].count("chunk")
+    assert first_short >= at_arrival and between <= 2, f"the pass ran {between} more chunks before the short score"
+    assert "chunk" in events[first_short:], "the pass did not resume after the short score began"
+
+
 def test_a_score_waits_for_memory_on_the_ledger_and_runs_when_it_is_released(client, layout, monkeypatch):
     monkeypatch.setattr(route, "QUEUE_WAIT_S", 10)
     full = cs.LEDGER.reserve(cs.LEDGER.bound, 0, "everything")
