@@ -285,7 +285,8 @@ def test_no_value_is_its_own_level_on_a_binned_axis(store, data):
     head, blocks = reply(run(store, "1d", [width("pseudotime", 4)]))
     assert head["axes"][0]["levels"] == ["bin:0", "bin:1", "bin:2", "bin:3", "@na"]
     assert blocks["counts"][-1] == 20 and head["axes"][0]["n_no_value"] == 20
-    head, blocks = reply(run(store, "1d", [width("pseudotime", 4)], rows=np.flatnonzero(np.isfinite(values(data, "pseudotime")))))
+    with_value = np.flatnonzero(np.isfinite(values(data, "pseudotime")))
+    head, blocks = reply(run(store, "1d", [width("pseudotime", 4)], rows=with_value))
     assert head["axes"][0]["levels"] == ["bin:0", "bin:1", "bin:2", "bin:3"]       # no cell without a value: no @na
 
 
@@ -495,7 +496,8 @@ def test_measure_moments_per_grid_cell(stores, data, layout, backend, source, ab
 
 
 def test_the_measure_moments_sum_to_the_counted_cells(store, data):
-    res = run(store, "categorical", [obs("condition")], measures=[{"id": "m", "source": {"type": "obs", "key": "score"}}])
+    m = [{"id": "m", "source": {"type": "obs", "key": "score"}}]
+    res = run(store, "categorical", [obs("condition")], measures=m)
     head, blocks = reply(res)
     m = blocks["measure_moments"][0]
     assert m[:, 0].tolist() == blocks["counts"].tolist()
@@ -520,7 +522,8 @@ def test_bad_measures_are_refused(measures, reason):
 
 def test_a_categorical_measure_is_refused_before_reading(store, no_reads):
     with pytest.raises(cg.GroupError) as e:
-        plan_of(store, "categorical", [obs("condition")], measures=[{"id": "m0", "source": {"type": "obs", "key": "cell_type"}}])
+        plan_of(store, "categorical", [obs("condition")],
+                measures=[{"id": "m0", "source": {"type": "obs", "key": "cell_type"}}])
     assert e.value.reason == "measure_not_numeric"
 
 
@@ -614,10 +617,12 @@ def test_the_reply_is_what_the_browsers_reader_takes(store, tmp_path):
     node = _node()
     cases = [
         ("1d", [width("score", 6, (3.0, 7.0)), obs("condition")], {}),
-        ("1d", [width("pseudotime", 4), obs("cell_type")], {"measures": [{"id": "m0", "source": {"type": "obs", "key": "score"}}]}),
+        ("1d", [width("pseudotime", 4), obs("cell_type")],
+         {"measures": [{"id": "m0", "source": {"type": "obs", "key": "score"}}]}),
         ("1d", [width("constant", 4)], {}),
         ("categorical", [obs("cell_type", levels=["c:T cell"]), obs("is_doublet")], {}),
-        ("sets", [obs("depth", member={"op": ">", "value": 1.0}), obs("cell_type", member={"levels": ["c:B cell"]})], {}),
+        ("sets", [obs("depth", member={"op": ">", "value": 1.0}),
+                  obs("cell_type", member={"levels": ["c:B cell"]})], {}),
     ]
     replies = []
     for mode, parts, kw in cases:

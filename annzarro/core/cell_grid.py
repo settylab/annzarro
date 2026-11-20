@@ -344,7 +344,11 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
         if mp.kind != "number":
             raise _bad(f"Measure '{m.id}' is not a numeric source.", "measure_not_numeric", measure=m.id)
         measures.append((m, mp))
-    parts = [q for a in axes + [mp for _, mp in measures] for q in ([a] + list(a.nested.all_parts() if a.nested else []))]
+    parts = []
+    for a in axes + [mp for _, mp in measures]:
+        parts.append(a)
+        if a.nested is not None:
+            parts.extend(a.nested.all_parts())
     seconds = gs.BASE_SECONDS + sum(a.seconds for a in axes) + sum(mp.seconds for _, mp in measures)
     entries = sum(p.entries for p in parts if p.nested is None)
     layouts = sorted({p.layout for p in parts if p.entries})
