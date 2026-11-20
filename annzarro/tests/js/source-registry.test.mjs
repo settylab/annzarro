@@ -48,11 +48,9 @@ test('view copy keys a score axis by signature and aggregation; a link without o
 });
 
 test('a consumer reads the layer of its own choice, else the signature input; view copy and columns tell layers apart', async () => {
-    const { layerOf, effectiveInput } = R;
+    const { layerOf } = R;
     assert.equal(layerOf({ type: 'gene-score', key: 's' }), '');
-    assert.equal(effectiveInput({ layer: 'counts' }, 'X'), 'counts');
-    assert.equal(effectiveInput({}, 'log1p'), 'log1p');
-    assert.equal(effectiveInput(null, ''), 'X');
+    assert.equal(layerOf({ type: 'gene-score', key: 's', layer: 'counts' }), 'counts');
     const a = coordinateId({ type: 'gene-score', key: 'sig-1', column: '' });
     const b = coordinateId({ type: 'gene-score', key: 'sig-1', column: '', layer: 'counts' });
     assert.notDeepEqual(a, b, 'the same score over another layer is another coordinate');

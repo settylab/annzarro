@@ -10,9 +10,8 @@
  * wording; panels/table-utilities/table-scores.js the handles.
  */
 import { scoreFullLabel } from '../../utils/score-source.js';
-import { setScoreNotice, setStatusTag } from '../../utils/panel-surface.js';
 import { worstNotice } from '../../utils/score-notices.js';
-import { registerHostActions, openSignature, offerAgain } from '../../utils/score-source.js';
+import { registerHostActions, openSignature, offerAgain, showNotice } from '../../utils/score-source.js';
 import { describeColumn, describeHeldRows } from '../../utils/score-column.js';
 import { TableScores } from './table-scores.js';
 
@@ -183,14 +182,7 @@ export function bindScoreColumns(dataTable, settings, container) {
         const worst = worstNotice(items.map(i => i.notice));
         const shown = items.find(i => i.notice === worst);
         container.__scoreWorst = shown ? shown.entry : null;
-        if (!worst) {
-            setScoreNotice(container, null);
-            setStatusTag(container, 'score', null);
-            return;
-        }
-        setStatusTag(container, 'score', { text: worst.tag.text, severity: worst.severity === 'error' ? 'error' : 'warning',
-            title: worst.tag.title, pop: { text: `${worst.headline}${worst.text ? ` ${worst.text}` : ''}`, actions: worst.actions } });
-        setScoreNotice(container, { state: worst.state, headline: worst.headline, text: worst.text, actions: worst.actions });
+        showNotice(container, worst);
     };
 
     const schedulePaint = () => {
@@ -224,8 +216,7 @@ export function bindScoreColumns(dataTable, settings, container) {
         const note = container.querySelector('.az-score-held-note');
         if (note) note.remove();
         container.classList.remove('az-score-held');
-        setScoreNotice(container, null);
-        setStatusTag(container, 'score', null);
+        showNotice(container, null);
     });
     // a condition added or removed in the filter changes whether the rows are held
     dataTable.on('draw.dt', () => {
@@ -239,11 +230,6 @@ export function bindScoreColumns(dataTable, settings, container) {
     };
     st._azScoreSync = syncAll;
     syncAll();
-}
-
-/** Whether the table's filter holds its rows now: for `isReady()` and for the resolver. */
-export function tableHeldBy(id, config) {
-    return TableScores.gateOf(id, config);
 }
 
 // ---------------------------------------------------------------------------

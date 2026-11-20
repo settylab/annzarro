@@ -6,8 +6,9 @@
  * of utils/score-notices.js.
  *
  * A plot's x, y, z, colour or hover that reads `{type: 'gene-score', key: <the
- * signature's panel id>, label: <its title when last seen>}` asks here for its
- * series (`loadScoreSeries`). A ready score is returned as a series. Anything
+ * source's panel id>, column: <method>, layer, label: <its title when last seen>}`
+ * asks here for its series (`loadScoreSeries`). A source is a Gene Signature or
+ * a Gene Table (utils/score-source-panels.js). A ready score is returned as a series. Anything
  * else throws `ScoreUnavailable`: a colour falls back to neutral points (the
  * plot's existing colour fallback) and an axis to a placeholder, both with the
  * notice over the plot. When the state changes, the plot is drawn again.
@@ -142,12 +143,6 @@ export function scores() {
     return { store: _store, sources: _sources };
 }
 
-/** For tests: replace the store and sources (Node cannot reach the page). */
-export function _useForTest(store, sources) {
-    _store = store;
-    _sources = sources;
-}
-
 /** The aggregations a signature panel offers consumers, first the default: [{value, label}]. */
 function offeredSubs(panel) {
     if (!isSource(panel)) return METHODS.map(value => ({ value, label: SUB_LABELS[value] }));
@@ -164,9 +159,9 @@ function offeredSubs(panel) {
 
 /**
  * Every source of a gene score, open or closed: signatures first, then gene tables, each in the order they were made.
- * [{id, title, open, kind: 'signature'|'table', subs}]. The name is kept from before tables were sources.
+ * [{id, title, open, kind: 'signature'|'table', subs, input, options}].
  */
-export function signatureList() {
+export function sourceList() {
     const open = new Set(PanelManager.getActivePanels().map(p => p.getId()));
     const all = PanelManager.getAllPanels().filter(isSource);
     return [...all.filter(p => p.getType() === 'gene-signature'), ...all.filter(p => p.getType() !== 'gene-signature')]
@@ -312,8 +307,7 @@ function release(host, role) {
     map.delete(role);
     if (!map.size) {
         LIVE_HOSTS.delete(host);
-        setScoreNotice(host, null);
-        setStatusTag(host, 'score', null);
+        showNotice(host, null);
         if (host.__scoreObserver) {
             host.__scoreObserver.disconnect();
             host.__scoreObserver = null;
@@ -366,7 +360,7 @@ function noticeOf(rec) {
  * The placeholder an axis shows while its score cannot be drawn. Also the
  * progress repaint: it replaces itself.
  */
-export function drawScorePlaceholder(host, notice, snap) {
+export function drawScorePlaceholder(host, notice) {
     if (!host) return;
     const unit = 'cells';
     const cov = Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: null });
@@ -378,7 +372,6 @@ export function drawScorePlaceholder(host, notice, snap) {
     const box = host.querySelector('.coverage-placeholder');
     if (box) box.dataset.scoreState = notice.state;
     host.__scorePlaceholder = true;
-    void snap;
 }
 
 /** Say what every score of this plot is doing: an overlay and a strip tag, never a resize. */
@@ -391,25 +384,26 @@ export function paint(host) {
     const worst = worstNotice(entries.map(e => e.notice));
     const shown = entries.find(e => e.notice === worst);
     host.__scoreShown = shown ? shown.rec.role : null;
-    if (!worst) {
-        setScoreNotice(host, null);
-        setStatusTag(host, 'score', null);
-        host.__scorePlaceholder = false;
-        return;
-    }
-    setStatusTag(host, 'score', { text: worst.tag.text, severity: worst.severity === 'error' ? 'error' : 'warning',
-        title: worst.tag.title, pop: { text: `${worst.headline}${worst.text ? ` ${worst.text}` : ''}`, actions: worst.actions } });
+    // an axis that cannot be drawn: nothing truthful can be shown, so the plot area says it, as a placeholder
+    showNotice(host, worst, { overlay: !axis });
     if (axis) {
-        // nothing truthful can be drawn: the plot area says so, as a placeholder
-        setScoreNotice(host, null);
-        if (host.__scorePlaceholder || host.querySelector('.coverage-placeholder')) {
-            const again = entries.find(e => e.notice === axis);
-            if (host.__scoreHost) drawScorePlaceholder(host, axis, again && again.snap);
-        }
+        if (host.__scoreHost && (host.__scorePlaceholder || host.querySelector('.coverage-placeholder'))) drawScorePlaceholder(host, axis);
         return;
     }
     host.__scorePlaceholder = false;
-    setScoreNotice(host, { state: worst.state, headline: worst.headline, text: worst.text, actions: worst.actions });
+}
+
+/**
+ * Say a score's notice on a host (a plot's or a table's container): a strip tag and an overlay inside the host, so
+ * nothing moves or resizes. Null clears both.
+ * @param {HTMLElement} host
+ * @param {Object|null} notice - from describeScore
+ * @param {{overlay?: boolean}} [opts] - false when the host states the notice itself (an axis placeholder)
+ */
+export function showNotice(host, notice, { overlay = true } = {}) {
+    setStatusTag(host, 'score', notice && { text: notice.tag.text, severity: notice.severity === 'error' ? 'error' : 'warning',
+        title: notice.tag.title, pop: { text: `${notice.headline}${notice.text ? ` ${notice.text}` : ''}`, actions: notice.actions } });
+    setScoreNotice(host, notice && overlay ? { state: notice.state, headline: notice.headline, text: notice.text, actions: notice.actions } : null);
 }
 
 function refreshPanel(host) {
@@ -425,16 +419,12 @@ function refreshPanel(host) {
 function onChange(host, rec, snap) {
     if (rec.waiters && rec.waiters.length) for (const wake of rec.waiters.splice(0)) wake();
     if (!host.isConnected) { release(host, rec.role); return; }
-    if (!stillUsed(rec)) { release(host, rec.role); refreshPanelIfNeeded(host); return; }
+    if (!stillUsed(rec)) { release(host, rec.role); paint(host); return; }
     const showing = snap.values ? (snap.shownKey || snap.key) : null;
     if (!rec.quiet && snap.state !== 'updating' && rec.drawnKey !== undefined && showing !== rec.drawnKey) {
         refreshPanel(host);
     }
     schedulePaint(host);
-}
-
-function refreshPanelIfNeeded(host) {
-    paint(host);
 }
 
 function recordFor(host, role, setting) {
@@ -627,9 +617,20 @@ export function openSignature(id, nextTo = null) {
 // ---------------------------------------------------------------------------
 // events from the page
 
-/** A signature was edited (called by the panel). */
-export function signatureChanged(id) {
+/** The option fields that change what plots and tables may pick: their menus and titles follow an edit of one. */
+const MENU_KEYS = ['offered', 'layers', 'input', 'method', 'detect_above'];
+
+/**
+ * A source changed: its genes (a signature's list, the rows a table's filter passes) or the option fields named in
+ * `keys`, by an edit in its panel or from outside (a saved config, Back and Forward). The plots and tables that read
+ * its score follow by the rules for an edit (utils/score-sources.js), and the menus that list what it offers are
+ * rebuilt when what they list changed.
+ * @param {string} id - the source's panel id
+ * @param {string[]} [keys] - the option fields that changed, if any
+ */
+export function sourceChanged(id, keys = []) {
     if (_sources) _sources.recipeChanged(id);
+    if (keys.some(key => MENU_KEYS.includes(key))) sourceRenamed(id);
 }
 
 /** A command from the signature's own panel: compute, cancel, retry, update (the notices' actions, from the panel). */
@@ -644,8 +645,8 @@ export function scoreCommand(id, command) {
     return false;
 }
 
-/** A signature was renamed: the titles of the plots that show it follow. */
-export function signatureRenamed(id) {
+/** A source was renamed, or what it offers changed: the menus that list it are rebuilt and the titles of the plots that show it follow. */
+export function sourceRenamed(id) {
     if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
     if (!_sources) return;
     for (const host of LIVE_HOSTS) {
@@ -669,13 +670,13 @@ export function contextChanged() {
     if (_sources) _sources.contextChanged();
 }
 
-/** The status of a signature for its own panel. */
-export function signatureStatus(id) {
+/** The status of a source's score for its own panel. */
+export function sourceStatus(id) {
     return scores().sources.status(id);
 }
 
 /** Subscribe the panel to its own score status; returns the way to stop. */
-export function onSignatureStatus(id, fn) {
+export function onSourceStatus(id, fn) {
     return scores().sources.onSignature(id, fn);
 }
 
@@ -689,15 +690,6 @@ export function layersInUse(id) {
     return scores().sources.usage(id, 'layer');
 }
 
-/** The plots and other dependants that use a signature: hosts and roles. */
-export function dependantsOf(id) {
-    const out = [];
-    for (const host of LIVE_HOSTS) {
-        for (const rec of recordsOf(host).values()) if (rec.sigId === id) out.push({ host, role: rec.role });
-    }
-    return out;
-}
-
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
     document.addEventListener('annzarro:panels-changed', () => panelsChanged());
     // A gene table's filter changed, or its rows were built: its genes changed, and its dependants follow as they do
@@ -705,7 +697,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     document.addEventListener('annzarro:table-filtered', (event) => {
         const id = event && event.detail && event.detail.id;
         const panel = sourcePanel(id);
-        if (panel && panel.getType() === 'gene-table') signatureChanged(id);
+        if (panel && panel.getType() === 'gene-table') sourceChanged(id);
     });
 }
 
@@ -720,7 +712,7 @@ registerSource({
     consumers: ['cell-plot'],
     axes: ['x', 'y', 'z', 'color', 'hover'],
     defaultSub: DEFAULT_METHOD,
-    entities: () => signatureList(),
+    entities: () => sourceList(),
     /** The aggregations the server computes, z-score mean first; a new method is a new entry in METHODS. */
     subKeys: (id) => {
         const panel = sourcePanel(id);

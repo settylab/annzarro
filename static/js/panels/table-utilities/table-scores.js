@@ -15,7 +15,7 @@
 import { scores, scoreLabel } from '../../utils/score-source.js';
 import { DataManager } from '../../data-manager.js';
 import { getColumnKey } from '../../utils/column-key.js';
-import { isScoreColumn, subOf, columnView, usedScoreColumns, filterGate } from '../../utils/score-column.js';
+import { isScoreColumn, sameScoreColumn, subOf, columnView, usedScoreColumns, filterGate } from '../../utils/score-column.js';
 
 /** tableId -> Map(columnKey -> entry) */
 const TABLES = new Map();
@@ -112,7 +112,7 @@ function ensure(tableId, column, visible = null) {
     const key = getColumnKey(column);
     const map = tableMap(tableId);
     let entry = map.get(key);
-    if (entry && (entry.column.key !== column.key || subOf(entry.column) !== subOf(column) || (entry.column.layer || '') !== (column.layer || ''))) {
+    if (entry && !sameScoreColumn(entry.column, column)) {
         release(tableId, key);
         entry = null;
     }
@@ -179,20 +179,10 @@ export const TableScores = {
         SINKS.delete(tableId);
     },
 
-    /**
-     * Who needs the scores to be computed: a closed table's dependants, by what they can see.
-     * @param {string} tableId
-     * @param {() => boolean} visible
-     */
-    setVisible(tableId, visible) {
-        for (const entry of this.entries(tableId)) entry.visible = visible;
-    },
-
     /** The open table fills its columns in place through this. */
     setSink(tableId, fn) {
         if (fn) SINKS.set(tableId, fn); else SINKS.delete(tableId);
     },
-    hasSink(tableId) { return SINKS.has(tableId); },
     clearSink(tableId, fn) {
         if (SINKS.get(tableId) === fn) SINKS.delete(tableId);
     },

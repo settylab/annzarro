@@ -26,7 +26,7 @@ import { describeScore } from './score-notices.js';
 import { referencedKeys } from './line-select.js';
 import { DEFAULT_METHOD } from './gene-signature.js';
 
-export const SCORE_TYPE = 'gene-score';
+const SCORE_TYPE = 'gene-score';
 
 /** Whether a table column is a gene-signature score. */
 export function isScoreColumn(column) {
@@ -71,7 +71,7 @@ const PENDING = new Set(['estimating', 'queued', 'computing', 'idle', 'building'
  * How a column looks and what it allows, from the state of its score.
  * @param {Object|null} snap - a handle's read(); null before it has been read
  * @param {string} [title] - the column's name
- * @returns {{kind: 'ready'|'updating'|'pending'|'none', state: string, suffix: string, cell: string,
+ * @returns {{kind: 'ready'|'updating'|'pending'|'none', state: string, suffix: string (the header's state, in brackets), cell: string,
  *   hasValues: boolean, sortable: boolean, filterable: boolean, exportable: boolean, exportNote: string}}
  */
 export function columnView(snap, title = '') {
@@ -99,11 +99,6 @@ export function columnView(snap, title = '') {
         return view('none', '(deleted)', 'no score', { exportNote: `${t} was deleted: remove the column to export` });
     }
     return view('none', '(no score)', 'no score', { exportNote: `${t} has no score: remove the column to export` });
-}
-
-/** The header of a column: its name, then the state in brackets when the score is not ready. */
-export function headerText(title, view) {
-    return view.suffix ? `${title} ${view.suffix}` : title;
 }
 
 /**
@@ -170,19 +165,6 @@ export function describeHeldRows(gate) {
 }
 
 /**
- * Which score columns a table's configuration reads that are not columns of the table, and the
- * other way round, after the columns changed: the keys to drop and the columns to add.
- * @param {Object[]} before
- * @param {Object[]} after
- * @returns {{added: Object[], removed: Object[]}}
- */
-export function diffScoreColumns(before, after) {
-    const b = scoreColumnsOf(before);
-    const a = scoreColumnsOf(after);
-    return { added: a.filter(c => !b.some(o => sameScoreColumn(o, c))), removed: b.filter(c => !a.some(o => sameScoreColumn(o, c))) };
-}
-
-/**
  * Follow a signature to a new id in a table's configuration (a panel set added beside open
  * panels): the columns' `key`, and the conditions of the filter, which name a column by its
  * data key (`origData`), a string that holds the signature's id.
@@ -202,13 +184,23 @@ export function followSignatureIds(config, idMap, keyOf) {
         }
     }
     if (!renames.size) return false;
+    renameFilterKeys(config.searchBuilderConfig, renames);
+    return true;
+}
+
+/**
+ * Rename the columns a filter's conditions name. A condition names its column by data key (`origData`), which for a
+ * score column holds the source's id and the layer, so it follows when either is rewritten.
+ * @param {{criteria?: Array}|null|undefined} searchBuilderConfig - rewritten in place
+ * @param {Map<string, string>} renames - old data key -> new data key
+ */
+function renameFilterKeys(searchBuilderConfig, renames) {
     const walk = (node) => {
         if (!node || typeof node !== 'object') return;
         if (Array.isArray(node.criteria)) node.criteria.forEach(walk);
         else if (typeof node.origData === 'string' && renames.has(node.origData)) node.origData = renames.get(node.origData);
     };
-    walk(config.searchBuilderConfig);
-    return true;
+    walk(searchBuilderConfig);
 }
 
 
@@ -244,14 +236,7 @@ export function pinScoreLayers(config, inputOf, keyOf) {
             const before = keyOf(column);
             if (pin(column)) renames.set(before, keyOf(column));
         }
-        if (renames.size) {
-            const walk = (node) => {
-                if (!node || typeof node !== 'object') return;
-                if (Array.isArray(node.criteria)) node.criteria.forEach(walk);
-                else if (typeof node.origData === 'string' && renames.has(node.origData)) node.origData = renames.get(node.origData);
-            };
-            walk(config.searchBuilderConfig);
-        }
+        if (renames.size) renameFilterKeys(config.searchBuilderConfig, renames);
     }
     return changed;
 }

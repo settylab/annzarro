@@ -116,9 +116,6 @@ test('a bulk change of direction on a long list says exactly what moved', () => 
 test('the Selected view lists both sides in name order; the counts and formula are in plain words', () => {
     const r = recipe({ genes: ['A', 'C'], down: ['B', 'D'] });
     assert.deepEqual(G.selectedNames(r), ['A', 'B', 'C', 'D']);
-    assert.equal(G.directionOf(r, 'B'), 'down');
-    assert.equal(G.directionOf(r, 'A'), 'up');
-    assert.equal(G.directionOf(r, 'Z'), null);
     assert.equal(G.directionCounts(r), '2 up, 2 down');
     assert.equal(G.directionCounts(recipe({ genes: ['A'] })), '', 'nothing to say without down genes');
     // the formula follows the weighting in force: by gene is the default, by side is the difference of two means

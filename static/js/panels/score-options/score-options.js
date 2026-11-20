@@ -4,7 +4,7 @@
  * (utils/signature-options.js), the kind of each layer and the way an edit reaches plots and tables are the same code
  * for both; a panel supplies only where its option fields live.
  *
- *   const options = createScoreOptions({ id, D, getOptions, setOptions, getTitle, focusGene, onApplied });
+ *   const options = createScoreOptions({ id, D, getOptions, setOptions, getTitle, focusGene });
  *   host.append(options.warning, options.scoring.element);     // the section, with the default layer's warning
  *   host.append(options.inspect.element);                      // Inspect
  *
@@ -17,16 +17,13 @@ import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
 import { createKindClient } from '../../utils/matrix-kind-client.js';
 import { layerKeys } from '../../utils/structure-keys.js';
-import { aggregationsInUse, layersInUse, onSignatureStatus, signatureChanged, signatureRenamed } from '../../utils/score-source.js';
+import { aggregationsInUse, layersInUse, onSourceStatus, sourceChanged, sourceRenamed } from '../../utils/score-source.js';
 import { offeredOptions } from '../../utils/signature-options.js';
 import { createScoringSection } from './scoring-section.js';
 import { createInspect } from './inspect-section.js';
 
 /** What the layers look like, asked once per dataset and layer for the whole page. */
 const KIND_CLIENT = createKindClient({ url: Config.API.MATRIX_KIND });
-
-/** The edits that change what plots and tables may pick: their menus and titles follow. */
-const MENU_KEYS = ['offered', 'layers', 'input', 'method', 'detect_above'];
 
 /**
  * @param {Object} o
@@ -36,41 +33,38 @@ const MENU_KEYS = ['offered', 'layers', 'input', 'method', 'detect_above'];
  * @param {(patch: Object) => void} o.setOptions - store a patch of option fields and repaint the panel
  * @param {() => string} o.getTitle
  * @param {(gene: string) => void} o.focusGene
- * @param {() => void} [o.onApplied] - after an edit was stored and told to its readers
- * @param {boolean} [o.withInspect] - make Inspect too (default true)
  * @param {{countAsUp: () => void}|null} [o.directions] - a source whose genes can be up or down (a signature, not a table)
  */
-export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, focusGene, onApplied = () => {}, withInspect = true, directions = null }) {
+export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, focusGene, directions = null }) {
     let scoring = null;
 
     function apply(patch) {
         setOptions(patch);
-        signatureChanged(id);
+        sourceChanged(id, Object.keys(patch));
         if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') {
             window.sessionManager.notifyPanelUpdate();
         }
-        if (MENU_KEYS.some(key => key in patch)) signatureRenamed(id);
         if ('input' in patch || 'layers' in patch) scoring.refreshKind();
-        onApplied(patch);
     }
 
     scoring = createScoringSection({
         D, id, getRecipe: getOptions, apply,
         getInputs: async () => layerKeys(await DataManager.getDatasetStructure(DataManager.getCurrentDataset())),
         getKind: (input, opts) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), input, opts),
-        onKinds: () => { signatureRenamed(id); }, directions,
+        onKinds: () => { sourceRenamed(id); }, directions,
         getInUse: () => aggregationsInUse(id), getLayersInUse: () => layersInUse(id)
     });
     // a plot or table began or stopped reading the score: the section says who uses what
-    const unwatch = onSignatureStatus(id, () => scoring.paintUsage());
-    const inspect = withInspect ? createInspect({ id, D, getTitle, getRecipe: getOptions, getOptions: () => offeredOptions(getOptions(), null, scoring.getKinds(), scoring.getStats()), focusGene }) : null;
+    const unwatch = onSourceStatus(id, () => scoring.paintUsage());
+    /** What plots and tables are offered: every offered method of every offered layer that can be computed. */
+    const getOfferedOptions = () => offeredOptions(getOptions(), null, scoring.getKinds(), scoring.getStats());
+    const inspect = createInspect({ id, D, getTitle, getRecipe: getOptions, getOptions: getOfferedOptions, focusGene });
 
     return {
         scoring,
         inspect,
         warning: scoring.warning,
-        /** What plots and tables are offered: every offered method of every offered layer that can be computed. */
-        getOfferedOptions: () => offeredOptions(getOptions(), null, scoring.getKinds(), scoring.getStats()),
+        getOfferedOptions,
         /** The dataset is there: read the layers and what the chosen ones look like. */
         load() {
             scoring.refreshInputs();
@@ -92,7 +86,7 @@ export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, fo
         reveal: () => scoring.reveal(),
         destroy() {
             unwatch();
-            if (inspect) inspect.destroy();
+            inspect.destroy();
             scoring.destroy();
         }
     };

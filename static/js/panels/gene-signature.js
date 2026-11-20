@@ -18,9 +18,11 @@
  * signature keeps filtering, because its genes are its recipe and need no
  * computation. `selectionIsLive` tells those readers so.
  *
- * Later steps plug in through the exported registries: more ways to add genes
- * (paste and upload), more places to use the signature (a colour, a table
- * column) and the scoring options.
+ * Its score, one number per cell, is offered to Cell Plots and Cell Tables as
+ * the `gene-score` source (utils/score-source.js); what is offered and how it
+ * is computed is the panel's Scores offered section, and Inspect shows what a
+ * score is made of (panels/score-options). More ways to add genes plug in
+ * through ADD_SOURCES (paste and upload).
  *
  * It touches no DOM and adds no listener until init(): a closed panel
  * restored from a link or a panel set is constructed and never initialized
@@ -34,7 +36,7 @@ import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-v
 import { createGeneGrid } from '../utils/gene-grid.js';
 import { getFixedGenes } from './table-utilities/panel-tracker.js';
 import { OPTION_KEYS, offeredOptions } from '../utils/signature-options.js';
-import { pinConsumersOf, signatureChanged, signatureRenamed, signatureStatus, onSignatureStatus, scoreCommand } from '../utils/score-source.js';
+import { pinConsumersOf, sourceChanged, sourceRenamed, sourceStatus, onSourceStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
 import { createScoreOptions } from './score-options/score-options.js';
@@ -131,8 +133,8 @@ const GeneSignaturePanel = (function() {
             if (loaded) loadGenes();
             rebuildRows({ top: true });
             paint();
-            if (loaded) loadScoringInputs();
-            _unwatchScore = onSignatureStatus(_id, paintScore);
+            if (loaded) _scoreOptions.load();        // the layers, and what the offered ones look like
+            _unwatchScore = onSourceStatus(_id, paintScore);
             // a panel opened under an id the page already uses (Back and Forward, a reopened signature, a panel set)
             // is what a plot filtered by that id has not read yet; a table says as much when its rows are in
             if (loaded) announce();
@@ -159,10 +161,6 @@ const GeneSignaturePanel = (function() {
             _initialized = false;
             _dom = null;
             _container.innerHTML = '';
-        }
-
-        function destroy() {
-            cleanup();
         }
 
         function loadGenes() {
@@ -218,16 +216,14 @@ const GeneSignaturePanel = (function() {
 
         function updateConfig(config) {
             if (!config) return;
-            if (config.title && config.title !== _title) { _title = config.title; signatureRenamed(_id); }
+            if (config.title && config.title !== _title) { _title = config.title; sourceRenamed(_id); }
             else if (config.title) _title = config.title;
             if (config.controlsVisible !== undefined) _controlsVisible = config.controlsVisible;
             const recipeKeys = ['genes', 'down', 'down_weight', 'directions', ...OPTION_KEYS];
             if (recipeKeys.some(k => k in config)) {
                 setRecipe(Object.fromEntries(recipeKeys.filter(k => k in config).map(k => [k, config[k]])));
                 if (_initialized) { rebuildRows(); paint(); if (_scoreOptions) _scoreOptions.changed(Object.keys(config)); }
-                notifyChange();
-                // what consumers may pick changed: their menus follow
-                if (['offered', 'layers', 'input', 'method'].some(k => k in config)) signatureRenamed(_id);
+                notifyChange(Object.keys(config));
             }
         }
 
@@ -238,7 +234,7 @@ const GeneSignaturePanel = (function() {
 
         function getId() { return _id; }
         function getTitle() { return _title; }
-        function setTitle(title) { _title = title; signatureRenamed(_id); }
+        function setTitle(title) { _title = title; sourceRenamed(_id); }
         function getType() { return 'gene-signature'; }
 
         /** Tell readers (plots filtered by this signature, Gene Set Analysis) and the saved state that the genes changed. */
@@ -248,11 +244,6 @@ const GeneSignaturePanel = (function() {
             } catch (error) {
                 console.error(`Gene signature ${_id}:`, error);
             }
-        }
-
-        /** Read what the inputs are and what the chosen one looks like (raw counts get a warning). */
-        function loadScoringInputs() {
-            if (_scoreOptions) _scoreOptions.load();
         }
 
         /**
@@ -270,10 +261,14 @@ const GeneSignaturePanel = (function() {
             if (_grid) _grid.refresh();
         }
 
-        function notifyChange() {
+        /**
+         * The genes changed, or the option fields named in `keys` (a saved config, Back and Forward).
+         * @param {string[]} [keys]
+         */
+        function notifyChange(keys = []) {
             announce();
             // plots that show this signature's score: update now, or collect the edits behind Update score
-            signatureChanged(_id);
+            sourceChanged(_id, keys);
             if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') {
                 window.sessionManager.notifyPanelUpdate();
             }
@@ -712,7 +707,7 @@ const GeneSignaturePanel = (function() {
          */
         function paintScore() {
             if (!_dom || !_dom.scoreLine) return;
-            const st = signatureStatus(_id);
+            const st = sourceStatus(_id);
             const line = _dom.scoreLine;
             D.clear(line);
             const btn = (label, command) => D.el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link',
@@ -1065,7 +1060,7 @@ const GeneSignaturePanel = (function() {
 
         function addFocused() {
             const gene = DataManager.getFocusedGene();
-            if (gene && !btnBlocked()) addGenes([gene], { direction: currentAddAs() });
+            if (gene && _dom && !_dom.focusedBtn.disabled) addGenes([gene], { direction: currentAddAs() });
         }
 
         /** What Add from and the focused gene add as: up unless Score some genes as down is on and Down is chosen. */
@@ -1073,14 +1068,10 @@ const GeneSignaturePanel = (function() {
             return _recipe.directions && _addAs === 'down' ? 'down' : 'up';
         }
 
-        function btnBlocked() {
-            return !_dom || _dom.focusedBtn.disabled;
-        }
-
         // -------------------------------------------------------------------
         // events from the page
 
-        function onDataUpdate(updateType, updateData) {
+        function onDataUpdate(updateType) {
             if (updateType === 'datasetChanged') {
                 if (!_initialized) return undefined;
                 closeFlow(null, { focus: false });
@@ -1092,7 +1083,6 @@ const GeneSignaturePanel = (function() {
                 paint();
                 notifyChange();
             }
-            void updateData;
             return undefined;
         }
 
@@ -1113,7 +1103,7 @@ const GeneSignaturePanel = (function() {
         const api = {
             init,
             cleanup,
-            destroy,
+            destroy: cleanup,
             onDataUpdate,
             onPanelsChanged,
             getId,
@@ -1129,6 +1119,7 @@ const GeneSignaturePanel = (function() {
             // for the steps after this one
             getRecipe,
             getOfferedOptions,
+            /** What the default score depends on, as text: equal recipes give equal text (the tests compare it across a link). */
             getRecipeHash: () => recipeHash(_recipe),
             revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
             addGenes,

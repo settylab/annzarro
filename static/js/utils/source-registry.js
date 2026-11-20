@@ -52,15 +52,3 @@ export function subKeyOf(setting) {
     if (!provider) return setting && setting.column ? String(setting.column) : '';
     return setting.column ? String(setting.column) : provider.defaultSub;
 }
-
-/**
- * The layer a score is computed over for one consumer: its own choice, else the signature's input.
- * The one place the raw-count warning and anything else that asks "what is this score read from"
- * should call, so a per-consumer choice is honoured everywhere.
- * @param {{layer?: string}} setting - the consumer's source setting
- * @param {string} signatureInput - the signature's `input` ('X' or a layer)
- * @returns {string}
- */
-export function effectiveInput(setting, signatureInput = 'X') {
-    return layerOf(setting) || signatureInput || 'X';
-}

@@ -158,13 +158,6 @@ export function selectedNames(recipe) {
     return recipe.down.length ? mergeSorted(recipe.genes, recipe.down) : recipe.genes;
 }
 
-/** 'up', 'down' or null (not in the signature). */
-export function directionOf(recipe, name) {
-    if (recipe.genes.includes(name)) return 'up';
-    if (recipe.down.includes(name)) return 'down';
-    return null;
-}
-
 /**
  * Set the direction of genes already in the signature. Pure: says what would happen.
  * @param {{genes: string[], down: string[]}} recipe
@@ -195,7 +188,11 @@ export function planDirection(recipe, names, direction) {
 }
 
 /**
- * Add genes on one side. Pure; a gene already in the signature (either side) is left where it is.
+ * Add genes on one side. Pure: says what would happen, the caller applies it. A gene already in the signature (either
+ * side) is left where it is, and there is no limit on the length of a list.
+ * @param {{genes: string[], down: string[]}} recipe
+ * @param {Iterable<string>} incoming
+ * @param {'up'|'down'} direction
  * @returns {{genes: string[], down: string[], added: string[], already: number}}
  */
 export function planAddAs(recipe, incoming, direction) {
@@ -234,7 +231,7 @@ export function directionFormula(recipe) {
     return `${formula} Control-adjusted takes each side minus its own control genes.`;
 }
 
-/** How the score is defined, in words (the Scoring row states it whatever is collapsed). */
+/** How one option is computed, in words: Inspect states it for the option it shows. */
 export function definitionText(recipe) {
     if (recipe.method === 'mean') return `Mean of ${recipe.input}`;
     if (recipe.method === 'control_adjusted') return `Control-adjusted mean of ${recipe.input}, seed ${recipe.seed === null ? DEFAULT_SEED : recipe.seed}`;
@@ -243,43 +240,9 @@ export function definitionText(recipe) {
     return `Z-score mean of ${recipe.input}, ${clip}`;
 }
 
-/**
- * The shared settings in words, for the collapsed Scoring row: "X, clipped at ±10", "counts, not clipped, seed 3".
- * The seed is named only when it is set; the clip is named whatever the aggregation, because it is the signature's.
- */
-export function settingsText(recipe) {
-    const clip = recipe.clip === null ? 'not clipped' : `clipped at ±${recipe.clip}`;
-    const seed = recipe.seed === null || recipe.seed === undefined ? '' : `, seed ${recipe.seed}`;
-    return `${recipe.input}, ${clip}${seed}`;
-}
-
 /** Number with thousands separators, in the same form everywhere in the panel. */
 export function fmtCount(n) {
     return Number(n).toLocaleString('en-US');
-}
-
-/**
- * Adding names to a list. Pure: says what would happen, the caller applies it. There is no limit on the
- * length of a list.
- * @param {string[]} current - the genes now (sorted, distinct)
- * @param {Iterable<string>} incoming
- * @returns {{added: string[], already: number, total: number, genes: string[]}}
- *   `genes` is the list after the add; `already` counts the incoming names the list had
- */
-export function planAdd(current, incoming) {
-    const have = new Set(current);
-    const distinct = new Set();
-    for (const name of incoming) {
-        if (typeof name === 'string' && name !== '') distinct.add(name);
-    }
-    let already = 0;
-    const fresh = [];
-    for (const name of distinct) {
-        if (have.has(name)) already++;
-        else fresh.push(name);
-    }
-    const added = fresh.sort(compareNames);
-    return { added, already, total: current.length + added.length, genes: mergeSorted(current, added) };
 }
 
 /** Two sorted lists of distinct names, merged (the shorter list walked once). */

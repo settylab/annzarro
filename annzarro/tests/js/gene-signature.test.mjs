@@ -159,23 +159,21 @@ test('the saved config carries the recipe and never a derived list', () => {
 // -------------------------------------------------------------- adding genes
 
 test('adding genes: merged sorted, duplicates ignored, the already selected counted', () => {
-    const plan = G.planAdd(['B', 'D'], ['C', 'B', 'A', 'C', '']);
+    const plan = G.planAddAs({ genes: ['B', 'D'], down: [] }, ['C', 'B', 'A', 'C', ''], 'up');
     assert.deepEqual(plan.added, ['A', 'C']);
     assert.equal(plan.already, 1);
     assert.deepEqual(plan.genes, ['A', 'B', 'C', 'D']);
-    assert.equal(plan.total, 4);
 });
 
 test('adding has no limit: any number of genes is merged in one step', () => {
-    const plan = G.planAdd(names(1990), names(60000, 'X'));
+    const plan = G.planAddAs({ genes: names(1990), down: [] }, names(60000, 'X'), 'up');
     assert.equal(plan.added.length, 60000);
     assert.equal(plan.genes.length, 61990);
-    assert.equal(plan.total, 61990);
     assert.equal(G.limitMessage, undefined);
 });
 
 test('adding only genes already in the list changes nothing', () => {
-    const plan = G.planAdd(['A', 'B'], ['B', 'A']);
+    const plan = G.planAddAs({ genes: ['A', 'B'], down: [] }, ['B', 'A'], 'up');
     assert.deepEqual(plan.added, []);
     assert.equal(plan.already, 2);
     assert.deepEqual(plan.genes, ['A', 'B']);

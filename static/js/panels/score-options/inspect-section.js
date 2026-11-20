@@ -334,8 +334,8 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         const hits = [];
         for (let i = 0; i < n; i++) {
             const hit = svg('rect', { class: 'gsig-hist__hit', x: MARGIN.left + i * slot, y: MARGIN.top, width: slot, height: ph, 'data-bin': i });
-            hit.addEventListener('pointerenter', () => setActive(i, { from: 'pointer' }));
-            hit.addEventListener('pointermove', () => setActive(i, { from: 'pointer' }));
+            hit.addEventListener('pointerenter', () => setActive(i));
+            hit.addEventListener('pointermove', () => setActive(i));
             hits.push(hit);
             root.append(hit);
         }
@@ -344,16 +344,16 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
             aria: { label: `Histogram of the score in ${n} bar${n === 1 ? '' : 's'}. Left and right arrow keys read each bar.`, describedby: sid('heading') },
             on: {
                 keydown: onChartKey,
-                focus: () => { if (_active < 0) setActive(0, { from: 'key' }); },
+                focus: () => { if (_active < 0) setActive(0); },
                 blur: () => setActive(-1)
             } });
         group.append(root);
         chartHost.append(group);
         chartHost._geometry = { bars, hits, width, pw, slot, ymax, ph };
-        if (_active >= 0) setActive(_active, { from: 'key' });
+        if (_active >= 0) setActive(_active);
     }
 
-    function setActive(i, { from = 'key' } = {}) {
+    function setActive(i) {
         const g = chartHost._geometry;
         if (!g || !_dist) return;
         if (_active >= 0 && g.bars[_active]) g.bars[_active].classList.remove('is-active');
@@ -373,7 +373,6 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         const center = MARGIN.left + (i + 0.5) * g.slot;
         const left = Math.max(0, Math.min((wrap.width || g.width) - w, center - w / 2));
         tip.style.left = `${left}px`;
-        void from;
     }
 
     function onChartKey(e) {
@@ -386,7 +385,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         else if (e.key === 'End') i = n - 1;
         else return;
         e.preventDefault();
-        setActive(i, { from: 'key' });
+        setActive(i);
     }
 
     function observeSize() {

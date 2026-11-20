@@ -4,7 +4,7 @@ import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
-import { signatureList, NEW_SIGNATURE, OFFER_MORE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers, sourceInput } from '../../utils/score-source.js';
+import { sourceList, NEW_SIGNATURE, OFFER_MORE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers, sourceInput } from '../../utils/score-source.js';
 import { scoreHoverOptions, SCORE_GROUP } from './hover-columns.js';
 import { DEFAULT_INPUT, DEFAULT_METHOD, METHODS } from '../../utils/signature-options.js';
 import { scoreKeyOptions } from '../../utils/score-source-panels.js';
@@ -280,7 +280,7 @@ function scoreKeyEntries(list, held, heldTitle) {
 export function refreshScoreKeySelects() {
   if (typeof document === 'undefined') return;
   setTimeout(() => syncSelectTitles(), 60);
-  const list = signatureList();
+  const list = sourceList();
   const isScoreAxis = (select) => {
     const panel = select.closest('.plot-panel');
     const type = panel && panel.querySelector(`select.axis-type-select[data-axis="${select.dataset.axis}"]`);

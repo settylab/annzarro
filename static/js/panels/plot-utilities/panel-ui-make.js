@@ -8,7 +8,7 @@ import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { populateHoverSelect } from './hover-columns.js';
-import { signatureList } from '../../utils/score-source.js';
+import { sourceList } from '../../utils/score-source.js';
 import { sourcesFor } from '../../utils/source-registry.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, trackValue } from '../../utils/slider-scales.js';
@@ -528,7 +528,7 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   
   // Hover columns picker (settings.hoverInfo)
   populateHoverSelect(document.getElementById(`hover-columns-${id}`), plotType, datasetStructure, settings.hoverInfo, settings.hoverOff,
-    signatureList());
+    sourceList());
 
   // Initialize table filter dropdown
   updateTableFilterSelect(controlsContainer, id, plotType, settings.tableFilter);

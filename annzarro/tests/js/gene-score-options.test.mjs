@@ -42,14 +42,6 @@ test('a seed is a whole number from 0 up that the browser holds exactly', () => 
     }
 });
 
-test('the collapsed row states the shared settings, the seed only when it is set', () => {
-    assert.equal(G.settingsText(recipe({})), 'X, clipped at ±10');
-    assert.equal(G.settingsText(recipe({ clip: null })), 'X, not clipped');
-    assert.equal(G.settingsText(recipe({ input: 'logged_counts', clip: 3, seed: 7 })), 'logged_counts, clipped at ±3, seed 7');
-});
-
-// ---------------------------------------------------------------- the key
-
 test('the key moves with the input, the genes and the method, and only then with the clip and the seed', () => {
     const base = recipe({});
     const hash = (r, method) => G.recipeHash(withMethod(r, method));
@@ -198,21 +190,6 @@ test('a slow control-adjusted score holds an edit even when the z-score mean bes
 });
 
 // ---------------------------------------------------------------- what an input looks like
-
-test('raw counts and unlogged normalised values each get their sentence; log-normalised values and the unknown none', () => {
-    const counts = K.warningFor({ input: 'X', kind: 'counts', stats: { max: 557 }, suggest: null });
-    assert.equal(counts.kind, 'counts');
-    assert.match(counts.text, /^X looks like raw counts \(whole numbers up to 557\)\. Scores should be computed on normalised, log-transformed data/);
-    assert.equal(counts.suggest, null);
-    const layer = K.warningFor({ input: 'raw_counts', kind: 'counts', stats: { max: 1234 }, suggest: 'logged_counts' });
-    assert.match(layer.text, /^Layer raw_counts looks like raw counts \(whole numbers up to 1,234\)/);
-    assert.match(layer.text, /logged_counts looks log-normalised\.$/);
-    assert.equal(layer.suggest, 'logged_counts');
-    const unlogged = K.warningFor({ input: 'normalized_counts', kind: 'normalised', stats: { max: 1140.2 }, suggest: null });
-    assert.match(unlogged.text, /looks normalised but not log-transformed \(values reach 1,140\)/);
-    for (const kind of ['log', 'signed', 'other', 'unknown']) assert.equal(K.warningFor({ input: 'X', kind, stats: {} }), null, kind);
-    assert.equal(K.warningFor(null), null);
-});
 
 test('the kind of an input is asked once per dataset and input, a failure is quiet and asked again', async () => {
     const urls = [];

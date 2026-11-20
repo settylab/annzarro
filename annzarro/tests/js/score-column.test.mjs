@@ -8,8 +8,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { isScoreColumn, scoreColumnsOf, subOf, sameScoreColumn, usedScoreColumns, columnView, headerText, describeColumn,
-    filterGate, describeHeldRows, diffScoreColumns, followSignatureIds } = await import('../../../static/js/utils/score-column.js');
+const { isScoreColumn, scoreColumnsOf, subOf, sameScoreColumn, usedScoreColumns, columnView, describeColumn,
+    filterGate, describeHeldRows, followSignatureIds } = await import('../../../static/js/utils/score-column.js');
 const { getColumnKey } = await import('../../../static/js/utils/column-key.js');
 
 const col = (key = 'sig-1', column = 'zscore_mean') => ({ type: 'gene-score', key, column, label: 'T cell score' });
@@ -57,7 +57,6 @@ for (const [s, kind, suffix, cell, sortable, filterable, exportable] of TABLE) {
         const v = columnView(s, 'T cell score');
         assert.deepEqual([v.kind, v.suffix, v.cell, v.sortable, v.filterable, v.exportable], [kind, suffix, cell, sortable, filterable, exportable]);
         assert.equal(v.hasValues, kind === 'ready' || kind === 'updating');
-        assert.equal(headerText('T cell score', v), suffix ? `T cell score ${suffix}` : 'T cell score');
         if (!exportable) assert.match(v.exportNote, /'T cell score'/, 'the column that blocks the export is named');
     });
 }
@@ -140,15 +139,6 @@ test('only the score columns a condition names are a dependency of the filter', 
     assert.deepEqual(usedScoreColumns([{ type: 'obs', key: 'x' }], sb, getColumnKey), []);
     const nested = { criteria: [{ criteria: [{ origData: getColumnKey(b), condition: '>', type: 'num', value: ['1'] }], logic: 'AND' }], logic: 'AND' };
     assert.deepEqual(usedScoreColumns(columns, nested, getColumnKey), [b], 'groups are searched');
-});
-
-test('what changed between two column lists', () => {
-    const a = col('s1', 'mean');
-    const b = col('s2', 'zscore_mean');
-    const d = diffScoreColumns([{ type: 'obs', key: 'x' }, a], [{ type: 'obs', key: 'x' }, b, col('s1', 'mean')]);
-    assert.deepEqual(d.added.map(c => c.key), ['s2']);
-    assert.deepEqual(d.removed, []);
-    assert.deepEqual(diffScoreColumns([a], []).removed.map(c => c.key), ['s1']);
 });
 
 // links ---------------------------------------------------------------------------------------

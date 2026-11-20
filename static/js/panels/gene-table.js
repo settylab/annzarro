@@ -22,7 +22,7 @@ import './table-utilities/table-background.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { createScoreOptions } from './score-options/score-options.js';
 import { normalizeOptions, storedOptions, isDefaultOptions, offeredOptions } from '../utils/signature-options.js';
-import { signatureChanged, signatureRenamed, pinConsumersOf } from '../utils/score-source.js';
+import { sourceChanged, sourceRenamed, pinConsumersOf } from '../utils/score-source.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -438,7 +438,7 @@ const GeneTablePanel = (function() {
             // Update title in settings to ensure it's included in getConfig()
             _settings.title = title;
             // plots that show this table's score, and the source menus, name it by its title
-            if (renamed) signatureRenamed(_id);
+            if (renamed) sourceRenamed(_id);
         }
         
         /**
@@ -469,7 +469,7 @@ const GeneTablePanel = (function() {
             if (config.title) {
                 const renamed = config.title !== _title;
                 _title = config.title;
-                if (renamed) signatureRenamed(_id);
+                if (renamed) sourceRenamed(_id);
             }
             
             // Update other settings; never the read-only views of the live
@@ -485,8 +485,7 @@ const GeneTablePanel = (function() {
                 // Back and Forward, a panel set: the offer changed from outside; its readers follow
                 _settings.scoreOptions = isDefaultOptions(_settings.scoreOptions) ? null : storedOptions(_settings.scoreOptions);
                 if (_scoreOptions) _scoreOptions.changed(['offered', 'layers', 'input']);
-                signatureChanged(_id);
-                signatureRenamed(_id);
+                sourceChanged(_id, ['offered', 'layers', 'input']);
             }
         }
 
@@ -514,8 +513,7 @@ const GeneTablePanel = (function() {
         function setScoreOptions(patch) {
             storeScoreOptions(patch);
             if (_scoreOptions) _scoreOptions.changed(Object.keys(patch));
-            signatureChanged(_id);
-            signatureRenamed(_id);
+            sourceChanged(_id, Object.keys(patch));
             if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
         }
 
