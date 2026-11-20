@@ -2,9 +2,10 @@
 The text index: what the local stores say about themselves, searchable without opening them.
 
 A crawl walks every local store the server can list (``store_walk.iter_stores``: the data directory,
-the admin roots and every restricted user's grants) and reads two things of each, with
-``dataset_info.read_info``: the attribution fields and the first ``text_index_readme_kb`` KB of the
-README. Remote stores are not crawled. The result is one gzipped JSON file in the cache directory,
+the admin roots and every restricted user's grants) and reads three things of each: the attribution fields
+and the first ``text_index_readme_kb`` KB of the README (``dataset_info.read_info``), and the names of its
+fields, which are the obs and var columns, the obsm, varm, obsp and varp keys, the layers and the ``uns``
+paths (``store_details.describe_store``, metadata only). Remote stores are not crawled. The result is one gzipped JSON file in the cache directory,
 shared by every worker, which loads it again when its stamp moves and answers queries from memory.
 
 * **One crawler at a time**, across workers, by an ``flock`` on ``crawl.lock`` held for the whole run
@@ -12,13 +13,13 @@ shared by every worker, which loads it again when its stamp moves and answers qu
   status whose heartbeat is older than ``HEARTBEAT_STALE_S`` belongs to a dead crawler.
 * **Incremental, and light.** A store is read again only when its stat signature moved (or its last read
   timed out an hour ago); an unchanged store costs its signature stats. A zarr store with neither
-  ``uns/README`` nor ``uns/annzarro`` has no text to read: the signature already says so, and it is
-  indexed by name alone without being opened. Entries of vanished stores are dropped.
+  ``uns/README`` nor ``uns/annzarro`` has no text to read: the signature already says so, and only its
+  field names are read. Entries of vanished stores are dropped.
 * **Bounded.** ``text_index_workers`` threads, ``text_index_store_timeout_s`` per store (a late
   read cannot be killed: it keeps its thread, a spare one takes its place, and its answer is kept if it
   comes before the crawl ends; a crawl with as many late stores as workers at once stops as ``partial``),
   ``CRAWL_SECONDS`` and ``text_index_max_stores`` per crawl, ``text_index_max_mb`` for
-  the whole index (READMEs are dropped from the largest down past it).
+  the whole index (READMEs are dropped from the largest down past it, and only then field names).
 * **Kept by the keeper.** Each server process runs one thread (``start_keeper``) that starts a crawl a
   little after the server is up, continues a partial one and refreshes the index once it is older than
   ``text_index_ttl_s``. A search never starts a crawl; an administrator can ask for one (``rebuild``).
@@ -47,7 +48,7 @@ except ImportError:  # Windows: the desktop app is a single process
 
 logger = logging.getLogger(__name__)
 
-INDEX_VERSION = 3
+INDEX_VERSION = 4
 HEARTBEAT_STALE_S = 30
 #: one crawl stops (partial) after this long; the keeper goes on with the rest
 CRAWL_SECONDS = 300
@@ -61,10 +62,17 @@ _late_reads = set()
 _late_reads_guard = threading.Lock()
 #: ``(field, weight)``: the order matters, it is the order ``matched`` lists them in
 FIELDS = (("title", 8), ("name", 6), ("authors", 5), ("contacts", 5), ("description", 4), ("doi", 4),
-          ("citation", 4), ("attribution", 3), ("license", 3), ("funding", 3), ("provenance", 3),
-          ("source_url", 3), ("readme", 1))
+          ("citation", 4), ("obs", 3), ("obsm", 3), ("layers", 3), ("attribution", 3), ("license", 3), ("funding", 3),
+          ("provenance", 3), ("source_url", 3), ("var", 2), ("varm", 2), ("obsp", 2), ("varp", 2), ("uns", 2),
+          ("readme", 1))
 WEIGHTS = dict(FIELDS)
-ABOUT_FIELDS = tuple(name for name, _ in FIELDS if name not in ("name", "readme"))
+#: the kinds of field name an entry holds in ``names``, heaviest first (the order of ``fields`` in a hit)
+NAME_KINDS = ("obs", "obsm", "layers", "var", "varm", "obsp", "varp", "uns")
+#: all the names of one store, in bytes (a name and its separator): the lightest kinds are the ones cut
+MAX_NAME_BYTES = 16 * 1024
+#: names listed per kind in a hit
+HIT_NAMES = 5
+ABOUT_FIELDS = tuple(name for name, _ in FIELDS if name not in ("name", "readme") + NAME_KINDS)
 
 _now = time.time          # tests move the clock here
 
@@ -151,6 +159,41 @@ def read_text(path, readme_bytes):
     return about, plain_text(text), cut
 
 
+def read_names(path, trust_listing=False):
+    """``(names, cut)`` of the store at ``path``: ``names`` maps each kind of ``NAME_KINDS`` that has names to
+    them, one per line; ``cut`` lists the kinds whose names were capped (``store_details.MAX_NAMES`` per kind,
+    ``MAX_NAME_BYTES`` in all, the lightest kinds first to go). A store that cannot be read as AnnData has none.
+    ``trust_listing`` reads a consolidated store through its listing without first checking the listing against
+    the disk (that check visits every metadata file); the crawl's signature covers what moves."""
+    from ..core import store_details
+    try:
+        info = store_details.describe_store(path, trust_listing=trust_listing)
+    except store_details.StoreDetailsError:
+        return {}, []
+    lists = {"obs": ([c["name"] for c in info["obs_columns"]], info["obs_columns_total"]),
+             "var": ([c["name"] for c in info["var_columns"]], info["var_columns_total"]),
+             "uns": (info["uns_paths"], info["uns_paths_total"])}
+    for kind in ("obsm", "layers", "varm", "obsp", "varp"):
+        lists[kind] = (info[f"{kind}_keys"], info[f"{kind}_total"])
+    names, cut, room, full = {}, [], MAX_NAME_BYTES, False
+    for kind in NAME_KINDS:
+        listed, total = lists[kind]
+        kept = []
+        for name in () if full else listed:
+            name = name.replace("\n", " ")
+            cost = len(name.encode("utf-8", "replace")) + 1
+            if cost > room:
+                full = True               # out of room: this kind stops here and the lighter ones are left out
+                break
+            room -= cost
+            kept.append(name)
+        if kept:
+            names[kind] = "\n".join(kept)
+        if len(kept) < total:
+            cut.append(kind)
+    return names, cut
+
+
 # -- the index file ----------------------------------------------------------------------------------
 #
 # In memory an entry keeps its README once, as it is. The matcher folds a field when it looks at it
@@ -165,11 +208,13 @@ def readme_of(entry):
 
 
 def _entry_chars(entry):
-    return len(entry.get("readme") or "") + sum(len(v) for v in (entry.get("about") or {}).values())
+    return (len(entry.get("readme") or "") + sum(len(v) for v in (entry.get("about") or {}).values())
+            + sum(len(v) for v in (entry.get("names") or {}).values()))
 
 
 def _cap_size(entries, max_mb):
-    """Drop READMEs, largest first, until the text fits ``max_mb``; whether any was dropped."""
+    """Drop READMEs, largest first, until the text fits ``max_mb``, and only when every README is gone, field
+    names, largest first, marked cut; whether anything was dropped."""
     limit = int(max_mb * 1024 * 1024)
     total = sum(_entry_chars(e) for e in entries)
     if total <= limit:
@@ -179,6 +224,15 @@ def _cap_size(entries, max_mb):
             break
         total -= len(entry["readme"])
         entry["readme"], entry["readme_cut"] = "", True
+    if total > limit:
+        def size(e):
+            return sum(len(v) for v in (e.get("names") or {}).values())
+        for entry in sorted(entries, key=lambda e: -size(e)):
+            if total <= limit or not size(entry):
+                break
+            total -= size(entry)
+            entry["names_cut"] = sorted({*(entry.get("names_cut") or ()), *entry["names"]}, key=NAME_KINDS.index)
+            entry["names"] = {}
     return True
 
 
@@ -234,6 +288,7 @@ class Loaded:
         self.partial = bool(header.get("partial"))
         self.stores_capped = bool(header.get("stores_capped"))
         self.entries = []
+        self.lowered = []             # per entry: {kind: lower-case names} of the ASCII kinds of field names, else a shared {}
         self.folded = []              # per entry: {field: folded text} for fields that are not ASCII, else a shared {}
         self.errors = 0               # entries whose store could not be read (timeouts included)
         self.timeouts = 0             # of them, stores that did not answer in time: a later crawl reads them again
@@ -252,6 +307,8 @@ class Loaded:
                 extra[name] = fold(text)
         self.entries.append(record)
         self.folded.append(extra)
+        # field names are searched by every query: their lower case is made once here (ASCII ones; the others are in ``folded``)
+        self.lowered.append({k: v.lower() for k, v in (record.get("names") or {}).items() if v.isascii()} or _NOTHING)
 
     def __len__(self):
         return len(self.entries)
@@ -261,6 +318,7 @@ def fields_of(entry):
     """``{field: text}`` of an entry, the fields the matcher reads."""
     fields = {"name": entry.get("name") or "", "rel_path": entry.get("rel_path") or ""}
     fields.update(entry.get("about") or {})
+    fields.update(entry.get("names") or {})
     fields["readme"] = entry.get("readme") or ""
     return fields
 
@@ -560,6 +618,10 @@ def _enumerate(config, deadline, max_stores):
     return found, truncated
 
 
+#: the folders whose members are field names and which the store's own signature does not stat
+SLOT_DIRS = ("layers", "obsm", "obsp", "varm", "varp")
+
+
 def _probe(entry):
     """``(signature, has_text)`` of a store from stat calls alone. ``has_text`` is False for a zarr store with
     neither ``uns/README`` nor ``uns/annzarro``: it has nothing to read, and is not opened. A file (.h5ad) cannot
@@ -569,7 +631,13 @@ def _probe(entry):
         signature = info_routes._signature(entry["real"], False)
     except OSError:
         return None, True
-    digest = hashlib.blake2b(repr(signature).encode("utf-8", "surrogateescape"), digest_size=8).hexdigest()
+    slots = []
+    for slot in SLOT_DIRS + (".zmetadata",):    # a key added to a slot moves the slot's folder, not the store's
+        try:
+            slots.append(os.stat(os.path.join(entry["real"], slot)).st_mtime_ns)
+        except OSError:
+            slots.append(None)
+    digest = hashlib.blake2b(repr((signature, slots)).encode("utf-8", "surrogateescape"), digest_size=8).hexdigest()
     if not isinstance(signature[0], tuple):          # (mtime, size) of a file
         return digest, True
     _uns, annzarro, readme = signature[1]
@@ -596,7 +664,7 @@ def crawl(config):
               "reused": 0, "errors": 0, "built_at": prior_built}
     results = {}                     # real path: entry
     todo = []
-    bare = 0
+    bare = []                        # no text to read: only the names of their fields
     for store in stores:
         sig, has_text = _probe(store)
         before = old.get(store["real"])
@@ -606,13 +674,18 @@ def crawl(config):
                                       "h5ad": store["h5ad"]}
             status["reused"] += 1
         elif not has_text:
-            results[store["real"]] = _entry(store, sig)       # nothing to read: indexed by name alone
-            bare += 1
+            bare.append((store, sig))
         else:
             todo.append((store, sig))
-    status["done"] = status["reused"] + bare
+    status["done"] = status["reused"]
     logger.info(f"Text index crawl started: {len(stores)} datasets found in {clock() - began_at:.1f} s, "
-                f"{len(todo)} to read, {status['reused']} unchanged, {bare} without text; {workers} threads, {store_timeout:g} s per dataset")
+                f"{len(todo)} to read, {status['reused']} unchanged, {len(bare)} without text; {workers} threads, {store_timeout:g} s per dataset")
+    for store, sig in bare:           # nothing to read but the names of their fields, a metadata read: in line
+        if clock() > deadline:
+            break
+        names, names_cut = read_names(store["real"], trust_listing=True)
+        results[store["real"]] = _entry(store, sig, names=names, names_cut=names_cut)
+    status["done"] += len(bare)
 
     last_beat = [0.0]
 
@@ -736,10 +809,10 @@ def crawl(config):
     return status
 
 
-def _entry(store, sig, about=None, readme="", cut=False, error=None):
+def _entry(store, sig, about=None, readme="", cut=False, error=None, names=None, names_cut=None):
     return {"path": store["path"], "real": store["real"], "name": store["name"], "rel_path": store["rel_path"],
             "h5ad": store["h5ad"], "sig": sig, "read_at": _now(), "about": about or {}, "readme": readme,
-            "readme_cut": cut, "error": error}
+            "readme_cut": cut, "names": names or {}, "names_cut": names_cut or [], "error": error}
 
 
 def _result_entry(store, sig, future):
@@ -748,7 +821,10 @@ def _result_entry(store, sig, future):
     except Exception as exc:
         logger.debug(f"Text index: {store['real']} not read: {exc}")
         return _entry(store, sig, error="unreadable")
-    return _entry(store, sig, about, readme, cut)
+    # the names are a metadata read, made here in the crawl's own thread once the text is in: the pooled read
+    # (the long one, the one that can hang) is only the text, and its timing is what it was
+    names, names_cut = read_names(store["real"], trust_listing=True)
+    return _entry(store, sig, about, readme, cut, names=names, names_cut=names_cut)
 
 
 # -- searching ---------------------------------------------------------------------------------------
@@ -784,12 +860,27 @@ def parse_query(query):
     return terms
 
 
+NAME_WEIGHT_KINDS = frozenset(NAME_KINDS)
+
+
 def _weight(field):
     return WEIGHTS.get("name" if field == "rel_path" else field, 0)
 
 
+def _whole_name(low, term):
+    """Whether ``term`` is a whole line of ``low`` (the names of one kind, one per line)."""
+    at = low.find(term)
+    while at >= 0:
+        end = at + len(term)
+        if (at == 0 or low[at - 1] == "\n") and (end == len(low) or low[end] == "\n"):
+            return True
+        at = low.find(term, at + 1)
+    return False
+
+
 def _score(entry, extra, terms):
-    """``(score, matched fields)`` of one entry, or None when a term is in none of its fields."""
+    """``(score, matched fields)`` of one entry, or None when a term is in none of its fields. A term that is
+    a whole field name scores double."""
     best = [0.0] * len(terms)
     matched = set()
     for field, text in fields_of(entry).items():
@@ -802,7 +893,10 @@ def _score(entry, extra, terms):
             if pos < 0:
                 continue
             matched.add("name" if field == "rel_path" else field)
-            best[n] = max(best[n], weight * (1.5 if pos == 0 or not low[pos - 1].isalnum() else 1.0))
+            score = weight * (1.5 if pos == 0 or not low[pos - 1].isalnum() else 1.0)
+            if field in NAME_WEIGHT_KINDS and _whole_name(low, term):
+                score *= 2
+            best[n] = max(best[n], score)
     if not all(best):
         return None
     return sum(best), [name for name, _ in FIELDS if name in matched]
@@ -887,13 +981,43 @@ def _field_text(entry, field):
     return (entry.get("about") or {}).get(field, "")
 
 
+def matching_names(entry, extra, terms, kind):
+    """The names of ``kind`` of ``entry`` that hold a term, best first: whole names, then the earliest hit,
+    then the shorter name, then the store's own order."""
+    text = (entry.get("names") or {}).get(kind) or ""
+    if not text:
+        return []
+    names = text.split("\n")
+    lows = (extra.get(kind) or text.lower()).split("\n")
+    ranked = []
+    for i, (name, low) in enumerate(zip(names, lows)):
+        spots = [low.find(t) for t in terms]
+        spots = [p for p in spots if p >= 0]
+        if spots:
+            ranked.append((low not in terms, min(spots), len(name), i, name))
+    ranked.sort()
+    return [item[-1] for item in ranked]
+
+
+def hit_fields(entry, extra, terms, matched):
+    """``fields`` of a hit: per kind of name that matched, heaviest first, ``{kind, names, more, cut}``."""
+    cut = entry.get("names_cut") or ()
+    out = []
+    for kind in NAME_KINDS:
+        if kind in matched:
+            found = matching_names(entry, extra, terms, kind)
+            out.append({"kind": kind, "names": found[:HIT_NAMES], "more": max(0, len(found) - HIT_NAMES), "cut": kind in cut})
+    return out
+
+
 def search(loaded, terms, readable, folder=None, limit=50, seconds=SEARCH_SECONDS, offset=0, current=None):
     """``(hits, more, partial)``: entries of ``loaded`` that contain every term, best first.
 
     ``readable(entry)`` is asked of each candidate in order, after the lookup, and a candidate it refuses is
     not returned or counted. ``folder`` (a real path) keeps the stores below it. ``current`` (a path) puts the
     store the user has open first when it matches. The page is ``limit`` hits from ``offset``; ``more`` counts
-    the readable matches after it. A hit is ``{"entry", "score", "matched", "snippet"}``. ``partial`` says the
+    the readable matches after it. A hit is ``{"entry", "score", "matched", "fields", "snippet"}``; ``fields`` is
+    ``hit_fields``, the names that matched. ``partial`` says the
     clock ran out (``more`` is then a lower bound).
     """
     from .routes import dataset_folders as df
@@ -901,7 +1025,9 @@ def search(loaded, terms, readable, folder=None, limit=50, seconds=SEARCH_SECOND
     partial = False
     scored = []
     prefix = folder.rstrip(os.sep) + os.sep if folder else None
-    for i, (entry, extra) in enumerate(zip(loaded.entries, loaded.folded)):
+    for i, (entry, extra, lows) in enumerate(zip(loaded.entries, loaded.folded, loaded.lowered)):
+        if lows:
+            extra = {**lows, **extra}
         if i % 256 == 0 and time.monotonic() > deadline:
             partial = True
             break
@@ -930,8 +1056,13 @@ def search(loaded, terms, readable, folder=None, limit=50, seconds=SEARCH_SECOND
         field = max(texty or matched, key=_weight)
         if field == "name" and not any(t in folded_field(entry, extra, "name") for t in terms):
             field = "rel_path"
-        hits.append({"entry": entry, "score": score, "matched": matched,
-                     "snippet": _snippet(_field_text(entry, field), folded_field(entry, extra, field), terms, field)})
+        fields = hit_fields(entry, extra, terms, matched)
+        if field in NAME_WEIGHT_KINDS:         # only names matched: the snippet is the best of them
+            names = ", ".join(next(f["names"] for f in fields if f["kind"] == field))
+            snippet = _snippet(names, fold(names), terms, field)
+        else:
+            snippet = _snippet(_field_text(entry, field), folded_field(entry, extra, field), terms, field)
+        hits.append({"entry": entry, "score": score, "matched": matched, "fields": fields, "snippet": snippet})
     return hits, more, partial
 
 

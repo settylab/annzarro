@@ -525,7 +525,7 @@ def test_the_index_file_is_gzipped_json_and_leaves_no_temporary_file(world):
     with gzip.open(directory / "index.json.gz", "rt", encoding="utf-8") as fh:
         lines = [json.loads(line) for line in fh]
     header, records = lines[0], lines[1:]
-    assert header["version"] == 3 and header["complete"] is True and header["count"] == len(records) == 5
+    assert header["version"] == text_index.INDEX_VERSION == 4 and header["complete"] is True and header["count"] == len(records) == 5
     assert any(r["readme"] for r in records) and all(r.get("real", r["path"]) == r["path"] for r in records)
     assert sorted(p.name for p in directory.iterdir() if p.name.endswith(".tmp")) == []
     from annzarro.utils import paths
@@ -882,11 +882,17 @@ def test_a_store_with_nothing_to_index_costs_only_its_signature_and_so_does_a_re
     second = {name: calls.of(path) for name, path in stores.items()}
     assert status["read"] == 0 and status["reused"] == 5
     print(f"filesystem calls per store, first crawl: {first}; re-check of unchanged stores: {second}")
-    # a store with no README and no attribution: stat calls only, nothing listed or opened
-    assert first["plain.zarr"]["list"] == 0 and first["plain.zarr"]["open"] == 0
+    # a store with no README and no attribution: its text is not read, but since 0.8.0 (SCH-5) its field names
+    # are: that costs exactly 8 stats and 4 opens of metadata files, and lists nothing (measured); the re-check
+    # below still costs the signature's 22 stats and opens nothing
+    names_cost = {"stat": 8, "list": 0, "open": 4}
+    assert first["plain.zarr"]["list"] == 0 and first["plain.zarr"]["open"] == names_cost["open"]
     # re-checking an unchanged store costs the same signature stats whether it has text or not, and opens nothing
     assert second["plain.zarr"] == second["liver.zarr"]
     assert second["liver.zarr"]["list"] == 0 and second["liver.zarr"]["open"] == 0
     # reading a store with a README does cost more: it is opened
     assert first["liver.zarr"]["total"] > first["plain.zarr"]["total"] and first["liver.zarr"]["open"] > 0
-    assert first["plain.zarr"]["total"] == second["plain.zarr"]["total"]
+    # the re-check costs what it cost before names (22 signature stats), the first crawl that plus the names read
+    assert second["plain.zarr"]["total"] == 22
+    assert first["plain.zarr"]["total"] == 22 + sum(names_cost.values())
+    assert first["plain.zarr"]["stat"] == 22 + names_cost["stat"]

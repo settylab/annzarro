@@ -1,8 +1,8 @@
 """What is in a store, from its metadata alone: the dataset browser's details pane.
 
 ``describe_store`` names the obs and var columns (with a coarse type), the obsm keys, the layers and
-the number of top-level ``uns`` keys of an ``.h5ad`` file or a local zarr store (format 2, 3 or
-sharded). It lists groups and reads array shapes, dtypes and attributes, never a chunk and never X,
+the obsp, varm and varp keys, the number of top-level ``uns`` keys and the ``uns`` paths (to depth
+``UNS_DEPTH``) of an ``.h5ad`` file or a local zarr store (format 2, 3 or sharded). It lists groups and reads array shapes, dtypes and attributes, never a chunk and never X,
 so it takes milliseconds on a store of any size. A group with more than ``MAX_NAMES`` members is
 cut there and says so (``*_total``).
 """
@@ -13,8 +13,14 @@ from typing import Any, Dict, List, Optional
 
 __all__ = ["MAX_NAMES", "describe_store", "counts_from_root", "StoreDetailsError"]
 
-#: Most names listed per group (obs columns, var columns, obsm keys, layers).
+#: Most names listed per group (obs columns, var columns, obsm keys, layers, ...) and most ``uns`` paths.
 MAX_NAMES = 500
+#: ``uns`` is listed as paths this many levels deep ("donor_metadata/age" is two).
+UNS_DEPTH = 3
+#: Most ``uns`` nodes visited; a wider ``uns`` is cut there and says so (``uns_paths_total``).
+MAX_UNS_VISITED = 5000
+#: Top-level ``uns`` nodes that are not field names: the dataset's attribution and README, indexed as text.
+UNS_RESERVED = ("annzarro", "README")
 
 _NULLABLE = {"nullable-integer": "integer", "nullable-boolean": "bool", "nullable-string-array": "string"}
 
@@ -87,17 +93,49 @@ def _is_group(node) -> bool:
     return hasattr(node, "attrs") and not hasattr(node, "dtype")
 
 
+def _uns_paths(root) -> Dict[str, Any]:
+    """``{"paths": [...], "total": n}``: the nodes of ``uns`` as ``a/b/c`` paths to ``UNS_DEPTH`` levels. At most
+    ``MAX_NAMES`` are listed; ``total`` counts the nodes visited, which stops at ``MAX_UNS_VISITED``."""
+    if "uns" not in root or not _is_group(root["uns"]):
+        return {"paths": [], "total": 0}
+    paths: List[str] = []
+    visited = 0
+    stack = [("", root["uns"], 1)]
+    while stack and visited < MAX_UNS_VISITED:
+        prefix, group, depth = stack.pop()
+        for name in sorted(_names(group), reverse=True):
+            if depth == 1 and name in UNS_RESERVED:
+                continue
+            if visited >= MAX_UNS_VISITED:
+                break
+            visited += 1
+            path = f"{prefix}{name}"
+            paths.append(path)
+            if depth < UNS_DEPTH:
+                try:
+                    child = group[name]
+                except Exception:
+                    continue
+                if _is_group(child):
+                    stack.append((f"{path}/", child, depth + 1))
+    paths.sort()
+    return {"paths": paths[:MAX_NAMES], "total": visited}
+
+
 def _describe_group(root) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     for axis in ("obs", "var"):
         found = _columns(root[axis]) if axis in root and _is_group(root[axis]) else {"columns": [], "total": 0}
         out[f"{axis}_columns"] = found["columns"]
         out[f"{axis}_columns_total"] = found["total"]
-    for slot, key in (("obsm", "obsm"), ("layers", "layers")):
+    for slot, key in (("obsm", "obsm"), ("layers", "layers"), ("obsp", "obsp"), ("varm", "varm"), ("varp", "varp")):
         found = _keys(root, slot)
         out[f"{key}_keys"] = found["keys"]
         out[f"{key}_total"] = found["total"]
     out["uns_count"] = len(_names(root["uns"])) if "uns" in root else 0
+    found = _uns_paths(root)
+    out["uns_paths"] = found["paths"]
+    out["uns_paths_total"] = found["total"]
     return out
 
 
@@ -131,10 +169,29 @@ def _describe_h5ad(path: str) -> Dict[str, Any]:
         return _describe_group(file)
 
 
-def _describe_zarr(path: str) -> Dict[str, Any]:
+def _open_trusting(path: str):
+    """The root of the local zarr store at ``path`` through its consolidated listing when it has one, without
+    checking that listing against the files (``store_check._open`` does, and that visits every metadata file)."""
+    from .store_check import StoreCheckError
+    from .zarr_reader import zarr_format_problem
+    if not os.path.isdir(path):
+        raise StoreCheckError(f"{path} does not exist")
+    problem = zarr_format_problem(path)
+    if problem:
+        raise StoreCheckError(problem)
+    if not any(os.path.exists(os.path.join(path, f)) for f in (".zgroup", ".zarray", "zarr.json")):
+        raise StoreCheckError(f"{path} does not look like a zarr store (no .zgroup or zarr.json)")
+    import zarr
+    try:
+        return zarr.open_group(path, mode="r")
+    except Exception as exc:
+        raise StoreCheckError(f"Cannot open {path}: {exc}") from exc
+
+
+def _describe_zarr(path: str, trust_listing: bool = False) -> Dict[str, Any]:
     from .store_check import StoreCheckError, _open
     try:
-        root, _remote, _consolidated = _open(path, None)
+        root = _open_trusting(path) if trust_listing else _open(path, None)[0]
     except StoreCheckError as exc:
         raise StoreDetailsError(str(exc)) from exc
     info = _describe_group(root)
@@ -142,12 +199,15 @@ def _describe_zarr(path: str) -> Dict[str, Any]:
     return info
 
 
-def describe_store(path: str) -> Dict[str, Any]:
+def describe_store(path: str, trust_listing: bool = False) -> Dict[str, Any]:
     """Columns, obsm keys, layers and the ``uns`` key count of the local store at ``path``.
 
     Keys: ``obs_columns`` and ``var_columns`` (``[{name, kind}]``), ``obs_columns_total``,
-    ``var_columns_total``, ``obsm_keys``, ``obsm_total``, ``layers_keys``, ``layers_total``,
-    ``uns_count`` (the number of top-level keys) and, for zarr, ``zarr_format``.
+    ``var_columns_total``, ``<slot>_keys`` and ``<slot>_total`` for ``obsm``, ``layers``, ``obsp``, ``varm`` and
+    ``varp``, ``uns_count`` (the number of top-level keys), ``uns_paths`` (every node of ``uns`` but its
+    attribution and README, to depth 3) with ``uns_paths_total`` and, for zarr, ``zarr_format``.
+
+    ``trust_listing`` skips the check of a zarr store's consolidated listing against its files.
 
     Raises:
         StoreDetailsError: The store cannot be read as AnnData (the message says why).
@@ -158,7 +218,7 @@ def describe_store(path: str) -> Dict[str, Any]:
             if not path.endswith(".h5ad"):
                 raise StoreDetailsError(f"{os.path.basename(path)} is a file but not an .h5ad")
             return _describe_h5ad(path)
-        return _describe_zarr(path)
+        return _describe_zarr(path, trust_listing)
     except StoreDetailsError:
         raise
     except Exception as exc:
