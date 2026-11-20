@@ -56,26 +56,34 @@ def _clear(page):
     button = page.locator(".clear-closed-panels-btn:visible").first
     button.click()
     until(page, "() => !!document.querySelector('.clear-closed-panels-btn[data-armed=\"1\"]')")
-    page.locator('.clear-closed-panels-btn[data-armed="1"]').first.click()
+    armed = page.locator('.clear-closed-panels-btn[data-armed="1"]').first
+    question = armed.text_content().strip()
+    armed.click()
+    return question
 
 
 ONE = {"cell-table-A": {**CLOSED["cell-table-A"], "columns": [CT]}, "gene-plot-D": CLOSED["gene-plot-D"]}
 NONE = {"gene-plot-D": CLOSED["gene-plot-D"], "cell-table-E": CLOSED["cell-table-E"]}
 
 
-@pytest.mark.parametrize("closed, kept, said", [
-    (CLOSED, {"cell-table-A", "gene-signature-S"}, ["Kept 2 closed panels in use."]),
-    (ONE, {"cell-table-A"}, ["Kept 1 closed panel in use."]),
-    (NONE, set(), []),
-], ids=["two-kept-one-through-a-kept-table", "one-kept", "none-kept"])
-def test_clear_closed_panels_keeps_the_ones_in_use_and_says_how_many(page, server, closed, kept, said):  # noqa: F811
+def _open(page, server, closed):  # noqa: F811
     plot = _plot_cfg() if "cell-table-A" in closed else _plot_cfg(tableFilter="none")
     view = _view(["cell-plot-B"], {"cell-plot-B": plot, **closed})
     view["layout"]["hierarchy"] = [view["layout"]["hierarchy"][0], {"type": "selector"}]
     page.goto(_url(server, view))
     _wait_plot(page, notice="cell-table-A" in closed)
     assert set(closed) <= set(_panels(page))
-    _clear(page)
+    return plot
+
+
+@pytest.mark.parametrize("closed, kept, question, said", [
+    (CLOSED, {"cell-table-A", "gene-signature-S"}, "Delete 3 closed panels? 2 in use stay.", ["Kept 2 closed panels in use."]),
+    (ONE, {"cell-table-A"}, "Delete 1 closed panel? 1 in use stays.", ["Kept 1 closed panel in use."]),
+    (NONE, set(), "Delete all 2 closed panels?", []),
+], ids=["two-kept-one-through-a-kept-table", "one-kept", "none-kept"])
+def test_clear_closed_panels_keeps_the_ones_in_use_and_says_how_many(page, server, closed, kept, question, said):  # noqa: F811
+    plot = _open(page, server, closed)
+    assert _clear(page) == question
     until(page, "() => !window.PanelManager.getPanel('gene-plot-D')")
     panels = _panels(page)
     assert set(panels) == {"cell-plot-B"} | kept, sorted(panels)
@@ -84,3 +92,11 @@ def test_clear_closed_panels_keeps_the_ones_in_use_and_says_how_many(page, serve
     # the notice is raised in the same task that deletes, so by now it is there or it never comes
     notices = page.evaluate("() => window.__azNotices")
     assert [n["message"] for n in notices] == said, notices
+
+
+def test_with_every_closed_panel_in_use_there_is_nothing_to_clear(page, server):  # noqa: F811
+    _open(page, server, {"cell-table-A": ONE["cell-table-A"]})
+    button = page.locator(".clear-closed-panels-btn:visible").first
+    until(page, "() => [...document.querySelectorAll('.clear-closed-panels-btn')].some(b => b.offsetParent && b.disabled)")
+    assert button.get_attribute("title") == "All closed panels are in use."
+    assert "cell-table-A" in _panels(page)
