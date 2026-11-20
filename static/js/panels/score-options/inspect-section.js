@@ -171,7 +171,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         unwatch();
         const { sources } = scores();
         _handle = sources.watch(id, {
-            host: element, role: 'inspect', sub: _method, layer: _layer,
+            kind: 'inspect', host: element, role: 'inspect', sub: _method, layer: _layer,
             visible: () => _open && element.isConnected,
             onChange: (snap) => { _snap = snap; render(); }
         });

@@ -101,7 +101,7 @@ function world({ estimateSeconds = () => 2 } = {}) {
 }
 
 async function ready(w, sub) {
-    const handle = w.sources.watch('S1', { onChange: () => {}, sub });
+    const handle = w.sources.watch('S1', { onChange: () => {}, kind: 'plot', sub });
     handle.read();
     await settle();
     await settle();
