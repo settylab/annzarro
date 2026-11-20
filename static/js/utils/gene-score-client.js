@@ -1,8 +1,8 @@
 /**
  * The browser's side of `POST /api/v1/data/gene_score` (annzarro/server/routes/gene_score.py).
  *
- * The body carries the recipe, because 2,000 gene names do not fit a request
- * line. The reply to a computation is one stream: JSON lines (`progress`
+ * The body carries the recipe, because a long list of gene names does not fit
+ * a request line. The reply to a computation is one stream: JSON lines (`progress`
  * frames, then a `result` frame with the vector's header, the gene figures and
  * the warnings, or an `error` frame when the work fails after the stream has
  * begun), followed by `byte_length` bytes of little-endian float32, one value

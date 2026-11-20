@@ -369,7 +369,7 @@ $ curl -s "http://127.0.0.1:8812/api/v1/data/subset/locate?dataset_path=$DS&subs
 
 `POST /data/gene_score?dataset_path=` gives one number per cell for a list of genes, a *signature*.
 The dataset is named in the query, as on every data route (the access gate and the path checks read it);
-the recipe and the cells to show go in a JSON body, because 2,000 names do not fit a request line.
+the recipe and the cells to show go in a JSON body, because a long list of gene names does not fit a request line.
 
 ```json
 {"recipe": {"genes": ["CD3E", "CD8A"], "input": "X", "method": "zscore_mean", "clip": 10},
@@ -382,14 +382,15 @@ The **recipe** is the whole definition of a score. Only `genes` is required.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `genes` | (required) | gene names, matched exactly; at most 2,000 distinct names (`413 too_many_genes`); a repeated name counts once |
+| `genes` | (required) | gene names, matched exactly; a repeated name counts once. There is no limit on their number: the body may be up to 16 MB (`413 request_too_large` above it), and the cost estimate refuses a score that would take too long |
 | `input` | `"X"` | `"X"`, or the name of a layer |
 | `method` | `"zscore_mean"` | `zscore_mean`: the mean over genes of the z-score `(x - mean) / sd`, clipped at plus and minus `clip`. `mean`: the mean over genes of `x`. `sum`: the sum over genes of `x` (a gene with no value in a cell adds nothing; a cell with no value for any gene is NaN). `detected`: the share of the genes whose value is above `detect_above` in the cell, 0 to 1 (a share, so it is unchanged by a gene missing from the dataset). `fraction_of_total`: the sum over genes of `x` over the sum of the cell's finite values over **all** genes, times 100, so in percent (see below). `control_adjusted`: the mean over genes of `x`, less the mean of `x` over control genes (Tirosh et al. 2016, as scanpy's `score_genes`; see below). Mean and SD are taken over **all cells of the dataset**, zeros included, so a score does not change with the cells shown |
 | `clip` | `10` | a number above 0, or `null` for no clipping; anything else is `400 bad_clip`. Only the z-score mean clips: the recipe keeps the value, but it changes nothing under `mean` or `control_adjusted` |
 | `seed` | `null` | a whole number from 0 up (`400 bad_seed` otherwise), or `null`. Only the control-adjusted score draws anything: it picks the control genes, and `null` means 0. The reply's `recipe.seed` is the seed used (`null` for the other methods) |
 | `detect_above` | `0` | `detected` only: a number from 0 up (`400 bad_detect_above`); a gene is detected in a cell when its value is above it. The reply's `recipe.detect_above` is `null` for the other methods |
 | `bins`, `controls` | `25`, `50` | control-adjusted only: gene bins (a whole number from 2 to 200, `400 bad_bins`) and control genes drawn per bin (1 to 1,000, `400 bad_controls`). The reply's `recipe` holds them, and `null` for the other methods |
-| `down` | `[]` | reserved for up and down genes. The recipe format already holds it; the server answers `400 down_not_available` until it is computed |
+| `down` | `[]` | down genes: the score is the up genes (`genes`) minus the down genes. Only `zscore_mean`, `mean` and `control_adjusted` have a signed version; any other method with down genes is `400 method_no_down`. A gene named on both sides counts as up (the reply's `overlap` lists them) |
+| `down_weight` | `"gene"` | how down genes weigh in `zscore_mean` and `mean`. `gene`: the signs of the down genes are flipped and every usable gene is averaged, (sum of up - sum of down) / (number of up + number of down). `side`: the mean of the up genes minus the mean of the down genes. `control_adjusted` ignores it: each side always subtracts its own controls. Anything else is `400 bad_down_weight` |
 | `version` | `1` | the algorithm version; a recipe for another version is `400 unsupported_version` |
 
 **The fraction of total.** The total of every cell over all genes is one pass over the matrix (every stored entry of a store held by gene or by cell, every element of a dense one), so the estimate counts it: `stat_entries` joins `entries`, and `seconds` follows at the layout's rate. For a matrix held by gene with 1,500 stored genes per cell, 10 million cells is 15 billion entries, which the estimate puts in the `confirm` tier (not `auto`) and double that is `refused`, with the usual message. The share is only meaningful for counts and linear normalised values; when the input looks log-transformed or scaled the reply's `warnings` hold `fraction_not_meaningful`. The denominator is every gene of the matrix, the signature's own included: that is what the share of a cell's counts means. A cell whose total is 0 has no value (NaN).
@@ -426,10 +427,10 @@ raw bytes.
 2. `{"type":"result", ...}`, then `byte_length` bytes: little-endian float32, one value per cell shown, in the
    order the cells are shown (the `subset`'s order; all cells without one). The frame has `scored`, `reason`
    and `message` (why there is no score, and `byte_length: 0`), `n_cells` (the dataset), `n_shown`,
-   `n_used`, `recipe` (what was computed: `clip` is `null` for `mean`), `genes` (per gene: `name`, `column`,
-   `status` `used`, `constant` or `no_values`, `mean`, `sd`, `detected`, the fraction of cells with a non-zero
-   value, and `clipped`, the fraction beyond the clip), `missing`, `duplicated`, `warnings`, `entries_read` and
-   `seconds`; for a control-adjusted score also `n_controls`, `n_controls_used` and `binning`.
+   `n_used` (with `n_used_up` and `n_used_down`), `recipe` (what was computed: `clip` is `null` for `mean`), `genes`
+   (per gene: `name`, `column`, `direction` `up` or `down`, `status` `used`, `constant` or `no_values`, `mean`, `sd`,
+   `detected`, the fraction of cells with a non-zero value, and `clipped`, the fraction beyond the clip), `missing`,
+   `missing_down`, `overlap`, `duplicated`, `warnings`, `entries_read` and `seconds`; for a control-adjusted score also `n_controls`, `n_controls_used` and `binning`.
 3. `{"type":"error","reason":...,"message":...}` if the work fails after the stream began. The status is
    already `200`, so a stream that ends without a `result` frame has failed.
 
@@ -771,9 +772,9 @@ same; what differs for a restricted user:
 | 404 | `not_found` | dataset path does not exist; panel set not found (no `reason`) |
 | 404 | `key_not_found` | a layer, obsm, varm, obsp, varp or uns key, an obs/var column or an obsm/varm `column_name` that the dataset does not have (also when the whole `layers`/`obsp`/`varp` group is missing); `X` in a store without `X`; a subset column that does not exist |
 | 409 | `session_quota_user`, `session_quota_total` | saving, duplicating or importing a panel set would pass `server.max_sessions_per_user`, `server.max_sessions` or `server.max_sessions_mb`; the body has `limit` and `used`. Delete sets you no longer need |
-| 400 | `bad_recipe`, `bad_clip`, `bad_method`, `bad_seed`, `unsupported_version`, `down_not_available`, `method_not_available` | `POST /data/gene_score`: a recipe the server cannot use ({ref}`http-gene-score`) |
+| 400 | `bad_recipe`, `bad_clip`, `bad_method`, `bad_seed`, `bad_bins`, `bad_controls`, `bad_detect_above`, `bad_down_weight`, `method_no_down`, `unsupported_version` | `POST /data/gene_score`: a recipe the server cannot use ({ref}`http-gene-score`) |
 | 409 | `confirmation_required` | a gene score whose estimate is over 60 s and not over 10 minutes, sent without `confirm: true` |
-| 413 | `too_many_genes`, `score_too_expensive` | a signature of more than 2,000 genes; a gene score estimated over 10 minutes |
+| 413 | `score_too_expensive` | a gene score estimated over 10 minutes |
 | 413 | `request_too_large` | the request body is over `server.max_request_mb` (64 MB; panel-set saves and imports) |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
 | 431 | (none) | `annzarro start` only: the request line and headers together are over 262,144 bytes (waitress answers, not the app; under gunicorn a header field over `server.limit_request_field_size` is a `400`) |

@@ -122,10 +122,11 @@ signature by name. Every signature is listed, open or closed.
 The score works in large-plot mode too (colour and axes; the tooltip shows the
 colour's score).
 
-A score is chosen in three steps, as an embedding is: the source (**gene-score**), the signature, and
-the **aggregation** (z-score mean, the default, or any other the signature offers). Each axis, the colour and the hover can use a
-different signature or a different aggregation of the same one; the same choice on two axes is computed once.
-The third menu is one list of what the signature offers, method and layer together ("Z-score mean", or "Mean · counts" when several layers are offered). A cell table's **gene-score** tab lists the same options. The same signature over two layers is two scores; a layer the dataset does not have, or an option the signature stopped offering, is stated over the plot.
+A score is chosen in three steps, as an embedding is: the source (**gene-score**), the signature, and one of
+the options it offers. The third menu is one list of what the signature offers, method and layer together
+("z-score mean", or "mean · counts" when several layers are offered); a new plot starts on its first entry.
+Each axis, the colour and the hover can use a different signature or a different option of the same one; the
+same choice on two axes is computed once. A cell table's **gene-score** tab lists the same options. The same signature over two layers is two scores; a layer the dataset does not have, or an option the signature stopped offering, is stated over the plot.
 The score can be on any axis, x, y and z (3D) included, against another score, an obs column or a gene.
 In large-plot mode x, y and colour take a score; 3D and extra hover columns are not available there.
 
@@ -318,7 +319,7 @@ the chart is replaced by its figures.
 
 A **Gene Table** is a source of a gene score exactly as a signature is. The one difference is how the genes
 are chosen: a signature's are ticked by hand, a table's are the rows that pass its filter. Everything else is
-the same: the score, the cost estimate and its three tiers, the aggregations and layers, the notices over a plot,
+the same: the score, the cost estimate and its three tiers, the methods and layers, the notices over a plot,
 **Update score**, and **Inspect**.
 
 Choose **gene-score** as a plot's source (or on a Cell Table's **gene-score** tab) and the list of sources shows
@@ -350,9 +351,9 @@ nothing. Gene Set Analysis and Gene Plot filters read the table as before.
 
 A Cell Table can show a signature's score as a column, so you can sort the cells by it, filter on it and
 export it. Open the table's
-column chooser, choose the **gene-score** tab, and tick a signature and then the aggregation under it
-(z-score mean or mean). Tick as many as you like: several signatures, and several aggregations of one, are
-several columns, and each is computed once however many plots and tables use it.
+column chooser, choose the **gene-score** tab, and tick the options you want under a signature: the same
+list of method and layer a plot's menu has. Tick as many as you like: several signatures, and several options
+of one, are several columns, and each is computed once however many plots and tables use it.
 
 The table appears at once. A score that is not there yet shows as `T cell score (computing)`, with
 `computing…` in its cells, and the column fills in where it is when the score arrives: the table is not
@@ -386,7 +387,7 @@ the page computes the score first, then builds the table's filter in the backgro
 table, and the plot draws when both are done. A table that depends on another that depends on it, through a
 hand-edited link, is named in the plot and asks for no score.
 
-A link, a panel set and the history keep the column's reference (the signature and the aggregation) and the
+A link, a panel set and the history keep the column's reference (the signature, the method and the layer) and the
 filter conditions, never the numbers; the column is computed again when the table opens. A signature that
 changes id when a panel set is added beside open panels takes the table's columns and conditions with it.
 

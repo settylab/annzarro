@@ -1,12 +1,12 @@
 """``POST /api/v1/data/gene_score``: one score per cell for a gene signature.
 
-The body carries the recipe (2,000 names do not fit a request line); the dataset is named, as on
+The body carries the recipe (a long list of gene names does not fit a request line); the dataset is named, as on
 every data route, by ``?dataset_path=``, which is what the access gate and the path confinement read.
 A ``dataset_path`` in the body is allowed only if it names the same dataset.
 
 Body::
 
-    {"recipe": {...},              # core/gene_score.py: genes, down, input, method, clip, seed, version
+    {"recipe": {...},              # core/gene_score.py: genes, down, down_weight, input, method and its parameters, version
                                    # (method control_adjusted draws its control genes with ``seed``)
      "subset": "<spec>" | {...},   # optional: the cells shown (as ?subset= elsewhere)
      "estimate_only": false,       # answer with the cost estimate and read nothing
