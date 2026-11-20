@@ -480,9 +480,9 @@ def test_edges_time_grows_no_faster_than_the_data():
         x = np.random.default_rng(0).normal(size=n).astype(np.float32)
         t = []
         for _ in range(3):
-            t0 = time.perf_counter()
+            t0 = time.process_time()
             binning.edges(slabs_of(x, 1 << 20), make("equal_count", bins=4))
-            t.append(time.perf_counter() - t0)
+            t.append(time.process_time() - t0)
         return min(t)
 
     assert best(5_000_000) <= 15 * best(500_000)
