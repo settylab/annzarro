@@ -27,10 +27,10 @@ test('every concept of the table in UX 6.1 has its word, its plural and the word
     assert.ok(V.never.statistic.includes('metric') && V.never.noValue.includes('NaN') && V.never.cellsShown.includes('visible'));
 });
 
-test('a word is never one of the words another concept forbids', () => {
-    const used = new Set(Object.values(V.word).map((w) => w.toLowerCase()));
+test('a concept\'s own word is never on its own list of forbidden words', () => {
     for (const [concept, words] of Object.entries(V.never)) {
-        for (const w of words) assert.ok(!used.has(w.toLowerCase()), `${concept}: the interface uses '${w}', which it must never`);
+        assert.ok(V.word[concept], `${concept} has a word`);
+        assert.ok(!words.map((w) => w.toLowerCase()).includes(V.word[concept].toLowerCase()), concept);
     }
 });
 

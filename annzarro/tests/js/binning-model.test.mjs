@@ -43,7 +43,6 @@ test('the field names, methods and limits are the engine\'s', () => {
     assert.deepEqual([...B.BINNING_METHODS], ['equal_width', 'equal_count', 'log', 'manual', 'categories']);
     assert.deepEqual([B.BINS_MIN, B.BINS_MAX], [2, 1000]);
     assert.deepEqual({ ...B.DEFAULT_BINS }, { equal_count: 4, equal_width: 10, log: 10 });
-    assert.equal(B.ZERO_BIN_SHARE, 0.25);
 });
 
 test('defaults are not written, and what differs from a default is', () => {

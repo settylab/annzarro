@@ -26,6 +26,7 @@
    }
   }
  ],
+ "separator": " / ",
  "small": {
   "mode": "collect"
  },
@@ -38,6 +39,5 @@
   "logged",
   "counts"
  ],
- "separator": " / ",
  "detect_above": 0.5
 }

@@ -294,7 +294,7 @@ test('a gene is named by the gene, a score by the title of its panel', () => {
     assert.ok(names.every((n) => n.includes(' | ')) && names.some((n) => n.includes('GENE005')), names.join(', '));
     assert.equal(G.sourceName({ type: 'layer', key: 'logged', column: 'Cd3e' }), 'Cd3e');
     assert.equal(G.sourceName({ type: 'obs', key: 'pseudotime' }), 'pseudotime');
-    assert.equal(G.sourceName({ type: 'obsm', key: 'X_pca', column: '3' }), '3');
+    assert.equal(G.sourceName({ type: 'obsm', key: 'X_pca', column: '3' }), 'X_pca 3');
     assert.equal(G.sourceName({ type: 'table', key: 't1' }, () => 'Table 1'), 'Table 1');
     assert.equal(G.sourceName({ type: 'table', key: 't1' }), 't1');
 });
