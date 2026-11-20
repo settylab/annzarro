@@ -70,7 +70,7 @@ function recordingDocument() {
 
 const recipe = (raw) => G.normalizeRecipe({ genes: ['A', 'B'], ...raw }).recipe;
 
-function build({ usage = () => [] } = {}) {
+function build() {
     const { doc, log } = recordingDocument();
     const D = makeDom(doc);
     const state = { recipe: recipe({}), usage: [] };
