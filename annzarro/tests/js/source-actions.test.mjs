@@ -16,7 +16,7 @@ const TU = await import('../../../static/js/panels/table-utilities/table-score-u
 function checkContract(registry, hosts, spies) {
     let checked = 0;
     for (const host of hosts) {
-        for (const name of A.ACTIONS) {
+        for (const name of A.actions.known) {
             const before = spies.map(s => s.calls);
             const available = registry.available(name, host);
             assert.equal(typeof available, 'boolean', `${name}: available answers true or false`);
@@ -32,7 +32,7 @@ function checkContract(registry, hosts, spies) {
 
 test('an action is available exactly when it runs, for every action of a fake provider', () => {
     const spy = { calls: 0 };
-    const registry = A.createActionRegistry();
+    const registry = A.actions.fresh();
     registry.register({
         id: 'fake',
         owns: (host) => host.owned,
@@ -42,7 +42,7 @@ test('an action is available exactly when it runs, for every action of a fake pr
         }
     });
     const hosts = [{ name: 'can', owned: true, can: true }, { name: 'cannot', owned: true, can: false }, { name: 'foreign', owned: false, can: true }];
-    assert.equal(checkContract(registry, hosts, [spy]), hosts.length * A.ACTIONS.length);
+    assert.equal(checkContract(registry, hosts, [spy]), hosts.length * A.actions.known.length);
     assert.equal(registry.run('score-compute', hosts[0]), true);
     assert.equal(spy.calls > 0, true);
     assert.equal(registry.available('score-offer', hosts[0]), false, 'a target of null is not available');
@@ -51,7 +51,7 @@ test('an action is available exactly when it runs, for every action of a fake pr
 });
 
 test('a provider cannot name an action the registry does not know, nor share an id', () => {
-    const registry = A.createActionRegistry();
+    const registry = A.actions.fresh();
     assert.throws(() => registry.register({ id: 'x', owns: () => true, actions: { 'score-bogus': { target: () => 1, run() {} } } }), /Unknown action/);
     registry.register({ id: 'x', owns: () => true, actions: {} });
     assert.throws(() => registry.register({ id: 'x', owns: () => true, actions: {} }), /already/);
@@ -59,7 +59,7 @@ test('a provider cannot name an action the registry does not know, nor share an 
 });
 
 test('run is decided by the target, so a handler cannot answer true and then refuse', () => {
-    const registry = A.createActionRegistry();
+    const registry = A.actions.fresh();
     let ran = 0;
     registry.register({ id: 'p', owns: () => true, actions: { 'score-open': { target: () => 'there', run: (target) => { ran += target === 'there' ? 1 : 100; return false; } } } });
     assert.equal(registry.run('score-open', {}), true, 'what a handler returns is not the answer');
@@ -93,9 +93,9 @@ test('the plot provider: every action of every state of its host agrees with its
         { name: 'a record whose source is gone', rec: rec({ sigId: 'gone', setting: { key: 'gone' } }) },
         { name: 'a record without a chooser', rec: rec() }
     ];
-    const registry = A.createActionRegistry();
+    const registry = A.actions.fresh();
     registry.register(make({}));
-    assert.ok(checkContract(registry, hosts, [spy]) >= 4 * A.ACTIONS.length);
+    assert.ok(checkContract(registry, hosts, [spy]) >= 4 * A.actions.known.length);
     assert.equal(registry.available('score-offer', hosts[2]), false, 'offering again to a source that is gone');
     assert.equal(registry.available('score-open', hosts[2]), false);
     assert.equal(registry.available('score-choose', hosts[3]), false, 'no select to focus');
@@ -123,7 +123,7 @@ test('the table provider: every action of every state of its host agrees with it
         { name: 'a table with a worst column', table: 't1', worst: columns() },
         { name: 'a worst column of a source that is gone', table: 't1', worst: columns({ column: { key: 'gone' } }) }
     ];
-    const registry = A.createActionRegistry();
+    const registry = A.actions.fresh();
     registry.register(make());
     checkContract(registry, hosts, [spy]);
     assert.equal(registry.available('score-offer', hosts[4]), false);
@@ -139,5 +139,5 @@ test('the page registers the plot provider and the table provider, once each', (
     assert.deepEqual(A.actions.providerIds().sort(), ['plot-score', 'table-score']);
     // the contract also holds over the registry the page uses, for a host nobody owns
     const spy = { calls: 0 };
-    assert.equal(checkContract(A.actions, [{ name: 'a stray element' }], [spy]), A.ACTIONS.length);
+    assert.equal(checkContract(A.actions, [{ name: 'a stray element' }], [spy]), A.actions.known.length);
 });

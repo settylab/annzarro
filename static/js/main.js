@@ -31,7 +31,8 @@ import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
 import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/subset-loading.js';
 import { registerStatusActions, setStatusTag } from './utils/panel-surface.js';
-import { scoreActionAvailable, runScoreAction } from './utils/score-source.js';
+import './utils/score-source.js';
+import { actions as sourceActions } from './utils/source-actions.js';
 import { TableScores } from './panels/table-utilities/table-scores.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
@@ -1976,7 +1977,7 @@ const App = (function() {
             case 'table-filter-off': return !!_tableFilterSelect(id);
             case 'build-filter': case 'retry-filter': case 'cancel-filter':
             case 'table-score-compute': case 'table-score-cancel': case 'table-score-retry': return !!_tableFilterOf(id);
-            default: return scoreActionAvailable(action, host);
+            default: return sourceActions.available(action, host);
         }
     }
 
@@ -2103,7 +2104,7 @@ const App = (function() {
                 break;
             default:
                 // the notices of a gene-signature score: Compute, Cancel, Retry, Update score, Open signature, Choose another
-                runScoreAction(action, host);
+                sourceActions.run(action, host);
         }
     }
 

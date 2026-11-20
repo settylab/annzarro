@@ -16,12 +16,15 @@
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { Policy } from '../policy.js';
-import { setStatusTag, setScoreNotice, drawPlaceholder } from './panel-surface.js';
+import { drawPlaceholder } from './panel-surface.js';
 import { Coverage, GAP, classifyValues } from './coverage.js';
 import { createScoreStore } from './score-store.js';
+import { createLimiter, DEFAULT_MAX_ACTIVE } from './derived-store.js';
 import { createScoreSources } from './score-sources.js';
 import { createScoreApi } from './gene-score-client.js';
-import { describeScore, worstNotice } from './score-notices.js';
+import { describeScore } from './score-notices.js';
+import { worstNotice, paintNotice } from './source-notices.js';
+import { actions } from './source-actions.js';
 import { registerSource, subKeyOf, layerOf } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
@@ -134,10 +137,22 @@ function context() {
         cells: cells && Number.isFinite(Number(cells.length)) ? Number(cells.length) : null };
 }
 
+let _limiter = null;
+
+/**
+ * The page's one limit on computations at once (SHR-31), made when first needed and given to every derived store, so a
+ * score and a grouping computing together share the two slots.
+ */
+// export-unused-ok: the cell-group store (G7) is given it
+export function pageLimiter() {
+    if (!_limiter) _limiter = createLimiter(DEFAULT_MAX_ACTIVE);
+    return _limiter;
+}
+
 /** The store and the sources, made when first needed. */
 export function scores() {
     if (!_sources) {
-        _store = createScoreStore({ api: createScoreApi({ url: Config.API.GENE_SCORE }) });
+        _store = createScoreStore({ api: createScoreApi({ url: Config.API.GENE_SCORE }), limiter: pageLimiter() });
         _sources = createScoreSources({ store: _store, signatures: signatureAdapter(), context });
     }
     return { store: _store, sources: _sources };
@@ -307,7 +322,7 @@ function release(host, role) {
     map.delete(role);
     if (!map.size) {
         LIVE_HOSTS.delete(host);
-        showNotice(host, null);
+        paintNotice(host, null);
         if (host.__scoreObserver) {
             host.__scoreObserver.disconnect();
             host.__scoreObserver = null;
@@ -385,25 +400,12 @@ export function paint(host) {
     const shown = entries.find(e => e.notice === worst);
     host.__scoreShown = shown ? shown.rec.role : null;
     // an axis that cannot be drawn: nothing truthful can be shown, so the plot area says it, as a placeholder
-    showNotice(host, worst, { overlay: !axis });
+    paintNotice(host, worst, { overlay: !axis });
     if (axis) {
         if (host.__scoreHost && (host.__scorePlaceholder || host.querySelector('.coverage-placeholder'))) drawScorePlaceholder(host, axis);
         return;
     }
     host.__scorePlaceholder = false;
-}
-
-/**
- * Say a score's notice on a host (a plot's or a table's container): a strip tag and an overlay inside the host, so
- * nothing moves or resizes. Null clears both.
- * @param {HTMLElement} host
- * @param {Object|null} notice - from describeScore
- * @param {{overlay?: boolean}} [opts] - false when the host states the notice itself (an axis placeholder)
- */
-export function showNotice(host, notice, { overlay = true } = {}) {
-    setStatusTag(host, 'score', notice && { text: notice.tag.text, severity: notice.severity === 'error' ? 'error' : 'warning',
-        title: notice.tag.title, pop: { text: `${notice.headline}${notice.text ? ` ${notice.text}` : ''}`, actions: notice.actions } });
-    setScoreNotice(host, notice && overlay ? { state: notice.state, headline: notice.headline, text: notice.text, actions: notice.actions } : null);
 }
 
 function refreshPanel(host) {
@@ -530,7 +532,30 @@ export function shownScoreKey(setting) {
 // ---------------------------------------------------------------------------
 // actions of the notices (main.js routes `score-*` here)
 
-export const SCORE_ACTIONS = ['score-offer', 'score-compute', 'score-cancel', 'score-retry', 'score-update', 'score-open', 'score-choose'];
+/**
+ * The plots' provider of the notice actions (utils/source-actions.js). Every dependency is given, so a Node test can hold
+ * every state of a host against every action; the page registers its own below.
+ * @param {Object} deps
+ */
+export function createPlotActions({ shownRecord: shown, recordsOf: records, sourcePanel: panelOf, canOffer, offerAgain: offer, update, openSource,
+    chooser, panelIdOf: hostPanelId }) {
+    const ofShown = (host) => shown(host) || null;
+    const record = (run) => ({ target: ofShown, run });
+    return {
+        id: 'plot-score',
+        owns: (host) => !!shown(host),
+        actions: {
+            'score-compute': { target: (host) => (records(host).size ? host : null), run: (host) => { for (const r of records(host).values()) r.handle.compute(); } },
+            'score-offer': { target: (host) => { const rec = shown(host); return rec && canOffer(rec.setting) ? rec : null; }, run: (rec) => { offer(rec.setting); } },
+            'score-cancel': record((rec) => { rec.handle.cancel(); }),
+            'score-retry': record((rec) => { rec.handle.retry(); }),
+            'score-update': record((rec) => { update(rec.sigId); }),
+            'score-open': { target: (host) => { const rec = shown(host); return rec && panelOf(rec.sigId) ? rec : null; },
+                run: (rec, host) => { openSource(rec.sigId, hostPanelId(host)); } },
+            'score-choose': { target: (host) => { const rec = shown(host); return rec ? chooser(host, rec) : null; }, run: (place) => { place.focus(); } }
+        }
+    };
+}
 
 function shownRecord(host) {
     const map = HOSTS.get(host);
@@ -538,64 +563,18 @@ function shownRecord(host) {
     return map.get(host.__scoreShown) || [...map.values()][0] || null;
 }
 
-/**
- * Hosts other than plots (a Cell Table's score columns) run the same actions: each registers a
- * provider `{available(action, host) -> boolean|undefined, run(action, host) -> boolean}` that
- * answers for its own containers and says nothing (undefined, false) for the rest.
- */
-const HOST_ACTIONS = new Set();
-export function registerHostActions(provider) {
-    HOST_ACTIONS.add(provider);
+/** The select a plot's source is chosen in, to take the user to: null when the plot has none. */
+function sourceChooser(host, rec) {
+    const tile = host.closest ? host.closest('.tile') : null;
+    const select = tile && tile.querySelector(`.axis-key-select[data-axis="${isHover(rec.role) ? 'color' : rec.role}"]`);
+    if (!select) return null;
+    return { focus() { select.scrollIntoView && select.scrollIntoView({ block: 'nearest' }); select.focus(); } };
 }
 
-/** Whether a score action applies to this plot now. */
-export function scoreActionAvailable(action, host) {
-    for (const provider of HOST_ACTIONS) {
-        const answer = provider.available(action, host);
-        if (answer !== undefined) return answer;
-    }
-    if (!SCORE_ACTIONS.includes(action)) return false;
-    const rec = shownRecord(host);
-    if (!rec) return false;
-    return action !== 'score-open' || !!sourcePanel(rec.sigId);
-}
-
-/** Run a score action for a plot. */
-export function runScoreAction(action, host) {
-    for (const provider of HOST_ACTIONS) if (provider.run(action, host)) return;
-    const rec = shownRecord(host);
-    if (!rec) return;
-    const { sources } = scores();
-    switch (action) {
-        case 'score-compute':
-            for (const r of recordsOf(host).values()) r.handle.compute();
-            break;
-        case 'score-offer':
-            offerAgain(rec.setting);
-            break;
-        case 'score-cancel':
-            rec.handle.cancel();
-            break;
-        case 'score-retry':
-            rec.handle.retry();
-            break;
-        case 'score-update':
-            sources.update(rec.sigId);
-            break;
-        case 'score-open':
-            openSignature(rec.sigId, panelIdOf(host));
-            break;
-        case 'score-choose': {
-            const tile = host.closest ? host.closest('.tile') : null;
-            const select = tile && tile.querySelector(`.axis-key-select[data-axis="${isHover(rec.role) ? 'color' : rec.role}"]`);
-            if (select) {
-                select.scrollIntoView && select.scrollIntoView({ block: 'nearest' });
-                select.focus();
-            }
-            break;
-        }
-    }
-}
+actions.register(createPlotActions({
+    shownRecord, recordsOf, sourcePanel, canOffer: (setting) => !!offerTarget(setting), offerAgain, openSource: openSignature,
+    update: (id) => scores().sources.update(id), chooser: sourceChooser, panelIdOf
+}));
 
 /**
  * Open a signature for editing: the tile of `nextTo` splits and the signature
@@ -781,14 +760,14 @@ export function offerOtherScores(id, nextTo = null) {
 }
 
 /**
- * Offer again the option a consumer holds that its source stopped offering (the notice's one-click action, for a plot
- * and a table column alike).
+ * Where an option a consumer holds would be offered again: the source panel and how it takes the change, or null when
+ * the source is gone or cannot take it (so the notice does not offer what cannot be done).
  * @param {{key: string, column?: string, layer?: string}} setting - the consumer's setting
- * @returns {boolean} whether the source took it
+ * @returns {null|{apply: () => void}}
  */
-export function offerAgain(setting) {
+function offerTarget(setting) {
     const panel = sourcePanel(setting && setting.key);
-    if (!panel) return false;
+    if (!panel) return null;
     const method = subKeyOf(setting);
     const layer = layerOf(setting);
     const recipe = optionFieldsOf(panel);
@@ -796,9 +775,23 @@ export function offerAgain(setting) {
     const layers = layer && !(recipe.layers || []).includes(layer) ? [...(recipe.layers || [recipe.input]), layer] : recipe.layers;
     const patch = { offered, ...(layers ? { layers } : {}) };
     // a gene table stores the option fields under one key; a signature keeps them in its recipe
-    if (typeof panel.setScoreOptions === 'function') panel.setScoreOptions(patch);
-    else if (typeof panel.updateConfig === 'function') panel.updateConfig(patch);
-    else return false;
-    scores().sources.recheck();
+    const take = typeof panel.setScoreOptions === 'function' ? panel.setScoreOptions : typeof panel.updateConfig === 'function' ? panel.updateConfig : null;
+    return take ? { apply: () => { take.call(panel, patch); scores().sources.recheck(); } } : null;
+}
+
+/** Whether a consumer's option could be offered again now (the notice's one-click action, for a plot and a table column alike). */
+export function canOfferAgain(setting) {
+    return !!offerTarget(setting);
+}
+
+/**
+ * Offer again the option a consumer holds that its source stopped offering.
+ * @param {{key: string, column?: string, layer?: string}} setting - the consumer's setting
+ * @returns {boolean} whether the source took it
+ */
+export function offerAgain(setting) {
+    const target = offerTarget(setting);
+    if (!target) return false;
+    target.apply();
     return true;
 }

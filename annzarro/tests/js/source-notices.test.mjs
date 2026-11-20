@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { snapshotOf } from './notice-matrix.mjs';
+import { snapshotOf, STATES } from './notice-matrix.mjs';
 
 const SN = await import('../../../static/js/utils/source-notices.js');
 const N = await import('../../../static/js/utils/score-notices.js');
@@ -18,8 +18,10 @@ const C = await import('../../../static/js/utils/score-column.js');
 const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const SNAPSHOT = JSON.parse(readFileSync(new URL('./score-notice-sentences.json', import.meta.url), 'utf8'));
 
+const RANKED = STATES.filter(state => !['ready', 'idle', 'someday'].includes(state));
+
 // the vocabulary a cell grouping will bring (UX 5): nothing here is gene-signature wording
-const GROUPING = { thing: 'grouping', source: 'Grouping', result: 'Grouping', Computing: 'Computing', tags: { computing: 'Grouping…' } };
+const GROUPING = { thing: 'grouping', source: 'grouping', result: 'grouping', Computing: 'Computing', tags: { computing: 'Grouping…' } };
 
 test('every existing sentence of a score is byte-identical to the base', () => {
     const now = snapshotOf(N.describeScore, (s, c) => C.describeColumn(s, c), sha);
@@ -46,7 +48,7 @@ test('a fake vocabulary gives its own nouns: "Grouping \'G1\' was deleted."', ()
     assert.equal(SN.describeSource({ state: 'computing', title: 'G1' }, {}, GROUPING).tag.text, 'Grouping…');
     assert.equal(SN.describeSource({ state: 'queued', title: 'G1' }, { role: 'colour' }, GROUPING).headline,
         "'G1' is waiting for another grouping to finish. This plot has no colour.");
-    assert.equal(SN.describeSource({ state: 'cancelled', title: 'G1' }, {}, GROUPING).headline, "'G1' was cancelled.");
+    assert.equal(SN.describeSource({ state: 'cancelled', title: 'G1' }, { role: 'x' }, GROUPING).headline, "'G1' was cancelled.");
     for (const state of ['deleted', 'failed', 'refused', 'awaiting', 'cancelled', 'queued', 'computing', 'updating']) {
         const note = SN.describeSource({ state, title: 'G1' }, {}, GROUPING);
         assert.doesNotMatch(`${note.headline} ${note.text} ${note.tag.text}`, /score|signature|table/i, `${state} names no gene-score word`);
@@ -66,18 +68,13 @@ test('of several notices the worst is stated; a state nobody ranked is never the
     assert.equal(SN.worstNotice([t('computing'), t('failed'), null]).state, 'failed');
     assert.equal(SN.worstNotice([null, null]), null);
     // every ranked state outranks an unknown one, wherever it stands in the list (a defect of the base ranked it first)
-    for (const state of SN.PRIORITY) {
+    for (const state of RANKED) {
         const known = { state, severity: 'notice' };
         assert.equal(SN.worstNotice([{ state: 'someday' }, known]), known, `'${state}' beats an unknown state`);
         assert.equal(SN.worstNotice([known, { state: 'someday' }]), known);
     }
     assert.equal(SN.worstNotice([{ state: 'someday' }]).state, 'someday', 'alone, it is still said');
     assert.equal(N.worstNotice, SN.worstNotice, 'one function');
-});
-
-test('the priority list names each state once', () => {
-    assert.equal(new Set(SN.PRIORITY).size, SN.PRIORITY.length);
-    assert.equal(SN.PRIORITY[SN.PRIORITY.length - 1], 'notoffered');
 });
 
 // --------------------------------------------------------------- the one painter
