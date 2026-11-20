@@ -159,13 +159,15 @@ def read_text(path, readme_bytes):
     return about, plain_text(text), cut
 
 
-def read_names(path):
+def read_names(path, trust_listing=False):
     """``(names, cut)`` of the store at ``path``: ``names`` maps each kind of ``NAME_KINDS`` that has names to
     them, one per line; ``cut`` lists the kinds whose names were capped (``store_details.MAX_NAMES`` per kind,
-    ``MAX_NAME_BYTES`` in all, the lightest kinds first to go). A store that cannot be read as AnnData has none."""
+    ``MAX_NAME_BYTES`` in all, the lightest kinds first to go). A store that cannot be read as AnnData has none.
+    ``trust_listing`` reads a consolidated store through its listing without first checking the listing against
+    the disk (that check visits every metadata file); the crawl's signature covers what moves."""
     from ..core import store_details
     try:
-        info = store_details.describe_store(path)
+        info = store_details.describe_store(path, trust_listing=trust_listing)
     except store_details.StoreDetailsError:
         return {}, []
     lists = {"obs": ([c["name"] for c in info["obs_columns"]], info["obs_columns_total"]),
@@ -286,6 +288,7 @@ class Loaded:
         self.partial = bool(header.get("partial"))
         self.stores_capped = bool(header.get("stores_capped"))
         self.entries = []
+        self.lowered = []             # per entry: {kind: lower-case names} of the ASCII kinds of field names, else a shared {}
         self.folded = []              # per entry: {field: folded text} for fields that are not ASCII, else a shared {}
         self.errors = 0               # entries whose store could not be read (timeouts included)
         self.timeouts = 0             # of them, stores that did not answer in time: a later crawl reads them again
@@ -304,6 +307,8 @@ class Loaded:
                 extra[name] = fold(text)
         self.entries.append(record)
         self.folded.append(extra)
+        # field names are searched by every query: their lower case is made once here (ASCII ones; the others are in ``folded``)
+        self.lowered.append({k: v.lower() for k, v in (record.get("names") or {}).items() if v.isascii()} or _NOTHING)
 
     def __len__(self):
         return len(self.entries)
@@ -627,7 +632,7 @@ def _probe(entry):
     except OSError:
         return None, True
     slots = []
-    for slot in SLOT_DIRS:                      # a key added to a slot moves the slot's folder, not the store's
+    for slot in SLOT_DIRS + (".zmetadata",):    # a key added to a slot moves the slot's folder, not the store's
         try:
             slots.append(os.stat(os.path.join(entry["real"], slot)).st_mtime_ns)
         except OSError:
@@ -675,8 +680,12 @@ def crawl(config):
     status["done"] = status["reused"]
     logger.info(f"Text index crawl started: {len(stores)} datasets found in {clock() - began_at:.1f} s, "
                 f"{len(todo)} to read, {status['reused']} unchanged, {len(bare)} without text; {workers} threads, {store_timeout:g} s per dataset")
-    nameless = {store["real"] for store, _ in bare}      # their names are read, their text is not: not counted as ``read``
-    todo += bare
+    for store, sig in bare:           # nothing to read but the names of their fields, a metadata read: in line
+        if clock() > deadline:
+            break
+        names, names_cut = read_names(store["real"], trust_listing=True)
+        results[store["real"]] = _entry(store, sig, names=names, names_cut=names_cut)
+    status["done"] += len(bare)
 
     last_beat = [0.0]
 
@@ -696,8 +705,8 @@ def crawl(config):
 
     def job(store):
         began[store["real"]] = clock()
-        about, readme, cut = ({}, "", False) if store["real"] in nameless else read_text(store["real"], readme_bytes)
-        names, names_cut = read_names(store["real"])
+        about, readme, cut = read_text(store["real"], readme_bytes)
+        names, names_cut = read_names(store["real"], trust_listing=True)
         return about, readme, cut, names, names_cut
 
     # A read past the timeout cannot be stopped, so it keeps its thread: the pool has spare threads, and a
@@ -730,7 +739,7 @@ def crawl(config):
         nonlocal since_checkpoint
         store = info[future][0]
         results[store["real"]] = entry
-        status["read"] += store["real"] not in nameless
+        status["read"] += 1
         status["errors"] += bool(entry["error"])
         status["done"] += 1
         since_checkpoint += 1
@@ -1015,7 +1024,9 @@ def search(loaded, terms, readable, folder=None, limit=50, seconds=SEARCH_SECOND
     partial = False
     scored = []
     prefix = folder.rstrip(os.sep) + os.sep if folder else None
-    for i, (entry, extra) in enumerate(zip(loaded.entries, loaded.folded)):
+    for i, (entry, extra, lows) in enumerate(zip(loaded.entries, loaded.folded, loaded.lowered)):
+        if lows:
+            extra = {**lows, **extra}
         if i % 256 == 0 and time.monotonic() > deadline:
             partial = True
             break

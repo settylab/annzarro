@@ -169,10 +169,29 @@ def _describe_h5ad(path: str) -> Dict[str, Any]:
         return _describe_group(file)
 
 
-def _describe_zarr(path: str) -> Dict[str, Any]:
+def _open_trusting(path: str):
+    """The root of the local zarr store at ``path`` through its consolidated listing when it has one, without
+    checking that listing against the files (``store_check._open`` does, and that visits every metadata file)."""
+    from .store_check import StoreCheckError
+    from .zarr_reader import zarr_format_problem
+    if not os.path.isdir(path):
+        raise StoreCheckError(f"{path} does not exist")
+    problem = zarr_format_problem(path)
+    if problem:
+        raise StoreCheckError(problem)
+    if not any(os.path.exists(os.path.join(path, f)) for f in (".zgroup", ".zarray", "zarr.json")):
+        raise StoreCheckError(f"{path} does not look like a zarr store (no .zgroup or zarr.json)")
+    import zarr
+    try:
+        return zarr.open_group(path, mode="r")
+    except Exception as exc:
+        raise StoreCheckError(f"Cannot open {path}: {exc}") from exc
+
+
+def _describe_zarr(path: str, trust_listing: bool = False) -> Dict[str, Any]:
     from .store_check import StoreCheckError, _open
     try:
-        root, _remote, _consolidated = _open(path, None)
+        root = _open_trusting(path) if trust_listing else _open(path, None)[0]
     except StoreCheckError as exc:
         raise StoreDetailsError(str(exc)) from exc
     info = _describe_group(root)
@@ -180,13 +199,15 @@ def _describe_zarr(path: str) -> Dict[str, Any]:
     return info
 
 
-def describe_store(path: str) -> Dict[str, Any]:
+def describe_store(path: str, trust_listing: bool = False) -> Dict[str, Any]:
     """Columns, obsm keys, layers and the ``uns`` key count of the local store at ``path``.
 
     Keys: ``obs_columns`` and ``var_columns`` (``[{name, kind}]``), ``obs_columns_total``,
     ``var_columns_total``, ``<slot>_keys`` and ``<slot>_total`` for ``obsm``, ``layers``, ``obsp``, ``varm`` and
     ``varp``, ``uns_count`` (the number of top-level keys), ``uns_paths`` (every node of ``uns`` but its
     attribution and README, to depth 3) with ``uns_paths_total`` and, for zarr, ``zarr_format``.
+
+    ``trust_listing`` skips the check of a zarr store's consolidated listing against its files.
 
     Raises:
         StoreDetailsError: The store cannot be read as AnnData (the message says why).
@@ -197,7 +218,7 @@ def describe_store(path: str) -> Dict[str, Any]:
             if not path.endswith(".h5ad"):
                 raise StoreDetailsError(f"{os.path.basename(path)} is a file but not an .h5ad")
             return _describe_h5ad(path)
-        return _describe_zarr(path)
+        return _describe_zarr(path, trust_listing)
     except StoreDetailsError:
         raise
     except Exception as exc:

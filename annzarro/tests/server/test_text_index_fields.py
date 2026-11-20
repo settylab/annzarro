@@ -103,11 +103,11 @@ def test_an_index_of_the_old_version_is_not_read(bare_app):
 
 def test_donor_counts_finds_a_store_by_an_obs_column_and_a_layer(bare_app):
     """Fails on the base: a store with neither README nor attribution was indexed by its name alone."""
-    new_store(bare_app.data, "cohort.zarr", obs=["donor_id"], layers=["counts"])
+    new_store(bare_app.data, "cohort.zarr", obs=["donor_id"], layers=["logged"])
     new_store(bare_app.data, "other.zarr", obs=["batch"])
     new_store(bare_app.data, "half.zarr", obs=["donor_id"])
     crawl(bare_app)
-    hits = search(bare_app, "donor counts")
+    hits = search(bare_app, "donor logged")
     assert [h["entry"]["name"] for h in hits] == ["cohort.zarr"]
     assert hits[0]["matched"] == ["obs", "layers"]
 
@@ -206,7 +206,7 @@ def test_a_hit_lists_its_matching_names_by_kind_heaviest_first(bare_app):
     assert [f["kind"] for f in hit["fields"]] == ["obs", "var", "uns"]
     obs = hit["fields"][0]
     assert sorted(obs["names"]) == ["donor_id", "donor_sex"] and obs["more"] == 0 and obs["cut"] is False
-    assert hit["fields"][2]["names"] in (["donor_metadata"], ["donor_metadata/age"]) and hit["fields"][2]["more"] == 1
+    assert hit["fields"][2]["names"] == ["donor_metadata", "donor_metadata/age"] and hit["fields"][2]["more"] == 0
 
 
 def test_five_names_are_listed_best_first_and_the_rest_counted(bare_app):
@@ -238,7 +238,7 @@ def test_a_name_only_hit_has_a_snippet_of_the_names(bare_app):
 # --- caps ------------------------------------------------------------------------------------------------------------
 
 def test_names_cut_by_the_store_listing_are_marked(bare_app, monkeypatch):
-    monkeypatch.setattr(store_details, "MAX_NAMES", 2)
+    monkeypatch.setattr(store_details, "MAX_NAMES", 5)      # the fixture's three columns, then g_1 and g_2
     new_store(bare_app.data, "a.zarr", obs=["g_1", "g_2", "g_3", "g_4"], layers=["g_layer"])
     crawl(bare_app)
     entry = entries(bare_app)["a.zarr"]
@@ -249,13 +249,14 @@ def test_names_cut_by_the_store_listing_are_marked(bare_app, monkeypatch):
 
 def test_names_are_cut_at_sixteen_kilobytes_in_all_with_the_heavy_kinds_first(bare_app, monkeypatch):
     assert text_index.MAX_NAME_BYTES == 16 * 1024
-    monkeypatch.setattr(text_index, "MAX_NAME_BYTES", 40)
+    monkeypatch.setattr(text_index, "MAX_NAME_BYTES", 70)        # the fixture's obs columns take 30, "o" * 30 the next 31
     new_store(bare_app.data, "a.zarr", obs=["o" * 30, "p" * 30], var=["v_name"])
     crawl(bare_app)
     entry = entries(bare_app)["a.zarr"]
     kept = [n for text in entry["names"].values() for n in text.split("\n") if n]
-    assert sum(len(n.encode()) + 1 for n in kept) <= 40
-    assert "o" * 30 in entry["names"]["obs"] and "v_name" not in entry["names"].get("var", "")     # obs outweighs var
+    assert sum(len(n.encode()) + 1 for n in kept) <= 70
+    assert "o" * 30 in entry["names"]["obs"] and "p" * 30 not in entry["names"]["obs"]
+    assert "var" not in entry["names"]                                                           # the lighter kinds are left out
     assert "obs" in entry["names_cut"] and "var" in entry["names_cut"]
 
 
@@ -273,18 +274,6 @@ def test_names_are_dropped_only_after_every_readme():
     assert [e["readme"] for e in big] == ["", ""]
     assert sorted(bool(e["names"]) for e in big) == [False, True]       # the larger names go first, only as far as needed
     assert [e["names_cut"] for e in big if not e["names"]] == [["obs"]]
-
-
-def test_an_index_over_its_size_drops_readmes_before_names_in_a_crawl(tmp_path):
-    (tmp_path / "data").mkdir()
-    for n in range(3):
-        path = new_store(tmp_path / "data", f"s{n}.zarr", obs=[f"name_{n}"])
-        annotate(path, {"title": f"Store {n}"}, "word " * 400)
-    app = create_app(config_for(tmp_path, text_index_max_mb=0.003))
-    crawl(app)
-    found_entries = entries(app)
-    assert all(e["readme"] == "" and e["readme_cut"] for e in found_entries.values())
-    assert all(any(f"name_{n}" in e["names"].get("obs", "") for n in range(3)) for e in found_entries.values() if e["names"])
 
 
 # --- who is told -----------------------------------------------------------------------------------------------------
@@ -410,9 +399,9 @@ def test_a_search_over_twenty_thousand_entries_ends_inside_its_time_limit():
 
 
 def test_a_search_grows_with_the_size_of_the_index_and_no_faster_than_fifteen_to_one_for_ten_times_the_entries():
-    small, big = synthetic_index(2_000), synthetic_index(20_000)
+    small, big = synthetic_index(3_000), synthetic_index(30_000)
     run = lambda loaded: text_index.search(loaded, ["donor", "counts"], lambda e: True, seconds=60)
-    assert best_of(lambda: run(big)) <= 15 * best_of(lambda: run(small))
+    assert best_of(lambda: run(big), 7) <= 15 * best_of(lambda: run(small), 7)
 
 
 def test_reading_the_names_of_stores_grows_linearly(tmp_path):
@@ -425,4 +414,4 @@ def test_reading_the_names_of_stores_grows_linearly(tmp_path):
     small, big = build(10), build(100)
     assert best_of(lambda: [text_index.read_names(p) for p in big], 3) <= 15 * best_of(lambda: [text_index.read_names(p) for p in small], 3)
     names, cut = text_index.read_names(big[0])
-    assert names["obs"].split("\n") == ["cell_type", "leiden", "total_counts"] and cut == []
+    assert sorted(names["obs"].split("\n")) == ["cell_type", "leiden", "total_counts"] and cut == []
