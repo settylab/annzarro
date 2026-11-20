@@ -132,7 +132,7 @@ const GeneSignaturePanel = (function() {
             rebuildRows({ top: true });
             paint();
             if (loaded) loadScoringInputs();
-            _unwatchScore = onSignatureStatus(_id, () => { paintScore(); if (_scoreOptions) _scoreOptions.paintAggregations(); });
+            _unwatchScore = onSignatureStatus(_id, paintScore);
             // a panel opened under an id the page already uses (Back and Forward, a reopened signature, a panel set)
             // is what a plot filtered by that id has not read yet; a table says as much when its rows are in
             if (loaded) announce();

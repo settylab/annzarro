@@ -306,7 +306,12 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
             el('span', { text: `${SCORING_HELP.downWeight}: ` }), radio('gene', SCORING_HELP.downWeightGene), radio('side', SCORING_HELP.downWeightSide));
     }
 
+    /** Who uses which method and layer, as text: what the rows were last drawn with. */
+    const usageNow = () => JSON.stringify([getInUse(), getLayersInUse()]);
+    let usageShown = '';
+
     function paintMethods(recipe) {
+        usageShown = usageNow();
         makeBoxes();
         D.clear(methodRows);
         const offered = new Set(cleanOffered(recipe.offered, recipe.method));
@@ -526,7 +531,8 @@ export function createScoringSection({ D, id, getRecipe, apply, getInputs, getKi
         element,
         warning: warningLine,
         paint,
-        paintAggregations: () => { if (!destroyed && open) paint(); },
+        /** The score's state changed (each progress frame says so): the rows are drawn again only when who uses what did. */
+        paintUsage: () => { if (!destroyed && open && usageNow() !== usageShown) paint(); },
         refreshInputs,
         refreshKind,
         /** Open the section and put the cursor on it: where a consumer's "Offer other scores…" leads. */

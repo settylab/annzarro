@@ -22,7 +22,7 @@ import './table-utilities/table-background.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { createScoreOptions } from './score-options/score-options.js';
 import { normalizeOptions, storedOptions, isDefaultOptions, offeredOptions } from '../utils/signature-options.js';
-import { signatureChanged, signatureRenamed, onSignatureStatus, pinConsumersOf } from '../utils/score-source.js';
+import { signatureChanged, signatureRenamed, pinConsumersOf } from '../utils/score-source.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -42,7 +42,6 @@ const GeneTablePanel = (function() {
         let _tableListenersCleanup = null;
         let _isFirstLoad = true;
         let _scoreOptions = null;         // Scores offered and Inspect (panels/score-options/score-options.js), shared with the gene signature
-        let _unwatchScore = null;
         
         // Initialize settings with default options
         const _settings = {
@@ -316,8 +315,6 @@ const GeneTablePanel = (function() {
          */
         function cleanup() {
             cancelLoads(_tableContainer);
-            if (_unwatchScore) _unwatchScore();
-            _unwatchScore = null;
             if (_scoreOptions) _scoreOptions.destroy();
             _scoreOptions = null;
             if (_dataTable) {
@@ -533,7 +530,6 @@ const GeneTablePanel = (function() {
          */
         function mountScoreOptions(controlsContainer) {
             if (_scoreOptions) _scoreOptions.destroy();
-            if (_unwatchScore) _unwatchScore();
             const D = makeDom(document);
             _scoreOptions = createScoreOptions({
                 id: _id, D, getOptions: getScoreOptions, setOptions: storeScoreOptions, getTitle: () => _title,
@@ -543,7 +539,6 @@ const GeneTablePanel = (function() {
                 _scoreOptions.warning, _scoreOptions.scoring.element, _scoreOptions.inspect.element);
             controlsContainer.append(section);
             _scoreOptions.paint();
-            _unwatchScore = onSignatureStatus(_id, () => { if (_scoreOptions) _scoreOptions.paintAggregations(); });
         }
         
         /**

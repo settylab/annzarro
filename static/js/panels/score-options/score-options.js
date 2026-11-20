@@ -17,7 +17,7 @@ import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
 import { createKindClient } from '../../utils/matrix-kind-client.js';
 import { layerKeys } from '../../utils/structure-keys.js';
-import { aggregationsInUse, layersInUse, signatureChanged, signatureRenamed } from '../../utils/score-source.js';
+import { aggregationsInUse, layersInUse, onSignatureStatus, signatureChanged, signatureRenamed } from '../../utils/score-source.js';
 import { offeredOptions } from '../../utils/signature-options.js';
 import { createScoringSection } from './scoring-section.js';
 import { createInspect } from './inspect-section.js';
@@ -61,6 +61,8 @@ export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, fo
         onKinds: () => { signatureRenamed(id); }, directions,
         getInUse: () => aggregationsInUse(id), getLayersInUse: () => layersInUse(id)
     });
+    // a plot or table began or stopped reading the score: the section says who uses what
+    const unwatch = onSignatureStatus(id, () => scoring.paintUsage());
     const inspect = withInspect ? createInspect({ id, D, getTitle, getRecipe: getOptions, getOptions: () => offeredOptions(getOptions(), null, scoring.getKinds(), scoring.getStats()), focusGene }) : null;
 
     return {
@@ -88,9 +90,8 @@ export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, fo
         paint: () => scoring.paint(),
         /** Open Scores offered and put the cursor there ("Offer other scores…"). */
         reveal: () => scoring.reveal(),
-        /** The score's state changed: the section shows what is in use. */
-        paintAggregations: () => scoring.paintAggregations(),
         destroy() {
+            unwatch();
             if (inspect) inspect.destroy();
             scoring.destroy();
         }
