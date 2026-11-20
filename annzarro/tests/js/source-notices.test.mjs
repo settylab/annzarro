@@ -61,6 +61,10 @@ test('a cycle is named by the vocabulary, not "Circular tables"', () => {
     assert.equal(note.tag.text, 'Circular dependency');
     assert.equal(note.headline, "'G1' and 'Genes A' depend on each other.");
     assert.equal(SN.describeSource(snap, { role: 'x' }, { ...GROUPING, tags: { cycle: 'Circular groupings' } }).tag.text, 'Circular groupings');
+    const mixed = { ...snap, cycleKinds: ['grouping', 'table', 'grouping'] };
+    assert.equal(SN.describeSource(mixed, { role: 'x' }, GROUPING).tag.text, 'Circular references', 'a ring through two kinds of panel');
+    assert.equal(N.describeScore({ ...mixed, kind: 'table' }, { role: 'x' }).tag.text, 'Circular references', 'also for a table among groupings');
+    assert.equal(N.describeScore({ ...snap, kind: 'table', cycleKinds: ['table', 'table', 'table'] }, { role: 'x' }).tag.text, 'Circular tables');
     assert.equal(N.describeScore({ ...snap, kind: 'table' }, { role: 'x' }).tag.text, 'Circular tables', 'the table-only wording is as before');
 });
 

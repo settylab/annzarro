@@ -12,8 +12,8 @@ export { durationText, worstNotice, PRIORITY } from './source-notices.js';
 const TAGS = { cycle: 'Circular tables' };
 
 const VOCABULARY = {
-    signature: { thing: 'signature', source: 'source', result: 'score', Computing: 'Computing', tags: TAGS, off: 'Gene signatures are turned off on this server.' },
-    table: { thing: 'table', source: 'source', result: 'score', Computing: 'Computing', tags: TAGS, off: 'Gene tables are turned off on this server.' }
+    signature: { thing: 'signature', source: 'source', result: 'score', Computing: 'Computing', tags: TAGS, cycleKind: 'table', off: 'Gene signatures are turned off on this server.' },
+    table: { thing: 'table', source: 'source', result: 'score', Computing: 'Computing', tags: TAGS, cycleKind: 'table', off: 'Gene tables are turned off on this server.' }
 };
 
 /** The states only a gene score has: layers, down genes, a table's filter. Each returns undefined to leave the state generic. */
