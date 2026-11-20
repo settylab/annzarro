@@ -1,7 +1,7 @@
 /**
- * Inspecting a gene-signature score: the distribution of the score over the
- * cells shown, the figures of each gene, the plain-words flags, and the CSV
- * of both. Pure (no DOM, no page state), so Node tests cover all of it; the
+ * Inspecting a gene score: the distribution of the score over the cells shown,
+ * the figures of each gene, the plain-words flags, and the CSV of the gene
+ * figures. Pure (no DOM, no page state), so Node tests cover all of it; the
  * panel (panels/score-options/inspect-section.js) draws it.
  *
  * The score is the Float32Array the score store holds. Cells whose score is
@@ -222,51 +222,27 @@ export function csvField(value, { text = false } = {}) {
     return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** A float32 in the fewest digits that read back to the same float32 (0.1, not 0.10000000149011612). */
-export function float32Text(v) {
-    if (!Number.isFinite(v)) return '';
-    if (v === 0) return '0';
-    for (let digits = 6; digits < 9; digits++) {
-        const s = v.toPrecision(digits);
-        if (Math.fround(Number(s)) === v) return String(Number(s));
-    }
-    return String(Number(v.toPrecision(9)));
-}
-
 /** A float64 figure from the server, as shortest text. */
 function figure(x) {
     return typeof x === 'number' && Number.isFinite(x) ? String(x) : '';
 }
 
 /**
- * The per-gene figures as CSV text: every gene of the result, in the order the server sent.
- * Shares are fractions (0.412), not percentages, so a spreadsheet can use them.
- * @param {Array<Object>} genes - `header.genes`
- */
-export function geneCsv(genes) {
-    // a signature with down genes says which side each gene is on; without any the file is what it always was
-    const withDirection = (genes || []).some(g => g.direction === 'down');
-    const lines = [`gene,${withDirection ? 'direction,' : ''}status,detected_fraction,mean,sd,clipped_fraction`];
-    for (const g of genes || []) {
-        lines.push([csvField(g.name, { text: true }), ...(withDirection ? [g.direction === 'down' ? 'down' : 'up'] : []), csvField(g.status),
-            figure(g.detected), figure(g.mean), figure(g.sd), figure(g.clipped)].join(','));
-    }
-    return `${lines.join('\r\n')}\r\n`;
-}
-
-/**
- * The per-gene figures of several combinations in the LONG form: one row per combination and gene, with the
- * combination named in the first column. Long, not one block of columns per combination, because the figures of each
- * combination are read from its own layer (a gene can be constant in one and not in another) and the number of columns
- * would otherwise grow with every combination; one fixed header filters, sorts and pivots in any spreadsheet or script.
+ * The per-gene figures of several combinations in the LONG form: one row per combination and gene, in the order the
+ * server sent, with the combination named in the first column. Long, not one block of columns per combination, because
+ * the figures of each combination are read from its own layer (a gene can be constant in one and not in another) and
+ * the number of columns would otherwise grow with every combination; one fixed header filters, sorts and pivots in any
+ * spreadsheet or script. Shares are fractions (0.412), not percentages. A source with down genes says which side each
+ * gene is on; without any the file has no such column.
  * @param {Array<{label: string, genes: Array<Object>}>} blocks
  */
 export function longGeneCsv(blocks) {
-    const lines = ['combination,gene,status,detected_fraction,mean,sd,clipped_fraction'];
+    const withDirection = blocks.some(b => (b.genes || []).some(g => g.direction === 'down'));
+    const lines = [`combination,gene,${withDirection ? 'direction,' : ''}status,detected_fraction,mean,sd,clipped_fraction`];
     for (const b of blocks) {
         for (const g of b.genes || []) {
-            lines.push([csvField(b.label), csvField(g.name, { text: true }), csvField(g.status), figure(g.detected), figure(g.mean),
-                figure(g.sd), figure(g.clipped)].join(','));
+            lines.push([csvField(b.label), csvField(g.name, { text: true }), ...(withDirection ? [g.direction === 'down' ? 'down' : 'up'] : []),
+                csvField(g.status), figure(g.detected), figure(g.mean), figure(g.sd), figure(g.clipped)].join(','));
         }
     }
     return `${lines.join('\r\n')}\r\n`;

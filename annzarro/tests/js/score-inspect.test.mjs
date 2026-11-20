@@ -139,28 +139,16 @@ test('csv fields are quoted when they need it and formulas are defused', () => {
 });
 
 test('the gene csv carries every gene with fractions, in the order sent', () => {
-    const csv = I.geneCsv([gene('CD3D', { mean: 0.5, sd: 1.25, detected: 0.412, clipped: 0.001 }),
-        gene('X,Y', { status: 'constant', mean: 2, sd: 0, detected: 1, clipped: null }), gene('NV', { status: 'no_values', mean: null, sd: null, detected: null, clipped: null })]);
+    const csv = I.longGeneCsv([{ label: 'T', genes: [gene('CD3D', { mean: 0.5, sd: 1.25, detected: 0.412, clipped: 0.001 }),
+        gene('X,Y', { status: 'constant', mean: 2, sd: 0, detected: 1, clipped: null }), gene('NV', { status: 'no_values', mean: null, sd: null, detected: null, clipped: null })] }]);
     assert.equal(csv, [
-        'gene,status,detected_fraction,mean,sd,clipped_fraction',
-        'CD3D,used,0.412,0.5,1.25,0.001',
-        '"X,Y",constant,1,2,0,',
-        'NV,no_values,,,,',
+        'combination,gene,status,detected_fraction,mean,sd,clipped_fraction',
+        'T,CD3D,used,0.412,0.5,1.25,0.001',
+        'T,"X,Y",constant,1,2,0,',
+        'T,NV,no_values,,,,',
         ''
     ].join('\r\n'));
-    assert.equal(I.geneCsv([]), 'gene,status,detected_fraction,mean,sd,clipped_fraction\r\n');
-});
-
-test('float32 values are written in the fewest digits that read back exactly', () => {
-    assert.equal(I.float32Text(Math.fround(0.1)), '0.1');
-    assert.equal(I.float32Text(Math.fround(-1.2345678)), '-1.2345678');
-    assert.equal(I.float32Text(0), '0');
-    assert.equal(I.float32Text(3), '3');
-    assert.equal(I.float32Text(NaN), '');
-    for (const x of [0.3, 1 / 3, 12345.678, 1e-7, 123456.7, 2 ** 24 + 2]) {
-        const f = Math.fround(x);
-        assert.equal(Math.fround(Number(I.float32Text(f))), f, String(x));
-    }
+    assert.equal(I.longGeneCsv([]), 'combination,gene,status,detected_fraction,mean,sd,clipped_fraction\r\n');
 });
 
 test('file names are safe', () => {

@@ -345,6 +345,36 @@ def test_export_of_the_gene_figures(page, served):
         assert float(r[3]) == pytest.approx(g["detected"]) and float(r[4]) == pytest.approx(g["mean"]) and float(r[5]) == pytest.approx(g["sd"])
 
 
+def _directions(page):
+    """The Direction cell of each row, or None when the table has no such column."""
+    return page.evaluate("""(I) => { const rows = [...document.querySelectorAll(I + ' .gsig-inspect__genes tbody tr')];
+        if (!document.querySelector(I + ' .gsig-inspect__genes th.gsig-col-direction')) return null;
+        return Object.fromEntries(rows.map(tr => [tr.dataset.gene, tr.querySelector('td.gsig-col-direction').textContent.trim()])); }""", I)
+
+
+def test_down_genes_get_a_direction_column_in_the_table_and_in_the_export(page, served):
+    # no down gene: no column, in the table and in the file
+    _open_panel(page, served, sig=_sig(genes=["GENE0001", "GENE0002", "GENE0003"]))
+    _inspect(page)
+    _wait_table(page)
+    assert _directions(page) is None
+    # one gene scored as down: the server says which side each gene is on, the table and the file repeat it
+    page.goto("about:blank")
+    _open_panel(page, served, sig=_sig(genes=["GENE0001", "GENE0003"], down=["GENE0002"]))
+    _inspect(page)
+    _wait_table(page)
+    assert _directions(page) == {"GENE0001": "Up", "GENE0002": "Down", "GENE0003": "Up"}
+    heads = page.evaluate("(I) => [...document.querySelectorAll(I + ' .gsig-inspect__genes thead th')].map(th => th.textContent.trim())", I)
+    assert heads[:3] == ["Gene ▲", "Direction", "Detected"], heads
+    # sorting keeps each gene with its side
+    page.click(f"{I} [data-sort=mean]")
+    assert _directions(page) == {"GENE0001": "Up", "GENE0002": "Down", "GENE0003": "Up"}
+    name, text = _download(page, "genes")
+    rows = list(csv.reader(io.StringIO(text)))
+    assert rows[0] == ["combination", "gene", "direction", "status", "detected_fraction", "mean", "sd", "clipped_fraction"]
+    assert {r[1]: r[2] for r in rows[1:]} == {"GENE0001": "up", "GENE0002": "down", "GENE0003": "up"}
+
+
 def test_inspect_has_no_per_cell_export_and_says_where_it_is_done(page, served):
     _open_panel(page, served, sig=_sig(genes=["GENE0001"]))
     _inspect(page)
