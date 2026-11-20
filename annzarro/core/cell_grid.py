@@ -23,7 +23,7 @@ held column takes ``n``, ``sigma`` (ddof 1) and the exact 0.1st and 99.9th perce
 side; the second pass bins it equal-width, outside excluded. The smoothing is the browser's.
 
 Measures (CNT-16) are the five moments ``[n, sum, sumsq, n_above, sum_above]`` of one numeric source per grid cell,
-over the cells counted and the source's finite values, as Float64.
+over the cells counted: ``core/group_features.py`` parses, plans and accumulates them over the grid's codes.
 """
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ from . import binning as bn
 from . import cell_groups as cg
 from . import cell_sources as cs
 from . import gene_score as gs
+from . import group_features as gf
 from .remote import is_remote_path
 
 ALGORITHM_VERSION = 1
@@ -44,8 +45,8 @@ ALGORITHM_VERSION = 1
 #: The most levels of each axis, in request order, per mode (SHR-39): 2D x, y, split; 1D x, split; a categorical
 #: x, y; the most sets. An axis past its mode's tuple (the factor of a categorical heatmap) has only the cell cap.
 GRID_LIMITS = {"2d": (512, 512, 8), "1d": (2000, 200), "categorical": (200, 200), "sets": 16}
-#: The most grid cells, so measure moments stay at 84 MB (512 x 512 x 8, five Float64 each).
-MAX_GRID_MEASURE_CELLS = 2_097_152
+#: The most grid cells, so measure moments stay at 84 MB (512 x 512 x 8, five Float64 each): group_features'.
+MAX_GRID_MEASURE_CELLS = gf.MAX_GRID_MEASURE_CELLS
 MODES = tuple(GRID_LIMITS)
 #: Axes each mode takes, fewest and most: the inputs its count-plot modes send (UX 4.2).
 AXES = {"1d": (1, 2), "2d": (2, 3), "categorical": (1, 3), "sets": (2, GRID_LIMITS["sets"])}
@@ -55,10 +56,8 @@ DENSITY_QUANTILES = (0.001, 0.999)
 DENSITY_PAD = 3.0
 #: A count plot has one measure (CNT-16).
 MAX_MEASURES = 1
-MOMENTS = ("n", "sum", "sumsq", "n_above", "sum_above")
 
 _BODY_FIELDS = ("shape", "mode", "partitionings", "sets", "subset", "measures", "density", "estimate_only", "confirm")
-_MEASURE_FIELDS = ("id", "source", "above")
 #: Methods with a bin count and a range: the ones a density can bin.
 _RANGED = tuple(bn.DEFAULT_BINS)
 
@@ -77,19 +76,12 @@ def _bad(message: str, reason: str = "bad_request", status: int = 400, **extra) 
 
 
 @dataclass(frozen=True)
-class Measure:
-    id: str
-    source: Dict[str, Any]
-    above: float = 0.0
-
-
-@dataclass(frozen=True)
 class Request:
     mode: str
     partitionings: Tuple[cg.Partitioning, ...]
     levels: cg.Request                              # what the levels of cell_groups read: the sets, the subset
     density: bool = False
-    measures: Tuple[Measure, ...] = ()
+    measures: Tuple[gf.Measure, ...] = ()
     estimate_only: bool = False
     confirm: bool = False
 
@@ -100,27 +92,6 @@ class Request:
     @property
     def subset(self) -> Any:
         return self.levels.subset
-
-
-def _parse_measure(raw: Any, seen: set) -> Measure:
-    if not isinstance(raw, dict):
-        raise _bad("A measure must be an object.")
-    cg._unknown(raw, _MEASURE_FIELDS, "a measure")
-    mid = raw.get("id")
-    if not isinstance(mid, str) or not mid:
-        raise _bad("A measure needs an id.")
-    if mid in seen:
-        raise _bad(f"Two measures are called '{mid}'.")
-    seen.add(mid)
-    if not isinstance(raw.get("source"), dict):
-        raise _bad("A measure needs a source object.")
-    source, _ = cg._parse_source(raw["source"], 0)
-    if source["type"] in ("table", "cell-group"):
-        raise _bad("A measure is a numeric per-cell source.", "measure_not_numeric")
-    above = raw.get("above", 0.0)
-    if not isinstance(above, (int, float)) or isinstance(above, bool) or not math.isfinite(float(above)):
-        raise _bad("A measure's above must be a finite number.")
-    return Measure(mid, source, float(above))
 
 
 def parse_request(body: Any) -> Request:
@@ -165,8 +136,7 @@ def parse_request(body: Any) -> Request:
     if len(raw_measures) > MAX_MEASURES:
         raise _bad(f"A grid has at most {MAX_MEASURES} measure.", "too_many_measures", count=len(raw_measures),
                    limit=MAX_MEASURES)
-    seen: set = set()
-    measures = tuple(_parse_measure(m, seen) for m in raw_measures)
+    measures = gf.parse_measures(raw_measures)
     levels = cg.Request(shape="grid", grouping=cg.Grouping(parts), sets=sets, set_hashes={},
                         subset=body.get("subset"))
     return Request(mode=mode, partitionings=parts, levels=levels, density=cg._flag(body, "density"),
@@ -185,7 +155,7 @@ class Plan:
     dataset_path: str
     request: Request
     axes: List[cg.PartPlan]
-    measures: List[Tuple[Measure, cg.PartPlan]]
+    work: gf.Work                   # the measures: what they read, and its cost
     declared: List[Optional[int]]   # levels of each axis known from the store's metadata (None: known once read)
     n_cells: int
     seconds: float
@@ -200,13 +170,13 @@ class Plan:
         return None if None in self.declared else int(np.prod(self.declared, dtype=np.int64))
 
     def estimate(self) -> Dict[str, Any]:
-        parts = self.axes + [m for _, m in self.measures]
         return {"seconds": round(self.seconds, 2), "tier": self.tier,
                 "live_max_s": gs.LIVE_MAX_S, "auto_max_s": gs.AUTO_MAX_S, "max_s": gs.CONFIRM_MAX_S,
                 "entries": self.entries, "layout": self.layout, "n_cells": self.n_cells, "lane": self.lane,
                 "cells": self.cells,
                 "parts": [{"type": p.spec.source["type"], "seconds": round(p.seconds, 3), "entries": p.entries,
-                           "layout": p.layout} for p in parts]}
+                           "layout": p.layout} for p in self.axes],
+                "measures": {"seconds": round(self.work.seconds, 3), "entries": self.work.entries}}
 
 
 def _n_categories(reader, dataset_path: str, key: str) -> Optional[int]:
@@ -307,22 +277,18 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
     _check_kinds(request, axes)
     declared = [_declared(reader, dataset_path, a) for a in axes]
     _check_limits(request.mode, axes, declared)
-    measures = []
-    for m in request.measures:
-        mp = cg._plan_part(reader, dataset_path, cg.Partitioning(source=m.source), request.levels, n_cells, remote)
-        if mp.kind != "number":
-            raise _bad(f"Measure '{m.id}' is not a numeric source.", "measure_not_numeric", measure=m.id)
-        measures.append((m, mp))
+    work = gf.plan_work(reader, dataset_path, measures=request.measures)
     parts = []
-    for a in axes + [mp for _, mp in measures]:
+    for a in axes:
         parts.append(a)
         if a.nested is not None:
             parts.extend(a.nested.all_parts())
-    seconds = gs.BASE_SECONDS + sum(a.seconds for a in axes) + sum(mp.seconds for _, mp in measures)
-    entries = sum(p.entries for p in parts if p.nested is None)
-    layouts = sorted({p.layout for p in parts if p.entries})
-    lane = "light" if seconds <= gs.LIVE_MAX_S and not any(p.whole_matrix for p in parts) else "heavy"
-    return Plan(reader=reader, dataset_path=dataset_path, request=request, axes=axes, measures=measures,
+    seconds = gs.BASE_SECONDS + sum(a.seconds for a in axes) + work.seconds
+    entries = sum(p.entries for p in parts if p.nested is None) + work.entries
+    layouts = sorted({p.layout for p in parts if p.entries} | set(work.layouts))
+    lane = "light" if seconds <= gs.LIVE_MAX_S and not work.whole_matrix and \
+        not any(p.whole_matrix for p in parts) else "heavy"
+    return Plan(reader=reader, dataset_path=dataset_path, request=request, axes=axes, work=work,
                 declared=declared, n_cells=n_cells, seconds=seconds, entries=entries,
                 layout=layouts[0] if len(layouts) == 1 else ("mixed" if layouts else "column"),
                 tier=gs.tier_of(seconds), lane=lane)
@@ -449,7 +415,7 @@ class GridResult:
     n_counted: int = 0
     axes: List[Dict[str, Any]] = field(default_factory=list)
     counts: Optional[np.ndarray] = None             # uint32, mixed radix, first axis slowest
-    measure_ids: List[str] = field(default_factory=list)
+    measure_status: List[Dict[str, Any]] = field(default_factory=list)     # {id, status} per measure
     moments: Optional[np.ndarray] = None            # float64 (measures, cells, 5)
     refused: Optional[Dict[str, Any]] = None
 
@@ -460,50 +426,15 @@ class GridResult:
             head["refused"] = self.refused
             return head, []
         head.update(n_counted=self.n_counted, axes=self.axes,
-                    measures=[{"id": m, "status": "ok"} for m in self.measure_ids])
+                    measures=self.measure_status)
         blocks = [("counts", self.counts)]
         meta = [{"name": "counts", "dtype": "uint32", "length": int(self.counts.size)}]
-        if self.measure_ids:
-            head["moments"] = list(MOMENTS)
+        if self.moments is not None:
+            head["moments"] = list(gf.MOMENTS)
             blocks.append(("measure_moments", self.moments))
             meta.append({"name": "measure_moments", "dtype": "float64", "shape": list(self.moments.shape)})
         head["blocks"] = meta
         return head, blocks
-
-
-def _measure_slabs(mp: cg.PartPlan, ctx: cg._Ctx) -> Iterator[Tuple[int, np.ndarray]]:
-    """The measure's values over the cells shown, slab by slab; a score is computed whole first."""
-    if mp.score is not None:
-        start = 0
-        for v in cg._Levels(mp, ctx, -1)._numbers(ctx.rows):
-            yield start, v
-            start += v.size
-        return
-    for slab in cs.column(ctx.reader, ctx.dataset_path, mp.spec.source, ctx.rows, sets=ctx.request.sets,
-                          should_stop=ctx.should_stop):
-        if slab.kind != "number":
-            raise _bad("A measure is a numeric per-cell source.", "measure_not_numeric")
-        yield slab.start, slab.values
-
-
-def _moments(codes: np.ndarray, space: int, slabs: Iterator[Tuple[int, np.ndarray]], above: float,
-             ctx: cg._Ctx) -> np.ndarray:
-    """``(5, space)`` moments of the finite values per grid code; cells outside the grid are left out."""
-    acc = np.zeros((len(MOMENTS), space), dtype=np.float64)
-    for start, v in slabs:
-        ctx.check()
-        c = codes[start:start + v.size]
-        x = np.asarray(v, dtype=np.float64)
-        ok = c < space
-        ok &= np.isfinite(x)
-        c, x = c[ok], x[ok]
-        acc[0] += np.bincount(c, minlength=space)
-        acc[1] += np.bincount(c, weights=x, minlength=space)
-        acc[2] += np.bincount(c, weights=x * x, minlength=space)
-        hi = x > above
-        acc[3] += np.bincount(c[hi], minlength=space)
-        acc[4] += np.bincount(c[hi], weights=x[hi], minlength=space)
-    return acc
 
 
 def _check_axis(mode: str, i: int, axis: _Axis, sizes: List[Optional[int]]) -> None:
@@ -532,7 +463,7 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, should_stop
     rows = None if shown_rows is None else np.asarray(shown_rows, dtype=np.int64)
     n_shown = plan_.n_cells if rows is None else int(rows.size)
     ctx = cg._Ctx(plan_.reader, plan_.dataset_path, req.levels, rows, n_shown, should_stop, pause)
-    total = len(plan_.axes) + len(plan_.measures)
+    total = len(plan_.axes)
     yield "progress", {"stage": "grid", "done": 0, "total": total}
     result = GridResult(mode=req.mode, n_shown=n_shown)
     codes = np.zeros(n_shown, dtype=np.uint32)
@@ -564,10 +495,14 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, should_stop
         np.minimum(c, space, out=c)                     # every cell left out is now ``space``, past the grid
         flat += np.bincount(c, minlength=space + 1)
     flat = flat[:space]
-    moments = []
-    for j, (m, mp) in enumerate(plan_.measures):
-        moments.append(_moments(codes, space, _measure_slabs(mp, ctx), m.above, ctx))
-        yield "progress", {"stage": "grid", "done": len(made) + j + 1, "total": total}
+    moments = None
+    if req.measures:
+        for event, payload in gf.accumulate(plan_.work, plan_.reader, plan_.dataset_path, rows, codes, space,
+                                            sizes=flat, sets=req.sets, should_stop=should_stop, pause=pause):
+            if event == "progress":
+                yield event, payload
+            else:
+                moments, result.measure_status = payload.measures, payload.measure_status
     del codes
     result.axes = []
     keeps = []
@@ -581,11 +516,11 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, should_stop
     if trim:
         index = np.ix_(*keeps)
         flat = flat.reshape(widths)[index].reshape(-1)
-        moments = [acc.reshape([len(MOMENTS)] + widths)[(slice(None),) + index].reshape(len(MOMENTS), -1)
-                   for acc in moments]
+        if moments is not None:
+            moments = moments.reshape([moments.shape[0]] + widths + [5])[(slice(None),) + index + (slice(None),)]
+            moments = moments.reshape(moments.shape[0], -1, 5)
     result.counts = flat.astype(np.uint32)
     result.n_counted = int(flat.sum())
-    if moments:
-        result.measure_ids = [m.id for m, _ in plan_.measures]
-        result.moments = np.ascontiguousarray(np.stack([acc.T for acc in moments]))
+    if moments is not None:
+        result.moments = np.ascontiguousarray(moments)
     yield "result", result

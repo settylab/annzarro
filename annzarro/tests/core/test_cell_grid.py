@@ -520,9 +520,9 @@ def test_the_measure_moments_sum_to_the_counted_cells(store, data):
 @pytest.mark.parametrize("measures,reason", [
     ({"id": "m0"}, "bad_request"),
     ([{"source": {"type": "obs", "key": "score"}}], "bad_request"),
-    ([{"id": "m0", "source": {"type": "obs", "key": "score"}, "above": "1"}], "bad_request"),
+    ([{"id": "m0", "source": {"type": "obs", "key": "score"}, "above": "1"}], "bad_threshold"),
     ([{"id": "m0", "source": {"type": "obs", "key": "score"}, "stat": "mean"}], "unknown_field"),
-    ([{"id": "m0", "source": {"type": "table", "ref": "s0"}}], "measure_not_numeric"),
+    ([{"id": "m0", "source": {"type": "table", "ref": "s0"}}], "not_numeric"),
     ([{"id": "m0", "source": {"type": "obs", "key": "score"}}, {"id": "m1", "source": {"type": "obs", "key": "depth"}}],
      "too_many_measures"),
 ])
@@ -536,7 +536,7 @@ def test_a_categorical_measure_is_refused_before_reading(store, no_reads):
     with pytest.raises(cg.GroupError) as e:
         plan_of(store, "categorical", [obs("condition")],
                 measures=[{"id": "m0", "source": {"type": "obs", "key": "cell_type"}}])
-    assert e.value.reason == "measure_not_numeric"
+    assert e.value.reason == "not_numeric"
 
 
 # --------------------------------------------------------------------------------------------- the request
@@ -612,8 +612,11 @@ def test_progress_counts_axes_and_measures(store):
                 measures=[{"id": "m0", "source": {"type": "obs", "key": "score"}}])
     events = list(cgr.compute(p))
     progress = [e for k, e in events if k == "progress"]
-    assert progress[0] == {"stage": "grid", "done": 0, "total": 3}
-    assert progress[-1] == {"stage": "grid", "done": 3, "total": 3}
+    grid = [e for e in progress if e["stage"] == "grid"]
+    assert grid[0] == {"stage": "grid", "done": 0, "total": 2} and grid[-1] == {"stage": "grid", "done": 2, "total": 2}
+    measured = [e for e in progress if e["stage"] == "features"]               # group_features' own frames
+    assert measured and measured[-1]["done"] == measured[-1]["total"] == 1
+    assert progress.index(grid[-1]) < progress.index(measured[0])
 
 
 # --------------------------------------------------------------------------------------------- the browser's reader
