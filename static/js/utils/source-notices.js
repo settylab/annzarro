@@ -22,6 +22,7 @@ import { setStatusTag, setScoreNotice } from './panel-surface.js';
  * @property {string} source - the tag word for a source that is gone: 'source', 'grouping'
  * @property {string} result - what the source makes: 'score', 'grouping'
  * @property {string} Computing - 'Computing'
+ * @property {string} [cycleKind] - the kind of panel a ring made only of this provider's own is named for (default `thing`)
  * @property {string} [off] - the sentence for a provider that is turned off on this server
  * @property {Record<string, string>} [tags] - tag text that replaces the default of a state ('computing', 'failed', ...)
  * @property {Record<string, (snap: Object, frame: Object) => (Object|null|undefined)>} [states]
@@ -98,7 +99,10 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
             const names = (snap.cycle || []).slice(0, -1).map(x => `'${x}'`);
             const ring = names.length === 2 ? `${names[0]} and ${names[1]} depend on each other.`
                 : `${names.join(', ')} depend on each other in a circle.`;
-            return out('cycle', 'warning', tagOf('cycle', 'Circular dependency'), `${ring}${none}`, '', [open, choose]);
+            // the tag names the ring by the kind of panel in it: the provider's own word when every member is its kind
+            const kinds = snap.cycleKinds || [];
+            const own = kinds.every(k => k === (vocabulary.cycleKind || thing));
+            return out('cycle', 'warning', own ? tagOf('cycle', 'Circular dependency') : 'Circular references', `${ring}${none}`, '', [open, choose]);
         }
         case 'failed':
             return out('failed', 'error', tagOf('failed', `${Result} failed`),
