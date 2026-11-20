@@ -312,10 +312,13 @@ def test_another_request_waits_for_the_slot_then_is_told_to_retry(client, layout
     assert route._slot.acquire(blocking=False)
     try:
         resp = post(client, layout, {"recipe": {"genes": NAMES}})
+        frames, vector = parse(resp.get_data())
     finally:
         route._slot.release()
-    assert resp.status_code == 503 and resp.get_json()["reason"] == "read_busy"
-    assert resp.headers["Retry-After"] == "1"
+    # queued, the stream began at once: the wait that outlasts QUEUE_WAIT_S is an error frame, not a 503
+    assert resp.status_code == 200 and [f["type"] for f in frames] == ["progress", "error"]
+    assert frames[0]["done"] == 0 and frames[0]["entries_done"] == 0 and frames[0]["queue"] == {"ahead": 1, "sharing": 0}
+    assert frames[1]["reason"] == "read_busy" and vector is None
     assert post(client, layout, {"recipe": {"genes": NAMES}}).status_code == 200      # and it is free after
 
 
