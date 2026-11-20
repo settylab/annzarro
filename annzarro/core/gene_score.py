@@ -642,7 +642,7 @@ def _unsupported(node_name: str, encoding):
                                     f"csc_matrix matrices.")
 
 
-def _input_node(root, input_name: str):
+def input_node(root, input_name: str):
     """The node of the matrix ``input_name`` in an open store (zarr group or HDF5 file) and what to call it in a
     message: ``X``, or a layer. ScoreError 404 ``key_not_found`` when the store has no such matrix."""
     layers = root["layers"] if "layers" in root else None
@@ -665,7 +665,7 @@ def _open_zarr(reader, dataset_path: str, input_name: str) -> _OpenSource:
     root = reader._get_root(dataset_path=dataset_path)
     if root is None:
         raise FileNotFoundError(f"Dataset path does not exist: {dataset_path}")
-    node, label = _input_node(root, input_name)
+    node, label = input_node(root, input_name)
     remote = is_remote_path(dataset_path)
     is_sparse, fmt = reader._is_sparse_matrix(node)
     if is_sparse:
@@ -699,7 +699,7 @@ def _open_h5ad(dataset_path: str, input_name: str) -> _OpenSource:
     from . import h5ad_reader as h5
     f = h5._open(dataset_path)
     try:
-        node, label = _input_node(f, input_name)
+        node, label = input_node(f, input_name)
         if isinstance(node, h5py.Group):
             fmt, shape = h5._encoding(node), h5._sparse_group_shape(node)
             if fmt not in ("csr_matrix", "csc_matrix") or shape is None:
@@ -1203,26 +1203,39 @@ class _Accumulator:
         return np.ascontiguousarray(out, dtype=np.float32)
 
 
-def _pipeline(tasks: List[_Task], threads: int, budget: int) -> Iterator[Tuple[_Task, list, int]]:
+def pipeline(tasks: List[_Task], threads: int, budget: int, pause=None) -> Iterator[Tuple[_Task, list, int]]:
     """Yield each task with its result, in order, reading ahead by at most ``budget`` entries.
 
     Memory is bounded by the budget plus the task being worked on, however many genes there
     are; order is fixed, so the arithmetic does not depend on the number of threads.
     The third item is the peak entries in flight so far. A read runs in a copy of the caller's
     context, so a remote store's request deadline reaches the reader threads.
+
+    ``pause`` (None: never) has ``wanted()``, asked before each read is started, and ``wait()``. While a pause is wanted
+    no new read is started; the reads already in flight are handed out in order, and only then, with nothing in flight,
+    is ``wait()`` called. The read-ahead is therefore free for as long as the job waits (a heavy job giving way,
+    SHR-41). Afterwards reading resumes with the next task: none is read twice and the order is the same.
     """
     pending: deque = deque()
     in_flight = peak = 0
     queue = deque(tasks)
     window = max(2 * threads, 2)
+    draining = False
     with ThreadPoolExecutor(max_workers=max(threads, 1), thread_name_prefix="gene-score") as pool:
         try:
             while pending or queue:
-                while queue and len(pending) < window and (not pending or in_flight + queue[0].entries <= budget):
-                    task = queue.popleft()
-                    pending.append((task, pool.submit(contextvars.copy_context().run, task.read)))
-                    in_flight += task.entries
-                    peak = max(peak, in_flight)
+                if pause is not None and (draining or pause.wanted()):
+                    draining = True                      # a wanted pause stands until the reads in flight are handed out
+                    if not pending:
+                        draining = False
+                        pause.wait()
+                        continue
+                else:
+                    while queue and len(pending) < window and (not pending or in_flight + queue[0].entries <= budget):
+                        task = queue.popleft()
+                        pending.append((task, pool.submit(contextvars.copy_context().run, task.read)))
+                        in_flight += task.entries
+                        peak = max(peak, in_flight)
                 task, future = pending.popleft()
                 result = future.result()
                 in_flight -= task.entries
@@ -1233,12 +1246,14 @@ def _pipeline(tasks: List[_Task], threads: int, budget: int) -> Iterator[Tuple[_
 
 
 def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
-            should_stop: Optional[Callable[[], bool]] = None) -> Iterator[Tuple[str, Any]]:
+            should_stop: Optional[Callable[[], bool]] = None, pause=None) -> Iterator[Tuple[str, Any]]:
     """Score the cells ``shown_rows`` (sorted dataset rows; None: all cells).
 
     A generator of ``("progress", (genes_done, genes_total))`` events and a final
     ``("result", ScoreResult)``. Closing it stops the work after the read in progress.
-    ``should_stop`` is asked between reads; true raises ``ScoreCancelled``.
+    ``should_stop`` is asked between reads; true raises ``ScoreCancelled``. ``pause`` is passed to ``pipeline``:
+    the gene reads stop and drain while it is wanted (the passes over the whole matrix that bin or total the genes
+    do not read through it). None keeps the behaviour of every other caller.
     """
     started = time.perf_counter()
     recipe = plan_.recipe
@@ -1288,7 +1303,7 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
         up_set, down_set = set(up_cols), set(down_cols)
         up_ctrl, down_ctrl = set(controls or ()), set(down_controls or ())
         tasks = source.tasks(sorted(up_set | down_set | up_ctrl | down_ctrl))
-        for task, rows_values, peak in _pipeline(tasks, source.threads, READ_AHEAD_ENTRIES):
+        for task, rows_values, peak in pipeline(tasks, source.threads, READ_AHEAD_ENTRIES, pause):
             if should_stop is not None and should_stop():
                 raise ScoreCancelled()
             for col, rows, values in rows_values:
