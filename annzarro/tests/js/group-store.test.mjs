@@ -452,3 +452,37 @@ test('two holders: pinned while either is on screen', async () => {
     w.store.poke();
     assert.equal(ledger.holdings.get(name).pinned, false);
 });
+
+// --- the review's scenarios (G7b) -----------------------------------------------------------------------------------
+
+test('M7: a consumer on screen that joins a hidden holder pins the codes at once, and unpins them when it leaves', async () => {
+    const ledger = new Ledger();
+    const w = world({ codes: ledger });
+    let hiddenShown = true;
+    const hidden = w.consume(need({ codes: true }), { visible: () => hiddenShown });
+    await settle();
+    await w.finish(0);
+    hiddenShown = false;
+    w.store.poke();
+    const [name] = [...ledger.holdings.keys()];
+    assert.equal(ledger.holdings.get(name).pinned, false);
+    const shown = w.consume(need({ codes: true }), { visible: true });
+    assert.equal(ledger.holdings.get(name).pinned, true, 'pinned on attach, with no poke');
+    assert.equal(ledger.evict(), 0, 'a plot on screen is drawing them');
+    shown.leave();
+    assert.equal(ledger.holdings.get(name).pinned, false, 'unpinned when the plot on screen leaves');
+    hidden.leave();
+    assert.equal(ledger.holdings.size, 0);
+});
+
+test('H5: the store keeps the frame\'s queue, seconds running, entries and stage with the progress', async () => {
+    const w = world();
+    const c = w.consume(need());
+    await settle();
+    w.waiting[0].req.onProgress(0, 600, { type: 'start', queue: { ahead: 1, sharing: 0 } });
+    assert.deepEqual(c.snap().progress, { done: 0, total: 600, queue: { ahead: 1, sharing: 0 } });
+    w.waiting[0].req.onProgress(300, 600, { type: 'progress', stage: 'features', entries_done: 300, entries_total: 600,
+        running_s: 2.25, queue: { ahead: 0, sharing: 1 } });
+    assert.deepEqual(c.snap().progress, { done: 300, total: 600, stage: 'features', entries_done: 300, entries_total: 600,
+        running_s: 2.25, queue: { ahead: 0, sharing: 1 } });
+});

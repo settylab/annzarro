@@ -221,6 +221,14 @@ test('the order of offered statistics and layers changes nothing a number depend
     assert.equal(G.groupingHasher(a)(a), G.groupingHasher(a)(b));
 });
 
+test('M1: the statistics offered, the layers and the detection threshold change no hash: no number of the groups depends on them', () => {
+    const a = { version: 1, partitionings: [obs('x')] };
+    const hash = G.groupingHasher(a);
+    assert.equal(hash({ ...a, offered: ['mean', 'sd'] }), hash(a));
+    assert.equal(hash({ ...a, layers: ['X', 'logged'] }), hash(a));
+    assert.equal(hash({ ...a, detect_above: 0.5 }), hash(a));
+});
+
 test('a source made by another panel is hashed by what that panel computes, not by its id', () => {
     const recipe = { version: 1, partitionings: [{ source: { type: 'table', key: 'cell-table-1' } }] };
     const hash = (upstream) => G.groupingHasher(recipe, upstream)(recipe);

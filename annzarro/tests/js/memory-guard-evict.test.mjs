@@ -54,3 +54,34 @@ test('a fitting check evicts nothing, even with unpinned codes held', () => {
     assert.equal(ui.ledger.heldBytes(), 1000);
     ui.ledger.release('codes:small');
 });
+
+test('M4: a check evicts the shortfall only: a holding it does not need stays', () => {
+    const told = [];
+    ui.ledger.hold('codes:big', TOO_MUCH, { pinned: false, evict: () => told.push('big') });
+    ui.ledger.hold('codes:small', 1000, { pinned: false, evict: () => told.push('small') });
+    assert.equal(small().fits, true);
+    assert.deepEqual(told, ['big']);
+    assert.equal(ui.ledger.heldBytes(), 1000);
+    ui.ledger.release('codes:small');
+});
+
+test('M4: nothing is evicted when the check would not fit even then', () => {
+    const told = [];
+    ui.ledger.hold('codes:pinned', TOO_MUCH, { pinned: true, evict: () => told.push('pinned') });
+    ui.ledger.hold('codes:hidden', 1000, { pinned: false, evict: () => told.push('hidden') });
+    assert.equal(small().fits, false);
+    assert.deepEqual(told, [], 'the hidden codes stay: evicting them would not have made it fit');
+    assert.equal(ui.ledger.heldBytes(), TOO_MUCH + 1000);
+    ui.ledger.release('codes:pinned');
+    ui.ledger.release('codes:hidden');
+});
+
+test('M4: an advisory check (a create tile, the subset chips) evicts nothing, and answers as the action would', () => {
+    const told = [];
+    ui.ledger.hold('codes:hidden', TOO_MUCH, { pinned: false, evict: () => told.push('hidden') });
+    const r = ui.newPanelCheck('cell-table', {});
+    assert.equal(r.fits, true, 'the action would evict and fit');
+    assert.deepEqual(told, []);
+    assert.equal(ui.ledger.heldBytes(), TOO_MUCH);
+    ui.ledger.release('codes:hidden');
+});

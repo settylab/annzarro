@@ -176,3 +176,35 @@ test('method lines and option notes: each names the layer, or every offered laye
         }
     }
 });
+
+// --- a grouping's recipe, which has no input and no method (G7b, M9) ------------------------------------------------
+
+const STAT_METHODS = [
+    { value: 'mean', label: 'Mean', menu: 'Mean', needs: [], unit: 'layer units', definition: 'Average over the group.' },
+    { value: 'sd', label: 'SD', menu: 'SD', needs: [], unit: 'layer units', definition: 'Standard deviation over the group.' }
+];
+
+function groupingModel() {
+    return M.createOptionsModel({
+        methods: STAT_METHODS, defaultMethod: 'mean', defaultOffered: ['mean'], defaultLayer: 'X',
+        resetFields: ['offered', 'layers'], grade: () => ({ grade: 'ok', code: '', reason: '' })
+    });
+}
+
+test('M9: a grouping\'s recipe (offered and layers, no input or method) reads as the default layer', () => {
+    const m = groupingModel();
+    const recipe = { version: 1, partitionings: [], offered: ['mean', 'sd'] };
+    assert.deepEqual(m.offeredLayers(recipe), ['X']);
+    assert.deepEqual(m.gradedOptions(recipe).map((o) => o.id), ['mean@X', 'sd@X']);
+    assert.equal(m.offeredSummary(recipe), 'Mean, SD · X');
+    assert.equal(m.inputOf(recipe), 'X');
+    assert.equal(m.inputOf({ input: 'logged' }), 'logged');
+});
+
+test('M9: a reset writes only the fields the spec names, so no foreign field enters a grouping\'s recipe', () => {
+    const m = groupingModel();
+    assert.deepEqual(m.defaultFields(), { offered: ['mean'], layers: ['X'] });
+    assert.equal(m.isDefaultOffer({ version: 1, partitionings: [], offered: ['mean'], layers: ['X'] }), true);
+    assert.equal(m.isDefaultOffer({ version: 1, partitionings: [] }), true, 'defaults left out are the defaults');
+    assert.equal(m.isDefaultOffer({ version: 1, partitionings: [], offered: ['mean', 'sd'] }), false);
+});
