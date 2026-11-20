@@ -691,3 +691,40 @@ def test_the_cache_key_follows_what_changes_the_codes(store):
     m2[5] = True
     t = [{"source": {"type": "table", "ref": "s0"}}]
     assert _plan(store, t, sets={"s0": _bitset(m1)}).cache_key != _plan(store, t, sets={"s0": _bitset(m2)}).cache_key
+
+
+# --------------------------------------------------------------------------------------------- shared with the browser
+
+@pytest.mark.parametrize("length,cells,data", [
+    (13, [0, 2, 3, 7, 8, 12], "jRE="), (8, list(range(8)), "/w=="), (9, [0], "AQA="), (0, [], ""),
+])
+def test_the_bitset_vectors_shared_with_the_browser(length, cells, data):
+    """The same strings as G6's packBitset (cell-grouping.js): bit i & 7 of byte i >> 3, least significant first."""
+    want = np.zeros(length, dtype=bool)
+    want[cells] = True
+    np.testing.assert_array_equal(cg.decode_set("s0", {"encoding": "bitset-base64", "length": length, "data": data}),
+                                  want)
+    assert _bitset(want)["data"] == data
+
+
+def test_a_boolean_column_says_so(store):
+    res = run(store, [{"source": {"type": "obs", "key": "is_doublet"}}, {"source": {"type": "obs", "key": "cell_type"}}])
+    assert res.partitionings[0]["boolean"] is True
+    assert "boolean" not in res.partitionings[1]
+
+
+def test_colors_come_from_the_uns_palette_when_it_has_one_per_category(store, tmp_path):
+    path = str(tmp_path / "colors.zarr")
+    shutil.copytree(store, path)
+    root = zarr_compat.open_group(path, mode="r+")
+    uns = root["uns"] if "uns" in root else root.create_group("uns")
+    palette = ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666"]
+    zarr_compat.write_strings(uns, "cell_type_colors", palette)
+    zarr_compat.write_strings(uns, "condition_colors", ["#abcdef"])               # one short: not usable
+    zarr_compat.write_strings(uns, "is_doublet_colors", ["#000000", "#ffffff"])
+    zarr_compat.consolidate(path)
+    res = run(path, [{"source": {"type": "obs", "key": "cell_type"}}, {"source": {"type": "obs", "key": "condition"}},
+                     {"source": {"type": "obs", "key": "is_doublet"}}])
+    assert res.partitionings[0]["colors"] == {"c:" + n: c for (n, _), c in zip(gs.CELL_TYPES, palette)}
+    assert "colors" not in res.partitionings[1]
+    assert res.partitionings[2]["colors"] == {"c:false": "#000000", "c:true": "#ffffff"}

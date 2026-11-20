@@ -969,13 +969,29 @@ class _Levels:
         if first.kind == "category":
             ids = [canonical_label(v) for v in first.categories]
             self._from_codes(ids, ((s.start, s.values) for s in rest()))
+            self._uns_colors(ids)
         elif first.kind == "bool":
-            self._from_codes(["c:false", "c:true"], ((s.start, _bool_codes(s.values)) for s in rest()))
+            ids = ["c:false", "c:true"]
+            self.info["boolean"] = True        # a text column whose categories are "true" and "false" has the same ids
+            self._from_codes(ids, ((s.start, _bool_codes(s.values)) for s in rest()))
+            self._uns_colors(ids)
         elif first.kind == "text":
             self._prepare_text(rest())
         else:
             raise _bad("This column is numeric: bin it, or split it by its values (method 'categories').",
                        "not_categorical", partitioning=self.index)
+
+    def _uns_colors(self, ids: List[str]) -> None:
+        """``colors``, ``{id: css}``, from ``uns/<key>_colors`` when it has one entry per category (SHR-11), in the
+        column's category order (a boolean's is [False, True], as scanpy writes it)."""
+        name = f"{self.part.spec.source['key']}_colors"
+        with cs._root(self.ctx.reader, self.ctx.dataset_path) as root:
+            if "uns" not in root or name not in root["uns"] or cs._is_group(root["uns"][name]):
+                return
+            values = np.asarray(root["uns"][name][...]).reshape(-1).tolist()
+        values = [v.decode("utf-8") if isinstance(v, bytes) else v for v in values]
+        if len(values) == len(ids) and all(isinstance(v, str) and v for v in values):
+            self.info["colors"] = dict(zip(ids, values))
 
     def _prepare_text(self, slabs: Iterator[cs.Slab]) -> None:
         """A text column: its distinct values are its categories, sorted. One pass, provisional codes held."""
