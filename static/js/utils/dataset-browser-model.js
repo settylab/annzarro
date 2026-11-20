@@ -512,7 +512,7 @@ export function termRanges(text, terms) {
     return merged;
 }
 
-/** Whether the server says the field names of the datasets are still being read (the `index` of an answer). */
+/** Whether the server says the field names are still being read: `index.names` is there only while a crawl runs; absent means ready. */
 export function fieldNamesBuilding(index) {
     return !!(index && index.names && index.names.state === 'building');
 }
