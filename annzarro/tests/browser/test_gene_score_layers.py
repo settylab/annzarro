@@ -74,7 +74,6 @@ def test_the_third_menu_is_one_list_of_what_the_signature_offers_method_and_laye
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'X'")
     page.select_option(sel, "mean@counts")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'counts'")
-    page.screenshot(path="/private/tmp/claude-501/-Users-dotto-gits-annzarro/d0efd83a-6333-4a2b-8ec0-f428a26626fb/scratchpad/gs5c-layer-menu.png")
     # a source that is not a score has no such list
     page.select_option(f"{C} select.axis-type-select[data-axis='color']", "obs")
     until(page, "() => !('layer' in window.PanelManager.getPanel('cell-plot-C').getConfig().color)")
@@ -166,7 +165,6 @@ def test_an_option_the_signature_stops_offering_is_a_state_and_a_lapsed_entry_wi
     assert len(_calls(page, "compute")) == n, "served from the store: nothing was recomputed"
 
 
-SHOTS = "/private/tmp/claude-501/-Users-dotto-gits-annzarro/d0efd83a-6333-4a2b-8ec0-f428a26626fb/scratchpad"
 
 
 def _switch_off(page, *methods):
@@ -309,7 +307,6 @@ def test_the_selects_are_readable_at_820_and_1600_px_in_both_themes(page, served
             assert types[0] <= types[1] + 2, f"the type select shows 'gene-score' in full at {width}px: {types}"
             titles = page.evaluate("(t) => [...document.querySelectorAll(t + ' .axis-selector select')].map(s => s.title)", C)
             assert all(titles), "every select says its full text when hovered"
-            page.screenshot(path=f"{SHOTS}/gs5c-{width}-{theme}.png", clip={"x": 0, "y": 100, "width": width, "height": 330})
             page.goto("about:blank")
 
 
