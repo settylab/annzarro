@@ -358,6 +358,18 @@ export function planGrid(config, ctx) {
 const MOMENTS = 5;
 const [N, SUM, SUMSQ, N_ABOVE] = [0, 1, 2, 3];
 
+/** A contract error: the reply is not what the request's shape promises. */
+function gridError(message) {
+    return Object.assign(new Error(message), { reason: 'bad_grid_reply' });
+}
+
+/** Cells an axis left out under `outside: 'exclude'`: a number, or the grouping reply's `[below, above]`; null when it is neither. */
+function outsideOf(axis) {
+    const v = axis.n_outside;
+    if (Number.isInteger(v) && v >= 0) return v;
+    return Array.isArray(v) && v.length === 2 && v.every((n) => Number.isInteger(n) && n >= 0) ? v[0] + v[1] : null;
+}
+
 const flatten = (rows) => {
     const out = new Float64Array(rows.length * MOMENTS);
     rows.forEach((row, i) => {
@@ -374,6 +386,9 @@ const flatten = (rows) => {
  */
 // export-unused-ok: C2a reads the reply of the grid request
 export function readGrid(reply) {
+    if (!Number.isInteger(reply.n_shown) || !reply.axes.every((a) => outsideOf(a) !== null)) {
+        throw gridError('The grid reply lacks n_shown or an axis\'s n_outside.');
+    }
     const dims = reply.axes.map((a) => a.levels.length);
     const cells = dims.reduce((p, d) => p * d, 1);
     if (reply.counts.length !== cells) throw new Error(`The grid's counts block has ${reply.counts.length} cells; its axes make ${cells}.`);
@@ -384,7 +399,7 @@ export function readGrid(reply) {
     }
     const pooled = measure ? [0, 0, 0] : null;
     if (measure) for (let c = 0; c < cells; c++) for (let k = 0; k < 3; k++) pooled[k] += measure[c * MOMENTS + k];
-    return { axes: reply.axes.map((a) => ({ levels: a.levels })), dims, cells, counts: reply.counts, measure, counted: reply.n_counted,
+    return { axes: reply.axes.map((a) => ({ levels: a.levels })), dims, cells, counts: reply.counts, measure, counted: reply.n_counted, shown: reply.n_shown, outside: reply.axes.reduce((n, a) => n + outsideOf(a), 0),
         pooled: pooled && { n: pooled[N], sum: pooled[SUM], sumsq: pooled[SUMSQ] }, tables: new Map() };
 }
 
@@ -480,7 +495,7 @@ function project(grid, inputs, pie, wantTop) {
     if (top) for (let r = 0; r < rows; r++) if (top.level[r] >= 0) top.share[r] = best[r] / count[r];
     let total = 0;
     for (let r = 0; r < rows; r++) total += count[r];
-    return { rows, axes: kept.map((a) => ({ ...inputs[a], levels: maps[a].levels })), dims, stride, count, moments, top, total, counted: grid.counted,
+    return { rows, axes: kept.map((a) => ({ ...inputs[a], levels: maps[a].levels })), dims, stride, count, moments, top, total, counted: grid.counted, shown: grid.shown, outside: grid.outside,
         noValue, pooled: grid.pooled, shares: new Map(), measures: new Map() };
 }
 
@@ -592,17 +607,13 @@ export function axisOrder(table, axis, values, { sort, reverse } = {}) {
 // --- the strip and the export ----------------------------------------------------------------------------------------
 
 /**
- * The numbers of the status strip (CNT-22): the cells counted in the plot, those without a value per input, and those
- * left outside a range. The engine drops a cell outside an excluded range without a trace, so those are the shown
- * cells it did not count; with kept levels (`rest: 'exclude'`) they cannot be told apart, and `outside` is null.
- * @param {Object} config
+ * The numbers of the status strip (CNT-22), all from the reply: the cells counted in the plot, those without a value
+ * per input (the @na level), those left outside an excluded range (the axes' `n_outside`, summed) and the cells shown.
  * @param {Object} table - from countTable
- * @param {{shown: number}} ctx - how many cells are shown
  */
 // export-unused-ok: C2b writes the status strip
-export function stripNumbers(config, table, ctx) {
-    const kept = [config.x, config.y, config.split].some((p) => p && p.rest === 'exclude' && p.levels);
-    return { shown: ctx.shown, counted: table.total, noValue: { ...table.noValue }, outside: kept ? null : ctx.shown - table.counted };
+export function stripNumbers(table) {
+    return { shown: table.shown, counted: table.total, noValue: { ...table.noValue }, outside: table.outside };
 }
 
 /**

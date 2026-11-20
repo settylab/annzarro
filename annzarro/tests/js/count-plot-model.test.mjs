@@ -32,7 +32,9 @@ const ctxOf = (extra = {}) => ({
     ...extra
 });
 
-const gridOf = (name) => M.readGrid(expected.grid[name]);
+const withContract = (reply, extra = {}) => ({ n_shown: reply.n_counted + (extra.left || 0), ...reply,
+    axes: reply.axes.map((a, i) => ({ n_outside: i === 0 ? (extra.outside || 0) : 0, ...a })) });
+const gridOf = (name, extra) => M.readGrid(withContract(expected.grid[name], extra));
 
 // --- the stored config ---------------------------------------------------------------------------------------------
 
@@ -290,8 +292,8 @@ test('the z-score is the group mean against the mean and SD of all counted cells
 });
 
 test('a group with no measured cell has no value, and a constant measure has z-score 0', () => {
-    const grid = M.readGrid({ axes: [{ levels: ['c:a', 'c:b'] }], counts: [3, 2], n_counted: 5,
-        measure: [[0, 0, 0, 0, 0], [2, 4, 8, 0, 0]] });
+    const grid = M.readGrid(withContract({ axes: [{ levels: ['c:a', 'c:b'] }], counts: [3, 2], n_counted: 5,
+        measure: [[0, 0, 0, 0, 0], [2, 4, 8, 0, 0]] }));
     const table = M.countTable({ version: 1, mode: 'bar', x: obs('k') }, grid, [{ input: 'x' }]);
     const mean = M.measureValues(table, 'mean');
     assert.ok(Number.isNaN(mean[0]));
@@ -388,11 +390,11 @@ test('the most frequent level of each rectangle, and its share', () => {
 });
 
 test('a tie goes to the first level and an empty rectangle has none', () => {
-    const grid = M.readGrid({ axes: [{ levels: ['c:a'] }, { levels: ['c:b'] }, { levels: ['c:p', 'c:q'] }], counts: [2, 2], n_counted: 4 });
+    const grid = M.readGrid(withContract({ axes: [{ levels: ['c:a'] }, { levels: ['c:b'] }, { levels: ['c:p', 'c:q'] }], counts: [2, 2], n_counted: 4 }));
     const table = M.countTable({ version: 1, mode: 'heatmap', x: obs('a'), y: obs('b'), value: { kind: 'top_level', factor: obs('f') } }, grid,
         [{ input: 'x' }, { input: 'y' }, { input: 'factor' }]);
     assert.equal(table.top.level[0], 0);
-    const empty = M.readGrid({ axes: [{ levels: ['c:a'] }, { levels: ['c:p', 'c:q'] }], counts: [0, 0], n_counted: 0 });
+    const empty = M.readGrid(withContract({ axes: [{ levels: ['c:a'] }, { levels: ['c:p', 'c:q'] }], counts: [0, 0], n_counted: 0 }));
     const t2 = M.countTable({ version: 1, mode: 'bar', x: obs('a'), value: { kind: 'top_level', factor: obs('f') } }, empty, [{ input: 'x' }, { input: 'factor' }]);
     assert.equal(t2.top.level[0], -1);
     assert.ok(Number.isNaN(t2.top.share[0]));
@@ -401,18 +403,18 @@ test('a tie goes to the first level and an empty rectangle has none', () => {
 test('a pie keeps its 12 largest levels and collects the rest into other', () => {
     const levels = Array.from({ length: 15 }, (_, i) => `c:L${i}`);
     const counts = levels.map((_, i) => 100 - i * 5);
-    const grid = M.readGrid({ axes: [{ levels }], counts, n_counted: counts.reduce((s, v) => s + v, 0) });
+    const grid = M.readGrid(withContract({ axes: [{ levels }], counts, n_counted: counts.reduce((s, v) => s + v, 0) }));
     const table = M.countTable({ version: 1, mode: 'pie', x: obs('k') }, grid, [{ input: 'x' }]);
     assert.equal(table.rows, 13);
     assert.equal(M.levelsAt(table, 12)[0], '@other');
     assert.equal(table.count[12], counts.slice(12).reduce((s, v) => s + v, 0));
     assert.equal(table.total, grid.counted);
-    const small = M.readGrid({ axes: [{ levels: levels.slice(0, 12) }], counts: counts.slice(0, 12), n_counted: 1 });
+    const small = M.readGrid(withContract({ axes: [{ levels: levels.slice(0, 12) }], counts: counts.slice(0, 12), n_counted: 1 }));
     assert.equal(M.countTable({ version: 1, mode: 'pie', x: obs('k') }, small, [{ input: 'x' }]).rows, 12);
 });
 
 test('a set grid is a table of regions, whatever the mode', () => {
-    const grid = M.readGrid({ axes: [{ levels: ['@in', '@out'] }, { levels: ['@in', '@out'] }], counts: [10, 20, 30, 40], n_counted: 100 });
+    const grid = M.readGrid(withContract({ axes: [{ levels: ['@in', '@out'] }, { levels: ['@in', '@out'] }], counts: [10, 20, 30, 40], n_counted: 100 }));
     const table = M.countTable({ version: 1, mode: 'upset' }, grid, [{ input: 'sets', set: 0 }, { input: 'sets', set: 1 }]);
     assert.deepEqual(M.levelsAt(table, 1), ['@in', '@out']);
     assert.deepEqual(Array.from(table.count), [10, 20, 30, 40]);
@@ -432,19 +434,30 @@ test('levels can be sorted by height and reversed', () => {
 
 // --- the strip and the CSV -----------------------------------------------------------------------------------------
 
-test('the strip states the cells counted, those without a value per input, and those outside', () => {
-    const grid = gridOf('pseudotime_x_cell_type');
+test('the strip is made of the reply: cells shown, counted, without a value per input, and outside the range', () => {
+    const grid = gridOf('pseudotime_x_cell_type', { left: 50, outside: 50 });
     const config = { version: 1, mode: 'heatmap', x: obs('pseudotime', { binning: { method: 'equal_width', bins: 5 } }), y: obs('cell_type') };
     const table = M.countTable(config, grid, [{ input: 'x' }, { input: 'y' }]);
-    const strip = M.stripNumbers(config, table, { shown: 1250 });
-    assert.deepEqual(strip, { shown: 1250, counted: 1200 - table.noValue.x, noValue: { x: table.noValue.x, y: 0 }, outside: 50 });
+    assert.deepEqual(M.stripNumbers(table), { shown: 1250, counted: 1200 - table.noValue.x, noValue: { x: table.noValue.x, y: 0 }, outside: 50 });
 });
 
-test('with kept levels the cells left out cannot be told from those outside, so outside is unknown', () => {
-    const grid = gridOf('kept_other_x_condition');
-    const config = { version: 1, mode: 'bar', x: obs('cell_type', { levels: ['c:T cell'], rest: 'exclude' }), split: obs('condition') };
-    const table = M.countTable(config, grid, [{ input: 'x' }, { input: 'split' }]);
-    assert.equal(M.stripNumbers(config, table, { shown: 1300 }).outside, null);
+test('an axis may report its outside cells as the grouping reply does, below and above', () => {
+    const reply = withContract(expected.grid.kept_other_x_condition);
+    reply.axes[0].n_outside = [3, 4];
+    reply.axes[1].n_outside = 2;
+    const table = M.countTable({ version: 1, mode: 'bar', x: obs('a') }, M.readGrid(reply), [{ input: 'x' }, { input: 'split' }]);
+    assert.equal(M.stripNumbers(table).outside, 9);
+});
+
+test('a reply without n_shown or an axis\'s n_outside is a contract error, not a guess', () => {
+    const noShown = withContract(expected.grid.three_axes);
+    delete noShown.n_shown;
+    assert.throws(() => M.readGrid(noShown), (e) => e.reason === 'bad_grid_reply');
+    const noOutside = withContract(expected.grid.three_axes);
+    delete noOutside.axes[1].n_outside;
+    assert.throws(() => M.readGrid(noOutside), (e) => e.reason === 'bad_grid_reply');
+    noOutside.axes[1].n_outside = -1;
+    assert.throws(() => M.readGrid(noOutside), (e) => e.reason === 'bad_grid_reply');
 });
 
 test('the CSV has the levels, count, share and measure of the plotted table, and the headers are the caller\'s', () => {
@@ -465,8 +478,8 @@ test('the CSV has the levels, count, share and measure of the plotted table, and
 test('a large grid is projected once: the table, its shares and its measures are reused', () => {
     const levels = Array.from({ length: 512 }, (_, i) => `bin:${i}`);
     const cells = 512 * 512;
-    const grid = M.readGrid({ axes: [{ levels }, { levels }], counts: new Uint32Array(cells).fill(1), n_counted: cells,
-        measure: new Float64Array(cells * 5).fill(1) });
+    const grid = M.readGrid(withContract({ axes: [{ levels }, { levels }], counts: new Uint32Array(cells).fill(1), n_counted: cells,
+        measure: new Float64Array(cells * 5).fill(1) }));
     const config = { version: 1, mode: 'hist2d', x: obs('a'), y: obs('b') };
     const a = M.countTable(config, grid, [{ input: 'x' }, { input: 'y' }]);
     const b = M.countTable(config, grid, [{ input: 'x' }, { input: 'y' }]);
@@ -476,6 +489,6 @@ test('a large grid is projected once: the table, its shares and its measures are
 });
 
 test('a grid whose blocks do not fit its axes is refused', () => {
-    assert.throws(() => M.readGrid({ axes: [{ levels: ['c:a', 'c:b'] }], counts: [1], n_counted: 1 }), /counts/);
-    assert.throws(() => M.readGrid({ axes: [{ levels: ['c:a'] }], counts: [1], n_counted: 1, measure: [[1, 2]] }), /measure/);
+    assert.throws(() => M.readGrid(withContract({ axes: [{ levels: ['c:a', 'c:b'] }], counts: [1], n_counted: 1 })), /counts/);
+    assert.throws(() => M.readGrid(withContract({ axes: [{ levels: ['c:a'] }], counts: [1], n_counted: 1, measure: [[1, 2]] })), /measure/);
 });
