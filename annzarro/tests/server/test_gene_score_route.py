@@ -328,7 +328,9 @@ def test_a_queued_request_runs_when_the_slot_frees(client, layout, monkeypatch):
     threading.Timer(0.3, route._slot.release).start()
     start = time.monotonic()
     resp = post(client, layout, {"recipe": {"genes": NAMES}})
+    frames, vector = parse(resp.get_data())                           # the stream begins at once, queued
     assert resp.status_code == 200 and time.monotonic() - start >= 0.25
+    assert frames[0]["queue"] == {"ahead": 1, "sharing": 0} and frames[-1]["type"] == "result" and vector is not None
 
 
 def test_the_memory_of_a_score_is_held_while_it_streams_and_released_after(client, layout):
