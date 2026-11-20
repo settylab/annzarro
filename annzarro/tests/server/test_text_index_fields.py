@@ -384,9 +384,9 @@ def synthetic_index(n):
 def best_of(fn, runs=5):
     times = []
     for _ in range(runs):
-        began = time.perf_counter()
+        began = time.process_time()          # CPU time: a busy machine does not move it
         fn()
-        times.append(time.perf_counter() - began)
+        times.append(time.process_time() - began)
     return min(times)
 
 
