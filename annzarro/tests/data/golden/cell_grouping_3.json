@@ -1,0 +1,43 @@
+{
+ "version": 1,
+ "partitionings": [
+  {
+   "source": {
+    "type": "obs",
+    "key": "cell_type"
+   }
+  },
+  {
+   "source": {
+    "type": "obs",
+    "key": "condition"
+   }
+  },
+  {
+   "source": {
+    "type": "layer",
+    "key": "logged",
+    "column": "Cd3e"
+   },
+   "binning": {
+    "method": "equal_count",
+    "bins": 3,
+    "zero_bin": true
+   }
+  }
+ ],
+ "small": {
+  "mode": "collect"
+ },
+ "offered": [
+  "mean",
+  "pct_expressing",
+  "mean_expressing"
+ ],
+ "layers": [
+  "logged",
+  "counts"
+ ],
+ "separator": " / ",
+ "detect_above": 0.5
+}

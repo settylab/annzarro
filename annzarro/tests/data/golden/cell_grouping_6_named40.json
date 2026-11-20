@@ -1,0 +1,105 @@
+{
+ "version": 1,
+ "partitionings": [
+  {
+   "source": {
+    "type": "obs",
+    "key": "cell_type"
+   },
+   "levels": [
+    "c:T cell CD4 naive 0",
+    "c:T cell CD8 effector memory 0",
+    "c:NK cell CD56 bright 0",
+    "c:Classical monocyte 0",
+    "c:Plasmacytoid dendritic cell 0",
+    "c:Regulatory T cell 0",
+    "c:Memory B cell 0",
+    "c:Naive B cell 0",
+    "c:Plasma cell 0",
+    "c:Megakaryocyte progenitor 0",
+    "c:T cell CD4 naive 1",
+    "c:T cell CD8 effector memory 1",
+    "c:NK cell CD56 bright 1",
+    "c:Classical monocyte 1",
+    "c:Plasmacytoid dendritic cell 1",
+    "c:Regulatory T cell 1",
+    "c:Memory B cell 1",
+    "c:Naive B cell 1",
+    "c:Plasma cell 1",
+    "c:Megakaryocyte progenitor 1",
+    "c:T cell CD4 naive 2",
+    "c:T cell CD8 effector memory 2",
+    "c:NK cell CD56 bright 2",
+    "c:Classical monocyte 2",
+    "c:Plasmacytoid dendritic cell 2",
+    "c:Regulatory T cell 2",
+    "c:Memory B cell 2",
+    "c:Naive B cell 2",
+    "c:Plasma cell 2",
+    "c:Megakaryocyte progenitor 2",
+    "c:T cell CD4 naive 3",
+    "c:T cell CD8 effector memory 3",
+    "c:NK cell CD56 bright 3",
+    "c:Classical monocyte 3",
+    "c:Plasmacytoid dendritic cell 3",
+    "c:Regulatory T cell 3",
+    "c:Memory B cell 3",
+    "c:Naive B cell 3",
+    "c:Plasma cell 3",
+    "c:Megakaryocyte progenitor 3"
+   ],
+   "rest": "exclude",
+   "labels": {
+    "c:T cell CD4 naive 0": "CD4 naive",
+    "c:T cell CD8 effector memory 0": "CD8 effector"
+   }
+  },
+  {
+   "source": {
+    "type": "obs",
+    "key": "condition"
+   }
+  },
+  {
+   "source": {
+    "type": "obs",
+    "key": "donor"
+   }
+  },
+  {
+   "source": {
+    "type": "obs",
+    "key": "batch"
+   },
+   "binning": {
+    "method": "categories"
+   }
+  },
+  {
+   "source": {
+    "type": "obs",
+    "key": "pseudotime"
+   },
+   "binning": {
+    "method": "equal_width",
+    "bins": 5,
+    "range": [
+     0,
+     10
+    ]
+   }
+  },
+  {
+   "source": {
+    "type": "table",
+    "key": "cell-table-1718000000005"
+   }
+  }
+ ],
+ "separator": " / ",
+ "small": {
+  "threshold": 20,
+  "mode": "hide"
+ },
+ "detect_above": 0.5
+}
