@@ -19,9 +19,11 @@ every threshold, 0 included: the mean of expressing cells needs it on a signed m
 offered on a layer (OD 8, SHR-27) is the browser's decision, from the existing matrix-kind fact; the moments are
 always all five.
 
-Reads. Each matrix is opened once and each gene of it is read once, whatever number of features want it: the colour
-and the size of a row (OD 15), two thresholds, two sections. A score is computed once for every feature and measure
-that asks for it, through the score engine (``gene_score.compute``). Gene reads go through the score engine's
+Reads. Each gene of a matrix is read once, whatever number of features want it: the colour and the size of a row
+(OD 15), two thresholds, two sections, and a score of the same matrix, whose reads the features take their genes
+from (``gene_score.compute``'s ``on_read``). A score is computed once for every feature and measure that asks for
+it, through the score engine. A gene a score was to read and did not (it stopped first, as when no control gene can
+be drawn) is read afterwards, so a score without a result never costs a feature its moments. Gene reads go through the score engine's
 ``pipeline``, so memory is the read-ahead (``READ_AHEAD_ENTRIES``) whatever the number of genes, and one gene is worked
 through ``SEGMENT_ENTRIES`` entries at a time (CMP-2). A sparse gene costs its stored entries: a cell without an entry
 holds zero, which adds to ``n`` only (and to ``n_above`` under a negative threshold).
@@ -195,12 +197,13 @@ def _recipe_of(source: Dict[str, Any]) -> Dict[str, Any]:
 
 @dataclass
 class _MatrixRead:
-    """The genes the features read from one matrix."""
+    """The genes the features read from one matrix: every gene they want (``thresholds``), of which ``columns`` are
+    read here and the rest ride on a score's read of the same matrix (``gene_score.compute``'s ``on_read``)."""
     layer: str
-    columns: List[int]                                  # distinct, ascending
     thresholds: Dict[int, List[float]]                  # column -> its distinct thresholds
-    entries: int
-    layout: str
+    columns: List[int] = field(default_factory=list)    # read here, distinct, ascending
+    entries: int = 0
+    layout: str = ""
 
 
 @dataclass
@@ -264,26 +267,18 @@ def plan_work(reader, dataset_path: str, features: Sequence[Feature] = (), measu
     var_names = reader.get_cell_gene_names(dataset_path, "genes") if genes else []
     seconds, entries, whole, layouts = 0.0, 0, False, set()
     for layer, fs in by_layer.items():
-        with gs.open_source(reader, dataset_path, layer) as source:
-            column_of, absent, _ = gs._resolve_names(var_names, [f.name for f in fs])
-            thresholds: Dict[int, List[float]] = {}
-            for f in fs:
-                col = column_of.get(f.name)
-                if col is None:
-                    continue
-                ts = thresholds.setdefault(col, [])
-                if f.threshold not in ts:
-                    ts.append(f.threshold)
-                gene_target[f.id] = (len(reads), col, f.threshold)
-            missing += [n for n in absent if n not in missing]
-            columns = sorted(thresholds)
-            n_entries = int(source.entries(columns)) if columns else 0
-            reads.append(_MatrixRead(layer, columns, thresholds, n_entries, source.layout))
-            if columns:
-                seconds += cg._rate_seconds(source.layout, n_entries, remote)
-                entries += n_entries
-                whole = whole or source.layout in ("csr", "dense")      # as a layer partitioning (cell_groups)
-                layouts.add(source.layout)
+        column_of, absent, _ = gs._resolve_names(var_names, [f.name for f in fs])
+        thresholds: Dict[int, List[float]] = {}
+        for f in fs:
+            col = column_of.get(f.name)
+            if col is None:
+                continue
+            ts = thresholds.setdefault(col, [])
+            if f.threshold not in ts:
+                ts.append(f.threshold)
+            gene_target[f.id] = (len(reads), col, f.threshold)
+        missing += [n for n in absent if n not in missing]
+        reads.append(_MatrixRead(layer, thresholds))
     vectors: List[_Vector] = []
     index: Dict[str, int] = {}
     vector_of: Dict[Tuple[str, str], int] = {}
@@ -306,6 +301,19 @@ def plan_work(reader, dataset_path: str, features: Sequence[Feature] = (), measu
         if threshold not in v.thresholds:
             v.thresholds.append(threshold)
         vector_of[(what, fid)] = index[key]
+    for read in reads:
+        # a gene a score of the same matrix reads for sure (its signature, up and down) is counted there, once
+        shared = {c for v in vectors if v.part.score is not None and v.part.score.recipe.input == read.layer
+                  for c in v.part.score.columns}
+        with gs.open_source(reader, dataset_path, read.layer) as source:
+            read.columns = sorted(c for c in read.thresholds if c not in shared)
+            read.entries = int(source.entries(read.columns)) if read.columns else 0
+            read.layout = source.layout
+        if read.columns:
+            seconds += cg._rate_seconds(read.layout, read.entries, remote)
+            entries += read.entries
+            whole = whole or read.layout in ("csr", "dense")             # as a layer partitioning (cell_groups)
+            layouts.add(read.layout)
     return Work(features=tuple(features), measures=tuple(measures), n_cells=n_cells, reads=reads, vectors=vectors,
                 gene_target=gene_target, vector_of=vector_of, missing=missing, entries=entries, seconds=seconds,
                 whole_matrix=whole, layouts=sorted(layouts))
@@ -518,37 +526,45 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
         if on_entries is not None:
             on_entries(n)
 
-    yield "progress", dict(progress)
-    for r, read in enumerate(work.reads):
-        if not read.columns:
-            continue
-        with gs.open_source(reader, dataset_path, read.layer) as source:
-            for task, rows_values, _ in gs.pipeline(source.tasks(read.columns), source.threads,
-                                                    READ_AHEAD_ENTRIES, pause):
-                gs._checkpoint(should_stop, None)
-                for col, at, values in rows_values:
-                    ts = read.thresholds[col]
-                    _gene_moments(bins, sizes, at, np.asarray(values), ts, [gene_rows[(r, col, t)] for t in ts])
-                told(task.entries)
-                progress["done"] += len(task.cols)
-                yield "progress", dict(progress)
-    for v, vec in enumerate(work.vectors):
+    done: List[set] = [set() for _ in work.reads]             # columns whose moments are written, per read
+
+    def take(r: int, rows_values) -> None:
+        """The moments of the genes of read ``r`` in one matrix read (its own, or a score's)."""
+        read = work.reads[r]
+        for col, at, values in rows_values:
+            if col in read.thresholds and col not in done[r]:
+                ts = read.thresholds[col]
+                _gene_moments(bins, sizes, at, np.asarray(values), ts, [gene_rows[(r, col, t)] for t in ts])
+                done[r].add(col)
+
+    def settle(items: int, entries0: int, planned: int) -> None:
+        """Once a read or a score ends, the totals become what it did: a CSR or dense read counts its batches'
+        entries, not the plan's scans, and a score that stopped early read less. So entries_done ends at
+        entries_total, and done at total."""
+        progress["total"] += items
+        progress["entries_total"] += progress["entries_done"] - entries0 - planned
+
+    def vector(v: int, vec: _Vector) -> Iterator[Tuple[str, Any]]:
         sums = _Sums(bins.n_bins, vec.thresholds)
         part = vec.part
         if part.score is not None:
-            done0 = progress["done"]
+            # the features' genes of the score's matrix ride on its reads: each gene is read once (OD 15)
+            riders = [r for r, read in enumerate(work.reads) if read.layer == part.score.recipe.input]
+            done0, entries0 = progress["done"], progress["entries_done"]
             result = None
-            for event, payload in gs.compute(part.score, rows, should_stop, pause, on_entries=told):
+            for event, payload in gs.compute(part.score, rows, should_stop, pause, on_entries=told,
+                                             on_read=(lambda rv: [take(r, rv) for r in riders]) if riders else None):
                 if event == "progress":
                     progress["done"] = done0 + min(payload[0], len(part.score.columns))
                     yield "progress", dict(progress)
                 else:
                     result = payload
             progress["done"] = done0 + len(part.score.columns)
+            settle(0, entries0, part.entries)
             if result.values is None:                    # no score: no cell has a value, as a missing gene
                 vector_status[v] = {"status": "no_score", "reason": result.reason}
                 yield "progress", dict(progress)
-                continue
+                return
             for a, b in cs._spans(result.values.size):
                 gs._checkpoint(should_stop, pause)
                 sums.add(bins.index(bins.codes[a:b]), result.values[a:b])
@@ -562,6 +578,32 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
             progress["done"] += 1
         sums.write(sizes, [vector_rows.get((v, t), []) for t in vec.thresholds])
         yield "progress", dict(progress)
+
+    yield "progress", dict(progress)
+    for v, vec in enumerate(work.vectors):                    # scores first: the genes they share are read there
+        if vec.part.score is not None:
+            yield from vector(v, vec)
+    for r, read in enumerate(work.reads):
+        # what is left: the planned columns, less any a score read though not planned to (a control drawn as it
+        # ran), plus any it was to read and did not (it stopped first)
+        left = [c for c in sorted(read.thresholds) if c not in done[r]]
+        if not left and not read.columns:
+            continue
+        entries0 = progress["entries_done"]
+        if left:
+            with gs.open_source(reader, dataset_path, read.layer) as source:
+                for task, rows_values, _ in gs.pipeline(source.tasks(left), source.threads, READ_AHEAD_ENTRIES,
+                                                        pause):
+                    gs._checkpoint(should_stop, None)
+                    take(r, rows_values)
+                    told(task.entries)
+                    progress["done"] += len(task.cols)
+                    yield "progress", dict(progress)
+        settle(len(left) - len(read.columns), entries0, read.entries)
+        yield "progress", dict(progress)
+    for v, vec in enumerate(work.vectors):
+        if vec.part.score is None:
+            yield from vector(v, vec)
     feature_status = [{"id": f.id, **({"status": "ok" if f.id in work.gene_target else "missing"} if f.kind == "gene"
                                       else vector_status[work.vector_of[("feature", f.id)]])}
                       for f in work.features]
