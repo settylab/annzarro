@@ -512,14 +512,25 @@ export function termRanges(text, terms) {
     return merged;
 }
 
+/** Whether the server says the field names of the datasets are still being read (the `index` of an answer). */
+export function fieldNamesBuilding(index) {
+    return !!(index && index.names && index.names.state === 'building');
+}
+
 /**
- * The one line under the search field about the description index, from the `index` object of an answer: null
- * when every dataset is searched (or the server said nothing), else how far it is. The counts are only there
- * for an unrestricted user (`searched`, `total`); `capped` says the server's size limit leaves datasets out.
+ * The one line under the search field about the index, from the `index` object of an answer: null when every
+ * dataset is searched (or the server said nothing), else how far it is. While the field names are being read
+ * that is the line (`names.read` of `names.total` datasets); else the descriptions' own. The counts are only
+ * there for an unrestricted user; `capped` says the server's size limit leaves datasets out.
  * There is no polling: the next query shows the newer state.
  * @returns {string|null}
  */
 export function indexLine(index) {
+    if (fieldNamesBuilding(index)) {
+        const { read, total } = index.names;
+        const counted = Number.isFinite(read) && Number.isFinite(total) && total > 0;
+        return `Field names are still being indexed${counted ? `: ${countLabel(Math.min(read, total))} of ${countLabel(total)} datasets read` : ''}. Results may be incomplete.`;
+    }
     if (!index || index.complete !== false) return null;
     const searched = Number.isFinite(index.searched) ? index.searched : null;
     const total = Number.isFinite(index.total) && index.total > 0 ? index.total : null;
@@ -533,4 +544,163 @@ export function indexLine(index) {
 /** The label of the button that loads the next page of description hits (`more` is the server's count). */
 export function moreLabel(more) {
     return Number.isFinite(more) && more > 0 ? `${countLabel(more)} more` : '';
+}
+
+// ---- searching the field names -------------------------------------------------------------
+//
+// A result may also carry `fields: [{kind, names, more, cut}]` (plan 1.5): the field names that matched, one entry per
+// kind, at most five names each, `more` the matching names not listed and `cut` that the store's names were capped.
+// The open dataset's own entry is built here, from the structure the page holds (SCH-14), in the same shape.
+
+/** The kinds of field names, heaviest first (the server's weights: obs, obsm, layers 3; the rest 2). */
+export const FIELD_KINDS = ['obs', 'var', 'obsm', 'varm', 'layers', 'obsp', 'varp', 'uns'];
+const KIND_ORDER = ['obs', 'obsm', 'layers', 'var', 'varm', 'obsp', 'varp', 'uns'];
+export const FIELD_LABELS = {
+    obs: 'obs column', var: 'var column', obsm: 'embedding (obsm)', varm: 'varm', layers: 'layer', obsp: 'obsp', varp: 'varp', uns: 'uns'
+};
+export const FIELD_NAMES_SHOWN = 5;
+const UNS_DEPTH = 3;
+const SHORTENED = '(field list shortened)';
+
+/** The toggle of the text search: its label is unchanged, its title says what is searched. */
+export const TEXT_TOGGLE = { label: 'Descriptions', title: 'Also search descriptions, READMEs and field names (Alt+D)' };
+
+/** The search box's placeholder: what is searched, shorter in a narrow window. */
+export function searchPlaceholder({ textOn, narrow }) {
+    if (!textOn) return 'Search name or path';
+    return narrow ? 'Search names, descriptions and fields'
+        : 'Search names, descriptions, READMEs and field names (columns, layers, embeddings)';
+}
+
+/** What a query with no hit says; while the field names are being read it does not claim there is none. */
+export function noHitText(query, index) {
+    if (fieldNamesBuilding(index)) return 'No dataset matches yet: field names are still being indexed';
+    return `No dataset has a name, description or field matching '${query}'.`;
+}
+
+/**
+ * The snippet lines of a result's field names: `[{kind, label, names: [{parts}], moreText, cutText}]`, `parts` as
+ * `snippetParts` gives them (the matched part of a name marked with the query's terms). Entries that cannot be
+ * read are dropped.
+ */
+export function fieldLines(hit, query) {
+    const terms = queryTerms(query);
+    const lines = [];
+    for (const entry of hit && Array.isArray(hit.fields) ? hit.fields : []) {
+        if (!entry || !FIELD_KINDS.includes(entry.kind) || !Array.isArray(entry.names)) continue;
+        const names = entry.names.filter(n => typeof n === 'string' && n).slice(0, FIELD_NAMES_SHOWN)
+            .map(n => ({ text: n, parts: snippetParts({ text: n, highlights: termRanges(n, terms) }) }));
+        if (!names.length) continue;
+        const more = Number.isFinite(entry.more) && entry.more > 0 ? entry.more : 0;
+        lines.push({ kind: entry.kind, label: FIELD_LABELS[entry.kind], names, moreText: more ? `+${countLabel(more)} more` : '', cutText: entry.cut ? SHORTENED : '' });
+    }
+    return lines;
+}
+
+/** What "Show field" shows: the first listed name and the first term of the query that is in it (else the first term). */
+export function showFieldTarget(hit, query) {
+    const line = fieldLines(hit, query)[0];
+    if (!line) return null;
+    const name = line.names[0].text;
+    const terms = queryTerms(query);
+    const term = terms.find(t => termRanges(name, [t]).length) || terms[0] || name;
+    return { name, term };
+}
+
+/** The accessible name of "Show field". */
+export function showFieldLabel(name, store) {
+    return `Show ${name} in the structure of ${store}`;
+}
+
+/**
+ * The names of a dataset's structure (the `structure` part of the information dialog) per kind; the names of `uns`
+ * are paths to a depth of three.
+ */
+export function structureNames(structure) {
+    const out = {};
+    const s = structure || {};
+    for (const kind of ['obs', 'var']) {
+        const t = s[kind];
+        if (t && Array.isArray(t.columns)) out[kind] = t.columns.map(c => c && c.name).filter(n => typeof n === 'string' && n);
+    }
+    for (const kind of ['obsm', 'varm', 'obsp', 'varp', 'layers']) {
+        const t = s[kind];
+        if (t && Array.isArray(t.items)) out[kind] = t.items.map(c => c && c.name).filter(n => typeof n === 'string' && n);
+    }
+    if (s.uns && Array.isArray(s.uns.children)) {
+        const paths = [];
+        const walk = (node, trail) => {
+            for (const child of node.children || []) {
+                if (!child || typeof child.name !== 'string') continue;
+                const path = [...trail, child.name];
+                paths.push(path.join('/'));
+                if (path.length < UNS_DEPTH) walk(child, path);
+            }
+        };
+        walk(s.uns, []);
+        out.uns = paths;
+    }
+    return out;
+}
+
+/** Whether the part of a kind the structure lists is less than the dataset has (so the list is cut). */
+function listCut(structure, kind) {
+    const t = (structure || {})[kind];
+    if (!t) return false;
+    if (kind === 'uns') return !!t.capped;
+    const listed = (kind === 'obs' || kind === 'var' ? t.columns : t.items) || [];
+    return Number.isFinite(t.total) && t.total > listed.length;
+}
+
+/**
+ * The entry the open dataset gets in a search, built from its structure: the same shape as the server's
+ * (`matched` and `fields`), or null when some term occurs in no name (nor in the dataset's own name) or
+ * no field name matches at all.
+ * @param {{path: string, label: string, structure: Object|null, query: string}} open
+ */
+export function openDatasetHit({ path, label, structure, query }) {
+    const terms = queryTerms(query);
+    if (!terms.length || !structure) return null;
+    const names = structureNames(structure);
+    const folded = terms.map(fold);
+    const own = fold(String(label || ''));
+    const pool = new Set(Object.values(names).flat().map(fold));
+    const everywhere = t => own.includes(t) || [...pool].some(n => n.includes(t));
+    if (!folded.every(everywhere)) return null;
+    const fields = [];
+    for (const kind of KIND_ORDER) {
+        const all = (names[kind] || []).filter(n => folded.some(t => fold(n).includes(t)));
+        if (!all.length) continue;
+        const whole = n => folded.includes(fold(n));
+        const ranked = all.map((n, i) => ({ n, i })).sort((a, b) => (whole(b.n) - whole(a.n)) || (a.n.length - b.n.length) || (a.i - b.i)).map(x => x.n);
+        fields.push({ kind, names: ranked.slice(0, FIELD_NAMES_SHOWN), more: Math.max(0, ranked.length - FIELD_NAMES_SHOWN), cut: listCut(structure, kind) });
+    }
+    if (!fields.length) return null;
+    return { path, rel_path: label, name: basenameOf(path), title: '', score: 0, matched: fields.map(f => f.kind), snippet: null, fields };
+}
+
+const basenameOf = path => String(path || '').replace(/\/+$/, '').split('/').pop();
+
+/**
+ * The server's `results` with the open dataset's own entry first: its fields replace what the server sent
+ * (the page holds the whole structure), the rest of the server's entry for it stays. `open` null leaves them as they are.
+ */
+export function withOpenHit(results, open) {
+    if (!open) return results;
+    const list = Array.isArray(results) ? results : [];
+    const server = list.find(h => hitKey(h) === open.path);
+    const rest = list.filter(h => h !== server);
+    if (!server) return [open, ...rest];
+    const matched = [...new Set([...(Array.isArray(server.matched) ? server.matched : []).filter(k => !FIELD_KINDS.includes(k)), ...open.matched])];
+    return [{ ...server, matched, fields: open.fields }, ...rest];
+}
+
+/** Name-match rows that also have field names in a hit, with those (the rows are not changed). */
+export function withFieldHits(rows, hits) {
+    const fieldsOf = new Map();
+    for (const hit of Array.isArray(hits) ? hits : []) {
+        if (Array.isArray(hit.fields) && hit.fields.length) fieldsOf.set(hitKey(hit), hit.fields);
+    }
+    if (!fieldsOf.size) return rows;
+    return rows.map(row => (fieldsOf.has(row.path) ? { ...row, fields: fieldsOf.get(row.path) } : row));
 }

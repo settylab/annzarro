@@ -33,7 +33,9 @@ test('every kind has its label', () => {
 
 test('the matched part of a name is marked with the query terms', () => {
     const [line] = M.fieldLines({ fields: [{ kind: 'obs', names: ['donor_id'], more: 0, cut: false }] }, 'ID "donor_"');
-    assert.deepEqual(line.names[0].parts, [{ text: 'donor_', hit: true }, { text: 'id', hit: true }]);
+    assert.deepEqual(line.names[0].parts, [{ text: 'donor_id', hit: true }], 'touching marks are one');
+    const [other] = M.fieldLines({ fields: [{ kind: 'obs', names: ['my_donor_id'], more: 0, cut: false }] }, 'donor');
+    assert.deepEqual(other.names[0].parts, [{ text: 'my_', hit: false }, { text: 'donor', hit: true }, { text: '_id', hit: false }]);
 });
 
 test('"more" counts after five names and a cut store says its list was shortened', () => {

@@ -54,9 +54,12 @@ def _type(page, text):
 
 
 def _lines(page, path_end):
+    """The field lines of a row as ``{label, text}``, without the Show field button."""
     return page.eval_on_selector_all(
         f"{ROWS}[data-path$='{path_end}'] .dsb-fields",
-        "els => els.map(e => ({label: e.querySelector('.dsb-snippet-field').textContent, text: e.textContent.replace(e.querySelector('.dsb-snippet-field').textContent, '').trim()}))")
+        """els => els.map(e => { const c = e.cloneNode(true); const label = c.querySelector('.dsb-snippet-field').textContent;
+            c.querySelectorAll('button, .dsb-snippet-field').forEach(n => n.remove());
+            return {label, text: c.textContent.replace(/\\s+/g, ' ').trim()}; })""")
 
 
 def test_the_open_dataset_matches_by_its_fields_before_the_crawl_reaches_it(world):
@@ -85,7 +88,7 @@ def test_a_query_with_terms_in_two_kinds_gives_one_line_each(world):
         open_browser(page)
         _type(page, "umap gene")
         page.locator(f"{ROWS}[data-path$='bm_aging.zarr'] .dsb-fields").first.wait_for(timeout=20_000)
-        assert [l["label"] for l in _lines(page, "bm_aging.zarr")] == ["var column", "embedding (obsm)"]
+        assert [l["label"] for l in _lines(page, "bm_aging.zarr")] == ["embedding (obsm)", "var column"]   # heaviest kind first
     finally:
         s.close()
 
