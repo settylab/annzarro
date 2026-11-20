@@ -427,9 +427,9 @@ const sectionsFor = () => [
 test('colourBars: rows of one quantity share a bar, and every row is in exactly one bar', () => {
     const bars2 = D.colourBars(barMatrix(5, 2, (r, g) => r + g), [sectionsFor()[0], sectionsFor()[2]], settings());
     assert.equal(bars2.length, 1);
-    assert.deepEqual([...bars2[0].rows], [0, 1, 2, 4].slice(0, 3).concat([4]).map((_, i) => [0, 1, 2, 4][i]));
+    assert.deepEqual([...bars2[0].rows], [0, 1, 2, 4]);
     const all = D.colourBars(barMatrix(5, 2, (r, g) => r + g), sectionsFor(), settings());
-    const seen = all.flatMap((b) => [...b.rows]).sort();
+    const seen = all.flatMap((b) => [...b.rows]).sort((a, b) => a - b);
     assert.deepEqual(seen, [0, 1, 2, 3, 4]);
 });
 
