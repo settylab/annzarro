@@ -8,7 +8,7 @@
  */
 
 /** @type {Readonly<Record<string, Readonly<{counts: (string|null)}>>>} `counts`: the field of a usage row; null: not a consumer */
-export const CONSUMER_KINDS = Object.freeze({
+const CONSUMER_KINDS = Object.freeze({
     plot: Object.freeze({ counts: 'plots' }),
     table: Object.freeze({ counts: 'tables' }),
     grouping: Object.freeze({ counts: 'groupings' }),
@@ -17,7 +17,7 @@ export const CONSUMER_KINDS = Object.freeze({
 });
 
 /** The fields of a usage row that count consumers, in display order. */
-export const COUNT_FIELDS = Object.freeze(['plots', 'tables', 'groupings']);
+const COUNT_FIELDS = Object.freeze(['plots', 'tables', 'groupings']);
 
 function entry(kind) {
     if (typeof kind !== 'string' || !Object.hasOwn(CONSUMER_KINDS, kind)) throw new Error(`Unknown consumer kind '${kind}'`);
@@ -36,5 +36,5 @@ export function isConsumer(kind) {
 
 /** A usage row with no consumers yet. */
 export function emptyUsage(value) {
-    return { value, plots: 0, tables: 0, groupings: 0 };
+    return Object.fromEntries([['value', value], ...COUNT_FIELDS.map(f => [f, 0])]);
 }

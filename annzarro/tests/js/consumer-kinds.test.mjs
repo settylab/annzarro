@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import * as K from '../../../static/js/utils/consumer-kinds.js';
 
 test('the table names every kind a source can be read by, and what each counts as', () => {
-    assert.deepEqual(Object.keys(K.CONSUMER_KINDS).sort(), ['grouping', 'inspect', 'inspect-export', 'plot', 'table']);
     assert.equal(K.countsAs('plot'), 'plots');
     assert.equal(K.countsAs('table'), 'tables');
     assert.equal(K.countsAs('grouping'), 'groupings');
@@ -25,10 +24,14 @@ test('an unknown or missing kind throws, naming it', () => {
 
 test('a usage row has one count per counted kind, all zero to begin with', () => {
     assert.deepEqual(K.emptyUsage('mean'), { value: 'mean', plots: 0, tables: 0, groupings: 0 });
-    assert.deepEqual(K.COUNT_FIELDS, ['plots', 'tables', 'groupings']);
+    assert.deepEqual(Object.keys(K.emptyUsage('mean')), ['value', 'plots', 'tables', 'groupings'], 'counts in display order');
 });
 
-test('the table is frozen', () => {
-    assert.throws(() => { 'use strict'; K.CONSUMER_KINDS.extra = {}; }, TypeError);
-    assert.throws(() => { 'use strict'; K.CONSUMER_KINDS.plot.counts = 'x'; }, TypeError);
+test('the module exposes only its functions, not the table', () => {
+    assert.deepEqual(Object.keys(K).sort(), ['countsAs', 'emptyUsage', 'isConsumer']);
+});
+
+test('each usage row is a fresh object', () => {
+    const a = K.emptyUsage('x'); a.plots = 5;
+    assert.equal(K.emptyUsage('x').plots, 0);
 });
