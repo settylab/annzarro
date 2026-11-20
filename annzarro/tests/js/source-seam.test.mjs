@@ -121,9 +121,12 @@ test('view copy keys a provider axis by entity and sub-key, the default for an e
 });
 
 test('the type menu lists a provider for a consumer only when it takes every role asked', () => {
-    assert.deepEqual(R.sourcesFor('cell-plot', ['color']).map(p => p.type).filter(t => t.startsWith('fake-g')), ['fake-group']);
-    assert.deepEqual(R.sourcesFor('cell-plot', ['z']).map(p => p.type), ['fake-score']);
-    assert.deepEqual(R.sourcesFor('cell-plot', ['x', 'z']).map(p => p.type), ['fake-score']);
+    // (the page's own gene-score provider is registered too: plot-make.js loads it)
+    const fakes = (roles) => R.sourcesFor('cell-plot', roles).map(p => p.type).filter(t => t.startsWith('fake-'));
+    assert.deepEqual(fakes(['color']), ['fake-group', 'fake-score']);
+    assert.deepEqual(fakes(['z']), ['fake-score'], 'the grouping takes no z');
+    assert.deepEqual(fakes(['x', 'z']), ['fake-score']);
+    assert.deepEqual(fakes(['x', 'hover']), [], 'every role asked');
     assert.deepEqual(R.sourcesFor('gene-plot', ['x']).map(p => p.type), [], 'a cell source is not a gene plot\'s');
     assert.equal(R.isProviderType('fake-group'), true);
     assert.equal(R.isProviderType('obsm'), false);

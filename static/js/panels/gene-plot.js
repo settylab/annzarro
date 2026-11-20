@@ -88,7 +88,7 @@ const GenePlotPanel = (function() {
         async function init() {
             try {
                 // Create panel structure
-                const { plotContainer, controlsContainer, loadingScreen } = createPanelStructure(_container, _id, _settings);
+                const { plotContainer, controlsContainer, loadingScreen } = createPanelStructure(_container, _id, _settings, { plotType: _plotType, consumer: 'gene-plot' });
     
                 // Store references for later use
                 _plotContainer = plotContainer;
@@ -134,7 +134,7 @@ const GenePlotPanel = (function() {
                 }
                 
                 // Initialize UI state with the dataset
-                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer, 'gene-plot');
                 
                 // Load data and create plot
                 await refreshPlot();
@@ -167,6 +167,7 @@ const GenePlotPanel = (function() {
                 controlsContainer: _controlsContainer,
                 settings: _settings,
                 plotType: _plotType,
+                consumer: 'gene-plot',
                 data: _data,
                 id: _id,
                 loadDataAndCreatePlot: refreshPlot,
@@ -535,7 +536,7 @@ const GenePlotPanel = (function() {
                     const datasetPath = updateData["dataset"];
                     const datasetStructure = await DataManager.getDatasetStructure(datasetPath);
 
-                    await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                    await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer, 'gene-plot');
 
                     // Another dataset's coordinates: the zoom and camera chosen
                     // on the previous one do not apply (the plot is drawn into

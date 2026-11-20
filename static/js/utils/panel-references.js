@@ -9,8 +9,9 @@
  *                     (the table resolver finds a cycle in it, whatever kinds of panel are on it)
  *   usersOf           the panels that use a panel ("in use", "used by")
  *   keptInUse         the closed panels in use, which Clear closed panels keeps
+ *   referencedFields  the top-level keys of a configuration that hold references, which a remap rewrote
  *
- * A reference is `{ id, via, get, set, remembered? }`:
+ * A reference is `{ id, via, get, set, remembered?, field? }`:
  *   id          the id it names now (`get()` when it was declared)
  *   via         how it is named, one of VIAS below
  *   get, set    read and write it in the configuration. A reference is used right after it was asked
@@ -18,6 +19,7 @@
  *               they were when it was declared, so ids that swap places land each in its own place.
  *   remembered  true for a setting the panel keeps only to restore it (an axis's earlier source): it
  *               follows a remap, but it is no use and no edge
+ *   field       the top-level key (or keys) of the configuration that `set` writes
  *
  * The graph is mixed: a table, a signature, a grouping or a plot is a node alike, so a cycle through a
  * panel that is not a table is found as one through tables is. An edge is every reference the panel is
@@ -115,6 +117,21 @@ export function remapReferences(configs, idMap) {
 }
 
 /**
+ * The top-level keys of a configuration that hold its references, each once, in the order they are declared: what a
+ * remap may have rewritten, and so what a panel that holds the configuration is given again.
+ * @param {Object} config
+ * @param {string} panelType
+ * @returns {string[]}
+ */
+export function referencedFields(config, panelType) {
+    const out = [];
+    for (const ref of referencesOf(config, panelType)) {
+        for (const field of [].concat(ref.field || [])) if (!out.includes(field)) out.push(field);
+    }
+    return out;
+}
+
+/**
  * Where the graph finds the page's panels.
  * @param {{panel: (id: string) => ({type: string, config: Object}|null), ids: () => string[]}} pageHost
  */
@@ -188,16 +205,16 @@ export function keptInUse(closedIds) {
 const isObject = (x) => !!x && typeof x === 'object';
 const isPanelSource = (s) => isObject(s) && isPanelSourceType(s.type) && typeof s.key === 'string';
 
-/** The key of a source setting as a reference. */
-function sourceRef(source, via, remembered = false) {
-    return { id: source.key, via, get: () => source.key, set: (v) => { source.key = v; }, ...(remembered ? { remembered } : {}) };
+/** The key of a source setting as a reference; the setting is the configuration's `field`. */
+function sourceRef(source, via, field, remembered = false) {
+    return { id: source.key, via, field, get: () => source.key, set: (v) => { source.key = v; }, ...(remembered ? { remembered } : {}) };
 }
 
 /** `tableFilter`: the table (or signature) whose rows filter the panel's. 'none' names nothing. */
 function tableFilterRefs(config) {
     const id = config.tableFilter;
     if (typeof id !== 'string' || !id || id === 'none') return [];
-    return [{ id, via: 'filter', get: () => config.tableFilter, set: (v) => { config.tableFilter = v; } }];
+    return [{ id, via: 'filter', field: 'tableFilter', get: () => config.tableFilter, set: (v) => { config.tableFilter = v; } }];
 }
 
 const AXES = ['x', 'y', 'z', 'color'];
@@ -205,13 +222,13 @@ const AXES = ['x', 'y', 'z', 'color'];
 /** A plot: its table filter, the sources of its axes, colour and hover, and what each axis remembers. */
 function plotReferences(config) {
     const out = tableFilterRefs(config);
-    for (const axis of AXES) if (isPanelSource(config[axis])) out.push(sourceRef(config[axis], 'axis'));
-    if (Array.isArray(config.hoverInfo)) for (const h of config.hoverInfo) if (isPanelSource(h)) out.push(sourceRef(h, 'axis'));
+    for (const axis of AXES) if (isPanelSource(config[axis])) out.push(sourceRef(config[axis], 'axis', axis));
+    if (Array.isArray(config.hoverInfo)) for (const h of config.hoverInfo) if (isPanelSource(h)) out.push(sourceRef(h, 'axis', 'hoverInfo'));
     for (const axis of AXES) {
         const history = isObject(config[axis]) && isObject(config[axis].history) ? config[axis].history : null;
         if (!history) continue;
         for (const [type, was] of Object.entries(history)) {
-            if (isPanelSourceType(type) && isObject(was) && typeof was.key === 'string') out.push(sourceRef(was, 'axis', true));
+            if (isPanelSourceType(type) && isObject(was) && typeof was.key === 'string') out.push(sourceRef(was, 'axis', axis, true));
         }
     }
     return out;
@@ -243,6 +260,8 @@ function tableReferences(config) {
         const naming = conditions.filter(node => node.origData === key);
         out.push({
             id: column.key, via: naming.length ? 'filter' : 'source',
+            // the conditions that name the column live in the filter's configuration
+            field: naming.length ? ['columns', 'searchBuilderConfig'] : 'columns',
             get: () => column.key,
             set: (v) => {
                 column.key = v;

@@ -32,21 +32,6 @@ export const SOURCE_TYPES = Object.freeze([SIGNATURE_TYPE, TABLE_TYPE]);
 export const isSourceType = (type) => SOURCE_TYPES.includes(type);
 export const kindOfType = (type) => (type === TABLE_TYPE ? 'table' : 'signature');
 
-/**
- * Whether a panel's configuration reads the score of source `id`: an axis, the colour or a hover entry of a plot, or a
- * score column of a table. Only those keys are read (a table's config has lazy views of its rows that must not be
- * touched). The dependants of a gene table that is closed are the panels for which this is true.
- * @param {Object|null} config
- * @param {string} id
- */
-export function readsScoreOf(config, id) {
-    if (!config || !id) return false;
-    const hit = (s) => !!s && s.type === 'gene-score' && s.key === id;
-    for (const axis of ['x', 'y', 'z', 'color']) if (hit(config[axis])) return true;
-    if (Array.isArray(config.hoverInfo) && config.hoverInfo.some(hit)) return true;
-    return Array.isArray(config.columns) && config.columns.some(hit);
-}
-
 /** A source's name where signatures and tables share one list with no heading (a hover picker): a table says so. */
 export const entityLabel = (entity) => (entity.kind === 'table' ? `${entity.title} (table)` : entity.title);
 
@@ -96,7 +81,8 @@ export function tableRecipe(panel, ctx) {
 
 /**
  * A table resolver status as the state of a score that waits for it.
- * @param {{state: string, reason?: string, detail?: string, cycle?: string[], rows?: number, frozen?: boolean}} status
+ * @param {{state: string, reason?: string, detail?: string, cycle?: string[], cycleKinds?: string[], rows?: number,
+ *   frozen?: boolean}} status - a cycle's `cycleKinds` is parallel to its titles: each member's panel kind
  * @returns {{state: string, message?: string, gate: Object}}
  *   `state` is one a snapshot has: building, ask, refused, failed or cycle
  */
@@ -109,7 +95,7 @@ export function gateState(status) {
                 ? `Not enough browser memory to build the table.${status.detail ? ` ${status.detail}` : ''}`
                 : `The table is too large to build here${status.rows ? ` (${Number(status.rows).toLocaleString('en-US')} rows)` : ''}. Open it to score its genes.` };
         case 'failed': return { state: 'failed', gate, message: status.reason || 'the table could not be built' };
-        case 'cycle': return { state: 'cycle', gate, cycle: status.cycle || [] };
+        case 'cycle': return { state: 'cycle', gate, cycle: status.cycle || [], cycleKinds: status.cycleKinds || [] };
         default: return { state: 'building', gate };      // waiting, building, opening, idle
     }
 }
@@ -129,11 +115,17 @@ export function createSourceAdapter({ panel, active, geneNames, off = () => fals
         const p = panel(id);
         return p && typeof p.getTitle === 'function' ? p.getTitle() : id;
     };
+    /** A cycle member's kind, as a notice names a ring: any table is 'table', another panel its type. */
+    const kindOf = (id) => {
+        const p = panel(id);
+        const type = p && typeof p.getType === 'function' ? p.getType() : null;
+        return type === TABLE_TYPE || type === 'cell-table' ? 'table' : (type || 'panel');
+    };
 
     function tableGate(p, dependant) {
         const id = p.getId();
         const cycle = resolver && resolver.cycleOf ? resolver.cycleOf(id) : null;
-        if (cycle) return gateState({ state: 'cycle', cycle: cycle.map(titleOf) });
+        if (cycle) return gateState({ state: 'cycle', cycle: cycle.map(titleOf), cycleKinds: cycle.map(kindOf) });
         // only whether the rows can be read: a gate is asked on every read of a dependant, the rows when they change
         const rows = tableSelectionStatus(p, { open: active(p) }).status;
         if (rows === 'waiting') return gateState({ state: 'waiting', reason: 'opening' });

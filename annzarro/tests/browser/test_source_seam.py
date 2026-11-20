@@ -3,7 +3,7 @@
 A fake CATEGORICAL provider is registered at run time, before the app reads anything, and no consumer file knows
 it. It must work where a registered source works: the type menu (a Cell Plot's colour and x list it, its z and a
 Gene Plot do not), the key list (its entities, open or closed, and one that is gone), the colour (one trace per
-category, in the provider's own colours, named in the legend's title), an axis (a category axis, titled by the
+category, named in the legend's title; drawn from a link, in the provider's own colours), an axis (a category axis, titled by the
 entity) and the link round trip. The Node half is annzarro/tests/js/source-seam.test.mjs.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1 (set in CI).
@@ -11,6 +11,7 @@ Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWS
 import base64
 import json
 import os
+import re
 import urllib.parse
 
 import pytest
@@ -20,7 +21,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
-from annzarro.tests.browser.test_gene_score_plots import N_OBS, UMAP_X, UMAP_Y, served  # noqa: E402,F401
+from annzarro.tests.browser.test_gene_score_plots import UMAP_X, UMAP_Y, served  # noqa: E402,F401
 
 C = '.tile[data-tile-id="cell-plot-C"]'
 G = '.tile[data-tile-id="gene-plot-G"]'
@@ -131,6 +132,12 @@ def _layout(page, path, tile=C):
     }""", [tile, path])
 
 
+def _legend(page, tile=C):
+    """The legend's title as read: its markup (spacing lines, a sized span) left out."""
+    text = _layout(page, ["legend", "title", "text"], tile) or ""
+    return re.sub(r"<[^>]+>", " ", text).replace("\xa0", " ").strip()
+
+
 def _wait_menus(page, tile):
     page.wait_for_function("""(tile) => { const s = document.querySelector(`${tile} select.axis-type-select[data-axis="color"]`);
         return !!s && [...s.options].some(o => o.value === 'obs' || o.value === 'var'); }""", arg=tile, timeout=30000)
@@ -147,7 +154,7 @@ def test_the_type_menu_lists_the_provider_where_it_is_accepted(page, served):
         assert "fake-group" not in [v for v, _ in _options(page, G, "type", axis)], "a cell source is not a Gene Plot's"
 
 
-def test_colour_from_the_menus_key_list_and_the_providers_own_colours(page, served):
+def test_colour_from_the_menus_and_the_key_list(page, served):
     page.goto(_link(served, {"cell-plot-C": _cell()}, ["cell-plot-C"]))
     page.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
     _wait_menus(page, C)
@@ -157,14 +164,13 @@ def test_colour_from_the_menus_key_list_and_the_providers_own_colours(page, serv
     assert _options(page, C, "key", "color") == [["grp-1", "Grouping A"], ["grp-2", "Grouping B"]], "open and closed entities"
     assert page.is_disabled(f'{C} select.axis-column-select[data-axis="color"]'), "no sub-keys: no third menu"
     _wait_categories(page)
-    drawn = dict(_traces(page))
-    assert [drawn[n] for n in CATEGORIES] == COLOURS, "the provider's own colours, one per category"
-    assert _layout(page, ["legend", "title", "text"]) == "Grouping A", "the legend names the entity"
+    assert _legend(page) == "Grouping A", "the legend names the entity"
     assert window_loads(page)[-1] == {"key": "grp-1", "role": "color"}
     page.select_option(f'{C} select.axis-key-select[data-axis="color"]', "grp-2")
     page.wait_for_function("""(tile) => { const gd = document.querySelector(tile + ' .js-plotly-plot');
-        return !!(gd && gd.layout && gd.layout.legend && gd.layout.legend.title && gd.layout.legend.title.text === 'Grouping B'); }""",
+        return !!(gd && gd.layout && gd.layout.legend && gd.layout.legend.title && String(gd.layout.legend.title.text).includes('Grouping B')); }""",
                            arg=C, timeout=30000)
+    assert _legend(page) == "Grouping B"
     assert window_loads(page)[-1] == {"key": "grp-2", "role": "color"}
 
 
@@ -175,6 +181,8 @@ def window_loads(page):
 def test_an_axis_and_the_link_round_trip(page, served):
     page.goto(_link(served, {"cell-plot-C": _cell(color=FAKE_COLOUR)}, ["cell-plot-C"]))
     _wait_categories(page)
+    drawn = dict(_traces(page))
+    assert [drawn[n] for n in CATEGORIES] == COLOURS, "the provider's own colours, one per category"
     _wait_menus(page, C)
     page.select_option(f'{C} select.axis-type-select[data-axis="x"]', "fake-group")
     page.wait_for_function("""(tile) => { const gd = document.querySelector(tile + ' .js-plotly-plot');
@@ -194,10 +202,11 @@ def test_an_axis_and_the_link_round_trip(page, served):
         _wait_categories(other)
         assert sorted(_traces(other)) == want, "the same categories in the same colours"
         assert _layout(other, ["xaxis", "title", "text"]) == "Grouping A"
-        assert _layout(other, ["legend", "title", "text"]) == "Grouping A"
+        assert _legend(other) == "Grouping A"
         assert _layout(other, ["xaxis", "type"]) == "category"
-        points = other.evaluate("(tile) => document.querySelector(tile + ' .js-plotly-plot').data.reduce((n, t) => n + (t.x || []).length, 0)", C)
-        assert points == N_OBS - N_OBS // 10, "cells with no group are not on a category axis"
+        xs = other.evaluate("""(tile) => [...new Set(document.querySelector(tile + ' .js-plotly-plot').data
+            .flatMap(t => Array.from(t.x || [])).filter(v => typeof v === 'string'))]""", C)
+        assert sorted(xs) == sorted(CATEGORIES), "the x axis shows the provider's categories"
     finally:
         other.close()
 

@@ -142,17 +142,6 @@ test('a panel that is not a source is no source; a signature is unchanged by the
     assert.equal(sources.get(null), null);
 });
 
-test('readsScoreOf finds a plot axis, colour or hover and a table column, and nothing else', () => {
-    const hit = { type: 'gene-score', key: 'gene-table-1', column: 'mean' };
-    assert.equal(P.readsScoreOf({ color: hit }, 'gene-table-1'), true);
-    assert.equal(P.readsScoreOf({ x: hit }, 'gene-table-1'), true);
-    assert.equal(P.readsScoreOf({ hoverInfo: [{ type: 'obs', key: 'a' }, hit] }, 'gene-table-1'), true);
-    assert.equal(P.readsScoreOf({ columns: [hit] }, 'gene-table-1'), true);
-    assert.equal(P.readsScoreOf({ color: hit }, 'gene-table-2'), false);
-    assert.equal(P.readsScoreOf({ color: { type: 'obs', key: 'gene-table-1' } }, 'gene-table-1'), false);
-    assert.equal(P.readsScoreOf(null, 'gene-table-1'), false);
-});
-
 test('menus: signatures and tables are grouped when both exist, plain when only one kind does; hover lists say (table)', () => {
     const sig = { id: 's', title: 'Sig', kind: 'signature' };
     const tab = { id: 't', title: 'Tab', kind: 'table' };

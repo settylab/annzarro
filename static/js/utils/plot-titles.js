@@ -10,6 +10,8 @@
  * text, so exports and deep links are unchanged.
  */
 
+import { isProviderType, settingTitle } from './source-registry.js';
+
 /**
  * Shorten `text` in the middle with an ellipsis until `fits(candidate)`.
  * @param {string} text
@@ -44,9 +46,9 @@ export function middleEllipsis(text, fits) {
 export function colourTitle(color) {
     if (!color || !color.key) return '';
     const { type, key, column } = color;
-    // a gene-score names its signature by title (kept in `label`, refreshed when the signature is read)
-    // two lines: the signature, then the method and layer (a title that leaves the app names both)
-    if (type === 'gene-score') return color.labelFull ? color.labelFull.replace('\n', '<br>') : (color.label || key);
+    // a provider's source is named by its entity's title (its load keeps it in the setting); a score's in two
+    // lines, the signature, then the method and layer (a title that leaves the app names both)
+    if (isProviderType(type)) return settingTitle(color, '<br>');
     if (!column) return key;
     return type === 'obsp' || type === 'varp' ? `${key} · row ${column}` : `${key} · ${column}`;
 }

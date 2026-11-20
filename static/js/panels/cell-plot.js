@@ -88,7 +88,7 @@ const CellPlotPanel = (function() {
         async function init() {
             try {
                 // Create panel structure
-                const { plotContainer, controlsContainer, loadingScreen } = createPanelStructure(_container, _id, _settings);
+                const { plotContainer, controlsContainer, loadingScreen } = createPanelStructure(_container, _id, _settings, { plotType: _plotType, consumer: 'cell-plot' });
     
                 // Store references for later use
                 _plotContainer = plotContainer;
@@ -135,7 +135,7 @@ const CellPlotPanel = (function() {
                 }
                 
                 // Initialize UI state with the dataset
-                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer, 'cell-plot');
                 
                 // Load data and create plot
                 await refreshPlot();
@@ -165,6 +165,7 @@ const CellPlotPanel = (function() {
                 controlsContainer: _controlsContainer,
                 settings: _settings,
                 plotType: _plotType,
+                consumer: 'cell-plot',
                 data: _data,
                 id: _id,
                 loadDataAndCreatePlot: refreshPlot,
@@ -557,11 +558,10 @@ const CellPlotPanel = (function() {
 
                 // For dataset changes, fully reinitialize the plot with abort signal
                 try {
-                    //setupAxisSelector(_controlsContainer, 'x', );
                     const datasetPath = updateData["dataset"];
                     const datasetStructure = await DataManager.getDatasetStructure(datasetPath);
 
-                    await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                    await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer, 'cell-plot');
 
                     // Another dataset's coordinates: the zoom and camera chosen
                     // on the previous one do not apply (the plot is drawn into

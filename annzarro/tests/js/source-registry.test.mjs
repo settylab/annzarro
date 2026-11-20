@@ -39,7 +39,9 @@ test('an empty column means the default sub-key, the way an old link has it', ()
     assert.equal(R.subKeyOf({ type: 'obsm', key: 'X_umap', column: '1' }), '1', 'a built-in source keeps its column');
 });
 
-test('view copy keys a score axis by signature and aggregation; a link without one is the z-score mean', () => {
+test('view copy keys a score axis by signature and aggregation; a link without one is the z-score mean', async () => {
+    // view copy asks the provider for the default sub-key: the page's gene-score provider registers it
+    await import('../../../static/js/utils/score-source.js');
     const old = coordinateId({ type: 'gene-score', key: 'sig-1', column: '' });
     assert.deepEqual(old, { key: 'gene-score:sig-1', dim: 'zscore_mean' });
     assert.deepEqual(coordinateId({ type: 'gene-score', key: 'sig-1', column: 'zscore_mean' }), old);
@@ -48,6 +50,7 @@ test('view copy keys a score axis by signature and aggregation; a link without o
 });
 
 test('a consumer reads the layer of its own choice, else the signature input; view copy and columns tell layers apart', async () => {
+    await import('../../../static/js/utils/score-source.js');
     const { layerOf } = R;
     assert.equal(layerOf({ type: 'gene-score', key: 's' }), '');
     assert.equal(layerOf({ type: 'gene-score', key: 's', layer: 'counts' }), 'counts');

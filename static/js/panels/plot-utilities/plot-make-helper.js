@@ -9,6 +9,7 @@ import { plotArea } from '../../utils/view-point-style.js';
 import { scaleBar, replaceScaleBar, SCALE_BAR } from './plot-options.js';
 import { usableUnsPalette } from '../../utils/uns-palette.js';
 import { proxyMarkerSize } from '../../utils/legend-options.js';
+import { isProviderType, settingTitle } from '../../utils/source-registry.js';
 import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName, colourGroupKey } from '../../utils/categories.js';
 
 /**
@@ -103,8 +104,8 @@ export function axisTitle(settings, axis) {
   const custom = settings[`${axis}axisTitle`];
   if (custom) return custom;
   const a = settings[axis];
-  // a gene score is named by its signature's title, not by the panel id it is stored under
-  if (a.type === 'gene-score') return a.labelFull ? a.labelFull.replace('\n', ' · ') : (a.label || a.key);
+  // a provider's source (a gene score) is named by its entity's title, not by the panel id it is stored under
+  if (isProviderType(a.type)) return settingTitle(a, ' · ');
   return `${a.type}.${a.key}` + (a.column ? `.${a.column}` : '');
 }
 

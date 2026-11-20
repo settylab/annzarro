@@ -4,11 +4,9 @@ import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
-import { sourceList, NEW_SIGNATURE, OFFER_MORE, scoreOptions, optionOf, lapsedLabel, noteDatasetLayers, sourceInput } from '../../utils/score-source.js';
+import { sourceList, noteDatasetLayers } from '../../utils/score-source.js';
 import { scoreHoverOptions, SCORE_GROUP } from './hover-columns.js';
-import { DEFAULT_INPUT, DEFAULT_METHOD, METHODS } from '../../utils/signature-options.js';
-import { scoreKeyOptions } from '../../utils/score-source-panels.js';
-import { getSource } from '../../utils/source-registry.js';
+import { getSource, sourcesFor } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
@@ -184,9 +182,6 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         keyOptions = keys.map(key => ({ value: key, text: key }));
         break;
       }
-      case 'gene-score':
-        keyOptions = scoreKeyEntries(getSource('gene-score').entities(), settings.key, settings.label);
-        break;
       case 'var': {
         let columns = datasetStructure.var?.columns || Object.keys(datasetStructure.var || {});
         // Sort columns alphabetically if there are more than 10
@@ -206,8 +201,12 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         keyOptions = keys.map(key => ({ value: key, text: key }));
         break;
       }
-      default:
-        console.warn(`Unsupported type in populateKeySelector: ${type}`);
+      default: {
+        // a provider's source (utils/source-registry.js): its entities, open or closed, and what the setting holds
+        const provider = getSource(type);
+        if (provider) keyOptions = provider.keyEntries(provider.entities(), settings);
+        else console.warn(`Unsupported type in populateKeySelector: ${type}`);
+      }
     }
   
     // Use jQuery to populate the select element
@@ -232,7 +231,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     // Last resort: use first available key, but avoid _index if possible
     else {
       const wanted = settings.key;
-      if (wanted && type !== 'gene-score' && !keyExistsInStructure(datasetStructure, wanted)) {
+      if (wanted && !getSource(type) && !keyExistsInStructure(datasetStructure, wanted)) {
         // A key the dataset does not have at all (a deep link or panel set
         // from another dataset) is KEPT, listed as missing: the select
         // and the loader state the gap ('not in this dataset') instead of the
@@ -251,46 +250,39 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     
     // Set the select value using jQuery
     $.setSelectValue($keySelect, settings.key, false);
-    if (type === 'gene-score') $keySelect.find('option[value=""]').prop('disabled', true);
-}
-
-
-/**
- * The key list of a gene score: every source, open or closed, by its title; the one held when it is gone, so the
- * plot can say it was deleted; and the way to make a signature.
- * @param {Array<{id: string, title: string, kind?: string}>} list - the sources
- * @param {string} [held] - the key the consumer holds
- * @param {string} [heldTitle] - what that source was called when last seen
- */
-function scoreKeyEntries(list, held, heldTitle) {
-  const options = scoreKeyOptions(list);
-  // (a key left over from another source type is not a deleted source: source ids are panel ids)
-  if (held && /^gene-(signature|table)-/.test(held) && !list.some(source => source.id === held)) {
-    options.push({ value: held, text: `${heldTitle || held} (deleted)` });
-  }
-  if (!options.length) options.push({ value: '', text: 'No signatures or tables yet' });
-  options.push({ value: NEW_SIGNATURE, text: 'New signature…' });
-  return options;
+    // a provider's list may hold no entity: that line is not a choice
+    if (getSource(type)) $keySelect.find('option[value=""]').prop('disabled', true);
 }
 
 /**
- * The menus of every plot that read gene scores, up to date: sources were added, removed or renamed, or what one
- * offers changed. Each key list, third menu and Hover picker keeps its choice and has its options rebuilt.
+ * The menus of every plot that read a provider's source, up to date: sources were added, removed or renamed, or what
+ * one offers changed. Each key list, third menu and Hover picker keeps its choice and has its options rebuilt.
  */
-export function refreshScoreKeySelects() {
+function refreshSourceMenus() {
   if (typeof document === 'undefined') return;
   setTimeout(() => syncSelectTitles(), 60);
-  const list = sourceList();
-  const isScoreAxis = (select) => {
+  // each provider's entities, asked once for every menu
+  const entities = new Map();
+  const entitiesOf = (provider) => {
+    if (!entities.has(provider)) entities.set(provider, provider.entities());
+    return entities.get(provider);
+  };
+  /** The provider an axis select reads, and the setting it holds: the plot's own, else what the select shows. */
+  const axisOf = (select) => {
     const panel = select.closest('.plot-panel');
     const type = panel && panel.querySelector(`select.axis-type-select[data-axis="${select.dataset.axis}"]`);
-    return !!type && type.value === 'gene-score';
+    const provider = type ? getSource(type.value) : null;
+    if (!provider) return null;
+    const tile = select.closest('.tile');
+    const plot = tile && window.PanelManager ? window.PanelManager.getPanel(tile.dataset.tileId) : null;
+    const held = plot && plot.getConfig ? plot.getConfig()[select.dataset.axis] : null;
+    return { provider, setting: held && held.type === provider.type ? held : null };
   };
   for (const keySelect of document.querySelectorAll('select.axis-key-select')) {
-    if (!isScoreAxis(keySelect)) continue;
+    const axis = axisOf(keySelect);
+    if (!axis) continue;
     const current = keySelect.value;
-    const was = keySelect.selectedOptions[0];
-    const options = scoreKeyEntries(list, current, was && was.textContent.replace(/ \(deleted\)$/, ''));
+    const options = axis.provider.keyEntries(entitiesOf(axis.provider), axis.setting || { type: axis.provider.type, key: current });
     const same = options.length === keySelect.options.length
       && options.every((o, i) => keySelect.options[i].value === o.value && keySelect.options[i].textContent === o.text);
     if (same) continue;
@@ -298,14 +290,12 @@ export function refreshScoreKeySelects() {
     $.setSelectValue(jQuery(keySelect), current, false);
     jQuery(keySelect).find('option[value=""]').prop('disabled', true);
   }
-  // the third menu of every score axis follows what its source offers (a lapsed choice stays, labelled)
+  // the third menu of every provider axis follows what its source offers (a lapsed choice stays, labelled)
   for (const select of document.querySelectorAll('select.axis-column-select')) {
-    const tile = select.closest('.tile');
-    if (!isScoreAxis(select) || !tile || !window.PanelManager) continue;
-    const plot = window.PanelManager.getPanel(tile.dataset.tileId);
-    const setting = plot && plot.getConfig ? plot.getConfig()[select.dataset.axis] : null;
-    if (setting && setting.type === 'gene-score') fillScoreColumnSelect(select, scoreColumnOptions(setting));
+    const axis = axisOf(select);
+    if (axis && axis.setting && axis.provider.subKeyMenu) fillSubKeySelect(select, axis.provider.subKeyMenu(axis.setting));
   }
+  const list = sourceList();
   // the Hover pickers list each score a source offers, after the columns
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
     // gene scores are a cell source: a Gene Plot's hover never lists them
@@ -336,8 +326,9 @@ export function refreshScoreKeySelects() {
  */
 export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure) {
   noteDatasetLayers(layerKeys(datasetStructure));
-  // the layer belongs to a gene score only: another source has none
-  if (settings.type !== 'gene-score' && settings.layer) delete settings.layer;
+  // a layer belongs to a provider that has them (a gene score) only: another source has none
+  const provider = getSource(settings.type);
+  if (!(provider && provider.layered) && settings.layer) delete settings.layer;
   // Initialize the settings history if it doesn't exist
   if (!settings.history) {
     settings.history = {};
@@ -357,23 +348,28 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   }
   
   let columnOptions = [];
-  let scoreChosen = null;
   const $columnSelect = jQuery(columnSelect);
   $columnSelect.prop('disabled', false);
 
-  switch (type) {
-    case 'gene-score': {
-      // level 3: ONE list of what the signature's panel offers, method and layer together
-      // (utils/score-source.js scoreOptions). The method is stored in `column`, the layer beside it.
-      const built = scoreColumnOptions(settings);
-      columnOptions = built.options;
-      if (built.adopt) {
-        settings.column = built.adopt.method;
-        if (built.adopt.layer) settings.layer = built.adopt.layer; else delete settings.layer;
-      }
-      scoreChosen = built.chosen;
-      break;
+  if (provider) {
+    // level 3 is the provider's own menu (a score's offered options: the method in `column`, the layer beside it),
+    // or none
+    const built = provider.subKeyMenu ? provider.subKeyMenu(settings) : null;
+    if (!built) {
+      $.createSelect([{ value: '', text: 'N/A' }], $columnSelect);
+      $columnSelect.prop('disabled', true);
+      settings.column = '';
+      return;
     }
+    if (built.adopt) {
+      settings.column = built.adopt.column;
+      if (built.adopt.layer) settings.layer = built.adopt.layer; else delete settings.layer;
+    }
+    fillSubKeySelect($columnSelect[0], built);
+    return;
+  }
+
+  switch (type) {
     case 'obs':
     case 'var': {
       columnOptions = [{ value: '', text: 'N/A' }];
@@ -526,12 +522,6 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   // Use jQuery to populate the select element
   $.createSelect(columnOptions, $columnSelect);
 
-  if (type === 'gene-score') {
-    // the options carry the pair a consumer stores: method in `column`, layer beside it
-    fillScoreColumnSelect($columnSelect[0], { options: columnOptions, chosen: scoreChosen });
-    return;
-  }
-
   const colValues = $columnSelect.find('option').map(function() {
     return jQuery(this).val();
   }).get();
@@ -556,6 +546,33 @@ export function showDropdownLoading(dropdown) {
   $dropdown.prop('disabled', true);
 }
 
+/** The built-in sources of a type menu, by the entity a value belongs to. */
+const BUILT_IN_TYPES = Object.freeze({ cells: ['obs', 'obsm', 'obsp', 'layer'], genes: ['var', 'varm', 'varp', 'layer'] });
+
+/**
+ * What a type menu lists: no source for a colour, the built-in sources of the consumer's entity, then the providers
+ * the consumer accepts for every one of its roles (utils/source-registry.js).
+ * @param {'cells'|'genes'} plotType - the entity a value belongs to
+ * @param {string} consumer - the panel type, e.g. 'cell-plot'
+ * @param {string[]} roles - e.g. ['x'], ['color']
+ * @returns {Array<{value: string, text: string}>}
+ */
+export function typeChoices(plotType, consumer, roles) {
+  return [
+    ...(roles.includes('color') ? [{ value: 'none', text: 'None (constant)' }] : []),
+    ...BUILT_IN_TYPES[plotType === 'genes' ? 'genes' : 'cells'].map(type => ({ value: type, text: type })),
+    ...sourcesFor(consumer, roles).map(p => ({ value: p.type, text: p.label }))
+  ];
+}
+
+/** Put a type menu's choices in its select, unless it lists them already (a provider may register late). */
+function fillTypeSelect(select, choices) {
+  if (select.options.length === choices.length && choices.every((c, i) => select.options[i].value === c.value)) return;
+  select.innerHTML = '';
+  for (const c of choices) select.appendChild(new Option(c.text, c.value));
+  select.disabled = false;
+}
+
 /**
  * Function to set up axis selector.
  * @param {HTMLElement} container - The root DOM element containing the selector elements.
@@ -563,9 +580,10 @@ export function showDropdownLoading(dropdown) {
  * @param {Object} settings - Axis settings (will be updated)
  * @param {string} plotType - Either 'cells' or 'genes'
  * @param {Object} datasetStructure - Dataset structure as returned from DataManager
- * @returns {Promise<void>}
+ * @param {{consumer: string, roles: string[]}} use - the panel type the selects belong to and the roles the source
+ *   fills (['x'], ['color']): the type menu lists what that consumer accepts for them
  */
-export function setupAxisSelector(container, axis, settings, plotType, datasetStructure) {
+export function setupAxisSelector(container, axis, settings, plotType, datasetStructure, { consumer, roles }) {
     const $container = jQuery(container);
     const $typeSelect = $container.find(`.axis-type-select[data-axis="${axis}"]`);
     const $keySelect = $container.find(`.axis-key-select[data-axis="${axis}"]`);
@@ -575,6 +593,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
       console.error(`Missing select elements for ${axis} axis`);
       return;
     }
+    fillTypeSelect($typeSelect[0], typeChoices(plotType, consumer, roles));
     
     // Show loading indicators while initializing
     showDropdownLoading($keySelect);
@@ -1193,44 +1212,38 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
 }
 
 
-/**
- * The entries of the third menu of a gene score and the one that is chosen, without changing anything:
- * what the signature offers, then the choice the consumer holds if it is no longer offered (kept, labelled).
- * `adopt` is set when the consumer holds none, so the first entry becomes its choice.
- */
-export function scoreColumnOptions(settings) {
-  const offered = scoreOptions(settings.key);
-  const options = offered.map(o => ({ value: o.value, text: o.label, method: o.method, layer: o.layer }));
-  const wanted = optionOf(settings);
-  let chosen = wanted ? wanted.value : null;
-  let adopt = null;
-  // a column left over from another source (an obsm dimension) is not a lapsed choice: only a method is
-  if (!wanted && settings.key && offered.length && (METHODS.includes(settings.column) || settings.layer)) {
-    // the id form of the offered entries: `method@layer`
-    const method = settings.column || DEFAULT_METHOD;
-    chosen = `${method}@${settings.layer || sourceInput(settings.key) || DEFAULT_INPUT}`;
-    options.push({ value: chosen, text: lapsedLabel(settings), method, layer: settings.layer || '' });
-  } else if (!wanted && offered.length) {
-    chosen = offered[0].value;
-    adopt = { method: offered[0].method, layer: offered[0].layer };
-  }
-  if (settings.key && offered.length) options.push({ value: OFFER_MORE, text: 'Offer other scores…', method: '', layer: '' });
-  return { options, chosen, adopt };
-}
-
-/** Fill a select with a gene score's options, each carrying the method and layer it stands for. */
-function fillScoreColumnSelect(select, built) {
+/** Fill a select with a provider's third menu (subKeyMenu), keeping it when its entries are the same. */
+function fillSubKeySelect(select, built) {
   const same = select.options.length === built.options.length
     && built.options.every((o, i) => select.options[i].value === o.value && select.options[i].textContent === o.text);
   if (!same) {
     select.innerHTML = '';
     for (const o of built.options) select.appendChild(new Option(o.text, o.value));
   }
-  Array.from(select.options).forEach((opt, i) => {
-    opt.dataset.method = built.options[i].method;
-    opt.dataset.layer = built.options[i].layer || '';
-  });
   if (built.chosen !== null) select.value = built.chosen;
+}
+
+/**
+ * A choice in a provider's third menu, as the setting stores it: the option's column and layer. An option that is a
+ * way somewhere (Offer other scores…) runs and leaves the setting as it was.
+ * @param {Object} settings - the axis setting, rewritten in place
+ * @param {HTMLSelectElement} select - its column select
+ * @param {string} nextTo - the panel the choice was made in
+ * @returns {boolean} whether the setting changed
+ */
+export function takeSubKey(settings, select, nextTo) {
+  const provider = getSource(settings.type);
+  const built = provider && provider.subKeyMenu ? provider.subKeyMenu(settings) : null;
+  const picked = built && built.options.find(o => o.value === select.value);
+  if (!picked) return false;
+  if (picked.run) {
+    picked.run(settings, nextTo);
+    if (built.chosen !== null) select.value = built.chosen;
+    return false;
+  }
+  settings.column = picked.column;
+  if (picked.layer) settings.layer = picked.layer; else delete settings.layer;
+  return true;
 }
 
 /** Every axis select says its full text when hovered: a narrow panel cuts the visible one. */
@@ -1242,7 +1255,7 @@ function syncSelectTitles(root = document) {
 }
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   // sources were added, removed or renamed, or what one offers changed
-  document.addEventListener('annzarro:panels-changed', () => refreshScoreKeySelects());
+  document.addEventListener('annzarro:panels-changed', () => refreshSourceMenus());
   document.addEventListener('change', (e) => {
     const select = e.target && e.target.closest ? e.target.closest('.axis-selector select') : null;
     if (select) setTimeout(() => syncSelectTitles(select.closest('.axis-selector').parentNode), 60);
