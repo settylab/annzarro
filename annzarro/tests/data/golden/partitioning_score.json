@@ -1,0 +1,15 @@
+{
+ "source": {
+  "type": "gene-score",
+  "key": "signature-1718000000004",
+  "column": "zscore_mean",
+  "layer": "logged"
+ },
+ "binning": {
+  "method": "manual",
+  "thresholds": [
+   0.5,
+   1.75
+  ]
+ }
+}

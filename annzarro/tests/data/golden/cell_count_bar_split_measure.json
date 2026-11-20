@@ -1,0 +1,28 @@
+{
+ "version": 1,
+ "mode": "bar",
+ "x": {
+  "source": {
+   "type": "obs",
+   "key": "cell_type"
+  }
+ },
+ "split": {
+  "source": {
+   "type": "obs",
+   "key": "condition"
+  }
+ },
+ "arrangement": "dodge",
+ "value": {
+  "kind": "measure"
+ },
+ "measure": {
+  "stat": "mean",
+  "source": {
+   "type": "layer",
+   "key": "logged",
+   "column": "Cd3e"
+  }
+ }
+}

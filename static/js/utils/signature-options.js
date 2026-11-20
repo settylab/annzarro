@@ -19,6 +19,15 @@
  * option is no longer offered, with a way to offer it again (`offeredOptions` leaves it out, `isOffered` says).
  */
 
+import {
+    andList, cleanThreshold, cleanWhole, createOptionsModel, figure, kindWord, parseClipText, parseSeedText, parseThresholdText,
+    parseWholeText, useText
+} from './options-model.js';
+
+// The pure parts every method table shares live in options-model.js; this file is the gene signature's method table,
+// its grading and its stored fields.
+export { cleanThreshold, cleanWhole, kindWord, parseClipText, parseSeedText, parseThresholdText, parseWholeText, useText };
+
 /**
  * Every aggregation, in the order menus list them. ONE name per method, used by every surface: `label` as a panel
  * label (sentence case), `menu` in menus, titles and tags (lower case, after a signature's name). `needs` names the
@@ -67,11 +76,6 @@ const DOWN_REASONS = Object.freeze({
 /** Whether `method` can score a signature that has down genes. */
 export const canScoreDown = (method) => DOWN_METHODS.includes(method);
 
-export const methodInfo = (method) => METHOD_INFO.find(m => m.value === method) || null;
-export const methodLabel = (method) => (methodInfo(method) || { label: String(method) }).label;
-/** The name menus, titles and tags use. */
-export const methodShort = (method) => (methodInfo(method) || { menu: String(method) }).menu;
-
 /** The defaults of each method's parameters (keys of the recipe), for "Reset" under a method. */
 export const PARAM_DEFAULTS = Object.freeze({
     zscore_mean: Object.freeze({ clip: 10 }),
@@ -79,34 +83,14 @@ export const PARAM_DEFAULTS = Object.freeze({
     detected: Object.freeze({ detect_above: 0 })
 });
 
-/** Whether every parameter of `method` is at its default in `recipe`. */
-export function isMethodDefault(recipe, method) {
-    const defaults = PARAM_DEFAULTS[method];
-    if (!defaults) return true;
-    return Object.entries(defaults).every(([key, value]) => {
-        const have = recipe[key] === undefined ? null : recipe[key];
-        return key === 'seed' ? (have === null || have === 0) : have === value;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // What a layer looks like decides what may be computed from it
-
-/** The word the section gives a kind (from core/matrix_kind.py): it answers "which layer should I use". */
-export function kindWord(kind) {
-    return { counts: 'counts', normalised: 'normalised', log: 'log-normalised', signed: 'scaled', other: 'other' }[kind] || '';
-}
 
 /** Methods whose score follows how deeply a cell was sequenced when the layer holds raw counts. */
 const DEPTH_METHODS = Object.freeze(['zscore_mean', 'mean', 'sum', 'control_adjusted']);
 /** A detection threshold leaves a score constant when this share (or its complement) of the values are on one side of it. */
 export const DETECT_TOO_MANY = 0.99;
 export const DETECT_TOO_FEW = 0.01;
-
-/** A figure in the panel's words: 3 significant digits, a true minus sign. */
-function figure(x) {
-    return String(Number(Number(x).toPrecision(3))).replace('-', '\u2212');
-}
 
 /**
  * The share of ALL the values of a layer that are above `threshold`, from the sample the server read (`stats.density`:
@@ -176,9 +160,6 @@ export function gradeOption(method, layer, kind, hasDown = false, ctx = {}) {
     return ok;
 }
 
-/** "a", "a and b", "a, b and c". */
-const andList = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
-
 /**
  * What to say on a LAYER's row: its properties, each once and short, only when they matter for a method that is offered.
  * "Raw counts: sum and mean follow sequencing depth." Several lines at most one per property.
@@ -186,10 +167,10 @@ const andList = (items) => (items.length < 2 ? items.join('') : `${items.slice(0
  * @param {Object} recipe - from normalizeRecipe
  * @param {string} [kind]
  * @param {Object} [stats] - what the server sampled of the layer
+ * @param {string[]} offered - the methods the recipe offers
  * @returns {Array<{grade: string, code: string, text: string}>}
  */
-export function layerLines(layer, recipe, kind, stats) {
-    const offered = offeredMethods(recipe);
+function signatureLayerLines(layer, recipe, kind, stats, offered) {
     const lines = [];
     const depth = offered.filter(m => DEPTH_METHODS.includes(m));
     if (kind === 'counts' && depth.length) {
@@ -207,113 +188,6 @@ export function layerLines(layer, recipe, kind, stats) {
         if (g.grade === 'cannot') lines.push({ grade: 'cannot', code: g.code, text: g.reason });
     }
     return lines;
-}
-
-/**
- * What to say under a METHOD: only what holds whatever the layer. A property of some layers is said on their rows,
- * not here; one that every offered layer has is said here too, once; the down genes' reason always, once.
- * @param {string} method
- * @param {string[]} layers - the offered layers
- * @param {Object} recipe
- * @param {Object<string, string>} [kinds]
- * @param {Object<string, Object>} [stats]
- * @returns {Array<{grade: string, code: string, text: string, down?: boolean}>}
- */
-export function methodLines(method, layers, recipe, kinds = {}, stats = {}) {
-    const hasDown = Array.isArray(recipe.down) && recipe.down.length > 0;
-    if (!layers.length) return [];
-    const grade = (layer, label) => gradeOption(method, layer, kinds[layer], hasDown,
-        { stats: stats[layer], detectAbove: recipe.detect_above, label });
-    const first = grade(layers[0]);
-    if (first.down) return [{ grade: first.grade, code: first.code, text: first.reason, down: true }];
-    if (first.grade === 'ok') return [];
-    const all = layers.every(l => grade(l).code === first.code);
-    if (!all) return [];
-    if (layers.length === 1) return [{ grade: first.grade, code: first.code, text: first.reason }];
-    // a threshold's message names figures of one layer: with several it stays on the rows
-    if (first.code.startsWith('detect_')) return [];
-    const every = grade(layers[0], 'every offered layer');
-    return [{ grade: every.grade, code: every.code, text: every.reason }];
-}
-
-/**
- * The methods a stored list stands for: known ids only, each once, in menu order; the default list when there is
- * none; never empty (the default method stays offered, so a signature always offers something).
- * @param {*} value
- * @param {string} [fallback] - the method kept when nothing valid is left
- * @returns {string[]}
- */
-export function cleanOffered(value, fallback = DEFAULT_METHOD) {
-    const wanted = new Set(Array.isArray(value) ? value.filter(m => METHODS.includes(m)) : DEFAULT_OFFERED);
-    if (!wanted.size) wanted.add(METHODS.includes(fallback) ? fallback : DEFAULT_METHOD);
-    return METHODS.filter(m => wanted.has(m));
-}
-
-/**
- * The layers a stored list stands for: text only, each once, the default layer first (it is always offered).
- * @param {*} value
- * @param {string} input - the default layer
- * @returns {string[]}
- */
-export function cleanLayers(value, input) {
-    const seen = new Set([input]);
-    if (Array.isArray(value)) for (const name of value) if (typeof name === 'string' && name !== '') seen.add(name);
-    return [...seen];
-}
-
-/** The methods a recipe (or a source's option fields) offers, in menu order. */
-export const offeredMethods = (recipe) => cleanOffered(recipe.offered, recipe.method);
-/** The layers it offers, in the order they were offered: the first is where a new consumer starts. */
-export const offeredLayers = (recipe) => cleanLayers(recipe.layers, recipe.input);
-
-/** Whether a consumer may pick `method` (and `layer`, when given) of this signature now. */
-export function isOffered(recipe, method, layer) {
-    if (!offeredMethods(recipe).includes(method)) return false;
-    return layer === undefined || layer === null || layer === '' || offeredLayers(recipe).includes(layer);
-}
-
-/**
- * Every offered method of every offered layer with its grade, `cannot` ones included: for the panel, which says why
- * an option is not in the menus. Order: by method (the panel's order), and within a method the layers in the order
- * they were offered, so the first entry is the first method on the first layer.
- * @param {Object} recipe - from normalizeRecipe
- * @param {string[]} [datasetLayers] - the matrices the dataset has, X first; an offered layer it lacks is left out
- * @param {Object<string, string>} [kinds] - layer -> what it looks like; a layer not listed is not graded
- * @param {Object<string, Object>} [stats] - layer -> what the server sampled of it (`detected` is graded against the threshold)
- * @returns {Array<{id: string, method: string, layer: string, label: string, fullLabel: string, definition: string,
- *   grade: string, reason: string}>}
- *   `id` is always `method@layer`, however many layers are offered, but a consumer stores `{column: method, layer}`,
- *   never the id. `label` names the layer only when several are offered; `fullLabel` always does.
- */
-export function gradedOptions(recipe, datasetLayers, kinds = {}, stats = {}) {
-    const methods = offeredMethods(recipe);
-    let layers = offeredLayers(recipe);
-    if (Array.isArray(datasetLayers) && datasetLayers.length) {
-        const have = new Set(datasetLayers);
-        layers = layers.filter(name => have.has(name));
-    }
-    const several = layers.length > 1;
-    const hasDown = Array.isArray(recipe.down) && recipe.down.length > 0;
-    const out = [];
-    for (const method of methods) {
-        for (const layer of layers) {
-            const info = methodInfo(method);
-            const { grade, reason, code } = gradeOption(method, layer, kinds[layer], hasDown,
-                { stats: stats[layer], detectAbove: recipe.detect_above });
-            out.push({
-                id: `${method}@${layer}`, method, layer, label: several ? `${info.menu} · ${layer}` : info.menu,
-                fullLabel: `${info.menu} · ${layer}`, definition: info.definition, grade, reason, code,
-                // a combination that can be computed but misleads says so in a title, not in a notice
-                note: grade === 'warn' ? reason : ''
-            });
-        }
-    }
-    return out;
-}
-
-/** The menu a consumer shows: `gradedOptions` without the combinations that cannot be computed. */
-export function offeredOptions(recipe, datasetLayers, kinds, stats) {
-    return gradedOptions(recipe, datasetLayers, kinds, stats).filter(o => o.grade !== 'cannot');
 }
 
 const nonDefault = (recipe, key, fallback) => (recipe[key] === undefined || recipe[key] === null ? fallback : recipe[key]);
@@ -334,47 +208,27 @@ function paramNotes(recipe, method) {
     return notes;
 }
 
-/**
- * The collapsed row: offered methods, then the layers. A parameter that is not at its default follows its method.
- * "z-score mean, mean, sum · X"; "z-score mean (not clipped), control-adjusted (seed 3) · X, logged_counts (default X)".
- */
-export function offeredSummary(recipe) {
-    const methods = offeredMethods(recipe).map((m) => {
-        const notes = paramNotes(recipe, m);
-        return notes.length ? `${methodShort(m)} (${notes.join(', ')})` : methodShort(m);
-    }).join(', ');
-    const layers = offeredLayers(recipe);
-    return `${methods} · ${layers.join(', ')}`;
+// ---------------------------------------------------------------------------
+// The sentences that state a setting: each is a function of the value in force, so none can describe another value
+
+/** What the clip does: names the cut, or says there is none. */
+export function clipLine(clip) {
+    return clip === null || clip === undefined
+        ? 'Not clipped: one rare gene can dominate the average.'
+        : `Z-scores are cut at \u00b1${figure(clip)}. One rare gene can otherwise dominate the average.`;
 }
 
-/** The narrow form of the collapsed row: "3 methods · X". */
-export function offeredSummaryShort(recipe) {
-    const n = offeredMethods(recipe).length;
-    const layers = offeredLayers(recipe);
-    return `${n} method${n === 1 ? '' : 's'} · ${layers.length > 1 ? `${layers.length} layers` : layers[0]}`;
+/** What the detection threshold does: names the threshold. */
+export function thresholdLine(threshold) {
+    return `A gene counts as detected in a cell when its value is above this. Now: above ${figure(cleanThreshold(threshold))}.`;
 }
 
-/** Who uses an option, in words: "1 plot", "2 plots, 1 table"; empty when nothing does. */
-export function useText({ plots = 0, tables = 0 } = {}) {
-    const parts = [];
-    if (plots) parts.push(`${plots} plot${plots === 1 ? '' : 's'}`);
-    if (tables) parts.push(`${tables} table${tables === 1 ? '' : 's'}`);
-    return parts.join(', ');
-}
+/** The words for a down-gene weighting. */
+export const DOWN_WEIGHT_WORDS = Object.freeze({ gene: 'each gene weighs equally', side: 'each side weighs equally' });
 
-/**
- * The parameters of a method, as the recipe holds them (for the cache key and the panel): only those the method uses.
- * @returns {Object}
- */
-export function paramsOf(recipe, method) {
-    const need = (methodInfo(method) || { needs: [] }).needs;
-    const out = {};
-    if (need.includes('clip')) out.clip = recipe.clip;
-    if (need.includes('bins')) out.bins = recipe.bins;
-    if (need.includes('controls')) out.controls = recipe.controls;
-    if (need.includes('seed')) out.seed = recipe.seed === null || recipe.seed === undefined ? 0 : recipe.seed;
-    if (need.includes('detect_above')) out.detect_above = recipe.detect_above === undefined ? 0 : recipe.detect_above;
-    return out;
+/** The hint under "Score some genes as down": names the weighting in force. */
+export function downWeightLine(weight) {
+    return `Down genes count against the score. How they weigh is chosen under each method. Now: ${DOWN_WEIGHT_WORDS[cleanDownWeight(weight)]}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -396,72 +250,11 @@ export const CONTROLS_RANGE = [1, 1000];
 /** Largest seed the page accepts: whole numbers the browser holds exactly (the server takes up to 2^63 - 1). */
 export const MAX_SEED = Number.MAX_SAFE_INTEGER;
 
-/**
- * A clip typed into the panel: a number above 0 (any size, `1e3` included).
- * @param {string} text
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseClipText(text) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = trimmed === '' ? NaN : Number(trimmed);
-    if (!Number.isFinite(value) || value <= 0) return { ok: false, error: 'Enter a number above 0.' };
-    return { ok: true, value };
-}
-
-/**
- * A seed typed into the panel: a whole number from 0 up.
- * @param {string} text
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseSeedText(text) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
-    if (!Number.isSafeInteger(value)) return { ok: false, error: 'Enter a whole number from 0 up.' };
-    return { ok: true, value };
-}
-
-/** A whole number in [lo, hi], else the default. */
-export function cleanWhole(value, fallback, [lo, hi]) {
-    return Number.isInteger(value) && value >= lo && value <= hi ? value : fallback;
-}
-
-/** A detection threshold: a finite number from 0 up, else 0. */
-export function cleanThreshold(value) {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
-}
-
-/**
- * A detection threshold typed into the panel: a number from 0 up.
- * @param {string} text
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseThresholdText(text) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = trimmed === '' ? NaN : Number(trimmed);
-    if (!Number.isFinite(value) || value < 0) return { ok: false, error: 'Enter a number from 0 up.' };
-    return { ok: true, value };
-}
-
 /** A clip as the recipe keeps it: a finite number above 0, `null` for none, else the default. */
 export function cleanClip(value) {
     if (value === null) return null;
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
     return DEFAULT_CLIP;
-}
-
-/**
- * A whole number typed into the panel, within [lo, hi].
- * @param {string} text
- * @param {number[]} range
- * @returns {{ok: true, value: number} | {ok: false, error: string}}
- */
-export function parseWholeText(text, [lo, hi]) {
-    const trimmed = String(text === undefined || text === null ? '' : text).trim();
-    const value = /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
-    if (!Number.isSafeInteger(value) || value < lo || value > hi) {
-        return { ok: false, error: `Enter a whole number from ${lo.toLocaleString('en-US')} to ${hi.toLocaleString('en-US')}.` };
-    }
-    return { ok: true, value };
 }
 
 
@@ -512,3 +305,31 @@ export function isDefaultOptions(options) {
     const b = normalizeOptions({});
     return OPTION_KEYS.every(key => JSON.stringify(a[key]) === JSON.stringify(b[key]));
 }
+
+// ---------------------------------------------------------------------------
+// The signature's method table as an options model (options-model.js): the rest of this file's exports are its functions
+
+const MODEL = createOptionsModel({
+    methods: METHOD_INFO, defaultMethod: DEFAULT_METHOD, defaultOffered: DEFAULT_OFFERED, defaultLayer: 'X',
+    paramDefaults: PARAM_DEFAULTS,
+    sameParam: (key, have, want) => {
+        const v = have === undefined ? null : have;
+        return key === 'seed' ? (v === null || v === 0) : v === want;
+    },
+    paramNotes,
+    paramLines: { clip: (recipe) => clipLine(recipe.clip), detect_above: (recipe) => thresholdLine(recipe.detect_above) },
+    paramValue: (recipe, key) => {
+        if (key === 'seed') return recipe.seed === null || recipe.seed === undefined ? 0 : recipe.seed;
+        if (key === 'detect_above') return recipe.detect_above === undefined ? 0 : recipe.detect_above;
+        return recipe[key];
+    },
+    context: (recipe) => ({ hasDown: Array.isArray(recipe.down) && recipe.down.length > 0, detectAbove: recipe.detect_above }),
+    grade: (method, layer, kind, ctx) => gradeOption(method, layer, kind, !!ctx.hasDown, ctx),
+    layerLines: signatureLayerLines
+});
+
+export const SIGNATURE_MODEL = MODEL;
+export const {
+    methodInfo, methodLabel, methodShort, isMethodDefault, cleanOffered, cleanLayers, offeredMethods, offeredLayers, isOffered,
+    gradedOptions, offeredOptions, methodLines, layerLines, offeredSummary, offeredSummaryShort, paramsOf
+} = MODEL;

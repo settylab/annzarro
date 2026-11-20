@@ -8,6 +8,7 @@ import { lastSessionElement } from './utils/last-session-card.js';
 import { createLoadActions, createDatasetBadge, createStyleBadge } from './panelset-load-ui.js';
 import { notify } from './utils/notify.js';
 import { onDefault } from './utils/session-style.js';
+import { keptInUse } from './utils/panel-references.js';
 
 export class SelectionTile {
     /**
@@ -643,12 +644,33 @@ export class SelectionTile {
       if (paneClearButton) {
         paneClearButton.style.display = hasClosedPanels ? 'block' : 'none';
       }
+
+      // with every closed panel in use there is nothing to clear
+      const closed = this._closedPanelIds();
+      const allInUse = closed.length > 0 && keptInUse(closed).size === closed.length;
+      for (const button of [welcomeClearButton, paneClearButton]) {
+        if (!button) continue;
+        button.disabled = allInUse;
+        if (allInUse) button.title = 'All closed panels are in use.';
+        else button.removeAttribute('title');
+      }
     }
     
+    /** The ids of the closed panels. @private */
+    _closedPanelIds() {
+      const ids = [];
+      this.panels.forEach((panel, id) => {
+        if (!this.activePanels.has(panel)) ids.push(id);
+      });
+      return ids;
+    }
+
     /**
-     * Clear all closed panels after confirmation: the first press turns the
+     * Clear the closed panels after confirmation: the first press turns the
      * button into the question, the second (within a few seconds) deletes.
-     * In place, with no dialog.
+     * In place, with no dialog. A closed panel in use (an open panel, or a
+     * kept one, refers to it: utils/panel-references.js) stays, and a notice
+     * says how many did.
      * @param {HTMLElement} [button] - the Clear button that was pressed
      * @private
      */
@@ -665,11 +687,17 @@ export class SelectionTile {
       if (closedPanels.length === 0) {
         return;
       }
+      // asked again on the second press: a use may have come or gone in between
+      const kept = keptInUse(closedPanels.map(({ id }) => id));
+      const doomed = closedPanels.length - kept.size;
+      if (!doomed) return;
       
       if (button && button.dataset.armed !== '1') {
         const label = button.innerHTML;
         button.dataset.armed = '1';
-        button.textContent = `Delete all ${closedPanels.length} closed panels?`;
+        button.textContent = kept.size
+          ? `Delete ${doomed} closed panel${doomed === 1 ? '' : 's'}? ${kept.size} in use stay${kept.size === 1 ? 's' : ''}.`
+          : `Delete all ${closedPanels.length} closed panels?`;
         const disarm = () => {
           clearTimeout(timer);
           button.removeEventListener('blur', disarm);
@@ -686,8 +714,9 @@ export class SelectionTile {
         button.innerHTML = '<i class="fas fa-trash-alt"></i> Clear closed panels';
       }
 
-        // Delete all closed panels
+        // Delete the closed panels nothing that stays uses
         closedPanels.forEach(({ panel, id }) => {
+          if (kept.has(id)) return;
           const type = panel.getType();
           if (this.panelsByType.has(type)) {
             this.panelsByType.get(type).delete(panel);
@@ -704,6 +733,9 @@ export class SelectionTile {
         // Update all selection tiles globally
         if (window.PanelManager && typeof window.PanelManager.updateSourcePanelSelection === 'function') {
           window.PanelManager.updateSourcePanelSelection();
+        }
+        if (kept.size) {
+          notify('Closed panels cleared', kept.size === 1 ? 'Kept 1 closed panel in use.' : `Kept ${kept.size} closed panels in use.`, 'info');
         }
     }
   
