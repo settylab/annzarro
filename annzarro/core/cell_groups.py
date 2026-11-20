@@ -820,7 +820,7 @@ class _Levels:
             for start, v in self._shown_values(held, from_all):
                 lv = bn.assign(v, e, counts)
                 if na != NONE16:
-                    lv[lv == bn.NO_LEVEL] = na
+                    np.minimum(lv, na, out=lv)          # every level is below na; only NO_LEVEL is above
                 yield start, lv
             self.info["n_no_value"] = counts.n_no_value
             self.info["n_outside"] = counts.n_outside
@@ -884,18 +884,14 @@ class _Levels:
             self._prepare_column_categories()
 
     def _from_codes(self, ids: List[str], codes_slabs: Iterator[Tuple[int, np.ndarray]]) -> None:
-        """Codes index ``ids``; -1 (or anything past them) is a missing value."""
+        """Codes index ``ids``; -1 is a missing value (``lut[-1]``, the slot of a missing value, is last)."""
         lut = self._set_categories(ids)
-        n = len(ids)
         self.info["n_no_value"] = 0
 
         def slabs():
             for start, codes in codes_slabs:
                 c = np.asarray(codes)
-                if c.size and (c.min() < 0 or c.max() >= n):
-                    missing = (c < 0) | (c >= n)
-                    self.info["n_no_value"] += int(np.count_nonzero(missing))
-                    c = np.where(missing, n, c)
+                self.info["n_no_value"] += int(np.count_nonzero(c < 0))
                 yield start, lut[c]
         self._slabs = slabs()
 
@@ -1029,6 +1025,7 @@ class _Fold:
         self.k = 1                                      # code space
         self.keys = np.zeros((1, 0), dtype=np.int32)    # slots of each compacted code
         self.radices: List[int] = []                    # partitionings folded in since the last compaction
+        self.pending: Optional[np.ndarray] = None       # compact(apply=False): the numbering not yet applied
 
     @property
     def none(self) -> int:
@@ -1047,10 +1044,11 @@ class _Fold:
         codes = self.codes
         for start, lv in levels:
             r = codes[start:start + lv.size]
-            bad = (r == NONE16) | (lv == NONE16)
-            t = r.astype(np.uint32) * width + lv
-            t[bad] = NONE16
-            r[:] = t
+            bad = r == NONE16
+            bad |= lv == NONE16
+            r *= np.uint16(width)                       # below 65,535 wherever both are set; the rest is reset
+            r += lv
+            np.copyto(r, NONE16, where=bad)
         self.k *= width
         self.radices.append(width)
 
@@ -1093,14 +1091,18 @@ class _Fold:
         self.k = int(occupied.size)
         self.radices = []
 
-    def compact(self) -> np.ndarray:
-        """Number the occupied codes 0, 1, ... in order; returns the cells per new code."""
+    def compact(self, apply: bool = True) -> np.ndarray:
+        """Number the occupied codes 0, 1, ... in order; returns the cells per new code.
+
+        With ``apply`` false the codes are left as they are and ``pending`` holds the lookup that would number
+        them, so the caller can fold a further renumbering into the same pass over the cells.
+        """
         none = self.none
         if self.codes.dtype == np.uint16:
-            counts = np.zeros(self.k + 1, dtype=np.int64)
+            counts = np.zeros(NONE16 + 1, dtype=np.int64)
             for a, b in _spans(self.codes.size):
-                counts += np.bincount(np.minimum(self.codes[a:b], self.k), minlength=self.k + 1)
-            counts = counts[:-1]
+                counts += np.bincount(self.codes[a:b], minlength=NONE16 + 1)
+            counts = counts[:self.k]
         else:
             counts = np.zeros(self.k, dtype=np.int64)
             for a, b in _spans(self.codes.size):
@@ -1116,18 +1118,32 @@ class _Fold:
                                        axis=1)
         else:
             self.keys = self.keys[occupied]
+        self.pending = None
         if occupied.size != self.k:
-            self.remap(_lookup(occupied, self.k, none, self.codes.dtype))
+            lut = _lookup(occupied, self.k, none, self.codes.dtype)
+            if apply:
+                self.remap(lut)
+            else:
+                self.pending = lut
         self.k = int(occupied.size)
         self.radices = []
         return counts[occupied]
 
     def remap(self, lut: np.ndarray) -> None:
         """Codes through ``lut`` (indexed by code, with the value of a cell in no group last)."""
-        none = self.none
+        full = _full_lookup(lut, self.codes.dtype)
         for a, b in _spans(self.codes.size):
             c = self.codes[a:b]
-            c[:] = lut[np.where(c == none, lut.size - 1, c)]
+            c[:] = full[c] if full is not None else lut[np.where(c == self.none, lut.size - 1, c)]
+
+
+def _full_lookup(lut: np.ndarray, dtype) -> Optional[np.ndarray]:
+    """For uint16 codes: ``lut`` over every uint16 value, so a code indexes it directly (NONE16 included)."""
+    if dtype != np.uint16:
+        return None
+    full = np.full(NONE16 + 1, lut[-1], dtype=lut.dtype)
+    full[:lut.size - 1] = lut[:-1]
+    return full
 
 
 def _lookup(old: np.ndarray, k: int, none: int, dtype) -> np.ndarray:
@@ -1189,7 +1205,7 @@ def _resolving(gp: GroupingPlan, ctx: _Ctx) -> Iterator[int]:
             fold.fold(levels)
             made.append(levels)
             yield i + 1
-        counts = fold.compact()
+        counts = fold.compact(apply=False)
         if fold.k > GROUPING_LIMITS["groups"]:
             raise _Refused(reason="too_many_groups", count=int(fold.k), limit=GROUPING_LIMITS["groups"])
     except _Refused as r:
@@ -1225,16 +1241,22 @@ def _small_groups(fold: _Fold, keys: List[List[str]], counts: np.ndarray, g: Gro
     none = 0xFF if dtype == np.uint8 else NONE16
     lut = np.where(new_of >= 0, new_of, none).astype(dtype)
     lut = np.append(lut, np.array([none], dtype=dtype))
+    if fold.pending is not None:                   # the compaction's numbering and this one, in one pass
+        lut = lut[np.where(fold.pending == fold.none, k, fold.pending)]
+    elif np.array_equal(new_of, np.arange(k)):
+        lut = None
     if dtype == fold.codes.dtype:                  # in place: the codes are never held twice (CMP-4)
-        if not np.array_equal(new_of, np.arange(k)):
+        if lut is not None:
             fold.remap(lut)
         codes = fold.codes
     else:
         codes = np.empty(fold.codes.size, dtype=dtype)
-        src_none = fold.none
+        if lut is None:
+            lut = np.append(np.arange(k), none).astype(dtype)
+        full = _full_lookup(lut, fold.codes.dtype)
         for a, b in _spans(codes.size):
             c = fold.codes[a:b]
-            codes[a:b] = lut[np.where(c == src_none, k, c)]
+            codes[a:b] = full[c] if full is not None else lut[np.where(c == fold.none, lut.size - 1, c)]
     groups = [{"key": key, "n": int(n)} for key, n in zip(out_keys, out_counts)]
     return groups, codes, info
 
