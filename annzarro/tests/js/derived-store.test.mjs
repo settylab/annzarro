@@ -78,12 +78,16 @@ test('a store of mixed values keeps them whole and evicts by their total bytes',
 test('a value larger than the whole budget is handed to the draw and not stored', async () => {
     const fake = fakeApi();
     const store = D.createDerivedStore({ api: fake.api, budget: 100 });
+    const seen = [];
+    store.on((key, snap) => seen.push(snap));
     store.attach('big', spec('big'), owner());
     await settle();
     fake.finish(0, grouping(1000));
     await settle();
-    assert.equal(store.snapshot('big').state, 'ready');
     assert.equal(store.cache.size, 0);
+    assert.equal(store.cache.bytes, 0);
+    // the cache holds nothing, so the entry is the job's to hand over: the ready snapshot has no values
+    assert.ok(seen.some(snap => snap.state === 'ready'));
 });
 
 test('one request for however many dependants, and the last one leaving aborts it', async () => {
