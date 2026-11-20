@@ -48,8 +48,11 @@ import {
     applyFilters, emptyFilters, filtersActive, searchRows, sortRows, ariaSort, nextSort, typeAheadIndex,
     buildPlaces, breadcrumbs, matchBadge, matchesView, rowDescription, countLabel, dateLabel, dateTimeLabel,
     openedLabel, formatLabel, countSummary, isRemote, missingKeys,
-    TEXT_SECTION, snippetParts, textSection, MATCH_CHIP, queryTerms, termRanges, indexLine, moreLabel
+    TEXT_SECTION, snippetParts, textSection, MATCH_CHIP, queryTerms, termRanges, indexLine, moreLabel,
+    FIELD_KINDS, TEXT_TOGGLE, fieldLines, showFieldTarget, showFieldLabel, openDatasetHit, withOpenHit, withFieldHits,
+    searchPlaceholder, noHitText
 } from './dataset-browser-model.js';
+import { showStructureSearch } from './dataset-info-dialog.js';
 
 const PAGE = 200;
 const DETAILS_DELAY_MS = 400;
@@ -199,6 +202,8 @@ export function createDatasetBrowser(services) {
             textOn: true,                  // the toggle
             text: { hits: null, index: null },     // hits: {key, results, more, partial, error, loadingMore}; index: the server's `index`
             textSearching: null,
+            structureAsked: new Set(),     // the open datasets whose structure was asked for, for the field names (SCH-14)
+            openHit: null,                 // {path, query, structure, hit}: the open dataset's entry for this query, kept until one changes
             filters: emptyFilters(),
             sort: null,                    // null: the default of the place
             limit: PAGE,
@@ -549,7 +554,39 @@ export function createDatasetBrowser(services) {
         const on = textActive();
         dom.text.setAttribute('aria-pressed', String(on));
         dom.text.classList.toggle('active', on);
-        dom.search.placeholder = on ? 'Search names and descriptions' : 'Search name or path';
+        dom.text.title = TEXT_TOGGLE.title;
+        dom.text.setAttribute('aria-label', TEXT_TOGGLE.label);
+        dom.search.placeholder = searchPlaceholder({ textOn: on, narrow: narrowWindow() });
+    }
+
+    /** Below the md breakpoint the dialog is full screen and the placeholder is the short one. */
+    function narrowWindow() {
+        return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 767.98px)').matches;
+    }
+
+    /**
+     * The open dataset's entry for the query, built from the structure the page holds (SCH-14): the names are
+     * searched whether or not the crawl has reached the dataset, and also when it is remote. A structure not held
+     * yet is asked for once, and the table drawn again when it arrives. Kept until the query or the structure changes.
+     */
+    function openDatasetEntry() {
+        const path = services.currentPath();
+        const loader = services.infoLoader;
+        if (!path || !loader) return null;
+        const structure = loader.peek(path, 'structure');
+        if (!structure) {
+            if (!S.structureAsked.has(path)) {
+                S.structureAsked.add(path);
+                const mine = S;
+                Promise.resolve(loader.load(path, 'structure')).then(() => { if (S === mine) render(); }, () => {});
+            }
+            return null;
+        }
+        const kept = S.openHit;
+        if (kept && kept.path === path && kept.query === S.query && kept.structure === structure) return kept.hit;
+        const hit = openDatasetHit({ path, label: services.label(path) || path, structure, query: S.query });
+        S.openHit = { path, query: S.query, structure, hit };
+        return hit;
     }
 
     /** One line under the field while datasets are not searched yet; nothing when they all are. */
@@ -598,10 +635,12 @@ export function createDatasetBrowser(services) {
         const sort = effectiveSort();
         if (!sort.server) rows = sortRows(rows, sort.key, sort.dir);
         else rows = sortRows(rows, null);     // the server's order, folders kept first
-        // the stores whose title, attribution or README holds the words follow, best first (the server's order)
+        // the stores whose title, attribution, README or field names hold the words follow, best first (the server's order),
+        // the open dataset first (its field names are matched here, from the structure the page holds)
         const hits = S.text.hits;
         if (wantsText() && hits && hits.key === textKey() && hits.results) {
-            rows = rows.concat(textSection(matches, hits.results, S.filters, annotate));
+            const results = withOpenHit(hits.results, openDatasetEntry());
+            rows = withFieldHits(rows, results).concat(textSection(matches, results, S.filters, annotate));
         }
         return { rows, compiled: found.compiled };
     }
@@ -910,6 +949,8 @@ export function createDatasetBrowser(services) {
             const none = el('div', 'dsb-state');
             const filtered = filtersActive(S.filters) || searching();
             none.textContent = filtered ? 'No dataset matches the search and filters.' : emptyText();
+            const answered = S.text.hits;
+            if (wantsText() && answered && answered.key === textKey() && !answered.error && !filtersActive(S.filters)) none.textContent = noHitText(S.query.trim(), S.text.index);
             if (searching() && ((S.remote === null && S.searching) || (S.textSearching && !S.text.hits))) none.textContent = 'Searching…';
             wrap.appendChild(none);
             if (!filtered) { wrap.appendChild(table); table.classList.add('visually-hidden'); }
@@ -1034,7 +1075,13 @@ export function createDatasetBrowser(services) {
                 if (titled) appendSnippet(title, snippet); else title.textContent = row.title;
                 th.appendChild(title);
             }
-            if (!titled && snippetParts(snippet).length) {
+        }
+        appendFieldLines(th, row);
+        if (row.textHit) {
+            const snippet = row.snippet || {};
+            const titled = snippet.field === 'title';
+            // a snippet labelled by a field kind would repeat the field lines
+            if (!titled && !FIELD_KINDS.includes(snippet.field) && snippetParts(snippet).length) {
                 const line = el('div', 'dsb-snippet');
                 if (snippet.field) line.appendChild(el('span', 'dsb-snippet-field', fieldLabel(snippet.field)));
                 appendSnippet(line, snippet);
@@ -1056,6 +1103,49 @@ export function createDatasetBrowser(services) {
         tr.addEventListener('click', () => select(row));
         tr.addEventListener('dblclick', () => activate(row));
         return tr;
+    }
+
+    /** One line per kind of field name that matched, and "Show field" at the end of the first (SCH-4, SCH-8). */
+    function appendFieldLines(parent, row) {
+        const lines = fieldLines(row, S.query);
+        lines.forEach((entry, i) => {
+            const line = el('div', 'dsb-snippet dsb-fields');
+            line.dataset.kind = entry.kind;
+            line.appendChild(el('span', 'dsb-snippet-field', entry.label));
+            entry.names.forEach((name, n) => {
+                if (n) line.appendChild(document.createTextNode(' \u00b7 '));
+                const holder = el('span', 'dsb-field-name');
+                for (const part of name.parts) {
+                    if (part.hit) holder.appendChild(el('mark', null, part.text));
+                    else holder.appendChild(document.createTextNode(part.text));
+                }
+                line.appendChild(holder);
+            });
+            if (entry.moreText) line.appendChild(document.createTextNode(` \u00b7 ${entry.moreText}`));
+            if (entry.cutText) line.appendChild(document.createTextNode(` ${entry.cutText}`));
+            if (i === 0) {
+                const target = showFieldTarget(row, S.query);
+                const button = el('button', 'btn btn-sm btn-link dsb-show-field', 'Show field');
+                button.type = 'button';
+                button.setAttribute('aria-label', showFieldLabel(target.name, row.name || basename(row.path)));
+                button.addEventListener('click', (e) => { e.stopPropagation(); showField(row, target.term); });
+                line.appendChild(document.createTextNode(' '));
+                line.appendChild(button);
+            }
+            parent.appendChild(line);
+        });
+    }
+
+    /**
+     * "Show field": the information dialog on Structure with the term in its filter. It belongs to the open dataset,
+     * so another dataset is opened first, as choosing it from the hit would.
+     */
+    async function showField(row, term) {
+        if (!S) return;
+        if (row.path === services.currentPath()) hide();
+        else if (!await choose(row.path, { check: true })) return;
+        if (hiddenPromise) await hiddenPromise;
+        await showStructureSearch(term);
     }
 
     // ---- choosing ------------------------------------------------------------------------

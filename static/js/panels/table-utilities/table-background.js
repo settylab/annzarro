@@ -20,6 +20,7 @@ import { loadTableData, initializeDataTable, releaseTable, getColumnKey } from '
 import { TableScores, tileOnScreen } from './table-scores.js';
 import { usedScoreColumns } from '../../utils/score-column.js';
 import { readsScoreOf } from '../../utils/score-source-panels.js';
+import { dependsOn, setReferenceHost } from '../../utils/panel-references.js';
 
 const TABLE_KINDS = new Set(['cell-table', 'gene-table']);
 
@@ -148,19 +149,9 @@ const host = {
             return { ok: true };
         }
     },
-    depends(id) {
-        const found = panelOf(id);
-        const config = found && found.panel.getConfig ? found.panel.getConfig() : null;
-        const upstream = config && config.tableFilter;
-        const out = typeof upstream === 'string' && upstream && upstream !== 'none' && panelOf(upstream) ? [upstream] : [];
-        // a table whose filter reads the score of a gene table needs that table's genes first
-        if (config && Array.isArray(config.columns)) {
-            for (const column of usedScoreColumns(config.columns, config.searchBuilderConfig, getColumnKey)) {
-                if (typeof column.key === 'string' && !out.includes(column.key) && panelOf(column.key)) out.push(column.key);
-            }
-        }
-        return out;
-    },
+    // what a panel is computed from, over every panel on the page (a table filtered on a grouping's
+    // column, a grouping partitioned by a table's rows): one declaration per panel type
+    depends: dependsOn,
     scoreGate(id, { open }) {
         const found = panelOf(id);
         if (!found || found.kind !== 'cell-table' || typeof found.panel.scoreGate !== 'function') return null;
@@ -184,6 +175,20 @@ const host = {
 };
 
 TableResolver.host = host;
+
+// The page's panels, open or closed, as the reference graph sees them (utils/panel-references.js)
+setReferenceHost({
+    panel(id) {
+        const pm = window.PanelManager;
+        const panel = pm && pm.getPanel ? pm.getPanel(id) : null;
+        if (!panel || typeof panel.getType !== 'function' || typeof panel.getConfig !== 'function') return null;
+        return { type: panel.getType(), get config() { return panel.getConfig(); } };
+    },
+    ids() {
+        const pm = window.PanelManager;
+        return pm && pm.getAllPanels ? pm.getAllPanels().map(p => p.getId()) : [];
+    }
+});
 
 // A score a closed table's filter reads arrived or changed: what was built from the old one is void
 TableScores.on((tableId, entry, changed) => {

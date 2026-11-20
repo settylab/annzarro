@@ -14,7 +14,10 @@ LITERAL = re.compile(r"""['"](gene-score|cell-group|group-stat)['"]""")
 #: files that define a source type; they may name it
 PROVIDER_FILES = {"utils/score-source.js", "utils/cell-group-source.js"}
 
-#: occurrences per file on the base, measured with this pattern, provider files left out (53 in 18 files)
+#: the base run (59b13127): 53 occurrences in 18 files, provider files left out; the ceiling may only fall from it
+BASE_TOTAL, BASE_FILES = 53, 18
+
+#: occurrences allowed per file now; F4 took utils/deeplink.js from 2 to 0
 CEILING = {
     "panels/plot-utilities/panel-ui-update.js": 9,
     "panels/table-utilities/table-ui-make.js": 8,
@@ -26,7 +29,6 @@ CEILING = {
     "panels/plot-utilities/hover-columns.js": 3,
     "utils/score-column.js": 3,
     "panels/plot-utilities/large-interact.js": 2,
-    "utils/deeplink.js": 2,
     "utils/view-descriptor.js": 2,
     "panels/plot-utilities/large-plot.js": 1,
     "panels/plot-utilities/plot-make-helper.js": 1,
@@ -59,8 +61,15 @@ def test_no_file_holds_more_literals_than_on_the_base():
                      "do not add literals:\n" + "\n".join(bad))
 
 
-def test_the_recorded_ceiling_is_the_base_run():
-    assert sum(CEILING.values()) == 53 and len(CEILING) == 18
+def test_the_ceiling_only_falls_from_the_base_run():
+    assert sum(CEILING.values()) <= BASE_TOTAL and len(CEILING) <= BASE_FILES
+
+
+def test_the_ceiling_is_tight():
+    """A step that removes literals lowers the ceiling in the same commit, so no slack is left to spend later."""
+    found = counts(JS_ROOT)
+    slack = [f"{rel}: ceiling {n}, holds {found.get(rel, 0)}" for rel, n in CEILING.items() if found.get(rel, 0) < n]
+    assert not slack, "Lower these ceilings to what the files hold:\n" + "\n".join(slack)
 
 
 def test_planted_literal_is_found(tmp_path):

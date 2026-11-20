@@ -1,0 +1,106 @@
+{
+ "version": 1,
+ "mode": "upset",
+ "sets": [
+  {
+   "source": {
+    "type": "table",
+    "key": "cell-table-1718000000020"
+   },
+   "member": {
+    "levels": [
+     "@in"
+    ]
+   },
+   "name": "Set 1"
+  },
+  {
+   "source": {
+    "type": "table",
+    "key": "cell-table-1718000000021"
+   },
+   "member": {
+    "levels": [
+     "@in"
+    ]
+   },
+   "name": "Set 2"
+  },
+  {
+   "source": {
+    "type": "table",
+    "key": "cell-table-1718000000022"
+   },
+   "member": {
+    "levels": [
+     "@in"
+    ]
+   },
+   "name": "Set 3"
+  },
+  {
+   "source": {
+    "type": "table",
+    "key": "cell-table-1718000000023"
+   },
+   "member": {
+    "levels": [
+     "@in"
+    ]
+   },
+   "name": "Set 4"
+  },
+  {
+   "source": {
+    "type": "table",
+    "key": "cell-table-1718000000024"
+   },
+   "member": {
+    "levels": [
+     "@in"
+    ]
+   },
+   "name": "Set 5"
+  },
+  {
+   "source": {
+    "type": "table",
+    "key": "cell-table-1718000000025"
+   },
+   "member": {
+    "levels": [
+     "@in"
+    ]
+   },
+   "name": "Set 6"
+  },
+  {
+   "source": {
+    "type": "table",
+    "key": "cell-table-1718000000026"
+   },
+   "member": {
+    "levels": [
+     "@in"
+    ]
+   },
+   "name": "Set 7"
+  },
+  {
+   "source": {
+    "type": "table",
+    "key": "cell-table-1718000000027"
+   },
+   "member": {
+    "levels": [
+     "@in"
+    ]
+   },
+   "name": "Set 8"
+  }
+ ],
+ "sort": "size",
+ "minSize": 5,
+ "labels": true,
+ "colors": "set"
+}

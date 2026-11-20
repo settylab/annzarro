@@ -1,0 +1,9 @@
+{
+ "source": {
+  "type": "obs",
+  "key": "batch"
+ },
+ "binning": {
+  "method": "categories"
+ }
+}
