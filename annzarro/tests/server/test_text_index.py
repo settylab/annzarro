@@ -883,12 +883,16 @@ def test_a_store_with_nothing_to_index_costs_only_its_signature_and_so_does_a_re
     assert status["read"] == 0 and status["reused"] == 5
     print(f"filesystem calls per store, first crawl: {first}; re-check of unchanged stores: {second}")
     # a store with no README and no attribution: its text is not read, but since 0.8.0 (SCH-5) its field names
-    # are, so it is opened once; the re-check below still costs stat calls only
-    assert first["plain.zarr"]["list"] == 0 and first["plain.zarr"]["open"] > 0
+    # are: that costs exactly 8 stats and 4 opens of metadata files, and lists nothing (measured); the re-check
+    # below still costs the signature's 22 stats and opens nothing
+    names_cost = {"stat": 8, "list": 0, "open": 4}
+    assert first["plain.zarr"]["list"] == 0 and first["plain.zarr"]["open"] == names_cost["open"]
     # re-checking an unchanged store costs the same signature stats whether it has text or not, and opens nothing
     assert second["plain.zarr"] == second["liver.zarr"]
     assert second["liver.zarr"]["list"] == 0 and second["liver.zarr"]["open"] == 0
     # reading a store with a README does cost more: it is opened
     assert first["liver.zarr"]["total"] > first["plain.zarr"]["total"] and first["liver.zarr"]["open"] > 0
-    # (SCH-5, as above) the first crawl opened it for its names; the re-check costs the same signature stats as before
-    assert first["plain.zarr"]["total"] > second["plain.zarr"]["total"]
+    # the re-check costs what it cost before names (22 signature stats), the first crawl that plus the names read
+    assert second["plain.zarr"]["total"] == 22
+    assert first["plain.zarr"]["total"] == 22 + sum(names_cost.values())
+    assert first["plain.zarr"]["stat"] == 22 + names_cost["stat"]
