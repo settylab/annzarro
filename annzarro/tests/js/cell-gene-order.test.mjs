@@ -1,7 +1,8 @@
 // X2b: the order of the Cell-Gene Plot's rows and groups, and the scopes of its clustering (static/js/utils/cell-gene-order.js;
 // CXG-7, CXG-13, CXG-22, CXG-23, CXG-25). The clustering itself is X1's and is held against scipy in hclust.test.mjs;
 // here it runs synchronously through clusterRows behind a Promise, and every test checks which blocks are sent,
-// what each block contains, and that the answer comes back in the right place.
+// what each block contains, and that the answer comes back in the right place. Every value enters as its place on its
+// own colour bar (operator ruling on Q1); the bars are made by hand here, as X4a's colourBars will make them.
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -37,10 +38,12 @@ function matrix(rows, groups, rand, gaps = 0) {
 const geneSection = (...genes) => ({ kind: "genes", genes });
 const setSection = () => ({ kind: "set" });
 const rowsOf = (s) => (s.kind === "set" ? 1 : s.genes.length);
+const ident = (n, from = 0) => Array.from({ length: n }, (_, i) => from + i);
 const flatGroups = (n) => Array.from({ length: n }, (_, i) => ({ key: [`c:g${i}`], n: 10 + i }));
 
+// By default every row is on one colour bar from 0 to 1, so a value's place on its bar is the value itself.
 function input(over) {
-  return {
+  const out = {
     sections: [geneSection("A", "B", "C")],
     groups: flatGroups(4),
     partitionings: 1,
@@ -48,6 +51,8 @@ function input(over) {
     sortBySize: false,
     ...over,
   };
+  if (!out.bars) out.bars = [{ rows: ident(out.sections.reduce((a, s) => a + rowsOf(s), 0)), lo: 0, hi: 1 }];
+  return out;
 }
 
 // The group-major copy of `groups` over the matrix rows `features`.
@@ -57,7 +62,6 @@ function transpose(values, G, groups, features) {
   return out;
 }
 
-const ident = (n, from = 0) => Array.from({ length: n }, (_, i) => from + i);
 
 test("with clustering off, rows keep the source order and groups the grouping's order", async () => {
   const rand = rng(1);
@@ -168,9 +172,8 @@ test("all groups: one block over the gene rows, as displayed", async () => {
   assert.deepEqual(Array.from(o.groupBlocks[0].merges), Array.from(want.merges));
 });
 
-test("a gene drawn in two sections counts once, and aggregated rows do not count, when groups are clustered", async () => {
+test("every displayed row counts for the groups, aggregated rows included", async () => {
   const rand = rng(13);
-  // Rows: A B C | set | B D | set. The features are A, B, C, D: rows 0, 1, 2, 5.
   const sections = [geneSection("A", "B", "C"), setSection(), geneSection("B", "D"), setSection()];
   const values = matrix(7, 5, rand);
   const { calls, cluster } = recorder();
@@ -178,24 +181,87 @@ test("a gene drawn in two sections counts once, and aggregated rows do not count
     values, sections, groups: flatGroups(5), cluster: { genes: "off", groups: "all", ...SETTINGS },
   }));
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].cols, 4, "four distinct genes");
-  assert.deepEqual(calls[0].values, transpose(values, 5, ident(5), [0, 1, 2, 5]));
-  const want = clusterRows(transpose(values, 5, ident(5), [0, 1, 2, 5]), 5, 4, SETTINGS);
-  assert.deepEqual(Array.from(o.groups), Array.from(want.order));
+  assert.equal(calls[0].cols, 7, "all seven rows, the repeated gene B twice");
+  assert.deepEqual(calls[0].values, transpose(values, 5, ident(5), ident(7)));
+  assert.deepEqual(Array.from(o.groups), Array.from(clusterRows(calls[0].values, 5, 7, SETTINGS).order));
 });
 
-test("with no gene rows, groups are clustered on the aggregated rows", async () => {
-  const rand = rng(17);
-  const sections = [setSection(), geneSection(), setSection(), setSection()];
-  const values = matrix(3, 5, rand);
-  const { calls, cluster } = recorder();
-  const o = await createCellGeneOrder({ cluster }).order(input({
-    values, sections, groups: flatGroups(5), cluster: { genes: "off", groups: "all", ...SETTINGS },
+// Four groups on two rows. Row A splits {0, 1} from {2, 3} by 0.5; row B splits {0, 2} from {1, 3} by 0.6.
+const EUCLID = { linkage: "complete", distance: "euclidean" };
+const twoRows = () => Float64Array.from([
+  0, 0.01, 0.5, 0.52,
+  0, 0.6, 0.02, 0.63,
+]);
+
+test("a row drawn twice weighs twice: it can change the group order", async () => {
+  const values = twoRows();
+  const once = await createCellGeneOrder(recorder()).order(input({
+    values, sections: [geneSection("A", "B")], cluster: { genes: "off", groups: "all", ...EUCLID },
   }));
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].cols, 3);
-  assert.deepEqual(calls[0].values, transpose(values, 5, ident(5), [0, 1, 2]));
-  assert.deepEqual(Array.from(o.groups), Array.from(clusterRows(calls[0].values, 5, 3, SETTINGS).order));
+  // B alone is the larger split, so {0, 2} and {1, 3} merge first.
+  assert.deepEqual(Array.from(once.groupBlocks[0].merges.filter((_, i) => i % 4 < 2)).slice(0, 2).sort(), [0, 2]);
+  const twice = Float64Array.from([...values, ...values.slice(0, 4)]);
+  const rec = recorder();
+  const o = await createCellGeneOrder({ cluster: rec.cluster }).order(input({
+    values: twice, sections: [geneSection("A", "B"), geneSection("A")], cluster: { genes: "off", groups: "all", ...EUCLID },
+  }));
+  // A twice: sqrt(2) x 0.5 > 0.6, so {0, 1} and {2, 3} merge first, as with row A weighted 2 in the squared distance.
+  const weighted = clusterRows(Float64Array.from([0, 0, 0.01, 0.6, 0.5, 0.02, 0.52, 0.63].map((v, i) => (i % 2 === 0 ? v * Math.SQRT2 : v))), 4, 2, EUCLID);
+  assert.deepEqual(Array.from(o.groups), Array.from(weighted.order));
+  assert.deepEqual(Array.from(o.groupBlocks[0].merges.filter((_, i) => i % 4 < 2)).slice(0, 2).sort(), [0, 1]);
+  assert.notDeepEqual(Array.from(o.groups), Array.from(once.groups));
+});
+
+test("a row on its own colour bar enters relative to that bar, so a row of thousands does not swamp the genes", async () => {
+  // Rows A and B on the genes' bar from 0 to 1; an aggregated row of thousands on its own bar from 0 to 100,000.
+  const values = Float64Array.from([...twoRows(), 1000, 3000, 1000, 3000]);
+  values[4] = 0; values[5] = 0.1; values[6] = 0.02; values[7] = 0.11;   // B now splits {0, 2} from {1, 3} by 0.1 only
+  const sections = [geneSection("A", "B"), setSection()];
+  const bars = [{ rows: [0, 1], lo: 0, hi: 1 }, { rows: [2], lo: 0, hi: 100000 }];
+  const rec = recorder();
+  const o = await createCellGeneOrder({ cluster: rec.cluster }).order(input({
+    values, sections, bars, cluster: { genes: "off", groups: "all", ...EUCLID },
+  }));
+  const placed = Float64Array.from(values);
+  for (let g = 0; g < 4; g++) placed[8 + g] = values[8 + g] / 100000;
+  assert.deepEqual(rec.calls[0].values, transpose(placed, 4, ident(4), ident(3)), "the aggregate is sent as its place on its bar");
+  assert.deepEqual(Array.from(o.groups), Array.from(clusterRows(transpose(placed, 4, ident(4), ident(3)), 4, 3, EUCLID).order));
+  const raw = clusterRows(transpose(values, 4, ident(4), ident(3)), 4, 3, EUCLID);
+  assert.notDeepEqual(Array.from(o.groups), Array.from(raw.order), "in raw units the row of thousands would decide the order");
+  const m = o.groupBlocks[0].merges;
+  assert.deepEqual([[m[0], m[1]], [m[4], m[5]]].map((p) => p.join()).sort(), ["0,1", "2,3"], "row A decides the first merges");
+});
+
+test("under one shared bar the order is that of the displayed values", async () => {
+  const rand = rng(47);
+  const sections = [geneSection("A", "B", "C", "D"), setSection(), geneSection("E", "F", "G")];
+  const values = matrix(8, 7, rand).map((v) => v / 100 - 3);   // z-score-like values from -3 to 7
+  const bars = [{ rows: ident(8), lo: -3, hi: 7 }];
+  for (const settings of [SETTINGS, EUCLID]) {
+    const o = await createCellGeneOrder(recorder()).order(input({
+      values, sections, bars, groups: flatGroups(7), cluster: { genes: "sections", groups: "all", ...settings },
+    }));
+    assert.deepEqual(Array.from(o.groups), Array.from(clusterRows(transpose(values, 7, ident(7), ident(8)), 7, 8, settings).order));
+    assert.deepEqual(Array.from(o.rows.slice(0, 4)), Array.from(clusterRows(values.subarray(0, 28), 4, 7, settings).order));
+    assert.deepEqual(Array.from(o.rows.slice(5)), Array.from(clusterRows(values.subarray(35), 3, 7, settings).order, (r) => 5 + r));
+  }
+});
+
+test("a degenerate bar places its rows at 0, and a missing value stays missing", async () => {
+  const values = Float64Array.from([1, NaN, 3, 4, 5, 5, 5, 5]);
+  const rec = recorder();
+  await createCellGeneOrder({ cluster: rec.cluster }).order(input({
+    values, sections: [geneSection("A"), setSection()], bars: [{ rows: [0], lo: 1, hi: 5 }, { rows: [1], lo: 5, hi: 5 }],
+    cluster: { genes: "off", groups: "all", ...EUCLID },
+  }));
+  assert.deepEqual(rec.calls[0].values, Float64Array.from([0, 0, NaN, 0, 0.5, 0, 0.75, 0]));
+});
+
+test("bars must cover every row once", () => {
+  const order = createCellGeneOrder(recorder());
+  const values = new Float64Array(12);
+  assert.throws(() => order.order(input({ values, bars: [{ rows: [0, 1], lo: 0, hi: 1 }] })), /row 2/);
+  assert.throws(() => order.order(input({ values, bars: [{ rows: [0, 1, 2], lo: 0, hi: 1 }, { rows: [1], lo: 0, hi: 1 }] })), /row 1/);
 });
 
 // Two partitionings: cell type (3 levels, runs of 3, 1 and 4 groups) by age.
@@ -314,17 +380,18 @@ test("asking again for the shown matrix costs no clustering and no new answer", 
   const values = matrix(6, 8, rand);
   const sections = [geneSection("A", "B", "C", "D", "E", "F")];
   const groups = flatGroups(8);
+  const bars = [{ rows: ident(6), lo: 0, hi: 1000 }];
   const cluster = { genes: "sections", groups: "all", ...SETTINGS };
   const rec = recorder();
   const order = createCellGeneOrder({ cluster: rec.cluster });
-  const first = order.order(input({ values, sections, groups, cluster }));
+  const first = order.order(input({ values, sections, groups, bars, cluster }));
   await first;
   const sent = rec.calls.length;
   for (let i = 0; i < 100; i++) {
-    assert.equal(order.order(input({ values, sections, groups, cluster: { ...cluster } })), first, "the same promise");
+    assert.equal(order.order(input({ values, sections, groups, bars, cluster: { ...cluster } })), first, "the same promise");
   }
   assert.equal(rec.calls.length, sent, "no clustering per paint");
-  await order.order(input({ values, sections, groups, cluster: { ...cluster, linkage: "average" } }));
+  await order.order(input({ values, sections, groups, bars, cluster: { ...cluster, linkage: "average" } }));
   assert.equal(rec.calls.length, sent * 2, "a changed setting clusters again");
 });
 
