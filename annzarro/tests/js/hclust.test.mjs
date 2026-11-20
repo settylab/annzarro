@@ -106,6 +106,22 @@ test("distances are pairwise-complete: each pair on the columns where both have 
   }
 });
 
+test("with scattered gaps the smallest and largest pair distances are the brute-force ones", () => {
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const rows = Array.from({ length: 25 }, () => Array.from({ length: 14 }, () => (rnd() < 0.15 ? NaN : 10 + 3 * rnd())));
+  for (const distance of ["correlation", "euclidean"]) {
+    const all = [];
+    for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) all.push(pairDistance(rows[i], rows[j], distance));
+    const lo = all.reduce((m, v) => Math.min(m, v), Infinity), hi = all.reduce((m, v) => Math.max(m, v), -Infinity);
+    const r = clusterRows(flat(rows), 25, 14, { linkage: "complete", distance });
+    assert.equal(r.excluded.length, 0);
+    const last = r.merges.length - 2;
+    assert.ok(near(r.merges[2], lo), `${distance}: first ${r.merges[2]} vs ${lo}`);
+    assert.ok(near(r.merges[last], hi), `${distance}: last ${r.merges[last]} vs ${hi}`);
+  }
+});
+
 const FULL = [[1, 2, 3, 4, 5], [2, 1, 4, 3, 6], [5, 4, 3, 2, 1], [1, 3, 2, 5, 4], [4, 5, 6, 1, 2], [2, 2, 1, 3, 9]];
 
 test("a constant row takes no part under correlation and goes last; Euclidean keeps it", () => {

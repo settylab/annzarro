@@ -95,36 +95,48 @@ function distanceMatrix(values, cols, rowsIn, distance, anyMissing) {
     }
     return { D, lonely };
   }
+  // Missing values. Each row is zero-filled (and, under correlation, centred on its own mean first), so the sum of
+  // products over the shared columns is one plain dot product. The other sums over the shared columns are the row's
+  // totals less its entries in the columns the other row lacks: one short loop over that row's missing columns.
+  const X = new Float64Array(k * cols), X2 = new Float64Array(k * cols), M = new Uint8Array(k * cols);
+  const T = new Float64Array(k), Q = new Float64Array(k), seen = new Int32Array(k);
+  const gapAt = new Int32Array(k + 1);
+  const gaps = [];
   for (let a = 0; a < k; a++) {
-    const oa = rowsIn[a] * cols;
+    const src = rowsIn[a] * cols, dst = a * cols;
+    let n = 0, mean = 0;
+    for (let j = 0; j < cols; j++) { const v = values[src + j]; if (v === v) { n++; mean += v; } }
+    mean = distance === "correlation" ? mean / n : 0;   // a shift changes Euclidean distances, not correlations
+    for (let j = 0; j < cols; j++) {
+      const v = values[src + j];
+      if (v === v) { const c = v - mean; X[dst + j] = c; X2[dst + j] = c * c; M[dst + j] = 1; T[a] += c; Q[a] += c * c; } else gaps.push(j);
+    }
+    seen[a] = n;
+    gapAt[a + 1] = gaps.length;
+  }
+  for (let a = 0; a < k; a++) {
+    const oa = a * cols;
     for (let b = a + 1; b < k; b++) {
-      const ob = rowsIn[b] * cols;
-      let n = 0, sa = 0, sb = 0;
-      for (let j = 0; j < cols; j++) {
-        const x = values[oa + j], y = values[ob + j];
-        if (x !== x || y !== y) continue;
-        n++; sa += x; sb += y;
+      const ob = b * cols;
+      let sab = 0;
+      for (let j = 0; j < cols; j++) sab += X[oa + j] * X[ob + j];
+      let n = seen[a], sa = T[a], saa = Q[a], sb = T[b], sbb = Q[b];
+      for (let g = gapAt[b]; g < gapAt[b + 1]; g++) {
+        const j = gaps[g];
+        if (M[oa + j]) { n--; sa -= X[oa + j]; saa -= X2[oa + j]; }
+      }
+      for (let g = gapAt[a]; g < gapAt[a + 1]; g++) {
+        const j = gaps[g];
+        if (M[ob + j]) { sb -= X[ob + j]; sbb -= X2[ob + j]; }
       }
       let s;
       if (n < 2) {
         lonely[a] = 1; lonely[b] = 1; s = 0;
       } else if (distance === "euclidean") {
-        s = 0;
-        for (let j = 0; j < cols; j++) {
-          const x = values[oa + j], y = values[ob + j];
-          if (x !== x || y !== y) continue;
-          s += (x - y) * (x - y);
-        }
-        s = Math.sqrt(s * cols / n);
+        s = Math.sqrt(Math.max(0, saa + sbb - 2 * sab) * cols / n);
       } else {
-        const ma = sa / n, mb = sb / n;
-        let sab = 0, saa = 0, sbb = 0;
-        for (let j = 0; j < cols; j++) {
-          const x = values[oa + j], y = values[ob + j];
-          if (x !== x || y !== y) continue;
-          sab += (x - ma) * (y - mb); saa += (x - ma) * (x - ma); sbb += (y - mb) * (y - mb);
-        }
-        s = saa > 0 && sbb > 0 ? 1 - sab / Math.sqrt(saa * sbb) : 1;
+        const va = saa - sa * sa / n, vb = sbb - sb * sb / n;
+        s = va > 1e-12 * saa && vb > 1e-12 * sbb ? 1 - (sab - sa * sb / n) / Math.sqrt(va * vb) : 1;
         if (s < 0) s = 0;
       }
       D[a * k + b] = s;
@@ -132,6 +144,13 @@ function distanceMatrix(values, cols, rowsIn, distance, anyMissing) {
     }
   }
   return { D, lonely };
+}
+
+// The k x k matrix of the positions `stay` of an n x n one.
+function compact(D, n, stay) {
+  const k = stay.length, out = new Float32Array(k * k);
+  for (let a = 0; a < k; a++) for (let b = 0; b < k; b++) out[a * k + b] = D[stay[a] * n + stay[b]];
+  return out;
 }
 
 // scipy's nn_chain, then its stable sort by height and its labelling. Returns the (k-1) x 4 linkage matrix.
@@ -228,10 +247,16 @@ export function clusterRows(values, rows, cols, opts = {}) {
   const { linkage, distance } = settingsOf(opts);
   checkShape(values, rows, cols);
   const { keep, anyMissing } = participants(values, rows, cols, distance);
-  let part = keep;
-  if (anyMissing && keep.length > 1) {
-    const { lonely } = distanceMatrix(values, cols, keep, distance, true);
-    if (lonely.some((v) => v === 1)) part = keep.filter((_, i) => !lonely[i]);
+  let part = keep, D = null;
+  if (keep.length > 1) {
+    const built = distanceMatrix(values, cols, keep, distance, anyMissing);
+    D = built.D;
+    if (built.lonely.some((v) => v === 1)) {
+      const stay = [];
+      keep.forEach((_, i) => { if (!built.lonely[i]) stay.push(i); });
+      part = stay.map((i) => keep[i]);
+      D = compact(D, keep.length, stay);
+    }
   }
   const k = part.length;
   const taking = new Uint8Array(rows);
@@ -239,7 +264,6 @@ export function clusterRows(values, rows, cols, opts = {}) {
   const excluded = Int32Array.from({ length: rows }, (_, r) => r).filter((r) => !taking[r]);
   let merges = new Float64Array(0), leaves = Int32Array.from({ length: k }, (_, i) => i);
   if (k > 1) {
-    const { D } = distanceMatrix(values, cols, part, distance, anyMissing);
     merges = nnChain(D, k, linkage);
     leaves = leafOrder(merges, k);
   }
