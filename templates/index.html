@@ -67,6 +67,9 @@
     <!-- Custom Styles: the theme's colours (light and dark) first, then the app's own -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cell-grouping.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cell-gene.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cell-count.css') }}">
     <!-- The desktop app has no native title bar on macOS and Windows; applies only with <html data-desktop-frame> (set by its preload) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/desktop-frame.css') }}">
 </head>
@@ -451,6 +454,9 @@
     <script type="module" src="{{ url_for('static', filename='js/panels/gene-table.js') }}"></script>
     <script type="module" src="{{ url_for('static', filename='js/panels/gene-set.js') }}"></script>
     <script type="module" src="{{ url_for('static', filename='js/panels/gene-signature.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/panels/cell-grouping.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/panels/cell-gene.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/panels/cell-count.js') }}"></script>
     <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
     
     <!-- Check dependencies are properly loaded -->
