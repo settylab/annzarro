@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 
 const S = await import('../../../static/js/utils/group-store.js');
 const { createLimiter } = await import('../../../static/js/utils/derived-store.js');
+const { Ledger } = await import('../../../static/js/utils/memory-guard.js');
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 
@@ -23,7 +24,7 @@ const momentOf = (name, g, m) => name.charCodeAt(0) * 100 + g * 10 + m;
 
 /** A fake server, and the store over it. */
 function world({ seconds = () => 1, tierOf = (s) => (s < 5 ? 'live' : s < 60 ? 'auto' : s < 600 ? 'confirm' : 'refused'),
-    budget, cells = CELLS } = {}) {
+    budget, cells = CELLS, codes = null } = {}) {
     const calls = { estimate: [], compute: [] };
     const waiting = [];
     const ledger = { held: new Map(), holds: 0, releases: 0 };
@@ -43,8 +44,9 @@ function world({ seconds = () => 1, tierOf = (s) => (s < 5 ? 'live' : s < 60 ? '
     };
     const store = S.createGroupStore({
         api, budget, limiter: createLimiter(2),
-        codes: {
+        codes: codes || {
             hold(key, bytes) { ledger.holds++; ledger.held.set(key, bytes); },
+            pin() {},
             release(key) { ledger.releases++; ledger.held.delete(key); }
         }
     });
@@ -73,7 +75,7 @@ function world({ seconds = () => 1, tierOf = (s) => (s < 5 ? 'live' : s < 60 ? '
     /** A consumer of a need: attaches it under the key group-sources would use. */
     const consume = (need, { visible = true, subset = ctx.subset } = {}) => {
         const key = `${need.hash}\u0001${ctx.dataset}\u0001${subset || ''}`;
-        const owner = { visible: () => visible };
+        const owner = { visible: typeof visible === 'function' ? visible : () => visible };
         const first = store.attach(key, { recipe: need, dataset: ctx.dataset, subset, hash: need.hash }, owner);
         return { key, owner, first, snap: () => store.snapshot(key), leave: () => store.detach(key, owner) };
     };
@@ -272,10 +274,35 @@ test('too many groups settles with the refusal in the header and nothing cached'
         refused: { reason: 'too_many_groups', count: 6840, limit: 2000 } }, values: {} });
     await settle();
     const snap = c.snap();
-    assert.equal(snap.state, 'noscore');
+    assert.equal(snap.state, 'refused', 'a refusal, never the empty state');
     assert.equal(snap.reason, 'too_many_groups');
     assert.equal(snap.header.refused.count, 6840);
+    assert.equal(snap.values, null);
     assert.equal(w.store.cache.size, 0);
+});
+
+test('a refusal and a reply with no groups are told apart', async () => {
+    const w = world();
+    const refused = w.consume(need());
+    const empty = w.consume(need({ features: [gene('Cd3e')] }));
+    await settle();
+    w.waiting[0].resolve({ header: { type: 'result', shape: 'grouping', n_shown: CELLS, reason: 'too_many_groups',
+        refused: { reason: 'too_many_groups', count: 6840, limit: 2000 } }, values: {} });
+    w.waiting[1].resolve({ header: { type: 'result', shape: 'grouping', n_shown: CELLS, n_grouped: 0, partitionings: [{ levels: [] }],
+        groups: [], features: [{ id: 'f0', status: 'ok' }] }, values: { feature_moments: new Float64Array(0) } });
+    await settle();
+    const a = refused.snap();
+    const b = empty.snap();
+    assert.equal(a.state, 'refused');
+    assert.equal(b.state, 'ready');
+    assert.deepEqual(b.values.reply.groups, []);
+    assert.notEqual(a.state, b.state);
+    // and both differ from a refusal by cost, which is refused too, by its own reason
+    const costly = w.consume(need({ features: [gene('Nkg7')] }));
+    await settle();
+    await w.fail(2, Object.assign(new Error('Too expensive.'), { status: 413, reason: 'groups_too_expensive' }));
+    assert.equal(costly.snap().state, 'refused');
+    assert.equal(costly.snap().reason, 'groups_too_expensive');
 });
 
 test('the last consumer leaving stops the request', async () => {
@@ -357,4 +384,71 @@ test('a read of a ready key does no work that grows with its features', async ()
     for (let i = 0; i < 10000; i++) c.snap();
     const perRead = (performance.now() - t0) / 10000;
     assert.ok(perRead < 0.01, `a read took ${perRead.toFixed(4)} ms at 2,000 features`);
+});
+
+test('codes are pinned while a consumer on screen holds them; hidden they may be evicted, and come back when shown', async () => {
+    const ledger = new Ledger();
+    const w = world({ codes: ledger, cells: 1000 });
+    let shown = true;
+    const plot = w.consume(need({ codes: true }), { visible: () => shown });
+    await settle();
+    await w.finish(0);
+    assert.equal(plot.snap().state, 'ready');
+    const [name] = [...ledger.holdings.keys()];
+    assert.deepEqual(ledger.holdings.get(name), { bytes: 1000, pinned: true, evict: ledger.holdings.get(name).evict });
+    assert.equal(ledger.evict(), 0, 'pinned codes are never evicted');
+    // hidden: still held and counted, but evictable
+    shown = false;
+    w.store.poke();
+    assert.equal(ledger.holdings.get(name).pinned, false);
+    assert.equal(ledger.heldBytes(), 1000);
+    // shown again before any eviction: pinned again, nothing asked
+    shown = true;
+    w.store.poke();
+    assert.equal(ledger.holdings.get(name).pinned, true);
+    // hidden, and the guard needs the room: evicted, the consumer's value goes, and nothing is asked while hidden
+    shown = false;
+    w.store.poke();
+    assert.equal(ledger.evict(), 1000);
+    assert.equal(ledger.holdings.size, 0);
+    assert.equal(w.store.stats().codesBytes, 0);
+    await settle();
+    assert.notEqual(plot.snap().state, 'ready');
+    assert.equal(plot.snap().values, null);
+    assert.equal(w.calls.compute.length, 1);
+    // shown again: asked for again, the codes only (the group table is cached), and pinned once they are back
+    shown = true;
+    w.store.poke();
+    await settle();
+    assert.equal(w.calls.compute.length, 2);
+    assert.equal(w.calls.compute[1].recipe.want.codes, true);
+    await w.finish(1);
+    assert.equal(plot.snap().state, 'ready');
+    assert.equal(ledger.holdings.get(name).pinned, true);
+    // released with the last holder
+    plot.leave();
+    assert.equal(ledger.holdings.size, 0);
+});
+
+test('two holders: pinned while either is on screen', async () => {
+    const ledger = new Ledger();
+    const w = world({ codes: ledger });
+    let one = true;
+    let two = false;
+    w.consume(need({ codes: true }), { visible: () => one });
+    w.consume(need({ codes: true, features: [gene('Cd3e')] }), { visible: () => two });
+    await settle();
+    await w.finish(0);
+    // the second waits off screen; give it the codes held for the first
+    two = true;
+    w.store.poke();
+    await settle();
+    await w.finish(1);
+    const [name] = [...ledger.holdings.keys()];
+    one = false;
+    w.store.poke();
+    assert.equal(ledger.holdings.get(name).pinned, true);
+    two = false;
+    w.store.poke();
+    assert.equal(ledger.holdings.get(name).pinned, false);
 });
