@@ -31,6 +31,7 @@
  */
 import { findCycle as findCycleIn } from './table-resolver.js';
 import { getColumnKey } from './column-key.js';
+import { isScoreColumn } from './score-column.js';
 
 /**
  * How a configuration names another panel:
@@ -46,8 +47,10 @@ const VIAS = new Set(['filter', 'source', 'partitioning', 'set', 'section', 'axi
 
 /** panel type -> (config) => references */
 const declarations = new Map();
-/** Source types whose `key` is a panel's id (a signature's score; later a grouping's groups). */
+/** Source types whose `key` is a panel's id, registered by their providers (later a grouping's groups). */
 const panelSourceTypes = new Set();
+/** A signature's or gene table's score is one already: score-column.js names its type. */
+const isPanelSourceType = (type) => panelSourceTypes.has(type) || isScoreColumn({ type });
 
 let host = { panel: () => null, ids: () => [] };
 
@@ -58,7 +61,7 @@ let host = { panel: () => null, ids: () => [] };
  *   reads only the fields that hold references (a table's configuration has lazy views of its rows)
  *   and must not throw on a configuration from a hand-edited link
  */
-export function registerReferences(panelType, declare) {
+export function registerReferences(panelType, declare) {  // export-unused-ok: G9a, X3a and C2a declare their panel types' references (plan 1.3)
     if (typeof declare !== 'function') throw new Error(`The references of '${panelType}' must be a function`);
     if (declarations.has(panelType)) throw new Error(`The references of '${panelType}' are declared already`);
     declarations.set(panelType, declare);
@@ -69,7 +72,7 @@ export function registerReferences(panelType, declare) {
  * table's columns of that type then follow their panel, with no other change.
  * @param {string} type
  */
-export function registerPanelSourceType(type) {
+export function registerPanelSourceType(type) {  // export-unused-ok: G8a registers cell-group (CAT-9)
     panelSourceTypes.add(type);
 }
 
@@ -81,7 +84,7 @@ export function registerPanelSourceType(type) {
  *   only its own fields
  * @returns {Array<{id: string, via: string, get: Function, set: Function, remembered?: boolean}>}
  */
-export function referencesOf(config, panelType) {
+export function referencesOf(config, panelType) {  // export-unused-ok: plan 1.3 interface; the new panel types' remap round-trip tests and G9a read it
     if (!config || typeof config !== 'object' || Array.isArray(config)) return [];
     const own = declarations.get(panelType);
     const asked = own ? [own] : [...declarations.values()];
@@ -145,7 +148,7 @@ export function dependsOn(id) {
  * @param {string} id
  * @returns {string[]|null} the ids on the cycle, starting and ending at the one met twice
  */
-export function findCycle(id) {
+export function findCycle(id) {  // export-unused-ok: plan 1.3 interface; the grouping's cycle state (G9a, SHR-34) asks it
     return findCycleIn(id, dependsOn);
 }
 
@@ -155,7 +158,7 @@ export function findCycle(id) {
  * @param {string} id
  * @returns {Array<{panelId: string, kind: string}>} kind is the user's panel type
  */
-export function usersOf(id) {
+export function usersOf(id) {  // export-unused-ok: plan 1.3 interface; a grouping's delete with its user count (GRP-13, G9a)
     const out = [];
     for (const other of host.ids()) {
         if (other === id) continue;
@@ -192,10 +195,8 @@ export function keptInUse(closedIds) {
 
 // ---------------------------------------------------------------- the panel types before 0.8.0
 
-registerPanelSourceType('gene-score');
-
 const isObject = (x) => !!x && typeof x === 'object';
-const isPanelSource = (s) => isObject(s) && panelSourceTypes.has(s.type) && typeof s.key === 'string';
+const isPanelSource = (s) => isObject(s) && isPanelSourceType(s.type) && typeof s.key === 'string';
 
 /** The key of a source setting as a reference. */
 function sourceRef(source, via, remembered = false) {
@@ -219,9 +220,8 @@ function plotReferences(config) {
     for (const axis of AXES) {
         const history = isObject(config[axis]) && isObject(config[axis].history) ? config[axis].history : null;
         if (!history) continue;
-        for (const type of panelSourceTypes) {
-            const was = history[type];
-            if (isObject(was) && typeof was.key === 'string') out.push(sourceRef(was, 'axis', true));
+        for (const [type, was] of Object.entries(history)) {
+            if (isPanelSourceType(type) && isObject(was) && typeof was.key === 'string') out.push(sourceRef(was, 'axis', true));
         }
     }
     return out;
