@@ -29,8 +29,7 @@ import { TableResolver, describeUnresolved } from '../../utils/table-resolver.js
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
 import { NO_HOVER } from './hover-columns.js';
-import { loadScoreSeries, scoreLabel } from '../../utils/score-source.js';
-import { getSource, plotSeries } from '../../utils/source-registry.js';
+import { getSource, hoverSources, plotSeries } from '../../utils/source-registry.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
@@ -1662,11 +1661,14 @@ export async function loadHoverColumns(settings, plotType, plotContainer = null,
     const count = (h.type === 'obs' || h.type === 'var') && !h.column ? categoryCount(structure, h.type, h.key) : null;
     if (count !== null && !(await hoverLabelsFit(datasetPath, h.type, h.key, count, points, plotContainer, signal))) continue;
     try {
-      if (h.type === 'gene-score') {
-        // a signature's score beside the obs columns; read only when ready (the plot draws again when it is)
-        if (plotType === 'genes') continue;
-        const scored = await loadScoreSeries(h, { host: plotContainer, role: `hover:${h.key}:${h.column || ''}:${h.layer || ''}`, expected: points });
-        out.push({ label: scoreLabel(h), values: scored.values });
+      const provider = getSource(h.type);
+      if (provider) {
+        // a provider's series beside the columns (a signature's score, a grouping), in a plot whose picker lists it;
+        // read only when ready (the plot draws again when it is)
+        if (!hoverSources(plotType === 'genes' ? 'gene-plot' : 'cell-plot').includes(provider)) continue;
+        const series = plotSeries(await provider.load(h, { host: plotContainer, role: `hover:${h.key}:${h.column || ''}:${h.layer || ''}`,
+          axis: null, expected: points, unit: plotType === 'genes' ? 'genes' : 'cells', signal }));
+        out.push({ label: provider.hover.label(h), values: series.values });
         continue;
       }
       const loaded = await loadAxisData({ type: h.type, key: h.key, column: h.column || '' }, plotType, null, { signal });

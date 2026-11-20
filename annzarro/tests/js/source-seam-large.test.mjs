@@ -12,7 +12,6 @@ import assert from 'node:assert/strict';
 const R = await import('../../../static/js/utils/source-registry.js');
 const H = await import('../../../static/js/panels/plot-utilities/hover-columns.js');
 const { updateLargePlotControls, largePlotTooltip } = await import('../../../static/js/panels/plot-utilities/large-plot-controls.js');
-const { largePlotRefusal } = await import('../../../static/js/panels/plot-utilities/large-plot.js');
 
 const KEPT = [];
 /** A grouping-like provider: categorical; colour and hover in a large plot, never an axis there. */
@@ -74,7 +73,10 @@ test('a pick becomes the provider\'s setting and back; what the picker cannot sh
     assert.deepEqual(H.hoverInfoFromSelection('cells', ['Age'], [unknown]), [{ type: 'obs', key: '_index' }, unknown, { type: 'obs', key: 'Age' }]);
 });
 
-test('large-plot mode accepts a provider on the axes it declares, and refuses the rest with the existing sentence', () => {
+test('large-plot mode accepts a provider on the axes it declares, and refuses the rest with the existing sentence', async () => {
+    // imported here: large-plot.js brings the page's own providers (a score's Hover entries need its panels), which
+    // the picker tests above leave out
+    const { largePlotRefusal } = await import('../../../static/js/panels/plot-utilities/large-plot.js');
     for (const axis of ['x', 'y', 'color']) assert.equal(R.largeAccepts('fake-score', axis), true, axis);
     assert.equal(R.largeAccepts('fake-group', 'color'), true);
     assert.equal(R.largeAccepts('fake-group', 'x'), false);

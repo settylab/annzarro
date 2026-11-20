@@ -1,15 +1,17 @@
-import { DEFAULT_INPUT, DEFAULT_METHOD, methodShort } from '../../utils/signature-options.js';
-import { entityLabel } from '../../utils/score-source-panels.js';
+import { getSource, hoverSources } from '../../utils/source-registry.js';
 
 /**
  * The panel's "Hover" picker: which obs (cell plot) or var (gene plot)
- * columns the hover label lists after x / y / colour.
+ * columns the hover label lists after x / y / colour, then each provider's
+ * entries (a signature's scores, a grouping) in a group of their own.
  *
  * settings.hoverInfo ([{type, key, column?}]) is saved in configs, panel
  * sets and links and read by loadHoverColumns, but nothing in the panel let
  * you change it. The picker offers the 1-D annotation columns; entries it
  * cannot show (the default `_index`, matrix columns from a link) are kept
- * as they are when the selection changes.
+ * as they are when the selection changes. A provider's entries are what its
+ * `hover` says (utils/source-registry.js): its group, its entries and the
+ * picker value of each, `${type}:...`; the picker names no source type.
  */
 
 /**
@@ -23,59 +25,25 @@ export function hoverAnnotation(plotType) {
   return plotType === 'genes' ? 'var' : 'obs';
 }
 
-/** The picker's value for a score: `gene-score:<signature id>:<method>:<layer>` (layer empty for the signature's default). */
-export const SCORE_PREFIX = 'gene-score:';
+/** The consumer a plot's Hover picker lists providers for. */
+const consumerOf = (plotType) => (plotType === 'genes' ? 'gene-plot' : 'cell-plot');
 
-/** The picker value of one score. */
-export const scoreValue = (id, method, layer = '') => `${SCORE_PREFIX}${id}:${method}:${layer || ''}`;
-
-/** `{key, column, layer}` of a picker value of a score (layer only when the value names one). */
-export function parseScoreValue(value) {
-  const rest = value.slice(SCORE_PREFIX.length);
-  const parts = rest.split(':');
-  if (parts.length < 3) return { key: parts[0], column: parts[1] || DEFAULT_METHOD };
-  const layer = parts.pop();
-  const column = parts.pop();
-  return { key: parts.join(':'), column, ...(layer ? { layer } : {}) };
+/** The picker value of a stored hover entry: a provider's own (its hover.valueOf), else the column's key. */
+export function pickerValue(h) {
+  const provider = h && getSource(h.type);
+  return provider && provider.hover ? provider.hover.valueOf(h) : h.key;
 }
 
-/** The picker value of a stored hover entry that reads a score; one with no layer reads the source's own. */
-export function hoverScoreValue(h, inputOf = () => DEFAULT_INPUT) {
-  return scoreValue(h.key, h.column || DEFAULT_METHOD, h.layer || inputOf(h.key) || DEFAULT_INPUT);
-}
-
-/** The optgroup the scores sit in. */
-export const SCORE_GROUP = 'Gene scores';
-
-/**
- * The picker's entries for gene scores: each score a source offers (`source.options`: [{method, layer, label}]), then
- * any value in `kept` that it no longer offers (kept and marked, so the plot still has it). A source's first entry is
- * named by the source alone.
- * @param {Array<{id: string, title: string, kind?: string, options?: Object[]}>} sources
- * @param {Iterable<string>} kept - picker values chosen now
- * @returns {Array<{value: string, label: string}>}
- */
-export function scoreHoverOptions(sources, kept) {
-  const out = [];
-  for (const source of sources) {
-    const mine = (source.options || []).map(o => ({ value: scoreValue(source.id, o.method, o.layer), label: o.label }));
-    for (const value of kept) {
-      const got = parseScoreValue(value);
-      if (got.key === source.id && !mine.some(m => m.value === value)) {
-        mine.push({ value, label: `${methodShort(got.column)}${got.layer ? ` · ${got.layer}` : ''} (no longer offered)` });
-      }
-    }
-    const name = entityLabel(source);
-    mine.forEach((o, i) => out.push({ value: o.value, label: i === 0 ? name : `${name} · ${o.label}` }));
-  }
-  return out;
+/** The provider among `providers` whose entry a picker value is (`${type}:...`), or null for a column. */
+function providerOf(value, providers) {
+  return providers.find(p => value.startsWith(`${p.type}:`)) || null;
 }
 
 /**
- * Options for the picker: "No hover", then every annotation column, selected if configured; in a cell plot
- * then the gene scores (scoreHoverOptions).
+ * Options for the picker: "No hover", then every annotation column, selected if configured; then each provider's
+ * entries (its hover.options), in its group.
  */
-export function hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverOff, signatures = []) {
+export function hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverOff) {
   const type = hoverAnnotation(plotType);
   const off = hoverOff === true || hoverOff === 'auto';
   const info = Array.isArray(hoverInfo) ? hoverInfo : [];
@@ -83,11 +51,11 @@ export function hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverO
   const options = [{ value: NO_HOVER, label: 'No hover', selected: off }].concat((datasetStructure?.[type]?.columns || [])
     .filter(c => c !== '_index')
     .map(c => ({ value: c, label: c, selected: !off && chosen.has(c) })));
-  if (plotType === 'genes') return options;
-  const inputOf = (key) => (signatures.find(s => s.id === key) || {}).input;
-  const scored = new Set(info.filter(h => h && h.type === 'gene-score').map(h => hoverScoreValue(h, inputOf)));
-  for (const o of scoreHoverOptions(signatures, scored)) {
-    options.push({ ...o, selected: !off && scored.has(o.value), group: SCORE_GROUP });
+  for (const provider of hoverSources(consumerOf(plotType))) {
+    const chosenHere = new Set(info.filter(h => h && h.type === provider.type).map(h => provider.hover.valueOf(h)));
+    for (const o of provider.hover.options(chosenHere)) {
+      options.push({ ...o, selected: !off && chosenHere.has(o.value), group: provider.hover.group });
+    }
   }
   return options;
 }
@@ -110,23 +78,26 @@ export function hoverOffFromSelection(selected, previous) {
 /** The hoverInfo a picker selection stands for. */
 export function hoverInfoFromSelection(plotType, selected, previous) {
   const type = hoverAnnotation(plotType);
+  const providers = hoverSources(consumerOf(plotType));
   selected = (selected || []).filter(v => v !== NO_HOVER);
-  const scores = selected.filter(v => v.startsWith(SCORE_PREFIX));
-  selected = selected.filter(v => !v.startsWith(SCORE_PREFIX));
+  const picked = selected.filter(v => providerOf(v, providers));
+  selected = selected.filter(v => !providerOf(v, providers));
+  // the picker lists every entry of its providers: their entries are what it selects; another provider's (one this
+  // page has not loaded, from a link) is kept
   const kept = (Array.isArray(previous) ? previous : [])
-    .filter(h => h && !(h.type === type && !h.column && h.key !== '_index') && h.type !== 'gene-score');
+    .filter(h => h && !(h.type === type && !h.column && h.key !== '_index') && !providers.some(p => p.type === h.type));
   if (!kept.some(h => h.type === type && h.key === '_index')) kept.unshift({ type, key: '_index' });
   return kept.concat((selected || []).filter(k => k && k !== '_index').map(key => ({ type, key })),
-    scores.map(v => ({ type: 'gene-score', ...parseScoreValue(v) })));
+    picked.map(v => { const provider = providerOf(v, providers); return { type: provider.type, ...provider.hover.parse(v) }; }));
 }
 
 /** Fill a <select multiple> with the options. */
-export function populateHoverSelect(select, plotType, datasetStructure, hoverInfo, hoverOff, signatures = []) {
+export function populateHoverSelect(select, plotType, datasetStructure, hoverInfo, hoverOff) {
   if (!select) return;
   select.innerHTML = '';
   let group = null;
   let groupName = null;
-  for (const o of hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverOff, signatures)) {
+  for (const o of hoverColumnOptions(plotType, datasetStructure, hoverInfo, hoverOff)) {
     const opt = document.createElement('option');
     opt.value = o.value;
     opt.textContent = o.label;
@@ -142,5 +113,29 @@ export function populateHoverSelect(select, plotType, datasetStructure, hoverInf
     } else {
       select.appendChild(opt);
     }
+  }
+}
+
+/**
+ * Follow what each provider offers in a Hover picker that is built (panels came or went, a signature changed what it
+ * offers): a provider's group is rebuilt in place when its entries changed, and what is chosen stays chosen.
+ * @param {HTMLSelectElement} select
+ * @param {'cells'|'genes'} plotType
+ */
+export function refreshHoverGroups(select, plotType) {
+  for (const provider of hoverSources(consumerOf(plotType))) {
+    const label = provider.hover.group;
+    const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === label);
+    const have = group ? Array.from(group.querySelectorAll('option')) : [];
+    const chosen = new Set(have.filter(o => o.selected).map(o => o.value));
+    const wanted = provider.hover.options(chosen);
+    const same = have.length === wanted.length && wanted.every((o, i) => have[i].value === o.value && have[i].textContent === o.label);
+    if (same) continue;
+    if (!wanted.length) { if (group) group.remove(); continue; }
+    const next = document.createElement('optgroup');
+    next.label = label;
+    for (const o of wanted) next.appendChild(new Option(o.label, o.value, false, chosen.has(o.value)));
+    if (group) group.replaceWith(next);
+    else select.appendChild(next);
   }
 }

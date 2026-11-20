@@ -18,17 +18,12 @@ PROVIDER_FILES = {"utils/score-source.js", "utils/cell-group-source.js"}
 BASE_TOTAL, BASE_FILES = 53, 18
 
 #: occurrences allowed per file now; F4 took utils/deeplink.js from 2 to 0; F3c-1 took the menus, loads, titles, view
-#: descriptor and panel-set follow to the provider (hover and the large plot are F3c-2's, tables F3d's)
+#: descriptor and panel-set follow to the provider; F3c-2 the Hover picker and lines, large-plot mode and the colour
+#: groups (the plots hold none now; tables are F3d's)
 CEILING = {
     "panels/table-utilities/table-ui-make.js": 8,
     "panels/table-utilities/table-data.js": 4,
-    "panels/plot-utilities/large-plot-controls.js": 3,
-    "panels/plot-utilities/hover-columns.js": 3,
     "utils/score-column.js": 3,
-    "panels/plot-utilities/large-interact.js": 2,
-    "panels/plot-utilities/listeners.js": 1,
-    "panels/plot-utilities/plot-make.js": 1,
-    "panels/plot-utilities/large-plot.js": 1,
     "panels/table-utilities/table-scores.js": 1,
     "utils/column-key.js": 1,
 }

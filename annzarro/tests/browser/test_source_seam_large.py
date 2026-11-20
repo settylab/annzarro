@@ -83,15 +83,31 @@ window.__fakeReady = Promise.all([import('/static/js/utils/source-registry.js'),
     },
     loadLarge: async () => { throw new Error('not drawn large here'); }
   });
+  const FEW = ['B cells', 'T cells', 'NK cells'], FEW_COLOURS = ['#1b9e77', '#d95f02', '#7570b3'];
+  const few = (fn) => async (setting, opts) => {
+    window.__fakeLoads.push({ fn, type: 'fake-few', role: opts.role });
+    named(setting);
+    const codes = new Uint8Array(opts.expected || 0).map((_, i) => i %% 3);
+    return { type: 'categorical', codes, MISSING: 255, categories: FEW, colours: FEW_COLOURS,
+      coverage: C.Coverage.complete(opts.expected || 0, 'cells') };
+  };
+  R.registerSource({ ...base('fake-few', 'fake few'), load: few('load'), loadLarge: few('loadLarge') });
+});
+// every uns key the plots ask for (DataManager.loadUns answers a key the store lacks without a request)
+window.__unsKeys = [];
+window.__unsReady = import('/static/js/data-manager.js').then(({ DataManager }) => {
+  const real = DataManager.loadUns;
+  DataManager.loadUns = (options, ...rest) => { window.__unsKeys.push(options && options.unsKey); return real(options, ...rest); };
 });
 const realFetch = window.fetch.bind(window);
-window.fetch = async (url, init) => { await window.__fakeReady; return realFetch(url, init); };
+window.fetch = async (url, init) => { await window.__fakeReady; await window.__unsReady; return realFetch(url, init); };
 """ % LEVELS
 
 UMAP_X = {"type": "obsm", "key": "X_umap", "column": "0"}
 UMAP_Y = {"type": "obsm", "key": "X_umap", "column": "1"}
 MANY = {"type": "fake-many", "key": "grp-1", "column": ""}
 RANKED = {"type": "fake-ranked", "key": "grp-1", "column": ""}
+FEW = {"type": "fake-few", "key": "grp-1", "column": ""}
 SUBSET = {"n": LEVELS, "seed": 0}
 
 
@@ -184,9 +200,9 @@ def test_the_hover_picker_lists_the_provider_and_the_hover_line_reads_it(browser
     page.select_option(f"{L} select.hover-columns-select", ["fake-many:grp-1"])
     texts = until(page, """(tile) => { const g = document.querySelector(tile + ' .js-plotly-plot');
         const t = g && g.data && g.data.find(d => Array.isArray(d.hovertext) && d.hovertext.some(h => String(h).includes('Grouping A: ')));
-        return t ? { text: t.text, hovertext: t.hovertext } : null; }""", L)
-    names = page.evaluate("() => window.DataManager.getCells()")
-    for name, line in zip(texts["text"], texts["hovertext"]):
+        return t ? { names: t.customdata, hovertext: t.hovertext } : null; }""", L)
+    names = page.evaluate("async () => Array.from((await import('/static/js/data-manager.js')).DataManager.getCells())")
+    for name, line in zip(texts["names"], texts["hovertext"]):
         i = names.index(name)
         assert line == f"<br>Grouping A: L{i % LEVELS:02d}", (name, line)
     hover = page.evaluate("() => window.PanelManager.getPanel('cell-plot-L').getConfig().hoverInfo")
@@ -235,6 +251,17 @@ def test_a_large_plot_is_coloured_from_the_providers_codes(browser, server):
     assert not page.__errors, page.__errors
 
 
+def test_a_large_plot_draws_a_providers_own_colours(browser, server):
+    page = _page(browser)
+    page.goto(_link(server, colour=FEW, categoryPalette="uns"))
+    until(page, LARGE, L)
+    legend = page.evaluate("""(tile) => document.querySelector(tile + ' .js-plotly-plot')._fullData
+        .filter(d => d.meta === 'az-legend').map(d => [d.name, d.marker.color])""", L)
+    assert legend == [["B cells", "#1b9e77"], ["T cells", "#d95f02"], ["NK cells", "#7570b3"]], "the provider's colours, not uns"
+    assert page.evaluate("""(t) => !document.querySelector(t + ' .plot-status .ps-tag[data-tag="uns-palette"]')""", L)
+    assert not page.__errors, page.__errors
+
+
 def test_a_grouping_is_refused_as_a_large_plot_axis(browser, server):
     page = _page(browser)
     page.goto(_link(server, x=MANY, colour={"type": "none", "key": "", "column": ""}))
@@ -248,4 +275,76 @@ def test_a_grouping_is_refused_as_a_large_plot_axis(browser, server):
         const o = document.querySelector(`${tile} select.axis-type-select[data-axis="${axis}"] option[value="fake-many"]`);
         return [axis, o.disabled, o.getAttribute('title')]; })""", L)
     assert state == [["x", True, TOOLTIP], ["y", True, TOOLTIP], ["color", False, None]]
+    assert not page.__errors, page.__errors
+
+
+TRACE_COLOURS = """(tile) => {
+  const g = document.querySelector(tile + ' .js-plotly-plot');
+  if (!g || !g.data || document.querySelector(tile + ' .loading-overlay')) return null;
+  const named = g.data.filter(t => t.meta !== 'az-legend' && typeof t.name === 'string' && !/Focused/.test(t.name) && typeof (t.marker && t.marker.color) === 'string'
+      && Array.isArray(t.x) && t.x.length);
+  return named.length ? Object.fromEntries(named.map(t => [t.name, t.marker.color])) : null;
+}"""
+
+FEW_COLOURS = {"B cells": "#1b9e77", "T cells": "#d95f02", "NK cells": "#7570b3"}
+CELL_TYPE = {"type": "obs", "key": "cell_type", "column": ""}
+
+
+def _recolour(page, kind, value):
+    page.select_option(f'{L} select.axis-{kind}-select[data-axis="color"]', value)
+
+
+def _wait_colours(page, names):
+    return until(page, """([tile, names]) => { const c = (%s)(tile);
+        return c && names.every(n => n in c) ? c : null; }""" % TRACE_COLOURS, [L, names])
+
+
+def _cell_type_colours(browser, server):
+    """cell_type's colours as a full draw gives them (its uns palette, or the default)."""
+    page = _page(browser)
+    page.goto(_link(server, colour=CELL_TYPE, subset=SUBSET, categoryPalette="uns"))
+    colours = until(page, TRACE_COLOURS, L)
+    page.close()
+    return colours
+
+
+def test_recolour_takes_a_providers_colours_and_a_columns_back(browser, server):
+    """Recolouring from the menus (plot-update.js) uses a provider's own colours and asks uns for nothing under its
+    key; recolouring back to a column drops them and reads the column's uns palette again, as a full draw does."""
+    want = _cell_type_colours(browser, server)
+    assert set(want.values()) & set(FEW_COLOURS.values()) == set()
+    page = _page(browser)
+    page.goto(_link(server, colour=CELL_TYPE, subset=SUBSET, categoryPalette="uns"))
+    assert until(page, TRACE_COLOURS, L) == want
+    page.wait_for_function("""(tile) => [...document.querySelectorAll(`${tile} select.axis-type-select[data-axis="color"] option`)]
+        .some(o => o.value === 'fake-few')""", arg=L, timeout=30000)
+    _recolour(page, "type", "fake-few")
+    assert _wait_colours(page, list(FEW_COLOURS)) == FEW_COLOURS, "the provider's own colours"
+    assert not [k for k in page.evaluate("() => window.__unsKeys") if k and k.startswith("grp-1")], "no uns lookup under a panel id"
+    asked = len(page.evaluate("() => window.__unsKeys"))
+    _recolour(page, "type", "obs")
+    page.wait_for_function("""(tile) => [...document.querySelectorAll(`${tile} select.axis-key-select[data-axis="color"] option`)]
+        .some(o => o.value === 'cell_type')""", arg=L, timeout=30000)
+    _recolour(page, "key", "cell_type")
+    assert _wait_colours(page, list(want)) == want, "the column's colours again, not the provider's"
+    assert "cell_type_colors" in page.evaluate("() => window.__unsKeys")[asked:], "the column's uns palette is read again"
+    assert not page.__errors, page.__errors
+
+
+def test_a_column_recoloured_after_a_provider_drops_its_colours(browser, server):
+    """The review's case (M11): a provider's colours drawn in full, then a column chosen from the menus: the column's
+    own colours, read from its uns key, never the provider's left over."""
+    want = _cell_type_colours(browser, server)
+    page = _page(browser)
+    page.goto(_link(server, colour=FEW, subset=SUBSET, categoryPalette="uns"))
+    assert _wait_colours(page, list(FEW_COLOURS)) == FEW_COLOURS
+    assert not [k for k in page.evaluate("() => window.__unsKeys") if k and k.startswith("grp-1")], "no uns lookup under a panel id"
+    page.wait_for_function("""(tile) => [...document.querySelectorAll(`${tile} select.axis-type-select[data-axis="color"] option`)]
+        .some(o => o.value === 'obs')""", arg=L, timeout=30000)
+    _recolour(page, "type", "obs")
+    page.wait_for_function("""(tile) => [...document.querySelectorAll(`${tile} select.axis-key-select[data-axis="color"] option`)]
+        .some(o => o.value === 'cell_type')""", arg=L, timeout=30000)
+    _recolour(page, "key", "cell_type")
+    assert _wait_colours(page, list(want)) == want, "the column's colours, not the provider's"
+    assert "cell_type_colors" in page.evaluate("() => window.__unsKeys")
     assert not page.__errors, page.__errors

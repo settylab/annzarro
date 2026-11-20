@@ -11,12 +11,15 @@
  * An empty `column` means the provider's default sub-key, so a link made before sub-keys
  * existed keeps its meaning.
  *
- * The plots' menus, loads, titles and view copy ask the provider; none of them names a type.
+ * The plots' menus, loads, titles, view copy, Hover picker and large-plot mode ask the provider; none of them names a type.
  * A provider declares:
  *   type, label
+ *   valueType         'numerical' | 'categorical': what its series is (the memory guard prices a colour by it)
  *   entity            'cells' | 'genes': what one value belongs to (a grouping gives cells)
  *   consumers         the panel types that accept it, e.g. ['cell-plot']
  *   axes              which roles accept it, e.g. ['x', 'y', 'z', 'color', 'hover']
+ *   largeAxes         which of x, y and color a large plot (large-plot.js) draws it on; elsewhere that mode refuses
+ *                     it, as it refuses any type it cannot draw (none: [] or left out)
  *   entities()        [{id, title, open, kind?}] (open or closed)
  *   keyEntries(entities, setting)
  *                     the key list of a consumer that holds `setting`: [{value, text, group?}], with what the
@@ -35,9 +38,23 @@
  *                     the series, opts {host, role, axis, expected, unit, signal}:
  *                       numerical    {values, type: 'numerical', coverage, vector}
  *                       categorical  {codes, MISSING, categories, colours, coverage, rankOf?, ranked?, groupNames?, values?}
+ *                     A categorical series of more than GROUP_COLOURS categories is drawn in colour groups (utils/categories.js):
+ *                     `rankOf` (category -> rank over every cell) decides each category's colour. `ranked` codes are
+ *                     those ranks themselves, with no labels: then `groupNames` names each colour's legend entry
  *                     It names what it read in the setting: `label` (the entity's title, kept for when it is
  *                     gone) and, when the title has two lines, `labelFull` (joined by '\n'); titles read them, as
  *                     they cannot reach the page. A series that cannot be drawn yet throws SourceUnavailable
+ *   loadLarge(setting, opts)
+ *                     the series in a large plot's form, typed arrays only, never a plain array per point (opts as load's):
+ *                       numerical    {type: 'numerical', vector}
+ *                       categorical  {type: 'categorical', codes, MISSING, categories, colours?, rankOf?, ranked?, groupNames?}
+ *   hover             optional, for a provider with the 'hover' role: the Hover picker's group and a hover line
+ *                       group           the picker's heading for its entries ('Gene scores')
+ *                       options(kept)   [{value, label}]: its entries, then any value in `kept` (picker values chosen
+ *                                       now) it no longer offers, kept and marked
+ *                       valueOf(setting)  the picker value of a stored hover entry: `${type}:...`
+ *                       parse(value)    the setting a picker value stands for, without its type: {key, column?, layer?}
+ *                       label(setting)  what its hover line is called ("T cell score"): "<label>: <value>"
  *   titleOf(setting)  the source as a coverage line names it ("gene score T cell score")
  *   placeholder(host, notice)
  *                     draws an axis that cannot be drawn: the placeholder says why, with the way out
@@ -68,6 +85,30 @@ export function getSource(type) {
  */
 export function isProviderType(type) {
     return !!type && !BUILT_IN.has(type);
+}
+
+/** What a large plot draws of the built-in sources, per axis (large-plot.js); a provider says it in `largeAxes`. */
+const LARGE_BUILT_IN = Object.freeze({
+    x: Object.freeze(['obsm', 'obs', 'layer']),
+    y: Object.freeze(['obsm', 'obs', 'layer']),
+    color: Object.freeze(['obsm', 'obs', 'layer', 'none'])
+});
+
+/**
+ * Whether a large plot can draw a source type on an axis: a built-in source it reads, or a provider registered here
+ * that names the axis in its `largeAxes`.
+ * @param {string} type
+ * @param {'x'|'y'|'color'} axis
+ */
+export function largeAccepts(type, axis) {
+    if ((LARGE_BUILT_IN[axis] || []).includes(type)) return true;
+    const provider = !BUILT_IN.has(type) ? getSource(type) : null;
+    return !!provider && Array.isArray(provider.largeAxes) && provider.largeAxes.includes(axis);
+}
+
+/** The providers whose entries a consumer's Hover picker lists, in registration order. */
+export function hoverSources(consumer) {
+    return sourcesFor(consumer, ['hover']).filter(p => p.hover);
 }
 
 /**
@@ -128,8 +169,11 @@ export function plotSeries(series) {
         return { values: series.values, type: series.type, categories: null, coverage: series.coverage, rankOf: null, ranked: false,
             groupNames: null, colours: null };
     }
-    const { codes, MISSING, categories } = series;
-    const values = series.values || Array.from(codes, c => (c === MISSING ? null : categories[c]));
+    const { codes, MISSING } = series;
+    // ranked codes have no labels: each point's value is its rank, as the plot's own ranked categories are
+    const ranked = !!series.ranked;
+    const categories = ranked ? null : series.categories;
+    const values = series.values || Array.from(codes, c => (c === MISSING ? null : ranked ? c : categories[c]));
     return { values, type: 'categorical', categories, coverage: series.coverage, rankOf: series.rankOf || null,
-        ranked: !!series.ranked, groupNames: series.groupNames || null, colours: series.colours || null };
+        ranked, groupNames: series.groupNames || null, colours: series.colours || null };
 }
