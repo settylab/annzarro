@@ -129,15 +129,6 @@ test('a gene\'s values per row come from the moments by group key, whatever the 
     assert.deepEqual(Array.from(v[1]), [50, NaN, 40, NaN, NaN], '% expressing: 20/40, 4/10');
 });
 
-test('a value is text with three figures, and a missing one is a dash, never 0', () => {
-    assert.equal(M.valueText(0.4213), '0.421');
-    assert.equal(M.valueText(61.04), '61');
-    assert.equal(M.valueText(1234.5), '1,235');
-    assert.equal(M.valueText(0), '0');
-    assert.equal(M.valueText(NaN), '—');
-    assert.equal(M.valueText(null), '—');
-});
-
 test('the list grid\'s columns, and the CSV that has exactly them after the key', () => {
     const rows = M.groupRows({ reply: REPLY, names: NAMES, colors: COLORS, small: SMALL });
     const focus = M.focusColumns({ gene: 'G', recipe: {} });

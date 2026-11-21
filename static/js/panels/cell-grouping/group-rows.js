@@ -166,13 +166,6 @@ export function focusValues({ columns, rows, featureReply, moments }) {
     });
 }
 
-/** A value as the grid writes it: three figures, and a dash where a group has no value (SHR-20), never 0. */
-export function valueText(x) {
-    if (typeof x !== 'number' || !Number.isFinite(x)) return DASH;
-    if (Math.abs(x) >= 1000) return Math.round(x).toLocaleString('en-US');
-    return String(Number(x.toPrecision(3)));
-}
-
 /**
  * One number format for a whole column, so its figures line up: % expressing to one decimal (58.0, 100.0); any other
  * statistic with as many decimals as its smallest non-zero figure needs for three figures (at most 6). A dash for a
