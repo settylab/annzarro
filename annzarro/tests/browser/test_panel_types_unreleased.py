@@ -53,7 +53,8 @@ def test_an_unreleased_type_is_a_placeholder_titled_by_its_label(env):
     _open(page, root)
     title = page.evaluate("() => window.PanelManager.createPanelInLayout('cell-gene', {version: 1, future: {a: 1}}).getTitle()")
     assert title == "Cell-Gene Plot 1"
-    page.wait_for_selector('.panel-no-data[data-panel-type="cell-gene"]')
+    # X3a built the panel: unreleased means not offered in the chooser; a link still opens it with its settings
+    page.wait_for_selector('.tile[data-tile-id^="cell-gene"] .cgene-panel')
     saved = page.evaluate("() => Object.values(window.PanelManager.saveLayout().panelConfigs).find(c => c.id.startsWith('cell-gene'))")
     assert saved["future"] == {"a": 1} and saved["version"] == 1, json.dumps(saved)
     assert menu(page) == RELEASED
