@@ -45,6 +45,7 @@ import {
     renameLevel, setRest, levelRows, BINNING_SLOT, SCORE_SOURCE, GROUP_SOURCE, TABLE_SOURCE
 } from './cell-grouping/factors.js';
 import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/status.js';
+import { GROUP_GRID } from './cell-grouping/group-grid.js';
 import './partition-options/binning-control.js';
 import { usedByText } from '../utils/panel-users.js';
 import {
@@ -55,6 +56,7 @@ const TYPE = 'cell-grouping';
 const DEFAULT_TITLE = 'Grouping 1';
 /** Keys of a configuration that are the panel's own, not the recipe's. */
 const PANEL_KEYS = ['id', 'title', 'controlsVisible', '_closed', 'active'];
+const NO_FEATURES = Object.freeze([]);
 
 registerReferences(TYPE, groupingReferences);
 
@@ -64,6 +66,7 @@ registerReferences(TYPE, groupingReferences);
  */
 // export-unused-ok: G9c and G9d mount the group grid and Statistics offered here
 export const PARTS = { groups: null, statistics: null };
+PARTS.groups = GROUP_GRID;
 
 // ================================================================================================ the views
 
@@ -575,7 +578,7 @@ function createStatus({ D, id, on }) {
         const open = reasons.hidden;
         reasons.hidden = !open;
         noGroup.setAttribute('aria-expanded', String(open));
-        // SEAM (G9c): the group grid filters to the cells in no group while this is open
+        if (on.toggled) on.toggled(open);
     }
 
     /**
@@ -603,7 +606,7 @@ function createStatus({ D, id, on }) {
         usedBy.textContent = extra.usedBy || '';
     }
 
-    return { element, paint };
+    return { element, paint, isOpen: () => !reasons.hidden };
 }
 
 /**
@@ -712,6 +715,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         let _usedTimer = null;
         let _factors = null;
         let _asked = [];                    // the histograms the handle asks for: the expanded binned cards
+        let _features = NO_FEATURES;        // the focused gene's feature, set by the group grid (G9c): it rides this panel's own request
+        let _applied = NO_FEATURES;         // the features the handle's option carries now
         let _status = null;
         let _settings = null;
         const _parts = [];
@@ -791,8 +796,9 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             if (!_recipe.partitionings.length) { release(); return; }
             if (_handle) return;
             _asked = _factors ? _factors.wanted() : [];
+            _applied = _features;
             _handle = groupSources().sources.watch(_id, {
-                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: { histograms: _asked },
+                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: { histograms: _asked, features: _applied },
                 visible: () => _visible && !!_dom && _dom.root.isConnected,
                 onChange: (snap) => { _snap = snap; noteKey(snap); paint(); syncHistograms(); }
             });
@@ -810,9 +816,16 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             // positions of the recipe now; a request for an older recipe leaves out the ones it lacks (serverRequest)
             const ps = _recipe.partitionings;
             const now = [...new Set([..._asked.filter((k) => ps[k] && ps[k].binning), ..._factors.wanted()])].sort((a, b) => a - b);
-            if (now.join() === _asked.join()) return;
+            if (now.join() === _asked.join() && _features === _applied) return;
             _asked = now;
-            _handle.setOption({ histograms: now });
+            _applied = _features;
+            _handle.setOption({ histograms: now, features: _applied });
+        }
+
+        /** The group grid asks for a feature (the focused gene's moments) with this panel's own request; null stops asking. */
+        function setFeatures(wires) {
+            _features = wires && wires.length ? Object.freeze([...wires]) : NO_FEATURES;
+            syncHistograms();
         }
 
         function release() {
@@ -950,7 +963,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const { el } = D;
             const root = el('div', { class: 'cgrp-panel', data: { panelId: _id } });
             root.insertAdjacentHTML('afterbegin', noDatasetScreenHtml(_id));
-            _status = createStatus({ D, id: _id, on: { action: onAction } });
+            _status = createStatus({ D, id: _id, on: { action: onAction, toggled: () => { for (const part of _parts) if (part && part.update) part.update(); } } });
             _factors = createFactors({ D, id: _id, model: factorsModel, on: {
                 commit: (list, label, opts) => commit({ ..._recipe, partitionings: list }, label, opts),
                 add: (p, label) => addFactor(p, label),
@@ -992,7 +1005,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         }
 
         function mountParts() {
-            const ctx = { panelId: _id, read: () => _snap, recipe: () => _recipe, set: setFields, shown };
+            const ctx = { panelId: _id, read: () => _snap, recipe: () => _recipe, set: setFields, shown, noGroup: () => !!_status && _status.isOpen(),
+                setFeatures, applied: () => _applied };
             if (PARTS.groups) _parts.push(PARTS.groups.mount(_dom.groups, ctx));
             if (PARTS.statistics) _parts.push(PARTS.statistics.mount(_dom.statistics, ctx));
         }
