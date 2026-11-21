@@ -439,6 +439,33 @@ raw bytes.
 
 Nothing is cached or kept: the server holds a score only while it computes it.
 
+(http-cell-groups)=
+
+## Cell groups
+
+`POST /data/cell_groups?dataset_path=` puts the cells shown into groups and, per group, counts and summarises genes,
+scores and per-cell columns. One route serves two shapes: `grouping` (the groups of a list of partitionings, one
+code per cell, moments per group) and `grid` (the dense counts of a count plot). The dataset is in the query, as on
+every data route; the JSON body is `{shape, partitionings, sets, subset, small, features, measures, want, mode,
+density, estimate_only, confirm}`. A field the shape does not take is `400 unknown_field`, a field no shape takes
+`400 bad_request`.
+
+Like the score route it has the access gate, the CSRF check, the 16 MB body limit (`413 request_too_large`),
+`estimate_only` (answers `{"estimate": {...}, "missing": {...}}` and reads nothing), the cost tiers (`409
+confirmation_required`, `413 groups_too_expensive`) and cancellation by closing the connection. It adds `422` for
+limits met before any read (`grid_too_large`, `too_many_sets`, `too_many_partitionings`, `obsp_too_large`) and
+`400 set_length_mismatch` for a table's bitset that does not cover the cells shown.
+
+The reply is `application/x-annzarro-groups-stream`: JSON lines (`start`, `progress` frames with `stage`, `done`,
+`total`, `entries_done`, `entries_total`, `running_s` and `queue`, then `result`, or `error`), then the binary blocks
+the `result` frame lists. A request that has to wait for its lane or for memory is sent a `progress` frame at once
+with its `queue`; a wait longer than 30 seconds ends in an `error` frame with reason `read_busy`.
+
+Requests whose estimate is under 5 seconds and that read no whole matrix run in the light lane (two at a time per
+worker); every other request takes the heavy slot, which one job at a time holds and gives back between read batches
+when another waits. The estimate names the lane. The full reference of the request, the frames and the blocks
+follows with the Cell Grouping feature.
+
 (http-matrix-kind)=
 ### What an input looks like
 
@@ -781,6 +808,8 @@ same; what differs for a restricted user:
 | 400 | `bad_recipe`, `bad_clip`, `bad_method`, `bad_seed`, `bad_bins`, `bad_controls`, `bad_detect_above`, `bad_down_weight`, `method_no_down`, `unsupported_version` | `POST /data/gene_score`: a recipe the server cannot use ({ref}`http-gene-score`) |
 | 409 | `confirmation_required` | a gene score whose estimate is over 60 s and not over 10 minutes, sent without `confirm: true` |
 | 413 | `score_too_expensive` | a gene score estimated over 10 minutes |
+| 413 | `groups_too_expensive` | a `POST /data/cell_groups` request estimated over 10 minutes ({ref}`http-cell-groups`) |
+| 422 | `grid_too_large`, `too_many_sets`, `too_many_partitionings`, `obsp_too_large` | `POST /data/cell_groups`: a limit met before any read, with `count` and `limit` |
 | 413 | `request_too_large` | the request body is over `server.max_request_mb` (64 MB; panel-set saves and imports) |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
 | 431 | (none) | `annzarro start` only: the request line and headers together are over 262,144 bytes (waitress answers, not the app; under gunicorn a header field over `server.limit_request_field_size` is a `400`) |
