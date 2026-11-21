@@ -46,13 +46,13 @@ export function cellGroupType() {
 }
 
 /** The type of the source this module provides. */
-export const GROUP_TYPE = cellGroupType();
+const GROUP_TYPE = cellGroupType();
 
 /** The panel type whose panels are groupings. */
 const GROUPING_PANEL = 'cell-grouping';
 
 /** The value that is not a grouping: "New grouping…" in the key list. */
-export const NEW_GROUPING = '__new_grouping__';
+const NEW_GROUPING = '__new_grouping__';
 
 /** The heading of the groupings in the Hover picker and under obs in a key list (UX 5). */
 const GROUPINGS = capital(PL.grouping);
@@ -140,7 +140,7 @@ const missingOf = (codes) => (codes.BYTES_PER_ELEMENT === 1 ? 0xff : 0xffff);
  * @param {Object} reply - a snapshot's `values.reply`
  * @returns {string[]}
  */
-export function groupingColours(reply) {
+function groupingColours(reply) {
     const n = Array.isArray(reply.groups) ? reply.groups.length : 0;
     const palette = grouped(n) ? colourGroupPalette(GROUP_COLOURS) : generateDiscreteColors(Math.max(1, n));
     // the reply's partitionings say what the recipe that made it said: a column's colours come only with an unbinned
@@ -188,7 +188,7 @@ function hoverValues(codes, MISSING, names) {
  * @param {string[]} names - the group names (group-sources.js `namesOf`), one per group of the reply
  * @param {{hover?: boolean}} [opts]
  */
-export function groupSeries(values, names, { hover = false } = {}) {
+function groupSeries(values, names, { hover = false } = {}) {
     const { codes } = values;
     const MISSING = missingOf(codes);
     const parts = partsOf(values.reply, names);
@@ -205,7 +205,7 @@ export function groupSeries(values, names, { hover = false } = {}) {
  * @param {{codes: ArrayBufferView, reply: Object}} values
  * @param {string[]} names
  */
-export function groupLargeSeries(values, names) {
+function groupLargeSeries(values, names) {
     const { codes } = values;
     const MISSING = missingOf(codes);
     const parts = partsOf(values.reply, names);
@@ -264,7 +264,7 @@ const VOCAB = Object.freeze({
  * @param {Object} snap - from a handle's read()
  * @param {{role?: string, sharers?: number}} [ctx] - `role`: 'colour', 'x', 'y', 'z' or 'hover'
  */
-export function describeGrouping(snap, ctx = {}) {
+function describeGrouping(snap, ctx = {}) {
     return describeSource(closedRing(snap), ctx, VOCAB);
 }
 
@@ -381,11 +381,6 @@ function binding() {
     return _binding;
 }
 
-/** A plot closes: its records go, and groups nothing else needs stop computing and leave the ledger. */
-export function releaseGroupHost(host) {
-    if (_binding) _binding.releaseHost(host);
-}
-
 // ---------------------------------------------------------------------------------------------- loads
 
 /**
@@ -458,11 +453,10 @@ function loadLargeForPlot(setting, { host, role, expected, unit = 'cells', signa
 // ---------------------------------------------------------------------------------------------- actions
 
 /**
- * The plots' provider of a grouping's notice actions (utils/source-actions.js). Every dependency is given, so a Node test
- * can hold every state of a host against every action; the page registers its own below.
+ * The plots' provider of a grouping's notice actions (utils/source-actions.js), over the page's records of groupings.
  * @param {Object} deps
  */
-export function createPlotGroupActions({ shownRecord: shown, recordsOf: records, groupingPanel: panelOf, update, openGrouping: open, chooser,
+function createPlotGroupActions({ shownRecord: shown, recordsOf: records, groupingPanel: panelOf, update, openGrouping: open, chooser,
     panelIdOf: hostPanelId }) {
     const record = (run) => ({ target: (host) => shown(host) || null, run });
     return {
@@ -495,7 +489,7 @@ function groupChooser(host, rec) {
  * @param {string|null} [nextTo] - the panel the request came from
  * @returns {Object|null} the open panel, or null when there is no such grouping
  */
-export function openGrouping(id, nextTo = null) {
+function openGrouping(id, nextTo = null) {
     const panel = groupingPanel(id);
     if (!panel) return null;
     if (PanelManager.getActivePanels().includes(panel)) {

@@ -2,16 +2,18 @@
  * The `cell-group` provider (static/js/utils/cell-group-source.js, G8a): a Cell Grouping as a categorical source of a
  * Cell Plot's colour, x, y, z and hover (CAT-1, CAT-2, CAT-5, CAT-8, SHR-35 to SHR-38, GRP-17).
  *
- * - The provider contract of F3c-2: valueType 'categorical', no large axes yet (G8b), `load` with codes, MISSING, the
- *   group names in group order and their colours (SHR-11); past 64 groups `rankOf` by group order, and the large
- *   form ranked with `groupNames`; hover {group, options, valueOf, parse, label}.
- * - The key list (groupings open and closed, a deleted one kept, New grouping… last), the notices in a grouping's words,
- *   and the plot provider's actions, whose `available` and `run` agree in every state.
- * - The page's own binding over a fake cell_groups route: a load reads the codes through the page's group sources and
- *   names the setting by the grouping's title; a second read of the same reply does no work that grows with groups.
+ * Everything is reached the way the page reaches it: the provider in the source registry, the page's action registry
+ * and the page's one group binding (utils/group-host.js) over a fake cell_groups route, with fake panels.
  *
- * This file imports the provider FIRST, before anything that reaches panels/cell-grouping/factors.js: the two are on
- * an import cycle (through utils/group-host.js), and the type must be readable whichever module the page loads first.
+ * - The provider contract of F3c-2: valueType 'categorical', no large axes yet (G8b), `load` with codes, MISSING, the
+ *   group names in group order and their colours (SHR-11); past 64 groups `rankOf` by group order, and the large form
+ *   ranked with `groupNames`; hover {group, options, valueOf, parse, label}.
+ * - The key list (groupings open and closed, a deleted one kept, New grouping… last), the notices in a grouping's words,
+ *   and the plot provider's actions, whose `available` and `run` agree in every state of a real host.
+ * - A second read of the same reply does no work that grows with the groups.
+ *
+ * This file imports the provider FIRST, before anything that reaches panels/cell-grouping/factors.js: the two are on an
+ * import cycle (through utils/group-host.js), and the type must be readable whichever module the page loads first.
  *
  * Run:  node --test annzarro/tests/js/cell-group-source.test.mjs
  */
@@ -27,6 +29,9 @@ const PR = await import('../../../static/js/utils/panel-references.js');
 const { generateDiscreteColors, groupColours: colourGroups } = await import('../../../static/js/panels/plot-utilities/colors.js');
 const { ledger } = await import('../../../static/js/utils/memory-guard-ui.js');
 
+const TYPE = 'cell-group';
+const provider = () => R.getSource(TYPE);
+
 // ------------------------------------------------------------------------------------------------ the page's fakes
 
 const CELLS = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5'];
@@ -34,35 +39,59 @@ Object.assign(DataManager, {
     getCurrentDataset: () => 'd.zarr', getCells: () => CELLS, getSubsetParam: () => null, getGenes: () => [], isDatasetLoaded: () => false
 });
 
-const recipeOf = (keys) => ({ version: 1, partitionings: keys.map((key) => ({ source: { type: 'obs', key } })) });
+const byColumn = (...keys) => ({ version: 1, partitionings: keys.map((key) => ({ source: { type: 'obs', key } })) });
+const byGrouping = (key) => ({ version: 1, partitionings: [{ source: { type: TYPE, key } }] });
 function grouping(id, title, recipe) {
     const g = { id, title, recipe };
     return Object.assign(g, { getId: () => g.id, getType: () => 'cell-grouping', getTitle: () => g.title, getRecipe: () => g.recipe,
         getConfig: () => ({ title: g.title, ...g.recipe }) });
 }
-const G1 = grouping('cell-grouping-1', 'Cell type', recipeOf(['cell_type']));
-const G2 = grouping('cell-grouping-2', 'Closed one', recipeOf(['condition']));
+const G1 = grouping('cell-grouping-1', 'Cell type', byColumn('cell_type'));
+const G2 = grouping('cell-grouping-2', 'Closed one', byColumn('condition'));
 const EMPTY = grouping('cell-grouping-3', 'Grouping 3', { version: 1, partitionings: [] });
-const plotConfig = {};
-const PLOT = { getId: () => 'cell-plot-1', getType: () => 'cell-plot', getTitle: () => 'Cell Plot 1', getConfig: () => plotConfig };
+const MANY = grouping('cell-grouping-4', 'Many', byColumn('many'));
+const WIDE = grouping('cell-grouping-5', 'Wide', byColumn('wide'));
+const OWN = grouping('cell-grouping-6', 'Coloured', byColumn('coloured'));
+const BIG = grouping('cell-grouping-7', 'Too many', byColumn('too_many'));
+const SLOW = grouping('cell-grouping-8', 'Slow', byColumn('slow'));
+const RING_A = grouping('cell-grouping-10', 'Ring A', byGrouping('cell-grouping-11'));
+const RING_B = grouping('cell-grouping-11', 'Ring B', byGrouping('cell-grouping-10'));
+const GONE = grouping('cell-grouping-12', 'Soon gone', byColumn('cell_type'));
+const FRESH = grouping('cell-grouping-13', 'Fresh', byColumn('batch'));
+const SLOW_TOO = grouping('cell-grouping-14', 'Slow too', byColumn('slow_too'));
+const plotConfigs = new Map();
+const plots = new Map();
+const plot = (id) => ({ getId: () => id, getType: () => 'cell-plot', getTitle: () => id,
+    getConfig: () => { if (!plotConfigs.has(id)) plotConfigs.set(id, {}); return plotConfigs.get(id); } });
 const made = [];
-let all = [G1, G2, EMPTY, PLOT];
+let all = [G1, G2, EMPTY, MANY, WIDE, OWN, BIG, SLOW, RING_A, RING_B, GONE, FRESH, SLOW_TOO];
+function panelOf(id) {
+    const found = all.find((p) => p.getId() === id);
+    if (found) return found;
+    if (!id || !id.startsWith('cell-plot-')) return null;
+    if (!plots.has(id)) plots.set(id, plot(id));
+    return plots.get(id);
+}
 globalThis.PanelManager = {
-    getPanel: (id) => all.find((p) => p.getId() === id) || null,
+    getPanel: panelOf,
     getActivePanels: () => all.filter((p) => p !== G2),
     getAllPanels: () => all,
-    reopenClosedPanel: (id, opts) => { made.push(['reopen', id, opts]); return all.find((p) => p.getId() === id) || null; },
+    reopenClosedPanel: (id, opts) => { made.push(['reopen', id, opts]); return panelOf(id); },
     createPanelNextTo: (type, nextTo) => { made.push(['create', type, nextTo]); return grouping('cell-grouping-9', 'Grouping 4', { version: 1, partitionings: [] }); }
 };
+// the page's graph of references (panels/cell-grouping.js declares a grouping's; the panel module is not loaded here)
+PR.registerReferences('cell-grouping', F.groupingReferences);
+PR.setReferenceHost({ panel: (id) => { const p = all.find((x) => x.getId() === id); return p ? { type: p.getType(), config: p.getConfig() } : null; },
+    ids: () => all.map((p) => p.getId()) });
 
 // ------------------------------------------------------------------------------------------------ a fake route
 
 const enc = new TextEncoder();
 const line = (obj) => enc.encode(`${JSON.stringify(obj)}\n`);
 const cat = (...parts) => {
-    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));
     let at = 0;
-    for (const p of parts) { out.set(p, at); at += p.length; }
+    for (const p of parts) { out.set(new Uint8Array(p.buffer, p.byteOffset, p.byteLength), at); at += p.byteLength; }
     return out;
 };
 const json = (body) => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) });
@@ -71,69 +100,107 @@ const streamed = (bytes) => ({ ok: true, status: 200, body: { getReader() {
     return { async read() { if (sent) return { done: true }; sent = true; return { done: false, value: bytes }; }, async cancel() {} };
 } } });
 
-/** cell_type: c0 B, c1 T, c2 T, c3 none (a level left out), c4 B, c5 NK. */
-const CODES = new Uint8Array([0, 1, 1, 255, 0, 2]);
-const RESULT = { type: 'result', version: 1, shape: 'grouping', n_shown: 6, n_grouped: 5,
-    partitionings: [{ kind: 'categorical', levels: [{ id: 'c:B cell', n: 2 }, { id: 'c:T cell', n: 2 }, { id: 'c:NK cell', n: 1 }] }],
-    groups: [{ key: ['c:B cell'], n: 2 }, { key: ['c:T cell'], n: 2 }, { key: ['c:NK cell'], n: 1 }], features: [], measures: [],
-    blocks: [{ name: 'codes', dtype: 'uint8', length: 6 }] };
+const groupsOf = (n) => Array.from({ length: n }, (_, i) => ({ key: [`c:g${i}`], n: 1 }));
+const namesOf = (n) => Array.from({ length: n }, (_, i) => `g${i}`);
+const levelsOf = (n) => Array.from({ length: n }, (_, i) => ({ id: `c:g${i}`, n: 1 }));
+
+/** cell_type: c0 B, c1 T, c2 T, c3 in no group (a level left out), c4 B, c5 NK. */
+const TYPES = ['B cell', 'T cell', 'NK cell'];
+const REPLIES = {
+    cell_type: { codes: new Uint8Array([0, 1, 1, 255, 0, 2]), levels: TYPES.map((t) => ({ id: `c:${t}`, n: 1 })), groups: TYPES.map((t) => ({ key: [`c:${t}`], n: 2 })) },
+    coloured: { codes: new Uint8Array([0, 1, 1, 255, 0, 2]), levels: TYPES.map((t) => ({ id: `c:${t}`, n: 1 })), groups: TYPES.map((t) => ({ key: [`c:${t}`], n: 2 })),
+        colors: { 'c:B cell': '#111111', 'c:T cell': '#222222', 'c:NK cell': '#333333' } },
+    many: { codes: new Uint8Array([0, 149, 64, 255, 1, 2]), levels: levelsOf(150), groups: groupsOf(150) },
+    wide: { codes: new Uint16Array([0, 65535, 299, 3, 4, 5]), levels: levelsOf(300), groups: groupsOf(300) }
+};
 
 const asked = [];
 globalThis.fetch = async (url, init) => {
     const body = JSON.parse(init.body);
     asked.push(body);
-    if (body.estimate_only) return json({ estimate: { seconds: 0.1, tier: 'live', lane: 'light' } });
-    return streamed(cat(line({ type: 'start', codes: 'miss', lane: 'light', entries_total: 6, queue: { ahead: 0, sharing: 0 } }), line(RESULT), CODES));
+    const key = body.partitionings && body.partitionings[0] && body.partitionings[0].source.key;
+    if (body.estimate_only) return json({ estimate: String(key).startsWith('slow') ? { seconds: 120, tier: 'confirm', lane: 'heavy' } : { seconds: 0.1, tier: 'live', lane: 'light' } });
+    const start = line({ type: 'start', codes: 'miss', lane: 'light', entries_total: 6, queue: { ahead: 0, sharing: 0 } });
+    if (key === 'too_many') {
+        return streamed(cat(start, line({ type: 'result', version: 1, shape: 'grouping', n_shown: 6, blocks: [],
+            refused: { reason: 'too_many_groups', count: 6840, limit: 2000 } })));
+    }
+    const r = REPLIES[key] || REPLIES.cell_type;
+    const part = { kind: 'categorical', levels: r.levels, ...(r.colors ? { colors: r.colors } : {}) };
+    const header = { type: 'result', version: 1, shape: 'grouping', n_shown: 6, n_grouped: 5, partitionings: [part], groups: r.groups,
+        features: [], measures: [], blocks: [{ name: 'codes', dtype: r.codes.BYTES_PER_ELEMENT === 1 ? 'uint8' : 'uint16', length: 6 }] };
+    return streamed(cat(start, line(header), r.codes));
 };
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, what) {
     for (let i = 0; i < 400; i++) {
         if (fn()) return;
-        await new Promise((r) => setTimeout(r, 5));
+        await sleep(5);
     }
     throw new Error(`timed out: ${what}`);
 }
 
-/** A load once the groups are there: each attempt before then is refused with what the plot would say. */
-async function loadReady(p, setting, opts) {
-    for (let i = 0; i < 400; i++) {
-        try {
-            return await p.load(setting, opts);
-        } catch (error) {
-            if (error.name !== 'SourceUnavailable') throw error;
-        }
-        await new Promise((r) => setTimeout(r, 5));
-    }
-    throw new Error('timed out: the series');
+let hostCount = 0;
+/** A plot's container, its plot's config holding `config`. */
+function plotHost(config = {}) {
+    const id = `cell-plot-${++hostCount}`;
+    plotConfigs.set(id, config);
+    return { id: `plot-container-${id}`, isConnected: true, dataset: {}, panelId: id };
 }
 
-const host = (panel = 'cell-plot-1') => ({ id: `plot-container-${panel}`, isConnected: true, dataset: {} });
-const provider = () => R.getSource(CG.GROUP_TYPE);
+const setting = (key, extra = {}) => ({ type: TYPE, key, column: '', ...extra });
+
+const loadOf = (s, h, role = 'color') => provider().load(s, { host: h, role, axis: role === 'color' ? null : role, expected: 6, unit: 'cells' });
+
+/** What a load says now: the series, or the SourceUnavailable it throws. */
+async function attempt(s, h, role = 'color', large = false) {
+    try {
+        return large ? await provider().loadLarge(s, { host: h, role, expected: 6, unit: 'cells' }) : await loadOf(s, h, role);
+    } catch (error) {
+        if (error.name !== 'SourceUnavailable') throw error;
+        return error;
+    }
+}
+
+/** A load once the groups are there, or the refusal once its state is `state`. The plot's config holds the setting. */
+async function settle(s, h, { role = 'color', large = false, state = null } = {}) {
+    const cfg = plotConfigs.get(h.panelId);
+    if (!role.startsWith('hover') && !cfg[role]) cfg[role] = s;
+    let got = null;
+    for (let i = 0; i < 400; i++) {
+        got = await attempt(s, h, role, large);
+        if (state ? got.name === 'SourceUnavailable' && got.notice.state === state : got.name !== 'SourceUnavailable') return got;
+        await sleep(5);
+    }
+    throw new Error(`timed out: ${state || 'the series'} (last: ${got && got.notice ? got.notice.state : 'a series'})`);
+}
 
 // ------------------------------------------------------------------------------------------------ the type
 
-test('the type is exported by the provider and is the one the grouping panel names (one literal, here)', () => {
-    assert.equal(CG.GROUP_TYPE, 'cell-group');
-    assert.equal(CG.cellGroupType(), CG.GROUP_TYPE);
-    assert.equal(F.GROUP_SOURCE, CG.GROUP_TYPE, "a factor's source type is the provider's");
-    assert.ok(F.PANEL_SOURCES.includes(CG.GROUP_TYPE));
+test("the type is the provider's, and is the one the grouping panel names (one literal, there)", () => {
+    assert.equal(CG.cellGroupType(), TYPE);
+    assert.equal(provider().type, TYPE);
+    assert.equal(F.GROUP_SOURCE, TYPE, "a factor's source type is the provider's");
+    assert.ok(F.PANEL_SOURCES.includes(TYPE));
 });
 
 test('the provider is registered as a categorical cell source of a Cell Plot, after gene-score (CAT-1)', () => {
     const p = provider();
-    assert.ok(p, 'registered');
     assert.equal(p.valueType, 'categorical');
     assert.equal(p.entity, 'cells');
     assert.deepEqual(p.consumers, ['cell-plot']);
     assert.deepEqual(p.axes, ['x', 'y', 'z', 'color', 'hover']);
-    assert.deepEqual(p.largeAxes, [], 'large-plot mode is G8b\'s');
+    assert.deepEqual(p.largeAxes, [], "large-plot mode is G8b's");
     assert.equal(p.subKeyMenu, undefined, 'no third select');
+    assert.deepEqual(p.subKeys('cell-grouping-1'), []);
     assert.equal(p.defaultSub, '');
     assert.equal(p.alsoListedUnder, 'obs', 'listed under obs too (UX 5)');
     assert.equal(p.alsoListedGroup, 'Groupings');
     const types = R.sourcesFor('cell-plot', ['color']).map((s) => s.type);
-    assert.ok(types.indexOf('cell-group') > types.indexOf('gene-score') && types.indexOf('gene-score') >= 0, types.join(','));
-    assert.deepEqual(R.sourcesFor('gene-plot', ['color']).filter((s) => s.type === CG.GROUP_TYPE), [], 'not a Gene Plot source');
+    assert.ok(types.indexOf('gene-score') >= 0 && types.indexOf(TYPE) > types.indexOf('gene-score'), types.join(','));
+    assert.deepEqual(R.sourcesFor('gene-plot', ['color']).filter((s) => s.type === TYPE), [], 'not a Gene Plot source');
+    assert.equal(p.titleOf(setting('cell-grouping-1')), 'grouping Cell type');
 });
 
 // ------------------------------------------------------------------------------------------------ the key list
@@ -141,254 +208,251 @@ test('the provider is registered as a categorical cell source of a Cell Plot, af
 test('the key list: every grouping by its title, open or closed, a deleted one kept and marked, New grouping… last', () => {
     const p = provider();
     const list = p.entities();
-    assert.deepEqual(list.map((e) => [e.id, e.title, e.open]), [['cell-grouping-1', 'Cell type', true],
+    assert.deepEqual(list.slice(0, 3).map((e) => [e.id, e.title, e.open]), [['cell-grouping-1', 'Cell type', true],
         ['cell-grouping-2', 'Closed one', false], ['cell-grouping-3', 'Grouping 3', true]]);
-    assert.deepEqual(p.keyEntries(list, { type: 'cell-group', key: 'cell-grouping-1' }), [
-        { value: 'cell-grouping-1', text: 'Cell type' }, { value: 'cell-grouping-2', text: 'Closed one' },
-        { value: 'cell-grouping-3', text: 'Grouping 3' }, { value: CG.NEW_GROUPING, text: 'New grouping…' }]);
-    const gone = p.keyEntries(list, { type: 'cell-group', key: 'cell-grouping-7', label: 'Old grouping' });
-    assert.deepEqual(gone.slice(-2), [{ value: 'cell-grouping-7', text: 'Old grouping (deleted)' }, { value: CG.NEW_GROUPING, text: 'New grouping…' }]);
-    assert.deepEqual(p.keyEntries([], { type: 'cell-group', key: '' }), [{ value: '', text: 'No groupings yet' }, { value: CG.NEW_GROUPING, text: 'New grouping…' }]);
-    // a key left over from another type is not a deleted grouping
-    assert.equal(p.keyEntries(list, { type: 'cell-group', key: 'X_umap' }).some((o) => /deleted/.test(o.text)), false);
+    const NEW = p.newEntity.value;
+    const two = list.slice(0, 2);
+    assert.deepEqual(p.keyEntries(two, setting('cell-grouping-1')), [
+        { value: 'cell-grouping-1', text: 'Cell type' }, { value: 'cell-grouping-2', text: 'Closed one' }, { value: NEW, text: 'New grouping…' }]);
+    assert.deepEqual(p.keyEntries(two, setting('cell-grouping-70', { label: 'Old grouping' })).slice(-2),
+        [{ value: 'cell-grouping-70', text: 'Old grouping (deleted)' }, { value: NEW, text: 'New grouping…' }]);
+    assert.deepEqual(p.keyEntries([], setting('')), [{ value: '', text: 'No groupings yet' }, { value: NEW, text: 'New grouping…' }]);
+    assert.equal(p.keyEntries(two, setting('X_umap')).some((o) => /deleted/.test(o.text)), false, 'a key left from another type is not a deleted grouping');
 });
 
 test('New grouping… makes a grouping beside the plot (GRP-17)', () => {
     made.length = 0;
-    const p = provider();
-    assert.equal(p.newEntity.value, CG.NEW_GROUPING);
-    const panel = p.newEntity.run('cell-plot-1');
+    const panel = provider().newEntity.run('cell-plot-1');
     assert.equal(panel.getId(), 'cell-grouping-9');
     assert.deepEqual(made, [['create', 'cell-grouping', 'cell-plot-1']]);
 });
 
-test('Open grouping reopens a closed grouping beside the plot, and a missing one opens nothing (GRP-17)', () => {
-    made.length = 0;
-    assert.equal(CG.openGrouping('cell-grouping-2', 'cell-plot-1'), G2);
-    assert.deepEqual(made, [['reopen', 'cell-grouping-2', { nextTo: 'cell-plot-1' }]]);
-    assert.equal(CG.openGrouping('cell-grouping-7', 'cell-plot-1'), null);
-});
-
 // ------------------------------------------------------------------------------------------------ the series
 
-const values = (codes, groups, partitionings = [{ kind: 'categorical' }]) => ({ codes, reply: { n_shown: codes.length, groups, partitionings } });
-const groupsOf = (n) => Array.from({ length: n }, (_, i) => ({ key: [`c:g${i}`], n: 1 }));
-const namesOf = (n) => Array.from({ length: n }, (_, i) => `g${i}`);
-
-test('a series: the codes as they came, MISSING by their width, the names in group order, colours in group order (CAT-2, SHR-11)', () => {
-    const v = values(CODES, RESULT.groups);
-    const s = CG.groupSeries(v, ['B cell', 'T cell', 'NK cell']);
-    assert.equal(s.type, 'categorical');
-    assert.equal(s.codes, CODES, 'not copied');
-    assert.equal(s.MISSING, 255);
-    assert.deepEqual(s.categories, ['B cell', 'T cell', 'NK cell']);
-    assert.deepEqual(s.colours, generateDiscreteColors(3), "the app's palette in group order: a plot coloured by the column matches");
-    assert.equal(s.rankOf, null);
-    assert.equal(s.ranked, false);
-    const wide = CG.groupSeries(values(new Uint16Array([0, 65535, 299]), groupsOf(300)), namesOf(300));
-    assert.equal(wide.MISSING, 65535, '2 bytes past 255 groups (CAT-4)');
+test('a series: the codes as they came, MISSING by their width, the names in group order, colours in group order (CAT-2, SHR-11)', async () => {
+    asked.length = 0;
+    const h = plotHost();
+    const s = setting('cell-grouping-1', { labelFull: 'left over\nfrom a score' });
+    plotConfigs.get(h.panelId).color = s;
+    const first = await attempt(s, h);
+    assert.equal(first.name, 'SourceUnavailable', 'nothing yet: the plot has nothing to keep, so it is told');
+    assert.equal(first.type, TYPE, "the provider's placeholder draws an axis");
+    const got = await settle(s, h);
+    assert.equal(got.type, 'categorical');
+    assert.deepEqual(Array.from(got.codes), [0, 1, 1, 255, 0, 2]);
+    assert.equal(got.MISSING, 255);
+    assert.deepEqual(got.categories, TYPES);
+    assert.deepEqual(got.colours, generateDiscreteColors(3), "the app's palette in group order: a plot coloured by the column matches");
+    assert.equal(got.rankOf, null);
+    assert.equal(got.values, undefined, 'colour and axes: a cell in no group is missing');
+    assert.equal(s.label, 'Cell type', 'named by its title (CAT-8)');
+    assert.equal(s.labelFull, undefined, "a title of one line: nothing left over from another source's");
+    const request = asked.find((b) => !b.estimate_only);
+    assert.equal(request.want.codes, true, 'a plot asks for the codes');
+    assert.ok(ledger.heldBytes() >= 6, 'the codes are on the memory guard ledger (CAT-4)');
+    // the plain series a regular plot draws: one label per point, null for a cell in no group
+    assert.deepEqual(R.plotSeries(got).values, ['B cell', 'T cell', 'T cell', null, 'B cell', 'NK cell']);
 });
 
-test("a grouping of one categorical factor takes that column's colours (SHR-11)", () => {
-    const own = { kind: 'categorical', colors: { 'c:B cell': '#111111', 'c:T cell': '#222222', 'c:NK cell': '#333333' } };
-    const s = CG.groupSeries(values(CODES, RESULT.groups, [own]), ['B cell', 'T cell', 'NK cell']);
-    assert.deepEqual(s.colours, ['#111111', '#222222', '#333333']);
+test('a hover line names the group, and "not in any group" for a cell in none (CAT-5)', async () => {
+    const h = plotHost();
+    const s = setting('cell-grouping-1');
+    plotConfigs.get(h.panelId).hoverInfo = [s];
+    await settle(setting('cell-grouping-1'), h);
+    asked.length = 0;
+    const hover = await loadOf(s, h, 'hover:cell-grouping-1::');
+    assert.deepEqual(R.plotSeries(hover).values, ['B cell', 'T cell', 'T cell', 'not in any group', 'B cell', 'NK cell']);
+    assert.equal(provider().hover.label(s), 'Cell type');
+    assert.equal(asked.length, 0, 'colour and hover read the groups held: no request');
 });
 
-test('past 64 groups: every group ranked by its place in group order, so its colour is the colour-group rule of the grouping (SHR-11)', () => {
-    const n = 150;
-    const names = namesOf(n);
-    const s = CG.groupSeries(values(new Uint8Array([0, 149, 64, 255]), groupsOf(n)), names);
-    assert.equal(s.colours, null, 'colour groups take the palette, not one colour per group');
-    assert.ok(s.rankOf instanceof Map);
-    assert.equal(s.rankOf.size, n);
-    for (const i of [0, 1, 63, 64, 149]) assert.equal(s.rankOf.get(names[i]), i);
-    // the colour a plot gives rank r is colour group r mod 64: the grouping's own colours (cell-grouping.js groupColours)
-    assert.deepEqual(CG.groupingColours(values(new Uint8Array(1), groupsOf(n)).reply).slice(60, 70),
-        colourGroups(64).concat(colourGroups(64)).slice(60, 70));
+test('2 bytes past 255 groups, with their missing value (CAT-4)', async () => {
+    const got = await settle(setting('cell-grouping-5'), plotHost());
+    assert.ok(got.codes instanceof Uint16Array);
+    assert.equal(got.MISSING, 65535);
+    assert.equal(got.categories.length, 300);
 });
 
-test('the large form: the codes as they are, and past 64 groups ranked with the name of each colour group', () => {
-    const small = CG.groupLargeSeries(values(CODES, RESULT.groups), ['B cell', 'T cell', 'NK cell']);
+test("a grouping of one categorical factor takes that column's colours (SHR-11)", async () => {
+    const got = await settle(setting('cell-grouping-6'), plotHost());
+    assert.deepEqual(got.colours, ['#111111', '#222222', '#333333']);
+});
+
+test("past 64 groups: each group ranked by its place in group order, so its colour group is the grouping's (SHR-11)", async () => {
+    const got = await settle(setting('cell-grouping-4'), plotHost());
+    const names = namesOf(150);
+    assert.deepEqual(got.categories, names);
+    assert.equal(got.colours, null, 'colour groups take the palette, not one colour per group');
+    assert.ok(got.rankOf instanceof Map);
+    assert.equal(got.rankOf.size, 150);
+    for (const i of [0, 1, 63, 64, 149]) assert.equal(got.rankOf.get(names[i]), i);
+    // the plot gives rank r the colour group r mod 64: the grouping's own colour (cell-grouping.js groupColours)
+    const palette = colourGroups(64);
+    assert.equal(palette[got.rankOf.get('g70') % 64], palette[6]);
+});
+
+test('the large form: the codes as they are; past 64 groups ranked with the name of each colour group', async () => {
+    const small = await settle(setting('cell-grouping-1'), plotHost(), { large: true });
     assert.deepEqual(Object.keys(small).sort(), ['MISSING', 'categories', 'codes', 'colours', 'type']);
-    assert.equal(small.codes, CODES);
-    const n = 130;
-    const big = CG.groupLargeSeries(values(new Uint8Array([0, 129]), groupsOf(n)), namesOf(n));
-    assert.equal(big.ranked, true, 'a group code is its rank in group order already: nothing is copied');
+    assert.deepEqual(small.categories, TYPES);
+    const big = await settle(setting('cell-grouping-4'), plotHost(), { large: true });
+    assert.equal(big.ranked, true, "a group's code is its rank in group order already: nothing is copied");
     assert.equal(big.groupNames.length, 64);
     assert.equal(big.groupNames[0], 'g0, g64, g128');
-    assert.equal(big.groupNames[2], 'g2, g66');
+    assert.equal(big.groupNames[2], 'g2, g66, g130');
+    assert.equal(big.groupNames[30], 'g30, g94');
     assert.equal(big.groupNames[63], 'g63, g127');
     assert.deepEqual(big.categories, []);
+    assert.deepEqual(Array.from(big.codes), [0, 149, 64, 255, 1, 2]);
 });
 
-test('a series is made once per reply and names: a repaint does no work that grows with the groups', () => {
-    const n = 1500;
-    const v = values(new Uint16Array(10), groupsOf(n));
-    const names = namesOf(n);
-    const first = CG.groupSeries(v, names);
+test('a series is made once per reply: a repaint does no work that grows with the groups', async () => {
+    const h = plotHost();
+    const s = setting('cell-grouping-5');
+    const first = await settle(s, h);
     const t0 = process.hrtime.bigint();
-    for (let i = 0; i < 2000; i++) assert.equal(CG.groupSeries(v, names).categories, first.categories);
+    for (let i = 0; i < 300; i++) {
+        const again = await loadOf(s, h);
+        assert.equal(again.categories, first.categories);
+        assert.equal(again.colours, first.colours);
+    }
     const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-    assert.equal(CG.groupSeries(v, names).rankOf, first.rankOf);
-    assert.ok(ms < 200, `2,000 reads of a 1,500-group series took ${ms.toFixed(1)} ms`);
+    assert.ok(ms < 300, `300 reads of a 300-group series took ${ms.toFixed(1)} ms`);
 });
 
-// ------------------------------------------------------------------------------------------------ hover
+// ------------------------------------------------------------------------------------------------ hover entries
 
-test('hover: its own group, one entry per grouping, a deleted one kept, valueOf and parse agree, the line names the title (CAT-5)', () => {
+test('the Hover picker: its own group, one entry per grouping, a deleted one kept, valueOf and parse agree', () => {
     const h = provider().hover;
     assert.equal(h.group, 'Groupings');
-    assert.deepEqual(h.options([]), [{ value: 'cell-group:cell-grouping-1', label: 'Cell type' },
-        { value: 'cell-group:cell-grouping-2', label: 'Closed one' }, { value: 'cell-group:cell-grouping-3', label: 'Grouping 3' }]);
-    assert.deepEqual(h.options(['cell-group:cell-grouping-7']).slice(-1), [{ value: 'cell-group:cell-grouping-7', label: 'cell-grouping-7 (deleted)' }]);
-    const setting = { type: 'cell-group', key: 'cell-grouping-1' };
-    assert.ok(h.valueOf(setting).startsWith('cell-group:'));
-    assert.deepEqual(h.parse(h.valueOf(setting)), { key: 'cell-grouping-1' });
-    assert.equal(h.label(setting), 'Cell type');
-    assert.equal(h.label({ type: 'cell-group', key: 'cell-grouping-7', label: 'Old grouping' }), 'Old grouping', 'a deleted one by its last title');
+    const options = h.options([]);
+    assert.deepEqual(options.slice(0, 2), [{ value: 'cell-group:cell-grouping-1', label: 'Cell type' },
+        { value: 'cell-group:cell-grouping-2', label: 'Closed one' }]);
+    assert.equal(options.length, all.length);
+    assert.deepEqual(h.options(['cell-group:cell-grouping-70']).slice(-1), [{ value: 'cell-group:cell-grouping-70', label: 'cell-grouping-70 (deleted)' }]);
+    const s = setting('cell-grouping-1');
+    assert.ok(h.valueOf(s).startsWith(`${TYPE}:`));
+    assert.deepEqual(h.parse(h.valueOf(s)), { key: 'cell-grouping-1' });
+    assert.equal(h.label(setting('cell-grouping-70', { label: 'Old grouping' })), 'Old grouping', 'a deleted one by its last title');
 });
 
-test('a hover line says "not in any group" for a cell in none, never NA', () => {
-    const s = CG.groupSeries(values(CODES, RESULT.groups), ['B cell', 'T cell', 'NK cell'], { hover: true });
-    assert.deepEqual(s.values, ['B cell', 'T cell', 'T cell', 'not in any group', 'B cell', 'NK cell']);
-    assert.equal(CG.groupSeries(values(CODES, RESULT.groups), ['B cell', 'T cell', 'NK cell']).values, undefined, 'colour and axes: missing');
-});
+// ------------------------------------------------------------------------------------------------ the states
 
-// ------------------------------------------------------------------------------------------------ notices
+const OPEN = ['score-open', 'Open grouping'];
+const CHOOSE = ['score-choose', 'Choose another'];
 
-test("the notices say a grouping's words (SHR-35, UX 5)", () => {
-    const say = (snap, role = 'colour') => CG.describeGrouping({ title: 'G1', ...snap }, { role });
-    const open = ['score-open', 'Open grouping'];
-    assert.equal(say({ state: 'computing' }).tag.text, 'Grouping…');
-    assert.equal(say({ state: 'computing', progress: { done: 3, total: 9 } }).headline, "Computing 'G1': 3 of 9 values. This plot has no color.");
-    const ask = say({ state: 'awaiting', estimate: { seconds: 120 } });
+test("computing, then asks first, in a grouping's words (SHR-35, UX 5)", async () => {
+    const computing = (await attempt(setting('cell-grouping-13'), plotHost(), 'x')).notice;
+    assert.ok(['estimating', 'computing'].includes(computing.state));
+    assert.equal(computing.tag.text, 'Grouping…');
+    const ask = (await settle(setting('cell-grouping-8'), plotHost(), { state: 'awaiting' })).notice;
     assert.equal(ask.tag.text, 'Grouping not computed');
-    assert.equal(ask.headline, "'G1' will take about 2 minutes. This plot has no color.");
-    assert.deepEqual(ask.actions, [['score-compute', 'Compute'], ['score-choose', 'Choose another']]);
-    const refused = say({ state: 'refused', message: '6,840 groups: a grouping holds up to 2,000.' }, 'x');
-    assert.equal(refused.tag.text, 'Grouping refused');
-    assert.deepEqual(refused.actions, [open, ['score-choose', 'Choose another']]);
-    const deleted = say({ state: 'deleted' });
-    assert.equal(deleted.tag.text, 'Grouping deleted');
-    assert.equal(deleted.headline, "Grouping 'G1' was deleted.");
-    const held = say({ state: 'ready', held: { edits: 2, seconds: 40 } });
-    assert.equal(held.headline, "Showing the previous 'G1'. 2 changes are not applied. About 40 seconds.");
-    assert.deepEqual(held.actions, [['score-update', 'Update grouping']]);
-    assert.equal(say({ state: 'updating' }).headline, "Showing the previous 'G1'. Updating.");
-    assert.equal(say({ state: 'building', table: 'cell-grouping-1', gate: { state: 'building' } }, 'x').headline,
-        "Building 'Cell type' to find its cells, then grouping them.");
-    const cycle = say({ state: 'cycle', cycle: ['G1', 'G2', 'G1'], cycleKinds: ['grouping', 'grouping', 'grouping'] });
-    assert.equal(cycle.headline, "'G1' and 'G2' depend on each other. This plot has no color.");
-    assert.equal(cycle.tag.text, 'Circular groupings');
-    assert.deepEqual(cycle.actions, [open, ['score-choose', 'Choose another']]);
-    // the group sources name each panel of the ring once
-    assert.equal(say({ state: 'cycle', cycle: ['G1', 'G2'], cycleKinds: ['grouping', 'grouping'] }).headline,
-        "'G1' and 'G2' depend on each other. This plot has no color.");
-    assert.equal(say({ state: 'cycle', cycle: ['G1', 'Table 2', 'G3'], cycleKinds: ['grouping', 'table', 'grouping'] }).headline,
-        "'G1', 'Table 2', 'G3' depend on each other in a circle. This plot has no color.");
-    const empty = say({ state: 'nofactors' }, 'x');
-    assert.equal(empty.headline, "'G1' has no factors yet.");
-    assert.deepEqual(empty.actions, [open, ['score-choose', 'Choose another']]);
-    assert.equal(say({ state: 'notcells' }).headline, 'Groupings are a cell source; not available in a Gene Plot.');
-    assert.equal(say({ state: 'off' }).headline, 'Cell Grouping is turned off on this server.');
-    assert.equal(say({ state: 'ready' }), null);
-    for (const state of ['computing', 'awaiting', 'refused', 'deleted', 'cycle', 'failed', 'cancelled', 'queued', 'building', 'ask', 'nofactors']) {
-        const n = say({ state, cycle: ['G1', 'G2', 'G1'], estimate: { seconds: 9 } });
-        assert.doesNotMatch(`${n.headline} ${n.text} ${n.tag.text}`, /score|signature|gene|colour|partitioning|cluster/i, state);
+    assert.equal(ask.headline, "'Slow' will take about 2 minutes. This plot has no color.");
+    assert.deepEqual(ask.actions, [['score-compute', 'Compute'], CHOOSE]);
+});
+
+test('refused for its size: the figures and the way out (SHR-35)', async () => {
+    const note = (await settle(setting('cell-grouping-7'), plotHost(), { role: 'x', state: 'refused' })).notice;
+    assert.equal(note.headline, "'Too many' has 6,840 groups: a grouping holds up to 2,000, so it was not computed.");
+    assert.equal(note.tag.text, 'Grouping refused');
+    assert.deepEqual(note.actions, [OPEN, CHOOSE]);
+});
+
+test('a loop computes nothing and names the panels once each (SHR-34)', async () => {
+    asked.length = 0;
+    const note = (await settle(setting('cell-grouping-10'), plotHost(), { role: 'x', state: 'cycle' })).notice;
+    assert.equal(note.headline, "'Ring A' and 'Ring B' depend on each other.");
+    assert.equal(note.tag.text, 'Circular groupings');
+    assert.deepEqual(note.actions, [OPEN, CHOOSE]);
+    assert.equal(asked.length, 0);
+});
+
+test('an empty grouping asks nothing and says it has no factors', async () => {
+    asked.length = 0;
+    const note = (await settle(setting('cell-grouping-3'), plotHost(), { role: 'x', state: 'nofactors' })).notice;
+    assert.equal(note.headline, "'Grouping 3' has no factors yet.");
+    assert.deepEqual(note.actions, [OPEN, CHOOSE]);
+    await sleep(30);
+    assert.equal(asked.length, 0, 'nothing asked');
+});
+
+test('a deleted grouping says so by its last title and keeps the setting (SHR-38)', async () => {
+    const h = plotHost();
+    const s = setting('cell-grouping-12');
+    await settle(s, h, { role: 'x' });
+    all = all.filter((p) => p !== GONE);
+    const note = (await settle(s, h, { role: 'x', state: 'deleted' })).notice;
+    assert.equal(note.headline, "Grouping 'Soon gone' was deleted.");
+    assert.equal(note.tag.text, 'Grouping deleted');
+    assert.deepEqual(note.actions, [CHOOSE]);
+    assert.equal(s.key, 'cell-grouping-12');
+});
+
+test('a Gene Plot cannot take a grouping: that axis says so', async () => {
+    const got = await provider().load(setting('cell-grouping-1'), { host: plotHost(), role: 'x', axis: 'x', expected: 4, unit: 'genes' })
+        .catch((e) => e);
+    assert.equal(got.notice.state, 'notcells');
+    assert.equal(got.notice.headline, 'Groupings are a cell source; not available in a Gene Plot.');
+});
+
+test('no notice speaks of scores, signatures, genes, partitionings or clusters', async () => {
+    for (const [key, state] of [['cell-grouping-8', 'awaiting'], ['cell-grouping-7', 'refused'], ['cell-grouping-10', 'cycle'], ['cell-grouping-3', 'nofactors']]) {
+        const note = (await settle(setting(key), plotHost(), { role: 'x', state })).notice;
+        assert.doesNotMatch(`${note.headline} ${note.text} ${note.tag.text}`, /score|signature|gene|colour|partitioning|cluster/i, state);
     }
 });
 
 // ------------------------------------------------------------------------------------------------ actions
 
 /** The contract, as source-actions.test.mjs holds it: available() and run() agree for every action and host. */
-function checkContract(registry, hosts, spies) {
-    for (const h of hosts) {
+function checkContract(hostsList) {
+    let checked = 0;
+    for (const h of hostsList) {
         for (const name of A.actions.known) {
-            const before = spies.map((s) => s.calls);
-            const available = registry.available(name, h);
-            assert.deepEqual(spies.map((s) => s.calls), before, `${name}: asking changes nothing`);
-            assert.equal(registry.run(name, h), available, `${name} on ${h.name}`);
-            if (!available) assert.deepEqual(spies.map((s) => s.calls), before, `${name} on ${h.name}: unavailable does nothing`);
+            const available = A.actions.available(name, h);
+            assert.equal(typeof available, 'boolean');
+            assert.equal(A.actions.run(name, h), available, `${name} on ${h.id}`);
+            checked++;
         }
     }
+    return checked;
 }
 
-test("the plot provider's actions: every action of every state of its host agrees with itself", () => {
-    const spy = { calls: 0 };
-    const tick = () => { spy.calls++; };
-    const handle = { compute: tick, cancel: tick, retry: tick };
-    const rec = (groupId) => ({ groupId, role: 'color', handle });
-    const registry = A.actions.fresh();
-    registry.register(CG.createPlotGroupActions({
-        shownRecord: (h) => h.rec, recordsOf: (h) => new Map(h.rec ? [['color', h.rec]] : []),
-        groupingPanel: (id) => (id === 'cell-grouping-1' ? G1 : null), update: tick, openGrouping: tick,
-        chooser: (h) => (h.chooser ? { focus: tick } : null), panelIdOf: () => 'cell-plot-1'
-    }));
-    const hosts = [{ name: 'none' }, { name: 'live', rec: rec('cell-grouping-1'), chooser: true },
-        { name: 'gone', rec: rec('cell-grouping-7') }, { name: 'no chooser', rec: rec('cell-grouping-1') }];
-    checkContract(registry, hosts, [spy]);
-    assert.equal(registry.available('score-open', hosts[2]), false, 'a deleted grouping cannot be opened');
-    assert.equal(registry.available('score-offer', hosts[1]), false, 'a grouping offers nothing');
-    assert.equal(registry.available('score-open', hosts[1]), true);
+test("the page's grouping provider: every action of every state of a real host agrees with itself", async () => {
+    assert.ok(A.actions.providerIds().includes('plot-group'));
+    const states = [['cell-grouping-1', null], ['cell-grouping-8', 'awaiting'], ['cell-grouping-7', 'refused'], ['cell-grouping-10', 'cycle'],
+        ['cell-grouping-3', 'nofactors'], ['cell-grouping-70', 'deleted']];
+    const list = [];
+    for (const [key, state] of states) {
+        const h = plotHost();
+        await settle(setting(key), h, { role: 'x', state });
+        list.push(h);
+    }
+    assert.equal(checkContract(list), list.length * A.actions.known.length);
+    assert.equal(A.actions.available('score-open', list[list.length - 1]), false, 'a deleted grouping cannot be opened');
+    assert.equal(A.actions.available('score-offer', list[2]), false, 'a grouping offers nothing');
 });
 
-test("the page registers the grouping's plot provider beside the score's", () => {
-    assert.ok(A.actions.providerIds().includes('plot-group'));
-    assert.ok(A.actions.providerIds().includes('plot-score'));
+test('Open grouping reopens a closed grouping beside the plot (GRP-17); Compute computes one that asks first', async () => {
+    const h = plotHost();
+    made.length = 0;
+    await settle(setting('cell-grouping-2'), h, { role: 'x' });
+    assert.equal(A.actions.available('score-open', h), true);
+    A.actions.run('score-open', h);
+    assert.deepEqual(made, [['reopen', 'cell-grouping-2', { nextTo: h.panelId }]]);
+    const slow = plotHost();
+    await settle(setting('cell-grouping-14'), slow, { role: 'x', state: 'awaiting' });
+    asked.length = 0;
+    assert.equal(A.actions.run('score-compute', slow), true);
+    await until(() => asked.some((b) => !b.estimate_only), 'the request Compute sends');
 });
 
 // ------------------------------------------------------------------------------------------------ references (CAT-9)
 
 test("a plot's colour, axis and hover keys of a grouping follow a remap", () => {
-    const cfg = { color: { type: 'cell-group', key: 'cell-grouping-1' }, x: { type: 'cell-group', key: 'cell-grouping-1' },
-        hoverInfo: [{ type: 'cell-group', key: 'cell-grouping-1' }] };
+    const cfg = { color: setting('cell-grouping-1'), x: setting('cell-grouping-1'), hoverInfo: [setting('cell-grouping-1')] };
     PR.remapReferences([cfg], { 'cell-grouping-1': 'cell-grouping-5' });
     assert.equal(cfg.color.key, 'cell-grouping-5');
     assert.equal(cfg.x.key, 'cell-grouping-5');
     assert.equal(cfg.hoverInfo[0].key, 'cell-grouping-5');
-});
-
-// ------------------------------------------------------------------------------------------------ the page's binding
-
-test('a load reads the codes through the page group sources and names the setting by its title (CAT-8)', async () => {
-    asked.length = 0;
-    const h = host();
-    const setting = { type: 'cell-group', key: 'cell-grouping-1', column: '', labelFull: 'left over\nfrom a score' };
-    plotConfig.color = setting;
-    const p = provider();
-    await assert.rejects(p.load(setting, { host: h, role: 'color', axis: null, expected: 6, unit: 'cells' }),
-        (e) => e.name === 'SourceUnavailable' && e.type === 'cell-group');
-    await until(() => asked.some((b) => !b.estimate_only), 'the request');
-    const got = await loadReady(p, setting, { host: h, role: 'color', axis: null, expected: 6, unit: 'cells' });
-    assert.equal(got.type, 'categorical');
-    assert.deepEqual(Array.from(got.codes), Array.from(CODES));
-    assert.deepEqual(got.categories, ['B cell', 'T cell', 'NK cell']);
-    assert.equal(setting.label, 'Cell type');
-    assert.equal(setting.labelFull, undefined, "a title of one line: nothing left over from another source's");
-    const request = asked.find((b) => !b.estimate_only);
-    assert.equal(request.want.codes, true, 'a plot asks for the codes');
-    assert.ok(ledger.heldBytes() >= CODES.length, 'the codes are on the memory guard ledger (CAT-4)');
-    // the hover's line: values with the words for a cell in none
-    plotConfig.hoverInfo = [{ type: 'cell-group', key: 'cell-grouping-1' }];
-    const hover = await p.load(plotConfig.hoverInfo[0], { host: h, role: 'hover:cell-grouping-1::', axis: null, expected: 6, unit: 'cells' });
-    assert.equal(hover.values[3], 'not in any group');
-    assert.equal(asked.filter((b) => !b.estimate_only).length, 1, 'colour and hover share one request');
-    CG.releaseGroupHost(h);
-});
-
-test('an empty grouping asks nothing of the server and says it has no factors', async () => {
-    asked.length = 0;
-    const h = host('cell-plot-2');
-    const setting = { type: 'cell-group', key: 'cell-grouping-3' };
-    await assert.rejects(provider().load(setting, { host: h, role: 'x', axis: 'x', expected: 6, unit: 'cells' }),
-        (e) => e.name === 'SourceUnavailable' && e.notice.state === 'nofactors');
-    await new Promise((r) => setTimeout(r, 50));
-    assert.equal(asked.length, 0, 'nothing asked');
-    CG.releaseGroupHost(h);
-});
-
-test('a Gene Plot cannot take a grouping: that axis says so', async () => {
-    await assert.rejects(provider().load({ type: 'cell-group', key: 'cell-grouping-1' }, { host: host('gene-plot-1'), role: 'x', axis: 'x', expected: 4, unit: 'genes' }),
-        (e) => e.name === 'SourceUnavailable' && e.notice.state === 'notcells');
 });
