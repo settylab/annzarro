@@ -64,7 +64,7 @@ BUILD = """async (shots) => {
       const fig = D.densityFigure(config, table, {options, inputNames: {x: 'score', y: 'depth', split: 'kind'},
         palette: ['#1b9e77', '#d95f02', '#7570b3'], theme: T.PLOT_PALETTES[theme]});
       const div = document.createElement('div');
-      div.style.width = '600px'; div.style.height = '400px'; div.style.background = T.PLOT_PALETTES[theme].bgColor;
+      div.style.width = '600px'; div.style.height = '400px'; div.style.position = 'fixed'; div.style.left = '0'; div.style.top = '0'; div.style.zIndex = '99999'; div.style.background = T.PLOT_PALETTES[theme].bgColor;
       document.body.appendChild(div);
       await Plotly.newPlot(div, fig.data, fig.layout);
       const png = await X.exportImageData(div, 'full', {format: 'png', width: 600, height: 400, scale: 1});
@@ -74,7 +74,7 @@ BUILD = """async (shots) => {
         drawn: [...new Set(div._fullData.map((t) => t._module && t._module.name))].sort(),
         png: String(png).startsWith('data:image/png') && String(png).length > 500, svg: svg.includes('<svg'),
         svgText: svg.replace(/<[^>]+>/g, ' '), notes: fig.notes};
-      if (shots) { div.id = 'shot-' + theme + '-' + name; } else { Plotly.purge(div); div.remove(); }
+      if (shots) { div.id = 'shot-' + theme + '-' + name; div.style.visibility = 'hidden'; } else { Plotly.purge(div); div.remove(); }
     }
   }
   return out;
@@ -106,7 +106,10 @@ def test_every_density_figure_draws_and_exports(server):
             if shots:
                 os.makedirs(shots, exist_ok=True)
                 for key in got:
-                    page.locator("#shot-" + key.replace("/", "-")).screenshot(path=os.path.join(shots, key.replace("/", "-") + ".png"))
+                    shot = page.locator("#shot-" + key.replace("/", "-"))
+                    shot.evaluate("el => { el.style.visibility = 'visible'; }")
+                    shot.screenshot(path=os.path.join(shots, key.replace("/", "-") + ".png"))
+                    shot.evaluate("el => { el.style.visibility = 'hidden'; }")
             bad = [m for m in problems if "nrecognized" in m or m.startswith(("pageerror", "error"))]
             bad = [m for m in bad if "favicon" not in m and "GPU stall" not in m]
             assert not bad, bad
