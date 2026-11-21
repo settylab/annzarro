@@ -27,7 +27,7 @@ const inputNames = { x: 'cell_type', y: 'condition', split: 'condition', factor:
 const opts = (options = {}, extra = {}) => ({ options, words, inputNames, palette: PALETTE, theme: PLOT_PALETTES.light, measureSource: 'score', ...extra });
 
 const withContract = (reply) => ({ n_shown: reply.n_counted, ...reply,
-    axes: reply.axes.map((a, i) => {
+    axes: reply.axes.map((a) => {
         const bins = a.levels.filter((id) => id.startsWith('bin:')).length;
         const binned = bins ? { edges: Array.from({ length: bins + 1 }, (_, k) => k * 10), bins_made: bins, degenerate: false } : {};
         return { n_outside: [0, 0], ...binned, ...a };
@@ -182,9 +182,9 @@ test('hover names the levels, the count, the share and the measure with its stat
 
 // --- histogram -------------------------------------------------------------------------------------------------------
 
-const hist = (levels, counts, over = {}) => {
+const hist = (levels, counts, edges, over = {}) => {
     const config = norm({ mode: 'histogram', x: { source: { type: 'obs', key: 'depth' }, binning: { method: 'equal_width', bins: 3 } }, ...over });
-    return { config, table: tableOf(config, { axes: [{ levels }], counts, n_counted: counts.reduce((a, b) => a + b, 0) }, ['x']) };
+    return { config, table: tableOf(config, { axes: [{ levels, ...(edges ? { edges } : {}) }], counts, n_counted: counts.reduce((x, y) => x + y, 0) }, ['x']) };
 };
 
 test('a histogram sits on the numeric axis: each bar at its bin\'s center with its bin\'s width', () => {
@@ -205,7 +205,7 @@ test('the cells without a value are not a bar of a histogram', () => {
 });
 
 test('a zero bin is a bar just left of the first edge, not on the axis of another', () => {
-    const { config, table } = hist(['@zero', 'bin:0', 'bin:1', 'bin:2'], [9, 5, 8, 2]);
+    const { config, table } = hist(['@zero', 'bin:0', 'bin:1', 'bin:2'], [9, 5, 8, 2], [4, 14, 24, 34]);
     const t = D.countFigure(config, table, opts()).data[0];
     assert.deepEqual(t.y, [9, 5, 8, 2]);
     assert.equal(t.x[0], 0);
@@ -226,7 +226,7 @@ test('overlaid histograms of a split are translucent; stacked ones are not', () 
 
 test('levels that are not bins (an integer split by its values) are drawn as categories', () => {
     const config = norm({ mode: 'histogram', x: { source: { type: 'obs', key: 'n' }, binning: { method: 'categories' } } });
-    const table = tableOf(config, { axes: [{ levels: ['c:1', 'c:2', 'c:3'] }], counts: [4, 5, 6], n_counted: 15 }, ['x']);
+    const table = tableOf(config, { axes: [{ levels: ['c:1', 'c:2', 'c:3'], edges: [1, 2, 3], bins_made: 3, degenerate: false }], counts: [4, 5, 6], n_counted: 15 }, ['x']);
     const f = D.countFigure(config, table, opts());
     assert.deepEqual(f.data[0].x, [0, 1, 2]);
     assert.deepEqual(f.layout.xaxis.ticktext, ['1', '2', '3']);
