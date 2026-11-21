@@ -48,6 +48,8 @@ import { parseAlsoListed } from '../utils/source-registry.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { groupColours } from './plot-utilities/colors.js';
+import { drawPlot } from '../utils/panel-surface.js';
+import { Coverage, GAP } from '../utils/coverage.js';
 import './partition-options/binning-control.js';
 
 const TYPE = 'cell-count';
@@ -99,6 +101,29 @@ function planSentence(snap, nameOf) {
     return '';
 }
 
+/**
+ * What the plot shows of the cells shown (the panel surface states it): the cells counted, and the cells left out, each
+ * reason apart: without a value on an input, outside an excluded range, in levels left out.
+ * @param {Object} table - from countTable
+ * @param {Object} names - the inputs' names
+ */
+function coverageOf(table, names) {
+    const gaps = [];
+    let accounted = 0;
+    for (const [input, n] of Object.entries(table.noValue)) {
+        if (!(n > 0)) continue;
+        gaps.push({ reason: GAP.FILTERED, detail: `without a value for ${names[input] || input}`, source: names[input] || '', count: n });
+        accounted += n;
+    }
+    if (table.outside > 0) {
+        gaps.push({ reason: GAP.FILTERED, detail: 'outside the range', source: '', count: table.outside });
+        accounted += table.outside;
+    }
+    const rest = table.shown - table.total - accounted;
+    if (rest > 0) gaps.push({ reason: GAP.FILTERED, detail: `in ${VOCABULARY.plural.level} left out`, source: '', count: rest });
+    return new Coverage({ shown: table.total, total: table.shown, unit: 'cells', gaps });
+}
+
 /** Whether a snapshot is a plan's own (no input yet, an input the mode cannot use, a limit), not the route's. */
 const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state === 'unusable' || (snap.state === 'refused' && Array.isArray(snap.inputs)));
 
@@ -134,6 +159,7 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
         let _infos = {};
         let _labelMaps = {};
         let _notes = null;
+        let _drawSerial = 0;
         const _listeners = [];
         /** the shape and the shown config of `_config`, made once per config */
         let _shape = null;
@@ -468,6 +494,7 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
             if (!found || !window.Plotly) {
                 if (window.Plotly && _dom.plot._fullLayout) window.Plotly.purge(_dom.plot);
                 _drawing = null;
+                _drawSerial++;
                 _notes = null;
                 _infos = {};
                 _labelMaps = {};
@@ -492,10 +519,15 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
                 : DENSITY_MODES.includes(config.mode) ? densityFigure(config, table, opts) : countFigure(config, table, opts);
             // a density's sentences (UX 4.4): the bandwidth and the floor in Plot Options, the range in the strip
             _notes = fig.notes || null;
-            window.Plotly.react(_dom.plot, fig.data, { ...fig.layout, autosize: true }, { displaylogo: false, responsive: true });
+            const serial = ++_drawSerial;
+            delete _dom.root.dataset.drawn;
+            const root = _dom.root;
+            drawPlot(_dom.plot, fig.data, { ...fig.layout, autosize: true }, { displaylogo: false, responsive: true },
+                coverageOf(table, names), 'cells').then(() => {
+                // what a test or a style reads: the mode drawn, once the drawing is of the config now
+                if (serial === _drawSerial && config === live) root.dataset.drawn = config.mode;
+            }, (error) => console.error(`Cell count plot ${_id}:`, error));
             _drawing = { config, table, labels, names };
-            // what a test or a style reads: the mode drawn, only once the drawing is of the config now
-            if (config === live) _dom.root.dataset.drawn = config.mode; else delete _dom.root.dataset.drawn;
             // what Choose levels and the binning control read: each input's axis of the reply, with its cells per level
             const defaults = levelLabelsOf(config, table, sourceTitleOf);
             _infos = {};

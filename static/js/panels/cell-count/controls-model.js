@@ -345,7 +345,7 @@ export function countReferences(config) {
 
 const LABEL_KINDS = Object.freeze(['none', 'count', 'share', 'measure']);
 /** The bandwidth adjust a density takes (CNT-10). */
-export const ADJUST = Object.freeze({ min: 0.1, max: 10 });
+const ADJUST = Object.freeze({ min: 0.1, max: 10 });
 
 /** A typed bandwidth adjust: a number from 0.1 to 10, or empty for 1; else the sentence that says so. */
 export function parseAdjust(text) {
