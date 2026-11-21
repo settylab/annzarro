@@ -75,3 +75,31 @@ def test_a_strip_that_is_not_persistent_stays_while_it_holds_a_bar_and_clears_af
     got = page.evaluate(STRIP, ["indeterminate"])
     assert got["bar"]["mode"] == "indeterminate" and got["bar"]["now"] is None and got["bar"]["text"] == "Score queued"
     assert page.evaluate(STRIP, ["clear"]) == {"strip": False, "bar": None}, "the bar gone, the strip goes"
+
+
+def _summary(page, tile=gs.C):
+    return page.evaluate("(t) => { const s = document.querySelector(t + ' .plot-status'); return s ? s.getAttribute('data-summary') : null; }", tile)
+
+
+def test_the_strip_says_a_score_is_not_ready_not_available_or_not_in_this_dataset(page, served):
+    wait = "([t, w]) => ((document.querySelector(t + ' .plot-status') || {getAttribute: () => ''}).getAttribute('data-summary') || '').includes(w)"
+    # none of its genes in the dataset (the real route): truly not in this dataset
+    gs._open(page, served, sig=gs._sig(genes=("NOT_A_GENE", "NOR_THIS")))
+    page.wait_for_selector(f"{gs.C} .score-notice[data-state='noscore']", timeout=30000)
+    gs.until(page, wait, [gs.C, "gene score"])
+    assert "gene score T cell score: not in this dataset" in _summary(page)
+    # computing: not ready yet (it said "not in this dataset", which was false)
+    page.goto("about:blank")
+    gs._slow(page, "auto", 3)
+    gs._open(page, served, wait=False)
+    page.wait_for_selector(f"{gs.C} .score-notice[data-state='computing']", timeout=30000)
+    gs.until(page, wait, [gs.C, "gene score"])
+    assert "gene score T cell score: not ready yet" in _summary(page)
+    assert "not in this dataset" not in _summary(page)
+    # refused: not available
+    page.goto("about:blank")
+    gs._slow(page, "refused", 1500, refuse="Too large. Use fewer genes.")
+    gs._open(page, served, wait=False)
+    page.wait_for_selector(f"{gs.C} .score-notice[data-state='refused']", timeout=30000)
+    gs.until(page, wait, [gs.C, "not available"])
+    assert "gene score T cell score: not available" in _summary(page)

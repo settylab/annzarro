@@ -237,6 +237,8 @@ function unwatchVisibility(host, listener) {
  * @param {(rec: Object, setting: Object) => boolean} spec.matches - whether a record still serves this setting
  * @param {(snap: Object, ctx: {role: string, sharers: number}) => (Object|null)} spec.describe - the notice of a snapshot
  * @param {(rec: Object) => boolean} [spec.stillUsed] - whether the host still reads what the record holds
+ * @param {(rec: Object, snap: Object) => boolean} [spec.stale] - whether what the plot drew for a record that has no
+ *   value says something the new state does not (its coverage in the strip): the plot is drawn again
  * @param {(host: HTMLElement) => void} [spec.refresh] - draw the panel again (its values changed)
  * @param {() => void} [spec.visibilityChanged] - a host of this provider came on screen or left it
  * @param {(host: HTMLElement, notice: Object) => void} [spec.placeholder] - draws an axis that cannot be drawn
@@ -244,7 +246,8 @@ function unwatchVisibility(host, listener) {
  * @param {number} [spec.paintMs] - a burst of changes is painted once, this long after the first
  * @param {Function} [spec.setTimer]
  */
-export function createHostBinding({ id, open, matches, describe, stillUsed = () => true, refresh = () => {}, visibilityChanged = () => {},
+export function createHostBinding({ id, open, matches, describe, stillUsed = () => true, stale = () => false, refresh = () => {},
+    visibilityChanged = () => {},
     placeholder = null, painter: own = painter, paintMs = 120, setTimer = (fn, ms) => setTimeout(fn, ms) }) {
     /** host -> Map(role -> record) */
     const HOSTS = new WeakMap();
@@ -307,7 +310,8 @@ export function createHostBinding({ id, open, matches, describe, stillUsed = () 
         if (!host.isConnected) { release(host, rec.role); return; }
         if (!stillUsed(rec)) { release(host, rec.role); return; }
         const showing = snap.values ? (snap.shownKey || snap.key) : null;
-        if (!rec.quiet && snap.state !== 'updating' && rec.drawnKey !== undefined && showing !== rec.drawnKey) refreshSoon(host);
+        const moved = (rec.drawnKey !== undefined && showing !== rec.drawnKey) || stale(rec, snap);
+        if (!rec.quiet && snap.state !== 'updating' && moved) refreshSoon(host);
         schedulePaint(host);
     }
 

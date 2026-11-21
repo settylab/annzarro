@@ -53,6 +53,24 @@ export function durationText(seconds) {
     return `about ${Math.round(h)} hour${Math.round(h) === 1 ? '' : 's'}`;
 }
 
+/** The states of a dependant whose value is still on its way. */
+const PENDING_STATES = Object.freeze(['idle', 'estimating', 'queued', 'computing', 'updating']);
+
+/**
+ * What a dependant without its value says in its plot's coverage (utils/coverage.js gap kinds): 'pending' while the
+ * value is on its way ("not ready yet"), '' when the dataset truly lacks it (a layer or every gene not in it: the gap's
+ * own "not in this dataset"), and 'stopped' for every other state ("not available": refused, failed, cancelled,
+ * deleted, asks first).
+ * @param {Object|null} snap
+ * @returns {'pending'|'stopped'|''}
+ */
+export function coverageKindOf(snap) {
+    if (!snap) return 'stopped';
+    if (PENDING_STATES.includes(snap.state)) return 'pending';
+    if (snap.state === 'nolayer' || (snap.state === 'noscore' && snap.reason === 'no_gene_present')) return '';
+    return 'stopped';
+}
+
 /** Notice states, most urgent first: a plot with two sources states the worst. A state not listed is the least urgent. */
 export const PRIORITY = ['nolayer', 'nodown', 'notcells', 'unset', 'deleted', 'off', 'cycle', 'failed', 'refused', 'ask', 'awaiting', 'cancelled', 'noscore',
     'nogenes', 'building', 'estimating', 'queued', 'computing', 'updating', 'held', 'notoffered'];

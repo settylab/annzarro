@@ -28,7 +28,7 @@ import { createLimiter, DEFAULT_MAX_ACTIVE } from './derived-store.js';
 import { createScoreSources } from './score-sources.js';
 import { createScoreApi } from './gene-score-client.js';
 import { describeScore } from './score-notices.js';
-import { paintProgress, sentenceOf } from './source-notices.js';
+import { paintProgress, sentenceOf, coverageKindOf } from './source-notices.js';
 import { actions } from './source-actions.js';
 import { createHostBinding, isHover, isVisible, panelIdOf, PENDING } from './host-binding.js';
 import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-registry.js';
@@ -269,7 +269,7 @@ function refreshPanel(host) {
 function drawScorePlaceholder(host, notice) {
     if (!host) return;
     const unit = 'cells';
-    const cov = Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: null });
+    const cov = Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: null, kind: coverageKindOf(notice) });
     drawPlaceholder(host, cov, unit, {
         actions: notice.actions,
         say: { severity: notice.severity === 'error' ? 'error' : 'notice', headline: notice.headline,
@@ -304,6 +304,9 @@ function binding() {
             matches: (rec, setting) => rec.sigId === setting.key && rec.sub === subKeyOf(setting) && (rec.layer || '') === layerOf(setting),
             describe: describeScore,
             stillUsed,
+            // drawn without a value, its strip says "not ready yet", "not available" or "not in this dataset": the
+            // plot is drawn again when that changes (computing, then refused), and only then
+            stale: (rec, snap) => rec.drawnKey === null && rec.drawnKind !== undefined && coverageKindOf(snap) !== rec.drawnKind,
             refresh: refreshPanel,
             visibilityChanged: () => scores().sources.visibilityChanged(),
             placeholder: drawScorePlaceholder
@@ -336,7 +339,7 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
     if (!host || !setting.key) {
         const notice = describeScore({ state: 'unset', title: '' }, { role });
         throw unavailable(notice.headline, notice,
-            Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected }));
+            Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected, kind: 'stopped' }));
     }
     // an entry with no layer (an old link) is resolved now, once, to the signature's input
     if (!setting.layer) { const input = sourceInput(setting.key); if (input) setting.layer = input; }
@@ -345,6 +348,7 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
     const snap = rec.handle.read();
     if (snap.values) {
         rec.drawnKey = snap.shownKey || snap.key;
+        rec.drawnKind = undefined;
         binding().paint(host);
         const vector = snap.values;
         const values = array ? Array.from(vector) : null;
@@ -353,13 +357,14 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
         return Promise.resolve({ values: array ? values : vector, type: 'numerical', categories: null, coverage, vector });
     }
     rec.drawnKey = null;
+    rec.drawnKind = coverageKindOf(snap);
     const notice = describeScore(snap, { role, sharers: rec.handle.sharers() })
         || describeScore({ ...snap, state: 'estimating' }, { role });
     // a caller that waits for the score says nothing yet (rec.quiet): no notice and no tag until it is known to last
     if (!(quiet && PENDING.includes(snap.state))) binding().paint(host);
     throw unavailable(notice.headline, notice,
         Coverage.missing(GAP.UNAVAILABLE, `${notice.headline}${notice.text ? ` ${notice.text}` : ''}`,
-            { source: `gene score ${title}`, unit, total: expected }), snap.state);
+            { source: `gene score ${title}`, unit, total: expected, kind: coverageKindOf(snap) }), snap.state);
 }
 
 // ---------------------------------------------------------------------------
@@ -523,7 +528,7 @@ function loadForPlot(setting, { host, role, axis, expected, unit, signal }) {
     if (unit === 'genes') {
         const notice = describeScore({ state: 'notcells', title: '' }, { role: role === 'color' ? 'colour' : (axis || 'x') });
         return Promise.reject(unavailable(notice.headline, notice,
-            Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected })));
+            Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected, kind: 'stopped' })));
     }
     // a hover line does not hold the plot back: it is left out until the score is ready, and the plot draws again then
     if (isHover(role)) {

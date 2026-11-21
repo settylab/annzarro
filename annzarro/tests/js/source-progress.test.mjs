@@ -149,3 +149,25 @@ test("the reasons' sentences use the interface words, US spelling, and end as se
     }
     assert.deepEqual(Object.keys(V.reasons).sort(), [...LIMITS, ...PASSING].sort());
 });
+
+// ---------------------------------------------------------------- what the strip says of a score that is not drawn
+
+const { Coverage, GAP, breakdown } = await import('../../../static/js/utils/coverage.js');
+
+test('a pending score is "not ready yet", a stopped one "not available", one the dataset lacks "not in this dataset"', () => {
+    const kindOf = SN.coverageKindOf;
+    for (const state of ['idle', 'estimating', 'queued', 'computing', 'updating']) assert.equal(kindOf({ state }), 'pending', state);
+    for (const state of ['refused', 'failed', 'cancelled', 'awaiting', 'deleted', 'cycle', 'off', 'nogenes', 'unset', 'building', 'ask']) {
+        assert.equal(kindOf({ state }), 'stopped', state);
+    }
+    assert.equal(kindOf({ state: 'nolayer' }), '', 'a layer the dataset lacks');
+    assert.equal(kindOf({ state: 'noscore', reason: 'no_gene_present' }), '', 'no gene of it in the dataset');
+    assert.equal(kindOf({ state: 'noscore', reason: 'other' }), 'stopped');
+    const line = (kind) => Coverage.missing(GAP.UNAVAILABLE, 'why', { source: 'gene score T cell score', unit: 'cells', total: 60, kind }).lines()[0];
+    assert.equal(line('pending'), 'gene score T cell score: not ready yet (60 cells) -- why');
+    assert.equal(line('stopped'), 'gene score T cell score: not available (60 cells) -- why');
+    assert.equal(line(''), 'gene score T cell score: not in this dataset (60 cells) -- why');
+    assert.equal(line(undefined), 'gene score T cell score: not in this dataset (60 cells) -- why', 'no kind: as before');
+    const note = breakdown(Coverage.missing(GAP.UNAVAILABLE, 'why', { source: 'gene score S', unit: 'cells', total: null, kind: 'pending' })).notes[0];
+    assert.equal(note.label.split(' -- ')[0], 'gene score S: not ready yet', "the strip's short line");
+});

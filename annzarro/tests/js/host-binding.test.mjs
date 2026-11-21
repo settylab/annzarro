@@ -319,6 +319,20 @@ test("a burst of changes is painted once; a changed value redraws the panel; a h
     assert.equal(painted[painted.length - 1].notice, null, 'ready, and the hover role (computing) is not stated');
 });
 
+test('a plot drawn without a value is drawn again when what its strip says changes, and only then', () => {
+    const { b, src, time, refreshed } = binding({ stale: (rec, snap) => rec.drawnKey === null && rec.drawnKind !== SN.coverageKindOf(snap) });
+    const h = host();
+    const rec = b.recordFor(h, 'color', { key: 'G1' });
+    rec.drawnKey = null;
+    rec.drawnKind = 'pending';
+    src.handles[0].set({ state: 'computing', title: 'G1', key: 'G1:1', progress: { done: 1, total: 2 } });
+    time.advance(50);
+    assert.deepEqual(refreshed, [], 'still on its way: the strip says the same');
+    src.handles[0].set({ state: 'refused', title: 'G1', key: 'G1:1' });
+    time.advance(50);
+    assert.deepEqual(refreshed, [h], 'refused: "not ready yet" would be false now');
+});
+
 test('a record the host no longer reads goes at its next change', () => {
     let used = true;
     const { b, src } = binding({ stillUsed: () => used });
