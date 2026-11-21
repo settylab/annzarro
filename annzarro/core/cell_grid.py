@@ -181,9 +181,9 @@ class Plan:
 
 def _n_categories(reader, dataset_path: str, key: str) -> Optional[int]:
     """Categories of a categorical obs column, from the length of its stored list (no cell is read)."""
-    with cs._root(reader, dataset_path) as root:
+    with cs.root(reader, dataset_path) as root:
         node = root["obs"][key]
-        if cs._is_group(node) and "categories" in node:
+        if cs.is_group(node) and "categories" in node:
             return int(node["categories"].shape[0])
     return None
 
@@ -268,8 +268,8 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
     by its values, cell names, a grouping) is checked again when it has been read, and refused in the result.
     The estimate and the lane follow the grouping's (SHR-41), with each measure's read added.
     """
-    with cs._root(reader, dataset_path) as root:
-        n_cells = cs._n_cells(root)
+    with cs.root(reader, dataset_path) as root:
+        n_cells = cs.n_cells(root)
     remote = is_remote_path(dataset_path)
     axes = [cg._plan_part(reader, dataset_path, p, request.levels, n_cells, remote, allow_exclude=True,
                           max_bins=_axis_limit(request.mode, i) or MAX_GRID_MEASURE_CELLS)

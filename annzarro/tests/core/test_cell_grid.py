@@ -661,11 +661,11 @@ def test_the_reply_is_what_the_browsers_reader_takes(store, tmp_path):
     replies = []
     for mode, parts, kw in cases:
         head, blocks = reply(run(store, mode, parts, **kw))
-        out = {k: v for k, v in head.items() if k != "blocks"}
-        out["counts"] = blocks["counts"].tolist()
+        value = {"reply": {k: v for k, v in head.items() if k != "blocks"}, "counts": blocks["counts"].tolist(),
+                 "measures": None}                     # a group-store handle's values: the frame, its blocks apart
         if "measure_moments" in blocks:
-            out["measure"] = blocks["measure_moments"][0].reshape(-1).tolist()
-        replies.append(out)
+            value["measures"] = blocks["measure_moments"][0].reshape(-1).tolist()
+        replies.append(value)
     path = tmp_path / "replies.json"
     path.write_text(json.dumps(replies))
     script = (f"import {{ readGrid }} from {json.dumps('file://' + COUNT_MODEL)};\n"
@@ -676,8 +676,9 @@ def test_the_reply_is_what_the_browsers_reader_takes(store, tmp_path):
     result = subprocess.run([node, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr[-3000:]
     got = json.loads(result.stdout)
-    for r, g in zip(replies, got):
-        assert g["cells"] == len(r["counts"]) and g["counted"] == r["n_counted"] and g["shown"] == r["n_shown"]
+    for v, g in zip(replies, got):
+        r = v["reply"]
+        assert g["cells"] == len(v["counts"]) and g["counted"] == r["n_counted"] and g["shown"] == r["n_shown"]
         assert g["outside"] == sum(sum(a["n_outside"]) for a in r["axes"])
 
 
