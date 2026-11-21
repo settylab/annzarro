@@ -203,6 +203,34 @@ def test_a_new_binned_factor_costs_at_most_two_computes_and_a_missing_factor_kee
     assert _histogram_requests(page)[-1]["want"]["histograms"] == [0]
 
 
+def test_a_renamed_bin_survives_a_reload_and_keeps_its_label_when_the_edges_move(page, served):
+    _open_binned(page, served, [_binned("score", bins=3)])
+    _ready(page)
+    _ctrl_ready(page)
+    card = f"{A} .cgrp-card[data-index='0']"
+    was = page.evaluate("(s) => document.querySelectorAll(s + ' .cgrp-level__label')[1].textContent", card)
+    page.click(f"{card} .cgrp-level__rename >> nth=1")
+    page.fill(f"{card} .cgrp-level__name", "low depth")
+    page.press(f"{card} .cgrp-level__name", "Enter")
+    until(page, "(id) => { const l = window.PanelManager.getPanel(id).getRecipe().partitionings[0].labels; return !!l && Object.values(l).includes('low depth'); }", GA)
+    assert list(_recipe(page)["partitionings"][0]["labels"].values()) == ["low depth"]
+    link = _captured_url(page, served)
+    page.goto("about:blank")
+    page.goto(link)
+    page.wait_for_selector(f"{A} .cgrp-panel .cgrp-status[data-state]", timeout=30000)
+    _expand(page, 0)
+    _ready(page)
+    until(page, "(s) => [...document.querySelectorAll(s + ' .cgrp-level__label')].some(e => e.textContent === 'low depth')", card)
+    # the edges move: the label stays on its level, with the hover that says what it was
+    page.fill(f"{CTRL} .pbc-bins", "5")
+    page.press(f"{CTRL} .pbc-bins", "Enter")
+    _wait_binning(page, {"method": "equal_count", "bins": 5})
+    until(page, "(s) => document.querySelectorAll(s + ' .cgrp-level').length === 5", card)
+    title = page.evaluate("(s) => { const e = [...document.querySelectorAll(s + ' .cgrp-level__label')].find(x => x.textContent === 'low depth'); return e ? e.title : null; }", card)
+    assert title and title.startswith("Was: "), title
+    assert was.startswith("score"), was
+
+
 # ------------------------------------------------------------------ 2. invalid entry
 
 def test_an_invalid_bin_count_brings_the_last_value_back_with_the_sentence(page, served):
