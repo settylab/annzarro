@@ -155,10 +155,17 @@ def _toggle(page, mode):
 
 
 def _menu(page, pid, section="background"):
-    if not page.query_selector(f"details[data-panel='{pid}']"):
+    """Open the Plot Options popover of `pid` at `section`, and only ever work in a popover that is shown.
+
+    A click outside it (the theme toggle is one) starts to hide it: Bootstrap drops `.show` at once and
+    removes the element when the fade ends. Its inputs are still there for a while but are about to go, so
+    wait that out, then open the menu again."""
+    shown = f".popover.show details[data-panel='{pid}']"
+    if not page.query_selector(shown):
+        page.wait_for_selector(f"details[data-panel='{pid}']", state="detached")      # a fading one is gone
         page.click(f"#aesthetics-menu-btn-{pid}")
-        page.wait_for_selector(f"details[data-panel='{pid}']", state="visible")
-    d = page.query_selector(f"details[data-panel='{pid}'][data-section='{section}']")
+        page.wait_for_selector(shown, state="visible")
+    d = page.query_selector(f"{shown}[data-section='{section}']")
     if not d.evaluate("e => e.open"):
         d.query_selector("summary").click()
     page.wait_for_function("(e) => e.open", arg=d)
@@ -352,10 +359,12 @@ def test_a_set_colour_is_kept_and_follow_restores(tab, server):
     assert _rgb(s["font"]) == "#ff0000" and _rgb(s["tick"]) == "#ff0000"      # kept
     assert _rgb(s["paper"]) == DARK["bg"] and _rgb(s["grid"]) == DARK["grid"]   # the rest followed
     assert _rgb(_snap(page, B)["font"]) == DARK["text"]                         # another plot is untouched
-    # the menu shows what is drawn
-    assert page.input_value(f"#text-color-{A}") == "#ff0000"
-    assert page.input_value(f"#plot-bg-color-{A}") == DARK["bg"]
-    assert page.is_disabled(f"#reset-bg-color-{A}") and not page.is_disabled(f"#reset-text-color-{A}")
+    # the menu shows what is drawn (the theme click closed the menu: open it again)
+    _menu(page, A)                    # a freshly opened menu fills its controls a moment later: expect() waits for them
+    playwright.expect(page.locator(f"#text-color-{A}")).to_have_value("#ff0000")
+    playwright.expect(page.locator(f"#plot-bg-color-{A}")).to_have_value(DARK["bg"])
+    playwright.expect(page.locator(f"#reset-bg-color-{A}")).to_be_disabled()
+    playwright.expect(page.locator(f"#reset-text-color-{A}")).to_be_enabled()
 
     _toggle(page, "light")
     _wait_plot(page, A, "paper", LIGHT["bg"])
@@ -400,7 +409,8 @@ def test_the_theme_buttons_are_gone_and_a_pinned_palette_still_loads(tab, server
     page.wait_for_timeout(600)
     assert _rgb(_snap(page, A)["paper"]) == DARK["bg"]                          # and kept across theme changes
     _menu(page, A)                                                              # a click on the toggle closed the menu
-    assert page.input_value(f"#plot-bg-color-{A}") == DARK["bg"] and not page.is_disabled(f"#reset-bg-color-{A}")
+    playwright.expect(page.locator(f"#plot-bg-color-{A}")).to_have_value(DARK["bg"])
+    playwright.expect(page.locator(f"#reset-bg-color-{A}")).to_be_enabled()
     page.click(f"#reset-bg-color-{A}")                                          # each colour's own Reset follows the theme
     _wait_plot(page, A, "paper", LIGHT["bg"])
     assert "bgColor" not in _cfg(page, A) and _cfg(page, A)["textColor"] == DARK["text"]

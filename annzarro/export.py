@@ -313,7 +313,7 @@ def _wait_until_drawn(page, timeout_s: float, settle_s: float = 1.5) -> None:
     while time.time() < deadline:
         state = json.loads(page.evaluate("() => window.annzarroPlotState()"))
         sig = json.dumps(state)
-        ready = (not state["loading"] and not state["noData"] and state["plots"]
+        ready = (not state["loading"] and not state["noData"] and not state.get("pending") and state["plots"]
                  and all(p[1] for p in state["plots"]))
         if sig != last:
             last, since = sig, time.time()

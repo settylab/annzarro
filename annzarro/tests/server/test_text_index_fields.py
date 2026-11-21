@@ -391,11 +391,22 @@ def best_of(fn, runs=5):
     return min(times)
 
 
-def test_a_search_over_twenty_thousand_entries_ends_inside_its_time_limit():
+def test_a_search_over_twenty_thousand_entries_ends_inside_its_time_limit(monkeypatch):
+    # The limit is SEARCH_SECONDS of work. A busy machine stretches a wall-clock run as far as it likes and the
+    # search then stops midway for reasons of its own. So the search's own deadline is run on the CPU seconds of
+    # this process (a clock load does not move), with its real default limit and its own check: one search of
+    # each kind, and neither may be cut.
+    class CpuTime:
+        def __getattr__(self, name):
+            return getattr(time, name)
+
+        def monotonic(self):
+            return time.process_time()
     loaded = synthetic_index(20_000)
-    hits, more, partial = text_index.search(loaded, ["donor", "counts"], lambda e: True, seconds=text_index.SEARCH_SECONDS)
+    monkeypatch.setattr(text_index, "time", CpuTime())
+    hits, more, partial = text_index.search(loaded, ["donor", "counts"], lambda e: True)
     assert partial is False and hits == []
-    hits, more, partial = text_index.search(loaded, ["highly_variable"], lambda e: True, seconds=text_index.SEARCH_SECONDS)
+    hits, more, partial = text_index.search(loaded, ["highly_variable"], lambda e: True)
     assert partial is False and len(hits) == 50 and more == 20_000 - 50
 
 
