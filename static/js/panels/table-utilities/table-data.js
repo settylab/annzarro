@@ -8,13 +8,14 @@ import { VALUE_LIST_MAX } from '../../utils/categories.js';
 import { isDerived, derivedValues, derivedColumn, sameExpr, sameColumn, numberCriterion, addCriterion, configDepth, referencedKeys, orphanedDerived } from '../../utils/line-select.js';
 import { DataManager } from '../../data-manager.js';
 import { RemoteNames } from '../../utils/remote-names.js';
-import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents, syncSelectedColumns } from './table-ui-make.js'
+import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents, syncSelectedColumns, cellTableSources, geneTableSources } from './table-ui-make.js'
 import { freezeSelection } from '../../utils/closed-table.js';
 import { getColumnKey } from '../../utils/column-key.js';
 import { TableResolver } from '../../utils/table-resolver.js';
 import { lineSelectButton } from './line-select-ui.js';
 import { isScoreColumn } from '../../utils/score-column.js';
-import { scoreLabel } from '../../utils/score-source.js';
+import { tableHalfOf } from '../../utils/table-source.js';
+import { getSource } from '../../utils/source-registry.js';
 import { TableScores } from './table-scores.js';
 import { bindScoreColumns } from './table-score-ui.js';
 import {
@@ -103,10 +104,10 @@ export async function loadTableData(settings, entityType, signal = null) {
                     throw new DOMException(`Table data loading aborted before loading column ${getColumnKey(column)}`, 'AbortError');
                 }
                 
-                // A gene-signature score is not loaded here: the table is built at once and the column
-                // fills in place when the score is there (panels/table-utilities/table-score-ui.js).
-                // Its cells are read from the score's Float32Array by row, so no row object gets a
-                // property for it.
+                // A source's column (a gene-signature score, a provider's series) is not loaded here: the table is
+                // built at once and the column fills in place when the series is there
+                // (panels/table-utilities/table-score-ui.js). Its cells are read from the series by row, so no row
+                // object gets a property for it.
                 if (isScoreColumn(column) && entityType === 'cells') {
                     columnCoverages.push(Coverage.complete(entityIndex.length, entityType));
                     columnDefinitions.push(scoreColumnDefinition(column, getColumnKey(column),
@@ -230,21 +231,23 @@ export async function loadTableData(settings, entityType, signal = null) {
 }
 
 /**
- * The DataTables column of a gene-signature score. Its `data` is a key no row has (the row
- * objects stay as they are); the cell is the reader's: the score at the row's position, or the
- * word for the state the score is in (utils/score-column.js).
- * @param {Object} column - `{type: 'gene-score', key, column, label}`
+ * The DataTables column of a source (a gene-signature score, or a provider's series). Its `data` is a key no row
+ * has (the row objects stay as they are); the cell is the reader's: the value at the row's position, or the word
+ * for the state the source is in (utils/score-column.js). A numerical column is filtered and sorted by number, a
+ * categorical one by its label (typed, as the name of a cell is).
+ * @param {Object} column - `{type, key, column, label}`
  * @param {string} columnKey
  * @param {{render: Function}} reader - panels/table-utilities/table-scores.js
  */
 function scoreColumnDefinition(column, columnKey, reader) {
+    const categorical = (getSource(column.type) || {}).valueType === 'categorical';
     return {
         title: getColumnDisplayName(column),
         data: columnKey,
         defaultContent: '',
         className: 'dt-center az-score-col',
-        type: 'num',
-        searchBuilderType: TEXT_ONLY_NUM_TYPE,
+        type: categorical ? 'string' : 'num',
+        searchBuilderType: categorical ? TEXT_ONLY_TYPE : TEXT_ONLY_NUM_TYPE,
         render: (data, type, row, meta) => reader.render(type, meta.row)
     };
 }
@@ -703,7 +706,7 @@ export function getColumnDisplayName(column) {
     if (isDerived(column)) {
         return column.key;
     } else if (isScoreColumn(column)) {
-        return scoreLabel(column);
+        return tableHalfOf(column).label(column);
     } else if (column.type === 'obs' || column.type === 'var') {
         return `${column.key}`;
     } else if (column.type === 'obsm' || column.type === 'varm') {
@@ -1639,18 +1642,7 @@ export async function refreshColumnChooser(panelSettings, tableRows) {
     const datasetStructure = await DataManager.getDatasetStructure(DataManager.getCurrentDataset());
     if (!datasetStructure) return;
     // Which tabs exist depends on the TABLE, not on the focus.
-    const sources = tableRows === 'cells' ? [
-        { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
-        { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
-        { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
-        { id: 'layer', name: 'layer', label: 'layers' }, // Expression Layers
-        { id: 'gene-score', name: 'gene-score', label: 'gene-score' } // Gene signature scores
-    ] : [
-        { id: 'var', name: 'var', label: 'var' }, // Gene Annotations
-        { id: 'varm', name: 'varm', label: 'varm' }, // Gene Matrices
-        { id: 'varp', name: 'varp', label: 'varp' }, // Gene-Gene Relations
-        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
-    ];
+    const sources = tableRows === 'cells' ? cellTableSources() : geneTableSources();
 
     //Make everything blank to start fresh
     for (const source of sources) {

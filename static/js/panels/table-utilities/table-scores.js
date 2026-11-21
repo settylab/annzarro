@@ -1,9 +1,10 @@
 /**
- * The scores a Cell Table shows as columns: one handle per (table, score column), shared by the
- * open table (which draws them and fills them in place, table-score-ui.js) and by the table
- * resolver (which needs the scores a CLOSED table's filter reads before it can build that
- * filter, table-background.js). The values live in the score store (utils/score-store.js) as a
- * Float32Array; this module holds a reference to it, never a copy.
+ * The sources a Cell Table shows as columns (a gene score, or any provider with a table half,
+ * utils/table-source.js): one handle per (table, column), shared by the open table (which draws them
+ * and fills them in place, table-score-ui.js) and by the table resolver (which needs the scores a
+ * CLOSED table's filter reads before it can build that filter, table-background.js). A score's values
+ * live in the score store (utils/score-store.js) as a Float32Array; this module holds a reference to
+ * the series, never a copy.
  *
  * What a table's render functions read is a `reader`: `{vec, view, render(type, row)}`. DataTables
  * keeps a row as an object with one property per column, which is what makes a 1M-row table
@@ -12,10 +13,10 @@
  * hands every render function), so the table holds exactly one Float32Array per score and the
  * per-row cost is DataTables' own caches for the column when it is sorted or filtered.
  */
-import { scores, scoreLabel } from '../../utils/score-source.js';
 import { DataManager } from '../../data-manager.js';
 import { getColumnKey } from '../../utils/column-key.js';
-import { isScoreColumn, sameScoreColumn, subOf, columnView, usedScoreColumns, filterGate } from '../../utils/score-column.js';
+import { tableHalfOf } from '../../utils/table-source.js';
+import { isScoreColumn, sameScoreColumn, subOf, columnView, describeColumn, usedScoreColumns, filterGate, seriesOf } from '../../utils/score-column.js';
 
 /** tableId -> Map(columnKey -> entry) */
 const TABLES = new Map();
@@ -34,6 +35,11 @@ export function tileOnScreen(id) {
         && r.top < window.innerHeight && r.left < window.innerWidth;
 }
 
+/** A label as the text of a cell. */
+function escapeText(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 /** The text of a number in a cell, as the other numeric columns show it. */
 function displayNumber(v) {
     return v.toFixed(4).replace(/\.?0+$/, '');
@@ -48,19 +54,39 @@ function rowsShown() {
 function makeReader() {
     const reader = {
         vec: null,
+        codes: null,
+        categories: null,
+        MISSING: null,
+        rank: null,
         view: columnView(null),
+        /** Hold the series the rows are shown from (or none). */
+        hold(series, snap) {
+            reader.vec = series && series.kind === 'numerical' ? series.held : null;
+            reader.codes = series && series.kind === 'categorical' ? series.held : null;
+            reader.categories = reader.codes ? snap.categories : null;
+            reader.MISSING = reader.codes ? snap.MISSING : null;
+            reader.rank = reader.codes && Array.isArray(snap.rank) ? snap.rank : null;
+        },
         /**
-         * One cell. DataTables asks for it by type: 'display' (HTML), 'sort' (a number), and
-         * 'filter', 'export' and the rest (the value at the precision a float32 has).
+         * One cell. DataTables asks for it by type: 'display' (HTML), 'sort' (a number, or for a category the text of its
+         * place in the order), and 'filter', 'export' and the rest (a number at the precision a float32 has, or the
+         * category's label).
          * @param {string} type
          * @param {number} i - the row, as DataTables numbers it (the position in the rows it was given)
          */
         render(type, i) {
-            const vec = reader.vec;
-            if (!vec || !(i < vec.length)) {
+            const series = reader.codes || reader.vec;
+            if (!series || !(i < series.length)) {
                 return type === 'display' ? `<span class="text-muted az-score-wait">${reader.view.cell || ''}</span>` : '';
             }
-            const v = vec[i];
+            if (reader.codes) {
+                const code = reader.codes[i];
+                if (code === reader.MISSING || reader.categories[code] === undefined) return type === 'display' ? '<span class="text-muted">N/A</span>' : '';
+                if (type === 'display') return escapeText(reader.categories[code]);
+                if (type === 'sort' && reader.rank) return String(reader.rank[code]).padStart(8, '0');
+                return reader.categories[code];
+            }
+            const v = reader.vec[i];
             if (v !== v) return type === 'display' ? '<span class="text-muted">N/A</span>' : '';
             if (type === 'display') return displayNumber(v);
             if (type === 'sort') return v;
@@ -71,17 +97,18 @@ function makeReader() {
 }
 
 function update(entry, snap, silent = false) {
-    const previous = entry.reader.vec;
+    const previous = entry.reader.codes || entry.reader.vec;
     entry.snap = snap;
-    entry.title = scoreLabel(entry.column);
+    entry.title = tableHalfOf(entry.column).label(entry.column);
     // sources.read() already states a score of another length as failed (or asks again): the values
     // here are the rows' own. A last look, in case the cells changed between that read and now.
-    const values = snap && snap.values && snap.values.length === rowsShown() ? snap.values : null;
-    entry.reader.vec = values;
-    entry.reader.view = columnView(values || !snap || !snap.values ? snap
-        : { ...snap, state: 'failed', values: null, message: 'the score is for other cells' }, entry.title);
-    const sig = [snap && snap.state, entry.reader.vec ? 1 : 0, snap && snap.held ? snap.held.edits : '', entry.title].join('|');
-    const changed = sig !== entry.sig || previous !== entry.reader.vec;
+    const series = seriesOf(snap);
+    const fits = !!series && series.length === rowsShown();
+    entry.reader.hold(fits ? series : null, snap);
+    entry.reader.view = columnView(fits || !series ? snap
+        : { ...snap, state: 'failed', values: null, codes: null, message: 'the score is for other cells' }, entry.title);
+    const sig = [snap && snap.state, fits ? 1 : 0, snap && snap.held ? snap.held.edits : '', entry.title].join('|');
+    const changed = sig !== entry.sig || previous !== (entry.reader.codes || entry.reader.vec);
     entry.sig = sig;
     if (silent) return;
     const sink = SINKS.get(entry.tableId);
@@ -106,7 +133,7 @@ function tableMap(tableId) {
  * The entry for one score column of a table, made (and its score asked for) when it is not
  * there yet.
  * @param {string} tableId
- * @param {Object} column - `{type: 'gene-score', key, column, label}`
+ * @param {Object} column - `{type, key, column, label}` of a provider with a table half
  */
 function ensure(tableId, column, visible = null) {
     const key = getColumnKey(column);
@@ -119,17 +146,15 @@ function ensure(tableId, column, visible = null) {
     if (!entry) {
         entry = { tableId, key, column, sub: subOf(column), handle: null, snap: null, title: '', sig: '',
             reader: makeReader(), visible: visible || (() => tileOnScreen(tableId)) };
-        entry.handle = scores().sources.watch(column.key, {
-            kind: 'table', sub: entry.sub, layer: column.layer || '', host: tableId, role: 'column', visible: () => entry.visible(),
-            onChange: (snap) => update(entry, snap)
-        });
+        entry.handle = tableHalfOf(column).watch(column, { host: tableId, visible: () => entry.visible(), onChange: (snap) => update(entry, snap) });
         map.set(key, entry);
         update(entry, entry.handle.read(), true);
     } else {
         entry.column = column;
         if (visible && entry.visible !== visible) {
             entry.visible = visible;
-            scores().sources.visibilityChanged();
+            const half = tableHalfOf(column);
+            if (half.visibilityChanged) half.visibilityChanged();
         }
         // the cells may have changed since the table last built its rows: read where the score stands now
         update(entry, entry.handle.read(), true);
@@ -206,7 +231,9 @@ export const TableScores = {
         if (!used.length) return null;
         const items = used.map((column) => {
             const entry = ensure(tableId, column, visible);
-            return { title: entry.title, view: entry.reader.view, snap: entry.snap };
+            const half = tableHalfOf(column);
+            return { title: entry.title, view: entry.reader.view, snap: entry.snap,
+                describe: half.describe ? (snap) => half.describe(snap, { sharers: 1 }) : undefined };
         });
         return filterGate(items);
     },
@@ -217,8 +244,38 @@ export const TableScores = {
     cancel(tableId) { return this.entries(tableId).some(e => e.handle.cancel()); },
     update(tableId) {
         let any = false;
-        for (const entry of this.entries(tableId)) any = scores().sources.update(entry.column.key) || any;
+        for (const entry of this.entries(tableId)) {
+            const half = tableHalfOf(entry.column);
+            any = (half.update ? half.update(entry.column) : false) || any;
+        }
         return any;
+    },
+
+    /** The notice of a column, from its provider (the score's own words when it has none): null when it has nothing to say. */
+    noticeOf(entry) {
+        const half = tableHalfOf(entry.column);
+        const snap = { ...entry.snap, source: entry.snap && entry.snap.title, title: entry.title };
+        const sharers = entry.handle.sharers();
+        return half.describe ? half.describe(snap, { sharers }) : describeColumn(snap, { sharers });
+    },
+
+    /** A column's name in an export's header. */
+    fullLabelOf(entry) { return tableHalfOf(entry.column).fullLabel(entry.column); },
+
+    /** Whether the provider can offer a lapsed option of the column again (a notice's action), and doing it. */
+    canOffer(column) {
+        const half = tableHalfOf(column);
+        return !!half && !!half.canOffer && !!half.offer && !!half.canOffer(column);
+    },
+    offer(column) {
+        const half = tableHalfOf(column);
+        return half && half.offer ? half.offer(column) : false;
+    },
+
+    /** Open the entity a column reads beside its table, when its provider can. */
+    open(column, hostId) {
+        const half = tableHalfOf(column);
+        return half && half.open ? half.open(column, hostId) : null;
     },
 
     /** The handle count, for tests. */
