@@ -222,3 +222,99 @@ def test_a_read_guard_refusal_names_no_pairwise_matrices(hosted, layout, monkeyp
     assert resp.status_code == 503
     body = resp.get_json()
     assert body["reason"] == "read_busy" and "pairwise" not in body["error"] and "this request" in body["error"]
+
+
+# --- a job held only by its own requester waits without the queue's time limit -------------------------------------
+
+def _wait_for_turn(lanes, job, wait_s):
+    """What ``respond`` does while a job is queued: wait_turn until it runs, from one deadline."""
+    deadline = lanes.now() + wait_s
+    last = job.queue()
+    while (last := lanes.wait_turn(job, deadline, last, wait_s)) is not None:
+        pass
+
+
+def test_a_job_held_only_by_its_own_requester_outlasts_the_queue_wait(guard, monkeypatch):
+    monkeypatch.setattr(cs, "OWN_WAIT_HEARTBEAT_S", 0.05)
+    lanes = cs.Lanes()
+    first = lanes.enter("heavy", admit_bytes=300 * MB, owner="alice")
+    second = lanes.enter("heavy", admit_bytes=300 * MB, owner="alice")
+    got = []
+    with _threads() as spawn:
+        def waiter():
+            try:
+                _wait_for_turn(lanes, second, 0.1)
+                got.append("ran")
+            except cs.Busy:
+                got.append("busy")
+        spawn(waiter)
+        time.sleep(0.5)                                   # five times the queue wait
+        assert got == [] and not second.running
+        first.leave()
+        _until(lambda: got, what="the second job's turn")
+    assert got == ["ran"] and second.running
+    second.leave()
+
+
+def test_a_job_held_by_another_requester_still_times_out(guard):
+    lanes = cs.Lanes()
+    others = [lanes.enter("heavy", admit_bytes=450 * MB, owner=who) for who in ("bob", "carol")]
+    with _threads() as spawn:
+        spawn(others[0].wait)                             # bob gives way: both hold 900 of the 1000 MB budget
+        _until(lambda: others[1].running)
+        alice = lanes.enter("heavy", admit_bytes=450 * MB, owner="alice")
+        start = time.monotonic()
+        with pytest.raises(cs.Busy):
+            _wait_for_turn(lanes, alice, 0.2)
+        assert time.monotonic() - start < 2
+        alice.leave()
+        others[1].leave()
+        _until(lambda: others[0].running)
+    others[0].leave()
+
+
+def test_the_wait_is_limited_again_once_another_requester_holds_it(guard, monkeypatch):
+    """Alice's second job fits her share beside her first (200 + 300 MB); what holds it is bob's 750 MB: the budget
+    would not fit it even without alice's own. So the queue's time limit applies."""
+    monkeypatch.setattr(cs, "OWN_WAIT_HEARTBEAT_S", 0.05)
+    lanes = cs.Lanes()
+    mine = lanes.enter("heavy", admit_bytes=200 * MB, owner="alice")
+    bob = lanes.enter("heavy", admit_bytes=750 * MB, owner="bob")
+    with _threads() as spawn:
+        mine.wanted()
+        spawn(mine.wait)                                  # bob takes a turn: 950 of the 1000 MB held
+        _until(lambda: bob.running)
+        second = lanes.enter("heavy", admit_bytes=300 * MB, owner="alice")
+        with pytest.raises(cs.Busy):
+            _wait_for_turn(lanes, second, 0.2)
+        second.leave()
+        bob.leave()
+        _until(lambda: mine.running)
+    mine.leave()
+
+
+def test_one_requesters_second_request_finishes_after_a_first_longer_than_the_queue_wait(hosted, layout, monkeypatch):
+    monkeypatch.setattr(route, "QUEUE_WAIT_S", 0.3)
+    monkeypatch.setattr(cs, "OWN_WAIT_HEARTBEAT_S", 0.1)
+    real = cg.compute
+    slow_first = []
+
+    def slow(plan_, *a, **k):                             # the first request runs well past the queue wait
+        if not slow_first:
+            slow_first.append(1)
+            time.sleep(1.5)
+        yield from real(plan_, *a, **k)
+    monkeypatch.setattr(cg, "compute", slow)
+    client = hosted.test_client()
+    out = [None] * 2
+
+    def one(i):
+        resp = post(client, layout, grouping([_gene_part(i + 1)]), name="csr.zarr")
+        out[i] = parse(resp.get_data())[0]
+    with _threads() as spawn:
+        spawn(one, 0)
+        _until(lambda: slow_first, what="the first request's resolve")
+        spawn(one, 1)
+    assert [o[-1]["type"] for o in out] == ["result", "result"], out
+    assert out[1][0]["type"] == "progress" and out[1][0]["queue"]["ahead"] >= 1        # told it is queued
+    assert all(f.get("reason") != "read_busy" for o in out for f in o)
