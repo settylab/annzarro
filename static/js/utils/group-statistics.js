@@ -1,0 +1,197 @@
+/**
+ * What a Cell Grouping offers its consumers (GRP-9, SHR-25 to SHR-27): the statistics a plot or a table may read per
+ * group, the layers it may read them from, and the one detection threshold two of them share. Pure (no DOM, no page
+ * state), so Node tests hold it and the Cell-Gene Plot's menus build on it.
+ *
+ * It is the grouping's METHOD TABLE for the shared options model (utils/options-model.js, SHR-25); the signature's
+ * (utils/signature-options.js) is the other. A grouping's recipe stores three option fields: `offered` (statistic ids),
+ * `layers` and `detect_above`. It has no `input` and no `method`: the default layer is X and it is always offered
+ * (SHR-26, OD 8). No layer is ever chosen by guessing what a matrix holds, so a statistic that a layer cannot give is
+ * left out of menus for that layer (SHR-27, `core/matrix_kind.py` through `statisticAvailability`) and a size waits
+ * until a layer is picked.
+ *
+ * Cell count needs no feature and no layer: it is always offered and is not in the table.
+ */
+import { createOptionsModel, andList, figure } from './options-model.js';
+import { STATISTIC_IDS } from './cell-grouping.js';
+import { statisticAvailability } from './cell-gene-model.js';
+import { VOCABULARY } from './vocabulary.js';
+import { countsAs, emptyUsage } from './consumer-kinds.js';
+
+const NAME = VOCABULARY.cellGene.statistic;
+
+/** The statistics a consumer picks from, in the order menus list them. `menu` is the name in running text. */
+// export-unused-ok: consumed by X3a and C2a (statistic menus read the same table)
+export const STATISTIC_INFO = Object.freeze([
+    { value: 'mean', label: NAME.mean, menu: 'mean', needs: [], unit: 'layer units',
+        definition: 'Average over the group\'s cells, zeros included.' },
+    { value: 'pct_expressing', label: NAME.pct_expressing, menu: '% expressing', needs: ['detect_above'], unit: '0 to 100',
+        definition: 'Share of the group\'s cells above the threshold, 0 to 100.' },
+    { value: 'mean_expressing', label: NAME.mean_expressing, menu: 'mean of expressing cells', needs: ['detect_above'], unit: 'layer units',
+        definition: 'Average over the cells above the threshold.' },
+    { value: 'sum', label: NAME.sum, menu: 'sum', needs: [], unit: 'layer units',
+        definition: 'Total over the group\'s cells (pseudobulk).' },
+    { value: 'sd', label: NAME.sd, menu: 'SD', needs: [], unit: 'layer units',
+        definition: 'Spread over the group\'s cells.' }
+]);
+
+/** Offered until the grouping says otherwise (SHR-26). */
+// export-unused-ok: consumed by X3a (a new plot's first statistics)
+export const DEFAULT_STATISTICS = Object.freeze(['mean', 'pct_expressing']);
+/** The statistic that is offered whatever the recipe says: it reads no feature. */
+export const ALWAYS_OFFERED = 'count';
+const DEFAULT_LAYER = 'X';
+const THRESHOLD_USERS = STATISTIC_INFO.filter((m) => m.needs.includes('detect_above')).map((m) => m.value);
+/** The statistic a dot plot's size starts on (SHR-27). */
+const SIZE_STATISTIC = 'pct_expressing';
+/** The statistics that follow how deeply a cell was sequenced, on raw counts. */
+const DEPTH_STATISTICS = Object.freeze(['mean', 'sum', 'sd']);
+
+/** "% expressing is not available on X: X has negative values. Choose a layer." (SHR-27) */
+export function negativeValuesSentence(stat, layer) {
+    return `${NAME[stat]} is not available on ${layer}: ${layer} has negative values. Choose a layer.`;
+}
+
+/**
+ * How one statistic reads one layer, from what the layer looks like (`kind` of core/matrix_kind.py): `ok`, `warn` (it
+ * can be computed but misleads: said in a title) or `cannot` (left out of menus, and the panel says why).
+ * @param {string} stat
+ * @param {string} layer
+ * @param {string} [kind] - counts, normalised, log, signed or other; undefined while unknown, and then nothing is assumed
+ * @param {{label?: string}} [ctx] - what to call the layer in the sentence (the panel says "every offered layer" when all share the issue)
+ * @returns {{grade: 'ok'|'warn'|'cannot', code: string, reason: string}}
+ */
+export function statisticGrade(stat, layer, kind, ctx = {}) {
+    const name = ctx.label || `'${layer}'`;
+    if (!statisticAvailability(stat, kind).available) {
+        return { grade: 'cannot', code: 'negative_values',
+            reason: ctx.label ? `${NAME[stat]} is not available on ${ctx.label}: they have negative values.` : negativeValuesSentence(stat, layer) };
+    }
+    if (kind === 'counts' && DEPTH_STATISTICS.includes(stat)) {
+        return { grade: 'warn', code: 'depth', reason: `On ${name} this follows sequencing depth.` };
+    }
+    if (kind === 'log' && stat === 'sum') {
+        return { grade: 'warn', code: 'log', reason: `On ${name} a sum of log values is not a total of the counts. It is usually read from counts.` };
+    }
+    return { grade: 'ok', code: '', reason: '' };
+}
+
+const info = (stat) => STATISTIC_INFO.find((m) => m.value === stat);
+const menuNames = (ids) => andList(ids.map((id) => info(id).menu));
+
+/** What to say on a LAYER's row: its properties, each once and short, only when they matter for an offered statistic. */
+function layerLines(layer, recipe, kind, stats, offered) {
+    const lines = [];
+    const cannot = THRESHOLD_USERS.filter((s) => !statisticAvailability(s, kind).available);
+    if (cannot.length && THRESHOLD_USERS.some((s) => offered.includes(s))) {
+        lines.push({ grade: 'cannot', code: 'negative_values',
+            text: `${menuNames(cannot)} are not available on ${layer}: ${layer} has negative values.` });
+    }
+    const depth = offered.filter((s) => DEPTH_STATISTICS.includes(s));
+    if (kind === 'counts' && depth.length) {
+        lines.push({ grade: 'warn', code: 'depth', text: `Raw counts: ${menuNames(depth)} follow${depth.length === 1 ? 's' : ''} sequencing depth.` });
+    }
+    if (kind === 'log' && offered.includes('sum')) {
+        lines.push({ grade: 'warn', code: 'log', text: 'Log values: a sum of them is not a total of the counts. It is usually read from counts.' });
+    }
+    return lines;
+}
+
+const thresholdOf = (recipe) => (typeof recipe.detect_above === 'number' && Number.isFinite(recipe.detect_above) ? recipe.detect_above : 0);
+
+/** What the detection threshold does: names the statistics that use it and the value in force. */
+export function thresholdLine(recipe) {
+    return `Used by ${menuNames(THRESHOLD_USERS)}. Now: above ${figure(thresholdOf(recipe))}.`;
+}
+
+/** The grouping's statistics as an options model (SHR-25). */
+export const GROUP_STATISTICS_MODEL = createOptionsModel({
+    methods: STATISTIC_INFO, defaultMethod: 'mean', defaultOffered: DEFAULT_STATISTICS, defaultLayer: DEFAULT_LAYER,
+    paramDefaults: { pct_expressing: { detect_above: 0 }, mean_expressing: { detect_above: 0 } },
+    sameParam: (key, have, want) => (have === undefined ? 0 : have) === want,
+    paramNotes: (recipe, method) => (info(method).needs.includes('detect_above') && thresholdOf(recipe) !== 0 ? [`above ${thresholdOf(recipe)}`] : []),
+    paramLines: { detect_above: thresholdLine },
+    paramValue: (recipe, key) => (key === 'detect_above' ? thresholdOf(recipe) : recipe[key]),
+    grade: (method, layer, kind, ctx) => statisticGrade(method, layer, kind, ctx),
+    layerLines,
+    // a grouping's recipe has no `input` and no `method`: it names what it offers and nothing else
+    resetFields: ['offered', 'layers']
+});
+
+/** Whether a consumer may pick `stat` (and `layer`, when given) of this grouping now. Cell count always. */
+// export-unused-ok: consumed by X3a and C2a ("no longer offered" for a statistic a grouping stopped offering)
+export function isStatisticOffered(recipe, stat, layer) {
+    return stat === ALWAYS_OFFERED || GROUP_STATISTICS_MODEL.isOffered(recipe, stat, layer);
+}
+
+/**
+ * Where a dot plot's size starts (SHR-27): % expressing on the first offered layer, or nothing and the sentence that says
+ * why when that layer cannot give it. Nothing is drawn until the user picks another layer.
+ * @param {Object} recipe - the grouping's recipe
+ * @param {Object<string, string>} kinds - layer -> what it looks like; a layer not listed is not yet known
+ * @param {string} [picked] - the layer the user chose
+ * @returns {{stat: (string|null), layer: (string|null), say: string, pending: boolean}} `pending`: the layer's kind is not
+ *   known yet, so nothing is drawn and nothing is said
+ */
+// export-unused-ok: consumed by X3a (the dot plot's size)
+export function sizeDefault(recipe, kinds, picked) {
+    const none = { stat: null, layer: null, say: '', pending: false };
+    const model = GROUP_STATISTICS_MODEL;
+    if (!model.offeredMethods(recipe).includes(SIZE_STATISTIC)) return none;
+    const layers = model.offeredLayers(recipe);
+    const layer = picked === undefined || picked === null ? layers[0] : picked;
+    if (!layers.includes(layer)) return none;
+    const kind = kinds[layer];
+    if (kind === undefined) return { stat: null, layer, say: '', pending: true };
+    const g = model.gradeOption(SIZE_STATISTIC, layer, kind, recipe);
+    if (g.grade === 'cannot') return { ...none, say: g.reason };
+    return { stat: SIZE_STATISTIC, layer, say: '', pending: false };
+}
+
+/**
+ * Who uses what, counted from the kinds of the consumers (consumer-kinds.js: a plot, a table or a grouping uses, Inspect
+ * only looks). A consumer says what it reads in its option: `statistics: [{stat, layer}]`. It counts once for a
+ * statistic and once for a layer however often it reads them.
+ * @param {Array<{kind: string, option?: {statistics?: Array<{stat: string, layer?: string}>}}>} handles - consumers of the grouping
+ * @returns {{statistics: Array<Object>, layers: Array<Object>}} usage rows `{value, plots, tables, groupings}`, statistics in
+ *   menu order, layers in the order first read
+ */
+export function statisticUsage(handles) {
+    const stats = new Map();
+    const layers = new Map();
+    const bump = (rows, value, field) => {
+        const row = rows.get(value) || emptyUsage(value);
+        row[field]++;
+        rows.set(value, row);
+    };
+    for (const handle of handles) {
+        const field = countsAs(handle.kind);
+        if (field === null) continue;
+        const read = (handle.option && handle.option.statistics) || [];
+        for (const stat of new Set(read.map((r) => r.stat))) bump(stats, stat, field);
+        for (const layer of new Set(read.filter((r) => r.stat !== ALWAYS_OFFERED).map((r) => r.layer || DEFAULT_LAYER))) bump(layers, layer, field);
+    }
+    const order = [...STATISTIC_IDS];
+    return { statistics: [...stats.values()].sort((a, b) => order.indexOf(a.value) - order.indexOf(b.value)), layers: [...layers.values()] };
+}
+
+/**
+ * The section's edit as an edit of a grouping's recipe: its fields only, and a field at its default is removed, so a
+ * default grouping's recipe (and its link) is the same as before it had this section. `undefined` removes a field.
+ * @param {Object} patch - keys of the section's option fields (offered, layers, detect_above; input and method are dropped)
+ * @returns {Object}
+ */
+export function recipePatch(patch) {
+    const model = GROUP_STATISTICS_MODEL;
+    const out = {};
+    if ('offered' in patch) {
+        const list = model.cleanOffered(patch.offered);
+        out.offered = list.join() === model.cleanOffered(DEFAULT_STATISTICS).join() ? undefined : list;
+    }
+    if ('layers' in patch) {
+        const rest = model.cleanLayers(patch.layers, DEFAULT_LAYER).filter((name) => name !== DEFAULT_LAYER);
+        out.layers = rest.length ? rest : undefined;
+    }
+    if ('detect_above' in patch) out.detect_above = patch.detect_above === 0 ? undefined : patch.detect_above;
+    return out;
+}
