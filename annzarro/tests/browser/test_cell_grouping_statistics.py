@@ -94,7 +94,7 @@ def test_open_it_defines_every_statistic_and_always_offers_cell_count_and_x(page
     assert page.is_checked(f"{SEC} [data-layer-offer='X']") and page.is_disabled(f"{SEC} [data-layer-offer='X']")
     assert page.get_attribute(f"{SEC} [data-layer-offer='X']", "title") == "X is always offered."
     assert [k for k in _kinds(page)][:1] == ["X"]
-    assert _kinds(page) == {"X": "scaled", "logged": "log-normalised", "counts": "counts"}
+    assert _kinds(page) == {"X": "scaled", "logged": "log-normalized", "counts": "counts"}
     # the threshold sits once, at the top, above both statistics that use it
     box = f"{SEC} [data-threshold] [data-param='detect']"
     assert page.input_value(box) == "0"

@@ -177,7 +177,7 @@ function signatureLayerLines(layer, recipe, kind, stats, offered) {
         lines.push({ grade: 'warn', code: 'depth', text: `Raw counts: ${andList(depth.map(methodShort))} follow${depth.length === 1 ? 's' : ''} sequencing depth.` });
     }
     if (kind === 'normalised' && depth.length) {
-        lines.push({ grade: 'warn', code: 'normalised', text: 'Normalised but not log-transformed: one highly expressed gene can dominate.' });
+        lines.push({ grade: 'warn', code: 'normalised', text: 'Normalized but not log-transformed: one highly expressed gene can dominate.' });
     }
     if (offered.includes('fraction_of_total')) {
         if (kind === 'log') lines.push({ grade: 'warn', code: 'log', text: 'Log values: % of total is compressed. It is usually read from counts.' });
