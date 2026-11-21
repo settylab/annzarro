@@ -52,12 +52,14 @@ import { statisticGrade, negativeValuesSentence } from '../utils/group-statistic
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
 import { buildFigure, colourBars } from './cell-gene/draw.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
+import { drawPlot, fitToContainer } from '../utils/panel-surface.js';
+import { Coverage } from '../utils/coverage.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { VOCABULARY } from '../utils/vocabulary.js';
 import {
     normalizeCellGene, cellGeneReferences, addSection, duplicateSection, removeSection, moveSection, setSectionRows,
     setSectionTitle, setRowAggregation, rowAggregationOf, sectionTitle, sectionGenes, sectionLine, tooManyGenesText,
-    parseAggregation, planFeatures, buildMatrix, OFFER_OTHER
+    parseAggregation, planFeatures, buildMatrix, OFFER_OTHER, GROUP_AXIS
 } from './cell-gene/sections.js';
 import {
     statisticChoices, parseStatistic, statisticValue, axisChoices, axisSourceId, axisRecipe, createControls, createAddGenes,
@@ -280,7 +282,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         /** The grouping of the cell axis, when it is one, or null (an obs column, or none). */
         function axisGrouping() {
             const axis = _config.cellAxis;
-            if (!axis || axis.type !== 'cell-group') return null;
+            if (!axis || axis.type !== GROUP_AXIS) return null;
             const p = panelOf(axis.key);
             return typeOf(p) === GROUPING_TYPE ? p : null;
         }
@@ -479,7 +481,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         function newGrouping() {
             const panel = PanelManager.createPanelNextTo(GROUPING_TYPE, _id);
-            if (panel) setAxis({ type: 'cell-group', key: panel.getId() });
+            if (panel) setAxis({ type: GROUP_AXIS, key: panel.getId() });
         }
 
         function addGenesFrom(id) {
@@ -563,7 +565,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _dom = { root, controls: _controls.element, undoBtn, message, checklist, plot, area,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (typeof ResizeObserver !== 'undefined') {
-                _resize = new ResizeObserver(() => { if (_dom && _dom.plot._fullLayout && window.Plotly) window.Plotly.Plots.resize(_dom.plot); });
+                _resize = new ResizeObserver(() => { if (_dom && _dom.plot._fullLayout) fitToContainer(_dom.plot); });
                 _resize.observe(area);
             }
             showControls();
@@ -719,7 +721,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 return;
             }
             if (token !== _drawToken || !_dom || !window.Plotly) return;
-            await window.Plotly.react(_dom.plot, figure.data, figure.layout, figure.config);
+            // every group the reply has is drawn: the cells shown are covered (missing values are X3b's strip line)
+            await drawPlot(_dom.plot, figure.data, figure.layout, figure.config, Coverage.complete(values.reply.n_shown || 0, 'cells'), 'cells');
             if (token !== _drawToken || !_dom) return;
             _shown = { key, inputs, order, rows: figure.rows, groups: figure.groups };
             rec.drawnKey = key;
@@ -885,5 +888,5 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         };
     }
 
-    PanelManager.registerPanelType(TYPE, CellGenePanel);
+    PanelManager.registerPanelType('cell-gene', CellGenePanel);
 })();

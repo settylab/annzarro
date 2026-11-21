@@ -17,7 +17,7 @@ import { normalizeGrouping } from '../../utils/cell-grouping.js';
 import { GROUP_STATISTICS_MODEL, ALWAYS_OFFERED, STATISTIC_INFO } from '../../utils/group-statistics.js';
 import { SCALINGS } from '../../utils/cell-gene-model.js';
 import { loopReason } from '../../utils/panel-references.js';
-import { OFFER_OTHER, aggregationEntries, aggregationValue, aggregationHelp } from './sections.js';
+import { GROUP_AXIS, OFFER_OTHER, aggregationEntries, aggregationValue, aggregationHelp } from './sections.js';
 
 const CG = VOCABULARY.cellGene;
 
@@ -139,7 +139,7 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
 
     const axisType = el('select', { class: 'form-select form-select-sm cgene-axis-type', aria: { label: 'Groups: source type' },
         on: { change: () => { typeShown = axisType.value; paintKeys(); } } });
-    options(D, axisType, [{ value: 'obs', label: 'obs' }, { value: 'cell-group', label: 'cell-group' }]);
+    options(D, axisType, [{ value: 'obs', label: 'obs' }, { value: GROUP_AXIS, label: GROUP_AXIS }]);
     const axisKey = el('select', { class: 'form-select form-select-sm cgene-axis-key', aria: { label: `Groups: column or ${VOCABULARY.word.grouping}` },
         on: { change: onKey } });
 

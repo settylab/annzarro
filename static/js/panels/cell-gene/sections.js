@@ -25,8 +25,12 @@ import {
 } from '../../utils/cell-gene-model.js';
 import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
 import { stableStringify } from '../../utils/url-history.js';
+import { cellGroupType } from '../../utils/cell-group-source.js';
 
 const CG = VOCABULARY.cellGene;
+
+/** The source type of a grouping as a cell axis: the provider's (utils/cell-group-source.js), never a literal here. */
+export const GROUP_AXIS = cellGroupType();
 
 /** The value of "Offer other scores…" in a one-row section's selects. */
 export const OFFER_OTHER = '__offer_other__';
@@ -123,7 +127,7 @@ export function normalizeCellGene(raw) {
         config.mode = 'dots';
     }
     const axis = src.cellAxis;
-    if (isObject(axis) && (axis.type === 'obs' || axis.type === 'cell-group') && isText(axis.key)) {
+    if (isObject(axis) && (axis.type === 'obs' || axis.type === GROUP_AXIS) && isText(axis.key)) {
         config.cellAxis = { ...axis };
     } else {
         if ('cellAxis' in src && axis !== undefined) problems.push('cellAxis: not an obs column or a grouping, left out');
@@ -167,7 +171,7 @@ export function cellGeneReferences(config) {
     const out = [];
     if (!isObject(config)) return out;
     const axis = config.cellAxis;
-    if (isObject(axis) && axis.type === 'cell-group' && isText(axis.key)) {
+    if (isObject(axis) && axis.type === GROUP_AXIS && isText(axis.key)) {
         out.push({ id: axis.key, via: 'axis', field: 'cellAxis', get: () => axis.key, set: (v) => { axis.key = v; } });
     }
     for (const section of Array.isArray(config.sections) ? config.sections : []) {
