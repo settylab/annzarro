@@ -22,6 +22,8 @@ import { setStatusTag, setScoreNotice } from './panel-surface.js';
  * @property {string} source - the tag word for a source that is gone: 'source', 'grouping'
  * @property {string} result - what the source makes: 'score', 'grouping'
  * @property {string} Computing - 'Computing'
+ * @property {string} [progressUnit] - what a progress count counts: 'genes' for a score; a grouping's stored entries
+ *   (default 'genes')
  * @property {string} [cycleKind] - the kind of panel a ring made only of this provider's own is named for (default `thing`)
  * @property {string} [off] - the sentence for a provider that is turned off on this server
  * @property {Record<string, string>} [tags] - tag text that replaces the default of a state ('computing', 'failed', ...)

@@ -120,7 +120,47 @@ function _observed() {
  * refusal that only the learned margin makes carries `learned` (the entry),
  * so the panel can say so and offer to reset it.
  */
+/** Depth of the checks that only ask (a create tile, the subset chips, a refusal's "at most" search): they never evict. */
+let _advising = 0;
+
+/** Run `fn`'s checks as questions: what an action would find, with no holding evicted. */
+function _advise(fn) {
+    _advising++;
+    try { return fn(); } finally { _advising--; }
+}
+
+/** The check as if `freed` bytes of holdings had left (they count outside the heap and as buffers). */
+function _checkFreed(need, heldNow, panels, buffers, n, freed) {
+    if (!freed) return _checkHeld(need, heldNow, panels, buffers, n);
+    return _checkHeld(need, { ...heldNow, off: Math.max(0, heldNow.off - freed) }, panels,
+        buffers ? { ...buffers, held: Math.max(0, buffers.held - freed) } : null, n);
+}
+
+/**
+ * The check of an action. Holdings no consumer on screen pins (a grouping's codes held by hidden plots, CAT-4) give
+ * way before the guard warns or refuses, but only when giving way makes the action fit, and only as many as it
+ * needs, oldest first; their owners are told, and ask again when shown. A check that only asks evicts nothing and
+ * answers what the action would find.
+ */
 function _check(need, heldNow, panels, buffers = null, n = null) {
+    const r = _checkHeld(need, heldNow, panels, buffers, n);
+    const evictable = r.fits ? 0 : ledger.evictable();
+    if (!evictable) return r;
+    const all = _checkFreed(need, heldNow, panels, buffers, n, evictable);
+    if (!all.fits || _advising) return all.fits ? all : r;
+    let freed = 0;
+    let now = r;
+    // the shortfall of the check that binds, until it fits: each pass frees at least one holding, and all would fit
+    while (!now.fits && freed < evictable) {
+        const more = ledger.evict(Math.max(1, now.needBytes - now.freeBytes));
+        if (!more) break;
+        freed += more;
+        now = _checkFreed(need, heldNow, panels, buffers, n, freed);
+    }
+    return now;
+}
+
+function _checkHeld(need, heldNow, panels, buffers, n) {
     const opts = { observed: _observed(), panels, ...(buffers ? { buffers } : {}) };
     const r = check(need, heldNow, limits(n), settings(n), opts);
     if (r.fits || n === null) return r;
@@ -257,7 +297,7 @@ function _refusalPanel({ result, kind, n, checkAt, anyway, cap }) {
     }
     let fit = 0;
     if (cells) {
-        try { fit = roundDownNice(Math.min(cap, largestFitting(m => checkAt(m).fits, 1, n - 1))); } catch { fit = 0; }
+        try { fit = roundDownNice(Math.min(cap, _advise(() => largestFitting(m => checkAt(m).fits, 1, n - 1)))); } catch { fit = 0; }
     }
     const actions = [];
     if (fit >= 1) actions.push([`subset-n:${fit}`, `Show ${fit.toLocaleString('en-US')} cells`]);
@@ -339,7 +379,11 @@ export function recolourCheck(gd) {
 }
 
 /** Before a new or duplicated panel of `kind` with `config` (its colour and 3D) is created. */
-export function newPanelCheck(kind, { n, large = false, colour = 'numeric', threeD = false } = {}) {
+export function newPanelCheck(kind, opts = {}) {
+    return _advise(() => _newPanelCheck(kind, opts));
+}
+
+function _newPanelCheck(kind, { n, large = false, colour = 'numeric', threeD = false }) {
     if (kind !== 'cell-plot' && kind !== 'gene-plot') return _check({ heap: 0, off: 0, gpu: 0, contexts: 0 }, held(), ledger.plotCount());
     const need = panelCost({ kind, n, large, colour, threeD }).peak;
     const now = held();
@@ -368,6 +412,10 @@ export function exportCheck(gd, { width = 1200, height = 800, scale = 1 } = {}) 
  * @param {number} threshold - large-plot mode above this many points
  */
 export function subsetCheck(n, threshold) {
+    return _advise(() => _subsetCheck(n, threshold));
+}
+
+function _subsetCheck(n, threshold) {
     const panels = ledger.panels();
     const { peak, changed } = predictSubsetChange(n, panels, threshold, ledger.model, p => !p.threeD, settings(n).margin);
     const b = predictSubsetBuffers(n, panels, threshold, ledger.model, p => !p.threeD);
