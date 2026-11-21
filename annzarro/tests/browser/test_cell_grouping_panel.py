@@ -480,8 +480,10 @@ def test_a_gene_and_a_score_in_bins(page, served):
     _open(page, served, {GA: _grouping(), "gene-signature-S": sig})
     _add(page, "gene", key="logged", gene=gstore.gene(1))
     _ready(page)
+    # a gene with at least 25% zeros gets the zero bin once its card has the preview (SHR-15, the binning control)
+    until(page, "(id) => !!window.PanelManager.getPanel(id).getRecipe().partitionings[0].binning.zero_bin", GA)
     assert _recipe(page)["partitionings"] == [{"source": {"type": "layer", "key": "logged", "column": gstore.gene(1)},
-                                               "binning": {"method": "equal_count"}}]
+                                               "binning": {"method": "equal_count", "zero_bin": True}}]
     assert _cards(page)[0]["title"] == gstore.gene(1)
     assert _cards(page)[0]["summary"].startswith("binned · Equal count · ")
     # a gene the dataset lacks is refused in the row, with the reason
