@@ -12,10 +12,16 @@ the reserved ``@zero``, ``@in``, ``@out``, ``@other``, ``@na``; a level of a gro
 ``g:<canonical JSON of its key>`` (:func:`group_key_json`). A group's key is the list of its level ids, one per
 partitioning, except the collected small group, whose key is ``["@small"]``.
 
-Memory (CMP-4). Codes are worked on in place, one ``uint16`` per cell (``uint32`` only while an intermediate
-intersection has more than 65,534 combinations), and a source column is held at most once, in its stored type,
-while its edges are found and its cells assigned. Slabs are released as they are assigned. At 100M cells that is
-0.2 GB of codes plus the column (0.8 GB for float64).
+Memory (CMP-4), per cell shown unless said. Codes are worked on in place, 2 B a cell (``uint16``; 4 B while an
+intermediate intersection has more than 65,534 combinations, with the 2 B codes alive while they are widened). A fold
+whose code space reaches 65,535 also holds its partitioning's slots, 1 B a cell (2 B past 254 slots). A source
+column is held once, in its stored type, while its edges are found and its cells assigned (every cell's when the
+edges come from all cells); the exact select adds at most 192 MB (one batch and its sort buffer). A score source
+adds its values (4 B a cell) to the score's own memory while it runs; a grouping source adds what its own resolve
+holds while it runs, then its codes (1 or 2 B a cell) until it is folded. Narrowing the final codes to ``uint8``
+adds 1 B a cell. Slab and span temporaries stay near 128 MB. At 100M cells and a float64 column: 0.2 GB of codes,
+0.8 GB of column, 0.1 GB of slots and 0.3 GB of temporaries, about 1.4 GB. What a source reads with
+(``core/cell_sources.py``) comes on top.
 
 The wire (what ``parse_request`` takes), per partitioning ``{source, binning?, levels?, rest?, member?}``:
 
@@ -645,12 +651,20 @@ class _Ctx:
     n_shown: int
     should_stop: Optional[Callable[[], bool]]
     pause: Any
+    on_entries: Optional[Callable[[int], None]] = None
+    told: int = 0                                   # entries reported so far, by tell()
 
     def check(self) -> None:
         if self.should_stop is not None and self.should_stop():
             raise gs.ScoreCancelled()
         if self.pause is not None and self.pause.wanted():
             self.pause.wait()
+
+    def tell(self, n: int) -> None:
+        """Stored entries read: a score's as it reads them, a column's once it is read."""
+        self.told += int(n)
+        if self.on_entries is not None and n:
+            self.on_entries(int(n))
 
 
 def _spans(n: int) -> Iterator[Tuple[int, int]]:
@@ -676,10 +690,15 @@ class _Levels:
         self.bounds: Dict[int, Tuple[Optional[float], Optional[float]]] = {}
         self.categories: Optional[List[str]] = None
         self.absent: List[str] = []
+        #: The level limit the stored categories are compared with before any cell is read (a count plot's axis
+        #: sets its own); past it, the categories that hold a cell shown are counted instead (SHR-6, SHR-7).
+        self.level_limit: Optional[int] = None
         self.info: Dict[str, Any] = {}
         self.counts: Optional[np.ndarray] = None
         self.count = True
         self._slabs: Iterator[Tuple[int, np.ndarray]] = iter(())
+        self._score_values: Optional[np.ndarray] = None     # a score source computed by precompute()
+        self._sub: Optional["GroupingResult"] = None        # a grouping source resolved by precompute()
 
     # -- the reply --------------------------------------------------------------------------------------------
 
@@ -727,6 +746,38 @@ class _Levels:
         return cs.column(self.ctx.reader, self.ctx.dataset_path, self.part.spec.source, rows, sets=req.sets,
                          should_stop=self.ctx.should_stop)
 
+    def precompute(self) -> Iterator[Tuple[int, int]]:
+        """Before ``prepare()``: compute a score source, or resolve a grouping source, yielding the progress
+        ``(genes_done, genes_total)`` of every score this computes, so a resolve is never silent while a score runs.
+        ``prepare()`` then takes what this computed; without it, ``prepare()`` computes the same silently (a count
+        plot's axis)."""
+        part = self.part
+        if part.score is not None:
+            self._score_values = yield from self._score(self._rows_read())
+        elif part.nested is not None:
+            self._sub = yield from _scores_while_resolving(part.nested, self.ctx)
+
+    def _rows_read(self) -> Optional[np.ndarray]:
+        """The rows a numeric source is read for: every cell when its edges come from all of them, else those shown."""
+        b = self.part.binning
+        if b is not None and b.edges_from == "all" and self.ctx.rows is not None:
+            return None
+        return self.ctx.rows
+
+    def _score(self, rows) -> Iterator[Tuple[int, int]]:
+        """The score's values for ``rows``, yielding its progress; refused when it has none."""
+        values = None
+        for event, payload in gs.compute(self.part.score, rows, self.ctx.should_stop, self.ctx.pause,
+                                         on_entries=self.ctx.tell):
+            if event == "result":
+                values = payload.values
+                if values is None:
+                    raise GroupError(422, "no_score", gs.NO_SCORE_MESSAGES.get(payload.reason, "No score."),
+                                     partitioning=self.index, score_reason=payload.reason)
+            else:
+                yield payload
+        return values
+
     def prepare(self) -> None:
         part = self.part
         if part.kind == "set":
@@ -757,13 +808,9 @@ class _Levels:
         """The source's values for ``rows`` (None: all cells), held as slabs in their stored type."""
         part = self.part
         if part.score is not None:
-            values = None
-            for event, payload in gs.compute(part.score, rows, self.ctx.should_stop, self.ctx.pause):
-                if event == "result":
-                    values = payload.values
-                    if values is None:
-                        raise GroupError(422, "no_score", gs.NO_SCORE_MESSAGES.get(payload.reason, "No score."),
-                                         partitioning=self.index, score_reason=payload.reason)
+            values, self._score_values = self._score_values, None
+            if values is None:
+                values = _drain(self._score(rows))
             return [values[a:b] for a, b in _spans(values.size)]
         held = []
         for slab in self._column(rows):
@@ -882,7 +929,8 @@ class _Levels:
             for i, cid in enumerate(ids):
                 if cid in want:
                     lut[i] = 0
-            self.absent = [cid for cid in sorted(want) if cid not in set(ids)]
+            have = set(ids)
+            self.absent = [cid for cid in sorted(want) if cid not in have]
             self.categories = ids
             return lut
         if part.spec.levels is not None:
@@ -914,9 +962,11 @@ class _Levels:
         else:
             self._prepare_column_categories()
 
-    def _from_codes(self, ids: List[str], codes_slabs: Iterator[Tuple[int, np.ndarray]]) -> None:
-        """Codes index ``ids``; -1 is a missing value (``lut[-1]``, the slot of a missing value, is last)."""
-        lut = self._set_categories(ids)
+    def _from_codes(self, ids: List[str], codes_slabs: Iterator[Tuple[int, np.ndarray]],
+                    lut: Optional[np.ndarray] = None) -> None:
+        """Codes index ``ids``; -1 is a missing value (``lut[-1]``, the slot of a missing value, is last). ``lut``
+        given: the slots are set already (``_from_occupied``)."""
+        lut = self._set_categories(ids) if lut is None else lut
         self.info["n_no_value"] = 0
 
         def slabs():
@@ -925,6 +975,27 @@ class _Levels:
                 self.info["n_no_value"] += int(np.count_nonzero(c < 0))
                 yield start, lut[c]
         self._slabs = slabs()
+
+    def _from_occupied(self, ids: List[str], first_read: Iterator[cs.Slab], limit: int) -> None:
+        """More stored categories than the level limit: the levels are the categories that hold a cell shown
+        (SHR-6, SHR-7; a subset keeps every category of its atlas). One pass over the codes counts them. Over the
+        limit, ``prepare()`` refuses with that count; within it, a second read assigns the cells. ``categories``
+        still lists every stored category."""
+        self._set_categories(ids)                    # the ambiguity check, and categories
+        counts = np.zeros(len(ids) + 1, dtype=np.int64)
+        for slab in first_read:
+            self.ctx.check()
+            c = np.asarray(slab.values)
+            counts += np.bincount(np.where(c < 0, len(ids), c), minlength=len(ids) + 1)
+        used = np.flatnonzero(counts[:-1])
+        exclude = self.part.spec.rest == "exclude"
+        self.slots = [ids[i] for i in used.tolist()] + ([] if exclude else ["@na"])
+        if used.size > limit:
+            return
+        lut = np.full(len(ids) + 1, NONE16, dtype=np.uint16)
+        lut[used] = np.arange(used.size, dtype=np.uint16)
+        lut[-1] = NONE16 if exclude else used.size
+        self._from_codes(ids, ((s.start, s.values) for s in self._column(self.ctx.rows)), lut=lut)
 
     def _prepare_index(self) -> None:
         n = self.ctx.n_shown
@@ -937,14 +1008,21 @@ class _Levels:
         self._from_codes(ids, iter([(0, np.arange(n, dtype=np.int64))]) if n else iter(()))
 
     def _prepare_grouping(self) -> None:
-        sub = _resolve(self.part.nested, self.ctx)
+        sub, self._sub = self._sub, None
+        if sub is None:
+            sub = _resolve(self.part.nested, self.ctx)
         if sub.refused is not None:
             raise GroupError(422, "upstream_refused", "The grouping used as a factor cannot be computed.",
                              partitioning=self.index, upstream=sub.refused)
         ids = ["g:" + group_key_json(g["key"]) for g in sub.groups]
-        codes = sub.codes.astype(np.int64)
-        codes[codes == _none_of(sub.codes)] = -1
-        self._from_codes(ids, ((a, codes[a:b]) for a, b in _spans(codes.size)))
+        none = _none_of(sub.codes)
+
+        def codes():                                # one span at a time: the upstream codes are not copied whole
+            for a, b in _spans(sub.codes.size):
+                c = sub.codes[a:b].astype(np.int32)
+                c[c == none] = -1
+                yield a, c
+        self._from_codes(ids, codes())
 
     def _prepare_value_categories(self) -> None:
         """A numeric column split by its values (the ``categories`` method)."""
@@ -994,7 +1072,12 @@ class _Levels:
             yield from slabs
         if first.kind == "category":
             ids = [canonical_label(v) for v in first.categories]
-            self._from_codes(ids, ((s.start, s.values) for s in rest()))
+            limit = GROUPING_LIMITS["levels"] if self.level_limit is None else \
+                min(self.level_limit, GROUPING_LIMITS["levels"])
+            if len(ids) > limit and self.part.member is None and self.part.spec.levels is None:
+                self._from_occupied(ids, rest(), limit)
+            else:
+                self._from_codes(ids, ((s.start, s.values) for s in rest()))
             self._uns_colors(ids)
         elif first.kind == "bool":
             ids = ["c:false", "c:true"]
@@ -1002,7 +1085,10 @@ class _Levels:
             self._from_codes(ids, ((s.start, _bool_codes(s.values)) for s in rest()))
             self._uns_colors(ids)
         elif first.kind == "text":
-            self._prepare_text(rest())
+            # a plain string column arrives as categories (cell_sources); values only a list can give are of a type
+            # no level id is defined for (dates, complex numbers)
+            raise _bad("This column's values are neither numbers, categories nor text.", "unsupported_column",
+                       partitioning=self.index)
         else:
             raise _bad("This column is numeric: bin it, or split it by its values (method 'categories').",
                        "not_categorical", partitioning=self.index)
@@ -1018,30 +1104,6 @@ class _Levels:
         values = [v.decode("utf-8") if isinstance(v, bytes) else v for v in values]
         if len(values) == len(ids) and all(isinstance(v, str) and v for v in values):
             self.info["colors"] = dict(zip(ids, values))
-
-    def _prepare_text(self, slabs: Iterator[cs.Slab]) -> None:
-        """A text column: its distinct values are its categories, sorted. One pass, provisional codes held."""
-        seen: Dict[Any, int] = {}
-        provisional = np.empty(self.ctx.n_shown, dtype=np.int64)
-        for slab in slabs:
-            self.ctx.check()
-            vals = np.asarray(slab.values, dtype=object)
-            out = provisional[slab.start:slab.start + vals.size]
-            missing = np.fromiter((v is None for v in vals), dtype=bool, count=vals.size)
-            out[missing] = -1
-            if missing.all():
-                continue
-            distinct, inverse = np.unique(vals[~missing].astype(str), return_inverse=True)
-            ids = np.asarray([seen.setdefault(v, len(seen)) for v in distinct.tolist()], dtype=np.int64)
-            out[~missing] = ids[inverse.reshape(-1)]
-        order = sorted(seen, key=lambda s: str(s))
-        rank = np.empty(len(order) + 1, dtype=np.int64)
-        for r, v in enumerate(order):
-            rank[seen[v]] = r
-        rank[-1] = -1
-        codes = rank[provisional]
-        self._from_codes([canonical_label(v) for v in order],
-                         ((a, codes[a:b]) for a, b in _spans(codes.size)))
 
 
 def _bool_codes(values: np.ndarray) -> np.ndarray:
@@ -1238,8 +1300,8 @@ class GroupingResult:
         return head, blocks
 
 
-def _resolve(gp: GroupingPlan, ctx: _Ctx) -> GroupingResult:
-    steps = _resolving(gp, ctx)
+def _drain(steps: Iterator[Any]) -> Any:
+    """Run a generator to its end; its return value."""
     while True:
         try:
             next(steps)
@@ -1247,21 +1309,57 @@ def _resolve(gp: GroupingPlan, ctx: _Ctx) -> GroupingResult:
             return stop.value
 
 
-def _resolving(gp: GroupingPlan, ctx: _Ctx) -> Iterator[int]:
-    """Resolve ``gp``, yielding the number of partitionings done; returns the GroupingResult."""
+def _resolve(gp: GroupingPlan, ctx: _Ctx) -> GroupingResult:
+    return _drain(_resolving(gp, ctx))
+
+
+def _scores_while_resolving(gp: GroupingPlan, ctx: _Ctx) -> Iterator[Tuple[int, int]]:
+    """Resolve a grouping used as a source, yielding the progress of its scores; returns the GroupingResult."""
+    steps = _resolving(gp, ctx)
+    while True:
+        try:
+            event, payload = next(steps)
+        except StopIteration as stop:
+            return stop.value
+        if event == "score":
+            yield payload
+
+
+def _resolving(gp: GroupingPlan, ctx: _Ctx) -> Iterator[Tuple[str, Any]]:
+    """Resolve ``gp``, yielding ``("part", partitionings done)`` and, while a score source computes (here or in a
+    grouping used as a source), ``("score", (genes_done, genes_total))``; returns the GroupingResult.
+
+    Each partitioning's stored entries are reported through ``ctx.tell``: a score's as it reads them, and what the
+    plan counted beyond that once the partitioning is folded, so the calls add up to the plan's entries.
+
+    When no partitioning can leave a cell in no group, the number of groups only grows from one partitioning to the
+    next. Once it is over the limit the grouping is refused before the next partitioning is read (its ``count`` is
+    then the groups so far, a lower bound)."""
     result = GroupingResult(n_shown=ctx.n_shown)
     fold = _Fold(ctx.n_shown)
     made: List[_Levels] = []
     every_cell_grouped = not any(p.spec.rest == "exclude" and p.member is None for p in gp.parts)
+    limit = GROUPING_LIMITS["groups"]
     try:
         for i, part in enumerate(gp.parts):
             ctx.check()
+            last = i == len(gp.parts) - 1
+            told = ctx.told
             levels = _Levels(part, ctx, i)
             levels.count = not every_cell_grouped
+            for progress in levels.precompute():
+                yield "score", progress
             levels.prepare()
-            fold.fold(levels, last=i == len(gp.parts) - 1)
+            fold.fold(levels, last=last)
             made.append(levels)
-            yield i + 1
+            if part.nested is None and part.entries > ctx.told - told:
+                ctx.tell(part.entries - (ctx.told - told))
+            if every_cell_grouped and not last and fold.k > limit:
+                if fold.radices:
+                    fold.compact()
+                if fold.k > limit:
+                    raise _Refused(reason="too_many_groups", count=int(fold.k), limit=limit)
+            yield "part", i + 1
         counts = None if fold.over else fold.compact(apply=False)
         if fold.k > GROUPING_LIMITS["groups"]:
             raise _Refused(reason="too_many_groups", count=int(fold.k), limit=GROUPING_LIMITS["groups"])
@@ -1322,13 +1420,19 @@ def _small_groups(fold: _Fold, keys: List[List[str]], counts: np.ndarray, g: Gro
 
 
 def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, codes: Optional[GroupingResult] = None,
-            should_stop: Optional[Callable[[], bool]] = None, pause=None) -> Iterator[Tuple[str, Any]]:
+            should_stop: Optional[Callable[[], bool]] = None, pause=None,
+            on_entries: Optional[Callable[[int], None]] = None) -> Iterator[Tuple[str, Any]]:
     """Resolve the grouping over the cells ``shown_rows`` (sorted dataset rows; None: all cells).
 
     Yields ``("progress", {"stage": "groups", "done", "total"})`` per partitioning and a final
-    ``("result", GroupingResult)``. ``codes`` is a result from the code cache: it is the answer, nothing is read.
+    ``("result", GroupingResult)``. While a score source computes (a ``gene-score`` partitioning, or one inside a
+    grouping used as a source) its reads add ``("progress", {"stage": "groups", "done", "total", "genes_done",
+    "genes_total"})``, ``done`` still the partitionings done, so the stream is never silent for long.
+    ``codes`` is a result from the code cache: it is the answer, nothing is read.
     ``should_stop`` is asked between slabs (true raises ``gene_score.ScoreCancelled``); ``pause`` (``wanted()``,
-    ``wait()``) is honoured between slabs and passed to a score's pipeline.
+    ``wait()``) is honoured between slabs and passed to a score's pipeline. ``on_entries(n)`` is told the stored
+    entries read: a score's as it reads them, a column's once it is read; the calls add up to ``plan_.entries``
+    unless the grouping is refused before every partitioning is read.
     """
     total = len(plan_.top.parts)
     if codes is not None:
@@ -1336,13 +1440,19 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, codes: Opti
         return
     rows = None if shown_rows is None else np.asarray(shown_rows, dtype=np.int64)
     n_shown = plan_.n_cells if rows is None else int(rows.size)
-    ctx = _Ctx(plan_.reader, plan_.dataset_path, plan_.request, rows, n_shown, should_stop, pause)
+    ctx = _Ctx(plan_.reader, plan_.dataset_path, plan_.request, rows, n_shown, should_stop, pause, on_entries)
     yield "progress", {"stage": "groups", "done": 0, "total": total}
     steps = _resolving(plan_.top, ctx)
+    done = 0
     while True:
         try:
-            done = next(steps)
+            event, payload = next(steps)
         except StopIteration as stop:
             yield "result", stop.value
             return
-        yield "progress", {"stage": "groups", "done": done, "total": total}
+        if event == "part":
+            done = payload
+            yield "progress", {"stage": "groups", "done": done, "total": total}
+        else:
+            yield "progress", {"stage": "groups", "done": done, "total": total, "genes_done": payload[0],
+                               "genes_total": payload[1]}

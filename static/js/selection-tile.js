@@ -8,7 +8,8 @@ import { lastSessionElement } from './utils/last-session-card.js';
 import { createLoadActions, createDatasetBadge, createStyleBadge } from './panelset-load-ui.js';
 import { notify } from './utils/notify.js';
 import { onDefault } from './utils/session-style.js';
-import { keptInUse } from './utils/panel-references.js';
+import { keptInUse, usersOf } from './utils/panel-references.js';
+import { deleteInUseText } from './utils/panel-users.js';
 
 export class SelectionTile {
     /**
@@ -376,6 +377,15 @@ export class SelectionTile {
     }
   
     /**
+     * The title of a new panel of a type: the type's own word for one where it has one ("Grouping 1"), else its
+     * label ("Cell Plot 1"), made unique.
+     */
+    _newTitle(panelType) {
+      const info = Config.panelTypeInfo(panelType);
+      return this.generateUniqueName(`${(info && info.title) || this._formatPanelType(panelType)} 1`);
+    }
+
+    /**
      * Create a panel based on the type.
      * For "welcome", use the layoutManager; for "pane", call createPanel directly and remove the tile.
      */
@@ -412,7 +422,7 @@ export class SelectionTile {
         // a new plot is on Default: it follows the session's default look (utils/session-style.js)
         const config = onDefault(panelType, {
           id: newId,
-          title: this.generateUniqueName(`${this._formatPanelType(panelType)} 1`)
+          title: this._newTitle(panelType)
         });
         const parentPane = this.tileSelector.closest('.split-pane') || this.container;
         this.createPanel(panelType, config, parentPane);
@@ -539,11 +549,57 @@ export class SelectionTile {
       return option;
     }
   
+    /**
+     * The × of a closed panel. A panel in use (another panel's configuration names it: panel-references.js) is deleted
+     * on a second press: the first turns the button into the question, "Delete 'T cell score'? 2 plots and 1 table use
+     * it." (design-gene-signature 7.1, GRP-13), as Clear closed panels does. Escape, a focus move or a few seconds
+     * put it back. A panel nothing uses is deleted at once, as before.
+     * @private
+     */
+    _armDelete(button, panelId) {
+      const users = usersOf(panelId);
+      if (!users.length || button.dataset.armed === '1') return false;
+      const panel = this.panels.get(panelId);
+      const question = deleteInUseText(panel ? panel.getTitle() : panelId, users);
+      const was = { text: button.textContent, title: button.title };
+      button.dataset.armed = '1';
+      button.textContent = 'Delete?';
+      button.setAttribute('aria-label', question);
+      button.title = question;
+      button.classList.add('tile-delete-armed');
+      const line = document.createElement('div');
+      line.className = 'delete-panel-question';
+      line.setAttribute('role', 'status');
+      line.textContent = question;
+      line.addEventListener('click', (e) => e.stopPropagation());
+      const option = button.closest('.source-panel-option');
+      if (option) { option.appendChild(line); option.classList.add('is-delete-armed'); }
+      const disarm = () => {
+        clearTimeout(timer);
+        button.removeEventListener('blur', disarm);
+        button.removeEventListener('keydown', onKey);
+        line.remove();
+        if (option) option.classList.remove('is-delete-armed');
+        if (button.dataset.armed !== '1') return;
+        delete button.dataset.armed;
+        button.textContent = was.text;
+        button.title = was.title;
+        button.removeAttribute('aria-label');
+        button.classList.remove('tile-delete-armed');
+      };
+      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); disarm(); } };
+      const timer = setTimeout(disarm, 6000);
+      button.addEventListener('blur', disarm);
+      button.addEventListener('keydown', onKey);
+      return true;
+    }
+
     _attachDeleteHandlers(grid) {
       grid.querySelectorAll('.delete-panel-btn').forEach(button => {
         button.addEventListener('click', (e) => {
           e.stopPropagation();
           const panelId = button.dataset.id;
+          if (panelId && this._armDelete(button, panelId)) return;
           if (panelId) {
             const panelInstance = this.panels.get(panelId);
             if (panelInstance) {

@@ -9,7 +9,9 @@ obs (SHR terms in brackets):
   cell_type    6 levels of 500, 300, 200, 150, 45 and 5 cells (the 5 is under the small-group threshold)
   condition    2 levels
   sample       30 levels of 40 cells, ONE of them called "other" (typed ids: ``c:other`` is not ``@other``)
-  many         2,001 declared levels, one per cell for the first 1,200 (over the 2,000 limit, SHR-6)
+  many         2,001 declared levels, one per cell for the first 1,200: more stored than the 2,000 limit, but
+               the levels that count are those holding a cell (SHR-6, SHR-7), so it groups into 1,200; all 2,001
+               kept by name are over the limit
   pseudotime   float64, 25 distinct values (heavy ties) and 20 missing
   depth        float64, 60% exact zeros (zero bin, SHR-15)
   constant     float64, every cell 2.5 (degenerate data, SHR-46)
@@ -284,9 +286,13 @@ def _edges(values, binning):
     return sorted(set(e))                              # equal edges are merged
 
 
-def ref_partition(data, part, shown):
+def ref_partition(data, part, shown, limit=None):
     """``(levels, codes, info)``: the partitioning's level ids in SHR-10 order (``@other`` and ``@na`` only when
-    occupied), and for each cell of the dataset its index into ``levels`` (-1: in no group, or not shown)."""
+    occupied), and for each cell of the dataset its index into ``levels`` (-1: in no group, or not shown).
+
+    A categorical column storing more categories than ``limit`` (the group limit by default) has as levels the
+    categories that hold a cell shown (SHR-6, SHR-7); within the limit, every stored category is a level."""
+    limit = GROUP_LIMIT if limit is None else limit
     values = _source_values(data, part["source"])
     n = len(values)
     in_shown = np.zeros(n, dtype=bool)
@@ -321,6 +327,9 @@ def ref_partition(data, part, shown):
                 raise ValueError(f"levels not in the column: {unknown}")
         else:
             kept = ids
+            if len(ids) > limit:
+                held = {ref_label(raw[r]) for r in shown}
+                kept = [i for i in ids if i in held]
         info["n_levels"] = len(kept)                     # kept levels are what count for the limit (SHR-6)
         pos = {i: k for k, i in enumerate(kept)}
         other_at, na_at = len(kept), len(kept) + 1
@@ -520,7 +529,8 @@ GROUPING_RECIPES = {
                                                   "shown": "third"},
     "pseudotime_width4_shown_third_edges_all": {"partitionings": [_binned("pseudotime", "equal_width", 4, edges_from="all")],
                                                 "shown": "third"},
-    "many_over_limit": {"partitionings": [_obs("many")]},
+    "many_unused_categories": {"partitionings": [_obs("many")]},
+    "many_all_kept_over_limit": {"partitionings": [_obs("many", levels=[f"c:m{i:04d}" for i in range(N_MANY)])]},
     "many_kept_under_limit": {"partitionings": [_obs("many", levels=["c:m0005", "c:m0000"], rest="other")]},
     "score_manual_3_thresholds": {"partitionings": [_obs("score", binning={"method": "manual", "thresholds": [7.0, 3.0, 5.0]})]},
 }
