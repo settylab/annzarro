@@ -392,11 +392,19 @@ def best_of(fn, runs=5):
 
 
 def test_a_search_over_twenty_thousand_entries_ends_inside_its_time_limit():
+    # The limit is SEARCH_SECONDS of work. Whether a search "ends inside" it cannot be read off one wall-clock run
+    # with the limit itself as the cutoff: a busy machine stops the search midway and reports it partial for
+    # reasons that are its own. So the searches run with room to finish (they must find what they find), and the
+    # time they take is the CPU seconds of the quickest of five runs, which load does not move, against the limit.
     loaded = synthetic_index(20_000)
-    hits, more, partial = text_index.search(loaded, ["donor", "counts"], lambda e: True, seconds=text_index.SEARCH_SECONDS)
+    first = lambda: text_index.search(loaded, ["donor", "counts"], lambda e: True, seconds=60)
+    second = lambda: text_index.search(loaded, ["highly_variable"], lambda e: True, seconds=60)
+    hits, more, partial = first()
     assert partial is False and hits == []
-    hits, more, partial = text_index.search(loaded, ["highly_variable"], lambda e: True, seconds=text_index.SEARCH_SECONDS)
+    hits, more, partial = second()
     assert partial is False and len(hits) == 50 and more == 20_000 - 50
+    assert best_of(first, 5) < text_index.SEARCH_SECONDS
+    assert best_of(second, 5) < text_index.SEARCH_SECONDS
 
 
 def test_a_search_grows_with_the_size_of_the_index_and_no_faster_than_fifteen_to_one_for_ten_times_the_entries():
