@@ -34,11 +34,11 @@ const ctxOf = (extra = {}) => ({
 
 /** A grid reply as the group store holds it (group-store.js): the result frame read, and its blocks apart. */
 const withContract = ({ counts, measure, ...reply }, extra = {}) => ({
-    reply: { n_shown: reply.n_counted + (extra.left || 0), ...reply,
+    reply: { ...reply, n_shown: reply.n_counted + (extra.left || 0),
         axes: reply.axes.map((a, i) => {
             const bins = a.levels.filter((id) => id.startsWith('bin:')).length;
             const binned = bins ? { edges: Array.from({ length: bins + 1 }, (_, k) => k), bins_made: bins, degenerate: false } : {};
-            return { n_outside: i === 0 ? [extra.outside || 0, 0] : [0, 0], ...binned, ...a };
+            return { ...binned, ...a, n_outside: i === 0 ? [extra.outside || 0, 0] : [0, 0] };
         }) },
     counts, measures: measure || null });
 const gridOf = (name, extra) => M.readGrid(withContract(expected.grid[name], extra));

@@ -113,12 +113,14 @@ def _finite_number(v: Any, what: str) -> float:
     return float(v)
 
 
-def parse(raw: Optional[Mapping[str, Any]], *, numeric: bool) -> Binning:
+def parse(raw: Optional[Mapping[str, Any]], *, numeric: bool, max_bins: int = BINS_MAX) -> Binning:
     """Validate a binning recipe.
 
-    ``numeric`` is whether the source is a numeric column. A categorical source has no binning but the implied
-    ``categories``. Fields that do not belong to the method (``bins`` on manual, ``range`` on equal count ...) are
-    dropped, so a recipe edited through several methods stays clean. Unknown fields are refused.
+    ``numeric`` is whether the source is a numeric column. ``max_bins`` is the most bins the consumer takes: a
+    grouping's 1,000 by default; a count plot passes its axis's limit (2,000 for a 1D x, 512 in 2D). A
+    categorical source has no binning but the implied ``categories``. Fields that do not belong to the method
+    (``bins`` on manual, ``range`` on equal count ...) are dropped, so a recipe edited through several methods stays
+    clean. Unknown fields are refused.
     """
     if raw is None:
         raw = {}
@@ -156,9 +158,9 @@ def parse(raw: Optional[Mapping[str, Any]], *, numeric: bool) -> Binning:
         if b is None:
             bins = DEFAULT_BINS[method]
         else:
-            if not _is_number(b) or float(b) != int(b) or not BINS_MIN <= int(b) <= BINS_MAX:
-                raise BinningError("bad_bins", f"The number of bins must be a whole number from {BINS_MIN} to {BINS_MAX}.",
-                                   minimum=BINS_MIN, maximum=BINS_MAX)
+            if not _is_number(b) or float(b) != int(b) or not BINS_MIN <= int(b) <= max_bins:
+                raise BinningError("bad_bins", f"The number of bins must be a whole number from {BINS_MIN} to {max_bins}.",
+                                   minimum=BINS_MIN, maximum=max_bins)
             bins = int(b)
     if method in ("equal_width", "log"):
         r = raw.get("range")
@@ -178,8 +180,8 @@ def parse(raw: Optional[Mapping[str, Any]], *, numeric: bool) -> Binning:
         if not isinstance(t, (list, tuple)) or not t:
             raise BinningError("bad_thresholds", "Manual thresholds need at least one value.")
         vals = sorted({_finite_number(v, "thresholds") for v in t})
-        if len(vals) > BINS_MAX - 1:
-            raise BinningError("bad_thresholds", f"At most {BINS_MAX - 1} thresholds.", limit=BINS_MAX - 1, count=len(vals))
+        if len(vals) > max_bins - 1:
+            raise BinningError("bad_thresholds", f"At most {max_bins - 1} thresholds.", limit=max_bins - 1, count=len(vals))
         thresholds = tuple(vals)
     if method == "categories":
         zero_bin = False
@@ -312,7 +314,6 @@ class _Scan:
     vmin: float = math.inf    # over those
     vmax: float = -math.inf
     n_negative: int = 0       # finite and below 0, anywhere
-    minpos: float = math.inf  # least value above 0, anywhere (log-spaced lower end)
 
 
 def _counted(c: np.ndarray, zero_bin: bool, positive: bool) -> np.ndarray:
@@ -343,9 +344,6 @@ def _scan(slabs: Callable[[], Iterable[np.ndarray]], zero_bin: bool, positive: b
             lo, hi = float(c.min()), float(c.max())
             if lo < 0:
                 s.n_negative += int(np.count_nonzero(c < 0))
-            pos = c[c > 0]
-            if pos.size:
-                s.minpos = min(s.minpos, float(pos.min()))
             v = c
             if zero_bin:
                 v = v[v != 0]
@@ -594,6 +592,37 @@ class Counts:
         return [self.n_below, self.n_above]
 
 
+#: Correction steps of the arithmetic bin index; ``test_equal_width_index.py`` shows one is never exceeded.
+_CORRECTIONS = 2
+
+
+def _search_index(v: np.ndarray, ed: np.ndarray) -> np.ndarray:
+    """The bin of each value among the edges ``ed``: the last bin closed, a value outside in the end bin."""
+    return np.searchsorted(ed[1:-1], v, side="right")
+
+
+def _equal_width_index(v: np.ndarray, ed: np.ndarray) -> np.ndarray:
+    """:func:`_search_index` for equal-width edges, to the bit: the bin by arithmetic, then moved down or up where
+    the edges themselves say it is wrong (rounding leaves it one bin off at most). About six times faster than the
+    search at 512 bins. ``v`` is finite."""
+    k = ed.size - 1
+    t = (v - ed[0]) * (k / (ed[-1] - ed[0]))
+    np.clip(t, 0, k - 1, out=t)
+    idx = t.astype(np.int64)
+    for _ in range(_CORRECTIONS + 1):
+        down = v < ed[idx]
+        down &= idx > 0
+        up = v >= ed[idx + 1]
+        up &= idx < k - 1
+        if not (down.any() or up.any()):
+            return idx
+        idx -= down
+        idx += up
+    wrong = ((v < ed[idx]) & (idx > 0)) | ((v >= ed[idx + 1]) & (idx < k - 1))
+    idx[wrong] = _search_index(v[wrong], ed)
+    return idx
+
+
 def assign(values: Any, e: Edges, counts: Optional[Counts] = None) -> np.ndarray:
     """The ``uint16`` level index of each value: the position in :func:`level_ids`, or ``NO_LEVEL``.
 
@@ -631,7 +660,8 @@ def _assign_chunk(x: np.ndarray, e: Edges, counts: Optional[Counts]) -> np.ndarr
         ok &= pos
     if not ok.any():
         return code
-    v = x[ok]
+    every = bool(ok.all())
+    v = x if every else x[ok]
     if e.degenerate:
         idx = np.zeros(v.size, dtype=np.int64)
     elif b.method == "manual":
@@ -646,7 +676,7 @@ def _assign_chunk(x: np.ndarray, e: Edges, counts: Optional[Counts]) -> np.ndarr
             idx = np.where(hit, idx, NO_LEVEL - base)
     else:
         ed = e.edges
-        idx = np.searchsorted(ed[1:-1], v, side="right")
+        idx = _equal_width_index(v, ed) if b.method == "equal_width" else _search_index(v, ed)
         below = v < ed[0]
         above = v > ed[-1]
         if counts is not None:
@@ -656,8 +686,10 @@ def _assign_chunk(x: np.ndarray, e: Edges, counts: Optional[Counts]) -> np.ndarr
             gone = below | above
             if gone.any():
                 idx = np.where(gone, NO_LEVEL - base, idx)
-    full = idx + base
-    code[ok] = np.where(idx >= NO_LEVEL - base, NO_LEVEL, full).astype(np.uint16)
+    full = np.where(idx >= NO_LEVEL - base, NO_LEVEL, idx + base).astype(np.uint16)
+    if every:
+        return full
+    code[ok] = full
     return code
 
 

@@ -4314,12 +4314,20 @@
       "c:Monocyte",
       "c:Dendritic",
       "c:Platelet"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     },
     {
      "levels": [
       "c:ctrl",
       "c:treated"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     }
    ],
@@ -4337,6 +4345,7 @@
     2,
     3
    ],
+   "n_shown": 1200,
    "n_counted": 1200,
    "measure": [
     [
@@ -4457,18 +4466,30 @@
       "c:Monocyte",
       "c:Dendritic",
       "c:Platelet"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     },
     {
      "levels": [
       "c:ctrl",
       "c:treated"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     },
     {
      "levels": [
       "c:false",
       "c:true"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     }
    ],
@@ -4498,6 +4519,7 @@
     3,
     0
    ],
+   "n_shown": 1200,
    "n_counted": 1200
   },
   "pseudotime_x_cell_type": {
@@ -4531,6 +4553,10 @@
       "bin:3",
       "bin:4",
       "@na"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     },
     {
@@ -4541,6 +4567,10 @@
       "c:Monocyte",
       "c:Dendritic",
       "c:Platelet"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     }
    ],
@@ -4582,6 +4612,7 @@
     1,
     0
    ],
+   "n_shown": 1200,
    "n_counted": 1200
   },
   "sample_x_cell_type": {
@@ -4634,6 +4665,10 @@
       "c:S27",
       "c:S28",
       "c:S29"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     },
     {
@@ -4644,6 +4679,10 @@
       "c:Monocyte",
       "c:Dendritic",
       "c:Platelet"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     }
    ],
@@ -4829,6 +4868,7 @@
     0,
     0
    ],
+   "n_shown": 1200,
    "n_counted": 1200
   },
   "kept_other_x_condition": {
@@ -4857,12 +4897,20 @@
      "levels": [
       "c:T cell",
       "@other"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     },
     {
      "levels": [
       "c:ctrl",
       "c:treated"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     }
    ],
@@ -4872,6 +4920,7 @@
     479,
     421
    ],
+   "n_shown": 1200,
    "n_counted": 1200
   },
   "depth_zero_bin_x_condition": {
@@ -4904,12 +4953,20 @@
       "bin:0",
       "bin:1",
       "bin:2"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     },
     {
      "levels": [
       "c:ctrl",
       "c:treated"
+     ],
+     "n_outside": [
+      0,
+      0
      ]
     }
    ],
@@ -4923,6 +4980,7 @@
     4,
     3
    ],
+   "n_shown": 1200,
    "n_counted": 1200
   }
  }
