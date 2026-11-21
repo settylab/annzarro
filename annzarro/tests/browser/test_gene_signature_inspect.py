@@ -31,6 +31,7 @@ import json
 import re
 
 import pytest
+import playwright.sync_api as playwright
 
 from annzarro.tests.browser import test_gene_score_plots as base
 from annzarro.tests.browser.test_gene_score_plots import (  # noqa: F401  (fixtures)
@@ -203,30 +204,39 @@ def test_the_histogram_has_a_tooltip_per_bin_by_pointer_and_keyboard(page, serve
     _wait_table(page)
     bins = _bins(page)
     assert len(bins) == 30 and sum(bins) == N_OBS
-    hit = page.query_selector_all(f"{I} .gsig-hist__hit")
-    assert len(hit) == 30
+    # The chart is drawn again whenever its host changes width (a ResizeObserver: the table filling in can add
+    # a scrollbar), which replaces every bar. Work on it only once its width has held for several frames, and
+    # through locators, which look the element up again at each action, never on handles taken earlier.
+    page.wait_for_function("""(I) => { const host = document.querySelector(I + ' .gsig-hist__hit');
+        const w = host && host.ownerSVGElement ? host.ownerSVGElement.getBoundingClientRect().width : 0;
+        const s = window.__azHistW = (window.__azHistW && window.__azHistW.w === w && window.__azHistW.el === host)
+            ? { ...window.__azHistW, n: window.__azHistW.n + 1 } : { w, el: host, n: 0 };
+        return w > 0 && s.n >= 10; }""", arg=I, polling="raf", timeout=30000)
+    hit = page.locator(f"{I} .gsig-hist__hit")
+    assert hit.count() == 30
     # every bar is thin: at most 24 px, and there is no stroke on a mark
-    widths = page.eval_on_selector_all(f"{I} .gsig-hist__bar", "els => els.map(e => e.getBoundingClientRect().width)")
+    widths = page.locator(f"{I} .gsig-hist__bar").evaluate_all("els => els.map(e => e.getBoundingClientRect().width)")
     assert widths and max(widths) <= 24.01
-    assert page.eval_on_selector_all(f"{I} .gsig-hist__bar", "els => els.every(e => getComputedStyle(e).strokeWidth === '0px' || getComputedStyle(e).stroke === 'none')")
-    hit[3].hover()
-    tip = page.inner_text(f"{I} .gsig-hist__tip")
+    assert page.locator(f"{I} .gsig-hist__bar").evaluate_all("els => els.every(e => getComputedStyle(e).strokeWidth === '0px' || getComputedStyle(e).stroke === 'none')")
+    hit.nth(3).hover()
     n = bins[3]
-    assert re.fullmatch(rf".+ to .+: {n} cell{{0,1}}s? \(\d+\.\d%\)", tip) or n == 0, tip
-    assert page.evaluate("(I) => document.querySelector(I + ' .gsig-hist__tip').classList.contains('is-shown')", I)
+    tip = page.locator(f"{I} .gsig-hist__tip")
+    if n:
+        playwright.expect(tip).to_have_text(re.compile(rf".+ to .+: {n} cells? \(\d+\.\d%\)"))
+    playwright.expect(tip).to_have_class(re.compile(r"\bis-shown\b"))
     page.mouse.move(0, 0)
-    assert not page.evaluate("(I) => document.querySelector(I + ' .gsig-hist__tip').classList.contains('is-shown')", I)
+    playwright.expect(tip).not_to_have_class(re.compile(r"\bis-shown\b"))
     # keyboard: the chart is one tab stop, arrows read the bars
     page.focus(f"{I} .gsig-hist__group")
     first = page.inner_text(f"{I} .gsig-hist__tip")
     assert first.startswith(page.evaluate("(I) => document.querySelector(I + ' .gsig-hist__tip').textContent.split(' to ')[0]", I))
     page.keyboard.press("ArrowRight")
     page.keyboard.press("ArrowRight")
-    assert page.get_attribute(f"{I} .gsig-hist__tip", "data-bin") == "2"
+    playwright.expect(tip).to_have_attribute("data-bin", "2")
     page.keyboard.press("End")
-    assert page.get_attribute(f"{I} .gsig-hist__tip", "data-bin") == "29"
+    playwright.expect(tip).to_have_attribute("data-bin", "29")
     page.keyboard.press("Home")
-    assert page.get_attribute(f"{I} .gsig-hist__tip", "data-bin") == "0"
+    playwright.expect(tip).to_have_attribute("data-bin", "0")
     assert page.get_attribute(f"{I} .gsig-hist__group", "role") == "group"
     assert "arrow keys" in page.get_attribute(f"{I} .gsig-hist__group", "aria-label")
 
