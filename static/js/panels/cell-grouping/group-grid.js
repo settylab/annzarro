@@ -14,10 +14,9 @@
  * The panel mounts it: `PARTS.groups.mount(host, ctx)` (panels/cell-grouping.js).
  */
 import { DataManager } from '../../data-manager.js';
-import { Config } from '../../config.js';
 import { makeDom } from '../gene-set-utilities/dom.js';
 import { createVirtualGrid, columnRange } from '../../utils/virtual-grid.js';
-import { createKindClient } from '../../utils/matrix-kind-client.js';
+import { KIND_CLIENT } from '../score-options/score-options.js';
 import { groupSources, sourceTitleOf } from '../../utils/group-host.js';
 import { groupColours as colorsOf, sourceName } from '../../utils/cell-grouping.js';
 import { groupColours as hueColours } from '../plot-utilities/colors.js';
@@ -29,7 +28,6 @@ import {
     listColumns, listCsv, crossCsv
 } from './group-rows.js';
 
-const KIND_CLIENT = createKindClient({ url: Config.API.MATRIX_KIND });
 const fmt = (n) => Number(n).toLocaleString('en-US');
 const PENDING = '…';
 const DASH = '—';
@@ -150,7 +148,7 @@ function mount(host, ctx) {
     async function kindOf(layer) {
         if (focus.kindLayer === layer) return focus.kind;
         let reply = null;
-        try { reply = await KIND_CLIENT.kind(DataManager.getCurrentDataset(), layer, { suggest: false }); } catch (error) { console.error('Group grid:', error); }
+        try { reply = await KIND_CLIENT.kind(DataManager.getCurrentDataset(), layer); } catch (error) { console.error('Group grid:', error); }
         const kind = (reply && reply.kind) || null;
         focus.kind = kind;
         focus.kindLayer = layer;
