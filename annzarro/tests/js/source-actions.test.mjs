@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 const A = await import('../../../static/js/utils/source-actions.js');
 const SS = await import('../../../static/js/utils/score-source.js');
 const TU = await import('../../../static/js/panels/table-utilities/table-score-ui.js');
+await import('../../../static/js/utils/cell-group-source.js');
 
 /** The contract, for one registry over the hosts it may be asked about. Returns the number of (action, host) pairs checked. */
 function checkContract(registry, hosts, spies) {
@@ -136,7 +137,7 @@ test('the table provider: every action of every state of its host agrees with it
 });
 
 test('the page registers the plot provider and the table provider, once each', () => {
-    assert.deepEqual(A.actions.providerIds().sort(), ['plot-score', 'table-score']);
+    assert.deepEqual(A.actions.providerIds().sort(), ['plot-group', 'plot-score', 'table-score']);
     // the contract also holds over the registry the page uses, for a host nobody owns
     const spy = { calls: 0 };
     assert.equal(checkContract(A.actions, [{ name: 'a stray element' }], [spy]), A.actions.known.length);
