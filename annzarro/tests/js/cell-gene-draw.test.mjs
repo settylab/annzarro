@@ -409,7 +409,9 @@ test('scaling: ten times the cells take at most fifteen times as long, heatmap a
     // scheduler's slice is as long as the build. The work is what grows with the cells, so CPU time is
     // compared (the machine's load does not enter it), a sample is a batch of builds (the small size 10 times,
     // the large one once, the same total cells, so neither sample is a fraction of a millisecond), and each is
-    // the quickest of seven samples after a warm-up. Sizes and the 15x bound are as before.
+    // the quickest of seven samples after a warm-up. Sizes and the 15x bound are as before. The floor under the
+    // small build is 0.1 ms, not the 1 ms a single wall-clock reading needed: the small sample is a batch of ten,
+    // and a 1 ms floor let a heatmap build of 0.7 ms grow 21 times before the bound caught it.
     for (const mode of ['heatmap', 'dots']) {
         const small = model({ rows: 20, groups: 200, mode });
         const large = model({ rows: 200, groups: 200, mode });
@@ -417,7 +419,7 @@ test('scaling: ten times the cells take at most fifteen times as long, heatmap a
         D.buildFigure(large, LIGHT);
         const a = bestCpu(() => D.buildFigure(small, LIGHT), 10) / 10;
         const b = bestCpu(() => D.buildFigure(large, LIGHT), 1);
-        assert.ok(b <= 15 * Math.max(a, 1), `${mode}: ${a.toFixed(2)} ms of CPU for 4,000, ${b.toFixed(2)} ms for 40,000`);
+        assert.ok(b <= 15 * Math.max(a, 0.1), `${mode}: ${a.toFixed(2)} ms of CPU for 4,000, ${b.toFixed(2)} ms for 40,000`);
     }
 });
 
