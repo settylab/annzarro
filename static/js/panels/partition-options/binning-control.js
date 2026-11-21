@@ -12,7 +12,7 @@
  * stateless; what must outlive a redraw (an invalid entry's sentence, a freeze's Undo, the focused slider) is kept in a
  * small table by source.
  *
- * Mounted through factors.js `BINNING_SLOT.mount(host, {partitioning, info, commit, levels?, titleOf?, cells?, kind?, max?})`.
+ * Mounted through factors.js `BINNING_SLOT.mount(host, {partitioning, info, commit, fresh?, settled?, levels?, titleOf?, cells?, kind?, max?})`.
  */
 import { BINNING_SLOT } from '../cell-grouping/factors.js';
 import {
@@ -336,7 +336,7 @@ if (typeof document !== 'undefined') {
 function memoryOf(key) {
     let m = memory.get(key);
     if (!m) {
-        m = { error: null, frozen: null, moved: null, last: null, drafts: {}, decided: false };
+        m = { error: null, frozen: null, moved: null, last: null, drafts: {} };
         memory.set(key, m);
         if (memory.size > MEMORY_MAX) memory.delete(memory.keys().next().value);
     }
@@ -372,6 +372,8 @@ const label = (text, ...inner) => h('label', { class: 'pbc-field' }, h('span', {
  * @param {Object} ctx.partitioning - the stored factor: `{source, binning, ...}`
  * @param {?Object} ctx.info - this partitioning of the reply (edges, counts, histogram, ...)
  * @param {(next: Object, label: string) => void} ctx.commit - one undoable step
+ * @param {boolean} [ctx.fresh] - the factor was added in this session and has had no preview yet (SHR-15)
+ * @param {() => void} [ctx.settled] - the factor is no longer new
  * @param {HTMLElement} [ctx.levels] - the factor's list of bins with their cells, drawn under the preview
  * @param {(source: Object) => (string|undefined)} [ctx.titleOf]
  * @param {'grouping'|'count'} [ctx.kind]
@@ -397,7 +399,7 @@ function mount(host, ctx) {
         if (destroyed || stableStringify(next) === sig) return;
         mem.error = null;
         mem.moved = null;
-        mem.decided = true;
+        if (ctx.settled) ctx.settled();
         const now = host.contains(document.activeElement) ? identify(document.activeElement) : null;
         held = now ? { key, ...now, at: Date.now() } : null;
         ctx.commit({ ...p, binning: next }, text);
@@ -411,9 +413,10 @@ function mount(host, ctx) {
         mem.last = { sig, n: info.edges_n, from: info.edges_from };
     }
 
-    // The zero bin is on at 25% zeros (SHR-15), decided once from the first preview of this source.
-    if (hist && !mem.decided) {
-        mem.decided = true;
+    // The zero bin is on at 25% zeros (SHR-15), for a factor the user has just added, on its first preview, once. A
+    // factor that comes from a link, a panel set or a reload is never changed: its binning is the user's.
+    if (hist && ctx.fresh) {
+        if (ctx.settled) ctx.settled();
         if (zeroBinDefault(binning, info)) {
             setTimeout(() => ctx.commit({ ...p, binning: setZeroBin(binning, true) }, `zero as its own bin of ${name}`), 0);
         }

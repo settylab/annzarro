@@ -282,6 +282,7 @@ const ADD_ENTRIES = Object.freeze([
  */
 function createFactors({ D, id, model, on }) {
     const { el } = D;
+    const fresh = new Set();            // sources of factors added in this session that have had no preview yet (SHR-15)
     const expanded = new Set();         // indexes of expanded cards (kept by position, as the recipe is)
     const showAll = new Set();          // cards whose long level list is shown whole
     let adding = null;                  // the entry whose inline row is open
@@ -469,7 +470,7 @@ function createFactors({ D, id, model, on }) {
             note.textContent = why || '';
             if (why) return;
             const { p, label } = make();
-            if (p.binning) expanded.add(m.recipe.partitionings.length);
+            if (p.binning) { expanded.add(m.recipe.partitionings.length); fresh.add(stableStringify(p.source)); }
             adding = null;
             paintRow();
             on.add(p, label);
@@ -637,7 +638,8 @@ function createFactors({ D, id, model, on }) {
         const rows = info ? levelRows(p, info, defaults) : [];
         const levels = el('ul', { class: 'cgrp-levels cgrp-bins', role: 'list' }, rows.map((r) => levelRow(i, p, info, r)));
         if (BINNING_SLOT.mount) {
-            mounts.push(BINNING_SLOT.mount(host, { partitioning: p, info, levels, titleOf: model().titleOf, cells: model().cells,
+            const mark = stableStringify(p.source);
+            mounts.push(BINNING_SLOT.mount(host, { partitioning: p, info, levels, fresh: fresh.has(mark), settled: () => fresh.delete(mark), titleOf: model().titleOf, cells: model().cells,
                 commit: (next, label) => commitFactor(i, next, label) }));
             return [host];
         }
@@ -1000,7 +1002,10 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
          */
         function syncHistograms() {
             if (!_handle || !_snap || _snap.state !== 'ready' || !_factors) return;
-            const now = _factors.wanted(_made.get(_snap.shownKey || _snap.key) || _recipe);
+            // only ever more: a card collapsed keeps the histogram it has and asks for nothing
+            const applied = _made.get(_snap.shownKey || _snap.key) || _recipe;
+            const ps = applied.partitionings;
+            const now = [...new Set([..._asked.filter((k) => ps[k] && ps[k].binning), ..._factors.wanted(applied)])].sort((a, b) => a - b);
             if (now.join() === _asked.join()) return;
             _asked = now;
             _handle.setOption({ histograms: now });

@@ -29,8 +29,9 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import waits  # noqa: E402
 from annzarro.tests.browser.test_cell_grouping_panel import (  # noqa: E402,F401
-    A, GA, DATA, N, _add, _grouping, _ready, _recipe, _state, page, served)
+    _captured_url, A, GA, DATA, N, _add, _grouping, _ready, _recipe, _state, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
 CTRL = f"{A} .cgrp-binning .pbc"
@@ -41,7 +42,7 @@ def _binned(key, **binning):
     return {"source": {"type": "obs", "key": key}, "binning": {"method": "equal_count", **binning}}
 
 
-def _open_binned(page, served, partitionings, subset=None):
+def _open_binned(page, served, partitionings, subset=None, expand=True):
     root, store = served
     tiles = {"type": "tile", "id": GA, "controlsVisible": True}
     view = {"v": 1, "layout": {"v": 1, "hierarchy": [tiles], "controlState": {GA: True},
@@ -51,7 +52,7 @@ def _open_binned(page, served, partitionings, subset=None):
     enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
     page.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}")
     page.wait_for_selector(f"{A} .cgrp-panel .cgrp-status[data-state]", timeout=30000)
-    if partitionings:
+    if partitionings and expand:
         _expand(page, 0)
 
 
@@ -116,6 +117,67 @@ def test_a_column_with_fewer_zeros_does_not_and_a_signed_one_has_no_zero_bin_to_
     _expand(page, 1)
     _ctrl_ready(page, 1)
     assert page.locator(f"{A} .cgrp-card[data-index='1'] .pbc-zero").count() == 0
+
+
+def _histogram_requests(page):
+    return [c for c in page.calls if not c.get("estimate_only") and c.get("want", {}).get("histograms")]
+
+
+def test_a_link_with_factory_binning_on_zero_heavy_data_is_never_changed_and_histograms_follow_expansion(page, served):
+    _open_binned(page, served, [_binned("depth")], expand=False)
+    _ready(page)
+    assert _histogram_requests(page) == [], "a collapsed card asks for no histogram"
+    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__toggle")
+    _ctrl_ready(page)
+    assert len(_histogram_requests(page)) == 1, "expanding asks for exactly one"
+    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__toggle")
+    waits.expect_stays(lambda: len(_histogram_requests(page)) == 1 and len(_requests_all(page)) == len(page.calls),
+                       "collapsing a card must send no request", page=page)
+    n = len(page.calls)
+    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__toggle")
+    _ctrl_ready(page)
+    waits.expect_stays(lambda: len(page.calls) == n, "re-expanding keeps the histogram it has", page=page)
+    # the user's factory binning from a link stays as it is, however many zeros
+    waits.expect_stays(lambda: _binning(page) == {"method": "equal_count"}, "a linked factory binning is never auto-changed", page=page)
+    assert not page.is_checked(f"{CTRL} .pbc-zero")
+
+
+def _requests_all(page):
+    return list(page.calls)
+
+
+def test_turning_the_default_off_and_reloading_keeps_it_off(page, served):
+    _open_binned(page, served, [])
+    _add(page, "column", type_="obs", key="depth")
+    _wait_binning(page, {"method": "equal_count", "zero_bin": True})
+    _ctrl_ready(page)
+    page.uncheck(f"{CTRL} .pbc-zero")
+    _wait_binning(page, {"method": "equal_count"})
+    link = _captured_url(page, served)
+    page.goto("about:blank")
+    page.goto(link)
+    page.wait_for_selector(f"{A} .cgrp-panel .cgrp-status[data-state]", timeout=30000)
+    _expand(page, 0)
+    _ctrl_ready(page)
+    waits.expect_stays(lambda: _binning(page) == {"method": "equal_count"} and not page.is_checked(f"{CTRL} .pbc-zero"),
+                       "an explicit off survives a reload", page=page)
+
+
+def test_the_bins_are_listed_with_their_cells_and_one_can_be_renamed(page, served):
+    # pseudotime has 20 missing values: its no-value level is the one a binned card lets the user rename (as G9a's list did)
+    _open_binned(page, served, [_binned("pseudotime", bins=3)])
+    _ready(page)
+    _ctrl_ready(page)
+    card = f"{A} .cgrp-card[data-index='0']"
+    rows = page.evaluate("(s) => [...document.querySelectorAll(s + ' .cgrp-level')].map(e => [e.querySelector('.cgrp-level__label').textContent, e.querySelector('.cgrp-level__n').textContent])", card)
+    summary = page.inner_text(f"{card} .cgrp-card__summary")
+    assert len(rows) >= 2 and summary.endswith(f"{len(rows)} levels"), (rows, summary)
+    assert all(n for _, n in rows)
+    page.click(f"{card} .cgrp-level__rename")
+    page.fill(f"{card} .cgrp-level__name", "missing")
+    page.press(f"{card} .cgrp-level__name", "Enter")
+    until(page, "(id) => { const l = window.PanelManager.getPanel(id).getRecipe().partitionings[0].labels; return !!l && Object.values(l).includes('missing'); }", GA)
+    until(page, "(s) => [...document.querySelectorAll(s + ' .cgrp-level__label')].some(e => e.textContent === 'missing')", card)
 
 
 # ------------------------------------------------------------------ 2. invalid entry
