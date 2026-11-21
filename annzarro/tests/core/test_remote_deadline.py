@@ -116,28 +116,37 @@ def test_wrapping_is_idempotent(loop):
 
 
 def test_threads_keep_separate_deadlines_on_one_filesystem(loop):
+    """Three threads, one filesystem, three deadlines. How long the short one took is wall-clock time, which
+    a loaded machine stretches without bound: it is measured three times and judged on the quickest, while
+    every repetition must still end in the same outcomes (a real defect, such as a deadline shared between
+    threads, shows in all of them)."""
     fs = bound_by_deadline(FakeFs(0.6))
-    outcome = {}
+    short_took = []
 
-    def request(name, seconds):
-        start = time.monotonic()
-        with deadline(seconds):
-            try:
-                _read(loop, fs)
-                outcome[name] = ("ok", time.monotonic() - start)
-            except RemoteDeadlineExceeded as exc:
-                outcome[name] = ("deadline", time.monotonic() - start, exc.seconds)
+    for _ in range(3):
+        outcome = {}
 
-    threads = [threading.Thread(target=request, args=args)
-               for args in (("short", 0.2), ("long", 5), ("none", None))]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    assert outcome["short"][0] == "deadline" and outcome["short"][2] == 0.2
-    assert 0.15 <= outcome["short"][1] < 0.55
-    assert outcome["long"][0] == "ok" and outcome["none"][0] == "ok"
-    assert remote._deadline.get() is None
+        def request(name, seconds):
+            start = time.monotonic()
+            with deadline(seconds):
+                try:
+                    _read(loop, fs)
+                    outcome[name] = ("ok", time.monotonic() - start)
+                except RemoteDeadlineExceeded as exc:
+                    outcome[name] = ("deadline", time.monotonic() - start, exc.seconds)
+
+        threads = [threading.Thread(target=request, args=args)
+                   for args in (("short", 0.2), ("long", 5), ("none", None))]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert outcome["short"][0] == "deadline" and outcome["short"][2] == 0.2
+        assert outcome["short"][1] >= 0.15
+        assert outcome["long"][0] == "ok" and outcome["none"][0] == "ok"
+        assert remote._deadline.get() is None
+        short_took.append(outcome["short"][1])
+    assert min(short_took) < 0.55, short_took
 
 
 def test_a_socket_timeout_inside_the_call_is_not_taken_for_the_deadline(loop):
