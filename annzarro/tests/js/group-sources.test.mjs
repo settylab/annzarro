@@ -201,6 +201,21 @@ test('histograms of the factors a panel shows are asked for, and are part of the
     assert.notEqual(panel.read().key, plot.read().key);
 });
 
+test('a histogram position past the recipe makes no separate key and no separate request', async () => {
+    const w = world();
+    w.grouping('g1', 'Grouping 1', [obs('total_counts', { binning: { method: 'equal_width', bins: 4 } })]);
+    const plain = w.watch('g1', {}, { kind: 'grouping', panelId: 'g1' });
+    const early = w.watch('g1', { histograms: [1] }, { kind: 'grouping', panelId: 'g1' });
+    await settle();
+    assert.equal(w.calls.compute.length, 1, 'the card of an edit not yet applied asks for nothing more');
+    assert.deepEqual(w.calls.compute[0].recipe.want.histograms, []);
+    assert.equal(plain.read().key, early.read().key);
+    const both = w.watch('g1', { histograms: [0, 3] }, { kind: 'grouping', panelId: 'g1' });
+    await settle();
+    assert.deepEqual(w.calls.compute[1].recipe.want.histograms, [0], 'a position the recipe has is kept, the rest left out');
+    assert.notEqual(both.read().key, plain.read().key);
+});
+
 test('a table gate upstream: its state, its buttons, then the cells it passes as a bitset', async () => {
     const w = world();
     w.panels.set('t1', { title: 'Table 1', kind: 'table' });
