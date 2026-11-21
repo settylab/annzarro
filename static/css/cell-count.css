@@ -1,1 +1,95 @@
-/* Cell Count Plot panel: its styles only (the shared ones are in styles.css). Empty until the panel is built. */
+/* Cell Count Plot panel (panels/cell-count.js): its styles only (the shared ones are in styles.css).
+   Top to bottom (UX 4.1): the control bar, the plot with its state over it, the strip. Colours are the theme's tokens
+   (theme.css), so light and dark follow. Narrow (UX 4.7): the rows stack, and the arrangement wraps under Color by. */
+
+.tile-content > .ccnt-panel { flex: 1 1 auto; min-height: 0; }
+.ccnt-panel {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    height: 100%;
+    min-height: 0;
+    font-size: 0.8125rem;
+    container: ccnt / inline-size;
+}
+
+/* the control bar */
+.ccnt-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--az-border);
+    background-color: var(--az-surface-2);
+    max-height: 55%;
+    overflow: auto;
+    flex: 0 0 auto;
+}
+.ccnt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0; }
+.ccnt-row[hidden], .ccnt-input[hidden] { display: none; }
+.ccnt-row > .ctl-label, .ccnt-row > .axis-selector-label { flex: 0 0 4.75rem; margin: 0; color: var(--az-text); font-weight: 600; }
+.ccnt-row .axis-selector { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+.ccnt-row .form-select, .ccnt-row .form-control { width: auto; max-width: 13rem; }
+.ccnt-row .form-select:disabled { opacity: 0.6; }
+.ccnt-row__extra { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ccnt-bins, .ccnt-choose { padding: 0 2px; font-size: 0.75rem; text-decoration: none; }
+.ccnt-help { color: var(--az-muted); font-size: 0.75rem; }
+.ccnt-above { width: 5rem !important; }
+.ccnt-above-wrap[hidden] { display: none; }
+.ccnt-above-wrap, .ccnt-fade-wrap, .ccnt-opt { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+
+/* Color by's arrangement: a radio group that reads as buttons */
+.ccnt-arrangement { display: inline-flex; flex-wrap: wrap; gap: 2px; margin-left: 4px; }
+.ccnt-arrangement[hidden] { display: none; }
+.ccnt-arrangement__opt {
+    display: inline-flex; align-items: center; margin: 0; padding: 1px 8px; border: 1px solid var(--az-border-strong);
+    border-radius: 3px; background: var(--az-surface); color: var(--az-text); cursor: pointer; font-size: 0.75rem;
+}
+.ccnt-arrangement__input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.ccnt-arrangement__opt:has(.ccnt-arrangement__input:checked) { background: var(--az-surface-3); border-color: var(--az-link); font-weight: 600; }
+.ccnt-arrangement__opt:has(.ccnt-arrangement__input:focus-visible) { outline: 2px solid var(--az-link); outline-offset: 1px; }
+
+/* an input's binning control and its level list, opened in place under its row (UX 4.4) */
+.ccnt-binning, .ccnt-levels {
+    margin: 2px 0 4px 4.75rem; padding: 6px 8px; border: 1px solid var(--az-border); border-radius: 4px; background: var(--az-surface);
+}
+.ccnt-binning[hidden], .ccnt-levels[hidden] { display: none; }
+.ccnt-levels__list { list-style: none; margin: 0; padding: 0; max-height: 12rem; overflow: auto; }
+.ccnt-level { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+.ccnt-level__tick { display: inline-flex; align-items: center; gap: 4px; margin: 0; flex: 1 1 auto; min-width: 0; }
+.ccnt-level__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ccnt-level__n { margin-left: auto; color: var(--az-muted); font-variant-numeric: tabular-nums; }
+.ccnt-levels__wait { color: var(--az-muted); }
+.ccnt-rest-row, .ccnt-levels__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; }
+.ccnt-rest-opt { display: inline-flex; align-items: center; gap: 2px; margin: 0; }
+
+.ccnt-row--labels .btn.active { background: var(--az-surface-3); border-color: var(--az-link); color: var(--az-text); }
+.ccnt-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-left: 4.75rem; }
+.ccnt-options[hidden], .ccnt-opt[hidden] { display: none; }
+.ccnt-kept { color: var(--az-muted); font-size: 0.75rem; }
+.ccnt-kept[hidden] { display: none; }
+.ccnt-controls__foot { display: flex; justify-content: flex-end; }
+.ccnt-sets[hidden] { display: none; }
+
+/* the plot, and what it says when there is nothing to draw (never resizes the plot) */
+.ccnt-plot-area { position: relative; flex: 1 1 auto; min-height: 160px; }
+.ccnt-plot { position: absolute; inset: 0; }
+.ccnt-state {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 12px; text-align: center; color: var(--az-text); background: var(--az-surface); z-index: 2;
+}
+.ccnt-state[hidden] { display: none; }
+.ccnt-state__text { margin: 0; max-width: 32rem; }
+.ccnt-state[data-state="failed"] .ccnt-state__text,
+.ccnt-state[data-state="refused"] .ccnt-state__text,
+.ccnt-state[data-state="cycle"] .ccnt-state__text { color: var(--az-danger-text); }
+.ccnt-state[data-state="empty"] .ccnt-state__text, .ccnt-state[data-state="unavailable"] .ccnt-state__text { color: var(--az-muted); }
+.ccnt-state__actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+.ccnt-strip { flex: 0 0 auto; min-height: 1.3em; padding: 1px 8px; color: var(--az-muted); font-size: 0.75rem; }
+
+/* narrow: the label goes above its selects (UX 4.7) */
+@container ccnt (max-width: 420px) {
+    .ccnt-row > .ctl-label, .ccnt-row > .axis-selector-label { flex-basis: 100%; }
+    .ccnt-binning, .ccnt-levels, .ccnt-options { margin-left: 0; }
+    .ccnt-arrangement { margin-left: 0; }
+}

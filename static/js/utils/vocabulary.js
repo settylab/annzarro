@@ -195,6 +195,7 @@ const countPlot = Object.freeze({
     }),
     valueHelp: Object.freeze({
         count: 'Cells in the bar.',
+        countColor: 'Cells in the rectangle.',
         share: 'As percent.',
         heatmapShare: 'As percent: of the row, of the column, of the total.',
         stat: 'A statistic of the source below, over the cells of the bar.',

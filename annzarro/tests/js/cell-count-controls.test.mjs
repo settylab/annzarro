@@ -1,5 +1,5 @@
 /**
- * C2a: the Cell Count Plot's controls, without a page (panels/cell-count/controls.js).
+ * C2a: the Cell Count Plot's controls, without a page (panels/cell-count/controls-model.js).
  *
  *   - the rows each mode shows, in the order of UX 4.1, and the inputs per mode of UX 4.2;
  *   - a mode change keeps every input, and the "Kept for other modes" line names what the mode does not read (CNT-6);
@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 
 globalThis.fetch = async () => ({ ok: false, status: 404, statusText: 'offline in test' });
 
-const K = await import('../../../static/js/panels/cell-count/controls.js');
+const K = await import('../../../static/js/panels/cell-count/controls-model.js');
 const M = await import('../../../static/js/utils/count-plot-model.js');
 const R = await import('../../../static/js/utils/panel-references.js');
 const { VOCABULARY } = await import('../../../static/js/utils/vocabulary.js');
