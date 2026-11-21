@@ -133,7 +133,7 @@ test('threshold line: names the threshold, and keeps the sentence the page has a
 });
 
 const KINDS = ['counts', 'normalised', 'log', 'signed', 'other', undefined];
-const KIND_PHRASE = { counts: 'Raw counts', normalised: 'Normalised', log: 'Log values', signed: 'negative values' };
+const KIND_PHRASE = { counts: 'Raw counts', normalised: 'Normalized', log: 'Log values', signed: 'negative values' };
 
 test('layer lines: each names the kind or the threshold in force, over every kind and offered set', () => {
     const subsets = [['zscore_mean'], ['mean', 'sum'], ['sum', 'fraction_of_total'], ['detected'], O.METHODS];

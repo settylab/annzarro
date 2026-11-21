@@ -187,7 +187,7 @@ test('a layer row says its properties once and only for what is offered', () => 
     assert.deepEqual(lines('raw_counts', 'counts', { offered: ['zscore_mean', 'mean', 'sum'] }), ['Raw counts: z-score mean, mean and sum follow sequencing depth.']);
     assert.deepEqual(lines('raw_counts', 'counts', { offered: ['sum'] }), ['Raw counts: sum follows sequencing depth.']);
     assert.deepEqual(lines('raw_counts', 'counts', { offered: ['fraction_of_total'] }), [], 'counts is what % of total wants');
-    assert.deepEqual(lines('n', 'normalised'), ['Normalised but not log-transformed: one highly expressed gene can dominate.']);
+    assert.deepEqual(lines('n', 'normalised'), ['Normalized but not log-transformed: one highly expressed gene can dominate.']);
     assert.deepEqual(lines('l', 'log'), [], 'nothing offered cares');
     assert.deepEqual(lines('l', 'log', { offered: ['fraction_of_total'] }), ['Log values: % of total is compressed. It is usually read from counts.']);
     assert.deepEqual(lines('X', 'signed', { offered: ['zscore_mean', 'fraction_of_total'] }), ['Has negative values: % of total is not offered here.']);
@@ -218,7 +218,7 @@ test('under a method only what every offered layer shares is said, once; the res
 
 test('what a layer looks like has one word, and use is said in words', () => {
     assert.deepEqual(['counts', 'normalised', 'log', 'signed', 'other', 'unknown'].map(O.kindWord),
-        ['counts', 'normalised', 'log-normalised', 'scaled', 'other', '']);
+        ['counts', 'normalized', 'log-normalized', 'scaled', 'other', '']);
     assert.equal(O.useText({}), '');
     assert.equal(O.useText({ plots: 1 }), '1 plot');
     assert.equal(O.useText({ plots: 2, tables: 1 }), '2 plots, 1 table');
