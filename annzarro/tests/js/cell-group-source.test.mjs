@@ -282,6 +282,11 @@ test("the notices say a grouping's words (SHR-35, UX 5)", () => {
     assert.equal(cycle.headline, "'G1' and 'G2' depend on each other. This plot has no color.");
     assert.equal(cycle.tag.text, 'Circular groupings');
     assert.deepEqual(cycle.actions, [open, ['score-choose', 'Choose another']]);
+    // the group sources name each panel of the ring once
+    assert.equal(say({ state: 'cycle', cycle: ['G1', 'G2'], cycleKinds: ['grouping', 'grouping'] }).headline,
+        "'G1' and 'G2' depend on each other. This plot has no color.");
+    assert.equal(say({ state: 'cycle', cycle: ['G1', 'Table 2', 'G3'], cycleKinds: ['grouping', 'table', 'grouping'] }).headline,
+        "'G1', 'Table 2', 'G3' depend on each other in a circle. This plot has no color.");
     const empty = say({ state: 'nofactors' }, 'x');
     assert.equal(empty.headline, "'G1' has no factors yet.");
     assert.deepEqual(empty.actions, [open, ['score-choose', 'Choose another']]);

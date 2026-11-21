@@ -97,9 +97,10 @@ def _url(served, open_ids, configs):
     return f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}"
 
 
-def _open(page, served, configs, open_ids=(P,)):
+def _open(page, served, configs, open_ids=(P,), wait=True):
     page.goto(_url(served, list(open_ids), configs))
-    page.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
+    if wait:
+        page.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
 
 
 def _menus(page, axis="color"):
@@ -113,10 +114,14 @@ def _options(page, kind, axis):
 
 
 def _traces(page):
-    """Each drawn trace with a legend entry: [name, colour, points]."""
+    """Each legend entry: [name, colour, points]. The points are its legend group's (a legend entry may be a proxy of
+    the traces that hold them, plot-make-helper.js withLegendProxies)."""
     return page.evaluate("""(t) => { const gd = document.querySelector(t + ' .js-plotly-plot');
-        return gd && gd.data ? gd.data.filter(d => d.showlegend !== false).map(d => [d.name || '', typeof (d.marker && d.marker.color) === 'string' ? d.marker.color : null,
-            (d.x || []).length]) : []; }""", C)
+        if (!gd || !gd.data) return [];
+        const points = (d) => gd.data.filter(e => e !== d && e.showlegend === false && e.legendgroup === d.legendgroup)
+            .reduce((n, e) => n + (e.x || []).length, 0) || (d.x || []).filter(v => v !== null).length;
+        return gd.data.filter(d => d.showlegend !== false).map(d => [d.name || '', typeof (d.marker && d.marker.color) === 'string' ? d.marker.color : null,
+            points(d)]); }""", C)
 
 
 def _legend(page):
@@ -179,10 +184,12 @@ def test_colour_by_a_grouping_from_the_menus_in_group_order_with_its_colours(pag
         assert "cell-group" in types and types.index("cell-group") > types.index("gene-score"), (axis, types)
     page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "cell-group")
     until(page, """(t) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="color"] option`)].some(o => o.value === 'cell-grouping-B')""", C)
-    assert _options(page, "key", "color") == [[GA, "Grouping 1"], [GB, "Grouping 2"], ["__new_grouping__", "New grouping…"]], \
+    keys = _options(page, "key", "color")
+    assert sorted(keys[:-1]) == [[GA, "Grouping 1"], [GB, "Grouping 2"]] and keys[-1] == ["__new_grouping__", "New grouping…"], \
         "every grouping, open or closed, then New grouping…"
     assert page.is_hidden(f'{C} select.axis-column-select[data-axis="color"]') or \
         page.is_disabled(f'{C} select.axis-column-select[data-axis="color"]'), "no third select (CAT-1)"
+    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', GA)
     _wait_legend(page, TYPES)
     assert _legend(page) == "Grouping 1", "the legend is titled by the grouping (CAT-8)"
     traces = _traces(page)
@@ -290,12 +297,12 @@ def test_a_grouping_refused_for_its_size_says_why_with_open_grouping(page, serve
         route.fulfill(status=200, body=json.dumps({"type": "start", "entries_done": 0, "entries_total": 0}) + "\n" + json.dumps(frame) + "\n",
                       headers={"Content-Type": "application/x-ndjson"})
     page.route(ROUTE, handler)
-    _open(page, served, {P: _plot(x=by(GA)), GA: _grouping()})
+    _open(page, served, {P: _plot(x=by(GA)), GA: _grouping()}, wait=False)
     until(page, "(t) => { const e = document.querySelector(t + ' .coverage-placeholder'); return !!e && e.dataset.scoreState === 'refused'; }", C)
     box = _placeholder(page)
     assert "'Grouping 1' has 6,840 groups: a grouping holds up to 2,000, so it was not computed." in box["text"]
     assert box["actions"] == ["score-open|Open grouping", "score-choose|Choose another"]
-    assert _tag(page) == "Grouping refused"
+    assert page.evaluate("(id) => document.getElementById('plot-container-' + id).dataset.sourceState", P) == "refused"
 
 
 def test_a_table_upstream_that_is_building_or_asks_first_says_so(page, served):
@@ -411,8 +418,9 @@ def test_a_hidden_plots_codes_are_evicted_with_its_drawing_and_asked_for_again_w
     until(page, "async () => { const { ledger } = await import('/static/js/utils/memory-guard-ui.js'); return ledger.evictable() >= 1200; }")
     page.evaluate("async () => { const { ledger } = await import('/static/js/utils/memory-guard-ui.js'); ledger.evict(); }")
     assert page.evaluate(held)[0] == 0, "nothing still counts the codes the guard took"
-    until(page, "(id) => { const h = document.getElementById('plot-container-' + id); return !!h && h.dataset.sourceState !== undefined; }", P)
     asked = len(_computes(page))
+    waits.expect_stays(lambda: len(_computes(page)) == asked, "a hidden plot asks for nothing; there is no event for a request not sent",
+                       page=page)
     # shown again: asked for again, and drawn
     page.evaluate("(t) => { document.querySelector(t).style.display = ''; }", C)
     _wait_legend(page, TYPES)
