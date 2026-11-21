@@ -690,6 +690,9 @@ class _Levels:
         self.bounds: Dict[int, Tuple[Optional[float], Optional[float]]] = {}
         self.categories: Optional[List[str]] = None
         self.absent: List[str] = []
+        #: The level limit the stored categories are compared with before any cell is read (a count plot's axis
+        #: sets its own); past it, the categories that hold a cell shown are counted instead (SHR-6, SHR-7).
+        self.level_limit: Optional[int] = None
         self.info: Dict[str, Any] = {}
         self.counts: Optional[np.ndarray] = None
         self.count = True
@@ -959,9 +962,11 @@ class _Levels:
         else:
             self._prepare_column_categories()
 
-    def _from_codes(self, ids: List[str], codes_slabs: Iterator[Tuple[int, np.ndarray]]) -> None:
-        """Codes index ``ids``; -1 is a missing value (``lut[-1]``, the slot of a missing value, is last)."""
-        lut = self._set_categories(ids)
+    def _from_codes(self, ids: List[str], codes_slabs: Iterator[Tuple[int, np.ndarray]],
+                    lut: Optional[np.ndarray] = None) -> None:
+        """Codes index ``ids``; -1 is a missing value (``lut[-1]``, the slot of a missing value, is last). ``lut``
+        given: the slots are set already (``_from_occupied``)."""
+        lut = self._set_categories(ids) if lut is None else lut
         self.info["n_no_value"] = 0
 
         def slabs():
@@ -970,6 +975,27 @@ class _Levels:
                 self.info["n_no_value"] += int(np.count_nonzero(c < 0))
                 yield start, lut[c]
         self._slabs = slabs()
+
+    def _from_occupied(self, ids: List[str], first_read: Iterator[cs.Slab], limit: int) -> None:
+        """More stored categories than the level limit: the levels are the categories that hold a cell shown
+        (SHR-6, SHR-7; a subset keeps every category of its atlas). One pass over the codes counts them. Over the
+        limit, ``prepare()`` refuses with that count; within it, a second read assigns the cells. ``categories``
+        still lists every stored category."""
+        self._set_categories(ids)                    # the ambiguity check, and categories
+        counts = np.zeros(len(ids) + 1, dtype=np.int64)
+        for slab in first_read:
+            self.ctx.check()
+            c = np.asarray(slab.values)
+            counts += np.bincount(np.where(c < 0, len(ids), c), minlength=len(ids) + 1)
+        used = np.flatnonzero(counts[:-1])
+        exclude = self.part.spec.rest == "exclude"
+        self.slots = [ids[i] for i in used.tolist()] + ([] if exclude else ["@na"])
+        if used.size > limit:
+            return
+        lut = np.full(len(ids) + 1, NONE16, dtype=np.uint16)
+        lut[used] = np.arange(used.size, dtype=np.uint16)
+        lut[-1] = NONE16 if exclude else used.size
+        self._from_codes(ids, ((s.start, s.values) for s in self._column(self.ctx.rows)), lut=lut)
 
     def _prepare_index(self) -> None:
         n = self.ctx.n_shown
@@ -1046,7 +1072,12 @@ class _Levels:
             yield from slabs
         if first.kind == "category":
             ids = [canonical_label(v) for v in first.categories]
-            self._from_codes(ids, ((s.start, s.values) for s in rest()))
+            limit = GROUPING_LIMITS["levels"] if self.level_limit is None else \
+                min(self.level_limit, GROUPING_LIMITS["levels"])
+            if len(ids) > limit and self.part.member is None and self.part.spec.levels is None:
+                self._from_occupied(ids, rest(), limit)
+            else:
+                self._from_codes(ids, ((s.start, s.values) for s in rest()))
             self._uns_colors(ids)
         elif first.kind == "bool":
             ids = ["c:false", "c:true"]
