@@ -59,9 +59,11 @@ def layout(tmp_path_factory):
 def fresh():
     zarr_reader.clear_cache()
     cell_subset.clear()
+    route.CODES.clear()                     # every test starts with a cold code cache
     yield
     zarr_reader.clear_cache()
     cell_subset.clear()
+    route.CODES.clear()
 
 
 @pytest.fixture
