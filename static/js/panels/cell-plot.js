@@ -1,5 +1,4 @@
-import { pinLayers } from '../utils/score-source.js';
-import { releaseSourceHost } from '../utils/source-registry.js';
+import { releaseHost, pinLayers } from '../utils/score-source.js';
 import { cancelIndexBuild } from './plot-utilities/large-plot.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
 import { createPanelStructure, initializeUIState, checkDatasetLoadingStatus } from './plot-utilities/panel-ui-make.js';
@@ -421,9 +420,8 @@ const CellPlotPanel = (function() {
          * Clean up resources
          */
         function cleanup() {
-            // what this plot shows from a provider (a score, a grouping) is no longer needed by it: each provider lets go
-            // at once, and a value nothing else needs stops computing and leaves the memory guard's ledger
-            if (_plotContainer) releaseSourceHost(_plotContainer);
+            // the scores this plot shows are no longer needed by it; one nothing else needs stops computing
+            if (_plotContainer) releaseHost(_plotContainer);
 
             // Remove document event listeners
             if (handleFocusedCellChanged.eventHandler) {

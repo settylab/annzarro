@@ -1,4 +1,4 @@
-import { getSource, parseAlsoListed } from '../../utils/source-registry.js';
+import { getSource } from '../../utils/source-registry.js';
 import { updateColorSliderUI, setupAxisSelector, takeSubKey, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
@@ -1177,17 +1177,6 @@ function setupAxisSelectorListeners(
     const axis = jQuery(this).data('axis');
     let newKey = jQuery(this).val();
     const $columnSelect = $container.find(`.axis-column-select[data-axis="${axis}"]`);
-
-    // a provider's entity listed under obs (a grouping, UX 5): the axis switches to that type and takes it. The entry's
-    // value is a way to choose and is never stored: the type select's change reads the key from the history
-    const listed = parseAlsoListed(newKey);
-    if (listed) {
-      settings[axis].history = settings[axis].history || {};
-      settings[axis].history[listed.type] = { ...(settings[axis].history[listed.type] || {}), key: listed.key };
-      jQuery(this).val(settings[axis].key || '');
-      $container.find(`.axis-type-select[data-axis="${axis}"]`).val(listed.type).trigger('change');
-      return;
-    }
 
     // a provider's way to make an entity ("New signature…"): it opens beside this plot and this axis takes it
     const provider = getSource(settings[axis].type);

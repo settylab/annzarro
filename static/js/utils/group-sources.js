@@ -13,8 +13,7 @@
  *   shown that pass it, with their hash; a score's recipe, inline; another grouping's applied recipe). So a key follows
  *   PER-3 (the hash of the bitset sent, of the score's recipe, of the upstream grouping), an upstream change is an edit
  *   of the source, and a rename changes nothing.
- * - GATES, in this order, before anything is asked: a cycle through the source (SHR-34), a grouping with no factor yet
- *   (`nofactors`, reason 'no_factors'), groupings nested deeper than
+ * - GATES, in this order, before anything is asked: a cycle through the source (SHR-34), groupings nested deeper than
  *   the server takes, a table factor above 1M cells shown (SHR-33), the gate of a table or a score source upstream (the
  *   host's: building, ask, refused, failed), and an upstream grouping whose groups for its current recipe are not there
  *   yet (its own state). Behind a gate that is computing, a consumer keeps what it shows.
@@ -31,7 +30,6 @@
  * names. `namesOf` and `labelsOf` make them once per reply and recipe.
  */
 import { createDerivedSources } from './derived-sources.js';
-import { VOCABULARY } from './vocabulary.js';
 import { normalizeGrouping, groupingHasher, groupNames, serverRequest, MAX_NESTING } from './cell-grouping.js';
 import { groupNeed } from './group-store.js';
 import { labelledGroups } from './group-reference.js';
@@ -251,10 +249,6 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
         if (cycle) return { gate: { state: 'cycle', cycle: cycle.map(host.titleOf), cycleKinds: cycle.map(host.kindOf) }, actions: null };
         const src = host.source(id);
         if (!src) return null;
-        // a grouping with no factor yet (a new one): there is nothing to ask the server, so nothing is asked
-        if (src.shape === GROUPING && !src.shape.sources(recipeOf(src)).length) {
-            return { gate: { state: 'nofactors', reason: 'no_factors' }, actions: null };
-        }
         if (depthOf(id, new Set([id]), true) > MAX_NESTING + 1) {
             return { gate: { state: 'refused', reason: 'nested_too_deep', message: TOO_DEEP }, actions: null };
         }
@@ -277,10 +271,8 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
                 // the upstream's groups for its current recipe: until they are there, its names could not be given
                 if (snap.state === 'ready' && snap.values) continue;
                 const gone = snap.state === 'deleted' || snap.state === 'off';
-                // the upstream's own state, as it stands: computing, asks first, refused, failed, a gate of its own (one
-                // that has no factor is said as the upstream's, not as this grouping's)
-                const gate = gone ? { state: 'failed', reason: 'upstream_gone', message: 'the grouping it uses is gone' }
-                    : snap.state === 'nofactors' ? { state: 'failed', reason: 'upstream_no_factors', message: VOCABULARY.phrase.noFactors('the grouping it uses') } : {
+                // the upstream's own state, as it stands: computing, asks first, refused, failed, a gate of its own
+                const gate = gone ? { state: 'failed', reason: 'upstream_gone', message: 'the grouping it uses is gone' } : {
                     state: snap.state === 'ready' || snap.state === 'updating' ? 'computing' : snap.state, progress: snap.progress || null,
                     estimate: snap.estimate || null, message: snap.message || null, reason: snap.reason || null,
                     ...(snap.cycle ? { cycle: snap.cycle, cycleKinds: snap.cycleKinds } : {})

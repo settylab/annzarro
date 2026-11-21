@@ -59,14 +59,12 @@ const RING_B = grouping('cell-grouping-11', 'Ring B', byGrouping('cell-grouping-
 const GONE = grouping('cell-grouping-12', 'Soon gone', byColumn('cell_type'));
 const FRESH = grouping('cell-grouping-13', 'Fresh', byColumn('batch'));
 const SLOW_TOO = grouping('cell-grouping-14', 'Slow too', byColumn('slow_too'));
-const ALONE = grouping('cell-grouping-15', 'Alone', byColumn('alone'));
-const ALONE = grouping('cell-grouping-15', 'Alone', byColumn('alone'));
 const plotConfigs = new Map();
 const plots = new Map();
 const plot = (id) => ({ getId: () => id, getType: () => 'cell-plot', getTitle: () => id,
     getConfig: () => { if (!plotConfigs.has(id)) plotConfigs.set(id, {}); return plotConfigs.get(id); } });
-let all = [G1, G2, EMPTY, MANY, WIDE, OWN, BIG, SLOW, RING_A, RING_B, GONE, FRESH, SLOW_TOO, ALONE];
-let all = [G1, G2, EMPTY, MANY, WIDE, OWN, BIG, SLOW, RING_A, RING_B, GONE, FRESH, SLOW_TOO, ALONE];
+const made = [];
+let all = [G1, G2, EMPTY, MANY, WIDE, OWN, BIG, SLOW, RING_A, RING_B, GONE, FRESH, SLOW_TOO];
 function panelOf(id) {
     const found = all.find((p) => p.getId() === id);
     if (found) return found;
@@ -457,147 +455,4 @@ test("a plot's colour, axis and hover keys of a grouping follow a remap", () => 
     assert.equal(cfg.color.key, 'cell-grouping-5');
     assert.equal(cfg.x.key, 'cell-grouping-5');
     assert.equal(cfg.hoverInfo[0].key, 'cell-grouping-5');
-
-// ------------------------------------------------------------------------------------------------ the shared seams
-
-test('the legend names the cells in no group "Not in any group"; every other source keeps NA (SHR-5)', async () => {
-    const got = await settle(setting('cell-grouping-1'), plotHost());
-    assert.equal(R.plotSeries(got).missingLabel, 'Not in any group');
-    const column = R.plotSeries({ type: 'categorical', codes: new Uint8Array([0, 255]), MISSING: 255, categories: ['a'], coverage: null });
-    assert.equal(column.missingLabel, null, "another provider's series: the plot's own 'NA'");
-    assert.equal(R.plotSeries({ type: 'numerical', values: [1], coverage: null }).missingLabel, null);
 });
-
-test('the obs key list lists the groupings under "Groupings"; the entry is a way to choose, never a key', () => {
-    const entries = R.alsoListedEntries('obs', 'cell-plot', ['color']);
-    assert.deepEqual(entries.slice(0, 2).map((e) => [e.text, e.group]), [['Cell type', 'Groupings'], ['Closed one', 'Groupings']]);
-    for (const e of entries) {
-        assert.ok(e.value.startsWith('\u0001'), 'no stored key or column name can look like it');
-        const parsed = R.parseAlsoListed(e.value);
-        assert.equal(parsed.type, TYPE);
-        assert.ok(all.some((p) => p.getId() === parsed.key));
-    }
-    assert.equal(R.parseAlsoListed('cell_type'), null);
-    assert.equal(R.parseAlsoListed('\u0001no-such-type\u0001x'), null);
-    assert.deepEqual(R.alsoListedEntries('obs', 'gene-plot', ['color']), [], 'not a Gene Plot source');
-    assert.deepEqual(R.alsoListedEntries('obsm', 'cell-plot', ['color']), []);
-});
-
-test('a plot is no panel\'s dependency, so no choice of a grouping in a plot can close a loop (operator decision 15)', () => {
-    // a page with every kind of reference a plot, a table, a signature and a grouping can hold
-    const page = new Map([
-        ['cell-plot-P', { type: 'cell-plot', config: { tableFilter: 'cell-table-T', color: setting('cell-grouping-1'), x: setting('cell-grouping-2'),
-            y: { type: 'gene-score', key: 'gene-signature-S', column: '' }, hoverInfo: [setting('cell-grouping-1')],
-            z: { type: 'obs', key: 'c', column: '', history: { [TYPE]: { key: 'cell-grouping-2' } } } } }],
-        ['cell-table-T', { type: 'cell-table', config: { tableFilter: 'cell-table-U', columns: [setting('cell-grouping-1'),
-            { type: 'gene-score', key: 'gene-signature-S', column: '' }] } }],
-        ['cell-table-U', { type: 'cell-table', config: { columns: [] } }],
-        ['gene-table-V', { type: 'gene-table', config: { tableFilter: 'gene-signature-S', columns: [] } }],
-        ['gene-signature-S', { type: 'gene-signature', config: {} }],
-        ['cell-grouping-1', { type: 'cell-grouping', config: { partitionings: [{ source: { type: 'table', key: 'cell-table-T' } },
-            { source: { type: 'gene-score', key: 'gene-signature-S' } }, { source: { type: TYPE, key: 'cell-grouping-2' } }] } }],
-        ['cell-grouping-2', { type: 'cell-grouping', config: { partitionings: [{ source: { type: 'obs', key: 'c' } }] } }]
-    ]);
-    PR.setReferenceHost({ panel: (id) => page.get(id) || null, ids: () => [...page.keys()] });
-    try {
-        for (const id of page.keys()) assert.ok(!PR.dependsOn(id).includes('cell-plot-P'), `${id} depends on no plot`);
-        assert.deepEqual(PR.usersOf('cell-plot-P'), []);
-        // what a plot's colour, axis or hover may name: the entities of the providers, none of them a plot
-        for (const p of R.sourcesFor('cell-plot', ['color'])) {
-            for (const e of p.entities()) assert.ok(!e.id.startsWith('cell-plot-') && !e.id.startsWith('gene-plot-'), `${p.type}: ${e.id}`);
-        }
-        // a grouping's factors name tables, scores and groupings only
-        assert.deepEqual([...F.PANEL_SOURCES].sort(), ['cell-group', 'gene-score', 'table']);
-        for (const g of ['cell-grouping-1', 'cell-grouping-2']) assert.equal(PR.wouldLoop('cell-plot-P', g), false, g);
-    } finally {
-        PR.setReferenceHost({ panel: (id) => { const p = all.find((x) => x.getId() === id); return p ? { type: p.getType(), config: p.getConfig() } : null; },
-            ids: () => all.map((p) => p.getId()) });
-    }
-});
-
-test('a closed plot lets go of its groupings at once, in every provider (the codes leave the ledger)', async () => {
-    const h = plotHost();
-    const s = setting('cell-grouping-15');
-    await settle(s, h);
-    const held = ledger.heldBytes();
-    R.releaseSourceHost(h);
-    assert.equal(ledger.heldBytes(), held - 6, "the plot's codes, nothing else's");
-    assert.equal(A.actions.available('score-choose', h), false, 'no record is left on the host');
-});
-});
-
-// ------------------------------------------------------------------------------------------------ the shared seams
-
-test('the legend names the cells in no group "Not in any group"; every other source keeps NA (SHR-5)', async () => {
-    const got = await settle(setting('cell-grouping-1'), plotHost());
-    assert.equal(R.plotSeries(got).missingLabel, 'Not in any group');
-    const column = R.plotSeries({ type: 'categorical', codes: new Uint8Array([0, 255]), MISSING: 255, categories: ['a'], coverage: null });
-    assert.equal(column.missingLabel, null, "another provider's series: the plot's own 'NA'");
-    assert.equal(R.plotSeries({ type: 'numerical', values: [1], coverage: null }).missingLabel, null);
-});
-
-test('the obs key list lists the groupings under "Groupings"; the entry is a way to choose, never a key', () => {
-    const entries = R.alsoListedEntries('obs', 'cell-plot', ['color']);
-    assert.deepEqual(entries.slice(0, 2).map((e) => [e.text, e.group]), [['Cell type', 'Groupings'], ['Closed one', 'Groupings']]);
-    for (const e of entries) {
-        assert.ok(e.value.startsWith('\u0001'), 'no stored key or column name can look like it');
-        const parsed = R.parseAlsoListed(e.value);
-        assert.equal(parsed.type, TYPE);
-        assert.ok(all.some((p) => p.getId() === parsed.key));
-    }
-    assert.equal(R.parseAlsoListed('cell_type'), null);
-    assert.equal(R.parseAlsoListed('\u0001no-such-type\u0001x'), null);
-    assert.deepEqual(R.alsoListedEntries('obs', 'gene-plot', ['color']), [], 'not a Gene Plot source');
-    assert.deepEqual(R.alsoListedEntries('obsm', 'cell-plot', ['color']), []);
-});
-
-test('a closed plot lets go of its groupings at once, in every provider (the codes leave the ledger)', async () => {
-    const h = plotHost();
-    const s = setting('cell-grouping-15');
-    await settle(s, h);
-    const held = ledger.heldBytes();
-    R.releaseSourceHost(h);
-    assert.equal(ledger.heldBytes(), held - 6, "the plot's codes, nothing else's");
-    assert.equal(A.actions.available('score-choose', h), false, 'no record is left on the host');
-});
-
-// ------------------------------------------------------------------------------------------------ the shared seams
-
-test('the legend names the cells in no group "Not in any group"; every other source keeps NA (SHR-5)', async () => {
-    const got = await settle(setting('cell-grouping-1'), plotHost());
-    assert.equal(R.plotSeries(got).missingLabel, 'Not in any group');
-    const column = R.plotSeries({ type: 'categorical', codes: new Uint8Array([0, 255]), MISSING: 255, categories: ['a'], coverage: null });
-    assert.equal(column.missingLabel, null, "another provider's series: the plot's own 'NA'");
-    assert.equal(R.plotSeries({ type: 'numerical', values: [1], coverage: null }).missingLabel, null);
-});
-
-test('the obs key list lists the groupings under "Groupings"; the entry is a way to choose, never a key', () => {
-    const entries = R.alsoListedEntries('obs', 'cell-plot', ['color']);
-    assert.deepEqual(entries.slice(0, 2).map((e) => [e.text, e.group]), [['Cell type', 'Groupings'], ['Closed one', 'Groupings']]);
-    for (const e of entries) {
-        assert.ok(e.value.startsWith('\u0001'), 'no stored key or column name can look like it');
-        const parsed = R.parseAlsoListed(e.value);
-        assert.equal(parsed.type, TYPE);
-        assert.ok(all.some((p) => p.getId() === parsed.key));
-    }
-    assert.equal(R.parseAlsoListed('cell_type'), null);
-    assert.equal(R.parseAlsoListed('\u0001no-such-type\u0001x'), null);
-    assert.deepEqual(R.alsoListedEntries('obs', 'gene-plot', ['color']), [], 'not a Gene Plot source');
-    assert.deepEqual(R.alsoListedEntries('obsm', 'cell-plot', ['color']), []);
-});
-
-test('the obs key list lists the groupings under "Groupings"; the entry is a way to choose, never a key', () => {
-    const entries = R.alsoListedEntries('obs', 'cell-plot', ['color']);
-    assert.deepEqual(entries.slice(0, 2).map((e) => [e.text, e.group]), [['Cell type', 'Groupings'], ['Closed one', 'Groupings']]);
-    for (const e of entries) {
-        assert.ok(e.value.startsWith('\u0001'), 'no stored key or column name can look like it');
-        const parsed = R.parseAlsoListed(e.value);
-        assert.equal(parsed.type, TYPE);
-        assert.ok(all.some((p) => p.getId() === parsed.key));
-    }
-    assert.equal(R.parseAlsoListed('cell_type'), null);
-    assert.equal(R.parseAlsoListed('\u0001no-such-type\u0001x'), null);
-    assert.deepEqual(R.alsoListedEntries('obs', 'gene-plot', ['color']), [], 'not a Gene Plot source');
-    assert.deepEqual(R.alsoListedEntries('obsm', 'cell-plot', ['color']), []);
-});
-

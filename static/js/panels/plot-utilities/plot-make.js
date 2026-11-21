@@ -1190,8 +1190,6 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           data.colorRankOf = colorData.rankOf || null;
           data.colorRanked = !!colorData.ranked;
           data.colorGroupNames = colorData.groupNames || null;
-          // what the legend calls the points without a category: a provider's own words ('Not in any group'), else 'NA'
-          data.colorMissingLabel = colorData.missingLabel || null;
           data.colorCoverage = colorData.coverage || null;
           // Update any color control UI in the container.
           updateColorControlsVisibility(container, data.colorType, id);

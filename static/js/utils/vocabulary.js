@@ -72,9 +72,7 @@ const phrase = Object.freeze({
     between: (name, lo, hi) => `${name} ${lo} to ${hi}`,
     atLeast: (name, x) => `${name} ≥ ${x}`,
     positiveBelow: (name, x) => `0 < ${name} < ${x}`,
-    suffixed: (name, n) => `${name} (${n})`,
-    /** A grouping that cannot be computed yet: "'Grouping 3' has no factors yet." */
-    noFactors: (name) => `${name} has no ${plural.factor} yet.`
+    suffixed: (name, n) => `${name} (${n})`
 });
 
 /**

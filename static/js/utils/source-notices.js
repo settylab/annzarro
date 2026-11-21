@@ -73,7 +73,7 @@ export function coverageKindOf(snap) {
 
 /** Notice states, most urgent first: a plot with two sources states the worst. A state not listed is the least urgent. */
 export const PRIORITY = ['nolayer', 'nodown', 'notcells', 'unset', 'deleted', 'off', 'cycle', 'failed', 'refused', 'ask', 'awaiting', 'cancelled', 'noscore',
-    'nogenes', 'nofactors', 'building', 'estimating', 'queued', 'computing', 'updating', 'held', 'notoffered'];
+    'nogenes', 'building', 'estimating', 'queued', 'computing', 'updating', 'held', 'notoffered'];
 
 const RANK = new Map(PRIORITY.map((state, i) => [state, i]));
 
@@ -225,9 +225,6 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
                     : `Building ${U} to find its ${found}, then ${act.ing} them.${none}`, '',
                 snap.gate && snap.gate.frozen ? [open] : [['score-cancel', cancelLabel], open]);
         }
-        case 'nofactors':
-            // a grouping with no factor yet: nothing was asked (group-sources.js gates it)
-            return out('nofactors', 'notice', `No ${VOCABULARY.plural.factor}`, `${VOCABULARY.phrase.noFactors(t)}${none}`, '', [open, choose]);
         case 'ask':
             return out('ask', 'notice', 'Filter not built',
                 `Building ${upstream()} to find its ${found} will pause the page for a few seconds.${none}`, '',

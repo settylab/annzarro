@@ -57,12 +57,6 @@ const NEW_GROUPING = '__new_grouping__';
 /** The heading of the groupings in the Hover picker and under obs in a key list (UX 5). */
 const GROUPINGS = capital(PL.grouping);
 
-/** The legend entry of the cells in no group (SHR-5, UX 5). */
-const NOT_IN_ANY_GROUP = capital(W.notInAnyGroup);
-
-/** The legend entry of the cells in no group (SHR-5, UX 5). */
-const NOT_IN_ANY_GROUP = capital(W.notInAnyGroup);
-
 /** The page's panel registry (window.PanelManager): importing panel-manager.js would load every panel. */
 const PanelManager = {
     getPanel: (id) => (globalThis.PanelManager ? globalThis.PanelManager.getPanel(id) : null),
@@ -89,6 +83,30 @@ function groupingList() {
 /** The title of the grouping a setting names, or what it was called when last seen (the setting's `label`). */
 function groupingTitle(setting) {
     const panel = groupingPanel(setting && setting.key);
+    return panel ? panel.getTitle() : (setting && (setting.label || setting.key)) || '';
+}
+
+/** Whether a grouping has no factor yet (a new one): nothing can be asked of the server for it. */
+function isEmptyGrouping(id) {
+    const panel = groupingPanel(id);
+    if (!panel || typeof panel.getRecipe !== 'function') return false;
+    const recipe = panel.getRecipe();
+    return !recipe || !Array.isArray(recipe.partitionings) || recipe.partitionings.length === 0;
+}
+
+/**
+ * Write into a consumer's setting what it is called: `label`, the grouping's title (kept for when it is deleted). A
+ * grouping's title has one line, so a `labelFull` left over from another source is dropped (titles read it first).
+ * @returns {boolean} whether it changed
+ */
+function nameSetting(setting) {
+    const panel = groupingPanel(setting.key);
+    const changed = (!!panel && setting.label !== panel.getTitle()) || setting.labelFull !== undefined;
+    if (panel) setting.label = panel.getTitle();
+    delete setting.labelFull;
+    return changed;
+}
+
 // ---------------------------------------------------------------------------------------------- the key list
 
 /**
@@ -183,12 +201,12 @@ function groupSeries(values, names, { hover = false } = {}) {
 /**
  * A ready grouping in a large plot's form (`loadLarge`): typed codes only, never a plain array per point. Up to 64
  * groups, with their names and colours; past 64, the codes are the groups' ranks already (a group's code is its place
-        groupNames: null, missingLabel: NOT_IN_ANY_GROUP, coverage: Coverage.complete(codes.length, 'cells') };
+ * in group order), so they are `ranked` and `groupNames` names the legend entry of each colour group.
  * @param {{codes: ArrayBufferView, reply: Object}} values
  * @param {string[]} names
  */
 function groupLargeSeries(values, names) {
-        groupNames: null, missingLabel: NOT_IN_ANY_GROUP, coverage: Coverage.complete(codes.length, 'cells') };
+    const { codes } = values;
     const MISSING = missingOf(codes);
     const parts = partsOf(values.reply, names);
     if (parts.many) return { type: 'categorical', codes, MISSING, categories: [], ranked: true, groupNames: parts.groupNames };
@@ -223,6 +241,9 @@ const VOCAB = Object.freeze({
         return panel && typeof panel.getTitle === 'function' ? panel.getTitle() : null;
     },
     states: {
+        nofactors(snap, f) {
+            return f.out('nofactors', 'notice', `No ${PL.factor}`, `${f.t} has no ${PL.factor} yet.${f.none}`, '', [f.open, f.choose]);
+        },
         notcells(snap, f) {
             return f.out('notcells', 'notice', 'Not a cell source', `${GROUPINGS} are a cell source; not available in a Gene Plot.`, '', []);
         },
@@ -231,14 +252,31 @@ const VOCAB = Object.freeze({
         },
         refused(snap, f) {
             const said = sizeRefusal(snap.refused);
+            if (!said) return undefined;
+            return f.out('refused', 'warning', f.tagOf('refused', `${f.Result} refused`), `${f.t} ${said}, so it was not computed.`, '', [f.open, f.choose]);
+        }
     }
 });
 
 /**
  * The notice of a plot's grouping in one state, or null when nothing is to be said (ready, no edits waiting). Pure: a
+ * refusal for its size names its figures from `snap.refused` (the binding adds them from the store).
+ * @param {Object} snap - from a handle's read()
+ * @param {{role?: string, sharers?: number}} [ctx] - `role`: 'colour', 'x', 'y', 'z' or 'hover'
  */
 function describeGrouping(snap, ctx = {}) {
     return describeSource(snap, ctx, VOCAB);
+}
+
+/** A refused snapshot with the route's figures (the group store keeps them in the header), for its sentence. */
+function withFigures(snap) {
+    if (!snap || snap.state !== 'refused' || !snap.key || snap.refused) return snap;
+    const header = groupSources().store.snapshot(snap.key).header;
+    return header && header.refused ? { ...snap, refused: header.refused } : snap;
+}
+
+/** A setting's role as a notice says it. */
+const roleWord = (role) => (role === 'color' ? 'colour' : (isHover(role) ? 'hover' : role));
 
 /** The series cannot be drawn yet, and why. */
 const unavailable = (notice, coverage, state = null) => new SourceUnavailable(notice.headline, notice, coverage, state, GROUP_TYPE);
@@ -249,7 +287,18 @@ const missingCoverage = (notice, setting, unit, total, kind) => Coverage.missing
 
 // ---------------------------------------------------------------------------------------------- records
 
-    return describeSource(snap, ctx, VOCAB);
+/** Whether the plot still reads the grouping a record holds (the user may have changed the axis). */
+function stillUsed(rec) {
+    const panel = rec.panelId ? PanelManager.getPanel(rec.panelId) : null;
+    if (!panel || typeof panel.getConfig !== 'function') return true;
+    const cfg = panel.getConfig();
+    if (isHover(rec.role)) return (cfg.hoverInfo || []).some((h) => h && h.type === GROUP_TYPE && h.key === rec.groupId);
+    const s = cfg[rec.role];
+    return !!(s && s.type === GROUP_TYPE && s.key === rec.groupId);
+}
+
+/** Draw the panel of a host again: the groups it drew changed. */
+function refreshPanel(host) {
     const panel = PanelManager.getPanel(panelIdOf(host));
     const reload = panel && (panel.refreshPlot || panel.refreshTable);
     if (typeof reload === 'function') Promise.resolve(reload()).catch(() => {});
@@ -257,7 +306,18 @@ const missingCoverage = (notice, setting, unit, total, kind) => Coverage.missing
 
 /**
  * The placeholder an axis shows while its grouping cannot be drawn, with the notice's progress bar. Also the progress
-    return describeSource(snap, ctx, VOCAB);
+ * repaint: it replaces itself.
+ */
+function drawGroupPlaceholder(host, notice) {
+    if (!host) return;
+    const unit = 'cells';
+    const cov = Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: W.grouping, unit, total: null, kind: coverageKindOf(notice) });
+    drawPlaceholder(host, cov, unit, {
+        actions: notice.actions,
+        say: { severity: notice.severity === 'error' ? 'error' : 'notice', headline: notice.headline, lines: notice.text ? [notice.text] : [] }
+    });
+    const box = host.querySelector('.coverage-placeholder');
+    if (box) {
         box.dataset.scoreState = notice.state;
         paintProgress(box, notice.progress || null, sentenceOf(notice));
     }
@@ -275,6 +335,17 @@ function emptyHandle(id, onChange) {
     return { read, release: stop, sharers: () => 1, compute: no, cancel: no, retry: no };
 }
 
+/** The id of the plots' grouping provider: its notices on the painter, its actions in the registry. */
+const PLOT_PROVIDER = 'plot-group';
+
+let _binding = null;
+
+/** The plots' records of groupings, made when first needed. */
+function binding() {
+    if (!_binding) {
+        _binding = createHostBinding({
+            id: PLOT_PROVIDER,
+            open: (host, role, setting, onChange) => {
                 const id = setting.key;
                 if (isEmptyGrouping(id)) return { groupId: id, empty: true, handle: emptyHandle(id, onChange) };
                 const handle = groupSources().sources.watch(id, {
@@ -287,16 +358,29 @@ function emptyHandle(id, onChange) {
             describe: (snap, ctx) => describeGrouping(withFigures(snap), ctx),
             stillUsed,
             // drawn again when: a factor was added to an empty grouping (or the last one removed); the grouping was
+            // renamed (its legend and axis titles name it); what the strip said of a grouping with no value changed
             stale: (rec, snap) => rec.empty !== isEmptyGrouping(rec.groupId)
                 || (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)
                 || (rec.drawnKey === null && rec.drawnKind !== undefined && coverageKindOf(snap) !== rec.drawnKind),
             refresh: refreshPanel,
-                return { groupId: id, handle };
+            visibilityChanged: () => groupSources().sources.visibilityChanged(),
             placeholder: drawGroupPlaceholder
-            matches: (rec, setting) => rec.groupId === setting.key,
+        });
     }
     return _binding;
-            // drawn again when the grouping was renamed (its legend and axis titles name it), or when what the strip
+}
+
+// ---------------------------------------------------------------------------------------------- loads
+
+/**
+ * The series of a grouping for one role of a plot.
+ * @param {Object} setting - `{type: 'cell-group', key, label}`
+ * @param {{host: HTMLElement, role: string, expected: (number|null), unit?: string, large?: boolean, quiet?: boolean}} opts
+ * @returns {Object} groupSeries's (or groupLargeSeries's, with `large`)
+ * @throws {SourceUnavailable} when no groups can be drawn
+ */
+function loadGroupSeries(setting, { host, role, expected, unit = 'cells', large = false, quiet = false }) {
+    nameSetting(setting);
     if (!host || !setting.key) {
         const notice = describeGrouping({ state: 'unset', title: '' }, { role: roleWord(role) });
         throw unavailable(notice, missingCoverage(notice, setting, unit, expected, 'stopped'));
@@ -309,13 +393,26 @@ function emptyHandle(id, onChange) {
         rec.drawnKind = undefined;
         binding().paint(host);
         const names = groupSources().sources.namesOf(setting.key, snap.values.reply);
+        return large ? groupLargeSeries(snap.values, names) : groupSeries(snap.values, names, { hover: isHover(role) });
     }
     rec.drawnKey = null;
     rec.drawnKind = coverageKindOf(snap);
     const ctx = { role: roleWord(role), sharers: rec.handle.sharers() };
-                return { groupId: id, handle };
+    const notice = describeGrouping(withFigures(snap), ctx) || describeGrouping({ ...snap, state: 'estimating' }, ctx);
     // a caller that waits for the groups says nothing yet (rec.quiet): no notice and no tag until it is known to last
-            matches: (rec, setting) => rec.groupId === setting.key,
+    if (!(quiet && PENDING.includes(snap.state))) binding().paint(host);
+    throw unavailable(notice, missingCoverage(notice, setting, unit, expected, coverageKindOf(snap)), snap.state);
+}
+
+/** A Gene Plot cannot take a grouping (a link can name it there): that axis says so, and the rest of the link works. */
+function notCells(setting, role, unit, expected) {
+    const notice = describeGrouping({ state: 'notcells', title: '' }, { role: roleWord(role) });
+    return Promise.reject(unavailable(notice, missingCoverage(notice, setting, unit, expected, 'stopped')));
+}
+
+/**
+ * A plot's series of a grouping: waits for it while the plot has a drawing to keep (the binding's loadWhenReady). A
+ * hover line does not hold the plot back: it is left out until the groups are there, and the plot draws again then.
  * @param {Object} setting
  * @param {{host, role: string, axis: (string|null), expected: (number|null), unit: string, signal: (AbortSignal|null)}} opts
  */
@@ -328,18 +425,20 @@ function loadForPlot(setting, { host, role, expected, unit, signal }) {
             return Promise.reject(error);
         }
     }
+    return binding().loadWhenReady((quiet) => loadGroupSeries(setting, { host, role, expected, unit, quiet }), { host, role }, signal);
 }
 
 /**
  * A large plot's series of a grouping: the codes the group store holds, nothing copied; waits as loadForPlot does.
-                return { groupId: id, handle };
+ * (Large-plot mode draws it once G8b names its axes in `largeAxes`.)
  * @param {Object} setting
-            matches: (rec, setting) => rec.groupId === setting.key,
+ * @param {{host, role: string, expected: (number|null), unit?: string, signal: (AbortSignal|null)}} opts
  */
 function loadLargeForPlot(setting, { host, role, expected, unit = 'cells', signal }) {
-            // drawn again when the grouping was renamed (its legend and axis titles name it), or when what the strip
-            // said of a grouping with no value changed (a factor added to an empty grouping: computing now)
-            stale: (rec, snap) => (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)
+    if (unit === 'genes') return notCells(setting, role, unit, expected);
+    return binding().loadWhenReady((quiet) => loadGroupSeries(setting, { host, role, expected, unit, large: true, quiet }), { host, role }, signal);
+}
+
 // ---------------------------------------------------------------------------------------------- actions
 
 /**
@@ -420,7 +519,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 }
 
 // ---------------------------------------------------------------------------------------------- the Hover picker
-            if (rec.drawnKey && groupingTitle(rec.setting) !== rec.setting.label) _binding.refreshSoon(host);
+
 const GROUP_PREFIX = `${GROUP_TYPE}:`;
 
 /** The picker's value of a grouping: `cell-group:<grouping id>`. */
@@ -455,7 +554,7 @@ registerSource({
     // large-plot mode draws a grouping once G8b says on which axes (CAT-3)
     largeAxes: [],
     defaultSub: '',
-            if (rec.drawnKey && groupingTitle(rec.setting) !== rec.setting.label) _binding.refreshSoon(host);
+    // the obs key list ends with the groupings, under this heading (UX 5)
     alsoListedUnder: 'obs',
     alsoListedGroup: GROUPINGS,
     entities: groupingList,
@@ -475,6 +574,3 @@ registerSource({
     placeholder: drawGroupPlaceholder,
     vocabulary: { result: W.grouping }
 });
-
- * Panels were added, removed, closed, reopened or renamed: a deleted grouping shows, a returned one resolves, and a
- * renamed one is named again. (A closed plot's records went with it: cell-plot.js releases them in every provider.)
