@@ -483,6 +483,38 @@ test('the obs key list lists the groupings under "Groupings"; the entry is a way
     assert.deepEqual(R.alsoListedEntries('obsm', 'cell-plot', ['color']), []);
 });
 
+test('a plot is no panel\'s dependency, so no choice of a grouping in a plot can close a loop (operator decision 15)', () => {
+    // a page with every kind of reference a plot, a table, a signature and a grouping can hold
+    const page = new Map([
+        ['cell-plot-P', { type: 'cell-plot', config: { tableFilter: 'cell-table-T', color: setting('cell-grouping-1'), x: setting('cell-grouping-2'),
+            y: { type: 'gene-score', key: 'gene-signature-S', column: '' }, hoverInfo: [setting('cell-grouping-1')],
+            z: { type: 'obs', key: 'c', column: '', history: { [TYPE]: { key: 'cell-grouping-2' } } } } }],
+        ['cell-table-T', { type: 'cell-table', config: { tableFilter: 'cell-table-U', columns: [setting('cell-grouping-1'),
+            { type: 'gene-score', key: 'gene-signature-S', column: '' }] } }],
+        ['cell-table-U', { type: 'cell-table', config: { columns: [] } }],
+        ['gene-table-V', { type: 'gene-table', config: { tableFilter: 'gene-signature-S', columns: [] } }],
+        ['gene-signature-S', { type: 'gene-signature', config: {} }],
+        ['cell-grouping-1', { type: 'cell-grouping', config: { partitionings: [{ source: { type: 'table', key: 'cell-table-T' } },
+            { source: { type: 'gene-score', key: 'gene-signature-S' } }, { source: { type: TYPE, key: 'cell-grouping-2' } }] } }],
+        ['cell-grouping-2', { type: 'cell-grouping', config: { partitionings: [{ source: { type: 'obs', key: 'c' } }] } }]
+    ]);
+    PR.setReferenceHost({ panel: (id) => page.get(id) || null, ids: () => [...page.keys()] });
+    try {
+        for (const id of page.keys()) assert.ok(!PR.dependsOn(id).includes('cell-plot-P'), `${id} depends on no plot`);
+        assert.deepEqual(PR.usersOf('cell-plot-P'), []);
+        // what a plot's colour, axis or hover may name: the entities of the providers, none of them a plot
+        for (const p of R.sourcesFor('cell-plot', ['color'])) {
+            for (const e of p.entities()) assert.ok(!e.id.startsWith('cell-plot-') && !e.id.startsWith('gene-plot-'), `${p.type}: ${e.id}`);
+        }
+        // a grouping's factors name tables, scores and groupings only
+        assert.deepEqual([...F.PANEL_SOURCES].sort(), ['cell-group', 'gene-score', 'table']);
+        for (const g of ['cell-grouping-1', 'cell-grouping-2']) assert.equal(PR.wouldLoop('cell-plot-P', g), false, g);
+    } finally {
+        PR.setReferenceHost({ panel: (id) => { const p = all.find((x) => x.getId() === id); return p ? { type: p.getType(), config: p.getConfig() } : null; },
+            ids: () => all.map((p) => p.getId()) });
+    }
+});
+
 test('a closed plot lets go of its groupings at once, in every provider (the codes leave the ledger)', async () => {
     const h = plotHost();
     const s = setting('cell-grouping-15');
