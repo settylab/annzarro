@@ -45,6 +45,7 @@ import {
     renameLevel, setRest, levelRows, BINNING_SLOT, SCORE_SOURCE, GROUP_SOURCE, TABLE_SOURCE
 } from './cell-grouping/factors.js';
 import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/status.js';
+import './partition-options/binning-control.js';
 import { usedByText } from '../utils/panel-users.js';
 import {
     settingsSummary, thresholdProblem, separatorProblem, smallOf, separatorOf, storedSeparator, storedSmall, smallModeWord
@@ -89,6 +90,7 @@ const ADD_ENTRIES = Object.freeze([
  */
 function createFactors({ D, id, model, on }) {
     const { el } = D;
+    const fresh = new Set();            // sources of factors added in this session that have had no preview yet (SHR-15)
     const expanded = new Set();         // indexes of expanded cards (kept by position, as the recipe is)
     const showAll = new Set();          // cards whose long level list is shown whole
     let adding = null;                  // the entry whose inline row is open
@@ -276,6 +278,7 @@ function createFactors({ D, id, model, on }) {
             note.textContent = why || '';
             if (why) return;
             const { p, label } = make();
+            if (p.binning) { expanded.add(m.recipe.partitionings.length); fresh.add(stableStringify(p.source)); }
             adding = null;
             paintRow();
             on.add(p, label);
@@ -391,7 +394,7 @@ function createFactors({ D, id, model, on }) {
             li.append(label);
         }
         li.append(count);
-        if (r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table') {
+        if (r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table' || factorKind(p) === 'binned') {
             li.append(el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-level__rename', title: `Rename ${r.label}`,
                 aria: { label: `Rename ${r.label}` }, on: { click: () => { renaming = { index: i, id: r.id }; paint(); } } }, '✎'));
         }
@@ -439,13 +442,16 @@ function createFactors({ D, id, model, on }) {
 
     function binnedBody(i, p, info) {
         const host = el('div', { class: 'cgrp-binning' });
-        if (BINNING_SLOT.mount) {
-            mounts.push(BINNING_SLOT.mount(host, { partitioning: p, info, commit: (next, label) => commitFactor(i, next, label) }));
-            return [host];
-        }
         const defaults = defaultsOf(i);
         const rows = info ? levelRows(p, info, defaults) : [];
-        return [host, el('ul', { class: 'cgrp-levels cgrp-bins', role: 'list' }, rows.map((r) => levelRow(i, p, info, r)))];
+        const levels = el('ul', { class: 'cgrp-levels cgrp-bins', role: 'list' }, rows.map((r) => levelRow(i, p, info, r)));
+        if (BINNING_SLOT.mount) {
+            const mark = stableStringify(p.source);
+            mounts.push(BINNING_SLOT.mount(host, { partitioning: p, info, levels, fresh: fresh.has(mark), settled: () => fresh.delete(mark), titleOf: model().titleOf, cells: model().cells,
+                commit: (next, label) => commitFactor(i, next, label) }));
+            return [host];
+        }
+        return [host, levels];
     }
 
     function card(i, p, n) {
@@ -513,6 +519,15 @@ function createFactors({ D, id, model, on }) {
         m.recipe.partitionings.forEach((p, i) => list.appendChild(card(i, p, n)));
         list.hidden = !n;
         if (menuOpen) paintMenu();
+        if (on.wants) on.wants();
+    }
+
+    /**
+     * The positions of the expanded binned cards: they ask the server for their histogram (SHR-18).
+     */
+    function wanted() {
+        const ps = model().recipe.partitionings;
+        return [...expanded].filter((k) => ps[k] && ps[k].binning).sort((a, b) => a - b);
     }
 
     return {
@@ -520,6 +535,7 @@ function createFactors({ D, id, model, on }) {
         addElement,
         /** The cards: they stay, collapsed, when the controls are hidden. */
         listElement: list,
+        wanted,
         paint,
         /** Expand a card (a status action: "Choose levels of sample"). */
         expand(i) {
@@ -695,6 +711,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         let _usedBy = '';
         let _usedTimer = null;
         let _factors = null;
+        let _asked = [];                    // the histograms the handle asks for: the expanded binned cards
         let _status = null;
         let _settings = null;
         const _parts = [];
@@ -773,13 +790,29 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             if (!_initialized || !DataManager.isDatasetLoaded()) return;
             if (!_recipe.partitionings.length) { release(); return; }
             if (_handle) return;
+            _asked = _factors ? _factors.wanted() : [];
             _handle = groupSources().sources.watch(_id, {
-                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: {},
+                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: { histograms: _asked },
                 visible: () => _visible && !!_dom && _dom.root.isConnected,
-                onChange: (snap) => { _snap = snap; noteKey(snap); paint(); }
+                onChange: (snap) => { _snap = snap; noteKey(snap); paint(); syncHistograms(); }
             });
             _snap = _handle.read();
             noteKey(_snap);
+        }
+
+        /**
+         * Ask for the histograms of the cards now expanded (or stop asking). Only once the groups are ready: an option
+         * changed while the first request is on its way strands it.
+         */
+        function syncHistograms() {
+            if (!_handle || !_snap || _snap.state !== 'ready' || !_factors) return;
+            // only ever more: a card collapsed keeps the histogram it has and asks for nothing
+            // positions of the recipe now; a request for an older recipe leaves out the ones it lacks (serverRequest)
+            const ps = _recipe.partitionings;
+            const now = [...new Set([..._asked.filter((k) => ps[k] && ps[k].binning), ..._factors.wanted()])].sort((a, b) => a - b);
+            if (now.join() === _asked.join()) return;
+            _asked = now;
+            _handle.setOption({ histograms: now });
         }
 
         function release() {
@@ -921,6 +954,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             _factors = createFactors({ D, id: _id, model: factorsModel, on: {
                 commit: (list, label, opts) => commit({ ..._recipe, partitionings: list }, label, opts),
                 add: (p, label) => addFactor(p, label),
+                wants: () => syncHistograms(),
                 announce: (text) => say(text),
                 open: openPanel
             } });
