@@ -392,14 +392,34 @@ const best = (fn, runs = 5) => {
     return t;
 };
 
+/** The CPU milliseconds (user + system) of `reps` calls of `fn` in this process, the quickest of `runs` samples. */
+const bestCpu = (fn, reps, runs = 7) => {
+    let t = Infinity;
+    for (let i = 0; i < runs; i++) {
+        const s = process.cpuUsage();
+        for (let k = 0; k < reps; k++) fn();
+        const d = process.cpuUsage(s);
+        t = Math.min(t, (d.user + d.system) / 1000);
+    }
+    return t;
+};
+
 test('scaling: ten times the cells take at most fifteen times as long, heatmap and dots', () => {
+    // A ratio of wall-clock times of builds that last a few milliseconds is noise on a loaded machine: the
+    // scheduler's slice is as long as the build. The work is what grows with the cells, so CPU time is
+    // compared (the machine's load does not enter it), a sample is a batch of builds (the small size 10 times,
+    // the large one once, the same total cells, so neither sample is a fraction of a millisecond), and each is
+    // the quickest of seven samples after a warm-up. Sizes and the 15x bound are as before. The floor under the
+    // small build is 0.1 ms, not the 1 ms a single wall-clock reading needed: the small sample is a batch of ten,
+    // and a 1 ms floor let a heatmap build of 0.7 ms grow 21 times before the bound caught it.
     for (const mode of ['heatmap', 'dots']) {
         const small = model({ rows: 20, groups: 200, mode });
         const large = model({ rows: 200, groups: 200, mode });
+        D.buildFigure(small, LIGHT);
         D.buildFigure(large, LIGHT);
-        const a = best(() => D.buildFigure(small, LIGHT));
-        const b = best(() => D.buildFigure(large, LIGHT));
-        assert.ok(b <= 15 * Math.max(a, 1), `${mode}: ${a.toFixed(1)} ms for 4,000, ${b.toFixed(1)} ms for 40,000`);
+        const a = bestCpu(() => D.buildFigure(small, LIGHT), 10) / 10;
+        const b = bestCpu(() => D.buildFigure(large, LIGHT), 1);
+        assert.ok(b <= 15 * Math.max(a, 0.1), `${mode}: ${a.toFixed(2)} ms of CPU for 4,000, ${b.toFixed(2)} ms for 40,000`);
     }
 });
 
