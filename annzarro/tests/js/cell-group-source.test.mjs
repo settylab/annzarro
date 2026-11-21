@@ -296,9 +296,11 @@ test("past 64 groups: each group ranked by its place in group order, so its colo
 
 test('the large form: the codes as they are; past 64 groups ranked with the name of each colour group', async () => {
     const small = await settle(setting('cell-grouping-1'), plotHost(), { large: true });
-    assert.deepEqual(Object.keys(small).sort(), ['MISSING', 'categories', 'codes', 'colours', 'type']);
+    assert.deepEqual(Object.keys(small).sort(), ['MISSING', 'categories', 'codes', 'colours', 'missingLabel', 'type']);
+    assert.equal(small.missingLabel, 'Not in any group', "the legend's word for a cell in no group (large mode's `NA` otherwise)");
     assert.deepEqual(small.categories, TYPES);
     const big = await settle(setting('cell-grouping-4'), plotHost(), { large: true });
+    assert.equal(big.missingLabel, 'Not in any group');
     assert.equal(big.ranked, true, "a group's code is its rank in group order already: nothing is copied");
     assert.equal(big.groupNames.length, 64);
     assert.equal(big.groupNames[0], 'g0, g64, g128');

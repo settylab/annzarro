@@ -213,8 +213,9 @@ function groupLargeSeries(values, names) {
     const { codes } = values;
     const MISSING = missingOf(codes);
     const parts = partsOf(values.reply, names);
-    if (parts.many) return { type: 'categorical', codes, MISSING, categories: [], ranked: true, groupNames: parts.groupNames };
-    return { type: 'categorical', codes, MISSING, categories: names, colours: parts.colours };
+    const missingLabel = NOT_IN_ANY_GROUP;
+    if (parts.many) return { type: 'categorical', codes, MISSING, categories: [], ranked: true, groupNames: parts.groupNames, missingLabel };
+    return { type: 'categorical', codes, MISSING, categories: names, colours: parts.colours, missingLabel };
 }
 
 // ---------------------------------------------------------------------------------------------- the codes' cost
