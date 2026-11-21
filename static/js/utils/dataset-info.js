@@ -474,11 +474,11 @@ function categoryDetail(doc, column) {
     if (labels.length && column.categories > labels.length) box.appendChild(el(doc, 'span', 'dsi-muted', `+${(column.categories - labels.length).toLocaleString('en-US')}`));
     if (column.colors !== undefined && column.colors !== null) {
         if (column.colors_mismatch) {
-            const warn = el(doc, 'span', 'dsi-warn', `Mismatch: ${plural(column.colors, 'colour', 'colours')} for ${plural(column.categories, 'category', 'categories')}`);
+            const warn = el(doc, 'span', 'dsi-warn', `Mismatch: ${plural(column.colors, 'color', 'colors')} for ${plural(column.categories, 'category', 'categories')}`);
             warn.setAttribute('role', 'note');
             box.appendChild(warn);
         } else {
-            box.appendChild(el(doc, 'span', 'dsi-muted', plural(column.colors, 'colour', 'colours')));
+            box.appendChild(el(doc, 'span', 'dsi-muted', plural(column.colors, 'color', 'colors')));
         }
     }
     return box.childNodes.length ? box : null;

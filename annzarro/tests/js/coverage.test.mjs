@@ -494,7 +494,7 @@ test('colour NaN is never suppressed', () => {
           hideNaNActive: true },
         'cells', { axisCoverage: { x: xLoaded } });
     assert.equal(filters.gaps.length, 1);
-    assert.match(filters.lines()[0], /colour/);
+    assert.match(filters.lines()[0], /color: filtered out .* points with no color value/);
 });
 
 
