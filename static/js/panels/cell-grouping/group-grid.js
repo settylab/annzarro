@@ -182,11 +182,11 @@ function mount(host, ctx) {
 
     /** Whether the gene's statistics are cheap enough to compute at once: the estimate, and nothing computed. */
     async function decide(gene, recipe, ticket) {
-        await kindOf(layerOf(recipe));
+        // what the layer's numbers look like and what the gene would cost are asked together: the answer comes in one round trip
+        const asked = groupSources().sources.estimate(ctx.panelId, { features: [featureWire(gene, recipe)] }).catch((error) => { console.error('Group grid:', error); return null; });
+        await Promise.all([kindOf(layerOf(recipe)), asked]);
         if (stale(ticket)) return;
-        let reply = null;
-        try { reply = await groupSources().sources.estimate(ctx.panelId, { features: [featureWire(gene, recipe)] }); } catch (error) { console.error('Group grid:', error); }
-        if (stale(ticket)) return;
+        const reply = await asked;
         if (!reply) { focus.key = null; return; }         // not decidable yet (the source is gated): asked again at the next paint
         if (isLive(reply.estimate)) {
             await request(gene, recipe, ticket);
