@@ -59,6 +59,7 @@ ROUTES = [
     ("GET", "/api/v1/zarr/to_anndata?dataset_path={p}"),
     ("POST", "/api/v1/data/refresh?dataset_path={p}"),
     ("POST", "/api/v1/data/gene_score?dataset_path={p}"),
+    ("POST", "/api/v1/data/cell_groups?dataset_path={p}"),
     ("GET", "/api/v1/data/matrix_kind?dataset_path={p}&input=X"),
     ("POST", "/api/v1/cache/reset?dataset_path={p}"),
     ("GET", "/api/v1/core/datasets?dir={d}"),
@@ -223,7 +224,8 @@ def test_every_route_is_classified(layout):
         adapter = app.url_map.bind("localhost")
         method = "POST" if template in ("/api/v1/data/refresh?dataset_path={p}",
                                         "/api/v1/cache/reset?dataset_path={p}",
-                                        "/api/v1/data/gene_score?dataset_path={p}") else "GET"
+                                        "/api/v1/data/gene_score?dataset_path={p}",
+                                        "/api/v1/data/cell_groups?dataset_path={p}") else "GET"
         probed.add(adapter.match(path, method=method)[0])
     unclassified = {rule.endpoint for rule in app.url_map.iter_rules()} - probed - NO_PATH
     assert not unclassified, f"routes neither probed for path escapes nor declared path-free: {unclassified}"
