@@ -17,7 +17,7 @@ import { isScoreColumn } from '../../utils/score-column.js';
 import { tableHalfOf } from '../../utils/table-source.js';
 import { getSource } from '../../utils/source-registry.js';
 import { TableScores } from './table-scores.js';
-import { bindScoreColumns } from './table-score-ui.js';
+import { bindScoreColumns, FILTER_COLUMNS } from './table-score-ui.js';
 import {
     Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
     classifyError, missingEntity, unreadableCell, classifyFocusRow
@@ -241,13 +241,16 @@ export async function loadTableData(settings, entityType, signal = null) {
  */
 function scoreColumnDefinition(column, columnKey, reader) {
     const categorical = (getSource(column.type) || {}).valueType === 'categorical';
+    // a provider whose categories are few enough to list says so: its "Equals" lists them (a grouping's groups, CAT-6)
+    const half = tableHalfOf(column);
+    const listed = categorical && !!half && half.listsCategories === true;
     return {
         title: getColumnDisplayName(column),
         data: columnKey,
         defaultContent: '',
         className: 'dt-center az-score-col',
         type: categorical ? 'string' : 'num',
-        searchBuilderType: categorical ? TEXT_ONLY_TYPE : TEXT_ONLY_NUM_TYPE,
+        searchBuilderType: listed ? 'string' : categorical ? TEXT_ONLY_TYPE : TEXT_ONLY_NUM_TYPE,
         render: (data, type, row, meta) => reader.render(type, meta.row)
     };
 }
@@ -1054,6 +1057,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             ]
         },
         searchBuilder: {
+                // the columns a new condition can name: every one but those a provider keeps out of this table's
+                // filter (a loop, operator decision 15). A selector of header cells, asked when a condition is made
+                columns: FILTER_COLUMNS,
                 // criteria AND top-level logic (an OR came back as AND), with
                 // boolean conditions saved as num 'true' translated to Yes/No
                 preDefined: searchBuilderPreDefined(settings.searchBuilderConfig, tableData.booleanColumns || []),
