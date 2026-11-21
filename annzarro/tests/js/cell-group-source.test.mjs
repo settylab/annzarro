@@ -190,8 +190,8 @@ test('the provider is registered as a categorical cell source of a Cell Plot, af
     const p = provider();
     assert.equal(p.valueType, 'categorical');
     assert.equal(p.entity, 'cells');
-    assert.deepEqual(p.consumers, ['cell-plot']);
-    assert.deepEqual(p.axes, ['x', 'y', 'z', 'color', 'hover']);
+    assert.deepEqual(p.consumers, ['cell-plot', 'cell-table'], 'a Cell Table column too (CAT-6, G10)');
+    assert.deepEqual(p.axes, ['x', 'y', 'z', 'color', 'hover', 'column']);
     assert.deepEqual(p.largeAxes, [], "large-plot mode is G8b's");
     assert.equal(p.subKeyMenu, undefined, 'no third select');
     assert.deepEqual(p.subKeys('cell-grouping-1'), []);
