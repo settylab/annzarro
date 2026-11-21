@@ -181,7 +181,7 @@ test('with no entity the tab says so and offers the provider\'s way to make one'
     entities = [];
     const { pane } = chooser('T2', { columns: [] });
     const list = pane.querySelector('.checkbox-list');
-    assert.match(list.innerHTML, /No groupings yet\./);
+    assert.equal(list.querySelector('.alert').textContent, 'No groupings yet.');
     assert.equal(list.querySelector('.az-score-new').textContent, 'New grouping…');
 });
 
