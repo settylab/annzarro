@@ -23,7 +23,7 @@ import { createScoringSection } from './scoring-section.js';
 import { createInspect } from './inspect-section.js';
 
 /** What the layers look like, asked once per dataset and layer for the whole page. */
-const KIND_CLIENT = createKindClient({ url: Config.API.MATRIX_KIND });
+export const KIND_CLIENT = createKindClient({ url: Config.API.MATRIX_KIND });
 
 /**
  * @param {Object} o

@@ -46,6 +46,7 @@ const LAYERS_SHOWN = 5;
  *   definition(recipe, info) -> { text, signed } replaces a method's definition
  *   methodExtras(recipe, info) -> nodes appended to an offered method's row before its parameters
  *   paintExtras(recipe) / paintParams(recipe) repaint the provider's blocks and boxes with the rows
+ *   pinnedLayer     a layer that is always offered: its box is ticked and cannot be switched off (text.pinnedLayer says why)
  *   resetPatch() -> the parameter fields a reset restores; paramsAreDefault(recipe) -> boolean
  */
 export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-scoring', getRecipe, apply, getInputs, getKind,
@@ -74,9 +75,10 @@ export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-sc
 
     const where = el('div', { class: `${cls}__help`, data: { aggregationsHelp: '' }, text: text.where });
     const noticeLine = el('div', { class: `${cls}__notice`, role: 'status', aria: { live: 'polite' }, hidden: true });
-    const methodSet = el('fieldset', { class: `${cls}__set` }, el('legend', { class: `${cls}__heading`, text: 'Methods' }));
+    const methodSet = el('fieldset', { class: `${cls}__set` }, el('legend', { class: `${cls}__heading`, text: text.methods || 'Methods' }));
     const methodRows = el('div', { class: `${cls}__options` });
     methodSet.append(methodRows);
+    if (text.methodsNote) methodSet.append(el('div', { class: `${cls}__help`, data: { methodsNote: '' }, text: text.methodsNote }));
     const layerSet = el('fieldset', { class: `${cls}__set` }, el('legend', { class: `${cls}__heading`, text: 'Layers' }));
     const layerRows = el('div', { class: `${cls}__layers` });
     const moreLayers = el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', hidden: true,
@@ -150,6 +152,7 @@ export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-sc
     }
 
     function toggleLayer(layer, on) {
+        if (layer === hooks.pinnedLayer && !on) return;
         const recipe = getRecipe();
         const before = { layers: offeredLayers(recipe), input: recipe.input };
         const next = new Set(before.layers);
@@ -245,11 +248,12 @@ export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-sc
         moreLayers.textContent = showAllLayers ? 'Show fewer layers' : `Show ${hidden} more layer${hidden === 1 ? '' : 's'}`;
         const used = getLayersInUse();
         for (const name of shown) {
-            const last = layers.has(name) && layers.size === 1;
+            const pinned = name === hooks.pinnedLayer;
+            const last = pinned || (layers.has(name) && layers.size === 1);
             const known = inputs.includes(name);
             const box = el('input', { type: 'checkbox', class: `${cls}__offer`, id: sid(`layer-offer-${name}`),
                 checked: layers.has(name), disabled: last, data: { layerOffer: name },
-                title: last ? text.lastLayer : '', on: { change: () => toggleLayer(name, box.checked) } });
+                title: pinned ? (text.pinnedLayer || '') : (last ? text.lastLayer : ''), on: { change: () => toggleLayer(name, box.checked) } });
             const word = kindWord(kinds.get(name));
             const use = useText(usesOf(used.map(u => ({ ...u, value: u.value === null ? model.inputOf(recipe) : u.value })), name));
             // a layer says its properties once, short, and only while it is offered (they matter to what is offered)
