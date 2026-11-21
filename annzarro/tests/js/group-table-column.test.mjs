@@ -18,7 +18,8 @@ const { tableProviders } = await import('../../../static/js/utils/table-source.j
 const { createGroupTable } = await import('../../../static/js/panels/cell-grouping/table-column.js');
 const { setReferenceHost, registerReferences } = await import('../../../static/js/utils/panel-references.js');
 const { groupingReferences } = await import('../../../static/js/panels/cell-grouping/factors.js');
-const { columnView, filterGate, describeHeldRows } = await import('../../../static/js/utils/score-column.js');
+const { columnView, filterGate, describeHeldRows, dropConditions } = await import('../../../static/js/utils/score-column.js');
+const { actions: pageActions } = await import('../../../static/js/utils/source-actions.js');
 
 // a grouping's references as its panel module declares them (panels/cell-grouping.js needs the page)
 registerReferences('cell-grouping', groupingReferences);
@@ -198,7 +199,9 @@ test('a notice is the grouping\'s, read as a column: no other grouping to choose
     const { half } = makeHalf();
     const cycle = half.describe({ state: 'cycle', title: 'Grouping 1' }, { sharers: 1 });
     assert.equal(cycle.role, 'column');
-    assert.deepEqual(cycle.actions, [['score-open', 'Open grouping'], ['score-remove', 'Remove column']]);
+    assert.deepEqual(cycle.actions, [['score-open', 'Open grouping'], ['score-unfilter', 'Remove this filter']],
+        'a loop through a table runs through a condition on the column: removing the conditions ends it (decision 18)');
+    assert.ok(pageActions.known.includes('score-unfilter'), 'a known action of the registry');
     for (const state of ['deleted', 'off', 'failed', 'refused', 'cancelled', 'nofactors']) {
         const n = half.describe({ state, title: 'Grouping 1' }, { sharers: 1 });
         assert.ok(n.actions.some(([a]) => a === 'score-remove'), state);
@@ -219,7 +222,7 @@ test('the chooser lists a grouping by its title, with the way to make one when t
     assert.deepEqual(half.chooser.empty, { text: 'No groupings yet.', button: 'New grouping…' });
 });
 
-test('a grouping built from this table is unavailable in its menu, with the reason; in another table it is offered (decision 15)', () => {
+test('a grouping built from this table can be shown but not filtered on there, and says so; in another table both (decision 15)', () => {
     const { half } = makeHalf();
     const configs = {
         [GA]: { type: 'cell-grouping', config: { partitionings: [{ source: { type: 'table', key: TA } }] } },
@@ -233,10 +236,18 @@ test('a grouping built from this table is unavailable in its menu, with the reas
     });
     const g = { id: GA, title: 'Grouping 1', open: true };
     const inT = half.chooser.options(g, [], TA);
-    assert.deepEqual(inT, [{ column: '', text: 'Grouping 1', unavailable: 'Uses Grouping 1, which depends on this table' }]);
+    assert.deepEqual(inT, [{ column: '', text: 'Grouping 1', note: "Can't be filtered here: Grouping 1 depends on this table" }]);
     assert.deepEqual(half.chooser.options(g, [], TB), [{ column: '', text: 'Grouping 1' }]);
-    // no table id (an old caller): nothing is marked
+    // no table id (an old caller): nothing is said
     assert.deepEqual(half.chooser.options(g, []), [{ column: '', text: 'Grouping 1' }]);
+    // the condition builder: not in this table, yes in another
+    assert.equal(half.filterable(COLUMN, TA), false);
+    assert.equal(half.filterable(COLUMN, TB), true);
+    assert.equal(half.filterable(COLUMN, null), true);
+    // a column the table only shows is no edge: showing it closes no loop, so the grouping stays usable as a factor
+    configs[TA].config.columns.push(COLUMN);
+    assert.equal(half.filterable(COLUMN, TA), false);
+    setReferenceHost({ panel: () => null, ids: () => [] });
 });
 
 test('the column states itself in a grouping\'s words, and the score\'s words are unchanged', () => {
@@ -281,4 +292,17 @@ test('a read does no work that grows with the cells or the groups: the rank is m
     for (let i = 0; i < 1000; i++) h.read();
     const small1000 = performance.now() - t1;
     assert.ok(big1000 < Math.max(15 * small1000, 20), `1,000 reads at 1M cells ${big1000.toFixed(1)} ms vs 100k ${small1000.toFixed(1)} ms`);
+});
+
+test('Remove this filter drops the conditions on one column and keeps the rest', () => {
+    const key = 'cell-group_cell-grouping-A_main';
+    const other = { condition: '=', data: 'cell_type', origData: 'obs_cell_type_main', type: 'string', value: ['B cell'] };
+    const mine = { condition: '=', data: 'Grouping 1', origData: key, type: 'string', value: ['in Table 1'] };
+    assert.deepEqual(dropConditions({ criteria: [mine], logic: 'AND' }, key), { criteria: [], logic: 'AND' });
+    assert.deepEqual(dropConditions({ criteria: [other, mine], logic: 'OR' }, key), { criteria: [other], logic: 'OR' });
+    const nested = { criteria: [other, { criteria: [mine, { ...mine, value: ['x'] }], logic: 'OR' }], logic: 'AND' };
+    const before = JSON.stringify(nested);
+    assert.deepEqual(dropConditions(nested, key), { criteria: [other], logic: 'AND' }, 'a group left empty goes');
+    assert.equal(JSON.stringify(nested), before, 'the filter given is not changed');
+    assert.deepEqual(dropConditions(undefined, key), { criteria: [], logic: 'AND' });
 });

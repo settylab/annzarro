@@ -11,9 +11,11 @@ B cell, T cell, NK cell, Monocyte, Dendritic, Platelet (500, 300, 200, 150, 45, 
 4.  While the groups are being computed the rows of a table that filters on the column are held, in a grouping's words,
     and appear when the groups are there (CAT-6, GS 7.4).
 5.  A table that filters on a group column is a binary partitioning for another grouping (CAT-7).
-6.  A grouping built from this table is unavailable in the table's column menu, with the reason (operator decision 15).
+6.  A grouping built from this table can be shown in it (no loop) and says it cannot be filtered on there; the
+    condition builder leaves it out (operator decision 15).
 7.  A table that filters on a grouping built from that table, from a crafted link: the cycle state names the panels,
-    nothing is computed, the rows are held; Remove column ends the loop (SHR-34, decisions 16 and 18).
+    nothing is computed, the rows are held; Remove this filter ends the loop and keeps the column (SHR-34, decisions 16
+    and 18).
 8.  Light and dark screenshots of the column and of the cycle state, when ANNZARRO_THEME_SHOTS names a directory.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
@@ -267,32 +269,65 @@ def test_a_table_filtering_on_a_group_column_is_a_factor_of_another_grouping(pag
     assert _status(page, B)["text"] == f"2 groups · {N:,} of {N:,} cells in a group", _status(page, B)
 
 
-# ------------------------------------------------------------------ 6. the menu
+# ------------------------------------------------------------------ 6. the menu and the condition builder
 
-def test_a_grouping_built_from_this_table_is_unavailable_in_its_menu_with_the_reason(page, served):
-    configs = {TA: _table(), GA: _grouping(partitionings=[{"source": {"type": "table", "key": TA}}]),
+def _builder_columns(page, keyboard=False):
+    """The columns a new condition of the filter can name: SearchBuilder's column list of a condition just added, by a
+    click or by Enter on the focused Add condition button."""
+    before = page.locator(f"{BOX} .dtsb-criteria select.dtsb-data").count()
+    add = page.locator(f"{BOX} .dtsb-searchBuilder .dtsb-add").first
+    if keyboard:
+        add.focus()
+        page.keyboard.press("Enter")
+    else:
+        add.click()
+    until(page, "([box, n]) => document.querySelectorAll(box + ' .dtsb-criteria select.dtsb-data').length > n", [BOX, before])
+    return page.evaluate("""(box) => { const sels = document.querySelectorAll(box + ' .dtsb-criteria select.dtsb-data');
+        const sel = sels[sels.length - 1];
+        return [...sel.options].filter(o => !o.disabled && o.value !== '').map(o => o.textContent.trim()); }""", BOX)
+
+
+def test_a_grouping_built_from_this_table_can_be_shown_but_not_filtered_on_here(page, served):
+    configs = {TA: _table(), GA: _grouping(partitionings=[{"source": {"type": "table", "key": TA}}, CELL_TYPE]),
                GB: _grouping(GB, "Grouping 2", [CONDITION])}
     _open(page, served, configs, open_ids=(TA, GA))
     until(page, "(id) => document.querySelectorAll('#cell-group-content-' + id + ' .column-checkbox').length === 2", TA)
     got = page.evaluate("""(id) => [...document.querySelectorAll('#cell-group-content-' + id + ' .form-check')].map(row => {
-        const b = row.querySelector('.column-checkbox'); const why = row.querySelector('.az-option-unavailable');
-        return [b.dataset.key, b.disabled, why ? why.textContent : null,
-                why ? b.getAttribute('aria-describedby') === why.id : null]; })""", TA)
-    assert got == [[GA, True, "Uses Grouping 1, which depends on this table", True], [GB, False, None, None]], got
+        const b = row.querySelector('.column-checkbox'); const note = row.querySelector('.az-option-note');
+        return [b.dataset.key, b.disabled, note ? note.textContent : null,
+                note ? b.getAttribute('aria-describedby') === note.id : null]; })""", TA)
+    assert got == [[GA, False, "Can't be filtered here: Grouping 1 depends on this table", True], [GB, False, None, None]], got
     _open_chooser(page)
     _shot(page, "g10-menu-loop-light")
+    # it can be shown: each cell's group beside its row, with no loop
+    for key in (GA, GB):
+        page.evaluate("([id, k]) => document.querySelector('#cell-group-content-' + id + ' .column-checkbox[data-key=\"' + k + '\"]').click()", [TA, key])
+    until(page, "(box) => ['Grouping 1', 'Grouping 2'].every(t => [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].some(th => th.textContent.trim() === t))", BOX)
+    heads = _headers(page)
+    _filled(page, heads.index("Grouping 1"))
+    _filled(page, heads.index("Grouping 2"))
+    assert set(_all(page, heads.index("Grouping 1"))) == {f"in Table 1 | {t}" for t in TYPES}
+    assert _notice(page) is None
+    assert _status(page)["state"] == "ready"
+    n = len(_computes(page))
+    waits.expect_stays(lambda: len(_computes(page)) == n, "showing the column must not set off computations; there is no event for none", page=page)
+    # it is absent from the condition builder (by keyboard: Enter on Add condition); the other grouping is there
+    names = _builder_columns(page, keyboard=True)
+    assert "Grouping 2" in names and "cell_type" in names, names
+    assert "Grouping 1" not in names, names
+    assert "Grouping 1" not in _builder_columns(page), "by mouse as well"
 
 
 # ------------------------------------------------------------------ 7. a loop from a link
 
 def test_a_table_filtering_on_a_grouping_built_from_it_shows_the_cycle_state_from_a_link(page, served):
-    ring = {TA: _table([OBS_TYPE, by(GA)], searchBuilderConfig=equals(GA, "Grouping 1", "in Table 1")),
+    ring = {TA: _table([OBS_TYPE, by(GA)], searchBuilderConfig=equals(GA, "Grouping 1", "in Table 1 | B cell")),
             GA: _grouping(partitionings=[{"source": {"type": "table", "key": TA}}, CELL_TYPE])}
     _open(page, served, ring, open_ids=(TA, GA))
     until(page, "(box) => { const el = document.querySelector(box + ' .score-notice'); return !!el && el.dataset.state === 'cycle'; }", BOX)
     note = _notice(page)
     assert note["text"].startswith("'Grouping 1' and 'Table 1' depend on each other."), note
-    assert note["actions"] == ["score-open|Open grouping", "score-remove|Remove column"], note
+    assert note["actions"] == ["score-open|Open grouping", "score-unfilter|Remove this filter"], note
     assert _held(page) == "Filter on 'Grouping 1' not applied. 'Grouping 1' and 'Table 1' depend on each other."
     assert "Grouping 1 (no groups)" in _headers(page)
     assert set(_column(page, 2)) <= {"no groups"}
@@ -304,14 +339,17 @@ def test_a_table_filtering_on_a_grouping_built_from_it_shows_the_cycle_state_fro
     _theme(page, "dark")
     _shot(page, "g10-cycle-dark")
     _theme(page, "light")
-    # Remove column ends the loop: the filter's condition goes with the column, and the grouping computes
-    page.click(f"{BOX} .score-notice [data-ps-action='score-remove']")
+    # Remove this filter ends the loop: the conditions on the column go, the column stays, and the grouping computes
+    page.click(f"{BOX} .score-notice [data-ps-action='score-unfilter']")
     until(page, "(box) => !document.querySelector(box + ' .score-notice') && !document.querySelector(box + ' .az-score-held-note')", BOX)
-    assert "Grouping 1" not in " ".join(_headers(page))
-    cfg = page.evaluate("(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return JSON.stringify(c.searchBuilderConfig || {}); }", TA)
+    cfg = page.evaluate("(id) => JSON.stringify(window.PanelManager.getPanel(id).getConfig().searchBuilderConfig || {})", TA)
     assert key_of(GA) not in cfg, cfg
     until(page, "(s) => document.querySelector(s + ' .cgrp-status').dataset.state === 'ready'", A)
     assert _computes(page), "the grouping computes once the loop is gone"
+    assert "Grouping 1" in _headers(page), "the column stays"
+    _filled(page, 2)
+    assert set(_all(page, 2)) == {f"in Table 1 | {t}" for t in TYPES}
+    assert "Grouping 1" not in _builder_columns(page), "and a condition on it cannot be made again"
 
 
 # ------------------------------------------------------------------ 8. both themes
