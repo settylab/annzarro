@@ -502,7 +502,8 @@ const isBinnedAxis = (levels) => levels.some((id) => id.startsWith('bin:') || id
  * @param {Object} grid - from readGrid
  * @param {{input: string}[]} inputs - the grid's axes, in order (planGrid's `inputs`)
  * @returns {{rows: number, axes: {input: string, set?: number, levels: string[], info: Object}[], dims: number[], count: Float64Array,
- *   moments: Float64Array|null, top: Object|null, total: number, counted: number, noValue: Object, pooled: Object|null}}
+ *   moments: Float64Array|null, top: ({levels: string[], info: Object, level: Int32Array, share: Float64Array}|null), total: number,
+ *   counted: number, noValue: Object, pooled: Object|null}} `top.info` is the factor's axis of the reply, as `axes[i].info`
  */
 // export-unused-ok: C3 draws the table and V1 reads the regions of a set grid
 export function countTable(config, grid, inputs) {
@@ -558,7 +559,10 @@ function project(grid, inputs, pie, wantTop) {
     const stride = dims.map((_, i) => dims.slice(i + 1).reduce((p, d) => p * d, 1));
     const count = new Float64Array(rows);
     const moments = grid.measure ? new Float64Array(rows * MOMENTS) : null;
-    const top = wantTop && factor >= 0 ? { levels: grid.axes[factor].levels, level: new Int32Array(rows).fill(-1), share: new Float64Array(rows).fill(NaN) } : null;
+    // the factor's axis of the reply goes with it (`info`: whether it is a boolean column, a grouping's group names), so
+    // its levels are labelled as an axis's are
+    const top = wantTop && factor >= 0 ? { levels: grid.axes[factor].levels, info: grid.axes[factor], level: new Int32Array(rows).fill(-1),
+        share: new Float64Array(rows).fill(NaN) } : null;
     const best = top ? new Float64Array(rows) : null;
     const noValue = Object.fromEntries(kept.map((a) => [inputs[a].input, 0]));
     const at = new Int32Array(inputs.length);
