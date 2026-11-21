@@ -413,6 +413,17 @@ def test_groupings_are_listed_under_obs_and_choosing_one_switches_the_type(page,
     until(page, "(t) => document.querySelector(`${t} select.axis-key-select[data-axis=\"color\"]`).value === 'condition'", C)
     _wait_legend(page, gstore.CONDITIONS)
     assert "\u0001" not in json.dumps(page.evaluate("() => window.sessionManager.captureView()"))
+    # the entry's value is a way to choose: no link, panel set or history holds it
+    view = page.evaluate("() => window.sessionManager.captureView()")
+    saved = view["layout"]["panelConfigs"][P]["color"]
+    assert saved["type"] == "cell-group" and saved["key"] == GA
+    assert saved["history"]["obs"]["key"] == "condition", "the obs column it had is remembered as it was"
+    assert "\u0001" not in json.dumps(view), "the entry's value is stored nowhere"
+    # and the obs column choice behaves as before
+    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "obs")
+    until(page, "(t) => document.querySelector(`${t} select.axis-key-select[data-axis=\"color\"]`).value === 'condition'", C)
+    _wait_legend(page, gstore.CONDITIONS)
+    assert "\u0001" not in json.dumps(page.evaluate("() => window.sessionManager.captureView()"))
 
 
 # ------------------------------------------------------------------ 6. the codes under the memory guard
@@ -427,6 +438,16 @@ def test_a_hidden_plots_codes_are_evicted_with_its_drawing_and_asked_for_again_w
     # hidden: the codes are evictable, and the guard may take them
     page.evaluate("(t) => { document.querySelector(t).style.display = 'none'; }", C)
     until(page, "async () => { const { ledger } = await import('/static/js/utils/memory-guard-ui.js'); return ledger.evictable() >= 1200; }")
+def test_closing_a_plot_coloured_by_a_grouping_releases_its_codes_at_once(page, served):
+    _open(page, served, {P: _plot(color=by(GA)), GA: _grouping()})
+    _wait_legend(page, TYPES)
+    held = "async () => (await import('/static/js/utils/memory-guard-ui.js')).ledger.heldBytes()"
+    assert page.evaluate(held) >= N
+    after = page.evaluate("""async (id) => { window.PanelManager.closePanel(id);
+        return (await import('/static/js/utils/memory-guard-ui.js')).ledger.heldBytes(); }""", P)
+    assert after == 0, "released in the close itself, not on a later event"
+
+
     page.evaluate("async () => { const { ledger } = await import('/static/js/utils/memory-guard-ui.js'); ledger.evict(); }")
     assert page.evaluate(held)[0] == 0, "nothing still counts the codes the guard took"
     asked = len(_computes(page))

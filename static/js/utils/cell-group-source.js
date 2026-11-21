@@ -60,6 +60,9 @@ const GROUPINGS = capital(PL.grouping);
 /** The legend entry of the cells in no group (SHR-5, UX 5). */
 const NOT_IN_ANY_GROUP = capital(W.notInAnyGroup);
 
+/** The legend entry of the cells in no group (SHR-5, UX 5). */
+const NOT_IN_ANY_GROUP = capital(W.notInAnyGroup);
+
 /** The page's panel registry (window.PanelManager): importing panel-manager.js would load every panel. */
 const PanelManager = {
     getPanel: (id) => (globalThis.PanelManager ? globalThis.PanelManager.getPanel(id) : null),
@@ -86,14 +89,6 @@ function groupingList() {
 /** The title of the grouping a setting names, or what it was called when last seen (the setting's `label`). */
 function groupingTitle(setting) {
     const panel = groupingPanel(setting && setting.key);
-    return panel ? panel.getTitle() : (setting && (setting.label || setting.key)) || '';
-}
-
-    if (panel) setting.label = panel.getTitle();
-    delete setting.labelFull;
-    return changed;
-}
-
 // ---------------------------------------------------------------------------------------------- the key list
 
 /**
@@ -193,7 +188,7 @@ function groupSeries(values, names, { hover = false } = {}) {
  * @param {string[]} names
  */
 function groupLargeSeries(values, names) {
-    const { codes } = values;
+        groupNames: null, missingLabel: NOT_IN_ANY_GROUP, coverage: Coverage.complete(codes.length, 'cells') };
     const MISSING = missingOf(codes);
     const parts = partsOf(values.reply, names);
     if (parts.many) return { type: 'categorical', codes, MISSING, categories: [], ranked: true, groupNames: parts.groupNames };
@@ -241,9 +236,6 @@ const VOCAB = Object.freeze({
 
 /**
  * The notice of a plot's grouping in one state, or null when nothing is to be said (ready, no edits waiting). Pure: a
- * refusal for its size names its figures from `snap.refused` (the binding adds them from the store).
- * @param {Object} snap - from a handle's read()
- * @param {{role?: string, sharers?: number}} [ctx] - `role`: 'colour', 'x', 'y', 'z' or 'hover'
  */
 function describeGrouping(snap, ctx = {}) {
     return describeSource(snap, ctx, VOCAB);
@@ -265,18 +257,7 @@ const missingCoverage = (notice, setting, unit, total, kind) => Coverage.missing
 
 /**
  * The placeholder an axis shows while its grouping cannot be drawn, with the notice's progress bar. Also the progress
- * repaint: it replaces itself.
- */
-function drawGroupPlaceholder(host, notice) {
-    if (!host) return;
-    const unit = 'cells';
-    const cov = Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: W.grouping, unit, total: null, kind: coverageKindOf(notice) });
-    drawPlaceholder(host, cov, unit, {
-        actions: notice.actions,
-        say: { severity: notice.severity === 'error' ? 'error' : 'notice', headline: notice.headline, lines: notice.text ? [notice.text] : [] }
-    });
-    const box = host.querySelector('.coverage-placeholder');
-    if (box) {
+    return describeSource(snap, ctx, VOCAB);
         box.dataset.scoreState = notice.state;
         paintProgress(box, notice.progress || null, sentenceOf(notice));
     }
@@ -335,17 +316,6 @@ function emptyHandle(id, onChange) {
                 return { groupId: id, handle };
     // a caller that waits for the groups says nothing yet (rec.quiet): no notice and no tag until it is known to last
             matches: (rec, setting) => rec.groupId === setting.key,
-    throw unavailable(notice, missingCoverage(notice, setting, unit, expected, coverageKindOf(snap)), snap.state);
-}
-            // drawn again when the grouping was renamed (its legend and axis titles name it), or when what the strip
-            // said of a grouping with no value changed (a factor added to an empty grouping: computing now)
-            stale: (rec, snap) => (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)
-    return Promise.reject(unavailable(notice, missingCoverage(notice, setting, unit, expected, 'stopped')));
-}
-
-/**
- * A plot's series of a grouping: waits for it while the plot has a drawing to keep (the binding's loadWhenReady). A
- * hover line does not hold the plot back: it is left out until the groups are there, and the plot draws again then.
  * @param {Object} setting
  * @param {{host, role: string, axis: (string|null), expected: (number|null), unit: string, signal: (AbortSignal|null)}} opts
  */
@@ -358,20 +328,18 @@ function loadForPlot(setting, { host, role, expected, unit, signal }) {
             return Promise.reject(error);
         }
     }
-    return binding().loadWhenReady((quiet) => loadGroupSeries(setting, { host, role, expected, unit, quiet }), { host, role }, signal);
 }
 
 /**
  * A large plot's series of a grouping: the codes the group store holds, nothing copied; waits as loadForPlot does.
- * (Large-plot mode draws it once G8b names its axes in `largeAxes`.)
+                return { groupId: id, handle };
  * @param {Object} setting
- * @param {{host, role: string, expected: (number|null), unit?: string, signal: (AbortSignal|null)}} opts
+            matches: (rec, setting) => rec.groupId === setting.key,
  */
 function loadLargeForPlot(setting, { host, role, expected, unit = 'cells', signal }) {
-    if (unit === 'genes') return notCells(setting, role, unit, expected);
-    return binding().loadWhenReady((quiet) => loadGroupSeries(setting, { host, role, expected, unit, large: true, quiet }), { host, role }, signal);
-}
-
+            // drawn again when the grouping was renamed (its legend and axis titles name it), or when what the strip
+            // said of a grouping with no value changed (a factor added to an empty grouping: computing now)
+            stale: (rec, snap) => (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)
 // ---------------------------------------------------------------------------------------------- actions
 
 /**
@@ -507,3 +475,6 @@ registerSource({
     placeholder: drawGroupPlaceholder,
     vocabulary: { result: W.grouping }
 });
+
+ * Panels were added, removed, closed, reopened or renamed: a deleted grouping shows, a returned one resolves, and a
+ * renamed one is named again. (A closed plot's records went with it: cell-plot.js releases them in every provider.)
