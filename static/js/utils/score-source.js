@@ -273,7 +273,7 @@ function nameSetting(setting) {
 }
 
 /** The type of the source this module provides: what a consumer's setting names. */
-const SCORE_TYPE = 'gene-score';
+export const SCORE_TYPE = 'gene-score';
 
 /** The series cannot be drawn yet, and why. */
 const unavailable = (text, notice, coverage, state = null) => new SourceUnavailable(text, notice, coverage, state, SCORE_TYPE);
