@@ -341,8 +341,10 @@ test('fading by the level\'s share steps each level through lighter colors', () 
 });
 
 test('the labels of the most frequent level come from the caller when it has them', () => {
+    // the caller's names are the factor's renames (C2a: opts.topLabels gave way to the factor's own `labels`)
     const { config, table } = topTable();
-    const f = D.countFigure(config, table, opts({}, { topLabels: new Map([['c:A', 'Alpha'], ['c:B', 'Beta']]) }));
+    const named = { ...config, value: { ...config.value, factor: { ...config.value.factor, labels: { 'c:A': 'Alpha', 'c:B': 'Beta' } } } };
+    const f = D.countFigure(named, table, opts());
     assert.deepEqual(f.data.slice(1).map((s) => s.name), ['Alpha', 'Beta']);
 });
 
