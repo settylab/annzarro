@@ -173,6 +173,28 @@ export function valueText(x) {
     return String(Number(x.toPrecision(3)));
 }
 
+/**
+ * One number format for a whole column, so its figures line up: % expressing to one decimal (58.0, 100.0); any other
+ * statistic with as many decimals as its smallest non-zero figure needs for three figures (at most 6). A dash for a
+ * group with no value.
+ * @param {string} stat
+ * @param {ArrayLike<number>} values - the column
+ * @returns {(x: number) => string}
+ */
+export function columnFormat(stat, values) {
+    let decimals = 1;
+    if (stat !== 'pct_expressing') {
+        let least = Infinity;
+        for (let i = 0; i < values.length; i++) {
+            const v = Math.abs(values[i]);
+            if (Number.isFinite(v) && v > 0 && v < least) least = v;
+        }
+        decimals = Number.isFinite(least) ? Math.min(6, Math.max(0, 2 - Math.floor(Math.log10(least)))) : 0;
+    }
+    return (x) => (typeof x === 'number' && Number.isFinite(x)
+        ? x.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : DASH);
+}
+
 // ================================================================================================ columns and CSV
 
 /** The columns of the list: the group's own, then the focused gene's (UX 2.5). The colour has no column of its own. */

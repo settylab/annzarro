@@ -2,9 +2,10 @@
    Colours are the theme's tokens (theme.css), so light and dark follow. The grid draws only the rows in view; a row is
    placed by a transform and every row has the same height, so the sizer's height is the list's. */
 
-.cgg { padding: 6px 8px 8px; border-top: 1px solid var(--az-border); }
+.cgrp-groups:has(.cgg:not([hidden])) { flex: 1 1 0; min-height: 12rem; display: flex; flex-direction: column; }
+.cgg { padding: 6px 8px 8px; border-top: 1px solid var(--az-border); flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
 .cgg[hidden] { display: none; }
-.cgg__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-bottom: 6px; }
+.cgg__bar { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-bottom: 6px; }
 .cgg__title { font-weight: 600; margin-right: auto; }
 .cgg__search { width: 11rem; max-width: 100%; }
 .cgg__view { display: inline-flex; border: 1px solid var(--az-border-strong); border-radius: 4px; overflow: hidden; }
@@ -13,12 +14,13 @@
 .cgg__viewbtn[aria-checked="true"] { background: var(--az-muted); color: var(--az-surface); }
 .cgg__viewbtn:disabled { color: var(--az-muted); opacity: 0.6; }
 .cgg__viewbtn:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
-.cgg__foot { padding-top: 4px; color: var(--az-muted); font-size: 0.75rem; }
+.cgg__gridhost { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.cgg__foot { flex: 0 0 auto; padding-top: 4px; color: var(--az-muted); font-size: 0.75rem; }
 
 .cgg-grid {
     position: relative;
-    min-height: 4rem;
-    max-height: 22rem;
+    flex: 1 1 0;
+    min-height: 8rem;
     overflow: auto;
     border: 1px solid var(--az-border);
     background: var(--az-surface);

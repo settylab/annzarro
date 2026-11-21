@@ -24,7 +24,7 @@ import { GROUP_COLOURS } from '../../utils/categories.js';
 import { noGroupReasons } from './status.js';
 import { smallOf } from './settings.js';
 import {
-    groupRows, shareText, filterRows, reasonRows, crossTable, layerOf, featureWire, focusColumns, focusValues, valueText, isLive, gateOf,
+    groupRows, shareText, filterRows, reasonRows, crossTable, layerOf, featureWire, focusColumns, focusValues, columnFormat, isLive, gateOf,
     listColumns, listCsv, crossCsv
 } from './group-rows.js';
 
@@ -246,10 +246,11 @@ function mount(host, ctx) {
         if (!feature) return { values: null, pending: true };
         if (!feature.moments || !feature.status || feature.status.status !== 'ok' || !model || !columns.length) return { values: null, pending: false };
         const memo = valuesMemo;
-        if (memo && memo.feature === feature && memo.rows === model.rows && memo.columns === columns) return { values: memo.values, pending: false };
+        if (memo && memo.feature === feature && memo.rows === model.rows && memo.columns === columns) return { values: memo.values, formats: memo.formats, pending: false };
         const values = focusValues({ columns, rows: model.rows, featureReply: snap.values.reply, moments: feature.moments });
-        valuesMemo = { feature, rows: model.rows, columns, values };
-        return { values, pending: false };
+        const formats = columns.map((c, k) => columnFormat(c.stat, values[k]));
+        valuesMemo = { feature, rows: model.rows, columns, values, formats };
+        return { values, formats, pending: false };
     }
 
     function paintFocus() {
@@ -351,7 +352,7 @@ function mount(host, ctx) {
         const bits = [];
         columns.forEach((c, k) => {
             const x = data.values ? data.values[k][r.index] : NaN;
-            const text = data.values ? valueText(x) : (data.pending ? PENDING : DASH);
+            const text = data.values ? data.formats[k](x) : (data.pending ? PENDING : DASH);
             p.vals[k].textContent = text;
             bits.push(`${c.header} ${text}`);
         });

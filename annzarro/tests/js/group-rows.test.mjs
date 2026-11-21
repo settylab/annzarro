@@ -172,3 +172,14 @@ test('the reasons a cell is in no group are rows of their own', () => {
     assert.deepEqual(rows.map((r) => r.name), ['78 have no value for Cd3e', '5 small groups (under 10 cells) are hidden']);
     assert.equal(rows.length, 2);
 });
+
+test('one format per column: % expressing to one decimal, the others to the decimals their smallest figure needs', () => {
+    const pct = M.columnFormat('pct_expressing', [58, 64.4, 100, NaN]);
+    assert.deepEqual([58, 64.4, 100].map(pct), ['58.0', '64.4', '100.0']);
+    assert.equal(pct(NaN), '\u2014');
+    const mean = M.columnFormat('mean', [3.88, 0.4213, 5.2]);
+    assert.deepEqual([3.88, 0.4213, 5.2].map(mean), ['3.880', '0.421', '5.200']);
+    assert.equal(M.columnFormat('mean', [1234.5, 2000])(1234.5), '1,235');
+    assert.equal(M.columnFormat('mean', [NaN, NaN])(NaN), '\u2014');
+    assert.equal(M.columnFormat('mean', [0, 0])(0), '0');
+});

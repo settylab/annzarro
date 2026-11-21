@@ -163,8 +163,10 @@ def _column_values(page, header_text):
             r.querySelectorAll('[role=gridcell]')[i].textContent.trim()]); }""", [f"{A} .cgg-grid", header_text])
 
 
-def _three(x):
-    return float(f"{x:.3g}")
+def _close(text, x):
+    """The text is the value to the decimals the column shows."""
+    decimals = len(text.split(".")[1]) if "." in text else 0
+    return abs(float(text.replace(",", "")) - x) <= 0.5 * 10 ** -decimals + 1e-9
 
 
 def test_with_no_gene_focused_the_columns_say_so(page, served):
@@ -184,8 +186,9 @@ def test_the_focused_gene_columns_are_its_offered_statistics_on_the_first_layer(
     obs = DATA.obs
     for (ct, cond), idx in obs.groupby(["cell_type", "condition"], observed=True).indices.items():
         name = f"{ct} | {cond}"
-        assert float(mean[name]) == pytest.approx(_three(float(column[idx].mean())), rel=1e-6), name
-        assert float(pct[name]) == pytest.approx(_three(100 * float((column[idx] > 0).mean())), rel=1e-6), name
+        assert _close(mean[name], float(column[idx].mean())), name
+        assert _close(pct[name], 100 * float((column[idx] > 0).mean())), name
+        assert "." in pct[name] and len(pct[name].split(".")[1]) == 1, "% expressing has one decimal in every row"
     sent = _feature_computes(page)
     assert sent and sent[-1]["features"][0]["name"] == GENE and sent[-1]["features"][0]["layer"] == "logged"
 
@@ -199,7 +202,7 @@ def _check_means(page, gene, index):
     mean = dict(_column_values(page, f"{gene} mean"))
     column = DATA.logged[:, index]
     for (ct, cond), idx in DATA.obs.groupby(["cell_type", "condition"], observed=True).indices.items():
-        assert float(mean[f"{ct} | {cond}"]) == pytest.approx(_three(float(column[idx].mean())), rel=1e-6), (gene, ct, cond)
+        assert _close(mean[f"{ct} | {cond}"], float(column[idx].mean())), (gene, ct, cond)
 
 
 def test_a_focus_change_gives_the_new_genes_values_and_no_focus_takes_the_columns_away(page, served):
@@ -220,6 +223,7 @@ def test_the_focused_gene_rides_the_first_request_and_costs_no_request_of_its_ow
     base._open(page, served, {GA: base._grouping(partitionings=[CELL_TYPE, CONDITION])})
     base._ready(page)
     until(page, "(s) => [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].length > 3", A)
+    until(page, "(s) => ![...document.querySelectorAll(s + ' .cgg-row .cgg-val')].some(e => e.textContent.trim() === '…')", A)
     computes = [c for c in page.calls if not c.get("estimate_only")]
     assert len(computes) == 1, [c.get("features") for c in computes]
     assert [f["name"] for f in computes[0]["features"]] == ["GENE000"], "the server's default focused gene"
