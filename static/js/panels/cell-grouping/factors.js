@@ -16,15 +16,17 @@ import { VOCABULARY } from '../../utils/vocabulary.js';
 import { GROUPING_LIMITS, sourceName } from '../../utils/cell-grouping.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
 import { wouldLoop, loopReason } from '../../utils/panel-references.js';
+import { SCORE_TYPE } from '../../utils/score-source.js';
 
 const W = VOCABULARY.word;
 const fmt = (n) => Number(n).toLocaleString('en-US');
 
 /**
- * The source types of plan 1.6 whose `key` is another panel's id, named once here: a factor's source is part of the
- * grouping's frozen schema. (The cell-group provider, G8a, may export its own name for the second; this one follows.)
+ * The source types of plan 1.6 whose `key` is another panel's id: a factor's source is part of the grouping's frozen
+ * schema. The score's type is its provider's.
  */
-export const SCORE_SOURCE = 'gene-score';
+export const SCORE_SOURCE = SCORE_TYPE;
+// G8a replaces this literal with utils/cell-group-source.js's exported type
 export const GROUP_SOURCE = 'cell-group';
 export const TABLE_SOURCE = 'table';
 /** Source types whose `key` is another panel's id: a grouping's references. */
