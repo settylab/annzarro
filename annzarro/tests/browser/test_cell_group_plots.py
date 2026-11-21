@@ -438,6 +438,16 @@ def test_a_hidden_plots_codes_are_evicted_with_its_drawing_and_asked_for_again_w
     assert len(_computes(page)) == asked + 1
 
 
+def test_closing_a_plot_coloured_by_a_grouping_releases_its_codes_at_once(page, served):
+    _open(page, served, {P: _plot(color=by(GA)), GA: _grouping()})
+    _wait_legend(page, TYPES)
+    held = "async () => (await import('/static/js/utils/memory-guard-ui.js')).ledger.heldBytes()"
+    assert page.evaluate(held) >= N
+    after = page.evaluate("""async (id) => { window.PanelManager.closePanel(id);
+        return (await import('/static/js/utils/memory-guard-ui.js')).ledger.heldBytes(); }""", P)
+    assert after == 0, "released in the close itself, not on a later event"
+
+
 # ------------------------------------------------------------------ 7. a link round trip
 
 def test_a_link_round_trip_keeps_the_grouping_on_colour_and_axis(page, served):

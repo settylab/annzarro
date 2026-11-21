@@ -476,8 +476,8 @@ actions.register(createPlotGroupActions({
 // ---------------------------------------------------------------------------------------------- events from the page
 
 /**
- * Panels were added, removed, closed, reopened or renamed: a deleted grouping shows, a returned one resolves, a renamed
- * one is named again, and a closed plot's records go.
+ * Panels were added, removed, closed, reopened or renamed: a deleted grouping shows, a returned one resolves, and a
+ * renamed one is named again. (A closed plot's records went with it: cell-plot.js releases them in every provider.)
  */
 function panelsChanged() {
     if (!_binding || !_binding.hosts().length) return;
@@ -485,7 +485,6 @@ function panelsChanged() {
     sources.recheck();
     sources.contextChanged();
     for (const host of _binding.hosts()) {
-        if (!host.isConnected) { _binding.releaseHost(host); continue; }
         for (const rec of _binding.recordsOf(host).values()) {
             if (rec.drawnKey && groupingTitle(rec.setting) !== rec.setting.label) _binding.refreshSoon(host);
         }
@@ -551,5 +550,6 @@ registerSource({
     },
     titleOf: (setting) => `${W.grouping} ${groupingTitle(setting)}`,
     placeholder: drawGroupPlaceholder,
+    releaseHost: (host) => { if (_binding) _binding.releaseHost(host); },
     vocabulary: { result: W.grouping }
 });

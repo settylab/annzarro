@@ -59,12 +59,13 @@ const RING_B = grouping('cell-grouping-11', 'Ring B', byGrouping('cell-grouping-
 const GONE = grouping('cell-grouping-12', 'Soon gone', byColumn('cell_type'));
 const FRESH = grouping('cell-grouping-13', 'Fresh', byColumn('batch'));
 const SLOW_TOO = grouping('cell-grouping-14', 'Slow too', byColumn('slow_too'));
+const ALONE = grouping('cell-grouping-15', 'Alone', byColumn('alone'));
 const plotConfigs = new Map();
 const plots = new Map();
 const plot = (id) => ({ getId: () => id, getType: () => 'cell-plot', getTitle: () => id,
     getConfig: () => { if (!plotConfigs.has(id)) plotConfigs.set(id, {}); return plotConfigs.get(id); } });
 const made = [];
-let all = [G1, G2, EMPTY, MANY, WIDE, OWN, BIG, SLOW, RING_A, RING_B, GONE, FRESH, SLOW_TOO];
+let all = [G1, G2, EMPTY, MANY, WIDE, OWN, BIG, SLOW, RING_A, RING_B, GONE, FRESH, SLOW_TOO, ALONE];
 function panelOf(id) {
     const found = all.find((p) => p.getId() === id);
     if (found) return found;
@@ -482,3 +483,12 @@ test('the obs key list lists the groupings under "Groupings"; the entry is a way
     assert.deepEqual(R.alsoListedEntries('obsm', 'cell-plot', ['color']), []);
 });
 
+test('a closed plot lets go of its groupings at once, in every provider (the codes leave the ledger)', async () => {
+    const h = plotHost();
+    const s = setting('cell-grouping-15');
+    await settle(s, h);
+    const held = ledger.heldBytes();
+    R.releaseSourceHost(h);
+    assert.equal(ledger.heldBytes(), held - 6, "the plot's codes, nothing else's");
+    assert.equal(A.actions.available('score-choose', h), false, 'no record is left on the host');
+});

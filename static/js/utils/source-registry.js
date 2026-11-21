@@ -61,6 +61,7 @@
  *   placeholder(host, notice)
  *                     draws an axis that cannot be drawn: the placeholder says why, with the way out
  *   vocabulary        {result}: what the source makes, in a sentence ('score')
+ *   releaseHost(host) a plot closes: what the provider holds for it goes (its records, and values nothing else needs)
  *
  * The built-in sources (obs, obsm, obsp, layer, var...) are not registered: they keep their
  * own handling in plot-make.js. Only providers added after them live here.
@@ -70,6 +71,16 @@ const _providers = new Map();
 
 /** The sources every dataset has, read by plot-make.js itself; any other type is a provider's. */
 const BUILT_IN = new Set(['none', 'obs', 'obsm', 'obsp', 'layer', 'var', 'varm', 'varp']);
+
+/**
+ * A consumer's container goes (a plot closes): every provider lets go of what it holds for it, at once.
+ * @param {HTMLElement} host
+ */
+export function releaseSourceHost(host) {
+    for (const provider of _providers.values()) {
+        if (typeof provider.releaseHost === 'function') provider.releaseHost(host);
+    }
+}
 
 /** What starts the value of an entry a built-in type's key list holds for a provider (never stored: it is a way to choose). */
 const ALSO = '\u0001';
