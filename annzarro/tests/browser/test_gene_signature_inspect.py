@@ -222,7 +222,7 @@ def test_the_histogram_has_a_tooltip_per_bin_by_pointer_and_keyboard(page, serve
     n = bins[3]
     tip = page.locator(f"{I} .gsig-hist__tip")
     if n:
-        playwright.expect(tip).to_have_text(re.compile(rf".+ to .+: {n} cells? \(\d+\.\d%\)"))
+        playwright.expect(tip).to_have_text(re.compile(rf"^.+ to .+: {n} cells? \(\d+\.\d%\)$"))   # whole text, as fullmatch was
     playwright.expect(tip).to_have_class(re.compile(r"\bis-shown\b"))
     page.mouse.move(0, 0)
     playwright.expect(tip).not_to_have_class(re.compile(r"\bis-shown\b"))
