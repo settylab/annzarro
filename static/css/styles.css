@@ -5014,6 +5014,10 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .source-progress[data-mode="indeterminate"] .source-progress__fill {
     width: 30%; animation: source-progress-band 1.6s ease-in-out infinite;
 }
+/* the slim form in a plot's status strip, for a load that keeps its drawing (setStatusProgress): never over the plot */
+.ps-progress { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; vertical-align: middle; }
+.source-progress--strip { display: inline-block; width: 96px; height: 4px; margin-top: 0; border-radius: 2px; }
+.ps-progress-text { font-size: 0.75rem; color: var(--az-muted); white-space: nowrap; }
 @keyframes source-progress-band {
     from { left: -30%; }
     to { left: 100%; }

@@ -195,3 +195,48 @@ def test_one_painter_per_host_two_providers_on_one_plot_and_a_shared_score(page,
     gs._wait_coloured(page)
     gs._wait_coloured(page, C2)
     assert gs._notice(page) is None and gs._notice(page, C2) is None
+
+
+def _strip_bar(page, tile=C):
+    """The slim bar in the plot's status strip: its mode, ARIA and the text beside it, or None."""
+    return page.evaluate("""(tile) => {
+        const el = document.querySelector(tile + ' .plot-status .ps-progress .source-progress');
+        if (!el) return null;
+        const text = el.parentNode.querySelector('.ps-progress-text');
+        return { mode: el.dataset.mode, role: el.getAttribute('role'), now: el.getAttribute('aria-valuenow'),
+                 valuetext: el.getAttribute('aria-valuetext'), text: text ? text.textContent : null,
+                 width: el.querySelector('.source-progress__fill').style.width };
+    }""", tile)
+
+
+def test_a_plot_that_keeps_its_drawing_shows_a_slim_bar_in_its_strip_and_is_not_covered(page, served):
+    gs._slow(page, "auto", 30)
+    obs_colour = gs._cell("cell-plot-C", color={"type": "obs", "key": "score"})
+    gs._open(page, served, plots=(("cell-plot-C", obs_colour),))
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.length); }", C)
+    # colour the drawn plot by the score: the plot keeps its drawing while the score computes (a quiet load)
+    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
+    until(page, "(t) => !!document.querySelector(t + ' select.axis-key-select[data-axis=\"color\"] option[value=\"gene-signature-S\"]')", C)
+    if page.eval_on_selector(f"{C} select.axis-key-select[data-axis='color']", "s => s.value") != gs.SIG:
+        page.select_option(f"{C} select.axis-key-select[data-axis='color']", gs.SIG)
+    until(page, "() => window.__ctls.length === 1")
+    gs._frame(page, 0, type="progress", done=61, total=200, entries_done=3_000_000_000, entries_total=10_000_000_000, running_s=60,
+              queue={"ahead": 0, "sharing": 0})
+    until(page, "(t) => { const b = document.querySelector(t + ' .plot-status .ps-progress .source-progress'); return !!b && b.dataset.mode === 'determinate'; }", C)
+    bar = _strip_bar(page)
+    assert bar["role"] == "progressbar" and bar["now"] == "30" and bar["width"] == "30%"
+    assert bar["valuetext"] == "Computing 'T cell score': 61 of 200 genes · about 2 minutes left. This plot has no color."
+    assert bar["text"] == "about 2 minutes left", "the time left, written beside the bar"
+    assert gs._drawn(page), "the drawing is kept"
+    expect_stays(lambda: gs._notice(page) is None and gs._tag(page) is None,
+                 "a quiet load is never covered: nothing event-driven marks the absence of an overlay", page=page, seconds=0.6)
+    # in line on the server: the same rules, indeterminate
+    gs._frame(page, 0, type="progress", done=61, total=200, entries_done=3_000_000_000, entries_total=10_000_000_000, running_s=60,
+              queue={"ahead": 1, "sharing": 0})
+    until(page, "(t) => { const b = document.querySelector(t + ' .plot-status .ps-progress .source-progress'); return !!b && b.dataset.mode === 'indeterminate'; }", C)
+    assert _strip_bar(page)["now"] is None
+    assert _strip_bar(page)["valuetext"].startswith("Waiting for the server: 1 computation ahead.")
+    gs._finish(page, 0)
+    gs._wait_coloured(page)
+    until(page, "(t) => !document.querySelector(t + ' .plot-status .ps-progress')", C)
+    assert gs._notice(page) is None

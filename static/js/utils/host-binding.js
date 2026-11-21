@@ -21,7 +21,7 @@
  *
  * A provider's painter id and its action provider id are the same string ('plot-score', 'table-score').
  */
-import { worstNotice, paintNotice, progressBar, BAR_AFTER_S } from './source-notices.js';
+import { worstNotice, paintNotice, paintStripProgress, progressBar, BAR_AFTER_S } from './source-notices.js';
 import { actions } from './source-actions.js';
 
 /** The axes a source can be an x, y or z of; their notice may block the plot (a placeholder instead of a drawing). */
@@ -52,8 +52,10 @@ export function panelIdOf(host) {
 /**
  * @typedef {Object} NoticeSource
  * @property {string} id - the provider's id, the same as its action provider's
- * @property {(host: HTMLElement) => Array<{role: string, snap: Object, notice: (Object|null), rec?: Object}>} entries
- *   what it has to say on this host now: one entry per role it serves there (a notice of null says nothing)
+ * @property {(host: HTMLElement) => Array<{role: string, snap: Object, notice: (Object|null), quiet?: Object, rec?: Object}>} entries
+ *   what it has to say on this host now: one entry per role it serves there (a notice of null says nothing). `quiet` is
+ *   the notice a load that keeps its drawing holds back: it is not said over the plot, but once its wait is long a slim
+ *   bar in the plot's status strip says it
  * @property {(host: HTMLElement, notice: Object) => void} [placeholder] - draws an axis that cannot be drawn
  */
 
@@ -64,10 +66,12 @@ export function panelIdOf(host) {
  * @param {(fn: Function, ms: number) => *} [options.setTimer]
  * @param {(timer: *) => void} [options.clearTimer]
  * @param {(host: HTMLElement, notice: (Object|null), opts: Object) => void} [options.paint] - source-notices.js paintNotice
+ * @param {(host: HTMLElement, bar: (Object|null), notice?: Object, snap?: Object) => void} [options.strip] - the strip's
+ *   bar of a quiet load: source-notices.js paintStripProgress
  */
 // export-unused-ok: the page's painter is made here; a test makes one with its own clock and timers (the 10 s rule)
 export function createPainter({ now = () => Date.now(), setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (t) => clearTimeout(t),
-    paint = paintNotice } = {}) {
+    paint = paintNotice, strip = paintStripProgress } = {}) {
     /** @type {Map<string, NoticeSource>} */
     const sources = new Map();
     /** host -> {since: Map(entry key -> ms), timer, shown, placeholder} */
@@ -76,7 +80,7 @@ export function createPainter({ now = () => Date.now(), setTimer = (fn, ms) => s
     function stateOf(host) {
         let st = states.get(host);
         if (!st) {
-            st = { since: new Map(), timer: null, shown: null };
+            st = { since: new Map(), timer: null, shown: null, strip: false };
             states.set(host, st);
         }
         return st;
@@ -86,7 +90,7 @@ export function createPainter({ now = () => Date.now(), setTimer = (fn, ms) => s
     function clock(st, all, t) {
         const seen = new Set();
         for (const e of all) {
-            if (!e.notice || !ON_ITS_WAY.includes(e.snap && e.snap.state)) continue;
+            if (!(e.notice || e.quiet) || !ON_ITS_WAY.includes(e.snap && e.snap.state)) continue;
             const key = `${e.provider}\u0001${e.role}\u0001${(e.snap && e.snap.key) || ''}`;
             e.clockKey = key;
             seen.add(key);
@@ -105,12 +109,21 @@ export function createPainter({ now = () => Date.now(), setTimer = (fn, ms) => s
     }
 
     /** A job on its way that has no bar yet gets one at 10 s by the clock, with no frame needed to ask for it. */
-    function armClock(host, st, shown, t) {
+    function armClock(host, st, waiting, t) {
         if (st.timer !== null) { clearTimer(st.timer); st.timer = null; }
-        if (!shown || !shown.clockKey || shown.notice.progress) return;
-        const left = BAR_AFTER_S - elapsedOf(st, shown, t);
-        if (left <= 0) return;
+        let left = Infinity;
+        for (const e of waiting) if (e.clockKey) left = Math.min(left, BAR_AFTER_S - elapsedOf(st, e, t));
+        if (!(left > 0) || left === Infinity) return;
         st.timer = setTimer(() => { st.timer = null; paintHost(host); }, Math.ceil(left * 1000) + 5);
+    }
+
+    /** The first quiet load that has run 10 s (by the clock, not the estimate), with its bar; null when none has. */
+    function quietBar(st, quiet, t) {
+        for (const e of quiet) {
+            const bar = progressBar(e.snap, elapsedOf(st, e, t), { byEstimate: false });
+            if (bar) return { e, bar };
+        }
+        return null;
     }
 
     function paintHost(host) {
@@ -131,7 +144,17 @@ export function createPainter({ now = () => Date.now(), setTimer = (fn, ms) => s
         const notice = withBar(st, shownEntry, t);
         // an axis that cannot be drawn: nothing truthful can be shown, so the plot area says it, as a placeholder
         paint(host, notice, { overlay: !axisEntry });
-        armClock(host, st, shownEntry && { ...shownEntry, notice }, t);
+        // a load that keeps its drawing is never covered: once it has run 10 s, the strip under the plot says it
+        const quiet = all.filter(e => !e.notice && e.quiet);
+        const said = quietBar(st, quiet, t);
+        if (said) {
+            strip(host, said.bar, said.e.quiet, said.e.snap);
+            st.strip = true;
+        } else if (st.strip) {
+            strip(host, null);
+            st.strip = false;
+        }
+        armClock(host, st, [...(notice && !notice.progress ? [shownEntry] : []), ...(said ? [] : quiet)], t);
         if (axisEntry) {
             const placed = host.__sourcePlaceholder || (typeof host.querySelector === 'function' && host.querySelector('.coverage-placeholder'));
             if (placed && axisEntry.source.placeholder) axisEntry.source.placeholder(host, withBar(st, axisEntry, t));
@@ -243,10 +266,11 @@ export function createHostBinding({ id, open, matches, describe, stillUsed = () 
 
     function noticeOf(rec) {
         const snap = rec.handle.read();
-        // while a load waits for a value that is only pending, nothing is said: the plot keeps what it shows and its
-        // loading pill speaks
-        if (rec.quiet && PENDING.includes(snap.state)) return { role: rec.role, snap, notice: null, rec };
-        return { role: rec.role, snap, notice: describe(snap, { role: roleWord(rec.role), sharers: rec.handle.sharers() }), rec };
+        // while a load waits for a value that is only pending, nothing is said over the plot: it keeps what it shows and
+        // its loading pill speaks, and after 10 s a bar in its strip (the painter's)
+        const notice = describe(snap, { role: roleWord(rec.role), sharers: rec.handle.sharers() });
+        if (rec.quiet && PENDING.includes(snap.state)) return { role: rec.role, snap, notice: null, quiet: notice, rec };
+        return { role: rec.role, snap, notice, rec };
     }
 
     const paint = (host) => own.paint(host);

@@ -46,12 +46,14 @@ function fakeTime() {
     };
 }
 
-/** A painter whose paints are recorded: host -> [{notice, overlay}]. */
+/** A painter whose paints are recorded: host -> [{notice, overlay}], and the strip's bars. */
 function recordedPainter(time = fakeTime()) {
     const painted = [];
+    const strips = [];
     const p = HB.createPainter({ now: time.now, setTimer: time.setTimer, clearTimer: time.clearTimer,
-        paint: (host, notice, opts) => painted.push({ host, notice, overlay: opts.overlay }) });
-    return { p, painted, time, last: () => painted[painted.length - 1] };
+        paint: (host, notice, opts) => painted.push({ host, notice, overlay: opts.overlay }),
+        strip: (host, bar, notice) => strips.push({ host, bar, sentence: notice ? SN.sentenceOf(notice) : null }) });
+    return { p, painted, strips, time, last: () => painted[painted.length - 1], lastStrip: () => strips[strips.length - 1] };
 }
 
 /** A notice source whose entries the test sets. */
@@ -207,6 +209,41 @@ test('a new key restarts the clock; a job that is done stops it', () => {
     score.set(h, [['color', { state: 'ready', title: 'Sig', key: 'k2', values: [1] }]]);
     p.paint(h);
     assert.equal(last().notice, null);
+    assert.equal(time.pending(), 0);
+});
+
+test('a load that keeps its drawing is never covered: after 10 s of running its bar is in the strip, and it goes when the job does', () => {
+    const { p, last, strips, lastStrip, time } = recordedPainter();
+    const on = new Map();
+    p.register({ id: 'plot-score', entries: (h) => (on.get(h) || []) });
+    const h = host();
+    const snap = { state: 'computing', title: 'Sig', key: 'k', estimate: { seconds: 3 }, progress: { done: 1, total: 4 } };
+    const quietEntry = (s) => ({ role: 'color', snap: s, notice: null, quiet: SN.describeSource(s, { role: 'colour' }, SCORE) });
+    on.set(h, [quietEntry(snap)]);
+    p.paint(h);
+    assert.equal(last().notice, null, 'nothing over the plot');
+    assert.equal(strips.length, 0, 'a short wait: no bar anywhere');
+    time.advance(10005);
+    assert.equal(last().notice, null, 'still nothing over the plot');
+    assert.deepEqual(lastStrip().bar, { determinate: true, value: 1, max: 4 });
+    assert.equal(lastStrip().sentence, "Computing 'Sig': 1 of 4 genes. This plot has no color.");
+    // a new job with a long estimate: not on the estimate alone (the clock rule only), then at 10 s; a queue is indeterminate
+    on.set(h, [quietEntry({ ...snap, key: 'k2', estimate: { seconds: 40 }, progress: { done: 0, total: 4, queue: { ahead: 1, sharing: 0 } } })]);
+    p.paint(h);
+    assert.equal(lastStrip().bar, null, 'a quiet load shows no bar on its estimate alone');
+    time.advance(10005);
+    assert.deepEqual(lastStrip().bar, { determinate: false });
+    // the server's running_s is the clock too
+    on.set(h, [quietEntry({ ...snap, key: 'k3', estimate: { seconds: 2 }, progress: { done: 2, total: 4, running_s: 12 } })]);
+    p.paint(h);
+    assert.deepEqual(lastStrip().bar, { determinate: true, value: 2, max: 4 });
+    // done: the strip's bar goes, once
+    on.set(h, [{ role: 'color', snap: { state: 'ready', key: 'k2', values: [1] }, notice: null }]);
+    p.paint(h);
+    assert.equal(lastStrip().bar, null);
+    const n = strips.length;
+    p.paint(h);
+    assert.equal(strips.length, n, 'nothing to take away twice');
     assert.equal(time.pending(), 0);
 });
 

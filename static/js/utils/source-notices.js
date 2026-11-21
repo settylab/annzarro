@@ -1,4 +1,4 @@
-import { setStatusTag, setScoreNotice } from './panel-surface.js';
+import { setStatusTag, setScoreNotice, setStatusProgress } from './panel-surface.js';
 import { VOCABULARY } from './vocabulary.js';
 
 /**
@@ -263,16 +263,19 @@ const ON_ITS_WAY = Object.freeze(['estimating', 'queued', 'computing', 'updating
  * DETERMINATE from the stored entries done and in all (SHR-48), or from the frame's count when it carries no entries;
  * a job waiting for the server or the page, and a phase that counts nothing, show an INDETERMINATE bar. There is never
  * a percentage that is not measured.
+ * A load that keeps its drawing (a quiet one, shown in the strip) takes the clock only, `byEstimate: false`: it shows a
+ * bar once the job has actually run 10 s, never on the estimate alone.
  * @param {Object} snap - a handle's snapshot
  * @param {number} elapsed - seconds since the page saw this job start waiting or computing
+ * @param {{byEstimate?: boolean}} [opts]
  * @returns {null|{determinate: boolean, value?: number, max?: number}}
  */
-export function progressBar(snap, elapsed) {
+export function progressBar(snap, elapsed, { byEstimate = true } = {}) {
     if (!snap || !ON_ITS_WAY.includes(snap.state)) return null;
     const p = snap.progress || null;
     const estimate = snap.estimate ? Number(snap.estimate.seconds) : NaN;
     const ran = p ? Number(p.running_s) : NaN;
-    const long = (Number.isFinite(estimate) && estimate > BAR_AFTER_S) || elapsed >= BAR_AFTER_S || (Number.isFinite(ran) && ran >= BAR_AFTER_S);
+    const long = (byEstimate && Number.isFinite(estimate) && estimate > BAR_AFTER_S) || elapsed >= BAR_AFTER_S || (Number.isFinite(ran) && ran >= BAR_AFTER_S);
     if (!long) return null;
     const queue = queueOf(p);
     if (snap.state !== 'computing' && snap.state !== 'updating') return { determinate: false };
@@ -326,6 +329,22 @@ export function paintProgress(box, bar, sentence) {
 
 /** A notice's whole sentence: its headline and its text. */
 export const sentenceOf = (notice) => `${notice.headline}${notice.text ? ` ${notice.text}` : ''}`;
+
+/**
+ * The slim bar in a plot's status strip for a load that keeps its drawing (the overlay would cover it): the notice's
+ * sentence as its aria-valuetext, and beside it the time left, or the notice's tag until the time left is known. Null
+ * takes it away.
+ * @param {HTMLElement} host
+ * @param {null|{determinate: boolean, value?: number, max?: number}} bar - progressBar's
+ * @param {Object} [notice] - the notice held back
+ * @param {Object} [snap] - its snapshot, for the time left
+ */
+export function paintStripProgress(host, bar, notice = null, snap = null) {
+    setStatusProgress(host, bar && notice ? {
+        determinate: bar.determinate, pct: bar.determinate ? Math.round((100 * bar.value) / bar.max) : undefined,
+        sentence: sentenceOf(notice), text: timeLeftText(snap && snap.progress) || notice.tag.text
+    } : null);
+}
 
 /**
  * Say a notice on a host (a plot's or a table's container): a strip tag and an overlay inside the host, so nothing
