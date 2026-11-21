@@ -11,8 +11,16 @@
  */
 import { actions } from '../../utils/source-actions.js';
 import { painter } from '../../utils/host-binding.js';
-import { describeHeldRows } from '../../utils/score-column.js';
+import { describeHeldRows, dropConditions } from '../../utils/score-column.js';
+import { referencedKeys } from '../../utils/line-select.js';
+import { tableHalfOf } from '../../utils/table-source.js';
 import { TableScores } from './table-scores.js';
+
+/** The class of a header whose column a new condition cannot name in this table (a loop: operator decision 15). */
+const FILTER_OFF = 'az-filter-off';
+
+/** SearchBuilder's `columns`: a selector of the header cells of the columns a new condition can name. */
+export const FILTER_COLUMNS = `:not(.${FILTER_OFF})`;
 
 /** Milliseconds a burst of progress frames waits before the notice is drawn again. */
 const NOTICE_MS = 120;
@@ -22,6 +30,8 @@ const TABLE_PROVIDER = 'table-score';
 
 /** container -> the table id whose score columns it states, while the table is bound */
 const BOUND = new WeakMap();
+/** container -> its DataTable, while the table is bound (Remove this filter rebuilds its conditions) */
+const TABLES = new WeakMap();
 
 // what a table container has to say: one entry per score column, as the column states it (the painter shows the
 // worst of every provider's notices on the container, with its progress bar)
@@ -193,8 +203,32 @@ export function bindScoreColumns(dataTable, settings, container) {
         else button.removeAttribute('title');
     };
 
+    /**
+     * Keep out of the condition builder the columns a provider says cannot be filtered on in this table, unless a
+     * condition names one already (a link): asked when the table is bound and again as a condition is about to be
+     * made, so it follows a grouping's recipe and the table's references as they are then.
+     */
+    const markFilterable = () => {
+        let named = null;
+        for (const entry of TableScores.entries(id)) {
+            const half = tableHalfOf(entry.column);
+            const idx = indexOf(entry);
+            if (!half || !half.filterable || idx < 0) continue;
+            let th;
+            try { th = dataTable.column(idx).header(); } catch { continue; }
+            if (!th) continue;
+            if (!named) named = referencedKeys(settings.searchBuilderConfig);
+            th.classList.toggle(FILTER_OFF, !half.filterable(entry.column, id) && !named.has(entry.key));
+        }
+    };
+    // before SearchBuilder's own handler makes the condition (and lists the columns it can name)
+    container.addEventListener('click', (e) => {
+        if (e.target && e.target.closest && e.target.closest('.dtsb-add')) markFilterable();
+    }, true);
+
     /** The worst notice among the columns (and any other provider's on the container): an overlay and a strip tag, never a resize. */
     BOUND.set(container, id);
+    TABLES.set(container, dataTable);
     const paint = () => painter.paint(container);
 
     const schedulePaint = () => {
@@ -229,6 +263,7 @@ export function bindScoreColumns(dataTable, settings, container) {
         if (note) note.remove();
         container.classList.remove('az-score-held');
         BOUND.delete(container);
+        TABLES.delete(container);
         painter.paint(container);
     });
     // a condition added or removed in the filter changes whether the rows are held
@@ -237,6 +272,7 @@ export function bindScoreColumns(dataTable, settings, container) {
     });
     const syncAll = () => {
         for (const entry of TableScores.entries(id)) decorate(entry);
+        markFilterable();
         hold();
         exportState();
         paint();
@@ -259,7 +295,7 @@ function tableIdOf(host) {
  * @param {Object} deps
  */
 export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compute, cancel, retry, update, canOffer, offerAgain: offer, panelOf: panel,
-    openSource }) {
+    openSource, filtersOn = () => false, unfilter = () => {} }) {
     const table = (host) => { const id = idOf(host); return id && hasColumns(id) ? id : null; };
     const all = (run) => ({ target: table, run: (id) => { run(id); } });
     const worst = (test) => (host) => { const w = table(host) && worstOf(host); return w && test(w, host) ? w : null; };
@@ -273,6 +309,8 @@ export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compu
             'score-update': all(update),
             'score-offer': { target: worst((w) => canOffer(w.column)), run: (w) => { offer(w.column); } },
             'score-open': { target: worst((w) => !!panel(w.column.key)), run: (w, host) => { openSource(w.column.key, idOf(host), w.column); } },
+            // the conditions on the column go, and the column stays (a loop through the filter ends: decision 18)
+            'score-unfilter': { target: worst((w, host) => filtersOn(host, w)), run: (w, host) => { unfilter(host, w); } },
             'score-remove': { target: worst((w, host) => { const p = panel(idOf(host)); return !!p && typeof p.removeColumn === 'function'; }),
                 run: (w, host) => { panel(idOf(host)).removeColumn(w.column); } }
         }
@@ -290,5 +328,7 @@ actions.register(createTableActions({
     canOffer: (column) => TableScores.canOffer(column),
     offerAgain: (column) => TableScores.offer(column),
     panelOf,
-    openSource: (key, hostId, column) => TableScores.open(column, hostId)
+    openSource: (key, hostId, column) => TableScores.open(column, hostId),
+    filtersOn: (host, entry) => { const dt = TABLES.get(host); return !!dt && referencedKeys(dt.searchBuilder.getDetails()).has(entry.key); },
+    unfilter: (host, entry) => { const dt = TABLES.get(host); if (dt) dt.searchBuilder.rebuild(dropConditions(dt.searchBuilder.getDetails(), entry.key)); }
 }));
