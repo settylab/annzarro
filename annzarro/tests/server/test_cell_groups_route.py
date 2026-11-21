@@ -94,7 +94,7 @@ def parse(data):
         if frame["type"] == "result":
             for b in frame.get("blocks", []):
                 dtype = np.dtype(b["dtype"]).newbyteorder("<")
-                shape = tuple(b.get("shape", (b["length"],)))
+                shape = tuple(b["shape"]) if "shape" in b else (b["length"],)
                 nbytes = int(np.prod(shape)) * dtype.itemsize
                 blocks[b["name"]] = np.frombuffer(data[pos:pos + nbytes], dtype=dtype).reshape(shape)
                 pos += nbytes
@@ -285,11 +285,14 @@ def test_a_refused_csr_request_names_the_way_out(client, layout, monkeypatch):
 
 
 def test_a_grid_over_its_limit_is_a_422_with_the_count_and_the_limit(client, layout):
-    axis = {"source": {"type": "obs", "key": "score"}, "binning": {"method": "equal_width", "bins": 400}}
-    resp = post(client, layout, {"shape": "grid", "mode": "2d", "partitionings": [axis, axis, axis]})
+    many = {"source": {"type": "obs", "key": "many"}}
+    resp = post(client, layout, {"shape": "grid", "mode": "categorical", "partitionings": [many]})
     out = resp.get_json()
-    assert resp.status_code == 422 and out["reason"] in ("grid_too_large", "too_many_bins") and out["error"]
-    assert out["limit"] and out["count"] > out["limit"]
+    assert resp.status_code == 422 and out["reason"] == "too_many_levels" and out["error"]
+    assert (out["count"], out["limit"]) == (2001, 200)
+    bins = {"source": {"type": "obs", "key": "score"}, "binning": {"method": "equal_width", "bins": 400}}
+    resp = post(client, layout, {"shape": "grid", "mode": "2d", "partitionings": [bins, bins, bins]})
+    assert resp.status_code == 400                                   # the third axis takes 8 bins: input validation
     sets = [{"source": {"type": "obs", "key": "is_doublet"}}] * 17
     resp = post(client, layout, {"shape": "grid", "mode": "sets", "partitionings": sets})
     assert resp.status_code == 422 and resp.get_json()["reason"] == "too_many_sets"

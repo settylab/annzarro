@@ -91,10 +91,11 @@ def test_the_ledger_bound_is_the_server_setting(tmp_path, bound):
     assert cs.LEDGER.bound == cs.DEFAULT_LEDGER_BYTES == 4608 * 2 ** 20
 
 
-@pytest.mark.parametrize("value", [0, -5, None, "lots"])
-def test_a_setting_that_is_not_a_size_leaves_the_default(tmp_path, bound, value):
-    _app(tmp_path, compute_budget_mb=value)
-    assert cs.LEDGER.bound == cs.DEFAULT_LEDGER_BYTES
+@pytest.mark.parametrize("value", [0, -5, None, "lots", float("nan"), float("inf")])
+def test_a_setting_that_is_not_a_size_leaves_the_default(bound, value):
+    """The settings registry refuses such values at startup; the reader is safe without it."""
+    cs.configure(value, value)
+    assert cs.LEDGER.bound == cs.DEFAULT_LEDGER_BYTES and cs.CODE_CACHE_BYTES == 512 * 2 ** 20
 
 
 def test_the_ledger_and_the_lanes_share_the_one_bound(tmp_path, bound):

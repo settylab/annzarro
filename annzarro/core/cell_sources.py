@@ -44,6 +44,10 @@ from .zarr_reader import MissingKeyError
 #: Most cells in one slab. A float32 slab is 16 MB; a stored column is read and cut into slabs of this size.
 SLAB_ROWS = 1 << 22
 
+#: The most cells a dataset may have for one of its obsp rows to be a per-cell source: the large-plot threshold
+#: (requirements 8.6). A row is found by its cell's name, and the names of a larger dataset are not listed for that.
+OBSP_MAX_CELLS = 1_000_000
+
 #: Read a contiguous run of cells (all cells, every slab of a full read) with a slice. Zarr turns a list of indices
 #: into a fancy selection, about a quarter of the time of a 100M cell grouping; tests switch it off to compare.
 USE_SLICES = True
@@ -109,6 +113,14 @@ def is_group(node) -> bool:
 
 def _key_not_found(what: str) -> CellSourceError:
     return CellSourceError(404, "key_not_found", f"This dataset has no {what}.")
+
+
+def _check_obsp(n: int) -> None:
+    """Refuse an obsp source on a dataset of more than ``OBSP_MAX_CELLS`` cells, before anything is read."""
+    if n > OBSP_MAX_CELLS:
+        raise CellSourceError(422, "obsp_too_large", f"A row of an obsp matrix can be a source for up to "
+                              f"{OBSP_MAX_CELLS:,} cells; this dataset has {n:,}. Use an obs or obsm column instead.",
+                              count=int(n), limit=OBSP_MAX_CELLS)
 
 
 def n_cells(store) -> int:
@@ -187,7 +199,7 @@ def _cell_row(reader, dataset_path: str, column, n: int) -> int:
     names = reader.get_cell_gene_names(dataset_path, "cells")
     text = str(column)
     try:
-        return list(names).index(text)
+        return (names if isinstance(names, list) else list(names)).index(text)
     except ValueError:
         pass
     if text.isdigit() and int(text) < n:
@@ -433,6 +445,7 @@ def _obsp_slabs(reader, dataset_path, source, rows, total, should_stop) -> Itera
         if "obsp" not in store or key not in store["obsp"]:
             raise _key_not_found(f"obsp '{key}'")
         n = n_cells(store)
+    _check_obsp(n)
     cell = _cell_row(reader, dataset_path, source.get("column"), n)
     member = None
     if USE_SLICES and _is_zarr(reader):
@@ -544,6 +557,8 @@ def cost(reader, dataset_path: str, source: Dict[str, Any], *, axis: str = "obs"
         if kind == "table":
             return Cost(0, "column", n)
         if kind in ("obsm", "obsp"):
+            if kind == "obsp":
+                _check_obsp(n)
             group = store[kind] if kind in store else None
             key = source.get("key")
             if group is None or key not in group:

@@ -41,8 +41,13 @@ LIGHT_WIDTH = 2
 #: The ledger's default bound per worker, the default of the server setting ``compute_budget_mb`` (4608 MiB, 4.5 GB;
 #: CMP-15: the heavy slot 2.3 GB, one resolve 1.5 GB, the code cache 0.5 GB, jobs that have given way under 0.1 GB).
 DEFAULT_LEDGER_BYTES = 4608 << 20
+#: Seconds a reservation waits before it asks the evictables to empty again, when one stayed full.
+_EVICT_RETRY_S = 0.05
 #: The lanes, in the words of the frames.
 LANE_NAMES = ("light", "heavy")
+#: The group code cache's size per worker, the server setting ``group_code_cache_mb`` (512 MiB by default). The cache
+#: (core/group_cache.py, step E6b) reads it from here; it is counted inside the ledger's bound.
+CODE_CACHE_BYTES = 512 << 20
 
 
 class Busy(read_guard.ReadBusyError):
@@ -187,6 +192,7 @@ class Ledger:
     def _resize(self, reservation: Reservation, nbytes: int, wait_s: float) -> None:
         want = min(max(int(nbytes), 0), self.bound)
         deadline = self._clock() + max(wait_s, 0.0)
+        emptied = False                       # the evictables were asked to empty once in this call
         with self._cond:
             while want > reservation.nbytes:
                 evictables = list(self._evictables.values())
@@ -197,7 +203,11 @@ class Ledger:
                     self._cond.acquire()
                 if self._held - reservation.nbytes + want + cached <= self.bound:
                     break
-                if cached:
+                if cached and not emptied:
+                    # asked once however little time is allowed; asked again only after a pause (below), so an
+                    # evictable that stays full (pinned entries, a refill by another thread) ends in Busy at the
+                    # deadline and is not asked in a spin
+                    emptied = True
                     self._cond.release()
                     try:
                         for _, evict in evictables:
@@ -210,7 +220,8 @@ class Ledger:
                     raise Busy(f"The server is holding {self._held / 2 ** 30:.1f} GB of computations of the "
                                f"{self.bound / 2 ** 30:.1f} GB it may hold at once, and {reservation.what} needs "
                                f"{(want - reservation.nbytes) / 2 ** 30:.2f} GB more; try again in a moment.", wait_s)
-                self._cond.wait(left)
+                self._cond.wait(min(left, _EVICT_RETRY_S) if cached else (None if math.isinf(left) else left))
+                emptied = False
             self._held += want - reservation.nbytes
             reservation.nbytes = want
             self._cond.notify_all()
@@ -247,7 +258,8 @@ class Job:
         return self.state == "running"
 
     def hold(self, reservation: Reservation, wait_s: float) -> None:
-        """The job's memory: shrunk to ``keep_bytes`` while it gives way, grown back (waiting up to ``wait_s``)."""
+        """The job's memory: shrunk to ``keep_bytes`` while it gives way, and grown back when its turn returns.
+        ``wait_s`` is how long the first reservation may wait; the growing back waits for as long as it takes."""
         self.reservation, self.wait_s = reservation, wait_s
 
     def running_s(self) -> float:
@@ -340,7 +352,9 @@ class Lanes:
             if job.state == "done":                  # left while it waited: nothing to grow back
                 return
         if job.reservation is not None:
-            job.reservation.resize(job.full_bytes, job.wait_s)
+            # The job has run, perhaps for minutes: it waits for room as long as it takes (the light lane's
+            # reservations are finite and the others hold only their accumulators), and is never told it is busy.
+            job.reservation.resize(job.full_bytes, math.inf)
 
     def wanted(self, job: Job) -> bool:
         """Whether a running heavy job should give way now: another job waits that may take its turn."""
@@ -459,6 +473,28 @@ class Holder:
 #: The ledger and the lanes of this worker process.
 LEDGER = Ledger()
 LANES = Lanes(ledger=LEDGER)
+
+
+def _megabytes(value, default: int) -> int:
+    """``value`` megabytes as bytes; the default for anything that is not a positive number."""
+    try:
+        mb = float(value)
+    except (TypeError, ValueError):
+        return default
+    return int(mb * 2 ** 20) if math.isfinite(mb) and mb > 0 else default
+
+
+def configure(compute_budget_mb=None, group_code_cache_mb=None) -> None:
+    """Read the server settings ``compute_budget_mb`` and ``group_code_cache_mb`` (when the server starts).
+
+    The ledger and the lanes of this worker stay the same objects: the lanes' fit test reads the ledger's bound. A
+    value that is not a positive number leaves the default.
+    """
+    global CODE_CACHE_BYTES
+    with LEDGER._cond:
+        LEDGER.bound = _megabytes(compute_budget_mb, DEFAULT_LEDGER_BYTES)
+        LEDGER._cond.notify_all()
+    CODE_CACHE_BYTES = _megabytes(group_code_cache_mb, 512 << 20)
 
 
 # ---------------------------------------------------------------------------
