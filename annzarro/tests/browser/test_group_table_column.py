@@ -17,6 +17,8 @@ B cell, T cell, NK cell, Monocyte, Dendritic, Platelet (500, 300, 200, 150, 45, 
     nothing is computed, the rows are held; Remove this filter ends the loop and keeps the column (SHR-34, decisions 16
     and 18).
 8.  Light and dark screenshots of the column and of the cycle state, when ANNZARRO_THEME_SHOTS names a directory.
+9.  A link's condition that names a value the cells shown don't have keeps it and shows no rows (search-builder.js
+    fastSelectInit, which also keeps a grouping's link condition while the groups are computed).
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -31,7 +33,7 @@ else:
     playwright = pytest.importorskip("playwright.sync_api")
 
 from annzarro.tests.browser import waits  # noqa: E402
-from annzarro.tests.browser.test_cell_grouping_panel import served, _url, N  # noqa: E402,F401
+from annzarro.tests.browser.test_cell_grouping_panel import served, _url, N, DATA  # noqa: E402,F401
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 from annzarro.tests.core import grouping_store as gstore  # noqa: E402
 
@@ -47,6 +49,8 @@ TYPES = [name for name, _ in gstore.CELL_TYPES]
 SIZES = dict(gstore.CELL_TYPES)
 OBS_TYPE = {"type": "obs", "key": "cell_type", "column": ""}
 ROUTE = "**/api/v1/data/cell_groups*"
+DATA_OBS_NAMES = list(DATA.obs.index)
+DATA_CELL_TYPE = [str(v) for v in DATA.obs["cell_type"]]
 
 
 def by(pid):
@@ -387,3 +391,39 @@ def test_the_column_reads_in_both_themes(page, served):
     until(page, "([box, was]) => getComputedStyle(document.querySelector(box + ' .dataTables_scrollBody tbody td:nth-child(3)')).color !== was", [BOX, light])
     _shot(page, "g10-column-dark")
     assert _headers(page)[2] == "Grouping 1"
+
+
+# ------------------------------------------------------------------ 9. a saved value no row has now (hunk H)
+
+def _subset_without(served, level, n=50):
+    """A random subset of the link's form ({n, seed}) whose cells hold no `level` of cell_type, and its cell count."""
+    from annzarro.tests.browser.test_focus_outside_subset import _api
+    root, store = served
+    kind = dict(zip(DATA_OBS_NAMES, DATA_CELL_TYPE))
+    for seed in range(50):
+        spec = {"n": n, "seed": seed}
+        cells = _api(root, "cells", dataset_path=store, subset=json.dumps(spec))["cells"]
+        if len(cells) == n and all(kind[c] != level for c in cells):
+            return spec
+    raise AssertionError(f"no seed below 50 gives {n} cells without {level}")
+
+
+def test_a_saved_value_no_row_has_now_is_kept_and_shows_no_rows(page, served):
+    import base64
+    import urllib.parse
+    spec = _subset_without(served, "Platelet")
+    sb = {"logic": "AND", "criteria": [{"condition": "=", "data": "cell_type", "origData": "obs_cell_type_main", "type": "string",
+                                        "value": ["Platelet"]}]}
+    root, store = served
+    tiles = [{"type": "tile", "id": TA, "controlsVisible": True}]
+    view = {"v": 1, "subset": spec, "layout": {"v": 1, "hierarchy": tiles, "controlState": {TA: True},
+                                               "panelConfigs": {TA: _table(searchBuilderConfig=sb)}}}
+    enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+    page.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}")
+    page.wait_for_selector(f"{BOX} .dataTables_scrollBody", state="attached", timeout=30000)
+    until(page, "(box) => $(box + ' .dataTables_scrollBody table').DataTable().rows().count() === 50", BOX)
+    assert page.evaluate("(box) => document.querySelector(box + ' .dtsb-criteria select.dtsb-value').value", BOX) == "Platelet", \
+        "the condition keeps its value"
+    assert _api(page, "dt.rows({search: 'applied'}).count()") == 0, "and shows no rows, as the link says"
+    saved = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().searchBuilderConfig", TA)
+    assert saved["criteria"][0]["value"] == ["Platelet"], saved
