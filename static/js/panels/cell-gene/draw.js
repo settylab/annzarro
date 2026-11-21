@@ -2,7 +2,8 @@
  * The Cell-Gene Plot's matrix and its legends (0.8.0 step X4a; CXG-9, CXG-12, CXG-15, CXG-16, CXG-20; UX 3.2 "in the
  * plot" and 3.3): `buildFigure(model, theme)` returns the Plotly figure `{data, layout, config}` for dots or a heatmap,
  * with the color bar, the size legend and the hover text. It is pure and holds no DOM, so Node tests hold the figure.
- * Brackets, strips, totals, dendrograms and label thinning are X4b's, drawn over the axes and margins left here.
+ * Brackets, strips, totals, dendrograms and label thinning are draw-annotations.js's (X4b), applied at the end of
+ * buildFigure; the model's `pixels` and `annotations` fields are described there.
  *
  * **The model** (the panel builds it from utils/cell-gene-model.js; every word the user reads is passed in or comes from
  * utils/vocabulary.js):
@@ -32,6 +33,7 @@
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { PLOT_PALETTES, GAP_COLOUR } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
+import { annotateFigure } from './draw-annotations.js';
 
 const W = VOCABULARY.cellGene;
 
@@ -46,8 +48,10 @@ const REFERENCE_DOTS = 5;
 const LEGEND_X = 0.83;
 const PLOT_RIGHT = 0.78;
 const LEGEND_SLOT_MAX = 0.3;
+/** The top of the legend column stays clear of Plotly's modebar (camera, zoom, pan), about this many px tall. */
+const MODEBAR_PX = 36;
+const DEFAULT_HEIGHT = 600;
 const MAIN = 'main';
-const TICK_MAX = 120;
 
 /** Plotly reads a little markup in titles, ticks and hover text, so a name holding `<` or `&` is escaped. */
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -239,9 +243,10 @@ function legendStack(model, P, dots) {
         if (model.size.none) items.push({ kind: 'none' });
         else for (const k of P.size) items.push({ kind: 'size', key: k.key });
     }
-    const slot = Math.min(LEGEND_SLOT_MAX, 0.96 / Math.max(items.length, 1));
+    const reserve = MODEBAR_PX / Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
+    const slot = Math.min(LEGEND_SLOT_MAX, (0.96 - reserve) / Math.max(items.length, 1));
     items.forEach((it, i) => {
-        it.top = 1 - i * slot;
+        it.top = 1 - reserve - i * slot;
         it.height = slot * 0.82;
     });
     return items;
@@ -286,14 +291,12 @@ function sizeLegendParts(model, k, entry, n, th) {
 // --- axes -------------------------------------------------------------------------------------------------------
 
 /**
- * Labels on an axis are capped at TICK_MAX, every n-th one: Plotly measures every label (and again for automargin),
- * which took 26 s for 2,000 genes. The hover still names every cell. Fitting labels to the pixels is X4b's thinning.
+ * Every tick is given here; annotateFigure (draw-annotations.js) keeps the labels that fit the axis's pixels, so Plotly
+ * measures tens of labels, not thousands. The hover still names every cell.
  */
 function axisOf(ticks, labels, extent, th, extra) {
-    const stride = Math.ceil(ticks.length / TICK_MAX);
-    const keep = (_, k) => k % stride === 0;
     return {
-        tickvals: stride > 1 ? ticks.filter(keep) : ticks, ticktext: stride > 1 ? labels.filter(keep) : labels, range: [-0.5, Math.max(extent, 1) - 0.5], zeroline: false, automargin: true,
+        tickvals: ticks, ticktext: labels, range: [-0.5, Math.max(extent, 1) - 0.5], zeroline: false, automargin: true,
         gridcolor: th.gridColor, linecolor: th.axisColor, tickcolor: th.axisColor, ...extra
     };
 }
@@ -425,7 +428,7 @@ function heatmapTraces(model, P, stack, th) {
  *   [theme] - the plot's resolved colors (plot-theme.js: PLOT_PALETTES or plotColour of the panel's settings); light by default
  * @returns {{data: object[], layout: object, config: object}}
  */
-// export-unused-ok: X3a draws the panel with it, X4b adds its annotations to the figure
+// export-unused-ok: X3a draws the panel with it
 export function buildFigure(model, theme) {
     if (model.mode !== 'dots' && model.mode !== 'heatmap') throw new Error(`unknown mode ${model.mode}`);
     const dots = model.mode === 'dots';
@@ -458,5 +461,6 @@ export function buildFigure(model, theme) {
             });
         }
     }
-    return { data, layout, config: { responsive: true, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] } };
+    const config = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] };
+    return annotateFigure({ data, layout, config }, model, th);
 }
