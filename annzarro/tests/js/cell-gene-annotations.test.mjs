@@ -37,7 +37,8 @@ function model({ rows = 6, groups = 4, split = 3, mode = 'dots', swap = false, a
     };
 }
 
-const draw = (m, theme = LIGHT) => A.annotateFigure(D.buildFigure(m, theme), m, theme);
+// buildFigure applies the annotations itself
+const draw = (m, theme = LIGHT) => D.buildFigure(m, theme);
 const named = (fig, name) => fig.data.filter((t) => t.name === name);
 const one = (fig, name) => {
     const t = named(fig, name);
@@ -319,13 +320,11 @@ test('long labels are cut to the room set aside for them; the hover has the whol
 
 // --- the whole figure -------------------------------------------------------------------------------------------
 
-test('with nothing to annotate the figure is the matrix and thinned labels, no extra traces', () => {
-    const m = model();
-    const plain = D.buildFigure(m, LIGHT);
-    const fig = draw(m);
-    assert.equal(fig.data.length, plain.data.length);
-    assert.equal(fig.layout.xaxis.automargin, true, 'Plotly still fits the labels when no band has to sit beyond them');
-    assert.deepEqual(fig.layout.xaxis.domain, plain.layout.xaxis.domain);
+test('with nothing to annotate there are no extra traces, and Plotly still fits the labels', () => {
+    const fig = draw(model());
+    assert.equal(fig.data.length, 1 + 1, 'the dots and the size legend');
+    assert.equal(fig.layout.xaxis.automargin, true);
+    assert.ok(fig.layout.xaxis.domain[0] === 0);
 });
 
 test('every annotation at once keeps the plot and the bands apart, in dots and in a heatmap, swapped or not', () => {
@@ -355,13 +354,14 @@ test('the dark palette colors the bands: totals, trees, bracket lines and titles
     assert.ok(fig.layout.annotations.filter((a) => a.name === 'section title').every((a) => a.font.color === DARK.textColor));
 });
 
-test('annotating does not touch the matrix traces and does no work per cell', () => {
-    const m = model({ rows: 2000, groups: 200, split: 1000, mode: 'heatmap', annotations: { brackets: { titles: true }, totals: true } });
-    const plain = D.buildFigure(m, LIGHT);
-    const before = plain.data[0];
-    const fig = A.annotateFigure(plain, m, LIGHT);
-    assert.equal(fig.data[0], before, 'the same trace object, untouched');
-    const t0 = performance.now();
-    for (let i = 0; i < 20; i++) A.annotateFigure(D.buildFigure(model({ rows: 2000, groups: 2, mode: 'heatmap', annotations: {} }), LIGHT), model({ rows: 2000, groups: 2 }), LIGHT);
-    assert.ok(performance.now() - t0 < 5000);
+test('the annotations do no work per cell: 2,000 genes by 200 groups cost no more than their rows and groups', () => {
+    const big = model({ rows: 2000, groups: 200, split: 1000, mode: 'heatmap', annotations: { brackets: { titles: true }, totals: true } });
+    const small = model({ rows: 2000, groups: 2, split: 1000, mode: 'heatmap', annotations: { brackets: { titles: true }, totals: true } });
+    const time = (m) => {
+        const t0 = performance.now();
+        for (let i = 0; i < 5; i++) A.annotateFigure({ data: [], layout: { margin: { l: 10, r: 10, t: 10, b: 10 }, xaxis: { domain: [0, 0.78], range: [0, 1] }, yaxis: { domain: [0, 1], range: [0, 1] } }, config: {} }, m, LIGHT);
+        return performance.now() - t0;
+    };
+    time(small);
+    assert.ok(time(big) < 20 * Math.max(time(small), 5), 'annotating reads rows and groups, never the matrix');
 });

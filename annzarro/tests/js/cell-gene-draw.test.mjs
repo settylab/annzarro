@@ -491,12 +491,13 @@ test('the figure takes its color bars from colourBars', () => {
     assert.deepEqual(drawn.map((t) => t.marker.colorbar.title.text), expected.map((b) => b.title));
 });
 
-test('an axis of thousands of genes carries at most 120 labels, the first among them, and hover still names every gene', () => {
+// X4b replaces X4a's stopgap (at most 120 labels, every n-th) with thinning by the pixels the axis has.
+test('an axis of thousands of genes thins its labels by pixels, the first among them, and hover still names every gene', () => {
     const fig = D.buildFigure(model({ rows: 2000, groups: 3, mode: 'heatmap' }), LIGHT);
     const axis = fig.layout.xaxis;
-    assert.ok(axis.tickvals.length <= 120 && axis.tickvals.length === axis.ticktext.length);
+    assert.ok(axis.tickvals.length < 120 && axis.tickvals.length === axis.ticktext.length);
     assert.equal(axis.ticktext[0], 'Gene0');
-    assert.equal(axis.tickvals[1] - axis.tickvals[0], Math.ceil(2000 / 120));
     assert.match(traces(fig, 'heatmap')[0].text[0][1999], /Gene1999/);
-    assert.equal(D.buildFigure(model({ rows: 120, groups: 2 }), LIGHT).layout.xaxis.ticktext.length, 120, 'at the cap nothing is dropped');
+    const wide = D.buildFigure(model({ rows: 300, groups: 2, pixels: { width: 6000, height: 400 } }), LIGHT);
+    assert.equal(wide.layout.xaxis.ticktext.length, 300, 'with the room, nothing is dropped, past the old cap');
 });

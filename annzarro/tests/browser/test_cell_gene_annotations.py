@@ -62,7 +62,6 @@ def root(tmp_path_factory):
 # A figure with every annotation, from the modules the page loads, drawn into a div of its own.
 DRAW = """async ([mode, swap, dark]) => {
   const D = await import('/static/js/panels/cell-gene/draw.js');
-  const A = await import('/static/js/panels/cell-gene/draw-annotations.js');
   const { PLOT_PALETTES } = await import('/static/js/utils/plot-theme.js');
   const theme = dark ? PLOT_PALETTES.dark : PLOT_PALETTES.light;
   const rows = 14, groups = 8;
@@ -87,7 +86,7 @@ DRAW = """async ([mode, swap, dark]) => {
     dendrograms: {groups: [{merges: merges(groups), positions: Array.from({length: groups}, (_, g) => g)}],
                   genes: [{merges: merges(7), positions: [0, 1, 2, 3, 4, 5, 6]}, {merges: merges(7), positions: [7, 8, 9, 10, 11, 12, 13]}]}
   };
-  const fig = A.annotateFigure(D.buildFigure(model, theme), model, theme);
+  const fig = D.buildFigure(model, theme);
   const div = document.createElement('div');
   div.style.cssText = 'width:900px;height:600px;position:fixed;left:0;top:0;z-index:99999;background:' + theme.bgColor;
   div.id = 'x4b';
