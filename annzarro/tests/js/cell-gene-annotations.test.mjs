@@ -136,9 +136,10 @@ test('strips: one stacked bar per factor, a color per group, hover naming group 
     assert.equal(bars[0].orientation, 'h', 'groups are on y, so the strip bars lie along it');
     assert.deepEqual(bars[0].y, [0, 1, 2, 3]);
     assert.deepEqual(bars[1].x, [1, 1, 1, 1]);
-    assert.equal(bars[1].text[1], 'group 1<br>age: Young');
+    assert.equal(bars[1].hovertext[1], 'group 1<br>age: Young');
     assert.equal(axisOf(fig, bars[0], 'y').matches, 'y');
     assert.equal(fig.layout.barmode, 'stack');
+    assert.ok(bars.every((b) => b.textposition === 'none'), 'the bars print no text over themselves');
     assert.equal(bars[0].xaxis, bars[1].xaxis, 'the factors share one strip subplot');
     // the strip is between the labels and the plot: the labels stand off by its width
     assert.ok(fig.layout.yaxis.ticklabelstandoff > 0);
@@ -172,7 +173,7 @@ test('totals: cells per group as a bar along the cell axis, on the side opposite
     assert.deepEqual(bar.x, [100, 200, 300, 400]);
     assert.deepEqual(bar.y, [0, 1, 2, 3]);
     assert.equal(bar.orientation, 'h');
-    assert.ok(bar.text.every((t, g) => t.includes(`group ${g}`) && t.includes(String(100 * (g + 1)))), bar.text.join('|'));
+    assert.ok(bar.hovertext.every((t, g) => t.includes(`group ${g}`) && t.includes(String(100 * (g + 1)))), bar.hovertext.join('|'));
     const band = axisOf(fig, bar, 'x');
     assert.ok(band.domain[0] >= fig.layout.xaxis.domain[1] - 1e-9, 'right of the plot');
     assert.equal(axisOf(fig, bar, 'y').matches, 'y');
