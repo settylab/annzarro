@@ -48,7 +48,8 @@ MAX_CATEGORY_LEVELS = NO_LEVEL - 1
 #: Buckets of the first pass of the exact select.
 SELECT_BUCKETS = 65_536
 #: A bucket with more values than this is split again by the same two passes; a batch of buckets collected in one
-#: pass holds at most this many values (128 MB of float64, in a pathological column only).
+#: pass holds at most this many values (128 MB of float64, in a pathological column only), sorted in place with a
+#: merge buffer of half that.
 SELECT_COLLECT_CAP = 16_000_000
 #: Temporaries are bounded by working in chunks of this many values, whatever the slab size.
 CHUNK = 1 << 20
@@ -395,6 +396,7 @@ def edges(slabs: Callable[[], Iterable[np.ndarray]], b: Binning) -> Edges:
                                lo=lo, hi=hi)
         if lo == hi:
             return degenerate(lo)
+        _check_span(lo, hi, log)
         stored = b.range is not None
         if b.method == "equal_width":
             # np.linspace is what numpy.histogram_bin_edges builds, so the two agree to the bit.
@@ -412,6 +414,7 @@ def edges(slabs: Callable[[], Iterable[np.ndarray]], b: Binning) -> Edges:
         return degenerate(None)
     if s.vmin == s.vmax:
         return degenerate(s.vmin)
+    _check_span(s.vmin, s.vmax, False)
     qs = np.arange(b.bins + 1, dtype=np.float64) / b.bins
 
     def values() -> Iterable[np.ndarray]:
@@ -425,6 +428,16 @@ def edges(slabs: Callable[[], Iterable[np.ndarray]], b: Binning) -> Edges:
     if ed.size < 2:
         return degenerate(s.vmin)
     return Edges(edges=ed, n_bins=ed.size - 1, **common)
+
+
+def _check_span(lo: float, hi: float, log: bool) -> None:
+    """Refuse a range whose width (its ratio, for log-spaced bins) is beyond the largest float: its edges would be
+    infinite or NaN, and the exact select could not split it."""
+    with np.errstate(over="ignore"):
+        span = np.float64(hi) / np.float64(lo) if log else np.float64(hi) - np.float64(lo)
+    if not math.isfinite(float(span)):
+        raise BinningError("range_too_wide", "The values span more than a number can hold, so no bin width fits. "
+                           "Set a range, or leave out the extreme values.", lo=float(lo), hi=float(hi))
 
 
 def _merge(ed: np.ndarray) -> np.ndarray:
@@ -551,20 +564,22 @@ def _select(values: Callable[[], Iterable[np.ndarray]], ranks: np.ndarray, n: in
     for batch in batches:
         table = np.zeros(SELECT_BUCKETS, dtype=bool)
         table[batch] = True
-        vals: List[np.ndarray] = []
-        idxs: List[np.ndarray] = []
+        # one array of the batch's values, sorted in place: the bucket of a value never decreases with the value,
+        # so sorting by value orders the batch by bucket, then by value (a stable sort keeps equal values as found)
+        want = sum(int(counts[w]) for w in batch)
+        got = np.empty(want, dtype=np.float64)
+        filled = 0
         for v in values():
-            idx = _bucket(v, lo, scale)
-            m = table[idx]
+            m = table[_bucket(v, lo, scale)]
             if m.any():
-                vals.append(v[m])
-                idxs.append(idx[m])
-        got = np.concatenate(vals) if vals else np.empty(0)
-        gi = np.concatenate(idxs) if idxs else np.empty(0, dtype=np.int64)
-        if got.size != sum(int(counts[w]) for w in batch):
+                part = v[m]
+                if filled + part.size > want:
+                    raise BinningError("slabs_changed", "The slabs gave different values on a later pass.")
+                got[filled:filled + part.size] = part
+                filled += part.size
+        if filled != want:
             raise BinningError("slabs_changed", "The slabs gave different values on a later pass.")
-        order = np.lexsort((got, gi))
-        got = got[order]
+        got.sort(kind="stable")
         starts = np.concatenate(([0], np.cumsum([int(counts[w]) for w in batch])))
         pos = {w: int(starts[i]) for i, w in enumerate(batch)}
         for j in np.flatnonzero(np.isin(bucket_of, batch)):

@@ -194,7 +194,7 @@ def _binned(part: cg.PartPlan) -> bool:
         part.binning.method != "categories"
 
 
-def _declared(reader, dataset_path: str, part: cg.PartPlan) -> Optional[int]:
+def _declared(reader, dataset_path: str, part: cg.PartPlan, limit: Optional[int] = None) -> Optional[int]:
     """The levels of an axis that count for its limit, when the store's metadata tell (reserved levels do not)."""
     if part.member is not None or part.kind == "set":
         return 2
@@ -207,7 +207,10 @@ def _declared(reader, dataset_path: str, part: cg.PartPlan) -> Optional[int]:
     if part.kind == "bool":
         return 2
     if part.kind == "category":
-        return _n_categories(reader, dataset_path, part.spec.source["key"])
+        # stored categories bound the levels only up to the limit; past it, the categories that hold a cell shown
+        # count (SHR-6, SHR-7), which only the read tells (cell_groups._Levels)
+        n = _n_categories(reader, dataset_path, part.spec.source["key"])
+        return n if n is not None and n <= (limit if limit is not None else cg.GROUPING_LIMITS["levels"]) else None
     return None
 
 
@@ -264,8 +267,10 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
     """Resolve the request's sources against the store, refuse what its mode's limits rule out, and estimate it.
 
     Reads no column: the levels of a binned axis come from its binning, of a categorical obs column from the
-    length of its category list. An axis whose levels are known only once read (a text column, an integer split
-    by its values, cell names, a grouping) is checked again when it has been read, and refused in the result.
+    length of its category list while that is within the axis's limit. An axis whose levels are known only once
+    read (a text column, an integer split by its values, cell names, a grouping, or a categorical column storing
+    more categories than its limit, whose levels are the categories that hold a cell shown) is checked again when
+    it has been read, and refused in the result.
     The estimate and the lane follow the grouping's (SHR-41), with each measure's read added.
     """
     with cs.root(reader, dataset_path) as root:
@@ -275,7 +280,7 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
                           max_bins=_axis_limit(request.mode, i) or MAX_GRID_MEASURE_CELLS)
             for i, p in enumerate(request.partitionings)]
     _check_kinds(request, axes)
-    declared = [_declared(reader, dataset_path, a) for a in axes]
+    declared = [_declared(reader, dataset_path, a, _axis_limit(request.mode, i)) for i, a in enumerate(axes)]
     _check_limits(request.mode, axes, declared)
     work = gf.plan_work(reader, dataset_path, measures=request.measures)
     parts = []
@@ -488,6 +493,7 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, should_stop
         for i, part in enumerate(plan_.axes):
             ctx.check()
             axis = _Axis(part, ctx, i, density_d if i < density_d else 0)
+            axis.level_limit = _axis_limit(req.mode, i)
             axis.prepare()
             _check_axis(req.mode, i, axis, sizes)
             last = i == len(plan_.axes) - 1
