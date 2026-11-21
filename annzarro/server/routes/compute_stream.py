@@ -13,6 +13,17 @@ while every one of them, itself included, could grow back to its whole reservati
 others (with the lanes' ledger); otherwise the running job keeps the lane, and the job waits for room. A job that
 has given way may pass a new one that does not fit, so turns never wait on memory only the turns hold.
 
+**The read guard's admission is part of the fit.** A job that takes a read-guard admission (``admit_bytes``) holds it
+from its first turn until it ends, given way or not. A new job whose admission would not fit beside those of the
+jobs that have run (its requester's share, ``read_guard.share_bytes``, and the whole budget) is not given a turn: it
+waits in its lane's queue, is told its place, and runs when a holder ends; jobs behind it, of other requesters, pass
+it. So no job sits in the read guard's own wait, and ends busy, because a longer job of its requester is running. A
+requester with no job of its own running is admitted as before. While only its own requester's admissions hold a
+job (another requester's alone would let it in), its wait has no time limit: at 100M cells one grouping with genes
+runs for minutes, and a user's dependants must not fail as busy behind the user's own work. It is sent a queued frame
+every ``OWN_WAIT_HEARTBEAT_S`` meanwhile, so a closed connection still ends it; the time limit applies again, for
+what is left of it, as soon as another requester's holding is what keeps it waiting.
+
 **A queued job is told at once (SHR-47).** A job that finds its lane taken gets a stream at once: a frame with its
 ``queue`` (``{"ahead", "sharing"}``), another whenever that changes, and either the work once its turn comes or, past
 the route's wait, an ``error`` frame with reason ``read_busy`` (the status is already 200, so it cannot be a 503). A
@@ -43,6 +54,9 @@ LIGHT_WIDTH = 2
 DEFAULT_LEDGER_BYTES = 4608 << 20
 #: Seconds a reservation waits before it asks the evictables to empty again, when one stayed full.
 _EVICT_RETRY_S = 0.05
+#: Seconds between the queued frames of a job waiting, without a time limit, for its own requester's jobs: each frame
+#: is a write, so a closed connection is noticed and the job leaves the queue.
+OWN_WAIT_HEARTBEAT_S = 5.0
 #: The lanes, in the words of the frames.
 LANE_NAMES = ("light", "heavy")
 #: The group code cache's size per worker, the server setting ``group_code_cache_mb`` (512 MiB by default). The cache
@@ -241,8 +255,11 @@ class Job:
     waits and turns given away left out (SHR-48).
     """
 
-    def __init__(self, lanes: "Lanes", lane: str, full_bytes: int, keep_bytes: int):
+    def __init__(self, lanes: "Lanes", lane: str, full_bytes: int, keep_bytes: int, admit_bytes: int = 0,
+                 owner: Optional[str] = None):
         self._lanes, self.lane = lanes, lane
+        self.admit_bytes = admit_bytes   # the read-guard admission it holds from its first turn until it ends
+        self.owner = owner               # whose share of the read budget that is (read_guard.current_requester)
         self.state = "waiting"           # waiting (never ran), running, yielded (gave way), done
         self.started = False
         self._fresh = False              # a turn has begun and has not yet been asked to give way
@@ -252,6 +269,7 @@ class Job:
         self.full_bytes = full_bytes     # the job's reservation while it runs
         self.keep_bytes = keep_bytes     # what the reservation shrinks to while the job has given way
         self.wait_s = 0.0                # how long the reservation may wait to grow back
+        self.excused_s = 0.0             # time queued behind its own requester alone, outside the queue's limit
 
     @property
     def running(self) -> bool:
@@ -289,15 +307,18 @@ class Lanes:
         self._running = {lane: [] for lane in LANE_NAMES}
         self._waiting = {lane: deque() for lane in LANE_NAMES}
 
-    def enter(self, lane: str, full_bytes: int = 0, keep_bytes: int = 0) -> Job:
+    def enter(self, lane: str, full_bytes: int = 0, keep_bytes: int = 0, admit_bytes: int = 0,
+              owner: Optional[str] = None) -> Job:
         """A new job, running at once when its lane has room and nobody waits, else at the back of the queue.
-        ``full_bytes`` is the reservation it will hold while it runs, ``keep_bytes`` while it has given way."""
+        ``full_bytes`` is the reservation it will hold while it runs, ``keep_bytes`` while it has given way;
+        ``admit_bytes`` the read-guard admission it will take for ``owner`` (its requester)."""
         if lane not in self._width:
             raise ValueError(f"lane must be one of {', '.join(LANE_NAMES)}")
         full = max(int(full_bytes), 0)
         if self._ledger is not None:
             full = min(full, self._ledger.bound)
-        job = Job(self, lane, full, min(max(int(keep_bytes), 0), full))
+        admit = min(max(int(admit_bytes), 0), read_guard.budget_bytes())
+        job = Job(self, lane, full, min(max(int(keep_bytes), 0), full), admit, owner)
         with self._cond:
             self._waiting[lane].append(job)
             self._promote(lane)
@@ -314,7 +335,8 @@ class Lanes:
             else:
                 self._waiting[job.lane].remove(job)
             job.state = "done"
-            self._promote(job.lane)
+            for lane in LANE_NAMES:              # its admission may have held a job of either lane
+                self._promote(lane)
 
     def wait_turn(self, job: Job, deadline: float, last: Optional[dict], wait_s: float) -> Optional[dict]:
         """Wait until the job runs (None) or its queue differs from ``last`` (the new queue). ``Busy`` at the
@@ -327,7 +349,14 @@ class Lanes:
                 queue = self._queue_of(job)
                 if queue != last:
                     return queue
-                left = deadline - self._clock()
+                if self._held_by_own(job):
+                    since = self._clock()
+                    self._cond.wait(OWN_WAIT_HEARTBEAT_S)
+                    job.excused_s += self._clock() - since
+                    if job.state != "running" and self._queue_of(job) == last:
+                        return queue                   # a heartbeat: the place again, so a closed stream is seen
+                    continue
+                left = deadline + job.excused_s - self._clock()
                 if left <= 0:
                     raise Busy("Other computations are using the server; try again in a moment.", wait_s)
                 self._cond.wait(None if math.isinf(left) else left)
@@ -367,20 +396,66 @@ class Lanes:
             return job.lane == "heavy" and bool(self._waiting[job.lane]) and self._next(job.lane) is not None
 
     def _next(self, lane: str) -> Optional[Job]:
-        """The waiting job that takes the next turn: the first that has run before, or the first new job if it
-        fits beside the turns (``_fits``); new jobs never pass each other. None when no job may take a turn."""
+        """The waiting job that takes the next turn: the first that has run before, or the first new job whose
+        admission may be taken (``_admissible``) if it fits beside the turns (``_fits``); such new jobs never pass
+        each other. None when no job may take a turn."""
         new_seen = False
         turns = None
+        admitted = None
         for job in self._waiting[lane]:
             if job.started:
                 return job
             if not new_seen:
+                if admitted is None:
+                    admitted = self._admitted()
+                if not self._admissible(job, admitted):
+                    continue                     # held by its requester's own jobs: the next may pass it
                 new_seen = True
                 if turns is None:
                     turns = [j for j in self._running[lane] + list(self._waiting[lane]) if j.started]
                 if self._fits(job, turns):
                     return job
         return None
+
+    def _admitted(self) -> tuple:
+        """``(bytes, bytes by requester)`` of the read-guard admissions the jobs that have run hold now."""
+        total, by_owner = 0, {}
+        for lane in LANE_NAMES:
+            for j in self._running[lane] + list(self._waiting[lane]):
+                if j.started and j.admit_bytes:
+                    total += j.admit_bytes
+                    if j.owner is not None:
+                        by_owner[j.owner] = by_owner.get(j.owner, 0) + j.admit_bytes
+        return total, by_owner
+
+    @staticmethod
+    def _admissible(job: Job, admitted: tuple) -> bool:
+        """Whether a new job's admission fits now beside those held: the read guard's budget, and its requester's
+        share when the requester holds some already (as ``read_guard.admit`` decides)."""
+        if job.started or not job.admit_bytes:
+            return True
+        total, by_owner = admitted
+        if total and total + job.admit_bytes > read_guard.budget_bytes():
+            return False
+        mine = by_owner.get(job.owner, 0) if job.owner is not None else 0
+        return not (mine and mine + job.admit_bytes > read_guard.share_bytes())
+
+    def _held_by_own(self, job: Job) -> bool:
+        """Whether a queued job is kept out only by its own requester's admissions: it does not fit now, and would
+        beside the other requesters' holdings alone."""
+        if job.started or not job.admit_bytes or job.owner is None:
+            return False
+        admitted = self._admitted()
+        if self._admissible(job, admitted):
+            return False
+        total, by_owner = admitted
+        mine = by_owner.get(job.owner, 0)
+        others = total - mine
+        return bool(mine) and not (others and others + job.admit_bytes > read_guard.budget_bytes())
+
+    def _first_admissible(self, lane: str) -> Optional[Job]:
+        admitted = self._admitted()
+        return next((j for j in self._waiting[lane] if self._admissible(j, admitted)), None)
 
     def _fits(self, job: Job, turns) -> bool:
         """Whether the jobs taking turns, with ``job`` among them, can each grow back to its whole reservation while
@@ -417,7 +492,9 @@ class Lanes:
     def _promote(self, lane: str) -> None:
         running, waiting = self._running[lane], self._waiting[lane]
         while waiting and len(running) < self._width[lane]:
-            job = (self._next(lane) or waiting[0]) if lane == "heavy" else waiting[0]
+            job = ((self._next(lane) if lane == "heavy" else None) or self._first_admissible(lane))
+            if job is None:
+                break                            # every waiting job waits for an admission to be given back
             waiting.remove(job)
             job.state, job.started, job._since, job._fresh = "running", True, self._clock(), True
             running.append(job)
@@ -511,12 +588,15 @@ def progress_fields(job: Job, entries_done: int, entries_total: int) -> dict:
 def respond(lane: str, *, nbytes: int, keep_bytes: int, what: str, wait_s: float,
             admit: Callable[[], Callable[[], None]], work: Callable[[Job], Iterator[bytes]],
             queued_frame: Callable[[Job], dict], mimetype: str, headers: Optional[Dict[str, str]] = None,
-            lanes: Optional[Lanes] = None, ledger: Optional[Ledger] = None) -> Response:
+            lanes: Optional[Lanes] = None, ledger: Optional[Ledger] = None,
+            admit_bytes: Optional[int] = None, on_release: Optional[Callable[[], None]] = None) -> Response:
     """The streamed reply of one computation in ``lane``.
 
     ``nbytes`` is reserved on the ledger for the job (``keep_bytes`` of it while the job has given way, ``what``
     names it in a refusal); ``admit()`` takes any other admission (the read guard) and returns its release; ``work(job)``
-    gives the bytes of the reply (frames and blocks) and turns its own failures into an error frame;
+    gives the bytes of the reply (frames and blocks) and turns its own failures into an error frame; ``admit_bytes``
+    is what ``admit()`` takes of the read guard's budget (None: ``nbytes``; 0: nothing), entered in the lanes' fit;
+    ``on_release()`` is called with the other releases, once, however the stream ends (the code cache's unpin);
     ``queued_frame(job)`` is the frame a waiting job is sent at once and whenever its queue changes.
 
     A job whose lane and memory are free at once streams ``work`` as it is, and a refusal of ``admit()`` is raised
@@ -526,8 +606,9 @@ def respond(lane: str, *, nbytes: int, keep_bytes: int, what: str, wait_s: float
     """
     lanes = LANES if lanes is None else lanes
     ledger = LEDGER if ledger is None else ledger
-    job = lanes.enter(lane, nbytes, keep_bytes)
-    releases = [job.leave]
+    job = lanes.enter(lane, nbytes, keep_bytes, nbytes if admit_bytes is None else admit_bytes,
+                      read_guard.current_requester())
+    releases = [job.leave] if on_release is None else [on_release, job.leave]
     released = []
 
     def release():
@@ -541,7 +622,14 @@ def respond(lane: str, *, nbytes: int, keep_bytes: int, what: str, wait_s: float
         reservation = ledger.reserve(nbytes, wait, what)
         releases.append(reservation.release)
         job.hold(reservation, wait_s)
-        releases.append(admit())
+        try:
+            releases.append(admit())
+        except Busy:
+            raise
+        except read_guard.ReadBusyError as exc:       # the guard's words are about pairwise reads: say it in ours
+            raise read_guard.ReadBusyError(
+                f"Other reads hold the server's read budget, and {what} could wait for them no longer; "
+                "try again in a moment.", exc.retry_after_s) from exc
 
     ready = False
     if job.running:
@@ -564,7 +652,7 @@ def respond(lane: str, *, nbytes: int, keep_bytes: int, what: str, wait_s: float
                 if lanes.wait_turn(job, deadline, told["queue"], wait_s) is None:
                     break
                 told = queued_frame(job)
-            take_memory(max(deadline - lanes.now(), 0.0))
+            take_memory(max(deadline + job.excused_s - lanes.now(), 0.0))
         except read_guard.ReadBusyError as exc:
             yield frame(busy_frame(exc))
             return
