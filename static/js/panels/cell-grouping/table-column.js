@@ -66,7 +66,6 @@ function rankOf(names) {
  * @param {Object} deps
  * @param {() => {watch: Function, namesOf: Function, update: Function, visibilityChanged: Function}} deps.sources - the
  *   page's group sources (utils/group-host.js `groupSources().sources`), asked when first needed
- * @param {() => Array<{id: string, title: string, open: boolean}>} deps.entities - every grouping, open or closed
  * @param {(setting: {key: string, label?: string}) => string} deps.titleOf - a grouping's title, or what it was called
  *   when last seen
  * @param {(id: string) => ({getTitle: () => string}|null)} deps.groupingPanel - the grouping panel with this id
@@ -75,7 +74,7 @@ function rankOf(names) {
  * @param {(id: string, nextTo: (string|null)) => Object|null} deps.open - Open grouping, beside a panel
  * @param {(codes: ArrayBufferView) => number} deps.missingOf - the code of a cell in no group, for codes of this width
  */
-export function createGroupTable({ sources, entities, titleOf, groupingPanel, describe, open, missingOf }) {
+export function createGroupTable({ sources, titleOf, groupingPanel, describe, open, missingOf }) {
     /**
      * What a table reads of a grouping's snapshot (utils/table-source.js): the codes, the group names and their ranks
      * when the groups are there; the state and its fields always. Never `values`: a table reads that as numbers. Made

@@ -69,7 +69,6 @@ function makeHalf(sources = fakeSources(), extra = {}) {
     const opened = [];
     const half = createGroupTable({
         sources: () => sources,
-        entities: () => [{ id: GA, title: 'Grouping 1', open: true }],
         titleOf: (setting) => (panels.get(setting.key) ? panels.get(setting.key).getTitle() : (setting.label || setting.key)),
         groupingPanel: (id) => panels.get(id) || null,
         describe: (snap, ctx) => ({ state: snap.state, headline: `${snap.title}: ${snap.state}`, text: '', role: ctx.role,

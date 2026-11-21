@@ -553,7 +553,7 @@ registerSource({
     },
     titleOf: (setting) => `${W.grouping} ${groupingTitle(setting)}`,
     // a grouping as a column of a Cell Table (CAT-6, CAT-7): panels/cell-grouping/table-column.js
-    table: createGroupTable({ sources: () => groupSources().sources, entities: groupingList, titleOf: groupingTitle, groupingPanel,
+    table: createGroupTable({ sources: () => groupSources().sources, titleOf: groupingTitle, groupingPanel,
         describe: (snap, ctx) => describeGrouping(withFigures(snap), ctx), open: openGrouping, missingOf }),
     placeholder: drawGroupPlaceholder,
     releaseHost: (host) => { if (_binding) _binding.releaseHost(host); },
