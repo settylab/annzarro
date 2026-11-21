@@ -29,6 +29,8 @@
  *   and, off the main road: refused, failed, noscore, cancelled.
  *   (`noscore` is the state of a reply with nothing in it; the name is kept
  *   from the score store, which the page's code already reads.)
+ * `queued` is a job waiting for one of the page's slots (the browser's
+ * limiter); the server's queue is `progress.queue`, its place in the lane.
  * The tiers are read from the estimate reply (`auto_max_s`, `max_s`), never
  * written here. The page computes at most `maxActive` values at once across
  * every store: stores of different kinds share one limiter (`createLimiter`).
@@ -191,11 +193,21 @@ function isAbort(error) {
     return !!error && error.name === 'AbortError';
 }
 
+/** What a progress frame says besides its count (SHR-47, SHR-48), kept as the frame carries it. */
+const PROGRESS_FIELDS = Object.freeze(['stage', 'entries_done', 'entries_total', 'running_s', 'queue']);
+
+/** A job's progress: done and in all, and whichever of the frame's other fields it carries. */
+function progressOf(done, total, frame) {
+    const out = { done, total };
+    if (frame) for (const f of PROGRESS_FIELDS) if (frame[f] !== undefined) out[f] = frame[f];
+    return out;
+}
+
 /**
  * @typedef {Object} DerivedApi
  * @property {(req: {recipe: Object, dataset: string}) => Promise<{estimate: Object}>} estimate
  * @property {(req: {recipe: Object, dataset: string, subset: (string|null), confirm: boolean,
- *   signal: AbortSignal, onProgress: (done: number, total: number) => void}) =>
+ *   hash: string, signal: AbortSignal, onProgress: (done: number, total: number, frame?: Object) => void}) =>
  *   Promise<{header: Object, values: *}>} compute
  *   Throws errors with `status`, `reason`, `message` and, for 409/413, `estimate`.
  */
@@ -210,15 +222,23 @@ function isAbort(error) {
  * @param {(out: {header: Object, values: *}) => boolean} [options.isEmpty] - a reply with nothing in it
  * @param {string} [options.emptyMessage]
  * @param {string} [options.refusalReason] - the 413 reason that means "too expensive, and the server says why"
- * @param {(cache: ByteCache) => ByteCache} [options.makeCache]
+ * @param {(out: {header: Object, values: *}) => ({reason: string, message: ?string}|null)} [options.refusedOf] - a reply
+ *   the server refused for its size: the state `refused`, never a reply with nothing in it
+ * @param {ByteCache} [options.cache] - where values are kept, keyed by job key: anything with ByteCache's interface
+ *   (a store whose values are put together from parts gives a view over them)
+ * @param {(job: Object) => ({recipe: Object, hash: string}|null)} [options.ask] - what a job asks the server now
+ *   (estimate and compute); null when nothing is missing. By default its own recipe and hash
+ * @param {(job: Object, out: {header: Object, values: *}, asked: Object) => void} [options.keep] - where a reply
+ *   goes; by default into the cache under the job's key
  */
 export function createDerivedStore({
     api, budget = DEFAULT_BUDGET, maxActive = DEFAULT_MAX_ACTIVE, limiter = null,
     bytesOf: measure = (values) => bytesOf(values), isEmpty = (out) => !out.values, emptyMessage = 'Nothing could be made.',
-    refusalReason = 'score_too_expensive'
+    refusalReason = 'score_too_expensive', refusedOf = () => null, cache = new ByteCache(budget, measure),
+    ask = (job) => ({ recipe: job.recipe, hash: job.hash }),
+    keep = (job, out) => { cache.put(job.key, { values: out.values, header: out.header }); }
 }) {
     const slots = limiter || createLimiter(maxActive);
-    const cache = new ByteCache(budget, measure);
     /** @type {Map<string, Object>} */
     const jobs = new Map();
     /** @type {Map<string, {value: (Object|null), promise: (Promise<Object>|null)}>} */
@@ -288,10 +308,12 @@ export function createDerivedStore({
     }
 
     async function estimateJob(job) {
+        const asked = ask(job);
+        if (!asked) { setState(job, 'ready'); return; }
         setState(job, 'estimating', { message: null });
         let reply;
         try {
-            reply = await estimateFor(job.recipe, job.dataset, job.hash);
+            reply = await estimateFor(asked.recipe, job.dataset, asked.hash);
         } catch (error) {
             if (job.state !== 'estimating') return;
             setState(job, 'failed', { message: errorText(error), reason: error.reason || 'estimate_failed' });
@@ -319,22 +341,26 @@ export function createDerivedStore({
         job.progress = { done: 0, total: 0 };
         setState(job, 'computing');
         counts.compute++;
+        const asked = ask(job);
         try {
             const out = await api.compute({
-                recipe: job.recipe, dataset: job.dataset, subset: job.subset, confirm: job.confirmed,
+                recipe: asked.recipe, hash: asked.hash, dataset: job.dataset, subset: job.subset, confirm: job.confirmed,
                 signal: controller.signal,
-                onProgress: (done, total) => {
+                onProgress: (done, total, frame) => {
                     if (job.abort !== controller) return;
-                    job.progress = { done, total };
+                    job.progress = progressOf(done, total, frame);
                     emit(job);
                 }
             });
             if (job.abort !== controller) return;      // aborted while the reply arrived
-            if (isEmpty(out)) {
+            const refused = refusedOf(out);
+            if (refused) {
+                setState(job, 'refused', { header: out.header, message: refused.message, reason: refused.reason });
+            } else if (isEmpty(out)) {
                 setState(job, 'noscore', { header: out.header, message: (out.header && out.header.message) || emptyMessage,
                     reason: (out.header && out.header.reason) || 'no_score' });
             } else {
-                cache.put(job.key, { values: out.values, header: out.header });
+                keep(job, out, asked);
                 setState(job, 'ready', { header: out.header });
             }
         } catch (error) {
@@ -370,6 +396,8 @@ export function createDerivedStore({
                 .sort((a, b) => (visibleOwners(b) > 0) - (visibleOwners(a) > 0) || a.seq - b.seq);
             for (const job of queued) {
                 if (visibleOwners(job) === 0) continue;
+                // what it needs came meanwhile (another job's reply held the parts it missed)
+                if (cache.has(job.key)) { setState(job, 'ready'); continue; }
                 if (!slots.tryTake()) break;
                 run(job);
             }
