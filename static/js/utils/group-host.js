@@ -200,15 +200,29 @@ function missingGate(source) {
 export const sourceTitleOf = (source) => (PANEL_SOURCES.includes(source.type) && panelOf(source.key)
     ? titleOfPanel(source.key) : undefined);
 
+/**
+ * Whether the source `id` is turned off here: its owner panel's type is disabled by policy. A panel that is a source of
+ * groups in a shape of its own (a count plot) is off with its own type; a grouping, and an id with no panel, with the
+ * Cell Grouping's.
+ * @param {string} [id]
+ * @param {(type: string) => boolean} [enabled] - the policy's panelEnabled
+ */
+export function sourceOff(id, enabled = (type) => Policy.panelEnabled(type)) {
+    const p = panelOf(id);
+    return !enabled(p && typeof p.groupSource === 'function' ? typeOf(p) : TYPE);
+}
+
 /** The page's host hooks of utils/group-sources.js (its `GroupHost`), each filled once. */
 function pageHost() {
     return {
         source(id) {
             const p = panelOf(id);
+            // a panel that is a source of groups in a shape of its own (a count plot's grid) describes itself
+            if (p && typeof p.groupSource === 'function') return p.groupSource();
             if (typeOf(p) !== TYPE) return null;
             return { title: p.getTitle(), kind: 'grouping', recipe: () => p.getRecipe(), shape: GROUPING };
         },
-        off: () => !Policy.panelEnabled(TYPE),
+        off: (id) => sourceOff(id),
         upstream(source, dependant) {
             switch (source.type) {
                 case GROUP_SOURCE: return typeOf(panelOf(source.key)) === TYPE ? { grouping: source.key } : gone('the grouping it uses is gone');
