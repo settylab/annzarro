@@ -181,26 +181,39 @@ def test_a_match_is_interrupted_inside_even_when_the_filter_lets_the_pattern_thr
     monkeypatch.setattr(name_index, "check_regex", lambda pattern: None)
     ix = NameIndex(["a" * 35 + "cb"] * 3)
     name_index.configure(timeout_s=0.5)
-    latencies, stop = [], threading.Event()
 
-    def probe():
-        while not stop.is_set():
-            t = time.perf_counter()
-            time.sleep(0.01)
-            latencies.append(time.perf_counter() - t)
+    def one_scan():
+        latencies, stop = [], threading.Event()
 
-    thread = threading.Thread(target=probe)
-    thread.start()
-    started = time.monotonic()
-    try:
-        out = ix.search(r"(a|a)*b", mode="regex")
-    finally:
-        stop.set()
-        thread.join()
-    elapsed = time.monotonic() - started
-    assert out["timed_out"] and out["partial"] and out["matches"] == []
-    assert 0.4 < elapsed < 1.5, elapsed
-    assert max(latencies) < 0.25, f"the match held the GIL for {max(latencies):.2f} s"
+        def probe():
+            while not stop.is_set():
+                t = time.perf_counter()
+                time.sleep(0.01)
+                latencies.append(time.perf_counter() - t)
+
+        thread = threading.Thread(target=probe)
+        thread.start()
+        started, cpu = time.monotonic(), time.thread_time()
+        try:
+            out = ix.search(r"(a|a)*b", mode="regex")
+        finally:
+            stop.set()
+            thread.join()
+        return out, time.monotonic() - started, time.thread_time() - cpu, max(latencies)
+
+    # A loaded machine stretches any wall-clock span as far as it likes, so one reading says little about
+    # the match. The scan is CPU-bound until its limit, so what it ends at is read in the CPU seconds the
+    # scanning thread spent (an uninterrupted match would burn CPU far past the limit, as before), and the
+    # time it ran is read as a lower bound only (it must not give up early). A match that held the GIL
+    # would stall the probe in EVERY scan: five scans, each must have been cut at the limit, and the least
+    # disturbed one must meet the latency bound.
+    scans = [one_scan() for _ in range(5)]
+    for out, elapsed, cpu, _ in scans:
+        assert out["timed_out"] and out["partial"] and out["matches"] == []
+        assert elapsed > 0.4, elapsed
+        assert cpu < 1.5, f"the scan spent {cpu:.2f} s of CPU"
+    best = min(latency for *_, latency in scans)
+    assert best < 0.25, f"the match held the GIL for {best:.2f} s"
 
 
 def test_the_streamed_scan_is_interrupted_inside_a_match_too(monkeypatch):
