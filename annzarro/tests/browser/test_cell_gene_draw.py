@@ -14,7 +14,7 @@ import os
 import socket
 import subprocess
 import sys
-import time
+import threading
 import urllib.request
 
 import pytest
@@ -45,12 +45,13 @@ def root(tmp_path_factory):
                              "--data-dir", str(data), "--no-browser", "--auth-disabled"],
                             env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     url = f"http://127.0.0.1:{port}"
+    retry = threading.Event()
     for k in range(120):
         try:
             urllib.request.urlopen(url + "/api/v1/config", timeout=1)
             break
         except OSError:
-            time.sleep(min(0.5, 0.1 * (k + 1)))
+            retry.wait(min(0.5, 0.1 * (k + 1)))   # the server is not up yet: nothing else to wait on
     else:
         proc.kill()
         pytest.fail("server did not start")

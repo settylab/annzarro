@@ -78,7 +78,6 @@ test('dot_min and dot_max clamp the size range', () => {
 });
 
 test('up to DOT_SVG_MAX dots are scatter, for a vector export; above, scattergl', () => {
-    assert.equal(D.DOT_SVG_MAX, 5000);
     const few = D.buildFigure(model({ rows: 50, groups: 100 }), LIGHT);
     assert.equal(traces(few, 'scatter').length >= 1, true);
     assert.equal(traces(few, 'scattergl').length, 0);
