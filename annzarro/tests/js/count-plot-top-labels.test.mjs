@@ -78,3 +78,22 @@ test('the key names a score statistic by the hash of its recipe, not by its pane
     assert.notEqual(a, M.planGrid(config, ctxFor('h2', { genes: ['B'] })).key);
     assert.ok(!a.includes('gene-signature-S'), 'the panel id is not in the key');
 });
+
+test('two scores whose recipes hash equal give the same key, whatever their recipe objects', () => {
+    const make = () => norm({ mode: 'bar', x: obs('cell_type'), value: { kind: 'measure' },
+        measure: { stat: 'mean', source: { type: 'gene-score', key: 'gene-signature-S', column: 'zscore_mean' } } });
+    const keyOf = (config) => M.planGrid(config, { isNumeric: () => false, levelCount: () => 6,
+        inlineRecipe: () => ({ recipe: { genes: ['A', 'B'] } }), hashOf: (s) => (s === config.measure.source ? 'same' : undefined) }).key;
+    const [a, b] = [make(), make()];
+    assert.notEqual(a.measure.source, b.measure.source);
+    assert.equal(keyOf(a), keyOf(b));
+});
+
+test('a field the normaliser keeps on a statistic\'s source never reaches the wire', () => {
+    const config = norm({ mode: 'bar', x: obs('cell_type'), value: { kind: 'measure' },
+        measure: { stat: 'sum', source: { type: 'obs', key: 'depth', future: { x: 1 } } } });
+    assert.deepEqual(config.measure.source.future, { x: 1 }, 'kept in the config');
+    const plan = M.planGrid(config, { isNumeric: () => false, levelCount: () => 6 });
+    assert.deepEqual(plan.request.measures, [{ id: 'm0', source: { type: 'obs', key: 'depth' } }]);
+    assert.ok(!JSON.stringify(plan.request).includes('future'));
+});

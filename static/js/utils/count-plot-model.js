@@ -343,11 +343,24 @@ export function planGrid(config, ctx) {
     if (mode.density) request.density = true;
     if (members) members.forEach((member, i) => { request.partitionings[i].member = member; });
     if (config.value && config.value.kind === 'measure' && config.measure) {
-        const measure = { id: 'm0', source: config.measure.source };
+        const measure = { id: 'm0', source: wireSource(config.measure.source, ctx) };
         if (config.measure.above !== undefined) measure.above = config.measure.above;
         request.measures = [measure];
     }
-    return { state: 'ready', request, inputs, key: gridKey(request, partitionings, members, ctx) };
+    // the key names a measure's source as the config does (a score by the hash of its recipe), not as it is sent
+    const keyed = request.measures ? { ...request, measures: request.measures.map((m) => ({ ...m, source: config.measure.source })) } : request;
+    return { state: 'ready', request, inputs, key: gridKey(keyed, partitionings, members, ctx) };
+}
+
+/**
+ * A measure's source as the request carries it: the fields the server reads, and a score's recipe inline (the score
+ * route's, as a partitioning's carries it; the server refuses a field it does not take).
+ */
+function wireSource(source, ctx) {
+    const out = Object.fromEntries(['type', 'key', 'column', 'layer'].filter((f) => source[f] !== undefined).map((f) => [f, source[f]]));
+    const inline = ctx && ctx.inlineRecipe ? ctx.inlineRecipe(source) : null;
+    if (inline && inline.recipe) out.recipe = inline.recipe;
+    return out;
 }
 
 /** A source as a key names it: one of another panel by the hash of what it computes, not by the panel. */
