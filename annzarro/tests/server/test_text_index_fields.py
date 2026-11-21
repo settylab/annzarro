@@ -391,20 +391,23 @@ def best_of(fn, runs=5):
     return min(times)
 
 
-def test_a_search_over_twenty_thousand_entries_ends_inside_its_time_limit():
-    # The limit is SEARCH_SECONDS of work. Whether a search "ends inside" it cannot be read off one wall-clock run
-    # with the limit itself as the cutoff: a busy machine stops the search midway and reports it partial for
-    # reasons that are its own. So the searches run with room to finish (they must find what they find), and the
-    # time they take is the CPU seconds of the quickest of five runs, which load does not move, against the limit.
+def test_a_search_over_twenty_thousand_entries_ends_inside_its_time_limit(monkeypatch):
+    # The limit is SEARCH_SECONDS of work. A busy machine stretches a wall-clock run as far as it likes and the
+    # search then stops midway for reasons of its own. So the search's own deadline is run on the CPU seconds of
+    # this process (a clock load does not move), with its real default limit and its own check: one search of
+    # each kind, and neither may be cut.
+    class CpuTime:
+        def __getattr__(self, name):
+            return getattr(time, name)
+
+        def monotonic(self):
+            return time.process_time()
     loaded = synthetic_index(20_000)
-    first = lambda: text_index.search(loaded, ["donor", "counts"], lambda e: True, seconds=60)
-    second = lambda: text_index.search(loaded, ["highly_variable"], lambda e: True, seconds=60)
-    hits, more, partial = first()
+    monkeypatch.setattr(text_index, "time", CpuTime())
+    hits, more, partial = text_index.search(loaded, ["donor", "counts"], lambda e: True)
     assert partial is False and hits == []
-    hits, more, partial = second()
+    hits, more, partial = text_index.search(loaded, ["highly_variable"], lambda e: True)
     assert partial is False and len(hits) == 50 and more == 20_000 - 50
-    assert best_of(first, 5) < text_index.SEARCH_SECONDS
-    assert best_of(second, 5) < text_index.SEARCH_SECONDS
 
 
 def test_a_search_grows_with_the_size_of_the_index_and_no_faster_than_fifteen_to_one_for_ten_times_the_entries():
