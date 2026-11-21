@@ -1,5 +1,5 @@
 /**
- * The open Cell Table's side of its gene-score columns: fill a column in place when its score
+ * The open Cell Table's side of its source columns (a gene score, or any provider with a table half): fill a column in place when its score
  * arrives, say what state it is in (header, cells, a notice over the table, the strip tag), hold
  * the rows while the filter reads a score that is not ready, and keep export honest.
  *
@@ -9,10 +9,9 @@
  * with the page position held, where the user is (sort order, page, search and scroll stay). Utils/score-column.js holds the
  * wording; panels/table-utilities/table-scores.js the handles.
  */
-import { scoreFullLabel, openSignature, offerAgain, canOfferAgain } from '../../utils/score-source.js';
 import { actions } from '../../utils/source-actions.js';
 import { painter } from '../../utils/host-binding.js';
-import { describeColumn, describeHeldRows } from '../../utils/score-column.js';
+import { describeHeldRows } from '../../utils/score-column.js';
 import { TableScores } from './table-scores.js';
 
 /** Milliseconds a burst of progress frames waits before the notice is drawn again. */
@@ -33,7 +32,7 @@ painter.register({
         if (!id) return [];
         return TableScores.entries(id).map(entry => ({
             role: 'column', snap: entry.snap, rec: entry,
-            notice: describeColumn({ ...entry.snap, source: entry.snap && entry.snap.title, title: entry.title }, { sharers: entry.handle.sharers() })
+            notice: TableScores.noticeOf(entry)
         }));
     }
 });
@@ -102,7 +101,7 @@ export function bindScoreColumns(dataTable, settings, container) {
             span.remove();
             adjust();
         }
-        th.dataset.exportTitle = scoreFullLabel(entry.column);
+        th.dataset.exportTitle = TableScores.fullLabelOf(entry);
         th.classList.toggle('az-sort-off', !view.sortable);
         th.setAttribute('aria-disabled', view.sortable ? 'false' : 'true');
         th.dataset.scoreState = view.state;
@@ -273,7 +272,7 @@ export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compu
             'score-retry': all(retry),
             'score-update': all(update),
             'score-offer': { target: worst((w) => canOffer(w.column)), run: (w) => { offer(w.column); } },
-            'score-open': { target: worst((w) => !!panel(w.column.key)), run: (w, host) => { openSource(w.column.key, idOf(host)); } },
+            'score-open': { target: worst((w) => !!panel(w.column.key)), run: (w, host) => { openSource(w.column.key, idOf(host), w.column); } },
             'score-remove': { target: worst((w, host) => { const p = panel(idOf(host)); return !!p && typeof p.removeColumn === 'function'; }),
                 run: (w, host) => { panel(idOf(host)).removeColumn(w.column); } }
         }
@@ -288,8 +287,8 @@ actions.register(createTableActions({
     cancel: (id) => TableScores.cancel(id),
     retry: (id) => TableScores.retry(id),
     update: (id) => TableScores.update(id),
-    canOffer: canOfferAgain,
-    offerAgain,
+    canOffer: (column) => TableScores.canOffer(column),
+    offerAgain: (column) => TableScores.offer(column),
     panelOf,
-    openSource: openSignature
+    openSource: (key, hostId, column) => TableScores.open(column, hostId)
 }));

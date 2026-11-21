@@ -37,6 +37,7 @@ import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
 import { DEFAULT_INPUT, DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
 import { createSourceAdapter, entityLabel, isSourceType, kindOfType, optionFieldsOf, scoreKeyOptions } from './score-source-panels.js';
 import { findCycle, TableResolver } from './table-resolver.js';
+import { layerKeys } from './structure-keys.js';
 
 /** What each aggregation is called where a consumer picks it (level 3). */
 const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
@@ -645,13 +646,48 @@ function scoreSubKeyMenu(setting) {
     return { options, chosen, adopt };
 }
 
+/**
+ * The table half of the provider (utils/table-source.js): a score as a column of a Cell Table. The column's handle is the
+ * score's, so a table's score and a plot's share one computation.
+ */
+const scoreTable = {
+    tab: 'gene-score',
+    watch: (column, { host, visible, onChange }) => scores().sources.watch(column.key, {
+        kind: 'table', sub: subKeyOf(column), layer: column.layer || '', host, role: 'column', visible, onChange
+    }),
+    visibilityChanged: () => scores().sources.visibilityChanged(),
+    update: (column) => scores().sources.update(column.key),
+    label: (column) => scoreLabel(column),
+    fullLabel: (column) => scoreFullLabel(column),
+    canOffer: (column) => canOfferAgain(column),
+    offer: (column) => offerAgain(column),
+    open: (column, hostId) => openSignature(column.key, hostId),
+    chooser: {
+        layerOf: (column) => column.layer || sourceInput(column.key) || DEFAULT_INPUT,
+        entityLabel,
+        /** What the signature offers (method and layer together), then a ticked column it no longer offers. */
+        options: (sig, ticked) => {
+            const entries = scoreOptions(sig.id).map(o => ({ column: o.method, layer: o.layer, text: o.label }));
+            for (const t of ticked) {
+                if (t.key === sig.id && !entries.some(e => e.column === subKeyOf(t) && e.layer === (t.layer || sig.input))) {
+                    entries.push({ column: subKeyOf(t), layer: t.layer || sig.input, text: lapsedLabel(t) });
+                }
+            }
+            return entries;
+        },
+        note: (structure) => noteDatasetLayers(layerKeys(structure)),
+        empty: { text: 'No signatures or gene tables yet.', button: 'New signature…' },
+        more: { text: 'Offer other scores…', run: (sig, nextTo) => offerOtherScores(sig.id, nextTo) }
+    }
+};
+
 registerSource({
     type: SCORE_TYPE,
     label: 'gene-score',
     valueType: 'numerical',
     entity: 'cells',
-    consumers: ['cell-plot'],
-    axes: ['x', 'y', 'z', 'color', 'hover'],
+    consumers: ['cell-plot', 'cell-table'],
+    axes: ['x', 'y', 'z', 'color', 'hover', 'column'],
     largeAxes: ['x', 'y', 'color'],
     defaultSub: DEFAULT_METHOD,
     layered: true,
@@ -675,6 +711,7 @@ registerSource({
         parse: parseScoreValue,
         label: scoreLabel
     },
+    table: scoreTable,
     titleOf: (setting) => `gene score ${scoreTitle(setting)}`,
     placeholder: drawScorePlaceholder,
     vocabulary: { result: 'score' }

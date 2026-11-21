@@ -12,12 +12,8 @@ import {
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { getColumnDisplayName } from './table-data.js';
 import { isDerived } from '../../utils/line-select.js';
-import { isScoreColumn } from '../../utils/score-column.js';
-import { getSource } from '../../utils/source-registry.js';
-import { DEFAULT_METHOD, DEFAULT_INPUT } from '../../utils/gene-signature.js';
-import { scoreOptions, lapsedLabel, noteDatasetLayers, offerOtherScores, sourceInput } from '../../utils/score-source.js';
-import { layerKeys } from '../../utils/structure-keys.js';
-import { entityLabel } from '../../utils/score-source-panels.js';
+import { isScoreColumn, subOf } from '../../utils/score-column.js';
+import { tableHalfOf, tableProviders } from '../../utils/table-source.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -182,8 +178,9 @@ export function populateColumnsCellTable(dataSources, datasetStructure, id, sett
         
         let items = [];
         
-        if (source.id === 'gene-score') {
-            buildScoreTab(id, settings, datasetStructure);
+        const provider = tableProviders().find(p => p.type === source.id);
+        if (provider) {
+            buildSourceTab(provider, id, settings, datasetStructure);
             continue;
         } else if (source.id === 'obs' && datasetStructure.obs?.columns) {
             items = datasetStructure.obs.columns.map(column => ({
@@ -272,6 +269,31 @@ export function populateColumnsGeneTable(dataSources, datasetStructure, id, sett
 }
 
 /**
+ * The tabs of a Cell Table's column chooser: the built-in sources, then one for every provider that gives a cell table
+ * columns (utils/table-source.js), in registration order.
+ * @returns {Array<{id: string, name: string, label: string}>}
+ */
+export function cellTableSources() {
+    return [
+        { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
+        { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
+        { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
+        { id: 'layer', name: 'layer', label: 'layers' }, // Expression Layers
+        ...tableProviders().map(p => ({ id: p.type, name: p.type, label: p.table.tab }))
+    ];
+}
+
+/** The tabs of a Gene Table's column chooser: a gene table has no cells to take a source's series from. */
+export function geneTableSources() {
+    return [
+        { id: 'var', name: 'var', label: 'var' }, // Gene Annotations
+        { id: 'varm', name: 'varm', label: 'varm' }, // Gene Matrices
+        { id: 'varp', name: 'varp', label: 'varp' }, // Gene-Gene Relations
+        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
+    ];
+}
+
+/**
  * Set up tabs for cell table
  * @param {HTMLElement} tabsContainer - The tabs container
  * @param {HTMLElement} tabContent - The tab content container
@@ -280,14 +302,8 @@ export function populateColumnsGeneTable(dataSources, datasetStructure, id, sett
  * @param {Object} settings - The panel settings
  */
 async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, id, settings) {
-    // Add tabs for obs, obsm, obsp, layer
-    const dataSources = [
-        { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
-        { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
-        { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
-        { id: 'layer', name: 'layer', label: 'layers' }, // Expression Layers
-        { id: 'gene-score', name: 'gene-score', label: 'gene-score' } // Gene signature scores
-    ];
+    // Add tabs for obs, obsm, obsp, layer, and one for each source that gives a cell table columns
+    const dataSources = cellTableSources();
     
     createDataTabs(tabsContainer, tabContent, dataSources, id, datasetStructure);
     
@@ -309,12 +325,7 @@ async function setupCellTableTabs(tabsContainer, tabContent, datasetStructure, i
  */
 async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, id, settings) {
     // Add tabs for var, varm, varp, layer
-    const dataSources = [
-        { id: 'var', name: 'var', label: 'var' }, // Gene Annotations
-        { id: 'varm', name: 'varm', label: 'varm' }, // Gene Matrices
-        { id: 'varp', name: 'varp', label: 'varp' }, // Gene-Gene Relations
-        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
-    ];
+    const dataSources = geneTableSources();
     
     createDataTabs(tabsContainer, tabContent, dataSources, id);
     
@@ -329,65 +340,64 @@ async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, i
 /** The id of a column's checkbox in the chooser. */
 function checkboxIdFor(column, panelId) {
     // a score's layer is always named: there is no default layer, and a column stored without one (an old
-    // link) is read on the signature's input at the time
-    const layer = column.type === 'gene-score' ? (column.layer || sourceInput(column.key) || DEFAULT_INPUT) : '';
+    // link) is read on the signature's input at the time (the provider says what a column reads)
+    const half = tableHalfOf(column);
+    const layer = half ? half.chooser.layerOf(column) : '';
     return `checkbox-${column.type}-${column.key}-${column.column}${layer ? `-of-${layer}` : ''}-${panelId}`.replace(/\s+/g, '_');
 }
 
 /**
- * The gene-score tab of a Cell Table's chooser: every signature (open or closed), and under each
- * the aggregations it can be read with (the source's three levels, utils/source-registry.js).
- * Several signatures and several aggregations of one can be ticked at once: each is a column.
- * Rebuilt whenever panels come, go or are renamed, since a signature can be made at any time.
+ * The tab of a source in a Cell Table's chooser: every entity (open or closed), and under each what it gives a column
+ * (a score's aggregations, over its layers: the source's levels, utils/source-registry.js). Several entities and several
+ * options of one can be ticked at once: each is a column. Rebuilt whenever panels come, go or are renamed, since an
+ * entity can be made at any time. The words and the options are the provider's (utils/table-source.js `chooser`).
+ * @param {Object} provider - a registered source with a table half
  * @param {string} id - the table panel's id
  * @param {Object} settings - the panel settings
  */
-export function buildScoreTab(id, settings, structure = null) {
-    const pane = document.getElementById(`gene-score-content-${id}`);
-    const provider = getSource('gene-score');
-    if (!pane || !provider) return;
+export function buildSourceTab(provider, id, settings, structure = null) {
+    const chooser = provider.table.chooser;
+    const pane = document.getElementById(`${provider.type}-content-${id}`);
+    if (!pane) return;
     const list = pane.querySelector('.checkbox-list');
     if (!list) return;
     const search = pane.querySelector('.column-search');
     list.innerHTML = '';
-    const signatures = provider.entities();
-    if (!signatures.length) {
-        list.innerHTML = '<div class="alert alert-secondary mb-2">No signatures or gene tables yet.</div>';
+    const entities = provider.entities();
+    if (!entities.length) {
+        const none = document.createElement('div');
+        none.className = 'alert alert-secondary mb-2';
+        none.textContent = chooser.empty.text;
+        list.appendChild(none);
         const make = document.createElement('button');
         make.type = 'button';
         make.className = 'btn btn-sm btn-outline-primary az-score-new';
-        make.textContent = 'New signature…';
+        make.textContent = chooser.empty.button;
         make.addEventListener('click', () => {
-            // a Gene Signature opens beside this table; the tab lists it as soon as it exists
-            if (window.PanelManager) window.PanelManager.createPanelNextTo('gene-signature', id);
+            // the entity opens beside this table; the tab lists it as soon as it exists
+            if (provider.newEntity) provider.newEntity.run(id);
         });
         list.appendChild(make);
         return;
     }
-    const ticked = (settings.columns || []).filter(isScoreColumn);
-    noteDatasetLayers(layerKeys(structure || pane.__structure || null));
+    const ticked = (settings.columns || []).filter(c => c.type === provider.type);
+    if (chooser.note) chooser.note(structure || pane.__structure || null);
     pane.__structure = structure || pane.__structure || null;
-    for (const sig of signatures) {
+    for (const entity of entities) {
         const group = document.createElement('div');
         group.className = 'az-score-group';
-        group.dataset.signature = sig.id;
+        group.dataset.entity = entity.id;
         const heading = document.createElement('div');
         heading.className = 'az-score-group-title fw-semibold';
-        heading.textContent = entityLabel(sig);
-        heading.title = sig.open ? entityLabel(sig) : `${entityLabel(sig)} (closed)`;
+        heading.textContent = chooser.entityLabel(entity);
+        heading.title = entity.open ? chooser.entityLabel(entity) : `${chooser.entityLabel(entity)} (closed)`;
         group.appendChild(heading);
-        // what the signature offers (method and layer together, as in a plot's menu), and any ticked column
+        // what the entity offers (method and layer together, as in a plot's menu), and any ticked column
         // it no longer offers (kept, so the table still has it)
-        // every column stores the layer it was given: the signature's first offered layer changes when the user unticks it
-        const entries = scoreOptions(sig.id).map(o => ({ method: o.method, layer: o.layer, text: o.label }));
-        for (const t of ticked) {
-            if (t.key === sig.id && !entries.some(e => e.method === (t.column || DEFAULT_METHOD) && e.layer === (t.layer || sig.input))) {
-                entries.push({ method: t.column || DEFAULT_METHOD, layer: t.layer || sig.input, text: lapsedLabel(t) });
-            }
-        }
-        for (const sub of entries) {
+        // every column stores the layer it was given: a signature's first offered layer changes when the user unticks it
+        for (const sub of chooser.options(entity, ticked)) {
             const layer = sub.layer;
-            const item = { type: 'gene-score', key: sig.id, column: sub.method, layer };
+            const item = { type: provider.type, key: entity.id, column: sub.column, layer };
             const div = document.createElement('div');
             div.className = 'form-check py-0 ms-3';
             const checkbox = document.createElement('input');
@@ -398,24 +408,26 @@ export function buildScoreTab(id, settings, structure = null) {
             checkbox.setAttribute('data-key', item.key);
             checkbox.setAttribute('data-column', item.column);
             if (layer) checkbox.setAttribute('data-layer', layer);
-            checkbox.setAttribute('data-label', sig.title);
+            checkbox.setAttribute('data-label', entity.title);
             checkbox.dataset.scoreBound = '1';
-            checkbox.checked = ticked.some(c => c.key === sig.id && (c.column || DEFAULT_METHOD) === sub.method && (c.layer || sig.input) === layer);
+            checkbox.checked = ticked.some(c => c.key === entity.id && subOf(c) === sub.column && chooser.layerOf(c) === (layer || ''));
             checkbox.addEventListener('change', () => updateSelectedColumnsList(id, settings));
             const label = document.createElement('label');
             label.className = 'form-check-label';
             label.htmlFor = checkbox.id;
             label.textContent = sub.text;
-            div.dataset.search = `${sig.title} ${sub.text}`.toLowerCase();
+            div.dataset.search = `${entity.title} ${sub.text}`.toLowerCase();
             div.append(checkbox, label);
             group.appendChild(div);
         }
-        const more = document.createElement('button');
-        more.type = 'button';
-        more.className = 'btn btn-link btn-sm az-score-offer-more ms-3 p-0';
-        more.textContent = 'Offer other scores…';
-        more.addEventListener('click', () => offerOtherScores(sig.id, id));
-        group.appendChild(more);
+        if (chooser.more) {
+            const more = document.createElement('button');
+            more.type = 'button';
+            more.className = 'btn btn-link btn-sm az-score-offer-more ms-3 p-0';
+            more.textContent = chooser.more.text;
+            more.addEventListener('click', () => chooser.more.run(entity, id));
+            group.appendChild(more);
+        }
         list.appendChild(group);
     }
     if (search && !search.dataset.scoreBound) {
@@ -444,7 +456,7 @@ export function buildScoreTab(id, settings, structure = null) {
  * @param {(a: Object, b: Object) => boolean} same
  */
 export function removeColumnFromChooser(id, settings, column, same) {
-    const box = document.getElementById(checkboxIdFor({ ...column, column: column.column || DEFAULT_METHOD }, id));
+    const box = document.getElementById(checkboxIdFor({ ...column, column: column.column || subOf(column) }, id));
     if (box) box.checked = false;
     settings.columns = (settings.columns || []).filter(c => !same(c, column));
     updateSelectedColumnsList(id, settings);
@@ -748,9 +760,11 @@ export function setupColumnSelectionEvents(id, settings, entityType) {
             updateSelectedColumnsList(id, settings);
         }, { signal });
     });
-    // signatures come and go: the gene-score tab lists them again
+    // entities come and go (a signature is made at any time): the tabs of the sources list them again
     if (entityType === 'cells') {
-        document.addEventListener('annzarro:panels-changed', () => buildScoreTab(id, settings), { signal });
+        document.addEventListener('annzarro:panels-changed', () => {
+            for (const provider of tableProviders()) buildSourceTab(provider, id, settings);
+        }, { signal });
     }
     
     // Handle apply button
@@ -862,10 +876,10 @@ function updateSelectedColumnsList(id, settings) {
     // The columns the line-selection tool derived are not in the chooser: they
     // stay, after the ticked ones
     const derived = (settings.columns || []).filter(isDerived);
-    // so do score columns whose signature is no longer listed (deleted): they say so in the table,
+    // so do source columns whose entity is no longer listed (deleted): they say so in the table,
     // and go when the user removes them
     const orphans = (settings.columns || []).filter(c => isScoreColumn(c)
-        && !document.getElementById(checkboxIdFor({ ...c, column: c.column || DEFAULT_METHOD }, id)));
+        && !document.getElementById(checkboxIdFor({ ...c, column: c.column || subOf(c) }, id)));
     // the score columns as they were: one already there on the same layer is kept as it is (an old column with no
     // layer keeps its key, and so its filter conditions); only a new tick stores its layer
     const before = (settings.columns || []).filter(isScoreColumn);
@@ -877,14 +891,14 @@ function updateSelectedColumnsList(id, settings) {
         const key = checkbox.getAttribute('data-key');
         const column = checkbox.getAttribute('data-column');
         
-        // Add to settings (a score column also keeps the signature's title, for when it is deleted)
+        // Add to settings (a source column also keeps the entity's title, for when it is deleted)
         const entry = { type, key, column };
-        if (type === 'gene-score') {
+        const half = tableHalfOf({ type });
+        if (half) {
             entry.label = checkbox.getAttribute('data-label') || undefined;
             const layer = checkbox.getAttribute('data-layer');
             if (layer) entry.layer = layer;
-            const input = sourceInput(key) || DEFAULT_INPUT;
-            const had = before.find(c => c.key === key && (c.column || DEFAULT_METHOD) === column && (c.layer || input) === layer);
+            const had = before.find(c => c.type === type && c.key === key && subOf(c) === column && (half.chooser.layerOf(c) || null) === layer);
             if (had) { delete entry.layer; if (had.layer) entry.layer = had.layer; }
         }
         settings.columns.push(entry);
@@ -999,7 +1013,7 @@ function restoreSelectedColumns(id, settings) {
     // Check all checkboxes that match a column in settings
     settings.columns.forEach(col => {
         // a link made before aggregations existed names the signature only: the default one
-        if (isScoreColumn(col) && !col.column) col.column = DEFAULT_METHOD;
+        if (isScoreColumn(col) && !col.column) col.column = subOf(col);
         const checkboxId = `checkbox-${col.type}-${col.key}-${col.column}-${id}`.replace(/\s+/g, '_');
         const checkbox = document.getElementById(checkboxId);
         if (checkbox) {
