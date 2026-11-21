@@ -20,6 +20,7 @@ BASE_TOTAL, BASE_FILES = 53, 18
 #: occurrences allowed per file now; F4 took utils/deeplink.js from 2 to 0; F3c-1 took the menus, loads, titles, view
 #: descriptor and panel-set follow to the provider (hover and the large plot are F3c-2's, tables F3d's)
 CEILING = {
+    "panels/cell-grouping/factors.js": 1,      # G8a drops this to 0
     "panels/table-utilities/table-ui-make.js": 8,
     "panels/table-utilities/table-data.js": 4,
     "panels/plot-utilities/large-plot-controls.js": 3,
