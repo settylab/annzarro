@@ -148,7 +148,11 @@ const KIND_LABEL = Object.freeze({
     unsupported: 'not covered by the service',
     'over-limit': "over the service's limit",
     disabled: 'external services are turned off',
-    declined: 'not sent: declined for this service'
+    declined: 'not sent: declined for this service',
+    // a derived source (a gene score, a grouping) whose value is not there: still on its way, or stopped (refused,
+    // failed, cancelled, deleted, asks first); its notice says which. One the dataset truly lacks keeps UNAVAILABLE's.
+    pending: 'not ready yet',
+    stopped: 'not available'
 });
 
 /**
@@ -298,12 +302,13 @@ export class Coverage {
      *
      * @param {string} reason  One of `GAP.*`.
      * @param {string} detail  Why, in the user's terms.
-     * @param {Object} [opts]  `{ source, unit, total }`.
+     * @param {Object} [opts]  `{ source, unit, total, role, kind }`; `kind` names the gap more exactly than its
+     *   reason (KIND_LABEL): a derived source still on its way ('pending') or stopped ('stopped')
      */
-    static missing(reason, detail, { source = '', unit = 'values', total = null, role = ROLE.RESTRICTS } = {}) {
+    static missing(reason, detail, { source = '', unit = 'values', total = null, role = ROLE.RESTRICTS, kind = '' } = {}) {
         return new Coverage({
             shown: 0, total, unit, role,
-            gaps: [{ reason, detail, source, count: total }]
+            gaps: [{ reason, detail, source, count: total, kind }]
         });
     }
 
@@ -988,20 +993,20 @@ export function classifyFilterStats(filterStats, unit = 'values', { axisCoverage
             add(only.table, 'table filter', 'points not in the linked table', 'table');
         }
         if (filterStats.hideNaNActive) {
-            add(only.nan, 'colour', 'points with no colour value (Hide NaN is on)', 'nan');
+            add(only.nan, 'color', 'points with no color value (Hide NaN is on)', 'nan');
         }
         if (filterStats.hideOutliersActive) {
-            add(only.outliers, 'colour', 'points outside the colour range (Hide Outliers is on)', 'outliers');
+            add(only.outliers, 'color', 'points outside the color range (Hide Outliers is on)', 'outliers');
         }
     } else {
         addAxis(filterStats.xNaN, 'x-axis', 'points with no x value', axisCoverage && axisCoverage.x);
         addAxis(filterStats.yNaN, 'y-axis', 'points with no y value', axisCoverage && axisCoverage.y);
         addAxis(filterStats.zNaN, 'z-axis', 'points with no z value', axisCoverage && axisCoverage.z);
         if (filterStats.hideNaNActive) {
-            add(filterStats.colorNaN, 'colour', 'points with no colour value (Hide NaN is on)');
+            add(filterStats.colorNaN, 'color', 'points with no color value (Hide NaN is on)');
         }
         if (filterStats.hideOutliersActive) {
-            add(filterStats.colorOutliers, 'colour', 'points outside the colour range (Hide Outliers is on)');
+            add(filterStats.colorOutliers, 'color', 'points outside the color range (Hide Outliers is on)');
         }
         if (filterStats.tableFilterActive) {
             add(filterStats.tableFiltered, 'table filter', 'points not in the linked table');

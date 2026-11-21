@@ -55,7 +55,8 @@ export const GROUPING = Object.freeze({
     parts: (resolved) => resolved.recipe.partitionings.map((p) => p.source),
     hash: (resolved, ctx) => groupingHasher(resolved.recipe, ctx.hashOf)(resolved.recipe),
     need(resolved, option, ctx, key) {
-        const histograms = option.histograms || [];
+        // a panel asks by the positions of its cards, which an edit not yet applied may not have: those are left out
+        const histograms = (option.histograms || []).filter((i) => i < resolved.recipe.partitionings.length);
         const features = (option.features || []).map((wire) => ({ key: stableStringify(wire), wire }));
         // made when it is first sent or estimated, not on every comparison of an edit (a table's cells are packed then)
         const request = () => serverRequest(resolved.recipe, ctx, { codes: false, histograms });

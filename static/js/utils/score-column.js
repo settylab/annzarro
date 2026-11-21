@@ -3,9 +3,13 @@
  * Pure: no DOM and no page state, so Node tests hold every state and sentence. The page's side
  * is panels/table-utilities/table-scores.js (the handles) and table-score-ui.js (the table).
  *
- * A column is `{type: 'gene-score', key: <signature panel id>, column: <aggregation>, label}`,
+ * A column is `{type: gene-score, key: <signature panel id>, column: <aggregation>, label}`,
  * the same three-level form every consumer of the source stores (utils/source-registry.js). A
  * link or a panel set keeps this reference and nothing else: never a value.
+ *
+ * The words below are the score's, and so are the states: a column of any other provider with a table half
+ * (utils/table-source.js) is stated by the same view and gate, from a snapshot with the same states, and sorted,
+ * filtered and exported alike. What differs per provider (its handle, title and notice) is the provider's.
  *
  * What a column says of itself is read from a handle's snapshot (utils/score-sources.js):
  *
@@ -25,12 +29,28 @@
 import { describeScore } from './score-notices.js';
 import { referencedKeys } from './line-select.js';
 import { DEFAULT_METHOD } from './gene-signature.js';
+import { tableHalfOf } from './table-source.js';
+import { getSource } from './source-registry.js';
 
 const SCORE_TYPE = 'gene-score';
 
-/** Whether a table column is a gene-signature score. */
+/**
+ * Whether a table column is one of a source (a gene-signature score, or any provider with a table half: the type
+ * is found in the registry, so a provider this page has not loaded is not).
+ */
 export function isScoreColumn(column) {
-    return !!column && column.type === SCORE_TYPE;
+    return !!column && (column.type === SCORE_TYPE || !!tableHalfOf(column));
+}
+
+/**
+ * The series a snapshot holds, in either form (utils/table-source.js), or null before it has one.
+ * @param {Object|null} snap
+ * @returns {null|{kind: 'numerical'|'categorical', length: number, held: Object}} `held` is the array itself
+ */
+export function seriesOf(snap) {
+    if (snap && snap.values) return { kind: 'numerical', length: snap.values.length, held: snap.values };
+    if (snap && snap.codes && snap.categories) return { kind: 'categorical', length: snap.codes.length, held: snap.codes };
+    return null;
 }
 
 /** The score columns of a table's column list, in order. */
@@ -40,7 +60,9 @@ export function scoreColumnsOf(columns) {
 
 /** The aggregation of a column: its sub-key, or the provider's default. */
 export function subOf(column) {
-    return column && column.column ? String(column.column) : DEFAULT_METHOD;
+    if (column && column.column) return String(column.column);
+    const provider = column && column.type !== SCORE_TYPE ? getSource(column.type) : null;
+    return provider ? provider.defaultSub : DEFAULT_METHOD;
 }
 
 /** Whether two columns are the same score: one signature, one aggregation. */
@@ -79,10 +101,11 @@ export function columnView(snap, title = '') {
     const t = title ? `'${title}'` : 'the score';
     const view = (kind, suffix, cell, o) => ({ kind, state, suffix, cell, hasValues: false, sortable: false,
         filterable: false, exportable: false, exportNote: '', ...o });
-    if (state === 'ready' && snap && snap.values) {
+    const hasSeries = !!seriesOf(snap);
+    if (state === 'ready' && hasSeries) {
         return view('ready', '', '', { hasValues: true, sortable: true, filterable: true, exportable: true });
     }
-    if (state === 'updating' && snap && snap.values) {
+    if (state === 'updating' && hasSeries) {
         return view('updating', '(updating)', '', { hasValues: true, sortable: true, filterable: true,
             exportNote: `Available when ${t} is updated` });
     }
@@ -124,7 +147,8 @@ export function describeColumn(snap, { sharers = 1 } = {}) {
  * the filter has a condition on. Null when every one of them can be read (ready or updating).
  * The status has the shape of a resolver status (utils/table-resolver.js) with reason 'score',
  * so a plot, a Gene Set Analysis panel and the resolver pass it down unchanged.
- * @param {Array<{title: string, view: Object, snap: Object}>} items
+ * @param {Array<{title: string, view: Object, snap: Object, describe?: (snap: Object) => Object|null}>} items - `describe`
+ *   is the provider's notice for the column (the score's own words when it has none)
  * @returns {null|{state: 'waiting'|'failed'|'refused', reason: 'score', title: string, scoreState: string,
  *   detail: string, columns: number}}
  */
@@ -141,7 +165,7 @@ export function filterGate(items) {
     }
     if (!worst || rank < 1) return null;
     const { view, snap, title } = worst;
-    const notice = describeScore({ ...(snap || {}), title }, { role: 'column' });
+    const notice = worst.describe ? worst.describe({ ...(snap || {}), title }) : describeScore({ ...(snap || {}), title }, { role: 'column' });
     const detail = notice ? `${notice.headline}${notice.text ? ` ${notice.text}` : ''}` : '';
     if (view.kind === 'pending') {
         return { state: 'waiting', reason: 'score', title, scoreState: view.state, detail, columns: items.length };
@@ -205,7 +229,7 @@ function renameFilterKeys(searchBuilderConfig, renames) {
 
 
 /**
- * Write the layer explicitly into every gene-score entry that has none: an axis, the colour or a hover
+ * Write the layer explicitly into every gene score entry that has none: an axis, the colour or a hover
  * entry of a plot, and a score column of a table. There is no default layer: the signature's `input` is
  * only its first offered layer and it changes when the user unticks it, so an entry that carried no layer
  * (a link made before layers were stored) is resolved ONCE, to the input as it is at that moment, and
@@ -220,7 +244,7 @@ export function pinScoreLayers(config, inputOf, keyOf) {
     if (!config || typeof config !== 'object') return false;
     let changed = false;
     const pin = (source) => {
-        if (!source || source.type !== 'gene-score' || typeof source.key !== 'string' || source.layer) return null;
+        if (!source || source.type !== SCORE_TYPE || typeof source.key !== 'string' || source.layer) return null;
         const input = inputOf(source.key);
         if (!input) return null;
         source.layer = input;

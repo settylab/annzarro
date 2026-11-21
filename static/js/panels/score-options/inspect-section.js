@@ -262,7 +262,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         if (notice.text) text += ` ${notice.text}`;
         if (kind === 'estimating') text = `Estimating how long '${title}' will take.`;
         if (kind === 'nogenes') text = 'Tick genes to inspect their score.';
-        if (kind === 'awaiting' || kind === 'cancelled') text = text.replace(/ This plot has no colour\.$/, '');
+        if (kind === 'awaiting' || kind === 'cancelled') text = text.replace(/ This plot has no color\.$/, '');
         state.append(D.el('span', { class: 'gsig-inspect__statetext', text }));
         const buttons = [];
         for (const [action, label] of notice.actions) {

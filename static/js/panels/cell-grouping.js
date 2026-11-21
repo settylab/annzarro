@@ -9,10 +9,8 @@
  * (G9c), Statistics offered (G9d), Settings (settings.js). Every edit is one undoable step. The panel watches its own
  * groups as a viewer (consumer kind `inspect`, so it is never counted as a user), through the page's group sources.
  *
- * THE PAGE'S GROUP SOURCES. `groupSources()` binds utils/group-sources.js to the page (G7b's API): one group store on
- * the cell_groups route with the page's limiter, and a host that knows the page's groupings, tables and scores. No
- * other module builds one yet: the cell-group provider (G8a, utils/cell-group-source.js) is to take this binding
- * over, with the memory guard's ledger for codes, which nothing here asks for.
+ * THE PAGE'S GROUP SOURCES are utils/group-host.js `groupSources()`: one group store and one set of group sources for
+ * the page, shared with every other consumer of groups.
  *
  * SEAMS for the steps after this one:
  *   G9b  factors.js BINNING_SLOT: the binning control mounts in a binned card.
@@ -26,21 +24,17 @@
  */
 import { PanelManager } from '../panel-manager.js';
 import { DataManager } from '../data-manager.js';
-import { Config } from '../config.js';
-import { Policy } from '../policy.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
-import { UndoStack, serverRecipe, recipeHash } from '../utils/gene-signature.js';
+import { UndoStack } from '../utils/gene-signature.js';
 import { normalizeGrouping, defaultLabelMaps, sourceName } from '../utils/cell-grouping.js';
-import { createGroupStore } from '../utils/group-store.js';
-import { createGroupSources, GROUPING } from '../utils/group-sources.js';
-import { createGroupsApi } from '../utils/cell-groups-client.js';
-import { pageLimiter, sourceList as scoreSources } from '../utils/score-source.js';
-import { createSourceAdapter } from '../utils/score-source-panels.js';
-import { registerReferences, usersOf, dependsOn } from '../utils/panel-references.js';
-import { findCycle, TableResolver } from '../utils/table-resolver.js';
-import { selectionOnCells } from '../utils/closed-table.js';
+import { sourceList as scoreSources } from '../utils/score-source.js';
+import {
+    groupSources, panelOf, typeOf, isOpen, titleOfPanel, cycleIds, hasGene, loadStructure, structureNow, structureRead, resetStructure,
+    sourceTitleOf
+} from '../utils/group-host.js';
+import { registerReferences, usersOf } from '../utils/panel-references.js';
 import { stableStringify } from '../utils/url-history.js';
 import { VOCABULARY } from '../utils/vocabulary.js';
 import { RESERVED } from '../utils/level-id.js';
@@ -48,10 +42,12 @@ import {
     groupingReferences, missingFactors, obsmWidth, obsmKeys, obspKeys, layerList, factorKind, columnFactor, cellNamesFactor, geneFactor,
     scoreFactor, tableFactor, groupingFactor, neighborsFactor, addFactorRefusal, cellNamesRefusal, referenceChoices, moveFactor,
     duplicateFactor, removeFactor, factorTitle, factorSummary, levelPreview, tickLevel, tickAll, tickNone, sortByCells, moveLevel,
-    renameLevel, setRest, levelRows, BINNING_SLOT, PANEL_SOURCES, SCORE_SOURCE, GROUP_SOURCE, TABLE_SOURCE
+    renameLevel, setRest, levelRows, BINNING_SLOT, SCORE_SOURCE, GROUP_SOURCE, TABLE_SOURCE
 } from './cell-grouping/factors.js';
 import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/status.js';
+import './partition-options/binning-control.js';
 import { usedByText } from '../utils/panel-users.js';
+import { STATISTICS_PART } from './cell-grouping/statistics.js';
 import {
     settingsSummary, thresholdProblem, separatorProblem, smallOf, separatorOf, storedSeparator, storedSmall, smallModeWord
 } from './cell-grouping/settings.js';
@@ -69,192 +65,7 @@ registerReferences(TYPE, groupingReferences);
  */
 // export-unused-ok: G9c and G9d mount the group grid and Statistics offered here
 export const PARTS = { groups: null, statistics: null };
-
-// ================================================================================================ the page binding
-
-const panelOf = (id) => (id ? PanelManager.getPanel(id) : null);
-const typeOf = (p) => (p && typeof p.getType === 'function' ? p.getType() : null);
-const isOpen = (p) => !!p && PanelManager.getActivePanels().includes(p);
-const titleOfPanel = (id) => { const p = panelOf(id); return p && p.getTitle ? p.getTitle() : id; };
-
-/** A cycle member's kind, as a notice names a ring. */
-function kindOfPanel(id) {
-    const type = typeOf(panelOf(id));
-    if (type === 'cell-table' || type === 'gene-table') return 'table';
-    if (type === TYPE) return 'grouping';
-    if (type === 'gene-signature') return 'signature';
-    return type || 'panel';
-}
-
-/** The ids on a cycle through `id`, each once, or null. */
-function cycleIds(id) {
-    const ring = findCycle(id, dependsOn);
-    return ring ? [...new Set(ring)] : null;
-}
-
-const resolver = {
-    need: (id, dependant) => TableResolver.need(id, dependant),
-    accept: (id) => TableResolver.accept(id),
-    cancel: (id) => TableResolver.cancel(id),
-    retry: (id) => TableResolver.retry(id),
-    cycleOf: (id) => cycleIds(id)
-};
-
-let _scoreAdapter = null;
-function scoreAdapter() {
-    if (!_scoreAdapter) {
-        _scoreAdapter = createSourceAdapter({ panel: panelOf, active: isOpen, geneNames: () => DataManager.getGenes(), resolver });
-    }
-    return _scoreAdapter;
-}
-
-/** The dataset's structure, as last read (a gate is asked on every read and cannot wait for it). */
-let _structure = { dataset: null, value: null };
-/** The dataset's genes as a Set, made once per gene list. */
-let _genes = { list: null, set: null };
-function hasGene(name) {
-    const list = DataManager.getGenes() || [];
-    if (_genes.list !== list) _genes = { list, set: new Set(list) };
-    return _genes.set.has(name);
-}
-
-/** Read the structure of the open dataset into the cache; resolves to it. */
-async function loadStructure() {
-    const dataset = DataManager.getCurrentDataset();
-    if (!dataset || !DataManager.isDatasetLoaded()) return null;
-    if (_structure.dataset === dataset && _structure.value) return _structure.value;
-    const value = await DataManager.getDatasetStructure(dataset);
-    _structure = { dataset, value };
-    return value;
-}
-
-const gone = (message) => ({ gate: { state: 'failed', reason: 'upstream_gone', message } });
-
-/** A hash of a table's passing rows for the cells shown: equal rows, equal hash. */
-function rowsHash(entries, n) {
-    let h = 2166136261 >>> 0;
-    for (const i of entries) { h ^= i & 0xffff; h = Math.imul(h, 16777619) >>> 0; h ^= i >>> 16; h = Math.imul(h, 16777619) >>> 0; }
-    return `${n}:${entries.length}:${h.toString(16)}`;
-}
-
-/** @type {Map<string, {hash: string, flags: Uint8Array}>} table id -> its last bitset, the same array while its hash is */
-const _bitsets = new Map();
-function bitsetOf(id, entries, n) {
-    const hash = rowsHash(entries, n);
-    const was = _bitsets.get(id);
-    if (was && was.hash === hash) return was;
-    const flags = new Uint8Array(n);
-    for (const i of entries) if (i >= 0 && i < n) flags[i] = 1;
-    const made = { hash, flags };
-    _bitsets.set(id, made);
-    return made;
-}
-
-/** What a table factor stands for: its passing cells shown, or the gate of its build (GRP-15). */
-function tableUpstream(id, dependant) {
-    const panel = panelOf(id);
-    if (!panel || typeOf(panel) !== 'cell-table') return gone('the table it uses is gone');
-    const cells = DataManager.getCells() || [];
-    const n = cells.length;
-    const actions = { accept: () => TableResolver.accept(id), cancel: () => TableResolver.cancel(id), retry: () => TableResolver.retry(id) };
-    const gated = TableResolver.gate(id);
-    const cfg = panel.getConfig();
-    if (isOpen(panel) && !gated) {
-        if (typeof panel.isReady === 'function' && !panel.isReady()) return { gate: { state: 'building', table: id }, actions };
-        const entries = Array.isArray(cfg.currentEntries) ? cfg.currentEntries : [];
-        return { bitset: () => bitsetOf(id, entries, n) };
-    }
-    // closed: by name, on the cells shown, from what it kept when it closed
-    const selection = cfg.closedSelection || null;
-    if (selection && Array.isArray(cells)) {
-        const found = selectionOnCells(selection, cells);
-        if (!found.unknown) {
-            return { bitset: () => {
-                const entries = [];
-                cells.forEach((name, i) => { if (found.passing.has(name)) entries.push(i); });
-                return bitsetOf(id, entries, n);
-            } };
-        }
-    }
-    const status = gated || TableResolver.need(id, dependant);
-    if (!status || status.state === 'ready') return { gate: { state: 'building', table: id }, actions };
-    if (status.state === 'missing') return gone('the table it uses is gone');
-    const state = ['ask', 'refused', 'failed', 'cycle'].includes(status.state) ? status.state : 'building';
-    return { gate: { ...status, state, table: id, message: status.reason && state !== 'building' ? status.reason : undefined }, actions };
-}
-
-/** What a score factor stands for: the score route's recipe, inline, or the gate of its source (a gene table). */
-function scoreUpstream(source, dependant) {
-    const src = scoreAdapter().get(source.key);
-    if (!src) return gone("the score's signature or gene table is gone");
-    const gate = src.gate(dependant);
-    if (gate) return { gate: { ...gate.gate, state: gate.state, message: gate.message, table: source.key }, actions: src.actions };
-    return { recipe: () => {
-        const base = src.recipe();
-        const scored = { ...base, method: source.column || base.method, input: source.layer || base.input };
-        return { recipe: serverRecipe(scored), hash: recipeHash(scored) };
-    } };
-}
-
-/** A column of the dataset that the open dataset lacks: a gate, so nothing is asked (GRP-14). */
-function missingGate(source) {
-    const structure = _structure.value;
-    if (!structure || _structure.dataset !== DataManager.getCurrentDataset()) return null;
-    const lacking = missingFactors({ partitionings: [{ source }] }, structure, { hasGene, hasPanel: () => true });
-    return lacking.length
-        ? { gate: { state: 'refused', reason: 'not_in_dataset', message: `${sourceName(source)} is not in this dataset` } } : null;
-}
-
-/** The title of the panel behind a source, for labels (a table's, a score's, a grouping's); undefined for a column. */
-const sourceTitleOf = (source) => (PANEL_SOURCES.includes(source.type) && panelOf(source.key)
-    ? titleOfPanel(source.key) : undefined);
-
-function host() {
-    return {
-        source(id) {
-            const p = panelOf(id);
-            if (typeOf(p) !== TYPE) return null;
-            return { title: p.getTitle(), kind: 'grouping', recipe: () => p.getRecipe(), shape: GROUPING };
-        },
-        off: () => !Policy.panelEnabled(TYPE),
-        upstream(source, dependant) {
-            switch (source.type) {
-                case GROUP_SOURCE: return typeOf(panelOf(source.key)) === TYPE ? { grouping: source.key } : gone('the grouping it uses is gone');
-                case TABLE_SOURCE: return tableUpstream(source.key, dependant);
-                case SCORE_SOURCE: return scoreUpstream(source, dependant);
-                default: return missingGate(source);
-            }
-        },
-        cycleOf: cycleIds,
-        titleOf: titleOfPanel,
-        kindOf: kindOfPanel,
-        sourceTitle: sourceTitleOf,
-        onUpstreamChange(fn) {
-            document.addEventListener('annzarro:table-filtered', (e) => { if (e.detail && e.detail.id) fn(e.detail.id); });
-        }
-    };
-}
-
-function context() {
-    const cells = DataManager.getCells();
-    return { dataset: DataManager.getCurrentDataset() || '', subset: DataManager.getSubsetParam(),
-        cells: cells && Number.isFinite(Number(cells.length)) ? Number(cells.length) : null };
-}
-
-let _binding = null;
-
-/**
- * The page's group store and group sources, made when first needed.
- * @returns {{store: ReturnType<typeof createGroupStore>, sources: ReturnType<typeof createGroupSources>}}
- */
-// export-unused-ok: G8a's cell-group provider takes this binding over (see the header)
-export function groupSources() {
-    if (!_binding) {
-        const store = createGroupStore({ api: createGroupsApi({ url: Config.API.CELL_GROUPS }), limiter: pageLimiter() });
-        _binding = { store, sources: createGroupSources({ store, host: host(), context }) };
-    }
-    return _binding;
-}
+PARTS.statistics = STATISTICS_PART;
 
 // ================================================================================================ the views
 
@@ -281,6 +92,7 @@ const ADD_ENTRIES = Object.freeze([
  */
 function createFactors({ D, id, model, on }) {
     const { el } = D;
+    const fresh = new Set();            // sources of factors added in this session that have had no preview yet (SHR-15)
     const expanded = new Set();         // indexes of expanded cards (kept by position, as the recipe is)
     const showAll = new Set();          // cards whose long level list is shown whole
     let adding = null;                  // the entry whose inline row is open
@@ -468,6 +280,7 @@ function createFactors({ D, id, model, on }) {
             note.textContent = why || '';
             if (why) return;
             const { p, label } = make();
+            if (p.binning) { expanded.add(m.recipe.partitionings.length); fresh.add(stableStringify(p.source)); }
             adding = null;
             paintRow();
             on.add(p, label);
@@ -583,7 +396,7 @@ function createFactors({ D, id, model, on }) {
             li.append(label);
         }
         li.append(count);
-        if (r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table') {
+        if (r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table' || factorKind(p) === 'binned') {
             li.append(el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-level__rename', title: `Rename ${r.label}`,
                 aria: { label: `Rename ${r.label}` }, on: { click: () => { renaming = { index: i, id: r.id }; paint(); } } }, '✎'));
         }
@@ -631,13 +444,16 @@ function createFactors({ D, id, model, on }) {
 
     function binnedBody(i, p, info) {
         const host = el('div', { class: 'cgrp-binning' });
-        if (BINNING_SLOT.mount) {
-            mounts.push(BINNING_SLOT.mount(host, { partitioning: p, info, commit: (next, label) => commitFactor(i, next, label) }));
-            return [host];
-        }
         const defaults = defaultsOf(i);
         const rows = info ? levelRows(p, info, defaults) : [];
-        return [host, el('ul', { class: 'cgrp-levels cgrp-bins', role: 'list' }, rows.map((r) => levelRow(i, p, info, r)))];
+        const levels = el('ul', { class: 'cgrp-levels cgrp-bins', role: 'list' }, rows.map((r) => levelRow(i, p, info, r)));
+        if (BINNING_SLOT.mount) {
+            const mark = stableStringify(p.source);
+            mounts.push(BINNING_SLOT.mount(host, { partitioning: p, info, levels, fresh: fresh.has(mark), settled: () => fresh.delete(mark), titleOf: model().titleOf, cells: model().cells,
+                commit: (next, label) => commitFactor(i, next, label) }));
+            return [host];
+        }
+        return [host, levels];
     }
 
     function card(i, p, n) {
@@ -705,6 +521,15 @@ function createFactors({ D, id, model, on }) {
         m.recipe.partitionings.forEach((p, i) => list.appendChild(card(i, p, n)));
         list.hidden = !n;
         if (menuOpen) paintMenu();
+        if (on.wants) on.wants();
+    }
+
+    /**
+     * The positions of the expanded binned cards: they ask the server for their histogram (SHR-18).
+     */
+    function wanted() {
+        const ps = model().recipe.partitionings;
+        return [...expanded].filter((k) => ps[k] && ps[k].binning).sort((a, b) => a - b);
     }
 
     return {
@@ -712,6 +537,7 @@ function createFactors({ D, id, model, on }) {
         addElement,
         /** The cards: they stay, collapsed, when the controls are hidden. */
         listElement: list,
+        wanted,
         paint,
         /** Expand a card (a status action: "Choose levels of sample"). */
         expand(i) {
@@ -887,6 +713,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         let _usedBy = '';
         let _usedTimer = null;
         let _factors = null;
+        let _asked = [];                    // the histograms the handle asks for: the expanded binned cards
         let _status = null;
         let _settings = null;
         const _parts = [];
@@ -965,13 +792,29 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             if (!_initialized || !DataManager.isDatasetLoaded()) return;
             if (!_recipe.partitionings.length) { release(); return; }
             if (_handle) return;
+            _asked = _factors ? _factors.wanted() : [];
             _handle = groupSources().sources.watch(_id, {
-                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: {},
+                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: { histograms: _asked },
                 visible: () => _visible && !!_dom && _dom.root.isConnected,
-                onChange: (snap) => { _snap = snap; noteKey(snap); paint(); }
+                onChange: (snap) => { _snap = snap; noteKey(snap); paint(); syncHistograms(); }
             });
             _snap = _handle.read();
             noteKey(_snap);
+        }
+
+        /**
+         * Ask for the histograms of the cards now expanded (or stop asking). Only once the groups are ready: an option
+         * changed while the first request is on its way strands it.
+         */
+        function syncHistograms() {
+            if (!_handle || !_snap || _snap.state !== 'ready' || !_factors) return;
+            // only ever more: a card collapsed keeps the histogram it has and asks for nothing
+            // positions of the recipe now; a request for an older recipe leaves out the ones it lacks (serverRequest)
+            const ps = _recipe.partitionings;
+            const now = [...new Set([..._asked.filter((k) => ps[k] && ps[k].binning), ..._factors.wanted()])].sort((a, b) => a - b);
+            if (now.join() === _asked.join()) return;
+            _asked = now;
+            _handle.setOption({ histograms: now });
         }
 
         function release() {
@@ -1099,7 +942,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         }
 
         function checkMissing() {
-            const structure = _structure.dataset === DataManager.getCurrentDataset() ? _structure.value : null;
+            const structure = structureNow();
             _missing = structure ? missingFactors(_recipe, structure, { hasGene, hasPanel: (id) => !!panelOf(id) }) : [];
         }
 
@@ -1113,6 +956,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             _factors = createFactors({ D, id: _id, model: factorsModel, on: {
                 commit: (list, label, opts) => commit({ ..._recipe, partitionings: list }, label, opts),
                 add: (p, label) => addFactor(p, label),
+                wants: () => syncHistograms(),
                 announce: (text) => say(text),
                 open: openPanel
             } });
@@ -1172,7 +1016,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const cells = DataManager.getCells();
             return {
                 self: _id, recipe: _recipe, infos, labels, missing: new Set(_missing), notes,
-                structure: _structure.value, cells: cells ? cells.length : 0, titleOf: sourceTitle, hasGene,
+                structure: structureRead(), cells: cells ? cells.length : 0, titleOf: sourceTitle, hasGene,
                 focusedGene: DataManager.getFocusedGene(), focusedCell: focusedCellName(),
                 choices: { groupings: ofType(TYPE), tables: ofType('cell-table'), scores: scoreChoices() }
             };
@@ -1219,7 +1063,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
                 recipe: _recipe, snap, header, cells: (DataManager.getCells() || []).length, nameOf, missing: _missing,
                 cycleIds: snap && snap.state === 'cycle' ? cycleIds(_id) || [] : [], self: _id,
                 loopUndo: !!(step && step.closesLoop),
-                obsmWidth: (key) => obsmWidth(_structure.value, key),
+                obsmWidth: (key) => obsmWidth(structureRead(), key),
                 tableTitle: titleOfPanel, gateTable: snap && snap.table ? snap.table : null
             });
         }
@@ -1235,7 +1079,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
                 usedBy: _usedBy
             });
             _dom.empty.hidden = desc.state !== 'empty';
-            const drawn = [_recipe, reply, _missing.join(','), JSON.stringify([...cardNotes(desc)]), _structure.value];
+            const drawn = [_recipe, reply, _missing.join(','), JSON.stringify([...cardNotes(desc)]), structureRead()];
             if (!_drawn || drawn.some((x, i) => x !== _drawn[i])) { _drawn = drawn; _factors.paint(); }
             _settings.paint();
             const step = _undo.peek();
@@ -1302,7 +1146,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             if (updateType === 'datasetChanged') {
                 _dom.noData.style.display = 'none';
                 syncControlsWithDataset(_dom.controls, true);
-                _structure = { dataset: null, value: null };
+                resetStructure();
                 groupSources().sources.contextChanged();
                 return datasetReady();
             }

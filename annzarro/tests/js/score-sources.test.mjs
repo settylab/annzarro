@@ -279,16 +279,16 @@ test('a signature turned off by the administrator says so', async () => {
 test('each state has its sentence, tag and actions (design 7.3)', () => {
     const t = (state, extra = {}, role = 'colour') => N.describeScore({ state, title: 'T cell score', ...extra }, { role });
     const computing = t('computing', { progress: { done: 31, total: 50 } });
-    assert.equal(computing.headline, "Computing 'T cell score': 31 of 50 genes. This plot has no colour.");
+    assert.equal(computing.headline, "Computing 'T cell score': 31 of 50 genes. This plot has no color.");
     assert.equal(computing.tag.text, 'Score computing');
     assert.deepEqual(computing.actions, [['score-cancel', 'Cancel']]);
     assert.equal(N.describeScore({ state: 'computing', title: 'T cell score', progress: { done: 1, total: 2 } }, { role: 'x' }).headline,
         "Computing 'T cell score': 1 of 2 genes.", 'an axis does not talk about colour');
     assert.equal(N.describeScore({ state: 'computing', title: 'T' }, { sharers: 3 }).actions[0][1], 'Cancel for 3 plots');
-    assert.equal(t('queued').headline, "'T cell score' is waiting for another score to finish. This plot has no colour.");
-    assert.equal(t('awaiting', { estimate: { seconds: 125 } }).headline, "'T cell score' will take about 2 minutes. This plot has no colour.");
+    assert.equal(t('queued').headline, "'T cell score' is waiting for another score to finish. This plot has no color.");
+    assert.equal(t('awaiting', { estimate: { seconds: 125 } }).headline, "'T cell score' will take about 2 minutes. This plot has no color.");
     assert.deepEqual(t('awaiting', { estimate: { seconds: 125 } }).actions[0], ['score-compute', 'Compute']);
-    assert.equal(t('cancelled').headline, "'T cell score' was cancelled. This plot has no colour.");
+    assert.equal(t('cancelled').headline, "'T cell score' was cancelled. This plot has no color.");
     const refused = t('refused', { estimate: { seconds: 1500 }, message: 'This score would take about 25 minutes; the limit is 10. Use fewer genes.' });
     assert.equal(refused.headline, "'T cell score' would take about 25 minutes, so it was not run.");
     assert.match(refused.text, /Use fewer genes/);

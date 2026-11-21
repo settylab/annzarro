@@ -20,7 +20,7 @@ const DATATABLES_SPECIAL = /[.[\]()\\]/g;
  */
 export function getColumnKey(column) {
     const { type, key, column: columnName, layer } = column;
-    // a gene score over a layer is another column from the same score over the signature's input
-    return `${type}_${key}_${columnName || 'main'}${type === 'gene-score' && layer ? `__of_${layer}` : ''}`.replace(/\s+/g, '_')
+    // a column that names a layer (a gene score over a layer) is another column from the same source over its default layer
+    return `${type}_${key}_${columnName || 'main'}${layer ? `__of_${layer}` : ''}`.replace(/\s+/g, '_')
         .replace(DATATABLES_SPECIAL, c => `␞${c.charCodeAt(0).toString(16)}␞`);
 }

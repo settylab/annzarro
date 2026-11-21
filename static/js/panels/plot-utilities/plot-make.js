@@ -1179,7 +1179,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
               coverage: (colorError.coverage
                 || classifyError(colorError, {
                      unit: isGenePlot ? 'genes' : 'cells',
-                     source: 'colour', total: n
+                     source: 'color', total: n
                    })).asDescribing()
             };
           }

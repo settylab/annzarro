@@ -226,7 +226,7 @@ def test_a_cancelled_score_says_no_score_and_offers_compute_and_remove(page, ser
     page.click(f"{BOX} .score-notice [data-ps-action='score-cancel']")
     note = _wait_notice(page, "cancelled")
     assert "'T cell score' was cancelled." in note["text"]
-    assert "This plot has no colour" not in note["text"]
+    assert "This plot has no color" not in note["text"]
     assert [a.split("|")[0] for a in note["actions"]] == ["score-compute", "score-remove"], note["actions"]
     st = _state(page)
     assert st["header"] == "T cell score (no score)" and st["cells"] == ["no score"] and st["sortOff"] and st["exportOff"]

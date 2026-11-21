@@ -1,5 +1,5 @@
 /**
- * The open Cell Table's side of its gene-score columns: fill a column in place when its score
+ * The open Cell Table's side of its source columns (a gene score, or any provider with a table half): fill a column in place when its score
  * arrives, say what state it is in (header, cells, a notice over the table, the strip tag), hold
  * the rows while the filter reads a score that is not ready, and keep export honest.
  *
@@ -9,14 +9,33 @@
  * with the page position held, where the user is (sort order, page, search and scroll stay). Utils/score-column.js holds the
  * wording; panels/table-utilities/table-scores.js the handles.
  */
-import { scoreFullLabel, openSignature, offerAgain, canOfferAgain } from '../../utils/score-source.js';
-import { worstNotice, paintNotice } from '../../utils/source-notices.js';
 import { actions } from '../../utils/source-actions.js';
-import { describeColumn, describeHeldRows } from '../../utils/score-column.js';
+import { painter } from '../../utils/host-binding.js';
+import { describeHeldRows } from '../../utils/score-column.js';
 import { TableScores } from './table-scores.js';
 
 /** Milliseconds a burst of progress frames waits before the notice is drawn again. */
 const NOTICE_MS = 120;
+
+/** The tables' provider: its notices on the page's painter and its actions in the registry. */
+const TABLE_PROVIDER = 'table-score';
+
+/** container -> the table id whose score columns it states, while the table is bound */
+const BOUND = new WeakMap();
+
+// what a table container has to say: one entry per score column, as the column states it (the painter shows the
+// worst of every provider's notices on the container, with its progress bar)
+painter.register({
+    id: TABLE_PROVIDER,
+    entries(container) {
+        const id = BOUND.get(container);
+        if (!id) return [];
+        return TableScores.entries(id).map(entry => ({
+            role: 'column', snap: entry.snap, rec: entry,
+            notice: TableScores.noticeOf(entry)
+        }));
+    }
+});
 
 function panelOf(id) {
     return window.PanelManager && window.PanelManager.getPanel ? window.PanelManager.getPanel(id) : null;
@@ -82,7 +101,7 @@ export function bindScoreColumns(dataTable, settings, container) {
             span.remove();
             adjust();
         }
-        th.dataset.exportTitle = scoreFullLabel(entry.column);
+        th.dataset.exportTitle = TableScores.fullLabelOf(entry);
         th.classList.toggle('az-sort-off', !view.sortable);
         th.setAttribute('aria-disabled', view.sortable ? 'false' : 'true');
         th.dataset.scoreState = view.state;
@@ -174,16 +193,9 @@ export function bindScoreColumns(dataTable, settings, container) {
         else button.removeAttribute('title');
     };
 
-    /** The worst notice among the columns: an overlay and a strip tag, never a resize. */
-    const paint = () => {
-        const items = TableScores.entries(id).map(entry => ({
-            entry, notice: describeColumn({ ...entry.snap, source: entry.snap && entry.snap.title, title: entry.title }, { sharers: entry.handle.sharers() })
-        }));
-        const worst = worstNotice(items.map(i => i.notice));
-        const shown = items.find(i => i.notice === worst);
-        container.__scoreWorst = shown ? shown.entry : null;
-        paintNotice(container, worst);
-    };
+    /** The worst notice among the columns (and any other provider's on the container): an overlay and a strip tag, never a resize. */
+    BOUND.set(container, id);
+    const paint = () => painter.paint(container);
 
     const schedulePaint = () => {
         if (noticeTimer) return;
@@ -216,7 +228,8 @@ export function bindScoreColumns(dataTable, settings, container) {
         const note = container.querySelector('.az-score-held-note');
         if (note) note.remove();
         container.classList.remove('az-score-held');
-        paintNotice(container, null);
+        BOUND.delete(container);
+        painter.paint(container);
     });
     // a condition added or removed in the filter changes whether the rows are held
     dataTable.on('draw.dt', () => {
@@ -251,7 +264,7 @@ export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compu
     const all = (run) => ({ target: table, run: (id) => { run(id); } });
     const worst = (test) => (host) => { const w = table(host) && worstOf(host); return w && test(w, host) ? w : null; };
     return {
-        id: 'table-score',
+        id: TABLE_PROVIDER,
         owns: (host) => !!table(host),
         actions: {
             'score-compute': all(compute),
@@ -259,7 +272,7 @@ export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compu
             'score-retry': all(retry),
             'score-update': all(update),
             'score-offer': { target: worst((w) => canOffer(w.column)), run: (w) => { offer(w.column); } },
-            'score-open': { target: worst((w) => !!panel(w.column.key)), run: (w, host) => { openSource(w.column.key, idOf(host)); } },
+            'score-open': { target: worst((w) => !!panel(w.column.key)), run: (w, host) => { openSource(w.column.key, idOf(host), w.column); } },
             'score-remove': { target: worst((w, host) => { const p = panel(idOf(host)); return !!p && typeof p.removeColumn === 'function'; }),
                 run: (w, host) => { panel(idOf(host)).removeColumn(w.column); } }
         }
@@ -269,13 +282,13 @@ export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compu
 actions.register(createTableActions({
     tableIdOf,
     hasColumns: (id) => TableScores.entries(id).length > 0,
-    worstOf: (host) => host.__scoreWorst,
+    worstOf: (host) => { const shown = painter.shownOf(host); return shown && shown.provider === TABLE_PROVIDER ? shown.rec : null; },
     compute: (id) => TableScores.compute(id),
     cancel: (id) => TableScores.cancel(id),
     retry: (id) => TableScores.retry(id),
     update: (id) => TableScores.update(id),
-    canOffer: canOfferAgain,
-    offerAgain,
+    canOffer: (column) => TableScores.canOffer(column),
+    offerAgain: (column) => TableScores.offer(column),
     panelOf,
-    openSource: openSignature
+    openSource: (key, hostId, column) => TableScores.open(column, hostId)
 }));
