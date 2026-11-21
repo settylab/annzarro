@@ -107,52 +107,55 @@ def test_a_grouping_is_not_an_axis_of_a_large_plot(page, large_served):
 
 # ------------------------------------------------------------------ 2. the memory guard
 
-# Set the tab's buffer ceiling so that `fraction` of the way from what the redraw of the drawn large plot needs to what
-# its peak holds is free, with no margin: the redraw's own check passes, and the codes' check (made once the plot's draw
-# is reserved at its peak) is the one that binds.
-LIMIT = """async ([id, where]) => {
+P2 = "cell-plot-Q"
+C2 = f'.tile[data-tile-id="{P2}"]'
+
+# Set the tab's buffer ceiling, with no margin, so that a SECOND large plot's first draw just fits beside the first
+# (`room` 'none': its own check passes with 100 bytes to spare) and the codes it then asks for do not (a grouping's
+# codes are 1 byte a cell: 1,200). With `room` 'codes' there is room for them.
+LIMIT = """async ([id, room]) => {
     const { Config } = await import('/static/js/config.js');
     const g = await import('/static/js/utils/memory-guard-ui.js');
     const m = await import('/static/js/utils/memory-guard.js');
     g.held();
     const n = g.ledger.get(id).n;
-    const p = { kind: 'cell-plot', n, large: true };
-    const need = m.bufferDrawNeed(p, g.ledger.get(id));
-    const peak = m.panelBuffers(p).peak;
-    const codes = n;
-    // the buffers held beside the plot's own old drawing (it is counted once, as the redraw's check counts it)
+    const peak = m.panelBuffers({ kind: 'cell-plot', n, large: true }).peak;
     const base = g.ledger.buffers();
-    const free = where === 'between' ? (need + peak) / 2 : peak + 2 * codes;
+    const free = room === 'none' ? peak + 100 : peak + 4 * n;
     Config.DEFAULTS.MEMORY = { ...(Config.DEFAULTS.MEMORY || {}), margin: 0, buffers_gb: (base + free) / m.GB };
     document.dispatchEvent(new CustomEvent(g.MEMORY_EVENT));
-    return { need, peak, base, free, codes };
+    return { peak, base, free, codes: n };
 }"""
 
 HELD = """async () => (await import('/static/js/utils/memory-guard-ui.js')).ledger.heldBytes()"""
 
 
 def test_codes_that_do_not_fit_are_refused_before_the_request_and_another_that_fits_is_drawn(page, large_served):
-    _open(page, large_served, {P: _plot(color=NONE), GA: _grouping(), GB: _grouping(GB, "Grouping 2", [CONDITION])})
+    plot2 = _plot(color=by(GA), id=P2, title="Cell Plot 2")
+    _open(page, large_served, {P: _plot(color=NONE), P2: plot2, GA: _grouping(), GB: _grouping(GB, "Grouping 2", [CONDITION])})
     until(page, """async (id) => { const g = await import('/static/js/utils/memory-guard-ui.js');
         return !!g.ledger.get(id) && !g.ledger.pending.has(id); }""", P)
     assert _large(page)["large"] is True
-    _menus(page)
-    figures = page.evaluate(LIMIT, [P, "between"])
-    assert figures["need"] < figures["free"] < figures["peak"], figures
+    figures = page.evaluate(LIMIT, [P, "none"])
+    assert figures["free"] == figures["peak"] + 100 and figures["codes"] == N, figures
     before = {"requests": len(page.requests), "held": page.evaluate(HELD)}
-    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "cell-group")
-    until(page, """(t) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="color"] option`)].some(o => o.value === 'cell-grouping-A')""", C)
-    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', GA)
-    notice = _wait_notice(page, "refused")
+    # the second plot is drawn now, with the first one beside it
+    page.evaluate("(id) => window.PanelManager.reopenClosedPanel(id)", P2)
+    page.wait_for_selector(f"{C2}", timeout=30000)
+    until(page, """(t) => { const n = document.querySelector(t + ' .score-notice'); return !!n && n.dataset.state === 'refused'; }""", C2)
+    notice = page.evaluate("""(t) => { const el = document.querySelector(t + ' .score-notice');
+        return { text: el.textContent.replace(/\\s+/g, ' ').trim(),
+                 actions: [...el.querySelectorAll('[data-ps-action]')].map(b => b.dataset.psAction) }; }""", C2)
     assert "buffers" in notice["text"].lower(), f"the guard's words, naming what ran out: {notice}"
-    assert [a.split("|")[0] for a in notice["actions"]] == ["score-choose"], "the way out is another grouping"
+    assert notice["actions"] == ["score-choose"], "the way out is another grouping"
     assert len(page.requests) == before["requests"], "no request of any kind: not even an estimate"
     assert page.evaluate(HELD) == before["held"], "nothing held on the ledger"
-    # a grouping that fits: the same guard, room for its codes, and the plot draws it
-    page.evaluate(LIMIT, [P, "room"])
-    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', GB)
-    _wait_legend(page, gstore.CONDITIONS)
-    assert _notice(page) is None
+    # room for the codes of another grouping: the same guard lets them in, and the plot draws it
+    page.evaluate(LIMIT, [P, "codes"])
+    page.select_option(f'{C2} select.axis-key-select[data-axis="color"]', GB)
+    until(page, """([t, names]) => { const gd = document.querySelector(t + ' .js-plotly-plot');
+        return !!(gd && gd.data && names.every(n => gd.data.some(d => d.name === n)) && !document.querySelector(t + ' .score-notice')); }""",
+          [C2, gstore.CONDITIONS])
     assert [c for c in page.calls if not c.get("estimate_only") and c["want"]["codes"]], "its codes were asked for now"
     assert page.evaluate(HELD) == before["held"] + N, "one byte a cell on the ledger"
     assert not [c for c in page.calls if c.get("partitionings") and c["partitionings"][0]["source"]["key"] == "cell_type"

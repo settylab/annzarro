@@ -29,6 +29,7 @@ const PR = await import('../../../static/js/utils/panel-references.js');
 const { generateDiscreteColors, groupColours: colourGroups } = await import('../../../static/js/panels/plot-utilities/colors.js');
 const { ledger } = await import('../../../static/js/utils/memory-guard-ui.js');
 const { Config } = await import('../../../static/js/config.js');
+const { panelBuffers, GB } = await import('../../../static/js/utils/memory-guard.js');
 
 const TYPE = 'cell-group';
 const provider = () => R.getSource(TYPE);
@@ -594,4 +595,32 @@ test('the same grouping is drawn once the guard has room again; a draw already h
 test('a refusal is not a size refusal: the figures of too_many_groups stay for the route', async () => {
     const got = await settle(setting('cell-grouping-7'), plotHost(), { large: true, state: 'refused' });
     assert.match(got.notice.headline, /6,840 groups/);
+});
+
+test('the asking plot is counted once beside its codes: a large plot redrawn in place does not refuse itself (CAT-4)', async () => {
+    const id = 'cell-plot-own';
+    const p = { kind: 'cell-plot', n: 2_000_000, large: true, colour: 'categorical' };
+    ledger.commit(id, null, ledger.reserve(id, p));
+    // its redraw is under way: the ledger holds the old plot and the draw at its peak
+    ledger.reserve(id, p);
+    try {
+        const peak = panelBuffers(p).peak;
+        const mine = { id: `plot-container-${id}`, isConnected: true, dataset: {}, panelId: id };
+        const other = plotHost();
+        const room = (extra) => ledger.buffers({ exclude: [id] }) + peak + extra;
+        const refused = async (host, s) => {
+            const got = await withBuffers(room(1_000_000) / GB, () => attempt(s, host, 'color', true));
+            return got.name === 'SourceUnavailable' && got.notice.state === 'refused';
+        };
+        const s1 = setting('cell-grouping-15');
+        plotConfigs.set(id, { color: s1 });
+        assert.equal(await refused(mine, s1), false, 'one copy of the plot, and a megabyte spare for 6 bytes of codes');
+        R.releaseSourceHost(mine);
+        const s2 = setting('cell-grouping-15');
+        plotConfigs.get(other.panelId).color = s2;
+        assert.equal(await refused(other, s2), true, "another plot sees the redraw's plot twice (old and new), as the ledger counts it");
+    } finally {
+        ledger.remove(id);
+        R.releaseSourceHost({ id: `plot-container-${id}`, isConnected: true, dataset: {}, panelId: id });
+    }
 });

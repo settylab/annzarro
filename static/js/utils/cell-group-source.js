@@ -233,16 +233,17 @@ function cost({ cells, groups = 0 }) {
 }
 
 /**
- * Whether the memory guard refuses the codes of grouping `id` for the cells shown, asked before they are requested.
+ * Whether the memory guard refuses the codes of grouping `id` for the cells shown, asked before they are requested, by
+ * the plot `panelId`.
  * The guard must never be why a plot is not drawn when it cannot answer: then nothing is refused.
  * @returns {null|{reason: string, binding: string, why: string}}
  */
-function codesRefusal(id) {
+function codesRefusal(id, panelId = null) {
     const cells = (DataManager.getCells() || []).length;
     if (!(cells > 0)) return null;
     let result;
     try {
-        result = codesCheck({ bytes: cost({ cells, groups: KNOWN_GROUPS.get(id) }).bytes, n: cells });
+        result = codesCheck({ bytes: cost({ cells, groups: KNOWN_GROUPS.get(id) }).bytes, n: cells, panelId });
     } catch (error) {
         console.warn('Browser memory check failed; reading the groups without it', error);
         return null;
@@ -385,7 +386,7 @@ function binding() {
             id: PLOT_PROVIDER,
             open: (host, role, setting, onChange) => {
                 const id = setting.key;
-                const refusal = codesRefusal(id);
+                const refusal = codesRefusal(id, panelIdOf(host));
                 if (refusal) return { groupId: id, handle: refusedHandle(id, refusal) };
                 const handle = groupSources().sources.watch(id, {
                     consumer: { kind: 'plot', role, panelId: panelIdOf(host), host }, option: { codes: true },
@@ -425,7 +426,7 @@ function loadGroupSeries(setting, { host, role, expected, unit = 'cells', large 
     }
     let rec = binding().recordFor(host, role, setting);
     // codes the guard refused are asked of it again: something may have been closed since
-    if (rec.handle.refusal && !codesRefusal(setting.key)) {
+    if (rec.handle.refusal && !codesRefusal(setting.key, panelIdOf(host))) {
         binding().release(host, role);
         rec = binding().recordFor(host, role, setting);
     }
