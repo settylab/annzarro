@@ -265,18 +265,7 @@ const VOCAB = Object.freeze({
  * @param {{role?: string, sharers?: number}} [ctx] - `role`: 'colour', 'x', 'y', 'z' or 'hover'
  */
 function describeGrouping(snap, ctx = {}) {
-    return describeSource(closedRing(snap), ctx, VOCAB);
-}
-
-/**
- * A cycle's panels as the shared wording reads them, a ring that ends where it starts ("A, B, A"). The group sources
- * name each panel once (group-host.js `cycleIds`), so the first is repeated at the end here.
- */
-function closedRing(snap) {
-    const ring = snap && snap.state === 'cycle' && Array.isArray(snap.cycle) ? snap.cycle : null;
-    if (!ring || ring.length < 2 || ring[0] === ring[ring.length - 1]) return snap;
-    const kinds = Array.isArray(snap.cycleKinds) ? [...snap.cycleKinds, snap.cycleKinds[0]] : snap.cycleKinds;
-    return { ...snap, cycle: [...ring, ring[0]], cycleKinds: kinds };
+    return describeSource(snap, ctx, VOCAB);
 }
 
 /** A refused snapshot with the route's figures (the group store keeps them in the header), for its sentence. */

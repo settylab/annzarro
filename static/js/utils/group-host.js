@@ -58,10 +58,12 @@ function kindOfPanel(id) {
     return type || 'panel';
 }
 
-/** The ids on a cycle through `id`, each once, or null. */
+/**
+ * The ids on a cycle through `id`, as a closed ring that ends where it starts ("A, B, A"), or null. That is the shape
+ * every reader of a cycle takes (group-sources.js `cycleOf`, source-notices.js `describeSource`, which drops the last).
+ */
 export function cycleIds(id) {
-    const ring = findCycle(id, dependsOn);
-    return ring ? [...new Set(ring)] : null;
+    return findCycle(id, dependsOn) || null;
 }
 
 const resolver = {
