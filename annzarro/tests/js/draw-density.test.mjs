@@ -21,12 +21,30 @@ const norm = (config) => M.normalizeCountPlot({ version: 1, ...config }).config;
 const PALETTE = ['#111111', '#222222', '#333333', '#444444'];
 const inputNames = { x: 'score', y: 'depth', split: 'cell_type', factor: 'f' };
 const opts = (options = {}, extra = {}) => ({ options, inputNames, palette: PALETTE, theme: PLOT_PALETTES.light, ...extra });
+const dense = (c) => { const a = new Float64Array(c.grid ** c.dims); c.cells.forEach((cell, i) => { a[cell] = c.counts[i]; }); return a; };
+/** A density on the engine's grid read at the oracle's cell centres (two grid cells per axis straddle each). */
+function atOracle(f, c) {
+    const r = c.grid / c.bins;
+    const at = (i) => (r === 1 ? [i] : [r * i + r / 2 - 1, r * i + r / 2]);
+    const out = [];
+    for (let i = 0; i < c.bins; i++) {
+        if (c.dims === 1) { out.push(at(i).reduce((s, a) => s + f[a], 0) / at(i).length); continue; }
+        for (let j = 0; j < c.bins; j++) {
+            let s = 0;
+            for (const a of at(i)) for (const b of at(j)) s += f[a * c.grid + b];
+            out.push(s / (at(i).length * at(j).length));
+        }
+    }
+    return out;
+}
 const peak = (a) => { let m = 0; for (const v of a) if (v > m) m = v; return m; };
 const worst = (got, want) => { let d = 0; for (let i = 0; i < want.length; i++) d = Math.max(d, Math.abs(got[i] - want[i])); return d / peak(want); };
 
 /** An axis of the grid reply as E4 writes a density's: equal-width bins over the padded range, with the pre-pass. */
-function axisOf(c, d, bins) {
-    const edges = Array.from({ length: bins + 1 }, (_, i) => c.lo[d] + i * c.step[d]);
+function axisOf(c, d) {
+    const bins = c.grid;
+    const step = (c.step[d] * c.bins) / c.grid;
+    const edges = Array.from({ length: bins + 1 }, (_, i) => c.lo[d] + i * step);
     return { levels: Array.from({ length: bins }, (_, i) => `bin:${i}`), edges, bins_made: bins, degenerate: false,
         n_outside: [c.n_out, 0],
         density: { n: c.n, sigma: c.sigma[d], bandwidth: c.sigma[d] * c.n ** (-1 / (c.dims + 4)), quantiles: [c.lo[d], c.hi[d]], range: [c.lo[d], c.hi[d]] } };
@@ -37,11 +55,11 @@ const gridOf = (axes, counts, n) => M.readGrid({ reply: { n_shown: n + 5, n_coun
 function oneD(name, options, split = false) {
     const c = oracle.cases[name];
     const config = norm({ mode: 'density', x: obs('score'), ...(split ? { split: obs('cell_type') } : {}) });
-    const axes = [axisOf(c, 0, c.bins)];
-    let counts = c.counts;
+    const axes = [axisOf(c, 0)];
+    let counts = dense(c);
     if (split) {
         axes.push({ levels: ['c:a', 'c:b'], n_outside: [0, 0] });
-        counts = c.counts.flatMap((n) => [Math.floor(n / 3), n - Math.floor(n / 3)]);
+        counts = Array.from(dense(c)).flatMap((n) => [Math.floor(n / 3), n - Math.floor(n / 3)]);
     }
     const table = M.countTable(config, gridOf(axes, counts, c.n_in), axes.map((_, i) => ({ input: i ? 'split' : 'x' })));
     return { c, config, table, figure: D.densityFigure(config, table, opts(options)) };
@@ -50,8 +68,8 @@ function oneD(name, options, split = false) {
 function twoD(name, options) {
     const c = oracle.cases[name];
     const config = norm({ mode: 'density2d', x: obs('score'), y: obs('depth') });
-    const axes = [axisOf(c, 0, c.bins), axisOf(c, 1, c.bins)];
-    const table = M.countTable(config, gridOf(axes, c.counts, c.n_in), [{ input: 'x' }, { input: 'y' }]);
+    const axes = [axisOf(c, 0), axisOf(c, 1)];
+    const table = M.countTable(config, gridOf(axes, dense(c), c.n_in), [{ input: 'x' }, { input: 'y' }]);
     return { c, config, table, figure: D.densityFigure(config, table, opts(options)) };
 }
 
@@ -60,26 +78,27 @@ function twoD(name, options) {
 for (const name of ['score__a1', 'signed__a0.5', 'depth__a2', 'pseudotime__a1']) {
     test(`${name}: the drawn curve is the oracle's within 2% of its peak, on the centres of the bins`, () => {
         const { c, figure } = oneD(name, { adjust: c0(name) });
-        const trace = figure.figure ? figure.figure.data[0] : figure.data[0];
+        const trace = figure.data[0];
         assert.equal(trace.type, 'scatter');
         assert.equal(trace.mode, 'lines');
-        assert.equal(trace.x.length, c.bins);
+        assert.equal(trace.x.length, c.grid);
         assert.ok(Math.abs(trace.x[0] - (c.lo[0] + c.step[0] / 2)) < 1e-9);
-        assert.ok(worst(trace.y, c.density) < 0.02, String(worst(trace.y, c.density)));
+        assert.ok(worst(atOracle(trace.y, c), c.density_binned) < 0.02, String(worst(atOracle(trace.y, c), c.density_binned)));
     });
 }
 function c0(name) { return oracle.cases[name].adjust; }
 
-for (const name of ['umap__a1', 'corr__a1', 'score_depth__a2', 'umap__a0.5', 'score_depth__a0.5']) {
+for (const name of ['umap__a1', 'corr__a1', 'score_depth__a1', 'score_depth__a2', 'umap__a2']) {
     test(`${name} (2D): the image is the oracle's within 2% of its peak, with the diagonal bandwidth`, () => {
         const { c, figure } = twoD(name, { adjust: c0(name), style: 'image' });
         const trace = figure.data[0];
         assert.equal(trace.type, 'heatmap');
-        assert.equal(trace.z.length, c.bins);
+        assert.equal(trace.z.length, c.grid);
         // z[iy][ix]; the oracle is [ix][iy]
-        const flat = [];
-        for (let ix = 0; ix < c.bins; ix++) for (let iy = 0; iy < c.bins; iy++) flat.push(trace.z[iy][ix]);
-        assert.ok(worst(flat, c.density) < 0.02, String(worst(flat, c.density)));
+        const flat = new Float64Array(c.grid * c.grid);
+        for (let ix = 0; ix < c.grid; ix++) for (let iy = 0; iy < c.grid; iy++) flat[ix * c.grid + iy] = trace.z[iy][ix];
+        const got = atOracle(flat, c);
+        assert.ok(worst(got, c.density_binned) < 0.02, String(worst(got, c.density_binned)));
     });
 }
 
@@ -132,8 +151,8 @@ test('the range sentence counts the cells outside, singular and plural, with tho
     assert.equal(figure.notes.range, 'Range from the 0.1st to the 99.9th percentile: 1 cell outside is not counted.');
     const c = oracle.cases['score__a1'];
     const config = norm({ mode: 'density', x: obs('score') });
-    const axis = { ...axisOf(c, 0, c.bins), n_outside: [1200, 82] };
-    const table = M.countTable(config, gridOf([axis], c.counts, c.n_in), [{ input: 'x' }]);
+    const axis = { ...axisOf(c, 0), n_outside: [1200, 82] };
+    const table = M.countTable(config, gridOf([axis], dense(c), c.n_in), [{ input: 'x' }]);
     assert.equal(D.densityFigure(config, table, opts()).notes.range, 'Range from the 0.1st to the 99.9th percentile: 1,282 cells outside are not counted.');
 });
 
@@ -144,10 +163,11 @@ test('no cell outside the range says so', () => {
 
 test('the floor sentence appears only when the floor applies, and the sentence names the raised bandwidth', () => {
     assert.equal(oneD('score__a1', { adjust: 1 }).figure.notes.floor, null);
-    const floored = twoD('umap__a0.5', { adjust: 0.5, style: 'image' }).figure;
+    // a tenth of Scott's rule on 256 x 256 is finer than 1.5 grid steps on both axes
+    const floored = twoD('umap__a1', { adjust: 0.1, style: 'image' }).figure;
     assert.equal(floored.notes.floor, 'Bandwidth raised to the grid\'s resolution.');
     assert.equal(floored.floored, true);
-    assert.ok(floored.notes.bandwidth.startsWith('Bandwidth 0.15 and 0.16 '), floored.notes.bandwidth);
+    assert.ok(floored.notes.bandwidth.startsWith('Bandwidth 0.043 and 0.046 (Scott\'s rule × 0.1)'), floored.notes.bandwidth);
 });
 
 // --- layout, themes and the contract ---------------------------------------------------------------------------------
@@ -156,8 +176,8 @@ test('axes are titled by the input, the range covers the padded grid, and the co
     for (const theme of ['light', 'dark']) {
         const c = oracle.cases['score__a1'];
         const config = norm({ mode: 'density', x: obs('score') });
-        const axes = [axisOf(c, 0, c.bins)];
-        const table = M.countTable(config, gridOf(axes, c.counts, c.n_in), [{ input: 'x' }]);
+        const axes = [axisOf(c, 0)];
+        const table = M.countTable(config, gridOf(axes, dense(c), c.n_in), [{ input: 'x' }]);
         const f = D.densityFigure(config, table, opts({}, { theme: PLOT_PALETTES[theme] }));
         assert.equal(f.layout.xaxis.title.text, 'score');
         assert.equal(f.layout.xaxis.color, PLOT_PALETTES[theme].axisColor);
@@ -169,9 +189,9 @@ test('axes are titled by the input, the range covers the padded grid, and the co
 test('a reply without the pre-pass is a contract error, not a flat curve', () => {
     const c = oracle.cases['score__a1'];
     const config = norm({ mode: 'density', x: obs('score') });
-    const axis = axisOf(c, 0, c.bins);
+    const axis = axisOf(c, 0);
     delete axis.density;
-    const table = M.countTable(config, gridOf([axis], c.counts, c.n_in), [{ input: 'x' }]);
+    const table = M.countTable(config, gridOf([axis], dense(c), c.n_in), [{ input: 'x' }]);
     assert.throws(() => D.densityFigure(config, table, opts()), /density/);
 });
 
@@ -193,10 +213,10 @@ test('only the density modes draw here', () => {
 test('no cell in any bin draws no curve and the sentences still read', () => {
     const c = oracle.cases['score__a1'];
     const config = norm({ mode: 'density', x: obs('score') });
-    const axis = axisOf(c, 0, c.bins);
+    const axis = axisOf(c, 0);
     axis.density = { n: 0 };
     axis.n_outside = [0, 0];
-    const table = M.countTable(config, gridOf([axis], new Array(c.bins).fill(0), 0), [{ input: 'x' }]);
+    const table = M.countTable(config, gridOf([axis], new Array(c.grid).fill(0), 0), [{ input: 'x' }]);
     const f = D.densityFigure(config, table, opts());
     assert.deepEqual(f.data, []);
 });

@@ -4,11 +4,16 @@ Needs numpy and pandas only (the repo venv is fine; scanpy is NOT involved, the 
 Run from anywhere:  python export_kde_json.py        (``--check`` compares instead of writing, exit 1 if stale)
 
 For each oracle case (1D ``score``, ``signed``, ``depth``, ``pseudotime``; 2D ``umap``, ``corr``, ``score_depth``; adjust
-0.5, 1, 2) the file holds what the engine's grid reply holds (the cells binned into ``bins`` equal-width cells over the
-oracle's range, ``lo + i * step``, a value on ``hi`` in the last cell; ``n``, ``sigma``; the range) and the oracle's
-answer: the density by direct summation over the cells, with the bandwidth floored at 1.5 grid steps
-(``density_floor``; it equals the unfloored density where the floor does not apply). A test smooths the counts and
-compares. Counts are integers; the densities are rounded to 9 significant digits (the tolerance is 2% of the peak).
+0.5, 1, 2) the file holds what the engine's grid reply holds and the oracle's answer. The reply is the cells binned into
+``grid`` equal-width cells per axis (512 in 1D, 256 in 2D: the grids the count plot asks for, count-plot-model.js
+DENSITY_BINS) over the oracle's range, a value on ``hi`` in the last cell, with ``n``, ``sigma`` and the range. The counts
+are stored sparsely (``cells``: the cell index, x slowest; ``counts``). The oracle's answer is its density on its own
+``bins`` per axis (512 in 1D, 64 in 2D) by direct summation, with the bandwidth floored at 1.5 of ITS grid steps
+(``density``; ``h_floor``); a test smooths the engine's counts at the grid of the product and compares at the oracle's
+centres. Why not at the oracle's own 64 x 64: a value is moved to its cell's centre, which on zero-inflated columns shifts
+a spike of cells by up to half a step, 5 to 10% of the peak at 64 and a quarter of that at 256. ``density_binned`` is the same
+definition by direct summation over the values snapped to the grid's centres (the like-for-like reference for the
+smoothing; the 2% bound is asserted against it everywhere). Densities are rounded to 3 significant digits, the rest to 9.
 """
 import json
 import os
@@ -36,19 +41,35 @@ def _columns(data):
     return cols
 
 
-def _round(a):
-    return [float(f"{x:.9g}") for x in np.asarray(a, dtype=np.float64).ravel()]
+def _round(a, digits=9):
+    return [float(f"{x:.{digits}g}") for x in np.asarray(a, dtype=np.float64).ravel()]
 
 
-def _counts(cols, lo, hi, step, bins):
+def _counts(cols, lo, hi, grid):
+    """The engine's grid: ``grid`` equal cells per axis over [lo, hi]; returns the non-empty cells and their counts."""
     V = np.column_stack(cols).astype(np.float64)
     V = V[np.all(np.isfinite(V), axis=1)]
     inside = np.all((V >= lo) & (V <= hi), axis=1)
     W = V[inside]
-    idx = np.minimum(np.floor((W - lo) / step).astype(np.int64), bins - 1)
-    if W.shape[1] == 1:
-        return np.bincount(idx[:, 0], minlength=bins)
-    return np.bincount(idx[:, 0] * bins + idx[:, 1], minlength=bins * bins)
+    idx = np.minimum(np.floor((W - lo) / ((hi - lo) / grid)).astype(np.int64), grid - 1)
+    flat = idx[:, 0] if W.shape[1] == 1 else idx[:, 0] * grid + idx[:, 1]
+    cells, counts = np.unique(flat, return_counts=True)
+    return cells, counts, lo + (idx + 0.5) * ((hi - lo) / grid)
+
+
+def _binned_density(snapped, lo, hi, bins, h):
+    """The oracle's definition (direct summation, diagonal bandwidth ``h``, centres of its ``bins``) over the values
+    SNAPPED to the engine's grid centres: what counts alone can carry. numpy only, no smoothing code shared with the app."""
+    dim = snapped.shape[1]
+    step = (hi - lo) / bins
+    per_dim = []
+    for d in range(dim):
+        centres = lo[d] + (np.arange(bins) + 0.5) * step[d]
+        u = (centres[:, None] - snapped[None, :, d]) / h[d]
+        per_dim.append(np.exp(-0.5 * u * u) / (h[d] * np.sqrt(2 * np.pi)))
+    if dim == 1:
+        return per_dim[0].mean(axis=1)
+    return np.einsum("im,jm->ij", per_dim[0], per_dim[1]) / snapped.shape[0]
 
 
 def build():
@@ -62,13 +83,16 @@ def build():
             k = f"{name}__{tag}__"
             lo, hi, step = npz[k + "lo"], npz[k + "hi"], npz[k + "step"]
             bins = 512 if name in ONE else 64
-            counts = _counts(cols[name], lo, hi, step, bins)
+            grid = 512 if name in ONE else 256
+            cells, counts, snapped = _counts(cols[name], lo, hi, grid)
+            binned = _binned_density(snapped, lo, hi, bins, npz[k + "h_floor"])
             out["cases"][f"{name}__{tag}"] = {
-                "dims": 1 if name in ONE else 2, "bins": bins, "adjust": a,
+                "dims": 1 if name in ONE else 2, "bins": bins, "grid": grid, "adjust": a,
                 "n": int(npz[k + "n"]), "n_in": int(npz[k + "n_in"]), "n_out": int(npz[k + "n_out"]),
                 "sigma": _round(npz[k + "sigma"]), "lo": _round(lo), "hi": _round(hi), "step": _round(step),
                 "h": _round(npz[k + "h"]), "h_floor": _round(npz[k + "h_floor"]),
-                "counts": counts.astype(int).tolist(), "density": _round(npz[k + "density_floor"])}
+                "cells": cells.astype(int).tolist(), "counts": counts.astype(int).tolist(), "density": _round(npz[k + "density_floor"], 3),
+                "density_binned": _round(binned, 3)}
     return out
 
 
