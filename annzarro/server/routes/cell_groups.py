@@ -22,8 +22,9 @@ limit (``grid_too_large``, ``too_many_partitionings``, ``obsp_too_large``).
 **Stream** (``application/x-annzarro-groups-stream``), JSON lines then the binary blocks the ``result`` frame lists,
 little-endian, in that order:
 
-* ``start``: ``{codes: "miss", lane, entries_total, queue}`` (a grid has no ``codes``). ``codes`` is ``miss`` until the
-  code cache (step E6b) answers ``hit``.
+* ``start``: ``{codes: "hit" | "miss", lane, entries_total, queue}`` (a grid has no ``codes``). ``hit``: the grouping
+  came from the worker's code cache (``CODES``, ``core/group_cache.py``) and is not resolved; ``entries_total`` is then
+  the features' and measures' alone.
 * ``progress``: ``{stage: groups | features | grid, done, total, entries_done, entries_total, running_s, queue}``.
 * ``result``: the engine's reply (``groups``, ``partitionings``, ``features``, ``measures``, ``blocks`` for a grouping;
   ``axes``, ``measures``, ``blocks`` for a grid), or ``refused: {reason, count, limit, ...}`` and no blocks.
@@ -38,6 +39,12 @@ or dense layer, a score, a wide obsm column, an obsp row past the live tier); ev
 
 **Ledger** (CMP-15): a request holds :func:`reservation` on the worker's ledger while it runs, and waits for room when
 it does not fit.
+
+**Code cache** (SHR-40, CMP-6): ``CODES`` keeps the groupings this worker resolved, within the server setting
+``group_code_cache_mb``, as the ledger's evictable (emptied before any reservation waits). A grouping is looked up
+when the job's turn comes, before anything is read; a hit passes the codes to the engine, a miss resolves and keeps
+them. A request that finds its grouping being resolved by a request without features or measures waits for it,
+giving its lane way meanwhile when another job waits for it.
 """
 import json
 import logging
@@ -46,7 +53,7 @@ from flask import jsonify, request
 
 from .. import access
 from ...core import cell_grid, cell_groups, gene_score, get_reader, read_guard, remote
-from ...core import group_features
+from ...core import group_cache, group_features
 from ...core import subset as cell_subset
 from . import compute_stream, data_routes
 
@@ -74,8 +81,16 @@ _GRID_MEASURE_AT_LIMIT = 290 << 20        # a grid measure at the cell limit: mo
 _COLUMN_ITEM = 8                          # a numeric source column is held as float64 at most
 _PER_GROUP = 40                           # bytes of accumulator per group and feature or measure
 
+#: Seconds between looks at a grouping another request is resolving (and at the lane, whether to give it way).
+_PENDING_POLL_S = 0.05
+
 _error = compute_stream.error_response
 _frame = compute_stream.frame
+
+#: The resolved groupings of this worker (SHR-40), counted on its ledger and emptied by it first when room is needed.
+CODES = group_cache.GroupCache(budget=lambda: compute_stream.CODE_CACHE_BYTES,
+                               room=lambda: compute_stream.LEDGER.bound - compute_stream.LEDGER.held())
+compute_stream.LEDGER.register_evictable("group codes", CODES.size, CODES.clear)
 
 
 def _partitionings_in(body):
@@ -204,29 +219,54 @@ class _Job:
         return {"type": "progress", "stage": "grid" if self.grid else "groups", "done": 0, "total": self.stages,
                 **compute_stream.progress_fields(job, 0, self.entries)}
 
+    def _lookup(self, job):
+        """``(cached grouping or None, claim or None)``: the code cache's answer for this grouping. While another
+        request resolves it for a reply that ends with the resolve, wait for that, giving the lane way when asked."""
+        key = group_cache.key_of(self.dataset_path, self.plan.groups.cache_key, self.n_shown)
+        if key is None:
+            return None, None
+        work = self.plan.work
+        prompt = not work.features and not work.measures
+        while True:
+            found = CODES.begin(key, self.plan.groups.request.histograms, prompt=prompt)
+            if isinstance(found, group_cache.Hit):
+                return found.result, None
+            if isinstance(found, group_cache.Claim):
+                return None, found
+            while not found.wait(_PENDING_POLL_S):
+                if job.wanted():                       # the resolver may be the job this one would wait behind
+                    job.wait()
+
     def frames(self, job):
         """The bytes of the stream, given the job the lane gave (the pause of the engine)."""
-        events = None
+        events, claim = None, None
         entries = [0]                                  # stored entries read so far (the engine's on_entries)
 
         def read(n):
             entries[0] += n
         try:
             with remote.deadline(REMOTE_COMPUTE_S if remote.is_remote_path(self.dataset_path) else None):
-                start = {"type": "start", "lane": self.lane, "entries_total": self.entries, "queue": job.queue()}
+                start, total, cached = {"type": "start"}, self.entries, None
                 if not self.grid:
-                    start = {"type": "start", "codes": "miss", **{k: v for k, v in start.items() if k != "type"}}
-                yield _frame(start)
+                    cached, claim = self._lookup(job)
+                    start["codes"] = "miss" if cached is None else "hit"
+                    if cached is not None:
+                        total = self.plan.work.entries            # the grouping's own entries are not read
+                yield _frame({**start, "lane": self.lane, "entries_total": total, "queue": job.queue()})
                 if self.grid:
                     events = cell_grid.compute(self.plan, self.rows, pause=job)
+                elif cached is not None:
+                    events = group_features.compute(self.plan, self.rows, codes=cached, pause=job, on_entries=read)
                 else:
                     events = group_features.compute(self.plan, self.rows, pause=job, on_entries=read)
                 for kind, payload in events:
                     if kind == "progress":
                         done = entries[0] if not self.grid else payload.get("entries_done", 0)
                         yield _frame({"type": "progress", **payload,
-                                      **compute_stream.progress_fields(job, done, self.entries)})
+                                      **compute_stream.progress_fields(job, done, total)})
                         continue
+                    if claim is not None:
+                        claim.fill(payload.grouping)
                     head, blocks = payload.to_reply() if self.grid else payload.to_reply(self.want_codes)
                     yield _frame(head)
                     yield from compute_stream.block_bytes([array for _, array in blocks])
@@ -237,6 +277,8 @@ class _Job:
         except Exception as exc:
             yield _frame(_error_frame(exc))
         finally:
+            if claim is not None:
+                claim.abandon()
             if events is not None:
                 events.close()
 

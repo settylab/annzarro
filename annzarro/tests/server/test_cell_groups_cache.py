@@ -68,6 +68,14 @@ def resolves(monkeypatch):
     return seen
 
 
+def claimed(before, timeout=5.0):
+    """Wait until a request has claimed a grouping since the cache's miss count was ``before``."""
+    deadline = time.monotonic() + timeout
+    while route.CODES.stats["misses"] <= before and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert route.CODES.stats["misses"] > before
+
+
 def stages(frames):
     return [f.get("stage") for f in frames if f["type"] == "progress"]
 
@@ -232,23 +240,34 @@ def test_the_cache_counts_on_the_ledger_and_is_emptied_before_a_reservation_wait
     try:
         assert time.monotonic() - start < 1.0 and everything.nbytes == cstream.LEDGER.bound
         assert route.CODES.size() == 0 and len(route.CODES) == 0
-        frames, _ = run(client, layout, grouping([{"source": {"type": "obs", "key": "condition"}}]))
     finally:
         everything.release()
-    assert len(route.CODES) == 0                                     # no room was left to keep it
+    assert run(client, layout, grouping([{"source": CELL_TYPE}]))[0][0]["codes"] == "miss"
+    assert len(route.CODES) == 1
+
+
+def test_no_grouping_is_kept_in_room_the_ledger_has_reserved(client, layout, monkeypatch):
+    real = cstream.LEDGER.held
+    monkeypatch.setattr(cstream.LEDGER, "held", lambda: cstream.LEDGER.bound)   # every byte reserved elsewhere
+    run(client, layout, grouping([{"source": CELL_TYPE}]))
+    assert len(route.CODES) == 0
+    monkeypatch.setattr(cstream.LEDGER, "held", real)
+    run(client, layout, grouping([{"source": CELL_TYPE}]))
+    assert len(route.CODES) == 1
 
 
 def test_a_grouping_is_kept_within_the_servers_code_cache_setting(layout, tmp_path, monkeypatch, resolves):
     monkeypatch.setattr(cstream, "CODE_CACHE_BYTES", cstream.CODE_CACHE_BYTES)
-    tiny = create_app({"TESTING": True, "data_dir": str(layout / "data"), "log_file": str(tmp_path / "t.log"),
-                       "group_code_cache_mb": N / 2 / 2 ** 20})        # half the codes of one grouping
-    assert cstream.CODE_CACHE_BYTES == int(N / 2)
-    client = tiny.test_client()
+    app = create_app({"TESTING": True, "data_dir": str(layout / "data"), "log_file": str(tmp_path / "t.log"),
+                      "group_code_cache_mb": 1})                       # the smallest the setting takes
+    assert cstream.CODE_CACHE_BYTES == 1 << 20
+    client = app.test_client()
     body = grouping([{"source": CELL_TYPE}])
-    assert [run(client, layout, body)[0][0]["codes"] for _ in range(2)] == ["miss", "miss"]
-    assert len(route.CODES) == 0
-    monkeypatch.setattr(cstream, "CODE_CACHE_BYTES", 512 << 20)
     assert [run(client, layout, body)[0][0]["codes"] for _ in range(2)] == ["miss", "hit"]
+    route.CODES.clear()
+    monkeypatch.setattr(cstream, "CODE_CACHE_BYTES", N // 2)           # half the codes of one grouping
+    assert [run(client, layout, body)[0][0]["codes"] for _ in range(2)] == ["miss", "miss"]
+    assert len(route.CODES) == 0 and len(resolves) == 3
 
 
 # --- a session opening: one grouping and three dependants (CMP-6) -----------------------------------------------------
@@ -273,10 +292,9 @@ def test_a_session_opening_with_three_dependants_resolves_the_grouping_once(clie
     dependants = [grouping(parts, features=[{**FEATURE, "name": gstore.gene(i)}]) for i in (1, 2, 3)]
     out = [None] * 4
     threads = [threading.Thread(target=_stream, args=(client, layout, panel, out, 0))]
+    misses = route.CODES.stats["misses"]
     threads[0].start()
-    deadline = time.monotonic() + 5
-    while not route.CODES.stats["misses"] and time.monotonic() < deadline:
-        time.sleep(0.01)
+    claimed(misses)
     for i, body in enumerate(dependants, start=1):
         threads.append(threading.Thread(target=_stream, args=(client, layout, body, out, i)))
         threads[-1].start()
@@ -308,14 +326,14 @@ def test_a_waiter_resolves_on_its_own_when_the_resolve_it_waited_for_fails(clien
     body = grouping([{"source": CELL_TYPE}])
     out = [None] * 2
     first = threading.Thread(target=_stream, args=(client, layout, body, out, 0))
+    misses = route.CODES.stats["misses"]
     first.start()
-    deadline = time.monotonic() + 5
-    while not route.CODES.stats["misses"] and time.monotonic() < deadline:
-        time.sleep(0.01)
+    claimed(misses)
+    waits = route.CODES.stats["waits"]
     second = threading.Thread(target=_stream, args=(client, layout, body, out, 1))
     second.start()
     time.sleep(0.2)
-    assert route.CODES.stats["waits"] >= 1
+    assert route.CODES.stats["waits"] > waits
     gate.set()
     first.join(10)
     second.join(10)
@@ -343,10 +361,9 @@ def test_a_heavy_request_waiting_on_a_heavy_resolve_gives_it_the_lane(client, la
     body = grouping([{"source": GENE1}])
     out = [None] * 2
     a = threading.Thread(target=_stream, args=(client, layout, body, out, 0, "csr.zarr"))
+    misses = route.CODES.stats["misses"]
     a.start()
-    deadline = time.monotonic() + 5
-    while not route.CODES.stats["misses"] and time.monotonic() < deadline:
-        time.sleep(0.01)
+    claimed(misses)
     b = threading.Thread(target=_stream, args=(client, layout, body, out, 1, "csr.zarr"))
     b.start()
     time.sleep(0.5)                                                    # b runs, waits, and gives way to a again

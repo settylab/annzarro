@@ -139,10 +139,11 @@ def test_the_budget_is_read_on_every_store():
     budget = [1 << 20]
     c = gc.GroupCache(budget=lambda: budget[0])
     fill(c, key("a"))
+    one = c.size()
     budget[0] = 10                                                   # the setting changed: nothing more fits
     assert not c.begin(key("b")).fill(result())
     assert isinstance(c.begin(key("a")), gc.Hit)                    # and what never fits evicts nothing
-    budget[0] = 2 * N + 4096
+    budget[0] = one + 10
     fill(c, key("c"))
     assert len(c) == 1 and isinstance(c.begin(key("c")), gc.Hit)  # one that fits makes room under the new size
 
@@ -151,7 +152,7 @@ def test_a_grouping_is_kept_only_in_the_room_the_ledger_has_left():
     room = [1 << 20]
     c = cache(room=lambda: room[0])
     fill(c, key("a"))
-    room[0] = c.size() + 10                                          # the ledger is nearly full
+    room[0] = c.size() - 1                                           # the ledger is nearly full
     assert not c.begin(key("b")).fill(result())
     assert isinstance(c.begin(key("a")), gc.Hit)
     room[0] = c.size()                                               # room for what is held, or for one other
