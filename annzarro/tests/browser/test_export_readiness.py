@@ -36,7 +36,7 @@ def test_pending_counts_an_automatic_restyle_and_ends_only_when_it_is_applied(br
 
         # a draw, zoom or resize asks for a restyle: it is pending until the follow-up has run
         page.evaluate("""(id) => { const gd = document.querySelector(`.tile[data-tile-id="${id}"] .js-plotly-plot`);
-            window.__azRestyleSeen = 0; gd.__azFollowView(); }""", A)
+            gd.__azFollowView(); }""", A)
         assert _state(page)["pending"] >= 1
         page.wait_for_function("() => JSON.parse(window.annzarroPlotState()).pending === 0", timeout=30000)
         settled = _state(page)
