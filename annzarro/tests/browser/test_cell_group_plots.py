@@ -445,3 +445,31 @@ def test_a_link_round_trip_keeps_the_grouping_on_colour_and_axis(page, served):
     _wait_legend(page, TYPES)
     assert _traces(page) == want
     assert _legend(page) == "Grouping 1"
+
+
+# ------------------------------------------------------------------ 8. light and dark
+
+def _shot(page, name):
+    """Screenshots for looking: only when ANNZARRO_THEME_SHOTS names a directory (as test_dark_theme.py)."""
+    out = os.environ.get("ANNZARRO_THEME_SHOTS")
+    if out:
+        os.makedirs(out, exist_ok=True)
+        page.locator(C).screenshot(path=os.path.join(out, name + ".png"))
+
+
+def test_the_legend_of_a_grouping_follows_the_theme(page, served):
+    _open(page, served, {P: _plot(color=by(GA), title="Cell Plot 1"), GA: _grouping(title="Cell type × condition", partitionings=[CELL_TYPE, CONDITION])})
+    names = [f"{t} | {c}" for t in TYPES for c in gstore.CONDITIONS]
+    _wait_legend(page, names)
+    font = "(t) => document.querySelector(t + ' .js-plotly-plot').layout.legend.title.font.color"
+    page.click('#theme-toggle button[data-theme-mode="light"]')
+    page.wait_for_function("() => document.documentElement.getAttribute('data-theme') === 'light'", timeout=5000)
+    light = page.evaluate(font, C)
+    _shot(page, "g8a-grouping-colour-light")
+    page.click('#theme-toggle button[data-theme-mode="dark"]')
+    page.wait_for_function("() => document.documentElement.getAttribute('data-theme') === 'dark'", timeout=5000)
+    until(page, "([t, was]) => document.querySelector(t + ' .js-plotly-plot').layout.legend.title.font.color !== was", [C, light])
+    _wait_legend(page, names)
+    assert [t[0] for t in _traces(page)][:2] == names[:2], "the groups keep their order and colours in either theme"
+    assert _legend(page) == "Cell type × condition"
+    _shot(page, "g8a-grouping-colour-dark")
