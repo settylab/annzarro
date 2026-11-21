@@ -27,6 +27,7 @@
  * run maxima of the benchmark, not from a fit of that action; the
  * measurement plan replaces them (see the docs, Browser memory).
  */
+import { getSource } from './source-registry.js';
 
 /** GB here are 10^9 bytes, as in the benchmark notes and Chrome's jsHeapSizeLimit (4,395,630,592 = 4.40 GB). */
 export const GB = 1e9;
@@ -374,6 +375,9 @@ export function readLimits(env = {}, settings = DEFAULT_SETTINGS) {
 export function colourKind(settings, structure) {
     const c = settings && settings.color;
     if (!c || !c.type || c.type === 'none') return 'none';
+    // a provider's series (utils/source-registry.js) says what it is
+    const provider = getSource(c.type);
+    if (provider) return provider.valueType === 'categorical' ? 'categorical' : 'numeric';
     if (c.type === 'obs') {
         const info = structure && structure.obs && structure.obs.columns_info && structure.obs.columns_info[c.key];
         if (info && /categor|bool|str|object/i.test(String(info.type))) return 'categorical';

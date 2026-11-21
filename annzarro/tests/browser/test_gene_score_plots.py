@@ -590,7 +590,39 @@ def test_hover_lists_the_score_beside_the_columns_and_labels_it_by_title(page, s
     until(page, "() => (window.PanelManager.getPanel('cell-plot-C').getConfig().hoverInfo || []).some(h => h.type === 'gene-score' && h.key === 'gene-signature-S')")
 
 
+# The score request the page sends, kept so a test can ask the route itself for the reply (its own oracle)
+KEEP_COMPUTE = """
+window.__computeRequests = [];
+const kept = window.fetch;
+window.fetch = (url, init) => {
+  if (String(url).includes('/data/gene_score') && init && typeof init.body === 'string' && !JSON.parse(init.body).estimate_only) {
+    window.__computeRequests.push({ url: String(url), body: init.body, headers: Object.fromEntries(new Headers(init.headers || {}).entries()) });
+  }
+  return kept(url, init);
+};
+"""
+
+# One cell's score as the route answers it: the first compute request sent again, its stream read here (JSON lines,
+# the result frame, then the float32 block), with no app code between
+ROUTE_VALUE = """async (row) => {
+  const req = window.__computeRequests[0];
+  const reply = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body });
+  const bytes = new Uint8Array(await reply.arrayBuffer());
+  let start = 0;
+  for (;;) {
+    const end = bytes.indexOf(10, start);
+    const frame = JSON.parse(new TextDecoder().decode(bytes.subarray(start, end)));
+    start = end + 1;
+    if (frame.type === 'result') {
+      const values = new Float32Array(bytes.slice(start, start + frame.byte_length).buffer);
+      return Number.isNaN(values[row]) ? null : values[row];
+    }
+  }
+}"""
+
+
 def test_large_plot_mode_colours_by_a_score_and_its_tooltip_reads_the_vector(large_page, large_served):
+    large_page.add_init_script(KEEP_COMPUTE)
     _open(large_page, large_served)
     _wait_large_coloured(large_page)
     assert large_page.evaluate("(t) => !!document.querySelector(t + ' .plot-status .ps-tag[data-tag=\"large\"]')", C), "large-plot mode"
@@ -619,13 +651,9 @@ def test_large_plot_mode_colours_by_a_score_and_its_tooltip_reads_the_vector(lar
         return !!(t && t.style.display !== 'none' && Array.from(t.children).some(c => c.textContent.startsWith('T cell score · z-score mean · X: '))); }""")
     tip = large_page.evaluate("() => Array.from(document.querySelector('.large-plot-tip').children).map(c => c.textContent)")
     line = [t for t in tip if t.startswith("T cell score · z-score mean · X: ")][0]
-    held = large_page.evaluate("""async () => {
-        const mod = await import('/static/js/utils/score-source.js');
-        const setting = window.PanelManager.getPanel('cell-plot-C').getConfig().color;
-        return mod.heldScoreValue(setting, 30);
-    }""")
-    assert held is not None and abs(float(line.split(": ")[1]) - held) <= abs(held) * 1e-3 + 1e-9, (line, held)
     assert len(_calls(large_page)) == before, "the value came from the vector: no request"
+    held = large_page.evaluate(ROUTE_VALUE, 30)
+    assert held is not None and abs(float(line.split(": ")[1]) - held) <= abs(held) * 1e-3 + 1e-9, (line, held)
 
 
 def _wait_large_coloured(page, tile=C):

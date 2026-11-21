@@ -9,6 +9,8 @@
  *     point within HOVER_PX; a small HTML tooltip shows its coordinates at
  *     once and its name and colour value once the server has answered for
  *     that one row (a few hundred rows are remembered, nothing per point);
+ *     a provider's colour (a score, a grouping) is held by the plot, and its
+ *     value is read there at once;
  *   - click: the regular path's action, `setFocusedCell(name)`. A click
  *     before the index is ready (seconds or more at 95.6M points) is kept, in data
  *     units: the cursor and the status strip say so ("Preparing click
@@ -20,7 +22,7 @@
  * Everything reads `plotContainer.__largeState`, replaced on each draw, so the
  * listeners are added once per graph.
  */
-import { heldScoreValue, shownScoreKey } from '../../utils/score-source.js';
+import { isProviderType } from '../../utils/source-registry.js';
 import { DataManager } from '../../data-manager.js';
 import { nearestPoint, pointOfRow } from '../../utils/point-index.js';
 import { colourTitle } from '../../utils/plot-titles.js';
@@ -140,16 +142,23 @@ export function applyPendingClick(gd) {
   if (hit) focusRow(gd, st, hit).catch((err) => console.warn('Focus by click failed:', err && err.message));
 }
 
-/** What the remembered tooltip lines depend on: the colour setting, and for a score the score shown. */
-function colourCacheKey(colour) {
-  return JSON.stringify(colour) + (colour.type === 'gene-score' ? shownScoreKey(colour) : '');
+/**
+ * Whether the tooltip asks the server for a row's colour value: a column's, yes; a provider's is held by the plot
+ * (st.colourAt), or there is none to show (it could not be drawn).
+ */
+function asksColour(colour) {
+  return !!colour && colour.type !== 'none' && !isProviderType(colour.type);
+}
+
+/** What a remembered row depends on: the dataset, the row and the colour asked for it. */
+function rowKey(row, colour) {
+  return `${DataManager.getDatasetGeneration()}:${row}:${asksColour(colour) ? JSON.stringify(colour) : ''}`;
 }
 
 /** Name and colour value of one row, from the server (remembered). */
 async function describeRow(st, row) {
   const colour = st.settings.color;
-  const hasColour = colour && colour.type !== 'none';
-  const key = `${DataManager.getDatasetGeneration()}:${row}:${hasColour ? colourCacheKey(colour) : ''}`;
+  const key = rowKey(row, colour);
   if (_cache.has(key)) return _cache.get(key);
   const [name, value] = await Promise.all([
     // the name is remembered as soon as it is here: a click needs only that
@@ -158,10 +167,7 @@ async function describeRow(st, row) {
       if (_names.size > REMEMBERED) _names.delete(_names.keys().next().value);
       return n;
     }),
-    // a signature's score is held as a vector: its value is read there, not asked of the server
-    hasColour ? (colour.type === 'gene-score' ? Promise.resolve(heldScoreValue(colour, row))
-      : DataManager.loadCellValue(colour, { shown: true, position: row }).catch(() => null))
-      : Promise.resolve(null)
+    asksColour(colour) ? DataManager.loadCellValue(colour, { shown: true, position: row }).catch(() => null) : Promise.resolve(null)
   ]);
   const out = { name, colour: value };
   _cache.set(key, out);
@@ -175,12 +181,15 @@ function showTip(gd, st, hit, clientX, clientY) {
   const tip = tooltip();
   const lines = [`x: ${_fmt(st.index.X[hit.p])}`, `y: ${_fmt(st.index.Y[hit.p])}`];
   const colour = st.settings.color;
+  // a colour the plot holds is read now; another one arrives with the row's name
+  const held = st.colourAt ? st.colourAt(hit.row) : null;
   const draw = (info) => {
     const rows = [];
     if (info && info.name !== undefined) rows.push(String(info.name));
     rows.push(...lines);
-    if (info && info.colour !== null && info.colour !== undefined && colour && colour.type !== 'none') {
-      rows.push(`${colourTitle(colour).replace('<br>', ' · ')}: ${_fmt(info.colour)}`);
+    const value = st.colourAt ? held : info && info.colour;
+    if (value !== null && value !== undefined && colour && colour.type !== 'none') {
+      rows.push(`${colourTitle(colour).replace('<br>', ' · ')}: ${_fmt(value)}`);
     }
     tip.replaceChildren(...rows.map((t, i) => {
       const d = document.createElement('div');
@@ -189,7 +198,7 @@ function showTip(gd, st, hit, clientX, clientY) {
       return d;
     }));
   };
-  const key = `${DataManager.getDatasetGeneration()}:${hit.row}:${colour && colour.type !== 'none' ? colourCacheKey(colour) : ''}`;
+  const key = rowKey(hit.row, colour);
   draw(_cache.get(key));
   tip.style.display = 'block';
   const w = tip.offsetWidth, h = tip.offsetHeight;
@@ -232,11 +241,13 @@ async function focusRow(gd, st, hit) {
  * @param {HTMLElement} gd  the plot
  * @param {Object} settings  the panel's settings
  * @param {Object|null} index  from buildPointIndex
+ * @param {null|((row: number) => (number|string|null))} [colourAt]  a cell's colour value where the plot holds it
+ *   (large-plot.js heldColour): the tooltip reads it there, not from the server
  */
-export function attachLargeInteraction(gd, settings, index) {
+export function attachLargeInteraction(gd, settings, index, colourAt = null) {
   const old = gd.__largeState;
   const same = old && old.pending && JSON.stringify([old.settings.x, old.settings.y]) === JSON.stringify([settings.x, settings.y]);
-  const st = gd.__largeState = { index, settings, hovered: -1, dwell: 0, lastFocus: null, seq: old ? old.seq : 0,
+  const st = gd.__largeState = { index, settings, colourAt, hovered: -1, dwell: 0, lastFocus: null, seq: old ? old.seq : 0,
     pending: same ? old.pending : null };
   if (old) clearTimeout(old.dwell);
   if (old && old.pending && !same) showWaiting(gd, false);

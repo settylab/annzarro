@@ -48,8 +48,8 @@ import { ledger } from '../../utils/memory-guard-ui.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { classifyError, classifyFilterStats, compactCount, exactCount } from '../../utils/coverage.js';
 import { columnsParam } from '../../utils/column-param.js';
-import { LARGE_TYPES, formatPoints, largeThreshold } from './large-plot-controls.js';
-import { loadScoreSeriesWhenReady } from '../../utils/score-source.js';
+import { formatPoints, largeThreshold } from './large-plot-controls.js';
+import { getSource, isProviderType, largeAccepts } from '../../utils/source-registry.js';
 import { buildPointIndexSliced } from '../../utils/point-index.js';
 import { attachLargeInteraction, detachLargeInteraction, highlightLargeFocus, applyPendingClick } from './large-interact.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
@@ -84,7 +84,7 @@ export function largePlotRefusal(settings, n) {
   // again once the plot leaves this mode (largePlotTag says so)
   for (const axis of ['x', 'y', 'color']) {
     const t = settings[axis] && settings[axis].type;
-    if (LARGE_TYPES[axis].includes(t)) continue;
+    if (largeAccepts(t, axis)) continue;
     return axis === 'color'
       ? `Colour by ${_an(t)} ${t} column ${at}, or choose an obs column or a gene`
       : `${axis === 'x' ? 'An x' : 'A y'} axis from ${t} ${at}, or choose an embedding (obsm), an obs column or a gene`;
@@ -103,11 +103,13 @@ export function largePlotReason(settings, n) {
 
 async function loadSeries(s, datasetPath, structure, signal, { axis = null, host = null, role = 'x' } = {}) {
   if (s.type === 'none') return null;
-  if (s.type === 'gene-score') {
-    // the Float32Array of the score store itself: nothing is copied (utils/score-source.js);
-    // a score that is not ready throws ScoreUnavailable (a colour is drawn neutral, an axis is a placeholder)
-    const scored = await loadScoreSeriesWhenReady(s, { host, role, expected: (DataManager.getCells() || []).length, array: false }, signal);
-    return { values: scored.vector };
+  if (isProviderType(s.type)) {
+    // a provider's series in this path's form (utils/source-registry.js loadLarge): the vector or the codes it
+    // holds, nothing copied; one that cannot be drawn yet throws SourceUnavailable (a colour is drawn neutral,
+    // an axis is the provider's placeholder)
+    const got = await getSource(s.type).loadLarge(s, { host, role, axis, expected: (DataManager.getCells() || []).length,
+      unit: 'cells', signal });
+    return got.type === 'categorical' ? providerCategories(got) : { values: got.vector };
   }
   if (s.type === 'obsm') {
     const v = await DataManager.loadVector(`${Config.API.OBSM}/${s.key}`,
@@ -140,6 +142,49 @@ async function loadSeries(s, datasetPath, structure, signal, { axis = null, host
   const v = await DataManager.loadVector(Config.API.OBS, { dataset_path: datasetPath, columns: columnsParam(s.key) }, signal);
   if (!v) throw new Error(`obs.${s.key} is neither categorical nor numeric`);
   return { values: v };
+}
+
+/**
+ * A provider's categorical series in the form the colour below draws, the obs codes' form: past GROUP_COLOURS
+ * categories it is drawn in colour groups (`ranked`), each code by its category's rank over every cell (`rankOf`;
+ * a category it does not rank comes after every ranked one, as in the regular path), or the codes are ranks already
+ * (the provider's `ranked`) and its `groupNames` name the legend. O(categories): the codes are not copied.
+ * @param {Object} got - what loadLarge returned
+ */
+function providerCategories(got) {
+  const { codes, MISSING } = got;
+  if (got.ranked) {
+    return { codes, MISSING, categories: [], ranked: true, used: GROUP_COLOURS, rankOfCode: null, groupNames: got.groupNames || null,
+      labelOfRank: new Map(), colours: null };
+  }
+  const categories = got.categories;
+  if (!grouped(categories.length)) {
+    return { codes, MISSING, categories, ranked: false, rankOfCode: null, groupNames: null, labelOfRank: null, colours: got.colours || null };
+  }
+  const rankOfCode = new Uint32Array(categories.length);
+  const labelOfRank = new Map();
+  let unranked = categories.length;
+  categories.forEach((label, k) => {
+    const known = got.rankOf ? got.rankOf.get(label) : k;
+    const r = known === undefined ? unranked++ : known;
+    rankOfCode[k] = r;
+    labelOfRank.set(r, label);
+  });
+  return { codes, MISSING, categories, ranked: true, used: unranked, rankOfCode, groupNames: null, labelOfRank, colours: null };
+}
+
+/**
+ * A cell's colour value, for the tooltip (large-interact.js), when this plot holds it: a provider's series (its
+ * vector, or its category's name), read where it is drawn from. Null when the colour is not a provider's: the
+ * tooltip asks the server for that one row.
+ * @param {Object|null} cs - the colour series drawn
+ * @param {Object} colour - the colour setting
+ * @returns {null|((row: number) => (number|string|null))}
+ */
+function heldColour(cs, colour) {
+  if (!cs || !isProviderType(colour.type)) return null;
+  if (cs.codes) return (row) => { const c = cs.codes[row]; return c === undefined || c === cs.MISSING ? null : cs.categories[c] ?? null; };
+  return (row) => { const v = cs.values[row]; return v === undefined || v !== v ? null : v; };
 }
 
 function _parseColor(c) {
@@ -512,6 +557,8 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     const many = !!cs.ranked;
     const ncAll = many ? cs.used : cs.categories.length;
     const nc = many ? Math.min(ncAll, GROUP_COLOURS) : ncAll;
+    // a provider's colour groups: each code's rank (providerCategories); the obs codes are ranks themselves
+    const rankOfCode = cs.rankOfCode || null;
     const key = keyBuffer(pre, n);
     const NA = nc, DROP = nc + 1;
     for (let i = 0; i < n; i++) {
@@ -520,21 +567,21 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
       else if (c === cs.MISSING) {
         key[i] = settings.hideNaN ? DROP : NA;
         if (settings.hideNaN) only.nan++;
-      } else key[i] = many ? groupOf(c) : c;
+      } else key[i] = many ? groupOf(rankOfCode ? rankOfCode[c] : c) : c;
     }
     const { X, Y, R, start, kept } = groupByKey(x, y, key, nc + 1, DROP, pre);
     pts = { X, Y, R };
     filtered = n - kept;
     // Colour groups: per group, the distinct ranks drawn (a bit set over the
     // ranks) and the three lowest, whose labels the legend names
-    let groupNames = null;
-    if (many) {
+    let groupNames = cs.groupNames || null;
+    if (many && !groupNames) {
       const seen = new Uint8Array(Math.ceil(ncAll / 8) || 1);
       const distinct = new Float64Array(GROUP_COLOURS);
       const lowest = Array.from({ length: GROUP_COLOURS }, () => []);
       for (let i = 0; i < n; i++) {
         if (key[i] >= nc) continue;                 // NA or dropped
-        const r = cs.codes[i];
+        const r = rankOfCode ? rankOfCode[cs.codes[i]] : cs.codes[i];
         if (seen[r >> 3] & (1 << (r & 7))) continue;
         seen[r >> 3] |= 1 << (r & 7);
         const g = groupOf(r);
@@ -546,13 +593,16 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
           if (low.length > LEGEND_NAMES) low.pop();
         }
       }
-      let labels = new Map();
-      try {
-        labels = await DataManager.loadCategoryLabels(datasetPath, settings.color.key, lowest.flat(),
-          settings.color.type === 'var' ? 'var' : 'obs', signal);
-      } catch (err) {
-        stopped();
-        console.warn('Legend labels not loaded:', err && err.message);
+      // a provider sent its labels; a column's are read for these ranks only
+      let labels = cs.labelOfRank || new Map();
+      if (!cs.labelOfRank) {
+        try {
+          labels = await DataManager.loadCategoryLabels(datasetPath, settings.color.key, lowest.flat(),
+            settings.color.type === 'var' ? 'var' : 'obs', signal);
+        } catch (err) {
+          stopped();
+          console.warn('Legend labels not loaded:', err && err.message);
+        }
       }
       groupNames = lowest.map((low, g) => {
         const names = low.map(r => labels.get(r) ?? `#${r}`);
@@ -563,7 +613,11 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     // The regular path's palette rule (processCategories): the colours stored
     // in uns.<key>_colors when the palette is 'uns' and they exist
     let palette = null, stored = null;
-    if (!many && settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
+    if (!many && settings.categoryPalette === 'uns' && cs.colours) {
+      // a provider's colours are its own (a grouping's): nothing is read from uns, and no note about it
+      palette = usableUnsPalette(cs.colours, nc);
+      setStatusTag(plotContainer, UNS_PALETTE_TAG, null);
+    } else if (!many && settings.categoryPalette === 'uns' && settings.color.type === 'obs') {
       try {
         const r = await DataManager.loadUns({ datasetPath, unsKey: `${settings.color.key}_colors`, signal });
         if (r && r.data) stored = Array.isArray(r.data) ? r.data : [r.data];
@@ -719,7 +773,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   // (a newer load, the Cancel button, the panel closing) an unfinished build stops
   if (signal.aborted) job.cancelled = true;
   else signal.addEventListener('abort', () => { job.cancelled = true; }, { once: true });
-  const st = attachLargeInteraction(plotContainer, settings, null);
+  const st = attachLargeInteraction(plotContainer, settings, null, heldColour(cs, settings.color));
   // which points each point trace draws, so hover and click can leave out a category hidden with the legend
   const base = pts.X.byteOffset / 4;
   st.chunks = traces.flatMap((t, trace) => (t.meta === LEGEND_POINTS
