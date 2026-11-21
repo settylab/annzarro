@@ -187,6 +187,7 @@ def test_a_second_score_starts_within_one_chunk_of_a_whole_matrix_pass(client, l
     short_frames, short_vector = parse(short_data)
     assert long_frames[-1]["type"] == "result" and short_frames[-1]["type"] == "result"
     assert long_vector is not None and short_vector is not None
+    assert len(entered) == 2, f"{len(entered)} jobs entered the lanes: the second is not the short score's"
     first_short = events.index("short")
     at_arrival = events.index("arrived")
     between = events[at_arrival:first_short].count("chunk")
