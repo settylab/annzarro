@@ -679,7 +679,8 @@ class Result:
 
 def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, codes: Optional[cg.GroupingResult] = None,
             should_stop: Optional[Callable[[], bool]] = None, pause=None,
-            on_entries: Optional[Callable[[int], None]] = None) -> Iterator[Tuple[str, Any]]:
+            on_entries: Optional[Callable[[int], None]] = None,
+            grouping_event: bool = False) -> Iterator[Tuple[str, Any]]:
     """The groups (``cell_groups.compute``, whose progress frames pass through), then the moments of every feature
     and measure per group (stage ``features``). The final event is ``("result", Result)``.
 
@@ -687,6 +688,10 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, codes: Opti
     is told the grouping's entries as its partitionings are read (``cell_groups.compute``) and then each read's, so
     the calls add up to the plan's entries (less the grouping's on a cache hit, or what a refused grouping did not
     read).
+
+    ``grouping_event`` adds ``("grouping", GroupingResult)`` once the groups are known (resolved, or the code cache's)
+    and before any feature is read, so the code cache can keep the codes while the features are still to come
+    (E6b). It is off by default: a caller that takes every event other than progress as the result stays as it is.
     """
     grouping = None
     for event, payload in cg.compute(plan_.groups, shown_rows, codes=codes, should_stop=should_stop, pause=pause,
@@ -695,6 +700,8 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, codes: Opti
             grouping = payload
         else:
             yield event, payload
+    if grouping_event:
+        yield "grouping", grouping
     work = plan_.work
     result = Result(grouping)
     if grouping.refused is not None or (not work.features and not work.measures):
