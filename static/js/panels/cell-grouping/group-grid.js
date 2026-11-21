@@ -32,6 +32,8 @@ const fmt = (n) => Number(n).toLocaleString('en-US');
 const PENDING = '…';
 const DASH = '—';
 const ROW_HEIGHT = 28;
+/** The sources the dataset itself holds: a grouping of these can be estimated before it is watched. */
+const PLAIN_SOURCES = Object.freeze(['obs', 'obsm', 'layer', 'obsp']);
 /** The cross-table's first column and each further column, in px. */
 const LABEL_WIDTH = 160;
 const COLUMN_WIDTH = 84;
@@ -139,7 +141,8 @@ function mount(host, ctx) {
     // ---------------------------------------------------------------------------------- the focused gene
 
     const focus = { gene: null, sig: '', blocked: false, forced: null, ticket: 0, key: null, kind: null, kindLayer: null,
-        requested: null, shownGene: null };
+        requested: null, shownGene: null, waiting: false };
+    const hasReply = () => { const snap = ctx.read(); return !!(snap && snap.values && snap.values.reply); };
 
     const currentGene = () => DataManager.getFocusedGene() || null;
     const sigOf = (recipe) => `${layerOf(recipe)}\u0001${recipe.detect_above || 0}`;
@@ -185,7 +188,13 @@ function mount(host, ctx) {
         await Promise.all([kindOf(layerOf(recipe)), asked]);
         if (stale(ticket)) return;
         const reply = await asked;
-        if (!reply) { focus.key = null; return; }         // not decidable yet (the source is gated): asked again at the next paint
+        if (!reply) {
+            // not decidable: the source is gated (a table or an upstream grouping is not ready). Asked again once the groups are
+            // there, and never on every paint, which the estimate itself would cause.
+            focus.key = null;
+            if (hasReply()) { focus.blocked = true; paintFocus(); } else focus.waiting = true;
+            return;
+        }
         if (isLive(reply.estimate)) {
             await request(gene, recipe, ticket);
         } else {
@@ -205,6 +214,7 @@ function mount(host, ctx) {
             focus.blocked = false;
             focus.forced = null;
             focus.kindLayer = null;
+            focus.waiting = false;
             stopAsking();
         }
         focus.gene = gene;
@@ -214,6 +224,10 @@ function mount(host, ctx) {
             return;
         }
         if (gate === 'wait') return;
+        if (focus.waiting) {
+            if (!hasReply()) return;
+            focus.waiting = false;
+        }
         const key = `${gene}\u0001${sig}`;
         if (focus.key === key) return;
         focus.key = key;
@@ -520,6 +534,27 @@ function mount(host, ctx) {
 
     return {
         update,
+        /**
+         * The panel is about to ask for its groups (a dataset is loaded): decide now whether the focused gene is cheap
+         * enough to ride that request. Resolves when it is decided; the first request waits for it for a moment.
+         * @returns {?Promise<void>}
+         */
+        prepare() {
+            const recipe = ctx.recipe();
+            focus.sig = sigOf(recipe);
+            focus.blocked = false;
+            focus.forced = null;
+            focus.kindLayer = null;
+            focus.waiting = false;
+            stopAsking();
+            const gene = currentGene();
+            focus.gene = gene;
+            if (gateOf({ gene, visible, blocked: false, forced: false }) !== 'estimate') return null;
+            // a factor that waits on another panel (a table, a score, another grouping) is estimated once its groups are there
+            if (!recipe.partitionings.every((p) => PLAIN_SOURCES.includes(p.source.type))) return null;
+            focus.key = `${gene}\u0001${focus.sig}`;
+            return decide(gene, recipe, ++focus.ticket);
+        },
         destroy() {
             alive = false;
             document.removeEventListener('focusedGeneChanged', onFocus);

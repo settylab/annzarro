@@ -58,6 +58,8 @@ const DEFAULT_TITLE = 'Grouping 1';
 /** Keys of a configuration that are the panel's own, not the recipe's. */
 const PANEL_KEYS = ['id', 'title', 'controlsVisible', '_closed', 'active'];
 const NO_FEATURES = Object.freeze([]);
+/** The longest the first request waits for the parts' decisions, in ms. */
+const PREPARE_MS = 1500;
 
 registerReferences(TYPE, groupingReferences);
 
@@ -759,9 +761,21 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             try { await loadStructure(); } catch (error) { console.error(`Cell grouping ${_id}:`, error); }
             if (!_initialized) return;
             checkMissing();
+            await prepareParts();
+            if (!_initialized) return;
             watch();
             groupSources().sources.recheck();
             refresh();
+        }
+
+        /**
+         * The parts that need to decide something before the first request (the group grid: whether the focused gene is
+         * cheap enough to ride it) say so; the first request waits for them for a moment at most.
+         */
+        async function prepareParts() {
+            const decisions = _parts.map((part) => (part && part.prepare ? part.prepare() : null));
+            if (!decisions.some(Boolean)) return;
+            await Promise.race([Promise.all(decisions), new Promise((resolve) => setTimeout(resolve, PREPARE_MS))]);
         }
 
         /** Read the handle again (a gate that changed without a store event: the structure came) and paint. */

@@ -216,6 +216,32 @@ def test_a_focus_change_gives_the_new_genes_values_and_no_focus_takes_the_column
     assert _grid(page)["headers"] == ["Name", "Cells", "Share"]
 
 
+def test_the_focused_gene_rides_the_first_request_and_costs_no_request_of_its_own(page, served):
+    base._open(page, served, {GA: base._grouping(partitionings=[CELL_TYPE, CONDITION])})
+    base._ready(page)
+    until(page, "(s) => [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].length > 3", A)
+    computes = [c for c in page.calls if not c.get("estimate_only")]
+    assert len(computes) == 1, [c.get("features") for c in computes]
+    assert [f["name"] for f in computes[0]["features"]] == ["GENE000"], "the server's default focused gene"
+    # an edit costs one request too: the gene rides it
+    page.calls.clear()
+    page.evaluate("() => window.PanelManager.getPanel('%s').addFactor({source: {type: 'obs', key: 'sample'}})" % GA)
+    base._ready(page, text=f"{base._groups_of('cell_type', 'condition', 'sample')} groups · {N:,} of {N:,} cells in a group")
+    waits.expect_stays(lambda: len([c for c in page.calls if not c.get("estimate_only")]) == 1,
+                       "an edit asks once, with the gene in it, and nothing follows", page=page, seconds=1.0)
+    assert [f["name"] for f in [c for c in page.calls if not c.get("estimate_only")][0]["features"]] == ["GENE000"]
+
+
+def test_a_grouping_that_waits_on_another_panel_gets_the_gene_columns_once_its_groups_are_there(page, served):
+    configs = {GA: base._grouping(partitionings=[CELL_TYPE]),
+               base.GB: base._grouping(base.GB, "Grouping 2", partitionings=[{"source": {"type": "cell-group", "key": GA}}])}
+    base._open(page, served, configs, open_ids=(base.GB,), sel=base.B)
+    base._ready(page, sel=base.B, text=f"6 groups · {N:,} of {N:,} cells in a group")
+    until(page, "(s) => [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].some(e => e.textContent.trim() === 'GENE000 mean')", base.B)
+    until(page, "(s) => ![...document.querySelectorAll(s + ' .cgg-row .cgg-val')].some(e => e.textContent.trim() === '…')", base.B)
+    waits.expect_stays(lambda: len(_feature_computes(page)) <= 2, "the gene is asked for once the groups are there, not on every paint", page=page, seconds=1.0)
+
+
 def test_a_statistic_the_layer_cannot_give_is_left_out(page, served):
     _open(page, served, [CELL_TYPE, CONDITION])          # X is signed: no % expressing
     _focus_gene(page, GENE)
