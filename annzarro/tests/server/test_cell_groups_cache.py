@@ -134,7 +134,8 @@ def test_a_grid_neither_says_nor_uses_codes(client, layout, resolves):
 
 
 def test_a_refused_grouping_is_not_kept(client, layout, resolves):
-    body = grouping([{"source": {"type": "obs", "key": "many"}}])
+    every = [f"c:m{i:04d}" for i in range(gstore.N_MANY)]             # 2,001 levels kept: over the limit (FX-E M5)
+    body = grouping([{"source": {"type": "obs", "key": "many"}, "levels": every}])
     for _ in range(2):
         frames, _ = run(client, layout, body)
         assert frames[0]["codes"] == "miss" and frames[-1]["refused"]["reason"] == "too_many_levels"
