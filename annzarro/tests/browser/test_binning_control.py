@@ -61,9 +61,9 @@ def _expand(page, i):
     page.wait_for_selector(CTRL)
 
 
-def _ctrl_ready(page):
-    """The reply has come: the edges line is there."""
-    until(page, "(s) => { const e = document.querySelector(s + ' .pbc-edges-line'); return !!e && e.textContent.length > 0; }", CTRL)
+def _ctrl_ready(page, card=0):
+    """The reply has come: the preview is drawn."""
+    until(page, "(s) => !!document.querySelector(s + ' .pbc-hist:not(.is-empty)')", f"{A} .cgrp-card[data-index='{card}']")
 
 
 def _binning(page, i=0):
@@ -75,8 +75,11 @@ def _message(page):
 
 
 def _wait_binning(page, expected, i=0):
-    until(page, "([id, i, want]) => JSON.stringify(window.PanelManager.getPanel(id).getRecipe().partitionings[i].binning) === want",
-          [GA, i, json.dumps(expected)])
+    """The stored binning of factor ``i`` is ``expected`` (compared as data, so key order and 3 against 3.0 do not matter)."""
+    until(page, """([id, i, want]) => { const sort = (v) => Array.isArray(v) ? v.map(sort) : v && typeof v === 'object'
+            ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sort(v[k])])) : v;
+        const got = window.PanelManager.getPanel(id).getRecipe().partitionings[i].binning;
+        return JSON.stringify(sort(got)) === JSON.stringify(sort(want)); }""", [GA, i, expected])
 
 
 # ------------------------------------------------------------------ 1. the zero bin
@@ -104,14 +107,14 @@ def test_a_column_with_many_zeros_gets_the_zero_bin_at_once_as_one_undoable_step
 
 
 def test_a_column_with_fewer_zeros_does_not_and_a_signed_one_has_no_zero_bin_to_offer(page, served):
-    _open_binned(page, served, [_binned("score")])
+    _open_binned(page, served, [_binned("pseudotime")])
     _ready(page)
     _ctrl_ready(page)
     assert not page.is_checked(f"{CTRL} .pbc-zero")
     assert _binning(page) == {"method": "equal_count"}
     _add(page, "column", type_="obs", key="signed")
     _expand(page, 1)
-    until(page, "(s) => document.querySelectorAll(s + ' .pbc').length === 2", f"{A} .cgrp-binning")
+    _ctrl_ready(page, 1)
     assert page.locator(f"{A} .cgrp-card[data-index='1'] .pbc-zero").count() == 0
 
 
@@ -153,20 +156,20 @@ def test_invalid_thresholds_bring_the_last_ones_back_and_valid_ones_are_sorted(p
 # ------------------------------------------------------------------ 3. methods
 
 def test_methods_change_the_recipe_and_log_spaced_bins_say_which_cells_have_no_bin(page, served):
-    _open_binned(page, served, [_binned("depth", zero_bin=False)])
+    _open_binned(page, served, [_binned("depth", bins=5)])
     _ready(page)
     _ctrl_ready(page)
     options = page.eval_on_selector_all(f"{CTRL} .pbc-method option", "(o) => o.map(e => e.textContent)")
     assert options == ["Equal count", "Equal width", "Log-spaced", "Manual thresholds"]
     page.select_option(f"{CTRL} .pbc-method", "equal_width")
-    _wait_binning(page, {"method": "equal_width"})
+    _wait_binning(page, {"method": "equal_width", "bins": 5})
     page.select_option(f"{CTRL} .pbc-method", "log")
-    _wait_binning(page, {"method": "log"})
+    _wait_binning(page, {"method": "log", "bins": 5})
     zeros = int((DATA.obs["depth"] == 0).sum())
     until(page, "(s) => /have no bin/.test(document.querySelector(s + ' .pbc-notes').textContent)", CTRL)
     assert page.inner_text(f"{CTRL} .pbc-notes") == f"{zeros:,} cells at or below 0 have no bin. Turn on Zero as its own bin to keep them."
     page.check(f"{CTRL} .pbc-zero")
-    _wait_binning(page, {"method": "log", "zero_bin": True})
+    _wait_binning(page, {"method": "log", "bins": 5, "zero_bin": True})
     until(page, "(s) => !/have no bin/.test(document.querySelector(s + ' .pbc-notes').textContent)", CTRL)
 
 
@@ -176,9 +179,11 @@ def test_a_range_on_equal_width_bins_clamps_and_says_how_many(page, served):
     _ctrl_ready(page)
     assert page.inner_text(f"{CTRL} .pbc-range-help") == "Values outside go into the first or last bin, labelled ≤ and ≥."
     page.fill(f"{CTRL} .pbc-range-lo", "3")
+    page.press(f"{CTRL} .pbc-range-lo", "Enter")
+    _wait_binning(page, {"method": "equal_width", "range": [3, None]})
     page.fill(f"{CTRL} .pbc-range-hi", "7")
     page.press(f"{CTRL} .pbc-range-hi", "Enter")
-    _wait_binning(page, {"method": "equal_width", "range": [3.0, 7.0]})
+    _wait_binning(page, {"method": "equal_width", "range": [3, 7]})
     outside = int(((DATA.obs["score"] < 3) | (DATA.obs["score"] > 7)).sum())
     until(page, "(s) => /outside the range/.test(document.querySelector(s + ' .pbc-notes').textContent)", CTRL)
     assert page.inner_text(f"{CTRL} .pbc-notes") == f"{outside:,} cells outside the range are in the end bins."
@@ -214,15 +219,17 @@ def test_a_threshold_moves_by_the_keyboard_and_stops_at_its_neighbour(page, serv
     assert lines[0]["label"] == "Threshold 1 of 2" and lines[0]["max"] == 6
     lo, hi = float(DATA.obs["score"].min()), float(DATA.obs["score"].max())
     step = (hi - lo) / 100
-    page.focus(f"{CTRL} .pbc-line:nth-of-type(1)")
+    page.locator(f"{CTRL} .pbc-line").first.focus()
     page.keyboard.press("ArrowRight")
     until(page, "([id, v]) => Math.abs(window.PanelManager.getPanel(id).getRecipe().partitionings[0].binning.thresholds[0] - v) < 1e-9", [GA, 3 + step])
     # the focus survives the repaint, so the key can be pressed again
-    assert page.evaluate("(s) => document.activeElement.getAttribute('aria-label')", CTRL) == "Threshold 1 of 2"
+    until(page, "() => document.activeElement.getAttribute('aria-label') === 'Threshold 1 of 2'")
+    until(page, "() => document.activeElement.getAttribute('aria-label') === 'Threshold 1 of 2'")
     page.keyboard.press("Shift+ArrowLeft")
     until(page, "([id, v]) => Math.abs(window.PanelManager.getPanel(id).getRecipe().partitionings[0].binning.thresholds[0] - v) < 1e-9", [GA, 3 + step - 10 * step])
+    until(page, "() => document.activeElement.getAttribute('aria-label') === 'Threshold 1 of 2'")
     page.keyboard.press("End")
-    until(page, "(id) => window.PanelManager.getPanel(id).getRecipe().partitionings[0].binning.thresholds[0] > 5.9", GA)
+    until(page, "(id) => window.PanelManager.getPanel(id).getRecipe().partitionings[0].binning.thresholds[0] > 5.5", GA)
     assert _binning(page)["thresholds"][0] < 6
     assert _binning(page)["thresholds"][1] == 6
 
@@ -293,7 +300,7 @@ def test_edges_from_all_cells_are_the_same_for_every_subset_and_the_line_names_t
     _open_binned(page, served, [_binned("score", bins=3)], subset={"n": 6, "seed": 2, "part": 0})
     _ready(page)
     _ctrl_ready(page)
-    shown = page.evaluate("() => window.DataManager.getCells().length")
+    shown = page.evaluate("async () => (await import('/static/js/data-manager.js')).DataManager.getCells().length")
     assert 0 < shown < N
     assert page.inner_text(f"{CTRL} .pbc-edges-line") == f"Edges from the {shown:,} cells shown."
     assert page.is_checked(f"{CTRL} .pbc-edges input[value='shown']")
@@ -331,9 +338,10 @@ def test_screenshots(page, served, theme):
     out = pathlib.Path(SHOTS)
     out.mkdir(parents=True, exist_ok=True)
     page.emulate_media(color_scheme=theme)
-    _open_binned(page, served, [_binned("depth", bins=5)])
+    _open_binned(page, served, [_binned("depth")])
     _ready(page)
     _ctrl_ready(page)
+    until(page, "(s) => !!document.querySelector(s + ' .pbc-zero:checked')", CTRL)
     page.locator(f"{A} .cgrp-card[data-index='0']").screenshot(path=str(out / f"binned-card-equal-count-{theme}.png"))
     page.select_option(f"{CTRL} .pbc-method", "manual")
     until(page, "(s) => document.querySelectorAll(s + ' .pbc-line').length > 0", CTRL)

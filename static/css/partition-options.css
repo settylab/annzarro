@@ -1,0 +1,43 @@
+/*
+ * The shared binning control (static/js/panels/partition-options/binning-control.js): the method row, the preview with
+ * its edges and sliders, the chips' foot and the sentences under it. Colors are the theme's tokens, so light and dark
+ * follow the page.
+ */
+.pbc { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; font-size: 0.8125rem; container-type: inline-size; }
+.pbc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.pbc-field { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.pbc-field__name { color: var(--az-muted); font-size: 0.75rem; }
+.pbc-method { width: auto; }
+.pbc-input { width: auto; }
+.pbc-zero-field, .pbc-radio { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+.pbc-edges { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.pbc-range { gap: 6px; }
+.pbc-help { color: var(--az-muted); font-size: 0.75rem; }
+
+/* the preview: 100 bars and the edges on them */
+.pbc-hist { position: relative; height: 56px; margin: 4px 7px 0; border-bottom: 1px solid var(--az-border-strong); }
+.pbc-hist.is-empty { background: var(--az-surface-2); border-radius: 3px; }
+.pbc-bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 0; }
+.pbc-bar { flex: 1 1 0; min-width: 0; background: var(--az-border-strong); border-radius: 1px 1px 0 0; }
+.pbc-lines { position: absolute; inset: 0; }
+.pbc-line { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--az-link); }
+.pbc-line--fixed { opacity: 0.75; }
+.pbc-line[role="slider"] { width: 14px; margin-left: -7px; background: transparent; cursor: ew-resize; touch-action: none; outline: none; }
+.pbc-line[role="slider"]::before { content: ''; position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; background: var(--az-link); }
+.pbc-line[role="slider"]::after { content: ''; position: absolute; left: 3px; top: -4px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--az-surface); border: 2px solid var(--az-link); }
+.pbc-line[role="slider"]:hover::before, .pbc-line[role="slider"]:focus-visible::before { width: 3px; left: 5.5px; }
+.pbc-line[role="slider"]:focus-visible::after { box-shadow: 0 0 0 2px var(--az-focus-border); }
+.pbc-readout { position: absolute; top: -22px; transform: translateX(-50%); padding: 0 4px; border-radius: 3px; font-size: 0.6875rem;
+    background: var(--az-surface-3); border: 1px solid var(--az-border-strong); color: var(--az-text); pointer-events: none; white-space: nowrap; }
+.pbc-ticks { position: relative; height: 1rem; margin: 0 7px; color: var(--az-muted); font-size: 0.6875rem; font-variant-numeric: tabular-nums; }
+.pbc-tick { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+
+.pbc-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; }
+.pbc-edges-line { color: var(--az-muted); }
+.pbc-moved { color: var(--az-warn-text); }
+.pbc-moved .btn-link, .pbc-frozen .btn-link { padding: 0 2px; vertical-align: baseline; font-size: inherit; }
+.pbc-notes { display: flex; flex-direction: column; gap: 2px; }
+.pbc-note { margin: 0; color: var(--az-warn-text); }
+.pbc-message { color: var(--az-danger-text); }
+.pbc-message[hidden], .pbc-notes:empty { display: none; }

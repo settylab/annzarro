@@ -171,6 +171,8 @@ test('the notes say fewer bins made, cells with no bin, degenerate data and clam
     assert.deepEqual(flat.map((n) => n.text), ['All cells share one value.'], 'a degenerate reply is not also "fewer bins made"');
     const clamp = C.binningNotes(norm({ method: 'equal_width', range: [0, 5] }), { bins_asked: 10, bins_made: 10, n_outside: 41, edges: [0, 5] });
     assert.deepEqual(clamp.map((n) => n.text), ['41 cells outside the range are in the end bins.']);
+    const clampPair = C.binningNotes(norm({ method: 'equal_width', range: [0, 5] }), { bins_asked: 10, bins_made: 10, n_outside: [30, 11] });
+    assert.deepEqual(clampPair.map((n) => n.text), ['41 cells outside the range are in the end bins.'], 'the reply gives [below, above]');
     assert.deepEqual(C.binningNotes(norm({ method: 'equal_width', range: [0, 5], outside: 'exclude' }), { n_outside: 41, bins_asked: 10, bins_made: 10 }, { kind: 'count' })
         .map((n) => n.text), [], 'a count plot says it in its status strip');
     assert.deepEqual(C.binningNotes(norm({ method: 'equal_count' }), null), []);
@@ -194,4 +196,11 @@ test('a card for a panel with no preview yet draws a model with no histogram and
     assert.deepEqual(C.lineValues(norm({ method: 'manual', thresholds: [3, 1] }), null), [1, 3]);
     assert.deepEqual(C.lineValues(norm({ method: 'equal_count' }), { edges: [0, 1, 2, 5] }), [1, 2]);
     assert.deepEqual(C.lineValues(norm({ method: 'equal_count' }), { edges: [0, 5], degenerate: true }), []);
+});
+
+test('typed thresholds that read as a stored one keep its full value', () => {
+    assert.equal(C.thresholdText(2.55345568525), '2.55346');
+    assert.deepEqual(C.keepStored([2.55346, 7], [2.55345568525, 6]), [2.55345568525, 7]);
+    assert.deepEqual(C.keepStored([2.5535, 7], [2.55345568525, 6]), [2.5535, 7], 'a different number is the user\'s');
+    assert.deepEqual(C.keepStored([1], []), [1]);
 });
