@@ -25,7 +25,7 @@ export const DENSITY_MODES = Object.freeze(['density', 'density2d']);
  * The interface text of a density (UX 4.4), local until G6 moves it into utils/vocabulary.js as C2a's
  * `VOCABULARY.countPlot` does for the other modes.
  */
-export const DENSITY_WORDS = Object.freeze({
+const DENSITY_WORDS = Object.freeze({
     axis: 'Density',
     axisBySize: 'Density, scaled by level size',
     bandwidth: (hs, adjust, dims) => `Bandwidth ${hs.join(' and ')} (Scott's rule × ${adjust})${dims === 2 ? ', per axis; it ignores correlation between X and Y' : ''}.`,

@@ -17,6 +17,7 @@
  */
 
 /** The bandwidth never goes below this many grid steps (CNT-10). */
+// export-unused-ok: the floor test reads the constant the sentence is about
 export const FLOOR_STEPS = 1.5;
 
 /** The kernel is cut where it is below 4e-6 of its peak. */
