@@ -6,7 +6,7 @@ import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScal
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { noteDatasetLayers } from '../../utils/score-source.js';
 import { refreshHoverGroups } from './hover-columns.js';
-import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed } from '../../utils/source-registry.js';
+import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
@@ -761,6 +761,16 @@ function applyColorToolbar($container, colorType, id) {
   }
 }
 
+/** The first palette option's words: the colours stored in the dataset's uns (a provider may name its own). */
+export const UNS_PALETTE_LABEL = 'As stored in adata.uns';
+
+/** The source type a plot's colour reads now, or null. */
+function colourTypeOf(id) {
+  const plot = typeof window !== 'undefined' && window.PanelManager ? window.PanelManager.getPanel(id) : null;
+  const colour = plot && typeof plot.getConfig === 'function' ? plot.getConfig().color : null;
+  return colour && colour.type ? colour.type : null;
+}
+
 /**
  * Updates the visibility of color controls based on the current color type,
  * using elements within the provided container.
@@ -821,6 +831,10 @@ export function updateColorControlsVisibility(container, colorType, id) {
     $.showHide($container.find(`#color-scale-preview-${id}`), false);
     
     $.showHide($categoryPaletteSelect, true, '');
+    // the first option says where its colours come from: a source's own (a grouping's), else the dataset's uns
+    const unsOption = $categoryPaletteSelect.find('option[value="uns"]')[0];
+    const unsLabel = paletteLabelOf(colourTypeOf(id)) || UNS_PALETTE_LABEL;
+    if (unsOption && unsOption.textContent !== unsLabel) unsOption.textContent = unsLabel;
     
     $.showHide($colorMinInput, false);
     $.showHide($colorMaxInput, false);

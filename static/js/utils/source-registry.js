@@ -61,6 +61,8 @@
  *   placeholder(host, notice)
  *                     draws an axis that cannot be drawn: the placeholder says why, with the way out
  *   vocabulary        {result}: what the source makes, in a sentence ('score')
+ *   paletteLabel      optional: what the first palette option ('uns') is called while a plot's colour is this
+ *                     source, when its colours are its own ("The grouping's colors"); the dataset's uns otherwise
  *   releaseHost(host) a plot closes: what the provider holds for it goes (its records, and values nothing else needs)
  *
  * The built-in sources (obs, obsm, obsp, layer, var...) are not registered: they keep their
@@ -107,6 +109,16 @@ export function parseAlsoListed(value) {
     if (typeof value !== 'string' || !value.startsWith(ALSO)) return null;
     const [type, key] = value.slice(ALSO.length).split(ALSO);
     return getSource(type) && key ? { type, key } : null;
+}
+
+/**
+ * What the first palette option of a plot coloured by a source of this type is called: its provider's own words, or
+ * null for the dataset's uns colours (every built-in source, and a provider that says nothing).
+ * @param {string} type
+ */
+export function paletteLabelOf(type) {
+    const provider = type ? getSource(type) : null;
+    return (provider && provider.paletteLabel) || null;
 }
 
 /** Register (or replace) a provider. */

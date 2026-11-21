@@ -1,5 +1,5 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector, typeChoices, updateTableFilterSelect, chooseDefaultAxes, showPointStyle, showScalePreview } from './panel-ui-update.js';
+import { setupAxisSelector, typeChoices, updateTableFilterSelect, chooseDefaultAxes, showPointStyle, showScalePreview, UNS_PALETTE_LABEL } from './panel-ui-update.js';
 import { scaleOptionLabel } from '../../utils/color-scales.js';
 import { colorBoundToData } from '../../utils/array-stats.js';
 import { Config } from '../../config.js';
@@ -17,7 +17,8 @@ const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES)
 
 /**
  * Injects available colormaps into a <select> element with <optgroup> support.
- * The first element is set to "uns" with the text "As stored in adata.uns".
+ * The first element is set to "uns" with the text UNS_PALETTE_LABEL ("As stored in adata.uns"; a provider's colour names
+ * its own, panel-ui-update.js updateColorControlsVisibility).
  * @param {HTMLSelectElement|jQuery} selectElement - The <select> element to populate.
  * @param {Object} colormapGroups - Output of listAvailableColormaps()
  * @param {string} [selected] - Optional selected value.
@@ -29,7 +30,7 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
   $select.empty();
   
   // Insert the first menu option for "uns" colors
-  $select.append(new Option('As stored in adata.uns', 'uns', selected === 'uns', selected === 'uns'));
+  $select.append(new Option(UNS_PALETTE_LABEL, 'uns', selected === 'uns', selected === 'uns'));
 
   // Process the remaining colormaps grouped by category
   for (const [groupLabel, colormaps] of Object.entries(colormapGroups)) {

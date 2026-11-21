@@ -494,3 +494,27 @@ def test_the_legend_of_a_grouping_follows_the_theme(page, served):
     assert [t[0] for t in _traces(page)][:2] == names[:2], "the groups keep their order and colours in either theme"
     assert _legend(page) == "Cell type × condition"
     _shot(page, "g8a-grouping-colour-dark")
+
+
+def _palette_option(page):
+    return page.evaluate("(id) => document.querySelector(`#category-palette-${id} option[value=\"uns\"]`).textContent", P)
+
+
+def test_the_first_palette_option_names_the_groupings_colors_and_another_palette_recolors(page, served):
+    _open(page, served, {P: _plot(color=by(GA)), GA: _grouping()})
+    _wait_legend(page, TYPES)
+    until(page, "(id) => { const s = document.querySelector(`#category-palette-${id}`); return !!s && s.offsetParent !== null; }", P)
+    assert _palette_option(page) == "The grouping's colors", "a grouping's colours are its own, not the dataset's uns"
+    before = [t[1] for t in _traces(page)]
+    page.select_option(f"#category-palette-{P}", "Dark2")
+    dark2 = ["#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e", "#e6ab02"]
+    until(page, "([t, want]) => { const gd = document.querySelector(t + ' .js-plotly-plot');"
+                " return !!gd && JSON.stringify(gd.data.filter(d => d.showlegend !== false).map(d => d.marker.color)) === JSON.stringify(want); }",
+          [C, dark2])
+    assert [t[0] for t in _traces(page)] == TYPES, "the groups keep their order"
+    assert before != dark2
+    # a column of the dataset: its uns colours, as before
+    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "obs")
+    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', "condition")
+    _wait_legend(page, gstore.CONDITIONS)
+    until(page, "(id) => document.querySelector(`#category-palette-${id} option[value=\"uns\"]`).textContent === 'As stored in adata.uns'", P)
