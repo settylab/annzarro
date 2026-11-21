@@ -502,7 +502,7 @@ def test_structure_shows_each_element_and_the_hostile_names_stay_text(opened):
     assert page.evaluate("() => [...document.querySelectorAll('#dsi-pane-structure [style]')].every(e => !/url|var\\(/.test(e.getAttribute('style')))")
     # colour count against categories, ordered and nullable
     obs = pane.locator("details[data-section=obs]").inner_text()
-    assert "Mismatch: 2 colours for 3 categories" in obs and "5 colours" in obs
+    assert "Mismatch: 2 colors for 3 categories" in obs and "5 colors" in obs
     assert "ordered" in obs and "nullable" in obs and "Index: _index, string" in obs
     # sparse, dataframe and awkward entries
     obsm = pane.locator("details[data-section=obsm]").inner_text()
