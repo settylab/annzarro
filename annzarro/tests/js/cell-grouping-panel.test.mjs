@@ -25,7 +25,7 @@ import {
     levelPreview, tickLevel, tickAll, tickNone, sortByCells, renameLevel, setRest, moveLevel, levelRows,
     tooManyLevelsText, scoreFactor, geneFactor, tableFactor, neighborsFactor
 } from '../../../static/js/panels/cell-grouping/factors.js';
-import { describeStatus, totalsLine, smallLine, noGroupReasons, usedByText } from '../../../static/js/panels/cell-grouping/status.js';
+import { describeStatus, smallLine, noGroupReasons, usedByText } from '../../../static/js/panels/cell-grouping/status.js';
 import { settingsSummary, separatorProblem, thresholdProblem } from '../../../static/js/panels/cell-grouping/settings.js';
 
 const golden = (name) => JSON.parse(readFileSync(new URL(`../data/golden/${name}.json`, import.meta.url), 'utf8'));
@@ -231,7 +231,7 @@ test('a source the dataset lacks is found and named (GRP-14)', () => {
         tableFactor('cell-table-gone'), tableFactor('cell-table-here')] }).recipe;
     const genes = new Set(['GENE001']);
     const found = missingFactors(recipe, STRUCTURE, { hasGene: (g) => genes.has(g), hasPanel: (id) => id === 'cell-table-here' });
-    assert.deepEqual(found, [1, 2, 3, 4]);
+    assert.deepEqual(found, [1, 2, 3, 4, 5]);
 });
 
 // ------------------------------------------------------------------------------------------- status
@@ -240,9 +240,14 @@ const nameOf = (names) => (i) => names[i];
 
 test('the status of a computed grouping: groups, cells in a group, cells in no group (UX 2.3)', () => {
     const reply = { n_shown: 8090, n_grouped: 8012, groups: Array.from({ length: 28 }, () => ({ key: [], n: 1 })), small: { threshold: 10, mode: 'keep', n_small: 3 } };
-    assert.deepEqual(totalsLine(reply), { text: '28 groups · 8,012 of 8,090 cells in a group', noGroup: 78 });
-    assert.deepEqual(totalsLine({ ...reply, n_grouped: 8090 }), { text: '28 groups · 8,090 of 8,090 cells in a group', noGroup: 0 });
-    assert.equal(totalsLine({ n_shown: 5, n_grouped: 5, groups: [{ key: [], n: 5 }] }).text, '1 group · 5 of 5 cells in a group');
+    const totals = (r) => {
+        const d = describeStatus({ recipe: normalizeGrouping({ partitionings: [{ source: { type: 'obs', key: 'k' } }] }).recipe,
+            snap: { state: 'ready', values: { reply: r } }, cells: r.n_shown, nameOf: () => 'k', missing: [] });
+        return { text: d.text, noGroup: d.noGroup };
+    };
+    assert.deepEqual(totals(reply), { text: '28 groups · 8,012 of 8,090 cells in a group', noGroup: 78 });
+    assert.deepEqual(totals({ ...reply, n_grouped: 8090 }), { text: '28 groups · 8,090 of 8,090 cells in a group', noGroup: 0 });
+    assert.equal(totals({ n_shown: 5, n_grouped: 5, groups: [{ key: [], n: 5 }] }).text, '1 group · 5 of 5 cells in a group');
     assert.equal(smallLine(reply), '3 small groups (under 10 cells), kept');
     assert.equal(smallLine({ small: { threshold: 20, mode: 'collect', n_small: 1 } }), '1 small group (under 20 cells), collected into "Small groups (under 20 cells)"');
     assert.equal(smallLine({ small: { threshold: 10, mode: 'hide', n_small: 2 } }), '2 small groups (under 10 cells), hidden: their cells are in no group');
@@ -258,7 +263,7 @@ test('"in no group" says why: each factor that leaves cells out, and hidden smal
     const reply = { n_shown: 1000, n_grouped: 600, small: { threshold: 10, mode: 'hide', n_small: 2 }, partitionings: [
         { levels: ['bin:0', 'bin:1'], counts: [500, 422] }, { levels: ['c:B cell', 'c:T cell'], counts: [900, null] },
         { levels: ['@in'], counts: [700] }, { levels: ['c:a', 'c:b'], counts: [500, 500] }] };
-    assert.deepEqual(noGroupReasons(recipe, reply, nameOf(['Cd3e', 'cell_type', 'in Table 1', 'condition'])), [
+    assert.deepEqual(noGroupReasons(recipe, reply, nameOf(['Cd3e', 'cell_type', 'Table 1', 'condition'])), [
         '78 have no value for Cd3e', '100 are in no ticked level of cell_type', '300 are not in Table 1',
         '2 small groups (under 10 cells) are hidden']);
     assert.deepEqual(noGroupReasons(normalizeGrouping({ partitionings: [{ source: { type: 'obs', key: 'condition' } }] }).recipe,

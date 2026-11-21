@@ -24,12 +24,8 @@ Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWS
 import base64
 import json
 import os
-import socket
-import subprocess
-import sys
 import time
 import urllib.parse
-import urllib.request
 
 import pytest
 
@@ -38,10 +34,12 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import test_focus_outside_subset as _focus  # noqa: E402
+from annzarro.tests.browser import waits  # noqa: E402
+from annzarro.tests.browser.test_names_dataset_scope import _serve  # noqa: E402
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 from annzarro.tests.core import grouping_store as gstore  # noqa: E402
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 GA = "cell-grouping-A"
 GB = "cell-grouping-B"
 TA = "cell-table-T"
@@ -54,34 +52,20 @@ DATA = gstore.make_data()
 N = gstore.N_OBS
 
 
-def _free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+def _make_store(path):
+    gstore.make_store(str(path), "csc", "zarr", data=DATA)
+    return str(path)
 
 
 @pytest.fixture(scope="module")
 def served(tmp_path_factory):
-    home = tmp_path_factory.mktemp("home")
-    data = tmp_path_factory.mktemp("data")
-    store = str(data / "grouping.zarr")
-    gstore.make_store(store, "csc", "zarr", data=DATA)
-    port = _free_port()
-    env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
-               PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
-    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1", "--port", str(port),
-                             "--data-dir", str(data), "--no-browser", "--auth-disabled"],
-                            env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-    root = f"http://127.0.0.1:{port}"
-    for i in range(120):
-        try:
-            urllib.request.urlopen(root + "/api/v1/config", timeout=1)
-            break
-        except OSError:
-            time.sleep(min(0.5, 0.1 * (i + 1)))
-    else:
-        proc.kill()
-        pytest.fail("server did not start")
+    # the server of test_focus_outside_subset (the code under test first on its path), on the grouping fixture
+    original = _focus._make_store
+    _focus._make_store = _make_store
+    try:
+        proc, root, store = _serve(tmp_path_factory)
+    finally:
+        _focus._make_store = original
     yield root, store
     proc.terminate()
     proc.wait(10)
@@ -275,8 +259,8 @@ def test_a_card_moves_duplicates_removes_and_renames_with_no_request(page, serve
     until(page, """(s) => document.querySelector(s + " .cgrp-level[data-id='c:B cell'] .cgrp-level__label").textContent === 'B lymphocyte'""", A)
     assert page.get_attribute(f"{A} .cgrp-level[data-id='c:B cell'] .cgrp-level__label", "title") == "Was: B cell"
     assert _recipe(page)["partitionings"][0]["labels"] == {"c:B cell": "B lymphocyte"}
-    page.wait_for_timeout(800)          # past the live delay: a recompute would have been asked by now
-    assert len(_requests(page)) == asked and len(page.calls) == estimates, "a rename asks for nothing"
+    waits.expect_stays(lambda: len(_requests(page)) == asked and len(page.calls) == estimates,
+                       "a rename asks for nothing: past the live delay a recompute would have been asked", page=page, seconds=0.8)
     assert _status(page)["state"] == "ready"
 
 
@@ -314,7 +298,8 @@ def _captured_url(page, served):
 
 def test_job5_a_link_carries_the_recipe_and_nothing_computed_open_and_closed(page, served):
     renamed = {**CELL_TYPE, "labels": {"c:T cell": "T lymphocyte"}}
-    _open(page, served, {GA: _grouping(partitionings=[renamed, CONDITION], separator=" / ", small={"mode": "collect"})})
+    _open(page, served, {GA: _grouping(partitionings=[renamed, CONDITION], separator=" / ", small={"mode": "collect"}), TA: _table()},
+          open_ids=(GA, TA))
     _ready(page)
     cfg = page.evaluate("() => window.sessionManager.captureView()")["layout"]["panelConfigs"][GA]
     assert set(cfg) <= {"id", "title", "version", "partitionings", "separator", "small", "offered", "layers", "detect_above",
@@ -405,12 +390,42 @@ def test_close_and_reopen_with_the_same_id_and_a_dataset_switch_keeps_the_recipe
     assert st["text"] == "Nothing computed until condition is replaced or removed."
     assert [c["title"] for c in _cards(page)] == ["cell_type", "condition (not in this dataset)"]
     assert _recipe(page)["partitionings"] == [CELL_TYPE, CONDITION]
-    page.wait_for_timeout(800)
-    assert len(page.calls) == asked, "nothing is asked while a factor is missing"
+    waits.expect_stays(lambda: len(page.calls) == asked,
+                       "nothing is asked while a factor is missing: past the live delay a request would have gone", page=page, seconds=0.8)
     # removing it computes again
     page.click(f"{A} .cgrp-card[data-index='1'] .cgrp-card__more")
     page.click(f"{A} .cgrp-card[data-index='1'] [data-op='remove']")
     _ready(page, text=f"6 groups · {N:,} of {N:,} cells in a group")
+
+
+def test_back_and_forward_restore_the_recipe(page, served):
+    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE])})
+    _ready(page, text=f"6 groups · {N:,} of {N:,} cells in a group")
+    # a grouping at rest makes no history step (computing is not an edit); this also outwaits the history's merge
+    # window (url-history.js MERGE_MS), so the next edit starts its own entry
+    before = page.evaluate("() => history.length")
+    waits.expect_stays(lambda: page.evaluate("() => history.length") == before,
+                       "computing groups is no history step; nothing else marks the merge window's end", page=page, seconds=1.5)
+    _add(page, "column", type_="obs", key="condition")
+    _ready(page, text=f"{_groups_of('cell_type', 'condition')} groups · {N:,} of {N:,} cells in a group")
+    until(page, "(b) => history.length >= b + 1", before)
+    page.go_back()
+    until(page, "(id) => window.PanelManager.getPanel(id)?.getRecipe().partitionings.length === 1", GA)
+    _ready(page, text=f"6 groups · {N:,} of {N:,} cells in a group")
+    page.go_forward()
+    until(page, "(id) => window.PanelManager.getPanel(id)?.getRecipe().partitionings.length === 2", GA)
+    _ready(page, text=f"{_groups_of('cell_type', 'condition')} groups · {N:,} of {N:,} cells in a group")
+
+
+def test_a_closed_grouping_used_by_an_open_one_is_computed_for_it(page, served):
+    # PER-5, PER-6: the closed grouping is restored from the link and computed because a dependant on screen needs it
+    configs = {GA: _grouping(partitionings=[CELL_TYPE]),
+               GB: _grouping(GB, "Grouping 2", partitionings=[{"source": {"type": "cell-group", "key": GA}}])}
+    _open(page, served, configs, open_ids=(GB,), sel=B)
+    _ready(page, sel=B, text=f"6 groups · {N:,} of {N:,} cells in a group")
+    assert page.evaluate(f"() => window.PanelManager.getActivePanels().some(p => p.getId() === '{GA}')") is False
+    assert _cards(page, B)[0]["title"] == "Grouping 1"
+    assert _cards(page, B)[0]["preview"] == "B cell 500 · T cell 300 · +4", "the levels of a grouping are its groups' names"
 
 
 # ------------------------------------------------------------------ 6. settings
@@ -422,6 +437,8 @@ def test_settings_small_groups_keep_collect_hide_and_a_separator_that_asks_for_n
     page.click(f"{A} .cgrp-settings__head")
     assert page.get_attribute(f"{A} .cgrp-settings__head", "aria-expanded") == "true"
     page.check(f"{A} input.cgrp-smallmode[value='collect']")
+    # the same number of groups: wait for the small-groups line to say so
+    until(page, "(s) => /collected/.test(document.querySelector(s + ' .cgrp-small').textContent)", A)
     st = _ready(page, text=f"6 groups · {N:,} of {N:,} cells in a group")
     assert st["small"] == '1 small group (under 10 cells), collected into "Small groups (under 10 cells)"'
     page.check(f"{A} input.cgrp-smallmode[value='hide']")
@@ -443,8 +460,8 @@ def test_settings_small_groups_keep_collect_hide_and_a_separator_that_asks_for_n
     page.fill(f"{A} input.cgrp-separator", " / ")
     page.keyboard.press("Enter")
     until(page, "(s) => document.querySelector(s + ' .cgrp-settings__summary').textContent.startsWith('Separator \" / \"')", A)
-    page.wait_for_timeout(800)
-    assert len(page.calls) == asked, "a separator changes no number"
+    waits.expect_stays(lambda: len(page.calls) == asked,
+                       "a separator changes no number: past the live delay a request would have gone", page=page, seconds=0.8)
     assert page.inner_text(f"{A} .cgrp-settings__summary") == 'Separator " / " · small groups under 46 cells hidden'
 
 
