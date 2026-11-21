@@ -183,16 +183,20 @@ def test_a_match_is_interrupted_inside_even_when_the_filter_lets_the_pattern_thr
     name_index.configure(timeout_s=0.5)
 
     def one_scan():
-        latencies, stop = [], threading.Event()
+        latencies, stop, probing = [], threading.Event(), threading.Event()
 
         def probe():
             while not stop.is_set():
                 t = time.perf_counter()
+                probing.set()
                 time.sleep(0.01)
                 latencies.append(time.perf_counter() - t)
 
         thread = threading.Thread(target=probe)
         thread.start()
+        # the scan starts only once the probe is in its loop: then it reads at least once during the scan,
+        # however late a loaded machine lets its thread run
+        assert probing.wait(30), "the probe thread never ran"
         started, cpu = time.monotonic(), time.thread_time()
         try:
             out = ix.search(r"(a|a)*b", mode="regex")
