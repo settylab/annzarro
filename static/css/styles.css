@@ -3072,6 +3072,7 @@ button.dtsb-button.dtsb-clear:hover {
     background: var(--az-danger-bg); color: var(--az-danger-text); border: 1px solid var(--az-danger-border);
 }
 .delete-panel-question { margin-top: 4px; font-size: 0.75rem; color: var(--az-danger-text); }
+.selection-panel-option.is-delete-armed .panel-closed-btn { visibility: hidden; }
 
 .tile-type-icon {
     margin-bottom: 1rem;

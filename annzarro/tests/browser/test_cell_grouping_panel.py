@@ -671,6 +671,10 @@ def test_a_panel_in_use_is_deleted_on_a_second_press_that_the_button_asks_for(pa
     page.click(btn)
     assert page.inner_text(btn) == "Delete?" and page.get_attribute(btn, "aria-label") == question
     assert "tile-delete-armed" in page.get_attribute(btn, "class") and not page.get_attribute(btn, "style")
+    badge = f".tile-selector .source-panel-option[data-id='{SIG}'] .panel-closed-btn"
+    hidden = "(s) => [...document.querySelectorAll(s)].some(e => e.offsetParent && getComputedStyle(e).visibility === 'hidden')"
+    # the badge's own 0.2 s transition holds visibility until it ends: wait for it
+    until(page, f"() => ({hidden})({json.dumps(badge)})")
     assert page.inner_text(f".tile-selector .source-panel-option[data-id='{SIG}'] .delete-panel-question") == question
     assert page.evaluate(f"() => !!window.PanelManager.getPanel('{SIG}')"), "the first press deletes nothing"
     # Escape puts the button back; a focus move does too
@@ -678,6 +682,7 @@ def test_a_panel_in_use_is_deleted_on_a_second_press_that_the_button_asks_for(pa
     page.keyboard.press("Escape")
     assert page.inner_text(btn) == "×" and page.locator(".delete-panel-question").count() == 0
     assert "tile-delete-armed" not in page.get_attribute(btn, "class")
+    until(page, f"() => !({hidden})({json.dumps(badge)})")
     page.focus(btn)
     page.keyboard.press("Enter")
     assert page.inner_text(btn) == "Delete?"

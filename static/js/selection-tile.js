@@ -573,12 +573,13 @@ export class SelectionTile {
       line.textContent = question;
       line.addEventListener('click', (e) => e.stopPropagation());
       const option = button.closest('.source-panel-option');
-      if (option) option.appendChild(line);
+      if (option) { option.appendChild(line); option.classList.add('is-delete-armed'); }
       const disarm = () => {
         clearTimeout(timer);
         button.removeEventListener('blur', disarm);
         button.removeEventListener('keydown', onKey);
         line.remove();
+        if (option) option.classList.remove('is-delete-armed');
         if (button.dataset.armed !== '1') return;
         delete button.dataset.armed;
         button.textContent = was.text;
