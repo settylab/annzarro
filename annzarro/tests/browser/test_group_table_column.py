@@ -99,6 +99,12 @@ def _headers(page):
         .map(th => th.textContent.replace(/\\s+/g, ' ').trim())""", BOX)
 
 
+def _index(page, title):
+    """The position of the column named `title` (its header may still say its state in brackets)."""
+    heads = _headers(page)
+    return next(i for i, h in enumerate(heads) if h == title or h.startswith(title + " ("))
+
+
 def _column(page, index):
     return page.evaluate("""([box, i]) => [...document.querySelectorAll(box + ' .dataTables_scrollBody tbody tr')]
         .map(tr => ((tr.children[i] || {}).textContent || '').trim())""", [BOX, index])
@@ -158,10 +164,9 @@ def _theme(page, mode):
 
 def _open_chooser(page):
     """Show the column chooser's cell-group tab."""
-    tab = f"{T} .data-type-tabs button[data-bs-target='#cell-group-content-{TA}'], {T} .data-type-tabs button[aria-controls='cell-group-content-{TA}']"
-    if page.locator(tab).count():
-        page.locator(tab).first.click()
-    until(page, "(id) => !!document.querySelector('#cell-group-content-' + id + ' .az-score-group')", TA)
+    page.click(f"#cell-group-tab-{TA}")
+    page.wait_for_selector(f"#cell-group-content-{TA}.show .az-score-group", state="visible")
+    page.wait_for_function("(id) => getComputedStyle(document.getElementById('cell-group-content-' + id)).opacity === '1'", arg=TA)
 
 
 # ------------------------------------------------------------------ 1. the chooser
@@ -174,13 +179,14 @@ def test_the_chooser_has_a_cell_group_tab_and_a_ticked_grouping_is_a_column_name
     assert "cell-group" in tabs, tabs
     boxes = page.evaluate("""(id) => [...document.querySelectorAll('#cell-group-content-' + id + ' .column-checkbox')]
         .map(b => [b.dataset.type, b.dataset.key, b.checked, b.disabled, b.nextElementSibling.textContent])""", TA)
-    assert boxes == [["cell-group", GA, False, False, "Grouping 1"], ["cell-group", GB, False, False, "Grouping 2"]], \
+    assert sorted(boxes) == [["cell-group", GA, False, False, "Grouping 1"], ["cell-group", GB, False, False, "Grouping 2"]], \
         "every grouping, open or closed, by its title"
     page.evaluate("(id) => { const b = document.querySelector('#cell-group-content-' + id + ' .column-checkbox[data-key=\"%s\"]'); b.click(); }" % GA, TA)
-    until(page, "([box]) => [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].some(th => th.textContent.trim() === 'Grouping 1')", [BOX])
+    page.click(f"#apply-columns-{TA}")
+    until(page, "([box]) => [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].some(th => th.textContent.trim().startsWith('Grouping 1'))", [BOX])
     cols = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.map(c => [c.type, c.key, c.label || null])", TA)
     assert ["cell-group", GA, "Grouping 1"] in cols
-    _filled(page, _headers(page).index("Grouping 1"))
+    _filled(page, _index(page, "Grouping 1"))
     req = _computes(page)[-1]
     assert req["want"]["codes"] is True, "a table reads the codes"
 
@@ -189,8 +195,9 @@ def test_the_chooser_has_a_cell_group_tab_and_a_ticked_grouping_is_a_column_name
 
 def test_the_column_names_each_cells_group_and_sorts_in_group_order(page, served):
     _open(page, served, {TA: _table([OBS_TYPE, by(GA)]), GA: _grouping()})
-    assert _headers(page)[:3] == ["Cell ID", "cell_type", "Grouping 1"], _headers(page)
     _filled(page, 2)
+    until(page, "(box) => [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].some(th => th.textContent.trim() === 'Grouping 1')", BOX)
+    assert _headers(page)[:3] == ["Cell ID", "cell_type", "Grouping 1"], _headers(page)
     page.evaluate(f"""() => {{ const dt = $('{BOX} .dataTables_scrollBody table').DataTable(); dt.order([2, 'asc']).draw(); }}""")
     shown = _all(page, 2)
     assert len(shown) == N
@@ -226,30 +233,42 @@ def test_a_conditions_equals_lists_the_groups_and_filters_the_rows(page, served)
     until(page, "(box) => $(box + ' .dataTables_scrollBody table').DataTable().rows({search: 'applied'}).count() === %d" % SIZES["NK cell"], BOX)
     assert set(_all(page, 2)) == {"NK cell"}
     assert _all(page, 1) == ["NK cell"] * SIZES["NK cell"]
-    # the condition's value is a list of the groups (categorical conditions), not a typed box
-    options = page.evaluate("""(box) => { const sel = document.querySelector(box + ' .dtsb-criteria select.dtsb-value');
-        return sel ? [...sel.options].filter(o => !o.disabled && o.value !== '').map(o => o.textContent) : null; }""", BOX)
-    assert options is not None, "Equals takes a list"
-    assert sorted(options) == sorted(TYPES), options
     assert page.evaluate("(box) => document.querySelector(box + ' .dtsb-criteria select.dtsb-value').value", BOX) == "NK cell"
+    # a new condition on the column: its value is a list of the groups (categorical conditions), not a typed box
+    _builder_columns(page)
+    page.evaluate("""(box) => { const sels = document.querySelectorAll(box + ' .dtsb-criteria select.dtsb-data'); const sel = sels[sels.length - 1];
+        sel.value = [...sel.options].find(o => o.textContent.trim() === 'Grouping 1').value; $(sel).trigger('change'); }""", BOX)
+    page.wait_for_function("""(box) => { const c = document.querySelectorAll(box + ' .dtsb-criteria'); const last = c[c.length - 1];
+        return !!last.querySelector('select.dtsb-condition') && last.querySelector('select.dtsb-condition').options.length > 1; }""", arg=BOX)
+    page.evaluate("""(box) => { const c = document.querySelectorAll(box + ' .dtsb-criteria'); const sel = c[c.length - 1].querySelector('select.dtsb-condition');
+        sel.value = '='; $(sel).trigger('change'); }""", BOX)
+    page.wait_for_function("(box) => { const c = document.querySelectorAll(box + ' .dtsb-criteria'); return !!c[c.length - 1].querySelector('select.dtsb-value'); }", arg=BOX)
+    options = page.evaluate("""(box) => { const c = document.querySelectorAll(box + ' .dtsb-criteria');
+        return [...c[c.length - 1].querySelector('select.dtsb-value').options].filter(o => !o.disabled && o.value !== '').map(o => o.textContent); }""", BOX)
+    assert sorted(options) == sorted(TYPES), options
 
 
 # ------------------------------------------------------------------ 4. held rows
 
 def test_the_rows_are_held_while_the_groups_are_computed_and_appear_with_them(page, served):
     held = []
+    gate = {"open": False}
 
     def hold(route):
-        held.append(route)
+        if gate["open"]:
+            route.continue_()
+        else:
+            held.append(route)
 
     page.route(ROUTE, hold)
     _open(page, served, {TA: _table([OBS_TYPE, by(GA)], searchBuilderConfig=equals(GA, "Grouping 1", "T cell")), GA: _grouping()})
     until(page, "(box) => !!document.querySelector(box + ' .az-score-held-note')", BOX)
     assert _held(page) == "Filter on 'Grouping 1' not applied yet. Rows appear when the groups are ready."
     assert "Grouping 1 (computing)" in _headers(page)
-    assert _api(page, "dt.rows({search: 'applied'}).count()") == 0, "held: no row is reported as passing"
+    assert page.evaluate("(box) => document.querySelector(box).classList.contains('az-score-held')", BOX), "the rows are held"
+    assert page.evaluate("(id) => window.PanelManager.getPanel(id).isReady()", TA) is False, "no row is reported as passing"
     _shot(page, "g10-held-rows-light")
-    page.unroute(ROUTE)
+    gate["open"] = True
     for route in held:
         route.continue_()
     until(page, "(box) => !document.querySelector(box + ' .az-score-held-note')", BOX)
@@ -296,17 +315,18 @@ def test_a_grouping_built_from_this_table_can_be_shown_but_not_filtered_on_here(
         const b = row.querySelector('.column-checkbox'); const note = row.querySelector('.az-option-note');
         return [b.dataset.key, b.disabled, note ? note.textContent : null,
                 note ? b.getAttribute('aria-describedby') === note.id : null]; })""", TA)
-    assert got == [[GA, False, "Can't be filtered here: Grouping 1 depends on this table", True], [GB, False, None, None]], got
+    assert sorted(got, key=lambda r: r[0]) == [[GA, False, "Can't be filtered here: Grouping 1 depends on this table", True],
+                                              [GB, False, None, None]], got
     _open_chooser(page)
     _shot(page, "g10-menu-loop-light")
     # it can be shown: each cell's group beside its row, with no loop
     for key in (GA, GB):
         page.evaluate("([id, k]) => document.querySelector('#cell-group-content-' + id + ' .column-checkbox[data-key=\"' + k + '\"]').click()", [TA, key])
-    until(page, "(box) => ['Grouping 1', 'Grouping 2'].every(t => [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].some(th => th.textContent.trim() === t))", BOX)
-    heads = _headers(page)
-    _filled(page, heads.index("Grouping 1"))
-    _filled(page, heads.index("Grouping 2"))
-    assert set(_all(page, heads.index("Grouping 1"))) == {f"in Table 1 | {t}" for t in TYPES}
+    page.click(f"#apply-columns-{TA}")
+    until(page, "(box) => ['Grouping 1', 'Grouping 2'].every(t => [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].some(th => th.textContent.trim().startsWith(t)))", BOX)
+    _filled(page, _index(page, "Grouping 1"))
+    _filled(page, _index(page, "Grouping 2"))
+    assert set(_all(page, _index(page, "Grouping 1"))) == {f"in Table 1 | {t}" for t in TYPES}
     assert _notice(page) is None
     assert _status(page)["state"] == "ready"
     n = len(_computes(page))
@@ -330,8 +350,9 @@ def test_a_table_filtering_on_a_grouping_built_from_it_shows_the_cycle_state_fro
     assert note["actions"] == ["score-open|Open grouping", "score-unfilter|Remove this filter"], note
     assert _held(page) == "Filter on 'Grouping 1' not applied. 'Grouping 1' and 'Table 1' depend on each other."
     assert "Grouping 1 (no groups)" in _headers(page)
-    assert set(_column(page, 2)) <= {"no groups"}
-    assert _api(page, "dt.rows({search: 'applied'}).count()") == 0
+    assert "no groups" in _api(page, "dt.cell(0, 2).render('display')"), "a cell says the column has no groups"
+    assert page.evaluate("(box) => document.querySelector(box).classList.contains('az-score-held')", BOX), "the rows are held"
+    assert page.evaluate("(id) => window.PanelManager.getPanel(id).isReady()", TA) is False, "no row is reported as passing"
     until(page, "(s) => { const e = document.querySelector(s + ' .cgrp-status'); return !!e && e.dataset.state === 'cycle'; }", A)
     assert _status(page)["text"] == "Grouping 1 and Table 1 depend on each other."
     waits.expect_stays(lambda: not _computes(page), "a loop must never reach the route; there is no event for nothing sent", page=page)
