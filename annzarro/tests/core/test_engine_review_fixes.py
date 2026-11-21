@@ -171,7 +171,8 @@ def test_h2_a_stop_is_noticed_inside_one_genes_arithmetic(stores, layout, monkey
 # --------------------------------------------------------------------------------------------- M1
 
 
-def test_m1_a_score_partitioning_sends_progress_and_entries_while_it_computes(store):
+def test_m1_a_score_partitioning_sends_progress_and_entries_while_it_computes(store, monkeypatch):
+    monkeypatch.setattr(gsc, "MAX_GROUP_ENTRIES", 1)                          # one read per gene
     req = cg.parse_request(body([CELL_TYPE, score_part({"method": "equal_count", "bins": 3})]))
     p = cg.plan(get_reader(store), store, req)
     told, seen = [], []
@@ -205,7 +206,8 @@ def test_m1_a_nested_score_sends_progress_too_and_the_codes_are_unchanged(store)
     assert [g["n"] for g in res.groups] == [g["n"] for g in flat.groups]
 
 
-def test_m1_group_features_reports_the_groupings_entries_as_they_are_read(store):
+def test_m1_group_features_reports_the_groupings_entries_as_they_are_read(store, monkeypatch):
+    monkeypatch.setattr(gsc, "MAX_GROUP_ENTRIES", 1)                          # one read per gene
     p = gf_plan(store, [CELL_TYPE, score_part({"method": "equal_count", "bins": 3})], [gene("a", gs.gene(1))])
     told, first_features = [], []
     for event, payload in gf.compute(p, None, on_entries=told.append):
@@ -340,3 +342,22 @@ def test_l2_a_wide_but_finite_range_still_bins():
     x = np.asarray([-1e307, 0.0, 1.0, 1e307])
     e = bn.edges(lambda: iter([x]), bn.parse({"method": "equal_width", "bins": 4}, numeric=True))
     np.testing.assert_array_equal(e.edges, np.histogram_bin_edges(x, 4))
+
+
+# --------------------------------------------------------------------------------------------- dead code
+
+
+def test_a_column_of_dates_is_refused_not_factorised_by_hand(store, tmp_path):
+    """Plain strings arrive as categories (cell_sources); the hand factorisation of what a reader can only list is
+    gone (review O2), so a column of another type (here dates) is refused with a reason."""
+    import shutil
+    path = str(tmp_path / "dates.zarr")
+    shutil.copytree(store, path)
+    root = zarr_compat.open_group(path, mode="r+")
+    days = np.datetime64("2020-01-01") + (np.arange(gs.N_OBS) % 3).astype("timedelta64[D]")
+    zarr_compat.write_array(root["obs"], "when", days, chunks=(512,))
+    zarr_compat.consolidate(path)
+    req = cg.parse_request(body([{"source": {"type": "obs", "key": "when"}}]))
+    with pytest.raises(cg.GroupError) as e:
+        list(cg.compute(cg.plan(get_reader(path), path, req)))
+    assert (e.value.status, e.value.reason) == (400, "unsupported_column")
