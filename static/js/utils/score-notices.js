@@ -1,5 +1,6 @@
 import { DEFAULT_METHOD, methodShort as methodLabel } from './signature-options.js';
 import { describeSource } from './source-notices.js';
+import { VOCABULARY as WORDS } from './vocabulary.js';
 
 /**
  * What a dependant of a gene-signature score says in each state (design 7.3, UX review 3.2): the gene-score
@@ -11,25 +12,16 @@ export { durationText, worstNotice, PRIORITY } from './source-notices.js';
 
 const TAGS = { cycle: 'Circular tables' };
 
+/** What a score does with what a gene table finds: the shared building and ask sentences use it. */
+const SCORING = { found: 'genes', act: { to: 'score', ing: 'scoring' }, waitingNote: WORDS.progress.keepWorking };
+
 const VOCABULARY = {
-    signature: { thing: 'signature', source: 'source', result: 'score', Computing: 'Computing', progressUnit: 'genes', tags: TAGS, cycleKind: 'table', off: 'Gene signatures are turned off on this server.' },
-    table: { thing: 'table', source: 'source', result: 'score', Computing: 'Computing', progressUnit: 'genes', tags: TAGS, cycleKind: 'table', off: 'Gene tables are turned off on this server.' }
+    signature: { thing: 'signature', source: 'source', result: 'score', Computing: 'Computing', progressUnit: 'genes', tags: TAGS, cycleKind: 'table', off: 'Gene signatures are turned off on this server.', ...SCORING },
+    table: { thing: 'table', source: 'source', result: 'score', Computing: 'Computing', progressUnit: 'genes', tags: TAGS, cycleKind: 'table', off: 'Gene tables are turned off on this server.', ...SCORING }
 };
 
-/** The states only a gene score has: layers, down genes, a table's filter. Each returns undefined to leave the state generic. */
+/** The states only a gene score has: layers, down genes, no genes. Each returns undefined to leave the state generic. */
 const OWN_STATES = {
-    building(snap, f) {
-        const opening = snap.gate && snap.gate.reason === 'opening';
-        return f.out('building', 'notice', opening ? 'Opening table' : 'Building filter',
-            opening ? `Waiting for ${f.T} to open, to score its genes.${f.none}`
-                : `Building ${f.T} to find its genes, then scoring them.${f.none}`, '',
-            snap.gate && snap.gate.frozen ? [f.open] : [['score-cancel', f.cancelLabel], f.open]);
-    },
-    ask(snap, f) {
-        return f.out('ask', 'notice', 'Filter not built',
-            `Building ${f.T} to find its genes will pause the page for a few seconds.${f.none}`, '',
-            [['score-compute', 'Build filter'], f.open, f.choose]);
-    },
     noscore(snap, f) {
         if (snap.reason !== 'no_gene_present') return undefined;
         return f.out('noscore', 'warning', 'No score', `None of the genes of ${f.T} are in this dataset.`, '', [f.open, f.choose]);

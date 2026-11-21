@@ -2,8 +2,9 @@
  * The page's side of the `gene-score` source: signatures, scores and the
  * plots that show them. The logic is in utils/score-store.js (cache, jobs,
  * tiers) and utils/score-sources.js (dependants, edits); this binds them to
- * PanelManager, DataManager and the plot containers, and paints the notices
- * of utils/score-notices.js.
+ * PanelManager, DataManager and the plot containers through one host binding
+ * (utils/host-binding.js: records per host and role, visibility, the painter
+ * every provider shares), with the notices of utils/score-notices.js.
  *
  * A plot's x, y, z, colour or hover that reads `{type: 'gene-score', key: <the
  * source's panel id>, column: <method>, layer, label: <its title when last seen>}`
@@ -27,8 +28,9 @@ import { createLimiter, DEFAULT_MAX_ACTIVE } from './derived-store.js';
 import { createScoreSources } from './score-sources.js';
 import { createScoreApi } from './gene-score-client.js';
 import { describeScore } from './score-notices.js';
-import { worstNotice, paintNotice } from './source-notices.js';
+import { paintProgress, sentenceOf } from './source-notices.js';
 import { actions } from './source-actions.js';
+import { createHostBinding, isHover, isVisible, panelIdOf, PENDING } from './host-binding.js';
 import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
@@ -39,14 +41,6 @@ import { findCycle, TableResolver } from './table-resolver.js';
 /** What each aggregation is called where a consumer picks it (level 3). */
 const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
 
-/** States that pass by themselves: a score being asked for, queued or computed. The others last until the user acts. */
-const PENDING = ['idle', 'estimating', 'queued', 'computing', 'updating'];
-
-/** Whether a plot shows a drawing now (not a placeholder): a switch keeps it until the new data is there. */
-export function hasDrawing(host) {
-    return !!(host && host._fullLayout && Array.isArray(host.data) && host.data.length && !host.querySelector('.coverage-placeholder'));
-}
-
 /**
  * The series of a score, waiting for it while it is pending when the plot has a drawing to keep. The old
  * drawing stays, the plot's own loading pill shows (the caller's), and nothing is claimed about the score
@@ -56,30 +50,8 @@ export function hasDrawing(host) {
  * @param {Object} opts - as loadScoreSeries
  * @param {AbortSignal|null} [signal]
  */
-export async function loadScoreSeriesWhenReady(setting, opts, signal = null) {
-    const keep = hasDrawing(opts.host);
-    for (;;) {
-        try {
-            const got = await loadScoreSeries(setting, { ...opts, quiet: keep });
-            const done = opts.host ? recordsOf(opts.host).get(opts.role) : null;
-            if (done) done.quiet = false;
-            return got;
-        } catch (error) {
-            if (!keep || !error || error.name !== 'SourceUnavailable' || !PENDING.includes(error.state)) {
-                // it lasts (or there is nothing to keep): say so
-                const rec = opts.host ? recordsOf(opts.host).get(opts.role) : null;
-                if (rec) { rec.quiet = false; paint(opts.host); }
-                throw error;
-            }
-            if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
-            const rec = recordsOf(opts.host).get(opts.role);
-            await new Promise((resolve, reject) => {
-                if (!rec) { resolve(); return; }
-                (rec.waiters = rec.waiters || []).push(resolve);
-                if (signal) signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
-            });
-        }
-    }
+function loadScoreSeriesWhenReady(setting, opts, signal = null) {
+    return binding().loadWhenReady((quiet) => loadScoreSeries(setting, { ...opts, quiet }), opts, signal);
 }
 
 /** The last entry of a score's option list: opens the signature panel on what it offers. */
@@ -87,12 +59,6 @@ export const OFFER_MORE = '__offer_more__';
 
 /** The value that is not a signature: "New signature..." in the key list. */
 export const NEW_SIGNATURE = '__new_signature__';
-
-/** Hover entries have a role each (`hover:<signature>:<aggregation>`): one plot may show several. */
-const isHover = (role) => typeof role === 'string' && role.startsWith('hover');
-
-/** The axes a score can be an x, y or z of; the rest of the roles are colour and hover. */
-const AXIS_ROLES = ['x', 'y', 'z'];
 
 /** The page's panel registry (window.PanelManager, as plot-make.js reads it): importing the module would load every panel. */
 const PanelManager = {
@@ -105,11 +71,6 @@ const PanelManager = {
 
 let _store = null;
 let _sources = null;
-
-/** host -> Map(role -> {handle, sigId, role, setting, drawnKey, panelId}) */
-const HOSTS = new WeakMap();
-/** hosts with records, to repaint */
-const LIVE_HOSTS = new Set();
 
 /** Whether this panel is a source of a gene score: a signature, or a gene table (utils/score-source-panels.js). */
 function isSource(panel) {
@@ -280,64 +241,7 @@ export const SCORE_TYPE = 'gene-score';
 const unavailable = (text, notice, coverage, state = null) => new SourceUnavailable(text, notice, coverage, state, SCORE_TYPE);
 
 // ---------------------------------------------------------------------------
-// records: one handle per (host, role)
-
-function recordsOf(host) {
-    let map = HOSTS.get(host);
-    if (!map) {
-        map = new Map();
-        HOSTS.set(host, map);
-    }
-    return map;
-}
-
-function panelIdOf(host) {
-    return host && typeof host.id === 'string' && host.id.startsWith('plot-container-')
-        ? host.id.slice('plot-container-'.length) : (host && host.__azPanelId) || null;
-}
-
-function isVisible(host) {
-    if (!host || !host.isConnected) return false;
-    return host.__scoreVisible !== false;
-}
-
-function watchVisibility(host) {
-    if (host.__scoreObserver || typeof IntersectionObserver === 'undefined') return;
-    host.__scoreVisible = true;
-    host.__scoreObserver = new IntersectionObserver((entries) => {
-        const last = entries[entries.length - 1];
-        const now = !!last.isIntersecting;
-        if (now === host.__scoreVisible) return;
-        host.__scoreVisible = now;
-        scores().sources.visibilityChanged();
-    });
-    host.__scoreObserver.observe(host);
-}
-
-function release(host, role) {
-    const map = HOSTS.get(host);
-    const rec = map && map.get(role);
-    if (!rec) return;
-    rec.handle.release();
-    map.delete(role);
-    if (!map.size) {
-        LIVE_HOSTS.delete(host);
-        paintNotice(host, null);
-        if (host.__scoreObserver) {
-            host.__scoreObserver.disconnect();
-            host.__scoreObserver = null;
-        }
-    } else {
-        paint(host);
-    }
-}
-
-/** A plot closes: its dependants go, and a score nothing else needs stops computing. */
-export function releaseHost(host) {
-    const map = HOSTS.get(host);
-    if (!map) return;
-    for (const role of [...map.keys()]) release(host, role);
-}
+// records: one handle per (host, role), through the page's host binding
 
 /** Whether the plot still reads the score a record holds (the user may have changed the axis). */
 function stillUsed(rec) {
@@ -351,28 +255,15 @@ function stillUsed(rec) {
     return !!(s && s.type === SCORE_TYPE && s.key === rec.sigId && subKeyOf(s) === rec.sub && layerOf(s) === (rec.layer || ''));
 }
 
-// ---------------------------------------------------------------------------
-// painting
-
-const PAINT_MS = 120;
-
-function schedulePaint(host) {
-    if (host.__scorePaint) return;
-    host.__scorePaint = setTimeout(() => {
-        host.__scorePaint = null;
-        paint(host);
-    }, PAINT_MS);
-}
-
-function noticeOf(rec) {
-    const snap = rec.handle.read();
-    // while a load waits for a score that is only pending, nothing is said: the plot keeps what it shows and the loading pill speaks
-    if (rec.quiet && PENDING.includes(snap.state)) return { rec, snap, notice: null };
-    return { rec, snap, notice: describeScore(snap, { role: rec.role === 'color' ? 'colour' : (isHover(rec.role) ? 'hover' : rec.role), sharers: rec.handle.sharers() }) };
+/** Draw the panel of a host again: the score it drew changed. */
+function refreshPanel(host) {
+    const panel = PanelManager.getPanel(panelIdOf(host));
+    const reload = panel && (panel.refreshPlot || panel.refreshTable);
+    if (typeof reload === 'function') Promise.resolve(reload()).catch(() => {});
 }
 
 /**
- * The placeholder an axis shows while its score cannot be drawn. Also the
+ * The placeholder an axis shows while its score cannot be drawn, with the notice's progress bar. Also the
  * progress repaint: it replaces itself.
  */
 function drawScorePlaceholder(host, notice) {
@@ -385,72 +276,45 @@ function drawScorePlaceholder(host, notice) {
             lines: notice.text ? [notice.text] : [] }
     });
     const box = host.querySelector('.coverage-placeholder');
-    if (box) box.dataset.scoreState = notice.state;
-    host.__scorePlaceholder = true;
-}
-
-/** Say what every score of this plot is doing: an overlay and a strip tag, never a resize. */
-export function paint(host) {
-    const map = HOSTS.get(host);
-    if (!map || !map.size) return;
-    const entries = [...map.values()].filter(r => !isHover(r.role)).map(noticeOf);
-    const axis = worstNotice(entries.filter(e => AXIS_ROLES.includes(e.rec.role) && e.notice && e.notice.blocksAxis)
-        .map(e => e.notice));
-    const worst = worstNotice(entries.map(e => e.notice));
-    const shown = entries.find(e => e.notice === worst);
-    host.__scoreShown = shown ? shown.rec.role : null;
-    // an axis that cannot be drawn: nothing truthful can be shown, so the plot area says it, as a placeholder
-    paintNotice(host, worst, { overlay: !axis });
-    if (axis) {
-        if (host.__scoreHost && (host.__scorePlaceholder || host.querySelector('.coverage-placeholder'))) drawScorePlaceholder(host, axis);
-        return;
+    if (box) {
+        box.dataset.scoreState = notice.state;
+        paintProgress(box, notice.progress || null, sentenceOf(notice));
     }
-    host.__scorePlaceholder = false;
+    host.__sourcePlaceholder = true;
 }
 
-function refreshPanel(host) {
-    if (host.__scoreRefresh) return;
-    host.__scoreRefresh = setTimeout(() => {
-        host.__scoreRefresh = null;
-        const panel = PanelManager.getPanel(panelIdOf(host));
-        const reload = panel && (panel.refreshPlot || panel.refreshTable);
-        if (typeof reload === 'function') Promise.resolve(reload()).catch(() => {});
-    }, 30);
-}
+/** The id of the plots' score provider: its notices on the painter, its actions in the registry. */
+const PLOT_PROVIDER = 'plot-score';
 
-function onChange(host, rec, snap) {
-    if (rec.waiters && rec.waiters.length) for (const wake of rec.waiters.splice(0)) wake();
-    if (!host.isConnected) { release(host, rec.role); return; }
-    if (!stillUsed(rec)) { release(host, rec.role); paint(host); return; }
-    const showing = snap.values ? (snap.shownKey || snap.key) : null;
-    if (!rec.quiet && snap.state !== 'updating' && rec.drawnKey !== undefined && showing !== rec.drawnKey) {
-        refreshPanel(host);
-    }
-    schedulePaint(host);
-}
+let _binding = null;
 
-function recordFor(host, role, setting) {
-    const map = recordsOf(host);
-    let rec = map.get(role);
-    const sub = subKeyOf(setting);
-    if (rec && (rec.sigId !== setting.key || rec.sub !== sub || (rec.layer || '') !== layerOf(setting))) {
-        release(host, role);
-        rec = null;
-    }
-    if (!rec) {
-        const { sources } = scores();
-        rec = { role, sigId: setting.key, sub, layer: setting.layer || null, setting, panelId: panelIdOf(host), drawnKey: undefined, handle: null };
-        rec.handle = sources.watch(setting.key, {
-            kind: 'plot', host, role, sub, layer: setting.layer || null, dependant: rec.panelId, visible: () => isVisible(host),
-            onChange: (snap) => onChange(host, rec, snap)
+/** The plots' records of scores, made when first needed. */
+function binding() {
+    if (!_binding) {
+        _binding = createHostBinding({
+            id: PLOT_PROVIDER,
+            open: (host, role, setting, onChange) => {
+                const sub = subKeyOf(setting);
+                const panelId = panelIdOf(host);
+                const handle = scores().sources.watch(setting.key, {
+                    kind: 'plot', host, role, sub, layer: setting.layer || null, dependant: panelId, visible: () => isVisible(host), onChange
+                });
+                return { sigId: setting.key, sub, layer: setting.layer || null, handle };
+            },
+            matches: (rec, setting) => rec.sigId === setting.key && rec.sub === subKeyOf(setting) && (rec.layer || '') === layerOf(setting),
+            describe: describeScore,
+            stillUsed,
+            refresh: refreshPanel,
+            visibilityChanged: () => scores().sources.visibilityChanged(),
+            placeholder: drawScorePlaceholder
         });
-        recordsOf(host).set(role, rec);
-        LIVE_HOSTS.add(host);
-        host.__scoreHost = true;
-        watchVisibility(host);
     }
-    rec.setting = setting;
-    return rec;
+    return _binding;
+}
+
+/** A plot closes: its dependants go, and a score nothing else needs stops computing. */
+export function releaseHost(host) {
+    binding().releaseHost(host);
 }
 
 // ---------------------------------------------------------------------------
@@ -476,12 +340,12 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
     }
     // an entry with no layer (an old link) is resolved now, once, to the signature's input
     if (!setting.layer) { const input = sourceInput(setting.key); if (input) setting.layer = input; }
-    const rec = recordFor(host, role, setting);
+    const rec = binding().recordFor(host, role, setting);
     rec.quiet = quiet;
     const snap = rec.handle.read();
     if (snap.values) {
         rec.drawnKey = snap.shownKey || snap.key;
-        paint(host);
+        binding().paint(host);
         const vector = snap.values;
         const values = array ? Array.from(vector) : null;
         const source = `gene score ${title}`;
@@ -492,7 +356,7 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
     const notice = describeScore(snap, { role, sharers: rec.handle.sharers() })
         || describeScore({ ...snap, state: 'estimating' }, { role });
     // a caller that waits for the score says nothing yet (rec.quiet): no notice and no tag until it is known to last
-    if (!(quiet && PENDING.includes(snap.state))) paint(host);
+    if (!(quiet && PENDING.includes(snap.state))) binding().paint(host);
     throw unavailable(notice.headline, notice,
         Coverage.missing(GAP.UNAVAILABLE, `${notice.headline}${notice.text ? ` ${notice.text}` : ''}`,
             { source: `gene score ${title}`, unit, total: expected }), snap.state);
@@ -511,7 +375,7 @@ export function createPlotActions({ shownRecord: shown, recordsOf: records, sour
     const ofShown = (host) => shown(host) || null;
     const record = (run) => ({ target: ofShown, run });
     return {
-        id: 'plot-score',
+        id: PLOT_PROVIDER,
         owns: (host) => !!shown(host),
         actions: {
             'score-compute': { target: (host) => (records(host).size ? host : null), run: (host) => { for (const r of records(host).values()) r.handle.compute(); } },
@@ -526,11 +390,6 @@ export function createPlotActions({ shownRecord: shown, recordsOf: records, sour
     };
 }
 
-function shownRecord(host) {
-    const map = HOSTS.get(host);
-    if (!map) return null;
-    return map.get(host.__scoreShown) || [...map.values()][0] || null;
-}
 
 /** The select a plot's source is chosen in, to take the user to: null when the plot has none. */
 function sourceChooser(host, rec) {
@@ -541,7 +400,8 @@ function sourceChooser(host, rec) {
 }
 
 actions.register(createPlotActions({
-    shownRecord, recordsOf, sourcePanel, canOffer: (setting) => !!offerTarget(setting), offerAgain, openSource: openSignature,
+    shownRecord: (host) => binding().shownRecord(host), recordsOf: (host) => binding().recordsOf(host), sourcePanel,
+    canOffer: (setting) => !!offerTarget(setting), offerAgain, openSource: openSignature,
     update: (id) => scores().sources.update(id), chooser: sourceChooser, panelIdOf
 }));
 
@@ -597,10 +457,10 @@ export function scoreCommand(id, command) {
 export function sourceRenamed(id) {
     if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
     if (!_sources) return;
-    for (const host of LIVE_HOSTS) {
-        for (const rec of recordsOf(host).values()) {
+    for (const host of binding().hosts()) {
+        for (const rec of binding().recordsOf(host).values()) {
             if (rec.sigId !== id) continue;
-            if (nameSetting(rec.setting) && rec.drawnKey) refreshPanel(host);
+            if (nameSetting(rec.setting) && rec.drawnKey) binding().refreshSoon(host);
         }
     }
 }
@@ -610,7 +470,7 @@ export function panelsChanged() {
     if (!_sources) return;
     _sources.recheck();
     _sources.contextChanged();
-    for (const host of LIVE_HOSTS) schedulePaint(host);
+    for (const host of binding().hosts()) binding().schedulePaint(host);
 }
 
 /** The dataset or the cells shown changed. */

@@ -4999,6 +4999,32 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .filter-notice__card { pointer-events: auto; max-width: min(34em, 90%); margin: 0; text-align: left; }
 .filter-notice__text { margin-top: 2px; overflow-wrap: anywhere; }
 
+/* The progress bar of a long wait (operator decision 21), in a notice's card or an axis placeholder, under its
+   sentence (utils/source-notices.js paintProgress). Determinate: the fill is the share of stored entries done.
+   Indeterminate (a queue, a phase that counts nothing): a band that moves, or a still, half-strong track when the
+   user asks for less motion. Never a percentage that is not measured. */
+.source-progress {
+    position: relative; height: 6px; margin-top: 8px; border-radius: 3px; overflow: hidden;
+    background: var(--az-border-strong);
+}
+.source-progress__fill {
+    position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 3px;
+    background: var(--az-link); transition: width 0.4s ease-out;
+}
+.source-progress[data-mode="indeterminate"] .source-progress__fill {
+    width: 30%; animation: source-progress-band 1.6s ease-in-out infinite;
+}
+@keyframes source-progress-band {
+    from { left: -30%; }
+    to { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .source-progress__fill { transition: none; }
+    .source-progress[data-mode="indeterminate"] .source-progress__fill {
+        animation: none; left: 0; width: 100%; opacity: 0.45;
+    }
+}
+
 /* Paste or upload genes, and its preview (static/js/utils/gene-paste-preview.js) */
 .gene-paste { font-size: 0.875rem; color: var(--az-text); }
 .gene-paste .gp-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap; }

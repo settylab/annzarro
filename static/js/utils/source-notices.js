@@ -1,4 +1,5 @@
 import { setStatusTag, setScoreNotice } from './panel-surface.js';
+import { VOCABULARY } from './vocabulary.js';
 
 /**
  * What a dependant of a derived source (a gene-signature score today, a cell grouping next) says in each state, and
@@ -10,7 +11,9 @@ import { setStatusTag, setScoreNotice } from './panel-surface.js';
  * cannot be drawn gets the same sentence as a placeholder. Actions are [action, label] pairs; the registry of
  * utils/source-actions.js runs them.
  *
- * Painting exists once (`paintNotice`): a plot and a table both use it.
+ * Painting exists once (`paintNotice`), and so does deciding what a host shows: utils/host-binding.js's painter
+ * gathers the notices of every provider on a host and paints the worst of them here, with its progress bar
+ * (`progressBar`, operator decision 21).
  */
 
 /**
@@ -27,6 +30,12 @@ import { setStatusTag, setScoreNotice } from './panel-surface.js';
  * @property {string} [cycleKind] - the kind of panel a ring made only of this provider's own is named for (default `thing`)
  * @property {string} [off] - the sentence for a provider that is turned off on this server
  * @property {Record<string, string>} [tags] - tag text that replaces the default of a state ('computing', 'failed', ...)
+ * @property {string} [found] - what a table upstream is built to find: 'genes' for a score, 'cells' for a grouping
+ * @property {{to: string, ing: string}} [act] - what the source does with them: {to: 'score', ing: 'scoring'}
+ * @property {(snap: Object) => (string|null)} [upstreamTitle] - the title of the table a gate waits on, when it is not
+ *   the source itself (a grouping's table factor); the source's own title otherwise
+ * @property {string} [waitingNote] - said under a queue position (SHR-47): 'Groupings and counts keep working.' for a
+ *   computation that holds the heavy slot
  * @property {Record<string, (snap: Object, frame: Object) => (Object|null|undefined)>} [states]
  */
 
@@ -58,6 +67,33 @@ function progressText(progress, unit) {
     return `${progress.done.toLocaleString('en-US')} of ${progress.total.toLocaleString('en-US')} ${unit}`;
 }
 
+/** Time left is said only after this share of the stored entries, and this much running time (SHR-48). */
+const LEFT_AFTER_SHARE = 0.1;
+const LEFT_AFTER_S = 5;
+
+/**
+ * "about 3 minutes left" (SHR-48, UX 3.5): from the stored entries done and in all, at the rate measured over the time
+ * the job held its lane (`running_s`, waits and give-way pauses left out); never from a count of genes. Empty until
+ * 10% of the entries and 5 s, or when the frame does not carry them.
+ */
+function timeLeftText(progress) {
+    if (!progress) return '';
+    const done = Number(progress.entries_done);
+    const total = Number(progress.entries_total);
+    const ran = Number(progress.running_s);
+    if (!(total > 0) || !(done > 0) || !(ran >= LEFT_AFTER_S) || done / total < LEFT_AFTER_SHARE) return '';
+    const left = Math.max(0, total - done) / (done / ran);
+    const sharing = !!(progress.queue && progress.queue.sharing > 0);
+    return VOCABULARY.progress.left(durationText(left), sharing);
+}
+
+/** The server's place for a job (SHR-47): {ahead, sharing}, each a count, or null when the frame says nothing. */
+function queueOf(progress) {
+    const q = progress && progress.queue;
+    if (!q || typeof q !== 'object') return null;
+    return { ahead: Math.max(0, Number(q.ahead) || 0), sharing: Math.max(0, Number(q.sharing) || 0) };
+}
+
 /**
  * The notice of one dependant's state, or null when nothing is to be said (a source that is ready and has no edits
  * waiting).
@@ -83,6 +119,13 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
     const choose = ['score-choose', 'Choose another'];
     const open = ['score-open', `Open ${thing}`];
     const frame = { out, t, T, none, cancelLabel, choose, open, thing, result, Result, tagOf };
+    const act = vocabulary.act || { to: 'compute', ing: 'computing' };
+    const found = vocabulary.found || 'values';
+    // the table a gate waits on: the source itself (a gene table), or a table its recipe uses (a grouping's factor)
+    const upstream = () => {
+        const title = typeof vocabulary.upstreamTitle === 'function' ? vocabulary.upstreamTitle(snap) : null;
+        return title ? `'${title}'` : T;
+    };
 
     // a state only this provider has, or a provider's own words for a generic one
     if (typeof states[snap.state] === 'function') {
@@ -106,9 +149,20 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
             const own = kinds.every(k => k === (vocabulary.cycleKind || thing));
             return out('cycle', 'warning', own ? tagOf('cycle', 'Circular dependency') : 'Circular references', `${ring}${none}`, '', [open, choose]);
         }
-        case 'failed':
+        case 'failed': {
+            // a reason the page has its own sentence for: a limit is a refusal (trying again gives the same answer),
+            // a busy server or a set that no longer fits is a failure that Retry may mend
+            const said = Object.hasOwn(VOCABULARY.reasons, snap.reason) ? VOCABULARY.reasons[snap.reason] : null;
+            if (said && !said.retry) {
+                return out('refused', 'warning', tagOf('refused', `${Result} refused`), `${t} was not computed.`, said.text, [open, choose]);
+            }
+            if (said) {
+                return out('failed', 'error', tagOf('failed', `${Result} failed`), `${t} could not be computed.`, said.text,
+                    [['score-retry', 'Retry'], open]);
+            }
             return out('failed', 'error', tagOf('failed', `${Result} failed`),
                 `${t} could not be computed${snap.message ? `: ${trimStop(snap.message)}` : ''}.`, '', [['score-retry', 'Retry'], open]);
+        }
         case 'refused': {
             const seconds = snap.estimate && snap.estimate.seconds;
             const head = Number.isFinite(seconds) ? `${t} would take ${durationText(seconds)}, so it was not run.`
@@ -130,10 +184,33 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
                 [['score-cancel', cancelLabel]]);
         case 'estimating':
         case 'computing': {
+            const queue = queueOf(snap.progress);
+            const note = vocabulary.waitingNote || '';
+            // waiting in the server's lane (SHR-47): the place in line, not a count that is not moving
+            if (queue && queue.ahead > 0) {
+                return out('queued', 'notice', tagOf('queued', `${Result} queued`), `${VOCABULARY.progress.ahead(queue.ahead)}${none}`, note,
+                    [['score-cancel', cancelLabel]]);
+            }
             const prog = progressText(snap.progress, vocabulary.progressUnit || 'genes');
-            return out(snap.state, 'notice', tagOf('computing', `${Result} computing`), `${Computing} ${t}${prog ? `: ${prog}` : ''}.${none}`, '',
+            const left = timeLeftText(snap.progress);
+            const sharing = queue && queue.sharing > 0 ? VOCABULARY.progress.sharing(queue.sharing) : '';
+            return out(snap.state, 'notice', tagOf('computing', `${Result} computing`),
+                `${Computing} ${t}${prog ? `: ${prog}` : ''}${left ? ` · ${left}` : ''}.${none}`, sharing ? `${sharing}${note ? ` ${note}` : ''}` : '',
                 [['score-cancel', cancelLabel]]);
         }
+        case 'building': {
+            // the table it reads must be built (or opened) first: a gate of the source's own table or a table upstream
+            const opening = snap.gate && snap.gate.reason === 'opening';
+            const U = upstream();
+            return out('building', 'notice', opening ? 'Opening table' : 'Building filter',
+                opening ? `Waiting for ${U} to open, to ${act.to} its ${found}.${none}`
+                    : `Building ${U} to find its ${found}, then ${act.ing} them.${none}`, '',
+                snap.gate && snap.gate.frozen ? [open] : [['score-cancel', cancelLabel], open]);
+        }
+        case 'ask':
+            return out('ask', 'notice', 'Filter not built',
+                `Building ${upstream()} to find its ${found} will pause the page for a few seconds.${none}`, '',
+                [['score-compute', 'Build filter'], open, choose]);
         case 'updating':
             return out('updating', 'notice', tagOf('updating', `${Result} updating`), `Showing the previous ${t}. Updating.`, '',
                 [['score-cancel', cancelLabel]]);
@@ -172,18 +249,100 @@ export function worstNotice(notices) {
     return best;
 }
 
+/** A wait longer than this shows a progress bar (operator decision 21): by the server's estimate, or by the clock. */
+export const BAR_AFTER_S = 10;
+
+/** The notice states of a computation on its way, which may show a bar. */
+const ON_ITS_WAY = Object.freeze(['estimating', 'queued', 'computing', 'updating']);
+
+/**
+ * The progress bar of a dependant's state (operator decision 21), or null for none.
+ *
+ * A bar is shown once the wait is long: the server's estimate is over 10 s, or the job has run 10 s (by the page's
+ * clock, `elapsed`, or the server's `running_s`), whichever comes first; a shorter job keeps its text line. It is
+ * DETERMINATE from the stored entries done and in all (SHR-48), or from the frame's count when it carries no entries;
+ * a job waiting for the server or the page, and a phase that counts nothing, show an INDETERMINATE bar. There is never
+ * a percentage that is not measured.
+ * @param {Object} snap - a handle's snapshot
+ * @param {number} elapsed - seconds since the page saw this job start waiting or computing
+ * @returns {null|{determinate: boolean, value?: number, max?: number}}
+ */
+export function progressBar(snap, elapsed) {
+    if (!snap || !ON_ITS_WAY.includes(snap.state)) return null;
+    const p = snap.progress || null;
+    const estimate = snap.estimate ? Number(snap.estimate.seconds) : NaN;
+    const ran = p ? Number(p.running_s) : NaN;
+    const long = (Number.isFinite(estimate) && estimate > BAR_AFTER_S) || elapsed >= BAR_AFTER_S || (Number.isFinite(ran) && ran >= BAR_AFTER_S);
+    if (!long) return null;
+    const queue = queueOf(p);
+    if (snap.state !== 'computing' && snap.state !== 'updating') return { determinate: false };
+    if (!p || (queue && queue.ahead > 0)) return { determinate: false };
+    const counted = Number(p.entries_total) > 0 ? [Number(p.entries_done), Number(p.entries_total)] : [Number(p.done), Number(p.total)];
+    const [done, total] = counted;
+    if (!(total > 0) || !Number.isFinite(done)) return { determinate: false };
+    return { determinate: true, value: Math.min(total, Math.max(0, done)), max: total };
+}
+
+/**
+ * Put a progress bar in `box` (a notice's card or an axis placeholder), under the sentence and above the buttons, or
+ * take it away. One element per box, kept across repaints of the card's text. `role="progressbar"`, 0 to 100, with no `aria-valuenow` while indeterminate,
+ * and the notice's sentence as `aria-valuetext`.
+ * @param {HTMLElement|null} box
+ * @param {null|{determinate: boolean, value?: number, max?: number}} bar
+ * @param {string} sentence
+ */
+export function paintProgress(box, bar, sentence) {
+    if (!box || typeof box.querySelector !== 'function') return;
+    let el = box.querySelector(':scope > .source-progress');
+    if (!bar) {
+        if (el) el.remove();
+        return;
+    }
+    if (!el) {
+        el = document.createElement('div');
+        el.className = 'source-progress';
+        el.setAttribute('role', 'progressbar');
+        el.setAttribute('aria-valuemin', '0');
+        el.setAttribute('aria-valuemax', '100');
+        const fill = document.createElement('div');
+        fill.className = 'source-progress__fill';
+        el.appendChild(fill);
+    }
+    // under the sentence, above the buttons; a repaint of the card's text put a new row of buttons in
+    const buttons = box.querySelector(':scope > .coverage-placeholder__do');
+    if (buttons ? el.nextElementSibling !== buttons : el.parentNode !== box) box.insertBefore(el, buttons);
+    el.dataset.mode = bar.determinate ? 'determinate' : 'indeterminate';
+    el.setAttribute('aria-valuetext', sentence);
+    const fill = el.firstElementChild;
+    if (bar.determinate) {
+        const pct = Math.round((100 * bar.value) / bar.max);
+        el.setAttribute('aria-valuenow', String(pct));
+        fill.style.width = `${pct}%`;
+    } else {
+        el.removeAttribute('aria-valuenow');
+        fill.style.width = '';
+    }
+}
+
+/** A notice's whole sentence: its headline and its text. */
+export const sentenceOf = (notice) => `${notice.headline}${notice.text ? ` ${notice.text}` : ''}`;
+
 /**
  * Say a notice on a host (a plot's or a table's container): a strip tag and an overlay inside the host, so nothing
  * moves or resizes. Null clears both. The state is mirrored into `data-state` of the overlay and `data-source-state`
- * of the host, which is what a test or a style reads.
+ * of the host, which is what a test or a style reads. A notice's `progress` (progressBar's) is drawn in its card.
+ * Call it through utils/host-binding.js's painter, which knows every provider on the host.
  * @param {HTMLElement} host
- * @param {Object|null} notice - from describeSource
+ * @param {Object|null} notice - from describeSource, with `progress` when the painter gives it one
  * @param {{overlay?: boolean}} [opts] - false when the host states the notice itself (an axis placeholder)
  */
 export function paintNotice(host, notice, { overlay = true } = {}) {
     setStatusTag(host, 'score', notice && { text: notice.tag.text, severity: notice.severity === 'error' ? 'error' : 'warning',
-        title: notice.tag.title, pop: { text: `${notice.headline}${notice.text ? ` ${notice.text}` : ''}`, actions: notice.actions } });
+        title: notice.tag.title, pop: { text: sentenceOf(notice), actions: notice.actions } });
     setScoreNotice(host, notice && overlay ? { state: notice.state, headline: notice.headline, text: notice.text, actions: notice.actions } : null);
+    if (notice && overlay && host && typeof host.querySelector === 'function') {
+        paintProgress(host.querySelector(':scope > .score-notice .filter-notice__card'), notice.progress || null, sentenceOf(notice));
+    }
     if (host && host.dataset) {
         if (notice) host.dataset.sourceState = notice.state; else delete host.dataset.sourceState;
     }
