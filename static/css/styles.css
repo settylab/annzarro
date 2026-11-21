@@ -3066,6 +3066,12 @@ button.dtsb-button.dtsb-clear:hover {
 .delete-panel-btn:hover {
     background: rgba(220, 53, 69, 0.2);
 }
+/* a closed panel in use: the × asks "Delete?" before it deletes (selection-tile.js _armDelete) */
+.delete-panel-btn.tile-delete-armed {
+    width: auto; border-radius: 10px; padding: 0 6px; font-size: 0.75rem; z-index: 2;
+    background: var(--az-danger-bg); color: var(--az-danger-text); border: 1px solid var(--az-danger-border);
+}
+.delete-panel-question { margin-top: 4px; font-size: 0.75rem; color: var(--az-danger-text); }
 
 .tile-type-icon {
     margin-bottom: 1rem;

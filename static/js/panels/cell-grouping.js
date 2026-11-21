@@ -50,7 +50,8 @@ import {
     duplicateFactor, removeFactor, factorTitle, factorSummary, levelPreview, tickLevel, tickAll, tickNone, sortByCells, moveLevel,
     renameLevel, setRest, levelRows, BINNING_SLOT, PANEL_SOURCES, SCORE_SOURCE, GROUP_SOURCE, TABLE_SOURCE
 } from './cell-grouping/factors.js';
-import { describeStatus, smallLine, noGroupReasons, usedByText } from './cell-grouping/status.js';
+import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/status.js';
+import { usedByText } from '../utils/panel-users.js';
 import {
     settingsSummary, thresholdProblem, separatorProblem, smallOf, separatorOf, storedSeparator, storedSmall, smallModeWord
 } from './cell-grouping/settings.js';
@@ -657,11 +658,15 @@ function createFactors({ D, id, model, on }) {
         el('span', { class: 'cgrp-card__pos', text: String(i + 1) }),
         el('span', { class: 'cgrp-card__title', text: factorTitle(p, m.titleOf, missing) }),
         el('span', { class: 'cgrp-card__summary', text: factorSummary(p, info) }),
-        open ? null : el('span', { class: 'cgrp-card__preview', text: levelPreview(info, mergedLabels(p, i)) }),
-        el('span', { class: 'cgrp-card__chev', aria: { hidden: 'true' }, text: open ? '^' : 'v' }));
+        open ? null : el('span', { class: 'cgrp-card__preview', text: levelPreview(info, mergedLabels(p, i)) }));
+        // the same chevron as a tile's header: a control of its own, saying what it does
+        const toggle = el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-card__toggle',
+            aria: { expanded: String(open), controls: `cgrp-card-${id}-${i}`, label: `${open ? 'Collapse' : 'Expand'} ${name}` },
+            on: { click: () => { if (expanded.has(i)) expanded.delete(i); else expanded.add(i); paint(); } } },
+        el('i', { class: `fas ${open ? 'fa-chevron-up' : 'fa-chevron-down'}`, aria: { hidden: 'true' } }));
         const note = m.notes.get(i) || (missing ? 'Replace or remove it: nothing is computed until then.' : '');
         const li = el('li', { class: `cgrp-card${missing ? ' is-missing' : ''}`, data: { index: i, kind }, draggable: 'true' },
-            el('div', { class: 'cgrp-card__bar' }, head, cardMenu(i, name, n, kind)),
+            el('div', { class: 'cgrp-card__bar' }, head, toggle, cardMenu(i, name, n, kind)),
             el('div', { class: 'cgrp-card__note', role: 'note', hidden: !note, text: note }));
         if (open) {
             const body = el('div', { class: 'cgrp-card__body', id: `cgrp-card-${id}-${i}` });

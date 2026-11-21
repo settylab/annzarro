@@ -9,7 +9,7 @@ import { createLoadActions, createDatasetBadge, createStyleBadge } from './panel
 import { notify } from './utils/notify.js';
 import { onDefault } from './utils/session-style.js';
 import { keptInUse, usersOf } from './utils/panel-references.js';
-import { deleteInUseText } from './panels/cell-grouping/status.js';
+import { deleteInUseText } from './utils/panel-users.js';
 
 export class SelectionTile {
     /**
@@ -561,18 +561,16 @@ export class SelectionTile {
       if (!users.length || button.dataset.armed === '1') return false;
       const panel = this.panels.get(panelId);
       const question = deleteInUseText(panel ? panel.getTitle() : panelId, users);
-      const was = { text: button.textContent, title: button.title, style: button.getAttribute('style') };
+      const was = { text: button.textContent, title: button.title };
       button.dataset.armed = '1';
       button.textContent = 'Delete?';
       button.setAttribute('aria-label', question);
       button.title = question;
-      // wide enough for its word, over the card's corner (the stylesheet sizes the × as a 20px circle)
-      Object.assign(button.style, { width: 'auto', borderRadius: '10px', padding: '0 6px', fontSize: '0.75rem', zIndex: '2' });
+      button.classList.add('tile-delete-armed');
       const line = document.createElement('div');
       line.className = 'delete-panel-question';
       line.setAttribute('role', 'status');
       line.textContent = question;
-      Object.assign(line.style, { fontSize: '0.75rem', color: 'var(--az-danger-text)', marginTop: '4px' });
       line.addEventListener('click', (e) => e.stopPropagation());
       const option = button.closest('.source-panel-option');
       if (option) option.appendChild(line);
@@ -586,7 +584,7 @@ export class SelectionTile {
         button.textContent = was.text;
         button.title = was.title;
         button.removeAttribute('aria-label');
-        if (was.style === null) button.removeAttribute('style'); else button.setAttribute('style', was.style);
+        button.classList.remove('tile-delete-armed');
       };
       const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); disarm(); } };
       const timer = setTimeout(disarm, 6000);

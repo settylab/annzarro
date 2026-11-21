@@ -670,12 +670,14 @@ def test_a_panel_in_use_is_deleted_on_a_second_press_that_the_button_asks_for(pa
     question = "Delete 'T cell score'? 1 plot uses it."
     page.click(btn)
     assert page.inner_text(btn) == "Delete?" and page.get_attribute(btn, "aria-label") == question
+    assert "tile-delete-armed" in page.get_attribute(btn, "class") and not page.get_attribute(btn, "style")
     assert page.inner_text(f".tile-selector .source-panel-option[data-id='{SIG}'] .delete-panel-question") == question
     assert page.evaluate(f"() => !!window.PanelManager.getPanel('{SIG}')"), "the first press deletes nothing"
     # Escape puts the button back; a focus move does too
     page.focus(btn)
     page.keyboard.press("Escape")
     assert page.inner_text(btn) == "×" and page.locator(".delete-panel-question").count() == 0
+    assert "tile-delete-armed" not in page.get_attribute(btn, "class")
     page.focus(btn)
     page.keyboard.press("Enter")
     assert page.inner_text(btn) == "Delete?"
@@ -693,3 +695,15 @@ def test_a_panel_nothing_uses_is_deleted_on_the_first_press(page, served):
     page.click(".tile-selector .delete-panel-btn[data-id='cell-table-L']")
     until(page, "() => !window.PanelManager.getPanel('cell-table-L')")
     assert page.locator(".delete-panel-question").count() == 0
+
+
+def test_a_card_has_the_header_chevron_as_its_own_named_control(page, served):
+    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE])})
+    _ready(page)
+    t = f"{A} .cgrp-card[data-index='0'] .cgrp-card__toggle"
+    assert page.get_attribute(t, "aria-expanded") == "false" and page.get_attribute(t, "aria-label") == "Expand cell_type"
+    assert page.locator(f"{t} i.fa-chevron-down").count() == 1
+    page.click(t)
+    assert page.get_attribute(t, "aria-expanded") == "true" and page.get_attribute(t, "aria-label") == "Collapse cell_type"
+    assert page.locator(f"{t} i.fa-chevron-up").count() == 1
+    assert page.locator(f"{A} .cgrp-card[data-index='0'] .cgrp-card__body").count() == 1

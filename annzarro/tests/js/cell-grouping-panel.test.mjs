@@ -25,7 +25,8 @@ import {
     levelPreview, tickLevel, tickAll, tickNone, sortByCells, renameLevel, setRest, moveLevel, levelRows,
     tooManyLevelsText, scoreFactor, geneFactor, tableFactor, neighborsFactor
 } from '../../../static/js/panels/cell-grouping/factors.js';
-import { describeStatus, smallLine, noGroupReasons, usedByText, deleteInUseText } from '../../../static/js/panels/cell-grouping/status.js';
+import { describeStatus, smallLine, noGroupReasons } from '../../../static/js/panels/cell-grouping/status.js';
+import { usedByText, deleteInUseText } from '../../../static/js/utils/panel-users.js';
 import { settingsSummary, separatorProblem, thresholdProblem } from '../../../static/js/panels/cell-grouping/settings.js';
 
 const golden = (name) => JSON.parse(readFileSync(new URL(`../data/golden/${name}.json`, import.meta.url), 'utf8'));
