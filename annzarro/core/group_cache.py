@@ -176,6 +176,19 @@ class GroupCache:
 
     # -- lookups -------------------------------------------------------------------------------------------------
 
+    def peek(self, key: Key, histograms: Iterable[int] = ()) -> Optional[GroupingResult]:
+        """The grouping when it is held with every histogram asked for (a hit, counted), else None. Claims nothing:
+        a request decides its lane by it before it queues, and looks up again (``begin``) when its turn comes."""
+        asked = frozenset(int(h) for h in histograms)
+        with self._lock:
+            self._drop_moved(key)
+            entry = self._entries.get(key)
+            if entry is None or not asked <= entry.asked:
+                return None
+            self._entries.move_to_end(key)
+            self.stats["hits"] += 1
+            return self._reply(entry, asked)
+
     def begin(self, key: Key, histograms: Iterable[int] = (), prompt: bool = False):
         """Look ``key`` up for a request asking for ``histograms``: a :class:`Hit`, a :class:`Pending` (another
         request is resolving it and will be done with it at once) or a :class:`Claim` (resolve it).

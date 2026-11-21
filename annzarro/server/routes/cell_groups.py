@@ -42,9 +42,11 @@ it does not fit.
 
 **Code cache** (SHR-40, CMP-6): ``CODES`` keeps the groupings this worker resolved, within the server setting
 ``group_code_cache_mb``, as the ledger's evictable (emptied before any reservation waits). A grouping is looked up
-when the job's turn comes, before anything is read; a hit passes the codes to the engine, a miss resolves and keeps
-them. A request that finds its grouping being resolved by a request without features or measures waits for it,
-giving its lane way meanwhile when another job waits for it.
+before the request queues: a hit reads no column, so it takes the lane of what it still reads (its features and
+measures; none: light) and reserves only that. Otherwise the grouping is looked up again when the job's turn comes:
+a hit passes the codes to the engine, a miss claims the grouping, resolves it and keeps it as soon as the groups are
+known (``group_features.compute``'s grouping event), before any gene is read. A request that finds its grouping
+claimed by another waits for that resolve, giving its lane way meanwhile when another job waits for it.
 """
 import json
 import logging
@@ -157,8 +159,10 @@ def _score_bytes(part, n_shown):
     return n_shown * (8 + 2) * score.vectors, min(gene_score.READ_AHEAD_ENTRIES, score.entries) * 12
 
 
-def reservation(plan, n_shown):
+def reservation(plan, n_shown, codes_held=False):
     """``(full, keep)`` bytes a request holds on the ledger while it runs and while it has given way.
+
+    ``codes_held``: the grouping came from the code cache, which holds (and counts) its codes, so nothing is resolved.
 
     ``plan`` is a ``group_features.Plan`` (shape grouping) or a ``cell_grid.Plan`` (shape grid); ``n_shown`` the cells
     shown. A resolve: :func:`_resolve_bytes`, FX-E's measured formula. Features and measures (E5): the read-ahead
@@ -173,7 +177,7 @@ def reservation(plan, n_shown):
     work = plan.work
     top = plan.axes if grid else plan.groups.top.parts
     n_cells = plan.n_cells if grid else plan.groups.n_cells
-    resolve = _resolve_bytes(top, n_shown, n_cells, grid=grid)
+    resolve = 0 if codes_held else _resolve_bytes(top, n_shown, n_cells, grid=grid)
     features_keep, features_full = 0, 0
     for vector in work.vectors:
         held = _COLUMN_ITEM * n_shown
@@ -215,11 +219,16 @@ def _error_frame(exc):
 class _Job:
     """One request past its refusals: the plan, the cells shown and what the stream needs of them."""
 
-    def __init__(self, shape, plan, rows, want_codes):
+    def __init__(self, shape, plan, rows, want_codes, cached=None):
         self.shape, self.plan, self.rows, self.want_codes = shape, plan, rows, want_codes
         self.grid = shape == "grid"
+        self.cached = cached                           # the grouping from the code cache, found before queueing
         self.entries = plan.entries if self.grid else plan.groups.entries
         self.lane = plan.lane if self.grid else plan.groups.lane
+        if cached is not None:                         # it reads its features and measures only (SHR-41)
+            work = plan.work
+            live = gene_score.BASE_SECONDS + work.seconds <= gene_score.LIVE_MAX_S
+            self.lane = "light" if live and not work.whole_matrix else "heavy"
         self.tier = plan.tier if self.grid else plan.groups.tier
         self.n_cells = plan.n_cells if self.grid else plan.groups.n_cells
         self.dataset_path = plan.dataset_path if self.grid else plan.groups.dataset_path
@@ -237,10 +246,9 @@ class _Job:
         key = group_cache.key_of(self.dataset_path, self.plan.groups.cache_key, self.n_shown)
         if key is None:
             return None, None
-        work = self.plan.work
-        prompt = not work.features and not work.measures
         while True:
-            found = CODES.begin(key, self.plan.groups.request.histograms, prompt=prompt)
+            # every claim is filled as soon as its groups are known (the grouping event), so each may be waited for
+            found = CODES.begin(key, self.plan.groups.request.histograms, prompt=True)
             if isinstance(found, group_cache.Hit):
                 return found.result, None
             if isinstance(found, group_cache.Claim):
@@ -260,25 +268,26 @@ class _Job:
             with remote.deadline(REMOTE_COMPUTE_S if remote.is_remote_path(self.dataset_path) else None):
                 start, total, cached = {"type": "start"}, self.entries, None
                 if not self.grid:
-                    cached, claim = self._lookup(job)
+                    cached, claim = (self.cached, None) if self.cached is not None else self._lookup(job)
                     start["codes"] = "miss" if cached is None else "hit"
                     if cached is not None:
                         total = self.plan.work.entries            # the grouping's own entries are not read
                 yield _frame({**start, "lane": self.lane, "entries_total": total, "queue": job.queue()})
                 if self.grid:
                     events = cell_grid.compute(self.plan, self.rows, pause=job)
-                elif cached is not None:
-                    events = group_features.compute(self.plan, self.rows, codes=cached, pause=job, on_entries=read)
                 else:
-                    events = group_features.compute(self.plan, self.rows, pause=job, on_entries=read)
+                    events = group_features.compute(self.plan, self.rows, codes=cached, pause=job, on_entries=read,
+                                                    grouping_event=True)
                 for kind, payload in events:
+                    if kind == "grouping":                     # the groups are known: keep them before any gene is read
+                        if claim is not None:
+                            claim.fill(payload)
+                        continue
                     if kind == "progress":
                         done = entries[0] if not self.grid else payload.get("entries_done", 0)
                         yield _frame({"type": "progress", **payload,
                                       **compute_stream.progress_fields(job, done, total)})
                         continue
-                    if claim is not None:
-                        claim.fill(payload.grouping)
                     head, blocks = payload.to_reply() if self.grid else payload.to_reply(self.want_codes)
                     yield _frame(head)
                     yield from compute_stream.block_bytes([array for _, array in blocks])
@@ -365,8 +374,13 @@ def register_cell_groups_routes(app_, api_version):
                 return _error(400, "set_length_mismatch",
                               f"Set '{ref}' has {members.size} cells; the request shows {job.n_shown}.",
                               count=int(members.size), shown=job.n_shown)
+        if shape == "grouping":                        # a hit reads no column: its lane and memory are its features'
+            key = group_cache.key_of(dataset_path, plan.groups.cache_key, job.n_shown)
+            cached = None if key is None else CODES.peek(key, parsed.histograms)
+            if cached is not None:
+                job = _Job(shape, plan, rows, job.want_codes, cached=cached)
 
-        full, keep = reservation(plan, job.n_shown)
+        full, keep = reservation(plan, job.n_shown, codes_held=job.cached is not None)
 
         def admit():
             if job.lane != "heavy":
