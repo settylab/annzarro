@@ -282,6 +282,45 @@ def test_a_slow_estimate_gives_a_button_and_a_focus_change_then_sends_no_request
     assert all(v != "—" for v in mean.values())
 
 
+def test_a_gene_that_would_leave_the_live_tier_is_dropped_and_never_holds_the_grouping(page, served):
+    def handler(route):
+        body = json.loads(route.request.post_data or "{}")
+        if not body.get("estimate_only") or not body.get("features"):
+            return route.continue_()
+        reply = route.fetch().json()
+        reply["estimate"] = {**reply.get("estimate", {}), "seconds": 40, "tier": "auto", "live_max_s": 5}
+        route.fulfill(status=200, body=json.dumps(reply), headers={"Content-Type": "application/json"})
+    page.route("**/api/v1/data/cell_groups*", handler)
+    base._open(page, served, {GA: base._grouping(partitionings=[CELL_TYPE, CONDITION])})
+    base._ready(page)
+    until(page, "(s) => !!document.querySelector(s + ' .cgg-show')", A)
+    assert page.inner_text(f"{A} .cgg-show") == "Show GENE000"
+    assert not _feature_computes(page)
+    assert base._status(page)["state"] == "ready", "the gene never changes the grouping's own state"
+    assert [c for c in page.calls if not c.get("estimate_only") and not c.get("features")], "the groups were computed without it"
+
+
+def test_a_focus_change_on_a_code_cache_hit_reads_only_the_gene(page, served):
+    replies = []
+
+    def handler(route):
+        if json.loads(route.request.post_data or "{}").get("estimate_only"):
+            return route.continue_()
+        response = route.fetch()
+        replies.append(response.body().split(b"\n", 1)[0].decode())
+        route.fulfill(response=response)
+    page.route("**/api/v1/data/cell_groups*", handler)
+    _open(page, served, [CELL_TYPE, CONDITION], layers=["logged"])
+    _focus_gene(page, GENE)
+    _wait_gene_columns(page, GENE)
+    n = len(replies)
+    page.calls.clear()
+    _focus_gene(page, "GENE006")
+    _wait_gene_columns(page, "GENE006")
+    assert len(replies) == n + 1, "one request for the new gene"
+    assert json.loads(replies[-1]).get("codes") == "hit", replies[-1]
+
+
 def test_a_panel_off_screen_asks_for_nothing_when_the_focus_changes(page, served):
     _open(page, served, [CELL_TYPE, CONDITION])
     page.evaluate("(s) => { document.querySelector(s).style.visibility = 'hidden'; document.querySelector(s).style.display = 'none'; }", A)
@@ -388,6 +427,8 @@ def test_in_no_group_shows_the_reasons_as_the_rows_of_the_grid(page, served):
     page.click(f"{A} .cgrp-nogroup")
     until(page, "(s) => document.querySelector(s + ' .cgg-grid').dataset.view === 'reasons'", A)
     assert [r["cells"][0] for r in _grid(page)["rows"]] == reasons
+    assert not page.locator(f"{A} .cgrp-reasons").is_visible(), "the reasons show once: as the grid's rows"
+    assert page.get_attribute(f"{A} .cgrp-nogroup", "aria-expanded") == "true"
     page.click(f"{A} .cgrp-nogroup")
     until(page, "(s) => document.querySelector(s + ' .cgg-grid').dataset.view !== 'reasons'", A)
     assert _grid(page)["rowcount"] == "3"

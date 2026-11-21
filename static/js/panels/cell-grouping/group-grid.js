@@ -485,6 +485,8 @@ function mount(host, ctx) {
             return;
         }
         root.hidden = false;
+        // the gene must never cost the grouping its live tier: when the panel holds edits or asks first, the gene goes
+        if (focus.requested && (snap.held || snap.state === 'awaiting')) { focus.blocked = true; stopAsking(); }
         if (!model || model.reply !== reply || model.recipe !== recipe) {
             model = makeModel(recipe);
             if (!model) { root.hidden = true; return; }
