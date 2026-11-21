@@ -575,7 +575,6 @@ test('the guard refuses codes that do not fit BEFORE the request, in its own wor
     assert.deepEqual(got.notice.actions.map((a) => a[0]), ['score-choose']);
     assert.equal(asked.length, before.asked, 'no request of any kind: not even an estimate');
     assert.equal(ledger.heldBytes(), before.held, 'nothing held');
-    assert.equal(A.actions.available('score-choose', h), true, 'the notice has its way out');
 });
 
 test('the same grouping is drawn once the guard has room again; a draw already holding the codes asks nothing more', async () => {

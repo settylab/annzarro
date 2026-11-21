@@ -16,6 +16,12 @@
  * and an axis to a placeholder, both with the notice over the plot in a grouping's words (SHR-35). When the state
  * changes, the plot is drawn again.
  *
+ * LARGE PLOTS (CAT-3, CAT-4). A grouping is the colour of a large plot, never an axis (`largeAxes`): `loadLarge` gives
+ * the codes the group store holds, nothing copied. Before the codes are asked for, `cost` says what they weigh and the
+ * memory guard is asked (`codesCheck`): codes that do not fit are refused with no request of any kind, in the guard's
+ * words, and the plot is drawn with no color and the notice over it. A plot that already holds its codes asks nothing
+ * more. The group count is what the last reply said (1 byte a cell until a reply says more than 255 groups).
+ *
  * The plots reach all of it through the provider registered at the end (utils/source-registry.js).
  *
  * THE TYPE is exported as a function declaration as well as a constant: panels/cell-grouping/factors.js names it, and
@@ -30,6 +36,9 @@ import { createHostBinding, isHover, isVisible, panelIdOf, PENDING } from './hos
 import { registerSource, SourceUnavailable } from './source-registry.js';
 import { registerPanelSourceType } from './panel-references.js';
 import { groupSources } from './group-host.js';
+import { codeBytes } from './group-store.js';
+import { codesCheck, shortRefusalText } from './memory-guard-ui.js';
+import { DataManager } from '../data-manager.js';
 import { groupColours } from './cell-grouping.js';
 import { GROUP_COLOURS, grouped, groupOf, groupLegendLabel } from './categories.js';
 import { generateDiscreteColors, groupColours as colourGroupPalette } from '../panels/plot-utilities/colors.js';
@@ -208,7 +217,50 @@ function groupLargeSeries(values, names) {
     return { type: 'categorical', codes, MISSING, categories: names, colours: parts.colours };
 }
 
+// ---------------------------------------------------------------------------------------------- the codes' cost
+
+/** grouping id -> how many groups its last reply had: what `cost` knows of a grouping it has not asked for yet. */
+const KNOWN_GROUPS = new Map();
+
+/**
+ * What the codes of a grouping weigh on the memory guard's ledger (CAT-4): one byte a cell up to 255 groups, two above.
+ * @param {{cells: number, groups?: number}} p - `groups` is left out when it is not known yet: the narrow codes
+ * @returns {{bytes: number}}
+ */
+function cost({ cells, groups = 0 }) {
+    return { bytes: codeBytes(Math.max(0, Number(cells) || 0), groups) };
+}
+
+/**
+ * Whether the memory guard refuses the codes of grouping `id` for the cells shown, asked before they are requested.
+ * The guard must never be why a plot is not drawn when it cannot answer: then nothing is refused.
+ * @returns {null|{reason: string, binding: string, why: string}}
+ */
+function codesRefusal(id) {
+    const cells = (DataManager.getCells() || []).length;
+    if (!(cells > 0)) return null;
+    let result;
+    try {
+        result = codesCheck({ bytes: cost({ cells, groups: KNOWN_GROUPS.get(id) }).bytes, n: cells });
+    } catch (error) {
+        console.warn('Browser memory check failed; reading the groups without it', error);
+        return null;
+    }
+    if (!result || result.verdict !== 'block') return null;
+    return { reason: MEMORY_REASON, binding: result.binding, why: shortRefusalText(result) };
+}
+
+/** What a record holds in place of a handle when the guard refused its codes: it says so, and asks for nothing. */
+function refusedHandle(id, refusal) {
+    const none = () => {};
+    return { refusal, read: () => ({ state: 'refused', key: null, title: groupingTitle({ key: id }), refused: refusal, values: null }),
+        sharers: () => 1, release: none, compute: none, retry: none, cancel: none };
+}
+
 // ---------------------------------------------------------------------------------------------- notices
+
+/** The reason of a grouping the memory guard refused, before the request (CAT-4). */
+const MEMORY_REASON = 'browser_memory';
 
 /** What a grouping's figures of a refusal for its size say (the route's `refused`). */
 function sizeRefusal(refused) {
@@ -243,6 +295,10 @@ const VOCAB = Object.freeze({
             return f.out('unset', 'notice', `No ${W.grouping}`, `No ${W.grouping} is chosen.`, '', [f.choose]);
         },
         refused(snap, f) {
+            if (snap.refused && snap.refused.reason === MEMORY_REASON) {
+                return f.out('refused', 'warning', f.tagOf('refused', `${f.Result} not loaded`), `${f.t} was not loaded.`,
+                    `${snap.refused.why}${f.none}`, [f.choose]);
+            }
             const said = sizeRefusal(snap.refused);
             if (!said) return undefined;
             return f.out('refused', 'warning', f.tagOf('refused', `${f.Result} refused`), `${f.t} ${said}, so it was not computed.`, '', [f.open, f.choose]);
@@ -328,6 +384,8 @@ function binding() {
             id: PLOT_PROVIDER,
             open: (host, role, setting, onChange) => {
                 const id = setting.key;
+                const refusal = codesRefusal(id);
+                if (refusal) return { groupId: id, handle: refusedHandle(id, refusal) };
                 const handle = groupSources().sources.watch(id, {
                     consumer: { kind: 'plot', role, panelId: panelIdOf(host), host }, option: { codes: true },
                     visible: () => isVisible(host), onChange
@@ -364,10 +422,16 @@ function loadGroupSeries(setting, { host, role, expected, unit = 'cells', large 
         const notice = describeGrouping({ state: 'unset', title: '' }, { role: roleWord(role) });
         throw unavailable(notice, missingCoverage(notice, setting, unit, expected, 'stopped'));
     }
-    const rec = binding().recordFor(host, role, setting);
+    let rec = binding().recordFor(host, role, setting);
+    // codes the guard refused are asked of it again: something may have been closed since
+    if (rec.handle.refusal && !codesRefusal(setting.key)) {
+        binding().release(host, role);
+        rec = binding().recordFor(host, role, setting);
+    }
     rec.quiet = quiet;
     const snap = rec.handle.read();
     if (snap.values && snap.values.codes) {
+        if (Array.isArray(snap.values.reply.groups)) KNOWN_GROUPS.set(setting.key, snap.values.reply.groups.length);
         rec.drawnKey = snap.shownKey || snap.key;
         rec.drawnKind = undefined;
         binding().paint(host);
@@ -409,7 +473,6 @@ function loadForPlot(setting, { host, role, expected, unit, signal }) {
 
 /**
  * A large plot's series of a grouping: the codes the group store holds, nothing copied; waits as loadForPlot does.
- * (Large-plot mode draws it once G8b names its axes in `largeAxes`.)
  * @param {Object} setting
  * @param {{host, role: string, expected: (number|null), unit?: string, signal: (AbortSignal|null)}} opts
  */
@@ -529,8 +592,8 @@ registerSource({
     entity: 'cells',
     consumers: ['cell-plot'],
     axes: ['x', 'y', 'z', 'color', 'hover'],
-    // large-plot mode draws a grouping once G8b says on which axes (CAT-3)
-    largeAxes: [],
+    // large-plot mode draws a grouping as colour, never as an axis (CAT-3)
+    largeAxes: ['color'],
     defaultSub: '',
     // the obs key list ends with the groupings, under this heading (UX 5)
     alsoListedUnder: 'obs',
@@ -543,6 +606,7 @@ registerSource({
     subKeys: () => [],
     load: loadForPlot,
     loadLarge: loadLargeForPlot,
+    cost,
     hover: {
         group: GROUPINGS,
         options: groupHoverOptions,
