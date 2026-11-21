@@ -484,6 +484,8 @@ def test_a_gene_and_a_score_in_bins(page, served):
     until(page, "(id) => !!window.PanelManager.getPanel(id).getRecipe().partitionings[0].binning.zero_bin", GA)
     assert _recipe(page)["partitionings"] == [{"source": {"type": "layer", "key": "logged", "column": gstore.gene(1)},
                                                "binning": {"method": "equal_count", "zero_bin": True}}]
+    until(page, "(s) => / levels$/.test(document.querySelector(s + ' .cgrp-card__summary').textContent)", A)
+    _ready(page)
     assert _cards(page)[0]["title"] == gstore.gene(1)
     assert _cards(page)[0]["summary"].startswith("binned · Equal count · ")
     # a gene the dataset lacks is refused in the row, with the reason
