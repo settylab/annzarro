@@ -102,14 +102,14 @@ def test_h1_more_measures_than_the_cap_are_refused_when_parsed():
 def test_h1_accumulate_holds_at_most_one_grids_moments(store, monkeypatch):
     monkeypatch.setattr(gf, "MAX_GRID_MEASURE_CELLS", 100)
     reader = get_reader(store)
-    work = gf.plan_work(reader, store, measures=gf.parse_measures(
-        [{"id": "m0", "source": {"type": "obs", "key": "depth"}}, {"id": "m1", "source": {"type": "obs", "key": "score"}}]))
+    depth, score = ({"id": f"m{i}", "source": {"type": "obs", "key": k}} for i, k in enumerate(("depth", "score")))
+    work = gf.plan_work(reader, store, measures=gf.parse_measures([depth, score]))
     codes = (np.arange(gs.N_OBS) % 60).astype(np.uint16)
     with pytest.raises(cg.GroupError) as e:
         list(gf.accumulate(work, reader, store, None, codes, 60))                # 60 cells x 2 measures > 100
     assert (e.value.status, e.value.reason) == (422, "too_many_values")
     assert e.value.extra == {"count": 120, "limit": 100}
-    one = gf.plan_work(reader, store, measures=gf.parse_measures([{"id": "m0", "source": {"type": "obs", "key": "depth"}}]))
+    one = gf.plan_work(reader, store, measures=gf.parse_measures([depth]))
     events = list(gf.accumulate(one, reader, store, None, codes, 60))
     assert events[-1][0] == "result" and events[-1][1].measures.shape == (1, 60, 5)
 
