@@ -452,3 +452,149 @@ def test_m5_within_the_limit_the_column_is_read_once_and_nothing_changes(categor
     reads.clear()
     _group(categories_store, [{"source": {"type": "obs", "key": "atlas"}}])
     assert reads == ["atlas", "atlas"]                            # past the limit: a counting pass, then the read
+
+
+# --------------------------------------------------------------------------------------------- M2, cell_sources
+
+
+def _source_store(path, n, x_csc=None, text=None):
+    """An obs + var + X store of ``n`` cells: ``x_csc`` = (indptr, indices, data) of a CSC X, ``text`` an obs
+    column of strings (None for a missing value)."""
+    root = zarr_compat.open_group(path, mode="w")
+    root.attrs.update({"encoding-type": "anndata", "encoding-version": "0.1.0"})
+    obs = root.create_group("obs")
+    obs.attrs.update({"encoding-type": "dataframe", "encoding-version": "0.2.0", "_index": "_index",
+                      "column-order": ["note"] if text is not None else []})
+    zarr_compat.write_array(obs, "_index", np.zeros(n, dtype=np.int8), chunks=(1 << 16,))
+    if text is not None:
+        zarr_compat.write_strings(obs, "note", text, chunks=(1 << 14,))
+    var = root.create_group("var")
+    n_var = 0 if x_csc is None else len(x_csc[0]) - 1
+    var.attrs.update({"encoding-type": "dataframe", "encoding-version": "0.2.0", "_index": "_index",
+                      "column-order": []})
+    zarr_compat.write_strings(var, "_index", [f"g{i}" for i in range(max(n_var, 1))])
+    if x_csc is not None:
+        g = root.create_group("X")
+        g.attrs.update({"encoding-type": "csc_matrix", "encoding-version": "0.1.0", "shape": [n, n_var]})
+        for name, arr in zip(("indptr", "indices", "data"), x_csc):
+            zarr_compat.write_array(g, name, np.asarray(arr), chunks=(1 << 16,))
+    for name in ("obsm", "obsp", "layers"):
+        g = root.create_group(name)
+        g.attrs.update({"encoding-type": "dict", "encoding-version": "0.1.0"})
+    zarr_compat.consolidate(path)
+    return path
+
+
+def _old_layer_values(at, values, rows, n):
+    """The layer path before FX-E (int64 entries, np.diff order test), as the reference."""
+    at = np.asarray(at, dtype=np.int64)
+    values = np.asarray(values)
+    if at.size > 1 and (np.diff(at) <= 0).any():
+        order = np.argsort(at, kind="stable")
+        at, values = at[order], values[order]
+    idx = np.arange(n, dtype=np.int64) if rows is None else np.asarray(rows, dtype=np.int64)
+    out = np.zeros(idx.size, dtype=values.dtype)
+    pos = np.searchsorted(at, idx)
+    hit = (pos < at.size) & (at[np.minimum(pos, at.size - 1)] == idx)
+    out[hit] = values[pos[hit]]
+    return out
+
+
+@pytest.mark.parametrize("order", ["sorted", "reversed", "shuffled"])
+def test_m2_a_layer_column_is_bit_identical_to_the_int64_path(tmp_path, monkeypatch, order):
+    from annzarro.core import cell_sources as cs
+    n = 5000
+    rng = np.random.default_rng(7)
+    at = np.flatnonzero(rng.random(n) < 0.4).astype(np.int32)
+    vals = rng.normal(size=at.size).astype(np.float32)
+    if order == "reversed":
+        at, vals = at[::-1].copy(), vals[::-1].copy()
+    elif order == "shuffled":
+        p = rng.permutation(at.size)
+        at, vals = at[p], vals[p]
+    path = _source_store(str(tmp_path / "x.zarr"), n, (np.array([0, at.size]), at, vals))
+    monkeypatch.setattr(cs, "SLAB_ROWS", 700)
+    for rows in (None, np.arange(1, n, 3), np.array([0, 17, 4999])):
+        slabs = list(cs.column(get_reader(path), path, {"type": "layer", "key": "X", "column": "g0"}, rows))
+        got = np.concatenate([s.values for s in slabs])
+        want = _old_layer_values(at, vals, rows, n)
+        assert got.dtype == want.dtype and got.tobytes() == want.tobytes()
+
+
+def test_m2_a_layer_column_holds_its_entries_as_stored(tmp_path, monkeypatch):
+    import tracemalloc
+    from annzarro.core import cell_sources as cs
+    n = 1_000_000
+    at = np.arange(n, dtype=np.int32)                                         # every cell stored
+    path = _source_store(str(tmp_path / "x.zarr"), n, (np.array([0, n]), at, np.ones(n, dtype=np.float32)))
+    monkeypatch.setattr(cs, "SLAB_ROWS", 1 << 16)
+    reader = get_reader(path)
+    reader.enable_caching = False
+    tracemalloc.start()
+    try:
+        for _ in cs.column(reader, path, {"type": "layer", "key": "X", "column": "g0"}, None):
+            pass
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    # entries as read (4 B) and values (4 B), not an int64 copy and its np.diff (16 B more)
+    assert peak < 14 * n, f"peak {peak / 1e6:.1f} MB for {n:,} entries"
+
+
+def _old_text(values_by_slab):
+    """The text path before FX-E (np.unique over a fixed-width copy) as the reference: codes, categories."""
+    seen, provisional = {}, []
+    for vals in values_by_slab:
+        vals = np.asarray(vals, dtype=object)
+        missing = np.fromiter((v is None for v in vals), dtype=bool, count=vals.size)
+        out = np.full(vals.size, -1, dtype=np.int64)
+        if not missing.all():
+            distinct, inverse = np.unique(vals[~missing].astype(str), return_inverse=True)
+            ids = np.asarray([seen.setdefault(v, len(seen)) for v in distinct.tolist()], dtype=np.int64)
+            out[~missing] = ids[inverse.reshape(-1)]
+        provisional.append(out)
+    order = sorted(seen)
+    rank = np.empty(len(order) + 1, dtype=np.int32)
+    for r, v in enumerate(order):
+        rank[seen[v]] = r
+    rank[-1] = -1
+    codes = np.concatenate(provisional)
+    return rank[np.where(codes < 0, len(order), codes)], order
+
+
+def test_m2_a_text_column_is_factorised_bit_identically_to_the_fixed_width_path(tmp_path, monkeypatch):
+    from annzarro.core import cell_sources as cs
+    n = 3000
+    rng = np.random.default_rng(9)
+    words = ["b", "a", "B", "ä", "a b", "", "z" * 40, "10", "9", "é", "é"]
+    text = [words[int(rng.integers(len(words)))] for _ in range(n)]          # a plain string array holds no None
+    path = _source_store(str(tmp_path / "t.zarr"), n, text=text)
+    monkeypatch.setattr(cs, "SLAB_ROWS", 512)
+    for rows in (None, np.arange(0, n, 7)):
+        slabs = list(cs.column(get_reader(path), path, {"type": "obs", "key": "note"}, rows))
+        got = np.concatenate([s.values for s in slabs])
+        shown = list(range(n)) if rows is None else rows.tolist()
+        spans = [[text[r] for r in shown[a:a + 512]] for a in range(0, len(shown), 512)]
+        want, cats = _old_text(spans)
+        assert got.dtype == want.dtype and got.tobytes() == want.tobytes()
+        assert slabs[0].categories == cats and all(type(c) is str for c in cats)
+
+
+def test_m2_one_long_value_does_not_widen_a_text_slab(tmp_path, monkeypatch):
+    import tracemalloc
+    from annzarro.core import cell_sources as cs
+    n = 20_000
+    text = [f"t{i % 5}" for i in range(n)]
+    text[7] = "x" * 2000                                                       # one long name
+    path = _source_store(str(tmp_path / "t.zarr"), n, text=text)
+    reader = get_reader(path)
+    reader.enable_caching = False
+    tracemalloc.start()
+    try:
+        slabs = list(cs.column(reader, path, {"type": "obs", "key": "note"}, None))
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert len(slabs[0].categories) == 6
+    # a fixed-width copy is n x 4 B x 2,000 characters (160 MB); the strings themselves are a few MB
+    assert peak < 40_000_000, f"peak {peak / 1e6:.1f} MB"
