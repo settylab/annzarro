@@ -76,9 +76,18 @@ def page(served):
             page = browser.new_page(viewport={"width": 1500, "height": 1100})
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
+            # every POST to the route (estimates too), and the computations alone
+            page.asked = []
             page.calls = []
-            page.on("request", lambda r: page.calls.append(json.loads(r.post_data or "{}"))
-                    if "/data/cell_groups" in r.url and r.method == "POST" else None)
+
+            def seen(r):
+                if "/data/cell_groups" not in r.url or r.method != "POST":
+                    return
+                body = json.loads(r.post_data or "{}")
+                page.asked.append(body)
+                if not body.get("estimate_only"):
+                    page.calls.append(body)
+            page.on("request", seen)
             yield page
             assert not errors, errors
         finally:
@@ -152,21 +161,24 @@ def test_nothing_chosen_says_what_to_pick_and_asks_nothing(page, served):
     assert "Add genes" in steps.nth(1).inner_text()
     assert steps.nth(0).get_attribute("data-done") == "false"
     _settle(page, "a plot with no groups and no genes must never ask the server; nothing happens to wait for")
-    assert page.calls == []
+    assert page.asked == []
     # choosing groups ticks the first step, and still asks for nothing (no genes yet)
     page.select_option(f"{TP} .cgene-axis-type", "obs")
     page.select_option(f"{TP} .cgene-axis-key", "cell_type")
     until(page, "(s) => document.querySelector(s + ' .cgene-checklist li').dataset.done === 'true'", TP)
     _settle(page, "groups with no genes are nothing to compute; the absence of a request cannot be waited on")
-    assert _features(page.calls) == []
+    assert page.asked == []
 
 
 # ------------------------------------------------------------------ 2. job 1
 
 def test_job1_marker_genes_as_a_dot_plot(page, served):
     genes = GENES[:5]
-    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}]),
-                         S1: _sig(S1, "Markers", genes)}, open_ids=(P, S1))
+    # the grouping offers sum and the logged layer, so Color can change statistic on the layer it reads (CXG-11)
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}],
+                "offered": ["mean", "pct_expressing", "sum"], "layers": ["logged"]}
+    _open(page, served, {P: _plot(cellAxis={"type": "cell-group", "key": GA}, sections=[{"source": S1, "rows": "genes"}]),
+                         S1: _sig(S1, "Markers", genes), GA: grouping}, open_ids=(P, S1))
     st = _drawn(page)
     assert st["groups"] == 6
     assert st["rows"] == 5
@@ -283,7 +295,7 @@ def test_a_sections_genes_are_requested_once_and_one_gene_adds_one_feature(page,
     assert len(page.calls) == 1
     # a duplicate section asks for nothing
     page.click(f"{TP} .cgene-section >> nth=0 >> .cgene-section__menu-btn")
-    page.click(f"{TP} .cgene-section__menu-item[data-op='duplicate']")
+    page.click(f"{TP} .cgene-section__menu:not([hidden]) .cgene-section__menu-item[data-op='duplicate']")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 3", P)
     _settle(page, "a duplicate section reads genes that are held; no request should follow")
     assert len(page.calls) == 1
@@ -324,9 +336,9 @@ def test_the_section_list_edits_are_undoable_steps(page, served):
     assert sec.nth(0).locator(".cgene-section__source").inner_text() == "B cell markers"
     # Move down from the ⋯ menu, announced; Alt+Up on the focused section moves it back
     sec.nth(0).locator(".cgene-section__menu-btn").click()
-    labels = page.locator(f"{TP} .cgene-section__menu-item")
+    labels = page.locator(f"{TP} .cgene-section__menu:not([hidden]) .cgene-section__menu-item")
     assert [labels.nth(i).inner_text() for i in range(labels.count())] == ["Duplicate", "Remove", "Open source", "Move up", "Move down"]
-    page.locator(f"{TP} .cgene-section__menu-item[data-op='down']").click()
+    page.locator(f"{TP} .cgene-section__menu:not([hidden]) .cgene-section__menu-item[data-op='down']").click()
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[1].title === 'B cells'", P)
     assert "moved to position 2 of 2" in page.locator(f"{TP} .cgene-message").inner_text()
     page.locator(f"{TP} .cgene-section").nth(1).focus()
@@ -334,9 +346,9 @@ def test_the_section_list_edits_are_undoable_steps(page, served):
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].title === 'B cells'", P)
     # Remove, then Undo brings it back; every edit was one step
     page.locator(f"{TP} .cgene-section").nth(1).locator(".cgene-section__menu-btn").click()
-    page.locator(f"{TP} .cgene-section__menu-item[data-op='remove']").click()
+    page.locator(f"{TP} .cgene-section__menu:not([hidden]) .cgene-section__menu-item[data-op='remove']").click()
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 1", P)
-    assert _state(page)["undo"] == 6
+    assert _state(page)["undo"] == 7, "two adds, one row, a title, two moves, a removal"
     page.click(f"{TP} .cgene-undo")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 2", P)
 

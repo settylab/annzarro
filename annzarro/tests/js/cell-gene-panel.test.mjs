@@ -33,7 +33,7 @@ import {
     aggregationValue, parseAggregation, aggregationHelp, planFeatures, buildMatrix, OFFER_OTHER, sectionTitle
 } from '../../../static/js/panels/cell-gene/sections.js';
 import {
-    statisticChoices, parseStatistic, statisticValue, axisChoices, categoricalColumns, axisSourceId, axisRecipe
+    statisticChoices, parseStatistic, statisticValue, axisChoices, axisSourceId, axisRecipe
 } from '../../../static/js/panels/cell-gene/controls.js';
 
 const golden = (name) => JSON.parse(readFileSync(new URL(`../data/golden/${name}.json`, import.meta.url), 'utf8'));
@@ -397,7 +397,6 @@ const STRUCTURE = {
 };
 
 test('Groups: an obs column is a categorical one; groupings follow, a loop unavailable with its reason (CXG-2, decision 15)', () => {
-    assert.deepEqual(categoricalColumns(STRUCTURE), ['cell_type', 'condition', 'is_doublet', 'label']);
     const choices = axisChoices({ structure: STRUCTURE, self: 'p1', groupings: [{ id: 'g1', title: 'Grouping 1' }, { id: 'g2', title: 'Grouping 2' }],
         loops: (a, b) => b === 'g2' });
     assert.deepEqual(choices.obs, ['cell_type', 'condition', 'is_doublet', 'label']);
@@ -407,9 +406,9 @@ test('Groups: an obs column is a categorical one; groupings follow, a loop unava
 });
 
 test('the cell axis as the page\'s group sources read it: a grouping by its id, an obs column as the plot\'s own axis', () => {
-    assert.equal(axisSourceId('p1', { type: 'cell-group', key: 'g1' }), 'g1');
-    assert.equal(axisSourceId('p1', { type: 'obs', key: 'cell_type' }), 'axis:p1');
-    assert.equal(axisSourceId('p1', undefined), null);
+    assert.equal(axisSourceId('p1', { type: 'cell-group', key: 'g1' }, 'axis:'), 'g1');
+    assert.equal(axisSourceId('p1', { type: 'obs', key: 'cell_type' }, 'axis:'), 'axis:p1');
+    assert.equal(axisSourceId('p1', undefined, 'axis:'), null);
     const r = axisRecipe({ type: 'obs', key: 'cell_type' });
     assert.deepEqual(r.partitionings, [{ source: { type: 'obs', key: 'cell_type' } }]);
     assert.equal(axisRecipe({ type: 'obs', key: 'cell_type' }), r, 'the same object until it changes');
