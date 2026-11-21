@@ -15,10 +15,13 @@
  *                   provider's grading of a method on a layer of this kind. ctx = { stats, label, ...context(recipe) }
  *   context         (recipe) -> the recipe-dependent facts grade needs (the signature's `hasDown`, its threshold)
  *   layerLines      (layer, recipe, kind, stats, offered) -> lines for a LAYER's row (default: none)
+ *   resetFields     the option fields a reset writes and `isDefaultOffer` compares (default: input, method, offered,
+ *                   layers). A grouping's recipe has no input and no method: it names offered and layers only
  *
  * and gets, as ONE implementation: the offered list and layers, `isOffered`, the graded menu, the summaries, the
  * lines under a method, the parameters of a method and the parsing of what is typed. The fields it reads from a recipe
- * are `input`, `method`, `offered` and `layers`.
+ * are `input`, `method`, `offered` and `layers`; a recipe without `input` reads as the default layer, one without
+ * `method` as the default method.
  *
  * Switching an option off never breaks a consumer that uses it: it keeps its setting and shows that the option is no
  * longer offered, with a way to offer it again (`offeredOptions` leaves it out, `isOffered` says).
@@ -121,7 +124,8 @@ const strictSame = (key, have, want) => (have === undefined ? null : have) === w
 export function createOptionsModel(spec) {
     const {
         methods, defaultMethod, defaultOffered, defaultLayer = 'X', paramDefaults = {}, sameParam = strictSame,
-        paramNotes = () => [], paramLines = {}, grade, context = () => ({}), layerLines: customLayerLines = () => []
+        paramNotes = () => [], paramLines = {}, grade, context = () => ({}), layerLines: customLayerLines = () => [],
+        resetFields = ['input', 'method', 'offered', 'layers']
     } = spec;
     if (!Array.isArray(methods) || !methods.length) throw new Error('options-model: a method table is required');
     if (typeof grade !== 'function') throw new Error('options-model: a grading function is required');
@@ -161,10 +165,12 @@ export function createOptionsModel(spec) {
         return [...seen];
     }
 
+    /** The layer a recipe reads by default: its own input, or the default layer when it has none (a grouping). */
+    const inputOf = (recipe) => (typeof recipe.input === 'string' && recipe.input ? recipe.input : defaultLayer);
     /** The methods a recipe (or a source's option fields) offers, in menu order. */
     const offeredMethods = (recipe) => cleanOffered(recipe.offered, recipe.method);
     /** The layers it offers, in the order they were offered: the first is where a new consumer starts. */
-    const offeredLayers = (recipe) => cleanLayers(recipe.layers, recipe.input);
+    const offeredLayers = (recipe) => cleanLayers(recipe.layers, inputOf(recipe));
 
     /** Whether a consumer may pick `method` (and `layer`, when given) of this source now. */
     function isOffered(recipe, method, layer) {
@@ -275,23 +281,25 @@ export function createOptionsModel(spec) {
     /** What the parameter `key` does, naming the value in force in `recipe`. */
     const paramLine = (key, recipe) => (paramLines[key] ? paramLines[key](recipe) : '');
 
-    /** The option fields a reset restores: the first of the default list, the default layer. */
-    const defaultFields = () => ({
-        input: defaultLayer, method: cleanOffered(defaultOffered, defaultMethod)[0],
-        offered: cleanOffered(defaultOffered, defaultMethod), layers: [defaultLayer]
-    });
+    /** The option fields a reset restores, of those the spec names: the first of the default list, the default layer. */
+    const defaultFields = () => {
+        const all = { input: defaultLayer, method: cleanOffered(defaultOffered, defaultMethod)[0],
+            offered: cleanOffered(defaultOffered, defaultMethod), layers: [defaultLayer] };
+        return Object.fromEntries(resetFields.map((field) => [field, all[field]]));
+    };
 
-    /** Whether `recipe` offers exactly the defaults (methods, layers, first method and layer). */
+    /** Whether `recipe` offers exactly the defaults (methods, layers, and the first method and layer it has fields for). */
     function isDefaultOffer(recipe) {
         const d = defaultFields();
-        return recipe.input === d.input && recipe.method === d.method
-            && offeredMethods(recipe).join() === d.offered.join() && offeredLayers(recipe).join() === d.layers.join();
+        return (!('input' in d) || recipe.input === d.input) && (!('method' in d) || recipe.method === d.method)
+            && offeredMethods(recipe).join() === cleanOffered(defaultOffered, defaultMethod).join()
+            && offeredLayers(recipe).join() === [defaultLayer].join();
     }
 
     return Object.freeze({
         methods: Object.freeze([...methods]), defaultMethod, defaultOffered: Object.freeze([...defaultOffered]), defaultLayer,
         paramDefaults, methodInfo, methodLabel, methodShort, isMethodDefault, cleanOffered, cleanLayers, offeredMethods,
-        offeredLayers, isOffered, gradedOptions, offeredOptions, methodLines, layerLines, offeredSummary, offeredSummaryShort,
+        offeredLayers, inputOf, isOffered, gradedOptions, offeredOptions, methodLines, layerLines, offeredSummary, offeredSummaryShort,
         paramsOf, usersOfParam, paramLine, defaultFields, isDefaultOffer,
         /** One method × layer, graded (the provider's grading with the recipe's facts filled in). */
         gradeOption: (method, layer, kind, recipe, extra) => gradeOf(method, layer, kind, recipe, extra)

@@ -17,6 +17,7 @@ import { csrfFetch } from './utils/csrf.js';
 import { DatasetState } from './utils/dataset-state.js';
 import { storableSessionStyles, replaceSessionStyles, onSessionStyleChange, saveSessionStylesTo, cleanSessionStyles } from './utils/session-style.js';
 import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
+import { referencedFields } from './utils/panel-references.js';
 import { storeRecord, storeName } from './utils/view-store.js';
 import { modeOptions } from './utils/panelset-load.js';
 import { knownStore, settleStore, appVersion } from './utils/store-identity.js';
@@ -638,7 +639,8 @@ const SessionManager = (function() {
             const panelConfigs = JSON.parse(JSON.stringify(sessionData.panelConfigs || {}));
 
             // registerClosedPanel gives a panel a new id when its id is taken;
-            // a plot's tableFilter must then follow its table to the new id.
+            // every reference to it (a plot's tableFilter, an axis on a signature's
+            // score, a table's score column) must then follow it to the new id.
             const panels = Object.values(panelConfigs).filter(panel => !panel.isSelectionTile && panel.config);
             const idMap = new Map();
             panels.forEach(panel => {
@@ -650,27 +652,13 @@ const SessionManager = (function() {
             });
             if (idMap.size) {
                 remapPanelReferences(panels.map(panel => panel.config), idMap);
+                // the registered panel is given again what holds its references (utils/panel-references.js): a
+                // plot by setConfig, a table, which has none, by updateConfig
                 panels.forEach(panel => {
                     const live = PanelManager.getPanel(panel.config.id);
-                    if (live && live.setConfig && panel.config.tableFilter !== undefined) {
-                        live.setConfig({ tableFilter: panel.config.tableFilter });
-                    }
-                    // a plot's gene-score sources follow their signature to its new id
-                    if (live && live.setConfig) {
-                        const follow = {};
-                        for (const axis of ['x', 'y', 'z', 'color']) {
-                            if (panel.config[axis] && panel.config[axis].type === 'gene-score') follow[axis] = panel.config[axis];
-                        }
-                        if (Array.isArray(panel.config.hoverInfo) && panel.config.hoverInfo.some(h => h && h.type === 'gene-score')) {
-                            follow.hoverInfo = panel.config.hoverInfo;
-                        }
-                        if (Object.keys(follow).length) live.setConfig(follow);
-                    }
-                    // a table's score columns, and the filter conditions that name them, follow too
-                    if (live && live.updateConfig && Array.isArray(panel.config.columns)
-                        && panel.config.columns.some(c => c && c.type === 'gene-score')) {
-                        live.updateConfig({ columns: panel.config.columns, searchBuilderConfig: panel.config.searchBuilderConfig });
-                    }
+                    const give = live && (live.setConfig || live.updateConfig);
+                    const fields = give ? referencedFields(panel.config, panel.type) : [];
+                    if (fields.length) give.call(live, Object.fromEntries(fields.map(field => [field, panel.config[field]])));
                 });
             }
             

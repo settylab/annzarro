@@ -201,7 +201,7 @@ const PanelManager = (function() {
      */
     function createPanel(type, config = {}, targetContainer = null) {
         if (!_panelTypes.has(type)) {
-            console.error(`Unknown panel type: ${type}`);
+            if (!Config.isReservedPanelType(type)) console.error(`Unknown panel type: ${type}`);
             return null;
         }
         
@@ -320,7 +320,7 @@ const PanelManager = (function() {
      */
     function createPanelInLayout(type, config = {}) {
         if (!_panelTypes.has(type)) {
-            console.error(`Unknown panel type: ${type}`);
+            if (!Config.isReservedPanelType(type)) console.error(`Unknown panel type: ${type}`);
             return null;
         }
 
@@ -445,7 +445,7 @@ const PanelManager = (function() {
      */
     function _formatPanelType(type) {
         // Use the label from centralized panel type definitions
-        const panelType = Config.PANEL_TYPES.find(pt => pt.type === type);
+        const panelType = Config.panelTypeInfo(type);
         if (panelType && panelType.label) {
             return panelType.label;
         }
@@ -916,7 +916,7 @@ const PanelManager = (function() {
                 
                 // Check if panel type is registered
                 if (!_panelTypes.has(type)) {
-                    console.error(`Unknown panel type: ${type} for panel id: ${id}`);
+                    if (!Config.isReservedPanelType(type)) console.error(`Unknown panel type: ${type} for panel id: ${id}`);
                     continue;
                 }
                 
@@ -1315,7 +1315,7 @@ const PanelManager = (function() {
      */
     function registerClosedPanel(type, config, { keepTitle = false } = {}) {
         if (!_panelTypes.has(type)) {
-            console.error(`Unknown panel type: ${type}`);
+            if (!Config.isReservedPanelType(type)) console.error(`Unknown panel type: ${type}`);
             return null;
         }
         

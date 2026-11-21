@@ -13,7 +13,8 @@ load_declarations()
 
 
 def test_every_panel_type_has_its_switch():
-    types = [e["type"] for e in panel_types()]
+    # an unreleased or reserved entry has no switch until it ships (test_f7_registration.py)
+    types = [e["type"] for e in panel_types() if not e.get("reserved") and e.get("released") is not False]
     assert {"cell-plot", "gene-plot", "cell-table", "gene-table", "gene-set"} <= set(types)
     for t in types:
         key = REGISTRY.get(f"panel.{t}.enabled")

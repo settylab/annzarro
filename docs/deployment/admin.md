@@ -341,21 +341,22 @@ A disabled type is missing from the panel menu. A saved panel set or
 the panel's saved JSON, so saving the layout again loses nothing and enabling the panel restores
 it.
 
+(admin-text-search)=
 ### Searching descriptions
 
 [`datasets.text-search.enabled`]{#policy-datasets-text-search-enabled} is on by default. It governs the
-search over the attribution and READMEs of the datasets (`GET /api/v1/datasets/text-search`: {doc}`../reference/http-api`). Off for a user, the route answers
+search over the attribution, the READMEs and the field names (columns, layers, embeddings and `uns` paths: {doc}`../user-guide/search`) of the datasets (`GET /api/v1/datasets/text-search`: {doc}`../reference/http-api`). Off for a user, the route answers
 `403 disabled_by_policy` to them; off in the config file (`server.text_index_enabled: false`) or for
 everyone, no crawl runs either. It is a restrict key like the others: the narrowest value of config, admin
 and user applies.
 
-The server reads the attribution and the first 64 KB of the README of every local store it can list, one crawl at a
+The server reads the attribution, the first 64 KB of the README and the names of the fields of every local store it can list, one crawl at a
 time for the whole server, into a gzipped index in the cache directory (`server.cache_dir`, shared by all
 workers). It needs no setup: each server process runs a keeper that starts the first crawl a few seconds after it
 starts (15 s), continues a crawl that stopped partway, and reads the datasets again for changes once the index is older than
 `server.text_index_ttl_s` (30 minutes). A search never starts a crawl. A dataset with neither a README nor an
-attribution is not opened: its signature (a few `stat` calls) already says there is nothing to read, and it is found by
-name only; a dataset that has not changed costs the same few `stat` calls on every later round. Remote datasets are
+attribution has only its names read, from its consolidated listing (a metadata read, without checking the listing against the files, so a store whose files were
+edited without rewriting the listing keeps its old names until it is consolidated again); a dataset that has not changed costs a few `stat` calls on every later round. The names are capped at 500 per kind and 16 KB for a dataset, and the index says which datasets were cut. The index version rose with field names, so the first crawl after an upgrade reads every dataset once more, and the dataset browser says field names are still being indexed meanwhile. Remote datasets are
 not indexed. A search shows a user only the stores they can open, and a restricted user is told the path of what they
 may open (as in their listings), nothing above a grant, and not how many stores the server holds. **Clear cache**
 marks the index stale, so the keeper refreshes it on its next round; it does not delete it. Each crawl logs a line at INFO

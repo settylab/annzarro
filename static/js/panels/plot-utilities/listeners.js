@@ -1,6 +1,6 @@
-import { NEW_SIGNATURE, OFFER_MORE, offerOtherScores, sourceInput } from '../../utils/score-source.js';
-import { scoreColumnOptions } from './panel-ui-update.js';
-import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
+import { sourceInput } from '../../utils/score-source.js';
+import { getSource } from '../../utils/source-registry.js';
+import { updateColorSliderUI, setupAxisSelector, takeSubKey, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { autoPointCount, plotArea } from '../../utils/view-point-style.js';
@@ -31,6 +31,7 @@ export function setupPlotEventListeners({
     controlsContainer,
     settings,
     plotType,
+    consumer,
     data,
     id,
     loadDataAndCreatePlot,
@@ -46,6 +47,7 @@ export function setupPlotEventListeners({
         plotContainer,
         settings,
         plotType,
+        consumer,
         data,
         id,
         loadDataAndCreatePlot,
@@ -60,7 +62,8 @@ export function setupPlotEventListeners({
         data,
         id,
         loadDataAndCreatePlot,
-        updatePlotElements
+        updatePlotElements,
+        consumer
     );
     
     setupColorControls(
@@ -156,6 +159,7 @@ export function setupResizeObserver(plotContainer) {
  * @param {string|number} id - Unique identifier to build element selectors.
  * @param {Function} loadDataAndCreatePlot - Function to recreate the entire plot.
  * @param {Function} updatePlotElements - Function to update plot properties.
+ * @param {string} consumer - the panel type ('cell-plot', 'gene-plot'): what the z axis's type menu lists
  */
 export function setupPlotControlListeners(
     controlsContainer,
@@ -165,7 +169,8 @@ export function setupPlotControlListeners(
     data,
     id,
     loadDataAndCreatePlot,
-    updatePlotElements
+    updatePlotElements,
+    consumer
   ) {
     // Use jQuery for element selection and event binding
     const $controlsContainer = jQuery(controlsContainer);
@@ -211,7 +216,7 @@ export function setupPlotControlListeners(
             // No matrix source: let the selector pick an annotation column.
             : { type: zType, key: '', column: '' };
           // Call the axis selector setup helper from the controls object.
-          setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure);
+          setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure, { consumer, roles: ['z'] });
         }
         loadDataAndCreatePlot();
       }
@@ -737,10 +742,11 @@ export function setupColorControls(
         _updatePlotElements({ colors: true, colorRange: true });
         _scoreLogHint();
     };
-    // A z-score is mostly negative, and a log colour scale cannot show a value of zero or below: those
-    // cells are not dropped, they share the lowest colour (the floor). Say how many, in plain words.
+    // A provider's values (a z-score) may be mostly negative, and a log colour scale cannot show a value of zero
+    // or below: those cells are not dropped, they share the lowest colour (the floor). Say how many, in plain words.
     function _scoreLogHint() {
-        if (!settings.color || settings.color.type !== 'gene-score' || !settings.color.log || !data.colorLog || !Array.isArray(data.colorRaw)) return;
+        const provider = settings.color && getSource(settings.color.type);
+        if (!provider || !settings.color.log || !data.colorLog || !Array.isArray(data.colorRaw)) return;
         const floor = data.colorLog.floor;
         let low = 0, finite = 0;
         for (const v of data.colorRaw) {
@@ -749,7 +755,7 @@ export function setupColorControls(
             if (!(v > floor)) low++;
         }
         if (!low) return;
-        _logHint(`Log colour scale: ${low.toLocaleString('en-US')} of ${finite.toLocaleString('en-US')} cells have a score at or below ${Number(floor.toPrecision(3))} `
+        _logHint(`Log colour scale: ${low.toLocaleString('en-US')} of ${finite.toLocaleString('en-US')} cells have a ${provider.vocabulary.result} at or below ${Number(floor.toPrecision(3))} `
             + 'and are all drawn in the lowest colour. A log scale cannot tell them apart.');
     }
     $logColorButton.on('click', () => {
@@ -1048,6 +1054,7 @@ function setupAxisSelectorListeners(
     plotContainer,
     settings,
     plotType,
+    consumer,
     data,
     id,
     loadDataAndCreatePlot,
@@ -1085,6 +1092,12 @@ function setupAxisSelectorListeners(
     // Now change the type
     delete settings[axis].auto;   // a colour the user changed is theirs
     settings[axis].type = newType;
+    // a provider's keys are its entities: the old type's key is none of them (nor one that is gone), so the axis
+    // takes the one it last had of this type, else the provider's first
+    if (getSource(newType)) {
+      const was = settings[axis].history && settings[axis].history[newType];
+      settings[axis].key = (was && was.key) || '';
+    }
     
     // Show loading indicators for key and column selects
     showDropdownLoading($keySelect[0]);
@@ -1096,7 +1109,7 @@ function setupAxisSelectorListeners(
       return;
     }
     
-    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
+    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure, { consumer, roles: [axis] });
 
     // Initialize history storage if needed
     if (!settings[axis].history) {
@@ -1127,8 +1140,9 @@ function setupAxisSelectorListeners(
       return;
     }
 
-    if (newType === 'gene-score') {
-      // the option list was built and the first option adopted (method in `column`, layer beside it): its ids are not columns
+    if (getSource(newType)) {
+      // the provider's third menu was built and its first entry adopted (a score's method in `column`, its layer
+      // beside it), or it has none: its values are not columns to fall back on
       handleAxisUpdate(axis, plotType);
       return;
     }
@@ -1165,9 +1179,10 @@ function setupAxisSelectorListeners(
     let newKey = jQuery(this).val();
     const $columnSelect = $container.find(`.axis-column-select[data-axis="${axis}"]`);
 
-    // "New signature…": a Gene Signature opens beside this plot and this axis takes it
-    if (settings[axis].type === 'gene-score' && newKey === NEW_SIGNATURE) {
-      const made = window.PanelManager && window.PanelManager.createPanelNextTo('gene-signature', id);
+    // a provider's way to make an entity ("New signature…"): it opens beside this plot and this axis takes it
+    const provider = getSource(settings[axis].type);
+    if (provider && provider.newEntity && newKey === provider.newEntity.value) {
+      const made = provider.newEntity.run(id);
       if (!made) { jQuery(this).val(settings[axis].key || ''); return; }
       newKey = made.getId();
       settings[axis].label = made.getTitle();
@@ -1197,7 +1212,7 @@ function setupAxisSelectorListeners(
       return;
     }
 
-    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
+    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure, { consumer, roles: [axis] });
 
     // Initialize history storage if needed
     if (!settings[axis].history) {
@@ -1222,20 +1237,10 @@ function setupAxisSelectorListeners(
   $container.find('.axis-column-select').on('change', function() {
     const axis = jQuery(this).data('axis');
     delete settings[axis].auto;
-    if (settings[axis].type === 'gene-score') {
-      // one list of the signature's offered options: the method goes in `column`, the layer beside it
-      const chosen = this.selectedOptions[0];
-      if (chosen && chosen.value === OFFER_MORE) {
-        // not a choice: the way to the signature's own list of offers; the plot keeps what it had
-        offerOtherScores(settings[axis].key, id);
-        const was = scoreColumnOptions(settings[axis]).chosen;
-        if (was !== null) this.value = was;
-        return;
-      }
-      settings[axis].column = (chosen && chosen.dataset.method) || jQuery(this).val();
-      const layer = chosen && chosen.dataset.layer;
-      if (layer) settings[axis].layer = layer; else delete settings[axis].layer;
-      handleAxisUpdate(axis, plotType);
+    if (getSource(settings[axis].type)) {
+      // the provider's third menu: an entry is what the setting stores (a score's method in `column`, its layer
+      // beside it), or a way somewhere (Offer other scores…) after which the plot keeps what it had
+      if (takeSubKey(settings[axis], this, id)) handleAxisUpdate(axis, plotType);
       return;
     }
     settings[axis].column = jQuery(this).val();

@@ -9,9 +9,12 @@
  * source's panel id>, column: <method>, layer, label: <its title when last seen>}`
  * asks here for its series (`loadScoreSeries`). A source is a Gene Signature or
  * a Gene Table (utils/score-source-panels.js). A ready score is returned as a series. Anything
- * else throws `ScoreUnavailable`: a colour falls back to neutral points (the
+ * else throws `SourceUnavailable`: a colour falls back to neutral points (the
  * plot's existing colour fallback) and an axis to a placeholder, both with the
  * notice over the plot. When the state changes, the plot is drawn again.
+ *
+ * The plots reach all of it through the provider registered at the end (utils/source-registry.js): its key
+ * list, its third menu of offered options, its load, titles and placeholder.
  */
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -25,11 +28,11 @@ import { createScoreApi } from './gene-score-client.js';
 import { describeScore } from './score-notices.js';
 import { worstNotice, paintNotice } from './source-notices.js';
 import { actions } from './source-actions.js';
-import { registerSource, subKeyOf, layerOf } from './source-registry.js';
+import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
 import { DEFAULT_INPUT, DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
-import { createSourceAdapter, isSourceType, kindOfType, optionFieldsOf } from './score-source-panels.js';
+import { createSourceAdapter, isSourceType, kindOfType, optionFieldsOf, scoreKeyOptions } from './score-source-panels.js';
 import { findCycle, TableResolver } from './table-resolver.js';
 
 /** What each aggregation is called where a consumer picks it (level 3). */
@@ -61,7 +64,7 @@ export async function loadScoreSeriesWhenReady(setting, opts, signal = null) {
             if (done) done.quiet = false;
             return got;
         } catch (error) {
-            if (!keep || !error || error.name !== 'ScoreUnavailable' || !PENDING.includes(error.scoreState)) {
+            if (!keep || !error || error.name !== 'SourceUnavailable' || !PENDING.includes(error.state)) {
                 // it lasts (or there is nothing to keep): say so
                 const rec = opts.host ? recordsOf(opts.host).get(opts.role) : null;
                 if (rec) { rec.quiet = false; paint(opts.host); }
@@ -95,7 +98,8 @@ const PanelManager = {
     getPanel: (id) => globalThis.PanelManager.getPanel(id),
     getAllPanels: () => globalThis.PanelManager.getAllPanels(),
     getActivePanels: () => globalThis.PanelManager.getActivePanels(),
-    reopenClosedPanel: (id, opts) => globalThis.PanelManager.reopenClosedPanel(id, opts)
+    reopenClosedPanel: (id, opts) => globalThis.PanelManager.reopenClosedPanel(id, opts),
+    createPanelNextTo: (type, nextTo) => globalThis.PanelManager.createPanelNextTo(type, nextTo)
 };
 
 let _store = null;
@@ -268,16 +272,11 @@ function nameSetting(setting) {
     return changed;
 }
 
-/** A custom error: the series cannot be drawn yet, and why. */
-export class ScoreUnavailable extends Error {
-    constructor(text, notice, coverage, scoreState = null) {
-        super(text);
-        this.scoreState = scoreState;
-        this.name = 'ScoreUnavailable';
-        this.scoreNotice = notice;
-        this.coverage = coverage;
-    }
-}
+/** The type of the source this module provides: what a consumer's setting names. */
+const SCORE_TYPE = 'gene-score';
+
+/** The series cannot be drawn yet, and why. */
+const unavailable = (text, notice, coverage, state = null) => new SourceUnavailable(text, notice, coverage, state, SCORE_TYPE);
 
 // ---------------------------------------------------------------------------
 // records: one handle per (host, role)
@@ -345,10 +344,10 @@ function stillUsed(rec) {
     if (!panel || typeof panel.getConfig !== 'function') return true;
     const cfg = panel.getConfig();
     if (isHover(rec.role)) {
-        return (cfg.hoverInfo || []).some(h => h && h.type === 'gene-score' && h.key === rec.sigId && subKeyOf(h) === rec.sub && layerOf(h) === (rec.layer || ''));
+        return (cfg.hoverInfo || []).some(h => h && h.type === SCORE_TYPE && h.key === rec.sigId && subKeyOf(h) === rec.sub && layerOf(h) === (rec.layer || ''));
     }
     const s = cfg[rec.role];
-    return !!(s && s.type === 'gene-score' && s.key === rec.sigId && subKeyOf(s) === rec.sub && layerOf(s) === (rec.layer || ''));
+    return !!(s && s.type === SCORE_TYPE && s.key === rec.sigId && subKeyOf(s) === rec.sub && layerOf(s) === (rec.layer || ''));
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +374,7 @@ function noticeOf(rec) {
  * The placeholder an axis shows while its score cannot be drawn. Also the
  * progress repaint: it replaces itself.
  */
-export function drawScorePlaceholder(host, notice) {
+function drawScorePlaceholder(host, notice) {
     if (!host) return;
     const unit = 'cells';
     const cov = Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: null });
@@ -462,7 +461,7 @@ function recordFor(host, role, setting) {
  * @param {{host: HTMLElement, role: string, expected: (number|null), unit: string}} opts
  * @returns {Promise<{values: Array<number>, type: 'numerical', categories: null, coverage: Coverage, vector: Float32Array}>}
  *   `values` is a plain array (the regular plot's form); `vector` is the Float32Array
- * @throws {ScoreUnavailable} when no score can be drawn
+ * @throws {SourceUnavailable} when no score can be drawn
  */
 export function loadScoreSeries(setting, { host, role, expected, unit = 'cells', array = true, quiet = false }) {
     // the setting keeps the source's title (for when the source is deleted) and what the colour bar, axis titles and
@@ -471,7 +470,7 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
     const title = scoreLabel(setting);
     if (!host || !setting.key) {
         const notice = describeScore({ state: 'unset', title: '' }, { role });
-        throw new ScoreUnavailable(notice.headline, notice,
+        throw unavailable(notice.headline, notice,
             Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected }));
     }
     // an entry with no layer (an old link) is resolved now, once, to the signature's input
@@ -493,7 +492,7 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
         || describeScore({ ...snap, state: 'estimating' }, { role });
     // a caller that waits for the score says nothing yet (rec.quiet): no notice and no tag until it is known to last
     if (!(quiet && PENDING.includes(snap.state))) paint(host);
-    throw new ScoreUnavailable(notice.headline, notice,
+    throw unavailable(notice.headline, notice,
         Coverage.missing(GAP.UNAVAILABLE, `${notice.headline}${notice.text ? ` ${notice.text}` : ''}`,
             { source: `gene score ${title}`, unit, total: expected }), snap.state);
 }
@@ -684,14 +683,78 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 // ---------------------------------------------------------------------------
 // the provider: signatures are the first source with a third level
 
+/**
+ * A plot's series of a score: waits for it while the plot has a drawing to keep (loadScoreSeriesWhenReady). A Gene
+ * Plot cannot take one (a link can name it there): that axis says so, and the rest of the link works.
+ * @param {Object} setting
+ * @param {{host, role: string, axis: (string|null), expected: (number|null), unit: string, signal: (AbortSignal|null)}} opts
+ */
+function loadForPlot(setting, { host, role, axis, expected, unit, signal }) {
+    if (unit === 'genes') {
+        const notice = describeScore({ state: 'notcells', title: '' }, { role: role === 'color' ? 'colour' : (axis || 'x') });
+        return Promise.reject(unavailable(notice.headline, notice,
+            Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected })));
+    }
+    return loadScoreSeriesWhenReady(setting, { host, role, expected, unit }, signal);
+}
+
+/**
+ * The key list of a gene score: every source, open or closed, by its title; the one held when it is gone, so the
+ * plot can say it was deleted; and the way to make a signature.
+ * @param {Array<{id: string, title: string, kind?: string}>} list - the sources
+ * @param {{key?: string, label?: string}} setting - what the consumer holds; `label` is what its source was called
+ */
+function scoreKeyEntries(list, setting) {
+    const options = scoreKeyOptions(list);
+    const held = setting && setting.key;
+    // (a key left over from another source type is not a deleted source: source ids are panel ids)
+    if (held && /^gene-(signature|table)-/.test(held) && !list.some(source => source.id === held)) {
+        options.push({ value: held, text: `${setting.label || held} (deleted)` });
+    }
+    if (!options.length) options.push({ value: '', text: 'No signatures or tables yet' });
+    options.push({ value: NEW_SIGNATURE, text: 'New signature…' });
+    return options;
+}
+
+/**
+ * The third menu of a gene score and the entry that is chosen, without changing anything: ONE list of what the
+ * signature's panel offers, method and layer together (scoreOptions), then the choice the consumer holds if it is
+ * no longer offered (kept, labelled), then the way to offer more. The method is stored in `column`, the layer beside
+ * it. `adopt` is set when the consumer holds none, so the first entry becomes its choice.
+ * @param {Object} setting
+ */
+function scoreSubKeyMenu(setting) {
+    const offered = scoreOptions(setting.key);
+    const options = offered.map(o => ({ value: o.value, text: o.label, column: o.method, layer: o.layer }));
+    const wanted = optionOf(setting);
+    let chosen = wanted ? wanted.value : null;
+    let adopt = null;
+    // a column left over from another source (an obsm dimension) is not a lapsed choice: only a method is
+    if (!wanted && setting.key && offered.length && (METHODS.includes(setting.column) || setting.layer)) {
+        // the id form of the offered entries: `method@layer`
+        const method = setting.column || DEFAULT_METHOD;
+        chosen = `${method}@${setting.layer || sourceInput(setting.key) || DEFAULT_INPUT}`;
+        options.push({ value: chosen, text: lapsedLabel(setting), column: method, layer: setting.layer || '' });
+    } else if (!wanted && offered.length) {
+        chosen = offered[0].value;
+        adopt = { column: offered[0].method, layer: offered[0].layer };
+    }
+    // not a choice: the way to the signature's own list of offers; the consumer keeps what it had
+    if (setting.key && offered.length) options.push({ value: OFFER_MORE, text: 'Offer other scores…', run: (s, nextTo) => offerOtherScores(s.key, nextTo) });
+    return { options, chosen, adopt };
+}
+
 registerSource({
-    type: 'gene-score',
+    type: SCORE_TYPE,
     label: 'gene-score',
     entity: 'cells',
     consumers: ['cell-plot'],
     axes: ['x', 'y', 'z', 'color', 'hover'],
     defaultSub: DEFAULT_METHOD,
+    layered: true,
     entities: () => sourceList(),
+    keyEntries: scoreKeyEntries,
+    newEntity: { value: NEW_SIGNATURE, run: (nextTo) => (PanelManager.createPanelNextTo('gene-signature', nextTo) || null) },
     /** The aggregations the server computes, z-score mean first; a new method is a new entry in METHODS. */
     subKeys: (id) => {
         const panel = sourcePanel(id);
@@ -699,7 +762,11 @@ registerSource({
         // no id: every aggregation; an id nothing answers to (a deleted signature): the ones offered by default
         return (id ? DEFAULT_OFFERED : METHODS).map(value => ({ value, label: SUB_LABELS[value] || value }));
     },
-    load: (setting, opts) => loadScoreSeries(setting, opts)
+    subKeyMenu: scoreSubKeyMenu,
+    load: loadForPlot,
+    titleOf: (setting) => `gene score ${scoreTitle(setting)}`,
+    placeholder: drawScorePlaceholder,
+    vocabulary: { result: 'score' }
 });
 
 

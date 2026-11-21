@@ -250,6 +250,16 @@ server:
       minimum: 0
       description: Seconds a subset waits for subset_budget_mb before answering 503 read_busy with Retry-After
       default: 30
+    compute_budget_mb:
+      type: number
+      minimum: 1
+      description: MB all compute jobs in flight in one worker (gene scores, cell groupings and the reads behind them) may hold together, each charged its estimate; the group code cache is emptied first when a job needs room, and a job that does not fit waits. At 100M cells one job needs up to 2.3 GB, so a lower value makes jobs wait for each other; 4608 = 4.5 GB per worker
+      default: 4608
+    group_code_cache_mb:
+      type: number
+      minimum: 1
+      description: MB of group codes (one small integer per cell for each grouping resolved) one worker keeps for reuse by the plots that colour or count by a grouping; counted inside compute_budget_mb and emptied first when a job needs room
+      default: 512
     max_requests:
       type: integer
       minimum: 0

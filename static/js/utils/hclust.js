@@ -290,7 +290,6 @@ const spawnWorker = () => new Worker(new URL("./hclust-worker.js", import.meta.u
  * A clustering client that runs `clusterRows` in a worker. It remembers the last 16 answers by a hash of the
  * input and its settings, and asks once for identical requests in flight. A failed request is not remembered.
  */
-// export-unused-ok: X2b and X3b consume the client; no module imports it yet
 export function createHclustClient(makeWorker = spawnWorker) {
   let worker = null, ended = false, nextId = 1;
   const pending = new Map();

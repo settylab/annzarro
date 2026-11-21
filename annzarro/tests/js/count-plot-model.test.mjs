@@ -32,12 +32,15 @@ const ctxOf = (extra = {}) => ({
     ...extra
 });
 
-const withContract = (reply, extra = {}) => ({ ...reply, n_shown: reply.n_counted + (extra.left || 0),
-    axes: reply.axes.map((a, i) => {
-        const bins = a.levels.filter((id) => id.startsWith('bin:')).length;
-        const binned = bins ? { edges: Array.from({ length: bins + 1 }, (_, k) => k), bins_made: bins, degenerate: false } : {};
-        return { ...binned, ...a, n_outside: i === 0 ? [extra.outside || 0, 0] : [0, 0] };
-    }) });
+/** A grid reply as the group store holds it (group-store.js): the result frame read, and its blocks apart. */
+const withContract = ({ counts, measure, ...reply }, extra = {}) => ({
+    reply: { ...reply, n_shown: reply.n_counted + (extra.left || 0),
+        axes: reply.axes.map((a, i) => {
+            const bins = a.levels.filter((id) => id.startsWith('bin:')).length;
+            const binned = bins ? { edges: Array.from({ length: bins + 1 }, (_, k) => k), bins_made: bins, degenerate: false } : {};
+            return { ...binned, ...a, n_outside: i === 0 ? [extra.outside || 0, 0] : [0, 0] };
+        }) },
+    counts, measures: measure || null });
 const gridOf = (name, extra) => M.readGrid(withContract(expected.grid[name], extra));
 
 // --- the stored config ---------------------------------------------------------------------------------------------
@@ -448,22 +451,22 @@ test('the strip is made of the reply: cells shown, counted, without a value per 
 
 test('an axis reports its outside cells as the grouping reply does, below and above, and the strip sums them', () => {
     const reply = withContract(expected.grid.kept_other_x_condition);
-    reply.axes[0].n_outside = [3, 4];
-    reply.axes[1].n_outside = [1, 1];
+    reply.reply.axes[0].n_outside = [3, 4];
+    reply.reply.axes[1].n_outside = [1, 1];
     const table = M.countTable({ version: 1, mode: 'bar', x: obs('a') }, M.readGrid(reply), [{ input: 'x' }, { input: 'split' }]);
     assert.equal(M.stripNumbers(table).outside, 9);
 });
 
 test('a reply without n_shown or an axis\'s n_outside is a contract error, not a guess', () => {
     const noShown = withContract(expected.grid.three_axes);
-    delete noShown.n_shown;
+    delete noShown.reply.n_shown;
     assert.throws(() => M.readGrid(noShown), (e) => e.reason === 'bad_grid_reply');
     const noOutside = withContract(expected.grid.three_axes);
-    delete noOutside.axes[1].n_outside;
+    delete noOutside.reply.axes[1].n_outside;
     assert.throws(() => M.readGrid(noOutside), (e) => e.reason === 'bad_grid_reply');
-    noOutside.axes[1].n_outside = 3;
+    noOutside.reply.axes[1].n_outside = 3;
     assert.throws(() => M.readGrid(noOutside), (e) => e.reason === 'bad_grid_reply', 'one integer is not the form');
-    noOutside.axes[1].n_outside = [-1, 0];
+    noOutside.reply.axes[1].n_outside = [-1, 0];
     assert.throws(() => M.readGrid(noOutside), (e) => e.reason === 'bad_grid_reply');
 });
 
@@ -471,13 +474,13 @@ test('a binned axis must carry edges, bins_made and degenerate, and a degenerate
     const fresh = () => withContract(expected.grid.pseudotime_x_cell_type);
     for (const field of ['edges', 'bins_made', 'degenerate']) {
         const reply = fresh();
-        delete reply.axes[0][field];
+        delete reply.reply.axes[0][field];
         assert.throws(() => M.readGrid(reply), (e) => e.reason === 'bad_grid_reply' && e.message.includes(field), field);
     }
     const flat = fresh();
-    flat.axes[0].degenerate = true;
+    flat.reply.axes[0].degenerate = true;
     assert.throws(() => M.readGrid(flat), (e) => e.message.includes('value'));
-    flat.axes[0].value = 3;
+    flat.reply.axes[0].value = 3;
     assert.equal(M.readGrid(flat).axes[0].value, 3);
     const categorical = withContract(expected.grid.three_axes);
     assert.doesNotThrow(() => M.readGrid(categorical), 'a categorical axis carries no edges');
@@ -537,4 +540,43 @@ test('the levels are labelled from the reply: closed ranges for the bins, plain 
     const pie = M.countTable({ version: 1, mode: 'pie', x: obs('k') }, M.readGrid(withContract({ axes: [{ levels: Array.from({ length: 14 }, (_, i) => `c:L${i}`) }],
         counts: Array.from({ length: 14 }, (_, i) => 20 - i), n_counted: 1 })), [{ input: 'x' }]);
     assert.equal(M.levelLabelsOf({ version: 1, mode: 'pie', x: obs('k') }, pie)[0].get('@other'), 'k other');
+});
+
+// --- the grid as the group store gives it (G7b, H4) -----------------------------------------------------------------
+
+test('H4: a ready plan carries its key: what is computed, with a table by the hash of its cells and never its bitset', () => {
+    const table = { source: { type: 'table', key: 't1' } };
+    let flags = new Uint8Array(4000).fill(1);
+    const ctx = (hash) => ctxOf({ bitsetFor: () => flags, hashOf: (source) => (source.type === 'table' ? `t:${hash}` : undefined) });
+    const a = planOf({ mode: 'bar', x: table, split: obs('cell_type') }, ctx('A'));
+    assert.equal(a.state, 'ready');
+    assert.equal(typeof a.key, 'string');
+    assert.ok(!a.key.includes(a.request.sets.s0.data), 'the bitset is not in the key');
+    assert.ok(a.key.length < 1000);
+    flags = new Uint8Array(4000).fill(1);
+    assert.equal(planOf({ mode: 'bar', x: table, split: obs('cell_type') }, ctx('A')).key, a.key, 'the same cells, the same key');
+    assert.notEqual(planOf({ mode: 'bar', x: table, split: obs('cell_type') }, ctx('B')).key, a.key, 'other cells, another key');
+    const moved = planOf({ mode: 'bar', x: { source: { type: 'table', key: 't2' } }, split: obs('cell_type') }, ctx('A'));
+    assert.equal(moved.key, a.key, 'a table is keyed by its cells, not its panel id');
+    assert.notEqual(planOf({ mode: 'pie', x: table }, ctx('A')).key, a.key);
+});
+
+test('H4: the key follows what the engine computes: bins, the mode, a measure; not what only the drawing reads', () => {
+    const key = (config) => planOf(config).key;
+    const hist = { mode: 'histogram', x: obs('pseudotime') };
+    assert.equal(key(hist), key({ ...hist, x: obs('pseudotime', { binning: { method: 'equal_width', bins: 50 } }) }), 'a default written out');
+    assert.notEqual(key(hist), key({ ...hist, x: obs('pseudotime', { binning: { method: 'equal_width', bins: 60 } }) }));
+    assert.notEqual(key(hist), key({ ...hist, mode: 'density' }));
+    const bar = { mode: 'bar', x: obs('cell_type') };
+    assert.equal(key(bar), key({ ...bar, arrangement: 'fill' }), 'the arrangement is drawing only');
+    assert.notEqual(key(bar), key({ ...bar, value: { kind: 'measure' }, measure: { stat: 'mean', source: { type: 'obs', key: 'depth' } } }));
+});
+
+test('H4: readGrid reads the group store\'s value, and one value is one grid', () => {
+    const value = withContract({ axes: [{ levels: ['c:a', 'c:b'] }], counts: [3, 2], n_counted: 5 });
+    const grid = M.readGrid(value);
+    assert.equal(M.readGrid(value), grid, 'a paint reads the same grid, so its tables are reused');
+    assert.equal(grid.shown, 5);
+    const config = { version: 1, mode: 'bar', x: obs('k') };
+    assert.equal(M.countTable(config, M.readGrid(value), [{ input: 'x' }]), M.countTable(config, M.readGrid(value), [{ input: 'x' }]));
 });

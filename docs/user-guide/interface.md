@@ -164,7 +164,8 @@ loads the next ones. The server builds the index of descriptions by itself short
 fresh, so there is nothing to start. While it has not read every dataset yet, one line under the field says so
 ("Descriptions of 120 of 3,400 datasets searched so far"; a user limited to some folders is told that some datasets are not
 searched yet, without counts), and the next search shows the newer state. When all are read the line is not there.
-A dataset with neither a README nor an attribution is found by its name only. The button is not there when an
+The same search finds datasets by the names of their fields (columns, layers, embeddings and `uns` paths),
+which {doc}`search` describes. The button is not there when an
 administrator turned the search off ({doc}`../deployment/admin`). Remote datasets are not
 searched.
 

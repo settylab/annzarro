@@ -77,6 +77,7 @@ class Cost:
     entries: int            # stored values decoded, comparable with the score engine's entries
     layout: str             # column | csc | csr | dense
     n_cells: int
+    heavy: bool = False     # a whole-column pass whose time the entries do not say: a text column (heavy lane)
 
 
 # ---------------------------------------------------------------------------
@@ -84,8 +85,8 @@ class Cost:
 # ---------------------------------------------------------------------------
 
 @contextmanager
-def _root(reader, dataset_path: str):
-    """The open store: a zarr group or an HDF5 file."""
+def root(reader, dataset_path: str):
+    """The open store: a zarr group or an HDF5 file (closed on leaving the block)."""
     from .h5ad_reader import h5adReader
     if isinstance(reader, h5adReader):
         from . import h5ad_reader as h5
@@ -95,13 +96,14 @@ def _root(reader, dataset_path: str):
         finally:
             f.close()
         return
-    root = reader._get_root(dataset_path=dataset_path)
-    if root is None:
+    store = reader._get_root(dataset_path=dataset_path)
+    if store is None:
         raise FileNotFoundError(f"Dataset path does not exist: {dataset_path}")
-    yield root
+    yield store
 
 
-def _is_group(node) -> bool:
+def is_group(node) -> bool:
+    """A zarr group or an HDF5 group (what has members), as against an array."""
     return hasattr(node, "keys")
 
 
@@ -109,13 +111,13 @@ def _key_not_found(what: str) -> CellSourceError:
     return CellSourceError(404, "key_not_found", f"This dataset has no {what}.")
 
 
-def _n_cells(root) -> int:
+def n_cells(store) -> int:
     """Cells of the dataset, from the length of the obs index; nothing is read."""
-    if "obs" not in root:
+    if "obs" not in store:
         raise _key_not_found("obs table")
-    obs = root["obs"]
+    obs = store["obs"]
     member = obs[obs.attrs.get("_index", "_index")]
-    if _is_group(member):
+    if is_group(member):
         for child in ("codes", "values"):
             if child in member:
                 return int(member[child].shape[0])
@@ -162,7 +164,7 @@ def _is_zarr(reader) -> bool:
 
 
 def _plain_array(node, ndim: int) -> bool:
-    return (not _is_group(node) and getattr(node, "shape", None) is not None and len(node.shape) == ndim
+    return (not is_group(node) and getattr(node, "shape", None) is not None and len(node.shape) == ndim
             and np.dtype(node.dtype).kind in "biuf")
 
 
@@ -195,7 +197,7 @@ def _cell_row(reader, dataset_path: str, column, n: int) -> int:
 
 def _describe(node):
     """``(shape, stored entries or None, layout)`` of a matrix member without reading its values."""
-    if not _is_group(node):
+    if not is_group(node):
         shape = tuple(int(v) for v in node.shape)
         return shape, None, "dense"
     enc = str(node.attrs.get("encoding-type", ""))
@@ -212,18 +214,54 @@ def _describe(node):
 # Reading
 # ---------------------------------------------------------------------------
 
-def _as_obs(reader, dataset_path: str, key: str, idx: np.ndarray, kind: Optional[str]):
+def _uncached(reader, name: str, *args, **kwargs):
+    """``reader.<name>(...)`` without the reader's cache: a slab is read once, and the cache would keep every one
+    of them (200 to 300 MB at 100M cells). A reader whose method has no cache (a subset's) is called as it is."""
+    method = getattr(reader, name)
+    if hasattr(method, "__wrapped__"):
+        kwargs["disable_caching"] = True
+    return method(*args, **kwargs)
+
+
+def _plain_obs(reader, dataset_path: str, key: str, idx: np.ndarray, run: Optional[tuple]):
+    """The cells ``idx`` of a plain numeric or boolean obs column as stored, or None when the column is anything
+    else (categorical, nullable, text). A numpy bool array is read as an array, as numbers are, not as a list of
+    Python booleans."""
+    from .h5ad_reader import h5adReader
+    if isinstance(reader, h5adReader):
+        import h5py
+        from . import h5ad_reader as h5
+        with root(reader, dataset_path) as store:
+            node = store["obs"][key] if "obs" in store and key in store["obs"] else None
+            if (node is None or is_group(node) or len(node.shape) != 1 or np.dtype(node.dtype).kind not in "biuf"
+                    or isinstance(node.attrs.get("categories"), h5py.Reference)):
+                return None
+            return np.asarray(node[run[0]:run[1]]) if run is not None else np.asarray(h5._values(node, idx))
+    from .zarr_reader import take_rows
+    with root(reader, dataset_path) as store:
+        node = store["obs"][key] if "obs" in store and key in store["obs"] else None
+        if node is None or not _plain_array(node, 1):
+            return None
+        return np.asarray(node[run[0]:run[1]]) if run is not None else np.asarray(take_rows(node, idx))
+
+
+def _as_obs(reader, dataset_path: str, key: str, idx: np.ndarray, kind: Optional[str],
+            run: Optional[tuple] = None):
     """``(kind, values, categories)`` of the cells ``idx`` of an obs column. ``kind`` is what the first slab found."""
+    if kind in (None, "number", "bool"):
+        plain = _plain_obs(reader, dataset_path, key, idx, run)
+        if plain is not None:
+            return ("bool" if plain.dtype.kind == "b" else "number"), plain, None
     if kind in (None, "category"):
-        got = reader.get_obs_var_codes("cells", dataset_path, key, idx)
+        got = _uncached(reader, "get_obs_var_codes", "cells", dataset_path, key, idx)
         if got is not None:
             return "category", np.asarray(got[0]), got[1]
     if kind in (None, "number"):
-        numeric = reader.get_obs_var_numeric("cells", dataset_path, key, idx)
+        numeric = _uncached(reader, "get_obs_var_numeric", "cells", dataset_path, key, idx)
         if numeric is not None:
             return "number", np.asarray(numeric), None
-    listed = reader.get_obs_var("cells", dataset_path, indices=idx.tolist(), column_names=[key],
-                                include_categories=False)
+    listed = _uncached(reader, "get_obs_var", "cells", dataset_path, indices=idx.tolist(), column_names=[key],
+                       include_categories=False)
     values = (listed.get("data") or {}).get(key)
     if values is None:
         raise _key_not_found(f"obs column '{key}'")
@@ -248,31 +286,96 @@ def _direct_obs(reader, dataset_path: str, key: str):
     """``(_Direct, categories)`` when a zarr obs column can be sliced as stored, else ``(None, None)``."""
     if not USE_SLICES or not _is_zarr(reader):
         return None, None
-    with _root(reader, dataset_path) as root:
-        node = root["obs"][key]
+    with root(reader, dataset_path) as store:
+        node = store["obs"][key]
         if _plain_array(node, 1):
             return _Direct(array=node, dtype=node.dtype), None
-        if (_is_group(node) and node.attrs.get("encoding-type") == "categorical" and "codes" in node
+        if (is_group(node) and node.attrs.get("encoding-type") == "categorical" and "codes" in node
                 and "categories" in node and _plain_array(node["codes"], 1)):
-            got = reader.get_obs_var_codes("cells", dataset_path, key, np.zeros(1, dtype=np.int64))
+            got = _uncached(reader, "get_obs_var_codes", "cells", dataset_path, key, np.zeros(1, dtype=np.int64))
             if got is not None:
                 return _Direct(codes=node["codes"]), got[1]
     return None, None
 
 
+def _text_node(reader, node) -> bool:
+    """A plain array of strings (not a categorical or nullable group)."""
+    if is_group(node) or getattr(node, "shape", None) is None or len(node.shape) != 1:
+        return False
+    if not _is_zarr(reader):
+        import h5py
+        return h5py.check_string_dtype(node.dtype) is not None or np.dtype(node.dtype).kind in "SU"
+    return np.dtype(node.dtype).kind in "OUST"
+
+
+def _read_text(reader, node, idx: np.ndarray, run: Optional[tuple]) -> np.ndarray:
+    if not _is_zarr(reader):
+        from . import h5ad_reader as h5
+        if run is not None:
+            data = np.asarray(node[run[0]:run[1]])
+            return np.asarray([v.decode("utf-8") if isinstance(v, bytes) else v for v in data.tolist()], dtype=object)
+        return np.asarray(h5._values(node, idx), dtype=object)
+    from .zarr_reader import take_rows
+    data = np.asarray(node[run[0]:run[1]] if run is not None else take_rows(node, idx))
+    return data.astype(object)
+
+
+def _text_slabs(reader, dataset_path, key, rows, total, should_stop) -> Iterator[Slab]:
+    """A text column as categories: each slab is factorised against a running dictionary, so memory is the codes of
+    the cells shown (two bytes each) and the distinct values, never a list of strings. The categories are sorted as
+    the list path sorts them (``str``), and the codes are numbered by that order once the last slab is read. A column
+    with more than ``READ_ALL_MAX`` distinct values is refused (``too_many_categories``)."""
+    limit = category_rules.READ_ALL_MAX
+    seen: Dict[str, int] = {}
+    codes = np.full(total, 0xFFFF, dtype=np.uint16)
+    for a, b in _spans(total):
+        _guard(should_stop)
+        with root(reader, dataset_path) as store:
+            vals = _read_text(reader, store["obs"][key], _index(rows, a, b), _run(rows, a, b))
+        missing = np.fromiter((v is None for v in vals), dtype=bool, count=vals.size)
+        if missing.all():
+            continue
+        distinct, inverse = np.unique(vals[~missing].astype(str), return_inverse=True)
+        ids = np.asarray([seen.setdefault(v, len(seen)) for v in distinct.tolist()], dtype=np.int64)
+        if len(seen) > limit:
+            raise CellSourceError(422, "too_many_categories",
+                                  f"Column '{key}' has more than {limit} distinct values; the most a source can read is "
+                                  f"{limit}.", count=len(seen), limit=limit)
+        if len(seen) >= 0xFFFF and codes.dtype == np.uint16:
+            codes = np.where(codes == 0xFFFF, np.uint32(0xFFFFFFFF), codes.astype(np.uint32)).astype(np.uint32)
+        out = np.full(vals.size, codes.dtype.type(np.iinfo(codes.dtype).max), dtype=codes.dtype)
+        out[~missing] = ids[inverse.reshape(-1)]
+        codes[a:b] = out
+    order = sorted(seen)
+    rank = np.empty(len(order) + 1, dtype=np.int32)
+    for r, v in enumerate(order):
+        rank[seen[v]] = r
+    rank[-1] = -1
+    sentinel = np.iinfo(codes.dtype).max
+    for a, b in _spans(total):
+        chunk = codes[a:b].astype(np.int64)
+        chunk[chunk == sentinel] = len(order)
+        yield Slab(a, rank[chunk], "category", order)
+
+
 def _obs_slabs(reader, dataset_path, source, rows, total, should_stop) -> Iterator[Slab]:
     key = source.get("key")
-    with _root(reader, dataset_path) as root:
-        if "obs" not in root or key not in root["obs"]:
+    with root(reader, dataset_path) as store:
+        if "obs" not in store or key not in store["obs"]:
             raise _key_not_found(f"obs column '{key}'")
-        node = root["obs"][key]
+        node = store["obs"][key]
         n_categories = None
-        if _is_group(node) and "categories" in node and hasattr(node["categories"], "shape"):
+        if is_group(node) and "categories" in node and hasattr(node["categories"], "shape"):
             n_categories = int(node["categories"].shape[0])
     if n_categories is not None and n_categories > category_rules.READ_ALL_MAX:
         raise CellSourceError(422, "too_many_categories",
                               f"Column '{key}' has {n_categories} categories; the most a source can read is "
                               f"{category_rules.READ_ALL_MAX}.", count=n_categories, limit=category_rules.READ_ALL_MAX)
+    with root(reader, dataset_path) as store:
+        textual = _text_node(reader, store["obs"][key])
+    if textual:
+        yield from _text_slabs(reader, dataset_path, key, rows, total, should_stop)
+        return
     direct, categories = _direct_obs(reader, dataset_path, key)
     kind = None
     for a, b in _spans(total):
@@ -286,7 +389,7 @@ def _obs_slabs(reader, dataset_path, source, rows, total, should_stop) -> Iterat
                 values = np.asarray(direct.array[lo:hi])
                 yield Slab(a, values, "bool" if values.dtype.kind == "b" else "number")
             continue
-        kind, values, categories_ = _as_obs(reader, dataset_path, key, _index(rows, a, b), kind)
+        kind, values, categories_ = _as_obs(reader, dataset_path, key, _index(rows, a, b), kind, _run(rows, a, b))
         yield Slab(a, values, kind, categories_)
 
 
@@ -299,9 +402,9 @@ def _obsm_slabs(reader, dataset_path, source, rows, total, should_stop) -> Itera
     key, column = source.get("key"), _column_name(source)
     member = position = None
     if USE_SLICES and _is_zarr(reader):
-        with _root(reader, dataset_path) as root:
-            if "obsm" in root and key in root["obsm"] and _plain_array(root["obsm"][key], 2):
-                member = root["obsm"][key]
+        with root(reader, dataset_path) as store:
+            if "obsm" in store and key in store["obsm"] and _plain_array(store["obsm"][key], 2):
+                member = store["obsm"][key]
         if member is not None:
             try:
                 position = reader._column_position(column, member.shape[1], "obsm", key)
@@ -314,7 +417,8 @@ def _obsm_slabs(reader, dataset_path, source, rows, total, should_stop) -> Itera
             yield Slab(a, np.asarray(member[run[0]:run[1], position]), "number")
             continue
         try:
-            got = reader.get_obsm_varm("cells", key, dataset_path, indices=_index(rows, a, b), column_name=column)
+            got = _uncached(reader, "get_obsm_varm", "cells", key, dataset_path, indices=_index(rows, a, b),
+                            column_name=column)
         except MissingKeyError as e:
             raise CellSourceError(404, "key_not_found", str(e)) from e
         got = np.asarray(got)
@@ -325,24 +429,24 @@ def _obsm_slabs(reader, dataset_path, source, rows, total, should_stop) -> Itera
 
 def _obsp_slabs(reader, dataset_path, source, rows, total, should_stop) -> Iterator[Slab]:
     key = source.get("key")
-    with _root(reader, dataset_path) as root:
-        if "obsp" not in root or key not in root["obsp"]:
+    with root(reader, dataset_path) as store:
+        if "obsp" not in store or key not in store["obsp"]:
             raise _key_not_found(f"obsp '{key}'")
-        n = _n_cells(root)
+        n = n_cells(store)
     cell = _cell_row(reader, dataset_path, source.get("column"), n)
     member = None
     if USE_SLICES and _is_zarr(reader):
-        with _root(reader, dataset_path) as root:
-            if _plain_array(root["obsp"][key], 2):
-                member = root["obsp"][key]
+        with root(reader, dataset_path) as store:
+            if _plain_array(store["obsp"][key], 2):
+                member = store["obsp"][key]
     for a, b in _spans(total):
         _guard(should_stop)
         run = _run(rows, a, b) if member is not None else None
         if run is not None:
             yield Slab(a, np.asarray(member[cell, run[0]:run[1]]), "number")
             continue
-        got = np.asarray(reader.get_obsp_varp(key, "cells", dataset_path, row_indices=[cell],
-                                              col_indices=_index(rows, a, b)))
+        got = np.asarray(_uncached(reader, "get_obsp_varp", key, "cells", dataset_path, row_indices=[cell],
+                                   col_indices=_index(rows, a, b)))
         if got.size == 0:
             raise _key_not_found(f"obsp '{key}'")
         yield Slab(a, got.reshape(-1), "number")
@@ -405,8 +509,8 @@ def column(reader, dataset_path: str, source: Dict[str, Any], rows, *, axis: str
     come with the first ``next()``, before any slab. Closing the iterator closes what it opened.
     """
     kind = _refuse(source, axis)
-    with _root(reader, dataset_path) as root:
-        n = _n_cells(root)
+    with root(reader, dataset_path) as store:
+        n = n_cells(store)
     rows = _check_rows(rows, n)
     total = n if rows is None else int(rows.size)
     if kind == "table":
@@ -431,12 +535,16 @@ def cost(reader, dataset_path: str, source: Dict[str, Any], *, axis: str = "obs"
     obsm and obsp are charged their whole matrix: the whole array when dense, the stored entries when sparse.
     """
     kind = _refuse(source, axis)
-    with _root(reader, dataset_path) as root:
-        n = _n_cells(root)
-        if kind in ("table", "obs"):
-            return Cost(0 if kind == "table" else n, "column", n)
+    with root(reader, dataset_path) as store:
+        n = n_cells(store)
+        if kind == "obs":
+            key = source.get("key")
+            node = store["obs"][key] if "obs" in store and key in store["obs"] else None
+            return Cost(n, "column", n, heavy=node is not None and _text_node(reader, node))
+        if kind == "table":
+            return Cost(0, "column", n)
         if kind in ("obsm", "obsp"):
-            group = root[kind] if kind in root else None
+            group = store[kind] if kind in store else None
             key = source.get("key")
             if group is None or key not in group:
                 raise _key_not_found(f"{kind} '{key}'")

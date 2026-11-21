@@ -4,6 +4,7 @@
 :maxdepth: 1
 
 interface
+search
 focus-and-lock
 cell-and-gene-plots
 colour-scales

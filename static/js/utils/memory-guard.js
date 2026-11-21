@@ -553,6 +553,7 @@ export class Ledger {
         this._drawing = new Map();    // token -> entry, every draw not yet settled
         this._seq = 0;
         this.cacheBytes = 0;
+        this.holdings = new Map();    // name -> {bytes, pinned, evict}: held outside the panels (a grouping's codes, CAT-4)
         this.observed = null;         // {bytes, at, source}: a measured total, when the browser gives one
         this._listeners = new Set();
     }
@@ -618,6 +619,68 @@ export class Ledger {
         if (b !== this.cacheBytes) { this.cacheBytes = b; this._changed(); }
     }
 
+    /**
+     * Bytes held outside the panels under a name (a grouping's codes, CAT-4), counted outside the heap and as
+     * buffers. A PINNED holding stays until it is released; an unpinned one may be evicted (`evict`), and its
+     * `evict` is then called, after it has left the ledger. Holding a name again replaces it.
+     * @param {string} name
+     * @param {number} bytes
+     * @param {{pinned?: boolean, evict?: (() => void)|null}} [opts]
+     */
+    hold(name, bytes, { pinned = true, evict = null } = {}) {
+        this.holdings.delete(name);
+        this.holdings.set(name, { bytes: Math.max(0, Number(bytes) || 0), pinned: !!pinned, evict });
+        this._changed();
+    }
+
+    /** Pin a holding (a consumer on screen holds it), or unpin it (only hidden ones do). */
+    pin(name, pinned) {
+        const h = this.holdings.get(name);
+        if (!h || h.pinned === !!pinned) return;
+        h.pinned = !!pinned;
+        this._changed();
+    }
+
+    release(name) {
+        if (this.holdings.delete(name)) this._changed();
+    }
+
+    /** Bytes of every holding, pinned or not. */
+    heldBytes() {
+        let b = 0;
+        for (const h of this.holdings.values()) b += h.bytes;
+        return b;
+    }
+
+    /** Bytes that evict() could free. */
+    evictable() {
+        let b = 0;
+        for (const h of this.holdings.values()) if (!h.pinned) b += h.bytes;
+        return b;
+    }
+
+    /**
+     * Evict unpinned holdings, oldest first, until at least `bytes` are free (all of them by default); each owner is
+     * told. Returns the bytes freed.
+     */
+    evict(bytes = Infinity) {
+        let freed = 0;
+        const gone = [];
+        for (const [name, h] of [...this.holdings]) {
+            if (freed >= bytes) break;
+            if (h.pinned) continue;
+            this.holdings.delete(name);
+            freed += h.bytes;
+            gone.push(h);
+        }
+        if (!gone.length) return 0;
+        this._changed();
+        for (const h of gone) {
+            try { if (h.evict) h.evict(); } catch (error) { console.error('Ledger eviction:', error); }
+        }
+        return freed;
+    }
+
     /** A measured total (bytes of the page, heap and ArrayBuffers), e.g. measureUserAgentSpecificMemory. */
     observe(bytes, source) {
         if (!(bytes > 0)) return;
@@ -641,7 +704,7 @@ export class Ledger {
      */
     totals({ exclude = [] } = {}) {
         const skip = new Set(exclude);
-        let t = { heap: this.model.app.heap, off: this.model.app.off + this.cacheBytes, gpu: 0, contexts: 0 };
+        let t = { heap: this.model.app.heap, off: this.model.app.off + this.cacheBytes + this.heldBytes(), gpu: 0, contexts: 0 };
         for (const [id, e] of this.entries) if (!skip.has(id)) t = addCost(t, e.resident);
         for (const [id, e] of this.pending) if (!skip.has(id)) t = addCost(t, e.peak);
         return t;
@@ -653,7 +716,7 @@ export class Ledger {
      */
     buffers({ exclude = [] } = {}) {
         const skip = new Set(exclude);
-        let b = this.cacheBytes;
+        let b = this.cacheBytes + this.heldBytes();
         for (const [id, e] of this.entries) if (!skip.has(id)) b += e.buffers ? e.buffers.resident : 0;
         for (const [id, e] of this.pending) if (!skip.has(id)) b += e.buffers ? e.buffers.peak : 0;
         return b;

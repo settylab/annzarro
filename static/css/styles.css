@@ -3421,13 +3421,15 @@ button.dtsb-button.dtsb-clear:hover {
     min-width: 0;
 }
 
-/* A gene score's source name is longer than the others ("gene-score"): its type select gets the room it needs,
-   and on a narrow panel the row wraps so the signature and the option are each read in full. */
-.axis-selector:has(> .axis-type-select option[value="gene-score"]:checked) > .axis-type-select { flex: 0 0 6.5rem; }
+/* A source name longer than the others ("gene-score", "cell-group") widens the type select of EVERY row of the plot
+   while any row uses one, so the keys of all rows keep lining up (UX risk 4). A row on a constant colour keeps its
+   own width. On a narrow panel the row that uses it wraps so the key and the option are each read in full. */
+.plot-controls:has(.axis-type-select option:is([value="gene-score"], [value="cell-group"]):checked)
+    .axis-selector:not(:has(> .axis-type-select option[value="none"]:checked)) > .axis-type-select { flex: 0 0 6.5rem; }
 @media (max-width: 1000px) {
-    .axis-selector:has(> .axis-type-select option[value="gene-score"]:checked) { flex-wrap: wrap; }
-    .axis-selector:has(> .axis-type-select option[value="gene-score"]:checked) > .axis-key-select { flex: 1 1 8rem; }
-    .axis-selector:has(> .axis-type-select option[value="gene-score"]:checked) > .axis-column-select { flex: 1 1 100%; }
+    .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"]):checked) { flex-wrap: wrap; }
+    .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"]):checked) > .axis-key-select { flex: 1 1 8rem; }
+    .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"]):checked) > .axis-column-select { flex: 1 1 100%; }
 }
 
 /* A constant colour has no key or column: the type select says so in full. */
