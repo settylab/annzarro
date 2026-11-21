@@ -7,6 +7,7 @@ which the browser's tests read too.
 import json
 import os
 import shutil
+import threading
 import time
 
 import numpy as np
@@ -415,3 +416,77 @@ def test_reading_the_names_of_stores_grows_linearly(tmp_path):
     assert best_of(lambda: [text_index.read_names(p) for p in big], 3) <= 15 * best_of(lambda: [text_index.read_names(p) for p in small], 3)
     names, cut = text_index.read_names(big[0])
     assert sorted(names["obs"].split("\n")) == ["cell_type", "leiden", "total_counts"] and cut == []
+
+
+# --- the names are read under the crawl's per-store timeout, its heartbeat and its deadline (FX-T) ---------
+
+def _slow_names(monkeypatch, pause=0.0, hang=(), release=None):
+    real = text_index.read_names
+
+    def read(path, trust_listing=False):
+        if path.endswith(tuple(hang)):
+            release.wait(10)
+        elif pause:
+            time.sleep(pause)
+        return real(path, trust_listing=trust_listing)
+    monkeypatch.setattr(text_index, "read_names", read)
+
+
+def test_a_store_whose_names_hang_is_skipped_as_a_timeout_and_the_crawl_finishes(bare_app, monkeypatch):
+    new_store(bare_app.data, "a.zarr", obs=["alpha_col"])
+    new_store(bare_app.data, "b.zarr", obs=["beta_col"])
+    bare_app.config["text_index_store_timeout_s"] = 0.3
+    release = threading.Event()
+    _slow_names(monkeypatch, hang=("a.zarr",), release=release)
+    try:
+        started = time.monotonic()
+        status = crawl(bare_app)
+        assert time.monotonic() - started < 5
+    finally:
+        release.set()
+    assert status["state"] == "done" and status["errors"] == 1 and status["done"] == 2
+    assert entries(bare_app)["a.zarr"]["error"] == "timeout"
+    assert found(bare_app, "beta_col") == ["b.zarr"]
+
+
+def test_a_store_with_text_whose_names_hang_is_skipped_as_a_timeout_too(bare_app, monkeypatch):
+    path = new_store(bare_app.data, "a.zarr", obs=["alpha_col"])
+    annotate(path, {"title": "Has text"}, "some readme")
+    bare_app.config["text_index_store_timeout_s"] = 0.3
+    release = threading.Event()
+    _slow_names(monkeypatch, hang=("a.zarr",), release=release)
+    try:
+        started = time.monotonic()
+        status = crawl(bare_app)
+        assert time.monotonic() - started < 5
+    finally:
+        release.set()
+    assert status["state"] == "done" and entries(bare_app)["a.zarr"]["error"] == "timeout"
+
+
+def test_the_crawl_beats_while_it_reads_the_names_of_many_bare_stores(bare_app, monkeypatch):
+    for i in range(6):
+        new_store(bare_app.data, f"s{i}.zarr", obs=[f"col_{i}"])
+    bare_app.config["text_index_workers"] = 1
+    monkeypatch.setattr(text_index, "HEARTBEAT_EVERY_S", 0.1)
+    _slow_names(monkeypatch, pause=0.15)
+    beats = []
+    real = text_index._write_status
+    monkeypatch.setattr(text_index, "_write_status", lambda config, status: (beats.append(time.monotonic()), real(config, status))[1])
+    started = time.monotonic()
+    assert crawl(bare_app)["state"] == "done"
+    ended = time.monotonic()
+    assert ended - started > 0.8, "the names were read slowly"
+    marks = [started, *beats[:-1], ended]            # the last write is the finished status
+    assert max(b - a for a, b in zip(marks, marks[1:])) < 0.5, "no heartbeat for a long stretch of bare stores"
+
+
+def test_a_crawl_that_runs_out_of_time_among_bare_stores_is_partial(bare_app, monkeypatch):
+    for i in range(6):
+        new_store(bare_app.data, f"s{i}.zarr", obs=[f"col_{i}"])
+    bare_app.config["text_index_workers"] = 1
+    monkeypatch.setattr(text_index, "CRAWL_SECONDS", 0.3)
+    _slow_names(monkeypatch, pause=0.2)
+    status = crawl(bare_app)
+    assert status["state"] == "partial"
+    assert text_index.load(bare_app.config).partial is True
