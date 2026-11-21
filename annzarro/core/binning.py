@@ -601,26 +601,57 @@ def _search_index(v: np.ndarray, ed: np.ndarray) -> np.ndarray:
     return np.searchsorted(ed[1:-1], v, side="right")
 
 
-def _equal_width_index(v: np.ndarray, ed: np.ndarray) -> np.ndarray:
-    """:func:`_search_index` for equal-width edges, to the bit: the bin by arithmetic, then moved down or up where
-    the edges themselves say it is wrong (rounding leaves it one bin off at most). About six times faster than the
-    search at 512 bins. ``v`` is finite."""
+def _equal_width_bins(v: np.ndarray, ed: np.ndarray, d: Optional[np.ndarray] = None) -> np.ndarray:
+    """The bin of each finite value for equal-width edges ``ed``, as :func:`_search_index` gives it, to the bit.
+
+    The bin by arithmetic, then moved down or up where the edges themselves say it is wrong; rounding leaves it
+    one bin off at most. The edges are padded with -inf below and +inf above for the checks, so a value outside
+    stays in its end bin with no mask of its own. ``d``, when given, is ``v - ed[0]`` already, and is overwritten.
+    """
     k = ed.size - 1
-    t = (v - ed[0]) * (k / (ed[-1] - ed[0]))
+    t = (v - ed[0]) if d is None else d          # ``d`` is the caller's to give up: it is scaled in place
+    t *= k / (ed[-1] - ed[0])
     np.clip(t, 0, k - 1, out=t)
-    idx = t.astype(np.int64)
+    idx = t.astype(np.intp)
+    lower = ed.copy()
+    lower[0] = -np.inf                  # bin 0 is never moved down
+    upper = np.append(ed[1:-1], np.inf)  # nor bin k - 1 up: the last bin is closed
     for _ in range(_CORRECTIONS + 1):
-        down = v < ed[idx]
-        down &= idx > 0
-        up = v >= ed[idx + 1]
-        up &= idx < k - 1
+        down = v < lower[idx]
+        up = v >= upper[idx]
         if not (down.any() or up.any()):
             return idx
         idx -= down
         idx += up
-    wrong = ((v < ed[idx]) & (idx > 0)) | ((v >= ed[idx + 1]) & (idx < k - 1))
+    wrong = (v < lower[idx]) | (v >= upper[idx])
     idx[wrong] = _search_index(v[wrong], ed)
     return idx
+
+
+def _equal_width_index(v: np.ndarray, ed: np.ndarray) -> np.ndarray:
+    """:func:`_search_index` for equal-width edges, to the bit, about six times faster at 512 bins. ``v`` is
+    finite."""
+    return _equal_width_bins(v, ed)
+
+
+def _assign_equal_width(x: np.ndarray, e: Edges, counts: Optional[Counts]) -> Optional[np.ndarray]:
+    """The fast path of :func:`_assign_chunk` for an equal-width binning without a zero bin, when every value of
+    the chunk is finite: the levels straight from the bin index, the below and above counts from the same
+    difference. None when it does not apply; the general path then gives the same levels."""
+    if e.zero_bin or e.degenerate or not np.isfinite(x).all():
+        return None
+    ed = e.edges
+    d = x - ed[0]
+    below = d < 0                       # exact: the difference of two different floats is never 0
+    above = x > ed[-1]
+    if counts is not None:
+        counts.n_below += int(np.count_nonzero(below))
+        counts.n_above += int(np.count_nonzero(above))
+    code = _equal_width_bins(x, ed, d).astype(np.uint16)
+    if e.binning.outside == "exclude":
+        below |= above
+        code[below] = NO_LEVEL
+    return code
 
 
 def assign(values: Any, e: Edges, counts: Optional[Counts] = None) -> np.ndarray:
@@ -641,6 +672,10 @@ def assign(values: Any, e: Edges, counts: Optional[Counts] = None) -> np.ndarray
 
 def _assign_chunk(x: np.ndarray, e: Edges, counts: Optional[Counts]) -> np.ndarray:
     b = e.binning
+    if b.method == "equal_width":
+        fast = _assign_equal_width(x, e, counts)
+        if fast is not None:
+            return fast
     code = np.full(x.size, NO_LEVEL, dtype=np.uint16)
     ok = np.isfinite(x)
     if counts is not None:
