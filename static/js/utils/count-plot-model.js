@@ -17,8 +17,11 @@
  * Pure, so Node tests cover it.
  */
 import { normalizePartitioning, serverRequest, defaultLabelMaps } from './cell-grouping.js';
+import { effectiveBinning } from './binning.js';
+import { groupNeed } from './group-store.js';
 import { csvField } from './score-inspect.js';
 import { RESERVED } from './level-id.js';
+import { stableStringify } from './url-history.js';
 
 const VERSION = 1;
 
@@ -298,12 +301,15 @@ function setsPlan(config, ctx) {
  * What a config asks of the engine, or why it asks nothing: checked before any request is made (SHR-39).
  * @param {Object} config - from normalizeCountPlot
  * @param {{isNumeric: (source: Object) => boolean, levelCount: (partitioning: Object) => (number|null), subset?: Object,
- *   bitsetFor?: Function, inlineRecipe?: Function, memberFor?: (set: Object) => Object}} ctx
+ *   bitsetFor?: Function, inlineRecipe?: Function, memberFor?: (set: Object) => Object,
+ *   hashOf?: (source: Object) => (string|undefined)}} ctx
  *   `isNumeric` says whether a source is binned as a number; `levelCount` how many levels a categorical input will have
- *   (null when it is not known: the engine then refuses); `memberFor` the wire form of a set's member
+ *   (null when it is not known: the engine then refuses); `memberFor` the wire form of a set's member; `hashOf` the
+ *   hash of what a source of another panel computes (a table's cells, a score's recipe, a grouping)
  * @returns {{state: 'empty', reason: string}|{state: 'unusable', reason: string, mode: string}
  *   |{state: 'refused', reason: string, mode: string, inputs: string[], counts: number[], limits: number[], over: string[]}
- *   |{state: 'ready', request: Object, inputs: {input: string, set?: number}[]}}
+ *   |{state: 'ready', request: Object, inputs: {input: string, set?: number}[], key: string}}
+ *   `key` is the grid's key (PER-3): what the engine computes, a source of another panel by its hash, never a bitset
  */
 // export-unused-ok: C2a sends the request and C2b says each refusal
 export function planGrid(config, ctx) {
@@ -341,7 +347,68 @@ export function planGrid(config, ctx) {
         if (config.measure.above !== undefined) measure.above = config.measure.above;
         request.measures = [measure];
     }
-    return { state: 'ready', request, inputs };
+    return { state: 'ready', request, inputs, key: gridKey(request, partitionings, members, ctx) };
+}
+
+/** A source as a key names it: one of another panel by the hash of what it computes, not by the panel. */
+function keyedSource(source, ctx) {
+    const up = ctx.hashOf ? ctx.hashOf(source) : undefined;
+    if (typeof up !== 'string') return source;
+    const out = { ...source, upstream: up };
+    delete out.key;
+    return out;
+}
+
+/** The key of a grid request: everything it sends but the cells shown, with each source keyed by what it computes. */
+function gridKey(request, partitionings, members, ctx) {
+    return stableStringify({
+        v: VERSION, mode: request.mode, density: !!request.density, members,
+        p: partitionings.map((p) => ({ source: keyedSource(p.source, ctx), levels: p.levels || null,
+            rest: p.rest === 'exclude' ? 'exclude' : 'other', binning: p.binning ? effectiveBinning(p.binning) : null })),
+        measures: (request.measures || []).map((m) => ({ ...m, source: keyedSource(m.source, ctx) }))
+    });
+}
+
+/**
+ * The count plot as a source of groups (utils/group-sources.js): its stored config, the sources it reads (which may
+ * be other panels), its key and what it asks the group store for. A plan that is not ready (no input, a mode it
+ * cannot draw, a limit broken) asks nothing, and is the handle's state.
+ * @param {{isNumeric: Function, levelCount: Function, memberFor?: Function}} page - what planGrid asks of the page
+ */
+// export-unused-ok: C2a gives the page's group sources a count plot
+export function gridShape(page) {
+    /** @type {WeakMap<Object, Object>} resolved config -> its plan */
+    const plans = new WeakMap();
+    const planOf = (resolved, ctx) => {
+        let plan = plans.get(resolved);
+        if (!plan) plans.set(resolved, plan = planGrid(resolved.recipe, { ...page, ...ctx }));
+        return plan;
+    };
+    return {
+        normalize: (raw) => normalizeCountPlot(raw).config,
+        sources: (config) => [
+            ...INPUTS.filter((input) => config[input]).map((input) => config[input].source),
+            ...(config.value && config.value.factor ? [config.value.factor.source] : []),
+            ...(config.sets || []).map((set) => set.source),
+            ...(config.measure ? [config.measure.source] : [])
+        ],
+        /** The sources in the order of the grid's axes. */
+        parts(resolved, ctx) {
+            const plan = planOf(resolved, ctx);
+            const config = resolved.recipe;
+            if (plan.state !== 'ready') return [];
+            return plan.inputs.map(({ input, set }) => (input === 'sets' ? config.sets[set].source
+                : input === 'factor' ? config.value.factor.source : config[input].source));
+        },
+        hash(resolved, ctx) {
+            const plan = planOf(resolved, ctx);
+            return plan.state === 'ready' ? plan.key : stableStringify(plan);
+        },
+        need(resolved, option, ctx) {
+            const plan = planOf(resolved, ctx);
+            return plan.state === 'ready' ? { recipe: groupNeed({ request: plan.request, key: plan.key }) } : { none: { ...plan } };
+        }
+    };
 }
 
 // --- the reply -------------------------------------------------------------------------------------------------------
@@ -382,14 +449,29 @@ const flatten = (rows) => {
     return out;
 };
 
+/** @type {WeakMap<Object, Object>} the group store's value -> its grid */
+const grids = new WeakMap();
+
 /**
  * The reply of a grid request as a grid: the levels of each axis, the counts and the moments in the engine's order.
- * @param {{n_shown: number, n_counted: number, axes: Object[], counts: ArrayLike<number>, measure?: ArrayLike<number>|number[][]}} reply
- *   each axis is `{levels, n_outside}` and, when binned, `{edges, bins_made, degenerate, value?}` as the grouping reply's
- *   partitionings are; a reply without them is refused (`reason: 'bad_grid_reply'`). `measure` is the block (flat, `cells × 5`) or a list of five-number rows
+ * Read once per value, so a paint reads the same grid and its tables are reused.
+ * @param {{reply: {n_shown: number, n_counted: number, axes: Object[]}, counts: ArrayLike<number>,
+ *   measures?: (ArrayLike<number>|number[][]|null)}} value - a handle's `values` (utils/group-store.js): the result
+ *   frame read, the counts block and the measure moments. Each axis is `{levels, n_outside}` and, when binned,
+ *   `{edges, bins_made, degenerate, value?}` as the grouping reply's partitionings are; a reply without them is
+ *   refused (`reason: 'bad_grid_reply'`). The measure is the block (flat, `cells × 5`) or a list of five-number rows
  */
 // export-unused-ok: C2a reads the reply of the grid request
-export function readGrid(reply) {
+export function readGrid(value) {
+    let grid = grids.get(value);
+    if (!grid) {
+        grid = gridOf(value.reply, value.counts, value.measures);
+        grids.set(value, grid);
+    }
+    return grid;
+}
+
+function gridOf(reply, counts, measures) {
     if (!Number.isInteger(reply.n_shown)) throw gridError('The grid reply lacks n_shown.');
     reply.axes.forEach((axis, i) => {
         const field = missingAxisField(axis);
@@ -397,15 +479,15 @@ export function readGrid(reply) {
     });
     const dims = reply.axes.map((a) => a.levels.length);
     const cells = dims.reduce((p, d) => p * d, 1);
-    if (reply.counts.length !== cells) throw new Error(`The grid's counts block has ${reply.counts.length} cells; its axes make ${cells}.`);
+    if (counts.length !== cells) throw new Error(`The grid's counts block has ${counts.length} cells; its axes make ${cells}.`);
     let measure = null;
-    if (reply.measure) {
-        measure = Array.isArray(reply.measure) && Array.isArray(reply.measure[0]) ? flatten(reply.measure) : reply.measure;
+    if (measures) {
+        measure = Array.isArray(measures) && Array.isArray(measures[0]) ? flatten(measures) : measures;
         if (measure.length !== cells * MOMENTS) throw new Error(`The grid's measure block has ${measure.length} numbers; ${cells} cells need ${cells * MOMENTS}.`);
     }
     const pooled = measure ? [0, 0, 0] : null;
     if (measure) for (let c = 0; c < cells; c++) for (let k = 0; k < 3; k++) pooled[k] += measure[c * MOMENTS + k];
-    return { axes: reply.axes.map((a) => ({ ...a })), dims, cells, counts: reply.counts, measure, counted: reply.n_counted, shown: reply.n_shown, outside: reply.axes.reduce((n, a) => n + outsideOf(a), 0),
+    return { axes: reply.axes.map((a) => ({ ...a })), dims, cells, counts, measure, counted: reply.n_counted, shown: reply.n_shown, outside: reply.axes.reduce((n, a) => n + outsideOf(a), 0),
         pooled: pooled && { n: pooled[N], sum: pooled[SUM], sumsq: pooled[SUMSQ] }, tables: new Map() };
 }
 

@@ -569,7 +569,7 @@ test('H4: the key follows what the engine computes: bins, the mode, a measure; n
     assert.notEqual(key(hist), key({ ...hist, mode: 'density' }));
     const bar = { mode: 'bar', x: obs('cell_type') };
     assert.equal(key(bar), key({ ...bar, arrangement: 'fill' }), 'the arrangement is drawing only');
-    assert.notEqual(key(bar), key({ ...bar, value: { kind: 'measure' }, measure: { source: { type: 'obs', key: 'depth' } } }));
+    assert.notEqual(key(bar), key({ ...bar, value: { kind: 'measure' }, measure: { stat: 'mean', source: { type: 'obs', key: 'depth' } } }));
 });
 
 test('H4: readGrid reads the group store\'s value, and one value is one grid', () => {

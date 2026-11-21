@@ -486,3 +486,36 @@ test('H5: the store keeps the frame\'s queue, seconds running, entries and stage
     assert.deepEqual(c.snap().progress, { done: 300, total: 600, stage: 'features', entries_done: 300, entries_total: 600,
         running_s: 2.25, queue: { ahead: 0, sharing: 1 } });
 });
+
+test('two keys that miss the same parts share one request: a link opens two plots and the codes come once', async () => {
+    const w = world();
+    // a gene of the grouping is cached; then a Cell Plot (codes) and a Cell-Gene Plot (codes and that gene) open
+    const first = w.consume(need({ features: [gene('Cd3e')] }));
+    await settle();
+    await w.finish(0);
+    first.leave();
+    const plot = w.consume(need({ codes: true }));
+    const cellGene = w.consume(need({ codes: true, features: [gene('Cd3e')] }));
+    await settle();
+    assert.equal(w.calls.compute.length, 2, 'one request for the codes both miss');
+    assert.equal(w.calls.compute[1].recipe.want.codes, true);
+    assert.equal(w.calls.compute[1].recipe.features, undefined);
+    await w.finish(1);
+    assert.equal(plot.snap().state, 'ready');
+    assert.equal(cellGene.snap().state, 'ready');
+    assert.equal(plot.snap().values.codes, cellGene.snap().values.codes, 'one copy of the codes');
+    // one of them leaving while it computes does not stop it for the other
+    plot.leave();
+    cellGene.leave();
+    const a = w.consume(need({ codes: true }));
+    const b = w.consume(need({ codes: true, features: [gene('Cd3e')] }));
+    await settle();
+    assert.equal(w.calls.compute.length, 3);
+    a.leave();
+    await settle();
+    assert.equal(w.waiting[2].req.signal.aborted, false, 'the other still waits on it');
+    await w.finish(2);
+    assert.equal(b.snap().state, 'ready');
+    b.leave();
+    assert.equal(w.store.stats().codesBytes, 0);
+});

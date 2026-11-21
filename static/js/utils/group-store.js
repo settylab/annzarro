@@ -24,8 +24,15 @@
  * for exactly what is missing, so adding a gene to a Cell-Gene Plot asks for that gene alone. Two consumers whose
  * missing parts are the same share one request.
  *
- * The store speaks the derived store's interface (attach, detach, snapshot, accept, retry, cancel, discard,
- * estimateFor, poke, on), so utils/derived-sources.js drives it unchanged (utils/group-sources.js).
+ * It IS a derived store (utils/derived-store.js) whose cache is a view over those parts: a key is held when every
+ * part of its need is, a job asks for the parts missing when it starts (`ask`), and a reply goes into the parts
+ * (`keep`). A part that goes is asked for again the derived store's way: the key is no longer held, so its job is
+ * idle and starts when a consumer of it is on screen.
+ *
+ * A consumer that still SHOWS a value of a key it has left (the previous groups, while an edit computes) keeps it with
+ * `keep(key, keeper)`: its codes stay on the ledger, pinned while the keeper is on screen, and nothing is asked for
+ * it. When the guard evicts codes, every consumer and keeper of them is told (`keeper.dropped()`), so nothing goes on
+ * holding codes the ledger no longer counts (CAT-4).
  */
 import { ByteCache, bytesOf, createDerivedStore } from './derived-store.js';
 
@@ -37,9 +44,6 @@ const REFUSAL_REASON = 'groups_too_expensive';
 
 /** What one group or one level of a group table weighs on the JS heap, for the budget. */
 const ROW_BYTES = 48;
-
-/** The value of a request whose parts went into the cache: nothing else holds them. */
-const ABSORBED = Object.freeze({});
 
 const NO_LEDGER = Object.freeze({ hold() {}, pin() {}, release() {} });
 
@@ -57,18 +61,26 @@ export function codeBytes(cells, groups) {
 /**
  * What a consumer of groups asks for.
  * @param {Object} options
- * @param {Object} options.request - the request without features and cells shown (`serverRequest`, a grid request)
+ * @param {Object|(() => Object)} options.request - the request without features and cells shown (`serverRequest`, a
+ *   grid request), or the way to make it: made once, when it is first sent or estimated (a table's cells are packed
+ *   then, not on every comparison of an edit)
  * @param {string} options.key - the grouping's key (PER-3): equal keys give equal groups for the same cells
+ * @param {number[]} [options.histograms] - the partitionings whose histograms the request asks for; read from the
+ *   request when it is given made
  * @param {boolean} [options.codes] - the codes too
  * @param {Array<{key: string, wire: Object}>} [options.features] - each feature's key, and the feature as the request
  *   carries it, without its id
  * @returns {{request: Object, key: string, table: string, codes: boolean, features: Array<{key: string, wire: Object}>, hash: string}}
  */
-export function groupNeed({ request, key, codes = false, features = [] }) {
-    const histograms = (request.want && request.want.histograms) || [];
-    const table = `${key}\u0002${histograms.join(',')}`;
-    return { request, key, table, codes: !!codes, features: features.map(({ key: k, wire }) => ({ key: k, wire })),
+export function groupNeed({ request, key, histograms, codes = false, features = [] }) {
+    const made = typeof request === 'function' ? null : request;
+    const shown = histograms || (made && made.want && made.want.histograms) || [];
+    const table = `${key}\u0002${shown.join(',')}`;
+    const need = { key, table, codes: !!codes, features: features.map(({ key: k, wire }) => ({ key: k, wire })),
         hash: `${table}\u0002${codes ? 1 : 0}\u0002${features.map((f) => f.key).join('\u0003')}` };
+    let body = made;
+    Object.defineProperty(need, 'request', { enumerable: true, get: () => body || (body = request()) });
+    return need;
 }
 
 /** A partitioning or an axis of the reply as the browser reads it (utils/cell-grouping.js): level ids, their counts apart. */
@@ -111,122 +123,129 @@ function partBytes(values) {
 // export-unused-ok: G8a makes the page's group store
 export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, codes: ledger = NO_LEDGER }) {
     const parts = new ByteCache(budget, partBytes);
-    /** @type {Map<string, {codes: ArrayBufferView, holders: Set<Object>}>} grouping key with cells -> its codes */
+    /** @type {Map<string, {codes: ArrayBufferView, holders: Set<Object>, pinned: boolean}>} codes key -> the codes */
     const held = new Map();
-    /** @type {Map<string, Object>} store key -> the consumers' entry */
+    /** @type {Map<string, Object>} store key -> its need, its parts' keys, who attached and who keeps it */
     const entries = new Map();
-    /** @type {Map<string, Set<Object>>} request key -> the entries waiting on it */
-    const waitingOn = new Map();
+    /** @type {Map<string, Object>} what is asked, with the cells -> the request out, which equal asks join */
+    const inflight = new Map();
     const listeners = new Set();
+    /** Parts deleted here; with the cache's evictions it says whether an entry's values may have lost a part. */
+    let drops = 0;
+    const stamp = () => `${parts.evictions}\u0001${drops}`;
 
-    const inner = createDerivedStore({
-        api: {
-            estimate: ({ recipe, dataset }) => api.estimate({ recipe: recipe.request, dataset }),
-            async compute(args) {
-                const out = await api.compute({ ...args, recipe: args.recipe.request });
-                if (!out.header || out.header.refused) return out;
-                absorb(args.recipe.parts, out);
-                return { header: out.header, values: ABSORBED };
-            }
-        },
-        budget: 1, limiter, bytesOf: () => 0, isEmpty: (out) => !!(out.header && out.header.refused),
-        emptyMessage: 'No groups could be made.', refusalReason: REFUSAL_REASON
-    });
+    const absorbed = new WeakSet();
 
-    function emit(entry) {
-        const snap = snapshot(entry.key);
+    function tell(key, snap) {
         for (const fn of [...listeners]) {
-            try { fn(entry.key, snap); } catch (error) { console.error('Group store listener:', error); }
+            try { fn(key, snap); } catch (error) { console.error('Group store listener:', error); }
         }
     }
 
-    /** Codes are pinned while a holder is on screen; held by hidden holders only, the guard may evict them. */
-    const onScreen = (h) => [...h.holders].some((e) => e.proxy.visible());
+    const shown = (entry) => [...entry.owners, ...entry.keepers].some((o) => !o.visible || o.visible());
 
-    function pinCodes(codesKey, h) {
-        const pinned = onScreen(h);
+    /** Codes are pinned while a holder is on screen; held by hidden holders only, the guard may evict them. */
+    function pinCodes(codesKey) {
+        const h = held.get(codesKey);
+        if (!h || !h.holders.size) return;
+        const pinned = [...h.holders].some(shown);
         if (pinned === h.pinned) return;
         h.pinned = pinned;
         ledger.pin(codesKey, pinned);
     }
 
-    function holdCodes(entry) {
-        const h = held.get(entry.codesKey);
-        if (!h || h.holders.has(entry)) return;
+    function holdCodes(entry, h) {
+        if (h.holders.has(entry)) return;
         h.holders.add(entry);
         if (h.holders.size === 1) {
-            h.pinned = onScreen(h);
-            ledger.hold(entry.codesKey, h.codes.byteLength, { pinned: h.pinned, evict: () => evicted(entry.codesKey, h) });
+            h.pinned = shown(entry);
+            ledger.hold(entry.codesKey, h.codes.byteLength, { pinned: h.pinned, evict: () => dropCodes(entry.codesKey, h) });
         } else {
-            pinCodes(entry.codesKey, h);
+            pinCodes(entry.codesKey);
         }
     }
 
-    function releaseCodes(entry) {
-        const h = entry.need.codes ? held.get(entry.codesKey) : null;
-        if (!h || !h.holders.delete(entry)) return;
-        if (h.holders.size) { pinCodes(entry.codesKey, h); return; }
-        held.delete(entry.codesKey);
-        ledger.release(entry.codesKey);
-    }
-
-    /** The guard evicted codes no consumer on screen held: their holders ask again, which starts once one is shown. */
-    function evicted(codesKey, h) {
+    /** Codes that go (evicted by the guard, or for other cells): their holders lose their values, and are told. */
+    function dropCodes(codesKey, h) {
         if (held.get(codesKey) !== h) return;
         held.delete(codesKey);
-        for (const entry of h.holders) {
-            if (entries.get(entry.key) !== entry) continue;
-            entry.values = null;
-            entry.ready = null;
-            if (!entry.r) plan(entry);
-            emit(entry);
-        }
+        const told = [...h.holders];
+        for (const entry of told) entry.made = null;
+        for (const entry of told) for (const keeper of [...entry.keepers]) keeper.dropped();
+        for (const entry of told) tell(entry.key, inner.snapshot(entry.key));
     }
 
-    /** The values of an entry from the parts held, or null when one is missing. Builds the entry's snapshot once. */
-    function assemble(entry) {
-        const table = parts.peek(entry.tableKey);
-        if (!table) return null;
+    /** An entry's values from the parts held, or null when one is missing. Put together once while its parts stay. */
+    function valuesOf(entry) {
         const codes = entry.need.codes ? held.get(entry.codesKey) : null;
-        if (entry.need.codes && !codes) return null;
+        if (entry.made && entry.stamp === stamp() && entry.codes === codes) return entry.made;
+        const table = parts.peek(entry.tableKey);
+        if (!table || (entry.need.codes && !codes)) return (entry.made = null);
         const features = [];
         for (const key of entry.featureKeys) {
             const f = parts.peek(key);
-            if (!f) return null;
+            if (!f) return (entry.made = null);
             features.push(f.values);
         }
-        parts.get(entry.tableKey);
-        for (const key of entry.featureKeys) parts.get(key);
-        entry.values = { reply: table.values.reply, codes: codes ? codes.codes : null, features,
-            counts: table.values.counts, measures: table.values.measures };
-        entry.ready = Object.freeze({ key: entry.key, state: 'ready', values: entry.values, header: table.header,
-            progress: null, estimate: null, message: null, reason: null });
-        if (codes) holdCodes(entry);
-        return entry.values;
+        const was = entry.made;
+        const same = was && was.header === table.header && was.values.codes === (codes ? codes.codes : null)
+            && features.every((f, i) => f === was.values.features[i]);
+        if (!same) {
+            parts.get(entry.tableKey);
+            for (const key of entry.featureKeys) parts.get(key);
+            entry.made = { header: table.header, values: { reply: table.values.reply, codes: codes ? codes.codes : null,
+                features, counts: table.values.counts, measures: table.values.measures } };
+        }
+        entry.stamp = stamp();
+        entry.codes = codes;
+        if (codes) holdCodes(entry, codes);
+        return entry.made;
     }
 
-    /** Ask for what an entry misses: one request, which entries missing the same share. */
-    function plan(entry) {
+    /** The derived store's cache: a key is held when every part of its need is. */
+    const view = {
+        has: (key) => entries.has(key) && !!valuesOf(entries.get(key)),
+        peek: (key) => (entries.has(key) ? valuesOf(entries.get(key)) || undefined : undefined),
+        get: (key) => view.peek(key),
+        put: () => false,
+        /** A value for other cells: its parts go, and are asked for again. */
+        delete(key) {
+            const entry = entries.get(key);
+            if (!entry) return false;
+            entry.made = null;
+            drops++;
+            parts.delete(entry.tableKey);
+            for (const k of entry.featureKeys) parts.delete(k);
+            const h = entry.need.codes ? held.get(entry.codesKey) : null;
+            if (h) { ledger.release(entry.codesKey); dropCodes(entry.codesKey, h); }
+            return true;
+        },
+        clear() {},
+        get size() { return parts.size; },
+        get bytes() { return parts.bytes; },
+        get evictions() { return parts.evictions; }
+    };
+
+    /** What a job misses now, as one request; null when it misses nothing. */
+    function ask(job) {
+        const entry = entries.get(job.key);
+        if (!entry || valuesOf(entry)) return null;
         const { need } = entry;
         const missing = [];
         need.features.forEach((f, i) => { if (!parts.has(entry.featureKeys[i])) missing.push(i); });
         const codes = need.codes && !held.has(entry.codesKey);
-        const request = { ...need.request, want: { ...need.request.want, codes } };
-        if (missing.length) request.features = missing.map((i, n) => ({ id: `f${n}`, ...need.features[i].wire }));
+        const recipe = { ...need.request, want: { ...need.request.want, codes } };
+        if (missing.length) recipe.features = missing.map((i, n) => ({ id: `f${n}`, ...need.features[i].wire }));
         const hash = `${need.table}\u0002${codes ? 1 : 0}\u0002${missing.map((i) => need.features[i].key).join('\u0003')}`;
-        const key = `${hash}\u0001${entry.ctx}`;
-        entry.r = key;
-        if (!waitingOn.has(key)) waitingOn.set(key, new Set());
-        waitingOn.get(key).add(entry);
-        const recipe = { request, parts: { key, tableKey: entry.tableKey, codesKey: entry.codesKey, codes,
+        return { recipe, hash, parts: { tableKey: entry.tableKey, codesKey: entry.codesKey, codes,
             features: missing.map((i) => entry.featureKeys[i]) } };
-        const snap = inner.attach(key, { recipe, dataset: entry.dataset, subset: entry.subset, hash }, entry.proxy);
-        // a request answered before, whose parts have gone since: ask again
-        if (snap.state === 'ready') inner.discard(key);
     }
 
-    /** A reply's parts into the cache, and its codes to the entries waiting for them. */
-    function absorb(info, out) {
+    /** A reply's parts into the cache, and its codes to be held by the entries that read them. */
+    function keep(job, out, asked) {
+        if (absorbed.has(out)) return;            // a request two jobs joined is kept once
+        absorbed.add(out);
+        const info = asked.parts;
         const reply = readReply(out.header);
         parts.put(info.tableKey, { values: { reply, counts: out.values.counts || null, measures: out.values.measure_moments || null },
             header: out.header });
@@ -237,65 +256,78 @@ export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, c
             parts.put(key, { values: { status: statuses.get(`f${i}`) || null,
                 moments: moments ? moments.slice(i * stride, (i + 1) * stride) : null } });
         });
-        const waiting = [...(waitingOn.get(info.key) || [])].filter((e) => e.need.codes);
-        if (info.codes && out.values.codes && waiting.length && !held.has(info.codesKey)) {
-            held.set(info.codesKey, { codes: out.values.codes, holders: new Set() });
+        if (info.codes && out.values.codes && !held.has(info.codesKey)) {
+            held.set(info.codesKey, { codes: out.values.codes, holders: new Set(), pinned: false });
         }
     }
 
-    /** Stop waiting on a request; the request goes with its last waiter. */
-    function leave(entry) {
-        const key = entry.r;
-        if (!key) return;
-        entry.r = null;
-        const set = waitingOn.get(key);
-        if (set) { set.delete(entry); if (!set.size) waitingOn.delete(key); }
-        inner.detach(key, entry.proxy);
-        if (!inner.jobKeys().includes(key)) inner.cache.delete(key);
+    /** One request for what is asked, whichever jobs ask it: the last to leave stops it. */
+    function compute(args) {
+        const id = `${args.hash}\u0001${args.dataset || ''}\u0001${args.subset || ''}`;
+        let out = inflight.get(id);
+        if (!out) {
+            const controller = new AbortController();
+            out = { controller, joined: new Set() };
+            out.promise = api.compute({ ...args, signal: controller.signal,
+                onProgress: (...frame) => { for (const j of [...out.joined]) j(...frame); } });
+            const mine = out;
+            out.promise.then(() => {}, () => {}).then(() => { if (inflight.get(id) === mine) inflight.delete(id); });
+            inflight.set(id, out);
+        }
+        const request = out;
+        request.joined.add(args.onProgress);
+        return new Promise((resolve, reject) => {
+            const leave = () => {
+                request.joined.delete(args.onProgress);
+                if (!request.joined.size && inflight.get(id) === request) {
+                    inflight.delete(id);
+                    request.controller.abort(args.signal.reason);
+                }
+                reject(args.signal.reason || Object.assign(new Error('Aborted'), { name: 'AbortError' }));
+            };
+            if (args.signal.aborted) { leave(); return; }
+            args.signal.addEventListener('abort', leave, { once: true });
+            request.promise.then((reply) => { args.signal.removeEventListener('abort', leave); request.joined.delete(args.onProgress); resolve(reply); },
+                (error) => { args.signal.removeEventListener('abort', leave); request.joined.delete(args.onProgress); reject(error); });
+        });
     }
 
-    inner.on((key, snap) => {
-        const set = waitingOn.get(key);
-        if (!set) return;
-        for (const entry of [...set]) {
-            if (snap.state === 'ready' && !entry.values && !assemble(entry)) {
-                // a part went before it could be read (the cache was full): ask for what is missing now
-                queueMicrotask(() => {
-                    if (entry.r !== key) return;
-                    leave(entry);
-                    if (entries.get(entry.key) === entry) { plan(entry); emit(entry); }
-                });
-            } else if (snap.state === 'ready') {
-                // once the store has settled the request: leaving inside its own event would abort what is done
-                queueMicrotask(() => { if (entry.r === key) leave(entry); });
-            }
-            emit(entry);
-        }
-        if (snap.state === 'ready') {
-            for (const [codesKey, h] of held) if (!h.holders.size) held.delete(codesKey);
-        }
+    const inner = createDerivedStore({
+        api: { estimate: (req) => api.estimate(req), compute }, cache: view, ask, keep, limiter,
+        isEmpty: () => false, emptyMessage: 'No groups could be made.', refusalReason: REFUSAL_REASON,
+        // too many levels or groups: a refusal of its own (SHR-35), never the state of a reply with nothing in it
+        refusedOf: (out) => (out.header && out.header.refused
+            ? { reason: out.header.refused.reason, message: out.header.message || null } : null)
     });
 
-    function snapshot(key) {
-        const entry = entries.get(key);
-        if (!entry) return { key, state: 'idle', values: null, header: null, owners: 0 };
-        if (entry.values) return entry.ready;
-        if (!entry.r) return { key, state: 'idle', values: null, header: null, owners: entry.owners.size };
-        const snap = inner.snapshot(entry.r);
-        // too many levels or groups: a refusal of its own (SHR-35), never the state of a reply with nothing in it
-        if (snap.state === 'noscore' && snap.header && snap.header.refused) {
-            return { ...snap, key, state: 'refused', reason: snap.header.refused.reason, message: snap.header.message || null,
-                values: null, owners: entry.owners.size };
+    inner.on((key, snap) => {
+        tell(key, snap);
+        // codes no entry came to read (its consumers left while they came) are not kept
+        if (snap.state === 'ready') for (const [codesKey, h] of held) if (!h.holders.size) held.delete(codesKey);
+    });
+
+    function entryOf(key, spec) {
+        let entry = entries.get(key);
+        if (!entry) {
+            const need = spec.recipe;
+            const ctx = `${spec.dataset || ''}\u0001${spec.subset || ''}`;
+            entry = { key, need, owners: new Set(), keepers: new Set(), made: null, stamp: null, codes: null,
+                tableKey: `T\u0001${ctx}\u0001${need.table}`, codesKey: `C\u0001${ctx}\u0001${need.key}`,
+                featureKeys: need.features.map((f) => `F\u0001${ctx}\u0001${need.key}\u0001${f.key}`) };
+            entries.set(key, entry);
         }
-        // answered, and its parts not all there: what is missing is asked for at once
-        const state = snap.state === 'ready' ? 'computing' : snap.state;
-        return { ...snap, key, state, values: null, owners: entry.owners.size };
+        return entry;
     }
 
-    function forget(entry) {
-        releaseCodes(entry);
-        entry.values = null;
-        entry.ready = null;
+    /** An entry no one attaches or keeps goes, and its codes with it when it was their last holder. */
+    function settle(entry) {
+        if (entry.owners.size || entry.keepers.size) { pinCodes(entry.codesKey); return; }
+        if (entries.get(entry.key) === entry) entries.delete(entry.key);
+        const h = held.get(entry.codesKey);
+        if (!h || !h.holders.delete(entry)) return;
+        if (h.holders.size) { pinCodes(entry.codesKey); return; }
+        held.delete(entry.codesKey);
+        ledger.release(entry.codesKey);
     }
 
     return {
@@ -314,22 +346,11 @@ export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, c
          * @param {{visible?: () => boolean}} owner - compared by identity
          */
         attach(key, spec, owner) {
-            let entry = entries.get(key);
-            if (!entry) {
-                const need = spec.recipe;
-                const ctx = `${spec.dataset || ''}\u0001${spec.subset || ''}`;
-                entry = { key, need, ctx, dataset: spec.dataset, subset: spec.subset || null, owners: new Set(), values: null,
-                    ready: null, r: null, tableKey: `T\u0001${ctx}\u0001${need.table}`, codesKey: `C\u0001${ctx}\u0001${need.key}`,
-                    featureKeys: need.features.map((f) => `F\u0001${ctx}\u0001${need.key}\u0001${f.key}`) };
-                const mine = entry;
-                entry.proxy = { visible: () => [...mine.owners].some((o) => !o.visible || o.visible()) };
-                entries.set(key, entry);
-                assemble(entry);
-            }
+            const entry = entryOf(key, spec);
             entry.owners.add(owner);
-            if (!entry.values && !entry.r) plan(entry);
-            else if (entry.r) inner.poke();
-            return snapshot(key);
+            inner.attach(key, spec, owner);
+            pinCodes(entry.codesKey);
+            return inner.snapshot(key);
         },
 
         /** A consumer no longer needs it; the last one leaving stops the request and releases the codes. */
@@ -337,52 +358,46 @@ export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, c
             const entry = entries.get(key);
             if (!entry) return;
             entry.owners.delete(owner);
-            if (entry.owners.size) return;
-            entries.delete(key);
-            forget(entry);
-            leave(entry);
+            inner.detach(key, owner);
+            settle(entry);
         },
 
-        snapshot,
-
-        /** Compute what asks first (`awaiting`), or again after a failure. */
-        accept(key) {
+        /**
+         * A consumer that left `key` still shows its values (the previous groups while an edit computes): they stay,
+         * their codes on the ledger, and nothing is asked for them. `keeper.dropped()` is called if they go.
+         * @param {string} key
+         * @param {{visible?: () => boolean, dropped: () => void}} keeper
+         */
+        keep(key, keeper) {
             const entry = entries.get(key);
-            return !!(entry && entry.r) && inner.accept(entry.r);
+            if (!entry) return;
+            entry.keepers.add(keeper);
+            pinCodes(entry.codesKey);
         },
 
-        retry(key) {
+        unkeep(key, keeper) {
             const entry = entries.get(key);
-            return !!(entry && entry.r) && inner.retry(entry.r);
+            if (!entry || !entry.keepers.delete(keeper)) return;
+            settle(entry);
         },
 
-        cancel(key) {
-            const entry = entries.get(key);
-            return !!(entry && entry.r) && inner.cancel(entry.r);
-        },
-
+        snapshot: (key) => inner.snapshot(key),
+        accept: (key) => inner.accept(key),
+        retry: (key) => inner.retry(key),
+        cancel: (key) => inner.cancel(key),
         /** A value that turned out to be for other cells: dropped, with its parts, and asked for again. */
-        discard(key) {
-            const entry = entries.get(key);
-            if (!entry) return false;
-            forget(entry);
-            parts.delete(entry.tableKey);
-            for (const k of entry.featureKeys) parts.delete(k);
-            if (entry.r) inner.discard(entry.r);
-            else plan(entry);
-            return true;
-        },
+        discard: (key) => inner.discard(key),
 
         /** The cost of all of a need, asked once. */
         estimateFor(need, dataset, hash) {
             const request = { ...need.request, want: { ...need.request.want, codes: need.codes } };
             if (need.features.length) request.features = need.features.map((f, i) => ({ id: `f${i}`, ...f.wire }));
-            return inner.estimateFor({ request }, dataset, hash);
+            return inner.estimateFor(request, dataset, hash);
         },
 
         /** Consumers came on screen or left it: codes are pinned or unpinned, and what may start, starts. */
         poke() {
-            for (const [codesKey, h] of [...held]) if (h.holders.size) pinCodes(codesKey, h);
+            for (const codesKey of [...held.keys()]) pinCodes(codesKey);
             inner.poke();
         },
 
@@ -392,12 +407,9 @@ export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, c
         /** Forget what is cached (a refresh that re-reads the disk); the consumers' values are asked for again. */
         clear() {
             parts.clear();
+            drops++;
+            for (const [codesKey, h] of [...held]) { ledger.release(codesKey); dropCodes(codesKey, h); }
             inner.clear();
-            for (const entry of entries.values()) {
-                if (!entry.values) continue;
-                forget(entry);
-                plan(entry);
-            }
         },
 
         stats() {

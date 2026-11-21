@@ -15,6 +15,7 @@ const { createLimiter } = await import('../../../static/js/utils/derived-store.j
 const { packBitset } = await import('../../../static/js/utils/cell-grouping.js');
 const { resolveGroup } = await import('../../../static/js/utils/group-reference.js');
 const { Ledger } = await import('../../../static/js/utils/memory-guard.js');
+const CP = await import('../../../static/js/utils/count-plot-model.js');
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 const obs = (key, extra = {}) => ({ source: { type: 'obs', key }, ...extra });
@@ -43,9 +44,10 @@ function world({ cells = 6, seconds = () => 1, ledger = undefined } = {}) {
     const upstreamListeners = [];
     let off = false;
     const host = {
-        panel: (id) => {
+        source: (id) => {
             const p = panels.get(id);
-            return p && p.kind === 'grouping' ? { title: p.title, recipe: () => p.raw } : null;
+            if (p && p.shape) return { title: p.title, kind: p.kind, recipe: () => p.raw, shape: p.shape };
+            return p && p.kind === 'grouping' ? { title: p.title, kind: 'grouping', recipe: () => p.raw, shape: GS.GROUPING } : null;
         },
         off: () => off,
         upstream: (source, dependant) => (ports.has(source.key) ? ports.get(source.key)(dependant) : null),
@@ -662,4 +664,69 @@ test('M10: a table panel that changes reaches the groupings that use it through 
     await w.fire();
     assert.notEqual(h.read().key, key);
     assert.equal(w.calls.compute.length, asked + 1, 'only the grouping that uses the table');
+});
+
+// --- what C2a and X3a build on (H4) ---------------------------------------------------------------------------------
+
+test('H4: a count plot is a source of groups: its grid request, its key, gates upstream, and readGrid of its value', async () => {
+    const w = world();
+    w.panels.set('t1', { title: 'Table 1', kind: 'table' });
+    let rows = { flags: [1, 0, 1, 1, 0, 0], hash: 'rows-A' };
+    w.ports.set('t1', () => ({ bitset: () => rows }));
+    const shape = CP.gridShape({ isNumeric: () => false, levelCount: () => 2 });
+    const plot = w.panels.set('c1', { title: 'Count 1', kind: 'count', shape,
+        raw: { version: 1, mode: 'bar', x: obs('cell_type'), split: { source: { type: 'table', key: 't1' } } } }).get('c1');
+    const h = w.watch('c1', {}, { panelId: 'c1' });
+    await settle();
+    assert.equal(w.calls.compute.length, 1);
+    const body = w.calls.compute[0].recipe;
+    assert.equal(body.shape, 'grid');
+    assert.equal(body.mode, 'categorical');
+    assert.deepEqual(body.partitionings[1].source, { type: 'table', ref: 's0' });
+    assert.equal(body.want.codes, false);
+    const axes = [{ levels: [{ id: 'c:B cell', n: 3 }, { id: 'c:T cell', n: 3 }], n_outside: [0, 0] },
+        { levels: [{ id: '@in', n: 3 }, { id: '@out', n: 3 }], n_outside: [0, 0] }];
+    w.waiting[0].resolve({ header: { type: 'result', shape: 'grid', n_shown: 6, n_counted: 6, axes }, values: { counts: Uint32Array.from([2, 1, 1, 2]) } });
+    await settle();
+    const snap = h.read();
+    assert.equal(snap.state, 'ready');
+    const grid = CP.readGrid(snap.values);
+    assert.equal(CP.readGrid(h.read().values), grid, 'one grid per value: a paint reuses its tables');
+    assert.deepEqual(grid.dims, [2, 2]);
+    assert.equal(grid.shown, 6);
+    // the arrangement is the drawing's: nothing is asked
+    plot.raw = { ...plot.raw, arrangement: 'fill' };
+    w.sources.sourceChanged('c1');
+    await w.fire();
+    assert.equal(w.calls.compute.length, 1);
+    // the table's other cells: a new key, asked after the pause
+    const key = h.read().key;
+    rows = { flags: [0, 0, 1, 1, 0, 0], hash: 'rows-B' };
+    w.upstreamChanged('t1');
+    await w.fire();
+    assert.equal(w.calls.compute.length, 2);
+    assert.notEqual(h.read().key, key);
+    // a plan that is not ready asks nothing and is the handle's state
+    plot.raw = { version: 1, mode: 'histogram' };
+    w.sources.sourceChanged('c1');
+    await w.fire();
+    assert.equal(h.read().state, 'empty');
+    assert.equal(h.read().reason, 'choose_x');
+});
+
+test('H4: a Cell-Gene Plot groups by its own obs axis, and adding a gene keeps the matrix while that gene comes', async () => {
+    const w = world();
+    w.panels.set('axis:x1', { title: '', kind: 'axis', shape: GS.GROUPING, raw: { version: 1, partitionings: [obs('cell_type')] } });
+    const h = w.watch('axis:x1', { features: [geneWire('Cd3e')] }, { panelId: 'x1' });
+    await settle();
+    await w.finish(0);
+    const shown = h.read().values;
+    assert.deepEqual(w.sources.namesOf('axis:x1', shown.reply), ['B cell', 'T cell']);
+    h.setOption({ features: [geneWire('Cd3e'), geneWire('Lyz')] });
+    assert.equal(h.read().values, shown);
+    await settle();
+    assert.deepEqual(w.calls.compute[1].recipe.features.map((f) => f.name), ['Lyz']);
+    await w.finish(1);
+    assert.equal(h.read().state, 'ready');
+    assert.equal(h.read().values.features.length, 2);
 });
