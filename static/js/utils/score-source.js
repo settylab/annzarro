@@ -14,7 +14,8 @@
  * notice over the plot. When the state changes, the plot is drawn again.
  *
  * The plots reach all of it through the provider registered at the end (utils/source-registry.js): its key
- * list, its third menu of offered options, its load, titles and placeholder.
+ * list, its third menu of offered options, its loads (the regular plot's and the large plot's), titles,
+ * placeholder and its Hover picker entries.
  */
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -32,7 +33,7 @@ import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-r
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
 import { DEFAULT_INPUT, DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
-import { createSourceAdapter, isSourceType, kindOfType, optionFieldsOf, scoreKeyOptions } from './score-source-panels.js';
+import { createSourceAdapter, entityLabel, isSourceType, kindOfType, optionFieldsOf, scoreKeyOptions } from './score-source-panels.js';
 import { findCycle, TableResolver } from './table-resolver.js';
 
 /** What each aggregation is called where a consumer picks it (level 3). */
@@ -497,37 +498,6 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
             { source: `gene score ${title}`, unit, total: expected }), snap.state);
 }
 
-/** The record that reads this very setting object, if a plot loaded it. */
-function recordOfSetting(setting) {
-    for (const host of LIVE_HOSTS) {
-        for (const rec of recordsOf(host).values()) if (rec.setting === setting) return rec;
-    }
-    return null;
-}
-
-/**
- * One cell's value of a score a plot holds, by its position among the cells
- * shown (a large plot's tooltip reads it here rather than asking the server
- * for one cell).
- * @returns {number|null}
- */
-export function heldScoreValue(setting, position) {
-    const rec = recordOfSetting(setting);
-    if (!rec) return null;
-    const snap = rec.handle.read();
-    if (!snap.values || !(position >= 0 && position < snap.values.length)) return null;
-    const v = snap.values[position];
-    return Number.isNaN(v) ? null : v;
-}
-
-/** Which score a plot shows now (changes when the recipe or the cells do): for caches keyed by the colour. */
-export function shownScoreKey(setting) {
-    const rec = recordOfSetting(setting);
-    if (!rec) return '';
-    const snap = rec.handle.read();
-    return snap.values ? (snap.shownKey || snap.key || '') : '';
-}
-
 // ---------------------------------------------------------------------------
 // actions of the notices (main.js routes `score-*` here)
 
@@ -695,7 +665,73 @@ function loadForPlot(setting, { host, role, axis, expected, unit, signal }) {
         return Promise.reject(unavailable(notice.headline, notice,
             Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected })));
     }
+    // a hover line does not hold the plot back: it is left out until the score is ready, and the plot draws again then
+    if (isHover(role)) {
+        try {
+            return loadScoreSeries(setting, { host, role, expected, unit });
+        } catch (error) {
+            return Promise.reject(error);
+        }
+    }
     return loadScoreSeriesWhenReady(setting, { host, role, expected, unit }, signal);
+}
+
+/**
+ * A large plot's series of a score: the score store's Float32Array itself, nothing copied; waits as loadForPlot does.
+ * @param {Object} setting
+ * @param {{host, role: string, expected: (number|null), signal: (AbortSignal|null)}} opts
+ */
+async function loadLargeForPlot(setting, { host, role, expected, signal }) {
+    const scored = await loadScoreSeriesWhenReady(setting, { host, role, expected, array: false }, signal);
+    return { type: 'numerical', vector: scored.vector };
+}
+
+// ---------------------------------------------------------------------------
+// the Hover picker's entries of a score (panels/plot-utilities/hover-columns.js asks the provider)
+
+/** The picker's value for a score: `gene-score:<signature id>:<method>:<layer>` (layer empty for the signature's default). */
+const SCORE_PREFIX = `${SCORE_TYPE}:`;
+
+/** The picker value of one score. */
+export const scoreValue = (id, method, layer = '') => `${SCORE_PREFIX}${id}:${method}:${layer || ''}`;
+
+/** `{key, column, layer}` of a picker value of a score (layer only when the value names one). */
+export function parseScoreValue(value) {
+    const rest = value.slice(SCORE_PREFIX.length);
+    const parts = rest.split(':');
+    if (parts.length < 3) return { key: parts[0], column: parts[1] || DEFAULT_METHOD };
+    const layer = parts.pop();
+    const column = parts.pop();
+    return { key: parts.join(':'), column, ...(layer ? { layer } : {}) };
+}
+
+/** The picker value of a stored hover entry that reads a score; one with no layer reads the source's own. */
+export function hoverScoreValue(h, inputOf = () => DEFAULT_INPUT) {
+    return scoreValue(h.key, h.column || DEFAULT_METHOD, h.layer || inputOf(h.key) || DEFAULT_INPUT);
+}
+
+/**
+ * The picker's entries for gene scores: each score a source offers (`source.options`: [{method, layer, label}]), then
+ * any value in `kept` that it no longer offers (kept and marked, so the plot still has it). A source's first entry is
+ * named by the source alone.
+ * @param {Array<{id: string, title: string, kind?: string, options?: Object[]}>} sources
+ * @param {Iterable<string>} kept - picker values chosen now
+ * @returns {Array<{value: string, label: string}>}
+ */
+export function scoreHoverOptions(sources, kept) {
+    const out = [];
+    for (const source of sources) {
+        const mine = (source.options || []).map(o => ({ value: scoreValue(source.id, o.method, o.layer), label: o.label }));
+        for (const value of kept) {
+            const got = parseScoreValue(value);
+            if (got.key === source.id && !mine.some(m => m.value === value)) {
+                mine.push({ value, label: `${methodShort(got.column)}${got.layer ? ` · ${got.layer}` : ''} (no longer offered)` });
+            }
+        }
+        const name = entityLabel(source);
+        mine.forEach((o, i) => out.push({ value: o.value, label: i === 0 ? name : `${name} · ${o.label}` }));
+    }
+    return out;
 }
 
 /**
@@ -747,9 +783,11 @@ function scoreSubKeyMenu(setting) {
 registerSource({
     type: SCORE_TYPE,
     label: 'gene-score',
+    valueType: 'numerical',
     entity: 'cells',
     consumers: ['cell-plot'],
     axes: ['x', 'y', 'z', 'color', 'hover'],
+    largeAxes: ['x', 'y', 'color'],
     defaultSub: DEFAULT_METHOD,
     layered: true,
     entities: () => sourceList(),
@@ -764,6 +802,14 @@ registerSource({
     },
     subKeyMenu: scoreSubKeyMenu,
     load: loadForPlot,
+    loadLarge: loadLargeForPlot,
+    hover: {
+        group: 'Gene scores',
+        options: (kept) => scoreHoverOptions(sourceList(), kept),
+        valueOf: (setting) => hoverScoreValue(setting, sourceInput),
+        parse: parseScoreValue,
+        label: scoreLabel
+    },
     titleOf: (setting) => `gene score ${scoreTitle(setting)}`,
     placeholder: drawScorePlaceholder,
     vocabulary: { result: 'score' }

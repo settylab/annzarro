@@ -422,10 +422,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             } else if (isCategorical) {
                 // Get unique category values and prepare color data
                 const catValues = data.colorCategories || [...new Set(data.color)];
-                let customColors = null;
+                // a provider's colours are its own (a grouping's); a column's are stored in uns
+                let customColors = data.colorColours || null;
                 
                 // Try to load custom colors from uns if categoryPalette is set to "uns"
-                if (settings.categoryPalette === "uns") {
+                if (settings.categoryPalette === "uns" && !customColors) {
                     const colorKey = `${settings.color.key}_colors`;
                     const datasetPath = DataManager.getCurrentDataset();
                     try {
@@ -457,7 +458,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 
                 // Add new categorical traces
                 Plotly.addTraces(plotContainer, categoricalTraces);
-                if (settings.categoryPalette === "uns") {
+                if (settings.categoryPalette === "uns" && !data.colorColours) {
                     setStatusTag(plotContainer, UNS_PALETTE_TAG,
                         unsPaletteTag(settings.color.key, customColors, categoricalTraces.categoryCount));
                 }
@@ -975,6 +976,8 @@ export async function loadColorDataAndUpdatePlot(
             data.colorType = colorData.type;
             applyLogColor(data, settings);
             data.colorCategories = colorData.categories;
+            // a provider's own colours, one per category (a grouping's); the dataset's are read from uns at the draw
+            data.colorColours = colorData.colours || null;
             data.colorRankOf = colorData.rankOf || null;
             data.colorRanked = !!colorData.ranked;
             data.colorGroupNames = colorData.groupNames || null;

@@ -4,8 +4,8 @@ import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
-import { sourceList, noteDatasetLayers } from '../../utils/score-source.js';
-import { scoreHoverOptions, SCORE_GROUP } from './hover-columns.js';
+import { noteDatasetLayers } from '../../utils/score-source.js';
+import { refreshHoverGroups } from './hover-columns.js';
 import { getSource, sourcesFor } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -295,24 +295,10 @@ function refreshSourceMenus() {
     const axis = axisOf(select);
     if (axis && axis.setting && axis.provider.subKeyMenu) fillSubKeySelect(select, axis.provider.subKeyMenu(axis.setting));
   }
-  const list = sourceList();
-  // the Hover pickers list each score a source offers, after the columns
+  // the Hover pickers list what each provider offers, after the columns
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
-    // gene scores are a cell source: a Gene Plot's hover never lists them
     const owner = select.closest('.tile');
-    if (owner && /^gene-plot/.test(owner.dataset.tileId || '')) continue;
-    const group = Array.from(select.querySelectorAll('optgroup')).find(g => g.label === SCORE_GROUP);
-    const have = group ? Array.from(group.querySelectorAll('option')) : [];
-    const chosen = new Set(have.filter(o => o.selected).map(o => o.value));
-    const wanted = scoreHoverOptions(list, chosen);
-    const same = have.length === wanted.length && wanted.every((o, i) => have[i].value === o.value && have[i].textContent === o.label);
-    if (same) continue;
-    if (group) group.remove();
-    if (!wanted.length) continue;
-    const next = document.createElement('optgroup');
-    next.label = SCORE_GROUP;
-    for (const o of wanted) next.appendChild(new Option(o.label, o.value, false, chosen.has(o.value)));
-    select.appendChild(next);
+    refreshHoverGroups(select, owner && /^gene-plot/.test(owner.dataset.tileId || '') ? 'genes' : 'cells');
   }
 }
   

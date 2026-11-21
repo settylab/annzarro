@@ -14,15 +14,10 @@
  * styles.css draws it as off while `data-large-off` is set, so it neither
  * reads as on nor loses the user's choice.
  *
- * DOM only, no other imports, so it can be tested without a browser.
+ * What the mode draws on each axis is the source registry's to say (largeAccepts: the built-in sources it reads,
+ * and each provider's `largeAxes`). DOM only otherwise, so it can be tested without a browser.
  */
-
-/** Data sources large-plot mode can draw, per axis. */
-export const LARGE_TYPES = Object.freeze({
-  x: Object.freeze(['obsm', 'obs', 'layer', 'gene-score']),
-  y: Object.freeze(['obsm', 'obs', 'layer', 'gene-score']),
-  color: Object.freeze(['obsm', 'obs', 'layer', 'gene-score', 'none'])
-});
+import { largeAccepts } from '../../utils/source-registry.js';
 
 /** Points above which a Cell Plot uses large-plot mode; `defaults` is Config.DEFAULTS. */
 export function largeThreshold(defaults) {
@@ -118,7 +113,7 @@ export function updateLargePlotControls(root, active, threshold, structure = nul
   for (const axis of ['x', 'y', 'color']) {
     for (const select of root.querySelectorAll(`select.axis-type-select[data-axis="${axis}"]`)) {
       for (const option of Array.from(select.options || [])) {
-        if (!LARGE_TYPES[axis].includes(option.value) && option.value !== '') set(option);
+        if (!largeAccepts(option.value, axis) && option.value !== '') set(option);
       }
     }
   }

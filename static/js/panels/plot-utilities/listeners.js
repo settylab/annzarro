@@ -1,11 +1,10 @@
-import { sourceInput } from '../../utils/score-source.js';
 import { getSource } from '../../utils/source-registry.js';
 import { updateColorSliderUI, setupAxisSelector, takeSubKey, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { autoPointCount, plotArea } from '../../utils/view-point-style.js';
 import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator, hoverPickFits, showHoverChoice } from './plot-make.js';
-import { hoverInfoFromSelection, hoverOffFromSelection, hoverScoreValue, NO_HOVER } from './hover-columns.js';
+import { hoverInfoFromSelection, hoverOffFromSelection, pickerValue, NO_HOVER } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { beginLoad, endLoad, wasCancelled } from '../../utils/load-scope.js';
 import { showCancelled } from '../../utils/panel-surface.js';
@@ -286,7 +285,7 @@ export function setupPlotControlListeners(
       if (!off && !(await hoverPickFits(settings, plotType, plotContainer, !!data.colorRanked))) {
         Object.assign(settings, before);
         if (before.hoverOff === undefined) delete settings.hoverOff;
-        const prior = new Set((before.hoverInfo || []).map(h => h && (h.type === 'gene-score' ? hoverScoreValue(h, sourceInput) : h.key)));
+        const prior = new Set((before.hoverInfo || []).map(h => h && pickerValue(h)));
         for (const o of e.target.options) o.selected = o.value !== NO_HOVER && prior.has(o.value);
         showHoverChoice(plotContainer, settings);
         return;
