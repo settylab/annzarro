@@ -310,6 +310,30 @@ test('a cycle computes nothing and names the panels on it', async () => {
     assert.equal(w.calls.estimate.length + w.calls.compute.length, 0);
 });
 
+test('a grouping with no factor asks nothing: a gate of its own for every consumer, lifted by the first factor', async () => {
+    const w = world();
+    const g = w.grouping('g1', 'Grouping 3', []);
+    const h = w.watch('g1', { codes: true });
+    await settle();
+    const snap = h.read();
+    assert.equal(snap.state, 'nofactors');
+    assert.equal(snap.reason, 'no_factors');
+    assert.equal(w.calls.estimate.length + w.calls.compute.length, 0, 'nothing asked');
+    // a grouping that uses it says so as the upstream's, not as its own
+    w.grouping('g2', 'Grouping 4', [{ source: { type: 'cell-group', key: 'g1' } }]);
+    w.ports.set('g1', () => ({ grouping: 'g1' }));
+    const down = w.watch('g2', { codes: true });
+    await settle();
+    assert.equal(down.read().state, 'failed');
+    assert.equal(down.read().message, 'the grouping it uses has no factors yet.');
+    assert.equal(w.calls.estimate.length + w.calls.compute.length, 0);
+    g.raw = { version: 1, partitionings: [obs('cell_type')] };
+    w.sources.sourceChanged('g1');
+    await settle();
+    assert.notEqual(h.read().state, 'nofactors');
+    assert.ok(w.calls.estimate.length + w.calls.compute.length > 0, 'the first factor asks for the groups');
+});
+
 test('a grouping of a grouping: the upstream first, its recipe inline, its names from the browser', async () => {
     const w = world();
     const g1 = w.grouping('g1', 'Grouping 1', [obs('cell_type')]);

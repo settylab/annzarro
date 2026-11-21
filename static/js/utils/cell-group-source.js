@@ -86,14 +86,6 @@ function groupingTitle(setting) {
     return panel ? panel.getTitle() : (setting && (setting.label || setting.key)) || '';
 }
 
-/** Whether a grouping has no factor yet (a new one): nothing can be asked of the server for it. */
-function isEmptyGrouping(id) {
-    const panel = groupingPanel(id);
-    if (!panel || typeof panel.getRecipe !== 'function') return false;
-    const recipe = panel.getRecipe();
-    return !recipe || !Array.isArray(recipe.partitionings) || recipe.partitionings.length === 0;
-}
-
 /**
  * Write into a consumer's setting what it is called: `label`, the grouping's title (kept for when it is deleted). A
  * grouping's title has one line, so a `labelFull` left over from another source is dropped (titles read it first).
@@ -241,9 +233,6 @@ const VOCAB = Object.freeze({
         return panel && typeof panel.getTitle === 'function' ? panel.getTitle() : null;
     },
     states: {
-        nofactors(snap, f) {
-            return f.out('nofactors', 'notice', `No ${PL.factor}`, `${f.t} has no ${PL.factor} yet.${f.none}`, '', [f.open, f.choose]);
-        },
         notcells(snap, f) {
             return f.out('notcells', 'notice', 'Not a cell source', `${GROUPINGS} are a cell source; not available in a Gene Plot.`, '', []);
         },
@@ -266,17 +255,6 @@ const VOCAB = Object.freeze({
  */
 function describeGrouping(snap, ctx = {}) {
     return describeSource(snap, ctx, VOCAB);
-}
-
-/** A refused snapshot with the route's figures (the group store keeps them in the header), for its sentence. */
-function withFigures(snap) {
-    if (!snap || snap.state !== 'refused' || !snap.key || snap.refused) return snap;
-    const header = groupSources().store.snapshot(snap.key).header;
-    return header && header.refused ? { ...snap, refused: header.refused } : snap;
-}
-
-/** A setting's role as a notice says it. */
-const roleWord = (role) => (role === 'color' ? 'colour' : (isHover(role) ? 'hover' : role));
 
 /** The series cannot be drawn yet, and why. */
 const unavailable = (notice, coverage, state = null) => new SourceUnavailable(notice.headline, notice, coverage, state, GROUP_TYPE);
@@ -335,17 +313,6 @@ function emptyHandle(id, onChange) {
     return { read, release: stop, sharers: () => 1, compute: no, cancel: no, retry: no };
 }
 
-/** The id of the plots' grouping provider: its notices on the painter, its actions in the registry. */
-const PLOT_PROVIDER = 'plot-group';
-
-let _binding = null;
-
-/** The plots' records of groupings, made when first needed. */
-function binding() {
-    if (!_binding) {
-        _binding = createHostBinding({
-            id: PLOT_PROVIDER,
-            open: (host, role, setting, onChange) => {
                 const id = setting.key;
                 if (isEmptyGrouping(id)) return { groupId: id, empty: true, handle: emptyHandle(id, onChange) };
                 const handle = groupSources().sources.watch(id, {
@@ -358,20 +325,18 @@ function binding() {
             describe: (snap, ctx) => describeGrouping(withFigures(snap), ctx),
             stillUsed,
             // drawn again when: a factor was added to an empty grouping (or the last one removed); the grouping was
-            // renamed (its legend and axis titles name it); what the strip said of a grouping with no value changed
             stale: (rec, snap) => rec.empty !== isEmptyGrouping(rec.groupId)
                 || (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)
                 || (rec.drawnKey === null && rec.drawnKind !== undefined && coverageKindOf(snap) !== rec.drawnKind),
             refresh: refreshPanel,
-            visibilityChanged: () => groupSources().sources.visibilityChanged(),
+                return { groupId: id, handle };
             placeholder: drawGroupPlaceholder
-        });
+            matches: (rec, setting) => rec.groupId === setting.key,
     }
     return _binding;
-}
-
-// ---------------------------------------------------------------------------------------------- loads
-
+            // drawn again when the grouping was renamed (its legend and axis titles name it), or when what the strip
+            // said of a grouping with no value changed (a factor added to an empty grouping: computing now)
+            stale: (rec, snap) => (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)
 /**
  * The series of a grouping for one role of a plot.
  * @param {Object} setting - `{type: 'cell-group', key, label}`
@@ -519,7 +484,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 }
 
 // ---------------------------------------------------------------------------------------------- the Hover picker
-
+            if (rec.drawnKey && groupingTitle(rec.setting) !== rec.setting.label) _binding.refreshSoon(host);
 const GROUP_PREFIX = `${GROUP_TYPE}:`;
 
 /** The picker's value of a grouping: `cell-group:<grouping id>`. */
