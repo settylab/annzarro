@@ -86,14 +86,6 @@ function groupingTitle(setting) {
     return panel ? panel.getTitle() : (setting && (setting.label || setting.key)) || '';
 }
 
-/** Whether a grouping has no factor yet (a new one): nothing can be asked of the server for it. */
-function isEmptyGrouping(id) {
-    const panel = groupingPanel(id);
-    if (!panel || typeof panel.getRecipe !== 'function') return false;
-    const recipe = panel.getRecipe();
-    return !recipe || !Array.isArray(recipe.partitionings) || recipe.partitionings.length === 0;
-}
-
 /**
  * Write into a consumer's setting what it is called: `label`, the grouping's title (kept for when it is deleted). A
  * grouping's title has one line, so a `labelFull` left over from another source is dropped (titles read it first).
@@ -241,9 +233,6 @@ const VOCAB = Object.freeze({
         return panel && typeof panel.getTitle === 'function' ? panel.getTitle() : null;
     },
     states: {
-        nofactors(snap, f) {
-            return f.out('nofactors', 'notice', `No ${PL.factor}`, `${f.t} has no ${PL.factor} yet.${f.none}`, '', [f.open, f.choose]);
-        },
         notcells(snap, f) {
             return f.out('notcells', 'notice', 'Not a cell source', `${GROUPINGS} are a cell source; not available in a Gene Plot.`, '', []);
         },
@@ -324,17 +313,6 @@ function drawGroupPlaceholder(host, notice) {
     host.__sourcePlaceholder = true;
 }
 
-/**
- * The handle of a grouping that has no factor yet: it asks nothing of the server, says so, and tells its record when
- * the grouping changes (a factor added), so the plot is drawn again and watches the groups.
- */
-function emptyHandle(id, onChange) {
-    const read = () => ({ id, state: 'nofactors', title: groupingTitle({ key: id }), key: null, held: null });
-    const stop = groupSources().sources.onSource(id, () => onChange(read()));
-    const no = () => false;
-    return { read, release: stop, sharers: () => 1, compute: no, cancel: no, retry: no };
-}
-
 /** The id of the plots' grouping provider: its notices on the painter, its actions in the registry. */
 const PLOT_PROVIDER = 'plot-group';
 
@@ -347,20 +325,18 @@ function binding() {
             id: PLOT_PROVIDER,
             open: (host, role, setting, onChange) => {
                 const id = setting.key;
-                if (isEmptyGrouping(id)) return { groupId: id, empty: true, handle: emptyHandle(id, onChange) };
                 const handle = groupSources().sources.watch(id, {
                     consumer: { kind: 'plot', role, panelId: panelIdOf(host), host }, option: { codes: true },
                     visible: () => isVisible(host), onChange
                 });
-                return { groupId: id, empty: false, handle };
+                return { groupId: id, handle };
             },
-            matches: (rec, setting) => rec.groupId === setting.key && rec.empty === isEmptyGrouping(setting.key),
+            matches: (rec, setting) => rec.groupId === setting.key,
             describe: (snap, ctx) => describeGrouping(withFigures(snap), ctx),
             stillUsed,
-            // drawn again when: a factor was added to an empty grouping (or the last one removed); the grouping was
-            // renamed (its legend and axis titles name it); what the strip said of a grouping with no value changed
-            stale: (rec, snap) => rec.empty !== isEmptyGrouping(rec.groupId)
-                || (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)
+            // drawn again when the grouping was renamed (its legend and axis titles name it), or when what the strip
+            // said of a grouping with no value changed (a factor added to an empty grouping: computing now)
+            stale: (rec, snap) => (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)
                 || (rec.drawnKey === null && rec.drawnKind !== undefined && coverageKindOf(snap) !== rec.drawnKind),
             refresh: refreshPanel,
             visibilityChanged: () => groupSources().sources.visibilityChanged(),
@@ -508,7 +484,7 @@ function panelsChanged() {
     for (const host of _binding.hosts()) {
         if (!host.isConnected) { _binding.releaseHost(host); continue; }
         for (const rec of _binding.recordsOf(host).values()) {
-            if (rec.empty !== isEmptyGrouping(rec.groupId) || (rec.drawnKey && groupingTitle(rec.setting) !== rec.setting.label)) _binding.refreshSoon(host);
+            if (rec.drawnKey && groupingTitle(rec.setting) !== rec.setting.label) _binding.refreshSoon(host);
         }
         _binding.schedulePaint(host);
     }
