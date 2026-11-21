@@ -358,3 +358,14 @@ test('a density\'s own options: the bandwidth adjust from 0.1 to 10, curves by l
     assert.deepEqual(K.parseAdjust('11'), { ok: false, message: 'Enter a number from 0.1 to 10.' });
     assert.deepEqual(K.parseAdjust('x'), { ok: false, message: 'Enter a number from 0.1 to 10.' });
 });
+
+test('a density never asks for a zero bin: one kept from a histogram stays stored and is not sent', () => {
+    const hist = norm({ mode: 'histogram', x: obs('depth', { binning: { method: 'equal_width', zero_bin: true } }) });
+    const dens = norm(K.setMode(hist, 'density'));
+    assert.equal(dens.x.binning.zero_bin, true, 'stored');
+    const shown = K.shownConfig(dens);
+    assert.equal(shown.x.binning.zero_bin, undefined);
+    const plan = M.planGrid(shown, { isNumeric: () => true, levelCount: () => null });
+    assert.equal(plan.request.partitionings[0].binning.zero_bin, undefined);
+    assert.equal(K.shownConfig(hist), hist, 'a histogram keeps it');
+});

@@ -161,8 +161,12 @@ def _state_text(page):
 # ------------------------------------------------------------------ 1. job 1
 
 def test_job1_cells_per_cluster_split_by_condition_as_shares(page, served):
+    statuses = []
+    page.on("response", lambda r: statuses.append(r.status) if "/data/cell_groups" in r.url and r.request.method == "POST" else None)
     _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE, split=CONDITION)})
     _drawn(page, "bar")
+    # the grid request reaches the route as the route takes it (no field a grid does not take): 200, never 400
+    assert statuses and set(statuses) == {200}, statuses
     assert _rows(page) == ["Mode", "X", "Color by", "Height", "Labels"]
     want = DATA.obs.groupby(["cell_type", "condition"], observed=True).size()
     got = _bars(page)

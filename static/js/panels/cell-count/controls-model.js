@@ -196,10 +196,23 @@ export function shownConfig(config) {
     const choice = valueChoiceOf(config);
     const now = choiceValue(config, choice);
     const was = config.value || { kind: 'count' };
-    if (now.kind === was.kind && (now.of || 'all') === (was.of || 'all')) return config;
+    const zeroed = densityZeroBins(config);
+    if (now.kind === was.kind && (now.of || 'all') === (was.of || 'all') && !zeroed.length) return config;
     const out = { ...config };
     if (now.kind === 'count') delete out.value; else out.value = now;
+    // a density is smoothed over one run of bins: a zero bin kept from another mode is not one of them (V3)
+    for (const field of zeroed) {
+        const binning = { ...out[field].binning };
+        delete binning.zero_bin;
+        out[field] = { ...out[field], binning };
+    }
     return out;
+}
+
+/** The inputs of a density whose stored binning has a zero bin (kept from a histogram, CNT-6). */
+function densityZeroBins(config) {
+    if (!rowsOf(config.mode).density) return [];
+    return ['x', 'y'].filter((f) => config[f] && isObject(config[f].binning) && config[f].binning.zero_bin);
 }
 
 /** The stored `value` of a choice (the measure and the factor are fields of their own). */
