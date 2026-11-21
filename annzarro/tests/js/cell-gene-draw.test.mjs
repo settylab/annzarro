@@ -501,3 +501,13 @@ test('an axis of thousands of genes thins its labels by pixels, the first among 
     const wide = D.buildFigure(model({ rows: 300, groups: 2, pixels: { width: 6000, height: 400 } }), LIGHT);
     assert.equal(wide.layout.xaxis.ticktext.length, 300, 'with the room, nothing is dropped, past the old cap');
 });
+
+test('the legend column starts below the modebar, at any figure height', () => {
+    for (const height of [300, 600, 1200]) {
+        const fig = D.buildFigure(model({ pixels: { width: 900, height } }), LIGHT);
+        const bar = bars(fig)[0].marker.colorbar;
+        assert.ok((1 - bar.y) * (height - 20) >= 36 - 1e-6, `colour bar top ${bar.y} at ${height}px`);
+        const title = fig.layout.annotations.find((a) => a.text && a.xref === 'paper' && a.x === 0.83);
+        assert.ok((1 - title.y) * (height - 20) >= 36 - 1e-6);
+    }
+});

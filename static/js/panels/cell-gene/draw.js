@@ -48,6 +48,9 @@ const REFERENCE_DOTS = 5;
 const LEGEND_X = 0.83;
 const PLOT_RIGHT = 0.78;
 const LEGEND_SLOT_MAX = 0.3;
+/** The top of the legend column stays clear of Plotly's modebar (camera, zoom, pan), about this many px tall. */
+const MODEBAR_PX = 36;
+const DEFAULT_HEIGHT = 600;
 const MAIN = 'main';
 
 /** Plotly reads a little markup in titles, ticks and hover text, so a name holding `<` or `&` is escaped. */
@@ -240,9 +243,10 @@ function legendStack(model, P, dots) {
         if (model.size.none) items.push({ kind: 'none' });
         else for (const k of P.size) items.push({ kind: 'size', key: k.key });
     }
-    const slot = Math.min(LEGEND_SLOT_MAX, 0.96 / Math.max(items.length, 1));
+    const reserve = MODEBAR_PX / Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
+    const slot = Math.min(LEGEND_SLOT_MAX, (0.96 - reserve) / Math.max(items.length, 1));
     items.forEach((it, i) => {
-        it.top = 1 - i * slot;
+        it.top = 1 - reserve - i * slot;
         it.height = slot * 0.82;
     });
     return items;
