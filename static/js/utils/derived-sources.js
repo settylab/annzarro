@@ -229,7 +229,7 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         const base = { id, title: src ? src.title : handle.lastTitle || '', held: null, key: null, kind: handle.lastKind || defaultKind };
         if (!src) {
             dropKey(handle);
-            return { ...base, state: sources.off && sources.off() ? 'off' : 'deleted' };
+            return { ...base, state: sources.off && sources.off(id) ? 'off' : 'deleted' };
         }
         handle.lastTitle = src.title;
         base.kind = handle.lastKind = src.kind || defaultKind;

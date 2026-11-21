@@ -37,6 +37,9 @@ import { missingFactors, PANEL_SOURCES, SCORE_SOURCE, GROUP_SOURCE, TABLE_SOURCE
 /** The panel type whose panels are groupings. */
 const TYPE = 'cell-grouping';
 
+/** The id of a panel's own cell axis in the page's group sources: 'axis:<panelId>' (G7b). */
+export const AXIS_PREFIX = 'axis:';
+
 /** The page's panel registry (window.PanelManager): importing panel-manager.js would load every panel. */
 const panels = () => globalThis.PanelManager;
 
@@ -204,11 +207,26 @@ export const sourceTitleOf = (source) => (PANEL_SOURCES.includes(source.type) &&
 function pageHost() {
     return {
         source(id) {
+            // a panel's own cell axis (a Cell-Gene Plot on an obs column): the panel says what it is
+            if (typeof id === 'string' && id.startsWith(AXIS_PREFIX)) {
+                const owner = panelOf(id.slice(AXIS_PREFIX.length));
+                return owner && typeof owner.axisSource === 'function' ? owner.axisSource() : null;
+            }
             const p = panelOf(id);
             if (typeOf(p) !== TYPE) return null;
             return { title: p.getTitle(), kind: 'grouping', recipe: () => p.getRecipe(), shape: GROUPING };
         },
-        off: () => !Policy.panelEnabled(TYPE),
+        // per id: a panel's own cell axis is off when its owner's type is; a panel that is a source of groups itself
+        // (a count plot, groupSource()) when its own type is; anything else (a grouping) when Cell Grouping is
+        off: (id) => {
+            if (typeof id === 'string' && id.startsWith(AXIS_PREFIX)) {
+                const owner = panelOf(id.slice(AXIS_PREFIX.length));
+                return !!owner && !Policy.panelEnabled(typeOf(owner));
+            }
+            const p = panelOf(id);
+            if (p && typeof p.groupSource === 'function') return !Policy.panelEnabled(typeOf(p));
+            return !Policy.panelEnabled(TYPE);
+        },
         upstream(source, dependant) {
             switch (source.type) {
                 case GROUP_SOURCE: return typeOf(panelOf(source.key)) === TYPE ? { grouping: source.key } : gone('the grouping it uses is gone');

@@ -71,7 +71,7 @@ export const GROUPING = Object.freeze({
  * @property {(id: string) => ({title: string, kind?: string, recipe: () => Object, shape: Object}|null)} source - a
  *   source of groups: `recipe()` is its stored recipe, the same object until it changes; `shape` is `GROUPING` or a
  *   count plot's `gridShape(...)`; `kind` defaults to 'grouping'
- * @property {() => boolean} [off] - the panel type is turned off here
+ * @property {(id: string) => boolean} [off] - the type of the panel behind source `id` is turned off here
  * @property {(source: Object, dependant: ?string) => (null|{grouping: string}|{gate: Object, actions?: Object}|
  *   {bitset: () => {flags: ArrayLike<*>, hash: string}}|{recipe: () => {recipe: Object, hash: string}})} upstream
  *   what a factor's source is: null for a column of the dataset; another grouping; a gate while its input cannot be
@@ -314,7 +314,7 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
                     }
                 };
             },
-            off: () => !!(host.off && host.off())
+            off: (id) => !!(host.off && host.off(id))
         },
         context, liveDelayMs, setTimer, clearTimer,
         // a resolved recipe is made afresh by every read of the source and never edited, and each variant has its hash
