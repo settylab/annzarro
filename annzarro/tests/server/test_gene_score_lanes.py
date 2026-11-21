@@ -158,6 +158,18 @@ def test_a_second_score_starts_within_one_chunk_of_a_whole_matrix_pass(client, l
         return real_read(self, lo, hi, spans)
     monkeypatch.setattr(gs._CscSource, "_read", recorded_read)
     monkeypatch.setattr(route, "QUEUE_WAIT_S", 0.5)
+    # "Sent during the pass" is the moment the score reaches the lanes, not the moment the test starts its thread:
+    # a request takes as long as the machine lets it to get from one to the other, and every 0.05 s of that is a
+    # chunk. The second job to enter a lane is the short score; the event is recorded just before it joins the
+    # queue, so a chunk that runs while it joins still counts against the bound.
+    real_enter, entered = cs.Lanes.enter, []
+
+    def enter(self, *a, **k):
+        entered.append(1)
+        if len(entered) == 2:
+            events.append("arrived")
+        return real_enter(self, *a, **k)
+    monkeypatch.setattr(cs.Lanes, "enter", enter)
     out = {}
     with _streams() as (open_, spawn):
         def run(name, body, dataset):
@@ -167,7 +179,6 @@ def test_a_second_score_starts_within_one_chunk_of_a_whole_matrix_pass(client, l
         deadline = time.monotonic() + 10
         while events.count("chunk") < 3 and time.monotonic() < deadline:
             time.sleep(0.01)
-        at_arrival = len(events)
         assert events.count("chunk") >= 3, "the whole-matrix pass did not start"
         spawn(run, "short", {"recipe": {"genes": NAMES}}, "in.zarr")
     (long_status, long_data), (short_status, short_data) = out["long"], out["short"]
@@ -177,6 +188,7 @@ def test_a_second_score_starts_within_one_chunk_of_a_whole_matrix_pass(client, l
     assert long_frames[-1]["type"] == "result" and short_frames[-1]["type"] == "result"
     assert long_vector is not None and short_vector is not None
     first_short = events.index("short")
+    at_arrival = events.index("arrived")
     between = events[at_arrival:first_short].count("chunk")
     assert first_short >= at_arrival and between <= 2, f"the pass ran {between} more chunks before the short score"
     assert "chunk" in events[first_short:], "the pass did not resume after the short score began"
