@@ -27,8 +27,8 @@ const MODE_ROWS = Object.freeze({
     hist2d: { value: 'color', labels: true, binned: ['x', 'y'] },
     heatmap: { value: 'color', labels: true, reverse: true, binned: ['x', 'y'] },
     // a density is smoothed on a fixed grid (CNT-10): only its Color by is binned
-    density: { binned: ['split'] },
-    density2d: { binned: ['split'] },
+    density: { binned: ['split'], density: 1 },
+    density2d: { binned: ['split'], density: 2 },
     venn: { binned: [] },
     upset: { value: 'color', binned: [] }
 });
@@ -46,7 +46,7 @@ export function rowsOf(mode) {
     return {
         ...reads, slices: !!own.slices, value: own.value || null, arrangement: own.arrangement || [], labels: !!own.labels,
         sort: !!own.sort, reverse: !!(own.sort || own.reverse), horizontal: !!own.horizontal, log: !!own.log, ring: !!own.ring,
-        binned: own.binned
+        binned: own.binned, density: own.density || 0
     };
 }
 
@@ -344,6 +344,16 @@ export function countReferences(config) {
 }
 
 const LABEL_KINDS = Object.freeze(['none', 'count', 'share', 'measure']);
+/** The bandwidth adjust a density takes (CNT-10). */
+export const ADJUST = Object.freeze({ min: 0.1, max: 10 });
+
+/** A typed bandwidth adjust: a number from 0.1 to 10, or empty for 1; else the sentence that says so. */
+export function parseAdjust(text) {
+    const s = String(text).trim();
+    if (s === '') return { ok: true, value: 1 };
+    const v = Number(s);
+    return Number.isFinite(v) && v >= ADJUST.min && v <= ADJUST.max ? { ok: true, value: v } : { ok: false, message: C.adjustProblem };
+}
 
 /**
  * The options of the drawing (draw.js `countFigure`'s `options`), from the style fields of the config: printed labels,
@@ -360,7 +370,11 @@ export function drawOptions(config) {
         horizontal: rows.horizontal && config.horizontal === true,
         log: rows.log && config.log === true,
         ring: rows.ring && config.ring === true,
-        fade: config.fade === true
+        fade: config.fade === true,
+        // a density's own (CNT-10): the bandwidth adjust, curves scaled by level size, a 2D density as an image
+        adjust: rows.density && Number.isFinite(config.adjust) && config.adjust >= ADJUST.min && config.adjust <= ADJUST.max ? config.adjust : 1,
+        scale: rows.density && config.scale === 'size' ? 'size' : 'level',
+        style: rows.density === 2 && config.style === 'image' ? 'image' : 'contours'
     };
 }
 

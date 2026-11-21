@@ -19,7 +19,7 @@ import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '
 import { getSource } from '../../utils/source-registry.js';
 import {
     rowsOf, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
-    setMode, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices
+    setMode, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
 } from './controls-model.js';
 
 const C = VOCABULARY.countPlot;
@@ -474,9 +474,33 @@ export function createControls({ D, id, model, on }) {
         on: { change: () => { const next = { ...model().config }; if (ringBox.checked) next.ring = true; else delete next.ring; commit(next, ringBox.checked ? 'ring' : 'pie'); } } });
     const logWrap = el('label', { class: 'ccnt-opt' }, logBox, ` ${C.buttons.log}`);
     const ringWrap = el('label', { class: 'ccnt-opt' }, ringBox, ` ${C.buttons.ring}`);
+    const adjust = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-adjust', inputmode: 'decimal', placeholder: '1',
+        autocomplete: 'off', aria: { label: C.buttons.adjust } });
+    const adjustNote = el('span', { class: 'ccnt-help ccnt-adjust__problem', role: 'alert' });
+    const commitAdjust = () => {
+        const c = model().config;
+        const r = parseAdjust(adjust.value);
+        adjustNote.textContent = r.ok ? '' : r.message;
+        if (!r.ok) { adjust.value = c.adjust === undefined ? '' : String(c.adjust); return; }
+        if (r.value === (c.adjust === undefined ? 1 : c.adjust)) return;
+        const next = { ...c };
+        if (r.value === 1) delete next.adjust; else next.adjust = r.value;
+        commit(next, `bandwidth adjust ${r.value}`);
+    };
+    adjust.addEventListener('change', commitAdjust);
+    adjust.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitAdjust(); } });
+    const adjustWrap = el('label', { class: 'ccnt-opt' }, `${C.buttons.adjust} `, adjust, adjustNote);
+    const toggleField = (cls, field, value, text) => {
+        const box = el('input', { type: 'checkbox', class: cls,
+            on: { change: () => { const next = { ...model().config }; if (box.checked) next[field] = value; else delete next[field]; commit(next, `${box.checked ? '' : 'no '}${text.toLowerCase()}`.trim()); } } });
+        return { box, wrap: el('label', { class: 'ccnt-opt' }, box, ` ${text}`) };
+    };
+    const bySize = toggleField('ccnt-bysize', 'scale', 'size', C.buttons.bySize);
+    const image = toggleField('ccnt-image', 'style', 'image', C.buttons.image);
+    const densityNotes = el('div', { class: 'ccnt-help ccnt-density-notes' });
     const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-csv', on: { click: () => on.csv() } }, C.buttons.csv);
     const optionsBox = el('div', { class: 'ccnt-options', id: `ccnt-options-${id}`, role: 'group', aria: { label: C.buttons.options }, hidden: true },
-        logWrap, ringWrap, csvBtn);
+        logWrap, ringWrap, adjustWrap, bySize.wrap, image.wrap, csvBtn, densityNotes);
     const labelsRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--labels' },
         el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, optionsBtn);
 
@@ -497,6 +521,14 @@ export function createControls({ D, id, model, on }) {
         logBox.checked = o.log;
         ringWrap.hidden = !shownRows.ring;
         ringBox.checked = o.ring;
+        adjustWrap.hidden = !shownRows.density;
+        if (document.activeElement !== adjust) adjust.value = m.config.adjust === undefined ? '' : String(m.config.adjust);
+        bySize.wrap.hidden = !(shownRows.density && m.config.split);
+        bySize.box.checked = o.scale === 'size';
+        image.wrap.hidden = shownRows.density !== 2;
+        image.box.checked = o.style === 'image';
+        densityNotes.textContent = shownRows.density && m.notes ? [m.notes.bandwidth, m.notes.floor].filter(Boolean).join(' ') : '';
+        densityNotes.hidden = !densityNotes.textContent;
         csvBtn.disabled = !m.canExport;
     }
 

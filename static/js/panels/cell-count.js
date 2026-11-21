@@ -31,6 +31,7 @@ import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-v
 import { UndoStack } from '../utils/gene-signature.js';
 import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLabelsOf } from '../utils/count-plot-model.js';
 import { countFigure, countCsv, DRAWN_MODES } from './cell-count/draw.js';
+import { densityFigure, DENSITY_MODES } from './cell-count/draw-density.js';
 import { createControls } from './cell-count/controls.js';
 import {
     countReferences, shownConfig, drawOptions, inputNames, shownLabels, followFocus, measureSourceName, levelTotals,
@@ -66,7 +67,7 @@ registerReferences(TYPE, countReferences);
 export const PARTS = { states: null, sets: null, draw: {} };
 
 /** Whether a mode can be drawn in this build. */
-const drawable = (mode) => DRAWN_MODES.includes(mode) || !!PARTS.draw[mode];
+const drawable = (mode) => DRAWN_MODES.includes(mode) || DENSITY_MODES.includes(mode) || !!PARTS.draw[mode];
 
 /** The words a notice of the route's states uses for a count (utils/source-notices.js `describeSource`). */
 const NOTICE_WORDS = Object.freeze({
@@ -132,6 +133,7 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
         let _drawing = null;                 // {config, table, labels, names} of the drawing shown, for the CSV
         let _infos = {};
         let _labelMaps = {};
+        let _notes = null;
         const _listeners = [];
         /** the shape and the shown config of `_config`, made once per config */
         let _shape = null;
@@ -437,7 +439,7 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing,
+                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, notes: _notes,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
             };
         }
@@ -448,7 +450,7 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
             if (!_dom) return;
             draw();
             paintState();
-            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing];
+            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes];
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
                 _controls.paint();
@@ -466,6 +468,7 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
             if (!found || !window.Plotly) {
                 if (window.Plotly && _dom.plot._fullLayout) window.Plotly.purge(_dom.plot);
                 _drawing = null;
+                _notes = null;
                 _infos = {};
                 _labelMaps = {};
                 delete _dom.root.dataset.drawn;
@@ -485,7 +488,10 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
                 measureSource: config.measure ? measureSourceName(config.measure.source, sourceTitleOf) : undefined, titleOf: sourceTitleOf
             };
             const part = PARTS.draw[config.mode];
-            const fig = part ? part.figure(config, table, opts) : countFigure(config, table, opts);
+            const fig = part ? part.figure(config, table, opts)
+                : DENSITY_MODES.includes(config.mode) ? densityFigure(config, table, opts) : countFigure(config, table, opts);
+            // a density's sentences (UX 4.4): the bandwidth and the floor in Plot Options, the range in the strip
+            _notes = fig.notes || null;
             window.Plotly.react(_dom.plot, fig.data, { ...fig.layout, autosize: true }, { displaylogo: false, responsive: true });
             _drawing = { config, table, labels, names };
             // what a test or a style reads: the mode drawn, only once the drawing is of the config now
@@ -541,6 +547,7 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
                 actions.appendChild(D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary ccnt-action', data: { action },
                     on: { click: run } }, label));
             }
+            if (!strip && _notes && snap && snap.state === 'ready') strip = [_notes.range, _notes.floor].filter(Boolean).join(' ');
             _dom.strip.textContent = strip;
         }
 

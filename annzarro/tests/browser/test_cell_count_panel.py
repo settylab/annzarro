@@ -11,7 +11,8 @@ sample (30 levels), depth and score (numbers), is_doublet, layers X, logged and 
     step, and the lock (CNT-16, CNT-17).
 4.  A mode change keeps every input; the rows of the mode, "Kept for other modes", a pie's Slices, the modes not drawn
     in this build unavailable with the reason (CNT-6, UX 4.1, UX 4.2).
-5.  A 2D histogram: its 100 x 100 default, the Color entries and the most frequent level (CNT-9, CNT-18, UX 4.5).
+5.  A 2D histogram: its 100 x 100 default, the Color entries and the most frequent level (CNT-9, CNT-18, UX 4.5); a
+    density per condition drawn by V3's figure, its sentences and the bandwidth adjust (CNT-10, UX 4.4).
 6.  A link and a panel set: the config only, nothing computed; a set added beside open panels remaps the inputs, Color
     by, the sets and the statistic (CAT-9); a grouping says it is used by the plot.
 
@@ -325,6 +326,28 @@ def test_a_2d_histogram_its_default_bins_and_the_most_frequent_level(page, serve
     assert page.is_visible(f"{S} [data-row='factor']")
     names = [t["name"] for t in _plot(page)["data"][1:]]
     assert sorted(names) == sorted(DATA.obs["cell_type"].cat.categories)
+
+
+def test_a_density_per_condition_draws_through_v3_with_its_sentences_and_adjust(page, served):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    _open(page, served, {CC: _count(mode="density", x=depth, split=CONDITION)})
+    _drawn(page, "density")
+    fig = _plot(page)
+    assert sorted(t["name"] for t in fig["data"]) == sorted(DATA.obs["condition"].unique())
+    assert _rows(page) == ["Mode", "X", "Color by", "Labels"]
+    assert page.inner_text(f"{S} .ccnt-strip").startswith("Range from the 0.1st to the 99.9th percentile")
+    page.click(f"{S} .ccnt-options-btn")
+    assert page.inner_text(f"{S} .ccnt-density-notes").startswith("Bandwidth ")
+    asked = len(_requests(page))
+    page.fill(f"{S} .ccnt-adjust", "2")
+    page.press(f"{S} .ccnt-adjust", "Enter")
+    _drawn(page, "density", "c.adjust === 2")
+    assert "× 2" in page.inner_text(f"{S} .ccnt-density-notes")
+    assert len(_requests(page)) == asked, "the bandwidth is the browser's: nothing is asked"
+    page.fill(f"{S} .ccnt-adjust", "40")
+    page.press(f"{S} .ccnt-adjust", "Enter")
+    until(page, "(s) => document.querySelector(s + ' .ccnt-adjust__problem').textContent === 'Enter a number from 0.1 to 10.'", S)
+    assert _config(page)["adjust"] == 2
 
 
 # ------------------------------------------------------------------ 6. links, panel sets, a remap

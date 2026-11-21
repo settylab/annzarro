@@ -309,9 +309,11 @@ test('the golden count configs read unchanged, and an UpSet\'s style fields are 
 
 test('the drawing\'s options are the style fields the mode has', () => {
     const bar = norm({ mode: 'bar', x: obs('cell_type'), labels: 'count', sort: 'height', reverse: true, horizontal: true, log: true, ring: true });
-    assert.deepEqual(K.drawOptions(bar), { labels: 'count', sort: 'height', reverse: true, horizontal: true, log: true, ring: false, fade: false });
+    assert.deepEqual(K.drawOptions(bar), { labels: 'count', sort: 'height', reverse: true, horizontal: true, log: true, ring: false, fade: false,
+        adjust: 1, scale: 'level', style: 'contours' });
     const pie = { ...bar, mode: 'pie' };
-    assert.deepEqual(K.drawOptions(pie), { labels: 'count', sort: 'height', reverse: true, horizontal: false, log: false, ring: true, fade: false });
+    assert.deepEqual(K.drawOptions(pie), { labels: 'count', sort: 'height', reverse: true, horizontal: false, log: false, ring: true, fade: false,
+        adjust: 1, scale: 'level', style: 'contours' });
     assert.equal(K.drawOptions({ ...bar, labels: 'measure' }).labels, 'none', 'no statistic to print');
     assert.deepEqual(K.labelChoices(bar).map((c) => c.label), ['None', 'Count', 'Share']);
     assert.deepEqual(K.labelChoices({ ...bar, measure: { stat: 'mean', source: { type: 'obs', key: 'depth' } } }).map((c) => c.label),
@@ -340,4 +342,19 @@ test('the words the drawing reads are VOCABULARY.countPlot\'s, and none says "me
         for (const word of VOCABULARY.never.statistic) assert.ok(!text.toLowerCase().includes(word), `${text} says ${word}`);
         assert.ok(!/colour/i.test(text), `${text}: US spelling`);
     }
+});
+
+test('a density\'s own options: the bandwidth adjust from 0.1 to 10, curves by level size, a 2D density as an image', () => {
+    assert.equal(K.rowsOf('density').density, 1);
+    assert.equal(K.rowsOf('density2d').density, 2);
+    assert.equal(K.rowsOf('bar').density, 0);
+    const d = norm({ mode: 'density2d', x: obs('depth'), y: obs('score'), adjust: 2.5, scale: 'size', style: 'image' });
+    const o = K.drawOptions(d);
+    assert.deepEqual([o.adjust, o.scale, o.style], [2.5, 'size', 'image']);
+    assert.deepEqual([K.drawOptions({ ...d, mode: 'density' }).style, K.drawOptions({ ...d, mode: 'bar' }).adjust], ['contours', 1]);
+    assert.equal(K.drawOptions({ ...d, adjust: 40 }).adjust, 1, 'out of range: the default');
+    assert.deepEqual(K.parseAdjust(' 0.5 '), { ok: true, value: 0.5 });
+    assert.deepEqual(K.parseAdjust(''), { ok: true, value: 1 });
+    assert.deepEqual(K.parseAdjust('11'), { ok: false, message: 'Enter a number from 0.1 to 10.' });
+    assert.deepEqual(K.parseAdjust('x'), { ok: false, message: 'Enter a number from 0.1 to 10.' });
 });
