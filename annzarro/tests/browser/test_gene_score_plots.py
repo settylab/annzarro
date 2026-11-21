@@ -1093,7 +1093,7 @@ def test_the_registry_lists_a_closed_signature_and_its_aggregations(page, served
     }""")
     assert sorted((e["id"], e["open"]) for e in got["entities"]) == [(SIG, True), (SIG2, False)], "the closed one is listed"
     assert [s["value"] for s in got["subs"]] == ["zscore_mean", "mean", "sum"] and got["def"] == "zscore_mean"
-    assert got["forX"] == ["gene-score"] and got["forZ"] == ["gene-score"] and got["forGenePlot"] == []
+    assert got["forX"] == ["gene-score", "cell-group"] and got["forZ"] == ["gene-score", "cell-group"] and got["forGenePlot"] == []
 
 
 def test_cells_without_a_score_on_an_axis_follow_hide_nan_and_are_counted(page, served):
