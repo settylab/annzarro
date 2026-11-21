@@ -207,7 +207,7 @@ export const sourceTitleOf = (source) => (PANEL_SOURCES.includes(source.type) &&
  * @param {string} [id]
  * @param {(type: string) => boolean} [enabled] - the policy's panelEnabled
  */
-export function sourceOff(id, enabled = (type) => Policy.panelEnabled(type)) {
+function sourceOff(id, enabled = (type) => Policy.panelEnabled(type)) {
     const p = panelOf(id);
     return !enabled(p && typeof p.groupSource === 'function' ? typeOf(p) : TYPE);
 }

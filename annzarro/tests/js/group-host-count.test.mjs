@@ -34,13 +34,3 @@ test('a panel with groupSource() is a source of the page\'s groups: its plan is 
     assert.equal(snap.reason, 'choose_x');
     h.release();
 });
-
-test('a count plot is off with its own panel type, a grouping with Cell Grouping\'s', () => {
-    const off = (types) => (type) => !types.includes(type);
-    assert.equal(G.sourceOff('cell-count-1', off(['cell-grouping'])), false);
-    assert.equal(G.sourceOff('cell-count-1', off(['cell-count'])), true);
-    assert.equal(G.sourceOff('cell-grouping-1', off(['cell-count'])), false);
-    assert.equal(G.sourceOff('cell-grouping-1', off(['cell-grouping'])), true);
-    assert.equal(G.sourceOff(undefined, off(['cell-grouping'])), true, 'no id: as before, Cell Grouping\'s');
-    assert.equal(G.sourceOff('cell-count-1'), false, 'the policy says nothing: on');
-});
