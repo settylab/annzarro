@@ -40,7 +40,9 @@
  *                       categorical  {codes, MISSING, categories, colours, coverage, rankOf?, ranked?, groupNames?, values?}
  *                     A categorical series of more than GROUP_COLOURS categories is drawn in colour groups (utils/categories.js):
  *                     `rankOf` (category -> rank over every cell) decides each category's colour. `ranked` codes are
- *                     those ranks themselves, with no labels: then `groupNames` names each colour's legend entry
+ *                     those ranks themselves, with no labels: then `groupNames` names each colour's legend entry.
+ *                     `missingLabel`, optional: what the legend calls the points without a category ('Not in any
+ *                     group'); 'NA' when not given
  *                     It names what it read in the setting: `label` (the entity's title, kept for when it is
  *                     gone) and, when the title has two lines, `labelFull` (joined by '\n'); titles read them, as
  *                     they cannot reach the page. A series that cannot be drawn yet throws SourceUnavailable
@@ -194,7 +196,7 @@ export class SourceUnavailable extends Error {
 export function plotSeries(series) {
     if (series.type !== 'categorical') {
         return { values: series.values, type: series.type, categories: null, coverage: series.coverage, rankOf: null, ranked: false,
-            groupNames: null, colours: null };
+            groupNames: null, colours: null, missingLabel: null };
     }
     const { codes, MISSING } = series;
     // ranked codes have no labels: each point's value is its rank, as the plot's own ranked categories are
@@ -202,5 +204,5 @@ export function plotSeries(series) {
     const categories = ranked ? null : series.categories;
     const values = series.values || Array.from(codes, c => (c === MISSING ? null : ranked ? c : categories[c]));
     return { values, type: 'categorical', categories, coverage: series.coverage, rankOf: series.rankOf || null,
-        ranked, groupNames: series.groupNames || null, colours: series.colours || null };
+        ranked, groupNames: series.groupNames || null, colours: series.colours || null, missingLabel: series.missingLabel || null };
 }

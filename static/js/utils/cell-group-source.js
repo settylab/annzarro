@@ -57,6 +57,9 @@ const NEW_GROUPING = '__new_grouping__';
 /** The heading of the groupings in the Hover picker and under obs in a key list (UX 5). */
 const GROUPINGS = capital(PL.grouping);
 
+/** The legend entry of the cells in no group (SHR-5, UX 5). */
+const NOT_IN_ANY_GROUP = capital(W.notInAnyGroup);
+
 /** The page's panel registry (window.PanelManager): importing panel-manager.js would load every panel. */
 const PanelManager = {
     getPanel: (id) => (globalThis.PanelManager ? globalThis.PanelManager.getPanel(id) : null),
@@ -185,7 +188,7 @@ function groupSeries(values, names, { hover = false } = {}) {
     const MISSING = missingOf(codes);
     const parts = partsOf(values.reply, names);
     const series = { type: 'categorical', codes, MISSING, categories: names, colours: parts.colours, rankOf: parts.rankOf, ranked: false,
-        groupNames: null, coverage: Coverage.complete(codes.length, 'cells') };
+        groupNames: null, missingLabel: NOT_IN_ANY_GROUP, coverage: Coverage.complete(codes.length, 'cells') };
     if (hover) series.values = hoverValues(codes, MISSING, names);
     return series;
 }
