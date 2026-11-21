@@ -387,19 +387,28 @@ def _plan(layout, body, name="in.zarr"):
 MB = 2 ** 20
 
 
+#: FX-E's measured reservation of a resolve (the lead's contract update, superseding E3's formula): 4 B a cell shown,
+#: the numeric source column (n_src x itemsize, counted at 8 B), 0.35 GB of temporaries, 4 B a cell more when an
+#: intersection may hold over 65,534 occupied combinations; keep on a pause = full - 128 MB.
+TEMPORARIES = int(0.35 * 2 ** 30)
+
+
 def test_a_resolve_is_charged_its_codes_its_column_and_the_slab_temporaries(layout):
     n = N
     full, keep = route.reservation(_plan(layout, grouping([{"source": CELL_TYPE}])), n)
-    assert full == 2 * n + 100 * MB and keep == 2 * n
+    assert full == 4 * n + TEMPORARIES and keep == full - 128 * MB
     one = [{"source": {"type": "obs", "key": "score"}, "binning": {"method": "equal_width", "bins": 4}}]
     full, keep = route.reservation(_plan(layout, grouping(one)), n)
-    assert full == 2 * n + 8 * n + 100 * MB                                    # a float64 column of the cells shown
+    assert full == 4 * n + 8 * n + TEMPORARIES                                 # a float64 column of the cells shown
     allcells = [{**one[0], "binning": {"method": "equal_width", "bins": 4, "edges_from": "all"}}]
     full, _ = route.reservation(_plan(layout, grouping(allcells)), 300)
-    assert full == 2 * 300 + 8 * N + 100 * MB                                  # edges_from all: the column of every cell
+    assert full == 4 * 300 + 8 * N + TEMPORARIES                               # edges_from all: the column of every cell
+    few = [{"source": {"type": "obs", "key": "condition"}, "levels": ["c:ctrl"]}, one[0]]
+    full, _ = route.reservation(_plan(layout, grouping(few)), n)
+    assert full == 4 * n + 8 * n + TEMPORARIES                                 # 3 x 7 combinations at most
     two = [{"source": CELL_TYPE}, {"source": {"type": "obs", "key": "condition"}}]
     full, _ = route.reservation(_plan(layout, grouping(two)), n)
-    assert full == 2 * n + n + 100 * MB                                        # the byte slot array of an intersection
+    assert full == 4 * n + 4 * n + TEMPORARIES                                 # two factors of up to 2,000 levels each
 
 
 def test_a_score_partitioning_adds_its_own_reservation(layout):
@@ -409,8 +418,8 @@ def test_a_score_partitioning_adds_its_own_reservation(layout):
     full, keep = route.reservation(plan, N)
     score = plan.groups.top.parts[0].score
     own = N * (8 + 2) * score.vectors + min(gsc.READ_AHEAD_ENTRIES, score.entries) * 12
-    assert full == 2 * N + 8 * N + 4 * N + own + 100 * MB
-    assert keep < full and keep >= 2 * N
+    assert full == 4 * N + 8 * N + 4 * N + own + TEMPORARIES
+    assert keep == full - 128 * MB
 
 
 def test_features_add_their_read_ahead_and_their_segments(layout):
@@ -459,10 +468,10 @@ def test_a_wait_for_the_ledger_past_the_limit_is_read_busy(client, layout, monke
 def test_a_smaller_budget_makes_a_request_wait_for_the_other(layout, tmp_path, monkeypatch):
     monkeypatch.setattr(cstream.LEDGER, "bound", cstream.LEDGER.bound)
     app = create_app({"TESTING": True, "data_dir": str(layout / "data"), "log_file": str(tmp_path / "t.log"),
-                      "compute_budget_mb": 150})
-    assert cstream.LEDGER.bound == 150 * MB
+                      "compute_budget_mb": 500})
+    assert cstream.LEDGER.bound == 500 * MB
     want, _ = route.reservation(_plan(layout, grouping([{"source": CELL_TYPE}])), N)
-    assert 100 * MB < want < 150 * MB < 2 * want                  # one fits, two do not
+    assert 300 * MB < want < 500 * MB < 2 * want                  # one fits, two do not
     client = app.test_client()
     first = post(client, layout, grouping([{"source": CELL_TYPE}]), buffered=False)
     second = None
