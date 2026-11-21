@@ -86,7 +86,7 @@ function mount(host, ctx) {
     section = createOfferedSection({
         D, id, model, title: STATISTICS_HELP.title, text: STATISTICS_HELP, getRecipe: () => ctx.recipe(), apply,
         getInputs: async () => layerKeys(await DataManager.getDatasetStructure(DataManager.getCurrentDataset())),
-        getKind: (layer) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), layer, { suggest: false }),
+        getKind: (layer, opts) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), layer, opts),
         getInUse: () => statisticUsage(groupSources().sources.consumersOf(id)).statistics,
         getLayersInUse: () => statisticUsage(groupSources().sources.consumersOf(id)).layers,
         hooks: {

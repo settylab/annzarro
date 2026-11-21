@@ -201,17 +201,23 @@ def test_the_threshold_is_checked_as_typed_shared_and_restored_by_one_reset(page
     assert _recipe(page)["layers"] == ["counts"], "one undo brings the whole reset back"
 
 
+PICK = """() => { // what a plot or table choosing a source does: a select changes, and the panel counts its users again
+    const s = document.createElement('select'); document.body.append(s); s.dispatchEvent(new Event('change', { bubbles: true })); s.remove(); }"""
+
+
 def _watch(page, name, kind, statistics):
-    page.evaluate("""async ([name, kind, statistics]) => {
+    page.evaluate("""async ([name, kind, statistics, pick]) => {
         const { groupSources } = await import('/static/js/utils/group-host.js');
         window.__stat = window.__stat || {};
         window.__stat[name] = groupSources().sources.watch('cell-grouping-A', { consumer: { kind, panelId: name },
             option: { codes: true, statistics }, onChange() {} });
-    }""", [name, kind, statistics])
+        (0, eval)(pick)();
+    }""", [name, kind, statistics, PICK])
 
 
 def _release(page, name):
     page.evaluate("(name) => { window.__stat[name].release(); delete window.__stat[name]; }", name)
+    page.evaluate(PICK)
 
 
 def _use(page, stat):
@@ -238,7 +244,7 @@ def test_used_by_counts_consumers_by_kind_per_statistic_and_layer_and_not_viewer
     # a statistic in use that is switched off is kept by its users, who are named, and Undo offers it again
     page.uncheck(f"{SEC} [data-offer-method='mean']")
     until(page, "() => (window.PanelManager.getPanel('cell-grouping-A').getConfig().offered || []).join() === 'pct_expressing,sum'")
-    assert page.inner_text(f"{SEC} .gsig-scoring__notice:not([hidden])").startswith("Mean is no longer offered. 2 plots, 1 table keep it and say so.")
+    assert page.inner_text(f"{SEC} .gsig-scoring__notice:not([hidden])").startswith("mean is no longer offered. 2 plots, 1 table keep it and say so.")
     page.click(f"{SEC} .gsig-scoring__notice [data-undo]")
     until(page, "() => (window.PanelManager.getPanel('cell-grouping-A').getConfig().offered || []).join() === 'mean,pct_expressing,sum'")
     _release(page, "plot-1")
@@ -273,3 +279,20 @@ def test_screenshots(page, served, scheme):
     _ready(page)
     _open_section(page)
     page.locator(f"{A} .cgrp-statistics").screenshot(path=os.path.join(out, f"statistics-{scheme}.png"))
+
+
+def test_statistics_and_the_signatures_scoring_share_one_kind_request_per_dataset_and_layer(page, served):
+    sig = "gene-signature-S"
+    kinds = []
+    page.on("request", lambda r: kinds.append(r.url) if "/data/matrix_kind" in r.url else None)
+    configs = {**_cfg(), sig: {"id": sig, "title": "Signature 1", "genes": ["GENE001", "GENE002"]}}
+    _open(page, served, configs, open_ids=(GA, sig))
+    page.wait_for_selector(f".tile[data-tile-id='{sig}'] .gsig-scoring")
+    until(page, "() => !!document.querySelector('.tile[data-tile-id=\"gene-signature-S\"] .gsig-scoring__summary')")
+    _open_section(page)
+    page.click(f".tile[data-tile-id='{sig}'] .gsig-scoring__toggle")
+    until(page, """() => [...document.querySelectorAll('.tile[data-tile-id="gene-signature-S"] .gsig-scoring__layer')]
+        .every(l => l.querySelector('.gsig-scoring__kind'))""")
+    for layer in ("X", "logged", "counts"):
+        asked = [u for u in kinds if f"input={layer}&" in u or u.endswith(f"input={layer}")]
+        assert len(asked) == 1, (layer, kinds)
