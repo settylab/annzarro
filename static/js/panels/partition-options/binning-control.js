@@ -18,9 +18,11 @@ import { BINNING_SLOT } from '../cell-grouping/factors.js';
 import {
     BINS_MIN, BINS_MAX, DEFAULT_BINS, normalizeBinning, freezeThresholds, recipeEdges
 } from '../../utils/binning.js';
+import { VOCABULARY } from '../../utils/vocabulary.js';
 import { sourceName } from '../../utils/cell-grouping.js';
 import { stableStringify } from '../../utils/url-history.js';
 
+const P = VOCABULARY.phrase;
 const fmt = (n) => Number(n).toLocaleString('en-US');
 /** A number to three significant digits, written plainly. */
 const figure = (x) => String(Number(Number(x).toPrecision(3)));
@@ -217,10 +219,16 @@ export function keyStep(histogram, big) {
     return (span > 0 ? span : 1) / (big ? 10 : 100);
 }
 
-/** The height of each bar, 0 to 1, of the tallest. */
+/**
+ * The height of each bar, 0 to 1, of the tallest. With the zero bin on, the cells at exactly 0 are not in the bars (they
+ * have a bar of their own), so the spike does not flatten the distribution the edges sit on.
+ * @param {Object} histogram
+ * @param {{zeroBin?: boolean}} [options]
+ */
 // export-unused-ok: the control's model is read by its Node tests, and the count plot (C2a) reads it
-export function barHeights(histogram) {
-    const counts = histogram.counts || [];
+export function barHeights(histogram, { zeroBin = false } = {}) {
+    const counts = [...(histogram.counts || [])];
+    if (zeroBin && counts.length && histogram.lo === 0 && histogram.n_zero > 0) counts[0] = Math.max(0, counts[0] - histogram.n_zero);
     let top = 0;
     for (const c of counts) if (c > top) top = c;
     return counts.map((c) => (top > 0 ? c / top : 0));
@@ -512,9 +520,13 @@ function mount(host, ctx) {
     const values = lineValues(binning, info);
     const preview = h('div', { class: `pbc-hist${hist ? '' : ' is-empty'}`, role: 'group', aria: { label: `Distribution of ${name} with the edges` } });
     const bars = h('div', { class: 'pbc-bars', aria: { hidden: 'true' } });
-    if (hist) for (const f of barHeights(hist)) bars.append(h('span', { class: 'pbc-bar', style: `height:${(f * 100).toFixed(1)}%` }));
+    if (hist) for (const f of barHeights(hist, { zeroBin: !!binning.zero_bin })) bars.append(h('span', { class: 'pbc-bar', style: `height:${(f * 100).toFixed(1)}%` }));
     const lines = h('div', { class: 'pbc-lines' });
     preview.append(bars, lines);
+    if (hist && binning.zero_bin && hist.lo === 0 && hist.n_zero > 0) {
+        preview.classList.add('has-zero');
+        preview.append(h('span', { class: 'pbc-zero-bar', title: `${P.zero(name)}: ${fmt(hist.n_zero)} cells`, aria: { hidden: 'true' } }));
+    }
     const slidable = method === 'manual' && !!hist;
     const drag = { i: -1 };
     const readout = h('div', { class: 'pbc-readout', aria: { hidden: 'true' }, hidden: true });
@@ -588,7 +600,7 @@ function mount(host, ctx) {
         });
         preview.append(readout);
     }
-    const ticks = h('div', { class: 'pbc-ticks', aria: { hidden: 'true' } });
+    const ticks = h('div', { class: `pbc-ticks${preview.classList.contains('has-zero') ? ' has-zero' : ''}`, aria: { hidden: 'true' } });
     if (hist && values.length <= 12) for (const v of values) ticks.append(h('span', { class: 'pbc-tick', text: figure(v), style: `left:${(fractionOf(v, hist) * 100).toFixed(3)}%` }));
 
     // ---- under the chips: the population, Freeze thresholds, and what the engine did

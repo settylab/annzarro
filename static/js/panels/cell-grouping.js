@@ -586,7 +586,7 @@ function createFactors({ D, id, model, on }) {
             li.append(label);
         }
         li.append(count);
-        if (r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table') {
+        if (r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table' || factorKind(p) === 'binned') {
             li.append(el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-level__rename', title: `Rename ${r.label}`,
                 aria: { label: `Rename ${r.label}` }, on: { click: () => { renaming = { index: i, id: r.id }; paint(); } } }, '✎'));
         }
@@ -715,15 +715,11 @@ function createFactors({ D, id, model, on }) {
     }
 
     /**
-     * The positions of the expanded binned cards: they ask the server for their histogram (SHR-18). A position is the
-     * one in the recipe that made the reply (`applied`, the recipe now by default), and counts only while the card at
-     * that position still shows the same source: a held edit moves nothing under it.
+     * The positions of the expanded binned cards: they ask the server for their histogram (SHR-18).
      */
-    function wanted(applied) {
-        const live = model().recipe.partitionings;
-        const ps = (applied || model().recipe).partitionings;
-        return [...expanded].filter((k) => ps[k] && ps[k].binning && live[k] && stableStringify(live[k].source) === stableStringify(ps[k].source))
-            .sort((a, b) => a - b);
+    function wanted() {
+        const ps = model().recipe.partitionings;
+        return [...expanded].filter((k) => ps[k] && ps[k].binning).sort((a, b) => a - b);
     }
 
     return {
@@ -1003,9 +999,9 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         function syncHistograms() {
             if (!_handle || !_snap || _snap.state !== 'ready' || !_factors) return;
             // only ever more: a card collapsed keeps the histogram it has and asks for nothing
-            const applied = _made.get(_snap.shownKey || _snap.key) || _recipe;
-            const ps = applied.partitionings;
-            const now = [...new Set([..._asked.filter((k) => ps[k] && ps[k].binning), ..._factors.wanted(applied)])].sort((a, b) => a - b);
+            // positions of the recipe now; a request for an older recipe leaves out the ones it lacks (serverRequest)
+            const ps = _recipe.partitionings;
+            const now = [...new Set([..._asked.filter((k) => ps[k] && ps[k].binning), ..._factors.wanted()])].sort((a, b) => a - b);
             if (now.join() === _asked.join()) return;
             _asked = now;
             _handle.setOption({ histograms: now });

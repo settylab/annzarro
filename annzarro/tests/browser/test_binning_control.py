@@ -31,7 +31,7 @@ else:
 
 from annzarro.tests.browser import waits  # noqa: E402
 from annzarro.tests.browser.test_cell_grouping_panel import (  # noqa: E402,F401
-    _captured_url, A, GA, DATA, N, _add, _grouping, _ready, _recipe, _state, page, served)
+    _captured_url, _requests, A, GA, DATA, N, _add, _grouping, _ready, _recipe, _state, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
 CTRL = f"{A} .cgrp-binning .pbc"
@@ -164,8 +164,7 @@ def test_turning_the_default_off_and_reloading_keeps_it_off(page, served):
 
 
 def test_the_bins_are_listed_with_their_cells_and_one_can_be_renamed(page, served):
-    # pseudotime has 20 missing values: its no-value level is the one a binned card lets the user rename (as G9a's list did)
-    _open_binned(page, served, [_binned("pseudotime", bins=3)])
+    _open_binned(page, served, [_binned("depth", bins=3)])
     _ready(page)
     _ctrl_ready(page)
     card = f"{A} .cgrp-card[data-index='0']"
@@ -173,11 +172,35 @@ def test_the_bins_are_listed_with_their_cells_and_one_can_be_renamed(page, serve
     summary = page.inner_text(f"{card} .cgrp-card__summary")
     assert len(rows) >= 2 and summary.endswith(f"{len(rows)} levels"), (rows, summary)
     assert all(n for _, n in rows)
-    page.click(f"{card} .cgrp-level__rename")
+    assert page.locator(f"{card} .cgrp-level__rename").count() == len(rows), "every bin row can be renamed"
+    page.click(f"{card} .cgrp-level__rename >> nth=1")
     page.fill(f"{card} .cgrp-level__name", "missing")
     page.press(f"{card} .cgrp-level__name", "Enter")
     until(page, "(id) => { const l = window.PanelManager.getPanel(id).getRecipe().partitionings[0].labels; return !!l && Object.values(l).includes('missing'); }", GA)
     until(page, "(s) => [...document.querySelectorAll(s + ' .cgrp-level__label')].some(e => e.textContent === 'missing')", card)
+
+
+def test_a_new_binned_factor_costs_at_most_two_computes_and_a_missing_factor_keeps_the_positions_right(page, served):
+    _open_binned(page, served, [{"source": {"type": "obs", "key": "condition"}}], expand=False)
+    _ready(page)
+    before = len(_requests(page))
+    _add(page, "column", type_="obs", key="depth")
+    _wait_binning(page, {"method": "equal_count", "zero_bin": True}, 1)
+    _ctrl_ready(page, 1)
+    _ready(page)
+    sent = _requests(page)[before:]
+    assert len(sent) == 2, [c["want"] for c in sent]
+    assert sent[0]["want"]["histograms"] == [1], "the first request already asks for the preview"
+    # a factor the dataset lacks computes nothing; removing it moves the card to position 0 and the histogram follows
+    page.goto("about:blank")
+    page.calls.clear()
+    _open_binned(page, served, [_binned("nosuch"), _binned("depth", bins=3)], expand=False)
+    _expand(page, 1)
+    waits.expect_stays(lambda: not _histogram_requests(page), "nothing is computed while a factor is missing", page=page)
+    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__more")
+    page.click(f"{A} .cgrp-card[data-index='0'] [data-op='remove']")
+    _ctrl_ready(page, 0)
+    assert _histogram_requests(page)[-1]["want"]["histograms"] == [0]
 
 
 # ------------------------------------------------------------------ 2. invalid entry

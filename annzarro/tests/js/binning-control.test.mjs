@@ -128,6 +128,17 @@ test('the bars scale to the tallest bin without spreading the counts into a call
 
 // --- the zero bin (SHR-15) --------------------------------------------------------------------------------------
 
+test('with the zero bin on, the zeros are not in the bars, so the spike does not flatten the rest', () => {
+    const counts = new Array(100).fill(10);
+    counts[0] = 710;
+    const h0 = hist({ counts, n_zero: 700 });
+    assert.equal(C.barHeights(h0)[0], 1);
+    const bars = C.barHeights(h0, { zeroBin: true });
+    assert.equal(bars[0], 1, 'the first bar keeps its non-zero cells, which here tie with the rest');
+    assert.equal(bars[1], 1);
+    assert.deepEqual(C.barHeights({ ...h0, lo: 1 }, { zeroBin: true })[0], 1, 'a preview that does not start at 0 has no zeros in it');
+});
+
 test('the zero bin is on by default at 25% zeros, only for a factory binning, and never when a value is negative', () => {
     const many = { histogram: hist({ zero_share: 0.6, zero_bin_default: true }) };
     assert.equal(C.zeroBinDefault(norm({ method: 'equal_count' }), many), true);

@@ -17,6 +17,9 @@
 /* the preview: 100 bars and the edges on them */
 .pbc-hist { position: relative; height: 56px; margin: 4px 7px 0; border-bottom: 1px solid var(--az-border-strong); }
 .pbc-hist.is-empty { background: var(--az-surface-2); border-radius: 3px; }
+.pbc-hist.has-zero, .pbc-ticks.has-zero { margin-left: 20px; }
+.pbc-zero-bar { position: absolute; left: -14px; bottom: 0; width: 9px; height: 100%; background: var(--az-warn-text); opacity: 0.55;
+    border-radius: 1px 1px 0 0; }
 .pbc-bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 0; }
 .pbc-bar { flex: 1 1 0; min-width: 0; background: var(--az-border-strong); border-radius: 1px 1px 0 0; }
 .pbc-lines { position: absolute; inset: 0; }
