@@ -40,7 +40,9 @@
  *                       categorical  {codes, MISSING, categories, colours, coverage, rankOf?, ranked?, groupNames?, values?}
  *                     A categorical series of more than GROUP_COLOURS categories is drawn in colour groups (utils/categories.js):
  *                     `rankOf` (category -> rank over every cell) decides each category's colour. `ranked` codes are
- *                     those ranks themselves, with no labels: then `groupNames` names each colour's legend entry
+ *                     those ranks themselves, with no labels: then `groupNames` names each colour's legend entry.
+ *                     `missingLabel`, optional: what the legend calls the points without a category ('Not in any
+ *                     group'); 'NA' when not given
  *                     It names what it read in the setting: `label` (the entity's title, kept for when it is
  *                     gone) and, when the title has two lines, `labelFull` (joined by '\n'); titles read them, as
  *                     they cannot reach the page. A series that cannot be drawn yet throws SourceUnavailable
@@ -59,6 +61,9 @@
  *   placeholder(host, notice)
  *                     draws an axis that cannot be drawn: the placeholder says why, with the way out
  *   vocabulary        {result}: what the source makes, in a sentence ('score')
+ *   paletteLabel      optional: what the first palette option ('uns') is called while a plot's colour is this
+ *                     source, when its colours are its own ("The grouping's colors"); the dataset's uns otherwise
+ *   releaseHost(host) a plot closes: what the provider holds for it goes (its records, and values nothing else needs)
  *
  * The built-in sources (obs, obsm, obsp, layer, var...) are not registered: they keep their
  * own handling in plot-make.js. Only providers added after them live here.
@@ -68,6 +73,53 @@ const _providers = new Map();
 
 /** The sources every dataset has, read by plot-make.js itself; any other type is a provider's. */
 const BUILT_IN = new Set(['none', 'obs', 'obsm', 'obsp', 'layer', 'var', 'varm', 'varp']);
+
+/**
+ * A consumer's container goes (a plot closes): every provider lets go of what it holds for it, at once.
+ * @param {HTMLElement} host
+ */
+export function releaseSourceHost(host) {
+    for (const provider of _providers.values()) {
+        if (typeof provider.releaseHost === 'function') provider.releaseHost(host);
+    }
+}
+
+/** What starts the value of an entry a built-in type's key list holds for a provider (never stored: it is a way to choose). */
+const ALSO = '\u0001';
+
+/**
+ * The entries a built-in type's key list adds for the providers listed under it too (a grouping under obs, UX 5), for a
+ * consumer's roles: each entity as `{value, text, group}`, grouped under the provider's `alsoListedGroup`. Choosing one
+ * switches the type select to the provider's type (parseAlsoListed); the value itself is never stored.
+ * @param {string} builtIn - 'obs'
+ * @param {string} consumer - a panel type, e.g. 'cell-plot'
+ * @param {string[]} roles
+ */
+export function alsoListedEntries(builtIn, consumer, roles) {
+    return sourcesFor(consumer, roles).filter(p => p.alsoListedUnder === builtIn && p.alsoListedGroup)
+        .flatMap(p => p.entities().map(e => ({ value: `${ALSO}${p.type}${ALSO}${e.id}`, text: e.title, group: p.alsoListedGroup })));
+}
+
+/**
+ * The provider's type and entity an entry of alsoListedEntries stands for, or null for any other value.
+ * @param {string} value
+ * @returns {{type: string, key: string}|null}
+ */
+export function parseAlsoListed(value) {
+    if (typeof value !== 'string' || !value.startsWith(ALSO)) return null;
+    const [type, key] = value.slice(ALSO.length).split(ALSO);
+    return getSource(type) && key ? { type, key } : null;
+}
+
+/**
+ * What the first palette option of a plot coloured by a source of this type is called: its provider's own words, or
+ * null for the dataset's uns colours (every built-in source, and a provider that says nothing).
+ * @param {string} type
+ */
+export function paletteLabelOf(type) {
+    const provider = type ? getSource(type) : null;
+    return (provider && provider.paletteLabel) || null;
+}
 
 /** Register (or replace) a provider. */
 export function registerSource(provider) {
@@ -167,7 +219,7 @@ export class SourceUnavailable extends Error {
 export function plotSeries(series) {
     if (series.type !== 'categorical') {
         return { values: series.values, type: series.type, categories: null, coverage: series.coverage, rankOf: null, ranked: false,
-            groupNames: null, colours: null };
+            groupNames: null, colours: null, missingLabel: null };
     }
     const { codes, MISSING } = series;
     // ranked codes have no labels: each point's value is its rank, as the plot's own ranked categories are
@@ -175,5 +227,5 @@ export function plotSeries(series) {
     const categories = ranked ? null : series.categories;
     const values = series.values || Array.from(codes, c => (c === MISSING ? null : ranked ? c : categories[c]));
     return { values, type: 'categorical', categories, coverage: series.coverage, rankOf: series.rankOf || null,
-        ranked, groupNames: series.groupNames || null, colours: series.colours || null };
+        ranked, groupNames: series.groupNames || null, colours: series.colours || null, missingLabel: series.missingLabel || null };
 }

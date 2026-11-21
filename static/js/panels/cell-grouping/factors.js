@@ -17,17 +17,18 @@ import { GROUPING_LIMITS, sourceName } from '../../utils/cell-grouping.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
 import { wouldLoop, loopReason } from '../../utils/panel-references.js';
 import { SCORE_TYPE } from '../../utils/score-source.js';
+import { cellGroupType } from '../../utils/cell-group-source.js';
 
 const W = VOCABULARY.word;
 const fmt = (n) => Number(n).toLocaleString('en-US');
 
 /**
  * The source types of plan 1.6 whose `key` is another panel's id: a factor's source is part of the grouping's frozen
- * schema. The score's type is its provider's.
+ * schema. The score's type and the grouping's are their providers'. (The grouping's provider is on an import cycle with
+ * this module, through utils/group-host.js: its type is read through a function declaration, defined before either runs.)
  */
 export const SCORE_SOURCE = SCORE_TYPE;
-// G8a replaces this literal with utils/cell-group-source.js's exported type
-export const GROUP_SOURCE = 'cell-group';
+export const GROUP_SOURCE = cellGroupType();
 export const TABLE_SOURCE = 'table';
 /** Source types whose `key` is another panel's id: a grouping's references. */
 export const PANEL_SOURCES = Object.freeze([TABLE_SOURCE, SCORE_SOURCE, GROUP_SOURCE]);

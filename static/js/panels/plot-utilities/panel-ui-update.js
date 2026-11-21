@@ -6,7 +6,7 @@ import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScal
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { noteDatasetLayers } from '../../utils/score-source.js';
 import { refreshHoverGroups } from './hover-columns.js';
-import { getSource, sourcesFor } from '../../utils/source-registry.js';
+import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
@@ -122,8 +122,10 @@ export function focusedOptionLabel(entity, name, locked = false) {
  * @param {Object} settings - Axis settings object (will be updated)
  * @param {HTMLSelectElement} keySelect - The key select dropdown
  * @param {Object} datasetStructure - Structure of the loaded dataset
+ * @param {{consumer: string, roles: string[]}|null} [use] - the panel type and roles the select serves: the obs list
+ *   ends with the entities of providers listed under obs for them (a grouping, UX 5)
  */
-export function populateKeySelector(settings, keySelect, datasetStructure) {
+export function populateKeySelector(settings, keySelect, datasetStructure, use = null) {
     const type = settings.type || 'layer';
     let keyOptions = [];
     const $keySelect = jQuery(keySelect);
@@ -152,6 +154,9 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
           columns = [...columns].sort((a, b) => a.localeCompare(b));
         }
         keyOptions = columns.map(col => ({ value: col, text: col }));
+        // a provider listed under obs too (a grouping): its entities in their own group after the columns
+        if (use) keyOptions.push(...alsoListedEntries('obs', use.consumer, use.roles));
+        keySelect.__alsoListedUse = use;
         break;
       }
       case 'obsm': {
@@ -216,9 +221,10 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
       $.createSelect([{ value: '', text: 'No options available' }], $keySelect);
     }
   
+    // an entry that switches the type (alsoListedEntries) is a way to choose, never a key the setting holds
     const keyValues = $keySelect.find('option').map(function() {
       return jQuery(this).val();
-    }).get();
+    }).get().filter(v => !parseAlsoListed(v));
     
     // First check if current selection is valid
     if (keyValues.includes(settings.key)) {
@@ -254,6 +260,27 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     if (getSource(type)) $keySelect.find('option[value=""]').prop('disabled', true);
 }
 
+/** An obs key list's entries of providers listed under obs, rebuilt; its columns and its choice stay. */
+function refreshAlsoListed(keySelect) {
+  const use = keySelect.__alsoListedUse;
+  const wanted = alsoListedEntries('obs', use.consumer, use.roles);
+  const now = [...keySelect.options].filter(o => parseAlsoListed(o.value));
+  if (wanted.length === now.length && wanted.every((o, i) => now[i].value === o.value && now[i].textContent === o.text)) return;
+  for (const group of [...keySelect.querySelectorAll('optgroup')]) {
+    if ([...group.children].every(o => parseAlsoListed(o.value))) group.remove();
+  }
+  const current = keySelect.value;
+  for (const entry of wanted) {
+    let group = [...keySelect.children].find(c => c.tagName === 'OPTGROUP' && c.label === entry.group);
+    if (!group) { group = document.createElement('optgroup'); group.label = entry.group; keySelect.appendChild(group); }
+    const option = document.createElement('option');
+    option.value = entry.value;
+    option.textContent = entry.text;
+    group.appendChild(option);
+  }
+  keySelect.value = current;
+}
+
 /**
  * The menus of every plot that read a provider's source, up to date: sources were added, removed or renamed, or what
  * one offers changed. Each key list, third menu and Hover picker keeps its choice and has its options rebuilt.
@@ -279,6 +306,8 @@ function refreshSourceMenus() {
     return { provider, setting: held && held.type === provider.type ? held : null };
   };
   for (const keySelect of document.querySelectorAll('select.axis-key-select')) {
+    // an obs list's entries of providers listed under it (groupings) follow theirs
+    if (keySelect.__alsoListedUse && keySelect.dataset.keyType === 'obs') refreshAlsoListed(keySelect);
     const axis = axisOf(keySelect);
     if (!axis) continue;
     const current = keySelect.value;
@@ -605,7 +634,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
       && (DataManager.getCells() || []).length > largeThreshold(Config.DEFAULTS);
     $keySelect[0].__blockedKeys = large && settings.type === 'obs' ? textObsColumns(datasetStructure) : null;
     $keySelect[0].dataset.keyType = settings.type;
-    populateKeySelector(settings, $keySelect[0], datasetStructure);
+    populateKeySelector(settings, $keySelect[0], datasetStructure, { consumer, roles });
     limitTextAxisOptions($keySelect[0], large, textObsColumns(datasetStructure));
     populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure);
     setTimeout(() => syncSelectTitles(), 60);
@@ -732,6 +761,16 @@ function applyColorToolbar($container, colorType, id) {
   }
 }
 
+/** The first palette option's words: the colours stored in the dataset's uns (a provider may name its own). */
+export const UNS_PALETTE_LABEL = 'As stored in adata.uns';
+
+/** The source type a plot's colour reads now, or null. */
+function colourTypeOf(id) {
+  const plot = typeof window !== 'undefined' && window.PanelManager ? window.PanelManager.getPanel(id) : null;
+  const colour = plot && typeof plot.getConfig === 'function' ? plot.getConfig().color : null;
+  return colour && colour.type ? colour.type : null;
+}
+
 /**
  * Updates the visibility of color controls based on the current color type,
  * using elements within the provided container.
@@ -792,6 +831,10 @@ export function updateColorControlsVisibility(container, colorType, id) {
     $.showHide($container.find(`#color-scale-preview-${id}`), false);
     
     $.showHide($categoryPaletteSelect, true, '');
+    // the first option says where its colours come from: a source's own (a grouping's), else the dataset's uns
+    const unsOption = $categoryPaletteSelect.find('option[value="uns"]')[0];
+    const unsLabel = paletteLabelOf(colourTypeOf(id)) || UNS_PALETTE_LABEL;
+    if (unsOption && unsOption.textContent !== unsLabel) unsOption.textContent = unsLabel;
     
     $.showHide($colorMinInput, false);
     $.showHide($colorMaxInput, false);

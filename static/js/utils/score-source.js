@@ -317,7 +317,7 @@ function binding() {
 }
 
 /** A plot closes: its dependants go, and a score nothing else needs stops computing. */
-export function releaseHost(host) {
+function releaseHost(host) {
     binding().releaseHost(host);
 }
 
@@ -714,6 +714,7 @@ registerSource({
     table: scoreTable,
     titleOf: (setting) => `gene score ${scoreTitle(setting)}`,
     placeholder: drawScorePlaceholder,
+    releaseHost,
     vocabulary: { result: 'score' }
 });
 
