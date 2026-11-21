@@ -638,6 +638,17 @@ def test_large_plot_mode_colours_by_a_score_and_its_tooltip_reads_the_vector(lar
     # the tooltip's colour line is read from the held vector, not asked of the server for one cell
     until(large_page, """(tile) => { const g = document.querySelector(tile + ' .js-plotly-plot');
         return !!(g && g.__largeState && g.__largeState.index && g._fullLayout); }""", C)
+    # The pointer is put where the cell is NOW, so the layout must have stopped moving (a late relayout or resize
+    # shifts the axes, and the same pixel is then another cell): wait until the axes and the plot area have held
+    # for ten frames.
+    large_page.wait_for_function("""(tile) => {
+        const g = document.querySelector(tile + ' .js-plotly-plot'), a = g && g.querySelector('.nsewdrag');
+        if (!g || !a || !g._fullLayout) return false;
+        const r = a.getBoundingClientRect(), L = g._fullLayout;
+        const key = [r.left, r.top, r.width, r.height, L.xaxis.range, L.yaxis.range].join();
+        const w = window.__azLayoutHold = (window.__azLayoutHold && window.__azLayoutHold.key === key)
+            ? { key, n: window.__azLayoutHold.n + 1 } : { key, n: 0 };
+        return w.n >= 10; }""", arg=C, polling="raf", timeout=30000)
     spot = large_page.evaluate("""(tile) => {
         const g = document.querySelector(tile + ' .js-plotly-plot'), idx = g.__largeState.index;
         const xa = g._fullLayout.xaxis, ya = g._fullLayout.yaxis, r = g.querySelector('.nsewdrag').getBoundingClientRect();
@@ -647,8 +658,13 @@ def test_large_plot_mode_colours_by_a_score_and_its_tooltip_reads_the_vector(lar
     before = len(_calls(large_page))
     large_page.mouse.move(spot["x"] - 60, spot["y"] - 60)
     large_page.mouse.move(spot["x"] + 1, spot["y"] + 1, steps=4)
+    # The pointer passes over cells 20 to 29 on its way (X_umap puts every cell on one diagonal), and each move is
+    # read a moment later: on a busy machine the tooltip can first show a cell passed on the way. Wait for the
+    # tooltip of the cell under the pointer's end, cell 30 (its x line), not for the first tooltip.
     until(large_page, """() => { const t = document.querySelector('.large-plot-tip');
-        return !!(t && t.style.display !== 'none' && Array.from(t.children).some(c => c.textContent.startsWith('T cell score · z-score mean · X: '))); }""")
+        const lines = t ? Array.from(t.children).map(c => c.textContent) : [];
+        return !!(t && t.style.display !== 'none' && lines.includes('x: 30') && lines.includes('y: -30')
+            && lines.some(c => c.startsWith('T cell score · z-score mean · X: '))); }""")
     tip = large_page.evaluate("() => Array.from(document.querySelector('.large-plot-tip').children).map(c => c.textContent)")
     line = [t for t in tip if t.startswith("T cell score · z-score mean · X: ")][0]
     assert len(_calls(large_page)) == before, "the value came from the vector: no request"
