@@ -6,6 +6,7 @@ moved fingerprint, a Refresh that found the store changed and another subset all
 counts on the ledger, is emptied before a reservation waits, and a session opening with one grouping and three
 dependants resolves the grouping once.
 """
+import json
 import os
 import threading
 import time
@@ -376,3 +377,94 @@ def test_a_heavy_request_waiting_on_a_heavy_resolve_gives_it_the_lane(client, la
     starts = [f for f in out[1][1] if f["type"] == "start"]
     assert starts[0]["codes"] == "hit" and out[1][1][-1]["type"] == "result"
     assert cstream.LEDGER.held() == 0
+
+
+# --- a dependant's claim is filled before its genes are read (FX-E's grouping event) ------------------------------------
+
+def test_a_second_dependant_waits_for_the_first_ones_claim_and_hits(client, layout, monkeypatch, resolves):
+    gate = threading.Event()
+    real = cg.compute
+
+    def held(plan_, *a, **k):                                         # the first dependant's resolve takes a while
+        for event in real(plan_, *a, **k):
+            if event[0] == "result":
+                gate.wait(10)
+            yield event
+    monkeypatch.setattr(cg, "compute", held)
+    parts = [{"source": CELL_TYPE}, SCORE_BIN]
+    first, second = (grouping(parts, features=[{**FEATURE, "name": gstore.gene(i)}]) for i in (1, 2))
+    out = [None] * 2
+    misses = route.CODES.stats["misses"]
+    a = threading.Thread(target=_stream, args=(client, layout, first, out, 0))
+    a.start()
+    claimed(misses)
+    waits = route.CODES.stats["waits"]
+    b = threading.Thread(target=_stream, args=(client, layout, second, out, 1))
+    b.start()
+    deadline = time.monotonic() + 5
+    while route.CODES.stats["waits"] == waits and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert route.CODES.stats["waits"] > waits                        # it waits for the first one's claim
+    gate.set()
+    a.join(20)
+    b.join(20)
+    assert [o[1][0]["codes"] for o in out] == ["miss", "hit"] and len(resolves) == 1
+    assert [o[1][-1]["features"] for o in out] == [[{"id": "f0", "status": "ok"}]] * 2
+
+
+def test_the_claim_is_filled_before_the_genes_are_read(client, layout, monkeypatch):
+    seen = []
+    real = gf.accumulate
+
+    def watched(*a, **k):
+        seen.append(len(route.CODES))
+        yield from real(*a, **k)
+    monkeypatch.setattr(gf, "accumulate", watched)
+    run(client, layout, grouping([{"source": CELL_TYPE}], features=[FEATURE]))
+    assert seen and all(n == 1 for n in seen)                         # kept before any gene is read
+
+
+# --- a hit takes the lane of what it still reads ------------------------------------------------------------------------
+
+def test_a_hit_on_a_heavy_grouping_does_not_queue_behind_a_heavy_job(client, layout):
+    body = grouping([{"source": GENE1}])
+    cold, _ = run(client, layout, body, name="csr.zarr")
+    assert cold[0]["lane"] == "heavy" and cold[0]["codes"] == "miss"     # a gene of a CSR store: a whole-matrix read
+    held = cstream.LANES.enter("heavy")
+    assert held.running
+    try:
+        frames, _ = run(client, layout, body, name="csr.zarr")
+    finally:
+        held.leave()
+    assert frames[0]["type"] == "start" and frames[0]["codes"] == "hit" and frames[0]["lane"] == "light"
+    assert frames[-1]["type"] == "result" and frames[-1] == cold[-1]
+
+
+def test_a_hit_reserves_only_what_it_still_reads(client, layout):
+    body = grouping([{"source": GENE1}])
+    path = ds(layout, "csr.zarr")
+    plan = gf.plan(get_reader(path), path, cg.parse_request(body))
+    full, _ = route.reservation(plan, N)
+    run(client, layout, body, name="csr.zarr")
+    resp = post(client, layout, body, name="csr.zarr", buffered=False)
+    try:
+        chunks = resp.iter_encoded()
+        assert json.loads(next(chunks))["codes"] == "hit"
+        held = cstream.LEDGER.held()
+    finally:
+        resp.close()
+    assert held == route.reservation(plan, N, codes_held=True)[0] < full
+    assert held == 0                                                  # no feature, no measure: nothing to read
+
+
+def test_a_hit_with_a_feature_takes_the_features_lane(client, layout):
+    body = grouping([{"source": GENE1}], features=[{**FEATURE, "name": gstore.gene(2)}])
+    run(client, layout, body, name="csr.zarr")
+    held = cstream.LANES.enter("heavy")
+    try:
+        resp = post(client, layout, body, name="csr.zarr", buffered=False)
+        first = json.loads(next(resp.iter_encoded()))
+        resp.close()
+    finally:
+        held.leave()
+    assert first["type"] == "progress" and first["queue"]["ahead"] == 1   # a gene of a CSR store: still heavy
