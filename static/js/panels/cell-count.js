@@ -656,5 +656,5 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
         };
     }
 
-    PanelManager.registerPanelType(TYPE, CellCountPanel);
+    PanelManager.registerPanelType('cell-count', CellCountPanel);
 })();
