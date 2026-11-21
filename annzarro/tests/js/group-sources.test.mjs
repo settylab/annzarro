@@ -722,7 +722,7 @@ test('H4: a count plot is a source of groups: its grid request, its key, gates u
     assert.equal(body.shape, 'grid');
     assert.equal(body.mode, 'categorical');
     assert.deepEqual(body.partitionings[1].source, { type: 'table', ref: 's0' });
-    assert.equal(body.want.codes, false);
+    assert.ok(!('want' in body));
     const axes = [{ levels: [{ id: 'c:B cell', n: 3 }, { id: 'c:T cell', n: 3 }], n_outside: [0, 0] },
         { levels: [{ id: '@in', n: 3 }, { id: '@out', n: 3 }], n_outside: [0, 0] }];
     w.waiting[0].resolve({ header: { type: 'result', shape: 'grid', n_shown: 6, n_counted: 6, axes }, values: { counts: Uint32Array.from([2, 1, 1, 2]) } });
