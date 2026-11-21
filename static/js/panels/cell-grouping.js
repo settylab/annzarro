@@ -578,9 +578,13 @@ function createStatus({ D, id, on }) {
         el('div', { class: 'cgrp-status__row' }, text, noGroup, actions, usedBy), small, reasons);
     let lastReasons = [];
 
+    // With the group grid mounted the grid is the one place the reasons show; the list stays filled (and readable) but hidden
+    let reasonsOpen = false;
+
     function toggleReasons() {
-        const open = reasons.hidden;
-        reasons.hidden = !open;
+        const open = !reasonsOpen;
+        reasonsOpen = open;
+        reasons.hidden = !open || !!PARTS.groups;
         noGroup.setAttribute('aria-expanded', String(open));
         if (on.toggled) on.toggled(open);
     }
@@ -600,7 +604,7 @@ function createStatus({ D, id, on }) {
         const n = desc.noGroup || 0;
         noGroup.hidden = !n;
         if (n) noGroup.textContent = `${fmt(n)} in no ${W.group}`;
-        if (!n) { reasons.hidden = true; noGroup.setAttribute('aria-expanded', 'false'); }
+        if (!n) { reasons.hidden = true; reasonsOpen = false; noGroup.setAttribute('aria-expanded', 'false'); }
         lastReasons = extra.reasons || [];
         D.clear(reasons);
         for (const r of lastReasons) reasons.appendChild(el('li', { text: r }));
@@ -610,7 +614,7 @@ function createStatus({ D, id, on }) {
         usedBy.textContent = extra.usedBy || '';
     }
 
-    return { element, paint, isOpen: () => !reasons.hidden };
+    return { element, paint, isOpen: () => reasonsOpen };
 }
 
 /**
