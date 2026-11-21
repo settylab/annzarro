@@ -186,7 +186,7 @@ export function missingFactors(recipe, structure, { hasGene, hasPanel }) {
     const obs = new Set((structure.obs && structure.obs.columns) || []);
     const obsm = obsmKeys(structure);
     const layers = new Set(['X', ...layerList(structure)]);
-    const obsp = new Set((structure.obsp && structure.obsp.keys) || []);
+    const obsp = obspKeys(structure);
     const out = [];
     recipe.partitionings.forEach((p, i) => {
         const s = p.source;
@@ -206,8 +206,14 @@ export function missingFactors(recipe, structure, { hasGene, hasPanel }) {
 /** The layers of a structure, X not included (it is always there). */
 export function layerList(structure) {
     const l = structure && structure.layers;
-    const names = Array.isArray(l) ? l : l && typeof l === 'object' ? Object.keys(l) : [];
-    return names.filter((n) => n !== 'X');
+    const keys = l && !Array.isArray(l) ? ((l.details && l.details.keys) || l.keys) : l;
+    return asList(keys).filter((n) => n !== 'X');
+}
+
+/** A structure's key list, given as a list or as an object by key. */
+function asList(keys) {
+    if (!keys) return [];
+    return Array.isArray(keys) ? keys : typeof keys === 'object' ? Object.keys(keys) : [];
 }
 
 /** The obsm keys of a structure. */
@@ -215,7 +221,12 @@ export function obsmKeys(structure) {
     const o = structure && structure.obsm;
     if (!o) return new Set();
     if (Array.isArray(o)) return new Set(o);
-    return new Set([...(o.keys || []), ...Object.keys(o.dataframes || {}), ...Object.keys(o.info || {})]);
+    return new Set([...asList(o.keys), ...Object.keys(o.dataframes || {}), ...Object.keys(o.info || {})]);
+}
+
+/** The obsp keys of a structure. */
+export function obspKeys(structure) {
+    return new Set(asList(structure && structure.obsp && structure.obsp.keys));
 }
 
 /** The width of an obsm matrix (its columns), or null when the structure does not say. */

@@ -45,7 +45,7 @@ import { stableStringify } from '../utils/url-history.js';
 import { VOCABULARY } from '../utils/vocabulary.js';
 import { RESERVED } from '../utils/level-id.js';
 import {
-    groupingReferences, missingFactors, obsmWidth, obsmKeys, layerList, factorKind, columnFactor, cellNamesFactor, geneFactor,
+    groupingReferences, missingFactors, obsmWidth, obsmKeys, obspKeys, layerList, factorKind, columnFactor, cellNamesFactor, geneFactor,
     scoreFactor, tableFactor, groupingFactor, neighborsFactor, addFactorRefusal, cellNamesRefusal, referenceChoices, moveFactor,
     duplicateFactor, removeFactor, factorTitle, factorSummary, levelPreview, tickLevel, tickAll, tickNone, sortByCells, moveLevel,
     renameLevel, setRest, levelRows, BINNING_SLOT, PANEL_SOURCES, SCORE_SOURCE, GROUP_SOURCE, TABLE_SOURCE
@@ -450,7 +450,7 @@ function createFactors({ D, id, model, on }) {
             validate = () => (!tables.length ? 'There is no cell table.'
                 : !src.value || (src.selectedOptions[0] && src.selectedOptions[0].disabled) ? 'Choose a table.' : null);
         } else if (adding === 'neighbors') {
-            const key = select('cgrp-addrow__key', 'Matrix', ((s.obsp && s.obsp.keys) || []).map((k) => option(k, k)));
+            const key = select('cgrp-addrow__key', 'Matrix', [...obspKeys(s)].map((k) => option(k, k)));
             const cell = el('input', { type: 'text', class: 'form-control form-control-sm cgrp-addrow__gene', placeholder: 'Cell',
                 autocomplete: 'off', spellcheck: 'false', aria: { label: 'Cell' } });
             parts.push(key, cell);

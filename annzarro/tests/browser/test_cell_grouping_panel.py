@@ -475,6 +475,35 @@ def test_cell_names_make_one_group_per_cell(page, served):
     assert _cards(page)[0]["summary"] == f"categorical · {N:,} levels"
 
 
+def test_a_gene_and_a_score_in_bins(page, served):
+    sig = {"id": "gene-signature-S", "title": "B score", "genes": [gstore.gene(i) for i in range(12)]}
+    _open(page, served, {GA: _grouping(), "gene-signature-S": sig})
+    _add(page, "gene", key="logged", gene=gstore.gene(1))
+    _ready(page)
+    assert _recipe(page)["partitionings"] == [{"source": {"type": "layer", "key": "logged", "column": gstore.gene(1)},
+                                               "binning": {"method": "equal_count"}}]
+    assert _cards(page)[0]["title"] == gstore.gene(1)
+    assert _cards(page)[0]["summary"].startswith("binned · Equal count · ")
+    # a gene the dataset lacks is refused in the row, with the reason
+    page.click(f"{A} .cgrp-add")
+    page.click(f"{A} .cgrp-add-menu [data-entry='gene']")
+    page.fill(f"{A} .cgrp-addrow__gene", "NOGENE")
+    page.click(f"{A} .cgrp-addrow__ok")
+    assert page.inner_text(f"{A} .cgrp-addrow__note") == "NOGENE is not in this dataset."
+    page.click(f"{A} .cgrp-addrow__cancel")
+    # a closed signature's score, its recipe inline in the request
+    _add(page, "score", key="gene-signature-S")
+    until(page, """(s) => { const c = document.querySelectorAll(s + ' .cgrp-card .cgrp-card__summary');
+        return c.length === 2 && / levels$/.test(c[1].textContent); }""", A)
+    _ready(page)
+    score = _recipe(page)["partitionings"][1]
+    assert score["source"]["type"] == "gene-score" and score["source"]["key"] == "gene-signature-S"
+    assert score["binning"] == {"method": "equal_count"}
+    sent = [c for c in _requests(page) if any(p["source"]["type"] == "gene-score" for p in c.get("partitionings", []))]
+    assert sent and sent[-1]["partitionings"][1]["source"]["recipe"]["genes"] == sig["genes"], [json.dumps(c)[:300] for c in page.calls]
+    assert _cards(page)[1]["title"] == "B score"
+
+
 # ------------------------------------------------------------------ 8. states from rewritten replies
 
 def _rewrite_estimate(page, seconds, tier="live"):
