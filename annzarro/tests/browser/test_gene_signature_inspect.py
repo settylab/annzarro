@@ -61,7 +61,7 @@ def _wait_ready(page):
 
 def _no_gene_list(page):
     """Decision 22: Inspect does not repeat the gene list (the panel already lists the genes)."""
-    assert page.locator(f"{I} table, {I} .gsig-inspect__genes, {I} .gsig-inspect__table, {I} [data-sort], "
+    assert page.locator(f"{I} table, {I} .gsig-inspect__genes, {I} .gsig-inspect__table, {I} .gsig-inspect__caption, {I} [data-sort], "
                         f"{I} [data-inspect-action=show-all], {I} tr[data-gene]").count() == 0
 
 
@@ -160,7 +160,7 @@ def test_each_aggregation_is_offered_and_a_second_one_is_a_second_score_only_onc
     until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute' && c.method === 'mean').length === 1")
     assert page.inner_text(f"{I} .gsig-inspect__definition") == "Mean of X."
     _, text = _download(page, "genes")
-    assert {r[6] for r in list(csv.reader(io.StringIO(text)))[1:]} == {""}, "a plain mean clips nothing: the CSV has no clipped figure"
+    assert {r[6] for r in list(csv.reader(io.StringIO(text)))[1:] if r[0].endswith(" · mean · X")} == {""}, "a plain mean clips nothing: the CSV has no clipped figure"
     # back to the first: held, so no request
     n = len(_calls(page))
     page.select_option(f"{I} select.gsig-inspect__select", "zscore_mean@X")
@@ -530,12 +530,10 @@ def test_inspect_chooses_among_method_and_layer_labels_both_and_requests_a_new_l
     _inspect(page)
     _wait_ready(page)
     assert "z-score mean · X: score distribution" in page.inner_text(f"{I} .gsig-inspect__heading")
-    assert "Per-gene figures for z-score mean · X" in page.inner_text(f"{I} .gsig-inspect__caption")
     n = len(_calls(page, "compute"))
     page.select_option(f"{I} select.gsig-inspect__select", "zscore_mean@counts")
     until(page, f"(n) => window.__scoreCalls.filter(c => c.kind === 'compute').length === n + 1", n)
     page.wait_for_function("(I) => document.querySelector(I + ' .gsig-inspect__heading').textContent.includes('z-score mean · counts')", arg=I)
-    assert "Per-gene figures for z-score mean · counts" in page.inner_text(f"{I} .gsig-inspect__caption")
     # time for a second request, were one going to; there should be one
     page.wait_for_timeout(500)
     assert len(_calls(page, "compute")) == n + 1, "once"

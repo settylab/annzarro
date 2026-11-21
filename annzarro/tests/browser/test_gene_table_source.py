@@ -340,7 +340,7 @@ def test_inspect_on_a_table_reads_the_score_the_plot_holds_and_follows_the_filte
     assert page.locator(f"{G} .gsig-inspect table, {G} .gsig-inspect__table, {G} .gsig-inspect tr[data-gene]").count() == 0, "decision 22: no gene list"
     assert _csv_genes(page) == sorted(FIRST_FIVE)
     _filter(page, 8)
-    until(page, "(g) => document.querySelector(g + ' .gsig-inspect__heading').textContent.includes('shown')", G)
+    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")    # the score of the new genes, inspected
     assert len(_csv_genes(page)) == 8
 
 
