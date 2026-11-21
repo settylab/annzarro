@@ -75,9 +75,19 @@ MAX_GRID_MEASURE_CELLS = 2_097_152
 #: only holds memory: at 1M cells it is as fast, and 2,000 genes then hold what 200 do.
 READ_AHEAD_ENTRIES = 12_000_000
 
-#: The most values (groups x features) one grouping request accumulates: CXG-17's matrix limit, which the browser
-#: keeps to, so the accumulators stay under 16 MB. A request over it is refused once its groups are known.
+#: The most values (groups x (features + measures)) one grouping request accumulates: CXG-17's matrix limit, which
+#: the browser keeps to, so the accumulators stay under 16 MB (40 B a value). A request over it is refused once its
+#: groups are known. ``accumulate`` itself holds at most ``MAX_GRID_MEASURE_CELLS`` values, whatever its caller.
 MAX_FEATURE_CELLS = 400_000
+
+#: The most measures one request carries. A count plot sends one (CNT-16); a grouping's are bounded by the value
+#: limit as well, and this bounds the planning before the groups are known.
+MAX_MEASURES = 16
+
+#: The most distinct thresholds one gene of one matrix, or one vector, is compared with. The interface asks for two
+#: at most (a row's colour and its size); each costs a pass over the gene's entries that the estimate does not
+#: charge, so more are refused before anything is read.
+MAX_THRESHOLDS = 4
 
 _GENE_FIELDS = ("id", "kind", "name", "layer", "detect_above")
 _SCORE_FIELDS = ("id", "kind", "recipe", "column", "layer", "above")
@@ -164,6 +174,9 @@ def parse_measures(raw: Any) -> Tuple[Measure, ...]:
     """Validate ``measures``: a numeric per-cell source each, with ``above``."""
     if not isinstance(raw, (list, tuple)):
         raise _bad("measures must be a list.")
+    if len(raw) > MAX_MEASURES:
+        raise _bad(f"A request has at most {MAX_MEASURES} measures; this one has {len(raw)}.", "too_many_measures",
+                   count=len(raw), limit=MAX_MEASURES)
     seen: set = set()
     out = []
     for m in raw:
@@ -236,6 +249,17 @@ class Work:
             len(v.part.score.columns) if v.part.score is not None else 1 for v in self.vectors)
 
 
+def _add_threshold(ts: List[float], threshold: float, fid: str) -> None:
+    """Add a distinct threshold, in order of first use; refuse past ``MAX_THRESHOLDS``."""
+    if threshold in ts:
+        return
+    if len(ts) >= MAX_THRESHOLDS:
+        raise cg.GroupError(422, "too_many_thresholds", f"One gene or source is compared with at most "
+                            f"{MAX_THRESHOLDS} thresholds; '{fid}' asks for one more.", count=len(ts) + 1,
+                            limit=MAX_THRESHOLDS, id=fid)
+    ts.append(threshold)
+
+
 def _vector_key(source: Dict[str, Any]) -> str:
     """What makes two vectors the same: a score's effective recipe (not the panel it comes from), or a stored
     column's setting."""
@@ -273,9 +297,7 @@ def plan_work(reader, dataset_path: str, features: Sequence[Feature] = (), measu
             col = column_of.get(f.name)
             if col is None:
                 continue
-            ts = thresholds.setdefault(col, [])
-            if f.threshold not in ts:
-                ts.append(f.threshold)
+            _add_threshold(thresholds.setdefault(col, []), f.threshold, f.id)
             gene_target[f.id] = (len(reads), col, f.threshold)
         missing += [n for n in absent if n not in missing]
         reads.append(_MatrixRead(layer, thresholds))
@@ -297,9 +319,7 @@ def plan_work(reader, dataset_path: str, features: Sequence[Feature] = (), measu
             whole = whole or part.whole_matrix
             if part.entries:
                 layouts.add(part.layout)
-        v = vectors[index[key]]
-        if threshold not in v.thresholds:
-            v.thresholds.append(threshold)
+        _add_threshold(vectors[index[key]].thresholds, threshold, fid)
         vector_of[(what, fid)] = index[key]
     for read in reads:
         # a gene a score of the same matrix reads for sure (its signature, up and down) is counted there, once
@@ -455,17 +475,21 @@ def _segments(n: int) -> Iterator[Tuple[int, int]]:
 
 
 def _gene_moments(bins: _Bins, sizes: np.ndarray, rows: Optional[np.ndarray], values: np.ndarray,
-                  thresholds: Sequence[float], outs: Sequence[Sequence[np.ndarray]]) -> None:
+                  thresholds: Sequence[float], outs: Sequence[Sequence[np.ndarray]],
+                  should_stop: Optional[Callable[[], bool]] = None) -> None:
     """One gene's moments per code at each threshold, into ``outs`` (as ``_Sums.write``): its stored entries
-    (``rows`` the dataset rows) or its whole column (``rows`` None), ``SEGMENT_ENTRIES`` at a time (CMP-2)."""
+    (``rows`` the dataset rows) or its whole column (``rows`` None), ``SEGMENT_ENTRIES`` at a time (CMP-2).
+
+    ``should_stop`` is asked before each segment. A pause is not: this runs while the pipeline holds reads in
+    flight (its own, or a score's through ``on_read``), and the pipeline waits only with none, between its reads.
+    With at most ``MAX_THRESHOLDS`` thresholds one gene's arithmetic is a few passes over its entries."""
     sums = _Sums(bins.n_bins, thresholds)
-    if rows is None:
-        for a, b in _segments(values.size):
-            sums.add(bins.index(bins.by_row[a:b]), values[a:b])
-    else:
+    if rows is not None:
         rows, values = gs._canonical(np.asarray(rows), np.asarray(values))
-        for a, b in _segments(values.size):
-            sums.add(bins.index(bins.by_row[rows[a:b]]), values[a:b])
+    for a, b in _segments(values.size):
+        if should_stop is not None and should_stop():
+            raise gs.ScoreCancelled()
+        sums.add(bins.index(bins.by_row[a:b] if rows is None else bins.by_row[rows[a:b]]), values[a:b])
     sums.write(sizes, outs)
 
 
@@ -498,6 +522,10 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
         raise cg.GroupError(422, "grid_too_large", f"Measures are accumulated over at most "
                             f"{MAX_GRID_MEASURE_CELLS:,} cells; this asks for {n_codes:,}.", count=int(n_codes),
                             limit=MAX_GRID_MEASURE_CELLS)
+    values = int(n_codes) * (len(work.features) + len(work.measures))
+    if values > MAX_GRID_MEASURE_CELLS:                  # the blocks below: 40 B a value, 84 MB at the limit
+        raise cg.GroupError(422, "too_many_values", f"At most {MAX_GRID_MEASURE_CELLS:,} values are accumulated; "
+                            f"this asks for {values:,}.", count=values, limit=MAX_GRID_MEASURE_CELLS)
     rows = None if rows is None else np.asarray(rows, dtype=np.int64)
     bins = _Bins(np.asarray(codes), int(n_codes), rows, work.n_cells)
     if sizes is None:
@@ -534,7 +562,8 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
         for col, at, values in rows_values:
             if col in read.thresholds and col not in done[r]:
                 ts = read.thresholds[col]
-                _gene_moments(bins, sizes, at, np.asarray(values), ts, [gene_rows[(r, col, t)] for t in ts])
+                _gene_moments(bins, sizes, at, np.asarray(values), ts, [gene_rows[(r, col, t)] for t in ts],
+                              should_stop)
                 done[r].add(col)
 
     def settle(items: int, entries0: int, planned: int) -> None:
@@ -655,25 +684,26 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, codes: Opti
     and measure per group (stage ``features``). The final event is ``("result", Result)``.
 
     ``codes`` is a grouping from the code cache: the groups are not resolved, the features are read. ``on_entries``
-    is told the grouping's entries once its groups are resolved and then each read's, so the calls add up to the
-    plan's entries (less the grouping's on a cache hit).
+    is told the grouping's entries as its partitionings are read (``cell_groups.compute``) and then each read's, so
+    the calls add up to the plan's entries (less the grouping's on a cache hit, or what a refused grouping did not
+    read).
     """
     grouping = None
-    for event, payload in cg.compute(plan_.groups, shown_rows, codes=codes, should_stop=should_stop, pause=pause):
+    for event, payload in cg.compute(plan_.groups, shown_rows, codes=codes, should_stop=should_stop, pause=pause,
+                                     on_entries=on_entries):
         if event == "result":
             grouping = payload
         else:
             yield event, payload
-    if codes is None and on_entries is not None and plan_.groups.entries - plan_.work.entries:
-        on_entries(plan_.groups.entries - plan_.work.entries)
     work = plan_.work
     result = Result(grouping)
     if grouping.refused is not None or (not work.features and not work.measures):
         yield "result", result
         return
     k = len(grouping.groups)
-    if k * len(work.features) > MAX_FEATURE_CELLS:
-        result.over_limit = {"reason": "too_many_values", "count": k * len(work.features), "limit": MAX_FEATURE_CELLS}
+    values = k * (len(work.features) + len(work.measures))
+    if values > MAX_FEATURE_CELLS:
+        result.over_limit = {"reason": "too_many_values", "count": values, "limit": MAX_FEATURE_CELLS}
         yield "result", result
         return
     sizes = np.asarray([g["n"] for g in grouping.groups], dtype=np.int64)

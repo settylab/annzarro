@@ -206,7 +206,8 @@ def test_an_h5ad_store_is_grouped_like_a_zarr_one(client, layout):
 
 
 def test_a_grouping_over_the_limit_is_a_result_that_says_so(client, layout):
-    frames, blocks = run(client, layout, grouping([{"source": {"type": "obs", "key": "many"}}]))
+    every = [f"c:m{i:04d}" for i in range(2001)]                    # kept by name: over the limit (SHR-6)
+    frames, blocks = run(client, layout, grouping([{"source": {"type": "obs", "key": "many"}, "levels": every}]))
     refused = frames[-1]["refused"]
     assert frames[-1]["type"] == "result" and refused["reason"] == "too_many_levels" and blocks == {}
     assert refused["limit"] == 2000
@@ -285,7 +286,7 @@ def test_a_refused_csr_request_names_the_way_out(client, layout, monkeypatch):
 
 
 def test_a_grid_over_its_limit_is_a_422_with_the_count_and_the_limit(client, layout):
-    many = {"source": {"type": "obs", "key": "many"}}
+    many = {"source": {"type": "obs", "key": "many"}, "levels": [f"c:m{i:04d}" for i in range(2001)]}
     resp = post(client, layout, {"shape": "grid", "mode": "categorical", "partitionings": [many]})
     out = resp.get_json()
     assert resp.status_code == 422 and out["reason"] == "too_many_levels" and out["error"]

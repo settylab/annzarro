@@ -374,6 +374,12 @@ def test_a_density_needs_numeric_binned_axes(store, mode, parts, reason):
 
 # --------------------------------------------------------------------------------------------- limits
 
+#: Every category kept by name: kept levels count before any read. A column storing more categories than its axis
+#: limit counts those holding a cell shown, which only the read tells (SHR-6, SHR-7).
+ALL_MANY = [f"c:m{i:04d}" for i in range(gs.N_MANY)]
+ALL_SAMPLES = [gs.ref_label(n) for n in gs.sample_names()]
+
+
 @pytest.fixture
 def no_reads(monkeypatch):
     def refuse(*a, **k):
@@ -390,12 +396,12 @@ def _refusal(store, mode, parts, **kw):
 
 
 @pytest.mark.parametrize("mode,parts,axis,count,limit,reason", [
-    ("1d", [width("score", 50), obs("many")], 1, 2001, 200, "too_many_levels"),
-    ("2d", [width("score", 4), width("signed", 4), obs("sample")], 2, 30, 8, "too_many_levels"),
+    ("1d", [width("score", 50), obs("many", levels=ALL_MANY)], 1, 2001, 200, "too_many_levels"),
+    ("2d", [width("score", 4), width("signed", 4), obs("sample", levels=ALL_SAMPLES)], 2, 30, 8, "too_many_levels"),
     ("2d", [width("score", 4, zero_bin=False), width("signed", 4),
             obs("depth", binning={"method": "equal_width", "bins": 8, "zero_bin": True})], 2, 9, 8, "too_many_bins"),
-    ("categorical", [obs("many")], 0, 2001, 200, "too_many_levels"),
-    ("categorical", [obs("cell_type"), obs("many")], 1, 2001, 200, "too_many_levels"),
+    ("categorical", [obs("many", levels=ALL_MANY)], 0, 2001, 200, "too_many_levels"),
+    ("categorical", [obs("cell_type"), obs("many", levels=ALL_MANY)], 1, 2001, 200, "too_many_levels"),
 ])
 def test_every_axis_limit_is_refused_before_any_read(store, no_reads, mode, parts, axis, count, limit, reason):
     e = _refusal(store, mode, parts)
@@ -445,11 +451,11 @@ def test_the_number_of_axes_is_the_modes(store, no_reads, mode, parts, reason):
 
 def test_the_cell_cap_is_checked_before_the_axis_limits(store, no_reads):
     # 512 x 512 x 30: the split breaks its limit of 8, but the grid breaks the cap first
-    e = _refusal(store, "2d", [width("score", 512), width("signed", 512), obs("sample")])
+    e = _refusal(store, "2d", [width("score", 512), width("signed", 512), obs("sample", levels=ALL_SAMPLES)])
     assert e.reason == "grid_too_large" and e.extra["count"] == 512 * 512 * 30
     assert e.extra["limit"] == cgr.MAX_GRID_MEASURE_CELLS
     # a categorical heatmap's third axis (the factor of top_level) has only the cap
-    e = _refusal(store, "categorical", [width("score", 200), width("signed", 200), obs("many")])
+    e = _refusal(store, "categorical", [width("score", 200), width("signed", 200), obs("many", levels=ALL_MANY)])
     assert e.reason == "grid_too_large" and e.extra["count"] == 200 * 200 * 2001
 
 

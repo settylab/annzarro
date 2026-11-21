@@ -676,7 +676,8 @@ def test_the_code_cache_answers_the_groups_and_the_features_are_read(store, data
 
 def test_a_refused_grouping_reads_no_feature(store, monkeypatch):
     counter = ReadCounter(monkeypatch)
-    res = run(store, [{"source": {"type": "obs", "key": "many"}}], [gene_feature("a", gs.gene(1))])
+    every = [f"c:m{i:04d}" for i in range(gs.N_MANY)]                 # 2,001 kept levels: over the limit
+    res = run(store, [{"source": {"type": "obs", "key": "many"}, "levels": every}], [gene_feature("a", gs.gene(1))])
     assert res.refused["reason"] == "too_many_levels" and counter.genes == []
     head, blocks = res.to_reply(False)
     assert blocks == [] and head["refused"]["reason"] == "too_many_levels"
