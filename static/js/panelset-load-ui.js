@@ -5,6 +5,7 @@
  * items all draw them here, so they look and behave the same.
  */
 import { loadChoices, describeStatus, describeStyle, MODE_ICONS } from './utils/panelset-load.js';
+import { VOCABULARY } from './utils/vocabulary.js';
 
 const TIP = { trigger: 'hover focus', container: 'body', placement: 'top', customClass: 'load-tip',
     delay: { show: 250, hide: 0 } };
@@ -99,14 +100,16 @@ export function createStyleBadge() {
 /**
  * Build the buttons.
  * @param {{compact?: boolean, getCurrent?: () => {hasCurrent: boolean, currentName: string},
- *          onLoad: (mode: string) => Promise<void>|void}} opts
+ *          onLoad: (mode: string) => Promise<void>|void, pageReady?: () => (Promise|null)}} opts
  *   onLoad gets the mode of the button clicked (the primary's current one for "Load").
+ *   pageReady: a promise while the page is still starting (SessionManager.whenReady), null once it has; a
+ *   click meanwhile shows "Loading…" on the buttons and loads when the page is ready.
  *   getCurrent says whether a dataset is open now: asked whenever the buttons
  *   are shown or used (the welcome list is drawn before the first dataset opens).
  * @returns {{el: HTMLElement, update: (status: Object) => void,
  *            setReady: (promise: Promise) => void, setBusy: (busy: boolean) => void}}
  */
-export function createLoadActions({ compact = false, getCurrent = () => ({}), onLoad }) {
+export function createLoadActions({ compact = false, getCurrent = () => ({}), onLoad, pageReady = () => null }) {
     const el = document.createElement('div');
     el.className = 'load-actions' + (compact ? ' load-actions-compact' : '');
     const primary = document.createElement('button');
@@ -172,9 +175,28 @@ export function createLoadActions({ compact = false, getCurrent = () => ({}), on
     document.addEventListener('datasetChanged', onDataset);
     document.addEventListener('datasetCleared', onDataset);
 
+    const setDisabled = (value) => { [primary, ...Object.values(buttons)].forEach(b => { b.disabled = value; }); };
     const click = async (button, fixedMode) => {
         if (busy) return;
         hideTip(button);
+        // the page is still starting: say so on the button and load once it can be applied
+        const starting = pageReady();
+        if (starting) {
+            busy = true;
+            setDisabled(true);
+            const label = primary.textContent;
+            primary.textContent = VOCABULARY.progress.loading;
+            el.setAttribute('aria-busy', 'true');
+            el.dataset.waiting = 'page';
+            try { await starting; } finally {
+                busy = false;
+                setDisabled(false);
+                el.removeAttribute('aria-busy');
+                delete el.dataset.waiting;
+                primary.textContent = label;
+                if (last) update(last);
+            }
+        }
         // a click while the dataset is still being looked for waits for the answer
         await ready;
         refresh();
@@ -202,7 +224,7 @@ export function createLoadActions({ compact = false, getCurrent = () => ({}), on
         setBusy: (value) => {
             busy = value;
             el.classList.toggle('is-busy', value);
-            [primary, ...Object.values(buttons)].forEach(b => { b.disabled = value; });
+            setDisabled(value);
         }
     };
 }

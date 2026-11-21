@@ -141,7 +141,9 @@ const progress = Object.freeze({
     ahead: (n) => `Waiting for the server: ${n.toLocaleString('en-US')} ${n === 1 ? 'computation' : 'computations'} ahead.`,
     sharing: (n) => `Sharing the server with ${n.toLocaleString('en-US')} other ${n === 1 ? 'computation' : 'computations'}.`,
     left: (duration, sharing) => `${duration} left${sharing ? ' while sharing' : ''}`,
-    keepWorking: `${capital(plural.grouping)} and counts keep working.`
+    keepWorking: `${capital(plural.grouping)} and counts keep working.`,
+    // a control that waits for the page to finish starting before it acts (a panel set's Load)
+    loading: 'Loading…'
 });
 
 /**
