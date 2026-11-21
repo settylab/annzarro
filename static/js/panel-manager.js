@@ -160,7 +160,9 @@ const PanelManager = (function() {
      */
     function _generateUniqueName(baseName, type = null) {
         if (!baseName) {
-            baseName = (type ? `${_formatPanelType(type)} 1` : 'Panel 1');
+            // a new panel's title: the type's own word for one ("Grouping 1") where it has one, else its label
+            const info = type ? Config.panelTypeInfo(type) : null;
+            baseName = type ? `${(info && info.title) || _formatPanelType(type)} 1` : 'Panel 1';
         }
         const existingNames = new Set();
         _panels.forEach(panel => {
@@ -253,7 +255,7 @@ const PanelManager = (function() {
         const Constructor = _panelTypes.get(type);
         const panelConfig = {
             id,
-            title: config.title || _generateUniqueName(`${_formatPanelType(type)} 1`),
+            title: config.title || _generateUniqueName(null, type),
             ...config
         };
         // a type the administrator disabled stands as a placeholder that keeps its settings

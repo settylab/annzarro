@@ -376,6 +376,15 @@ export class SelectionTile {
     }
   
     /**
+     * The title of a new panel of a type: the type's own word for one where it has one ("Grouping 1"), else its
+     * label ("Cell Plot 1"), made unique.
+     */
+    _newTitle(panelType) {
+      const info = Config.panelTypeInfo(panelType);
+      return this.generateUniqueName(`${(info && info.title) || this._formatPanelType(panelType)} 1`);
+    }
+
+    /**
      * Create a panel based on the type.
      * For "welcome", use the layoutManager; for "pane", call createPanel directly and remove the tile.
      */
@@ -412,7 +421,7 @@ export class SelectionTile {
         // a new plot is on Default: it follows the session's default look (utils/session-style.js)
         const config = onDefault(panelType, {
           id: newId,
-          title: this.generateUniqueName(`${this._formatPanelType(panelType)} 1`)
+          title: this._newTitle(panelType)
         });
         const parentPane = this.tileSelector.closest('.split-pane') || this.container;
         this.createPanel(panelType, config, parentPane);

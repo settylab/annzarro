@@ -613,3 +613,11 @@ def test_a_loop_from_a_link_names_the_panels_and_one_made_by_the_last_edit_offer
     page.click(f"{A} .cgrp-action[data-action='undo']")
     _ready(page, text=f"6 groups · {N:,} of {N:,} cells in a group")
     _ready(page, sel=B)
+
+
+# ------------------------------------------------------------------ 10. a new panel's title
+
+def test_a_new_grouping_is_titled_grouping_1_and_other_types_keep_their_label(page, served):
+    _open(page, served, {GA: _grouping(title="Mine")})
+    got = page.evaluate("""() => ['cell-grouping', 'cell-grouping', 'cell-table'].map(t => window.PanelManager.createPanelInLayout(t, {}).getTitle())""")
+    assert got == ["Grouping 1", "Grouping 2", "Cell Table 1"]

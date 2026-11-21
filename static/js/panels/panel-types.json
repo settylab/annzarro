@@ -5,7 +5,7 @@
     { "type": "gene-table", "label": "Gene Table", "icon": "fas fa-th-list" },
     { "type": "gene-set", "label": "Gene Set Analysis", "icon": "fas fa-project-diagram" },
     { "type": "gene-signature", "label": "Gene Signature", "icon": "fas fa-list-check" },
-    { "type": "cell-grouping", "label": "Cell Grouping", "icon": "fas fa-object-group", "released": false },
+    { "type": "cell-grouping", "label": "Cell Grouping", "title": "Grouping", "icon": "fas fa-object-group", "released": false },
     { "type": "cell-gene", "label": "Cell-Gene Plot", "icon": "fas fa-braille", "released": false },
     { "type": "cell-count", "label": "Cell Count Plot", "icon": "fas fa-chart-column", "released": false },
     { "type": "gene-count", "reserved": true },
