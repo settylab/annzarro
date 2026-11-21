@@ -58,6 +58,7 @@ function makeReader() {
         categories: null,
         MISSING: null,
         rank: null,
+        missing: null,
         view: columnView(null),
         /** Hold the series the rows are shown from (or none). */
         hold(series, snap) {
@@ -66,6 +67,8 @@ function makeReader() {
             reader.categories = reader.codes ? snap.categories : null;
             reader.MISSING = reader.codes ? snap.MISSING : null;
             reader.rank = reader.codes && Array.isArray(snap.rank) ? snap.rank : null;
+            // what a row of no category says, when its provider names it ('Not in any group'); 'N/A' otherwise
+            reader.missing = reader.codes && typeof snap.missingLabel === 'string' ? snap.missingLabel : null;
         },
         /**
          * One cell. DataTables asks for it by type: 'display' (HTML), 'sort' (a number, or for a category the text of its
@@ -81,7 +84,12 @@ function makeReader() {
             }
             if (reader.codes) {
                 const code = reader.codes[i];
-                if (code === reader.MISSING || reader.categories[code] === undefined) return type === 'display' ? '<span class="text-muted">N/A</span>' : '';
+                if (code === reader.MISSING || reader.categories[code] === undefined) {
+                    if (type === 'display') return `<span class="text-muted">${reader.missing === null ? 'N/A' : escapeText(reader.missing)}</span>`;
+                    // a named missing row is found by its name, and sorts after every category
+                    if (reader.missing === null) return '';
+                    return type === 'sort' ? (reader.rank ? '~' : `\uffff${reader.missing}`) : reader.missing;
+                }
                 if (type === 'display') return escapeText(reader.categories[code]);
                 if (type === 'sort' && reader.rank) return String(reader.rank[code]).padStart(8, '0');
                 return reader.categories[code];
