@@ -940,7 +940,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         pointStyleBase(), area);
       if (changed) showPointStyle(id, settings);
       if (changed || greysMoved) {
-        restyleMarkers(plotContainer, settings).catch(err => console.warn('Point size/opacity not updated:', err && err.message));
+        plotContainer.__azRestyling = (plotContainer.__azRestyling || 0) + 1;     // annzarroPlotState reads it
+        restyleMarkers(plotContainer, settings).catch(err => console.warn('Point size/opacity not updated:', err && err.message))
+          .finally(() => { plotContainer.__azRestyling -= 1; });
       }
     });
     // An image export at its own size: the automatic values for its plot
