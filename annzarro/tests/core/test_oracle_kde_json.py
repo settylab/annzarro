@@ -31,4 +31,6 @@ def test_the_json_covers_every_case_and_counts_the_cells_in_range():
     assert len(doc["cases"]) == 7 * 3
     for case in doc["cases"].values():
         assert sum(case["counts"]) == case["n_in"]
-        assert len(case["counts"]) == case["bins"] ** case["dims"]
+        assert len(case["cells"]) == len(case["counts"]) and case["cells"] == sorted(set(case["cells"]))
+        assert max(case["cells"]) < case["grid"] ** case["dims"]
+        assert case["grid"] % case["bins"] == 0
