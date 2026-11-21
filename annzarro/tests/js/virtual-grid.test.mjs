@@ -33,7 +33,7 @@ test('columns drawn: the ones in view and a few beyond, from the first column th
     assert.deepEqual(grid.columnRange(8000, 400, 80, 2000, 2), { start: 98, end: 107 });
     assert.deepEqual(grid.columnRange(0, 400, 80, 3, 2), { start: 0, end: 3 });
     assert.deepEqual(grid.columnRange(0, 400, 80, 0, 2), { start: 0, end: 0 });
-    const wide = grid.columnRange(80 * 1990, 400, 80, 2000, 2);
+    const wide = grid.columnRange(80 * 1996, 400, 80, 2000, 2);
     assert.equal(wide.end, 2000);
 });
 
