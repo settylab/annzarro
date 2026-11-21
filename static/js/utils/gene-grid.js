@@ -3,6 +3,7 @@
  * as a dataset's whole gene set (tens of thousands of rows, a million at the
  * most). Only the rows in view (and a few beyond) are in the page.
  *
+ * It is the shared virtualised grid (utils/virtual-grid.js) with a tick, a name and a direction button in each row.
  * It is a `role="grid"` and not a listbox because a row may hold two controls
  * (the tick, and a direction button when genes can be scored as down), which a listbox option may not.
  * The grid says its true size (`aria-rowcount`) and each row its place
@@ -12,49 +13,10 @@
  *
  * Names reach the page as text, never as markup.
  */
+import { createVirtualGrid, visibleRange, rowAfterKey } from './virtual-grid.js';
 
-/** Rows rendered above and below the view. */
-const OVERSCAN = 6;
-/** What a hidden or not yet laid out grid is taken to show, in px. */
-const FALLBACK_VIEWPORT = 400;
-
-/**
- * The rows to draw.
- * @param {number} scrollTop
- * @param {number} viewport - the grid's visible height
- * @param {number} rowHeight
- * @param {number} count - rows in all
- * @param {number} [overscan]
- * @returns {{start: number, end: number}} rows start..end-1
- */
-export function visibleRange(scrollTop, viewport, rowHeight, count, overscan = OVERSCAN) {
-    if (count <= 0 || rowHeight <= 0) return { start: 0, end: 0 };
-    const first = Math.floor(Math.max(0, scrollTop) / rowHeight);
-    const last = Math.ceil((Math.max(0, scrollTop) + Math.max(0, viewport)) / rowHeight);
-    return { start: Math.max(0, first - overscan), end: Math.min(count, last + overscan) };
-}
-
-/**
- * The row a movement key lands on.
- * @param {string} key
- * @param {number} active - the row now
- * @param {number} count
- * @param {number} page - rows in one page
- * @returns {number|null} null for a key that does not move
- */
-export function rowAfterKey(key, active, count, page) {
-    if (count <= 0) return null;
-    const clamp = (i) => Math.min(count - 1, Math.max(0, i));
-    switch (key) {
-        case 'ArrowDown': return clamp(active + 1);
-        case 'ArrowUp': return clamp(active - 1);
-        case 'Home': return 0;
-        case 'End': return count - 1;
-        case 'PageDown': return clamp(active + Math.max(1, page));
-        case 'PageUp': return clamp(active - Math.max(1, page));
-        default: return null;
-    }
-}
+// the windowing and the keys are the shared grid's; they stay importable from here
+export { visibleRange, rowAfterKey };
 
 /**
  * @param {Object} opts
@@ -69,35 +31,11 @@ export function rowAfterKey(key, active, count, page) {
  *   rowIndexOf: Function, rows: Function, activeName: Function, destroy: Function}}
  */
 export function createGeneGrid({ doc = document, label, rowHeight = 28, onToggle, onDirection = () => {}, stateOf }) {
-    const grid = doc.createElement('div');
-    grid.className = 'gsig-grid';
-    grid.setAttribute('role', 'grid');
-    grid.setAttribute('aria-label', label);
-    grid.setAttribute('aria-rowcount', '0');
-    grid.setAttribute('aria-colcount', '1');
-    const sizer = doc.createElement('div');
-    sizer.className = 'gsig-grid__sizer';
-    sizer.setAttribute('role', 'presentation');
-    const body = doc.createElement('div');
-    body.className = 'gsig-grid__rows';
-    body.setAttribute('role', 'rowgroup');
-    sizer.appendChild(body);
-    grid.appendChild(sizer);
-
     let rows = [];
-    let active = 0;
-    const drawn = new Map();   // row index -> element
-    let frame = 0;
-    let observer = null;
+    const parts = new WeakMap();   // row element -> its box, text, note and direction button
 
-    const viewport = () => grid.clientHeight || FALLBACK_VIEWPORT;
-
-    function makeRow(i) {
-        const row = doc.createElement('div');
-        row.className = 'gsig-row';
-        row.setAttribute('role', 'row');
-        row.style.height = `${rowHeight}px`;
-        row.style.transform = `translateY(${i * rowHeight}px)`;
+    function buildRow(row) {
+        row.classList.add('gsig-row');
         const cell = doc.createElement('div');
         cell.className = 'gsig-cell';
         cell.setAttribute('role', 'gridcell');
@@ -119,157 +57,62 @@ export function createGeneGrid({ doc = document, label, rowHeight = 28, onToggle
         });
         cell.append(box, text, note, dir);
         row.appendChild(cell);
-        return row;
+        parts.set(row, { box, text, note, dir });
     }
 
     /** Put row i's content and state in its element. */
-    function fill(row, i) {
+    function fillRow(row, i) {
         const name = rows[i];
-        row.dataset.index = String(i);
-        row.setAttribute('aria-rowindex', String(i + 1));
-        row.style.transform = `translateY(${i * rowHeight}px)`;
+        const { box, text, note, dir } = parts.get(row);
         const st = stateOf(name);
-        const box = row.querySelector('input');
-        const text = row.querySelector('.gsig-name');
-        const note = row.querySelector('.gsig-note');
         box.checked = !!st.checked;
         box.setAttribute('aria-label', st.missing ? `${name}, not in this dataset` : name);
-        box.tabIndex = i === active ? 0 : -1;
         text.textContent = name;
         text.title = name;
         note.textContent = st.missing ? 'not in this dataset' : '';
-        const dir = row.querySelector('.gsig-dir');
         dir.hidden = !st.direction;
         if (st.direction) {
             dir.dataset.direction = st.direction;
-            dir.textContent = st.direction === 'down' ? '↓ Down' : '↑ Up';
+            dir.textContent = st.direction === 'down' ? '\u2193 Down' : '\u2191 Up';
             dir.classList.toggle('gsig-dir--down', st.direction === 'down');
             dir.setAttribute('aria-label', `${name}: ${st.direction}. Press to make it ${st.direction === 'down' ? 'up' : 'down'}`);
             dir.title = `Scored as ${st.direction}. Press to make ${name} ${st.direction === 'down' ? 'up' : 'down'}.`;
         }
-        dir.tabIndex = i === active ? 0 : -1;
         row.classList.toggle('is-down', st.direction === 'down');
         row.classList.toggle('is-missing', !!st.missing);
         row.classList.toggle('is-removed', !!st.removed);
     }
 
-    function render() {
-        frame = 0;
-        const { start, end } = visibleRange(grid.scrollTop, viewport(), rowHeight, rows.length);
-        for (const [i, el] of drawn) {
-            if (i < start || i >= end) { el.remove(); drawn.delete(i); }
-        }
-        for (let i = start; i < end; i++) {
-            let el = drawn.get(i);
-            if (!el) {
-                el = makeRow(i);
-                drawn.set(i, el);
-                body.appendChild(el);
-            }
-            fill(el, i);
-        }
-        // the active row must be reachable by Tab even when it is out of view
-        if (!drawn.has(active) && drawn.size) {
-            const first = drawn.get(start);
-            if (first) first.querySelector('input').tabIndex = 0;
-        }
-    }
-
-    function schedule() {
-        if (frame) return;
-        frame = (doc.defaultView || window).requestAnimationFrame(render);
-    }
-
-    function scrollTo(i) {
-        const top = i * rowHeight;
-        if (top < grid.scrollTop) grid.scrollTop = top;
-        else if (top + rowHeight > grid.scrollTop + viewport()) grid.scrollTop = top + rowHeight - viewport();
-    }
-
-    function focusRow(i) {
-        if (!rows.length) return;
-        active = Math.min(rows.length - 1, Math.max(0, i));
-        scrollTo(active);
-        render();
-        const el = drawn.get(active);
-        if (el) el.querySelector('input').focus({ preventScroll: true });
-    }
-
-    grid.addEventListener('scroll', schedule, { passive: true });
-    grid.addEventListener('focusin', (e) => {
-        const row = e.target.closest && e.target.closest('.gsig-row');
-        if (!row) return;
-        const i = Number(row.dataset.index);
-        if (i === active) return;
-        const old = drawn.get(active);
-        if (old) { old.querySelector('input').tabIndex = -1; old.querySelector('.gsig-dir').tabIndex = -1; }
-        active = i;
-        row.querySelector('input').tabIndex = 0;
-        row.querySelector('.gsig-dir').tabIndex = 0;
+    const grid = createVirtualGrid({
+        doc, label, rowHeight, colCount: 1,
+        classes: { grid: 'gsig-grid', sizer: 'gsig-grid__sizer', rows: 'gsig-grid__rows' },
+        buildRow, fillRow,
+        controlsOf: (row) => { const p = parts.get(row); return p ? [p.box, p.dir] : []; }
     });
-    grid.addEventListener('keydown', (e) => {
-        if (e.ctrlKey || e.metaKey || e.altKey) return;
-        // Left and Right move between the controls of a row (the tick and the direction button)
-        if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && e.target && e.target.closest) {
-            const row = e.target.closest('.gsig-row');
-            const dir = row && row.querySelector('.gsig-dir');
-            if (dir && !dir.hidden) {
-                const to = e.key === 'ArrowRight' ? dir : row.querySelector('input');
-                if (to !== e.target) { e.preventDefault(); to.focus({ preventScroll: true }); }
-                return;
-            }
-        }
-        const page = Math.max(1, Math.floor(viewport() / rowHeight) - 1);
-        const next = rowAfterKey(e.key, active, rows.length, page);
-        if (next === null) return;
-        e.preventDefault();
-        focusRow(next);
-    });
-    if (typeof (doc.defaultView || window).ResizeObserver === 'function') {
-        observer = new (doc.defaultView || window).ResizeObserver(schedule);
-        observer.observe(grid);
-    }
 
     return {
-        element: grid,
+        element: grid.element,
         /**
          * Show these names. The scroll position is kept unless `top`.
          * @param {string[]} names
          * @param {{top?: boolean}} [opts]
          */
-        setRows(names, { top = false } = {}) {
+        setRows(names, opts = {}) {
             rows = names;
-            grid.setAttribute('aria-rowcount', String(names.length));
-            sizer.style.height = `${names.length * rowHeight}px`;
-            for (const el of drawn.values()) el.remove();
-            drawn.clear();
-            if (top) { grid.scrollTop = 0; active = 0; }
-            active = Math.min(active, Math.max(0, names.length - 1));
-            render();
+            grid.setCount(names.length, opts);
         },
         /** Repaint the rows in view (a tick changed, a state changed). */
-        refresh() {
-            for (const [i, el] of drawn) fill(el, i);
-        },
-        focusRow,
+        refresh: grid.refresh,
+        focusRow: grid.focusRow,
         rowIndexOf(name) {
             return rows.indexOf(name);
         },
         rows() {
             return rows;
         },
-        activeIndex() {
-            return active;
-        },
+        activeIndex: grid.activeIndex,
         /** The number of row elements in the page (a test reads it). */
-        drawnCount() {
-            return drawn.size;
-        },
-        destroy() {
-            if (frame) (doc.defaultView || window).cancelAnimationFrame(frame);
-            if (observer) observer.disconnect();
-            drawn.clear();
-            grid.remove();
-        }
+        drawnCount: grid.drawnCount,
+        destroy: grid.destroy
     };
 }

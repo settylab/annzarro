@@ -21,6 +21,14 @@ async function started(t, n = 1) {
     }
 }
 
+/** Wait for the real condition: `done()` is true. (A wait of a fixed time is for a thing that must NOT happen.) */
+async function until(done, what = 'the condition') {
+    for (let i = 0; !done(); i++) {
+        assert.ok(i < 5000, `${what} never came`);
+        await tick(1);
+    }
+}
+
 /** A host with tables `names`, builds that wait until the test lets them finish. */
 function fake({ rows = 100, tables = ['A', 'B', 'C'], depends = {}, visible = {}, guard = () => ({ ok: true }) } = {}) {
     const open = new Set();
@@ -67,7 +75,7 @@ test('a table above the automatic limit waits for Build filter; above the other 
     await tick();
     assert.equal(t.builds.length, 0, 'nothing is built before the click');
     t.resolver.accept('A');
-    await tick();
+    await started(t);
     assert.equal(t.builds.length, 1);
 
     const big = fake({ rows: 1000001 });
@@ -114,16 +122,18 @@ test('one build at a time; visible dependants first, then fewer tables upstream,
     const t = fake({ tables: ['A', 'B', 'C', 'D'], depends: { B: ['D'] }, visible: { pB: false } });
     Object.assign(t.wanted, { pA: 'A', pB: 'B', pC: 'C', pD: 'D' });
     for (const [id, p] of [['A', 'pA'], ['B', 'pB'], ['C', 'pC'], ['D', 'pD']]) t.resolver.need(id, p);
+    await started(t, 1);
     await tick(20);
     assert.equal(t.builds.length, 1, 'one at a time');
     const order = [];
     for (let i = 0; i < 4; i++) {
-        await tick(20);
+        await started(t, i + 1);
+        await tick(20);                                   // a second build, were one wrongly started, would be in by now
         assert.equal(t.builds.length, i + 1, 'the next build waits for the one running');
         order.push(t.builds[i].id);
         t.builds[i].finish({ passing: [], seen: [] });
     }
-    await tick(20);
+    await until(() => t.published.length === 4, 'the four results');
     // A, C, D are on screen and need no table first (A before C before D: the order asked); B is off
     // screen and has D upstream
     assert.deepEqual(order, ['A', 'C', 'D', 'B']);
@@ -137,7 +147,8 @@ test('the result is published once and the dependants are told once', async () =
     await started(t);
     const told = t.notified.length;                       // "building"
     t.builds[0].finish({ passing: ['x'], seen: ['x', 'y'] });
-    await tick();
+    await until(() => t.published.length === 1 && t.notified.length === told + 1, 'the result');
+    await tick();                                         // ... and nothing is published or told a second time
     assert.equal(t.published.length, 1);
     assert.equal(t.notified.length, told + 1);
     assert.equal(t.resolver.status('A').state, 'ready');
@@ -151,7 +162,7 @@ test('a build nobody wants any more ends', async () => {
     assert.equal(t.resolver.building, 'A');
     delete t.wanted.p;
     t.resolver.reassess();
-    await tick();
+    await until(() => t.builds[0].job.signal.aborted && t.resolver.building === null, 'the build to end');
     assert.equal(t.builds[0].job.signal.aborted, true);
     assert.equal(t.published.length, 0);
     assert.equal(t.resolver.building, null);
@@ -255,7 +266,7 @@ test('other cells end the builds for the old ones and void what was decided', as
     assert.equal(t.resolver.building, 'A');
     t.cells.key = 'k2';
     t.resolver.cellsChanged();
-    await tick();
+    await until(() => t.builds[0].job.signal.aborted, 'the build to be aborted');
     assert.equal(t.builds[0].job.signal.aborted, true);
     assert.equal(t.resolver.need('A', 'p').state, 'ask', 'the click was for the old cells');
 });
@@ -267,7 +278,8 @@ test('a dataset switch or a panel set loaded stops everything', async () => {
     t.resolver.need('B', 'q');
     await started(t);
     t.resolver.reset();
-    await tick(20);
+    await until(() => t.builds[0].job.signal.aborted, 'the build to be aborted');
+    await tick(20);                                       // the queued one must not start meanwhile
     assert.equal(t.builds[0].job.signal.aborted, true);
     assert.equal(t.builds.length, 1, 'the queued one does not start');
     assert.equal(t.published.length, 0);
@@ -279,13 +291,13 @@ test('a build that fails says why, once, and Retry builds again', async () => {
     t.resolver.need('A', 'p');
     await started(t);
     t.builds[0].fail(new Error('a column could not be read'));
-    await tick();
+    await until(() => t.resolver.status('A').state === 'failed', 'the failure');
     const s = t.resolver.need('A', 'p');
     assert.deepEqual([s.state, s.reason], ['failed', 'a column could not be read']);
     await tick(20);
     assert.equal(t.builds.length, 1, 'no loop of retries');
     t.resolver.retry('A');
-    await tick(20);
+    await started(t, 2);
     assert.equal(t.builds.length, 2);
 });
 
@@ -346,13 +358,13 @@ test('Cancel stops the load phase and returns to Build filter, whatever the size
     await started(t);
     assert.equal(t.resolver.status('A').state, 'building');
     assert.equal(t.resolver.cancel('A'), true);
-    await tick();
+    await until(() => t.builds[0].job.signal.aborted, 'the build to be aborted');
     assert.equal(t.builds[0].job.signal.aborted, true);
     assert.equal(t.resolver.need('A', 'p').state, 'ask');
     await tick(20);
     assert.equal(t.builds.length, 1, 'nothing restarts by itself');
     t.resolver.accept('A');
-    await tick(20);
+    await started(t, 2);
     assert.equal(t.builds.length, 2, 'Build filter builds again');
 });
 

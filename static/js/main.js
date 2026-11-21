@@ -119,6 +119,10 @@ const App = (function() {
                 return;
             }
 
+            // A panel set loaded from now on (the Load button works once _initUI has run, and scripts see
+            // window.sessionManager) waits until setViewApplier below, never the closed-panels fallback
+            SessionManager.expectViewApplier();
+
             installHoverCopy(() => DataManager.getCurrentDataset());
             _panelUnderPointer = trackPointerPanel();
 
@@ -323,6 +327,8 @@ const App = (function() {
             console.error('Error initializing application:', error);
             _showNotification('AnnZarro did not start', error.message, 'error');
         } finally {
+            // a start-up that failed before the applier was set: the loads waiting for it go on (closed panels)
+            SessionManager.startupEnded();
             _bootDone();
         }
     }
@@ -2156,17 +2162,23 @@ const App = (function() {
         };
         window.annzarroPlots = () => [...document.querySelectorAll('.tile-container .tile[data-tile-id]')]
             .filter(t => t.querySelector('.js-plotly-plot')).map(t => t.dataset.tileId);
-        window.annzarroPlotState = () => JSON.stringify({
-            loading: _isLoadingDataset,
-            noData: !!_noDataView,
-            plots: window.annzarroPlots().map(id => {
+        window.annzarroPlotState = () => {
+            let pending = 0;
+            const plots = window.annzarroPlots().map(id => {
                 const gd = plotOf(id);
                 const fl = gd && gd._fullLayout;
+                const panel = PanelManager.getPanel(id);
+                const cfg = (panel && panel.getConfig && panel.getConfig()) || {};
+                // an automatic size or opacity still to be settled: waiting out its delay, or being applied
+                if (gd && ((gd.__azFollowView && gd.__azFollowView.pending && gd.__azFollowView.pending())
+                    || gd.__azRestyling > 0)) pending += 1;
                 return [id, !!fl, ((gd && gd.data) || []).map(t => [t.type, (t.x || []).length,
                     t.marker && t.marker.color && t.marker.color.length]),
-                fl ? [fl.width, fl.height, JSON.stringify(fl.annotations || []).length] : null];
-            })
-        });
+                fl ? [fl.width, fl.height, JSON.stringify(fl.annotations || []).length] : null,
+                [cfg.pointSize, cfg.pointOpacity]];       // the resolved automatic values, which the figure carries
+            });
+            return JSON.stringify({ loading: _isLoadingDataset, noData: !!_noDataView, pending, plots });
+        };
         window.annzarroExport = async (id, format = 'svg') => {
             const gd = plotOf(id);
             if (!gd) throw new Error(`Panel ${id} has no plot`);
@@ -3708,6 +3720,7 @@ const App = (function() {
         card.querySelector('.session-card-dataset').append(badge.el, styleBadge.el);
         const actions = createLoadActions({
             getCurrent: SessionManager.getCurrentDatasetInfo,
+            pageReady: () => (SessionManager.isReady() ? null : SessionManager.whenReady()),
             onLoad: async (mode) => {
                 actions.setBusy(true);
                 try {
@@ -3842,6 +3855,7 @@ const App = (function() {
         host.appendChild(dataset);
         const actions = createLoadActions({
             getCurrent: SessionManager.getCurrentDatasetInfo,
+            pageReady: () => (SessionManager.isReady() ? null : SessionManager.whenReady()),
             onLoad: async (mode) => {
                 actions.setBusy(true);
                 _dialogNote(host, '');

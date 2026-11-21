@@ -98,5 +98,6 @@ export function debounced(run, delay = VIEW_STYLE_DELAY) {
     timer = setTimeout(() => { timer = null; run(); }, delay);
   };
   call.cancel = () => { if (timer !== null) clearTimeout(timer); timer = null; };
+  call.pending = () => timer !== null;      // a call is waiting out its delay (the export waits for none)
   return call;
 }

@@ -13,6 +13,14 @@ const { createResolver, describeUnresolved } = await import('../../../static/js/
 
 const tick = (ms = 5) => new Promise(r => setTimeout(r, ms));
 
+/** Wait for the real condition (a wait of a fixed time is for a thing that must NOT happen). */
+async function until(done, what = 'the condition') {
+    for (let i = 0; !done(); i++) {
+        assert.ok(i < 5000, `${what} never came`);
+        await tick(1);
+    }
+}
+
 function fake({ tables = ['A', 'B'], depends = {} } = {}) {
     const open = new Set();
     const wanted = { p: 'A' };
@@ -58,10 +66,10 @@ test('when the score is ready the same ask builds the filter', async () => {
     t.resolver.need('A', 'p');
     t.state.gate.A = null;
     assert.equal(t.resolver.need('A', 'p').state, 'waiting', 'queued for the build');
-    await tick(20);
+    await until(() => t.builds.length === 1, 'the build');
     assert.equal(t.builds.length, 1);
     t.builds[0].finish({ passing: [], seen: [] });
-    await tick(20);
+    await until(() => t.published.length === 1, 'the result');
     assert.equal(t.published.length, 1);
     assert.equal(t.resolver.status('A').state, 'ready');
 });
@@ -69,9 +77,9 @@ test('when the score is ready the same ask builds the filter', async () => {
 test('a score that changes voids the selection built from the old one and tells the dependants to ask again', async () => {
     const t = fake();
     t.resolver.need('A', 'p');
-    await tick(20);
+    await until(() => t.builds.length === 1, 'the build');
     t.builds[0].finish({ passing: ['c1'], seen: ['c1'] });
-    await tick(20);
+    await until(() => t.published.length === 1, 'the result');
     t.published.length = 0;
     t.notified.length = 0;
     t.resolver.scoreChanged('A');
@@ -79,7 +87,7 @@ test('a score that changes voids the selection built from the old one and tells 
     assert.deepEqual(t.notified, ['A']);
     assert.equal(t.resolver.status('A').state, 'idle');
     t.resolver.need('A', 'p');
-    await tick(20);
+    await until(() => t.builds.length === 2, 'the second build');
     assert.equal(t.builds.length, 2, 'it builds again');
 });
 

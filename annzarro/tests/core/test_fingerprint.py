@@ -531,3 +531,33 @@ def test_zarr_3_consolidated_zarr_json(tmp_path):
     if docs is None:
         pytest.skip("the committed zarr 3 fixture is not consolidated")
     assert docs == fingerprint._zarr_local_metadata(str(store))
+
+
+def test_a_hash_that_ends_between_the_cache_look_and_the_lock_is_not_started_again(tmp_path, monkeypatch):
+    """start() looks in the cache, then takes the lock: a running hash that finishes between the two has left
+    _pending and entered the cache, and a second full hash must not be submitted for it."""
+    import threading
+    store = _copy(tmp_path)
+    reader = get_reader(str(store))
+    gate, calls = threading.Event(), []
+    real = fingerprint.data_part
+
+    def slow(r, p):
+        calls.append(1)
+        gate.wait(10)
+        return real(r, p)
+    monkeypatch.setattr(fingerprint, "data_part", slow)
+    assert fingerprint.get(reader, str(store), wait=0.05)["status"] == "pending"
+    real_cached, looks = fingerprint.cached, [0]
+
+    def cached(path):
+        out = real_cached(path)
+        looks[0] += 1
+        if looks[0] == 2 and out is None:        # the look inside start(): not known yet ...
+            running = fingerprint._pending[path][1]
+            gate.set()                           # ... and the running hash ends right after it
+            running.result(10)
+        return out
+    monkeypatch.setattr(fingerprint, "cached", cached)
+    assert fingerprint.get(reader, str(store), wait=10)["status"] == "ready"
+    assert len(calls) == 1, f"the hash ran {len(calls)} times"
