@@ -8,8 +8,8 @@
  * HANDLE on one source, in one OPTION (for a score: its method and layer). `handle.read()` says where it stands:
  *
  *   ready      values are in the snapshot (`held` may say edits wait)
- *   updating   the key changed (an edit; a new subset is the exception: it drops the old values); the previous
- *              values are kept
+ *   updating   the key changed (an edit, a new option; a new subset is the exception: it drops the old values), or
+ *              a gate in a working state stands (an upstream computing): the previous values are kept
  *   estimating, queued, computing, awaiting, refused, failed, noscore, cancelled   the store's states, no values
  *   deleted    the source is gone;  off  the source type is turned off on this server
  *   a gate's state (the source's input is not known yet), a state of the provider's own when the option asks
@@ -18,6 +18,10 @@
  * EDITS. Each source has an APPLIED recipe: the one its consumers show. When the source is edited, the applied recipe
  * follows after a short pause if the slowest estimate of the options in use is under `live_max_s` (from the estimate
  * reply), and otherwise the edits collect (`held`) until `update(id)`. Consumers keep the previous values meanwhile.
+ *
+ * A store that can (`store.keep`) is told which values a handle still shows after it left their key, so what holds
+ * memory outside the heap stays counted until it is replaced; if the store drops them (`keeper.dropped()`), the
+ * handle stops showing them.
  *
  * A read never hashes. What an applied recipe gives per option (its variant recipe, hash and fields) is worked out
  * once: a handle is read on every paint, progress frame and hover, and a hash may walk every gene. An applied recipe
@@ -45,6 +49,7 @@ const PASSING = Object.freeze(['idle', 'estimating', 'queued', 'computing']);
  * @property {Object} recipe - what the server is asked for this option
  * @property {Object} [fields] - added to a snapshot that has a key (a score's `layer`)
  * @property {Object} [none] - the option asks nothing of the server: the snapshot's state and fields (`{state: 'nogenes'}`)
+ * @property {string} [hash] - the variant's hash, when the provider makes it itself (no `hashOf` is then needed)
  */
 
 /**
@@ -53,12 +58,13 @@ const PASSING = Object.freeze(['idle', 'estimating', 'queued', 'computing']);
  * @param {Sources} options.sources
  * @param {() => {dataset: string, subset: (string|null), cells?: (number|null)}} options.context
  * @param {(recipe: Object, option: Object) => Variant} options.variantOf - a recipe read in a consumer's option
- * @param {(recipe: Object) => (variant: Object) => string} options.hashOf - a recipe's hasher: walks its long parts
- *   once, then hashes each variant of it
+ * @param {(recipe: Object) => (variant: Object) => string} [options.hashOf] - a recipe's hasher: walks its long parts
+ *   once, then hashes each variant of it; not needed when every variant carries its `hash`
  * @param {(recipe: Object, hash: Function) => string} options.editHashOf - covers every variant the recipe can give:
  *   equal edit hashes mean no setting changed
  * @param {(parts: {hash: string, dataset: string, subset: (string|null)}) => string} options.keyOf - the store key
- * @param {(recipe: Object) => Object} options.copyOf - a copy no later edit of the source can change
+ * @param {(recipe: Object) => Object} [options.copyOf] - a copy no later edit of the source can change (the recipe
+ *   itself when `recipe()` makes a fresh one each time)
  * @param {(option: Object) => boolean} [options.isOption] - false for an option of another source type, left over
  *   while a consumer switches: nothing is asked for it
  * @param {(source: Object, option: Object) => (Object|null)} [options.lapsedOf] - null while the source offers the
@@ -71,7 +77,8 @@ const PASSING = Object.freeze(['idle', 'estimating', 'queued', 'computing']);
  * @param {Function} [options.setTimer]
  * @param {Function} [options.clearTimer]
  */
-export function createDerivedSources({ store, sources, context, variantOf, hashOf, editHashOf, keyOf, copyOf,
+export function createDerivedSources({ store, sources, context, variantOf, hashOf = () => null, editHashOf, keyOf,
+    copyOf = (recipe) => recipe,
     isOption = () => true, lapsedOf = null, failureStates = {}, countOf = (values) => values.length,
     kind: defaultKind = null, thing = 'value', liveDelayMs = 350,
     setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (t) => clearTimeout(t) }) {
@@ -87,6 +94,8 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
     const pending = new Map();
     /** @type {Map<string, Set<Function>>} */
     const sourceListeners = new Map();
+    /** @type {Set<string>} sources told of an edit while a gate stood: compared again once it lifts */
+    const missed = new Set();
     let token = 0;
 
     /** @type {WeakMap<Object, Map<string, *>>} applied recipe -> what follows from it */
@@ -98,12 +107,14 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         return map.get(key);
     };
     const optionKeyOf = (option) => JSON.stringify(option);
+    /** A variant's hash: its own, or the recipe's hasher's. */
+    const hashOfVariant = (v, hasher) => (typeof v.hash === 'string' ? v.hash : hasher()(v.recipe));
     /** The hasher of an applied recipe: its long parts are walked once for every option. */
     const hasherOf = (recipe) => memo(recipe, '\u0000hasher', () => hashOf(recipe));
     /** An applied recipe read in one option, with its hash: {recipe, hash, fields, none}. */
     const variantFor = (recipe, option, optionKey = optionKeyOf(option)) => memo(recipe, optionKey, () => {
         const v = variantOf(recipe, option);
-        return { recipe: v.recipe, hash: hasherOf(recipe)(v.recipe), fields: v.fields || null, none: v.none || null };
+        return { recipe: v.recipe, hash: hashOfVariant(v, () => hasherOf(recipe)), fields: v.fields || null, none: v.none || null };
     });
     const appliedEditHash = (recipe) => memo(recipe, '\u0000edit', () => editHashOf(recipe, hasherOf(recipe)));
 
@@ -115,7 +126,7 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         return [...seen.values()];
     };
     /** Whether the live recipe is a different value from the applied one for any option a consumer of `id` reads. */
-    const changesValue = (id, live, was, hash) => optionsUsed(id).some(o => hash(variantOf(live, o).recipe) !== variantFor(was, o).hash);
+    const changesValue = (id, live, was, hash) => optionsUsed(id).some(o => hashOfVariant(variantOf(live, o), () => hash) !== variantFor(was, o).hash);
 
     /** The gate of a source for a consumer: the state its input is in, or null when it can be read. */
     function gateOf(src, panelId) {
@@ -171,6 +182,17 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         notifyListeners(id);
     }
 
+    /** What a handle shows; a store that can is told, so it keeps those values while the handle shows them. */
+    function setShown(handle, shown) {
+        const was = handle.shown;
+        handle.shown = shown;
+        const from = was ? was.key : null;
+        const to = shown ? shown.key : null;
+        if (from === to || typeof store.keep !== 'function') return;
+        if (to) store.keep(to, handle.keeper);
+        if (from) store.unkeep(from, handle.keeper);
+    }
+
     function dropKey(handle) {
         if (!handle.key) return;
         const on = byKey.get(handle.key);
@@ -215,6 +237,12 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         if (gate) {
             dropKey(handle);
             const { state, ...rest } = gate;
+            // an upstream still computing: the previous values stay, as for an edit
+            const previous = handle.shown && handle.shown.ctx === ctxKeyOf(ctx) ? handle.shown : null;
+            if (previous && PASSING.includes(state)) {
+                return { ...base, ...rest, held: heldOf(id), state: 'updating', previous: true, values: previous.values,
+                    header: previous.header, shownKey: previous.key };
+            }
             return { ...base, state, ...rest };
         }
         const held = heldOf(id);
@@ -229,7 +257,7 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         base.key = key;
         if (v.fields) Object.assign(base, v.fields);
         if (snap.state === 'failed' && Object.hasOwn(failureStates, snap.reason)) {
-            handle.shown = null;
+            setShown(handle, null);
             return { ...base, held, state: failureStates[snap.reason], message: snap.message };
         }
         // A value covers the cells shown. One of another size is for other cells (a subset changed while it was on
@@ -247,7 +275,9 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
                 mismatch: true };
         }
         if (snap.state === 'ready' && snap.values) {
-            handle.shown = { key, ctx: ctxKeyOf(ctx), values: snap.values, header: snap.header };
+            if (!handle.shown || handle.shown.values !== snap.values || handle.shown.key !== key) {
+                setShown(handle, { key, ctx: ctxKeyOf(ctx), values: snap.values, header: snap.header });
+            }
             return { ...base, held, state: 'ready', values: snap.values, header: snap.header, shownKey: key };
         }
         const previous = handle.shown && handle.shown.ctx === ctxKeyOf(ctx) ? handle.shown : null;
@@ -256,7 +286,7 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
             return { ...base, held, state: 'updating', previous: true, values: previous.values, header: previous.header,
                 shownKey: previous.key, progress: snap.progress, estimate: snap.estimate, owners: snap.owners };
         }
-        if (!working) handle.shown = null;
+        if (!working) setShown(handle, null);
         return { ...base, held, state: snap.state === 'idle' ? 'estimating' : snap.state, progress: snap.progress,
             estimate: snap.estimate, message: snap.message, reason: snap.reason, owners: snap.owners };
     }
@@ -299,7 +329,7 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         const p = pending.get(id);
         if (!src || !p || p.token !== mine) return;
         p.timer = null;
-        if (gateOf(src, null)) { pending.delete(id); notifySource(id); return; }
+        if (gateOf(src, null)) { pending.delete(id); missed.add(id); notifySource(id); return; }
         const edited = copyOf(src.recipe());
         const ctx = context();
         const hash = hashOf(edited);
@@ -307,7 +337,7 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         const replies = await Promise.all(optionsUsed(id).map((o) => {
             const v = variantOf(edited, o);
             if (v.none) return null;               // nothing to ask for this option
-            return store.estimateFor(v.recipe, ctx.dataset, hash(v.recipe))
+            return store.estimateFor(v.recipe, ctx.dataset, hashOfVariant(v, () => hash))
                 .catch(() => null);                // the failure shows when the edit is applied and computed
         }));
         const now = pending.get(id);
@@ -335,7 +365,8 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
             return;
         }
         // a source whose input is not known yet has no recipe to compare: its consumers hear it when it has
-        if (gateOf(src, handlesOf(id)[0].panelId)) { notifySource(id); return; }
+        if (gateOf(src, handlesOf(id)[0].panelId)) { missed.add(id); notifySource(id); return; }
+        missed.delete(id);
         const live = src.recipe();
         const was = applied.get(id);
         if (!was) { appliedOf(id, src); notifySource(id); return; }
@@ -390,14 +421,26 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
                     const mine = bySource.get(id);
                     mine.delete(handle);
                     dropKey(handle);
-                    handle.shown = null;
+                    setShown(handle, null);
                     if (!mine.size) {
                         bySource.delete(id);
                         applied.delete(id);
+                        missed.delete(id);
                         const p = pending.get(id);
                         if (p && p.timer) clearTimer(p.timer);
                         pending.delete(id);
                     }
+                },
+                /**
+                 * Read another option of the same source (a Cell-Gene Plot's genes): what it shows stays until the new
+                 * values come, and the source's applied recipe and held edits are untouched.
+                 */
+                setOption(next = {}) {
+                    if (handle.released) return;
+                    handle.option = next;
+                    handle.optionKey = optionKeyOf(next);
+                    handle.known = isOption(next);
+                    notifyHandle(handle);
                 },
                 compute() { return handle.key ? store.accept(handle.key) : gateAction(handle, 'accept'); },
                 retry() {
@@ -417,6 +460,15 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
                     const hosts = new Set();
                     for (const h of byKey.get(handle.key) || []) hosts.add(h.host || h);
                     return hosts.size;
+                }
+            };
+            // what the store is told while it keeps values this handle still shows
+            handle.keeper = {
+                visible: () => !handle.released && handle.visible(),
+                dropped() {
+                    if (!handle.shown) return;
+                    setShown(handle, null);
+                    notifyHandle(handle);
                 }
             };
             handles.add(handle);
@@ -457,8 +509,16 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
             return true;
         },
 
-        /** The dataset or the cells shown changed: every handle moves to its new key. */
+        /**
+         * The dataset or the cells shown changed: every handle moves to its new key. A gate the change lifts (a table
+         * factor's cells under its limit again) lets the edits made under it count: each source is compared again.
+         */
         contextChanged() {
+            for (const id of [...missed]) {
+                const src = sources.get(id);
+                if (!src || !bySource.has(id)) missed.delete(id);
+                else if (!gateOf(src, handlesOf(id)[0].panelId)) sourceChanged(id);
+            }
             for (const handle of [...handles]) notifyHandle(handle);
             for (const id of [...bySource.keys()]) notifyListeners(id);
         },

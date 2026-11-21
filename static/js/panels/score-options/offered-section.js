@@ -251,7 +251,7 @@ export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-sc
                 checked: layers.has(name), disabled: last, data: { layerOffer: name },
                 title: last ? text.lastLayer : '', on: { change: () => toggleLayer(name, box.checked) } });
             const word = kindWord(kinds.get(name));
-            const use = useText(usesOf(used.map(u => ({ ...u, value: u.value === null ? recipe.input : u.value })), name));
+            const use = useText(usesOf(used.map(u => ({ ...u, value: u.value === null ? model.inputOf(recipe) : u.value })), name));
             // a layer says its properties once, short, and only while it is offered (they matter to what is offered)
             const lines = layers.has(name) ? model.layerLines(name, recipe, kinds.get(name), stats.get(name)) : [];
             const suggest = suggestions.get(name);

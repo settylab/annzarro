@@ -208,8 +208,9 @@ function computed(partitioning) {
 }
 
 /**
- * The hash a grouping's result is cached under (PER-3): equal recipes give equal text, and what no number depends on
- * does not change it: a rename, the separator, the order of the statistics offered, and a default written out.
+ * The hash a grouping's result is cached under (PER-3): equal recipes give equal text, and what no number of the
+ * groups depends on does not change it: a rename, the separator, the statistics and layers offered, the detection
+ * threshold (each feature's key carries its own), and a default written out. So it is made of what the request sends.
  * Each partitioning is walked once, when the hasher is made, and again only when a variant brings a new one, so
  * hashing the variants of one applied recipe costs nothing per call.
  * @param {Object} recipe - from normalizeGrouping
@@ -233,14 +234,7 @@ export function groupingHasher(recipe, upstream) {
         return { ...found, source };
     };
     recipe.partitionings.forEach((p) => body(p));
-    return (variant) => stableStringify({
-        v: variant.version,
-        p: variant.partitionings.map(body),
-        small: effectiveSmall(variant),
-        detect_above: variant.detect_above || 0,
-        offered: [...(variant.offered || [])].sort(),
-        layers: [...(variant.layers || [])].sort()
-    });
+    return (variant) => stableStringify({ v: variant.version, p: variant.partitionings.map(body), small: effectiveSmall(variant) });
 }
 
 /**
@@ -365,9 +359,24 @@ export function groupColours(recipe, reply, palette) {
     return reply.groups.map((g, i) => (own && own[g.key[0]]) || palette[groupOf(i) % palette.length]);
 }
 
-/** A set of cells shown as the request carries it: bit i & 7 of byte i >> 3, least significant first, padding bits 0. */
+/** @type {WeakMap<Object, Object>} flags -> packed: a table's cells are packed once while the host holds one array for them */
+const packed = new WeakMap();
+
+/**
+ * A set of cells shown as the request carries it: bit i & 7 of byte i >> 3, least significant first, padding bits 0.
+ * Packed once per flags array (a host hands the same array while the cells are the same: their hash).
+ */
 // export-unused-ok: C1 sends the sets of a count plot the same way
 export function packBitset(flags) {
+    let out = typeof flags === 'object' && flags ? packed.get(flags) : undefined;
+    if (!out) {
+        out = pack(flags);
+        if (typeof flags === 'object' && flags) packed.set(flags, out);
+    }
+    return { ...out };
+}
+
+function pack(flags) {
     const bytes = new Uint8Array((flags.length + 7) >> 3);
     for (let i = 0; i < flags.length; i++) if (flags[i]) bytes[i >> 3] |= 1 << (i & 7);
     let binary = '';
@@ -376,7 +385,7 @@ export function packBitset(flags) {
 }
 
 /** Groupings nested below the top one in a request: a grouping that uses a grouping that uses ... (SHR-29). */
-const MAX_NESTING = 4;
+export const MAX_NESTING = 4;
 
 /** The tables of a request, each packed once and named `s0`, `s1`, ... by the table panel that makes it. */
 function tableSets() {
