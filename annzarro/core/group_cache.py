@@ -29,6 +29,10 @@ memory ledger as its evictable: its bytes count against the ledger's bound, and 
 reservation waits. A new entry is kept only if it fits the budget and the room the ledger has left; older entries
 leave first to make room.
 
+**Pins.** A job that answers from the cache pins its entry (``peek``/``begin`` with ``pin=True``) until it ends
+(``unpin``): a pinned entry is not evicted, by the ledger or least recently used, not dropped when its store's
+fingerprint moves, and not replaced, so the codes a running job uses stay counted. It leaves once unpinned.
+
 **A grouping being resolved** is claimed, so a request that needs it while another resolves it waits for that
 resolve instead of paying for its own (CMP-6: a session opening with one grouping and three dependants resolves once
 per worker it reaches). Only a claim that ends right after its resolve is waited for (a request with no features
@@ -79,6 +83,7 @@ class _Entry:
     histograms: Dict[int, dict]     # partitioning position -> its histogram
     asked: FrozenSet[int]           # the positions resolved with a histogram asked for
     nbytes: int
+    pins: int = 0                   # jobs using its codes now: it is not evicted, dropped or replaced meanwhile
 
 
 class Hit:
@@ -164,11 +169,19 @@ class GroupCache:
             return self._bytes
 
     def clear(self) -> None:
-        """Empty the cache (the ledger's evict, and a test's fresh start). Claims in progress are kept."""
+        """Empty the cache (the ledger's evict, and a test's fresh start), but for pinned entries. Claims in progress
+        are kept."""
         with self._lock:
-            self.stats["evicted"] += len(self._entries)
-            self._entries.clear()
-            self._bytes = 0
+            for k in [k for k, e in self._entries.items() if not e.pins]:
+                self._bytes -= self._entries.pop(k).nbytes
+                self.stats["evicted"] += 1
+
+    def unpin(self, key: Key) -> None:
+        """A job that pinned ``key``'s entry has ended (finished, failed or closed)."""
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is not None and entry.pins:
+                entry.pins -= 1
 
     def __len__(self) -> int:
         with self._lock:
@@ -176,9 +189,9 @@ class GroupCache:
 
     # -- lookups -------------------------------------------------------------------------------------------------
 
-    def peek(self, key: Key, histograms: Iterable[int] = ()) -> Optional[GroupingResult]:
-        """The grouping when it is held with every histogram asked for (a hit, counted), else None. Claims nothing:
-        a request decides its lane by it before it queues, and looks up again (``begin``) when its turn comes."""
+    def peek(self, key: Key, histograms: Iterable[int] = (), pin: bool = False) -> Optional[GroupingResult]:
+        """The grouping when it is held with every histogram asked for (a hit, counted, pinned with ``pin``), else
+        None. Claims nothing: a request decides its lane by it before it queues."""
         asked = frozenset(int(h) for h in histograms)
         with self._lock:
             self._drop_moved(key)
@@ -187,14 +200,15 @@ class GroupCache:
                 return None
             self._entries.move_to_end(key)
             self.stats["hits"] += 1
+            entry.pins += bool(pin)
             return self._reply(entry, asked)
 
-    def begin(self, key: Key, histograms: Iterable[int] = (), prompt: bool = False):
+    def begin(self, key: Key, histograms: Iterable[int] = (), prompt: bool = False, pin: bool = False):
         """Look ``key`` up for a request asking for ``histograms``: a :class:`Hit`, a :class:`Pending` (another
         request is resolving it and will be done with it at once) or a :class:`Claim` (resolve it).
 
         ``prompt`` says this request ends right after its resolve (no features, no measures), so others may wait
-        for its claim."""
+        for its claim; ``pin`` pins a hit's entry."""
         asked = frozenset(int(h) for h in histograms)
         with self._lock:
             self._drop_moved(key)
@@ -202,6 +216,7 @@ class GroupCache:
             if entry is not None and asked <= entry.asked:
                 self._entries.move_to_end(key)
                 self.stats["hits"] += 1
+                entry.pins += bool(pin)
                 return Hit(self._reply(entry, asked))
             for claim in self._claims.get(key, ()):
                 if claim.prompt and asked <= claim.asked:
@@ -231,15 +246,24 @@ class GroupCache:
             self._drop_moved(key)
             if nbytes > limit:                           # never fits: what is held stays
                 return False
+            if key in self._entries and self._entries[key].pins:
+                return False                             # a job uses the held codes: they stay as they are
             old = self._entries.pop(key, None)
             if old is not None:
                 self._bytes -= old.nbytes
                 histograms = {**old.histograms, **histograms}
                 asked = asked | old.asked
-            while self._entries and self._bytes + nbytes > limit:
-                _, gone = self._entries.popitem(last=False)
-                self._bytes -= gone.nbytes
+            while self._bytes + nbytes > limit:
+                oldest = next((k for k, e in self._entries.items() if not e.pins), None)
+                if oldest is None:
+                    break                                # what is left is pinned
+                self._bytes -= self._entries.pop(oldest).nbytes
                 self.stats["evicted"] += 1
+            if self._bytes + nbytes > limit:
+                if old is not None:                      # put back what was held under the key
+                    self._entries[key] = old
+                    self._bytes += old.nbytes
+                return False
             self._entries[key] = _Entry(table, histograms, asked, nbytes)
             self._bytes += nbytes
             self.stats["kept"] += 1
@@ -258,7 +282,8 @@ class GroupCache:
 
     def _drop_moved(self, key: Key) -> None:
         """Drop the dataset's entries made under another fingerprint (the store changed, or was refreshed)."""
-        stale = [k for k in self._entries if k.dataset == key.dataset and k.fingerprint != key.fingerprint]
+        stale = [k for k, e in self._entries.items()
+                 if k.dataset == key.dataset and k.fingerprint != key.fingerprint and not e.pins]
         for k in stale:
             self._bytes -= self._entries.pop(k).nbytes
             self.stats["evicted"] += 1

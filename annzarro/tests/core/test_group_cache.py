@@ -251,8 +251,10 @@ def test_a_refused_fill_ends_the_claim_too():
 
 def test_a_pinned_hit_survives_clear_lru_and_a_moved_fingerprint_until_unpinned():
     one = result()
-    c = cache(budget=2 * one.codes.nbytes + 2048)
+    budget = [1 << 20]
+    c = gc.GroupCache(budget=lambda: budget[0])
     fill(c, key("a"))
+    budget[0] = 2 * c.size() + 100                                   # room for two entries
     assert c.peek(key("a"), pin=True) is not None
     c.clear()
     assert len(c) == 1 and isinstance(c.begin(key("a")), gc.Hit)

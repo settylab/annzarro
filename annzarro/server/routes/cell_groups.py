@@ -85,6 +85,12 @@ _GRID_MEASURE_AT_LIMIT = 290 << 20        # a grid measure at the cell limit: mo
 _COLUMN_ITEM = 8                          # a numeric source column is held as float64 at most
 _PER_GROUP = 40                           # bytes of accumulator per group and feature or measure
 
+#: What a hit that reads genes or measures reserves beyond its features' own figures. A hit has no resolve, whose
+#: 0.35 GB of temporaries covered the read's own until then: on the 95.6M-cell store one dependant of 2 genes, a hit,
+#: grew by 1364 MB and 1302 MB against the 1274.5 MB reserved (E6b's session-open runs), so the features' figures alone
+#: undercount real memory by up to about 90 MB. The ledger must never count less than is held.
+HIT_MARGIN_BYTES = 256 << 20
+
 #: Seconds between looks at a grouping another request is resolving (and at the lane, whether to give it way).
 _PENDING_POLL_S = 0.05
 
@@ -162,7 +168,8 @@ def _score_bytes(part, n_shown):
 def reservation(plan, n_shown, codes_held=False):
     """``(full, keep)`` bytes a request holds on the ledger while it runs and while it has given way.
 
-    ``codes_held``: the grouping came from the code cache, which holds (and counts) its codes, so nothing is resolved.
+    ``codes_held``: the grouping came from the code cache, which holds (and counts) its codes, so nothing is resolved;
+    a hit that reads features or measures adds ``HIT_MARGIN_BYTES`` while it reads.
 
     ``plan`` is a ``group_features.Plan`` (shape grouping) or a ``cell_grid.Plan`` (shape grid); ``n_shown`` the cells
     shown. A resolve: :func:`_resolve_bytes`, FX-E's measured formula. Features and measures (E5): the read-ahead
@@ -198,6 +205,8 @@ def reservation(plan, n_shown, codes_held=False):
         features_keep += _GRID_MEASURE_AT_LIMIT
     keep = max(resolve - _RESOLVE_PAUSE_FREES, 0) + features_keep + per_group
     full = resolve + features_full + per_group
+    if codes_held and (work.features or work.measures):
+        full += HIT_MARGIN_BYTES
     return full, min(keep, full)
 
 
@@ -223,6 +232,7 @@ class _Job:
         self.shape, self.plan, self.rows, self.want_codes = shape, plan, rows, want_codes
         self.grid = shape == "grid"
         self.cached = cached                           # the grouping from the code cache, found before queueing
+        self.pinned = None                             # the cache key a hit found in the stream pinned
         self.entries = plan.entries if self.grid else plan.groups.entries
         self.lane = plan.lane if self.grid else plan.groups.lane
         if cached is not None:                         # it reads its features and measures only (SHR-41)
@@ -248,8 +258,9 @@ class _Job:
             return None, None
         while True:
             # every claim is filled as soon as its groups are known (the grouping event), so each may be waited for
-            found = CODES.begin(key, self.plan.groups.request.histograms, prompt=True)
+            found = CODES.begin(key, self.plan.groups.request.histograms, prompt=True, pin=True)
             if isinstance(found, group_cache.Hit):
+                self.pinned = key                      # unpinned when the stream ends
                 return found.result, None
             if isinstance(found, group_cache.Claim):
                 return None, found
@@ -300,6 +311,9 @@ class _Job:
         finally:
             if claim is not None:
                 claim.abandon()
+            if self.pinned is not None:
+                CODES.unpin(self.pinned)
+                self.pinned = None
             if events is not None:
                 events.close()
 
@@ -374,11 +388,13 @@ def register_cell_groups_routes(app_, api_version):
                 return _error(400, "set_length_mismatch",
                               f"Set '{ref}' has {members.size} cells; the request shows {job.n_shown}.",
                               count=int(members.size), shown=job.n_shown)
+        unpin = None
         if shape == "grouping":                        # a hit reads no column: its lane and memory are its features'
             key = group_cache.key_of(dataset_path, plan.groups.cache_key, job.n_shown)
-            cached = None if key is None else CODES.peek(key, parsed.histograms)
-            if cached is not None:
+            cached = None if key is None else CODES.peek(key, parsed.histograms, pin=True)
+            if cached is not None:                     # pinned until the stream ends, however it ends
                 job = _Job(shape, plan, rows, job.want_codes, cached=cached)
+                unpin = lambda: CODES.unpin(key)       # noqa: E731
 
         full, keep = reservation(plan, job.n_shown, codes_held=job.cached is not None)
 
@@ -390,6 +406,6 @@ def register_cell_groups_routes(app_, api_version):
             return lambda: admitted.__exit__(None, None, None)
         return compute_stream.respond(
             job.lane, nbytes=full, keep_bytes=keep, what="this request", wait_s=QUEUE_WAIT_S, admit=admit,
-            admit_bytes=full if job.lane == "heavy" else 0,
+            admit_bytes=full if job.lane == "heavy" else 0, on_release=unpin,
             work=job.frames, queued_frame=job.queued_frame, mimetype=MIMETYPE,
             headers={"X-Annzarro-Groups-Version": str(cell_groups.ALGORITHM_VERSION)})

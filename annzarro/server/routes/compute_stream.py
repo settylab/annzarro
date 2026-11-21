@@ -589,13 +589,14 @@ def respond(lane: str, *, nbytes: int, keep_bytes: int, what: str, wait_s: float
             admit: Callable[[], Callable[[], None]], work: Callable[[Job], Iterator[bytes]],
             queued_frame: Callable[[Job], dict], mimetype: str, headers: Optional[Dict[str, str]] = None,
             lanes: Optional[Lanes] = None, ledger: Optional[Ledger] = None,
-            admit_bytes: Optional[int] = None) -> Response:
+            admit_bytes: Optional[int] = None, on_release: Optional[Callable[[], None]] = None) -> Response:
     """The streamed reply of one computation in ``lane``.
 
     ``nbytes`` is reserved on the ledger for the job (``keep_bytes`` of it while the job has given way, ``what``
     names it in a refusal); ``admit()`` takes any other admission (the read guard) and returns its release; ``work(job)``
     gives the bytes of the reply (frames and blocks) and turns its own failures into an error frame; ``admit_bytes``
     is what ``admit()`` takes of the read guard's budget (None: ``nbytes``; 0: nothing), entered in the lanes' fit;
+    ``on_release()`` is called with the other releases, once, however the stream ends (the code cache's unpin);
     ``queued_frame(job)`` is the frame a waiting job is sent at once and whenever its queue changes.
 
     A job whose lane and memory are free at once streams ``work`` as it is, and a refusal of ``admit()`` is raised
@@ -607,7 +608,7 @@ def respond(lane: str, *, nbytes: int, keep_bytes: int, what: str, wait_s: float
     ledger = LEDGER if ledger is None else ledger
     job = lanes.enter(lane, nbytes, keep_bytes, nbytes if admit_bytes is None else admit_bytes,
                       read_guard.current_requester())
-    releases = [job.leave]
+    releases = [job.leave] if on_release is None else [on_release, job.leave]
     released = []
 
     def release():
