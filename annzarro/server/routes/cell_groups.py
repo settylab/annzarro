@@ -74,8 +74,10 @@ MIMETYPE = "application/x-annzarro-groups-stream"
 _BODY_FIELDS = ("shape", "mode", "partitionings", "sets", "small", "subset", "features", "measures", "want", "density",
                 "estimate_only", "confirm")
 
-#: Bytes of the reservation (E3's formula for a resolve, E5's additions for features; lead-notes "E6a ledger formula").
-_SLAB_TEMPORARIES = 100 << 20             # the slabs a resolve works on
+#: Bytes of the reservation: FX-E's measured formula for a resolve (superseding E3's), E5's additions for features.
+_RESOLVE_TEMPORARIES = int(0.35 * 2 ** 30)  # what a resolve works on besides its codes and its source column
+_RESOLVE_PAUSE_FREES = 128 << 20          # what a resolve gives back when it gives way (FX-E: keep = full - 128 MB)
+_WIDE_COMBINATIONS = 65_534               # past this many possible combinations an intersection holds 4 B a cell more
 _SEGMENT_TEMPORARIES = 180 << 20          # a feature job's segment temporaries, at most
 _GRID_MEASURE_AT_LIMIT = 290 << 20        # a grid measure at the cell limit: moments, codes and the lookup
 _COLUMN_ITEM = 8                          # a numeric source column is held as float64 at most
@@ -112,11 +114,41 @@ def _partitionings_in(body):
     return total
 
 
-def _all_parts(parts):
+def _level_bound(part):
+    """The most levels a partitioning can have, from its recipe alone (the store's categories are not counted)."""
+    if part.member is not None or part.kind == "bool":
+        return 3                                            # in, out and no value
+    if part.binning is not None and part.binning.method != "categories":
+        b = part.binning
+        bins = b.bins if b.bins is not None else len(b.thresholds or ()) + 1
+        return bins + 3                                     # the bins, the zero bin, the two outsides or no value
+    if part.spec.levels is not None:
+        return len(part.spec.levels) + 2                    # the levels, the rest and no value
+    return cell_groups.GROUP_LIMIT + 2
+
+
+def _resolve_bytes(parts, n_shown, n_cells, grid=False):
+    """Bytes of resolving one grouping's ``parts`` (FX-E's measurement): 4 B a cell shown, the largest numeric
+    source column (8 B a cell read: of every cell for ``edges_from: all``, else of the cells shown), 0.35 GB of
+    temporaries, 4 B a cell more when an intersection may hold over 65,534 combinations; a score source adds 4 B a
+    cell read and its own reservation, a ``cell-group`` source its own grouping's reservation while it runs."""
+    full, column, combinations = 4 * n_shown + _RESOLVE_TEMPORARIES, 0, 1
     for part in parts:
-        yield part
+        combinations *= _level_bound(part)
         if part.nested is not None:
-            yield from part.nested.all_parts()
+            full += _resolve_bytes(part.nested.parts, n_shown, n_cells)
+            continue
+        if part.kind != "number":
+            continue
+        binned_all = part.binning is not None and part.binning.edges_from == "all"
+        n_source = n_cells if binned_all else n_shown
+        column = max(column, _COLUMN_ITEM * n_source)
+        if part.score is not None:
+            accumulators, read_ahead = _score_bytes(part, n_shown)
+            full += 4 * n_source + accumulators + read_ahead
+    if not grid and len(parts) > 1 and combinations > _WIDE_COMBINATIONS:
+        full += 4 * n_shown
+    return full + column
 
 
 def _score_bytes(part, n_shown):
@@ -129,39 +161,19 @@ def reservation(plan, n_shown):
     """``(full, keep)`` bytes a request holds on the ledger while it runs and while it has given way.
 
     ``plan`` is a ``group_features.Plan`` (shape grouping) or a ``cell_grid.Plan`` (shape grid); ``n_shown`` the cells
-    shown. A resolve (E3): two bytes per cell shown for the codes (four for a grid's), a byte per cell for the slot
-    array of an intersection of several partitionings, the largest numeric source column as float64 (of every cell,
-    for ``edges_from: all``, else of the cells shown), the slab temporaries (100 MB); a score source adds four bytes
-    per cell and its own reservation, a ``cell-group`` source the codes of the grouping it resolves. Features and
-    measures (E5): the read-ahead (12 bytes an entry, up to a gene of every cell), the segment temporaries (180 MB),
-    the accumulators of each group (40 bytes per feature or measure), a column per score or measure and its score's
-    own reservation; a grid's measure at the cell limit adds 290 MB.
+    shown. A resolve: :func:`_resolve_bytes`, FX-E's measured formula. Features and measures (E5): the read-ahead
+    (12 bytes an entry, up to a gene of every cell), the segment temporaries (180 MB), the accumulators of each group
+    (40 bytes per feature or measure), a column per score or measure and its score's own reservation; a grid's
+    measure at the cell limit adds 290 MB.
 
-    ``keep`` is what stays held while the job has given way: the codes, the column in hand and the accumulators; the
-    read-ahead and the temporaries are given back.
+    ``keep`` is what stays held while the job has given way: the resolve's reservation less the 128 MB it gives
+    back (FX-E), the columns in hand and the accumulators; the read-ahead and the segment temporaries are given back.
     """
     grid = isinstance(plan, cell_grid.Plan)
     work = plan.work
     top = plan.axes if grid else plan.groups.top.parts
-    parts = list(_all_parts(top))
     n_cells = plan.n_cells if grid else plan.groups.n_cells
-    codes = (4 if grid else 2) * n_shown
-    slot = n_shown if not grid and len(top) > 1 else 0
-    column, scores_keep, scores_full = 0, 0, 0
-    upstream = 0
-    for part in parts:
-        if part.nested is not None:
-            upstream += 2 * n_shown
-            continue
-        if part.kind != "number":
-            continue
-        binned_all = part.binning is not None and part.binning.edges_from == "all"
-        n_source = n_cells if binned_all else n_shown
-        column = max(column, _COLUMN_ITEM * n_source)
-        if part.score is not None:
-            accumulators, read_ahead = _score_bytes(part, n_shown)
-            scores_keep += 4 * n_source + accumulators
-            scores_full += 4 * n_source + accumulators + read_ahead
+    resolve = _resolve_bytes(top, n_shown, n_cells, grid=grid)
     features_keep, features_full = 0, 0
     for vector in work.vectors:
         held = _COLUMN_ITEM * n_shown
@@ -180,8 +192,8 @@ def reservation(plan, n_shown):
     if grid and work.measures:
         features_full += _GRID_MEASURE_AT_LIMIT
         features_keep += _GRID_MEASURE_AT_LIMIT
-    keep = codes + slot + upstream + column + scores_keep + features_keep + per_group
-    full = codes + slot + upstream + column + scores_full + features_full + per_group + _SLAB_TEMPORARIES
+    keep = max(resolve - _RESOLVE_PAUSE_FREES, 0) + features_keep + per_group
+    full = resolve + features_full + per_group
     return full, min(keep, full)
 
 
@@ -364,5 +376,6 @@ def register_cell_groups_routes(app_, api_version):
             return lambda: admitted.__exit__(None, None, None)
         return compute_stream.respond(
             job.lane, nbytes=full, keep_bytes=keep, what="this request", wait_s=QUEUE_WAIT_S, admit=admit,
+            admit_bytes=full if job.lane == "heavy" else 0,
             work=job.frames, queued_frame=job.queued_frame, mimetype=MIMETYPE,
             headers={"X-Annzarro-Groups-Version": str(cell_groups.ALGORITHM_VERSION)})
