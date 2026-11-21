@@ -402,6 +402,17 @@ def test_groupings_are_listed_under_obs_and_choosing_one_switches_the_type(page,
     _wait_legend(page, TYPES)
     cfg = _colour_cfg(page)
     assert cfg["type"] == "cell-group" and cfg["key"] == GA, "the setting stores cell-group, never obs"
+    # the entry's value is a way to choose: no link, panel set or history holds it
+    view = page.evaluate("() => window.sessionManager.captureView()")
+    saved = view["layout"]["panelConfigs"][P]["color"]
+    assert saved["type"] == "cell-group" and saved["key"] == GA
+    assert saved["history"]["obs"]["key"] == "condition", "the obs column it had is remembered as it was"
+    assert "\u0001" not in json.dumps(view), "the entry's value is stored nowhere"
+    # and the obs column choice behaves as before
+    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "obs")
+    until(page, "(t) => document.querySelector(`${t} select.axis-key-select[data-axis=\"color\"]`).value === 'condition'", C)
+    _wait_legend(page, gstore.CONDITIONS)
+    assert "\u0001" not in json.dumps(page.evaluate("() => window.sessionManager.captureView()"))
 
 
 # ------------------------------------------------------------------ 6. the codes under the memory guard

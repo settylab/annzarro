@@ -69,6 +69,33 @@ const _providers = new Map();
 /** The sources every dataset has, read by plot-make.js itself; any other type is a provider's. */
 const BUILT_IN = new Set(['none', 'obs', 'obsm', 'obsp', 'layer', 'var', 'varm', 'varp']);
 
+/** What starts the value of an entry a built-in type's key list holds for a provider (never stored: it is a way to choose). */
+const ALSO = '\u0001';
+
+/**
+ * The entries a built-in type's key list adds for the providers listed under it too (a grouping under obs, UX 5), for a
+ * consumer's roles: each entity as `{value, text, group}`, grouped under the provider's `alsoListedGroup`. Choosing one
+ * switches the type select to the provider's type (parseAlsoListed); the value itself is never stored.
+ * @param {string} builtIn - 'obs'
+ * @param {string} consumer - a panel type, e.g. 'cell-plot'
+ * @param {string[]} roles
+ */
+export function alsoListedEntries(builtIn, consumer, roles) {
+    return sourcesFor(consumer, roles).filter(p => p.alsoListedUnder === builtIn && p.alsoListedGroup)
+        .flatMap(p => p.entities().map(e => ({ value: `${ALSO}${p.type}${ALSO}${e.id}`, text: e.title, group: p.alsoListedGroup })));
+}
+
+/**
+ * The provider's type and entity an entry of alsoListedEntries stands for, or null for any other value.
+ * @param {string} value
+ * @returns {{type: string, key: string}|null}
+ */
+export function parseAlsoListed(value) {
+    if (typeof value !== 'string' || !value.startsWith(ALSO)) return null;
+    const [type, key] = value.slice(ALSO.length).split(ALSO);
+    return getSource(type) && key ? { type, key } : null;
+}
+
 /** Register (or replace) a provider. */
 export function registerSource(provider) {
     _providers.set(provider.type, provider);
