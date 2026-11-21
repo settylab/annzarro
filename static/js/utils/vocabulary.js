@@ -27,6 +27,8 @@ const word = Object.freeze({
     split: 'split'
 });
 
+const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
 const plural = Object.freeze({
     factor: 'factors',
     level: 'levels',
@@ -127,9 +129,45 @@ const cellGene = Object.freeze({
     csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' })
 });
 
+/**
+ * What a notice says while a computation waits or runs (SHR-47, SHR-48, UX 3.5): the server's place for it and the
+ * time left. The page never names whose a job ahead is unless it is its own; these are the fallback sentences.
+ */
+const progress = Object.freeze({
+    ahead: (n) => `Waiting for the server: ${n.toLocaleString('en-US')} ${n === 1 ? 'computation' : 'computations'} ahead.`,
+    sharing: (n) => `Sharing the server with ${n.toLocaleString('en-US')} other ${n === 1 ? 'computation' : 'computations'}.`,
+    left: (duration, sharing) => `${duration} left${sharing ? ' while sharing' : ''}`,
+    keepWorking: `${capital(plural.grouping)} and counts keep working.`
+});
+
+/**
+ * The sentence a notice says for a reason the server gives (the engine's limits, E6a's route, E6b's busy wait), and
+ * whether trying again can help: a limit gives the same answer every time, so it offers no Retry.
+ */
+const reasons = Object.freeze({
+    too_many_measures: Object.freeze({ retry: false,
+        text: `It asks for more ${plural.statistic} at once than one computation takes. Use fewer ${plural.statistic}.` }),
+    too_many_thresholds: Object.freeze({ retry: false,
+        text: 'It compares one gene with more thresholds than one computation takes. Use fewer thresholds for that gene.' }),
+    range_too_wide: Object.freeze({ retry: false,
+        text: 'Its values span more than a number can hold, so no bin width fits. Set a range, or leave out the extreme values.' }),
+    unsupported_column: Object.freeze({ retry: false,
+        text: 'It reads a column whose values are not numbers, categories or text (dates, for example). Use another column.' }),
+    too_many_values: Object.freeze({ retry: false,
+        text: `It asks for too many values at once (${plural.group} times genes and ${plural.statistic}). Use fewer ${plural.group} or fewer genes.` }),
+    too_many_partitionings: Object.freeze({ retry: false,
+        text: `It has more ${plural.factor} than a ${word.grouping} holds. Remove a ${word.factor}.` }),
+    obsp_too_large: Object.freeze({ retry: false,
+        text: 'A row of an obsp matrix can be a source for up to 1M cells. Use a subset of up to 1M cells, or an obs or obsm column.' }),
+    set_length_mismatch: Object.freeze({ retry: true,
+        text: `A ${word.set} no longer matched the ${word.cellsShown}; they changed while it was sent. Try again.` }),
+    read_busy: Object.freeze({ retry: true,
+        text: 'The server was busy with other computations and could not start this one in time. Try again in a moment.' })
+});
+
 /** "1 group", "28 groups", "1,204 levels". `noun` is a key of `word` that has a plural. */
 function count(n, noun) {
     return `${n.toLocaleString('en-US')} ${n === 1 ? word[noun] : plural[noun]}`;
 }
 
-export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene });
+export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, progress, reasons });

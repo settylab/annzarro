@@ -6,6 +6,10 @@
  * available exactly when it has a target, and running it does exactly that, so a button cannot be offered and then do
  * nothing: the registry, not the provider, makes `available` and `run` agree. A provider says which hosts are its own
  * (`owns`) and brings only the actions that make sense there.
+ *
+ * A host may hold several providers' sources (a plot with a score on x and a grouping on colour). Its notice is one
+ * provider's (utils/host-binding.js's painter decides which), and the notice's buttons go to THAT provider, by its id
+ * (`routeBy`). Only when no provider's notice is shown does the first provider that owns the host answer.
  */
 
 /** Every action a notice may offer. A provider may declare only some of them. */
@@ -24,9 +28,20 @@ const ACTIONS = Object.freeze(['score-offer', 'score-compute', 'score-cancel', '
 function createActionRegistry() {
     /** @type {ActionProvider[]} */
     const providers = [];
+    /** The id of the provider whose notice a host shows, or null. */
+    let shownBy = () => null;
+
+    function ownerOf(host) {
+        const id = shownBy(host);
+        if (id) {
+            const shown = providers.find(p => p.id === id);
+            if (shown) return shown.owns(host) ? shown : null;
+        }
+        return providers.find(p => p.owns(host)) || null;
+    }
 
     function targetOf(name, host) {
-        const owner = providers.find(p => p.owns(host));
+        const owner = ownerOf(host);
         const action = owner && owner.actions[name];
         if (!action) return null;
         const target = action.target(host);
@@ -44,6 +59,10 @@ function createActionRegistry() {
                 }
             }
             providers.push(provider);
+        },
+        /** Say whose notice a host shows (the painter's), so its buttons go to that provider. */
+        routeBy(fn) {
+            shownBy = typeof fn === 'function' ? fn : () => null;
         },
         providerIds() {
             return providers.map(p => p.id);
@@ -66,5 +85,8 @@ function createActionRegistry() {
     };
 }
 
-/** The page's registry: score-source.js registers the plots' provider, panels/table-utilities/table-score-ui.js the tables'. */
+/**
+ * The page's registry: score-source.js registers the plots' provider, panels/table-utilities/table-score-ui.js the tables';
+ * utils/host-binding.js routes it by the painter.
+ */
 export const actions = createActionRegistry();

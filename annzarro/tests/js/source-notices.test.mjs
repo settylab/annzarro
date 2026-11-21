@@ -47,7 +47,7 @@ test('a fake vocabulary gives its own nouns: "Grouping \'G1\' was deleted."', ()
     assert.equal(SN.describeSource({ state: 'awaiting', title: 'G1', estimate: { seconds: 40 } }, {}, GROUPING).tag.text, 'Grouping not computed');
     assert.equal(SN.describeSource({ state: 'computing', title: 'G1' }, {}, GROUPING).tag.text, 'Grouping…');
     assert.equal(SN.describeSource({ state: 'queued', title: 'G1' }, { role: 'colour' }, GROUPING).headline,
-        "'G1' is waiting for another grouping to finish. This plot has no colour.");
+        "'G1' is waiting for another grouping to finish. This plot has no color.");
     assert.equal(SN.describeSource({ state: 'cancelled', title: 'G1' }, { role: 'x' }, GROUPING).headline, "'G1' was cancelled.");
     for (const state of ['deleted', 'failed', 'refused', 'awaiting', 'cancelled', 'queued', 'computing', 'updating']) {
         const note = SN.describeSource({ state, title: 'G1' }, {}, GROUPING);

@@ -119,13 +119,13 @@ function findStrip(anchor) {
     return null;
 }
 
-/** What each host's strip states: {coverage, unit, persistent, tags, open}. */
+/** What each host's strip states: {coverage, unit, persistent, tags, open, progress}. */
 const _state = new WeakMap();
 
 function stateOf(host) {
     let s = _state.get(host);
     if (!s) {
-        s = { coverage: null, unit: 'values', persistent: false, tags: new Map(), open: null };
+        s = { coverage: null, unit: 'values', persistent: false, tags: new Map(), open: null, progress: null };
         _state.set(host, s);
     }
     return s;
@@ -217,14 +217,29 @@ function stripHtml(host, s) {
                 + `<div class="ps-pop-do">${actionButtons(tag.pop.actions, host)}</div></div>`;
         }
     }
+    const progress = s.progress ? progressHtml(s.progress) : '';
     return `<button type="button" class="ps-summary" aria-haspopup="dialog" aria-expanded="${s.open === 'main'}"`
         + `${hasDetail ? '' : ' disabled'}>`
         + `<span class="ps-text"><b class="ps-headline">${headline}</b>`
         + `<span class="ps-chips">${chipHtml}</span></span>`
         + (hasDetail ? '<span class="ps-details">details</span>' : '')
         + '</button>'
-        + `<span class="ps-tags">${tags}</span>`
+        + `<span class="ps-tags">${progress}${tags}</span>`
         + mainPop + tagPops;
+}
+
+/** A slim progress bar in the strip (setStatusProgress), its fill's width set by `fillProgress` after it is written. */
+function progressHtml(p) {
+    const mode = p.determinate ? 'determinate' : 'indeterminate';
+    return `<span class="ps-progress"><span class="source-progress source-progress--strip" role="progressbar" data-mode="${mode}"`
+        + ` aria-valuemin="0" aria-valuemax="100"${p.determinate ? ` aria-valuenow="${p.pct}"` : ''}`
+        + ` aria-valuetext="${escapeHtml(p.sentence)}"><span class="source-progress__fill"></span></span>`
+        + (p.text ? `<span class="ps-progress-text">${escapeHtml(p.text)}</span>` : '') + '</span>';
+}
+
+function fillProgress(el, p) {
+    const fill = p && p.determinate && el.querySelector('.ps-progress .source-progress__fill');
+    if (fill) fill.style.width = `${p.pct}%`;
 }
 
 /** Draw (or remove) the strip of `host` from its state. */
@@ -238,7 +253,7 @@ function paint(host) {
         if (el) el.remove();
         return null;
     }
-    if (!s.persistent && cov.isComplete && s.tags.size === 0) {
+    if (!s.persistent && cov.isComplete && s.tags.size === 0 && !s.progress) {
         if (el) el.remove();
         return null;
     }
@@ -263,6 +278,7 @@ function paint(host) {
     if (el._html !== html) {
         el.innerHTML = html;
         el._html = html;
+        fillProgress(el, s.progress);
     }
     // the whole statement as text, one reason per line (for tests, logs and
     // copy); not a title: nothing about the strip pops up on hover
@@ -291,6 +307,21 @@ export function renderCoverageNotice(host, coverage, unit, { persistent } = {}) 
     s.coverage = coerce(coverage, unit);
     s.unit = unit || s.coverage.unit;
     if (persistent !== undefined) s.persistent = persistent;
+    return paint(host);
+}
+
+/**
+ * Put (or with null take away) a slim progress bar at the right of the strip, before the tags: a long wait of a plot
+ * that keeps its drawing meanwhile (utils/host-binding.js), so the plot is not covered. `pct` is 0 to 100 while
+ * determinate; `sentence` is the notice's whole sentence (aria-valuetext), `text` what is written beside the bar.
+ * @param {HTMLElement} host
+ * @param {{determinate: boolean, pct?: number, sentence: string, text?: string}|null} progress
+ */
+export function setStatusProgress(host, progress) {
+    if (!stripAnchor(host)) return null;
+    const s = stateOf(host);
+    if (!progress && !s.progress) return findStrip(stripAnchor(host));
+    s.progress = progress || null;
     return paint(host);
 }
 
