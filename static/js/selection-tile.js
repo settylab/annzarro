@@ -8,7 +8,8 @@ import { lastSessionElement } from './utils/last-session-card.js';
 import { createLoadActions, createDatasetBadge, createStyleBadge } from './panelset-load-ui.js';
 import { notify } from './utils/notify.js';
 import { onDefault } from './utils/session-style.js';
-import { keptInUse } from './utils/panel-references.js';
+import { keptInUse, usersOf } from './utils/panel-references.js';
+import { deleteInUseText } from './panels/cell-grouping/status.js';
 
 export class SelectionTile {
     /**
@@ -548,11 +549,58 @@ export class SelectionTile {
       return option;
     }
   
+    /**
+     * The × of a closed panel. A panel in use (another panel's configuration names it: panel-references.js) is deleted
+     * on a second press: the first turns the button into the question, "Delete 'T cell score'? 2 plots and 1 table use
+     * it." (design-gene-signature 7.1, GRP-13), as Clear closed panels does. Escape, a focus move or a few seconds
+     * put it back. A panel nothing uses is deleted at once, as before.
+     * @private
+     */
+    _armDelete(button, panelId) {
+      const users = usersOf(panelId);
+      if (!users.length || button.dataset.armed === '1') return false;
+      const panel = this.panels.get(panelId);
+      const question = deleteInUseText(panel ? panel.getTitle() : panelId, users);
+      const was = { text: button.textContent, title: button.title, style: button.getAttribute('style') };
+      button.dataset.armed = '1';
+      button.textContent = 'Delete?';
+      button.setAttribute('aria-label', question);
+      button.title = question;
+      // wide enough for its word, over the card's corner (the stylesheet sizes the × as a 20px circle)
+      Object.assign(button.style, { width: 'auto', borderRadius: '10px', padding: '0 6px', fontSize: '0.75rem', zIndex: '2' });
+      const line = document.createElement('div');
+      line.className = 'delete-panel-question';
+      line.setAttribute('role', 'status');
+      line.textContent = question;
+      Object.assign(line.style, { fontSize: '0.75rem', color: 'var(--az-danger-text)', marginTop: '4px' });
+      line.addEventListener('click', (e) => e.stopPropagation());
+      const option = button.closest('.source-panel-option');
+      if (option) option.appendChild(line);
+      const disarm = () => {
+        clearTimeout(timer);
+        button.removeEventListener('blur', disarm);
+        button.removeEventListener('keydown', onKey);
+        line.remove();
+        if (button.dataset.armed !== '1') return;
+        delete button.dataset.armed;
+        button.textContent = was.text;
+        button.title = was.title;
+        button.removeAttribute('aria-label');
+        if (was.style === null) button.removeAttribute('style'); else button.setAttribute('style', was.style);
+      };
+      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); disarm(); } };
+      const timer = setTimeout(disarm, 6000);
+      button.addEventListener('blur', disarm);
+      button.addEventListener('keydown', onKey);
+      return true;
+    }
+
     _attachDeleteHandlers(grid) {
       grid.querySelectorAll('.delete-panel-btn').forEach(button => {
         button.addEventListener('click', (e) => {
           e.stopPropagation();
           const panelId = button.dataset.id;
+          if (panelId && this._armDelete(button, panelId)) return;
           if (panelId) {
             const panelInstance = this.panels.get(panelId);
             if (panelInstance) {

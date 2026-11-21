@@ -25,7 +25,7 @@ import {
     levelPreview, tickLevel, tickAll, tickNone, sortByCells, renameLevel, setRest, moveLevel, levelRows,
     tooManyLevelsText, scoreFactor, geneFactor, tableFactor, neighborsFactor
 } from '../../../static/js/panels/cell-grouping/factors.js';
-import { describeStatus, smallLine, noGroupReasons, usedByText } from '../../../static/js/panels/cell-grouping/status.js';
+import { describeStatus, smallLine, noGroupReasons, usedByText, deleteInUseText } from '../../../static/js/panels/cell-grouping/status.js';
 import { settingsSummary, separatorProblem, thresholdProblem } from '../../../static/js/panels/cell-grouping/settings.js';
 
 const golden = (name) => JSON.parse(readFileSync(new URL(`../data/golden/${name}.json`, import.meta.url), 'utf8'));
@@ -101,6 +101,10 @@ test('"Used by" names the users by kind: plots, tables, groupings (GRP-7)', () =
     assert.equal(usedByText([{ kind: 'cell-plot' }]), 'Used by 1 plot');
     assert.equal(usedByText([{ kind: 'cell-plot' }, { kind: 'cell-count' }, { kind: 'cell-table' }]), 'Used by 2 plots, 1 table');
     assert.equal(usedByText([{ kind: 'cell-grouping' }, { kind: 'cell-gene' }]), 'Used by 1 plot, 1 grouping');
+    assert.equal(usedByText([{ kind: 'gene-set' }, { kind: 'some-future-type' }]), 'Used by 2 panels', 'a kind not declared counts as a panel');
+    assert.equal(deleteInUseText('T cell score', [{ kind: 'cell-plot' }]), "Delete 'T cell score'? 1 plot uses it.");
+    assert.equal(deleteInUseText('Grouping 1', [{ kind: 'cell-plot' }, { kind: 'cell-count' }, { kind: 'gene-table' }]),
+        "Delete 'Grouping 1'? 2 plots and 1 table use it.");
 });
 
 // ------------------------------------------------------------------------------------------- loops in menus

@@ -644,3 +644,52 @@ def test_toggle_controls_hides_and_shows_the_grouping_bar_and_a_table_still_togg
     until(page, f"() => !({shown})('{T} .table-controls')")
     page.click(f"{T} .tile-toggle-controls")
     until(page, f"() => ({shown})('{T} .table-controls')")
+
+
+# ------------------------------------------------------------------ 12. delete from the panel menu
+
+SIG = "gene-signature-S"
+PLOT = "cell-plot-P"
+
+
+def _chooser(page, served):
+    sig = {"id": SIG, "title": "T cell score", "genes": [gstore.gene(i) for i in range(12, 24)]}
+    plot = {"id": PLOT, "title": "Cell Plot 1", "x": {"type": "obsm", "key": "X_umap", "column": "0"},
+            "y": {"type": "obsm", "key": "X_umap", "column": "1"}, "z": None,
+            "color": {"type": "gene-score", "key": SIG, "column": ""}}
+    lonely = {"id": "cell-table-L", "title": "Lonely table", "columns": [{"type": "obs", "key": "cell_type", "column": ""}]}
+    page.goto(_url(served, [PLOT], {PLOT: plot, SIG: sig, "cell-table-L": lonely}))
+    page.wait_for_selector(f'.tile[data-tile-id="{PLOT}"] .js-plotly-plot', timeout=30000)
+    page.click(f'.tile[data-tile-id="{PLOT}"] .tile-split-h')
+    page.wait_for_selector(f".tile-selector .delete-panel-btn[data-id='{SIG}']")
+
+
+def test_a_panel_in_use_is_deleted_on_a_second_press_that_the_button_asks_for(page, served):
+    _chooser(page, served)
+    btn = f".tile-selector .delete-panel-btn[data-id='{SIG}']"
+    question = "Delete 'T cell score'? 1 plot uses it."
+    page.click(btn)
+    assert page.inner_text(btn) == "Delete?" and page.get_attribute(btn, "aria-label") == question
+    assert page.inner_text(f".tile-selector .source-panel-option[data-id='{SIG}'] .delete-panel-question") == question
+    assert page.evaluate(f"() => !!window.PanelManager.getPanel('{SIG}')"), "the first press deletes nothing"
+    # Escape puts the button back; a focus move does too
+    page.focus(btn)
+    page.keyboard.press("Escape")
+    assert page.inner_text(btn) == "×" and page.locator(".delete-panel-question").count() == 0
+    page.focus(btn)
+    page.keyboard.press("Enter")
+    assert page.inner_text(btn) == "Delete?"
+    page.keyboard.press("Tab")
+    assert page.inner_text(btn) == "×"
+    # Enter twice deletes
+    page.focus(btn)
+    page.keyboard.press("Enter")
+    page.keyboard.press("Enter")
+    until(page, f"() => !window.PanelManager.getPanel('{SIG}')")
+
+
+def test_a_panel_nothing_uses_is_deleted_on_the_first_press(page, served):
+    _chooser(page, served)
+    page.click(".tile-selector .delete-panel-btn[data-id='cell-table-L']")
+    until(page, "() => !window.PanelManager.getPanel('cell-table-L')")
+    assert page.locator(".delete-panel-question").count() == 0
