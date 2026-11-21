@@ -26,12 +26,14 @@ const PALETTE = ['#111111', '#222222', '#333333', '#444444'];
 const inputNames = { x: 'cell_type', y: 'condition', split: 'condition', factor: 'sample' };
 const opts = (options = {}, extra = {}) => ({ options, words, inputNames, palette: PALETTE, theme: PLOT_PALETTES.light, measureSource: 'score', ...extra });
 
-const withContract = (reply) => ({ n_shown: reply.n_counted, ...reply,
-    axes: reply.axes.map((a) => {
-        const bins = a.levels.filter((id) => id.startsWith('bin:')).length;
-        const binned = bins ? { edges: Array.from({ length: bins + 1 }, (_, k) => k * 10), bins_made: bins, degenerate: false } : {};
-        return { n_outside: [0, 0], ...binned, ...a };
-    }) });
+const withContract = ({ counts, measure, ...reply }) => ({
+    reply: { n_shown: reply.n_counted, ...reply,
+        axes: reply.axes.map((a) => {
+            const bins = a.levels.filter((id) => id.startsWith('bin:')).length;
+            const binned = bins ? { edges: Array.from({ length: bins + 1 }, (_, k) => k * 10), bins_made: bins, degenerate: false } : {};
+            return { n_outside: [0, 0], ...binned, ...a };
+        }) },
+    counts, measures: measure || null });
 const gridOf = (reply) => M.readGrid(withContract(reply));
 const tableOf = (config, reply, inputs) => M.countTable(config, gridOf(reply), inputs.map((input) => ({ input })));
 

@@ -34,10 +34,10 @@ BUILD = """async () => {
   const T = await import('/static/js/utils/plot-theme.js');
   const norm = (c) => M.normalizeCountPlot({version: 1, ...c}).config;
   const obs = (key, extra = {}) => ({source: {type: 'obs', key}, ...extra});
-  const contract = (r) => ({n_shown: r.n_counted, ...r, axes: r.axes.map((a) => {
+  const contract = ({counts, measure, ...r}) => ({reply: {n_shown: r.n_counted, ...r, axes: r.axes.map((a) => {
     const bins = a.levels.filter((id) => id.startsWith('bin:')).length;
     return {n_outside: [0, 0], ...(bins ? {edges: Array.from({length: bins + 1}, (_, k) => k * 10), bins_made: bins, degenerate: false} : {}), ...a};
-  })});
+  })}, counts, measures: measure || null});
   const make = (config, reply, inputs) => ({config, table: M.countTable(config, M.readGrid(contract(reply)), inputs.map((input) => ({input})))});
   const words = {count: 'Cell count', fill: 'Fill', hoverCount: 'Cells', hoverShare: 'Share', share: () => 'Share',
                  measure: () => 'Measure', topLevel: () => 'Top level'};
