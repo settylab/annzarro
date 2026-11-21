@@ -371,6 +371,17 @@ export function hoverLabelsCheck({ points, labels, chars }) {
     return probed(_check(need, held(), ledger.plotCount(), null, points), need.heap + need.off, 'hover labels');
 }
 
+/**
+ * Before the codes of a grouping are asked for (CAT-4): `bytes` of typed array, off the JS heap, counted against the
+ * tab's buffers and the RAM budget, next to what is held. Holdings no consumer on screen pins give way first, as for any
+ * check.
+ * @param {{bytes: number, n: number}} p - the codes' bytes, and the cells they cover
+ */
+export function codesCheck({ bytes, n }) {
+    const need = { heap: 0, off: bytes, gpu: 0, contexts: 0 };
+    return probed(_check(need, held(), ledger.plotCount(), { need: bytes, held: ledger.buffers() }, n), bytes, 'grouping');
+}
+
 /** Before a recolour of the drawn regular plot `gd` (large-plot mode redraws, and is checked as a draw). */
 export function recolourCheck(gd) {
     const n = Number(gd && gd._pointCount) || 0;
