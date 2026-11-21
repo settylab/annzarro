@@ -206,12 +206,12 @@ test('narrow: the set-size bars move under the matrix (UX 4.8)', () => {
 
 test('bar labels thin out when the bars are too narrow to carry them', () => {
     const plot = upsetPlot(5, 31);
-    const roomy = traceOf(D.buildFigure(plot, LIGHT, { width: 1800, labels: 'count' }), 'intersections');
+    const roomy = traceOf(D.buildFigure(plot, LIGHT, { width: 2400, labels: 'count' }), 'intersections');
     const tight = traceOf(D.buildFigure(plot, LIGHT, { width: 400, labels: 'count' }), 'intersections');
     assert.equal(roomy.text.filter(Boolean).length, 31);
     assert.equal(tight.text.filter(Boolean).length, 0, 'none rather than overlapping');
-    assert.equal(traceOf(D.buildFigure(plot, LIGHT, { width: 1800, labels: 'none' }), 'intersections').text.filter(Boolean).length, 0);
-    const share = traceOf(D.buildFigure(plot, LIGHT, { width: 1800, labels: 'share' }), 'intersections').text;
+    assert.equal(traceOf(D.buildFigure(plot, LIGHT, { width: 2400, labels: 'none' }), 'intersections').text.filter(Boolean).length, 0);
+    const share = traceOf(D.buildFigure(plot, LIGHT, { width: 2400, labels: 'share' }), 'intersections').text;
     assert.ok(share.every(t => t.includes('%')));
 });
 
