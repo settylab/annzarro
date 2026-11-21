@@ -245,3 +245,45 @@ def test_a_refused_fill_ends_the_claim_too():
     pending = c.begin(key())
     assert not claim.fill(GroupingResult(n_shown=N, refused={"reason": "too_many_groups"}))
     assert pending.wait(0) and isinstance(c.begin(key()), gc.Claim)
+
+
+# --- pins -----------------------------------------------------------------------------------------------------------
+
+def test_a_pinned_hit_survives_clear_lru_and_a_moved_fingerprint_until_unpinned():
+    one = result()
+    c = cache(budget=2 * one.codes.nbytes + 2048)
+    fill(c, key("a"))
+    assert c.peek(key("a"), pin=True) is not None
+    c.clear()
+    assert len(c) == 1 and isinstance(c.begin(key("a")), gc.Hit)
+    fill(c, key("b"))
+    fill(c, key("c"))                                                # the least recent unpinned one leaves: b
+    assert isinstance(c.begin(key("a")), gc.Hit) and isinstance(c.begin(key("b")), gc.Claim)
+    c.begin(key("a", fingerprint="f2"))                              # the store moved: a stays while pinned
+    assert c.size() >= one.codes.nbytes
+    c.unpin(key("a"))
+    c.clear()
+    assert len(c) == 0 and c.size() == 0
+
+
+def test_begin_pins_a_hit_when_asked_and_pins_count():
+    c = cache()
+    fill(c, key())
+    assert isinstance(c.begin(key(), pin=True), gc.Hit)
+    assert c.peek(key(), pin=True) is not None
+    c.unpin(key())
+    c.clear()
+    assert len(c) == 1                                               # one pin left
+    c.unpin(key())
+    c.clear()
+    assert len(c) == 0
+    c.unpin(key())                                                   # nothing held: harmless
+
+
+def test_a_pinned_entry_is_not_replaced_under_its_job():
+    c = cache()
+    fill(c, key())
+    held = c.peek(key(), pin=True)
+    assert not c.begin(key(), (1,)).fill(result(histogram=HIST))
+    assert c.peek(key()).codes is held.codes
+    c.unpin(key())

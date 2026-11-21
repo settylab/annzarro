@@ -468,3 +468,47 @@ def test_a_hit_with_a_feature_takes_the_features_lane(client, layout):
     finally:
         held.leave()
     assert first["type"] == "progress" and first["queue"]["ahead"] == 1   # a gene of a CSR store: still heavy
+
+
+# --- a hit's margin, and its codes pinned while it runs -------------------------------------------------------------------
+
+def test_a_hit_that_reads_genes_reserves_them_and_the_margin(layout):
+    body = grouping([{"source": CELL_TYPE}], features=[FEATURE])
+    plan = gf.plan(get_reader(ds(layout)), ds(layout), cg.parse_request(body))
+    plain = gf.plan(get_reader(ds(layout)), ds(layout), cg.parse_request(grouping([{"source": CELL_TYPE}])))
+    full, keep = route.reservation(plan, N, codes_held=True)
+    resolve, _ = route.reservation(plain, N)
+    assert route.HIT_MARGIN_BYTES == 256 * 2 ** 20
+    assert full == route.reservation(plan, N)[0] - resolve + route.HIT_MARGIN_BYTES
+    assert keep < route.HIT_MARGIN_BYTES                                  # the margin is for the reads: given back
+
+
+def test_a_running_hit_keeps_its_codes_through_an_eviction(client, layout):
+    body = grouping([{"source": CELL_TYPE}], features=[FEATURE])
+    run(client, layout, body)
+    resp = post(client, layout, body, buffered=False)
+    try:
+        chunks = resp.iter_encoded()
+        assert json.loads(next(chunks))["codes"] == "hit"
+        size = route.CODES.size()
+        route.CODES.clear()                                               # what the ledger does to make room
+        assert len(route.CODES) == 1 and route.CODES.size() == size       # pinned: still held and counted
+        list(chunks)
+    finally:
+        resp.close()
+    route.CODES.clear()
+    assert len(route.CODES) == 0 and route.CODES.size() == 0              # unpinned when the job ended
+
+
+def test_a_hit_closed_while_queued_unpins_its_codes(client, layout):
+    body = grouping([{"source": GENE1}], features=[{**FEATURE, "name": gstore.gene(2)}])
+    run(client, layout, body, name="csr.zarr")
+    held = cstream.LANES.enter("heavy")
+    try:
+        resp = post(client, layout, body, name="csr.zarr", buffered=False)
+        assert json.loads(next(resp.iter_encoded()))["type"] == "progress"   # queued behind the heavy job
+        resp.close()                                                       # the page went away
+    finally:
+        held.leave()
+    route.CODES.clear()
+    assert len(route.CODES) == 0
