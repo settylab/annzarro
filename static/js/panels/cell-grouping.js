@@ -47,6 +47,7 @@ import {
 import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/status.js';
 import './partition-options/binning-control.js';
 import { usedByText } from '../utils/panel-users.js';
+import { STATISTICS_PART } from './cell-grouping/statistics.js';
 import {
     settingsSummary, thresholdProblem, separatorProblem, smallOf, separatorOf, storedSeparator, storedSmall, smallModeWord
 } from './cell-grouping/settings.js';
@@ -64,6 +65,7 @@ registerReferences(TYPE, groupingReferences);
  */
 // export-unused-ok: G9c and G9d mount the group grid and Statistics offered here
 export const PARTS = { groups: null, statistics: null };
+PARTS.statistics = STATISTICS_PART;
 
 // ================================================================================================ the views
 
