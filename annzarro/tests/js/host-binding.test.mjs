@@ -181,7 +181,7 @@ test('a queue wait shows an indeterminate bar with its place in line, and no fak
     score.set(h, [['color', queued]]);
     p.paint(h);
     assert.equal(last().notice.state, 'queued');
-    assert.equal(last().notice.headline, 'Waiting for the server: 2 computations ahead. This plot has no colour.');
+    assert.equal(last().notice.headline, 'Waiting for the server: 2 computations ahead. This plot has no color.');
     assert.deepEqual(last().notice.progress, { determinate: false });
     // the page's own limiter queue and an estimate in flight: indeterminate too, once long
     score.set(h, [['color', { state: 'queued', title: 'Sig', key: 'k2' }]]);

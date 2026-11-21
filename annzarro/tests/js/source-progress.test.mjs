@@ -29,7 +29,7 @@ test("a job behind others says its place in the server's line, with the score's 
     assert.equal(note.tag.text, 'Score queued');
     assert.deepEqual(note.actions, [['score-cancel', 'Cancel']]);
     assert.equal(N.describeScore(computing({ done: 0, total: 2, queue: { ahead: 3, sharing: 0 } }), { role: 'colour' }).headline,
-        'Waiting for the server: 3 computations ahead. This plot has no colour.');
+        'Waiting for the server: 3 computations ahead. This plot has no color.');
 });
 
 test('a grouping in line says no score word and no note it has not got', () => {
@@ -97,7 +97,7 @@ test("a table upstream is built or opened in the provider's own words, named by 
     assert.equal(building.tag.text, 'Building filter');
     assert.deepEqual(building.actions.map(a => a[0]), ['score-cancel', 'score-open']);
     const opening = SN.describeSource({ state: 'building', title: 'G1', table: 'cell-table-1', gate: { reason: 'opening' } }, { role: 'colour' }, GROUPING);
-    assert.equal(opening.headline, "Waiting for 'Table 1' to open, to group its cells. This plot has no colour.");
+    assert.equal(opening.headline, "Waiting for 'Table 1' to open, to group its cells. This plot has no color.");
     const ask = SN.describeSource({ state: 'ask', title: 'G1', table: 'cell-table-1' }, { role: 'x' }, GROUPING);
     assert.equal(ask.headline, "Building 'Table 1' to find its cells will pause the page for a few seconds.");
     assert.deepEqual(ask.actions, [['score-compute', 'Build filter'], ['score-open', 'Open grouping'], ['score-choose', 'Choose another']]);

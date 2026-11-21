@@ -110,7 +110,7 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
     const tagOf = (state, fallback) => tags[state] || fallback;
     const t = snap.title ? `'${snap.title}'` : `The ${thing}`;
     const T = snap.title ? `'${snap.title}'` : `the ${thing}`;
-    const none = role === 'colour' ? ' This plot has no colour.' : '';
+    const none = role === 'colour' ? ' This plot has no color.' : '';
     const cancelLabel = sharers > 1 ? `Cancel for ${sharers} plots` : 'Cancel';
     const out = (state, severity, tagText, headline, text, actions) => ({
         state, severity, tag: { text: tagText, title: text ? `${headline} ${text}` : headline }, headline, text: text || '',

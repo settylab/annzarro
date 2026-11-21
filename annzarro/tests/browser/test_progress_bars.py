@@ -84,7 +84,7 @@ def test_a_slow_score_shows_a_determinate_bar_beside_its_sentence(page, served):
     note = gs._notice(page)
     assert note["state"] == "computing"
     assert "Computing 'T cell score': 61 of 200 genes." in note["text"], "the existing sentence, beside the bar"
-    assert bar["text"] == "Computing 'T cell score': 61 of 200 genes. This plot has no colour."
+    assert bar["text"] == "Computing 'T cell score': 61 of 200 genes. This plot has no color."
     assert any(a.startswith("score-cancel|Cancel") for a in note["actions"])
     # time left, once 10% of the entries and 5 s of running are behind it
     gs._frame(page, 0, type="progress", done=120, total=200, entries_done=600, entries_total=1200, running_s=60,

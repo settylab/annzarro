@@ -429,7 +429,7 @@ def test_computing_shows_progress_and_cancel_stops_it_and_compute_starts_it_agai
     _action(page, "score-cancel")
     page.wait_for_selector(f"{C} .score-notice[data-state='cancelled']")
     note = _notice(page)
-    assert "'T cell score' was cancelled. This plot has no colour." in note["text"]
+    assert "'T cell score' was cancelled. This plot has no color." in note["text"]
     assert _tag(page) == "Score cancelled"
     assert _box(page) == box
     # the request was aborted: its stream is errored; nothing was computed
