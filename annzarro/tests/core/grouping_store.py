@@ -453,8 +453,8 @@ def moments(values, above=0.0):
 # --- the grid shape ----------------------------------------------------------------------------------------
 
 def reference_grid(data, partitionings, shown=None, measure=None):
-    """The ``grid`` shape by brute force: ``{"axes": [{"levels"}], "counts": flat, mixed radix, first axis
-    slowest, "measure": [[n, sum, sumsq, n_above, sum_above] per grid cell] (when ``measure`` =
+    """The ``grid`` shape by brute force: ``{"axes": [{"levels", "n_outside"}], "counts": flat, mixed radix, first
+    axis slowest, "n_shown", "measure": [[n, sum, sumsq, n_above, sum_above] per grid cell] (when ``measure`` =
     ``{"source", "above"}``), "n_counted"}``. Unlike a grouping the grid holds empty combinations."""
     n = len(data.obs)
     rows = _shown_rows(shown, n)
@@ -463,7 +463,7 @@ def reference_grid(data, partitionings, shown=None, measure=None):
         levels, codes, _ = ref_partition(data, part, rows)
         if levels is None:
             return {"refused": {"reason": "ambiguous_categories"}}
-        axes.append({"levels": levels})
+        axes.append({"levels": levels, "n_outside": [0, 0]})          # the reference recipes store no range
         codes_by.append(codes)
     dims = [len(a["levels"]) for a in axes]
     cells = int(np.prod(dims))
@@ -472,7 +472,7 @@ def reference_grid(data, partitionings, shown=None, measure=None):
     for c, d in zip(codes_by, dims):
         flat = flat * d + np.where(c >= 0, c, 0)
     counts = np.bincount(flat[ok], minlength=cells)
-    out = {"axes": axes, "counts": counts.astype(int).tolist(), "n_counted": int(ok.sum())}
+    out = {"axes": axes, "counts": counts.astype(int).tolist(), "n_shown": int(len(rows)), "n_counted": int(ok.sum())}
     if measure:
         col = _source_values(data, measure["source"]).to_numpy(dtype=np.float64)
         out["measure"] = [moments(col[ok & (flat == g)], measure.get("above", 0)) for g in range(cells)]
