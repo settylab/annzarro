@@ -5,16 +5,17 @@
  *
  * - The distribution of the score over the cells shown (a histogram that
  *   counts the cells with no score and says so), and its mean, SD, range.
- * - The figures of each gene from the server's `result` frame (detected,
- *   mean, SD, clipped), sortable, with plain-words flags for the genes that
- *   dominate the score or are barely detected. A click on a gene focuses it.
+ * - A plain-words flag summary naming only the genes that dominate the score
+ *   or are barely detected, from the server's `result` frame. A click on a
+ *   named gene focuses it. The section does not list every gene again (the
+ *   panel already does, decision 22); the full per-gene figures are the CSV.
  * - Which aggregation is inspected, with a choice of every one the signature
  *   supports. The score comes from the same score store the plots use (a
  *   dependant like any other), so a score a plot already holds is not asked
  *   for again; a score nothing holds is computed under the store's cost tiers
  *   and states (computing with Cancel, asks first, refused, failed).
- * - CSV of the gene figures, for the combinations the user picks
- *   (export-chooser.js). Scores per cell are exported by a Cell Table.
+ * - CSV of the per-gene figures (detected, mean, SD, clipped), for the
+ *   combinations the user picks (export-chooser.js). Scores per cell are exported by a Cell Table.
  *
  * Nothing is computed, and nothing is watched, until the section is opened.
  * Closing it lets go of the score (a score a plot still needs stays).
@@ -25,8 +26,7 @@ import { describeScore } from '../../utils/score-notices.js';
 import { DEFAULT_METHOD, definitionText, fmtCount } from '../../utils/gene-signature.js';
 import { methodShort, offeredOptions } from '../../utils/signature-options.js';
 import {
-    distribution, binText, missingText, geneRows, flagSummary, sortGeneRows, GENE_COLUMNS, ROWS_FIRST,
-    fmtNum, fmtPercent
+    distribution, binText, missingText, geneRows, flagSummary, flaggedGenes, fmtNum
 } from '../../utils/score-inspect.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -82,8 +82,6 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
     let _layer = null;
     let _handle = null;
     let _snap = null;
-    let _sort = { key: 'name', dir: 'asc' };
-    let _showAll = false;
     let _active = -1;                      // the bin pointed at or focused
     let _dist = null;                      // distribution of the values drawn
     let _drawnFor = null;                  // the values the histogram was computed from
@@ -94,7 +92,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         aria: { expanded: 'false', controls: sid('body') }, on: { click: () => setOpen(!_open) } },
     D.el('span', { class: 'gsig-inspect__caret', aria: { hidden: 'true' }, text: '▸' }),
     D.el('span', { class: 'gsig-inspect__name', text: 'Inspect' }),
-    D.el('span', { class: 'gsig-inspect__summary', text: 'Distribution and figures of each gene' }));
+    D.el('span', { class: 'gsig-inspect__summary', text: 'Distribution of the score' }));
     const picker = D.el('select', { class: 'form-select form-select-sm gsig-inspect__select', id: sid('option'),
         aria: { label: 'Score inspected: method and layer' }, on: { change: () => chooseOption(picker.value) } });
     const aggregation = D.el('div', { class: 'gsig-inspect__agg' }, picker);
@@ -113,11 +111,10 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
     const missing = D.el('div', { class: 'gsig-inspect__missing' });
     const exportRow = D.el('div', { class: 'gsig-inspect__export' });
     const flags = D.el('div', { class: 'gsig-inspect__flags' });
-    const tableHost = D.el('div', { class: 'gsig-inspect__table' });
-    const note = D.el('div', { class: 'gsig-inspect__note', text: 'Per-gene figures use all cells of the dataset.' });
+    const note = D.el('div', { class: 'gsig-inspect__note', text: 'The CSV of per-gene figures uses all cells of the dataset.' });
     const result = D.el('div', { class: 'gsig-inspect__result', role: 'status', aria: { live: 'polite' } });
     content.append(heading, D.el('div', { class: 'gsig-inspect__chartwrap' }, chartHost, tip), figures, missing, exportRow,
-        result, flags, tableHost, note);
+        result, flags, note);
 
     // ---------------------------------------------------------------------
     // open, close, aggregation
@@ -227,7 +224,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         drawChart();
         paintFigures();
         paintExport(snap);
-        paintGenes(header);
+        paintFlags(header);
         toggleSummary(_dist);
     }
 
@@ -245,7 +242,7 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         const el = toggle.querySelector('.gsig-inspect__summary');
         el.textContent = dist && dist.finite
             ? `Mean ${fmtNum(dist.mean)}, SD ${fmtNum(dist.sd)}, ${fmtCount(dist.n)} cell${dist.n === 1 ? '' : 's'}`
-            : 'Distribution and figures of each gene';
+            : 'Distribution of the score';
     }
 
     /** The state of the score in words with its actions, or nothing when the score is ready and current. */
@@ -446,51 +443,25 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
-    function paintGenes(header) {
-        const rows = geneRows(header.genes, _method);
-        const caption = D.el('div', { class: 'gsig-inspect__caption', text: `Per-gene figures for ${optionLabel()}` });
-        flags.textContent = flagSummary(rows);
-        flags.hidden = !flags.textContent;
-        D.clear(tableHost);
-        if (!rows.length) { tableHost.append(D.el('div', { class: 'gsig-inspect__empty', text: 'No gene was used.' })); return; }
-        const sorted = sortGeneRows(rows, _sort.key, _sort.dir);
-        const shown = _showAll ? sorted : sorted.slice(0, ROWS_FIRST);
-        const withDirection = rows.some(r => r.direction === 'down');          // up and down genes: say which side each is on
-        const columns = GENE_COLUMNS.map((c) => {
-            const on = _sort.key === c.key;
-            return D.el('th', { scope: 'col', class: `gsig-col-${c.key}${c.key === 'name' || c.key === 'detected' ? '' : ' gsig-col-extra'}`,
-                aria: { sort: on ? (_sort.dir === 'asc' ? 'ascending' : 'descending') : 'none' } },
-            D.el('button', { type: 'button', class: 'gsig-inspect__sort', data: { sort: c.key }, on: { click: () => sortBy(c) } },
-                c.label, D.el('span', { class: 'gsig-inspect__arrow', aria: { hidden: 'true' }, text: on ? (_sort.dir === 'asc' ? ' ▲' : ' ▼') : '' })));
-        });
-        if (withDirection) columns.splice(1, 0, D.el('th', { scope: 'col', class: 'gsig-col-direction', text: 'Direction' }));
-        const head = D.el('tr', {}, ...columns);
-        const clippedOff = rows.every(r => r.clipped === null);
-        const table = D.el('table', { class: 'gsig-inspect__genes' }, D.el('thead', {}, head),
-            D.el('tbody', {}, ...shown.map((r) => D.el('tr', { class: r.flags.length ? 'has-flag' : '', data: { gene: r.name } },
-                D.el('th', { scope: 'row', class: 'gsig-col-name' },
-                    D.el('button', { type: 'button', class: 'gsig-inspect__gene', title: `Focus ${r.name}`,
-                        on: { click: () => focusGene(r.name) } }, r.name),
-                    ...r.flags.map(f => D.el('div', { class: `gsig-inspect__flag gsig-inspect__flag--${f.kind}`, text: f.text }))),
-                ...(withDirection ? [D.el('td', { class: 'gsig-col-direction', text: r.direction === 'down' ? 'Down' : 'Up' })] : []),
-                D.el('td', { class: 'gsig-col-detected', text: fmtPercent(r.detected) }),
-                D.el('td', { class: 'gsig-col-mean gsig-col-extra', text: fmtNum(r.mean) }),
-                D.el('td', { class: 'gsig-col-sd gsig-col-extra', text: fmtNum(r.sd) }),
-                D.el('td', { class: 'gsig-col-clipped gsig-col-extra', text: r.clipped === null ? (clippedOff ? 'n/a' : '') : fmtPercent(r.clipped) })))));
-        tableHost.append(caption, table);
-        if (!_showAll && sorted.length > shown.length) {
-            tableHost.append(D.el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { inspectAction: 'show-all' },
-                on: { click: () => { _showAll = true; paintGenes(header); } } }, `Show all ${fmtCount(sorted.length)} genes`));
-        }
-    }
+    const FLAG_KINDS = [['dominates', 'Dominate the score'], ['rare', 'Barely detected']];
 
-    function sortBy(column) {
-        _sort = _sort.key === column.key
-            ? { key: column.key, dir: _sort.dir === 'asc' ? 'desc' : 'asc' }
-            : { key: column.key, dir: column.numeric ? 'desc' : 'asc' };
-        if (_snap && _snap.header) paintGenes(_snap.header);
-        const btn = tableHost.querySelector(`[data-sort="${column.key}"]`);
-        if (btn) btn.focus();
+    function paintFlags(header) {
+        const rows = geneRows(header.genes, _method);
+        D.clear(flags);
+        const sentence = flagSummary(rows);
+        flags.hidden = !sentence;
+        if (!sentence) return;
+        flags.append(D.el('div', { class: 'gsig-inspect__flagtext', text: sentence }));
+        for (const [kind, label] of FLAG_KINDS) {
+            const { names, more } = flaggedGenes(rows, kind);
+            if (!names.length) continue;
+            const why = new Map(rows.filter(r => r.flags.some(f => f.kind === kind)).map(r => [r.name, r.flags.find(f => f.kind === kind).text]));
+            flags.append(D.el('div', { class: 'gsig-inspect__flaglist', data: { flag: kind } },
+                D.el('span', { class: 'gsig-inspect__flaglabel', text: `${label}: ` }),
+                ...names.map(name => D.el('button', { type: 'button', class: 'gsig-inspect__gene', title: `Focus ${name}. ${why.get(name)}`,
+                    on: { click: () => focusGene(name) } }, name)),
+                ...(more ? [D.el('span', { class: 'gsig-inspect__flagmore', text: ` and ${fmtCount(more)} more, in the CSV` })] : [])));
+        }
     }
 
     function destroy() {
@@ -503,5 +474,5 @@ export function createInspect({ id, D, getTitle, getRecipe, getOptions = null, f
     return { element, destroy, isOpen: () => _open, setOpen,
         /** For tests: what the section holds. */
         _debug: () => ({ open: _open, method: _method, layer: _layer, state: _snap && _snap.state, key: _snap && _snap.key, dist: _dist,
-            sort: _sort, active: _active }) };
+            active: _active }) };
 }

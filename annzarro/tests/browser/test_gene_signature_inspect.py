@@ -127,7 +127,7 @@ def test_opening_computes_and_the_figures_are_the_servers(page, served):
     assert sum(_bins(page)) == N_OBS
     assert "No cell is missing a score." == page.inner_text(f"{I} .gsig-inspect__missing")
     assert "Z-score mean of X, clipped at ±10." == page.inner_text(f"{I} .gsig-inspect__definition")
-    assert page.inner_text(f"{I} .gsig-inspect__note") == "Per-gene figures use all cells of the dataset."
+    assert page.inner_text(f"{I} .gsig-inspect__note") == "The CSV of per-gene figures uses all cells of the dataset."
 
 
 # --------------------------------------------------------------------------- 3

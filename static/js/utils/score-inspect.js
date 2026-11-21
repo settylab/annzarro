@@ -1,7 +1,7 @@
 /**
  * Inspecting a gene score: the distribution of the score over the cells shown,
- * the figures of each gene, the plain-words flags, and the CSV of the gene
- * figures. Pure (no DOM, no page state), so Node tests cover all of it; the
+ * the figures of each gene (for the flags and the CSV; the panel does not list
+ * every gene again), the plain-words flags, and the CSV of the gene figures. Pure (no DOM, no page state), so Node tests cover all of it; the
  * panel (panels/score-options/inspect-section.js) draws it.
  *
  * The score is the Float32Array the score store holds. Cells whose score is
@@ -17,9 +17,6 @@ export const RARE_DETECTED = 0.01;
 
 /** A z-score gene clipped in at least this share of cells is said to dominate those cells. */
 export const CLIPPED_DOMINATES = 0.01;
-
-/** Genes rows the table draws before "Show all". */
-export const ROWS_FIRST = 100;
 
 /**
  * The distribution of a score.
@@ -138,7 +135,7 @@ export function geneRows(genes, method) {
     return list.map((g) => {
         const flags = [];
         const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
-        const row = { name: g.name, direction: g.direction === 'down' ? 'down' : 'up', status: g.status, detected: num(g.detected), mean: num(g.mean), sd: num(g.sd),
+        const row = { name: g.name, status: g.status, detected: num(g.detected), mean: num(g.mean), sd: num(g.sd),
             clipped: num(g.clipped), flags };
         if (g.status === 'constant') {
             flags.push({ kind: 'left-out', text: method === 'zscore_mean'
@@ -177,35 +174,19 @@ export function flagSummary(rows) {
     return parts.length ? `${parts.join(', ')}.`.replace(/^./, c => c.toUpperCase()) : '';
 }
 
-/** Columns of the gene table: key, heading, whether a larger number is the first click. */
-export const GENE_COLUMNS = [
-    { key: 'name', label: 'Gene', numeric: false },
-    { key: 'detected', label: 'Detected', numeric: true },
-    { key: 'mean', label: 'Mean', numeric: true },
-    { key: 'sd', label: 'SD', numeric: true },
-    { key: 'clipped', label: 'Clipped', numeric: true }
-];
+/** The most genes a flag names; the CSV of the figures holds the rest. */
+export const FLAG_NAMES_MAX = 20;
 
 /**
- * Rows sorted by a column. Missing figures sort last in either direction; ties keep the gene order by name.
- * @param {Array<Object>} rows
- * @param {string} key
- * @param {'asc'|'desc'} dir
+ * The genes carrying one kind of flag ('dominates', 'rare' or 'left-out'), in the order of the rows, at most
+ * FLAG_NAMES_MAX of them, with how many more there are.
+ * @param {Array<Object>} rows - from geneRows
+ * @param {string} kind
+ * @returns {{names: string[], more: number}}
  */
-export function sortGeneRows(rows, key, dir = 'asc') {
-    const sign = dir === 'desc' ? -1 : 1;
-    return rows.slice().sort((a, b) => {
-        const x = a[key];
-        const y = b[key];
-        const xn = x === null || x === undefined;
-        const yn = y === null || y === undefined;
-        if (xn || yn) {
-            if (xn && yn) return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-            return xn ? 1 : -1;
-        }
-        if (x !== y) return (x < y ? -1 : 1) * sign;
-        return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-    });
+export function flaggedGenes(rows, kind) {
+    const all = rows.filter(r => r.flags.some(f => f.kind === kind)).map(r => r.name);
+    return { names: all.slice(0, FLAG_NAMES_MAX), more: Math.max(0, all.length - FLAG_NAMES_MAX) };
 }
 
 // ---------------------------------------------------------------------------

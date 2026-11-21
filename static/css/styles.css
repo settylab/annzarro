@@ -1612,7 +1612,7 @@ button.dtsb-button.dtsb-clear:hover {
     display: flex; align-items: baseline; gap: 6px; width: 100%; border: 0; background: transparent; color: var(--az-text);
     padding: 5px 8px; text-align: left; font-size: 0.8125rem;
 }
-.gsig-inspect__toggle:focus-visible, .gsig-inspect__sort:focus-visible, .gsig-inspect__gene:focus-visible,
+.gsig-inspect__toggle:focus-visible, .gsig-inspect__gene:focus-visible,
 .gsig-hist__group:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
 .gsig-inspect__name { font-weight: 600; }
 .gsig-inspect__summary { color: var(--az-muted); font-size: 0.75rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1647,19 +1647,14 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-inspect__result:empty { display: none; }
 .gsig-inspect__flags { font-size: 0.75rem; color: var(--az-warn-text); font-weight: 600; margin-top: 4px; }
 .gsig-inspect__flags[hidden] { display: none; }
-.gsig-inspect__genes { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin-top: 4px; }
-.gsig-inspect__genes th, .gsig-inspect__genes td { padding: 2px 4px; border-bottom: 1px solid var(--az-border-soft); vertical-align: top; text-align: right; font-weight: 400; }
-.gsig-inspect__genes th.gsig-col-name, .gsig-inspect__genes th[scope="row"] { text-align: left; }
-.gsig-inspect__genes thead th { font-weight: 600; color: var(--az-text-2); border-bottom: 1px solid var(--az-border-strong); }
-.gsig-inspect__sort, .gsig-inspect__gene { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; font-weight: inherit; }
-.gsig-inspect__gene { color: var(--az-link); text-align: left; }
+.gsig-inspect__gene { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; font-weight: inherit; }
+.gsig-inspect__gene { color: var(--az-link); text-align: left; margin-right: 6px; }
 .gsig-inspect__gene:hover { text-decoration: underline; }
-.gsig-inspect__flag { color: var(--az-warn-text); font-size: 0.6875rem; text-align: left; font-weight: 400; }
+.gsig-inspect__flaglist { font-weight: 400; margin-top: 2px; }
+.gsig-inspect__flaglabel { color: var(--az-warn-text); font-weight: 600; }
+.gsig-inspect__flagmore { color: var(--az-muted); }
 .gsig-inspect__empty { color: var(--az-muted); padding: 4px 0; }
 .gsig-panel.gsig-flowing > .gsig-inspect { display: none; }
-@container gsig (max-width: 360px) {
-    .gsig-inspect__genes .gsig-col-extra { display: none; }
-}
 @container gsig (max-width: 280px) {
     .gsig-inspect__chartwrap { display: none; }
 }
