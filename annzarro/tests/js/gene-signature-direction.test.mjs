@@ -201,8 +201,6 @@ test('Inspect names each gene\'s side only when there are down genes, and the CS
     const lines = I.longGeneCsv([{ label: 'T', genes: both }, { label: 'U', genes: up }]).split('\r\n');
     assert.equal(lines[0], 'combination,gene,direction,status,detected_fraction,mean,sd,clipped_fraction');
     assert.deepEqual(lines.slice(1, 4).map(l => l.split(',').slice(0, 3).join(',')), ['T,A,up', 'T,B,down', 'U,A,up']);
-    assert.equal(I.geneRows(both, 'mean').find(r => r.name === 'B').direction, 'down');
-    assert.equal(I.geneRows([{ name: 'C', status: 'used', detected: 0.1, mean: 1, sd: 1, clipped: 0 }], 'mean')[0].direction, 'up', 'an older reply has none: up');
 });
 
 // ------------------------------------------------------------------ the sign column of a pasted table

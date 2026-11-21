@@ -117,13 +117,16 @@ test('constant genes and genes with no values are said to be left out', () => {
     assert.equal(rows[1].mean, null);
 });
 
-test('sorting: numbers in either direction, missing last, ties by name, the input untouched', () => {
-    const rows = I.geneRows([gene('C', { detected: 0.3 }), gene('A', { detected: 0.3 }), gene('B', { detected: null }), gene('D', { detected: 0.9 })], 'mean');
-    const before = rows.map(r => r.name).join('');
-    assert.equal(I.sortGeneRows(rows, 'detected', 'asc').map(r => r.name).join(''), 'ACDB');
-    assert.equal(I.sortGeneRows(rows, 'detected', 'desc').map(r => r.name).join(''), 'DACB');
-    assert.equal(I.sortGeneRows(rows, 'name', 'desc').map(r => r.name).join(''), 'DCBA');
-    assert.equal(rows.map(r => r.name).join(''), before);
+test('flaggedGenes names the genes of one kind in the order given and caps the list', () => {
+    const rows = I.geneRows([gene('A'), gene('RARE', { detected: 0.004 }), gene('CLIP', { clipped: 0.032 }),
+        gene('R2', { detected: 0.001 })], 'zscore_mean');
+    assert.deepEqual(I.flaggedGenes(rows, 'rare'), { names: ['RARE', 'R2'], more: 0 });
+    assert.deepEqual(I.flaggedGenes(rows, 'dominates'), { names: ['CLIP'], more: 0 });
+    assert.deepEqual(I.flaggedGenes(rows, 'left-out'), { names: [], more: 0 });
+    const many = I.geneRows(Array.from({ length: 30 }, (_, i) => gene(`R${i}`, { detected: 0.001 })), 'mean');
+    const capped = I.flaggedGenes(many, 'rare');
+    assert.equal(capped.names.length, I.FLAG_NAMES_MAX);
+    assert.equal(capped.more, 30 - I.FLAG_NAMES_MAX);
 });
 
 test('csv fields are quoted when they need it and formulas are defused', () => {

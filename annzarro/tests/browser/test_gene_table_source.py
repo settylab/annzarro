@@ -321,6 +321,15 @@ def test_the_table_offer_round_trips_through_a_link_and_a_panel_set(page, served
         fresh.close()
 
 
+def _csv_genes(page):
+    """The genes of the CSV the Inspect export gives for the current combination, sorted."""
+    page.click(f"{G} [data-inspect-export=genes]")
+    with page.expect_download() as info:
+        page.click(f"{G} [data-export-go]")
+    rows = open(info.value.path(), encoding="utf-8").read().splitlines()[1:]
+    return sorted(r.split(",")[1] for r in rows)
+
+
 def test_inspect_on_a_table_reads_the_score_the_plot_holds_and_follows_the_filter(page, served):
     _open_table_link(page, served)
     _wait_coloured(page)
@@ -328,10 +337,11 @@ def test_inspect_on_a_table_reads_the_score_the_plot_holds_and_follows_the_filte
     page.wait_for_selector(f"{G} .gsig-inspect__content", state="visible", timeout=20000)
     page.wait_for_function("(g) => document.querySelector(g + ' .gsig-inspect__heading').textContent.includes('60 cells shown')", arg=G)
     assert _asked(page) == [FIRST_FIVE], "the plot's score is the one inspected: nothing is asked twice"
-    genes = page.eval_on_selector_all(f"{G} .gsig-inspect__table [data-gene]", "els => els.map(e => e.dataset.gene).sort()")
-    assert genes == sorted(FIRST_FIVE), genes
+    assert page.locator(f"{G} .gsig-inspect table, {G} .gsig-inspect__table, {G} .gsig-inspect tr[data-gene]").count() == 0, "decision 22: no gene list"
+    assert _csv_genes(page) == sorted(FIRST_FIVE)
     _filter(page, 8)
-    page.wait_for_function("(g) => document.querySelectorAll(g + ' .gsig-inspect__table [data-gene]').length === 8", arg=G, timeout=20000)
+    until(page, "(g) => document.querySelector(g + ' .gsig-inspect__heading').textContent.includes('shown')", G)
+    assert len(_csv_genes(page)) == 8
 
 
 def test_offer_other_scores_opens_the_table_and_expands_what_it_offers(page, served):
@@ -470,7 +480,7 @@ def test_a_gene_tables_export_chooser_lists_its_combinations_and_exports_gene_fi
     _open_table_link(page, served, table=_table(scoreOptions=OFFER))
     _wait_coloured(page)
     page.click(f"{G} .gsig-inspect__toggle")
-    page.wait_for_function("(g) => document.querySelectorAll(g + ' .gsig-inspect__table [data-gene]').length === 5", arg=G, timeout=20000)
+    page.wait_for_selector(f"{G} [data-inspect-export=genes]:not([disabled])", timeout=20000)
     assert page.locator(f"{G} [data-inspect-export=scores]").count() == 0
     page.click(f"{G} [data-inspect-export=genes]")
     options = page.eval_on_selector_all(f"{G} .gsig-export input[type=checkbox]", "els => els.map(e => e.dataset.option)")

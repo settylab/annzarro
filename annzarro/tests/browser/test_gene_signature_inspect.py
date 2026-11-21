@@ -1,9 +1,9 @@
 """Inspect, in the Gene Signature panel (step 7 of the gene-signature plan), in a real browser.
 
 Inspect is one disclosure button under the gene list. Opened, it shows the distribution of the
-score over the cells shown (a histogram that counts the cells with no score), the figures of each
-gene from the server's `result` frame, plain-words flags, a sortable table whose rows focus the
-gene, and two CSV exports built in the browser from the held Float32Array.
+score over the cells shown (a histogram that counts the cells with no score), plain-words flags
+that name the genes to look at (a click focuses one), and the CSV of the per-gene figures from the
+server's `result` frame. It does not list every gene again (decision 22).
 
 The store is the one of test_gene_score_plots (60 cells, 3,000 genes). Where a test needs figures
 or states the real server does not produce (a barely detected gene, cells with no score, a score
@@ -15,7 +15,7 @@ that asks first), the page's `fetch` is replaced for the score route, as there.
     going back to the first is not a request.
 4.  The histogram: bins add up to the cells, a tooltip per bin by pointer and by keyboard.
 5.  Cells with no score are counted and said.
-6.  Flags in plain words; the table sorts; a click on a gene focuses it.
+6.  Flags in plain words naming the genes; a click on a flagged gene focuses it; no gene list.
 7.  Export: the gene figures of the chosen method · layer combinations; per-cell scores are exported by a Cell Table's columns.
 8.  Every state: computing with Cancel, asks first, cancelled, refused, failed with Retry,
     out of date behind Update score, no genes.
@@ -54,8 +54,15 @@ def _inspect(page):
     assert page.get_attribute(TOGGLE, "aria-expanded") == "true"
 
 
-def _wait_table(page):
-    page.wait_for_selector(f"{I} .gsig-inspect__genes tbody tr", timeout=30000)
+def _wait_ready(page):
+    """The score is held and drawn: the gene figures can be exported."""
+    page.wait_for_selector(f"{I} [data-inspect-export=genes]:not([disabled])", timeout=30000)
+
+
+def _no_gene_list(page):
+    """Decision 22: Inspect does not repeat the gene list (the panel already lists the genes)."""
+    assert page.locator(f"{I} table, {I} .gsig-inspect__genes, {I} .gsig-inspect__table, {I} [data-sort], "
+                        f"{I} [data-inspect-action=show-all], {I} tr[data-gene]").count() == 0
 
 
 def _server_header(page, genes, method="zscore_mean", clip=10):
@@ -72,16 +79,6 @@ def _server_header(page, genes, method="zscore_mean", clip=10):
         }
         return { error: text.slice(0, 200), status: r.status };
     }""", [page.evaluate("() => new URLSearchParams(location.search).get('dataset_path')"), genes, method, clip])
-
-
-def _rows(page):
-    """The table: {gene: [detected, mean, sd, clipped] as text}."""
-    return page.evaluate("""(I) => Object.fromEntries([...document.querySelectorAll(I + ' .gsig-inspect__genes tbody tr')].map(tr => [
-        tr.dataset.gene, ['detected', 'mean', 'sd', 'clipped'].map(k => tr.querySelector('.gsig-col-' + k).textContent.trim())]))""", I)
-
-
-def _order(page):
-    return page.evaluate("(I) => [...document.querySelectorAll(I + ' .gsig-inspect__genes tbody tr')].map(tr => tr.dataset.gene)", I)
 
 
 def _bins(page):
@@ -111,25 +108,18 @@ def test_inspect_is_closed_by_default_and_computes_nothing_until_opened(page, se
     # time for a score request, were one going to; nothing is asked until the section is opened
     page.wait_for_timeout(600)
     assert _calls(page) == [], "nothing is asked for a score that nobody opened"
-    assert page.inner_text(f"{TOGGLE} .gsig-inspect__summary") == "Distribution and figures of each gene"
+    assert page.inner_text(f"{TOGGLE} .gsig-inspect__summary") == "Distribution of the score"
 
 
 def test_opening_computes_and_the_figures_are_the_servers(page, served):
     genes = ["GENE0001", "GENE0002", "GENE0003"]
     _open_panel(page, served, sig=_sig(genes=genes))
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
     assert [c["kind"] for c in _calls(page)] == ["estimate", "compute"]
     header = _server_header(page, genes)
     assert header["type"] == "result", header
-    rows = _rows(page)
-    assert sorted(rows) == sorted(genes)
-    for g in header["genes"]:
-        det, mean, sd, clipped = rows[g["name"]]
-        assert _near(det, g["detected"], pct=True), (g, det)
-        assert _near(mean, g["mean"]), (g, mean)
-        assert _near(sd, g["sd"]), (g, sd)
-        assert clipped == "0%" or _near(clipped, g["clipped"], pct=True), (g, clipped)
+    _no_gene_list(page)
     # the summary beside the button and the figures under the histogram describe the score held
     summary = page.inner_text(f"{TOGGLE} .gsig-inspect__summary")
     assert re.fullmatch(r"Mean -?[\d.e-]+, SD [\d.e-]+, 60 cells", summary), summary
@@ -148,7 +138,7 @@ def test_a_plot_that_holds_the_score_means_no_second_request(page, served):
     before = _calls(page)
     assert [c["kind"] for c in before] == ["estimate", "compute"]
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
     # time for a second request, were one going to; the plot's score is the one inspected
     page.wait_for_timeout(500)
     assert _calls(page) == before, "the score the plot holds is the score inspected"
@@ -160,16 +150,17 @@ def test_a_plot_that_holds_the_score_means_no_second_request(page, served):
 def test_each_aggregation_is_offered_and_a_second_one_is_a_second_score_only_once(page, served):
     _open_panel(page, served)
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
     labels = page.eval_on_selector_all(f"{I} select.gsig-inspect__select option", "els => els.map(e => e.textContent + '|' + e.selected)")
     assert labels == ["z-score mean · X|true", "mean · X|false", "sum · X|false"]
     assert len(_calls(page, "compute")) == 1
     page.select_option(f"{I} select.gsig-inspect__select", "mean@X")
     until(page, "(I) => /Mean of X/.test((document.querySelector(I + ' .gsig-inspect__definition') || {}).textContent || '')", I)
-    page.wait_for_function("(I) => !!document.querySelector(I + ' .gsig-inspect__genes tbody tr')", arg=I)
+    _wait_ready(page)
     until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute' && c.method === 'mean').length === 1")
     assert page.inner_text(f"{I} .gsig-inspect__definition") == "Mean of X."
-    assert _rows(page)["GENE0001"][3] == "n/a", "a plain mean clips nothing"
+    _, text = _download(page, "genes")
+    assert {r[6] for r in list(csv.reader(io.StringIO(text)))[1:]} == {""}, "a plain mean clips nothing: the CSV has no clipped figure"
     # back to the first: held, so no request
     n = len(_calls(page))
     page.select_option(f"{I} select.gsig-inspect__select", "zscore_mean@X")
@@ -200,7 +191,7 @@ def test_with_no_plot_using_the_signature_inspect_starts_on_the_first_offered_op
 def test_the_histogram_has_a_tooltip_per_bin_by_pointer_and_keyboard(page, served):
     _open_panel(page, served)
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
     bins = _bins(page)
     assert len(bins) == 30 and sum(bins) == N_OBS
     hit = page.query_selector_all(f"{I} .gsig-hist__hit")
@@ -242,7 +233,7 @@ def test_cells_with_no_score_are_counted_and_said(page, served):
     values_js = [None if i in (3, 4, 5) else v for i, v in enumerate(values)]
     page.evaluate("""([v, h]) => window.__finish(0, v.map(x => x === null ? NaN : x), h)""",
                   [values_js, _fake_header([_g("GENE0001"), _g("GENE0002")])])
-    _wait_table(page)
+    _wait_ready(page)
     assert page.inner_text(f"{I} .gsig-inspect__missing") == "3 cells have no score (every gene is missing there) and are not in the histogram."
     assert "Missing 3" in page.inner_text(f"{I} .gsig-inspect__figures")
     assert sum(_bins(page)) == N_OBS - 3
@@ -265,52 +256,40 @@ def _fake_open(page, served, genes=FLAGGED, **kw):
     page.evaluate("([h]) => window.__finish(0, window.__ramp, h)", [_fake_header(genes)])
 
 
-def test_genes_that_dominate_or_are_barely_detected_are_flagged_in_plain_words(page, served):
+def test_flags_name_the_genes_in_plain_words_and_no_gene_list_is_drawn(page, served):
     page.add_init_script(f"window.__ramp = {json.dumps([float(i) for i in range(N_OBS)])};")
     _fake_open(page, served)
-    _wait_table(page)
-    flags = page.evaluate("""(I) => Object.fromEntries([...document.querySelectorAll(I + ' .gsig-inspect__genes tbody tr')].map(tr =>
-        [tr.dataset.gene, [...tr.querySelectorAll('.gsig-inspect__flag')].map(f => f.textContent)]))""", I)
-    assert flags["COMMON"] == []
-    assert flags["RARE"] == ["Barely detected: non-zero in 0.4% of cells, so a few cells set what it adds."]
-    assert flags["CLIPPER"] == ["Dominates: clipped in 3.2% of cells, where it outweighs the other genes."]
-    assert flags["FLAT"] == ["Left out: the same value in every cell."]
-    assert page.inner_text(f"{I} .gsig-inspect__flags") == "1 gene dominates the score, 1 is barely detected, 1 was left out."
-    assert page.inner_text(f"{I} tr[data-gene=CLIPPER] .gsig-col-clipped") == "3.2%"
+    _wait_ready(page)
+    assert page.inner_text(f"{I} .gsig-inspect__flags .gsig-inspect__flagtext") == "1 gene dominates the score, 1 is barely detected, 1 was left out."
+    named = page.evaluate("""(I) => [...document.querySelectorAll(I + ' .gsig-inspect__flaglist')].map(l =>
+        [l.dataset.flag, [...l.querySelectorAll('.gsig-inspect__gene')].map(b => b.textContent)])""", I)
+    assert named == [["dominates", ["CLIPPER"]], ["rare", ["RARE"]]], "only the genes that dominate or are barely detected are named"
+    assert "COMMON" not in page.inner_text(f"{I} .gsig-inspect__flags")
+    _no_gene_list(page)
 
 
-def test_the_gene_table_sorts_and_a_click_on_a_gene_focuses_it(page, served):
+def test_a_click_on_a_flagged_gene_focuses_it(page, served):
     page.add_init_script(f"window.__ramp = {json.dumps([float(i) for i in range(N_OBS)])};"
                          "window.__focused = []; document.addEventListener('focusedGeneChanged', e => window.__focused.push(e.detail.gene));")
     _fake_open(page, served)
-    _wait_table(page)
-    assert _order(page) == ["CLIPPER", "COMMON", "FLAT", "RARE"], "by name to begin with"
-    assert page.get_attribute(f"{I} th.gsig-col-name", "aria-sort") == "ascending"
-    page.click(f"{I} [data-sort=detected]")
-    assert _order(page) == ["FLAT", "COMMON", "CLIPPER", "RARE"], "a number sorts large first"
-    assert page.get_attribute(f"{I} th.gsig-col-detected", "aria-sort") == "descending"
-    page.click(f"{I} [data-sort=detected]")
-    assert _order(page) == ["RARE", "CLIPPER", "COMMON", "FLAT"]
-    page.click(f"{I} [data-sort=clipped]")
-    assert _order(page)[0] == "CLIPPER"
-    assert _order(page)[-1] == "FLAT", "a gene with no figure sorts last"
-    page.click(f"{I} [data-sort=name]")
-    assert _order(page) == ["CLIPPER", "COMMON", "FLAT", "RARE"]
-    page.click(f"{I} tr[data-gene=RARE] .gsig-inspect__gene")
+    _wait_ready(page)
+    page.click(f"{I} .gsig-inspect__flaglist[data-flag=rare] .gsig-inspect__gene")
     assert page.evaluate("() => window.__focused")[-1] == "RARE"
-    # the sort button keeps the focus after the table is drawn again
-    page.click(f"{I} [data-sort=sd]")
-    assert page.evaluate("() => document.activeElement.dataset.sort") == "sd"
+    page.click(f"{I} .gsig-inspect__flaglist[data-flag=dominates] .gsig-inspect__gene")
+    assert page.evaluate("() => window.__focused")[-1] == "CLIPPER"
 
 
-def test_a_long_gene_list_shows_the_first_hundred_and_offers_all(page, served):
-    genes = [_g(f"G{i:03d}") for i in range(250)]
+def test_the_csv_holds_every_genes_figures_not_only_the_flagged(page, served):
     page.add_init_script(f"window.__ramp = {json.dumps([float(i) for i in range(N_OBS)])};")
+    genes = [_g(f"G{i:03d}", mean=float(i)) for i in range(250)] + FLAGGED
     _fake_open(page, served, genes=genes)
-    _wait_table(page)
-    assert len(_order(page)) == 100
-    page.click(f"{I} [data-inspect-action=show-all]")
-    assert len(_order(page)) == 250
+    _wait_ready(page)
+    _no_gene_list(page)
+    _, text = _download(page, "genes")
+    rows = {r[1]: r for r in list(csv.reader(io.StringIO(text)))[1:]}
+    assert len(rows) == 254
+    assert float(rows["G007"][4]) == 7.0 and float(rows["RARE"][3]) == pytest.approx(0.004) and float(rows["CLIPPER"][6]) == pytest.approx(0.032)
+    assert rows["FLAT"][2] == "constant"
 
 
 # --------------------------------------------------------------------------- 7
@@ -335,7 +314,7 @@ def test_export_of_the_gene_figures(page, served):
     _wait_coloured(page)
     held = _numbers(page)
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
     header = _server_header(page, genes)
 
     name, text = _download(page, "genes")
@@ -348,30 +327,19 @@ def test_export_of_the_gene_figures(page, served):
         assert float(r[3]) == pytest.approx(g["detected"]) and float(r[4]) == pytest.approx(g["mean"]) and float(r[5]) == pytest.approx(g["sd"])
 
 
-def _directions(page):
-    """The Direction cell of each row, or None when the table has no such column."""
-    return page.evaluate("""(I) => { const rows = [...document.querySelectorAll(I + ' .gsig-inspect__genes tbody tr')];
-        if (!document.querySelector(I + ' .gsig-inspect__genes th.gsig-col-direction')) return null;
-        return Object.fromEntries(rows.map(tr => [tr.dataset.gene, tr.querySelector('td.gsig-col-direction').textContent.trim()])); }""", I)
-
-
-def test_down_genes_get_a_direction_column_in_the_table_and_in_the_export(page, served):
-    # no down gene: no column, in the table and in the file
+def test_down_genes_get_a_direction_column_in_the_export_only(page, served):
+    # no down gene: no column in the file
     _open_panel(page, served, sig=_sig(genes=["GENE0001", "GENE0002", "GENE0003"]))
     _inspect(page)
-    _wait_table(page)
-    assert _directions(page) is None
-    # one gene scored as down: the server says which side each gene is on, the table and the file repeat it
+    _wait_ready(page)
+    _, plain = _download(page, "genes")
+    assert list(csv.reader(io.StringIO(plain)))[0] == ["combination", "gene", "status", "detected_fraction", "mean", "sd", "clipped_fraction"]
+    # one gene scored as down: the server says which side each gene is on, the file repeats it
     page.goto("about:blank")
     _open_panel(page, served, sig=_sig(genes=["GENE0001", "GENE0003"], down=["GENE0002"]))
     _inspect(page)
-    _wait_table(page)
-    assert _directions(page) == {"GENE0001": "Up", "GENE0002": "Down", "GENE0003": "Up"}
-    heads = page.evaluate("(I) => [...document.querySelectorAll(I + ' .gsig-inspect__genes thead th')].map(th => th.textContent.trim())", I)
-    assert heads[:3] == ["Gene ▲", "Direction", "Detected"], heads
-    # sorting keeps each gene with its side
-    page.click(f"{I} [data-sort=mean]")
-    assert _directions(page) == {"GENE0001": "Up", "GENE0002": "Down", "GENE0003": "Up"}
+    _wait_ready(page)
+    _no_gene_list(page)
     name, text = _download(page, "genes")
     rows = list(csv.reader(io.StringIO(text)))
     assert rows[0] == ["combination", "gene", "direction", "status", "detected_fraction", "mean", "sd", "clipped_fraction"]
@@ -381,7 +349,7 @@ def test_down_genes_get_a_direction_column_in_the_table_and_in_the_export(page, 
 def test_inspect_has_no_per_cell_export_and_says_where_it_is_done(page, served):
     _open_panel(page, served, sig=_sig(genes=["GENE0001"]))
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
     assert page.locator(f"{I} [data-inspect-export=scores]").count() == 0
     assert "Export scores per cell" not in page.inner_text(f"{I} .gsig-inspect__body")
     assert page.inner_text(f"{I} [data-inspect-percell]") == "To export scores per cell, add them as columns to a Cell Table."
@@ -413,7 +381,7 @@ def test_computing_shows_progress_with_cancel_and_cancelled_offers_compute(page,
     page.click(f"{I} [data-inspect-action=score-compute]")
     until(page, "() => window.__ctls.length === 2")
     page.evaluate("(h) => window.__finish(1, window.__ramp, h)", _fake_header([_g("GENE0001")]))
-    _wait_table(page)
+    _wait_ready(page)
     assert _state(page) is None
 
 
@@ -456,7 +424,7 @@ def test_a_failed_score_says_why_and_retry_asks_again(page, served):
     page.click(f"{I} [data-inspect-action=score-retry]")
     until(page, "() => window.__ctls.length === 2")
     page.evaluate("(h) => window.__finish(1, window.__ramp, h)", _fake_header([_g("GENE0001")]))
-    _wait_table(page)
+    _wait_ready(page)
 
 
 def test_a_signature_with_no_genes_says_to_tick_some(page, served):
@@ -474,7 +442,7 @@ def test_an_edit_that_is_held_keeps_the_previous_score_and_update_applies_it(pag
     _inspect(page)
     until(page, "() => window.__ctls.length === 1")
     page.evaluate("(h) => window.__finish(0, window.__ramp, h)", _fake_header([_g("GENE0001")]))
-    _wait_table(page)
+    _wait_ready(page)
     page.click(f"{S} .gsig-seg >> nth=0")        # All genes
     page.fill(f"{S} .gsig-search", "GENE0005")
     page.keyboard.press("Enter")
@@ -498,13 +466,11 @@ def test_keyboard_opens_and_closes_inspect_and_the_option_is_one_select(page, se
     assert page.get_attribute(TOGGLE, "aria-expanded") == "true"
     assert page.get_attribute(TOGGLE, "aria-controls") == page.get_attribute(f"{I} .gsig-inspect__body", "id")
     assert page.get_attribute(f"{I} .gsig-inspect__body", "role") == "region"
-    _wait_table(page)
+    _wait_ready(page)
     assert page.get_attribute(f"{I} select.gsig-inspect__select", "aria-label") == "Score inspected: method and layer"
     page.select_option(f"{I} select.gsig-inspect__select", "mean@X")
     until(page, "(I) => /Mean of X/.test(document.querySelector(I + ' .gsig-inspect__definition').textContent)", I)
-    # tab order: gene buttons in the table are reachable and named
-    names = page.eval_on_selector_all(f"{I} .gsig-inspect__gene", "els => els.map(e => e.textContent)")
-    assert set(names) == {"GENE0001", "GENE0002"}
+    _no_gene_list(page)
     page.focus(TOGGLE)
     page.keyboard.press("Space")
     assert page.get_attribute(TOGGLE, "aria-expanded") == "false"
@@ -514,13 +480,13 @@ def test_keyboard_opens_and_closes_inspect_and_the_option_is_one_select(page, se
 def test_closing_inspect_lets_go_of_the_score_and_reopening_makes_no_request(page, served):
     _open_panel(page, served)
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
     page.click(TOGGLE)
     n = len(_calls(page))
     # nothing else holds the score now
     assert page.evaluate("() => window.PanelManager.getPanel('gene-signature-S')._inspect().isOpen()") is False
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
     assert len(_calls(page)) == n, "the score is still in the store"
 
 
@@ -529,7 +495,7 @@ def test_light_and_dark_use_the_theme_tokens(page, served, scheme):
     page.emulate_media(color_scheme=scheme)
     _open_panel(page, served)
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
     page.wait_for_selector(f"{I} .gsig-hist__bar")
     theme = page.evaluate("document.documentElement.getAttribute('data-theme')")
     assert theme == scheme
@@ -544,20 +510,15 @@ def test_light_and_dark_use_the_theme_tokens(page, served, scheme):
     assert style["bar"] == style["link"], "the bars wear the link token"
     assert style["tick"] == style["muted"], "axis text wears a text token, not the data colour"
     assert style["bg"] == style["surface2"]
-    text = page.evaluate("(I) => getComputedStyle(document.querySelector(I + ' .gsig-inspect__genes td')).color", I)
+    text = page.evaluate("(I) => getComputedStyle(document.querySelector(I + ' .gsig-inspect__figure strong')).color", I)
     assert text != style["bar"], "figures are not set in the data colour"
 
 
-def test_narrow_panels_keep_gene_and_detected_and_below_280_replace_the_chart_by_its_figures(page, served):
+def test_narrow_panels_below_280_replace_the_chart_by_its_figures(page, served):
     _open_panel(page, served)
     _inspect(page)
-    _wait_table(page)
-    assert page.is_visible(f"{I} .gsig-col-sd")
-    page.evaluate("(S) => { document.querySelector(S).style.width = '330px'; document.querySelector(S).style.flex = 'none'; }", S)
-    page.evaluate("(S) => { document.querySelector(S + ' .gsig-panel').parentElement.style.width = '330px'; }", S)
-    until(page, "(S) => document.querySelector(S + ' .gsig-panel').clientWidth <= 340", S)
-    assert not page.is_visible(f"{I} .gsig-col-sd"), "below 360 px the table shows Gene and Detected"
-    assert page.is_visible(f"{I} .gsig-col-detected")
+    _wait_ready(page)
+    assert page.is_visible(f"{I} .gsig-inspect__chartwrap")
     page.evaluate("(S) => { document.querySelector(S + ' .gsig-panel').parentElement.style.width = '260px'; }", S)
     until(page, "(S) => document.querySelector(S + ' .gsig-panel').clientWidth <= 270", S)
     assert not page.is_visible(f"{I} .gsig-inspect__chartwrap")
@@ -567,7 +528,7 @@ def test_narrow_panels_keep_gene_and_detected_and_below_280_replace_the_chart_by
 def test_inspect_chooses_among_method_and_layer_labels_both_and_requests_a_new_layer_once(page, served):
     _open_panel(page, served, sig=_sig(layers=["X", "counts"]))
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
     assert "z-score mean · X: score distribution" in page.inner_text(f"{I} .gsig-inspect__heading")
     assert "Per-gene figures for z-score mean · X" in page.inner_text(f"{I} .gsig-inspect__caption")
     n = len(_calls(page, "compute"))
@@ -611,7 +572,7 @@ def _ready_two(page, served):
     _open_panel(page, served, sig=_sig(genes=["GENE0001", "GENE0002"], **TWO), plots=(("cell-plot-C", None),))
     _wait_coloured(page)
     _inspect(page)
-    _wait_table(page)
+    _wait_ready(page)
 
 
 def test_the_chooser_ticks_the_inspected_and_computed_combinations_and_states_the_rest(page, served):
