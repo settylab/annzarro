@@ -621,3 +621,26 @@ def test_a_new_grouping_is_titled_grouping_1_and_other_types_keep_their_label(pa
     _open(page, served, {GA: _grouping(title="Mine")})
     got = page.evaluate("""() => ['cell-grouping', 'cell-grouping', 'cell-table'].map(t => window.PanelManager.createPanelInLayout(t, {}).getTitle())""")
     assert got == ["Grouping 1", "Grouping 2", "Cell Table 1"]
+
+
+# ------------------------------------------------------------------ 11. Toggle Controls
+
+def test_toggle_controls_hides_and_shows_the_grouping_bar_and_a_table_still_toggles(page, served):
+    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE]), TA: _table()}, open_ids=(GA, TA))
+    _ready(page)
+    page.wait_for_selector(f"{T} .table-controls", timeout=30000)
+    shown = "(s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && !e.closest('[hidden]'); }"
+    assert page.evaluate(shown, f"{A} .cgrp-controls") and page.evaluate(shown, f"{A} .cgrp-settings-zone")
+    page.click(f"{A} .tile-toggle-controls")
+    until(page, f"() => !({shown})('{A} .cgrp-controls')")
+    assert not page.evaluate(shown, f"{A} .cgrp-settings-zone"), "Settings hide with the controls (UX 2.1)"
+    assert page.evaluate(shown, f"{A} .cgrp-status") and page.evaluate(shown, f"{A} .cgrp-card"), "the status and the cards stay"
+    assert page.evaluate(f"() => window.PanelManager.getPanel('{GA}').getConfig().controlsVisible") is False
+    page.click(f"{A} .tile-toggle-controls")
+    until(page, f"() => ({shown})('{A} .cgrp-controls')")
+    assert page.evaluate(shown, f"{A} .cgrp-settings-zone")
+    # a table toggles as before
+    page.click(f"{T} .tile-toggle-controls")
+    until(page, f"() => !({shown})('{T} .table-controls')")
+    page.click(f"{T} .tile-toggle-controls")
+    until(page, f"() => ({shown})('{T} .table-controls')")

@@ -1121,7 +1121,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const messageUndo = el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-message__undo', hidden: true, on: { click: () => undo() } }, 'Undo');
             const message = el('div', { class: 'cgrp-message', role: 'status', aria: { live: 'polite' } }, messageText, messageUndo);
             // what Toggle Controls hides (UX 2.1): Add factor here, and the Settings row below
-            const controls = el('div', { class: 'cgrp-controls' }, _factors.addElement, undoBtn);
+            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, undoBtn);
             const groups = el('div', { class: 'cgrp-groups' });
             const statistics = el('div', { class: 'cgrp-statistics' });
             const settings = el('div', { class: 'cgrp-settings-zone' }, _settings.element);
