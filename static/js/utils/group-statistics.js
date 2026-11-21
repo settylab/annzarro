@@ -39,6 +39,7 @@ export const STATISTIC_INFO = Object.freeze([
 // export-unused-ok: consumed by X3a (a new plot's first statistics)
 export const DEFAULT_STATISTICS = Object.freeze(['mean', 'pct_expressing']);
 /** The statistic that is offered whatever the recipe says: it reads no feature. */
+// export-unused-ok: consumed by X3a and C2a (cell count is in every menu)
 export const ALWAYS_OFFERED = 'count';
 const DEFAULT_LAYER = 'X';
 const THRESHOLD_USERS = STATISTIC_INFO.filter((m) => m.needs.includes('detect_above')).map((m) => m.value);
@@ -48,6 +49,7 @@ const SIZE_STATISTIC = 'pct_expressing';
 const DEPTH_STATISTICS = Object.freeze(['mean', 'sum', 'sd']);
 
 /** "% expressing is not available on X: X has negative values. Choose a layer." (SHR-27) */
+// export-unused-ok: consumed by X3a (the control says it where a size would have been)
 export function negativeValuesSentence(stat, layer) {
     return `${NAME[stat]} is not available on ${layer}: ${layer} has negative values. Choose a layer.`;
 }
@@ -61,6 +63,7 @@ export function negativeValuesSentence(stat, layer) {
  * @param {{label?: string}} [ctx] - what to call the layer in the sentence (the panel says "every offered layer" when all share the issue)
  * @returns {{grade: 'ok'|'warn'|'cannot', code: string, reason: string}}
  */
+// export-unused-ok: consumed by X3a and C2a (menus grade a statistic on a layer)
 export function statisticGrade(stat, layer, kind, ctx = {}) {
     const name = ctx.label || `'${layer}'`;
     if (!statisticAvailability(stat, kind).available) {

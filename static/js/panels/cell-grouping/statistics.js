@@ -20,7 +20,7 @@ import { parseThresholdText } from '../../utils/options-model.js';
 import { GROUP_STATISTICS_MODEL as model, recipePatch, statisticUsage, thresholdLine } from '../../utils/group-statistics.js';
 
 /** The help texts, so the page and its tests say the same thing. */
-export const STATISTICS_HELP = Object.freeze({
+const STATISTICS_HELP = Object.freeze({
     title: 'Statistics offered',
     where: 'Plots pick from these. Nothing is computed until a plot shows it.',
     methods: 'Statistics',
