@@ -34,6 +34,7 @@ import { groupColours } from './cell-grouping.js';
 import { GROUP_COLOURS, grouped, groupOf, groupLegendLabel } from './categories.js';
 import { generateDiscreteColors, groupColours as colourGroupPalette } from '../panels/plot-utilities/colors.js';
 import { VOCABULARY } from './vocabulary.js';
+import { createGroupTable } from '../panels/cell-grouping/table-column.js';
 
 const W = VOCABULARY.word;
 const PL = VOCABULARY.plural;
@@ -527,8 +528,8 @@ registerSource({
     label: GROUP_TYPE,
     valueType: 'categorical',
     entity: 'cells',
-    consumers: ['cell-plot'],
-    axes: ['x', 'y', 'z', 'color', 'hover'],
+    consumers: ['cell-plot', 'cell-table'],
+    axes: ['x', 'y', 'z', 'color', 'hover', 'column'],
     // large-plot mode draws a grouping once G8b says on which axes (CAT-3)
     largeAxes: [],
     defaultSub: '',
@@ -551,6 +552,9 @@ registerSource({
         label: groupingTitle
     },
     titleOf: (setting) => `${W.grouping} ${groupingTitle(setting)}`,
+    // a grouping as a column of a Cell Table (CAT-6, CAT-7): panels/cell-grouping/table-column.js
+    table: createGroupTable({ sources: () => groupSources().sources, entities: groupingList, titleOf: groupingTitle, groupingPanel,
+        describe: (snap, ctx) => describeGrouping(withFigures(snap), ctx), open: openGrouping, missingOf }),
     placeholder: drawGroupPlaceholder,
     releaseHost: (host) => { if (_binding) _binding.releaseHost(host); },
     vocabulary: { result: W.grouping }
