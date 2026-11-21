@@ -361,3 +361,94 @@ def test_a_column_of_dates_is_refused_not_factorised_by_hand(store, tmp_path):
     with pytest.raises(cg.GroupError) as e:
         list(cg.compute(cg.plan(get_reader(path), path, req)))
     assert (e.value.status, e.value.reason) == (400, "unsupported_column")
+
+
+# --------------------------------------------------------------------------------------------- M5
+
+
+def _categories_store(path, n, columns):
+    """An obs-only store of ``n`` cells; ``columns`` maps a name to ``(stored, used)``: cell ``i`` holds category
+    ``(i % used) * (stored // used)``, so ``used`` categories spread over ``stored`` hold a cell."""
+    root = zarr_compat.open_group(path, mode="w")
+    root.attrs.update({"encoding-type": "anndata", "encoding-version": "0.1.0"})
+    obs = root.create_group("obs")
+    obs.attrs.update({"encoding-type": "dataframe", "encoding-version": "0.2.0", "_index": "_index",
+                      "column-order": list(columns)})
+    zarr_compat.write_array(obs, "_index", np.zeros(n, dtype=np.int8), chunks=(1024,))
+    for name, (stored, used) in columns.items():
+        g = obs.create_group(name)
+        g.attrs.update({"encoding-type": "categorical", "encoding-version": "0.2.0", "ordered": False})
+        codes = (np.arange(n) % used) * (stored // used)
+        zarr_compat.write_array(g, "codes", codes.astype(np.int16), chunks=(1024,))
+        zarr_compat.write_strings(g, "categories", [f"{name}{i:05d}" for i in range(stored)])
+    for name in ("var", "obsm", "obsp", "layers"):
+        g = root.create_group(name)
+        g.attrs.update({"encoding-type": "dict" if name != "var" else "dataframe", "encoding-version": "0.1.0"})
+    zarr_compat.consolidate(path)
+    return path
+
+
+@pytest.fixture(scope="module")
+def categories_store(tmp_path_factory):
+    return _categories_store(str(tmp_path_factory.mktemp("m5") / "cats.zarr"), 3000,
+                             {"atlas": (5000, 80), "wide": (2600, 2500), "mid": (300, 80)})
+
+
+def _group(path, parts, rows=None):
+    req = cg.parse_request(body(parts))
+    return [r for e, r in cg.compute(cg.plan(get_reader(path), path, req), rows) if e == "result"][0]
+
+
+def _grid(path, mode, parts, rows=None):
+    from annzarro.core import cell_grid as cgr
+    p = cgr.plan(get_reader(path), path, cgr.parse_request({"shape": "grid", "mode": mode, "partitionings": parts}))
+    return [r for e, r in cgr.compute(p, rows) if e == "result"][0]
+
+
+def test_m5_stored_categories_past_the_limit_count_only_those_holding_a_cell(categories_store):
+    atlas = {"source": {"type": "obs", "key": "atlas"}}
+    res = _group(categories_store, [atlas])                       # 5,000 stored, 80 used: grouped, not refused
+    assert res.refused is None and len(res.groups) == 80
+    assert [g["key"] for g in res.groups] == [[f"c:atlas{i * 62:05d}"] for i in range(80)]
+    assert all(g["n"] in (37, 38) for g in res.groups) and res.n_grouped == 3000
+    p = res.partitionings[0]
+    assert [lv["id"] for lv in p["levels"]] == [g["key"][0] for g in res.groups]
+    assert len(p["categories"]) == 5000                           # every stored category is still listed
+    grid = _grid(categories_store, "categorical", [atlas])        # the grid's axis agrees
+    assert grid.refused is None and grid.axes[0]["levels"] == [g["key"][0] for g in res.groups]
+
+
+def test_m5_a_subset_counts_the_categories_of_the_cells_shown(categories_store):
+    rows = np.arange(0, 3000, 80)                                 # every 80th cell: one category
+    res = _group(categories_store, [{"source": {"type": "obs", "key": "wide"}}], rows)
+    assert res.refused is None
+    assert len(res.groups) == len({int(r) % 2500 for r in rows})
+
+
+def test_m5_categories_holding_a_cell_past_the_limit_are_refused_with_their_count(categories_store):
+    res = _group(categories_store, [{"source": {"type": "obs", "key": "wide"}}])      # 2,600 stored, 2,500 used
+    assert res.refused == {"reason": "too_many_levels", "count": 2500, "limit": 2000, "partitioning": 0,
+                           "levels": []}
+    grid = _grid(categories_store, "categorical", [{"source": {"type": "obs", "key": "mid"}}])   # 300 > 200 stored
+    assert grid.refused is None and len(grid.axes[0]["levels"]) == 80
+    grid = _grid(categories_store, "categorical", [{"source": {"type": "obs", "key": "atlas"}},
+                                                   {"source": {"type": "obs", "key": "wide"}}])
+    assert grid.refused["reason"] == "too_many_levels" and grid.refused["count"] == 2500
+    assert grid.refused["axis"] == 1
+
+
+def test_m5_a_grid_axis_of_many_is_counted_after_its_read(store):
+    res = _grid(store, "categorical", [{"source": {"type": "obs", "key": "many"}}])
+    assert res.refused["reason"] == "too_many_levels"
+    assert (res.refused["count"], res.refused["limit"]) == (1200, 200)
+
+
+def test_m5_within_the_limit_the_column_is_read_once_and_nothing_changes(categories_store, monkeypatch):
+    reads = []
+    real = cg.cs.column
+    monkeypatch.setattr(cg.cs, "column", lambda *a, **k: (reads.append(a[2]["key"]), real(*a, **k))[1])
+    res = _group(categories_store, [{"source": {"type": "obs", "key": "mid"}}])        # 300 stored, under 2,000
+    assert reads == ["mid"] and len(res.partitionings[0]["levels"]) == 300          # unused levels listed, n 0
+    reads.clear()
+    _group(categories_store, [{"source": {"type": "obs", "key": "atlas"}}])
+    assert reads == ["atlas", "atlas"]                            # past the limit: a counting pass, then the read

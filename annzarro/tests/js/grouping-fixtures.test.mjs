@@ -30,7 +30,12 @@ test("every grouping recipe's groups add up to the cells grouped", () => {
 });
 
 test("a recipe over the level limit is refused with its count", () => {
-  assert.deepEqual(expected.grouping.many_over_limit.refused, { reason: "too_many_levels", count: 2001, limit: 2000 });
+  assert.deepEqual(expected.grouping.many_all_kept_over_limit.refused, { reason: "too_many_levels", count: 2001, limit: 2000 });
+});
+
+test("unused stored categories do not count for the level limit", () => {
+  // SHR-6, SHR-7: 2,001 stored categories, 1,200 holding a cell
+  assert.equal(expected.grouping.many_unused_categories.groups.length, 1200);
 });
 
 test("a category called other keeps its own id beside @other", () => {
