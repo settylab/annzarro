@@ -13,7 +13,7 @@ SOURCE = {"type": "obsp", "key": "dense_p", "column": "41"}
 
 @pytest.fixture(scope="module")
 def store(tmp_path_factory):
-    return make_cell_store(tmp_path_factory.mktemp("obsp") / "s.zarr", "csc", "zarr")
+    return make_cell_store(tmp_path_factory.mktemp("obsp") / "s.zarr", "csc", "zarr")[0]
 
 
 def test_the_limit_is_the_large_plot_threshold():
