@@ -981,6 +981,8 @@ export async function loadColorDataAndUpdatePlot(
             data.colorRankOf = colorData.rankOf || null;
             data.colorRanked = !!colorData.ranked;
             data.colorGroupNames = colorData.groupNames || null;
+            // what the legend calls the points without a category: a provider's own words ('Not in any group'), else 'NA'
+            data.colorMissingLabel = colorData.missingLabel || null;
             // Colour DESCRIBES the points (see ROLE). Without this the panel
             // kept announcing the PREVIOUS colour column's coverage -- and, on
             // a refocus, said nothing about a varp/obsp/layer row that came back

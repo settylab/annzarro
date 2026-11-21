@@ -1051,7 +1051,9 @@ export function keptViewRanges(settings) {
 
     // Points with no value, under the categories and last in the legend.
     if (blankIndices.length > 0) {
-      const naTrace = makeTrace(blankIndices, NO_VALUE_CATEGORY, 'rgba(200, 200, 200, 1.)', 'no value');
+      // a provider may name them ('Not in any group' for a grouping); a column's are 'NA' and 'no value'
+      const missing = data.colorMissingLabel || null;
+      const naTrace = makeTrace(blankIndices, missing || NO_VALUE_CATEGORY, 'rgba(200, 200, 200, 1.)', missing || 'no value');
       naTrace.legendrank = 1001;
       traces.push(naTrace);
     }

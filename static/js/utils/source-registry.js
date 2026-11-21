@@ -40,7 +40,9 @@
  *                       categorical  {codes, MISSING, categories, colours, coverage, rankOf?, ranked?, groupNames?, values?}
  *                     A categorical series of more than GROUP_COLOURS categories is drawn in colour groups (utils/categories.js):
  *                     `rankOf` (category -> rank over every cell) decides each category's colour. `ranked` codes are
- *                     those ranks themselves, with no labels: then `groupNames` names each colour's legend entry
+ *                     those ranks themselves, with no labels: then `groupNames` names each colour's legend entry.
+ *                     `missingLabel`, optional: what the legend calls the points without a category ('Not in any
+ *                     group'); 'NA' when not given
  *                     It names what it read in the setting: `label` (the entity's title, kept for when it is
  *                     gone) and, when the title has two lines, `labelFull` (joined by '\n'); titles read them, as
  *                     they cannot reach the page. A series that cannot be drawn yet throws SourceUnavailable
@@ -68,6 +70,33 @@ const _providers = new Map();
 
 /** The sources every dataset has, read by plot-make.js itself; any other type is a provider's. */
 const BUILT_IN = new Set(['none', 'obs', 'obsm', 'obsp', 'layer', 'var', 'varm', 'varp']);
+
+/** What starts the value of an entry a built-in type's key list holds for a provider (never stored: it is a way to choose). */
+const ALSO = '\u0001';
+
+/**
+ * The entries a built-in type's key list adds for the providers listed under it too (a grouping under obs, UX 5), for a
+ * consumer's roles: each entity as `{value, text, group}`, grouped under the provider's `alsoListedGroup`. Choosing one
+ * switches the type select to the provider's type (parseAlsoListed); the value itself is never stored.
+ * @param {string} builtIn - 'obs'
+ * @param {string} consumer - a panel type, e.g. 'cell-plot'
+ * @param {string[]} roles
+ */
+export function alsoListedEntries(builtIn, consumer, roles) {
+    return sourcesFor(consumer, roles).filter(p => p.alsoListedUnder === builtIn && p.alsoListedGroup)
+        .flatMap(p => p.entities().map(e => ({ value: `${ALSO}${p.type}${ALSO}${e.id}`, text: e.title, group: p.alsoListedGroup })));
+}
+
+/**
+ * The provider's type and entity an entry of alsoListedEntries stands for, or null for any other value.
+ * @param {string} value
+ * @returns {{type: string, key: string}|null}
+ */
+export function parseAlsoListed(value) {
+    if (typeof value !== 'string' || !value.startsWith(ALSO)) return null;
+    const [type, key] = value.slice(ALSO.length).split(ALSO);
+    return getSource(type) && key ? { type, key } : null;
+}
 
 /** What starts the value of an entry a built-in type's key list holds for a provider (never stored: it is a way to choose). */
 const ALSO = '\u0001';
@@ -167,7 +196,7 @@ export function subKeyOf(setting) {
  * @param {string} joiner - '<br>' for a colour bar, ' · ' for an axis
  */
 export function settingTitle(setting, joiner) {
-    return setting.labelFull ? setting.labelFull.replace('\n', joiner) : (setting.label || setting.key || '');
+            groupNames: null, colours: null, missingLabel: null };
 }
 
 /**
@@ -175,7 +204,7 @@ export function settingTitle(setting, joiner) {
  * provider's placeholder, both with the notice over the plot. `state` is the provider's state name, `type` the
  * provider's type (whose placeholder an axis draws).
  */
-export class SourceUnavailable extends Error {
+        ranked, groupNames: series.groupNames || null, colours: series.colours || null, missingLabel: series.missingLabel || null };
     constructor(text, notice, coverage, state = null, type = null) {
         super(text);
         this.name = 'SourceUnavailable';
