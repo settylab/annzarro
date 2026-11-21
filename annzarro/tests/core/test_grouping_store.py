@@ -156,8 +156,10 @@ def test_small_group_modes(data):
 
 
 def test_level_limit_and_members(data):
-    assert gs.reference_groups(data, gs.GROUPING_RECIPES["many_over_limit"]["partitionings"])["refused"] == \
+    assert gs.reference_groups(data, gs.GROUPING_RECIPES["many_all_kept_over_limit"]["partitionings"])["refused"] == \
         {"reason": "too_many_levels", "count": 2001, "limit": 2000}
+    unused = gs.reference_groups(data, gs.GROUPING_RECIPES["many_unused_categories"]["partitionings"])
+    assert len(unused["groups"]) == 1200 and unused["n_grouped"] == 1200      # the levels that hold a cell (SHR-6, SHR-7)
     m = gs.reference_groups(data, gs.GROUPING_RECIPES["depth_above_2"]["partitionings"])
     assert [g["key"] for g in m["groups"]] == [["@in"], ["@out"]]
     assert m["groups"][0]["n"] == int((data.obs["depth"] > 2).sum())
