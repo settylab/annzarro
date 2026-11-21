@@ -93,7 +93,7 @@ export function cleanThreshold(value) {
 
 /** The word the section gives a kind (from core/matrix_kind.py): it answers "which layer should I use". */
 export function kindWord(kind) {
-    return { counts: 'counts', normalised: 'normalised', log: 'log-normalised', signed: 'scaled', other: 'other' }[kind] || '';
+    return { counts: 'counts', normalised: 'normalized', log: 'log-normalized', signed: 'scaled', other: 'other' }[kind] || '';
 }
 
 /** A figure in the panel's words: 3 significant digits, a true minus sign. */
