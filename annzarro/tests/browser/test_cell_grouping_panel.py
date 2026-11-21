@@ -343,6 +343,11 @@ def test_job5_a_panel_set_round_trip_and_a_set_added_beside_open_panels_remaps_t
     _save_set(page, name)
     page.goto(root)
     page.wait_for_function("() => window.sessionManager && window.PanelManager")
+    # The page is still starting up when those two exist: it loads its configuration, builds the layout and opens
+    # the dataset (the chooser is drawn, and a dataset is current, only then). A set loaded into that start-up
+    # raced it: its panels were made beside the half-built layout, under new ids, and never drawn.
+    page.wait_for_selector(".panel-type-option[data-type='cell-plot']", timeout=30000)
+    page.wait_for_function("() => window.sessionManager.getCurrentDatasetInfo().hasCurrent", timeout=30000)
     loaded = page.evaluate("(n) => window.sessionManager.loadSession(n)", name)
     assert loaded["status"] == "success", loaded
     page.wait_for_selector(f"{A} .cgrp-status[data-state]", timeout=30000)

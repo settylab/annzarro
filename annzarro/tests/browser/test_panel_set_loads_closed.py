@@ -822,7 +822,11 @@ def test_load_opens_only_the_panels_open_at_save(server, browser, case, open_ids
 
 
 def _choose_file(page, path):
-    _open_dialog(page)
+    # Uploading needs the dialog, not a saved set: the list may be empty (a test run alone, or first), and
+    # then no card ever shows. Wait for the dialog's own upload button.
+    page.wait_for_selector(".modal-backdrop", state="detached")
+    page.click("#btn-load-session")
+    page.locator("#toggle-upload-btn").wait_for(state="visible", timeout=30000)
     page.click("#toggle-upload-btn")
     page.set_input_files("#session-file-upload", str(path))
     card = page.locator("#upload-card")
