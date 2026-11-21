@@ -79,8 +79,8 @@ def test_a_grouping_colours_a_large_plot_one_entry_per_group_in_group_order(page
     assert [t[0] for t in traces] == TYPES, "one entry per group, in group order"
     assert [t[2] for t in traces] == [n for _, n in gstore.CELL_TYPES], "every cell is drawn, in its group's colour"
     assert _legend(page) == "Grouping 1", "the legend is named for the grouping (CAT-8)"
-    request = [c for c in page.calls if not c.get("estimate_only")][-1]
-    assert request["want"]["codes"] is True
+    # the grouping's own panel asks too, without codes: the plot's request is the one that wants them
+    assert [c for c in page.calls if not c.get("estimate_only") and c["want"]["codes"]], "the plot asked for the codes"
 
 
 def test_cells_in_no_group_read_not_in_any_group_in_large_plot_mode(page, large_served):
