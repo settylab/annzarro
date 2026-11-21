@@ -47,6 +47,7 @@ const LEGEND_X = 0.83;
 const PLOT_RIGHT = 0.78;
 const LEGEND_SLOT_MAX = 0.3;
 const MAIN = 'main';
+const TICK_MAX = 120;
 
 /** Plotly reads a little markup in titles, ticks and hover text, so a name holding `<` or `&` is escaped. */
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -284,9 +285,15 @@ function sizeLegendParts(model, k, entry, n, th) {
 
 // --- axes -------------------------------------------------------------------------------------------------------
 
+/**
+ * Labels on an axis are capped at TICK_MAX, every n-th one: Plotly measures every label (and again for automargin),
+ * which took 26 s for 2,000 genes. The hover still names every cell. Fitting labels to the pixels is X4b's thinning.
+ */
 function axisOf(ticks, labels, extent, th, extra) {
+    const stride = Math.ceil(ticks.length / TICK_MAX);
+    const keep = (_, k) => k % stride === 0;
     return {
-        tickvals: ticks, ticktext: labels, range: [-0.5, Math.max(extent, 1) - 0.5], zeroline: false, automargin: true,
+        tickvals: stride > 1 ? ticks.filter(keep) : ticks, ticktext: stride > 1 ? labels.filter(keep) : labels, range: [-0.5, Math.max(extent, 1) - 0.5], zeroline: false, automargin: true,
         gridcolor: th.gridColor, linecolor: th.axisColor, tickcolor: th.axisColor, ...extra
     };
 }
