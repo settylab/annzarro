@@ -110,7 +110,11 @@ export function keepStored(typed, stored) {
 
 // ---------------------------------------------------------------------------------------------- what each control writes
 
-const renormalised = (raw) => normalizeBinning(raw).binning;
+/**
+ * A binning as the host stores it. `options` are normalizeBinning's: a count plot takes more bins than a grouping, and
+ * keeps a bin count equal to the grouping's default, since its own default differs (`{max, keepDefault: true}`).
+ */
+const renormalised = (raw, options) => normalizeBinning(raw, options).binning;
 
 /**
  * Another method. The zero bin, the population and the bin count stay (the new method takes its own default when none
@@ -121,7 +125,7 @@ const renormalised = (raw) => normalizeBinning(raw).binning;
  * @param {Object|null} [info] - this partitioning of the reply
  */
 // export-unused-ok: the control's model is read by its Node tests, and the count plot (C2a) reads it
-export function setMethod(binning, method, info = null) {
+export function setMethod(binning, method, info = null, options) {
     if (binning.method === method) return binning;
     const raw = { ...binning, method };
     delete raw.thresholds;
@@ -132,50 +136,50 @@ export function setMethod(binning, method, info = null) {
         raw.thresholds = frozen ? frozen.thresholds
             : h && Number.isFinite(h.lo) && Number.isFinite(h.hi) && h.lo < h.hi ? [Number(((h.lo + h.hi) / 2).toPrecision(3))] : [0];
     }
-    return renormalised(raw);
+    return renormalised(raw, options);
 }
 
 // export-unused-ok: the control's model is read by its Node tests, and the count plot (C2a) reads it
-export const setBins = (binning, bins) => renormalised({ ...binning, bins });
+export const setBins = (binning, bins, options) => renormalised({ ...binning, bins }, options);
 
 // export-unused-ok: the control's model is read by its Node tests, and the count plot (C2a) reads it
-export function setZeroBin(binning, on) {
+export function setZeroBin(binning, on, options) {
     const raw = { ...binning };
     if (on) raw.zero_bin = true; else delete raw.zero_bin;
-    return renormalised(raw);
+    return renormalised(raw, options);
 }
 
 // export-unused-ok: the control's model is read by its Node tests, and the count plot (C2a) reads it
-export function setEdgesFrom(binning, population) {
+export function setEdgesFrom(binning, population, options) {
     const raw = { ...binning };
     if (population === 'all') raw.edges_from = 'all'; else delete raw.edges_from;
-    return renormalised(raw);
+    return renormalised(raw, options);
 }
 
 /** @param {?Array<?number>} range - `[lo, hi]` with a side null for auto; null for no range */
 // export-unused-ok: the control's model is read by its Node tests, and the count plot (C2a) reads it
-export function setRange(binning, range) {
+export function setRange(binning, range, options) {
     const raw = { ...binning };
     if (range) raw.range = range; else delete raw.range;
-    return renormalised(raw);
+    return renormalised(raw, options);
 }
 
 // export-unused-ok: the control's model is read by its Node tests, and the count plot (C2a) reads it
-export const setThresholds = (binning, thresholds) => renormalised({ ...binning, thresholds });
+export const setThresholds = (binning, thresholds, options) => renormalised({ ...binning, thresholds }, options);
 
 /**
  * One threshold moved, between its neighbours and never onto or across one.
  * @returns {Object|null} the new binning, or null when the move is not allowed or changes nothing
  */
 // export-unused-ok: the control's model is read by its Node tests, and the count plot (C2a) reads it
-export function moveThreshold(binning, index, value) {
+export function moveThreshold(binning, index, value, options) {
     const ts = binning.method === 'manual' ? binning.thresholds : null;
     if (!ts || !Number.isInteger(index) || index < 0 || index >= ts.length || !Number.isFinite(value) || value === ts[index]) return null;
     if (index > 0 && value <= ts[index - 1]) return null;
     if (index < ts.length - 1 && value >= ts[index + 1]) return null;
     const next = [...ts];
     next[index] = value;
-    return setThresholds(binning, next);
+    return setThresholds(binning, next, options);
 }
 
 /** Freeze thresholds (SHR-17): the manual binning that puts every cell where it is now, or null. */
@@ -395,7 +399,9 @@ function mount(host, ctx) {
     const max = ctx.max || BINS_MAX;
     const key = stableStringify(p.source);
     const mem = memoryOf(key);
-    const binning = normalizeBinning(p.binning).binning;
+    // a count plot's bins go past the grouping's limit, and its own default differs, so a count it is given is kept
+    const nb = kind === 'count' ? { max, keepDefault: true } : undefined;
+    const binning = normalizeBinning(p.binning, nb).binning;
     const sig = stableStringify(binning);
     const name = sourceName(p.source, ctx.titleOf);
     const method = binning.method;
@@ -426,7 +432,7 @@ function mount(host, ctx) {
     if (hist && ctx.fresh) {
         if (ctx.settled) ctx.settled();
         if (zeroBinDefault(binning, info)) {
-            setTimeout(() => ctx.commit({ ...p, binning: setZeroBin(binning, true) }, `zero as its own bin of ${name}`), 0);
+            setTimeout(() => ctx.commit({ ...p, binning: setZeroBin(binning, true, nb) }, `zero as its own bin of ${name}`), 0);
         }
     }
 
@@ -459,7 +465,7 @@ function mount(host, ctx) {
     // ---- the first row: method, bins or thresholds, zero bin
     const methods = METHOD_ORDER.filter((m) => m !== 'categories' || method === 'categories');
     const select = h('select', { class: 'form-select form-select-sm pbc-method', title: METHOD_HELP[method],
-        on: { change: () => apply(setMethod(binning, select.value, info), `${METHOD_LABEL[select.value].toLowerCase()} bins of ${name}`) } },
+        on: { change: () => apply(setMethod(binning, select.value, info, nb), `${METHOD_LABEL[select.value].toLowerCase()} bins of ${name}`) } },
     methods.map((m) => h('option', { value: m, text: METHOD_LABEL[m], selected: m === method })));
     const row = h('div', { class: 'pbc-row' }, label('Method', select));
 
@@ -468,7 +474,7 @@ function mount(host, ctx) {
         row.append(label('Bins', textInput('pbc-bins', shown, `A whole number from ${BINS_MIN} to ${fmt(max)}.`, (input, was) => {
             const r = parseBins(input.value, { max });
             if (!r.ok) refuse(input, r.message, was);
-            else apply(setBins(binning, r.value), `${r.value} bins of ${name}`);
+            else apply(setBins(binning, r.value, nb), `${r.value} bins of ${name}`);
         }, '5rem')));
     }
     if (method === 'manual') {
@@ -476,12 +482,12 @@ function mount(host, ctx) {
         row.append(label('Thresholds', textInput('pbc-thresholds', shown, 'Numbers separated by commas; sorted for you. Drag a line on the chart to move one.', (input, was) => {
             const r = parseThresholds(input.value);
             if (!r.ok) refuse(input, r.message, was);
-            else apply(setThresholds(binning, keepStored(r.value, binning.thresholds)), `thresholds of ${name}`);
+            else apply(setThresholds(binning, keepStored(r.value, binning.thresholds), nb), `thresholds of ${name}`);
         }, '12rem')));
     }
     if (method !== 'categories' && zeroBinOffered(info)) {
         const box = h('input', { type: 'checkbox', class: 'pbc-zero', checked: !!binning.zero_bin,
-            on: { change: () => apply(setZeroBin(binning, box.checked), `${box.checked ? 'zero as its own bin' : 'no zero bin'} of ${name}`) } });
+            on: { change: () => apply(setZeroBin(binning, box.checked, nb), `${box.checked ? 'zero as its own bin' : 'no zero bin'} of ${name}`) } });
         row.append(h('label', { class: 'pbc-zero-field', title: 'Cells at exactly 0 form one bin; the method divides the rest.' }, box, ' Zero as its own bin'));
     }
 
@@ -491,7 +497,7 @@ function mount(host, ctx) {
         const group = `pbc-edges-${serial}`;
         const radio = (value, text, tip) => {
             const input = h('input', { type: 'radio', name: group, value, checked: (binning.edges_from || 'shown') === value,
-                on: { change: () => { if (input.checked) apply(setEdgesFrom(binning, value), `edges from ${value === 'all' ? 'all cells' : 'cells shown'} of ${name}`); } } });
+                on: { change: () => { if (input.checked) apply(setEdgesFrom(binning, value, nb), `edges from ${value === 'all' ? 'all cells' : 'cells shown'} of ${name}`); } } });
             return h('label', { class: 'pbc-radio', title: tip }, input, ` ${text}`);
         };
         rows.push(h('div', { class: 'pbc-row' },
@@ -506,7 +512,7 @@ function mount(host, ctx) {
                 const hi = which === 1 ? inp.value : (range[1] === null ? '' : String(range[1]));
                 const r = parseRange(lo, hi, method);
                 if (!r.ok) refuse(inp, r.message, value === null ? '' : String(value));
-                else apply(setRange(binning, r.value), `range of ${name}`);
+                else apply(setRange(binning, r.value, nb), `range of ${name}`);
             }, '5rem');
             input.placeholder = 'auto';
             return input;
@@ -541,7 +547,7 @@ function mount(host, ctx) {
         line.setAttribute('aria-valuetext', figure(v));
     };
     const commitMove = (i, v) => {
-        const next = moveThreshold(binning, i, v);
+        const next = moveThreshold(binning, i, v, nb);
         if (next) apply(next, `move threshold ${i + 1} of ${name}`);
     };
     if (hist) {
