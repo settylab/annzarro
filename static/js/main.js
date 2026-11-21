@@ -118,6 +118,10 @@ const App = (function() {
                 return;
             }
 
+            // A panel set loaded from now on (the Load button works once _initUI has run, and scripts see
+            // window.sessionManager) waits until setViewApplier below, never the closed-panels fallback
+            SessionManager.expectViewApplier();
+
             installHoverCopy(() => DataManager.getCurrentDataset());
             _panelUnderPointer = trackPointerPanel();
 
@@ -322,6 +326,8 @@ const App = (function() {
             console.error('Error initializing application:', error);
             _showNotification('AnnZarro did not start', error.message, 'error');
         } finally {
+            // a start-up that failed before the applier was set: the loads waiting for it go on (closed panels)
+            SessionManager.startupEnded();
             _bootDone();
         }
     }
@@ -3713,6 +3719,7 @@ const App = (function() {
         card.querySelector('.session-card-dataset').append(badge.el, styleBadge.el);
         const actions = createLoadActions({
             getCurrent: SessionManager.getCurrentDatasetInfo,
+            pageReady: () => (SessionManager.isReady() ? null : SessionManager.whenReady()),
             onLoad: async (mode) => {
                 actions.setBusy(true);
                 try {
@@ -3847,6 +3854,7 @@ const App = (function() {
         host.appendChild(dataset);
         const actions = createLoadActions({
             getCurrent: SessionManager.getCurrentDatasetInfo,
+            pageReady: () => (SessionManager.isReady() ? null : SessionManager.whenReady()),
             onLoad: async (mode) => {
                 actions.setBusy(true);
                 _dialogNote(host, '');

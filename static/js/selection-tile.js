@@ -933,6 +933,8 @@ export class SelectionTile {
           compact: true,
           getCurrent: () => (sessionManager && sessionManager.getCurrentDatasetInfo
             ? sessionManager.getCurrentDatasetInfo() : {}),
+          pageReady: () => (sessionManager && sessionManager.isReady && !sessionManager.isReady()
+            ? sessionManager.whenReady() : null),
           onLoad: async (mode) => {
             if (!sessionManager) { console.error('SessionManager not available, cannot load session'); return; }
             actions.setBusy(true);
