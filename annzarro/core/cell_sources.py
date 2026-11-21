@@ -347,8 +347,10 @@ def _text_slabs(reader, dataset_path, key, rows, total, should_stop) -> Iterator
         missing = np.fromiter((v is None for v in vals), dtype=bool, count=vals.size)
         if missing.all():
             continue
-        distinct, inverse = np.unique(vals[~missing].astype(str), return_inverse=True)
-        ids = np.asarray([seen.setdefault(v, len(seen)) for v in distinct.tolist()], dtype=np.int64)
+        # a dictionary over the slab's strings: no fixed-width copy, whose size the longest string sets
+        present = vals[~missing].tolist()
+        ids = np.fromiter((seen.setdefault(v if type(v) is str else str(v), len(seen)) for v in present),
+                          dtype=np.int64, count=len(present))
         if len(seen) > limit:
             raise CellSourceError(422, "too_many_categories",
                                   f"Column '{key}' has more than {limit} distinct values; the most a source can read is "
@@ -356,7 +358,7 @@ def _text_slabs(reader, dataset_path, key, rows, total, should_stop) -> Iterator
         if len(seen) >= 0xFFFF and codes.dtype == np.uint16:
             codes = np.where(codes == 0xFFFF, np.uint32(0xFFFFFFFF), codes.astype(np.uint32)).astype(np.uint32)
         out = np.full(vals.size, codes.dtype.type(np.iinfo(codes.dtype).max), dtype=codes.dtype)
-        out[~missing] = ids[inverse.reshape(-1)]
+        out[~missing] = ids
         codes[a:b] = out
     order = sorted(seen)
     rank = np.empty(len(order) + 1, dtype=np.int32)
@@ -470,9 +472,9 @@ def _layer_slabs(reader, dataset_path, source, rows, total, should_stop) -> Iter
     with gs.open_source(reader, dataset_path, source.get("key") or "X") as matrix:
         _guard(should_stop)
         (_, at, values), = matrix.tasks([col])[0].read()
-    at = None if at is None else np.asarray(at, dtype=np.int64)
+    at = None if at is None else np.asarray(at)          # as stored (int32 mostly): no int64 copy of the entries
     values = np.asarray(values)
-    if at is not None and at.size > 1 and (np.diff(at) <= 0).any():
+    if at is not None and at.size > 1 and not bool(np.all(at[1:] > at[:-1])):
         order = np.argsort(at, kind="stable")
         at, values = at[order], values[order]
     for a, b in _spans(total):
@@ -483,7 +485,8 @@ def _layer_slabs(reader, dataset_path, source, rows, total, should_stop) -> Iter
             idx = _index(rows, a, b)
             out = np.zeros(idx.size, dtype=values.dtype)
             if at.size:
-                pos = np.searchsorted(at, idx)
+                # the rows in the entries' own type, so searchsorted does not cast the entries (a row fits: it is one)
+                pos = np.searchsorted(at, idx.astype(at.dtype, copy=False) if at.dtype.kind in "iu" else idx)
                 hit = (pos < at.size) & (at[np.minimum(pos, at.size - 1)] == idx)
                 out[hit] = values[pos[hit]]
         yield Slab(a, out, "number")
