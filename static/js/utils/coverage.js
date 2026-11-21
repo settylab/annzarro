@@ -993,20 +993,20 @@ export function classifyFilterStats(filterStats, unit = 'values', { axisCoverage
             add(only.table, 'table filter', 'points not in the linked table', 'table');
         }
         if (filterStats.hideNaNActive) {
-            add(only.nan, 'colour', 'points with no colour value (Hide NaN is on)', 'nan');
+            add(only.nan, 'color', 'points with no color value (Hide NaN is on)', 'nan');
         }
         if (filterStats.hideOutliersActive) {
-            add(only.outliers, 'colour', 'points outside the colour range (Hide Outliers is on)', 'outliers');
+            add(only.outliers, 'color', 'points outside the color range (Hide Outliers is on)', 'outliers');
         }
     } else {
         addAxis(filterStats.xNaN, 'x-axis', 'points with no x value', axisCoverage && axisCoverage.x);
         addAxis(filterStats.yNaN, 'y-axis', 'points with no y value', axisCoverage && axisCoverage.y);
         addAxis(filterStats.zNaN, 'z-axis', 'points with no z value', axisCoverage && axisCoverage.z);
         if (filterStats.hideNaNActive) {
-            add(filterStats.colorNaN, 'colour', 'points with no colour value (Hide NaN is on)');
+            add(filterStats.colorNaN, 'color', 'points with no color value (Hide NaN is on)');
         }
         if (filterStats.hideOutliersActive) {
-            add(filterStats.colorOutliers, 'colour', 'points outside the colour range (Hide Outliers is on)');
+            add(filterStats.colorOutliers, 'color', 'points outside the color range (Hide Outliers is on)');
         }
         if (filterStats.tableFilterActive) {
             add(filterStats.tableFiltered, 'table filter', 'points not in the linked table');
