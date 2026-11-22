@@ -24,7 +24,7 @@ const W = VOCABULARY.countPlot.saveGrouping;
 
 /** The modes whose inputs are factors: not the densities, not the sets. */
 const SAVED_MODES = Object.freeze(['bar', 'histogram', 'pie', 'hist2d', 'heatmap']);
-/** The plan's inputs that become factors, in this order; a most frequent level colors the plot and is not one. */
+/** The plan's inputs that become factors, in this order; a most frequent level colours the plot and is not one. */
 const FACTOR_INPUTS = Object.freeze(['x', 'y', 'split']);
 
 /** Whether a config's plot can be saved as a grouping. */
