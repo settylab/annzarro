@@ -150,9 +150,10 @@ async function timed(n) {
     return Math.min(...best);
 }
 
-test('1M rows build inside 5 s, and 1M costs under 15 times 100k', async () => {
+test('1M rows build inside 2 s, and 1M costs under 15 times 100k', async () => {
     const small = await timed(100000);
     const large = await timed(1000000);
-    assert.ok(large < 5000, `1M rows took ${large.toFixed(0)} ms (bound 5000)`);
+    console.log(`# cell-export timing: 100k ${small.toFixed(0)} ms, 1M ${large.toFixed(0)} ms`);
+    assert.ok(large < 2000, `1M rows took ${large.toFixed(0)} ms (bound 2000)`);
     assert.ok(large < 15 * Math.max(small, 1), `1M took ${large.toFixed(0)} ms against 100k at ${small.toFixed(0)} ms (bound 15x)`);
 });
