@@ -283,7 +283,7 @@ def test_a_mode_change_keeps_every_input_and_lists_what_the_mode_does_not_read(p
         [g.label, [...g.children].map(o => [o.textContent, o.disabled, o.title])])""", S)
     assert [g[0] for g in groups] == ["Counts", "Two inputs", "Smoothed", "Sets"]
     assert groups[0][1] == [["Bar", False, ""], ["Histogram", False, ""], ["Pie", False, ""]]
-    assert groups[3][1][0] == ["Venn", True, "Venn is not available in this build."]
+    assert groups[3][1][0] == ["Venn", False, ""]
 
     page.select_option(f"{S} .ccnt-mode", "hist2d")
     until(page, "(s) => document.querySelector(s + ' .ccnt-panel').dataset.state === 'empty'", S)

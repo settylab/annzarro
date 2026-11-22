@@ -61,6 +61,7 @@ import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { groupColours } from './plot-utilities/colors.js';
 import { drawPlot } from '../utils/panel-surface.js';
 import { Coverage, GAP } from '../utils/coverage.js';
+import { installSets } from './cell-count/sets.js';
 import './partition-options/binning-control.js';
 
 const TYPE = 'cell-count';
@@ -78,6 +79,7 @@ registerReferences(TYPE, countReferences);
  */
 // export-unused-ok: V1, V2 and V3 register their parts here
 export const PARTS = { sets: null, draw: {} };
+installSets(PARTS);
 
 /** Whether a mode can be drawn in this build. */
 const drawable = (mode) => DRAWN_MODES.includes(mode) || DENSITY_MODES.includes(mode) || !!PARTS.draw[mode];
@@ -182,6 +184,7 @@ actions.register({
         let _dom = null;
         let D = null;
         let _controls = null;
+        let _sets = null;
         let _handle = null;
         let _snap = null;
         let _visible = true;
@@ -379,6 +382,8 @@ actions.register({
             releaseLevels();
             if (_dialog) _dialog.close();
             if (_controls) _controls.destroy();
+            if (_sets) _sets.destroy();
+            _sets = null;
             if (_dom && window.Plotly && _dom.plot) window.Plotly.purge(_dom.plot);
             _controls = null;
             _initialized = false;
@@ -581,7 +586,10 @@ actions.register({
             container.appendChild(root);
             _dom = { root, controls: _controls.element, plot, plotArea, state, stateBox, strip, table, saveBtn, tableBtn,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
-            if (PARTS.sets && PARTS.sets.mount) PARTS.sets.mount(_controls.setsElement, { panelId: _id, config: () => _config, commit });
+            if (PARTS.sets && PARTS.sets.mount) {
+                _sets = PARTS.sets.mount(_controls.setsElement, { panelId: _id, config: () => _config, commit, silent,
+                    visible: () => _visible && !!_dom && _dom.root.isConnected, redraw: () => { _drawnFrom = null; paint(); } });
+            }
             showControls();
         }
 
@@ -623,6 +631,7 @@ actions.register({
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
                 _controls.paint();
+                if (_sets) _sets.paint();
             }
         }
 
@@ -655,7 +664,7 @@ actions.register({
             const n = (table.top ? table.top.levels.length : 0) + levels.reduce((p, k) => p + k, 0);
             const opts = {
                 options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(Math.max(1, n)), theme: PLOT_PALETTES[theme],
-                measureSource: config.measure ? measureSourceName(config.measure.source, sourceTitleOf) : undefined, titleOf: sourceTitleOf
+                measureSource: config.measure ? measureSourceName(config.measure.source, sourceTitleOf) : undefined, titleOf: sourceTitleOf, panelId: _id
             };
             const part = PARTS.draw[config.mode];
             const fig = part ? part.figure(config, table, opts)

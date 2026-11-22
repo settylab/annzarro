@@ -372,6 +372,43 @@ const countPlot = Object.freeze({
     })
 });
 
+/** The sets of a Venn or UpSet (UX 4.6, CNT-5, CNT-12): the set list, Add set and an UpSet's own options. */
+const countSets = Object.freeze({
+    add: `Add ${word.set}`,
+    /** The kinds Add set offers, in its order. */
+    kinds: Object.freeze({
+        table: 'Cell table…', boolean: 'Boolean column…', levels: 'Levels of a column…', condition: 'Condition on a number…',
+        group: `${capital(word.group)} of a ${word.grouping}…`
+    }),
+    tooMany: (max) => `UpSet shows up to ${max} ${plural.set}.`,
+    cells: (n) => `${n.toLocaleString('en-US')} cells`,
+    noValue: (n) => `${n.toLocaleString('en-US')} without a value, counted as out`,
+    universe: (shown, none) => `Universe: the ${shown.toLocaleString('en-US')} ${word.cellsShown}. ${none.toLocaleString('en-US')} are in no ${word.set}.`,
+    /** A set's row text when it has no name of its own. */
+    levels: (column, labels) => `${column} is ${labels.join(', ')}`,
+    /** The comparisons of a condition, as a row writes them. */
+    ops: Object.freeze({ '>': '>', '>=': '≥', '<': '<', '<=': '≤' }),
+    condition: (name, op, value, layer) => `${name} ${op} ${value}${layer ? ` (${layer})` : ''}`,
+    group: (grouping, name) => `${grouping}: ${name}`,
+    follows: '(follows the bin)',
+    deleted: 'deleted',
+    choose: 'Choose…',
+    computingGroups: `Computing ${plural.group}…`,
+    noGroups: `No ${plural.group} yet.`,
+    tooManyCategories: (n, max) => `${n.toLocaleString('en-US')} categories; a ${word.set} picks from up to ${max.toLocaleString('en-US')}. Use a condition or a ${word.grouping}.`,
+    needsNumber: 'Choose a numeric source.',
+    needsValue: 'Enter a number.',
+    buttons: Object.freeze({ more: `More for this ${word.set}`, remove: 'Remove', rename: 'Rename', chooseAnother: 'Choose another' }),
+    renameLabel: `Name of the ${word.set}`,
+    /** An UpSet's own options (UX 4.2): Sort, Show top, Minimum size. */
+    sort: 'Sort',
+    sortBy: Object.freeze({ size: 'By size', degree: 'By degree' }),
+    top: 'Show top',
+    minSize: 'Minimum size',
+    topProblem: (max) => `Enter a whole number from 1 to ${max.toLocaleString('en-US')}.`,
+    minSizeProblem: 'Enter a whole number, 0 or more.'
+});
+
 /**
  * What a notice says while a computation waits or runs (SHR-47, SHR-48, UX 3.5): the server's place for it and the
  * time left. The page never names whose a job ahead is unless it is its own; these are the fallback sentences.
@@ -444,4 +481,4 @@ const table = Object.freeze({
     cut: (shown, all) => `Showing the first ${fmt(shown)} of ${fmt(all)} rows; Download CSV has them all.`
 });
 
-export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, countPlot, cellExport, progress, reasons, table });
+export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table });
