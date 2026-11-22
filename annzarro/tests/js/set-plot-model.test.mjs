@@ -270,6 +270,30 @@ test('a menu that picks the panel behind a set marks a choice that would close a
     }
 });
 
+test('levels of a column whose categories are numbers or booleans: the ids are the server\'s, and the regions follow the codes', async () => {
+    const fs = await import('node:fs');
+    const vectors = JSON.parse(fs.readFileSync(new URL('../data/level_id_vectors.json', import.meta.url), 'utf8')).categories
+        .filter((v) => v.only !== 'python' && ['bool', 'float', 'string'].includes(v.kind) && typeof v.value !== 'string' || v.kind === 'string');
+    // the obs route's category_ranks labels are the categories as JSON values (core/categories.py labels_of_ranks)
+    const values = vectors.map((v) => v.value);
+    const got = S.categoryChoices([...values, null]);
+    assert.deepEqual(got.ids, vectors.map((v) => v.id), 'each id is the producer\'s canonical id (plan 1.6)');
+    assert.equal(got.ids.length, values.length, 'a null category is no choice');
+    // a column of categories [3, 0.5, true]: codes per cell, a set of the first and last category
+    const cats = [3, 0.5, true];
+    const { ids } = S.categoryChoices(cats);
+    assert.deepEqual(ids, ['c:3', 'c:0.5', 'c:true']);
+    const serverIds = ['c:3', 'c:0.5', 'c:true'];         // core/cell_groups.py canonical_label of int 3, 0.5, True
+    const codes = Array.from({ length: 300 }, (_, i) => (i * 7) % 4 - 1);   // -1 is a missing value
+    const member = [ids[0], ids[2]];
+    const cells = codes.map((c, i) => Uint8Array.of(c >= 0 && member.includes(serverIds[c]) ? 1 : 0, i % 3 === 0 ? 1 : 0));
+    const config = { version: 1, mode: 'venn', sets: [{ source: { type: 'obs', key: 'k' }, member: { levels: member } }, setsOf(1)[0]] };
+    const plot = S.setPlotModel(config, tableOf(config, setsGrid(cells, 2)), { names: ['a', 'b'] });
+    assert.equal(plot.sets[0].size, codes.filter((c) => c === 0 || c === 2).length);
+    const brute = bruteRegions(cells, 2);
+    assert.deepEqual(plot.regions.map((r) => r.count), [1, 2, 3].map((code) => brute.get(code) || 0));
+});
+
 // --- where a group set stands (SHR-38, UX 2.8) -----------------------------------------------------------------------
 
 /** A grouping's groups by key with their default labels, as group-sources.js `labelsOf` gives them. */
