@@ -239,3 +239,28 @@ test('the density sentences live in the vocabulary with the other count words (U
     const source = (await import('node:fs')).readFileSync(new URL('../../../static/js/panels/cell-count/draw-density.js', import.meta.url), 'utf8');
     assert.ok(!/DENSITY_WORDS\s*=/.test(source), 'draw-density.js reads them, it does not define them');
 });
+
+// --- a typed bin count never validates and then meets a refusal (UX 4.3) ----------------------------------------------
+
+test('each input of each mode takes the bins its limit allows, so a valid typed count is never refused', () => {
+    assert.deepEqual(M.binsRange('bar', 'x'), { min: 2, max: 200 });
+    assert.deepEqual(M.binsRange('pie', 'x'), { min: 2, max: 200 });
+    assert.deepEqual(M.binsRange('heatmap', 'y'), { min: 2, max: 200 });
+    assert.deepEqual(M.binsRange('histogram', 'x'), { min: 2, max: 2000 });
+    assert.deepEqual(M.binsRange('hist2d', 'y'), { min: 2, max: 512 });
+    assert.deepEqual(M.binsRange('bar'), { min: 2, max: 2000 }, 'without an input: the dimension\'s range, as before');
+    assert.equal(M.binsProblem('bar', 201, 'x'), 'bad_bins');
+    assert.equal(M.binsProblem('bar', 200, 'x'), null);
+    // the sweep: in every mode that bins X or Y, the largest count the field takes plans, and one more would be refused
+    for (const mode of ['bar', 'pie', 'histogram', 'heatmap', 'hist2d']) {
+        for (const field of ['x', 'y']) {
+            if (field === 'y' && !['heatmap', 'hist2d'].includes(mode)) continue;
+            const { max } = M.binsRange(mode, field);
+            const binned = (n) => obs('depth', { binning: { method: 'equal_width', bins: n } });
+            const other = mode === 'heatmap' ? obs('cell_type') : obs('score');
+            const config = (n) => norm({ mode, x: field === 'x' ? binned(n) : other, ...(['heatmap', 'hist2d'].includes(mode) ? { y: field === 'y' ? binned(n) : other } : {}) });
+            assert.equal(M.planGrid(config(max), page).state, 'ready', `${mode} ${field} ${max}`);
+            if (max < M.binsRange(mode).max) assert.equal(M.planGrid(config(max + 1), page).state, 'refused', `${mode} ${field} ${max + 1}`);
+        }
+    }
+});

@@ -75,8 +75,17 @@ def test_too_many_levels_on_x_is_refused_before_any_request_and_choose_levels_li
     until(page, "(s) => document.querySelectorAll(s + ' [data-input=\"x\"] .ccnt-level').length > 0", S, timeout=60)
     assert page.is_visible(f"{S} [data-input='x'] .ccnt-levels")
     asked = _requests(page)
-    assert asked and not _grid_requests(page), asked
-    assert [p["source"]["key"] for p in asked[-1]["partitionings"]] == ["many"]
+    # at 2,001 categories: exactly one request, of levels only (no codes, no grid), for that input alone
+    assert len(asked) == 1 and not _grid_requests(page), asked
+    assert [p["source"]["key"] for p in asked[0]["partitionings"]] == ["many"]
+    assert not (asked[0].get("want") or {}).get("codes"), asked[0]
+    assert page.evaluate("(s) => document.querySelectorAll(s + ' [data-input=\"x\"] .ccnt-level').length", S) == 2001, \
+        "every category is listed, used or not"
+    # closing and opening the chooser again asks nothing more: the levels are held for that input
+    page.click(f"{S} [data-input='x'] .ccnt-choose")
+    page.click(f"{S} [data-input='x'] .ccnt-choose")
+    until(page, "(s) => document.querySelectorAll(s + ' [data-input=\"x\"] .ccnt-level').length === 2001", S)
+    waits.expect_stays(lambda: len(_requests(page)) == 1, "a second look at the levels asks nothing; there is no event to wait for", page=page)
     used = DATA.obs["many"].value_counts()
     counts = page.evaluate("""(s) => Object.fromEntries([...document.querySelectorAll(s + ' [data-input="x"] .ccnt-level')]
         .map(li => [li.dataset.id, li.querySelector('.ccnt-level__n').textContent]))""", S)
@@ -117,6 +126,21 @@ def test_a_2d_histograms_most_frequent_level_over_8_levels_and_a_heatmap_over_20
     until(page, "(s) => { const b = document.querySelector(s + ' .ccnt-state'); return b && !b.hidden && b.dataset.state === 'refused'; }", S)
     assert _state(page)["text"] == "many × cell_type is 2,001 × 6; Heatmap shows up to 200 × 200."
     waits.expect_stays(lambda: len(_grid_requests(page)) == asked, "the heatmap's refusal asks nothing", page=page)
+
+
+def test_a_typed_bin_count_is_checked_against_the_modes_limit_where_it_is_typed(page, served):
+    _open(page, served, {CC: _count(mode="bar", x=obs("depth"))})
+    _drawn(page, "bar")
+    page.click(f"{S} [data-row='x'] .ccnt-bins")
+    page.wait_for_selector(f"{S} .ccnt-binning .pbc")
+    assert page.get_attribute(f"{S} .ccnt-binning .pbc-bins", "title") == "A whole number from 2 to 200."
+    asked = len(_grid_requests(page))
+    page.fill(f"{S} .ccnt-binning .pbc-bins", "300")
+    page.press(f"{S} .ccnt-binning .pbc-bins", "Enter")
+    page.wait_for_selector(f"{S} .ccnt-binning .pbc-message:has-text('Enter a whole number from 2 to 200.')")
+    assert "binning" not in _config(page)["x"]
+    waits.expect_stays(lambda: len(_grid_requests(page)) == asked and _state(page) is None,
+                       "a refused entry changes nothing: no request and no refusal follow", page=page)
 
 
 def test_too_many_bins_for_bar_opens_the_binning_control_and_a_histogram_of_a_category_shows_as_bar(page, served):
