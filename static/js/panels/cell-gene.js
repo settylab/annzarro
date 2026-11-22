@@ -168,6 +168,18 @@ const sourceAdapter = createSourceAdapter({
 
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
+/**
+ * The groups a store key is of, whatever features it adds: its grouping's key (PER-3) and the cells shown. A store key
+ * is `hash \u0001 dataset \u0001 subset` (utils/group-sources.js), and the hash of a need starts with the grouping's
+ * key up to the first `\u0002` (utils/group-store.js groupNeed); both keys are stable JSON, with no raw control
+ * characters of their own. Two snapshots of one cell axis with equal results here have the same groups.
+ */
+function groupsOfKey(key) {
+    if (typeof key !== 'string') return null;
+    const [hash, dataset = '', subset = ''] = key.split('\u0001');
+    return `${hash.split('\u0002')[0]}\u0001${dataset}\u0001${subset}`;
+}
+
 (function () {
     /**
      * @param {HTMLElement} container
@@ -209,7 +221,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _state = 'empty';
         let _resize = null;
         /** gateMatrix's decision for the plan it was made for (CXG-17): what the plot asks of the server now */
-        let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null };
+        let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
+        let _regateDue = false;
 
         function configFrom(raw) {
             const fields = {};
@@ -419,7 +432,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const id = axisId();
             if (!id || !_config.sections.length || !DataManager.isDatasetLoaded()) {
                 binding.releaseHost(host);
-                _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null };
+                _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
                 return;
             }
             const plan = currentPlan();
@@ -444,16 +457,24 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          */
         function gateFor(plan, id) {
             if (_gate.planKey === plan.optionKey && _gate.axis === id && _gate.ask === 'all') return _gate;
-            _gate = { ...gateMatrix({ sections: plan.shape, groups: knownGroups(id) }), planKey: plan.optionKey, axis: id };
+            const known = knownGroups(id);
+            _gate = { ...gateMatrix({ sections: plan.shape, groups: known ? known.count : null }), planKey: plan.optionKey, axis: id,
+                groupsOf: known ? known.groupsOf : null };
             return _gate;
         }
 
-        /** The groups of the cell axis as a ready reply says them (this plot's, or another consumer's), or null. */
+        /**
+         * The groups of the cell axis as a ready reply of its current groups says them (this plot's, or another
+         * consumer's, such as the grouping panel's), with the groups they are of; null while no ready reply has them.
+         */
         function knownGroups(id) {
+            const rec = record();
+            const now = rec ? groupsOfKey(rec.handle.read().key) : null;
             for (const h of groupSources().sources.handlesOf(id)) {
                 const snap = h.read();
                 const reply = snap.state === 'ready' && snap.values ? snap.values.reply : null;
-                if (reply && Array.isArray(reply.groups)) return reply.groups.length;
+                const of = groupsOfKey(snap.key);
+                if (reply && Array.isArray(reply.groups) && (!now || of === now)) return { count: reply.groups.length, groupsOf: of };
             }
             return null;
         }
@@ -462,6 +483,22 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function regate() {
             _gate = { ..._gate, planKey: null };
             sync();
+        }
+
+        /**
+         * Decide the limit again once the store's notification is over: a change of option made while the store is
+         * starting its jobs would attach a job it does not start in that pass.
+         */
+        function regateSoon() {
+            if (_regateDue) return;
+            _regateDue = true;
+            queueMicrotask(() => {
+                _regateDue = false;
+                if (!_dom) return;
+                regate();
+                paint();
+                redraw();
+            });
         }
 
         function record() {
@@ -751,13 +788,18 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          */
         function snapshotChanged(snap) {
             if (!_dom) return;
+            // the groups changed since they were counted (the grouping was edited): unknown again, so with rows that could
+            // exceed the limit the groups go first, before any gene (CXG-17, Q4)
+            const of = groupsOfKey(snap.key);
+            if (_gate.ask === 'all' && _gate.groupsOf && of && of !== _gate.groupsOf) {
+                regateSoon();
+                return;
+            }
             // the groups the limit waits for are known, or the groups changed: decide again (CXG-17)
             if (snap.state === 'ready' && snap.values && snap.values.reply && Array.isArray(snap.values.reply.groups)) {
                 const grown = _plan && gateMatrix({ sections: _plan.shape, groups: snap.values.reply.groups.length }).ask !== 'all';
                 if (_gate.ask !== 'all' || grown) {
-                    regate();
-                    paint();
-                    redraw();
+                    regateSoon();
                     return;
                 }
             }
