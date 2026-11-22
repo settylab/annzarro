@@ -15,6 +15,7 @@ sample (30), many (2,001 categories, 1,200 of them used), pseudotime (20 cells w
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
+import json
 import os
 
 import pytest
@@ -48,7 +49,7 @@ def _state(page):
     """What the plot area says for a plan that asks nothing, and its buttons, or None when it is hidden."""
     return page.evaluate("""(s) => { const b = document.querySelector(s + ' .ccnt-state');
         return b.hidden ? null : { text: b.querySelector('.ccnt-state__text').textContent, state: b.dataset.state,
-            actions: [...b.querySelectorAll('button')].map(x => x.textContent) }; }""", S)
+            actions: [...document.querySelectorAll(s + ' .ccnt-state-box .ccnt-state__actions button')].map(x => x.textContent) }; }""", S)
 
 
 def _refused(page, text, actions):
@@ -69,7 +70,7 @@ def test_too_many_levels_on_x_is_refused_before_any_request_and_choose_levels_li
     _open(page, served, {CC: _count(mode="bar", x=obs("many"))})
     _refused(page, "many has 2,001 levels; Bar shows up to 200.", ["Choose levels"])
 
-    page.click(f"{S} .ccnt-state button:has-text('Choose levels')")
+    page.click(f"{S} .ccnt-state-box button:has-text('Choose levels')")
     # the chooser opens on X and lists the levels: one light request for that input alone, never the grid
     until(page, "(s) => document.querySelectorAll(s + ' [data-input=\"x\"] .ccnt-level').length > 0", S, timeout=60)
     assert page.is_visible(f"{S} [data-input='x'] .ccnt-levels")
@@ -94,20 +95,20 @@ def test_too_many_levels_on_x_is_refused_before_any_request_and_choose_levels_li
 def test_color_by_over_the_limit_is_removed_by_its_way_out_in_one_undoable_step(page, served):
     _open(page, served, {CC: _count(mode="histogram", x=obs("depth"), split=obs("many"))})
     _refused(page, "Color by many has 2,001 levels; a histogram colors up to 200.", ["Remove Color by"])
-    page.click(f"{S} .ccnt-state button:has-text('Remove Color by')")
+    page.click(f"{S} .ccnt-state-box button:has-text('Remove Color by')")
     _drawn(page, "histogram", "!c.split")
     assert _config(page)["x"] == obs("depth")
     assert _undo_label(page) == "Undo: no Color by"
     page.click(f"{S} .ccnt-undo")
-    until(page, f"() => !!window.PanelManager.getPanel('{CC}').getConfig().split")
-    _refused_again = _state(page)
-    assert _refused_again and _refused_again["actions"] == ["Remove Color by"]
+    until(page, "(s) => { const b = document.querySelector(s + ' .ccnt-state'); return b && !b.hidden && b.dataset.state === 'refused'; }", S)
+    assert _state(page)["actions"] == ["Remove Color by"]
+    assert _config(page)["split"] == obs("many")
 
 
 def test_a_2d_histograms_most_frequent_level_over_8_levels_and_a_heatmap_over_200(page, served):
     _open(page, served, {CC: _count(mode="hist2d", x=obs("depth"), y=obs("score"), value={"kind": "top_level", "factor": obs("sample")})})
     _refused(page, "Color by sample has 30 levels; 2D histogram colors up to 8.", ["Remove Color by"])
-    page.click(f"{S} .ccnt-state button:has-text('Remove Color by')")
+    page.click(f"{S} .ccnt-state-box button:has-text('Remove Color by')")
     _drawn(page, "hist2d", "!c.value")
 
     page.evaluate(f"""() => window.PanelManager.getPanel('{CC}').updateConfig({{ version: 1, mode: 'heatmap',
@@ -121,7 +122,7 @@ def test_a_2d_histograms_most_frequent_level_over_8_levels_and_a_heatmap_over_20
 def test_too_many_bins_for_bar_opens_the_binning_control_and_a_histogram_of_a_category_shows_as_bar(page, served):
     _open(page, served, {CC: _count(mode="bar", x=obs("depth", binning={"method": "equal_width", "bins": 300}))})
     _refused(page, "depth has 300 bins; Bar shows up to 200.", ["Bin it"])
-    page.click(f"{S} .ccnt-state button:has-text('Bin it')")
+    page.click(f"{S} .ccnt-state-box button:has-text('Bin it')")
     page.wait_for_selector(f"{S} [data-input='x'] .ccnt-binning .pbc")
     assert page.input_value(f"{S} .ccnt-binning .pbc-bins") == "300"
     page.fill(f"{S} .ccnt-binning .pbc-bins", "40")
@@ -132,7 +133,7 @@ def test_too_many_bins_for_bar_opens_the_binning_control_and_a_histogram_of_a_ca
     page.evaluate(f"""() => window.PanelManager.getPanel('{CC}').updateConfig({{ x: {{ source: {{ type: 'obs', key: 'cell_type' }} }} }})""")
     until(page, "(s) => { const b = document.querySelector(s + ' .ccnt-state'); return b && !b.hidden && b.dataset.state === 'unusable'; }", S)
     assert _state(page) == {"text": "Histogram needs a numeric X. cell_type is categorical.", "state": "unusable", "actions": ["Show as Bar"]}
-    page.click(f"{S} .ccnt-state button:has-text('Show as Bar')")
+    page.click(f"{S} .ccnt-state-box button:has-text('Show as Bar')")
     _drawn(page, "bar", "c.x.source.key === 'cell_type'")
     assert _undo_label(page) == "Undo: mode Bar"
 
@@ -144,7 +145,8 @@ def test_the_route_states_are_the_painters_with_its_progress_bar_cancel_and_retr
     failing = {"on": False}
 
     def handle(route):
-        if route.request.method != "POST":
+        # the estimate passes (the store asks it once per recipe and never cancels it); the count is held or fails
+        if route.request.method != "POST" or json.loads(route.request.post_data or "{}").get("estimate_only"):
             route.continue_()
         elif failing["on"]:
             route.abort()
@@ -157,8 +159,9 @@ def test_the_route_states_are_the_painters_with_its_progress_bar_cancel_and_retr
     assert "count-grid" in ids
     # no drawing yet: the painter's overlay says the cells being counted, with Cancel; the plan's own box is hidden
     notice = f"{S} .ccnt-plot > .score-notice"
-    page.wait_for_selector(f"{notice}[data-state='computing']", timeout=30000)
-    assert page.inner_text(f"{notice} .coverage-placeholder__headline") == f"Counting {N:,} cells…"
+    head = f"{notice} .coverage-placeholder__headline"
+    until(page, "([h, t]) => { const e = document.querySelector(h); return !!e && e.textContent === t; }", [head, f"Counting {N:,} cells…"])
+    assert page.is_visible(f"{notice} button:has-text('Cancel')")
     assert page.is_hidden(f"{S} .ccnt-state")
     # a long wait gets the bar of decision 21 by the page's clock (no progress frame has come: indeterminate)
     bar = page.wait_for_selector(f"{notice} .source-progress[role='progressbar']", timeout=20000)
@@ -246,7 +249,9 @@ def test_save_as_grouping_is_refused_over_the_grouping_limits_and_opens_from_a_c
     page.evaluate(f"""() => window.PanelManager.getPanel('{CC}').updateConfig({{ version: 1, mode: 'bar',
         x: {{ source: {{ type: 'obs', key: 'cell_type' }} }} }})""")
     _drawn(page, "bar")
-    page.locator(f"{S} .ccnt-plot .bars .point path").first.click()
+    # a click where a bar is: Plotly's drag layer takes the pointer and says which bar
+    box = page.locator(f"{S} .ccnt-plot .bars .point path").first.bounding_box()
+    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     until(page, "(s) => { const d = document.querySelector(s + ' .ccnt-save'); return d && !d.hidden; }", S)
     assert _dialog(page)["lines"] == ["Factors: cell_type. 6 groups."]
 

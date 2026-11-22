@@ -149,6 +149,6 @@ test('a table longer than its cap shows the first rows and says the CSV has them
     const header = ['x', 'Cells', 'Share'];
     const rows = [header, ...Array.from({ length: 2500 }, (_, i) => [`l${i}`, i, null])];
     const view = T.tableView(rows);
-    assert.equal(view.rows.length, T.TABLE_ROWS_MAX);
-    assert.equal(view.cut, `Showing the first ${T.TABLE_ROWS_MAX.toLocaleString('en-US')} of 2,500 rows; Download CSV has them all.`);
+    assert.equal(view.rows.length, 2000);
+    assert.equal(view.cut, 'Showing the first 2,000 of 2,500 rows; Download CSV has them all.');
 });
