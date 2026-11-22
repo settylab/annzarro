@@ -36,12 +36,13 @@ from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 NOTICE = f"{TP} .cgene-plot > .score-notice"
 
 
-def _notice(page):
-    """The overlay's headline and text, once it is there."""
-    page.wait_for_selector(f"{NOTICE} .coverage-placeholder__headline", timeout=30000)
-    head = page.inner_text(f"{NOTICE} .coverage-placeholder__headline")
+def _says(page, headline):
+    """Wait for the overlay to say `headline` (the painter paints a burst of changes once, a moment later), and return
+    its text under it."""
+    until(page, "([s, want]) => { const h = document.querySelector(s + ' .coverage-placeholder__headline'); return !!h && h.textContent === want; }",
+          [NOTICE, headline], timeout=30)
     text = page.locator(f"{NOTICE} .filter-notice__text")
-    return head, (text.inner_text() if text.count() else "")
+    return text.inner_text() if text.count() else ""
 
 
 def _buttons(page):
@@ -114,9 +115,7 @@ def test_too_large_with_the_groups_unknown_asks_for_the_groups_alone_and_never_f
     _open(page, served, {P: _plot(mode="heatmap", cellAxis={"type": "obs", "key": "many"}, sections=_sections(9)),
                          S1: _sig(S1, "All genes", GENES)}, open_ids=(P, S1))
     _wait_state(page, "toolarge")
-    head, text = _notice(page)
-    assert head == TOO_LARGE
-    assert text == "Remove a section or use fewer groups."
+    assert _says(page, TOO_LARGE) == "Remove a section or use fewer groups."
     assert _buttons(page) == []
     assert page.calls, "the groups were asked for, to know how many there are"
     assert _features(page.calls) == [], "no gene was asked for above the limit"
@@ -137,7 +136,7 @@ def test_too_large_with_the_groups_known_is_decided_without_any_request(page, se
     # nine sections on another layer: new genes to read, 432,000 cells of the matrix: refused before any request
     _set(page, {"sections": _sections(9), "color": {"stat": "mean", "layer": "counts"}})
     _wait_state(page, "toolarge")
-    assert _notice(page)[0] == TOO_LARGE
+    _says(page, TOO_LARGE)
     _settle(page, "the limit is decided from the groups known; the request it prevents never goes out")
     assert len(page.calls) == n
     # under the limit again, the new layer's genes are asked for
@@ -155,8 +154,7 @@ def test_asks_first_with_an_upper_bound_compute_and_fewer_genes(page, served):
     _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=_sections(1)),
                          S1: _sig(S1, "Markers", GENES[:5])}, open_ids=(P, S1))
     _wait_state(page, "awaiting")
-    head, text = _notice(page)
-    assert head == "Reading 5 genes over 1,200 cells: up to about 6 minutes (10.5 billion stored values)."
+    text = _says(page, "Reading 5 genes over 1,200 cells: up to about 6 minutes (10.5 billion stored values).")
     assert text == "Groupings and counts keep working."
     assert _buttons(page) == ["Compute", "Fewer genes"]
     _settle(page, "asks first: nothing is computed before Compute, so no request can be waited on")
@@ -184,8 +182,7 @@ def test_refused_for_a_csr_layer_names_the_layout_and_the_way_out(page, served):
     _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=_sections(1)),
                          S1: _sig(S1, "Markers", GENES[:5])}, open_ids=(P, S1))
     _wait_state(page, "refused")
-    head, text = _notice(page)
-    assert head == "logged is stored by cell (CSR), so 5 genes mean reading the whole matrix: about 40 minutes."
+    text = _says(page, "logged is stored by cell (CSR), so 5 genes mean reading the whole matrix: about 40 minutes.")
     assert text == "A copy of the layer stored by gene (CSC) makes this fast; see the documentation."
     assert _buttons(page) == []
     assert len(answered) == len(page.calls), "every computation was refused before the stream: no gene was read"
@@ -251,7 +248,7 @@ def test_an_error_says_why_and_retry_computes_again(page, served):
     _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=_sections(1)),
                          S1: _sig(S1, "Markers", GENES[:5])}, open_ids=(P, S1))
     _wait_state(page, "failed")
-    assert _notice(page)[0] == "Could not be computed: the server stopped responding."
+    _says(page, "Could not be computed: the server stopped responding.")
     assert _buttons(page) == ["Retry"]
     page.click(f"{NOTICE} .ps-action[data-ps-action='score-retry']")
     _drawn(page)
