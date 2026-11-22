@@ -306,6 +306,8 @@ def test_a_set_whose_table_is_gone_keeps_its_row_marked_deleted_with_choose_anot
 def test_add_set_is_disabled_at_sixteen_with_the_reason_and_sixteen_sets_draw(page, served):
     sets = [{"source": {"type": "obs", "key": "score"}, "member": {"op": ">", "value": round(1.0 + i * 0.5, 2)}} for i in range(16)]
     _open(page, served, {CC: _count(mode="upset", sets=sets)})
+    # sixteen rows push the plot below the fold, and a plot computes while it is on screen (host-binding.js)
+    page.locator(f"{S} .ccnt-plot").scroll_into_view_if_needed()
     _drawn(page, "upset")
     add = page.evaluate("(s) => { const a = document.querySelector(s + ' .ccnt-sets__add'); return [a.disabled, a.title]; }", S)
     assert add == [True, "UpSet shows up to 16 sets."]
