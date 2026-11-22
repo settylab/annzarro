@@ -268,3 +268,63 @@ test('each input of each mode takes the bins its limit allows, so a valid typed 
         }
     }
 });
+
+// --- Choose levels when the levels cannot be listed (follow-up to C2b) ----------------------------------------------
+
+test('levels refused for their number: Choose levels says how many and the limit, never "follow once counted"', () => {
+    const refused = { state: 'refused', reason: 'too_many_groups', refused: { reason: 'too_many_groups', count: 2345, limit: 2000 } };
+    assert.deepEqual(S.levelsNote(refused, { field: 'x', name: 'barcode', numeric: false }), {
+        state: 'refused', text: 'barcode has 2,345 levels that hold a cell; Choose levels lists up to 2,000.', actions: []
+    });
+    // a whole-number column read by its values: binning it is the way out
+    assert.deepEqual(S.levelsNote({ ...refused, reason: 'too_many_levels', refused: { reason: 'too_many_levels', count: 4100, limit: 2000 } },
+        { field: 'y', name: 'umi', numeric: true }),
+    { state: 'refused', text: 'umi has 4,100 levels that hold a cell; Choose levels lists up to 2,000.', actions: [['bin:y', 'Bin it']] });
+});
+
+test('levels that failed to come say why, with Retry; a refusal without figures says it was not read', () => {
+    assert.deepEqual(S.levelsNote({ state: 'failed', message: 'Failed to fetch.' }, { field: 'x', name: 'barcode', numeric: false }), {
+        state: 'failed', text: 'The levels of barcode could not be read: Failed to fetch.', actions: [['levels-retry:x', 'Retry']]
+    });
+    assert.deepEqual(S.levelsNote({ state: 'refused', message: 'It would take about 7 minutes.' }, { field: 'x', name: 'barcode', numeric: false }), {
+        state: 'refused', text: 'The levels of barcode could not be read: It would take about 7 minutes.', actions: []
+    });
+    for (const state of ['estimating', 'queued', 'computing', 'ready', 'idle']) {
+        assert.equal(S.levelsNote({ state }, { field: 'x', name: 'barcode', numeric: false }), null, state);
+    }
+    assert.equal(S.levelsNote(null, { field: 'x', name: 'barcode' }), null);
+});
+
+// --- the strip's bar of a count that keeps its drawing (decision 21), with this provider's words ----------------------
+
+test('a count that keeps its drawing shows a determinate strip bar from its progress frames after 10 s, saying the cells counted', async () => {
+    const HB = await import('../../../static/js/utils/host-binding.js');
+    const SN = await import('../../../static/js/utils/source-notices.js');
+    let t = 0;
+    const timers = [];
+    const strips = [];
+    const painter = HB.createPainter({ now: () => t, setTimer: (fn, ms) => { timers.push({ fn, at: t + ms }); return timers.length; }, clearTimer: () => {},
+        paint: () => {}, strip: (host, bar, notice) => strips.push({ bar, sentence: notice ? SN.sentenceOf(notice) : null }) });
+    let onChange = null;
+    const handle = { snap: { state: 'computing', title: 'Count 1', key: 'k1', progress: { entries_done: 0, entries_total: 100, running_s: 0 } },
+        read() { return this.snap; }, release() {}, sharers: () => 1 };
+    // the count plot's binding as panels/cell-count.js makes it: its notices are states.js gridNotice
+    const b = HB.createHostBinding({ id: 'count-grid-test', painter, setTimer: (fn) => { fn(); return 0; },
+        open: (h, role, setting, change) => { onChange = change; return { id: setting.id, handle }; },
+        matches: (rec, setting) => rec.id === setting.id, describe: (snap, ctx) => S.gridNotice(snap, ctx, 1200) });
+    const host = { isConnected: true, id: 'ccnt-plot-x' };
+    const rec = b.recordFor(host, 'grid', { id: 'cell-count-x' });
+    rec.quiet = true;                       // a drawing is kept: nothing is said over it
+    b.paint(host);
+    assert.equal(strips.length, 0, 'a short wait: no bar');
+    t = 12000;
+    handle.snap = { ...handle.snap, progress: { entries_done: 30, entries_total: 100, running_s: 12 } };
+    onChange(handle.snap);
+    b.paint(host);
+    const last = strips[strips.length - 1];
+    assert.deepEqual(last.bar, { determinate: true, value: 30, max: 100 });
+    assert.equal(last.sentence, 'Counting 1,200 cells…');
+    handle.snap = { ...handle.snap, state: 'ready', progress: null };
+    b.paint(host);
+    assert.equal(strips[strips.length - 1].bar, null, 'done: the bar goes');
+});

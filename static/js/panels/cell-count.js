@@ -51,7 +51,7 @@ import { registerReferences } from '../utils/panel-references.js';
 import { VOCABULARY } from '../utils/vocabulary.js';
 import { createHostBinding, isVisible, PENDING } from '../utils/host-binding.js';
 import { actions } from '../utils/source-actions.js';
-import { isPlanState, describePlan, wayOut, gridNotice, stripSentence } from './cell-count/states.js';
+import { isPlanState, describePlan, wayOut, gridNotice, stripSentence, levelsNote } from './cell-count/states.js';
 import { saveOffered, savePlan, openSaveDialog } from './cell-count/save-grouping.js';
 import { tableView, tableElement } from './cell-count/table-view.js';
 import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
@@ -281,11 +281,32 @@ actions.register({
 
         /** Keep the levels of a ready reply of the input asked for alone; whether they are new. */
         function takeLevels(snap) {
-            const reply = snap && snap.state === 'ready' && snap.values && snap.values.reply;
+            if (!snap || !_levelSource) return false;
+            if (snap.state === 'refused' || snap.state === 'failed') {
+                // what Choose levels says instead (states.js levelsNote), with the route's figures of a size refusal
+                const header = snap.key ? groupSources().store.snapshot(snap.key).header : null;
+                const said = { ...snap, refused: header && header.refused ? header.refused : snap.refused };
+                const was = _levelInfo && _levelInfo.said;
+                if (was && was.state === said.state && was.reason === said.reason && was.message === said.message) return false;
+                _levelInfo = { key: _levelSource.key, info: null, said };
+                return true;
+            }
+            if (_levelInfo && _levelInfo.said) {
+                // asked again (Retry): the note goes while it comes
+                _levelInfo = null;
+                return true;
+            }
+            const reply = snap.state === 'ready' && snap.values && snap.values.reply;
             const info = reply && reply.partitionings && reply.partitionings[0];
-            if (!info || !_levelSource || (_levelInfo && _levelInfo.info === info)) return false;
+            if (!info || (_levelInfo && _levelInfo.info === info)) return false;
             _levelInfo = { key: _levelSource.key, info };
             return true;
+        }
+
+        /** What Choose levels of `field` says when its levels did not come (refused or failed), or null. */
+        function levelsSaid(field) {
+            if (!_levelSource || _levelSource.field !== field || !_levelInfo || !_levelInfo.said || !_config[field]) return null;
+            return levelsNote(_levelInfo.said, { field, name: nameOfInput(field), numeric: page.isNumeric(_config[field].source) });
         }
 
         function releaseLevels() {
@@ -528,7 +549,7 @@ actions.register({
             const root = el('div', { class: 'ccnt-panel', data: { panelId: _id } });
             root.insertAdjacentHTML('afterbegin', noDatasetScreenHtml(_id));
             _controls = createControls({ D, id: _id, model: controlsModel, on: {
-                commit, undo: () => undo(), csv: downloadCsv,
+                commit, undo: () => undo(), csv: downloadCsv, wayOut: takeWayOut,
                 setupAxis: (rowEl, axis, setting, roles) => {
                     const structure = structureRead();
                     if (structure) setupAxisSelector(rowEl, axis, setting, 'cells', structure, { consumer: MENU_CONSUMER, roles });
@@ -583,7 +604,7 @@ actions.register({
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, notes: _notes, levelsOf,
+                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, notes: _notes, levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
             };
         }
@@ -729,6 +750,7 @@ actions.register({
 
         /** A way out of a plan's state (states.js): one undoable step, a control opened in place, or both. */
         function takeWayOut(action) {
+            if (action.startsWith('levels-retry:')) { if (_levelHandle) _levelHandle.retry(); return; }
             const way = wayOut(action, _config);
             if (!way) return;
             if (way.config) commit(way.config, way.label);

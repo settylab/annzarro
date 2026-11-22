@@ -145,6 +145,28 @@ export function wayOut(action, config) {
     }
 }
 
+/** The size refusals of the grouping route whose figures name a count and a limit. */
+const SIZE_REASONS = Object.freeze(['too_many_groups', 'too_many_levels']);
+
+/**
+ * What Choose levels says when an input's levels, asked for alone, did not come: refused for their number (the route's
+ * figures: how many, and the limit), refused otherwise, or failed (with Retry). Null while they are on their way or ready.
+ * @param {Object|null} snap - the levels handle's snapshot, with the route's figures as `refused` when it gave them
+ * @param {{field: string, name: string, numeric?: boolean}} input - which input, its name, whether it is a number (then
+ *   Bin it is the way out)
+ * @returns {null|{state: string, text: string, actions: Array<[string, string]>}}
+ */
+export function levelsNote(snap, { field, name, numeric = false }) {
+    if (!snap || (snap.state !== 'refused' && snap.state !== 'failed')) return null;
+    const L = C.levelsList;
+    const f = snap.refused;
+    if (snap.state === 'refused' && f && SIZE_REASONS.includes(f.reason) && Number.isFinite(Number(f.count)) && Number.isFinite(Number(f.limit))) {
+        return { state: 'refused', text: L.tooMany(name, Number(f.count), Number(f.limit)), actions: numeric ? [[`bin:${field}`, C.wayOut.bin]] : [] };
+    }
+    if (snap.state === 'refused') return { state: 'refused', text: L.notRead(name, snap.message), actions: [] };
+    return { state: 'failed', text: L.notRead(name, snap.message), actions: [[`levels-retry:${field}`, L.retry]] };
+}
+
 /** What a notice calls a count plot's grid (utils/source-notices.js), and how it says that it computes. */
 function noticeWords(cells) {
     const N = C.notice;

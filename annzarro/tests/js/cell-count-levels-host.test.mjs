@@ -16,13 +16,16 @@ const json = (body) => ({ ok: true, status: 200, headers: { get: () => null }, j
 const result = { type: 'result', version: 1, shape: 'grouping', n_shown: 3, n_grouped: 3,
     partitionings: [{ kind: 'categorical', levels: [{ id: 'c:m0', n: 1 }, { id: 'c:m1', n: 2 }], categories: ['c:m0', 'c:m1', 'c:m2'] }],
     groups: [{ key: ['c:m0'], n: 1 }, { key: ['c:m1'], n: 2 }], features: [], measures: [], blocks: [] };
+let refuseNext = false;
 globalThis.fetch = async (url, init) => {
     if (String(url).includes('/policy/effective')) return json({ version: JSON.stringify(policyValues), values: policyValues });
     if (!init || !init.body) return json({});
     const body = JSON.parse(init.body);
     asked.push(body);
     if (body.estimate_only) return json({ estimate: { seconds: 0.1, tier: 'live', lane: 'light' } });
-    const bytes = enc.encode(`${JSON.stringify({ type: 'start', lane: 'light', entries_total: 3 })}\n${JSON.stringify(result)}\n`);
+    const frame = refuseNext ? { type: 'result', version: 1, shape: 'grouping', n_shown: 3, refused: { reason: 'too_many_groups', count: 2345, limit: 2000 },
+        message: 'Too many groups.', blocks: [] } : result;
+    const bytes = enc.encode(`${JSON.stringify({ type: 'start', lane: 'light', entries_total: 3 })}\n${JSON.stringify(frame)}\n`);
     return { ok: true, status: 200, body: { getReader() {
         let sent = false;
         return { async read() { if (sent) return { done: true }; sent = true; return { done: false, value: bytes }; }, async cancel() {} };
@@ -33,13 +36,14 @@ const { DataManager } = await import('../../../static/js/data-manager.js');
 const { Policy } = await import('../../../static/js/policy.js');
 const G = await import('../../../static/js/utils/group-host.js');
 const { GROUPING } = await import('../../../static/js/utils/group-sources.js');
+const S = await import('../../../static/js/panels/cell-count/states.js');
 
 Object.assign(DataManager, {
     getCurrentDataset: () => 'd.zarr', getCells: () => ['a', 'b', 'c'], getSubsetParam: () => null, getGenes: () => [], isDatasetLoaded: () => false
 });
 
 // the levels of one input, as panels/cell-count.js axisSource() gives them
-const levels = { version: 1, partitionings: [{ source: { type: 'obs', key: 'many' } }] };
+let levels = { version: 1, partitionings: [{ source: { type: 'obs', key: 'many' } }] };
 const count = { getId: () => 'cell-count-C', getType: () => 'cell-count', getTitle: () => 'Count 1', getConfig: () => ({}),
     groupSource: () => null, axisSource: () => ({ title: 'Count 1', kind: 'count', recipe: () => levels, shape: GROUPING }) };
 // what panel-manager.js stands in a disabled type's place: the settings kept, no source of groups
@@ -79,4 +83,24 @@ test('turned on: one grouping request of that input alone, with no codes', async
     assert.ok(!(sent[0].want && sent[0].want.codes));
     assert.deepEqual(h.read().values.reply.partitionings[0].categories, ['c:m0', 'c:m1', 'c:m2']);
     h.release();
+});
+
+test('more used categories than a grouping holds: the levels are refused with their figures, and Choose levels says so', async () => {
+    refuseNext = true;
+    levels = { version: 1, partitionings: [{ source: { type: 'obs', key: 'barcode' } }] };
+    try {
+        const h = watch();
+        for (let i = 0; i < 400 && h.read().state !== 'refused'; i++) await new Promise((r) => setTimeout(r, 5));
+        const snap = h.read();
+        assert.equal(snap.state, 'refused');
+        assert.equal(snap.reason, 'too_many_groups');
+        // the figures the panel reads from the store, as utils/cell-group-source.js does
+        const figures = G.groupSources().store.snapshot(snap.key).header.refused;
+        assert.deepEqual(figures, { reason: 'too_many_groups', count: 2345, limit: 2000 });
+        assert.equal(S.levelsNote({ ...snap, refused: figures }, { field: 'x', name: 'barcode', numeric: false }).text,
+            'barcode has 2,345 levels that hold a cell; Choose levels lists up to 2,000.');
+        h.release();
+    } finally {
+        refuseNext = false;
+    }
 });
