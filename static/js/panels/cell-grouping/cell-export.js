@@ -14,7 +14,7 @@ import { csvField } from '../../utils/score-inspect.js';
 import { PENDING } from '../../utils/host-binding.js';
 
 /** The most cells a per-cell export is offered for (GRP-18). */
-export const CELL_EXPORT_LIMIT = 1000000;
+const CELL_EXPORT_LIMIT = 1000000;
 
 /** Rows built before the page is given a turn. */
 const ROWS_PER_CHUNK = 50000;
@@ -29,8 +29,7 @@ const nextTurn = () => new Promise((resolve) => setTimeout(resolve, 0));
  * @param {{cells: number, words: Object}} p - `words.tooManyCells(limit)` says why
  * @returns {{enabled: boolean, reason: string}}
  */
-// export-unused-ok: the Cell Grouping panel's export menu (a shared-file hunk the lead applies) reads it
-export function offer({ cells, words }) {
+function offer({ cells, words }) {
     return cells > CELL_EXPORT_LIMIT ? { enabled: false, reason: words.tooManyCells(CELL_EXPORT_LIMIT) } : { enabled: true, reason: '' };
 }
 
@@ -41,7 +40,7 @@ export function offer({ cells, words }) {
  *   yieldTurn?: () => Promise<void>}} p - `codes` and `names` cover the same cells, in the same order
  * @returns {Promise<string[]>}
  */
-export async function buildCsv({ names, codes, groupNames, words, rowsPerChunk = ROWS_PER_CHUNK, yieldTurn = nextTurn }) {
+async function buildCsv({ names, codes, groupNames, words, rowsPerChunk = ROWS_PER_CHUNK, yieldTurn = nextTurn }) {
     // each group's field, quoted once; a code with no group (the missing value, or one past the names) is the missing text
     const none = csvField(words.notInAnyGroup, { text: true });
     const fields = groupNames.map((name) => csvField(name, { text: true }));
