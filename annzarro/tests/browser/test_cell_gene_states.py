@@ -161,6 +161,25 @@ def test_too_large_reads_the_groups_of_a_grouping_panel_that_holds_them_with_no_
     assert len(page.calls) == n, "no request at all: not the groups (held), not the genes (above the limit)"
 
 
+def test_a_grouping_edited_to_more_groups_is_counted_again_before_any_gene(page, served):
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}]}
+    # 360 rows: 6 groups fit (2,160 cells of the matrix), 1,200 would not (432,000)
+    _open(page, served, {P: _plot(mode="heatmap", cellAxis={"type": "cell-group", "key": GA}, sections=_sections(9)),
+                         S1: _sig(S1, "All genes", GENES), GA: grouping}, open_ids=(P, S1, GA))
+    st = _drawn(page)
+    assert st["groups"] == 6 and st["rows"] == 360
+    n = len(page.calls)
+    # the grouping is edited to one group per cell: its groups are not known until they are counted
+    page.evaluate("([id, g]) => window.PanelManager.getPanel(id).updateConfig(g)", [GA, {**grouping, "partitionings": [{"source": {"type": "obs", "key": "many"}}]}])
+    _wait_state(page, "toolarge")
+    _says(page, TOO_LARGE)
+    _settle(page, "above the limit the genes are never asked for; a request that never goes out cannot be waited on")
+    after = page.calls[n:]
+    assert after, "the new groups were asked for, to count them"
+    # the plot reads its genes on `logged`; the grouping's own grid may ask for its focused gene on X
+    assert [f for f in _features(after) if f["layer"] == "logged"] == [], "no gene of the plot was asked for above the limit"
+
+
 # ------------------------------------------------------------------ 3. asks first (SHR-32)
 
 def test_asks_first_with_an_upper_bound_compute_and_fewer_genes(page, served):
