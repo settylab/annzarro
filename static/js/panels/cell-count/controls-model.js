@@ -13,6 +13,7 @@ import {
 } from '../../utils/count-plot-model.js';
 import { PANEL_SOURCES, TABLE_SOURCE } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
+import { setText } from '../../utils/set-plot-model.js';
 
 const C = VOCABULARY.countPlot;
 const P = VOCABULARY.phrase;
@@ -81,12 +82,6 @@ export function measureSourceName(source, titleOf) {
     return name;
 }
 
-/** A set's text in a line: its name, else "in Table 1" for a table, else its source. */
-function setText(set, titleOf) {
-    if (typeof set.name === 'string' && set.name) return set.name;
-    return inputText(set.source, titleOf);
-}
-
 /**
  * The line that lists what the mode does not read (UX 4.2), or '' when it reads all that is stored:
  * "Kept for other modes: Y obsm X_umap 1 · Sets: in Table 1, in Table 2".
@@ -97,7 +92,7 @@ export function keptLine(config, titleOf) {
     const kept = keptForOtherModes(config);
     if (!kept.length) return '';
     const items = kept.map((field) => (field === 'sets'
-        ? `${C.rows.sets}: ${config.sets.map((s) => setText(s, titleOf)).join(', ')}`
+        ? `${C.rows.sets}: ${config.sets.map((s) => setText(s, { titleOf })).join(', ')}`
         : `${C.rows[field]} ${inputText(config[field].source, titleOf)}`));
     return C.kept(items);
 }
