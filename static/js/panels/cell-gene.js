@@ -210,7 +210,6 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _resize = null;
         /** gateMatrix's decision for the plan it was made for (CXG-17): what the plot asks of the server now */
         let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
-        let _regateDue = false;
         /** the cell axis's applied recipe as last seen: the recipe its groups are of while edits wait or are checked */
         let _applied = null;
 
@@ -488,21 +487,6 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             sync();
         }
 
-        /**
-         * Decide the limit again once the store's notification is over: a change of option made while the store is
-         * starting its jobs would attach a job it does not start in that pass.
-         */
-        function regateSoon() {
-            if (_regateDue) return;
-            _regateDue = true;
-            queueMicrotask(() => {
-                _regateDue = false;
-                if (!_dom) return;
-                regate();
-                paint();
-                redraw();
-            });
-        }
 
         function record() {
             return _dom ? binding.recordsOf(_dom.plot).get(ROLE) || null : null;
@@ -794,14 +778,18 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             // the groups changed since they were counted (the grouping was edited): unknown again, so with rows that could
             // exceed the limit the groups go first, before any gene (CXG-17, Q4)
             if (_gate.ask === 'all' && _gate.groupsOf && !sameGroups(groupsIdentity(axisId()), _gate.groupsOf)) {
-                regateSoon();
+                regate();
+                paint();
+                redraw();
                 return;
             }
             // the groups the limit waits for are known, or the groups changed: decide again (CXG-17)
             if (snap.state === 'ready' && snap.values && snap.values.reply && Array.isArray(snap.values.reply.groups)) {
                 const grown = _plan && gateMatrix({ sections: _plan.shape, groups: snap.values.reply.groups.length }).ask !== 'all';
                 if (_gate.ask !== 'all' || grown) {
-                    regateSoon();
+                    regate();
+                    paint();
+                    redraw();
                     return;
                 }
             }
