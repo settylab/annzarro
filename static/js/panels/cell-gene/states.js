@@ -116,7 +116,7 @@ export function describePlot(snap, ctx, plot, words) {
             const cells = plot && typeof plot.cells === 'number' ? plot.cells : est.n_cells;
             return say('awaiting', 'notice', S.tags.awaiting,
                 S.ask(genes, compactCount(Number(cells) || 0), durationText(est.seconds), valuesText(Number(est.entries))), P.keepWorking,
-                [['score-compute', S.buttons.compute], ['score-fewer', S.buttons.fewer]]);
+                [['score-compute', S.buttons.compute], ['fewer-genes', S.buttons.fewer]]);
         }
         case 'refused':
             if (snap.reason !== COST_REFUSAL) break;

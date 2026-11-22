@@ -166,7 +166,7 @@ test('Asks first: an upper bound from the estimate, the stored values, Compute a
     assert.equal(n.headline, 'Reading 200 genes over 95.6M cells: up to about 6 minutes (10.5 billion stored values).');
     assert.equal(n.text, 'Groupings and counts keep working.');
     assert.deepEqual(labels(n), ['Compute', 'Fewer genes']);
-    assert.deepEqual(ids(n), ['score-compute', 'score-fewer']);
+    assert.deepEqual(ids(n), ['score-compute', 'fewer-genes']);
     assert.equal(n.tag.text, 'Not computed');
 });
 
@@ -245,4 +245,61 @@ test('the state word follows the snapshot and the drawing', () => {
     assert.equal(plotState({ state: 'ready' }, { drawn: true }), 'ready');
     assert.equal(plotState({ state: 'updating' }, { drawn: true }), 'updating');
     for (const s of ['awaiting', 'refused', 'failed', 'computing', 'cycle']) assert.equal(plotState({ state: s }), s);
+});
+
+// ------------------------------------------------------------------ the genes read reach the snapshot (R4)
+
+const { createGroupsApi } = await import('../../../static/js/utils/cell-groups-client.js');
+const { createDerivedStore } = await import('../../../static/js/utils/derived-store.js');
+
+/** A 200 reply whose body is these frames and then nothing: the stream stays open until `end()`. */
+function openStream(frames) {
+    const enc = new TextEncoder();
+    const pieces = frames.map((f) => enc.encode(`${JSON.stringify(f)}\n`));
+    let wake = null;
+    let ended = false;
+    return {
+        end() { ended = true; if (wake) wake(); },
+        response: { ok: true, status: 200, body: { getReader() {
+            return {
+                async read() {
+                    if (pieces.length) return { done: false, value: pieces.shift() };
+                    if (!ended) await new Promise((resolve) => { wake = resolve; });
+                    return { done: true };
+                },
+                async cancel() {}
+            };
+        } } }
+    };
+}
+
+const until = async (check) => { for (let i = 0; i < 200 && !check(); i++) await new Promise((r) => setTimeout(r, 5)); };
+
+test('a features frame of the groups route puts the genes read on the snapshot as items; a score frame carries none', async () => {
+    const queue = { ahead: 0, sharing: 0 };
+    const groups = openStream([
+        { type: 'start', codes: 'miss', lane: 'heavy', entries_total: 1000, queue },
+        { type: 'progress', stage: 'features', done: 61, total: 200, entries_done: 300, entries_total: 1000, running_s: 6, queue }
+    ]);
+    const api = createGroupsApi({ url: '/api/v1/data/cell_groups', fetchImpl: async () => groups.response });
+    const store = createDerivedStore({ api: { estimate: async () => ({ estimate: { seconds: 1, tier: 'live' } }), compute: (req) => api.compute(req) } });
+    store.attach('k', { recipe: { shape: 'grouping' }, dataset: 'd', subset: null, hash: 'k' }, { visible: () => true });
+    await until(() => (store.snapshot('k').progress || {}).items);
+    const p = store.snapshot('k').progress;
+    assert.deepEqual(p.items, { done: 61, total: 200 });
+    assert.equal(p.entries_done, 300);
+    assert.equal(describePlot(store.snapshot('k'), CTX, PLOT, WORDS).headline, 'Reading 200 genes: 61 of 200 · about 14 seconds left');
+    store.cancel('k');
+    groups.end();
+
+    // the score stream's frames are counted in genes already, and keep no items
+    let told = null;
+    const score = createDerivedStore({ api: { estimate: async () => ({ estimate: { seconds: 1, tier: 'live' } }),
+        compute: (req) => { req.onProgress(3, 12, { type: 'progress', done: 3, total: 12, entries_done: 30, entries_total: 120, running_s: 1, queue });
+            told = true; return new Promise(() => {}); } } });
+    score.attach('s', { recipe: {}, dataset: 'd', subset: null, hash: 's' }, { visible: () => true });
+    await until(() => told);
+    const q = score.snapshot('s').progress;
+    assert.equal(q.items, undefined);
+    assert.equal(q.done, 3);
 });
