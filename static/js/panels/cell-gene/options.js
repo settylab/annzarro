@@ -35,7 +35,7 @@ import { dendrogramBlocks } from './draw-annotations.js';
 import { needsThreshold } from './sections.js';
 
 const WO = VOCABULARY.cellGene.options;
-const TABLE = VOCABULARY.countPlot.table;
+const TABLE = VOCABULARY.table;
 
 const SCALES = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Viridis']);
 const DEFAULT_SCALE = 'Viridis';
