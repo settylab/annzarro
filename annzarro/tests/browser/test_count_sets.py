@@ -133,11 +133,12 @@ def test_add_set_builds_levels_and_a_condition_in_place_each_one_step(page, serv
     draft = f"{S} .ccnt-set--draft"
     page.select_option(f"{draft} select[data-field='column']", "cell_type")
     page.wait_for_selector(f"{draft} .ccnt-set__levels input[value='c:T cell']")
-    page.check(f"{draft} .ccnt-set__levels input[value='c:T cell']")
+    # a commit draws the row again, so the box is clicked, not checked through one element handle
+    page.click(f"{draft} .ccnt-set__levels input[value='c:T cell']")
     until(page, f"() => (window.PanelManager.getPanel('{CC}').getConfig().sets || []).length === 1")
     assert _config(page)["sets"] == [{"source": {"type": "obs", "key": "cell_type"}, "member": {"levels": ["c:T cell"]}}]
     steps = _undo_steps(page)
-    page.check(f"{S} .ccnt-set[data-set-index='0'] .ccnt-set__levels input[value='c:NK cell']")
+    page.click(f"{S} .ccnt-set[data-set-index='0'] .ccnt-set__levels input[value='c:NK cell']")
     until(page, f"() => window.PanelManager.getPanel('{CC}').getConfig().sets[0].member.levels.length === 2")
     assert _undo_steps(page) == steps + 1
 
@@ -289,6 +290,17 @@ def test_two_group_sets_changed_at_once_are_one_line_and_a_key_that_is_gone_says
     assert len(_config(page)["sets"]) == 3, "nothing is silently reset"
 
 
+def test_a_set_whose_table_is_gone_keeps_its_row_marked_deleted_with_choose_another(page, served):
+    gone = {"source": {"type": "table", "key": "cell-table-gone"}, "name": "old table"}
+    _open(page, served, {CC: _count(mode="venn", sets=[COND_SET, gone])})
+    until(page, "(s) => { const r = document.querySelector(s + ' .ccnt-set[data-set-index=\"1\"]'); return r && r.dataset.state === 'deleted'; }", S)
+    row = _rows(page)[1]
+    assert row["tag"] == "deleted" and row["name"] == "old table"
+    assert len(_config(page)["sets"]) == 2, "nothing is silently reset"
+    page.click(f"{S} .ccnt-set[data-set-index='1'] [data-set-action='chooseAnother']")
+    page.wait_for_selector(f"{S} .ccnt-set[data-set-index='1'] .ccnt-set__edit:not([hidden]) select[data-field='table']")
+
+
 # ------------------------------------------------------------------ 5. sixteen sets
 
 def test_add_set_is_disabled_at_sixteen_with_the_reason_and_sixteen_sets_draw(page, served):
@@ -313,4 +325,4 @@ def test_a_link_carries_the_sets_as_stored_and_nothing_computed(page, served):
     assert cfg["sets"][1]["name"] == "late" and cfg["sets"][1]["member"]["follow"] is True
     assert cfg["top"] == 12
     assert "n_no_value" not in json.dumps(cfg) and "regions" not in json.dumps(cfg)
-    assert _rows(page)[1]["name"] == "late"
+    assert _rows(page)[1]["name"] == "late (follows the bin)", "a following set's row says so, after its own name"
