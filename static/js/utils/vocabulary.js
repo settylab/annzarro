@@ -234,6 +234,12 @@ const countPlot = Object.freeze({
         thing: 'count', source: 'count', result: 'count', Computing: 'Counting', found: 'cells',
         act: Object.freeze({ to: 'count', ing: 'counting' }), computing: 'Counting…', off: 'Cell Count Plot is turned off on this server.'
     }),
+    /** Choose levels when an input's levels, asked for alone, cannot be listed. */
+    levelsList: Object.freeze({
+        tooMany: (name, n, max) => `${name} has ${fmt(n)} ${plural.level} that hold a cell; Choose ${plural.level} lists up to ${fmt(max)}.`,
+        notRead: (name, message) => `The ${plural.level} of ${name} could not be read${message ? `: ${String(message).replace(/[.\s]+$/, '')}` : ''}.`,
+        retry: 'Retry'
+    }),
     /** The way out of a refusal or of an input the mode cannot use (UX 4.2, 4.3). */
     wayOut: Object.freeze({ bin: 'Bin it', levels: `Choose ${plural.level}`, removeSplit: 'Remove Color by', showAs: (mode) => `Show as ${mode}` }),
     /** The status strip (CNT-22, UX 4.7), its parts joined by `join`. */
