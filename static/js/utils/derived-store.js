@@ -194,7 +194,7 @@ function isAbort(error) {
 }
 
 /** What a progress frame says besides its count (SHR-47, SHR-48), kept as the frame carries it. */
-const PROGRESS_FIELDS = Object.freeze(['stage', 'entries_done', 'entries_total', 'running_s', 'queue']);
+const PROGRESS_FIELDS = Object.freeze(['stage', 'entries_done', 'entries_total', 'running_s', 'queue', 'items']);
 
 /** A job's progress: done and in all, and whichever of the frame's other fields it carries. */
 function progressOf(done, total, frame) {

@@ -40,7 +40,11 @@ function blocksOf(header) {
 async function readGroupsStream(response, { onProgress = () => {} } = {}) {
     const { header, blocks } = await readFrameStream(response, {
         onFrame: (f) => {
-            if (f.type === 'start' || f.type === 'progress') onProgress(Number(f.entries_done) || 0, Number(f.entries_total) || 0, f);
+            if (f.type === 'start' || f.type === 'progress') {
+                // the items read (genes, scores) beside the stored entries: "Reading 200 genes: 61 of 200" (UX 3.5)
+                const items = f.type === 'progress' && f.stage === 'features' ? { items: { done: Number(f.done) || 0, total: Number(f.total) || 0 } } : {};
+                onProgress(Number(f.entries_done) || 0, Number(f.entries_total) || 0, { ...f, ...items });
+            }
         },
         blocksOf,
         words: { cut: 'The groups stream ended before the groups were complete.', failed: 'The groups could not be computed.' }
