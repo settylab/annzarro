@@ -300,7 +300,7 @@ function binding() {
                 const handle = scores().sources.watch(setting.key, {
                     kind: 'plot', host, role, sub, layer: setting.layer || null, dependant: panelId, visible: () => isVisible(host), onChange
                 });
-                return { sigId: setting.key, sub, layer: setting.layer || null, handle };
+                return { sigId: setting.key, sub, layer: setting.layer || null, handle, consumer: { kind: 'plot', role, panelId, host } };
             },
             matches: (rec, setting) => rec.sigId === setting.key && rec.sub === subKeyOf(setting) && (rec.layer || '') === layerOf(setting),
             describe: describeScore,

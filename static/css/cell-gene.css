@@ -111,6 +111,9 @@
 
 /* status line and the plot */
 .cgene-message { padding: 0 8px; color: var(--az-muted); font-size: 0.75rem; min-height: 1.1em; }
+/* One cell per group (X3b, CXG-27): the suggestion of a heatmap, with its button */
+.cgene-hint { display: flex; align-items: center; gap: 6px; padding: 2px 8px; font-size: 0.75rem; }
+.cgene-hint[hidden] { display: none; }
 /* the plot fills the area; the status strip of utils/panel-surface.js follows it, below */
 .cgene-area { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 240px; }
 .cgene-plot { position: relative; flex: 1 1 auto; min-height: 0; }
