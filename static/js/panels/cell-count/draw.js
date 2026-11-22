@@ -359,15 +359,24 @@ export function countFigure(config, table, opts) {
 }
 
 /**
- * The CSV of the plotted table (CNT-23): the levels of each input, the count, the share and the measure.
+ * The rows of the plotted table (CNT-23), headers first: the levels of each input, the count, the share and the measure.
+ * The CSV and Show as table are these rows (one column specification).
  * @param {Object} config
  * @param {Object} table
  * @param {{labels?: Map[], inputNames: Object, headers: {count: string, share: string, measure?: string}, titleOf?: Function}} opts
  */
-// export-unused-ok: C2a offers the CSV in Plot Options and Show as table
+export function countRows(config, table, opts) {
+    return tableRows(config, table, {
+        labelOf: labelFn(labelMapsOf(config, table, opts)), inputNames: opts.inputNames, headers: opts.headers, shareBase: valueOf(config).base
+    });
+}
+
+/**
+ * The CSV of the plotted table (CNT-23): `countRows` as text.
+ * @param {Object} config
+ * @param {Object} table
+ * @param {Object} opts - as countRows
+ */
 export function countCsv(config, table, opts) {
-    const labelAt = labelFn(labelMapsOf(config, table, opts));
-    return tableCsv(tableRows(config, table, {
-        labelOf: labelAt, inputNames: opts.inputNames, headers: opts.headers, shareBase: valueOf(config).base
-    }));
+    return tableCsv(countRows(config, table, opts));
 }
