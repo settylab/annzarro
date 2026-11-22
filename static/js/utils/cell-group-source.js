@@ -401,13 +401,11 @@ function binding() {
             id: PLOT_PROVIDER,
             open: (host, role, setting, onChange) => {
                 const id = setting.key;
-                const refusal = codesRefusal(id, panelIdOf(host));
-                if (refusal) return { groupId: id, handle: refusedHandle(id, refusal) };
-                const handle = groupSources().sources.watch(id, {
-                    consumer: { kind: 'plot', role, panelId: panelIdOf(host), host }, option: { codes: true },
-                    visible: () => isVisible(host), onChange
-                });
-                return { groupId: id, handle };
+                const consumer = { kind: 'plot', role, panelId: panelIdOf(host), host };
+                const refusal = codesRefusal(id, consumer.panelId);
+                if (refusal) return { groupId: id, handle: refusedHandle(id, refusal), consumer };
+                const handle = groupSources().sources.watch(id, { consumer, option: { codes: true }, visible: () => isVisible(host), onChange });
+                return { groupId: id, handle, consumer };
             },
             matches: (rec, setting) => rec.groupId === setting.key,
             describe: (snap, ctx) => describeGrouping(withFigures(snap), ctx),
