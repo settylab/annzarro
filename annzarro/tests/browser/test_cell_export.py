@@ -6,6 +6,7 @@ The store is the grouping fixture (tests/core/grouping_store.py): 1,200 cells, c
     group is the grid's name for it (the oracle is the fixture's obs table, not the page).
 2.  The export computes once, for the codes (after its estimate), and asks for nothing more when it is done.
 3.  A cell in no group reads "Not in any group", and the rows of the others still match the oracle.
+4.  Screenshots of the bar, light and dark, when ANNZARRO_G9E_SHOTS names a folder.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -80,3 +81,18 @@ def test_a_cell_in_no_group_reads_not_in_any_group(page, served):
     expected = [[str(name), ct if ct in ("B cell", "T cell") else "Not in any group"] for name, ct in zip(DATA.obs.index, DATA.obs["cell_type"])]
     assert rows[1:] == expected
     assert sum(1 for r in rows[1:] if r[1] == "Not in any group") == int((~DATA.obs["cell_type"].isin(["B cell", "T cell"])).sum())
+
+
+# ------------------------------------------------------------------ 4. screenshots
+
+SHOTS = os.environ.get("ANNZARRO_G9E_SHOTS")
+
+
+@pytest.mark.skipif(not SHOTS, reason="set ANNZARRO_G9E_SHOTS to a folder to write the screenshots")
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_screenshots(page, served, theme):
+    out = pathlib.Path(SHOTS)
+    out.mkdir(parents=True, exist_ok=True)
+    page.emulate_media(color_scheme=theme)
+    grid._open(page, served, [CELL_TYPE, CONDITION])
+    page.locator(f"{A} .cgg__bar").screenshot(path=str(out / f"export-bar-{theme}.png"))
