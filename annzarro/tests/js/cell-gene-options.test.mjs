@@ -304,6 +304,25 @@ test('5.3 values printed in the cells: a heatmap option, ignored for dots', () =
     assert.equal(O.figureExtras(normalizeCellGene({ printValues: true }).config, {}).color.printValues, undefined);
 });
 
+test('a one-row section with a quantity of its own is a column named by its section and aggregation, never "undefined"', () => {
+    const { model } = compose();
+    model.rows[5] = { ...model.rows[5], label: 'Pathway', section: { index: 1, title: 'Pathway' },
+        own: { color: { id: 'mean_of_means|logged|own', label: W.aggregation.mean_of_means } } };
+    const rows = longRows(O.tableOf(model));
+    const head = rows[0];
+    const own = columnHeader({ label: W.aggregation.mean_of_means, scaling: 'none', section: 'Pathway' });
+    assert.equal(own, "Pathway · Mean of the genes' means · not scaled");
+    assert.ok(head.includes(own), head.join(' | '));
+    assert.ok(!head.some((h) => h.includes('undefined')), head.join(' | '));
+    // its values are on its row only; the genes' column leaves that row empty
+    const at = head.indexOf(own);
+    const main = head.indexOf(columnHeader({ stat: 'mean', layer: 'logged', scaling: 'none' }));
+    const pathway = rows.filter((r) => r[1] === 'Pathway');
+    assert.equal(pathway.length, 4);
+    assert.ok(pathway.every((r) => r[at] !== '' && r[main] === ''));
+    assert.ok(rows.slice(1).filter((r) => r[1] !== 'Pathway').every((r) => r[at] === ''));
+});
+
 // ================================================================================================ the strips' legend
 
 test('the strips\' legend stands in the legend column below the modebar, past the color bar and the size legend', () => {

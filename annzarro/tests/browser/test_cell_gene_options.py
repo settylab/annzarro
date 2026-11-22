@@ -31,6 +31,7 @@ else:
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401 (the fixtures)
     served, page, _open, _plot, _sig, _state, _drawn, _settle, _config, P, TP, S1, S2, GA, GENES)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
+from annzarro.tests.browser import waits  # noqa: E402
 
 SHOTS = os.environ.get("ANNZARRO_SHOTS")
 TWO = {"id": GA, "title": "Grouping 1", "version": 1,
@@ -111,6 +112,27 @@ def test_within_the_first_factor_is_offered_for_a_grouping_of_two_factors(page, 
     until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().cluster || {}).groups === 'first'", P)
     # a dendrogram per block of the first factor, drawn beside the groups
     _redrawn(page, "(p) => p.data.some(t => t.name === 'dendrogram groups')")
+
+
+# ------------------------------------------------------------------ 1b. the live panel draws X4b's annotations
+
+def test_the_live_panel_draws_brackets_strips_dendrograms_and_marks_small_groups(page, served):
+    """Regression guard: X4b's annotations were drawn in Node only, never by the panel (found in X5)."""
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
+                                  cluster={"genes": "off", "groups": "all", "linkage": "complete", "distance": "correlation"},
+                                  sections=[{"source": S1, "rows": "genes"}, {"source": S2, "rows": "genes"}]),
+                         S1: _sig(S1, "B markers", GENES[:4]), S2: _sig(S2, "T markers", GENES[6:10])}, open_ids=(P, S1, S2))
+    _drawn(page)
+    _redrawn(page, "(p) => p.data.some(t => t.name === 'dendrogram groups')")
+    names = _trace_names(page)
+    for want in ("section brackets", "group strip", "strip legend", "dendrogram groups"):
+        assert want in names, (want, names)
+    titles = page.evaluate("(s) => (document.querySelector(s + ' .cgene-plot').layout.annotations || [])"
+                           ".filter(a => a.name === 'section title').map(a => a.text)", TP)
+    assert titles == ["B markers", "T markers"]
+    # cell_type's level of 5 cells is under the small-group threshold (10): its label says "small"
+    groups = _ticks(page, "yaxis")
+    assert sum(1 for t in groups if "<i>small</i>" in t) == 1, groups
 
 
 # ------------------------------------------------------------------ 2. Ward (Q2)
@@ -234,6 +256,9 @@ def test_a_new_section_shows_progress_on_its_own_rows_while_the_others_stay_draw
     # the first section stays drawn with its values meanwhile
     assert page.evaluate("(s) => document.querySelector(s + ' .cgene-plot').data[0].x.length", TP) > 0
     assert page.locator(f"{TP} .cgene-panel").get_attribute("data-state") == "updating"
+    # rows added to a drawing are a quiet recompute: no notice over the plot (decision 21)
+    waits.expect_stays(lambda: page.locator(f"{TP} .cgene-plot > .score-notice:visible").count() == 0,
+                       "a quiet recompute must never put a notice over the drawing; nothing appears to wait for", page=page, seconds=1.0)
     # the held request has reached the route (each evaluate lets Playwright run its handlers), then it goes through
     deadline = time.monotonic() + 30
     while not held:
