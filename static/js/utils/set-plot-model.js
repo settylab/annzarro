@@ -17,7 +17,7 @@
 import { VOCABULARY } from './vocabulary.js';
 import { heightValues } from './count-plot-model.js';
 import { resolveGroup, summariseChanges, describeGroupReference } from './group-reference.js';
-import { parseLevelId, RESERVED } from './level-id.js';
+import { parseLevelId, RESERVED, canonLabel } from './level-id.js';
 import { sourceName } from './cell-grouping.js';
 import { wouldLoop, loopReason } from './panel-references.js';
 import { GROUP_SOURCE, PANEL_SOURCES } from '../panels/cell-grouping/factors.js';
@@ -72,6 +72,25 @@ export function memberOnWire(set) {
     if (Array.isArray(m.group)) return { group: [...m.group] };
     if (m.op !== undefined) return { op: m.op, value: m.value };
     return { levels: [...m.levels] };
+}
+
+/**
+ * The choices of a "Levels of a column" set from the obs route's category labels (core/categories.py
+ * `labels_of_ranks`), which are the categories as JSON values: a string, a number or a boolean. Each id is the
+ * category's canonical text (plan 1.6), as the engine writes it; a null category is no choice (it is out of every set).
+ * @param {Array<string|number|boolean|null>} values
+ * @returns {{ids: string[], labels: string[]}}
+ */
+export function categoryChoices(values) {
+    const ids = [];
+    const labels = [];
+    for (const v of values) {
+        const id = canonLabel(v);
+        if (id === RESERVED.na) continue;
+        ids.push(id);
+        labels.push(levelText(id));
+    }
+    return { ids, labels };
 }
 
 /** The text of a category id ("T cell" of `c:T cell`). */

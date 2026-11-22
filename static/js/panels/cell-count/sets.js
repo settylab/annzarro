@@ -24,7 +24,7 @@ import { DataManager } from '../../data-manager.js';
 import { makeDom } from '../gene-set-utilities/dom.js';
 import {
     SET_KINDS, setKind, setText, memberOnWire, setStates, setPlotModel, upsetOptions, parseUpsetOption, withUpsetOption,
-    canAddSet, panelChoices, groupingOfSet, isBooleanColumn, universeLine, setCounts
+    canAddSet, panelChoices, categoryChoices, groupingOfSet, isBooleanColumn, universeLine, setCounts
 } from '../../utils/set-plot-model.js';
 import { keepGroup, referToGroup } from '../../utils/group-reference.js';
 import { canonKey } from '../../utils/level-id.js';
@@ -86,8 +86,7 @@ function categoriesOf(structure, column, onLoaded) {
     }
     const ranks = Array.from({ length: n }, (_, i) => i);
     const loading = DataManager.loadCategoryLabels(dataset, column, ranks).then((labels) => {
-        const texts = ranks.map((r) => labels.get(r)).filter((t) => typeof t === 'string');
-        categoryCache.set(key, { ids: texts.map((t) => `c:${t}`), labels: texts });
+        categoryCache.set(key, categoryChoices(ranks.map((r) => labels.get(r))));
         onLoaded();
     }, (error) => {
         categoryCache.delete(key);
