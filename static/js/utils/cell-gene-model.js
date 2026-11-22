@@ -319,14 +319,15 @@ export function matrixLimits({ groups, sections }) {
 // --- CSV (CXG-20) -----------------------------------------------------------------------------------------------
 
 /**
- * A column's header: statistic, layer and scaling, with the section first for a section's own aggregated quantity.
- * @param {{stat: string, layer?: string, scaling: string, section?: string}} column
+ * A column's header: statistic, layer and scaling, with the section first for a section's own aggregated quantity,
+ * which is named by its `label` (an aggregation has no statistic of its own).
+ * @param {{stat?: string, label?: string, layer?: string, scaling: string, section?: string}} column
  */
 // export-unused-ok: consumed by X4a (colour bar and legend titles name statistic, layer and scaling the same way)
-export function columnHeader({ stat, layer, scaling, section }) {
+export function columnHeader({ stat, label, layer, scaling, section }) {
     const parts = [];
     if (section) parts.push(section);
-    parts.push(W.statistic[stat]);
+    parts.push(label || W.statistic[stat]);
     if (layer) parts.push(layer);
     parts.push(W.scaled[scaling]);
     return parts.join(' · ');
@@ -335,27 +336,39 @@ export function columnHeader({ stat, layer, scaling, section }) {
 const figure = (v) => (Number.isFinite(v) ? String(v) : '');
 
 /**
- * The matrix in long form: one row per matrix row and group, one column per statistic, a missing value an empty
- * field. A column whose `noExpressing` flags a cell adds a final note column saying so (P3).
+ * The matrix in long form, as text fields: the header, then one row per matrix row and group, one column per
+ * statistic, a missing value an empty field. A column whose `noExpressing` flags a cell adds a final note column saying
+ * so (P3). The CSV and Show as table are these rows (one column specification).
  * @param {{groups: {label: string, n: number}[], rows: {section: string, label: string}[],
- *   columns: {stat: string, layer?: string, scaling: string, section?: string, values: Float64Array, noExpressing?: Uint8Array}[]}} table
- *   - `values[row * groups + group]`
- * @returns {string}
+ *   columns: {stat?: string, label?: string, layer?: string, scaling: string, section?: string, values: Float64Array,
+ *   noExpressing?: Uint8Array}[]}} table - `values[row * groups + group]`
+ * @returns {string[][]}
  */
-// export-unused-ok: consumed by X5 (the export menu)
-export function longCsv({ groups, rows, columns }) {
+export function longRows({ groups, rows, columns }) {
     const noted = columns.some((c) => c.noExpressing);
     const head = [W.csv.section, W.csv.row, W.csv.group, W.csv.cells, ...columns.map(columnHeader)];
     if (noted) head.push(W.csv.note);
-    const lines = [head.map((h) => csvField(h)).join(',')];
+    const out = [head];
     for (let r = 0; r < rows.length; r++) {
         for (let g = 0; g < groups.length; g++) {
             const i = r * groups.length + g;
-            const fields = [csvField(rows[r].section, { text: true }), csvField(rows[r].label, { text: true }),
-                csvField(groups[g].label, { text: true }), String(groups[g].n), ...columns.map((c) => figure(c.values[i]))];
-            if (noted) fields.push(columns.some((c) => c.noExpressing && c.noExpressing[i]) ? csvField(W.noExpressingCells) : '');
-            lines.push(fields.join(','));
+            const fields = [rows[r].section, rows[r].label, groups[g].label, String(groups[g].n), ...columns.map((c) => figure(c.values[i]))];
+            if (noted) fields.push(columns.some((c) => c.noExpressing && c.noExpressing[i]) ? W.noExpressingCells : '');
+            out.push(fields);
         }
     }
+    return out;
+}
+
+/** The fields of a long row that are names (section, row, group), written as text in the CSV. */
+const NAME_FIELDS = 3;
+
+/**
+ * longRows as CSV text: a name that looks like a formula is kept as written (score-inspect.js csvField).
+ * @param {Parameters<typeof longRows>[0]} table
+ * @returns {string}
+ */
+export function longCsv(table) {
+    const lines = longRows(table).map((fields, k) => fields.map((f, j) => csvField(f, { text: k > 0 && j < NAME_FIELDS })).join(','));
     return `${lines.join('\n')}\n`;
 }
