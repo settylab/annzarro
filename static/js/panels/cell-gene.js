@@ -19,9 +19,9 @@
  * so a computing, refused or failed plot says so over the plot as every source does, with its progress bar.
  *
  * SEAMS for the steps after this one:
- *   X3b  panels/cell-gene/states.js: the states of UX 3.5. Today the plot area says only what describeSource says
- *        (computing, queued, refused, failed, a gate upstream), the empty checklist and the over-the-limit sentence;
- *        `stateOf()` is where X3b's states take over, `_debugState().state` what the tests read.
+ *   X3b  panels/cell-gene/states.js: the states of UX 3.5 (the plot's notices, worded from what the plot knows by
+ *        `plotFacts()`; the matrix limit, decided in `sync()` before any request; the checklist; the strip's tags and
+ *        the heatmap hint of a drawn plot). `_debugState().state` is what the tests read.
  *   X4b  draw-annotations.js adds brackets, strips, totals and dendrograms to the figure `drawFigure` builds; the rows
  *        carry their section ({index, title}), and order()'s blocks are kept in `_shown.order` for the dendrograms.
  *   X5   options.js mounts Cluster ▾ and Plot Options in the control grid's `layoutSlot` (`PARTS.options`), and sets
@@ -36,12 +36,12 @@ import { DataManager } from '../data-manager.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
+import { setStatusTag } from '../utils/panel-surface.js';
 import { UndoStack, serverRecipe } from '../utils/gene-signature.js';
 import { AXIS_PREFIX, groupSources, panelOf, typeOf, isOpen, titleOfPanel, hasGene, loadStructure, structureRead, resetStructure } from '../utils/group-host.js';
 import { registerReferences, wouldLoop, dependsOn } from '../utils/panel-references.js';
 import { createHostBinding, isVisible } from '../utils/host-binding.js';
 import { GROUPING } from '../utils/group-sources.js';
-import { describeSource } from '../utils/source-notices.js';
 import { actions } from '../utils/source-actions.js';
 import { sourceList, scoreOptions, lapsedLabel, offerOtherScores, openSignature, onSourceStatus } from '../utils/score-source.js';
 import { createSourceAdapter, KIND_HEADING } from '../utils/score-source-panels.js';
@@ -65,6 +65,9 @@ import {
     statisticChoices, parseStatistic, statisticValue, axisChoices, axisSourceId, axisRecipe, createControls, createAddGenes,
     createSectionList
 } from './cell-gene/controls.js';
+import {
+    gateMatrix, describePlot, ownJobAhead, plotState, matrixTag, oneCellPerGroup, sizeFirst, createChecklist
+} from './cell-gene/states.js';
 
 const TYPE = 'cell-gene';
 const GROUPING_TYPE = 'cell-grouping';
@@ -89,6 +92,7 @@ registerReferences(TYPE, cellGeneReferences);
 export const PARTS = { options: null };
 
 const W = VOCABULARY.word;
+const STATES = VOCABULARY.cellGene.states;
 
 /** What a notice calls things (utils/source-notices.js): the plot waits on its groups. */
 const NOTICE_WORDS = Object.freeze({
@@ -106,15 +110,17 @@ const panelOfHost = (host) => (host && host.__azPanelId ? panelOf(host.__azPanel
 const binding = createHostBinding({
     id: PROVIDER,
     open: (host, role, setting, onChange) => {
+        const consumer = { kind: 'plot', role, panelId: host.__azPanelId, host };
         const handle = groupSources().sources.watch(setting.axisId, {
-            consumer: { kind: 'plot', role, panelId: host.__azPanelId, host }, option: setting.option,
+            consumer, option: setting.option,
             visible: () => isVisible(host),
             onChange: (snap) => { onChange(snap); const p = panelOfHost(host); if (p) p.snapshotChanged(snap); }
         });
-        return { axisId: setting.axisId, handle, optionKey: setting.optionKey, host };
+        return { axisId: setting.axisId, handle, optionKey: setting.optionKey, host, consumer };
     },
     matches: (rec, setting) => rec.axisId === setting.axisId,
-    describe: (snap, ctx) => describeSource(snap, ctx, NOTICE_WORDS),
+    // the plot's own words (UX 3.5) from what its panel knows; the generic notice for every other state
+    describe: (snap, ctx) => { const p = ctx && ctx.consumer ? panelOf(ctx.consumer.panelId) : null; return describePlot(snap, ctx, p ? p.plotFacts() : null, NOTICE_WORDS); },
     stillUsed: (rec) => { const p = panelOfHost(rec.host); return !p || p.axisId() === rec.axisId; },
     refresh: (host) => { const p = panelOfHost(host); if (p) p.redraw(); },
     visibilityChanged: () => groupSources().sources.visibilityChanged()
@@ -130,7 +136,9 @@ actions.register({
         'score-update': { target: (host) => binding.shownRecord(host), run: (rec) => { groupSources().sources.update(rec.axisId); } },
         'score-open': { target: (host) => { const rec = binding.shownRecord(host); return rec && typeOf(panelOf(rec.axisId)) === GROUPING_TYPE ? rec : null; },
             run: (rec, host) => { openPanel(rec.axisId, host.__azPanelId); } },
-        'score-choose': { target: (host) => (host.__azChooser ? host.__azChooser : null), run: (select) => { select.focus(); } }
+        'score-choose': { target: (host) => (host.__azChooser ? host.__azChooser : null), run: (select) => { select.focus(); } },
+        // Asks first (UX 3.5): Fewer genes opens the section list
+        'fewer-genes': { target: (host) => (binding.shownRecord(host) ? panelOfHost(host) : null), run: (panel) => { panel.fewerGenes(); } }
     }
 });
 
@@ -179,6 +187,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _controls = null;
         let _sections = null;
         let _addGenes = null;
+        let _checklist = null;
         const _parts = [];
         const _listeners = [];
         let _message = '';
@@ -199,6 +208,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _drawToken = 0;
         let _state = 'empty';
         let _resize = null;
+        /** gateMatrix's decision for the plan it was made for (CXG-17): what the plot asks of the server now */
+        let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null };
 
         function configFrom(raw) {
             const fields = {};
@@ -213,7 +224,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _initialized = true;
             buildDom();
             listen(document, 'click', (e) => {
-                if (!_dom || e.target.closest(`.tile[data-tile-id="${CSS.escape(_id)}"] .cgene-section__more, .tile[data-tile-id="${CSS.escape(_id)}"] .cgene-add-wrap`)) return;
+                const tile = `.tile[data-tile-id="${CSS.escape(_id)}"]`;
+                if (!_dom || e.target.closest(`${tile} .cgene-section__more, ${tile} .cgene-add-wrap, ${tile} .cgene-checklist__go`)) return;
                 _sections.closeMenus();
                 _addGenes.close();
             });
@@ -381,8 +393,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 return { section, genes: r.genes, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
             });
             const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null, threshold: baseThreshold() });
+            const rowsOf = new Array(entries.length).fill(0);
+            for (const row of features.rows) rowsOf[row.section]++;
             _plan = { ...features, entries, option: { features: features.features.map((f) => f.wire), statistics: features.statistics },
-                optionKey: features.features.map((f) => f.key).join('\u0003') + JSON.stringify(features.statistics) };
+                optionKey: features.features.map((f) => f.key).join('\u0003') + JSON.stringify(features.statistics),
+                // what the matrix limit and the notices read: each section's rows and genes, the genes read
+                shape: entries.map((e, i) => ({ rows: rowsOf[i], genes: e.genes.length })),
+                geneCount: new Set(features.features.filter((f) => f.wire.kind === 'gene').map((f) => f.wire.name)).size };
             return _plan;
         }
 
@@ -402,16 +419,49 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const id = axisId();
             if (!id || !_config.sections.length || !DataManager.isDatasetLoaded()) {
                 binding.releaseHost(host);
+                _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null };
                 return;
             }
             const plan = currentPlan();
-            const rec = binding.recordFor(host, ROLE, { axisId: id, option: plan.option, optionKey: plan.optionKey });
+            const gate = gateFor(plan, id);
+            // above the limit, or while the groups that decide it are not known, the groups alone (CXG-17)
+            const option = gate.ask === 'all' ? plan.option : { features: [], statistics: plan.option.statistics };
+            const optionKey = gate.ask === 'all' ? plan.optionKey : `\u0004${JSON.stringify(plan.option.statistics)}`;
+            const rec = binding.recordFor(host, ROLE, { axisId: id, option, optionKey });
             // the plan first: a value ready at once (every feature held) is read with the plan that asked for it
             rec.plan = plan;
-            if (rec.optionKey !== plan.optionKey) {
-                rec.optionKey = plan.optionKey;
-                rec.handle.setOption(plan.option);
+            if (rec.optionKey !== optionKey) {
+                rec.optionKey = optionKey;
+                rec.handle.setOption(option);
             }
+            binding.schedulePaint(host);
+        }
+
+        /**
+         * The matrix limit for a plan (CXG-17), decided before its genes are asked for: from the groups a ready reply of
+         * the cell axis says, when the rows could exceed the limit. A plan let through stays let through while its own
+         * request computes (its groups are pending then, not unknown).
+         */
+        function gateFor(plan, id) {
+            if (_gate.planKey === plan.optionKey && _gate.axis === id && _gate.ask === 'all') return _gate;
+            _gate = { ...gateMatrix({ sections: plan.shape, groups: knownGroups(id) }), planKey: plan.optionKey, axis: id };
+            return _gate;
+        }
+
+        /** The groups of the cell axis as a ready reply says them (this plot's, or another consumer's), or null. */
+        function knownGroups(id) {
+            for (const h of groupSources().sources.handlesOf(id)) {
+                const snap = h.read();
+                const reply = snap.state === 'ready' && snap.values ? snap.values.reply : null;
+                if (reply && Array.isArray(reply.groups)) return reply.groups.length;
+            }
+            return null;
+        }
+
+        /** Decide the limit again (the groups became known, or changed). */
+        function regate() {
+            _gate = { ..._gate, planKey: null };
+            sync();
         }
 
         function record() {
@@ -549,20 +599,28 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             } });
             const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-undo', disabled: true, on: { click: () => undo() } }, 'Undo');
             const message = el('div', { class: 'cgene-message', role: 'status', aria: { live: 'polite' } });
-            const checklist = el('ol', { class: 'cgene-checklist', aria: { label: 'To draw this plot' } },
-                el('li', { data: { done: 'false' } }, 'Choose groups'), el('li', { data: { done: 'false' } }, 'Add genes'));
+            _checklist = createChecklist({ D, on: {
+                groups: () => { revealControls(); _dom.controls.querySelector('.cgene-axis-type').focus(); },
+                genes: () => { revealControls(); _dom.controls.querySelector('.cgene-add').click(); }
+            } });
+            const checklist = _checklist.element;
+            // One cell per group (CXG-27): the size can only be 0 or 100, so a heatmap says more
+            const hint = el('div', { class: 'cgene-hint', role: 'status', hidden: true },
+                el('span', { text: STATES.oneCell }), ' ',
+                el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-hint__do',
+                    on: { click: () => commit({ ..._config, mode: 'heatmap' }, 'show as a heatmap') } }, STATES.buttons.heatmap));
             const plot = el('div', { class: 'cgene-plot', role: 'img', aria: { label: _title } });
             plot.__azPanelId = _id;
             plot.__azCellGene = true;
             plot.__azChooser = null;
             const area = el('div', { class: 'cgene-area' }, plot, el('div', { class: 'cgene-empty' }, checklist));
             _controls.element.appendChild(el('div', { class: 'cgene-undo-wrap' }, undoBtn));
-            root.append(_controls.element, message, area);
+            root.append(_controls.element, message, hint, area);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
             plot.__azChooser = root.querySelector('.cgene-axis-key');
-            _dom = { root, controls: _controls.element, undoBtn, message, checklist, plot, area,
+            _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (typeof ResizeObserver !== 'undefined') {
                 _resize = new ResizeObserver(() => { if (_dom && _dom.plot._fullLayout) fitToContainer(_dom.plot); });
@@ -612,7 +670,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 choices: axisChoices({ structure: structureRead(), self: _id, groupings: all, loops: wouldLoop }),
                 mode: _config.mode,
                 color: { value: statisticValue(_config.color), list: statisticList(_config.color) },
-                size: { value: statisticValue(_config.size), list: statisticList(_config.size) },
+                // under No size, the layers that can give the size first (SHR-27)
+                size: { value: statisticValue(_config.size), list: sizeProblem() ? sizeFirst(statisticList(_config.size), _config.size) : statisticList(_config.size) },
                 scale: _config.scale || 'none',
                 swap: !!_config.swap
             };
@@ -648,17 +707,42 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         // ---------------------------------------------------------------- painting
 
-        /** The plot's state in one word (data-state), for the styles and the tests; X3b's states take over here. */
+        /** The plot's state in one word (data-state), for the styles and the tests (states.js plotState). */
         function stateOf() {
             if (!DataManager.isDatasetLoaded()) return 'nodata';
             if (!_config.cellAxis || !_config.sections.length) return 'empty';
             const rec = record();
             if (!rec) return 'empty';
             const snap = rec.handle.read();
-            if (_shown && _shown.key === (snap.shownKey || snap.key) && (snap.state === 'ready' || snap.state === 'updating')) {
-                return snap.state === 'ready' && !snap.held ? 'ready' : snap.state;
-            }
-            return snap.state === 'ready' ? 'drawing' : snap.state;
+            return plotState(snap, { tooLarge: !!_gate.tooLarge, drawn: !!_shown && _shown.key === (snap.shownKey || snap.key) });
+        }
+
+        /** What the plot's notices are worded from (states.js describePlot): counts made once per plan, nothing per gene. */
+        function plotFacts() {
+            const plan = _plan;
+            const cells = DataManager.getCells();
+            return {
+                genes: plan ? plan.geneCount : 0,
+                cells: cells && Number.isFinite(Number(cells.length)) ? Number(cells.length) : null,
+                layer: (_config.color && _config.color.layer) || null,
+                tooLarge: _gate.tooLarge,
+                ownJobAhead: () => ownJobAhead(PanelManager.getActivePanels()
+                    .filter((p) => typeOf(p) === TYPE && p.getId() !== _id && typeof p.axisSnapshot === 'function')
+                    .map((p) => ({ title: p.getTitle(), snap: p.axisSnapshot() })))
+            };
+        }
+
+        /** The controls, shown when Toggle Controls hid them: a notice's or the checklist's button goes to one. */
+        function revealControls() {
+            if (_controlsVisible === false) { _controlsVisible = true; showControls(); }
+        }
+
+        /** Asks first, Fewer genes (UX 3.5): the section list, at its first section. */
+        function fewerGenes() {
+            if (!_dom) return;
+            revealControls();
+            if (_config.sections.length) _sections.focus(0);
+            else _dom.controls.querySelector('.cgene-add').focus();
         }
 
         /**
@@ -667,6 +751,16 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          */
         function snapshotChanged(snap) {
             if (!_dom) return;
+            // the groups the limit waits for are known, or the groups changed: decide again (CXG-17)
+            if (snap.state === 'ready' && snap.values && snap.values.reply && Array.isArray(snap.values.reply.groups)) {
+                const grown = _plan && gateMatrix({ sections: _plan.shape, groups: snap.values.reply.groups.length }).ask !== 'all';
+                if (_gate.ask !== 'all' || grown) {
+                    regate();
+                    paint();
+                    redraw();
+                    return;
+                }
+            }
             if (snap.state === 'ready' && snap.values && (!_shown || _shown.key !== (snap.shownKey || snap.key))) { redraw(); return; }
             _state = stateOf();
             _dom.root.dataset.state = _state;
@@ -678,9 +772,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _sections.paint();
             _state = stateOf();
             _dom.root.dataset.state = _state;
-            const steps = _dom.checklist.children;
-            steps[0].dataset.done = _config.cellAxis ? 'true' : 'false';
-            steps[1].dataset.done = _config.sections.length ? 'true' : 'false';
+            _checklist.paint({ groups: !!_config.cellAxis, genes: !!_config.sections.length });
+            // No size (SHR-27): the dots at one size, said in the strip
+            const noSize = _config.mode === 'dots' && _state !== 'empty' ? sizeProblem() : null;
+            setStatusTag(_dom.plot, 'cgene-nosize', noSize ? { text: STATES.tags.noSize, title: noSize, severity: 'warning', pop: { text: noSize } } : null);
+            _dom.hint.hidden = !(_shown && _shown.oneCell && _config.mode === 'dots');
             _dom.area.classList.toggle('cgene-area--empty', _state === 'empty');
             const step = _undo.peek();
             _dom.undoBtn.disabled = !step;
@@ -702,6 +798,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             if (snap && snap.state === 'ready' && snap.values && !_planOf.has(snap.values)) _planOf.set(snap.values, rec.plan || currentPlan());
             const values = snap && snap.values;
             const plan = values ? _planOf.get(values) : null;
+            // the genes were not asked for (above the limit, or the groups first): there is nothing to draw
+            if (_gate.ask !== 'all' && snap && snap.state === 'ready') { clearPlot(); paint(); return; }
             if (!values || !plan || !values.reply) {
                 if (!rec || !snap || !snap.values) clearPlot();
                 paint();
@@ -721,10 +819,12 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 return;
             }
             if (token !== _drawToken || !_dom || !window.Plotly) return;
-            // every group the reply has is drawn: the cells shown are covered (missing values are X3b's strip line)
+            // every group the reply has is drawn: the cells shown are covered; the matrix's own count is a tag of the strip
             await drawPlot(_dom.plot, figure.data, figure.layout, figure.config, Coverage.complete(values.reply.n_shown || 0, 'cells'), 'cells');
             if (token !== _drawToken || !_dom) return;
-            _shown = { key, inputs, order, rows: figure.rows, groups: figure.groups };
+            setStatusTag(_dom.plot, 'cgene-matrix', matrixTag(figure.groups, figure.rows, figure.missing));
+            const oneCell = oneCellPerGroup({ mode: _config.mode, size: _config.size, sized: sizeDrawn(), groups: values.reply.groups || [] });
+            _shown = { key, inputs, order, rows: figure.rows, groups: figure.groups, oneCell };
             rec.drawnKey = key;
             binding.paint(_dom.plot);
             paint();
@@ -732,6 +832,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         function clearPlot() {
             if (_shown && _dom && window.Plotly) window.Plotly.purge(_dom.plot);
+            if (_dom) setStatusTag(_dom.plot, 'cgene-matrix', null);
             _shown = null;
         }
 
@@ -788,7 +889,10 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                         values: permute(matrix.size.values) }
             };
             const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });
-            return { figure: { ...figure, rows: rows.length, groups: model.groups.length }, order };
+            // the cells of the matrix with no value, for the strip (CXG-16): once per drawing
+            let missing = 0;
+            for (const v of matrix.color.values) if (Number.isNaN(v)) missing++;
+            return { figure: { ...figure, rows: rows.length, groups: model.groups.length, missing }, order };
         }
 
         /** The color bar's settings: the quantity and its scaling (draw.js colourBars). */
@@ -858,7 +962,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const rec = record();
             const snap = rec ? rec.handle.read() : null;
             return JSON.parse(JSON.stringify({
-                config: _config, state: _state, snap: snap ? snap.state : null, undo: _undo.size,
+                config: _config, state: _state, snap: snap ? snap.state : null, undo: _undo.size, ask: _gate.ask,
                 groups: _shown ? _shown.groups : null, rows: _shown ? _shown.rows : null,
                 features: _plan ? _plan.features.length : null
             }));
@@ -881,6 +985,10 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             axisSource: () => (_config.cellAxis && _config.cellAxis.type === 'obs'
                 ? { title: _config.cellAxis.key, kind: 'grouping', recipe: () => axisRecipe(_config.cellAxis), shape: GROUPING } : null),
             axisId,
+            /** The cell axis's snapshot as this plot reads it, or null: another plot names this one as the job ahead. */
+            axisSnapshot: () => { const rec = record(); return rec ? rec.handle.read() : null; },
+            plotFacts,
+            fewerGenes,
             redraw,
             snapshotChanged,
             undo,
