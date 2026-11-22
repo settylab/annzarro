@@ -101,6 +101,33 @@ def test_too_many_levels_on_x_is_refused_before_any_request_and_choose_levels_li
     assert sum(sum(t["y"]) for t in _plot(page)["data"]) == N
 
 
+def test_choose_levels_says_why_when_the_levels_are_refused_for_their_number(page, served):
+    # the fixture has no column with more used categories than a grouping holds: the route's refusal is played here
+    refused = {"type": "result", "version": 1, "shape": "grouping", "n_shown": N, "message": "Too many groups.", "blocks": [],
+               "refused": {"reason": "too_many_groups", "count": 2345, "limit": 2000}}
+
+    def handle(route):
+        body = json.loads(route.request.post_data or "{}") if route.request.method == "POST" else {}
+        if route.request.method != "POST" or body.get("shape") == "grid":
+            route.continue_()
+        elif body.get("estimate_only"):
+            route.fulfill(status=200, content_type="application/json", body=json.dumps({"estimate": {"seconds": 0.1, "tier": "live", "lane": "light"}}))
+        else:
+            route.fulfill(status=200, content_type="application/x-ndjson",
+                          body=json.dumps({"type": "start", "lane": "light", "entries_total": 1}) + "\n" + json.dumps(refused) + "\n")
+
+    page.route("**/data/cell_groups*", handle)
+    _open(page, served, {CC: _count(mode="bar", x=obs("many"))})
+    _refused(page, "many has 2,001 levels; Bar shows up to 200.", ["Choose levels"])
+    page.click(f"{S} .ccnt-state-box button:has-text('Choose levels')")
+    note = f"{S} [data-input='x'] .ccnt-levels__note"
+    page.wait_for_selector(note, timeout=30000)
+    assert page.inner_text(f"{note} .ccnt-levels__said") == "many has 2,345 levels that hold a cell; Choose levels lists up to 2,000."
+    assert page.query_selector(f"{S} [data-input='x'] .ccnt-levels__wait") is None
+    assert page.query_selector_all(f"{note} button") == [], "a categorical column has no way out here"
+    assert len([c for c in _requests(page) if c.get("shape") != "grid"]) == 1
+
+
 def test_color_by_over_the_limit_is_removed_by_its_way_out_in_one_undoable_step(page, served):
     _open(page, served, {CC: _count(mode="histogram", x=obs("depth"), split=obs("many"))})
     _refused(page, "Color by many has 2,001 levels; a histogram colors up to 200.", ["Remove Color by"])
