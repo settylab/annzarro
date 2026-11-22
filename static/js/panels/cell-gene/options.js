@@ -313,13 +313,13 @@ function mount(slot, ctx) {
 
     // ---------------------------------------------------------------- Cluster ▾ (UX 3.4)
     const clusterBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-cluster-btn',
-        aria: { haspopup: 'true', expanded: 'false', controls: `cgene-cluster-${id}` }, on: { click: () => toggle('cluster') } }, WO.cluster);
+        aria: { expanded: 'false', controls: `cgene-cluster-${id}` }, on: { click: () => toggle('cluster') } }, WO.cluster);
     const scopeRow = (scope, label) => el('div', { class: 'cgene-cluster-scope', role: 'radiogroup', aria: { label }, data: { scope } },
         el('span', { class: 'cgene-field__label', text: label }));
     const genesRow = scopeRow('genes', WO.clusterGenes);
     const groupsRow = scopeRow('groups', WO.clusterGroups);
     const summary = el('p', { class: 'cgene-cluster-summary cgene-help' });
-    const clusterMenu = el('div', { class: 'cgene-cluster-menu cgene-menu', id: `cgene-cluster-${id}`, role: 'group', aria: { label: WO.clusterGenes },
+    const clusterMenu = el('div', { class: 'cgene-cluster-menu cgene-menu', id: `cgene-cluster-${id}`, role: 'group', aria: { label: WO.heading.clustering },
         hidden: true }, genesRow, groupsRow, summary);
     const note = el('div', { class: 'cgene-cluster-note cgene-help', role: 'status', aria: { live: 'polite' } });
 
@@ -342,7 +342,7 @@ function mount(slot, ctx) {
 
     // ---------------------------------------------------------------- Plot Options (UX 3.1)
     const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-options-btn',
-        aria: { haspopup: 'true', expanded: 'false', controls: `cgene-options-${id}` }, on: { click: () => toggle('options') } }, WO.plotOptions);
+        aria: { expanded: 'false', controls: `cgene-options-${id}` }, on: { click: () => toggle('options') } }, WO.plotOptions);
     const controls = {};
     const field = (label, control) => el('label', { class: 'cgene-field' }, el('span', { class: 'cgene-field__label', text: label }), control);
     const check = (name, label, onChange) => {
