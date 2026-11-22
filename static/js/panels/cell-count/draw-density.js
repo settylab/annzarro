@@ -16,23 +16,14 @@ import { levelLabelsOf } from '../../utils/count-plot-model.js';
 import { plotlyColorscale } from '../../utils/color-scales.js';
 import { normalizeHex } from '../../utils/plot-theme.js';
 import { RESERVED } from '../../utils/level-id.js';
+import { VOCABULARY } from '../../utils/vocabulary.js';
 
 /** The modes this module draws. */
 // export-unused-ok: C2a offers the density modes that draw here
 export const DENSITY_MODES = Object.freeze(['density', 'density2d']);
 
-/**
- * The interface text of a density (UX 4.4), local until G6 moves it into utils/vocabulary.js as C2a's
- * `VOCABULARY.countPlot` does for the other modes.
- */
-const DENSITY_WORDS = Object.freeze({
-    axis: 'Density',
-    axisBySize: 'Density, scaled by level size',
-    bandwidth: (hs, adjust, dims) => `Bandwidth ${hs.join(' and ')} (Scott's rule × ${adjust})${dims === 2 ? ', per axis; it ignores correlation between X and Y' : ''}.`,
-    range: (outside) => `Range from the 0.1st to the 99.9th percentile: ${outside === 0 ? 'all cells are counted'
-        : `${outside.toLocaleString('en-US')} ${outside === 1 ? 'cell outside is' : 'cells outside are'} not counted`}.`,
-    floor: 'Bandwidth raised to the grid\'s resolution.'
-});
+/** The interface text of a density (UX 4.4): the count plot's words, utils/vocabulary.js. */
+const WORDS = VOCABULARY.countPlot.density;
 
 const DEFAULT_COLORSCALE = 'Viridis';
 const CONTOURS = 6;
@@ -132,7 +123,7 @@ export function densityFigure(config, table, opts) {
     });
     const sa = table.axes.findIndex((axis) => axis.input === 'split');
     const pre = along.map((a, i) => prepassOf(table, a, names[i]));
-    const notes = { bandwidth: null, range: DENSITY_WORDS.range(table.outside), floor: null };
+    const notes = { bandwidth: null, range: WORDS.range(table.outside), floor: null };
     const layout = (extra) => baseLayout(opts, extra);
     if (pre[0].n === 0) return { data: [], layout: layout({}), notes, floored: false, bandwidth: [] };
     if (table.axes[along[0]].info.degenerate) return degenerateFigure(table, along[0], opts, notes, layout);
@@ -140,8 +131,8 @@ export function densityFigure(config, table, opts) {
     const grids = along.map((a, i) => gridOf(table, a, names[i]));
     const hs = pre.map((p, i) => bandwidthOf({ sigma: p.sigma, n: p.n, dims: names.length, adjust, step: grids[i].step }));
     const floored = hs.some((h) => h.floored);
-    notes.bandwidth = DENSITY_WORDS.bandwidth(hs.map((h) => shown(h.h)), adjustShown(adjust), names.length);
-    if (floored) notes.floor = DENSITY_WORDS.floor;
+    notes.bandwidth = WORDS.bandwidth(hs.map((h) => shown(h.h)), adjustShown(adjust), names.length);
+    if (floored) notes.floor = WORDS.floor;
 
     const levels = sa >= 0 ? Array.from({ length: table.dims[sa] }, (_, s) => s) : [-1];
     const maps = sa >= 0 ? (opts.labels || levelLabelsOf(config, table, opts.titleOf)) : null;
@@ -157,7 +148,7 @@ export function densityFigure(config, table, opts) {
         if (bySize && everyone > 0) for (let k = 0; k < f.length; k++) f[k] *= sizes[i] / everyone;
         return f;
     });
-    const words = DENSITY_WORDS;
+    const words = WORDS;
     const title = bySize && sa >= 0 ? words.axisBySize : words.axis;
     const colors = levels.map((s) => (s >= 0 ? colorOf(table, sa, s, opts) : opts.palette[0]));
     const legend = sa >= 0 ? { showlegend: true, legend: { title: { text: esc(opts.inputNames.split) } } } : { showlegend: false };

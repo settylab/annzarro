@@ -217,7 +217,16 @@ const countPlot = Object.freeze({
     needsNumeric: (mode, input, name) => `${mode} needs a numeric ${input}. ${name} is categorical.`,
     tooManySets: 'Venn shows 2 or 3 sets.',
     notDrawn: (mode) => `${mode} is not available in this build.`,
-    counting: (n) => `Counting ${n.toLocaleString('en-US')} cells…`
+    counting: (n) => `Counting ${n.toLocaleString('en-US')} cells…`,
+    /** A density's sentences (CNT-10, UX 4.4): in Plot Options and the strip. */
+    density: Object.freeze({
+        axis: 'Density',
+        axisBySize: 'Density, scaled by level size',
+        bandwidth: (hs, adjust, dims) => `Bandwidth ${hs.join(' and ')} (Scott's rule × ${adjust})${dims === 2 ? ', per axis; it ignores correlation between X and Y' : ''}.`,
+        range: (outside) => `Range from the 0.1st to the 99.9th percentile: ${outside === 0 ? 'all cells are counted'
+            : `${outside.toLocaleString('en-US')} ${outside === 1 ? 'cell outside is' : 'cells outside are'} not counted`}.`,
+        floor: 'Bandwidth raised to the grid\'s resolution.'
+    })
 });
 
 /**
