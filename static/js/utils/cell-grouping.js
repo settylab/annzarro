@@ -195,7 +195,8 @@ export function normalizeGrouping(raw) {
     return { recipe: unknownFields(raw, GROUPING_FIELDS, out), problems };
 }
 
-function effectiveSmall(recipe) {
+/** A recipe's small-group rule (SHR-12) with its defaults: `{threshold, mode}`; a group under `threshold` cells is small. */
+export function effectiveSmall(recipe) {
     return { threshold: DEFAULT_SMALL.threshold, mode: DEFAULT_SMALL.mode, ...recipe.small };
 }
 

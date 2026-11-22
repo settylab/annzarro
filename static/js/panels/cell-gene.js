@@ -70,6 +70,8 @@ import {
     gateMatrix, describePlot, ownJobAhead, plotState, matrixTag, oneCellPerGroup, sizeFirst, createChecklist
 } from './cell-gene/states.js';
 import { OPTIONS_PART, figureExtras, barSettings } from './cell-gene/options.js';
+import { effectiveSmall } from '../utils/cell-grouping.js';
+import { RESERVED } from '../utils/level-id.js';
 
 const TYPE = 'cell-gene';
 const GROUPING_TYPE = 'cell-grouping';
@@ -974,10 +976,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     gapBefore: prev && prev.section.index !== row.section.index ? extras.gap : 0 };
             });
             const sizeNone = sizeProblem();
+            // a small group kept as it is gets "small" after its label (CXG-14, SHR-12); the collected one is named so already
+            const smallRule = effectiveSmall(shownRecipe() || {});
+            const isSmall = (group) => smallRule.mode === 'keep' && group.n < smallRule.threshold
+                && !(group.key.length === 1 && group.key[0] === RESERVED.small);
             const model = {
                 mode: _config.mode, swap: !!_config.swap,
                 pixels: { width: _dom.plot.clientWidth || 900, height: _dom.plot.clientHeight || 600 },
-                groups: Array.from(order.groups, (g) => ({ label: names[g] || '', n: groups[g].n })),
+                groups: Array.from(order.groups, (g) => ({ label: names[g] || '', n: groups[g].n, small: isSmall(groups[g]) })),
                 rows,
                 color: { ...colorSettings, ...extras.color, values: permute(matrix.color.values), raw: permute(matrix.color.raw),
                     noExpressing: permute(matrix.color.noExpressing) },
