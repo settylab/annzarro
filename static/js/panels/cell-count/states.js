@@ -19,6 +19,7 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { describeSource } from '../../utils/source-notices.js';
+import { binsRange } from '../../utils/count-plot-model.js';
 import { setMode } from './controls-model.js';
 
 const C = VOCABULARY.countPlot;
@@ -123,11 +124,19 @@ export function wayOut(action, config) {
             const p = config[arg];
             if (!AXES.includes(arg) || !p) return null;
             const reveal = { field: arg, what: 'binning' };
-            if (!(p.binning && p.binning.method === 'categories')) return { reveal };
-            // a whole-number column read by its values: binned by the count plot's default (equal width, written as nothing)
-            const binned = { ...p };
-            delete binned.binning;
-            return { config: { ...config, [arg]: binned }, label: `bin ${C.rows[arg]}`, reveal };
+            const label = `bin ${C.rows[arg]}`;
+            if (p.binning && p.binning.method === 'categories') {
+                // a whole-number column read by its values: binned by the count plot's default (equal width, written as nothing)
+                const binned = { ...p };
+                delete binned.binning;
+                return { config: { ...config, [arg]: binned }, label, reveal };
+            }
+            // more bins than the input takes (from a link; a typed count is checked where it is typed): the most it takes
+            const { max } = binsRange(config.mode, arg);
+            if (p.binning && Number.isInteger(p.binning.bins) && p.binning.bins > max) {
+                return { config: { ...config, [arg]: { ...p, binning: { ...p.binning, bins: max } } }, label, reveal };
+            }
+            return { reveal };
         }
         case 'levels':
             return AXES.includes(arg) && config[arg] ? { reveal: { field: arg, what: 'levels' } } : null;
