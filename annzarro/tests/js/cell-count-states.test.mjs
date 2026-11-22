@@ -52,12 +52,15 @@ test('Bar and Pie: more than 200 levels on X is refused with the count, the limi
     }
 });
 
-test('a number with too many bins for Bar is refused with Bin it, which opens the binning control', () => {
+test('a number with too many bins for Bar is refused with Bin it, which takes the most bins Bar shows and opens the control', () => {
     const config = { mode: 'bar', x: obs('depth', { binning: { method: 'equal_width', bins: 300 } }) };
     assert.deepEqual(said(config), {
         state: 'refused', reason: 'too_many_bins', text: 'depth has 300 bins; Bar shows up to 200.', actions: [['bin:x', 'Bin it']]
     });
-    assert.deepEqual(S.wayOut('bin:x', norm(config)), { reveal: { field: 'x', what: 'binning' } });
+    const way = S.wayOut('bin:x', norm(config));
+    assert.deepEqual(way, { config: { ...norm(config), x: obs('depth', { binning: { method: 'equal_width', bins: 200 } }) },
+        label: 'bin X', reveal: { field: 'x', what: 'binning' } });
+    assert.equal(M.planGrid(way.config, page).state, 'ready');
 });
 
 test('a whole-number column read by its values offers both Bin it and Choose levels', () => {
@@ -123,6 +126,7 @@ test('a 2D histogram with too many bins says both, from a link (bins typed are v
     const out = said(config);
     assert.equal(out.text, 'depth × score is 600 × 100; 2D histogram shows up to 512 × 512.');
     assert.deepEqual(out.actions, [['bin:x', 'Bin it']]);
+    assert.equal(S.wayOut('bin:x', norm(config)).config.x.binning.bins, 512);
 });
 
 test('UpSet with more than 16 sets says its limit', () => {

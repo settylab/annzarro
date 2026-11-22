@@ -147,8 +147,11 @@ def test_too_many_bins_for_bar_opens_the_binning_control_and_a_histogram_of_a_ca
     _open(page, served, {CC: _count(mode="bar", x=obs("depth", binning={"method": "equal_width", "bins": 300}))})
     _refused(page, "depth has 300 bins; Bar shows up to 200.", ["Bin it"])
     page.click(f"{S} .ccnt-state-box button:has-text('Bin it')")
+    # the most bins Bar shows, one undoable step, and the control open on it
+    _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 200")
+    assert _undo_label(page) == "Undo: bin X"
     page.wait_for_selector(f"{S} [data-input='x'] .ccnt-binning .pbc")
-    assert page.input_value(f"{S} .ccnt-binning .pbc-bins") == "300"
+    assert page.input_value(f"{S} .ccnt-binning .pbc-bins") == "200"
     page.fill(f"{S} .ccnt-binning .pbc-bins", "40")
     page.press(f"{S} .ccnt-binning .pbc-bins", "Enter")
     _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 40")
