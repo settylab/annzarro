@@ -26,6 +26,7 @@
  * A job's life
  *   idle -> estimating -> queued -> computing -> ready
  *                     \-> awaiting (the estimate asks for one click: `accept()`)
+ *                     \-> refused  (the estimate's tier is `refused`: nothing is computed or sent)
  *   and, off the main road: refused, failed, noscore, cancelled.
  *   (`noscore` is the state of a reply with nothing in it; the name is kept
  *   from the score store, which the page's code already reads.)
@@ -37,6 +38,7 @@
  * Within a store, jobs with a dependant on screen go first; a job none of
  * whose dependants is visible waits.
  */
+import { VOCABULARY } from './vocabulary.js';
 
 /** Bytes of values kept in the browser (design 6.2). */
 export const DEFAULT_BUDGET = 1024 ** 3;
@@ -326,9 +328,20 @@ export function createDerivedStore({
             setState(job, 'awaiting');
             return;
         }
-        // 'refused' goes on to ask: the server answers 413 at once, in its own words
+        if (estimate.tier === 'refused') {
+            // decided by the estimate: nothing is asked of the server, whose 413 would only say the same
+            setState(job, 'refused', { message: refusalText(estimate, refusalReason), reason: refusalReason });
+            return;
+        }
         setState(job, 'queued');
         pump();
+    }
+
+    /** What a refusal by cost says under its headline: the limit, from the estimate, and the way out. */
+    function refusalText(estimate, reason) {
+        const limit = Number(estimate.max_s) > 0 ? VOCABULARY.progress.overLimit(Math.round(Number(estimate.max_s) / 60)) : '';
+        const way = Object.hasOwn(VOCABULARY.progress.wayOut, reason) ? VOCABULARY.progress.wayOut[reason] : '';
+        return [limit, way].filter(Boolean).join(' ') || null;
     }
 
     function errorText(error) {

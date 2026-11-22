@@ -269,6 +269,13 @@ const progress = Object.freeze({
     sharing: (n) => `Sharing the server with ${n.toLocaleString('en-US')} other ${n === 1 ? 'computation' : 'computations'}.`,
     left: (duration, sharing) => `${duration} left${sharing ? ' while sharing' : ''}`,
     keepWorking: `${capital(plural.grouping)} and counts keep working.`,
+    /** Under a refusal by cost: the limit of the confirm tier, from the estimate's `max_s` (SHR-32). */
+    overLimit: (minutes) => `The limit is ${minutes.toLocaleString('en-US')} ${minutes === 1 ? 'minute' : 'minutes'}.`,
+    /** ... and the way out, by the store's refusal reason (utils/derived-store.js). */
+    wayOut: Object.freeze({
+        score_too_expensive: 'Use fewer genes.',
+        groups_too_expensive: `Use fewer genes or ${plural.group}, or a subset.`
+    }),
     // a control that waits for the page to finish starting before it acts (a panel set's Load)
     loading: 'Loading…'
 });
