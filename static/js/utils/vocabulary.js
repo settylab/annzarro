@@ -28,6 +28,7 @@ const word = Object.freeze({
 });
 
 const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+const fmt = (n) => Number(n).toLocaleString('en-US');
 
 const plural = Object.freeze({
     factor: 'factors',
@@ -257,7 +258,65 @@ const countPlot = Object.freeze({
     needsNumeric: (mode, input, name) => `${mode} needs a numeric ${input}. ${name} is categorical.`,
     tooManySets: 'Venn shows 2 or 3 sets.',
     notDrawn: (mode) => `${mode} is not available in this build.`,
-    counting: (n) => `Counting ${n.toLocaleString('en-US')} cells…`
+    counting: (n) => `Counting ${n.toLocaleString('en-US')} cells…`,
+    /** A plan refused before any request (UX 4.3): the count and the limit; `colorsAs` names a mode in "… colors up to". */
+    limit: Object.freeze({
+        levels: (name, n, mode, max) => `${name} has ${fmt(n)} ${plural.level}; ${mode} shows up to ${fmt(max)}.`,
+        bins: (name, n, mode, max) => `${name} has ${fmt(n)} bins; ${mode} shows up to ${fmt(max)}.`,
+        pair: (names, counts, mode, limits) => `${names[0]} × ${names[1]} is ${fmt(counts[0])} × ${fmt(counts[1])}; ${mode} shows up to ${fmt(limits[0])} × ${fmt(limits[1])}.`,
+        colorBy: (name, n, mode, max) => `Color by ${name} has ${fmt(n)} ${plural.level}; ${mode} colors up to ${fmt(max)}.`,
+        colorsAs: Object.freeze({ histogram: 'a histogram', density: 'a density', hist2d: '2D histogram', density2d: '2D density' }),
+        sets: (mode, max) => `${mode} shows up to ${fmt(max)} ${plural.set}.`,
+        grid: (mode, n, max) => `${mode} would count ${fmt(n)} cells of a grid; it counts up to ${fmt(max)}.`
+    }),
+    /** What a notice of the route's states calls a count (utils/source-notices.js `describeSource`). */
+    notice: Object.freeze({
+        thing: 'count', source: 'count', result: 'count', Computing: 'Counting', found: 'cells',
+        act: Object.freeze({ to: 'count', ing: 'counting' }), computing: 'Counting…', off: 'Cell Count Plot is turned off on this server.'
+    }),
+    /** Choose levels when an input's levels, asked for alone, cannot be listed. */
+    levelsList: Object.freeze({
+        tooMany: (name, n, max) => `${name} has ${fmt(n)} ${plural.level} that hold a cell; Choose ${plural.level} lists up to ${fmt(max)}.`,
+        notRead: (name, message) => `The ${plural.level} of ${name} could not be read${message ? `: ${String(message).replace(/[.\s]+$/, '')}` : ''}.`,
+        retry: 'Retry'
+    }),
+    /** The way out of a refusal or of an input the mode cannot use (UX 4.2, 4.3). */
+    wayOut: Object.freeze({ bin: 'Bin it', levels: `Choose ${plural.level}`, removeSplit: 'Remove Color by', showAs: (mode) => `Show as ${mode}` }),
+    /** The status strip (CNT-22, UX 4.7), its parts joined by `join`. */
+    strip: Object.freeze({
+        counted: (n) => `${fmt(n)} cells counted`,
+        noValue: (n, name) => `${fmt(n)} without a value for ${name}`,
+        outside: (n) => `${fmt(n)} outside the range`,
+        leftOut: (n) => `${fmt(n)} in ${plural.level} left out`,
+        join: ' · '
+    }),
+    /** Save as grouping (CNT-7, UX 4.7). */
+    saveGrouping: Object.freeze({
+        button: `Save as ${word.grouping}`,
+        title: `Save as ${word.grouping}`,
+        factors: (names, groups) => `${capital(plural.factor)}: ${names.join(', ')}. ${count(groups, 'group')}.`,
+        binned: (name, n) => `${name} (${fmt(n)} bins)`,
+        clamp: (n) => `${n === 1 ? '1 cell' : `${fmt(n)} cells`} outside the range will go into the end bins (a ${word.grouping} keeps every cell).`,
+        overGroups: (n, max) => `Would make ${fmt(n)} ${plural.group}; a ${word.grouping} holds up to ${fmt(max)}. Use fewer bins first.`,
+        overBins: (name, n, max) => `${name} has ${fmt(n)} bins; a ${word.factor} of a ${word.grouping} holds up to ${fmt(max)}. Use fewer bins first.`,
+        cancel: 'Cancel',
+        save: 'Save'
+    }),
+    /** Show as table (UX 7): the CSV's rows as a table. */
+    table: Object.freeze({
+        show: 'Show as table',
+        hide: 'Hide table',
+        cut: (shown, all) => `Showing the first ${fmt(shown)} of ${fmt(all)} rows; Download CSV has them all.`
+    }),
+    /** A density's sentences (CNT-10, UX 4.4): in Plot Options and the strip. */
+    density: Object.freeze({
+        axis: 'Density',
+        axisBySize: 'Density, scaled by level size',
+        bandwidth: (hs, adjust, dims) => `Bandwidth ${hs.join(' and ')} (Scott's rule × ${adjust})${dims === 2 ? ', per axis; it ignores correlation between X and Y' : ''}.`,
+        range: (outside) => `Range from the 0.1st to the 99.9th percentile: ${outside === 0 ? 'all cells are counted'
+            : `${outside.toLocaleString('en-US')} ${outside === 1 ? 'cell outside is' : 'cells outside are'} not counted`}.`,
+        floor: 'Bandwidth raised to the grid\'s resolution.'
+    })
 });
 
 /**

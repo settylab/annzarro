@@ -11,10 +11,16 @@
  * groups are, and it watches its own grid as a plot. A config is a link's and a panel set's, and every edit is one
  * undoable step; a gene or cell that an input follows (CNT-17) moves with the focus and is no step.
  *
+ * WHAT IT SAYS (panels/cell-count/states.js). A plan that asks nothing (no X, an input the mode cannot use, a limit of
+ * the mode, UX 4.2 and 4.3) is said in the plot area's own box with its way out (Bin it, Choose levels, Remove Color
+ * by, Show as Bar), which acts on this config. The route's states (computing, queued, asks first, refused, failed,
+ * a cycle, out of date) go through the page's painter (utils/host-binding.js) as provider 'count-grid', as every
+ * source's do: the overlay while there is no drawing, the strip's bar of a long wait that keeps the drawing (decision
+ * 21), and the buttons routed by the action registry. A drawn plot's strip says the cells counted and those left out
+ * (CNT-22). Save as grouping (panels/cell-count/save-grouping.js) and Show as table (table-view.js) are in Plot
+ * Options; a click on a bar, slice or rectangle opens Save as grouping too (CNT-21).
+ *
  * SEAMS for the steps after this one (`PARTS`):
- *   C2b  `states`: what the plot area says for a plan that is not ready and for the route's states, and the strip
- *        (UX 4.3, 4.7): `describe(snap, ctx) -> {text, actions: [[id, label]]} | null`. Until then a plain sentence.
- *        Save as grouping and Show as table go in Plot Options.
  *   V1   `sets`: `mount(host, ctx)` draws the set list in the Sets row (UX 4.6); `ctx.memberFor(set)` is then the wire
  *        form of a set's member, which planGrid asks for.
  *   V1, V2, V3  `draw[mode]`: `figure(config, table, opts) -> {data, layout}` for a mode draw.js does not draw. A mode
@@ -30,7 +36,7 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { UndoStack } from '../utils/gene-signature.js';
 import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLabelsOf } from '../utils/count-plot-model.js';
-import { countFigure, countCsv, DRAWN_MODES } from './cell-count/draw.js';
+import { countFigure, countCsv, countRows, DRAWN_MODES } from './cell-count/draw.js';
 import { densityFigure, DENSITY_MODES } from './cell-count/draw-density.js';
 import { createControls } from './cell-count/controls.js';
 import {
@@ -38,11 +44,16 @@ import {
     isNumericSource, levelCountOf, valueDefaults, rowsOf
 } from './cell-count/controls-model.js';
 import {
-    groupSources, panelOf, isOpen, cycleIds, loadStructure, structureRead, resetStructure, sourceTitleOf
+    AXIS_PREFIX, groupSources, panelOf, isOpen, cycleIds, loadStructure, structureRead, resetStructure, sourceTitleOf
 } from '../utils/group-host.js';
+import { GROUPING } from '../utils/group-sources.js';
 import { registerReferences } from '../utils/panel-references.js';
 import { VOCABULARY } from '../utils/vocabulary.js';
-import { describeSource } from '../utils/source-notices.js';
+import { createHostBinding, isVisible, PENDING } from '../utils/host-binding.js';
+import { actions } from '../utils/source-actions.js';
+import { isPlanState, describePlan, wayOut, gridNotice, stripSentence, levelsNote } from './cell-count/states.js';
+import { saveOffered, savePlan, openSaveDialog } from './cell-count/save-grouping.js';
+import { tableView, tableElement } from './cell-count/table-view.js';
 import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
 import { parseAlsoListed } from '../utils/source-registry.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
@@ -63,43 +74,13 @@ registerReferences(TYPE, countReferences);
 
 /**
  * What later steps add to the panel (see the module's SEAMS).
- * @type {{states: ?{describe: Function}, sets: ?{mount: Function}, draw: Object<string, {figure: Function}>}}
+ * @type {{sets: ?{mount: Function}, draw: Object<string, {figure: Function}>}}
  */
-// export-unused-ok: C2b, V1, V2 and V3 register their parts here
-export const PARTS = { states: null, sets: null, draw: {} };
+// export-unused-ok: V1, V2 and V3 register their parts here
+export const PARTS = { sets: null, draw: {} };
 
 /** Whether a mode can be drawn in this build. */
 const drawable = (mode) => DRAWN_MODES.includes(mode) || DENSITY_MODES.includes(mode) || !!PARTS.draw[mode];
-
-/** The words a notice of the route's states uses for a count (utils/source-notices.js `describeSource`). */
-const NOTICE_WORDS = Object.freeze({
-    thing: 'count', source: 'count', result: 'count', Computing: 'Counting', progressUnit: 'values', found: 'cells',
-    act: { to: 'count', ing: 'counting' }, tags: { computing: 'Counting…' }, cycleKind: 'count'
-});
-
-/** States that pass by themselves: the plot keeps its drawing and the strip says the count is on its way. */
-const ON_ITS_WAY = Object.freeze(['estimating', 'queued', 'computing', 'updating']);
-
-const fmt = (n) => Number(n).toLocaleString('en-US');
-
-/**
- * A plain sentence for a plan that asks nothing (C2b says these with their way out, UX 4.3).
- * @param {Object} snap - a snapshot whose state is the plan's
- * @param {(field: string) => string} nameOf - the name of an input
- */
-function planSentence(snap, nameOf) {
-    const mode = C.modes[snap.mode] || snap.mode;
-    if (snap.state === 'empty') return C.empty[snap.reason] || '';
-    if (snap.reason === 'needs_numeric') return C.needsNumeric(mode, C.rows[snap.input], nameOf(snap.input));
-    if (snap.reason === 'too_many_sets' && snap.mode === 'venn') return C.tooManySets;
-    if (Array.isArray(snap.over) && snap.over.length) {
-        const i = snap.inputs.indexOf(snap.over[0]);
-        const noun = snap.reason === 'too_many_bins' ? 'bins' : VOCABULARY.plural.level;
-        return `${nameOf(snap.over[0])} has ${fmt(snap.counts[i])} ${noun}; ${mode} shows up to ${fmt(snap.limits[i])}.`;
-    }
-    if (snap.reason === 'grid_too_large') return `${mode} would count ${fmt(snap.counts[0])} cells of a grid; it counts up to ${fmt(snap.limits[0])}.`;
-    return '';
-}
 
 /**
  * What the plot shows of the cells shown (the panel surface states it): the cells counted, and the cells left out, each
@@ -124,8 +105,65 @@ function coverageOf(table, names) {
     return new Coverage({ shown: table.total, total: table.shown, unit: 'cells', gaps });
 }
 
-/** Whether a snapshot is a plan's own (no input yet, an input the mode cannot use, a limit), not the route's. */
-const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state === 'unusable' || (snap.state === 'refused' && Array.isArray(snap.inputs)));
+
+/** The panel type of a grouping, which Save as grouping makes. */
+const GROUPING_TYPE = 'cell-grouping';
+
+/** The page's provider of a count plot's notices and their buttons (utils/host-binding.js, utils/source-actions.js). */
+const PROVIDER = 'count-grid';
+const ROLE = 'grid';
+
+const panelOfHost = (host) => (host && host.__azPanelId ? panelOf(host.__azPanelId) : null);
+const cellsShown = () => (DataManager.getCells() || []).length;
+
+/** One record per plot host: the handle of the plot's own grid. The route's states are painted by the page's painter. */
+const binding = createHostBinding({
+    id: PROVIDER,
+    open: (host, role, setting, onChange) => {
+        const handle = groupSources().sources.watch(setting.id, {
+            consumer: { kind: 'plot', role: 'panel', panelId: setting.id, host }, option: {},
+            visible: () => isVisible(host),
+            onChange: (snap) => { onChange(snap); const p = panelOfHost(host); if (p) p.snapshotChanged(snap); }
+        });
+        return { id: setting.id, handle, host };
+    },
+    matches: (rec, setting) => rec.id === setting.id,
+    describe: (snap, ctx) => gridNotice(snap, ctx, cellsShown()),
+    visibilityChanged: () => groupSources().sources.visibilityChanged()
+});
+
+/** Show a panel: an open one is scrolled to, a closed one reopens beside `nextTo` with the same id. */
+function openPanel(id, nextTo) {
+    const p = panelOf(id);
+    if (!p) return;
+    if (isOpen(p)) {
+        const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(id)}"]`);
+        if (tile) tile.scrollIntoView({ block: 'nearest' });
+        return;
+    }
+    PanelManager.reopenClosedPanel(id, { nextTo });
+}
+
+/** The panel a notice's Open button shows: the table a gate waits on, or the other panel of a cycle. */
+function openTarget(rec) {
+    const snap = rec.handle.read();
+    const ring = cycleIds(rec.id) || [];
+    return (snap && snap.table) || ring.find((x) => x !== rec.id) || null;
+}
+
+actions.register({
+    id: PROVIDER,
+    owns: (host) => !!(host && host.__azCellCount),
+    actions: {
+        'score-compute': { target: (host) => binding.shownRecord(host), run: (rec) => { rec.handle.compute(); } },
+        'score-cancel': { target: (host) => binding.shownRecord(host), run: (rec) => { rec.handle.cancel(); } },
+        'score-retry': { target: (host) => binding.shownRecord(host), run: (rec) => { rec.handle.retry(); } },
+        'score-update': { target: (host) => binding.shownRecord(host), run: (rec) => { groupSources().sources.update(rec.id); } },
+        'score-open': { target: (host) => { const rec = binding.shownRecord(host); return rec ? openTarget(rec) : null; },
+            run: (id, host) => { openPanel(id, host.__azPanelId); } },
+        'score-choose': { target: (host) => host.__azChooser || null, run: (select) => { select.focus(); } }
+    }
+});
 
 (function () {
     /**
@@ -160,6 +198,14 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
         let _labelMaps = {};
         let _notes = null;
         let _drawSerial = 0;
+        /** Choose levels of an input no reply shows yet (a refused plan): its levels, asked for alone (axisSource) */
+        let _levelSource = null;
+        let _levelHandle = null;
+        let _levelInfo = null;
+        /** Save as grouping's dialog and Show as table, while open */
+        let _dialog = null;
+        let _tableShown = false;
+        let _tableFrom = null;
         const _listeners = [];
         /** the shape and the shown config of `_config`, made once per config */
         let _shape = null;
@@ -193,6 +239,80 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
         function groupSource() {
             if (!_shape) _shape = gridShape(page);
             return { title: _title, kind: 'count', recipe: () => shown(), shape: _shape };
+        }
+
+        /**
+         * The levels of one input that no reply shows (a plan refused for its levels, UX 4.3), as a grouping of that
+         * input alone: what Choose levels lists, at 'axis:<id>' of the page's group sources. Null when none is wanted.
+         */
+        function axisSource() {
+            return _levelSource ? { title: _title, kind: 'count', recipe: () => _levelSource, shape: GROUPING } : null;
+        }
+
+        /**
+         * Choose levels of `field`: the drawn reply's levels, else those of the input asked for alone (one light request,
+         * never the grid), null meanwhile. Called while the controls paint, so it never paints itself.
+         */
+        function levelsOf(field) {
+            if (_infos[field]) {
+                // the plot draws this input now: its reply lists every category, and the input alone is not needed
+                if (_levelSource && _levelSource.field === field) releaseLevels();
+                return _infos[field];
+            }
+            const p = _config[field];
+            if (!p || !_initialized || !DataManager.isDatasetLoaded()) return null;
+            const key = JSON.stringify(p.source);
+            if (!_levelSource || _levelSource.key !== key) {
+                _levelSource = { version: 1, partitionings: [{ source: p.source }], key, field };
+                _levelInfo = null;
+                const id = AXIS_PREFIX + _id;
+                if (_levelHandle) groupSources().sources.sourceChanged(id);
+                else {
+                    _levelHandle = groupSources().sources.watch(id, {
+                        consumer: { kind: 'inspect', role: 'levels', panelId: _id }, option: {},
+                        visible: () => _visible && !!_dom && _dom.root.isConnected,
+                        onChange: (snap) => { if (takeLevels(snap)) { _controlsFrom = null; paint(); } }
+                    });
+                }
+                takeLevels(_levelHandle.read());
+            }
+            return _levelInfo && _levelInfo.key === key ? _levelInfo.info : null;
+        }
+
+        /** Keep the levels of a ready reply of the input asked for alone; whether they are new. */
+        function takeLevels(snap) {
+            if (!snap || !_levelSource) return false;
+            if (snap.state === 'refused' || snap.state === 'failed') {
+                // what Choose levels says instead (states.js levelsNote), with the route's figures of a size refusal
+                const header = snap.key ? groupSources().store.snapshot(snap.key).header : null;
+                const said = { ...snap, refused: header && header.refused ? header.refused : snap.refused };
+                const was = _levelInfo && _levelInfo.said;
+                if (was && was.state === said.state && was.reason === said.reason && was.message === said.message) return false;
+                _levelInfo = { key: _levelSource.key, info: null, said };
+                return true;
+            }
+            if (_levelInfo && _levelInfo.said) {
+                // asked again (Retry): the note goes while it comes
+                _levelInfo = null;
+                return true;
+            }
+            const reply = snap.state === 'ready' && snap.values && snap.values.reply;
+            const info = reply && reply.partitionings && reply.partitionings[0];
+            if (!info || (_levelInfo && _levelInfo.info === info)) return false;
+            _levelInfo = { key: _levelSource.key, info };
+            return true;
+        }
+
+        /** What Choose levels of `field` says when its levels did not come (refused or failed), or null. */
+        function levelsSaid(field) {
+            if (!_levelSource || _levelSource.field !== field || !_levelInfo || !_levelInfo.said || !_config[field]) return null;
+            return levelsNote(_levelInfo.said, { field, name: nameOfInput(field), numeric: page.isNumeric(_config[field].source) });
+        }
+
+        function releaseLevels() {
+            if (_levelHandle) _levelHandle.release();
+            _levelHandle = null;
+            _levelSource = _levelInfo = null;
         }
 
         // ---------------------------------------------------------------- life cycle
@@ -256,6 +376,8 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
             if (_observer) _observer.disconnect();
             if (_resize) _resize.disconnect();
             _observer = _resize = null;
+            releaseLevels();
+            if (_dialog) _dialog.close();
             if (_controls) _controls.destroy();
             if (_dom && window.Plotly && _dom.plot) window.Plotly.purge(_dom.plot);
             _controls = null;
@@ -267,24 +389,28 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
 
         // ---------------------------------------------------------------- the grid
 
-        /** Watch the grid while the mode can be drawn; a mode with no drawing asks for nothing. */
+        /** Watch the grid while the mode can be drawn, through the page's binding; a mode with no drawing asks for nothing. */
         function watch() {
-            if (!_initialized || !DataManager.isDatasetLoaded()) return;
+            if (!_initialized || !_dom || !DataManager.isDatasetLoaded()) return;
             if (!drawable(_config.mode)) { release(); return; }
             if (_handle) return;
-            _handle = groupSources().sources.watch(_id, {
-                consumer: { kind: 'plot', panelId: _id, role: 'panel' }, option: {},
-                visible: () => _visible && !!_dom && _dom.root.isConnected,
-                onChange: (snap) => { _snap = snap; noteKey(snap); paint(); }
-            });
+            _handle = binding.recordFor(_dom.plot, ROLE, { id: _id }).handle;
             _snap = _handle.read();
             noteKey(_snap);
         }
 
         function release() {
-            if (_handle) _handle.release();
+            if (_dom) binding.releaseHost(_dom.plot);
             _handle = null;
             _snap = null;
+        }
+
+        /** The store said something of the grid (the binding's onChange): a progress frame costs a read and a paint. */
+        function snapshotChanged(snap) {
+            if (!_initialized) return;
+            _snap = snap;
+            noteKey(snap);
+            paint();
         }
 
         /**
@@ -423,7 +549,7 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
             const root = el('div', { class: 'ccnt-panel', data: { panelId: _id } });
             root.insertAdjacentHTML('afterbegin', noDatasetScreenHtml(_id));
             _controls = createControls({ D, id: _id, model: controlsModel, on: {
-                commit, undo: () => undo(), csv: downloadCsv,
+                commit, undo: () => undo(), csv: downloadCsv, wayOut: takeWayOut,
                 setupAxis: (rowEl, axis, setting, roles) => {
                     const structure = structureRead();
                     if (structure) setupAxisSelector(rowEl, axis, setting, 'cells', structure, { consumer: MENU_CONSUMER, roles });
@@ -433,15 +559,28 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
                 parseListed: parseAlsoListed
             } });
             const plot = el('div', { class: 'ccnt-plot', id: `ccnt-plot-${_id}` });
-            const state = el('div', { class: 'ccnt-state', role: 'status', aria: { live: 'polite' }, hidden: true },
-                el('p', { class: 'ccnt-state__text' }), el('div', { class: 'ccnt-state__actions' }));
-            const plotArea = el('div', { class: 'ccnt-plot-area' }, plot, state);
+            // what the plot area says for a plan that asks nothing: the sentence (the live region) and its way out beside it
+            const state = el('div', { class: 'ccnt-state', role: 'status', aria: { live: 'polite' }, hidden: true }, el('p', { class: 'ccnt-state__text' }));
+            const stateBox = el('div', { class: 'ccnt-state-box', hidden: true }, state, el('div', { class: 'ccnt-state__actions' }));
+            const plotArea = el('div', { class: 'ccnt-plot-area' }, plot, stateBox);
             const strip = el('div', { class: 'ccnt-strip', role: 'status', aria: { live: 'polite' } });
-            root.append(_controls.element, plotArea, strip);
+            const table = el('div', { class: 'ccnt-table', hidden: true });
+            // the page's painter and action registry find this plot's records and buttons by these
+            plot.__azPanelId = _id;
+            plot.__azCellCount = true;
+            plot.__azChooser = _controls.element.querySelector('[data-row="x"] select');
+            // Plot Options: Save as grouping and Show as table (CNT-7, UX 7)
+            const saveBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-save-btn', on: { click: saveAsGrouping } },
+                C.saveGrouping.button);
+            const tableBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-table-btn', aria: { expanded: 'false' },
+                on: { click: () => { _tableShown = !_tableShown; paintTable(); } } }, C.table.show);
+            _controls.optionsElement.append(saveBtn, tableBtn);
+            root.append(_controls.element, plotArea, strip, table);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
-            _dom = { root, controls: _controls.element, plot, plotArea, state, strip, noData: root.querySelector(`#loading-screen-${_id}`) };
+            _dom = { root, controls: _controls.element, plot, plotArea, state, stateBox, strip, table, saveBtn, tableBtn,
+                noData: root.querySelector(`#loading-screen-${_id}`) };
             if (PARTS.sets && PARTS.sets.mount) PARTS.sets.mount(_controls.setsElement, { panelId: _id, config: () => _config, commit });
             showControls();
         }
@@ -465,7 +604,7 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, notes: _notes,
+                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, notes: _notes, levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
             };
         }
@@ -476,7 +615,11 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
             if (!_dom) return;
             draw();
             paintState();
-            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes];
+            paintTable();
+            _dom.saveBtn.hidden = !saveOffered(_config);
+            _dom.saveBtn.disabled = !_drawing;
+            _dom.tableBtn.disabled = !_drawing;
+            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo];
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
                 _controls.paint();
@@ -522,12 +665,16 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
             const serial = ++_drawSerial;
             delete _dom.root.dataset.drawn;
             const root = _dom.root;
-            drawPlot(_dom.plot, fig.data, { ...fig.layout, autosize: true }, { displaylogo: false, responsive: true },
+            const plot = _dom.plot;
+            drawPlot(plot, fig.data, { ...fig.layout, autosize: true }, { displaylogo: false, responsive: true },
                 coverageOf(table, names), 'cells').then(() => {
+                // a click on a bar, slice or rectangle offers Save as grouping (CNT-21); a purge drops the listener
+                if (typeof plot.removeAllListeners === 'function') plot.removeAllListeners('plotly_click');
+                if (typeof plot.on === 'function') plot.on('plotly_click', saveAsGrouping);
                 // what a test or a style reads: the mode drawn, once the drawing is of the config now
                 if (serial === _drawSerial && config === live) root.dataset.drawn = config.mode;
             }, (error) => console.error(`Cell count plot ${_id}:`, error));
-            _drawing = { config, table, labels, names };
+            _drawing = { config, table, labels, names, grid, inputs };
             // what Choose levels and the binning control read: each input's axis of the reply, with its cells per level
             const defaults = levelLabelsOf(config, table, sourceTitleOf);
             _infos = {};
@@ -548,73 +695,97 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
             return !!_snap && _snap.state === 'ready' && !_snap.held && !(st && (st.held || st.checking));
         }
 
-        /** What the plot area and the strip say: a plan that asks nothing, the route's states, and Counting… meanwhile. */
+        /**
+         * What the plot area and the strip say. A plan that asks nothing is said in the plot area's box with its way out
+         * (states.js); the route's states are the page's painter's, over the plot while there is no drawing and, for a
+         * load that keeps the drawing, as the strip's bar once the wait is long. The strip says the cells counted.
+         */
         function paintState() {
             const snap = _snap;
             const box = _dom.state;
             const text = box.querySelector('.ccnt-state__text');
-            const actions = box.querySelector('.ccnt-state__actions');
-            D.clear(actions);
+            const buttons = _dom.stateBox.querySelector('.ccnt-state__actions');
             let say = null;
-            let strip = '';
-            if (!DataManager.isDatasetLoaded()) say = null;
-            else if (!drawable(_config.mode)) say = { state: 'unavailable', text: C.notDrawn(C.modes[_config.mode]), actions: [] };
-            else if (snap && PARTS.states && PARTS.states.describe) say = PARTS.states.describe(snap, { panelId: _id, config: _config });
-            else if (isPlanState(snap)) say = { state: snap.state, text: planSentence(snap, nameOfInput), actions: [] };
-            else if (snap && ON_ITS_WAY.includes(snap.state)) {
-                const cells = (DataManager.getCells() || []).length;
-                if (_drawing) strip = C.counting(cells);
-                else say = { state: snap.state, text: C.counting(cells), actions: [['score-cancel', 'Cancel']] };
-            } else if (snap && snap.state !== 'ready') {
-                const notice = describeSource({ ...snap, title: _title }, { role: 'x' }, NOTICE_WORDS);
-                if (notice) say = { state: notice.state, text: `${notice.headline}${notice.text ? ` ${notice.text}` : ''}`, actions: notice.actions };
+            if (DataManager.isDatasetLoaded()) {
+                say = !drawable(_config.mode) ? { state: 'unavailable', text: C.notDrawn(C.modes[_config.mode]), actions: [] }
+                    : describePlan(snap, { config: shown(), nameOf: nameOfInput, isNumeric: page.isNumeric });
             }
-            box.hidden = !say;
+            box.hidden = _dom.stateBox.hidden = !say;
             box.dataset.state = say ? say.state : (snap ? snap.state : 'none');
             _dom.root.dataset.state = snap ? snap.state : 'none';
             text.textContent = say ? say.text : '';
-            for (const [action, label] of (say && say.actions) || []) {
-                const run = actionRun(action);
-                if (!run) continue;
-                actions.appendChild(D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary ccnt-action', data: { action },
-                    on: { click: run } }, label));
+            // the way out's buttons are made again only when they change, so a repaint keeps the focus on one
+            const ways = (say && say.actions) || [];
+            const key = ways.map((a) => a.join('\u0001')).join('\u0002');
+            if (buttons.dataset.ways !== key) {
+                buttons.dataset.ways = key;
+                D.clear(buttons);
+                for (const [action, label] of ways) {
+                    buttons.appendChild(D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary ccnt-action', data: { action },
+                        on: { click: () => takeWayOut(action) } }, label));
+                }
             }
-            if (!strip && _notes && snap && snap.state === 'ready') strip = [_notes.range, _notes.floor].filter(Boolean).join(' ');
-            _dom.strip.textContent = strip;
+            // a load that keeps its drawing says nothing over it: the strip says it, and the painter's bar after 10 s
+            const rec = binding.recordsOf(_dom.plot).get(ROLE);
+            if (rec) rec.quiet = !!_drawing;
+            binding.paint(_dom.plot);
+            _dom.strip.textContent = stripText(snap);
+        }
+
+        /** The strip under the plot: Counting… while a drawing is kept, the cells counted once ready (CNT-22). */
+        function stripText(snap) {
+            if (!snap || !_drawing) return '';
+            if (PENDING.includes(snap.state) && snap.state !== 'idle') return C.counting(cellsShown());
+            if (snap.state !== 'ready') return '';
+            // a density says its range instead (UX 4.4): the cells outside it are those it does not count
+            if (_notes) return [_notes.range, _notes.floor].filter(Boolean).join(' ');
+            return stripSentence(_drawing.table, _drawing.names);
         }
 
         function nameOfInput(field) {
-            const p = field === 'factor' ? _config.value && _config.value.factor : _config[field];
+            const config = shown();
+            const p = field === 'factor' ? config.value && config.value.factor : config[field];
             return p && p.source ? inputNames({ x: p }, sourceTitleOf).x : C.rows[field] || field;
         }
 
-        /** What a notice's button does here, or null when it does nothing here. */
-        function actionRun(action) {
-            const h = _handle;
-            switch (action) {
-                case 'score-compute': return h ? () => h.compute() : null;
-                case 'score-cancel': return h ? () => h.cancel() : null;
-                case 'score-retry': return h ? () => h.retry() : null;
-                case 'score-update': return () => groupSources().sources.update(_id);
-                case 'score-open': {
-                    const ring = cycleIds(_id) || [];
-                    const target = (_snap && _snap.table) || ring.find((x) => x !== _id);
-                    return target ? () => openPanel(target) : null;
-                }
-                case 'score-choose': return () => { const first = _dom.controls.querySelector('[data-row="x"] select'); if (first) first.focus(); };
-                default: return null;
-            }
+        /** A way out of a plan's state (states.js): one undoable step, a control opened in place, or both. */
+        function takeWayOut(action) {
+            if (action.startsWith('levels-retry:')) { if (_levelHandle) _levelHandle.retry(); return; }
+            const way = wayOut(action, _config);
+            if (!way) return;
+            if (way.config) commit(way.config, way.label);
+            if (way.reveal && _controls) _controls.reveal(way.reveal.field, way.reveal.what);
         }
 
-        function openPanel(pid) {
-            const p = panelOf(pid);
-            if (!p) return;
-            if (isOpen(p)) {
-                const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(pid)}"]`);
-                if (tile) tile.scrollIntoView({ block: 'nearest' });
+        /** Save as grouping (CNT-7): the dialog of what the drawn plot would make; Save makes a Cell Grouping beside it. */
+        function saveAsGrouping() {
+            if (!_drawing || !_dom || !saveOffered(_drawing.config)) return;
+            const { config, grid, inputs, names } = _drawing;
+            const plan = savePlan(config, grid, inputs, { nameOf: (field) => names[field] || C.rows[field] || field });
+            if (_dialog) _dialog.close();
+            _dialog = openSaveDialog(D, _dom.plotArea, plan, {
+                save: (recipe) => { PanelManager.createPanelNextTo(GROUPING_TYPE, _id, recipe); },
+                close: () => { _dialog = null; }
+            });
+        }
+
+        /** Show as table (UX 7): the CSV's rows, drawn again only when the drawing changes. */
+        function paintTable() {
+            const on = _tableShown && !!_drawing;
+            _dom.tableBtn.textContent = on ? C.table.hide : C.table.show;
+            _dom.tableBtn.setAttribute('aria-expanded', String(on));
+            _dom.table.hidden = !on;
+            if (!on) {
+                if (_tableFrom) D.clear(_dom.table);
+                _tableFrom = null;
                 return;
             }
-            PanelManager.reopenClosedPanel(pid, { nextTo: _id });
+            if (_tableFrom === _drawing) return;
+            _tableFrom = _drawing;
+            const { config, table, labels, names } = _drawing;
+            const rows = countRows(config, table, { labels, inputNames: names, headers: C.csv, titleOf: sourceTitleOf });
+            D.clear(_dom.table);
+            _dom.table.appendChild(tableElement(D, tableView(rows), _title));
         }
 
         /** The CSV of the plotted table (CNT-23). */
@@ -682,6 +853,8 @@ const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state ==
             updateConfig,
             setConfig: updateConfig,
             groupSource,
+            axisSource,
+            snapshotChanged,
             // for the steps after this one, and the tests
             undo,
             _debugState
