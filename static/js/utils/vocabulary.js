@@ -133,6 +133,65 @@ const cellGene = Object.freeze({
     noExpressingCells: 'no expressing cells',
     csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' }),
     /**
+     * Cluster ▾ and Plot Options (UX 3.1, 3.3, 3.4; panels/cell-gene/options.js): the menus' labels, the clustering's
+     * sentences (CXG-24, CXG-25, Q2) and the scaling's help lines.
+     */
+    options: Object.freeze({
+        cluster: 'Cluster ▾',
+        plotOptions: 'Plot Options',
+        clusterGenes: 'Cluster genes',
+        clusterGroups: 'Cluster groups',
+        off: 'Off',
+        withinSections: 'Within sections',
+        all: 'All',
+        within: (factor) => `Within ${factor}`,
+        summary: (linkage, distance) => `${linkage} linkage, ${distance}, on the values as displayed. Change them in Plot Options.`,
+        /** The Linkage select's entries, and the linkage as the summary names it. */
+        linkage: Object.freeze({ complete: 'complete', average: 'average', ward: 'Ward (Euclidean distance only)' }),
+        linkageName: Object.freeze({ complete: 'Complete', average: 'Average', ward: 'Ward' }),
+        distance: Object.freeze({ correlation: 'Pearson correlation', euclidean: 'Euclidean' }),
+        wardSwitched: 'Ward needs Euclidean distance, so Distance is now Euclidean.',
+        wardOnly: 'Ward needs Euclidean distance.',
+        undo: 'Undo',
+        leftOut: (n, noun) => `${fmt(n)} ${n === 1 ? noun : `${noun}s`} not clustered: too few values in common, or constant. They are at the end.`,
+        tooMany: (title, n, limit) => `Not clustered: ${title} has ${fmt(n)} rows; clustering stops at ${fmt(limit)}.`,
+        heading: Object.freeze({
+            dots: 'Dots', colors: 'Colors', sections: 'Sections', labels: 'Labels', clustering: 'Clustering', legend: 'Legend', totals: 'Totals'
+        }),
+        dotSizes: 'Smallest and largest dot',
+        dotMin: '% at the smallest dot',
+        dotMax: '% at the largest dot',
+        sizeThreshold: 'Size threshold',
+        sameAsColor: 'as Color',
+        colorScale: 'Color scale',
+        min: 'Min',
+        max: 'Max',
+        center: 'Center',
+        centerDiverging: 'A center applies to a diverging color scale.',
+        printValues: 'Print values in cells',
+        gap: 'Gap between sections',
+        gapUnit: 'cell',
+        sectionTitles: 'Show section titles',
+        geneLabels: 'Gene labels',
+        groupLabels: 'Group labels',
+        plotTitle: 'Plot title',
+        colorTitle: 'Color bar title',
+        sizeTitle: 'Size legend title',
+        linkageLabel: 'Linkage',
+        distanceLabel: 'Distance',
+        dendrograms: 'Dendrograms',
+        colorBar: 'Color bar',
+        sizeLegend: 'Size legend',
+        strips: 'Strip legend',
+        totals: 'Cells per group',
+        sortGroups: 'Sort groups by size',
+        scalingNote: 'Groups with no value are skipped; a constant gene gives 0.',
+        pooledNote: 'A one-row section has no pooled cells of its own, so it is z-scored across its own groups.',
+        csv: 'Download CSV',
+        /** The strips' legend, past the levels it has room for. */
+        more: (n) => `+ ${fmt(n)} more`
+    }),
+    /**
      * What the plot says in each of its states (UX 3.5; SHR-27, SHR-32, SHR-47, SHR-48, CXG-17, CXG-19, CXG-27):
      * panels/cell-gene/states.js words its notices, its checklist and its strip with these alone. No string names a
      * command (N3).
