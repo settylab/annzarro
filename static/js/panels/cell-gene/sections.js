@@ -342,7 +342,8 @@ export function aggregationHelp(rowAgg, layer) {
 
 // ================================================================================================ the request
 
-const needsThreshold = (stat) => THRESHOLD_STATS.includes(stat);
+/** Whether a statistic reads an expression threshold (`detect_above`, CXG-9). */
+export const needsThreshold = (stat) => THRESHOLD_STATS.includes(stat);
 
 /** The statistic a summary reads of each gene. */
 const SUMMARY_STAT = Object.freeze({ mean_of_means: 'mean', sum_of_means: 'mean', mean_of_zscores: 'mean', mean_of_pct_expressing: 'pct_expressing' });
