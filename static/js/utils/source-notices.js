@@ -94,7 +94,7 @@ const LEFT_AFTER_S = 5;
  * the job held its lane (`running_s`, waits and give-way pauses left out); never from a count of genes. Empty until
  * 10% of the entries and 5 s, or when the frame does not carry them.
  */
-function timeLeftText(progress) {
+export function timeLeftText(progress) {
     if (!progress) return '';
     const done = Number(progress.entries_done);
     const total = Number(progress.entries_total);
@@ -106,7 +106,7 @@ function timeLeftText(progress) {
 }
 
 /** The server's place for a job (SHR-47): {ahead, sharing}, each a count, or null when the frame says nothing. */
-function queueOf(progress) {
+export function queueOf(progress) {
     const q = progress && progress.queue;
     if (!q || typeof q !== 'object') return null;
     return { ahead: Math.max(0, Number(q.ahead) || 0), sharing: Math.max(0, Number(q.sharing) || 0) };

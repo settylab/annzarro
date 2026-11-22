@@ -26,6 +26,7 @@
  * A job's life
  *   idle -> estimating -> queued -> computing -> ready
  *                     \-> awaiting (the estimate asks for one click: `accept()`)
+ *                     \-> refused  (the estimate's tier is `refused`: nothing is computed or sent)
  *   and, off the main road: refused, failed, noscore, cancelled.
  *   (`noscore` is the state of a reply with nothing in it; the name is kept
  *   from the score store, which the page's code already reads.)
@@ -37,6 +38,7 @@
  * Within a store, jobs with a dependant on screen go first; a job none of
  * whose dependants is visible waits.
  */
+import { VOCABULARY } from './vocabulary.js';
 
 /** Bytes of values kept in the browser (design 6.2). */
 export const DEFAULT_BUDGET = 1024 ** 3;
@@ -194,7 +196,7 @@ function isAbort(error) {
 }
 
 /** What a progress frame says besides its count (SHR-47, SHR-48), kept as the frame carries it. */
-const PROGRESS_FIELDS = Object.freeze(['stage', 'entries_done', 'entries_total', 'running_s', 'queue']);
+const PROGRESS_FIELDS = Object.freeze(['stage', 'entries_done', 'entries_total', 'running_s', 'queue', 'items']);
 
 /** A job's progress: done and in all, and whichever of the frame's other fields it carries. */
 function progressOf(done, total, frame) {
@@ -247,6 +249,8 @@ export function createDerivedStore({
     const counts = { estimate: 0, compute: 0, aborted: 0 };
     let seq = 0;
     let pumping = false;
+    /** pump() was called while it ran (a notification attached or freed a job): it makes one more pass */
+    let pumpAgain = false;
 
     function emit(job) {
         for (const fn of [...listeners]) {
@@ -326,9 +330,20 @@ export function createDerivedStore({
             setState(job, 'awaiting');
             return;
         }
-        // 'refused' goes on to ask: the server answers 413 at once, in its own words
+        if (estimate.tier === 'refused') {
+            // decided by the estimate: nothing is asked of the server, whose 413 would only say the same
+            setState(job, 'refused', { message: refusalText(estimate, refusalReason), reason: refusalReason });
+            return;
+        }
         setState(job, 'queued');
         pump();
+    }
+
+    /** What a refusal by cost says under its headline: the limit, from the estimate, and the way out. */
+    function refusalText(estimate, reason) {
+        const limit = Number(estimate.max_s) > 0 ? VOCABULARY.progress.overLimit(Math.round(Number(estimate.max_s) / 60)) : '';
+        const way = Object.hasOwn(VOCABULARY.progress.wayOut, reason) ? VOCABULARY.progress.wayOut[reason] : '';
+        return [limit, way].filter(Boolean).join(' ') || null;
     }
 
     function errorText(error) {
@@ -386,23 +401,34 @@ export function createDerivedStore({
 
     /** Start what can start: estimates for jobs with a dependant on screen, then computations, within the limit. */
     function pump() {
-        if (pumping) return;
+        if (pumping) { pumpAgain = true; return; }
         pumping = true;
         try {
-            const idle = [...jobs.values()].filter(j => j.state === 'idle' && visibleOwners(j) > 0)
-                .sort((a, b) => a.seq - b.seq);
-            for (const job of idle) estimateJob(job);
-            const queued = [...jobs.values()].filter(j => j.state === 'queued')
-                .sort((a, b) => (visibleOwners(b) > 0) - (visibleOwners(a) > 0) || a.seq - b.seq);
-            for (const job of queued) {
-                if (visibleOwners(job) === 0) continue;
-                // what it needs came meanwhile (another job's reply held the parts it missed)
-                if (cache.has(job.key)) { setState(job, 'ready'); continue; }
-                if (!slots.tryTake()) break;
-                run(job);
-            }
+            do {
+                pumpAgain = false;
+                pumpOnce();
+            } while (pumpAgain);
         } finally {
             pumping = false;
+        }
+    }
+
+    /**
+     * One pass of pump(). Each pass only starts what changes state (idle to estimating, queued to computing or ready),
+     * so the passes end once a pass is not asked for again.
+     */
+    function pumpOnce() {
+        const idle = [...jobs.values()].filter(j => j.state === 'idle' && visibleOwners(j) > 0)
+            .sort((a, b) => a.seq - b.seq);
+        for (const job of idle) estimateJob(job);
+        const queued = [...jobs.values()].filter(j => j.state === 'queued')
+            .sort((a, b) => (visibleOwners(b) > 0) - (visibleOwners(a) > 0) || a.seq - b.seq);
+        for (const job of queued) {
+            if (visibleOwners(job) === 0) continue;
+            // what it needs came meanwhile (another job's reply held the parts it missed)
+            if (cache.has(job.key)) { setState(job, 'ready'); continue; }
+            if (!slots.tryTake()) break;
+            run(job);
         }
     }
 

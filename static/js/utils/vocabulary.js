@@ -131,7 +131,47 @@ const cellGene = Object.freeze({
         score_pct_above: (option) => `% of cells with ${option} above`
     }),
     noExpressingCells: 'no expressing cells',
-    csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' })
+    csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' }),
+    /**
+     * What the plot says in each of its states (UX 3.5; SHR-27, SHR-32, SHR-47, SHR-48, CXG-17, CXG-19, CXG-27):
+     * panels/cell-gene/states.js words its notices, its checklist and its strip with these alone. No string names a
+     * command (N3).
+     */
+    states: Object.freeze({
+        checklist: Object.freeze({
+            label: 'To draw this plot', groups: 'Choose groups', genes: 'Add genes', groupsButton: 'Groups ▾', genesButton: 'Add genes ▾'
+        }),
+        genes: (n) => `${n.toLocaleString('en-US')} ${n === 1 ? 'gene' : 'genes'}`,
+        rows: (n) => `${n.toLocaleString('en-US')} ${n === 1 ? 'row' : 'rows'}`,
+        million: 'million',
+        billion: 'billion',
+        grouping: (cells) => `Grouping ${cells} cells…`,
+        reading: (genes, done, total) => `Reading ${genes}${total > 0 ? `: ${done.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}` : ''}`,
+        waiting: 'Waiting for the server.',
+        waitingFor: (title) => `Waiting for ${title} to finish.`,
+        held: (edits, duration) => `Showing the previous plot. ${edits === 1 ? '1 change' : `${edits.toLocaleString('en-US')} changes`} not applied.` +
+            `${duration ? ` ${duration.charAt(0).toUpperCase()}${duration.slice(1)}.` : ''}`,
+        ask: (genes, cells, duration, values) => `Reading ${genes} over ${cells} cells: up to ${duration} (${values} stored values).`,
+        refusedCost: (duration) => `Would take ${duration}, so it was not run.`,
+        costWayOut: 'Use fewer genes, a smaller subset, or a layer stored by gene (CSC).',
+        refusedCsr: (layer, genes, n, duration) => `${layer} is stored by cell (CSR), so ${genes} ${n === 1 ? 'means' : 'mean'} reading the whole matrix: ${duration}.`,
+        csrWayOut: 'A copy of the layer stored by gene (CSC) makes this fast; see the documentation.',
+        tooLarge: (groups, rows, cells, limit) => `${groups} × ${rows} = ${cells} cells of the matrix; the limit is ${limit}.`,
+        tooLargeWayOut: 'Remove a section or use fewer groups.',
+        oneCell: `One cell per group: ${word.percentExpressing} is 0 or 100.`,
+        failed: (reason) => `Could not be computed: ${reason}.`,
+        noAnswer: 'the server stopped responding',
+        matrix: (groups, rows) => `${groups} × ${rows}`,
+        noValue: (n) => `${n.toLocaleString('en-US')} ${n === 1 ? 'cell of the matrix has' : 'cells of the matrix have'} ${word.noValue}`,
+        buttons: Object.freeze({
+            compute: 'Compute', fewer: 'Fewer genes', update: 'Update', retry: 'Retry', heatmap: 'Show as Heatmap',
+            cancel: (sharers) => (sharers > 1 ? `Cancel for ${sharers} plots` : 'Cancel')
+        }),
+        tags: Object.freeze({
+            computing: 'Computing…', queued: 'Plot queued', awaiting: 'Not computed', refused: 'Plot refused', tooLarge: 'Too large',
+            failed: 'Plot failed', held: 'Out of date', noSize: 'No size'
+        })
+    })
 });
 
 /**
@@ -288,6 +328,13 @@ const progress = Object.freeze({
     sharing: (n) => `Sharing the server with ${n.toLocaleString('en-US')} other ${n === 1 ? 'computation' : 'computations'}.`,
     left: (duration, sharing) => `${duration} left${sharing ? ' while sharing' : ''}`,
     keepWorking: `${capital(plural.grouping)} and counts keep working.`,
+    /** Under a refusal by cost: the limit of the confirm tier, from the estimate's `max_s` (SHR-32). */
+    overLimit: (minutes) => `The limit is ${minutes.toLocaleString('en-US')} ${minutes === 1 ? 'minute' : 'minutes'}.`,
+    /** ... and the way out, by the store's refusal reason (utils/derived-store.js). */
+    wayOut: Object.freeze({
+        score_too_expensive: 'Use fewer genes.',
+        groups_too_expensive: `Use fewer genes or ${plural.group}, or a subset.`
+    }),
     // a control that waits for the page to finish starting before it acts (a panel set's Load)
     loading: 'Loading…'
 });
