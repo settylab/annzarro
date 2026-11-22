@@ -144,6 +144,27 @@ test('an estimate in the refused tier is refused at once: the estimate is the on
     assert.equal(snap.message, 'The limit is 10 minutes. Use fewer genes or groups, or a subset.');
 });
 
+test('a job attached from inside a notification of the store (a consumer changing its option) is started, never left idle', async () => {
+    const fake = fakeApi();
+    const store = D.createDerivedStore({ api: fake.api });
+    const o = owner();
+    let moved = false;
+    store.on((key) => {
+        // the consumer of 'a' moves to 'b' the moment 'a' starts: synchronously, while the store is starting its jobs
+        if (key === 'a' && store.snapshot('a').state === 'estimating' && !moved) {
+            moved = true;
+            store.detach('a', o);
+            store.attach('b', spec('b'), o);
+        }
+    });
+    store.attach('a', spec('a'), o);
+    await settle();
+    await settle();
+    assert.ok(moved);
+    assert.notEqual(store.snapshot('b').state, 'idle', 'the job attached during the notification was started');
+    assert.deepEqual(fake.calls.estimate.map((r) => r.recipe.hash).sort(), ['a', 'b']);
+});
+
 test('createLimiter: takes up to max, refuses beyond, and tells waiters on release', () => {
     const limiter = D.createLimiter(2);
     let told = 0;
