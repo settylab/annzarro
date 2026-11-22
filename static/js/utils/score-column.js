@@ -90,6 +90,14 @@ export function usedScoreColumns(columns, searchBuilderConfig, keyOf) {
 const PENDING = new Set(['estimating', 'queued', 'computing', 'idle', 'building']);
 
 /**
+ * What a column calls its values while it has none: a score's, unless the snapshot carries its provider's own
+ * (`snap.words`, utils/table-source.js): `the` (the values, when the column has no title), `none` (it has none) and
+ * `ready` (the sentence's end when they are there).
+ */
+const SCORE_WORDS = Object.freeze({ the: 'the score', none: 'no score', ready: 'the score is ready' });
+const wordsOf = (snap) => (snap && snap.words) || SCORE_WORDS;
+
+/**
  * How a column looks and what it allows, from the state of its score.
  * @param {Object|null} snap - a handle's read(); null before it has been read
  * @param {string} [title] - the column's name
@@ -98,7 +106,8 @@ const PENDING = new Set(['estimating', 'queued', 'computing', 'idle', 'building'
  */
 export function columnView(snap, title = '') {
     const state = snap && snap.state ? snap.state : 'estimating';
-    const t = title ? `'${title}'` : 'the score';
+    const w = wordsOf(snap);
+    const t = title ? `'${title}'` : w.the;
     const view = (kind, suffix, cell, o) => ({ kind, state, suffix, cell, hasValues: false, sortable: false,
         filterable: false, exportable: false, exportNote: '', ...o });
     const hasSeries = !!seriesOf(snap);
@@ -119,9 +128,9 @@ export function columnView(snap, title = '') {
         return view('pending', '(not computed)', 'not computed', { exportNote: `Available when ${t} is computed` });
     }
     if (state === 'deleted') {
-        return view('none', '(deleted)', 'no score', { exportNote: `${t} was deleted: remove the column to export` });
+        return view('none', '(deleted)', w.none, { exportNote: `${t} was deleted: remove the column to export` });
     }
-    return view('none', '(no score)', 'no score', { exportNote: `${t} has no score: remove the column to export` });
+    return view('none', `(${w.none})`, w.none, { exportNote: `${t} has ${w.none}: remove the column to export` });
 }
 
 /**
@@ -167,11 +176,12 @@ export function filterGate(items) {
     const { view, snap, title } = worst;
     const notice = worst.describe ? worst.describe({ ...(snap || {}), title }) : describeScore({ ...(snap || {}), title }, { role: 'column' });
     const detail = notice ? `${notice.headline}${notice.text ? ` ${notice.text}` : ''}` : '';
+    const words = wordsOf(snap);
     if (view.kind === 'pending') {
-        return { state: 'waiting', reason: 'score', title, scoreState: view.state, detail, columns: items.length };
+        return { state: 'waiting', reason: 'score', title, scoreState: view.state, detail, columns: items.length, words };
     }
     const refused = view.state === 'refused';
-    return { state: refused ? 'refused' : 'failed', reason: 'score', title, scoreState: view.state, detail, columns: items.length };
+    return { state: refused ? 'refused' : 'failed', reason: 'score', title, scoreState: view.state, detail, columns: items.length, words };
 }
 
 /**
@@ -181,11 +191,12 @@ export function filterGate(items) {
  */
 export function describeHeldRows(gate) {
     const t = `'${gate.title}'`;
+    const w = gate.words || SCORE_WORDS;
     if (gate.state === 'waiting') {
         return { headline: `Filter on ${t} not applied yet.`,
-            text: gate.scoreState === 'awaiting' ? `Rows appear when ${t} is computed.` : 'Rows appear when the score is ready.' };
+            text: gate.scoreState === 'awaiting' ? `Rows appear when ${t} is computed.` : `Rows appear when ${w.ready}.` };
     }
-    return { headline: `Filter on ${t} not applied.`, text: gate.detail || `${t} has no score.` };
+    return { headline: `Filter on ${t} not applied.`, text: gate.detail || `${t} has ${w.none}.` };
 }
 
 /**
@@ -210,6 +221,23 @@ export function followSignatureIds(config, idMap, keyOf) {
     if (!renames.size) return false;
     renameFilterKeys(config.searchBuilderConfig, renames);
     return true;
+}
+
+/**
+ * A filter without its conditions on one column: the others stay as they were, and a group left with no condition goes.
+ * @param {{criteria?: Array, logic?: string}|null|undefined} searchBuilderConfig - not changed
+ * @param {string} key - the column's data key (`origData`)
+ * @returns {{criteria: Array, logic: string}}
+ */
+export function dropConditions(searchBuilderConfig, key) {
+    const keep = (node) => {
+        if (!node || typeof node !== 'object') return null;
+        if (!Array.isArray(node.criteria)) return node.origData === key ? null : node;
+        const criteria = node.criteria.map(keep).filter(Boolean);
+        return criteria.length ? { ...node, criteria } : null;
+    };
+    const top = keep(searchBuilderConfig);
+    return top ? { ...top, logic: top.logic === 'OR' ? 'OR' : 'AND' } : { criteria: [], logic: 'AND' };
 }
 
 /**

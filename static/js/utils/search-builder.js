@@ -187,6 +187,10 @@ export function fastSelectInit(Criteria, $) {
             const key = v === null || v === undefined ? '' : String(v);
             if (!seen.has(key)) seen.set(key, [v, settings.oApi._fnGetCellData(settings, row, column, display)]);
         }
+        const wanted = preDefined !== null && preDefined !== undefined ? preDefined[0] : undefined;
+        // a saved value no row has now stays, chosen: a column whose values come later (a grouping's groups) keeps its
+        // condition until they are there, rather than losing its value while the condition is built
+        if (wanted !== undefined && wanted !== null && wanted !== '' && !seen.has(String(wanted))) seen.set(String(wanted), [wanted, wanted]);
         const type = that.s.type || '';
         const keys = [...seen.keys()];
         if (type.includes('num')) {
@@ -195,7 +199,6 @@ export function fastSelectInit(Criteria, $) {
         } else {
             keys.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
         }
-        const wanted = preDefined !== null && preDefined !== undefined ? preDefined[0] : undefined;
         const options = keys.map((key) => {
             const [v, text] = seen.get(key);
             const option = $('<option>', { type: 'String', value: v }).data('sbv', v)

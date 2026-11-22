@@ -395,7 +395,7 @@ export function buildSourceTab(provider, id, settings, structure = null) {
         // what the entity offers (method and layer together, as in a plot's menu), and any ticked column
         // it no longer offers (kept, so the table still has it)
         // every column stores the layer it was given: a signature's first offered layer changes when the user unticks it
-        for (const sub of chooser.options(entity, ticked)) {
+        for (const sub of chooser.options(entity, ticked, id)) {
             const layer = sub.layer;
             const item = { type: provider.type, key: entity.id, column: sub.column, layer };
             const div = document.createElement('div');
@@ -418,6 +418,15 @@ export function buildSourceTab(provider, id, settings, structure = null) {
             label.textContent = sub.text;
             div.dataset.search = `${entity.title} ${sub.text}`.toLowerCase();
             div.append(checkbox, label);
+            // what the provider says of the option here (it cannot be filtered on in this table: operator decision 15)
+            if (sub.note) {
+                const why = document.createElement('div');
+                why.className = 'form-text mt-0 az-option-note';
+                why.id = `${checkbox.id}-note`;
+                why.textContent = sub.note;
+                checkbox.setAttribute('aria-describedby', why.id);
+                div.appendChild(why);
+            }
             group.appendChild(div);
         }
         if (chooser.more) {
