@@ -11,6 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const S = await import('../../../static/js/utils/score-store.js');
+const { describeSource } = await import('../../../static/js/utils/source-notices.js');
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 5));
 const vec = (n, v = 1) => new Float32Array(n).fill(v);
@@ -160,7 +161,7 @@ test('the work stops when the last dependant leaves, and not before', async () =
     assert.equal(store.cache.size, 0, 'an aborted computation stores nothing');
 });
 
-test('the tier comes from the estimate: auto computes, confirm asks once, refused is answered by the server', async () => {
+test('the tier comes from the estimate: auto computes, confirm asks once, refused is decided by the estimate with no compute request', async () => {
     // auto
     let f = fakeApi({ tier: 'auto', seconds: 59 });
     let store = S.createScoreStore({ api: f.api });
@@ -182,16 +183,20 @@ test('the tier comes from the estimate: auto computes, confirm asks once, refuse
     assert.equal(f.calls.compute.length, 1);
     assert.equal(f.calls.compute[0].confirm, true, 'the click is sent to the server as confirm: true');
 
-    // refused: the server is asked and answers 413 in its own words
+    // refused: decided by the estimate, so nothing is computed or sent; the way out is the page's own sentence
     f = fakeApi({ tier: 'refused', seconds: 1500 });
     store = S.createScoreStore({ api: f.api });
     store.attach(keyOf('r'), spec('r'), owner());
     await settle();
-    f.failWith(0, { status: 413, reason: 'score_too_expensive', message: 'This score would take about 25 minutes; the limit is 10. Use fewer genes.' });
-    await settle();
     snap = store.snapshot(keyOf('r'));
     assert.equal(snap.state, 'refused');
-    assert.match(snap.message, /about 25 minutes/);
+    assert.equal(snap.reason, 'score_too_expensive');
+    assert.equal(snap.estimate.seconds, 1500, 'the notice words the refusal from the estimate');
+    assert.equal(snap.message, 'The limit is 10 minutes. Use fewer genes.');
+    assert.equal(f.calls.compute.length, 0);
+    const notice = describeSource(snap, { role: 'colour' }, { thing: 'signature', source: 'source', result: 'score', Computing: 'Computing' });
+    assert.equal(notice.headline, 'The signature would take about 25 minutes, so it was not run.');
+    assert.equal(notice.text, 'The limit is 10 minutes. Use fewer genes.');
 });
 
 test('the limits are not written in the store: a different estimate moves the tier', async () => {
