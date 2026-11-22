@@ -42,7 +42,8 @@ const INPUT_ROWS = Object.freeze([
  * @param {Object} opts.D - the DOM builder (gene-set-utilities/dom.js)
  * @param {string} opts.id - the panel id
  * @param {() => Object} opts.model - what to draw: {config, structure, titleOf, focusedGene, focusedCell, infos: {x?, y?,
- *   split?} (each input's axis of the reply shown, with `counts`), undo: ?string (the label of the step), drawable(mode)}
+ *   split?} (each input's axis of the reply shown, with `counts`), levelsOf(field) (an input's levels when no reply
+ *   shows them: a refused plan's, asked for alone; null meanwhile), undo: ?string (the label of the step), drawable(mode)}
  * @param {Object} opts.on - what the user did: commit(config, label), silent(config) (focus following, no step),
  *   undo(), csv(), setupAxis(rowEl, axis, setting, roles) (fills a row's selects)
  * @returns {{element: HTMLElement, paint: Function, destroy: Function}}
@@ -300,7 +301,7 @@ export function createControls({ D, id, model, on }) {
         row.levels.id = `ccnt-levels-${id}-${row.field}`;
         if (isOpen) {
             row.levels.hidden = false;
-            row.levels.append(...levelChooser(row.field, p, m.infos[row.field] || null, m));
+            row.levels.append(...levelChooser(row.field, p, m.infos[row.field] || (m.levelsOf ? m.levelsOf(row.field) : null), m));
         }
     }
 
@@ -580,7 +581,24 @@ export function createControls({ D, id, model, on }) {
         element,
         /** Where the sets of Venn and UpSet are drawn (V1). */
         setsElement: setsSlot,
+        /** Plot Options' box, where the panel adds Save as grouping and Show as table (C2b). */
+        optionsElement: optionsBox,
         paint,
+        /**
+         * Open an input's Choose levels or binning control in place and focus it: the way out of a refusal (UX 4.3).
+         * @param {string} field - 'x' or 'y'
+         * @param {'levels'|'binning'} what
+         */
+        reveal(field, what) {
+            const row = rows.get(field);
+            if (!row) return;
+            (what === 'binning' ? open.binning : open.levels).add(field);
+            paint();
+            const box = what === 'binning' ? row.binning : row.levels;
+            const target = box.querySelector(what === 'binning' ? '.pbc-bins' : 'input, button') || row.extra.querySelector('button');
+            if (target) target.focus();
+            row.wrap.scrollIntoView({ block: 'nearest' });
+        },
         /** The selects are filled again: the dataset or the panels changed (a provider's entities, the structure). */
         refill() {
             for (const row of rows.values()) row.sig = null;
