@@ -263,4 +263,19 @@ function count(n, noun) {
     return `${n.toLocaleString('en-US')} ${n === 1 ? word[noun] : plural[noun]}`;
 }
 
-export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, countPlot, progress, reasons });
+/**
+ * The words of the per-cell export of a Cell Grouping (GRP-18): its entry and hint, the two column headers, the text of a
+ * cell in no group, and the reasons it gives when it is disabled or cannot be done. panels/cell-grouping/cell-export.js
+ * reads them as its `words`.
+ */
+const cellExport = Object.freeze({
+    entry: 'Export cells',
+    entryTitle: 'Download each cell and its group as CSV',
+    cellName: 'Cell name',
+    groupName: 'Group name',
+    notInAnyGroup: capital(word.notInAnyGroup),
+    tooManyCells: (limit) => `Exporting each cell works up to ${limit.toLocaleString('en-US')} cells.`,
+    failed: 'The cells could not be exported: the groups could not be read'
+});
+
+export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, countPlot, cellExport, progress, reasons });
