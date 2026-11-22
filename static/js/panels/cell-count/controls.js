@@ -281,7 +281,7 @@ export function createControls({ D, id, model, on }) {
             row.binning.id = `ccnt-binning-${id}-${row.field}`;
             if (isOpen && BINNING_SLOT.mount) {
                 row.binning.hidden = false;
-                const max = binsRange(m.config.mode).max;
+                const max = binsRange(m.config.mode, row.field).max;
                 const handle = BINNING_SLOT.mount(row.binning, {
                     partitioning: forControl(p, m.config.mode), info: m.infos[row.field] || null, kind: 'count', max, titleOf: m.titleOf,
                     commit: (next, label) => {
