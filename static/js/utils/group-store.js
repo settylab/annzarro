@@ -226,6 +226,9 @@ export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, c
         get evictions() { return parts.evictions; }
     };
 
+    /** A request as sent: a grouping's says what it wants back (the codes); a grid has nothing to want and takes no `want`. */
+    const withWant = (request, codes) => (request.shape === 'grid' ? { ...request } : { ...request, want: { ...request.want, codes } });
+
     /** What a job misses now, as one request; null when it misses nothing. */
     function ask(job) {
         const entry = entries.get(job.key);
@@ -234,7 +237,7 @@ export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, c
         const missing = [];
         need.features.forEach((f, i) => { if (!parts.has(entry.featureKeys[i])) missing.push(i); });
         const codes = need.codes && !held.has(entry.codesKey);
-        const recipe = { ...need.request, want: { ...need.request.want, codes } };
+        const recipe = withWant(need.request, codes);
         if (missing.length) recipe.features = missing.map((i, n) => ({ id: `f${n}`, ...need.features[i].wire }));
         const hash = `${need.table}\u0002${codes ? 1 : 0}\u0002${missing.map((i) => need.features[i].key).join('\u0003')}`;
         return { recipe, hash, parts: { tableKey: entry.tableKey, codesKey: entry.codesKey, codes,
@@ -390,7 +393,7 @@ export function createGroupStore({ api, budget = GROUP_BUDGET, limiter = null, c
 
         /** The cost of all of a need, asked once. */
         estimateFor(need, dataset, hash) {
-            const request = { ...need.request, want: { ...need.request.want, codes: need.codes } };
+            const request = withWant(need.request, need.codes);
             if (need.features.length) request.features = need.features.map((f, i) => ({ id: `f${i}`, ...f.wire }));
             return inner.estimateFor(request, dataset, hash);
         },

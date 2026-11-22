@@ -1,0 +1,594 @@
+/**
+ * The controls of the Cell Count Plot (UX 4.1, 4.2, 4.4, 4.5; CNT-1 to CNT-4, CNT-6, CNT-17, CNT-21): the DOM side.
+ *
+ * Top to bottom: Mode; X (Slices for a pie); Y; Color by with its arrangement; Height or Color, with the source of a
+ * statistic or the factor of the most frequent level under it; Labels, Sort by height, Reverse, Horizontal and Plot
+ * Options. A row the mode does not read is hidden, and what it holds stays stored: one muted line lists it ("Kept for
+ * other modes"). A numeric input carries the compact binning line, which opens the shared binning control in place; a
+ * categorical one offers Choose levels. What each choice writes is controls-model.js's; panels/cell-count.js commits
+ * every change as one undoable step. Interface words come from utils/vocabulary.js.
+ *
+ * The x, y, Color by, statistic and factor selects are the cell plot's (CNT-2): the same markup, filled by
+ * plot-utilities `setupAxisSelector`, with the same focus following and lock for `layer` and `obsp` (CNT-17), and the
+ * providers a cell plot lists (a gene score, a grouping).
+ */
+import { VOCABULARY } from '../../utils/vocabulary.js';
+import { sourceName } from '../../utils/cell-grouping.js';
+import { binsRange } from '../../utils/count-plot-model.js';
+import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
+import { getSource } from '../../utils/source-registry.js';
+import {
+    rowsOf, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
+    setMode, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
+} from './controls-model.js';
+
+const C = VOCABULARY.countPlot;
+const P = VOCABULARY.phrase;
+
+// ================================================================================================ the view
+
+const ARRANGEMENT_WORD = (mode, id) => (mode === 'histogram' && id === 'dodge' ? C.arrangement.overlay : C.arrangement[id]);
+
+/** The input rows of the bar: `field` in the config, the select's axis name and the roles its type menu lists. */
+const INPUT_ROWS = Object.freeze([
+    { field: 'x', axis: 'count-x', roles: ['x'] },
+    { field: 'y', axis: 'count-y', roles: ['x'] },
+    { field: 'split', axis: 'split', roles: ['color'] }
+]);
+
+/**
+ * The control bar of a count plot.
+ * @param {Object} opts
+ * @param {Object} opts.D - the DOM builder (gene-set-utilities/dom.js)
+ * @param {string} opts.id - the panel id
+ * @param {() => Object} opts.model - what to draw: {config, structure, titleOf, focusedGene, focusedCell, infos: {x?, y?,
+ *   split?} (each input's axis of the reply shown, with `counts`), undo: ?string (the label of the step), drawable(mode)}
+ * @param {Object} opts.on - what the user did: commit(config, label), silent(config) (focus following, no step),
+ *   undo(), csv(), setupAxis(rowEl, axis, setting, roles) (fills a row's selects)
+ * @returns {{element: HTMLElement, paint: Function, destroy: Function}}
+ */
+export function createControls({ D, id, model, on }) {
+    const { el } = D;
+    const histories = new Map();          // a row's remembered sources by type, as a cell plot keeps them
+    const rows = new Map();               // field -> row
+    const open = { binning: new Set(), levels: new Set(), options: false };
+    let mounts = [];
+
+    const option = (value, text, extra = {}) => {
+        const o = el('option', { value, text });
+        if (extra.disabled) { o.disabled = true; o.title = extra.title || ''; }
+        return o;
+    };
+
+    // ---------------------------------------------------------------- Mode
+    const modeSelect = el('select', { class: 'form-select form-select-sm ccnt-mode', id: `ccnt-mode-${id}`,
+        on: { change: () => commit({ ...setMode(model().config, modeSelect.value) }, `mode ${C.modes[modeSelect.value]}`) } });
+    const modeRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--mode' },
+        el('label', { class: 'ctl-label', for: `ccnt-mode-${id}`, text: C.rows.mode }), modeSelect);
+
+    function fillModes() {
+        D.clear(modeSelect);
+        const m = model();
+        for (const g of C.modeGroups) {
+            const og = el('optgroup', { label: g.label });
+            for (const mode of g.modes) {
+                const drawable = m.drawable(mode);
+                og.appendChild(option(mode, C.modes[mode], { disabled: !drawable, title: drawable ? '' : C.notDrawn(C.modes[mode]) }));
+            }
+            modeSelect.appendChild(og);
+        }
+        modeSelect.value = m.config.mode;
+    }
+
+    // ---------------------------------------------------------------- an input row (the cell plot's selects)
+    function selectsRow(field, axis, label) {
+        const typeId = `${axis}-type-select-ccnt-${id}`;
+        const labelEl = el('label', { class: 'axis-selector-label ctl-label', for: typeId, text: label });
+        const type = el('select', { class: 'form-select form-select-sm axis-type-select', data: { axis }, id: typeId });
+        const key = el('select', { class: 'form-select form-select-sm axis-key-select', data: { axis }, disabled: true, aria: { label: `${label} key` } });
+        const column = el('select', { class: 'form-select form-select-sm axis-column-select', data: { axis }, disabled: true, aria: { label: `${label} column` } });
+        const selector = el('div', { class: 'axis-selector' }, type, key, column);
+        const extra = el('span', { class: 'ccnt-row__extra' });
+        const element = el('div', { class: 'axis-selector-container ctl-row ccnt-row', data: { row: field } }, labelEl, selector, extra);
+        return { field, axis, element, labelEl, type, key, column, selector, extra, setting: null, sig: null };
+    }
+
+    function inputRow(spec) {
+        const row = selectsRow(spec.field, spec.axis, C.rows[spec.field]);
+        row.roles = spec.roles;
+        row.binning = el('div', { class: 'ccnt-binning', hidden: true });
+        row.levels = el('div', { class: 'ccnt-levels', hidden: true });
+        row.wrap = el('div', { class: 'ccnt-input', data: { input: spec.field } }, row.element, row.binning, row.levels);
+        wireSelects(row, () => inputOf(row.field), (source) => commitInput(row.field, source));
+        rows.set(spec.field, row);
+        return row;
+    }
+
+    /** What a row's field holds in the config now. */
+    function inputOf(field) {
+        const c = model().config;
+        if (field === 'measure') return c.measure || null;
+        if (field === 'factor') return c.value && c.value.kind === 'top_level' ? c.value.factor || null : null;
+        return c[field] || null;
+    }
+
+    function commitInput(field, source) {
+        const c = model().config;
+        const next = { ...c };
+        const was = inputOf(field);
+        const p = inputFromSource(was, source);
+        if (field === 'measure') {
+            if (!p) return;
+            next.measure = { ...(c.measure || {}), source: p.source };
+            if (p.locked) next.measure.locked = true;
+            commit(next, `${C.rows.source.toLowerCase()} ${measureSourceName(p.source, model().titleOf)}`);
+            return;
+        }
+        if (field === 'factor') {
+            if (!p) return;
+            next.value = { kind: 'top_level', factor: p };
+            commit(next, `${C.value.topLevel.replace('…', '')} ${sourceName(p.source, model().titleOf)}`);
+            return;
+        }
+        if (p) next[field] = p; else delete next[field];
+        commit(next, p ? `${C.rows[field]} ${inputText(p.source, model().titleOf)}` : `no ${C.rows[field]}`);
+    }
+
+    /**
+     * The three selects of a row, as a cell plot's: a type change keeps what the row last had of the new type, a key
+     * change keeps the row's column, a provider entity listed under obs switches the type, and a provider's "New …"
+     * entry makes one beside this panel.
+     */
+    function wireSelects(row, stored, apply) {
+        const setup = () => on.setupAxis(row.element, row.axis, row.setting, row.roles);
+        const remember = (type, key, column) => {
+            const h = row.setting.history;
+            h[type] = { ...(h[type] || {}), key, columns: { ...((h[type] && h[type].columns) || {}), [key]: column } };
+        };
+        row.type.addEventListener('change', () => {
+            const s = row.setting;
+            const now = row.type.value;
+            if (s.type === now) return;
+            remember(s.type, s.key, s.column);
+            s.type = now;
+            s.key = getSource(now) ? ((s.history[now] && s.history[now].key) || '') : s.key;
+            if (now === 'none') { apply(null); return; }
+            setup();
+            apply(sourceFromSetting(s));
+        });
+        row.key.addEventListener('change', () => {
+            const s = row.setting;
+            let value = row.key.value;
+            const listed = parseListed(value);
+            if (listed) {
+                s.history[listed.type] = { ...(s.history[listed.type] || {}), key: listed.key };
+                row.type.value = listed.type;
+                row.type.dispatchEvent(new Event('change'));
+                return;
+            }
+            const provider = getSource(s.type);
+            if (provider && provider.newEntity && value === provider.newEntity.value) {
+                const made = provider.newEntity.run(id);
+                if (!made) { row.key.value = s.key || ''; return; }
+                value = made.getId();
+                s.column = '';
+            }
+            remember(s.type, s.key, s.column);
+            s.key = value;
+            setup();
+            apply(sourceFromSetting(s));
+        });
+        row.column.addEventListener('change', () => {
+            const s = row.setting;
+            const provider = getSource(s.type);
+            if (provider) {
+                if (on.takeSubKey(s, row.column)) apply(sourceFromSetting(s));
+                return;
+            }
+            s.column = row.column.value;
+            apply(sourceFromSetting(s));
+        });
+        // the cell plot's lock and refocus buttons, appended by setupAxisSelector for layer and obsp
+        row.selector.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            const s = row.setting;
+            if (btn.classList.contains('axis-lock-btn')) {
+                const holder = stored();
+                if (!holder) return;
+                lockInput(row.field, !holder.locked);
+            } else if (btn.classList.contains('axis-refocus-btn')) {
+                const m = model();
+                const want = s.type === 'obsp' ? m.focusedCell : m.focusedGene;
+                if (!want) return;
+                s.column = want;
+                apply(sourceFromSetting(s));
+            }
+        });
+        row.sync = () => {
+            const holder = stored();
+            const source = holder ? holder.source : null;
+            const sig = JSON.stringify([source, !!(holder && holder.locked), model().structureVersion]);
+            if (row.sig === sig) return;
+            row.sig = sig;
+            if (!histories.has(row.field)) histories.set(row.field, {});
+            row.setting = settingOf(holder, histories.get(row.field));
+            if (!holder && row.field !== 'split') {
+                // nothing chosen yet: the type menu with a blank first entry, and nothing in the other two
+                row.setting.type = '';
+                D.clear(row.type);
+                row.type.appendChild(option('', '—'));
+                for (const c of on.typeChoices(row.roles)) row.type.appendChild(option(c.value, c.text));
+                row.type.value = '';
+                row.type.disabled = false;
+                for (const select of [row.key, row.column]) { D.clear(select); select.disabled = true; }
+                return;
+            }
+            setup();
+            keepStoredColumn(row, source);
+        };
+    }
+
+    /**
+     * A layer or obsp source restored from a link keeps its gene or cell while there is no focus to follow; with a
+     * focus, an unlocked one follows it (CNT-17) as a cell plot's does, with no step of its own.
+     */
+    function keepStoredColumn(row, source) {
+        const s = row.setting;
+        if (!source || !(source.type === 'layer' || source.type === 'obsp') || !source.column || s.column === source.column) return;
+        const m = model();
+        const focus = source.type === 'layer' ? m.focusedGene : m.focusedCell;
+        if (focus && !s.locked) return;
+        s.column = source.column;
+        D.clear(row.column);
+        row.column.appendChild(option(source.column, source.column));
+        row.column.value = source.column;
+    }
+
+    function lockInput(field, locked) {
+        const c = model().config;
+        const next = { ...c };
+        const flip = (holder) => {
+            const out = { ...holder };
+            if (locked) out.locked = true; else delete out.locked;
+            return out;
+        };
+        if (field === 'measure') next.measure = flip(c.measure);
+        else if (field === 'factor') next.value = { ...c.value, factor: flip(c.value.factor) };
+        else next[field] = flip(c[field]);
+        commit(next, `${locked ? 'lock' : 'unlock'} ${C.rows[field] || field}`);
+    }
+
+    const parseListed = (value) => (on.parseListed ? on.parseListed(value) : null);
+
+    // ---------------------------------------------------------------- binning and levels of an input
+    function paintInputExtras(row, p, m, shownRows) {
+        D.clear(row.extra);
+        for (const mounted of mounts.filter((x) => x.row === row)) if (mounted.handle && mounted.handle.destroy) mounted.handle.destroy();
+        mounts = mounts.filter((x) => x.row !== row);
+        D.clear(row.binning);
+        D.clear(row.levels);
+        row.binning.hidden = true;
+        row.levels.hidden = true;
+        if (!p) return;
+        const numeric = m.isNumeric(p.source);
+        const binned = numeric && shownRows.binned.includes(row.field);
+        if (binned) {
+            const isOpen = open.binning.has(row.field);
+            row.extra.appendChild(el('button', { type: 'button', class: 'btn btn-sm btn-link ccnt-bins', aria: { expanded: String(isOpen), controls: `ccnt-binning-${id}-${row.field}` },
+                on: { click: () => { toggle(open.binning, row.field); paint(); } } }, `${binningLine(p, m.config.mode)} ${isOpen ? '▴' : '▾'}`));
+            row.binning.id = `ccnt-binning-${id}-${row.field}`;
+            if (isOpen && BINNING_SLOT.mount) {
+                row.binning.hidden = false;
+                const max = binsRange(m.config.mode).max;
+                const handle = BINNING_SLOT.mount(row.binning, {
+                    partitioning: forControl(p, m.config.mode), info: m.infos[row.field] || null, kind: 'count', max, titleOf: m.titleOf,
+                    commit: (next, label) => {
+                        const c = model().config;
+                        commit({ ...c, [row.field]: fromControl(next, c.mode) }, label);
+                    }
+                });
+                mounts.push({ row, handle });
+            }
+            return;
+        }
+        if (numeric) return;
+        // a categorical input: Choose levels (CNT-3, SHR-2)
+        const isOpen = open.levels.has(row.field);
+        row.extra.appendChild(el('button', { type: 'button', class: 'btn btn-sm btn-link ccnt-choose', aria: { expanded: String(isOpen), controls: `ccnt-levels-${id}-${row.field}` },
+            on: { click: () => { toggle(open.levels, row.field); paint(); } } }, `${C.buttons.chooseLevels} ${isOpen ? '▴' : '▾'}`));
+        row.levels.id = `ccnt-levels-${id}-${row.field}`;
+        if (isOpen) {
+            row.levels.hidden = false;
+            row.levels.append(...levelChooser(row.field, p, m.infos[row.field] || null, m));
+        }
+    }
+
+    function levelChooser(field, p, info, m) {
+        if (!info) return [el('div', { class: 'ccnt-levels__wait', text: `${VOCABULARY.plural.level[0].toUpperCase()}${VOCABULARY.plural.level.slice(1)} follow once the cells are counted.` })];
+        const set = (next, label) => commit({ ...model().config, [field]: next }, label);
+        const rowsOfLevels = levelRows(p, info, m.labelsOf(field));
+        const name = sourceName(p.source, m.titleOf);
+        const list = el('ul', { class: 'ccnt-levels__list', role: 'list', aria: { label: VOCABULARY.plural.level } }, rowsOfLevels.map((r) => {
+            const li = el('li', { class: 'ccnt-level', data: { id: r.id } });
+            const label = el('span', { class: 'ccnt-level__label', text: r.label });
+            const n = el('span', { class: 'ccnt-level__n', text: r.n === null ? '' : Number(r.n).toLocaleString('en-US') });
+            if (r.tickable) {
+                const box = el('input', { type: 'checkbox', checked: r.ticked, aria: { label: r.label } });
+                box.addEventListener('change', () => set(tickLevel(p, info, r.id, box.checked), `${box.checked ? 'tick' : 'untick'} ${r.label}`));
+                li.append(el('label', { class: 'ccnt-level__tick' }, box, label), n);
+            } else {
+                li.append(label, n);
+            }
+            return li;
+        }));
+        const restName = `ccnt-rest-${id}-${field}`;
+        const rest = (value, text) => el('label', { class: 'ccnt-rest-opt' },
+            el('input', { type: 'radio', class: 'ccnt-rest', name: restName, value, checked: (p.rest === 'exclude') === (value === 'exclude'),
+                on: { change: () => set(setRest(p, value), value === 'exclude' ? 'leave unticked levels out' : 'group unticked levels') } }), ` ${text}`);
+        return [
+            list,
+            el('div', { class: 'ccnt-rest-row', role: 'radiogroup', aria: { label: 'Unticked levels' } },
+                el('span', { text: 'Unticked levels ' }), rest('other', `Count as '${P.other(name)}'`), rest('exclude', 'Leave out')),
+            el('div', { class: 'ccnt-levels__actions' },
+                el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', on: { click: () => set(tickAll(p), 'tick all levels') } }, 'Tick all'),
+                el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', on: { click: () => set(tickNone(p), 'tick no level') } }, 'Tick none'))
+        ];
+    }
+
+    const toggle = (set, key) => { if (set.has(key)) set.delete(key); else set.add(key); };
+
+    // ---------------------------------------------------------------- Color by's arrangement
+    const arrangement = el('span', { class: 'ccnt-arrangement', role: 'radiogroup', aria: { label: 'Arrangement' } });
+    function paintArrangement(m, shownRows) {
+        D.clear(arrangement);
+        const ids = shownRows.arrangement;
+        arrangement.hidden = !ids.length || !m.config.split;
+        const now = m.config.arrangement || 'stack';
+        const group = `ccnt-arr-${id}`;
+        for (const a of ids) {
+            const input = el('input', { type: 'radio', name: group, value: a, checked: a === now, class: 'ccnt-arrangement__input',
+                on: { change: () => {
+                    const next = { ...model().config };
+                    if (a === 'stack') delete next.arrangement; else next.arrangement = a;
+                    commit(next, `${ARRANGEMENT_WORD(m.config.mode, a).toLowerCase()} bars`);
+                } } });
+            arrangement.appendChild(el('label', { class: 'ccnt-arrangement__opt' }, input, ` ${ARRANGEMENT_WORD(m.config.mode, a)}`));
+        }
+    }
+
+    // ---------------------------------------------------------------- Height / Color, with its source or its factor
+    const valueSelect = el('select', { class: 'form-select form-select-sm ccnt-value', id: `ccnt-value-${id}`,
+        on: { change: () => chooseValue(valueSelect.value) } });
+    const valueLabel = el('label', { class: 'ctl-label', for: `ccnt-value-${id}` });
+    const valueHelp = el('span', { class: 'ccnt-help ccnt-value__help' });
+    const valueRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--value' }, valueLabel, valueSelect, valueHelp);
+    const measureRow = selectsRow('measure', 'measure', C.rows.source);
+    measureRow.roles = ['x'];
+    const above = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-above', inputmode: 'decimal', placeholder: '0',
+        autocomplete: 'off', aria: { label: C.rows.above }, title: 'The threshold of % above: a cell counts when its value is above it.' });
+    const aboveWrap = el('label', { class: 'ccnt-above-wrap' }, `${C.rows.above} `, above);
+    measureRow.extra.appendChild(aboveWrap);
+    wireSelects(measureRow, () => inputOf('measure'), (source) => commitInput('measure', source));
+    rows.set('measure', measureRow);
+    const factorRow = selectsRow('factor', 'factor', C.rows.factor);
+    factorRow.roles = ['x'];
+    const fade = el('input', { type: 'checkbox', class: 'ccnt-fade',
+        on: { change: () => { const next = { ...model().config }; if (fade.checked) next.fade = true; else delete next.fade; commit(next, fade.checked ? 'fade by share' : 'no fade'); } } });
+    factorRow.extra.appendChild(el('label', { class: 'ccnt-fade-wrap' }, fade, ` ${C.buttons.fade}`));
+    wireSelects(factorRow, () => inputOf('factor'), (source) => commitInput('factor', source));
+    rows.set('factor', factorRow);
+
+    function commitAbove() {
+        const c = model().config;
+        if (!c.measure) return;
+        const text = above.value.trim();
+        const value = text === '' ? undefined : Number(text);
+        if (value !== undefined && !Number.isFinite(value)) { above.value = c.measure.above === undefined ? '' : String(c.measure.above); return; }
+        if (value === c.measure.above) return;
+        const measure = { ...c.measure };
+        if (value === undefined) delete measure.above; else measure.above = value;
+        commit({ ...c, measure }, `above ${value === undefined ? 0 : value}`);
+    }
+    above.addEventListener('change', commitAbove);
+    above.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitAbove(); } });
+
+    function chooseValue(choice) {
+        const m = model();
+        const next = applyValueChoice(m.config, choice, m.valueDefaults());
+        const entry = valueChoices(m.config).find((c) => c.value === choice);
+        if (!next) { valueSelect.value = valueChoiceOf(m.config); return; }
+        commit(next, `${rowsOf(m.config.mode).value === 'color' ? C.rows.color : C.rows.height} ${entry ? entry.label.replace('…', '') : choice}`);
+    }
+
+    function paintValue(m, shownRows) {
+        const kind = shownRows.value;
+        valueRow.hidden = !kind;
+        measureRow.element.hidden = true;
+        factorRow.element.hidden = true;
+        if (!kind) return;
+        valueLabel.textContent = kind === 'color' ? C.rows.color : C.rows.height;
+        D.clear(valueSelect);
+        const groups = new Map();
+        for (const c of valueChoices(m.config)) {
+            const o = option(c.value, c.label);
+            o.title = c.help;
+            if (!c.group) { valueSelect.appendChild(o); continue; }
+            if (!groups.has(c.group)) {
+                groups.set(c.group, el('optgroup', { label: C.value.groups[c.group] }));
+                valueSelect.appendChild(groups.get(c.group));
+            }
+            groups.get(c.group).appendChild(o);
+        }
+        const choice = valueChoiceOf(m.config);
+        valueSelect.value = choice;
+        const entry = valueChoices(m.config).find((c) => c.value === choice);
+        valueHelp.textContent = entry ? entry.help : '';
+        if (choice.startsWith('stat:')) {
+            measureRow.element.hidden = false;
+            measureRow.sync();
+            dropCategorical(measureRow);
+            aboveWrap.hidden = choice !== 'stat:pct_above';
+            if (document.activeElement !== above) above.value = m.config.measure.above === undefined ? '' : String(m.config.measure.above);
+        }
+        if (choice === 'top_level') {
+            factorRow.element.hidden = false;
+            factorRow.sync();
+            fade.checked = m.config.fade === true;
+        }
+    }
+
+    /** A statistic needs numbers: a categorical provider (a grouping) is not listed in its type menu. */
+    function dropCategorical(row) {
+        for (const o of [...row.type.options]) {
+            const provider = getSource(o.value);
+            if (provider && provider.valueType === 'categorical' && o.value !== row.setting.type) o.remove();
+        }
+    }
+
+    // ---------------------------------------------------------------- Labels, sort, reverse, horizontal, Plot Options
+    const labelsSelect = el('select', { class: 'form-select form-select-sm ccnt-labels', id: `ccnt-labels-${id}`,
+        on: { change: () => {
+            const next = { ...model().config };
+            if (labelsSelect.value === 'none') delete next.labels; else next.labels = labelsSelect.value;
+            commit(next, `labels ${C.labels[labelsSelect.value].toLowerCase()}`);
+        } } });
+    const pressed = (cls, text, field, value) => {
+        const btn = el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary ${cls}`, aria: { pressed: 'false' },
+            on: { click: () => {
+                const next = { ...model().config };
+                const on2 = btn.getAttribute('aria-pressed') !== 'true';
+                if (on2) next[field] = value; else delete next[field];
+                commit(next, `${on2 ? '' : 'no '}${text.toLowerCase()}`.trim());
+            } } }, text);
+        return btn;
+    };
+    const sortBtn = pressed('ccnt-sort', C.buttons.sort, 'sort', 'height');
+    const reverseBtn = pressed('ccnt-reverse', C.buttons.reverse, 'reverse', true);
+    const horizontalBtn = pressed('ccnt-horizontal', C.buttons.horizontal, 'horizontal', true);
+    const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-options-btn', aria: { expanded: 'false', controls: `ccnt-options-${id}` },
+        on: { click: () => { open.options = !open.options; paint(); } } }, C.buttons.options);
+    const logBox = el('input', { type: 'checkbox', class: 'ccnt-log',
+        on: { change: () => { const next = { ...model().config }; if (logBox.checked) next.log = true; else delete next.log; commit(next, logBox.checked ? 'log count axis' : 'linear count axis'); } } });
+    const ringBox = el('input', { type: 'checkbox', class: 'ccnt-ring',
+        on: { change: () => { const next = { ...model().config }; if (ringBox.checked) next.ring = true; else delete next.ring; commit(next, ringBox.checked ? 'ring' : 'pie'); } } });
+    const logWrap = el('label', { class: 'ccnt-opt' }, logBox, ` ${C.buttons.log}`);
+    const ringWrap = el('label', { class: 'ccnt-opt' }, ringBox, ` ${C.buttons.ring}`);
+    const adjust = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-adjust', inputmode: 'decimal', placeholder: '1',
+        autocomplete: 'off', aria: { label: C.buttons.adjust } });
+    const adjustNote = el('span', { class: 'ccnt-help ccnt-adjust__problem', role: 'alert' });
+    const commitAdjust = () => {
+        const c = model().config;
+        const r = parseAdjust(adjust.value);
+        adjustNote.textContent = r.ok ? '' : r.message;
+        if (!r.ok) { adjust.value = c.adjust === undefined ? '' : String(c.adjust); return; }
+        if (r.value === (c.adjust === undefined ? 1 : c.adjust)) return;
+        const next = { ...c };
+        if (r.value === 1) delete next.adjust; else next.adjust = r.value;
+        commit(next, `bandwidth adjust ${r.value}`);
+    };
+    adjust.addEventListener('change', commitAdjust);
+    adjust.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitAdjust(); } });
+    const adjustWrap = el('label', { class: 'ccnt-opt' }, `${C.buttons.adjust} `, adjust, adjustNote);
+    const toggleField = (cls, field, value, text) => {
+        const box = el('input', { type: 'checkbox', class: cls,
+            on: { change: () => { const next = { ...model().config }; if (box.checked) next[field] = value; else delete next[field]; commit(next, `${box.checked ? '' : 'no '}${text.toLowerCase()}`.trim()); } } });
+        return { box, wrap: el('label', { class: 'ccnt-opt' }, box, ` ${text}`) };
+    };
+    const bySize = toggleField('ccnt-bysize', 'scale', 'size', C.buttons.bySize);
+    const image = toggleField('ccnt-image', 'style', 'image', C.buttons.image);
+    const densityNotes = el('div', { class: 'ccnt-help ccnt-density-notes' });
+    const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-csv', on: { click: () => on.csv() } }, C.buttons.csv);
+    const optionsBox = el('div', { class: 'ccnt-options', id: `ccnt-options-${id}`, role: 'group', aria: { label: C.buttons.options }, hidden: true },
+        logWrap, ringWrap, adjustWrap, bySize.wrap, image.wrap, csvBtn, densityNotes);
+    const labelsRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--labels' },
+        el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, optionsBtn);
+
+    function paintLabels(m, shownRows) {
+        const o = drawOptions(m.config);
+        D.clear(labelsSelect);
+        for (const c of labelChoices(m.config)) labelsSelect.appendChild(option(c.value, c.label));
+        labelsSelect.value = o.labels;
+        labelsSelect.hidden = !shownRows.labels;
+        labelsRow.querySelector('label.ctl-label').hidden = !shownRows.labels;
+        const show = (btn, visible, isOn) => { btn.hidden = !visible; btn.setAttribute('aria-pressed', String(!!isOn)); btn.classList.toggle('active', !!isOn); };
+        show(sortBtn, shownRows.sort, o.sort === 'height');
+        show(reverseBtn, shownRows.reverse, o.reverse);
+        show(horizontalBtn, shownRows.horizontal, o.horizontal);
+        optionsBtn.setAttribute('aria-expanded', String(open.options));
+        optionsBox.hidden = !open.options;
+        logWrap.hidden = !shownRows.log;
+        logBox.checked = o.log;
+        ringWrap.hidden = !shownRows.ring;
+        ringBox.checked = o.ring;
+        adjustWrap.hidden = !shownRows.density;
+        if (document.activeElement !== adjust) adjust.value = m.config.adjust === undefined ? '' : String(m.config.adjust);
+        bySize.wrap.hidden = !(shownRows.density && m.config.split);
+        bySize.box.checked = o.scale === 'size';
+        image.wrap.hidden = shownRows.density !== 2;
+        image.box.checked = o.style === 'image';
+        densityNotes.textContent = shownRows.density && m.notes ? [m.notes.bandwidth, m.notes.floor].filter(Boolean).join(' ') : '';
+        densityNotes.hidden = !densityNotes.textContent;
+        csvBtn.disabled = !m.canExport;
+    }
+
+    // ---------------------------------------------------------------- the bar
+    const xRow = inputRow(INPUT_ROWS[0]);
+    const yRow = inputRow(INPUT_ROWS[1]);
+    const splitRow = inputRow(INPUT_ROWS[2]);
+    splitRow.extra.after(arrangement);
+    const setsSlot = el('div', { class: 'ccnt-sets', hidden: true });
+    const kept = el('div', { class: 'ccnt-kept', role: 'note' });
+    const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-undo', disabled: true, on: { click: () => on.undo() } }, C.buttons.undo);
+    const element = el('div', { class: 'ccnt-controls', 'data-panel-controls': '' },
+        modeRow, xRow.wrap, yRow.wrap, splitRow.wrap, setsSlot, valueRow, measureRow.element, factorRow.element, labelsRow, optionsBox, kept,
+        el('div', { class: 'ccnt-controls__foot' }, undoBtn));
+
+    function commit(next, label) {
+        on.commit(next, label);
+    }
+
+    let modesFilled = false;
+    function paint() {
+        const m = model();
+        const shownRows = rowsOf(m.config.mode);
+        if (!modesFilled) { fillModes(); modesFilled = true; }
+        modeSelect.value = m.config.mode;
+        xRow.labelEl.textContent = shownRows.slices ? C.rows.slices : C.rows.x;
+        xRow.wrap.hidden = !shownRows.x;
+        yRow.wrap.hidden = !shownRows.y;
+        splitRow.wrap.hidden = !shownRows.split;
+        setsSlot.hidden = !shownRows.sets;
+        if (m.structure) {
+            for (const row of [xRow, yRow, splitRow]) {
+                if (row.wrap.hidden) continue;
+                row.sync();
+                paintInputExtras(row, m.config[row.field] || null, m, shownRows);
+            }
+        }
+        paintArrangement(m, shownRows);
+        if (m.structure) paintValue(m, shownRows); else valueRow.hidden = true;
+        paintLabels(m, shownRows);
+        kept.textContent = keptLine(m.config, m.titleOf);
+        kept.hidden = !kept.textContent;
+        undoBtn.disabled = !m.undo;
+        undoBtn.title = m.undo ? `Undo: ${m.undo}` : 'Nothing to undo';
+        undoBtn.setAttribute('aria-label', m.undo ? `Undo: ${m.undo}` : C.buttons.undo);
+    }
+
+    return {
+        element,
+        /** Where the sets of Venn and UpSet are drawn (V1). */
+        setsElement: setsSlot,
+        paint,
+        /** The selects are filled again: the dataset or the panels changed (a provider's entities, the structure). */
+        refill() {
+            for (const row of rows.values()) row.sig = null;
+            modesFilled = false;
+        },
+        destroy() {
+            for (const mounted of mounts) if (mounted.handle && mounted.handle.destroy) mounted.handle.destroy();
+            mounts = [];
+        }
+    };
+}

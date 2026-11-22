@@ -386,7 +386,8 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
 
     /** The recipe that made a reply, with the renames and the separator of the recipe as it is now. */
     function namedRecipe(structure, live) {
-        if (!live || structure === live) return structure;
+        // a grid's config (a count plot's) has no factors of its own to rename: its reply is named by its inputs' sources
+        if (!live || structure === live || !Array.isArray(live.partitionings) || !Array.isArray(structure.partitionings)) return structure;
         const twins = new Map(live.partitionings.map((p) => [factorBody(p), p]));
         const partitionings = structure.partitionings.map((p) => {
             const twin = twins.get(factorBody(p));

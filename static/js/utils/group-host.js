@@ -213,6 +213,8 @@ function pageHost() {
                 return owner && typeof owner.axisSource === 'function' ? owner.axisSource() : null;
             }
             const p = panelOf(id);
+            // a panel that is a source of groups in a shape of its own (a count plot's grid) describes itself
+            if (p && typeof p.groupSource === 'function') return p.groupSource();
             if (typeOf(p) !== TYPE) return null;
             return { title: p.getTitle(), kind: 'grouping', recipe: () => p.getRecipe(), shape: GROUPING };
         },

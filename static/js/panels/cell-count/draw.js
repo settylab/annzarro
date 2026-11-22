@@ -219,10 +219,14 @@ function faded(colour, background, alpha) {
     return `#${c.map((v, i) => Math.round(v * alpha + b[i] * (1 - alpha)).toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** Labels of the most frequent level's factor: the caller's, or the default of the ids the table kept. */
+/**
+ * Labels of the most frequent level's factor: the default of each level, read from the factor's axis of the reply as an
+ * axis's are (a boolean column's two levels, a grouping's group names), with the factor's own renames over them.
+ */
 function topLabels(config, table, opts) {
-    if (opts.topLabels) return opts.topLabels;
-    const [map] = defaultLabelMaps({ partitionings: [config.value.factor] }, { partitionings: [{ levels: table.top.levels }] }, opts.titleOf);
+    const factor = config.value.factor;
+    const [map] = defaultLabelMaps({ partitionings: [factor] }, { partitionings: [{ ...table.top.info, levels: table.top.levels }] }, opts.titleOf);
+    for (const [id, text] of Object.entries(factor.labels || {})) map.set(id, text);
     return map;
 }
 
@@ -336,8 +340,8 @@ function pieFigure(config, table, opts) {
  * @param {Object} opts.inputNames - the title of each input by its name (`x`, `y`, `split`, `factor`)
  * @param {string[]} opts.palette - colors of a categorical input's levels, repeated past its length
  * @param {Object} opts.theme - the plot theme's `textColor`, `axisColor`, `gridColor`, `zeroLineColor`, `bgColor`, `notInTableColor`
- * @param {Map[]} [opts.labels] - one Map per table axis, level id to the label shown; defaults to `levelLabelsOf`
- * @param {Map} [opts.topLabels] - the labels of the most frequent level's factor
+ * @param {Map[]} [opts.labels] - one Map per table axis, level id to the label shown; defaults to `levelLabelsOf`. The
+ *   most frequent level's factor is labelled from the table's `top.info` and the factor's own `labels`
  * @param {string} [opts.measureSource] - the measure's source as the axis names it ("Mrpl15 · logged_counts")
  * @param {Function} [opts.titleOf] - the title of the panel behind a source, for the default labels
  * @returns {{data: Object[], layout: Object}}

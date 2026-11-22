@@ -134,6 +134,93 @@ const cellGene = Object.freeze({
 });
 
 /**
+ * The words of the Cell Count Plot (UX 4.1 to 4.5): its modes, the labels of its rows, the entries of Height and Color,
+ * the titles a value axis and a hover take, and the CSV headers. `count`, `fill`, `hoverCount`, `hoverShare`, `share`,
+ * `measure` and `topLevel` are what panels/cell-count/draw.js reads as its `words`. (`measure` is the code's name for a
+ * statistic of a per-cell source; the interface says "statistic".)
+ */
+const countPlot = Object.freeze({
+    count: 'Cells',
+    fill: '% of cells in each bar',
+    hoverCount: 'Cells',
+    hoverShare: 'Share',
+    /** A value axis of shares, by its base (plan 1.6 share bases), with the inputs' names. */
+    share: (base, names = {}) => {
+        switch (base) {
+            case 'x': case 'column': return `% within each ${names.x || 'X'}`;
+            case 'split': return `% within each ${names.split || 'color'}`;
+            case 'row': return `% within each ${names.y || 'Y'}`;
+            default: return `% of ${word.cellsShown}`;
+        }
+    },
+    /** A value axis of a statistic of a source ("Mean of Mrpl15 · logged_counts"). */
+    measure: (stat, source, above) => {
+        switch (stat) {
+            case 'sum': return `Sum of ${source}`;
+            case 'pct_above': return `% of cells with ${source} above ${above === undefined ? 0 : above}`;
+            case 'sd': return `SD of ${source}`;
+            case 'zscore': return `z-score of ${source}`;
+            default: return `Mean of ${source}`;
+        }
+    },
+    topLevel: (name) => `Most frequent ${word.level} of ${name}`,
+    csv: Object.freeze({ count: 'Cells', share: 'Share', measure: capital(word.statistic) }),
+    /** The Mode select: its groups in order, each with its modes (UX 4.1). */
+    modeGroups: Object.freeze([
+        Object.freeze({ label: 'Counts', modes: Object.freeze(['bar', 'histogram', 'pie']) }),
+        Object.freeze({ label: 'Two inputs', modes: Object.freeze(['hist2d', 'heatmap']) }),
+        Object.freeze({ label: 'Smoothed', modes: Object.freeze(['density', 'density2d']) }),
+        Object.freeze({ label: 'Sets', modes: Object.freeze(['venn', 'upset']) })
+    ]),
+    modes: Object.freeze({
+        bar: 'Bar', histogram: 'Histogram', pie: 'Pie', hist2d: '2D histogram', heatmap: 'Heatmap',
+        density: 'Density', density2d: '2D density', venn: 'Venn', upset: 'UpSet'
+    }),
+    /** The labels of the rows (UX 4.1); a pie's X is its slices. */
+    rows: Object.freeze({
+        mode: 'Mode', x: 'X', y: 'Y', split: 'Color by', slices: 'Slices', height: 'Height', color: 'Color', labels: 'Labels',
+        sets: capital(plural.set), factor: 'Of', source: 'Of', above: 'Above'
+    }),
+    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', fill: '100%', overlay: 'Overlaid' }),
+    /** The entries of Height and Color (UX 4.5), and the help line of each. */
+    value: Object.freeze({
+        count: 'Count',
+        share: Object.freeze({
+            all: `Share of all ${word.cellsShown}`, x: 'Share within each X', split: 'Share within each color',
+            row: 'Share of the row', column: 'Share of the column', total: 'Share of the total'
+        }),
+        stat: Object.freeze({ mean: 'Mean of…', sum: 'Sum of…', pct_above: '% above…', sd: 'SD of…', zscore: 'z-score of…' }),
+        topLevel: `Most frequent ${word.level} of…`,
+        groups: Object.freeze({ share: 'Share', stat: capital(word.statistic) })
+    }),
+    valueHelp: Object.freeze({
+        count: 'Cells in the bar.',
+        countColor: 'Cells in the rectangle.',
+        share: 'As percent.',
+        heatmapShare: 'As percent: of the row, of the column, of the total.',
+        stat: 'A statistic of the source below, over the cells of the bar.',
+        zscore: "The bar's mean against all counted cells.",
+        topLevel: `Colors each rectangle by its commonest ${word.level}.`
+    }),
+    labels: Object.freeze({ none: 'None', count: 'Count', share: 'Share', measure: capital(word.statistic) }),
+    buttons: Object.freeze({
+        sort: 'Sort by height', reverse: 'Reverse', horizontal: 'Horizontal', options: 'Plot Options', ring: 'Ring', log: 'Log count axis',
+        fade: 'Fade by its share', csv: 'Download CSV', chooseLevels: `Choose ${plural.level}`, undo: 'Undo',
+        adjust: 'Bandwidth adjust', bySize: 'Scale curves by level size', image: 'As an image'
+    }),
+    adjustProblem: 'Enter a number from 0.1 to 10.',
+    /** The inputs a mode does not read, still stored (CNT-6, UX 4.2). */
+    kept: (items) => `Kept for other modes: ${items.join(' · ')}`,
+    /** The compact binning line of a numeric input (UX 4.4). */
+    bins: (parts) => `Bins: ${parts.join(' · ')}`,
+    empty: Object.freeze({ choose_x: 'Choose X to count cells.', choose_y: 'Choose Y to count cells.', choose_sets: `Add two or more ${plural.set}.` }),
+    needsNumeric: (mode, input, name) => `${mode} needs a numeric ${input}. ${name} is categorical.`,
+    tooManySets: 'Venn shows 2 or 3 sets.',
+    notDrawn: (mode) => `${mode} is not available in this build.`,
+    counting: (n) => `Counting ${n.toLocaleString('en-US')} cells…`
+});
+
+/**
  * What a notice says while a computation waits or runs (SHR-47, SHR-48, UX 3.5): the server's place for it and the
  * time left. The page never names whose a job ahead is unless it is its own; these are the fallback sentences.
  */
@@ -176,4 +263,4 @@ function count(n, noun) {
     return `${n.toLocaleString('en-US')} ${n === 1 ? word[noun] : plural[noun]}`;
 }
 
-export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, progress, reasons });
+export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, countPlot, progress, reasons });
