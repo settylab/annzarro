@@ -86,6 +86,7 @@ function readCodes(handleOf) {
  * @param {Object} p.words - interface words (utils/vocabulary.js)
  * @returns {Promise<{ok: true, parts: string[]}|{ok: false, reason: string}>}
  */
+// export-unused-ok: the entry below wraps it; cell-export.test.mjs drives it directly, with fake sources and no DOM
 export async function exportCells({ id, deps, words, rowsPerChunk, yieldTurn }) {
     const gate = offer({ cells: deps.cells(), words });
     if (!gate.enabled) return { ok: false, reason: gate.reason };
