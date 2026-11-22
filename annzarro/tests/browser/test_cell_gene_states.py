@@ -146,6 +146,21 @@ def test_too_large_with_the_groups_known_is_decided_without_any_request(page, se
     assert {f["layer"] for f in page.calls[-1]["features"]} == {"counts"}
 
 
+def test_too_large_reads_the_groups_of_a_grouping_panel_that_holds_them_with_no_request(page, served):
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "many"}}]}
+    _open(page, served, {P: _plot(mode="heatmap", cellAxis={"type": "cell-group", "key": GA}),
+                         S1: _sig(S1, "All genes", GENES), GA: grouping}, open_ids=(P, S1, GA))
+    # the grouping panel computes its own groups; the plot, with no genes, asks nothing
+    until(page, "(id) => { const s = window.PanelManager.getPanel(id)._debugState(); return s.state === 'ready' && s.groups === 1200; }", GA, timeout=60)
+    # (the grouping's own grid may ask for the focused gene; the plot's genes are what must never be asked for)
+    n = len(page.calls)
+    _set(page, {"sections": _sections(9)})
+    _wait_state(page, "toolarge")
+    _says(page, TOO_LARGE)
+    _settle(page, "the grouping panel's groups decide the limit; the requests it makes unneeded never go out")
+    assert len(page.calls) == n, "no request at all: not the groups (held), not the genes (above the limit)"
+
+
 # ------------------------------------------------------------------ 3. asks first (SHR-32)
 
 def test_asks_first_with_an_upper_bound_compute_and_fewer_genes(page, served):
@@ -231,6 +246,7 @@ def test_ready_says_groups_by_rows_in_the_strip(page, served):
                          S1: _sig(S1, "Markers", GENES[:5])}, open_ids=(P, S1))
     _drawn(page)
     until(page, "(s) => { const t = document.querySelector(s + ' .ps-tag[data-tag=\"cgene-matrix\"]'); return t && t.textContent === '6 groups × 5 rows'; }", TP)
+    assert len(page.calls) == 1, "rows under 200 cannot exceed the limit: the groups and the genes in one request"
 
 
 # ------------------------------------------------------------------ 8. error
