@@ -17,8 +17,12 @@
  *            min?, max?, center?, title?, printValues? },
  *   size:  { id, stat, layer?, detectAbove?, values, dotMin?, dotMax?, smallest?, largest?, title? }
  *        | { none: sentence },                    No size: one dot size, the legend replaced by the sentence
- *   legend?: { colorBar?: boolean, sizeLegend?: boolean }, plotTitle?: string }
+ *   legend?: { colorBar?: boolean, sizeLegend?: boolean, strips?: boolean }, plotTitle?: string,
+ *   pendingText?: string }                        what a row still being read says (rows[].pending, CXG-18)
  * ```
+ * A row with `pending: true` is a placeholder of a section still being read (CXG-18): its cells are drawn faint, with
+ * `pendingText` in the hover, never as missing values. A strip of draw-annotations.js with a `legend` ({label, colour}
+ * per level) gets a legend in the legend column, below the color bars and size legends (X5).
  * `values` are `rows x groups` Float64Arrays (`values[row * groups + group]`, NaN for no value) as the model's scale()
  * and setRow() write them; `values` of `color` are the values as displayed (scaled), `raw` the statistic as computed.
  *
@@ -52,6 +56,9 @@ const LEGEND_SLOT_MAX = 0.3;
 const MODEBAR_PX = 36;
 const DEFAULT_HEIGHT = 600;
 const MAIN = 'main';
+/** A line of a strip's legend, in px: its levels are listed while they fit, then "+ N more". */
+const LEGEND_LINE_PX = 15;
+const PENDING_DOT = 5;
 
 /** Plotly reads a little markup in titles, ticks and hover text, so a name holding `<` or `&` is escaped. */
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -243,6 +250,8 @@ function legendStack(model, P, dots) {
         if (model.size.none) items.push({ kind: 'none' });
         else for (const k of P.size) items.push({ kind: 'size', key: k.key });
     }
+    const strips = (model.annotations && model.annotations.strips) || [];
+    if (wanted('strips')) strips.forEach((strip, i) => { if (strip.legend && strip.legend.length) items.push({ kind: 'strip', index: i }); });
     const reserve = MODEBAR_PX / Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
     const slot = Math.min(LEGEND_SLOT_MAX, (0.96 - reserve) / Math.max(items.length, 1));
     items.forEach((it, i) => {
@@ -286,6 +295,45 @@ function sizeLegendParts(model, k, entry, n, th) {
         align: 'left', text: k.lines.map(esc).join('<br>'), font: { color: th.textColor }
     };
     return { trace, axes, title };
+}
+
+/**
+ * The legend of one strip: its factor as the title, then a swatch and the label of each level, as many as the slot
+ * holds, the last line "+ N more" when they do not all fit.
+ */
+function stripLegendParts(model, strip, entry, n, th) {
+    const plotPx = Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
+    const titleRoom = Math.min(0.07, entry.height * 0.3);
+    const fit = Math.max(1, Math.floor(((entry.height - titleRoom) * plotPx) / LEGEND_LINE_PX));
+    const all = strip.legend;
+    const shown = all.length <= fit ? all : all.slice(0, fit - 1);
+    const more = all.length - shown.length;
+    const lines = shown.length + (more ? 1 : 0);
+    const axisId = n + 2;
+    const trace = {
+        type: 'scatter', mode: 'markers+text', name: 'strip legend', hoverinfo: 'skip', showlegend: false,
+        xaxis: `x${axisId}`, yaxis: `y${axisId}`,
+        x: Array.from({ length: lines }, () => 0), y: Array.from({ length: lines }, (_, j) => j),
+        text: [...shown.map((e) => esc(e.label)), ...(more ? [esc(W.options.more(more))] : [])], textposition: 'middle right', cliponaxis: false,
+        marker: { symbol: 'square', size: 10, color: [...shown.map((e) => e.colour), ...(more ? ['rgba(0,0,0,0)'] : [])], line: { width: 0 } },
+        textfont: { color: th.textColor }
+    };
+    const top = entry.top - titleRoom;
+    const axes = {
+        [`xaxis${axisId}`]: { domain: [LEGEND_X + 0.01, 1], range: [-0.6, 6], visible: false, fixedrange: true },
+        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, top], range: [Math.max(lines, fit) - 0.5, -0.5], visible: false, fixedrange: true }
+    };
+    const title = {
+        name: 'strip legend title', xref: 'paper', yref: 'paper', x: LEGEND_X, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,
+        align: 'left', text: esc(strip.title), font: { color: th.textColor }
+    };
+    return { trace, axes, title };
+}
+
+/** The hover of a placeholder cell (CXG-18): the group, the row, and what is being read. */
+function pendingHover(model) {
+    const said = esc(model.pendingText || '');
+    return (r, g) => `${esc(model.groups[g].label)}<br>${esc(model.rows[r].label)}<br>${said}`;
 }
 
 // --- axes -------------------------------------------------------------------------------------------------------
@@ -357,9 +405,33 @@ function dotTraces(model, P, stack, th) {
         if (entry) marker.colorbar = colourBar(entry, k.lines, th);
         return { type: 'scatter', mode: 'markers', x, y, text, hoverinfo: 'text', showlegend: false, marker };
     });
+    const pending = pendingRows(model);
+    if (pending.length) {
+        const hover = pendingHover(model);
+        const x = [];
+        const y = [];
+        const text = [];
+        for (const r of pending) {
+            for (let g = 0; g < G; g++) {
+                x.push(swap ? g : P.pos[r]);
+                y.push(swap ? P.pos[r] : g);
+                text.push(hover(r, g));
+            }
+        }
+        traces.push({ type: 'scatter', mode: 'markers', name: 'rows being read', x, y, text, hoverinfo: 'text', showlegend: false,
+            marker: { size: PENDING_DOT, symbol: 'circle-open', color: th.axisColor, opacity: 0.6 } });
+        total += x.length;
+    }
     const type = total > DOT_SVG_MAX ? 'scattergl' : 'scatter';
-    for (const t of traces) t.type = type;
+    for (const t of traces) if (t.name !== 'rows being read') t.type = type;
     return traces;
+}
+
+/** The rows still being read (CXG-18). */
+function pendingRows(model) {
+    const out = [];
+    model.rows.forEach((row, r) => { if (row.pending) out.push(r); });
+    return out;
 }
 
 // --- heatmap ----------------------------------------------------------------------------------------------------
@@ -377,6 +449,7 @@ function heatmapTraces(model, P, stack, th) {
     const ys = Array.from({ length: Y }, (_, k) => k);
     const describe = describer(model, P, false);
     const noValue = [];
+    const pending = new Set(pendingRows(model));
 
     const layers = P.colour.map((k) => {
         const z = blank(Y, X);
@@ -390,7 +463,7 @@ function heatmapTraces(model, P, stack, th) {
                 if (Number.isFinite(v)) {
                     z[yy][xx] = v;
                     text[yy][xx] = describe(r, g, i);
-                } else {
+                } else if (!pending.has(r)) {
                     noValue.push(yy, xx, describe(r, g, i));
                 }
             }
@@ -415,6 +488,23 @@ function heatmapTraces(model, P, stack, th) {
         layers.push({
             type: 'heatmap', x: xs, y: ys, z, text, hoverinfo: 'text', hoverongaps: false, showscale: false,
             colorscale: [[0, GAP_COLOUR], [1, GAP_COLOUR]], zmin: 0, zmax: 1
+        });
+    }
+    if (pending.size) {
+        const hover = pendingHover(model);
+        const z = blank(Y, X);
+        const text = Array.from({ length: Y }, () => new Array(X));
+        for (const r of pending) {
+            for (let g = 0; g < G; g++) {
+                const yy = swap ? P.pos[r] : g;
+                const xx = swap ? g : P.pos[r];
+                z[yy][xx] = 1;
+                text[yy][xx] = hover(r, g);
+            }
+        }
+        layers.push({
+            type: 'heatmap', name: 'rows being read', x: xs, y: ys, z, text, hoverinfo: 'text', hoverongaps: false, showscale: false,
+            colorscale: [[0, th.gridColor], [1, th.gridColor]], zmin: 0, zmax: 1, opacity: 0.6
         });
     }
     return layers;
@@ -449,7 +539,12 @@ export function buildFigure(model, theme) {
 
     let sized = 0;
     for (const entry of stack) {
-        if (entry.kind === 'size') {
+        if (entry.kind === 'strip') {
+            const parts = stripLegendParts(model, model.annotations.strips[entry.index], entry, sized++, th);
+            data.push(parts.trace);
+            Object.assign(layout, parts.axes);
+            layout.annotations.push(parts.title);
+        } else if (entry.kind === 'size') {
             const parts = sizeLegendParts(model, P.size.find((k) => k.key === entry.key), entry, sized++, th);
             data.push(parts.trace);
             Object.assign(layout, parts.axes);

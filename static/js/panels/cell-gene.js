@@ -24,9 +24,10 @@
  *        the heatmap hint of a drawn plot). `_debugState().state` is what the tests read.
  *   X4b  draw-annotations.js adds brackets, strips, totals and dendrograms to the figure `drawFigure` builds; the rows
  *        carry their section ({index, title}), and order()'s blocks are kept in `_shown.order` for the dendrograms.
- *   X5   options.js mounts Cluster ▾ and Plot Options in the control grid's `layoutSlot` (`PARTS.options`), and sets
- *        the style fields (colorScale, gap, sortGroups, legend, ...) with `ctx.set(patch, label)`; they are read here
- *        already where the figure needs them.
+ *   X5   options.js mounts Cluster ▾ and Plot Options in the control grid's `layoutSlot` (`PARTS.options`), sets the
+ *        style fields with `ctx.set(patch, label)`, and says what they add to the figure (`figureExtras`,
+ *        `barSettings`). A section added while the others are drawn shows placeholder rows until its genes are read
+ *        (CXG-18, `pendingRows`).
  *
  * It touches no DOM until init(): a closed plot restored from a link or a panel set is constructed and never
  * initialised, and computes nothing (PER-5).
@@ -38,7 +39,7 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { setStatusTag } from '../utils/panel-surface.js';
 import { UndoStack, serverRecipe } from '../utils/gene-signature.js';
-import { AXIS_PREFIX, groupSources, panelOf, typeOf, isOpen, titleOfPanel, hasGene, loadStructure, structureRead, resetStructure } from '../utils/group-host.js';
+import { AXIS_PREFIX, groupSources, panelOf, typeOf, isOpen, titleOfPanel, hasGene, loadStructure, structureRead, resetStructure, sourceTitleOf } from '../utils/group-host.js';
 import { registerReferences, wouldLoop, dependsOn } from '../utils/panel-references.js';
 import { createHostBinding, isVisible } from '../utils/host-binding.js';
 import { GROUPING } from '../utils/group-sources.js';
@@ -68,6 +69,9 @@ import {
 import {
     gateMatrix, describePlot, ownJobAhead, plotState, matrixTag, oneCellPerGroup, sizeFirst, createChecklist
 } from './cell-gene/states.js';
+import { OPTIONS_PART, figureExtras, barSettings } from './cell-gene/options.js';
+import { effectiveSmall } from '../utils/cell-grouping.js';
+import { RESERVED } from '../utils/level-id.js';
 
 const TYPE = 'cell-gene';
 const GROUPING_TYPE = 'cell-grouping';
@@ -77,19 +81,14 @@ const PANEL_KEYS = ['id', 'title', 'controlsVisible', '_closed', 'active'];
 /** The provider id of this panel's notices and their buttons (utils/host-binding.js, utils/source-actions.js). */
 const PROVIDER = 'cell-gene';
 const ROLE = 'axis';
-const DEFAULT_GAP = 1;
-const DEFAULT_SCALE = 'Viridis';
-const DEFAULT_CLUSTER = Object.freeze({ genes: 'off', groups: 'off', linkage: 'complete', distance: 'correlation' });
 
 registerReferences(TYPE, cellGeneReferences);
 
 /**
- * The parts later steps draw into the panel: `{mount(slot, ctx) -> {update(), destroy()}}` or null. X5 mounts Cluster ▾
- * and Plot Options in the Layout group, with `ctx.config()` and `ctx.set(patch, label)`.
- * @type {{options: ?Object}}
+ * The parts drawn into the panel: `{mount(slot, ctx) -> {update(), destroy()}}`. Cluster ▾ and Plot Options go in the
+ * Layout group (panels/cell-gene/options.js).
  */
-// export-unused-ok: X5 mounts Cluster and Plot Options here
-export const PARTS = { options: null };
+const PARTS = Object.freeze({ options: OPTIONS_PART });
 
 const W = VOCABULARY.word;
 const STATES = VOCABULARY.cellGene.states;
@@ -212,6 +211,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
         /** the cell axis's applied recipe as last seen: the recipe its groups are of while edits wait or are checked */
         let _applied = null;
+        /** pendingRows's answer for the plan last looked at (CXG-18): {now, held, rows} */
+        let _pending = { now: null, held: null, rows: null };
 
         function configFrom(raw) {
             const fields = {};
@@ -638,13 +639,17 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             plot.__azCellGene = true;
             plot.__azChooser = null;
             const area = el('div', { class: 'cgene-area' }, plot, el('div', { class: 'cgene-empty' }, checklist));
-            _controls.element.appendChild(el('div', { class: 'cgene-undo-wrap' }, undoBtn));
-            root.append(_controls.element, message, hint, area);
+            // Show as table (UX 7): Plot Options fills it
+            const table = el('div', { class: 'cgene-table', hidden: true });
+            // Cluster ▾ and Plot Options open here, the width of the control grid (panels/cell-gene/options.js)
+            const menus = el('div', { class: 'cgene-menus' });
+            _controls.element.append(el('div', { class: 'cgene-undo-wrap' }, undoBtn), menus);
+            root.append(_controls.element, message, hint, area, table);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
             plot.__azChooser = root.querySelector('.cgene-axis-key');
-            _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area,
+            _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area, table, menus,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (typeof ResizeObserver !== 'undefined') {
                 _resize = new ResizeObserver(() => { if (_dom && _dom.plot._fullLayout) fitToContainer(_dom.plot); });
@@ -658,8 +663,22 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         const withThreshold = (spec) => (isNumber(spec.detect_above) ? { detect_above: spec.detect_above } : {});
 
         function mountParts() {
-            const ctx = { panelId: _id, config: () => _config, set: (patch, label) => commit({ ..._config, ...patch }, label) };
-            if (PARTS.options) _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
+            const ctx = {
+                panelId: _id, D, config: () => _config, set: (patch, label) => commit({ ..._config, ...patch }, label), undo,
+                // the drawing as last drawn, for the clustering's sentences and Show as table
+                drawn: () => (_shown && _shown.model ? { model: _shown.model, order: _shown.order } : null),
+                // the recipe the cell axis's groups are of, for "Within <first factor>"
+                recipe: shownRecipe, titleOf: sourceTitleOf,
+                title: () => _title,
+                menuHost: _dom.menus, tableHost: _dom.table
+            };
+            _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
+        }
+
+        /** The grouping recipe the cell axis's groups are of: the one last applied, or the stored one. */
+        function shownRecipe() {
+            const id = axisId();
+            return id ? groupsIdentity(id).recipe : null;
         }
 
         /** Toggle Controls: the control grid hides, the plot stays. */
@@ -794,6 +813,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 }
             }
             if (snap.state === 'ready' && snap.values && (!_shown || _shown.key !== (snap.shownKey || snap.key))) { redraw(); return; }
+            // a section added while the others are drawn: its placeholder rows, once per plan, not per progress frame (CXG-18)
+            if (snap.state === 'updating' && snap.values && _plan && _pending.now !== _plan && _planOf.has(snap.values) && _planOf.get(snap.values) !== _plan) {
+                redraw();
+                return;
+            }
             _state = stateOf();
             _dom.root.dataset.state = _state;
         }
@@ -838,14 +862,29 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 return;
             }
             const key = snap.shownKey || snap.key;
-            // while other features compute, the drawing stays as it is (it was made with the settings of its own request)
-            if (snap.state !== 'ready' && _shown) { paint(); return; }
-            const inputs = [values, plan, _config, _kinds, currentTheme()];
+            // while other features compute, the drawing stays as it is (it was made with the settings of its own request),
+            // except that a section added meanwhile is drawn with placeholder rows (CXG-18)
+            let shownPlan = plan;
+            let pending = null;
+            if (snap.state !== 'ready') {
+                const now = currentPlan();
+                pending = snap.state === 'updating' && now !== plan ? pendingRows(now, plan) : null;
+                if (pending) shownPlan = now;
+            }
+            // only rows added to a drawing: a quiet recompute, said by the placeholder rows and, past 10 s, the strip's bar,
+            // never an overlay (decision 21); a first draw or an edit that changes the drawing keeps its notice
+            if (rec.quiet !== !!pending) {
+                rec.quiet = !!pending;
+                binding.paint(_dom.plot);
+            }
+            if (snap.state !== 'ready' && !pending && _shown) { paint(); return; }
+            const inputs = [values, shownPlan, _config, _kinds, currentTheme()];
             if (_shown && _shown.inputs.every((x, i) => x === inputs[i])) { paint(); return; }
             let figure;
             let order;
+            let model;
             try {
-                ({ figure, order } = await drawFigure(values, plan));
+                ({ figure, order, model } = await drawFigure(values, plan, shownPlan, pending));
             } catch (error) {
                 console.error(`Cell-Gene Plot ${_id}:`, error);
                 return;
@@ -856,7 +895,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             if (token !== _drawToken || !_dom) return;
             setStatusTag(_dom.plot, 'cgene-matrix', matrixTag(figure.groups, figure.rows, figure.missing));
             const oneCell = oneCellPerGroup({ mode: _config.mode, size: _config.size, sized: sizeDrawn(), groups: values.reply.groups || [] });
-            _shown = { key, inputs, order, rows: figure.rows, groups: figure.groups, oneCell };
+            _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell };
             rec.drawnKey = key;
             binding.paint(_dom.plot);
             paint();
@@ -868,11 +907,37 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _shown = null;
         }
 
-        /** The figure of the values a plan asked for, in the order of cell-gene-order.js. */
-        async function drawFigure(values, plan) {
+        /**
+         * The rows of `now` whose features `held` (the plan the shown values were asked with) lacks, when they are whole
+         * sections added while the others are drawn (CXG-18); null otherwise (an edit that changes every row keeps the
+         * drawing as it is until its values come).
+         */
+        function pendingRows(now, held) {
+            if (_pending.now === now && _pending.held === held) return _pending.rows;
+            _pending = { now, held, rows: placeholderRows(now, held) };
+            return _pending.rows;
+        }
+
+        function placeholderRows(now, held) {
+            const have = new Set(held.features.map((f) => f.key));
+            const keysOf = (part) => (!part ? [] : typeof part === 'string' ? [part] : part.key !== undefined ? [part.key] : part.keys || []);
+            const missing = now.rows.map((row) => [...keysOf(row.color), ...keysOf(row.size)].some((k) => k && !have.has(k)));
+            const partly = new Set();
+            const whole = new Set();
+            now.rows.forEach((row, r) => { (missing[r] ? whole : partly).add(row.section); });
+            for (const section of whole) if (partly.has(section)) return null;
+            return whole.size && partly.size ? missing : null;
+        }
+
+        /**
+         * The figure of the values `asked` (the plan they were asked with) holds, in the order of cell-gene-order.js: `plan`
+         * is the plan whose rows are drawn (the values' own, or a newer one whose `pending` rows are placeholders while
+         * their genes are read).
+         */
+        async function drawFigure(values, asked, plan = asked, pending = null) {
             const reply = values.reply;
             const groups = reply.groups || [];
-            const byKey = new Map(plan.features.map((f, i) => [f.key, values.features[i]]));
+            const byKey = new Map(asked.features.map((f, i) => [f.key, values.features[i]]));
             const momentsOf = (key) => {
                 const f = byKey.get(key);
                 return f && f.moments && !(f.status && f.status.status === 'missing') ? f.moments : null;
@@ -890,6 +955,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const G = groups.length;
             const R = matrix.rows.length;
             const colorSettings = colourSettings(matrix.color);
+            const style = figureExtras(_config);
             const bars = colourBars({ values: matrix.color.values, rows: R, groups: G }, barSections(matrix.rows), colorSettings);
             const orderSections = [];
             plan.rows.forEach((row) => {
@@ -899,39 +965,55 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             });
             const parts = Array.isArray(reply.partitionings) ? reply.partitionings.length : 1;
             const order = await _order.order({ values: matrix.color.values, sections: orderSections, bars, groups, partitionings: parts,
-                cluster: { ...DEFAULT_CLUSTER, ...(_config.cluster || {}) }, sortBySize: !!_config.sortGroups });
+                cluster: style.cluster, sortBySize: style.sortBySize });
             const names = groupSources().sources.namesOf(axisId(), reply);
             const permute = (arr) => (arr ? reorder(arr, order.rows, order.groups, G) : arr);
-            const gap = isNumber(_config.gap) ? Math.max(0, Math.min(3, _config.gap)) : DEFAULT_GAP;
+            const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf });
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
                 const prev = k > 0 ? matrix.rows[order.rows[k - 1]] : null;
-                return { label: row.label, section: row.section, own: row.own,
-                    gapBefore: prev && prev.section.index !== row.section.index ? gap : 0 };
+                return { label: row.label, section: row.section, own: row.own, pending: !!(pending && pending[r]),
+                    gapBefore: prev && prev.section.index !== row.section.index ? extras.gap : 0 };
             });
             const sizeNone = sizeProblem();
+            // a small group kept as it is gets "small" after its label (CXG-14, SHR-12); the collected one is named so already
+            const smallRule = effectiveSmall(shownRecipe() || {});
+            const isSmall = (group) => smallRule.mode === 'keep' && group.n < smallRule.threshold
+                && !(group.key.length === 1 && group.key[0] === RESERVED.small);
             const model = {
                 mode: _config.mode, swap: !!_config.swap,
-                groups: Array.from(order.groups, (g) => ({ label: names[g] || '', n: groups[g].n })),
+                pixels: { width: _dom.plot.clientWidth || 900, height: _dom.plot.clientHeight || 600 },
+                groups: Array.from(order.groups, (g) => ({ label: names[g] || '', n: groups[g].n, small: isSmall(groups[g]) })),
                 rows,
-                color: { ...colorSettings, values: permute(matrix.color.values), raw: permute(matrix.color.raw),
-                    noExpressing: permute(matrix.color.noExpressing), colorscale: _config.colorScale || DEFAULT_SCALE },
+                color: { ...colorSettings, ...extras.color, values: permute(matrix.color.values), raw: permute(matrix.color.raw),
+                    noExpressing: permute(matrix.color.noExpressing) },
                 size: _config.mode !== 'dots' ? { none: '' } : sizeNone ? { none: sizeNone }
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
-                        values: permute(matrix.size.values) }
+                        ...extras.size, values: permute(matrix.size.values) },
+                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations,
+                pendingText: pending ? pendingText(plan, pending) : ''
             };
             const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });
-            // the cells of the matrix with no value, for the strip (CXG-16): once per drawing
+            // the cells of the matrix with no value, for the strip (CXG-16): once per drawing; placeholders are not missing
             let missing = 0;
-            for (const v of matrix.color.values) if (Number.isNaN(v)) missing++;
-            return { figure: { ...figure, rows: rows.length, groups: model.groups.length, missing }, order };
+            for (let r = 0; r < R; r++) {
+                if (pending && pending[r]) continue;
+                for (let i = r * G, end = i + G; i < end; i++) if (Number.isNaN(matrix.color.values[i])) missing++;
+            }
+            return { figure: { ...figure, rows: rows.length, groups: model.groups.length, missing }, order, model };
         }
 
-        /** The color bar's settings: the quantity and its scaling (draw.js colourBars). */
+        /** "Reading 12 genes": what the placeholder rows of a plan say (CXG-18), from the genes of their sections. */
+        function pendingText(plan, pending) {
+            const genes = new Set();
+            plan.rows.forEach((row, r) => { if (pending[r]) for (const g of plan.entries[row.section].genes) genes.add(g); });
+            return STATES.reading(STATES.genes(genes.size), 0, 0);
+        }
+
+        /** The color bar's settings: the quantity, its scaling, and Plot Options' Min, Max, Center and title (draw.js colourBars). */
         function colourSettings(color) {
             return { id: color.id, stat: color.stat, layer: color.layer, detectAbove: color.detectAbove, scaling: color.scaling,
-                ...(isNumber(_config.limits && _config.limits[0]) ? { min: _config.limits[0] } : {}),
-                ...(isNumber(_config.limits && _config.limits[1]) ? { max: _config.limits[1] } : {}) };
+                ...barSettings(_config) };
         }
 
         /** The rows as colourBars reads them: a one-row section with a quantity of its own apart, every other row together. */
