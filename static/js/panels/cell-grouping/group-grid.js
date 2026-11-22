@@ -18,6 +18,9 @@ import { makeDom } from '../gene-set-utilities/dom.js';
 import { createVirtualGrid, columnRange } from '../../utils/virtual-grid.js';
 import { KIND_CLIENT } from '../score-options/score-options.js';
 import { groupSources, sourceTitleOf } from '../../utils/group-host.js';
+import { codesRefusal } from '../../utils/cell-group-source.js';
+import { VOCABULARY } from '../../utils/vocabulary.js';
+import { cellExportEntry } from './cell-export.js';
 import { groupColours as colorsOf, sourceName } from '../../utils/cell-grouping.js';
 import { groupColours as hueColours } from '../plot-utilities/colors.js';
 import { GROUP_COLOURS } from '../../utils/categories.js';
@@ -43,10 +46,10 @@ const PALETTE = hueColours(GROUP_COLOURS);
 /**
  * Hand a text to the user as a file.
  * @param {string} name
- * @param {string} text
+ * @param {string|string[]} text - the text, or its parts
  */
 function download(name, text) {
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+    const url = URL.createObjectURL(new Blob(Array.isArray(text) ? text : [text], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
     link.download = name;
@@ -88,7 +91,12 @@ function mount(host, ctx) {
     const viewGroup = el('div', { class: 'cgg__view', role: 'radiogroup', aria: { label: 'Show the groups as' } }, viewButtons.list, viewButtons.cross);
     const exportButton = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgg__export',
         title: 'Download the groups as CSV' }, 'Export CSV');
-    const bar = el('div', { class: 'cgg__bar' }, title, searchBox, viewGroup, exportButton);
+    const cellsExport = cellExportEntry({
+        id: ctx.panelId, words: VOCABULARY.cellExport, download,
+        deps: { cells: () => (DataManager.getCells() || []).length, names: () => DataManager.allCellNames(), sources: groupSources().sources,
+            refusal: (id) => codesRefusal(id, ctx.panelId), panelId: ctx.panelId, host }
+    });
+    const bar = el('div', { class: 'cgg__bar' }, title, searchBox, viewGroup, exportButton, cellsExport.button, cellsExport.note);
     const gridHost = el('div', { class: 'cgg__gridhost' });
     const foot = el('div', { class: 'cgg__foot', hidden: true });
     const root = el('div', { class: 'cgg', hidden: true }, bar, gridHost, foot);
@@ -477,6 +485,7 @@ function mount(host, ctx) {
     /** The panel painted: show what its groups say now. Cheap when nothing changed, and it never redraws rows that did not change. */
     function update() {
         if (!alive) return;
+        cellsExport.refresh();
         const snap = ctx.read();
         const reply = snap && snap.values && snap.values.reply;
         const recipe = ctx.recipe();

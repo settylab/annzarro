@@ -252,7 +252,7 @@ function holdsCodes(id) {
  * The guard must never be why a plot is not drawn when it cannot answer: then nothing is refused.
  * @returns {null|{reason: string, binding: string, why: string}}
  */
-function codesRefusal(id, panelId = null) {
+export function codesRefusal(id, panelId = null) {
     if (holdsCodes(id)) return null;
     const cells = (DataManager.getCells() || []).length;
     if (!(cells > 0)) return null;
