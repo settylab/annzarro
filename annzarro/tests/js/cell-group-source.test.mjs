@@ -63,12 +63,13 @@ const FRESH = grouping('cell-grouping-13', 'Fresh', byColumn('batch'));
 const SLOW_TOO = grouping('cell-grouping-14', 'Slow too', byColumn('slow_too'));
 const ALONE = grouping('cell-grouping-15', 'Alone', byColumn('alone'));
 const LARGE = grouping('cell-grouping-16', 'Large colour', byColumn('cell_type'));
+const UNHELD = grouping('cell-grouping-17', 'Unheld', byColumn('cell_type'));
 const plotConfigs = new Map();
 const plots = new Map();
 const plot = (id) => ({ getId: () => id, getType: () => 'cell-plot', getTitle: () => id,
     getConfig: () => { if (!plotConfigs.has(id)) plotConfigs.set(id, {}); return plotConfigs.get(id); } });
 const made = [];
-let all = [G1, G2, EMPTY, MANY, WIDE, OWN, BIG, SLOW, RING_A, RING_B, GONE, FRESH, SLOW_TOO, ALONE, LARGE];
+let all = [G1, G2, EMPTY, MANY, WIDE, OWN, BIG, SLOW, RING_A, RING_B, GONE, FRESH, SLOW_TOO, ALONE, LARGE, UNHELD];
 function panelOf(id) {
     const found = all.find((p) => p.getId() === id);
     if (found) return found;
@@ -623,4 +624,20 @@ test('the asking plot is counted once beside its codes: a large plot redrawn in 
         ledger.remove(id);
         R.releaseSourceHost({ id: `plot-container-${id}`, isConnected: true, dataset: {}, panelId: id });
     }
+});
+
+test('a second plot of a grouping whose codes are held is not refused; a plot of another grouping is (one copy fits, two do not)', async () => {
+    const first = plotHost();
+    await settle(setting('cell-grouping-16'), first, { large: true });
+    // room for the held codes and 3 bytes more: a second copy (6 bytes) would not fit
+    const tight = (ledger.buffers() + 3) / GB;
+    const refused = async (key) => {
+        const host = plotHost();
+        const s = setting(key);
+        plotConfigs.get(host.panelId).color = s;
+        const got = await withBuffers(tight, () => attempt(s, host, 'color', true));
+        return got.name === 'SourceUnavailable' && got.notice.state === 'refused';
+    };
+    assert.equal(await refused('cell-grouping-16'), false, 'the same codes are shared: nothing more to hold');
+    assert.equal(await refused('cell-grouping-17'), true, 'other codes would be a second copy');
 });

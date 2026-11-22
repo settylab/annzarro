@@ -232,6 +232,19 @@ function cost({ cells, groups = 0 }) {
     return { bytes: codeBytes(Math.max(0, Number(cells) || 0), groups) };
 }
 
+/** Whether a plot already holds the current codes of grouping `id`: asking for them again costs nothing (one copy is shared). */
+function holdsCodes(id) {
+    if (!_binding) return false;
+    for (const host of _binding.hosts()) {
+        for (const rec of _binding.recordsOf(host).values()) {
+            if (rec.groupId !== id || rec.handle.refusal) continue;
+            const snap = rec.handle.read();
+            if (snap.values && snap.values.codes) return true;
+        }
+    }
+    return false;
+}
+
 /**
  * Whether the memory guard refuses the codes of grouping `id` for the cells shown, asked before they are requested, by
  * the plot `panelId`.
@@ -239,6 +252,7 @@ function cost({ cells, groups = 0 }) {
  * @returns {null|{reason: string, binding: string, why: string}}
  */
 function codesRefusal(id, panelId = null) {
+    if (holdsCodes(id)) return null;
     const cells = (DataManager.getCells() || []).length;
     if (!(cells > 0)) return null;
     let result;
