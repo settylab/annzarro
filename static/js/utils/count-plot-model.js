@@ -223,16 +223,23 @@ export function keptForOtherModes(config) {
 
 // --- bins ------------------------------------------------------------------------------------------------------------
 
-/** The bin counts a typed number may take in this mode. */
-// export-unused-ok: C2b validates a typed bin count where it is typed
-export function binsRange(mode) {
-    return { ...BINS[MODES[mode].dimension || 'one'] };
+/**
+ * The bin counts a typed number may take in this mode: for `input` ('x', 'y'), also within that input's limit (UX 4.3),
+ * so a count the field takes is never refused (a bar's X takes 200 bins, though a 1D axis takes 2,000).
+ * @param {string} mode
+ * @param {string} [input]
+ */
+export function binsRange(mode, input) {
+    const range = { ...BINS[MODES[mode].dimension || 'one'] };
+    const cap = input && LIMITS[mode] && LIMITS[mode][input] ? LIMITS[mode][input].bins : undefined;
+    if (cap !== undefined) range.max = Math.min(range.max, cap);
+    return range;
 }
 
-/** `null` when `n` is a bin count this mode takes, else the reason (`bad_bins`), for the control to say where it is typed. */
-// export-unused-ok: C2b validates a typed bin count where it is typed
-export function binsProblem(mode, n) {
-    const { min, max } = binsRange(mode);
+/** `null` when `n` is a bin count this mode (and input) takes, else the reason (`bad_bins`). */
+// export-unused-ok: the model's tests state the limits through it; the control reads binsRange
+export function binsProblem(mode, n, input) {
+    const { min, max } = binsRange(mode, input);
     return Number.isInteger(n) && n >= min && n <= max ? null : 'bad_bins';
 }
 
