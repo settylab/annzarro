@@ -86,7 +86,6 @@ function readCodes(handleOf) {
  * @param {Object} p.words - interface words (utils/vocabulary.js)
  * @returns {Promise<{ok: true, parts: string[]}|{ok: false, reason: string}>}
  */
-// export-unused-ok: the Cell Grouping panel's export menu (a shared-file hunk the lead applies) runs it
 export async function exportCells({ id, deps, words, rowsPerChunk, yieldTurn }) {
     const gate = offer({ cells: deps.cells(), words });
     if (!gate.enabled) return { ok: false, reason: gate.reason };
@@ -121,7 +120,6 @@ export async function exportCells({ id, deps, words, rowsPerChunk, yieldTurn }) 
  * @param {(name: string, parts: string[]) => void} p.download - hands the parts over as a file
  * @returns {{button: HTMLButtonElement, note: HTMLElement, refresh: () => void}}
  */
-// export-unused-ok: the Cell Grouping panel's group grid (a shared-file hunk the lead applies) mounts it
 export function cellExportEntry({ id, deps, words, download }) {
     const button = document.createElement('button');
     button.type = 'button';
