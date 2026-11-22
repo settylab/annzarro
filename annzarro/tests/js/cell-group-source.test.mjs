@@ -5,7 +5,7 @@
  * Everything is reached the way the page reaches it: the provider in the source registry, the page's action registry
  * and the page's one group binding (utils/group-host.js) over a fake cell_groups route, with fake panels.
  *
- * - The provider contract of F3c-2: valueType 'categorical', no large axes yet (G8b), `load` with codes, MISSING, the
+ * - The provider contract of F3c-2: valueType 'categorical', large axes: colour only (CAT-3), `load` with codes, MISSING, the
  *   group names in group order and their colours (SHR-11); past 64 groups `rankOf` by group order, and the large form
  *   ranked with `groupNames`; hover {group, options, valueOf, parse, label}.
  * - The key list (groupings open and closed, a deleted one kept, New grouping… last), the notices in a grouping's words,
@@ -28,6 +28,8 @@ const A = await import('../../../static/js/utils/source-actions.js');
 const PR = await import('../../../static/js/utils/panel-references.js');
 const { generateDiscreteColors, groupColours: colourGroups } = await import('../../../static/js/panels/plot-utilities/colors.js');
 const { ledger } = await import('../../../static/js/utils/memory-guard-ui.js');
+const { Config } = await import('../../../static/js/config.js');
+const { panelBuffers, GB } = await import('../../../static/js/utils/memory-guard.js');
 
 const TYPE = 'cell-group';
 const provider = () => R.getSource(TYPE);
@@ -60,12 +62,14 @@ const GONE = grouping('cell-grouping-12', 'Soon gone', byColumn('cell_type'));
 const FRESH = grouping('cell-grouping-13', 'Fresh', byColumn('batch'));
 const SLOW_TOO = grouping('cell-grouping-14', 'Slow too', byColumn('slow_too'));
 const ALONE = grouping('cell-grouping-15', 'Alone', byColumn('alone'));
+const LARGE = grouping('cell-grouping-16', 'Large colour', byColumn('cell_type'));
+const UNHELD = grouping('cell-grouping-17', 'Unheld', byColumn('cell_type'));
 const plotConfigs = new Map();
 const plots = new Map();
 const plot = (id) => ({ getId: () => id, getType: () => 'cell-plot', getTitle: () => id,
     getConfig: () => { if (!plotConfigs.has(id)) plotConfigs.set(id, {}); return plotConfigs.get(id); } });
 const made = [];
-let all = [G1, G2, EMPTY, MANY, WIDE, OWN, BIG, SLOW, RING_A, RING_B, GONE, FRESH, SLOW_TOO, ALONE];
+let all = [G1, G2, EMPTY, MANY, WIDE, OWN, BIG, SLOW, RING_A, RING_B, GONE, FRESH, SLOW_TOO, ALONE, LARGE, UNHELD];
 function panelOf(id) {
     const found = all.find((p) => p.getId() === id);
     if (found) return found;
@@ -192,7 +196,7 @@ test('the provider is registered as a categorical cell source of a Cell Plot, af
     assert.equal(p.entity, 'cells');
     assert.deepEqual(p.consumers, ['cell-plot', 'cell-table'], 'a Cell Table column too (CAT-6, G10)');
     assert.deepEqual(p.axes, ['x', 'y', 'z', 'color', 'hover', 'column']);
-    assert.deepEqual(p.largeAxes, [], "large-plot mode is G8b's");
+    assert.deepEqual(p.largeAxes, ['color'], 'large-plot mode draws a grouping as colour only, never as an axis (CAT-3)');
     assert.equal(p.subKeyMenu, undefined, 'no third select');
     assert.deepEqual(p.subKeys('cell-grouping-1'), []);
     assert.equal(p.defaultSub, '');
@@ -294,9 +298,11 @@ test("past 64 groups: each group ranked by its place in group order, so its colo
 
 test('the large form: the codes as they are; past 64 groups ranked with the name of each colour group', async () => {
     const small = await settle(setting('cell-grouping-1'), plotHost(), { large: true });
-    assert.deepEqual(Object.keys(small).sort(), ['MISSING', 'categories', 'codes', 'colours', 'type']);
+    assert.deepEqual(Object.keys(small).sort(), ['MISSING', 'categories', 'codes', 'colours', 'missingLabel', 'type']);
+    assert.equal(small.missingLabel, 'Not in any group', "the legend's word for a cell in no group (large mode's `NA` otherwise)");
     assert.deepEqual(small.categories, TYPES);
     const big = await settle(setting('cell-grouping-4'), plotHost(), { large: true });
+    assert.equal(big.missingLabel, 'Not in any group');
     assert.equal(big.ranked, true, "a group's code is its rank in group order already: nothing is copied");
     assert.equal(big.groupNames.length, 64);
     assert.equal(big.groupNames[0], 'g0, g64, g128');
@@ -523,4 +529,115 @@ test('a closed plot lets go of its groupings at once, in every provider (the cod
     R.releaseSourceHost(h);
     assert.equal(ledger.heldBytes(), held - 6, "the plot's codes, nothing else's");
     assert.equal(A.actions.available('score-choose', h), false, 'no record is left on the host');
+});
+
+// ------------------------------------------------------------------------------------------------ large plots and memory (G8b)
+
+/** Run `fn` with the tab's buffer ceiling at `gb` (ui.memory.buffers_gb), as a small device has it. */
+async function withBuffers(gb, fn) {
+    const was = Config.DEFAULTS.MEMORY;
+    Config.DEFAULTS.MEMORY = { ...(was || {}), buffers_gb: gb };
+    try {
+        return await fn();
+    } finally {
+        Config.DEFAULTS.MEMORY = was;
+    }
+}
+
+test('large-plot mode draws a grouping as colour, never as an axis (CAT-3)', () => {
+    assert.equal(R.largeAccepts(TYPE, 'color'), true);
+    for (const axis of ['x', 'y', 'z']) assert.equal(R.largeAccepts(TYPE, axis), false, axis);
+});
+
+test('cost: 1 byte a cell up to 255 groups, 2 above, (CAT-4)', () => {
+    const { cost } = provider();
+    assert.equal(typeof cost, 'function');
+    assert.deepEqual(cost({ cells: 95_600_000, groups: 6 }), { bytes: 95_600_000 });
+    assert.deepEqual(cost({ cells: 95_600_000, groups: 255 }), { bytes: 95_600_000 });
+    assert.deepEqual(cost({ cells: 95_600_000, groups: 256 }), { bytes: 191_200_000 });
+    assert.deepEqual(cost({ cells: 1000 }), { bytes: 1000 }, 'groups not known yet: the narrow codes');
+    assert.deepEqual(cost({ cells: 0, groups: 3 }), { bytes: 0 });
+});
+
+test('large: colour codes are typed and nothing is copied; a ready grouping is drawn as colour in large-plot mode', async () => {
+    const got = await settle(setting('cell-grouping-1'), plotHost(), { large: true });
+    assert.ok(got.codes instanceof Uint8Array);
+    assert.equal(got.MISSING, 255);
+    assert.deepEqual(got.categories, TYPES);
+    assert.equal(got.colours.length, 3);
+});
+
+test('the guard refuses codes that do not fit BEFORE the request, in its own words, and holds nothing (CAT-4)', async () => {
+    const h = plotHost();
+    const s = setting('cell-grouping-16');
+    plotConfigs.get(h.panelId).color = s;
+    const before = { asked: asked.length, held: ledger.heldBytes() };
+    const got = await withBuffers(1e-9, () => attempt(s, h, 'color', true));
+    assert.equal(got.name, 'SourceUnavailable');
+    assert.equal(got.notice.state, 'refused');
+    assert.match(got.notice.headline + got.notice.text, /buffers/i, "the guard's wording: it names what it ran out of");
+    assert.deepEqual(got.notice.actions.map((a) => a[0]), ['score-choose']);
+    assert.equal(asked.length, before.asked, 'no request of any kind: not even an estimate');
+    assert.equal(ledger.heldBytes(), before.held, 'nothing held');
+});
+
+test('the same grouping is drawn once the guard has room again; a draw already holding the codes asks nothing more', async () => {
+    const h = plotHost();
+    const s = setting('cell-grouping-16');
+    const got = await settle(s, h, { large: true });
+    assert.equal(got.codes.length, 6);
+    const held = ledger.heldBytes();
+    // a redraw of a plot that holds its codes is not a new holding: the guard is not asked again
+    const again = await withBuffers(1e-9, () => attempt(s, h, 'color', true));
+    assert.equal(again.name, undefined, 'still a series');
+    assert.equal(ledger.heldBytes(), held);
+});
+
+test('a refusal is not a size refusal: the figures of too_many_groups stay for the route', async () => {
+    const got = await settle(setting('cell-grouping-7'), plotHost(), { large: true, state: 'refused' });
+    assert.match(got.notice.headline, /6,840 groups/);
+});
+
+test('the asking plot is counted once beside its codes: a large plot redrawn in place does not refuse itself (CAT-4)', async () => {
+    const id = 'cell-plot-own';
+    const p = { kind: 'cell-plot', n: 2_000_000, large: true, colour: 'categorical' };
+    ledger.commit(id, null, ledger.reserve(id, p));
+    // its redraw is under way: the ledger holds the old plot and the draw at its peak
+    ledger.reserve(id, p);
+    try {
+        const peak = panelBuffers(p).peak;
+        const mine = { id: `plot-container-${id}`, isConnected: true, dataset: {}, panelId: id };
+        const other = plotHost();
+        const room = (extra) => ledger.buffers({ exclude: [id] }) + peak + extra;
+        const refused = async (host, s) => {
+            const got = await withBuffers(room(1_000_000) / GB, () => attempt(s, host, 'color', true));
+            return got.name === 'SourceUnavailable' && got.notice.state === 'refused';
+        };
+        const s1 = setting('cell-grouping-15');
+        plotConfigs.set(id, { color: s1 });
+        assert.equal(await refused(mine, s1), false, 'one copy of the plot, and a megabyte spare for 6 bytes of codes');
+        R.releaseSourceHost(mine);
+        const s2 = setting('cell-grouping-15');
+        plotConfigs.get(other.panelId).color = s2;
+        assert.equal(await refused(other, s2), true, "another plot sees the redraw's plot twice (old and new), as the ledger counts it");
+    } finally {
+        ledger.remove(id);
+        R.releaseSourceHost({ id: `plot-container-${id}`, isConnected: true, dataset: {}, panelId: id });
+    }
+});
+
+test('a second plot of a grouping whose codes are held is not refused; a plot of another grouping is (one copy fits, two do not)', async () => {
+    const first = plotHost();
+    await settle(setting('cell-grouping-16'), first, { large: true });
+    // room for the held codes and 3 bytes more: a second copy (6 bytes) would not fit
+    const tight = (ledger.buffers() + 3) / GB;
+    const refused = async (key) => {
+        const host = plotHost();
+        const s = setting(key);
+        plotConfigs.get(host.panelId).color = s;
+        const got = await withBuffers(tight, () => attempt(s, host, 'color', true));
+        return got.name === 'SourceUnavailable' && got.notice.state === 'refused';
+    };
+    assert.equal(await refused('cell-grouping-16'), false, 'the same codes are shared: nothing more to hold');
+    assert.equal(await refused('cell-grouping-17'), true, 'other codes would be a second copy');
 });

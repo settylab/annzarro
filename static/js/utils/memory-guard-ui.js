@@ -371,6 +371,28 @@ export function hoverLabelsCheck({ points, labels, chars }) {
     return probed(_check(need, held(), ledger.plotCount(), null, points), need.heap + need.off, 'hover labels');
 }
 
+/**
+ * Before the codes of a grouping are asked for (CAT-4): `bytes` of typed array, off the JS heap, counted against the
+ * tab's buffers and the RAM budget, next to what is held. Holdings no consumer on screen pins give way first, as for any
+ * check. The plot that asks (`panelId`) is counted once, at the larger of what it holds and what its draw may hold: its
+ * old drawing and its new one are the same plot (a large plot redrawn in place replaces itself), and the ledger would
+ * otherwise count both beside the codes.
+ * @param {{bytes: number, n: number, panelId?: (string|null)}} p - the codes' bytes, the cells they cover, the asking plot
+ */
+export function codesCheck({ bytes, n, panelId = null }) {
+    const need = { heap: 0, off: bytes, gpu: 0, contexts: 0 };
+    const exclude = panelId ? [panelId] : [];
+    const old = panelId ? ledger.get(panelId) : null;
+    const drawing = panelId ? ledger.pending.get(panelId) : null;
+    let now = held(exclude);
+    let buffersHeld = ledger.buffers({ exclude });
+    for (const field of ['heap', 'off', 'gpu']) {
+        now = { ...now, [field]: now[field] + Math.max(old ? old.resident[field] : 0, drawing ? drawing.peak[field] : 0) };
+    }
+    buffersHeld += Math.max(old && old.buffers ? old.buffers.resident : 0, drawing && drawing.buffers ? drawing.buffers.peak : 0);
+    return probed(_check(need, now, ledger.plotCount(), { need: bytes, held: buffersHeld }, n), bytes, 'grouping');
+}
+
 /** Before a recolour of the drawn regular plot `gd` (large-plot mode redraws, and is checked as a draw). */
 export function recolourCheck(gd) {
     const n = Number(gd && gd._pointCount) || 0;

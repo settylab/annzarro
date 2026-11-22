@@ -155,11 +155,12 @@ function providerCategories(got) {
   const { codes, MISSING } = got;
   if (got.ranked) {
     return { codes, MISSING, categories: [], ranked: true, used: GROUP_COLOURS, rankOfCode: null, groupNames: got.groupNames || null,
-      labelOfRank: new Map(), colours: null };
+      labelOfRank: new Map(), colours: null, missingLabel: got.missingLabel || null };
   }
   const categories = got.categories;
   if (!grouped(categories.length)) {
-    return { codes, MISSING, categories, ranked: false, rankOfCode: null, groupNames: null, labelOfRank: null, colours: got.colours || null };
+    return { codes, MISSING, categories, ranked: false, rankOfCode: null, groupNames: null, labelOfRank: null, colours: got.colours || null,
+      missingLabel: got.missingLabel || null };
   }
   const rankOfCode = new Uint32Array(categories.length);
   const labelOfRank = new Map();
@@ -170,7 +171,8 @@ function providerCategories(got) {
     rankOfCode[k] = r;
     labelOfRank.set(r, label);
   });
-  return { codes, MISSING, categories, ranked: true, used: unranked, rankOfCode, groupNames: null, labelOfRank, colours: null };
+  return { codes, MISSING, categories, ranked: true, used: unranked, rankOfCode, groupNames: null, labelOfRank, colours: null,
+    missingLabel: got.missingLabel || null };
 }
 
 /**
@@ -637,7 +639,9 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
     }
     // blank values at the bottom, then the categories interleaved; legend
     // entries in category order with NA last, as the regular path lists them
-    traces.push(...chunkTraces(X, Y, start[NA], start[NA + 1], 'NA', NA_COLOR, settings));
+    // what the legend calls them: a provider's own words ('Not in any group'), else 'NA'
+    const missingName = cs.missingLabel || 'NA';
+    traces.push(...chunkTraces(X, Y, start[NA], start[NA + 1], missingName, NA_COLOR, settings));
     const groups = [];
     for (let k = 0; k < nc; k++) {
       const name = many ? groupNames[k] : String(cs.categories[k]);
@@ -648,7 +652,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
         traces.push(legendTrace(name, color, settings, k + 1, group));
       }
     }
-    if (start[NA + 1] > start[NA]) traces.push(legendTrace('NA', NA_COLOR, settings, 1001));
+    if (start[NA + 1] > start[NA]) traces.push(legendTrace(missingName, NA_COLOR, settings, 1001));
     traces.push(...interleave(groups));
     layout.showlegend = settings.showLegend !== false;     // Show Legend off: none
     // legend as the regular path draws it (plot-make.js, categorical branch)
