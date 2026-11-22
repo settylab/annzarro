@@ -43,9 +43,10 @@ const INPUT_ROWS = Object.freeze([
  * @param {string} opts.id - the panel id
  * @param {() => Object} opts.model - what to draw: {config, structure, titleOf, focusedGene, focusedCell, infos: {x?, y?,
  *   split?} (each input's axis of the reply shown, with `counts`), levelsOf(field) (an input's levels when no reply
- *   shows them: a refused plan's, asked for alone; null meanwhile), undo: ?string (the label of the step), drawable(mode)}
+ *   shows them: a refused plan's, asked for alone; null meanwhile), levelsSaid(field) (why they did not come, with its way
+ *   out, or null), undo: ?string (the label of the step), drawable(mode)}
  * @param {Object} opts.on - what the user did: commit(config, label), silent(config) (focus following, no step),
- *   undo(), csv(), setupAxis(rowEl, axis, setting, roles) (fills a row's selects)
+ *   undo(), csv(), setupAxis(rowEl, axis, setting, roles) (fills a row's selects), wayOut(action) (a way out's button, states.js)
  * @returns {{element: HTMLElement, paint: Function, destroy: Function}}
  */
 export function createControls({ D, id, model, on }) {
@@ -306,6 +307,14 @@ export function createControls({ D, id, model, on }) {
     }
 
     function levelChooser(field, p, info, m) {
+        // the levels did not come (refused for their number, or failed): why, and the way out when there is one
+        const said = !info && m.levelsSaid ? m.levelsSaid(field) : null;
+        if (said) {
+            return [el('div', { class: 'ccnt-levels__note', role: 'status', data: { state: said.state } },
+                el('p', { class: 'ccnt-levels__said', text: said.text }),
+                ...said.actions.map(([action, label]) => el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', data: { action },
+                    on: { click: () => on.wayOut(action) } }, label)))];
+        }
         if (!info) return [el('div', { class: 'ccnt-levels__wait', text: `${VOCABULARY.plural.level[0].toUpperCase()}${VOCABULARY.plural.level.slice(1)} follow once the cells are counted.` })];
         const set = (next, label) => commit({ ...model().config, [field]: next }, label);
         const rowsOfLevels = levelRows(p, info, m.labelsOf(field));
