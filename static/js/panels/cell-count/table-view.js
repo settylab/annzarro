@@ -6,7 +6,7 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 
-const W = VOCABULARY.countPlot.table;
+const W = VOCABULARY.table;
 
 /** The most rows the table shows; the CSV has every row. */
 const TABLE_ROWS_MAX = 2000;

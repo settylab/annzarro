@@ -573,7 +573,7 @@ actions.register({
             const saveBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-save-btn', on: { click: saveAsGrouping } },
                 C.saveGrouping.button);
             const tableBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-table-btn', aria: { expanded: 'false' },
-                on: { click: () => { _tableShown = !_tableShown; paintTable(); } } }, C.table.show);
+                on: { click: () => { _tableShown = !_tableShown; paintTable(); } } }, VOCABULARY.table.show);
             _controls.optionsElement.append(saveBtn, tableBtn);
             root.append(_controls.element, plotArea, strip, table);
             root.addEventListener('keydown', onKey);
@@ -772,7 +772,7 @@ actions.register({
         /** Show as table (UX 7): the CSV's rows, drawn again only when the drawing changes. */
         function paintTable() {
             const on = _tableShown && !!_drawing;
-            _dom.tableBtn.textContent = on ? C.table.hide : C.table.show;
+            _dom.tableBtn.textContent = on ? VOCABULARY.table.hide : VOCABULARY.table.show;
             _dom.tableBtn.setAttribute('aria-expanded', String(on));
             _dom.table.hidden = !on;
             if (!on) {
