@@ -146,14 +146,16 @@ test('5.3 layer: the color bar names the statistic and the layer it reads', () =
     assert.deepEqual(colourBarTitles(compose().figure), ['Mean · logged']);
 });
 
-test('5.3 expression_cutoff: the Size threshold of Plot Options is what the size statistic is read with', () => {
-    const config = O.withSizeThreshold(normalizeCellGene({ size: { stat: 'pct_expressing', layer: 'logged' } }).config, 0.5);
-    assert.equal(config.size.detect_above, 0.5);
+test('5.3 expression_cutoff: the Size threshold Plot Options stores is what the size statistic is read with', () => {
+    // Plot Options writes it as size.detect_above (the browser test drives the box); empty, Size reads Color's
+    const config = normalizeCellGene({ size: { stat: 'pct_expressing', layer: 'logged', detect_above: 0.5 } }).config;
     const plan = planFeatures({ sections: [{ section: { source: 'S1', rows: 'genes' }, genes: ['G1'], title: 'S1' }],
         color: config.color, size: config.size, threshold: 0 });
     assert.ok(plan.features.some((f) => f.wire.detect_above === 0.5), 'the gene is asked with the size threshold');
-    // cleared, it follows the grouping again
-    assert.equal('detect_above' in O.withSizeThreshold(config, null).size, false);
+    const { model } = compose({ size: config.size });
+    model.size.detectAbove = 0.5;
+    const fig = D.buildFigure(model, LIGHT);
+    assert.ok(fig.layout.annotations.some((a) => a.text === '% expressing (> 0.5) · logged'), 'the size legend names the threshold');
 });
 
 test('5.3 mean_only_expressed: a group with no expressing cell is noted in the table and the CSV', () => {
@@ -168,10 +170,8 @@ test('5.3 mean_only_expressed: a group with no expressing cell is noted in the t
 });
 
 test('5.3 standard_scale: the scaling help line, the pooled note under z_pooled, and headers naming the scaling', () => {
-    assert.deepEqual(O.scalingNotes(normalizeCellGene({ scale: 'var' }).config), [W.options.scalingNote]);
+    // the lines Plot Options shows under the scaling (the browser test reads them in the menu)
     assert.equal(W.options.scalingNote, 'Groups with no value are skipped; a constant gene gives 0.');
-    const pooled = O.scalingNotes(normalizeCellGene({ scale: 'z_pooled' }).config);
-    assert.deepEqual(pooled, [W.options.scalingNote, W.options.pooledNote]);
     assert.match(W.options.pooledNote, /one-row section/i);
     assert.match(W.options.pooledNote, /across its own groups/);
     const { model } = compose({ scale: 'var' }, { scaling: 'var' });
@@ -246,8 +246,10 @@ test('5.3 dendrogram, add_dendrogram: a tree for each clustered block; Dendrogra
     // clustering off: no tree, whatever the order holds
     assert.equal(named(compose({}, { order: clusteredGroups() }).figure, 'dendrogram groups').length, 0);
     // the defaults are scanpy's (OD 16)
-    assert.deepEqual(O.clusterOf(normalizeCellGene({}).config),
+    assert.deepEqual(O.figureExtras(normalizeCellGene({}).config).cluster,
         { genes: 'off', groups: 'off', linkage: 'complete', distance: 'correlation', dendrograms: true });
+    // Ward is Euclidean whatever a link says (CXG-21)
+    assert.equal(O.figureExtras(normalizeCellGene({ cluster: { linkage: 'ward', distance: 'correlation' } }).config).cluster.distance, 'euclidean');
 });
 
 test('5.3 add_totals: Cells per group draws the totals bar; Sort groups by size is the order\'s', () => {

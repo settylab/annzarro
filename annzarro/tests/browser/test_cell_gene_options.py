@@ -18,8 +18,8 @@ Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWS
 """
 import csv
 import io
-import json
 import os
+import time
 
 import pytest
 
@@ -96,7 +96,7 @@ def test_the_cluster_menu_offers_its_scopes_states_the_method_and_counts_rows_le
     assert len(page.calls) == n
     # off again: the source order, and the sentence goes
     menu.locator("[data-scope='genes'] input[value='off']").check()
-    _redrawn(page, "(p, a) => JSON.stringify(p.layout.xaxis.ticktext) === a", json.dumps(genes))
+    _redrawn(page, "(p, a) => JSON.stringify(p.layout.xaxis.ticktext) === JSON.stringify(a)", genes)
     assert note.inner_text() == ""
 
 
@@ -130,7 +130,7 @@ def test_ward_switches_distance_to_euclidean_says_so_and_undo_restores_it(page, 
     assert page.locator(_option("distance")).input_value() == "euclidean"
     # correlation cannot be chosen while Ward is the linkage, and says why
     corr = page.locator(f"{_option('distance')} option[value='correlation']")
-    assert corr.is_disabled()
+    assert corr.evaluate("(o) => o.disabled") is True
     assert "Ward" in (corr.get_attribute("title") or "")
     _open_cluster(page)
     assert page.locator(f"{TP} .cgene-cluster-summary").inner_text().startswith("Ward linkage, Euclidean, on the values as displayed.")
@@ -175,6 +175,12 @@ def test_plot_options_reach_the_drawing_and_ask_for_nothing(page, served):
     # each was one undoable step
     page.click(f"{TP} .cgene-undo")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().center === undefined", P)
+    # Size threshold (scanpy's expression_cutoff for the size): stored on Size, and the genes are read with it
+    page.fill(_option("sizeThreshold"), "0.5")
+    page.press(_option("sizeThreshold"), "Enter")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.detect_above === 0.5", P)
+    _drawn(page)
+    assert any(f.get("detect_above") == 0.5 for c in page.calls[n:] for f in (c.get("features") or [])), "the genes are asked with the threshold"
 
 
 # ------------------------------------------------------------------ 4. Show as table
@@ -228,8 +234,13 @@ def test_a_new_section_shows_progress_on_its_own_rows_while_the_others_stay_draw
     # the first section stays drawn with its values meanwhile
     assert page.evaluate("(s) => document.querySelector(s + ' .cgene-plot').data[0].x.length", TP) > 0
     assert page.locator(f"{TP} .cgene-panel").get_attribute("data-state") == "updating"
-    for route in held:
-        route.continue_()
+    # the held request has reached the route (each evaluate lets Playwright run its handlers), then it goes through
+    deadline = time.monotonic() + 30
+    while not held:
+        assert time.monotonic() < deadline, "the new section's request never reached the route"
+        page.evaluate("1")
+    assert len(held) == 1, "one request, for the new section's genes"
+    held.pop().continue_()
     _redrawn(page, "(p) => !p.data.some(t => t.name === 'rows being read') && p.layout.xaxis.ticktext.length === 5")
 
 
