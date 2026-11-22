@@ -235,7 +235,9 @@ function unwatchVisibility(host, listener) {
  * @param {(host: HTMLElement, role: string, setting: Object, onChange: (snap: Object) => void) => Object} spec.open -
  *   a record's own fields for this setting, with at least `handle` (read, release, sharers): what the role reads
  * @param {(rec: Object, setting: Object) => boolean} spec.matches - whether a record still serves this setting
- * @param {(snap: Object, ctx: {role: string, sharers: number}) => (Object|null)} spec.describe - the notice of a snapshot
+ * @param {(snap: Object, ctx: {role: string, sharers: number, consumer?: Object}) => (Object|null)} spec.describe - the notice
+ *   of a snapshot; `consumer` is the watch's consumer ({kind, role, panelId, host}) when `open` returns it as the record's
+ *   `consumer`, so a provider can word a notice from what its panel knows
  * @param {(rec: Object) => boolean} [spec.stillUsed] - whether the host still reads what the record holds
  * @param {(rec: Object, snap: Object) => boolean} [spec.stale] - whether what the plot drew for a record that has no
  *   value says something the new state does not (its coverage in the strip): the plot is drawn again
@@ -271,7 +273,7 @@ export function createHostBinding({ id, open, matches, describe, stillUsed = () 
         const snap = rec.handle.read();
         // while a load waits for a value that is only pending, nothing is said over the plot: it keeps what it shows and
         // its loading pill speaks, and after 10 s a bar in its strip (the painter's)
-        const notice = describe(snap, { role: roleWord(rec.role), sharers: rec.handle.sharers() });
+        const notice = describe(snap, { role: roleWord(rec.role), sharers: rec.handle.sharers(), consumer: rec.consumer || null });
         if (rec.quiet && PENDING.includes(snap.state)) return { role: rec.role, snap, notice: null, quiet: notice, rec };
         return { role: rec.role, snap, notice, rec };
     }
