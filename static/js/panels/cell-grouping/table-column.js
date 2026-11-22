@@ -26,13 +26,15 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { wouldLoop } from '../../utils/panel-references.js';
+// a function declaration, so it is ready inside the import cycle with cell-group-source.js (which imports this file)
+import { cellGroupType } from '../../utils/cell-group-source.js';
 
 const W = VOCABULARY.word;
 const PL = VOCABULARY.plural;
 const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** The type of the source, as a column stores it and as its chooser tab is called (UX 5). */
-const TAB = 'cell-group';
+const TAB = cellGroupType();
 
 /** What the column calls its groups while it has none (utils/table-source.js `words`). */
 const GROUP_WORDS = Object.freeze({ the: `the ${PL.group}`, none: `no ${PL.group}`, ready: `the ${PL.group} are ready` });
