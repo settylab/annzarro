@@ -168,18 +168,6 @@ const sourceAdapter = createSourceAdapter({
 
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
-/**
- * The groups a store key is of, whatever features it adds: its grouping's key (PER-3) and the cells shown. A store key
- * is `hash \u0001 dataset \u0001 subset` (utils/group-sources.js), and the hash of a need starts with the grouping's
- * key up to the first `\u0002` (utils/group-store.js groupNeed); both keys are stable JSON, with no raw control
- * characters of their own. Two snapshots of one cell axis with equal results here have the same groups.
- */
-function groupsOfKey(key) {
-    if (typeof key !== 'string') return null;
-    const [hash, dataset = '', subset = ''] = key.split('\u0001');
-    return `${hash.split('\u0002')[0]}\u0001${dataset}\u0001${subset}`;
-}
-
 (function () {
     /**
      * @param {HTMLElement} container
@@ -223,6 +211,8 @@ function groupsOfKey(key) {
         /** gateMatrix's decision for the plan it was made for (CXG-17): what the plot asks of the server now */
         let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
         let _regateDue = false;
+        /** the cell axis's applied recipe as last seen: the recipe its groups are of while edits wait or are checked */
+        let _applied = null;
 
         function configFrom(raw) {
             const fields = {};
@@ -468,16 +458,29 @@ function groupsOfKey(key) {
          * consumer's, such as the grouping panel's), with the groups they are of; null while no ready reply has them.
          */
         function knownGroups(id) {
-            const rec = record();
-            const now = rec ? groupsOfKey(rec.handle.read().key) : null;
             for (const h of groupSources().sources.handlesOf(id)) {
                 const snap = h.read();
                 const reply = snap.state === 'ready' && snap.values ? snap.values.reply : null;
-                const of = groupsOfKey(snap.key);
-                if (reply && Array.isArray(reply.groups) && (!now || of === now)) return { count: reply.groups.length, groupsOf: of };
+                if (reply && Array.isArray(reply.groups)) return { count: reply.groups.length, groupsOf: groupsIdentity(id) };
             }
             return null;
         }
+
+        /**
+         * What the cell axis's groups are of now: the recipe its consumers show (the stored one, unless edits wait for
+         * Update or for their estimate, when it is the one last applied) and the cells shown. A count is good while
+         * this stays the same.
+         */
+        function groupsIdentity(id) {
+            const st = groupSources().sources.status(id);
+            if (!_applied || _applied.id !== id || (!st.held && !st.checking)) {
+                const g = axisGrouping();
+                _applied = { id, recipe: g ? g.getRecipe() : axisRecipe(_config.cellAxis) };
+            }
+            return { recipe: _applied.recipe, subset: DataManager.getSubsetParam() || '' };
+        }
+
+        const sameGroups = (a, b) => !!a && !!b && a.recipe === b.recipe && a.subset === b.subset;
 
         /** Decide the limit again (the groups became known, or changed). */
         function regate() {
@@ -790,8 +793,7 @@ function groupsOfKey(key) {
             if (!_dom) return;
             // the groups changed since they were counted (the grouping was edited): unknown again, so with rows that could
             // exceed the limit the groups go first, before any gene (CXG-17, Q4)
-            const of = groupsOfKey(snap.key);
-            if (_gate.ask === 'all' && _gate.groupsOf && of && of !== _gate.groupsOf) {
+            if (_gate.ask === 'all' && _gate.groupsOf && !sameGroups(groupsIdentity(axisId()), _gate.groupsOf)) {
                 regateSoon();
                 return;
             }
