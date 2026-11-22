@@ -4,7 +4,7 @@ The store is the grouping fixture (tests/core/grouping_store.py): 1,200 cells, c
 
 1.  The entry beside "Export CSV" downloads cell name and group name, one row a cell in the dataset's order; each
     group is the grid's name for it (the oracle is the fixture's obs table, not the page).
-2.  The export asks the route once, for the codes, and the names of the cells are not asked of the server again.
+2.  The export computes once, for the codes (after its estimate), and asks for nothing more when it is done.
 3.  A cell in no group reads "Not in any group", and the rows of the others still match the oracle.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
@@ -61,14 +61,14 @@ def test_the_entry_downloads_a_row_a_cell_with_the_groups_name(page, served):
 def test_the_export_asks_the_route_once_for_the_codes(page, served):
     grid._open(page, served, [CELL_TYPE])
     asked = len(page.calls)
-    names_asked = []
-    page.on("request", lambda r: names_asked.append(r.url) if "/data/names" in r.url else None)
     rows = _download(page)
     assert len(rows) == 1 + len(DATA.obs)
     sent = page.calls[asked:]
     assert len(_codes_requests(page)) == 1, sent
-    assert len(sent) == 1, "no estimate and no second request"
-    waits.expect_stays(lambda: len(page.calls) == asked + 1, "the finished export asks for nothing more", page=page)
+    assert [c for c in sent if not c.get("estimate_only")] == _codes_requests(page), "the one computed request is the codes'"
+    assert len(sent) <= 2, "at most its estimate and the codes"
+    done = len(page.calls)
+    waits.expect_stays(lambda: len(page.calls) == done, "the finished export asks for nothing more", page=page)
 
 
 # ------------------------------------------------------------------ 3. no group
