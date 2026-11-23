@@ -70,7 +70,7 @@ def test_a_new_plot_on_a_grouping_axis_reads_decision_24_from_all_layers(page, s
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.layer === 'counts'", P, timeout=30)
     cfg = _config(page)
     assert cfg["color"] == {"stat": "mean", "layer": "logged"}
-    assert cfg["size"] == {"stat": "pct_expressing", "layer": "counts", "detect_above": 0}
+    assert cfg["size"] == {"stat": "pct_expressing", "layer": "counts"}, "no threshold of its own: it follows the grouping (decision 35)"
     assert "offer" not in cfg
     assert page.locator(f"{TP} .cgene-undo").is_disabled(), "a default is not an edit"
 
@@ -95,7 +95,8 @@ def test_the_groupings_threshold_is_read_by_the_plot_and_survives_the_groupings_
     hover = page.evaluate("(s) => JSON.stringify(document.querySelector(s + ' .cgene-plot').data[0].hovertext"
                           " || document.querySelector(s + ' .cgene-plot').data[0].text)", TP)
     assert "% expressing (> 1) · logged" in hover, hover[:300]
-    assert page.input_value(f"{TP} .cgene-size-above") == "1", "the threshold box shows the grouping's value"
+    assert page.input_value(f"{TP} .cgene-size-above") == "", "the override box is empty: the measure follows the grouping"
+    assert page.get_attribute(f"{TP} .cgene-size-above", "placeholder") == "auto (grouping: 1)", "it shows the grouping's value"
     # the grouping's next edit drops the retired offered and layers and keeps its threshold; the plot still reads above 1
     n = len(page.calls)
     page.evaluate("(id) => window.PanelManager.getPanel(id).addFactor({source: {type: 'obs', key: 'condition'}})", GA)

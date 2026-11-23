@@ -108,6 +108,80 @@ export function thresholdLine(recipe) {
     return `Used by ${menuNames(THRESHOLD_USERS)}. Now: above ${figure(thresholdOf(recipe))}.`;
 }
 
+// ================================================================================================ Methods ▾ (decision 34)
+
+/**
+ * The words of the Methods pop-over of a Cell Grouping and a Cell Table (offered-removal-080.md 10.2): the source sets
+ * the parameters of each statistic, for every layer; plots choose the statistic and the layer. Nothing is gated.
+ */
+export const METHODS_TEXT = Object.freeze({
+    label: 'Methods',
+    title: 'Methods',
+    intro: 'Statistics over a group\'s cells. Plots choose the statistic and the layer; these settings apply on every layer.',
+    tableIntro: 'Statistics over the table\'s cells. Plots choose the statistic and the layer; these settings apply on every layer.',
+    plainTitle: 'The settings of each statistic',
+    notUsed: 'No plot reads these statistics yet.',
+    reset: 'Reset to defaults'
+});
+
+/** A statistic's definition over a Cell Table's cells rather than a group's (the table's Methods ▾). */
+export function tableDefinition(m) {
+    return m.definition.replace(/the group's cells/g, 'the table\'s cells');
+}
+
+/**
+ * The parameters of the statistics, listed under the last statistic that uses each. Only Expressed above today (mean,
+ * sum and SD take none; scaling is a plot option).
+ */
+export const METHOD_PARAMS = Object.freeze([
+    Object.freeze({ key: 'detect_above', label: 'Expressed above', default: 0, users: THRESHOLD_USERS, after: THRESHOLD_USERS[THRESHOLD_USERS.length - 1],
+        name: 'A cell counts as expressing above this value', line: thresholdLine })
+]);
+
+/**
+ * The method fields of a Cell Table's configuration (`methods: {detect_above}`), cleaned: a parameter at its default or
+ * not valid is left out, so the field is omitted at default and a link stays as short as before.
+ * @param {*} raw
+ * @returns {{detect_above?: number}}
+ */
+export function cleanMethods(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    const t = raw.detect_above;
+    if (typeof t === 'number' && Number.isFinite(t) && t > 0) out.detect_above = t;
+    return out;
+}
+
+/** The parameters not at their default, in words ("expressed above 2"); empty when all are. Said on the button's title. */
+export function methodsSummary(fields) {
+    const t = thresholdOf(fields || {});
+    return t !== 0 ? `expressed above ${figure(t)}` : '';
+}
+
+/**
+ * Who reads a source's statistics, one entry per consumer panel: "Cell-Gene Plot 1 (% expressing · counts, mean · logged)".
+ * @param {Array<{kind: string, panelId?: string, option?: {statistics?: Array<{stat: string, layer?: string}>}}>} handles
+ * @param {(panelId: string) => string} titleOf - a panel's title ('' for one not found)
+ * @returns {string[]}
+ */
+export function methodsUsedBy(handles, titleOf) {
+    const byPanel = new Map();
+    for (const h of handles || []) {
+        if (countsAs(h.kind) === null || !h.panelId) continue;
+        const pairs = byPanel.get(h.panelId) || [];
+        for (const r of (h.option && h.option.statistics) || []) {
+            const known = info(r.stat);
+            const text = known ? `${known.menu} · ${r.layer || DEFAULT_LAYER}` : 'cell count';
+            if (!pairs.includes(text)) pairs.push(text);
+        }
+        byPanel.set(h.panelId, pairs);
+    }
+    return [...byPanel].map(([pid, pairs]) => {
+        const title = titleOf(pid) || pid;
+        return pairs.length ? `${title} (${pairs.join(', ')})` : title;
+    });
+}
+
 /** The group statistics as an options model (SHR-25). */
 // export-unused-ok: the `source` of options-model.js's free forms (methodChoices, layerChoices, pairAfter); Node tests read it
 export const GROUP_STATISTICS_MODEL = createOptionsModel({
@@ -192,7 +266,7 @@ function kindLayers(layers, kinds) {
 
 /**
  * Color and Size of a new Cell-Gene Plot (decision 24, kept by decision 32 on both axis kinds): the mean on the
- * log-normalised layer and % expressing on the counts layer above 0, when matrix-kind facts identify both among ALL the
+ * log-normalised layer and % expressing on the counts layer (above the grouping's threshold, 0 by default), when matrix-kind facts identify both among ALL the
  * dataset's layers; else both on X.
  * @param {string[]} layers - the dataset's matrices, X first
  * @param {Object<string, string>} kinds
@@ -200,6 +274,7 @@ function kindLayers(layers, kinds) {
  */
 export function defaultMeasures(layers, kinds) {
     const { log, counts } = kindLayers(layers, kinds);
-    if (log && counts) return { color: { stat: 'mean', layer: log }, size: { stat: SIZE_STATISTIC, layer: counts, detect_above: 0 } };
+    // no threshold of its own: Size follows the grouping's Expressed above (decision 35), 0 unless the grouping says otherwise
+    if (log && counts) return { color: { stat: 'mean', layer: log }, size: { stat: SIZE_STATISTIC, layer: counts } };
     return { color: { stat: 'mean', layer: DEFAULT_LAYER }, size: { stat: SIZE_STATISTIC, layer: DEFAULT_LAYER } };
 }

@@ -121,3 +121,22 @@
     .cgrp-card__preview { display: none; }
     .cgrp-usedby { margin-left: 0; }
 }
+
+/* 6. Methods ▾ (decision 34): the statistics over a group's or a table's cells and their parameters; shared with the Cell Table */
+.cmeth__toggle { position: relative; }
+.cmeth__dot { display: inline-block; width: 6px; height: 6px; margin-left: 4px; border-radius: 50%; background: var(--az-link); vertical-align: middle; }
+.cmeth__dot[hidden] { display: none; }
+.cmeth { display: flex; flex-direction: column; gap: 6px; font-size: 0.8125rem; }
+.cmeth__intro { margin: 0; color: var(--az-muted); }
+.cmeth__list { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; }
+.cmeth__name { font-weight: 600; margin: 0; }
+.cmeth__definition { margin: 0; }
+.cmeth__params { grid-column: 1 / -1; margin: 0 0 4px 12px; }
+.cmeth__param { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.cmeth__param .form-control { width: 5rem; }
+.cmeth__help { flex-basis: 100%; color: var(--az-muted); font-size: 0.75rem; }
+.cmeth__error { flex-basis: 100%; color: var(--az-danger-text); font-size: 0.75rem; }
+.cmeth__error:empty { display: none; }
+.cmeth__foot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 6px; }
+.cmeth__used { color: var(--az-muted); font-size: 0.75rem; flex: 1 1 12rem; }
+@media (max-width: 480px) { .cmeth__list { grid-template-columns: 1fr; } .cmeth__params { margin-left: 0; } }
