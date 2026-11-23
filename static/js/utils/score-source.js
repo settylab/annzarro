@@ -35,7 +35,8 @@ import { VOCABULARY } from './vocabulary.js';
 import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
-import { DEFAULT_INPUT, DEFAULT_OFFERED, METHODS, methodShort, offeredOptions, isOffered } from './signature-options.js';
+import { DEFAULT_INPUT, DEFAULT_OFFERED, METHODS, SIGNATURE_MODEL, methodShort, offeredOptions, isOffered } from './signature-options.js';
+import { legacyPair } from './options-model.js';
 import { createSourceAdapter, entityLabel, isSourceType, kindOfType, optionFieldsOf, scoreKeyOptions } from './score-source-panels.js';
 import { findCycle, TableResolver } from './table-resolver.js';
 import { layerKeys } from './structure-keys.js';
@@ -721,11 +722,51 @@ registerSource({
 
 
 /**
+ * What a consumer of the score of signature `id` may choose (decision 31): the two selects, ungated. ALL six methods
+ * and ALL the dataset's layers, an impossible pair disabled with its reason (SHR-27); no `offered`, nothing "no longer
+ * offered". `method`/`layer` are what the consumer holds: the method list is graded on its layer, the layer list for
+ * its method, and a held impossible pair stays selectable as "(not available)". `legacy` is the pair a consumer
+ * that stored neither resolved to before decision 31 (read from the retired `offered`/`layers`, never written back).
+ * @param {string} id - a signature (or gene table) panel id
+ * @param {{method?: string, layer?: string}} [held] - the consumer's setting; `layer` '' or absent reads as the source's input
+ * @param {{datasetLayers?: string[]}} [opts] - the dataset's layers, X first (default: those noted by noteDatasetLayers)
+ * @returns {{methods: Array<Object>, layers: Array<Object>, legacy: {method: string, layer: string}, after: Function}|null}
+ *   null when the source is gone; `after(changed, value, pair)` is `pairAfter` with this source's context
+ */
+export function scoreChoices(id, held = {}, { datasetLayers = _datasetLayers } = {}) {
+    const panel = sourcePanel(id);
+    if (!panel) return null;
+    const recipe = optionFieldsOf(panel);
+    const grading = typeof panel.getGrading === 'function' ? panel.getGrading() : {};
+    const kinds = grading.kinds || {};
+    const stats = grading.stats || {};
+    const ctx = { recipe, datasetLayers: datasetLayers && datasetLayers.length ? datasetLayers : [recipe.input || DEFAULT_INPUT], kinds, stats };
+    const legacy = legacyPair(SIGNATURE_MODEL, recipe);
+    const method = held.method || legacy.method;
+    const layer = held.layer || legacy.layer;
+    return {
+        methods: SIGNATURE_MODEL.methodChoices({ recipe, layer, kinds, stats, held: held.method }),
+        layers: SIGNATURE_MODEL.layerChoices({ ...ctx, method, held: held.layer || undefined }),
+        legacy,
+        after: (changed, value, pair) => SIGNATURE_MODEL.pairAfter(changed, value, pair, ctx)
+    };
+}
+
+/** The dataset's layers (X first), noted from its structure when a menu is built. */
+let _datasetLayers = null;
+export function noteDatasetLayers(list) {
+    _datasetLayers = Array.isArray(list) ? [...list] : null;
+}
+
+// SO-2/3/4 removes (the shims below stay until the callers move to scoreChoices)
+
+/**
  * What a signature offers its consumers, as one list of entries (method and layer together, in the
  * order of offeredOptions). `layer` is what a consumer stores: '' for the signature's default layer.
  * @param {string} id - a signature panel id
  * @returns {Array<{id: string, value: string, method: string, layer: string, label: string, short: string}>}
  */
+// SO-2/3/4 removes: replaced by scoreChoices(id)
 export function scoreOptions(id) {
     const panel = sourcePanel(id);
     if (!panel) return [];
@@ -738,13 +779,8 @@ export function scoreOptions(id) {
     }));
 }
 
-/** The dataset's layers (X first), noted from its structure when a menu is built. */
-let _datasetLayers = null;
-export function noteDatasetLayers(list) {
-    _datasetLayers = Array.isArray(list) ? [...list] : null;
-}
-
 /** The entry a consumer's setting stands for in a signature's options, or null when it is not offered. */
+// SO-2/3/4 removes: replaced by scoreChoices(id, setting)
 export function optionOf(setting) {
     const sub = subKeyOf(setting);
     // no layer: the setting follows the signature's default layer (a link made before the layer was stored)
@@ -753,6 +789,7 @@ export function optionOf(setting) {
 }
 
 /** The label of an option a consumer holds that the signature no longer offers. */
+// SO-2/3/4 removes: nothing is "no longer offered" any more
 export function lapsedLabel(setting) {
     const panel = sourcePanel(setting && setting.key);
     const several = panel ? new Set(offeredOptions(optionFieldsOf(panel), _datasetLayers).map(o => o.layer)).size > 1 : false;
