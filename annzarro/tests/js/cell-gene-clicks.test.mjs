@@ -142,3 +142,23 @@ test('the index of a drawing is made once, not per click', () => {
     assert.ok(reads <= N + 400, `the rows are read once per drawing, then once per click (${reads} reads)`);
     assert.deepEqual(targetOfPoint(point(N - 1, 1), m), { gene: `G${N - 1}` });
 });
+
+// ------------------------------------------------------------------ one rule for where a row is
+
+test("draw.js places the rows where rowCoordinates says, gaps included (its own copy of the rule must not drift)", async () => {
+    const { buildFigure } = await import('../../../static/js/panels/cell-gene/draw.js');
+    const { rowCoordinates } = await import('../../../static/js/panels/cell-gene/draw-annotations.js');
+    const gaps = [0, 0, 2, 0, 1, 0, 0, 3];
+    const rows = gaps.map((gapBefore, r) => ({ kind: 'gene', label: `Gene${r}`, gapBefore, section: { index: r, title: `S${r}` } }));
+    const values = Float64Array.from({ length: rows.length }, (_, r) => r);
+    for (const swap of [false, true]) {
+        const fig = buildFigure({
+            mode: 'dots', swap, groups: [{ label: 'g', n: 10 }], rows,
+            color: { id: 'mean|X', stat: 'mean', layer: 'X', scaling: 'none', values, colorscale: 'Viridis' },
+            size: { none: 'One size.' }
+        });
+        const drawn = fig.data[0][swap ? 'y' : 'x'];
+        assert.deepEqual(Array.from(drawn), rowCoordinates(rows).pos, swap ? 'swapped' : 'not swapped');
+        assert.deepEqual(Array.from(drawn), [0, 1, 4, 5, 7, 8, 9, 13]);
+    }
+});

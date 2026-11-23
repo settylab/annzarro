@@ -29,6 +29,8 @@ from annzarro.tests.browser import waits  # noqa: E402
 GROUPING = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}]}
 MENU = f"{TP} .cgene-group-menu"
 OTHER = GENES[-1]
+BOLD = ("([s, t]) => { const g = [...document.querySelectorAll(s + ' .cgene-plot g.xtick')].find(e => e.textContent === t); "
+        "return !!g && ['bold', '700'].includes(getComputedStyle(g.querySelector('text')).fontWeight); }")
 FOCUSED = "() => import('/static/js/data-manager.js').then(m => m.DataManager.getFocusedGene())"
 
 
@@ -101,17 +103,26 @@ def test_a_click_on_a_dot_or_a_heatmap_cell_focuses_its_gene_and_marks_its_label
     _focus_first(page)
     page.mouse.click(*_at(page, _gene_position(page, genes[1]), 0))
     _until_focused(page, genes[1])
-    until(page, "([s, t]) => { const g = [...document.querySelectorAll(s + ' .cgene-plot g.xtick')].find(e => e.textContent === t); "
-                "return !!g && ['bold', '700'].includes(getComputedStyle(g.querySelector('text')).fontWeight); }", [TP, genes[1]])
+    until(page, BOLD, [TP, genes[1]])
     assert _weight(page, genes[0]) not in ("bold", "700"), "only the focused gene is marked"
+
+    # the mark survives a redraw in the other theme and a resize (each redraws the ticks)
+    before = page.evaluate("(s) => document.querySelector(s + ' .cgene-plot').layout.paper_bgcolor", TP)
+    page.click('#theme-toggle button[data-theme-mode="dark"]')
+    _until_drawn_again(page, f"(p) => p.layout.paper_bgcolor !== {before!r}")
+    until(page, BOLD, [TP, genes[1]])
+    width = page.evaluate("(s) => document.querySelector(s + ' .cgene-plot')._fullLayout.width", TP)
+    page.set_viewport_size({"width": 1100, "height": 900})
+    _until_drawn_again(page, f"(p) => p._fullLayout.width < {width}")
+    until(page, BOLD, [TP, genes[1]])
+    assert _weight(page, genes[0]) not in ("bold", "700")
 
     # a heatmap cell, the mark following the focus
     page.click(f"{TP} .cgene-mode input[value='heatmap']")
     _until_drawn_again(page, "(p) => p.data[0].type === 'heatmap'")
     page.mouse.click(*_at(page, _gene_position(page, genes[2]), 3))
     _until_focused(page, genes[2])
-    until(page, "([s, t]) => { const g = [...document.querySelectorAll(s + ' .cgene-plot g.xtick')].find(e => e.textContent === t); "
-                "return !!g && ['bold', '700'].includes(getComputedStyle(g.querySelector('text')).fontWeight); }", [TP, genes[2]])
+    until(page, BOLD, [TP, genes[2]])
     assert _weight(page, genes[1]) not in ("bold", "700")
 
 
