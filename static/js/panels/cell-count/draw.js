@@ -487,6 +487,7 @@ export function countFigure(config, table, opts) {
  * @param {Object} table
  * @param {{labels?: Map[], inputNames: Object, headers: {count: string, share: string, measure?: string}, titleOf?: Function}} opts
  */
+// export-unused-ok: the CSV's rows; Node tests read them (Show as table, their other reader, was dropped in WP-6a)
 export function countRows(config, table, opts) {
     return tableRows(config, table, {
         labelOf: labelFn(labelMapsOf(config, table, opts)), inputNames: opts.inputNames, headers: opts.headers, shareBase: valueOf(config).base
