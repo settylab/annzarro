@@ -74,6 +74,23 @@ function cleanStatistic(raw, fallback, what, problems) {
     return out;
 }
 
+/**
+ * The plot's own offer (WP-4, operator ruling Q1): with an obs column as the cell axis there is no grouping to say what
+ * Color and Size may read, so the plot keeps `{offered?, layers?}` itself. Text layers and known statistics are kept;
+ * null when nothing is left.
+ */
+function cleanOffer(raw, problems) {
+    if (!isObject(raw)) {
+        problems.push('offer: not an object, left out');
+        return null;
+    }
+    const out = {};
+    if (Array.isArray(raw.layers)) out.layers = [...new Set(raw.layers.filter(isText))];
+    if (Array.isArray(raw.offered)) out.offered = [...new Set(raw.offered.filter((s) => STATISTIC_IDS.includes(s) && s !== 'count'))];
+    for (const key of ['layers', 'offered']) if (out[key] && !out[key].length) delete out[key];
+    return Object.keys(out).length ? out : null;
+}
+
 /** A one-row section's aggregation `{agg}` or `{agg, column, layer, above?}`; null when it cannot be kept. */
 function cleanAggregation(raw) {
     if (!isObject(raw)) return null;
@@ -114,7 +131,7 @@ function cleanSection(raw, i, problems) {
  * The configuration of a Cell-Gene Plot (plan 1.6, `cell-gene` version 1), as a link, a panel set and a history entry
  * carry it. Known fields are cleaned; unknown ones (style fields of later steps, a newer build's) are kept as they are.
  * `version`, `mode`, `sections`, `color` and `size` are always written; `cellAxis` once chosen; `scale` and `swap` only
- * when not the default.
+ * when not the default; `offer` (the plot's own offered statistics and layers on an obs axis) once edited.
  * @param {Object} raw
  * @returns {{config: Object, problems: string[]}}
  */
@@ -136,6 +153,10 @@ export function normalizeCellGene(raw) {
     const sections = Array.isArray(src.sections) ? src.sections : [];
     if ('sections' in src && !Array.isArray(src.sections)) problems.push('sections: not a list, none kept');
     config.sections = sections.map((s, i) => cleanSection(s, i, problems)).filter(Boolean);
+    if ('offer' in src) {
+        const offer = cleanOffer(src.offer, problems);
+        if (offer) config.offer = offer; else delete config.offer;
+    }
     config.color = cleanStatistic(src.color, DEFAULT_COLOR, 'color', problems);
     config.size = cleanStatistic(src.size, DEFAULT_SIZE, 'size', problems);
     if (!SCALINGS.includes(src.scale) || src.scale === 'none') {

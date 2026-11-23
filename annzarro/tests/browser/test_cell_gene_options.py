@@ -230,10 +230,11 @@ def test_plot_options_reach_the_drawing_and_ask_for_nothing(page, served):
     # each was one undoable step
     page.click(f"{TP} .cgene-undo")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().center === undefined", P)
-    # Size threshold (scanpy's expression_cutoff for the size): stored on Size, and the genes are read with it
-    _open_options(page)
-    page.fill(_option("sizeThreshold"), "0.5")
-    page.press(_option("sizeThreshold"), "Enter")
+    # Size threshold (scanpy's expression_cutoff for the size), beside Size since WP-4: stored on Size, and the genes are
+    # read with it; Plot Options no longer has one
+    assert page.locator(_option("sizeThreshold")).count() == 0
+    page.fill(f"{TP} .cgene-size-above", "0.5")
+    page.press(f"{TP} .cgene-size-above", "Enter")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.detect_above === 0.5", P)
     _drawn(page)
     assert any(f.get("detect_above") == 0.5 for c in page.calls[n:] for f in (c.get("features") or [])), "the genes are asked with the threshold"

@@ -36,7 +36,6 @@ import { longCsv } from '../../utils/cell-gene-model.js';
 import { generateDiscreteColors } from '../plot-utilities/colors.js';
 import { createPopover } from '../../ui/popover.js';
 import { dendrogramBlocks } from './draw-annotations.js';
-import { needsThreshold } from './sections.js';
 
 const WO = VOCABULARY.cellGene.options;
 
@@ -140,19 +139,6 @@ export function barSettings(config) {
     if (s.center !== null) out.center = s.center;
     if (s.titles.color) out.title = s.titles.color;
     return out;
-}
-
-/**
- * Plot Options' Size threshold (scanpy's `expression_cutoff` for the size statistic): a number, or null to read Size
- * with Color's threshold again.
- * @param {Object} config
- * @param {number|null} value
- * @returns {Object} the configuration with that threshold
- */
-function withSizeThreshold(config, value) {
-    const size = { ...config.size };
-    if (isNumber(value)) size.detect_above = value; else delete size.detect_above;
-    return { ...config, size };
 }
 
 /**
@@ -264,7 +250,7 @@ export function tableOf(model) {
     const R = model.rows.length;
     const columns = [];
     const add = (which, spec, valuesOf, scaling) => {
-        const main = { stat: spec.stat, layer: spec.layer, scaling, values: new Float64Array(R * G).fill(NaN) };
+        const main = { stat: spec.stat, layer: spec.layer, detectAbove: spec.detectAbove, scaling, values: new Float64Array(R * G).fill(NaN) };
         const own = new Map();
         model.rows.forEach((row, r) => {
             const mine = row.own && row.own[which];
@@ -477,13 +463,10 @@ function mount(slot, ctx) {
 
     // ---------------------------------------------------------------- Plot Options (UX 3.1; no clustering field since WP-2)
     const optionsBtn = button('cgene-options-btn', WO.plotOptions);
-    const sizeThreshold = number('sizeThreshold', WO.sizeThreshold, (v) => ctx.set(withSizeThreshold(config(), v), 'size threshold'),
-        { step: 'any', placeholder: WO.sameAsColor });
     const outlineInput = el('input', { type: 'color', class: 'form-control form-control-sm form-control-color', data: { option: 'outlineColor' }, aria: { label: WO.outlineColor },
         on: { change: (e) => nested('outline', 'color', e.target.value, DEFAULT_OUTLINE.color, 'dot outline color') } });
     controls.outlineColor = outlineInput;
     const dots = section(WO.heading.dots,
-        sizeThreshold,
         field(WO.outlineColor, outlineInput),
         number('outlineWidth', WO.outlineWidth, (v) => nested('outline', 'width', v === null ? DEFAULT_OUTLINE.width : Math.max(0, Math.min(OUTLINE_MAX, v)), DEFAULT_OUTLINE.width, 'dot outline width'),
             { min: 0, max: OUTLINE_MAX, step: 0.25 }));
@@ -585,8 +568,6 @@ function mount(slot, ctx) {
 
         // Plot Options
         dots.hidden = !dotsMode;
-        sizeThreshold.hidden = !(c.size && needsThreshold(c.size.stat));
-        setValue(controls.sizeThreshold, c.size && isNumber(c.size.detect_above) ? c.size.detect_above : null);
         controls.outlineColor.value = s.outline.color.length === 4 ? `#${[...s.outline.color.slice(1)].map((h) => h + h).join('')}` : s.outline.color.slice(0, 7);
         setValue(controls.outlineWidth, s.outline.width);
         setValue(controls.gap, s.gap);

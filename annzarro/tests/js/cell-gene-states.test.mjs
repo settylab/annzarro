@@ -8,8 +8,8 @@
  *     "while sharing" (SHR-48);
  *   - Stale (Update tier), Asks first as an upper bound with Compute and Fewer genes (SHR-32), Refused by cost and for
  *     a CSR layer (CXG-19, no command named), Refused too large, the grouping's own refusal, Error with Retry;
- *   - a drawn plot: the strip's "28 groups × 63 rows", One cell per group (CXG-27), the Size select under No size
- *     (SHR-27).
+ *   - a drawn plot: the strip's "28 groups × 63 rows", One cell per group (CXG-27), the Size layer select under No
+ *     size (SHR-27).
  *
  * Run:  node --test annzarro/tests/js/cell-gene-states.test.mjs
  */
@@ -17,8 +17,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    gateMatrix, describePlot, ownJobAhead, plotState, matrixTag, oneCellPerGroup, sizeFirst
+    gateMatrix, describePlot, ownJobAhead, plotState, matrixTag, oneCellPerGroup
 } from '../../../static/js/panels/cell-gene/states.js';
+import { layerList, statisticList } from '../../../static/js/panels/cell-gene/controls.js';
+import { OFFER_OTHER } from '../../../static/js/panels/cell-gene/sections.js';
+import { normalizeGrouping } from '../../../static/js/utils/cell-grouping.js';
 
 /** The generic words the panel gives the fallback notice (panels/cell-gene.js NOTICE_WORDS). */
 const WORDS = Object.freeze({
@@ -226,17 +229,16 @@ test('One cell per group: suggested only for dots sized by % expressing, over gr
     assert.equal(oneCellPerGroup({ mode: 'dots', size, sized: true, groups: [] }), false);
 });
 
-test('No size: the Size select lists the held statistic on the layers that work first', () => {
-    const list = [
-        { value: 'mean@X', label: 'Mean · X' },
-        { value: 'mean@logged_counts', label: 'Mean · logged_counts' },
-        { value: 'pct_expressing@logged_counts', label: '% expressing · logged_counts' },
-        { value: 'pct_expressing@raw_counts', label: '% expressing · raw_counts' },
-        { value: 'pct_expressing@X', label: '% expressing · X (not available)', lapsed: true },
-        { value: 'count', label: 'Cell count' }
-    ];
-    assert.deepEqual(sizeFirst(list, { stat: 'pct_expressing', layer: 'X' }).map((o) => o.value),
-        ['pct_expressing@logged_counts', 'pct_expressing@raw_counts', 'mean@X', 'mean@logged_counts', 'pct_expressing@X', 'count']);
+test('No size: the Size layer select keeps the statistic and offers the layers that can give it (WP-4)', () => {
+    const recipe = normalizeGrouping({ layers: ['logged_counts', 'raw_counts'] }).recipe;
+    const kinds = { X: 'signed', logged_counts: 'log', raw_counts: 'counts' };
+    const held = { stat: 'pct_expressing', layer: 'X' };
+    const list = layerList({ recipe, datasetLayers: ['X', 'logged_counts', 'raw_counts'], kinds, stat: held.stat, held });
+    assert.deepEqual(list.filter((o) => !o.disabled && !o.lapsed && o.value !== OFFER_OTHER).map((o) => o.value), ['logged_counts', 'raw_counts']);
+    const x = list.find((o) => o.value === 'X');
+    assert.equal(x.label, 'X (not available)', 'the held layer stays, marked, so the select shows what is held');
+    assert.equal(x.lapsed, true);
+    assert.equal(statisticList({ recipe, kinds, held }).find((o) => o.value === 'pct_expressing').label, '% expressing (not available)');
 });
 
 test('the state word follows the snapshot and the drawing', () => {

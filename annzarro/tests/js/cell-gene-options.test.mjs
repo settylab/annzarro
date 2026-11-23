@@ -186,7 +186,8 @@ test('5.3 dot_color_df, dot_size_df: Color and Size are separate columns, each w
     model.size.layer = 'counts';
     const head = longRows(O.tableOf(model))[0];
     assert.deepEqual(head, [W.csv.section, W.csv.row, W.csv.group, W.csv.cells,
-        columnHeader({ stat: 'mean', layer: 'logged', scaling: 'none' }), columnHeader({ stat: 'pct_expressing', layer: 'counts', scaling: 'none' })]);
+        columnHeader({ stat: 'mean', layer: 'logged', scaling: 'none' }), columnHeader({ stat: 'pct_expressing', layer: 'counts', detectAbove: 0, scaling: 'none' })]);
+    assert.equal(head[5], '% expressing (> 0) · counts · not scaled', 'a thresholded column names its threshold (WP-4)');
     // the CSV and the table are one specification
     assert.equal(longCsv(O.tableOf(model)).split('\n')[0], head.join(','));
 });

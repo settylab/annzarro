@@ -61,6 +61,9 @@ export const ROW_AGGREGATIONS = Object.freeze({
 // export-unused-ok: consumed by X3a (a new gene-set row starts with them)
 export const DEFAULT_ROW_AGGREGATIONS = Object.freeze({ color: 'mean_of_means', size: 'mean_of_pct_expressing' });
 
+/** The statistics read at an expression threshold. */
+const THRESHOLDED = Object.freeze(['pct_expressing', 'mean_expressing']);
+
 /** CXG-17. */
 const MATRIX_CELLS_MAX = 400000;
 const GENES_PER_SECTION_MAX = 2000;
@@ -299,13 +302,17 @@ export function setRow(aggregation, input, groups, { counted } = {}) {
 // --- limits (CXG-17) --------------------------------------------------------------------------------------------
 
 /**
- * Whether the matrix may be requested: at most 400,000 cells of it (groups x rows) and 2,000 genes in a section.
- * @param {{groups: number, sections: {rows: number, genes: number}[]}} shape - `rows` is what the section draws
+ * Whether the matrix may be requested: at most 2,000 genes in a section, 400,000 cells of the drawn matrix (groups x
+ * rows), and 400,000 values the server accumulates (groups x planned features, core/group_features.py
+ * MAX_FEATURE_CELLS). A gene read on two layers, or at two thresholds, is two features (finding 9), so the second limit
+ * is reached first when Color and Size read differently.
+ * @param {{groups: number, sections: {rows: number, genes: number}[], features?: number}} shape - `rows` is what the
+ *   section draws; `features` the distinct features the request carries (sections.js planFeatures)
  * @returns {{ok: true}|{ok: false, reason: 'too_many_genes', section: number, count: number, limit: number}
- *   |{ok: false, reason: 'matrix_too_large', count: number, limit: number}}
+ *   |{ok: false, reason: 'matrix_too_large'|'too_many_values', count: number, limit: number}}
  */
 // export-unused-ok: consumed by X3a (nothing is requested above the limit, and the panel says which number to reduce)
-export function matrixLimits({ groups, sections }) {
+export function matrixLimits({ groups, sections, features = 0 }) {
     for (let s = 0; s < sections.length; s++) {
         if (sections[s].genes > GENES_PER_SECTION_MAX) {
             return { ok: false, reason: 'too_many_genes', section: s, count: sections[s].genes, limit: GENES_PER_SECTION_MAX };
@@ -313,21 +320,45 @@ export function matrixLimits({ groups, sections }) {
     }
     const rows = sections.reduce((a, s) => a + s.rows, 0);
     if (rows * groups > MATRIX_CELLS_MAX) return { ok: false, reason: 'matrix_too_large', count: rows * groups, limit: MATRIX_CELLS_MAX };
+    if (features * groups > MATRIX_CELLS_MAX) return { ok: false, reason: 'too_many_values', count: features * groups, limit: MATRIX_CELLS_MAX };
     return { ok: true };
+}
+
+/**
+ * How often the request reads each gene: `reads` gene features over `genes` distinct genes, and why a gene is read more
+ * than once: on different `layers`, or at different `thresholds` of one layer (null when each gene is read once).
+ * @param {Array<{kind: string, name?: string, layer?: string, detect_above?: number}>} wires - the request's features
+ * @returns {{genes: number, reads: number, cause: ('layers'|'thresholds'|null)}}
+ */
+export function geneReads(wires) {
+    const layersOf = new Map();
+    let reads = 0;
+    for (const w of wires) {
+        if (w.kind !== 'gene') continue;
+        reads++;
+        if (!layersOf.has(w.name)) layersOf.set(w.name, new Set());
+        layersOf.get(w.name).add(w.layer);
+    }
+    const genes = layersOf.size;
+    if (reads <= genes) return { genes, reads, cause: null };
+    for (const set of layersOf.values()) if (set.size > 1) return { genes, reads, cause: 'layers' };
+    return { genes, reads, cause: 'thresholds' };
 }
 
 // --- CSV (CXG-20) -----------------------------------------------------------------------------------------------
 
 /**
- * A column's header: statistic, layer and scaling, with the section first for a section's own aggregated quantity,
+ * A column's header: statistic (with its threshold when it uses one), layer and scaling, with the section first for a section's own aggregated quantity,
  * which is named by its `label` (an aggregation has no statistic of its own).
- * @param {{stat?: string, label?: string, layer?: string, scaling: string, section?: string}} column
+ * @param {{stat?: string, label?: string, layer?: string, detectAbove?: number, scaling: string, section?: string}} column
  */
 // export-unused-ok: consumed by X4a (colour bar and legend titles name statistic, layer and scaling the same way)
-export function columnHeader({ stat, label, layer, scaling, section }) {
+export function columnHeader({ stat, label, layer, detectAbove, scaling, section }) {
     const parts = [];
     if (section) parts.push(section);
-    parts.push(label || W.statistic[stat]);
+    // a thresholded statistic names its threshold, so two thresholds stay two columns apart (WP-4)
+    const thresholded = !label && THRESHOLDED.includes(stat) && typeof detectAbove === 'number' && Number.isFinite(detectAbove);
+    parts.push(thresholded ? `${W.statistic[stat]} (> ${detectAbove})` : label || W.statistic[stat]);
     if (layer) parts.push(layer);
     parts.push(W.scaled[scaling]);
     return parts.join(' · ');
@@ -340,7 +371,7 @@ const figure = (v) => (Number.isFinite(v) ? String(v) : '');
  * statistic, a missing value an empty field. A column whose `noExpressing` flags a cell adds a final note column saying
  * so (P3). The CSV and Show as table are these rows (one column specification).
  * @param {{groups: {label: string, n: number}[], rows: {section: string, label: string}[],
- *   columns: {stat?: string, label?: string, layer?: string, scaling: string, section?: string, values: Float64Array,
+ *   columns: {stat?: string, label?: string, layer?: string, detectAbove?: number, scaling: string, section?: string, values: Float64Array,
  *   noExpressing?: Uint8Array}[]}} table - `values[row * groups + group]`
  * @returns {string[][]}
  */

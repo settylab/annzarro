@@ -170,8 +170,6 @@ const cellGene = Object.freeze({
         dotMax: '% at the largest dot',
         outlineColor: 'Dot outline color',
         outlineWidth: 'Dot outline width (px)',
-        sizeThreshold: 'Size threshold',
-        sameAsColor: 'as Color',
         colorScale: 'Color scale',
         min: 'Min',
         max: 'Max',
@@ -248,6 +246,37 @@ const cellGene = Object.freeze({
             computing: 'Computing…', queued: 'Plot queued', awaiting: 'Not computed', refused: 'Plot refused', tooLarge: 'Too large',
             failed: 'Plot failed', held: 'Out of date', noSize: 'No size'
         })
+    }),
+    /**
+     * Color and Size sources (WP-4, FB-2a): each measure's `statistic of layer above threshold`, where layers are
+     * offered, the plot's own Statistics offered on an obs axis, and the limit counted in values (finding 9).
+     */
+    sources: Object.freeze({
+        of: 'of',
+        above: 'above',
+        threshold: 'expressed above',
+        thresholdHelp: 'A cell counts as expressing above this value.',
+        offerOther: 'Offer other…',
+        /** The plot's own Statistics offered, with an obs column as groups (operator ruling Q1). */
+        offer: Object.freeze({
+            title: 'Statistics offered',
+            where: 'Color and Size pick from these. With an obs column as groups, the plot keeps this list itself.',
+            methods: 'Statistics',
+            methodsNote: 'Cell count is always offered.',
+            layers: 'Color and Size choose among the offered layers.',
+            pinnedLayer: 'X is always offered.',
+            lastLayer: 'At least one layer stays offered.',
+            lastMethod: 'At least one statistic stays offered.'
+        }),
+        /** "3 genes on 2 layers": genes (in words) read on `n` layers, or at `n` thresholds. */
+        geneReads: (genes, n, cause) => (cause === 'layers' ? `${genes} on ${n} layers` : cause === 'thresholds' ? `${genes} at ${n} thresholds` : genes),
+        tooManyValues: (groups, features, values, limit) => `${groups} × ${features} = ${values} values; the limit is ${limit}.`,
+        features: (n) => `${n.toLocaleString('en-US')} ${n === 1 ? 'value per group' : 'values per group'}`,
+        readTwice: Object.freeze({
+            layers: (n) => `Color and Size read different layers, so each gene is read ${n === 2 ? 'twice' : `${n} times`}.`,
+            thresholds: (n) => `Color and Size use different thresholds, so each gene is read ${n === 2 ? 'twice' : `${n} times`}.`
+        }),
+        tooManyValuesWayOut: 'Remove a section, use fewer groups, or read Color and Size on one layer.'
     })
 });
 
