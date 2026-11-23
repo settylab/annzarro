@@ -37,7 +37,7 @@
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { PLOT_PALETTES, GAP_COLOUR } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
-import { annotateFigure, matrixPixels, rowCoordinates } from './draw-annotations.js';
+import { annotateFigure, matrixPixels, rowCoordinates, MODEBAR_PX } from './draw-annotations.js';
 
 const W = VOCABULARY.cellGene;
 
@@ -63,8 +63,6 @@ const PLOT_RIGHT = 0.78;
 /** The legend column is at least this wide in px, so a narrow figure's legends stay readable (the plot gives way). */
 const LEGEND_MIN_PX = 120;
 const LEGEND_SLOT_MAX = 0.3;
-/** The top of the legend column stays clear of Plotly's modebar (camera, zoom, pan), about this many px tall. */
-const MODEBAR_PX = 36;
 const DEFAULT_HEIGHT = 600;
 const MAIN = 'main';
 /** A character's width in em, on average (as draw-annotations.js measures labels), and the most lines a title wraps to. */
