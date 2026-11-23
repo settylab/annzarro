@@ -13,7 +13,7 @@
  */
 import { bandwidthOf, smooth1, smooth2 } from '../../utils/kde.js';
 import { levelLabelsOf, densityLayers } from '../../utils/count-plot-model.js';
-import { plotlyColorscale } from '../../utils/color-scales.js';
+import { scaleKeys } from './colour.js';
 import { normalizeHex } from '../../utils/plot-theme.js';
 import { RESERVED } from '../../utils/level-id.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
@@ -25,7 +25,6 @@ export const DENSITY_MODES = Object.freeze(['density', 'density2d']);
 /** The interface text of a density (UX 4.4): the count plot's words, utils/vocabulary.js. */
 const WORDS = VOCABULARY.countPlot.density;
 
-const DEFAULT_COLORSCALE = 'Viridis';
 const CONTOURS = 6;
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -197,12 +196,7 @@ export function densityFigure(config, table, opts) {
         }
     } else {
         // one group: the density takes a color map the user chooses (map, direction, range) and a color bar
-        const color = options.color || {};
-        const scale = {
-            colorscale: plotlyColorscale(color.map || options.colorscale || DEFAULT_COLORSCALE),
-            ...(color.reverse ? { reversescale: true } : {}),
-            ...(Number.isFinite(color.min) ? { zmin: color.min } : {}), ...(Number.isFinite(color.max) ? { zmax: color.max } : {})
-        };
+        const scale = scaleKeys(options, 'z');
         const last = contoured ? 'contour' : 'heatmap';
         const bar = (type) => ({ showscale: type === last, ...(type === last ? { colorbar: { title: { text: esc(title) } } } : {}) });
         if (layers.image) data.push({ ...base(0, -1), type: 'heatmap', ...scale, ...bar('heatmap') });

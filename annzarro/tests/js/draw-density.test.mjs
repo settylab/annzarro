@@ -301,9 +301,9 @@ test('filled isolines of a Color by are bands of constant opacity in the level c
 });
 
 test('one group takes the color map, its direction and its range from the options, for the image and the contours', () => {
-    const color = { map: 'Cividis', reverse: true, min: 0.001, max: 0.02 };
+    const color = { colorscale: 'Cividis', colour: { reverse: true, min: 0.001, max: 0.02 } };
     for (const layers of [{ image: true }, { fill: true }, { lines: true }]) {
-        const { figure } = twoD('umap__a1', { adjust: 1, layers, color }, false);
+        const { figure } = twoD('umap__a1', { adjust: 1, layers, ...color }, false);
         const t = kinds(figure).at(-1);
         assert.equal(t.colorscale, 'Cividis', JSON.stringify(layers));
         assert.equal(t.reversescale, true);

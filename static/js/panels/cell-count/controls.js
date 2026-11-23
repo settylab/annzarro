@@ -2,10 +2,12 @@
  * The controls of the Cell Count Plot (UX 4.1, 4.2, 4.4, 4.5; CNT-1 to CNT-4, CNT-6, CNT-17, CNT-21): the DOM side.
  *
  * Top to bottom: Mode; X (Slices for a pie); Y; Color by with its arrangement; Height or Color, with the source of a
- * statistic or the factor of the most frequent level under it; Labels, Sort by height, Reverse, Horizontal and Plot
- * Options. A row the mode does not read is hidden, and what it holds stays stored: one muted line lists it ("Kept for
- * other modes"). A numeric input carries the compact binning line, which opens the shared binning control in place; a
- * categorical one offers Choose levels. What each choice writes is controls-model.js's; panels/cell-count.js commits
+ * statistic or the factor of the most frequent level under it; Labels, Sort by height, Reverse, Horizontal, Log axis and
+ * Ring; the density row (Smoothing, Scale by level size, Image); and the toolbar: Save as grouping, Color, Download CSV
+ * and Undo. A row the mode does not read is hidden, and what it holds stays stored: one muted line lists it ("Kept for
+ * other modes"). A numeric input carries the compact binning line, which opens the shared binning control in a pop-over;
+ * a categorical one offers Choose levels in a pop-over; Color opens the colour map, its range and the level palette in
+ * one. A pop-over never changes the size or flow of the panel (ui/popover.js, WP-6a). What each choice writes is controls-model.js's; panels/cell-count.js commits
  * every change as one undoable step. Interface words come from utils/vocabulary.js.
  *
  * The x, y, Color by, statistic and factor selects are the cell plot's (CNT-2): the same markup, filled by
@@ -17,13 +19,20 @@ import { sourceName } from '../../utils/cell-grouping.js';
 import { binsRange, binSpacingOf, splitUsed } from '../../utils/count-plot-model.js';
 import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
+import { createPopover } from '../../ui/popover.js';
+import { Config } from '../../config.js';
+import { scaleOptionLabel } from '../../utils/color-scales.js';
+import { listAvailableColormaps } from '../plot-utilities/colors.js';
+import { DEFAULT_COLORSCALE } from './colour.js';
 import {
-    rowsOf, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
+    colorUse, parseColourLimit, rowsOf, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
     setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
 } from './controls-model.js';
 
 const C = VOCABULARY.countPlot;
 const P = VOCABULARY.phrase;
+const CL = C.colour;
+const COLOR_MAPS = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || [DEFAULT_COLORSCALE]);
 
 // ================================================================================================ the view
 
@@ -53,8 +62,7 @@ export function createControls({ D, id, model, on }) {
     const { el } = D;
     const histories = new Map();          // a row's remembered sources by type, as a cell plot keeps them
     const rows = new Map();               // field -> row
-    const open = { binning: new Set(), levels: new Set(), options: false };
-    let mounts = [];
+    const editors = new Map();            // `${field}` -> {row, kind, btn, pop, body, ctl, mounts}: the levels or binning pop-over of an input
 
     const option = (value, text, extra = {}) => {
         const o = el('option', { value, text });
@@ -98,9 +106,7 @@ export function createControls({ D, id, model, on }) {
     function inputRow(spec) {
         const row = selectsRow(spec.field, spec.axis, C.rows[spec.field]);
         row.roles = spec.roles;
-        row.binning = el('div', { class: 'ccnt-binning', hidden: true });
-        row.levels = el('div', { class: 'ccnt-levels', hidden: true });
-        row.wrap = el('div', { class: 'ccnt-input', data: { input: spec.field } }, row.element, row.binning, row.levels);
+        row.wrap = el('div', { class: 'ccnt-input', data: { input: spec.field } }, row.element);
         wireSelects(row, () => inputOf(row.field), (source) => commitInput(row.field, source));
         rows.set(spec.field, row);
         return row;
@@ -263,27 +269,59 @@ export function createControls({ D, id, model, on }) {
 
     const parseListed = (value) => (on.parseListed ? on.parseListed(value) : null);
 
-    // ---------------------------------------------------------------- binning and levels of an input
-    function paintInputExtras(row, p, m, shownRows) {
-        D.clear(row.extra);
-        for (const mounted of mounts.filter((x) => x.row === row)) if (mounted.handle && mounted.handle.destroy) mounted.handle.destroy();
-        mounts = mounts.filter((x) => x.row !== row);
-        D.clear(row.binning);
-        D.clear(row.levels);
-        row.binning.hidden = true;
-        row.levels.hidden = true;
-        if (!p) return;
-        const numeric = m.isNumeric(p.source);
-        const binned = numeric && shownRows.binned.includes(row.field);
-        if (binned) {
-            const isOpen = open.binning.has(row.field);
-            row.extra.appendChild(el('button', { type: 'button', class: 'btn btn-sm btn-link ccnt-bins', aria: { expanded: String(isOpen), controls: `ccnt-binning-${id}-${row.field}` },
-                on: { click: () => { toggle(open.binning, row.field); paint(); } } }, `${binningLine(p, m.config.mode)} ${isOpen ? '▴' : '▾'}`));
-            row.binning.id = `ccnt-binning-${id}-${row.field}`;
-            if (isOpen && BINNING_SLOT.mount) {
-                row.binning.hidden = false;
+    // ---------------------------------------------------------------- binning and levels of an input (pop-overs)
+    /**
+     * The button of an input's levels or binning editor and its pop-over, made once and kept while the input's kind stays:
+     * a repaint draws the same button again, so an open pop-over keeps its anchor.
+     */
+    function editorOf(row, kind, name) {
+        let entry = editors.get(row.field);
+        if (entry && entry.kind !== kind) { destroyEditor(row.field); entry = null; }
+        if (entry) { entry.name = name; return entry; }
+        const btn = el('button', { type: 'button', class: `btn btn-sm btn-link ${kind === 'binning' ? 'ccnt-bins' : 'ccnt-choose'}`, data: { input: row.field } });
+        entry = { row, kind, name, btn, body: null, ctl: null, mounts: [], pop: null };
+        entry.pop = createPopover({
+            anchor: btn, name: kind, wide: true, title: '',
+            render: (body, ctl) => {
+                entry.body = body;
+                entry.ctl = ctl;
+                const title = body.parentElement && body.parentElement.querySelector('.az-popover-title');
+                if (title) title.textContent = `${kind === 'binning' ? 'Bins of' : 'Levels of'} ${entry.name}`;
+                fillEditor(entry);
+                return () => {
+                    for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
+                    entry.body = entry.ctl = null;
+                };
+            }
+        });
+        editors.set(row.field, entry);
+        return entry;
+    }
+
+    function destroyEditor(field) {
+        const entry = editors.get(field);
+        if (!entry) return;
+        entry.pop.destroy();
+        editors.delete(field);
+    }
+
+    /** The editor's body drawn from the model now; the focused control stays focused. */
+    function fillEditor(entry) {
+        if (!entry.body) return;
+        const m = model();
+        const { row, body } = entry;
+        const p = m.config[row.field] || null;
+        if (!p) { entry.ctl.close(); return; }
+        const focusables = () => [...body.querySelectorAll('input, button, select')].filter((e) => !e.disabled);
+        const at = focusables().indexOf(document.activeElement);
+        for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
+        D.clear(body);
+        if (entry.kind === 'binning') {
+            const host = el('div', { class: 'ccnt-binning' });
+            body.appendChild(host);
+            if (BINNING_SLOT.mount) {
                 const max = binsRange(m.config.mode, row.field).max;
-                const handle = BINNING_SLOT.mount(row.binning, {
+                entry.mounts.push(BINNING_SLOT.mount(host, {
                     partitioning: forControl(p, m.config.mode), info: m.infos[row.field] || null, kind: 'count', max, titleOf: m.titleOf,
                     commit: (next, label) => {
                         const c = model().config;
@@ -297,27 +335,44 @@ export function createControls({ D, id, model, on }) {
                             commit({ ...c, binSpacing: { ...c.binSpacing, [row.field]: value } }, `${value === 'even' ? 'even' : 'value-placed'} bins of ${C.rows[row.field] || row.field}`);
                         }
                     } } : {}),
-                    close: () => {
-                        open.binning.delete(row.field);
-                        paint();
-                        const back = row.extra.querySelector('.ccnt-bins');
-                        if (back) back.focus();
-                    }
-                });
-                mounts.push({ row, handle });
+                    close: () => entry.pop.close('button')
+                }));
             }
+        } else {
+            body.appendChild(el('div', { class: 'ccnt-levels' }, ...levelChooser(row.field, p, m.infos[row.field] || (m.levelsOf ? m.levelsOf(row.field) : null), m)));
+        }
+        if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
+        entry.ctl.update();
+    }
+
+    function paintInputExtras(row, p, m, shownRows) {
+        const numeric = !!p && m.isNumeric(p.source);
+        const binned = numeric && shownRows.binned.includes(row.field);
+        const kind = !p || (numeric && !binned) ? null : binned ? 'binning' : 'levels';
+        if (!kind) {
+            destroyEditor(row.field);
+            D.clear(row.extra);
             return;
         }
-        if (numeric) return;
-        // a categorical input: Choose levels (CNT-3, SHR-2)
-        const isOpen = open.levels.has(row.field);
-        row.extra.appendChild(el('button', { type: 'button', class: 'btn btn-sm btn-link ccnt-choose', aria: { expanded: String(isOpen), controls: `ccnt-levels-${id}-${row.field}` },
-            on: { click: () => { toggle(open.levels, row.field); paint(); } } }, `${C.buttons.chooseLevels} ${isOpen ? '▴' : '▾'}`));
-        row.levels.id = `ccnt-levels-${id}-${row.field}`;
-        if (isOpen) {
-            row.levels.hidden = false;
-            row.levels.append(...levelChooser(row.field, p, m.infos[row.field] || (m.levelsOf ? m.levelsOf(row.field) : null), m));
-        }
+        const entry = editorOf(row, kind, sourceName(p.source, m.titleOf));
+        const text = kind === 'binning' ? binningLine(p, m.config.mode) : C.buttons.chooseLevels;
+        entry.btn.textContent = `${text} ▾`;
+        if (row.extra.firstChild !== entry.btn) row.extra.replaceChildren(entry.btn);
+        if (entry.pop.isOpen()) fillEditor(entry);
+        flushReveal();
+    }
+
+    /**
+     * A way out asked for an editor (reveal): open it once its button exists in the kind asked. The opening waits a
+     * turn, so the click that asked is not read as a press outside the pop-over it opens.
+     */
+    let wanted = null;
+    function flushReveal() {
+        if (!wanted) return;
+        const entry = editors.get(wanted.field);
+        if (!entry || entry.kind !== wanted.what) return;
+        wanted = null;
+        setTimeout(() => { if (entry.btn.isConnected && !entry.pop.isOpen()) entry.pop.open(); }, 0);
     }
 
     function levelChooser(field, p, info, m) {
@@ -359,8 +414,6 @@ export function createControls({ D, id, model, on }) {
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', on: { click: () => set(tickNone(p), 'tick no level') } }, 'Tick none'))
         ];
     }
-
-    const toggle = (set, key) => { if (set.has(key)) set.delete(key); else set.add(key); };
 
     // ---------------------------------------------------------------- Color by's arrangement
     const arrangement = el('span', { class: 'ccnt-arrangement', role: 'radiogroup', aria: { label: 'Arrangement' } });
@@ -471,7 +524,7 @@ export function createControls({ D, id, model, on }) {
         }
     }
 
-    // ---------------------------------------------------------------- Labels, sort, reverse, horizontal, Plot Options
+    // ---------------------------------------------------------------- Labels, sort, reverse, horizontal, log axis, ring
     const labelsSelect = el('select', { class: 'form-select form-select-sm ccnt-labels', id: `ccnt-labels-${id}`,
         on: { change: () => {
             const next = { ...model().config };
@@ -491,16 +544,18 @@ export function createControls({ D, id, model, on }) {
     const sortBtn = pressed('ccnt-sort', C.buttons.sort, 'sort', 'height');
     const reverseBtn = pressed('ccnt-reverse', C.buttons.reverse, 'reverse', true);
     const horizontalBtn = pressed('ccnt-horizontal', C.buttons.horizontal, 'horizontal', true);
-    const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-options-btn', aria: { expanded: 'false', controls: `ccnt-options-${id}` },
-        on: { click: () => { open.options = !open.options; paint(); } } }, C.buttons.options);
     const logBox = el('input', { type: 'checkbox', class: 'ccnt-log',
         on: { change: () => { const next = { ...model().config }; if (logBox.checked) next.log = true; else delete next.log; commit(next, logBox.checked ? 'log count axis' : 'linear count axis'); } } });
     const ringBox = el('input', { type: 'checkbox', class: 'ccnt-ring',
         on: { change: () => { const next = { ...model().config }; if (ringBox.checked) next.ring = true; else delete next.ring; commit(next, ringBox.checked ? 'ring' : 'pie'); } } });
     const logWrap = el('label', { class: 'ccnt-opt' }, logBox, ` ${C.buttons.log}`);
     const ringWrap = el('label', { class: 'ccnt-opt' }, ringBox, ` ${C.buttons.ring}`);
+    const labelsRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--labels' },
+        el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, logWrap, ringWrap);
+
+    // the density row: Smoothing, Scale by level size, Image, and what the bandwidth and the floor were
     const adjust = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-adjust', inputmode: 'decimal', placeholder: '1',
-        autocomplete: 'off', aria: { label: C.buttons.adjust } });
+        autocomplete: 'off', id: `ccnt-adjust-${id}`, aria: { label: C.buttons.adjust } });
     const adjustNote = el('span', { class: 'ccnt-help ccnt-adjust__problem', role: 'alert' });
     const commitAdjust = () => {
         const c = model().config;
@@ -514,7 +569,6 @@ export function createControls({ D, id, model, on }) {
     };
     adjust.addEventListener('change', commitAdjust);
     adjust.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitAdjust(); } });
-    const adjustWrap = el('label', { class: 'ccnt-opt' }, `${C.buttons.adjust} `, adjust, adjustNote);
     const toggleField = (cls, field, value, text) => {
         const box = el('input', { type: 'checkbox', class: cls,
             on: { change: () => { const next = { ...model().config }; if (box.checked) next[field] = value; else delete next[field]; commit(next, `${box.checked ? '' : 'no '}${text.toLowerCase()}`.trim()); } } });
@@ -537,11 +591,8 @@ export function createControls({ D, id, model, on }) {
     };
     const layerBoxes = ['image', 'lines', 'fill'].map(layerBox);
     const densityNotes = el('div', { class: 'ccnt-help ccnt-density-notes' });
-    const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-csv', on: { click: () => on.csv() } }, C.buttons.csv);
-    const optionsBox = el('div', { class: 'ccnt-options', id: `ccnt-options-${id}`, role: 'group', aria: { label: C.buttons.options }, hidden: true },
-        logWrap, ringWrap, adjustWrap, bySize.wrap, ...layerBoxes.map((l) => l.wrap), csvBtn, densityNotes);
-    const labelsRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--labels' },
-        el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, optionsBtn);
+    const densityRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--density' },
+        el('label', { class: 'ctl-label', for: `ccnt-adjust-${id}`, text: C.buttons.adjust }), adjust, adjustNote, bySize.wrap, ...layerBoxes.map((l) => l.wrap), densityNotes);
 
     function paintLabels(m, shownRows) {
         const o = drawOptions(m.config);
@@ -554,13 +605,13 @@ export function createControls({ D, id, model, on }) {
         show(sortBtn, shownRows.sort, o.sort === 'height');
         show(reverseBtn, shownRows.reverse, o.reverse);
         show(horizontalBtn, shownRows.horizontal, o.horizontal);
-        optionsBtn.setAttribute('aria-expanded', String(open.options));
-        optionsBox.hidden = !open.options;
         logWrap.hidden = !shownRows.log;
         logBox.checked = o.log;
         ringWrap.hidden = !shownRows.ring;
         ringBox.checked = o.ring;
-        adjustWrap.hidden = !shownRows.density;
+        // a row with nothing in it is not drawn (a density's modes have no Labels, a pie has no Log axis)
+        labelsRow.hidden = !(shownRows.labels || shownRows.sort || shownRows.reverse || shownRows.horizontal || shownRows.log || shownRows.ring);
+        densityRow.hidden = !shownRows.density;
         if (document.activeElement !== adjust) adjust.value = m.config.adjust === undefined ? '' : String(m.config.adjust);
         bySize.wrap.hidden = !(shownRows.density && m.config.split);
         bySize.box.checked = o.scale === 'size';
@@ -570,6 +621,98 @@ export function createControls({ D, id, model, on }) {
         }
         densityNotes.textContent = shownRows.density && m.notes ? [m.notes.bandwidth, m.notes.floor].filter(Boolean).join(' ') : '';
         densityNotes.hidden = !densityNotes.textContent;
+    }
+
+    // ---------------------------------------------------------------- the toolbar: Save as grouping, Color, Download CSV, Undo
+    const saveBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-save-btn', on: { click: () => on.saveAsGrouping() } },
+        C.saveGrouping.button);
+    const colorBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-color-btn' }, `${CL.button} ▾`);
+    // temporary: Download CSV goes to Plot Options ▸ Export when the shared Plot Options land (WP-5a)
+    const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-csv', on: { click: () => on.csv() } }, C.buttons.csv);
+    const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-undo', disabled: true, on: { click: () => on.undo() } }, C.buttons.undo);
+    const toolbar = el('div', { class: 'ccnt-toolbar' }, saveBtn, colorBtn, el('span', { class: 'ccnt-toolbar__gap' }), csvBtn, undoBtn);
+
+    // Color: the colour map, Reverse, the range, the level palette. Every edit applies live as one undoable step.
+    const colorPop = createPopover({
+        anchor: colorBtn, name: 'color', title: CL.title,
+        render: (body, ctl) => {
+            colorState.body = body;
+            colorState.ctl = ctl;
+            fillColor();
+            return () => { colorState.body = colorState.ctl = null; };
+        }
+    });
+    const colorState = { body: null, ctl: null };
+
+    const withColor = (change, label) => {
+        const c = model().config;
+        const color = { ...(c.color || {}) };
+        change(color);
+        const next = { ...c };
+        if (Object.keys(color).length) next.color = color; else delete next.color;
+        commit(next, label);
+    };
+
+    function fillColor() {
+        if (!colorState.body) return;
+        const m = model();
+        const use = colorUse(m.config);
+        const c = m.config.color || {};
+        const body = colorState.body;
+        const focusables = () => [...body.querySelectorAll('input, button, select')].filter((e) => !e.disabled);
+        const at = focusables().indexOf(document.activeElement);
+        D.clear(body);
+        const line = (...kids) => el('div', { class: 'ccnt-color__line' }, ...kids);
+        const idOf = (k) => `ccnt-color-${k}-${id}`;
+        if (use.map) {
+            const map = el('select', { class: 'form-select form-select-sm ccnt-color-map', id: idOf('map'),
+                on: { change: () => withColor((o) => { if (map.value === DEFAULT_COLORSCALE) delete o.map; else o.map = map.value; }, `color map ${map.value}`) } });
+            for (const scale of COLOR_MAPS) map.appendChild(option(scale, scaleOptionLabel(scale)));
+            map.value = COLOR_MAPS.includes(c.map) ? c.map : DEFAULT_COLORSCALE;
+            const reverse = el('input', { type: 'checkbox', class: 'ccnt-color-reverse', checked: c.reverse === true,
+                on: { change: () => withColor((o) => { if (reverse.checked) o.reverse = true; else delete o.reverse; }, reverse.checked ? 'reverse color map' : 'color map as is') } });
+            body.append(line(el('label', { for: idOf('map'), text: CL.map }), map),
+                line(el('label', { class: 'ccnt-opt' }, reverse, ` ${CL.reverse}`)));
+            const problem = el('span', { class: 'ccnt-help ccnt-color__problem', role: 'alert' });
+            const limit = (key, text) => {
+                const input = el('input', { type: 'text', class: `form-control form-control-sm ccnt-color-${key}`, id: idOf(key), inputmode: 'decimal',
+                    autocomplete: 'off', placeholder: CL.auto, value: Number.isFinite(c[key]) ? String(c[key]) : '' });
+                const apply = () => {
+                    const r = parseColourLimit(input.value);
+                    problem.textContent = r.ok ? '' : r.message;
+                    if (!r.ok) { input.value = Number.isFinite(c[key]) ? String(c[key]) : ''; return; }
+                    if (r.value === (Number.isFinite(c[key]) ? c[key] : undefined)) return;
+                    withColor((o) => { if (r.value === undefined) delete o[key]; else o[key] = r.value; }, `color ${text.toLowerCase()} ${r.value === undefined ? 'auto' : r.value}`);
+                };
+                input.addEventListener('change', apply);
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+                return el('span', { class: 'ccnt-color__limit' }, el('label', { for: idOf(key), text: text }), input);
+            };
+            body.append(line(limit('min', CL.min), limit('max', CL.max), limit('center', CL.center)), problem);
+            if (Number.isFinite(c.center) && Number.isFinite(c.min) && Number.isFinite(c.max)) body.append(el('p', { class: 'ccnt-help', text: CL.centerNote }));
+        }
+        if (use.palette) {
+            const palette = el('select', { class: 'form-select form-select-sm ccnt-color-palette', id: idOf('palette'),
+                on: { change: () => withColor((o) => { if (palette.value) o.palette = palette.value; else delete o.palette; }, `level palette ${palette.value || 'default'}`) } });
+            palette.appendChild(option('', CL.paletteDefault));
+            for (const name of listAvailableColormaps()['Discrete Palettes']) palette.appendChild(option(name, name));
+            palette.value = c.palette || '';
+            if (palette.value !== (c.palette || '')) palette.value = '';
+            body.append(line(el('label', { for: idOf('palette'), text: CL.palette }), palette));
+        }
+        body.append(line(el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-color-reset', disabled: !m.config.color,
+            on: { click: () => { const next = { ...model().config }; delete next.color; commit(next, 'reset color'); } } }, CL.reset)));
+        if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
+        colorState.ctl.update();
+    }
+
+    function paintToolbar(m) {
+        const use = colorUse(m.config);
+        colorBtn.hidden = !(use.map || use.palette);
+        if (colorBtn.hidden && colorPop.isOpen()) colorPop.close('api');
+        else if (colorPop.isOpen()) fillColor();
+        saveBtn.hidden = !m.canSave;
+        saveBtn.disabled = !m.canExport;
         csvBtn.disabled = !m.canExport;
     }
 
@@ -580,10 +723,8 @@ export function createControls({ D, id, model, on }) {
     splitRow.extra.after(arrangement);
     const setsSlot = el('div', { class: 'ccnt-sets', hidden: true });
     const kept = el('div', { class: 'ccnt-kept', role: 'note' });
-    const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-undo', disabled: true, on: { click: () => on.undo() } }, C.buttons.undo);
     const element = el('div', { class: 'ccnt-controls', 'data-panel-controls': '' },
-        modeRow, xRow.wrap, yRow.wrap, splitRow.wrap, setsSlot, valueRow, measureRow.element, factorRow.element, labelsRow, optionsBox, kept,
-        el('div', { class: 'ccnt-controls__foot' }, undoBtn));
+        modeRow, xRow.wrap, yRow.wrap, splitRow.wrap, setsSlot, valueRow, measureRow.element, factorRow.element, labelsRow, densityRow, kept, toolbar);
 
     function commit(next, label) {
         on.commit(next, label);
@@ -602,14 +743,16 @@ export function createControls({ D, id, model, on }) {
         setsSlot.hidden = !shownRows.sets;
         if (m.structure) {
             for (const row of [xRow, yRow, splitRow]) {
-                if (row.wrap.hidden) continue;
+                if (row.wrap.hidden) { destroyEditor(row.field); continue; }
                 row.sync();
                 paintInputExtras(row, m.config[row.field] || null, m, shownRows);
             }
         }
+        wanted = null;       // a reveal not met by this paint is stale
         paintArrangement(m, shownRows);
         if (m.structure) paintValue(m, shownRows); else valueRow.hidden = true;
         paintLabels(m, shownRows);
+        paintToolbar(m);
         kept.textContent = keptLine(m.config, m.titleOf);
         kept.hidden = !kept.textContent;
         undoBtn.disabled = !m.undo;
@@ -621,23 +764,15 @@ export function createControls({ D, id, model, on }) {
         element,
         /** Where the sets of Venn and UpSet are drawn (V1). */
         setsElement: setsSlot,
-        /** Plot Options' box, where the panel adds Save as grouping and Show as table (C2b). */
-        optionsElement: optionsBox,
         paint,
         /**
-         * Open an input's Choose levels or binning control in place and focus it: the way out of a refusal (UX 4.3).
+         * Open an input's Choose levels or binning pop-over and focus it: the way out of a refusal (UX 4.3).
          * @param {string} field - 'x' or 'y'
          * @param {'levels'|'binning'} what
          */
         reveal(field, what) {
-            const row = rows.get(field);
-            if (!row) return;
-            (what === 'binning' ? open.binning : open.levels).add(field);
-            paint();
-            const box = what === 'binning' ? row.binning : row.levels;
-            const target = box.querySelector(what === 'binning' ? '.pbc-bins' : 'input, button') || row.extra.querySelector('button');
-            if (target) target.focus();
-            row.wrap.scrollIntoView({ block: 'nearest' });
+            wanted = { field, what };
+            flushReveal();
         },
         /** The selects are filled again: the dataset or the panels changed (a provider's entities, the structure). */
         refill() {
@@ -645,8 +780,8 @@ export function createControls({ D, id, model, on }) {
             modesFilled = false;
         },
         destroy() {
-            for (const mounted of mounts) if (mounted.handle && mounted.handle.destroy) mounted.handle.destroy();
-            mounts = [];
+            for (const field of [...editors.keys()]) destroyEditor(field);
+            colorPop.destroy();
         }
     };
 }
