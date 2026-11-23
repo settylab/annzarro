@@ -110,9 +110,9 @@ function mount(area, ctx) {
     let model = null;
     let offered = null;
 
-    const heading = D.el('div', { class: 'cgene-add-heading' });
-    const item = D.el('button', { type: 'button', role: 'menuitem', class: 'cgene-add-item', on: { click: openOffered } }, OPEN_GROUPING);
-    const menu = D.el('div', { class: 'cgene-add-menu cgene-group-menu', role: 'menu', hidden: true,
+    const heading = D.el('div', { class: 'cgene-group-menu__head' });
+    const item = D.el('button', { type: 'button', role: 'menuitem', class: 'cgene-group-menu__item', on: { click: openOffered } }, OPEN_GROUPING);
+    const menu = D.el('div', { class: 'cgene-group-menu', role: 'menu', hidden: true,
         on: { keydown: (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } } } }, heading, item);
     area.appendChild(menu);
 
