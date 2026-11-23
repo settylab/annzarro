@@ -2,8 +2,9 @@
 
 Nothing is stubbed: a real server and store. The user opens **Cell Grouping** (cell type), **Gene Signature** (three
 genes) and **Cell-Gene Plot** from "Create New Panel", takes the grouping as the groups and the signature as the genes,
-and the plot is drawn from ``POST /api/v1/data/cell_groups``. One mean and one percent-expressing value are compared
-with values computed here from the store's own arrays.
+and the plot is drawn from ``POST /api/v1/data/cell_groups``. Every group's mean of each gene, in the heatmap and in the
+dots' colours, is compared with values computed here from the store's own arrays. % expressing is not asserted: X is
+scaled in this fixture, so it is 100 for every gene.
 
 Needs Playwright with Chromium; skipped without it, or failed when ANNZARRO_REQUIRE_BROWSER=1.
 """
