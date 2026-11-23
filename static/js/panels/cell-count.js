@@ -56,7 +56,7 @@ import { isPlanState, describePlan, wayOut, gridNotice, levelsNote } from './cel
 import { saveOffered, savePlan, openSaveDialog } from './cell-count/save-grouping.js';
 import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
 import { parseAlsoListed } from '../utils/source-registry.js';
-import { PLOT_PALETTES } from '../utils/plot-theme.js';
+import { PLOT_PALETTES, modebarOf, MODEBAR_REMOVE } from '../utils/plot-theme.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { groupColours } from './plot-utilities/colors.js';
 import { drawPlot } from '../utils/panel-surface.js';
@@ -662,7 +662,8 @@ actions.register({
             delete _dom.root.dataset.drawn;
             const root = _dom.root;
             const plot = _dom.plot;
-            drawPlot(plot, fig.data, { ...fig.layout, autosize: true }, { displaylogo: false, responsive: true },
+            drawPlot(plot, fig.data, { ...fig.layout, autosize: true, modebar: modebarOf(PLOT_PALETTES[theme].textColor) },
+                { displaylogo: false, responsive: true, modeBarButtonsToRemove: [...MODEBAR_REMOVE] },
                 coverageOf(table, names), 'cells').then(() => {
                 // a click on a bar, slice or rectangle offers Save as grouping (CNT-21); a purge drops the listener
                 if (typeof plot.removeAllListeners === 'function') plot.removeAllListeners('plotly_click');
