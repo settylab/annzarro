@@ -157,7 +157,13 @@ unless its **Dendrograms** box is cleared.
 | Section | Controls |
 |---|---|
 | Colors | **Color scale**, **Reverse**, **Min**, **Max**, **Center** (for a diverging scale); **Print values in cells** (heatmap); the scaling's help line |
-| Dots | **Smallest and largest dot**; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`). Size's threshold sits beside **Size** in the control grid |
+| Dots | **Largest dot**, a slider from 10% to 100% of a cell; **Smallest dot**, a slider in px; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`). Size's threshold sits beside **Size** in the control grid |
+
+By default the largest dot fills its cell: the spacing of the genes or of the groups, whichever is smaller, less a
+2 px gap, and at most 40 px. The dots therefore grow and shrink with the panel and with the number of genes and groups.
+**Largest dot** draws it at a share of that. The smallest dot is 3 px. A view saved before the dots filled their cells
+keeps its dot sizes in px, and **Largest dot** says so ("12 px (saved)") until you move it. Dots are opaque, and
+neither the dots nor the heatmap draw grid lines.
 
 **Reset** puts all of these back to their defaults in one step.
 
@@ -257,7 +263,7 @@ How scanpy's options map onto the plot:
 | `categories_order` | The level order in the grouping (tick and drag levels) |
 | `num_categories` | Equal-width bins of a grouping's factor (see below) |
 | `cmap`, `vmin`, `vmax`, `vcenter` | **Color scale**, **Min**, **Max**, **Center** |
-| `dot_min`, `dot_max`, `smallest_dot`, `largest_dot` | **% at the smallest dot**, **% at the largest dot**, **Smallest and largest dot** |
+| `dot_min`, `dot_max`, `smallest_dot`, `largest_dot` | **% at the smallest dot**, **% at the largest dot**, **Smallest dot**; the largest dot is a share of its cell (**Largest dot**) rather than a size in px |
 | `swap_axes` | **Swap axes** |
 | `add_totals` | **Cells per group** and **Sort groups by size** |
 | `dendrogram`, `add_dendrogram` (`sc.tl.dendrogram`'s defaults) | **Cluster ▾** and **Dendrograms**: complete linkage and Pearson correlation by default (see below for the input) |

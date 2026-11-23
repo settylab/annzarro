@@ -398,7 +398,7 @@ def test_min_and_max_are_in_color(page, served):
     _one_plot(page, served)
     page.click(f"{TP} .cgene-color-btn")
     page.wait_for_selector(_pop("color"))
-    for name in ("colorScale", "reverse", "min", "max", "center", "dotSmallest", "dotLargest", "dotMin", "dotMax"):
+    for name in ("colorScale", "reverse", "min", "max", "center", "dotScale", "dotSmallest", "dotMin", "dotMax"):
         assert page.locator(f"{_pop('color')} [data-option='{name}']").count() == 1, name
     page.fill(f"{_pop('color')} [data-option='max']", "2")
     page.press(f"{_pop('color')} [data-option='max']", "Enter")
@@ -407,8 +407,49 @@ def test_min_and_max_are_in_color(page, served):
     assert page.locator(_pop("color")).count() == 1, "an edit applies live and leaves the pop-over open"
     page.click(f"{TP} .cgene-options-btn")
     page.wait_for_selector(_pop("plot-options"))
-    for name in ("colorScale", "min", "max", "center", "printValues", "dotSmallest", "dotMin", "dotMax"):
+    for name in ("colorScale", "min", "max", "center", "printValues", "dotScale", "dotSmallest", "dotMin", "dotMax"):
         assert page.locator(f"{_pop('plot-options')} [data-option='{name}']").count() == 0, name
+
+
+def _set_range(page, selector, value):
+    """Move a slider as a drag ends: its value, then input and change."""
+    page.eval_on_selector(selector, "(e, v) => { e.value = String(v); e.dispatchEvent(new Event('input', {bubbles: true}));"
+                          " e.dispatchEvent(new Event('change', {bubbles: true})); }", value)
+
+
+_LARGEST = "(p) => p.data[0].marker.size.reduce((m, v) => (v > m ? v : m), 0)"
+
+
+def test_dots_fill_their_cells_and_largest_dot_takes_a_share_of_the_cell(page, served):
+    _one_plot(page, served)
+    _open_color(page)
+    assert page.locator(_option("dotScaleValue", "color")).inner_text() == "100% of cell"
+    assert page.locator(_option("dotSmallestValue", "color")).inner_text() == "3 px"
+    full = page.evaluate(f"(s) => ({_LARGEST})(document.querySelector(s + ' .cgene-plot'))", TP)
+    assert full > 20, f"a full cell of four genes is larger than the old 20 px: {full}"
+    assert page.evaluate("(s) => document.querySelector(s + ' .cgene-plot').data[0].marker.opacity", TP) == 1
+    _set_range(page, _option("dotScale", "color"), 50)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotScale === 50", P)
+    _redrawn(page, f"(p, a) => Math.abs(({_LARGEST})(p) - a) < 0.5", full / 2)
+    assert page.locator(_option("dotScaleValue", "color")).inner_text() == "50% of cell"
+    _set_range(page, _option("dotSmallest", "color"), 6)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotSmallest === 6", P)
+    _redrawn(page, "(p) => p.data[0].marker.size.reduce((m, v) => (v < m ? v : m), Infinity) === 6")
+    page.click(f"{_pop('color')} .cgene-color-reset")
+    until(page, "(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return c.dotScale === undefined && c.dotSmallest === undefined; }", P)
+
+
+def test_a_link_from_before_keeps_its_dot_px_until_largest_dot_is_moved(page, served):
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}], dotSizes=[5, 12]),
+                         S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, S1))
+    _drawn(page)
+    _redrawn(page, f"(p) => ({_LARGEST})(p) === 12")
+    _open_color(page)
+    assert page.locator(_option("dotScaleValue", "color")).inner_text() == "12 px (saved)"
+    assert page.locator(_option("dotSmallestValue", "color")).inner_text() == "5 px"
+    _set_range(page, _option("dotScale", "color"), 100)
+    until(page, "(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return c.dotSizes === undefined && c.dotSmallest === 5; }", P)
+    _redrawn(page, f"(p) => ({_LARGEST})(p) > 12")
 
 
 def test_hiding_one_dendrogram_keeps_the_other(page, served):

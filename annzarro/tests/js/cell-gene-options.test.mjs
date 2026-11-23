@@ -208,9 +208,10 @@ test('5.3 cmap, vmin, vmax, vcenter: Color scale, Min, Max and a Center for a di
 });
 
 test('5.3 dot_min, dot_max: the % at the smallest and largest dot set the size legend\'s range', () => {
-    // a figure tall enough for all five reference dots (the legend column holds four entries here)
+    // a figure tall enough for all five reference dots (the legend column holds four entries here; the largest dot
+    // fills its cell by default, here the 40 px most, so each reference dot takes a 40 px line)
     const { model } = compose({ dotMin: 10, dotMax: 60 });
-    model.pixels = { width: 900, height: 1200 };
+    model.pixels = { width: 900, height: 1400 };
     assert.deepEqual(one(D.buildFigure(model, LIGHT), 'size legend').text, ['10', '22.5', '35', '47.5', '60']);
 });
 
@@ -570,4 +571,80 @@ test('WP-2 Reverse reverses the color scale of dots and heatmap', () => {
     assert.equal(matrixTraces(compose().figure)[0].marker.reversescale, undefined);
     assert.equal(matrixTraces(compose({ reverse: true }).figure)[0].marker.reversescale, true);
     assert.equal(matrixTraces(compose({ reverse: true, mode: 'heatmap' }).figure)[0].reversescale, true);
+});
+
+// --- dots fill their cells, opaque, no grid (operator, 2026-11-23) ------------------------------------------------
+
+const arrayMaxOf = (a) => a.reduce((m, v) => (v > m ? v : m), -Infinity);
+const arrayMinOf = (a) => a.reduce((m, v) => (v < m ? v : m), Infinity);
+
+/** The matrix's cell in px, read from the figure: the gene axis's and the group axis's pitch, the smaller. */
+function cellPitch(fig, model) {
+    const inner = { w: model.pixels.width - 20, h: model.pixels.height - 20 };
+    const along = (ax, px) => ((ax.domain[1] - ax.domain[0]) * px) / Math.abs(ax.range[1] - ax.range[0]);
+    return Math.min(along(fig.layout.xaxis, inner.w), along(fig.layout.yaxis, inner.h));
+}
+
+test('by default the largest dot fills its cell less a 2 px gap, and follows the plot size and the number of rows', () => {
+    const seen = [];
+    for (const [rows, width, height] of [[40, 900, 600], [40, 1400, 600], [60, 900, 600], [24, 700, 900], [80, 1200, 500]]) {
+        const { model } = compose({}, { rows, split: 3 });
+        model.pixels = { width, height };
+        const fig = D.buildFigure(model, LIGHT);
+        const sizes = matrixTraces(fig)[0].marker.size;
+        const largest = arrayMaxOf(sizes);
+        const want = Math.min(40, cellPitch(fig, model) - 2);
+        assert.ok(Math.abs(largest - want) < 1.5, `${rows} rows at ${width} x ${height}: largest ${largest.toFixed(1)} px, cell less 2 ${want.toFixed(1)}`);
+        assert.ok(arrayMinOf(sizes) >= 3 - 1e-9, 'the smallest dot stays 3 px');
+        seen.push(largest);
+    }
+    assert.ok(seen[1] > seen[0], 'a wider plot, larger dots');
+    assert.ok(seen[2] < seen[0], 'more rows, smaller dots');
+});
+
+test('a few rows and groups: the largest dot stops at 40 px, so the size legend still holds its reference dots', () => {
+    const { model } = compose({});
+    model.pixels = { width: 1400, height: 1000 };
+    const fig = D.buildFigure(model, LIGHT);
+    assert.ok(cellPitch(fig, model) > 60, 'the cell is far larger than 40 px');
+    assert.equal(arrayMaxOf(matrixTraces(fig)[0].marker.size), 40);
+});
+
+test('Largest dot takes a share of the cell; Smallest dot is px; the configuration keeps both', () => {
+    const at = (fields) => {
+        const { model } = compose(fields, { rows: 40, split: 3 });
+        const fig = D.buildFigure(model, LIGHT);
+        const sizes = matrixTraces(fig)[0].marker.size;
+        return { lo: arrayMinOf(sizes), hi: arrayMaxOf(sizes), cell: cellPitch(fig, model) };
+    };
+    const full = at({});
+    const half = at({ dotScale: 50 });
+    assert.ok(Math.abs(half.hi - (full.cell - 2) / 2) < 1, `50%: ${half.hi} of ${full.cell}`);
+    assert.equal(at({ dotScale: 3 }).hi, at({ dotScale: 10 }).hi, 'the share stops at 10%');
+    assert.equal(at({ dotSmallest: 6 }).lo, 6);
+    assert.ok(Math.abs(at({ dotSmallest: 6 }).hi - full.hi) < 1e-9, 'the smallest dot leaves the largest as it is');
+    // a smallest dot larger than a small cell's largest is drawn at the largest
+    const tiny = at({ dotScale: 10, dotSmallest: 30 });
+    assert.equal(tiny.lo, tiny.hi);
+    const c = normalizeCellGene({ version: 1, mode: 'dots', dotScale: 50, dotSmallest: 6, sections: [] }).config;
+    assert.ok(c.dotScale === 50 && c.dotSmallest === 6, 'both are kept by the configuration');
+});
+
+test('a link from before keeps its px range: dotSizes draws those px until Largest dot is moved', () => {
+    const old = compose({ dotSizes: [5, 12] }, { rows: 40, split: 3 }).figure;
+    const sizes = matrixTraces(old)[0].marker.size;
+    assert.equal(arrayMinOf(sizes), 5);
+    assert.equal(arrayMaxOf(sizes), 12);
+    const moved = matrixTraces(compose({ dotSizes: [5, 12], dotScale: 100 }, { rows: 40, split: 3 }).figure)[0].marker.size;
+    assert.equal(arrayMinOf(moved), 5, 'the smallest of the old range stays');
+    assert.ok(arrayMaxOf(moved) > 12, 'the largest fills the cell');
+});
+
+test('dots are opaque and neither mode draws grid lines', () => {
+    for (const mode of ['dots', 'heatmap']) {
+        const fig = compose({ mode }).figure;
+        assert.equal(fig.layout.xaxis.showgrid, false, `${mode}: x`);
+        assert.equal(fig.layout.yaxis.showgrid, false, `${mode}: y`);
+        if (mode === 'dots') for (const t of matrixTraces(fig)) assert.equal(t.marker.opacity, 1);
+    }
 });
