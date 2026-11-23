@@ -72,30 +72,30 @@ def test_too_many_levels_on_x_is_refused_before_any_request_and_choose_levels_li
 
     page.click(f"{S} .ccnt-state-box button:has-text('Choose levels')")
     # the chooser opens on X and lists the levels: one light request for that input alone, never the grid
-    until(page, "(s) => document.querySelectorAll(s + ' [data-input=\"x\"] .ccnt-level').length > 0", S, timeout=60)
-    assert page.is_visible(f"{S} [data-input='x'] .ccnt-levels")
+    until(page, "() => document.querySelectorAll('[data-popover=levels] .ccnt-level').length > 0", timeout=60)
+    assert page.is_visible("[data-popover='levels'] .ccnt-levels")
     asked = _requests(page)
     # at 2,001 categories: exactly one request, of levels only (no codes, no grid), for that input alone
     assert len(asked) == 1 and not _grid_requests(page), asked
     assert [p["source"]["key"] for p in asked[0]["partitionings"]] == ["many"]
     assert not (asked[0].get("want") or {}).get("codes"), asked[0]
-    assert page.evaluate("(s) => document.querySelectorAll(s + ' [data-input=\"x\"] .ccnt-level').length", S) == 2001, \
+    assert page.evaluate("() => document.querySelectorAll('[data-popover=levels] .ccnt-level').length") == 2001, \
         "every category is listed, used or not"
     # closing and opening the chooser again asks nothing more: the levels are held for that input
     page.click(f"{S} [data-input='x'] .ccnt-choose")
     page.click(f"{S} [data-input='x'] .ccnt-choose")
-    until(page, "(s) => document.querySelectorAll(s + ' [data-input=\"x\"] .ccnt-level').length === 2001", S)
+    until(page, "() => document.querySelectorAll('[data-popover=levels] .ccnt-level').length === 2001")
     waits.expect_stays(lambda: len(_requests(page)) == 1, "a second look at the levels asks nothing; there is no event to wait for", page=page)
     used = DATA.obs["many"].value_counts()
-    counts = page.evaluate("""(s) => Object.fromEntries([...document.querySelectorAll(s + ' [data-input="x"] .ccnt-level')]
-        .map(li => [li.dataset.id, li.querySelector('.ccnt-level__n').textContent]))""", S)
+    counts = page.evaluate("""() => Object.fromEntries([...document.querySelectorAll('[data-popover=levels] .ccnt-level')]
+        .map(li => [li.dataset.id, li.querySelector('.ccnt-level__n').textContent]))""")
     assert counts["c:m0005"] == f"{int(used['m0005']):,}"
 
     # keep two levels: the rest is counted as one, and the plot is drawn from one grid request
-    page.click(f"{S} [data-input='x'] .ccnt-levels__actions button:has-text('Tick none')")
+    page.click(f"[data-popover='levels'] .ccnt-levels__actions button:has-text('Tick none')")
     until(page, f"() => Array.isArray(window.PanelManager.getPanel('{CC}').getConfig().x.levels)")
     for name in ("m0001", "m0002"):
-        page.check(f"{S} [data-input='x'] .ccnt-level[data-id='c:{name}'] input[type=checkbox]")
+        page.check(f"[data-popover='levels'] .ccnt-level[data-id='c:{name}'] input[type=checkbox]")
     _drawn(page, "bar", "c.x.levels && c.x.levels.length === 2")
     assert len(_grid_requests(page)) >= 1
     assert sum(sum(t["y"]) for t in _plot(page)["data"]) == N
@@ -120,10 +120,10 @@ def test_choose_levels_says_why_when_the_levels_are_refused_for_their_number(pag
     _open(page, served, {CC: _count(mode="bar", x=obs("many"))})
     _refused(page, "many has 2,001 levels; Bar shows up to 200.", ["Choose levels"])
     page.click(f"{S} .ccnt-state-box button:has-text('Choose levels')")
-    note = f"{S} [data-input='x'] .ccnt-levels__note"
+    note = f"[data-popover='levels'] .ccnt-levels__note"
     page.wait_for_selector(note, timeout=30000)
     assert page.inner_text(f"{note} .ccnt-levels__said") == "many has 2,345 levels that hold a cell; Choose levels lists up to 2,000."
-    assert page.query_selector(f"{S} [data-input='x'] .ccnt-levels__wait") is None
+    assert page.query_selector(f"[data-popover='levels'] .ccnt-levels__wait") is None
     assert page.query_selector_all(f"{note} button") == [], "a categorical column has no way out here"
     assert len([c for c in _requests(page) if c.get("shape") != "grid"]) == 1
 
@@ -159,12 +159,12 @@ def test_a_typed_bin_count_is_checked_against_the_modes_limit_where_it_is_typed(
     _open(page, served, {CC: _count(mode="bar", x=obs("depth"))})
     _drawn(page, "bar")
     page.click(f"{S} [data-row='x'] .ccnt-bins")
-    page.wait_for_selector(f"{S} .ccnt-binning .pbc")
-    assert page.get_attribute(f"{S} .ccnt-binning .pbc-bins", "title") == "A whole number from 2 to 200."
+    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc")
+    assert page.get_attribute(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "title") == "A whole number from 2 to 200."
     asked = len(_grid_requests(page))
-    page.fill(f"{S} .ccnt-binning .pbc-bins", "300")
-    page.press(f"{S} .ccnt-binning .pbc-bins", "Enter")
-    page.wait_for_selector(f"{S} .ccnt-binning .pbc-message:has-text('Enter a whole number from 2 to 200.')")
+    page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "300")
+    page.press(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "Enter")
+    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc-message:has-text('Enter a whole number from 2 to 200.')")
     assert "binning" not in _config(page)["x"]
     waits.expect_stays(lambda: len(_grid_requests(page)) == asked and _state(page) is None,
                        "a refused entry changes nothing: no request and no refusal follow", page=page)
@@ -177,10 +177,10 @@ def test_too_many_bins_for_bar_opens_the_binning_control_and_a_histogram_of_a_ca
     # the most bins Bar shows, one undoable step, and the control open on it
     _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 200")
     assert _undo_label(page) == "Undo: bin X"
-    page.wait_for_selector(f"{S} [data-input='x'] .ccnt-binning .pbc")
-    assert page.input_value(f"{S} .ccnt-binning .pbc-bins") == "200"
-    page.fill(f"{S} .ccnt-binning .pbc-bins", "40")
-    page.press(f"{S} .ccnt-binning .pbc-bins", "Enter")
+    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc")
+    assert page.input_value(f"[data-popover='binning'] .ccnt-binning .pbc-bins") == "200"
+    page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "40")
+    page.press(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "Enter")
     _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 40")
 
     page.select_option(f"{S} .ccnt-mode", "histogram")
@@ -246,14 +246,19 @@ def test_the_route_states_are_the_painters_with_its_progress_bar_cancel_and_retr
 
 # ------------------------------------------------------------------ 3. the strip
 
-def test_the_strip_says_the_cells_counted_without_a_value_and_outside_the_range(page, served):
+def test_the_banner_says_the_cells_counted_without_a_value_and_outside_the_range(page, served):
     pt = DATA.obs["pseudotime"]
     _open(page, served, {CC: _count(mode="histogram", x=obs("pseudotime", binning={"method": "equal_width", "range": [0.5, None]}))})
     _drawn(page, "histogram")
     missing = int(pt.isna().sum())
     outside = int((pt < 0.5).sum())
     counted = N - missing - outside
-    assert page.inner_text(f"{S} .ccnt-strip") == f"{counted:,} cells counted · {missing} without a value for pseudotime · {outside} outside the range"
+    # the coverage banner under the plot says it, once; the footer line says nothing more
+    assert page.get_attribute(f"{S} .plot-status", "data-summary").splitlines() == [
+        f"{counted:,} of {N:,} cells shown",
+        f"pseudotime: filtered out ({missing} cells) -- without a value for pseudotime",
+        f"filtered out ({outside} cells) -- outside the range"]
+    assert page.inner_text(f"{S} .ccnt-strip") == ""
 
 
 # ------------------------------------------------------------------ 4. Save as grouping
@@ -271,7 +276,6 @@ def test_save_as_grouping_makes_a_grouping_of_the_plots_inputs_with_the_same_gro
     _drawn(page, "bar")
     groups = int((DATA.obs.groupby(["cell_type", "condition"], observed=True).size() > 0).sum())
     asked = len(_requests(page))
-    page.click(f"{S} .ccnt-options-btn")
     page.click(f"{S} .ccnt-save-btn")
     d = _dialog(page)
     assert d == {"title": "Save as grouping", "lines": [f"Factors: cell_type, condition. {groups} groups."], "disabled": False, "why": "", "role": "dialog"}
@@ -291,7 +295,6 @@ def test_save_as_grouping_makes_a_grouping_of_the_plots_inputs_with_the_same_gro
 def test_save_as_grouping_is_refused_over_the_grouping_limits_and_opens_from_a_click_on_a_bar(page, served):
     _open(page, served, {CC: _count(mode="histogram", x=obs("depth", binning={"method": "equal_width", "bins": 1500}))})
     _drawn(page, "histogram")
-    page.click(f"{S} .ccnt-options-btn")
     page.click(f"{S} .ccnt-save-btn")
     d = _dialog(page)
     reason = "depth has 1,500 bins; a factor of a grouping holds up to 1,000. Use fewer bins first."
@@ -310,20 +313,18 @@ def test_save_as_grouping_is_refused_over_the_grouping_limits_and_opens_from_a_c
     assert _dialog(page)["lines"] == ["Factors: cell_type. 6 groups."]
 
 
-# ------------------------------------------------------------------ 5. Show as table
+# ------------------------------------------------------------------ 5. no Show as table; Download CSV on the toolbar
 
-def test_show_as_table_is_the_csv_as_an_html_table(page, served):
+def test_there_is_no_show_as_table_and_the_csv_downloads_from_the_toolbar(page, served):
+    """Show as table was dropped (operator ruling, 2026-11-23); the CSV it mirrored stays, on the toolbar until the shared Plot Options."""
     _open(page, served, {CC: _count(mode="bar", x=cc.CELL_TYPE, split=cc.CONDITION)})
     _drawn(page, "bar")
-    page.click(f"{S} .ccnt-options-btn")
-    page.click(f"{S} .ccnt-table-btn")
-    page.wait_for_selector(f"{S} .ccnt-table table")
-    head = page.evaluate("(s) => [...document.querySelectorAll(s + ' .ccnt-table thead th')].map(t => [t.textContent, t.getAttribute('scope')])", S)
-    assert head == [["cell_type", "col"], ["condition", "col"], ["Cells", "col"], ["Share", "col"]]
-    body = page.evaluate("(s) => [...document.querySelectorAll(s + ' .ccnt-table tbody tr')].map(r => [...r.children].map(c => c.textContent))", S)
+    assert page.query_selector(f"{S} .ccnt-table-btn") is None and page.query_selector(f"{S} .ccnt-table") is None
+    assert "Show as table" not in page.inner_text(f"{S} .ccnt-panel")
+    with page.expect_download() as info:
+        page.click(f"{S} .ccnt-toolbar .ccnt-csv")
+    lines = open(info.value.path(), encoding="utf-8").read().strip().splitlines()
+    assert lines[0].split(",")[:4] == ["cell_type", "condition", "Cells", "Share"]
     want = DATA.obs.groupby(["cell_type", "condition"], observed=True).size()
-    got = {(r[0], r[1]): int(r[2]) for r in body}
+    got = {(r[0], r[1]): int(r[2]) for r in (line.split(",") for line in lines[1:])}
     assert {k: v for k, v in got.items() if v} == {k: int(v) for k, v in want.items() if v}
-    assert page.inner_text(f"{S} .ccnt-table-btn") == "Hide table"
-    page.click(f"{S} .ccnt-table-btn")
-    page.wait_for_selector(f"{S} .ccnt-table table", state="detached")
