@@ -25,7 +25,7 @@ const MODE_ROWS = Object.freeze({
     bar: { value: 'height', arrangement: ['stack', 'dodge', 'fill'], labels: true, sort: true, horizontal: true, log: true, binned: ['x', 'split'] },
     histogram: { value: 'height', arrangement: ['stack', 'dodge'], labels: true, horizontal: true, log: true, binned: ['x', 'split'] },
     pie: { slices: true, labels: true, sort: true, ring: true, binned: ['x'] },
-    hist2d: { value: 'color', labels: true, binned: ['x', 'y'] },
+    hist2d: { value: 'color', labels: true, binned: ['x', 'y', 'split'] },
     heatmap: { value: 'color', labels: true, reverse: true, binned: ['x', 'y'] },
     // a density is smoothed on a fixed grid (CNT-10): only its Color by is binned
     density: { binned: ['split'], density: 1 },
@@ -382,7 +382,8 @@ export function drawOptions(config) {
         // a density's own (CNT-10): the bandwidth adjust, curves scaled by level size, a 2D density as an image
         adjust: rows.density && Number.isFinite(config.adjust) && config.adjust >= ADJUST.min && config.adjust <= ADJUST.max ? config.adjust : 1,
         scale: rows.density && config.scale === 'size' ? 'size' : 'level',
-        style: rows.density === 2 && config.style === 'image' ? 'image' : 'contours'
+        // a Color by is told apart by the density of each level's color, as an image, unless the contours are chosen
+        style: rows.density === 2 && (config.style === 'image' || (config.style === undefined && !!config.split)) ? 'image' : 'contours'
     };
 }
 

@@ -56,7 +56,7 @@ const MODES = Object.freeze({
     pie: { x: true, wire: 'categorical', dimension: 'one' },
     histogram: { x: true, split: true, wire: '1d', dimension: 'one', numeric: ['x'] },
     density: { x: true, split: true, wire: '1d', dimension: 'one', numeric: ['x'], density: true },
-    hist2d: { x: true, y: true, wire: '2d', dimension: 'two', numeric: ['x', 'y'] },
+    hist2d: { x: true, y: true, split: true, wire: '2d', dimension: 'two', numeric: ['x', 'y'] },
     density2d: { x: true, y: true, split: true, wire: '2d', dimension: 'two', numeric: ['x', 'y'], density: true },
     heatmap: { x: true, y: true, wire: 'categorical', dimension: 'two' },
     venn: { sets: true, wire: 'sets', setsMax: 3 },
@@ -73,7 +73,7 @@ const LIMITS = Object.freeze({
     heatmap: { x: { levels: 200, bins: 200 }, y: { levels: 200, bins: 200 } },
     histogram: { x: { bins: 2000 }, split: { levels: 200 } },
     density: { x: { bins: 2000 }, split: { levels: 200 } },
-    hist2d: { x: { bins: 512 }, y: { bins: 512 }, factor: { levels: 8 } },
+    hist2d: { x: { bins: 512 }, y: { bins: 512 }, split: { levels: 8 }, factor: { levels: 8 } },
     density2d: { x: { bins: 512 }, y: { bins: 512 }, split: { levels: 8 } }
 });
 
@@ -254,7 +254,16 @@ export function modeReads(mode) {
 export function keptForOtherModes(config) {
     const reads = modeReads(config.mode);
     const stored = (field) => (field === 'sets' ? Array.isArray(config.sets) && config.sets.length > 0 : config[field] !== undefined);
-    return [...INPUTS, 'sets'].filter((field) => stored(field) && !reads[field]);
+    return [...INPUTS, 'sets'].filter((field) => stored(field) && (!reads[field] || (field === 'split' && !splitUsed(config))));
+}
+
+/**
+ * Whether the mode reads the config's Color by now: a bar, a histogram or a density always does; a 2D histogram while its
+ * rectangles show counts (a share, a statistic or the most frequent level says something else with their color).
+ */
+export function splitUsed(config) {
+    if (!modeReads(config.mode).split) return false;
+    return config.mode !== 'hist2d' || !config.value || config.value.kind === 'count';
 }
 
 // --- bins ------------------------------------------------------------------------------------------------------------
@@ -367,7 +376,8 @@ export function planGrid(config, ctx) {
     } else {
         if (!config.x) return { state: 'empty', reason: 'choose_x' };
         if (mode.y && !config.y) return { state: 'empty', reason: 'choose_y' };
-        const wanted = INPUTS.filter((input) => mode[input] && config[input]).map((input) => [input, config[input]]);
+        // a 2D histogram's Color by splits its counts into layers; it is read only while the rectangles show counts
+        const wanted = INPUTS.filter((input) => mode[input] && config[input] && !(input === 'split' && !splitUsed(config))).map((input) => [input, config[input]]);
         if (config.value && config.value.kind === 'top_level' && TOP_LEVEL_MODES.includes(config.mode)) wanted.push(['factor', config.value.factor]);
         const plan = wanted.map(([input, p]) => {
             const numeric = isBinned(p, ctx);

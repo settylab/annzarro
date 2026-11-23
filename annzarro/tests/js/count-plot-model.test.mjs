@@ -108,7 +108,7 @@ test('each mode reads the inputs of UX 4.2', () => {
     assert.deepEqual(reads('bar'), { x: true, y: false, split: true, sets: false });
     assert.deepEqual(reads('pie'), { x: true, y: false, split: false, sets: false });
     assert.deepEqual(reads('histogram'), { x: true, y: false, split: true, sets: false });
-    assert.deepEqual(reads('hist2d'), { x: true, y: true, split: false, sets: false });
+    assert.deepEqual(reads('hist2d'), { x: true, y: true, split: true, sets: false });
     assert.deepEqual(reads('heatmap'), { x: true, y: true, split: false, sets: false });
     assert.deepEqual(reads('density2d'), { x: true, y: true, split: true, sets: false });
     assert.deepEqual(reads('venn'), { x: false, y: false, split: false, sets: true });
@@ -591,4 +591,17 @@ test('binSpacing is kept per axis, a bad value is reported and dropped, and a co
     const old = M.normalizeCountPlot({ version: 1, mode: 'hist2d' });
     assert.equal(old.config.binSpacing, undefined);
     assert.deepEqual(old.problems, []);
+});
+
+
+const N = (c) => M.normalizeCountPlot({ version: 1, ...c }).config;
+test('a 2D histogram with a Color by asks the grid for x, y and the levels, only while it shows counts', () => {
+    const base = { mode: 'hist2d', x: obs('depth'), y: obs('pseudotime'), split: obs('cell_type') };
+    const plan = planOf(base);
+    assert.deepEqual(plan.inputs.map((i) => i.input), ['x', 'y', 'split']);
+    assert.equal(plan.request.mode, '2d');
+    assert.deepEqual(planOf({ ...base, value: { kind: 'share', of: 'row' } }).inputs.map((i) => i.input), ['x', 'y'], 'a share is of the rectangle, not of a level');
+    assert.deepEqual(planOf({ ...base, value: { kind: 'top_level', factor: obs('batch') } }).inputs.map((i) => i.input), ['x', 'y', 'factor']);
+    assert.deepEqual(M.keptForOtherModes(N({ ...base, value: { kind: 'top_level', factor: obs('batch') } })), ['split'], 'unused while the color says something else');
+    assert.deepEqual(M.keptForOtherModes(N(base)), []);
 });

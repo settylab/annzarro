@@ -559,3 +559,48 @@ test('the colour bar and the counts do not change with the drawing', () => {
     assert.deepEqual(a.z, b.z);
     assert.deepEqual(a.colorbar, b.colorbar);
 });
+
+
+test('a 2D histogram with a Color by is one transparent-to-color layer per level, opacity on one scale of counts', () => {
+    const config = norm({ mode: 'hist2d', split: obs('k'), x: { source: { type: 'obs', key: 'a' }, binning: { method: 'equal_width', bins: 3 } },
+        y: { source: { type: 'obs', key: 'b' }, binning: { method: 'equal_width', bins: 2 } } });
+    // x by y by level, the level innermost: level a counts 1..6, level b counts 10 for the first rectangle only
+    const counts = [1, 10, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0];
+    const table = tableOf(config, { axes: [{ levels: ['bin:0', 'bin:1', 'bin:2'] }, { levels: ['bin:0', 'bin:1'] }, { levels: ['c:a', 'c:b'] }], counts, n_counted: 36 }, ['x', 'y', 'split']);
+    const f = D.countFigure(config, table, opts());
+    const layers = f.data.filter((t) => t.type === 'heatmap');
+    assert.equal(layers.length, 2);
+    assert.deepEqual(layers[0].z, [[1, 3, 5], [2, 4, 6]]);
+    assert.deepEqual(layers[1].z, [[10, null, null], [null, null, null]], 'a level with no cell in a rectangle leaves it empty');
+    for (const t of layers) {
+        assert.equal(t.zmin, 0);
+        assert.equal(t.zmax, 10, 'one scale for every level: the highest count of any');
+        assert.match(t.colorscale[0][1], /, 0\)$/);
+        assert.equal(t.showscale, false);
+    }
+    assert.deepEqual(layers.map((t) => t.colorscale[1][1].replace(/[^#0-9a-f]/gi, '').slice(0, 7)).length, 2);
+    const names = f.data.filter((t) => t.type === 'scatter').map((t) => t.name);
+    assert.deepEqual(names, ['a', 'b'], 'a legend entry for each level');
+    assert.equal(f.layout.showlegend, true);
+    assert.equal(f.layout.legend.title.text, 'condition');
+});
+
+test('a log-binned 2D histogram with a Color by draws every level layer on the index axis with edge ticks', () => {
+    const input = (key, binning) => ({ source: { type: 'obs', key }, binning });
+    const config = norm({ mode: 'hist2d', x: input('a', { method: 'log' }), y: input('b', { method: 'equal_width' }), split: obs('s') });
+    const reply = { axes: [{ levels: LOG, edges: LOG_EDGES }, { levels: ['bin:0', 'bin:1'], edges: [0, 5, 10] }, { levels: ['c:p', 'c:q'] }],
+        counts: Array.from({ length: 12 }, (_, i) => i + 1), n_counted: 78 };
+    const table = tableOf(config, reply, ['x', 'y', 'split']);
+    const f = D.countFigure(config, table, opts());
+    const layers = f.data.filter((t) => t.type === 'heatmap');
+    assert.equal(layers.length, 2);
+    for (const t of layers) {
+        assert.deepEqual(t.x, [0, 1, 2]);
+        assert.deepEqual(t.y, [5 / 2, 15 / 2]);
+    }
+    assert.deepEqual(f.layout.xaxis.tickvals, [-0.5, 0.5, 1.5, 2.5]);
+    assert.deepEqual(f.layout.xaxis.ticktext, ['1', '10', '100', '1000']);
+    assert.equal(f.layout.xaxis.zeroline, false);
+    const atValues = D.countFigure(norm({ ...config, binSpacing: { x: 'value' } }), table, opts());
+    assert.deepEqual(atValues.data[0].x, [5.5, 55, 550]);
+});
