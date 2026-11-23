@@ -190,8 +190,9 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
 
 | Section | Controls |
 |---|---|
-| Colors | **Color scale**, **Reverse**, **Min**, **Max**, **Center** (for a diverging scale); **Print values in cells** (heatmap); the scaling's help line |
-| Dots | **Largest dot**, a slider from 10% to 100% of a cell; **Smallest dot**, a slider in px; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`). Size's threshold sits beside **Size** in the control grid |
+| Colors | **Color scale**, **Reverse**, **Min**, **Max** and **Center** (see below) (for a diverging scale); **Print values in cells** (heatmap); the scaling's help line |
+| Dots | **Largest dot**, a slider from 10% to 100% of a cell; **Smallest dot**, a slider in px; **Size min** and **Size max** (scanpy's `dot_min`, `dot_max`; see below). Size's threshold sits beside **Size** in the control grid |
+| Height (3D) | **Min** and **Max** of the bars' height |
 
 By default the largest dot fills its cell: the spacing of the genes or of the groups, whichever is smaller, less a
 2 px gap. The dots therefore grow and shrink with the panel and with the number of genes and groups. **Largest dot**
@@ -199,6 +200,14 @@ draws it at a share of that. When the size legend has too little room for dots t
 smaller and says so under its title, for example "(legend scaled 1:3)". The smallest dot is 3 px. A view saved before the dots filled their cells
 keeps its dot sizes in px, and **Largest dot** says so ("12 px (saved)") until you move it. Dots are opaque unless
 you lower **Dot opacity** in Plot Options, and neither the dots nor the heatmap draw grid lines.
+
+**Ranges.** Colour, size and, in 3D, height each have **Min** and **Max** boxes in one style (colour also has **Center**).
+A box that is not set says "auto" with the value the plot draws, such as "auto (0.12)", so it never looks empty; type a
+number to fix it, or clear the box. The **↺** button beside each scale returns its boxes to auto in one undo step, and
+**Reset** at the foot puts the whole pop-over back. Colour limits clip the colours. **Size min** and **Size max** are the
+values of the size statistic at the smallest and largest dot, named by the statistic ("Size min (% expressing)"), since it
+need not be a percentage. The height limits clip the bars: one taller than **Max** is drawn at **Max**, one shorter than
+**Min** at **Min**, and a bar of 0 stays undrawn.
 
 **Reset** puts all of these back to their defaults in one step.
 
@@ -300,7 +309,7 @@ How scanpy's options map onto the plot:
 | `categories_order` | The level order in the grouping (tick and drag levels) |
 | `num_categories` | Equal-width bins of a grouping's factor (see below) |
 | `cmap`, `vmin`, `vmax`, `vcenter` | **Color scale**, **Min**, **Max**, **Center** |
-| `dot_min`, `dot_max`, `smallest_dot`, `largest_dot` | **% at the smallest dot**, **% at the largest dot**, **Smallest dot**; the largest dot is a share of its cell (**Largest dot**) rather than a size in px |
+| `dot_min`, `dot_max`, `smallest_dot`, `largest_dot` | **Size min**, **Size max**, **Smallest dot**; the largest dot is a share of its cell (**Largest dot**) rather than a size in px |
 | `swap_axes` | **Swap axes** |
 | `add_totals` | **Cells per group** and **Sort groups by size** |
 | `dendrogram`, `add_dendrogram` (`sc.tl.dendrogram`'s defaults) | **Cluster ▾** and **Dendrograms**: complete linkage and Pearson correlation by default (see below for the input) |

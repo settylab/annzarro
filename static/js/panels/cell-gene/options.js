@@ -11,14 +11,14 @@
  * - The menus (`OPTIONS_PART`), three buttons mounted by panels/cell-gene.js in the control grid's Layout group, each
  *   opening a pop-over (ui/popover.js; design note options-ux-080 section 5): Cluster ▾ (scopes, Sort groups, Linkage,
  *   Distance, the Ward note, the two Dendrograms), Color ▾ (map, Reverse, Min, Max, Center, Print values; in dots the
- *   largest dot as a share of its cell, the smallest dot in px, and the % at the smallest and largest dot) and Plot Options (dots' outline and opacity, sections, labels, legends,
+ *   largest dot as a share of its cell, the smallest dot in px, and Size min and max) and Plot Options (dots' outline and opacity, sections, labels, legends,
  *   totals, Export with Download CSV from the CSV's rows, utils/cell-gene-model.js `longRows`; UX 7, CXG-20). A
  *   pop-over never changes the size of the panel. Every change applies live as one undoable step of the panel
  *   (`ctx.set(patch, label)`). Before them, the `3D` toggle (UX 6b, WP-12): `view: '3d'`, disabled with its reason
  *   over the bar cap (`view3dGate`); in 3D, Plot Options' Export greys SVG ("3D exports as an image only").
  *
  * STYLE FIELDS (plan 1.6: additive, default when absent, never frozen): `colorScale`, `reverse`, `limits: [min, max]`, `center`,
- * `printValues`, `dotScale` (10 to 100: the % of its cell the largest dot fills; absent, 100), `dotSmallest` (px),
+ * `printValues`, `heightLimits: [min, max]` (the 3D bars' range), `dotScale` (10 to 100: the % of its cell the largest dot fills; absent, 100), `dotSmallest` (px),
  * `dotOpacity` (0.1 to 1; absent, 1), `dotSizes: [smallest, largest]` (px; written before the dots filled their cells, still read: a link that has it draws
  * those px until Largest dot is moved), `dotMin`, `dotMax` (% at the smallest and largest dot), `gap`
  * (0 to 3 cells), `sectionTitles`, `labels: {genes, groups}`, `titles: {plot, color, size}`, `legend: {colorBar,
@@ -38,9 +38,11 @@ import { MAX_ROWS } from '../../utils/hclust.js';
 import { longCsv } from '../../utils/cell-gene-model.js';
 import { generateDiscreteColors } from '../plot-utilities/colors.js';
 import { createPopover } from '../../ui/popover.js';
+import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import { dendrogramBlocks } from './draw-annotations.js';
 import { BARS_3D_MAX, checkBarCap } from '../../utils/bars-3d.js';
 
+const W = VOCABULARY.cellGene;
 const WO = VOCABULARY.cellGene.options;
 const W3 = VOCABULARY.cellGene.view3d;
 
@@ -238,9 +240,14 @@ export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
     if (s.dotMin !== null) size.dotMin = s.dotMin;
     if (s.dotMax !== null) size.dotMax = s.dotMax;
     if (s.titles.size) size.title = s.titles.size;
+    // the 3D bars' height range (`heightLimits`): the heights are drawn between the two (draw.js figure3d)
+    const height = {};
+    const hl = Array.isArray(config && config.heightLimits) ? config.heightLimits : [];
+    if (isNumber(hl[0])) height.min = hl[0];
+    if (isNumber(hl[1])) height.max = hl[1];
     const outline = s.outline.width > 0 ? { color: s.outline.color, width: s.outline.width } : null;
     return {
-        color, size, outline, dotOpacity: s.dotOpacity, legend: s.legend, plotTitle: s.titles.plot || undefined, gap: s.gap, sortBySize: s.sortGroups, cluster,
+        color, size, height, outline, dotOpacity: s.dotOpacity, legend: s.legend, plotTitle: s.titles.plot || undefined, gap: s.gap, sortBySize: s.sortGroups, cluster,
         annotations: {
             brackets: { titles: s.sectionTitles },
             totals: s.totals,
@@ -342,7 +349,7 @@ const fileName = (title) => `${String(title || 'cell-gene').replace(/[^\w.-]+/g,
 const IMAGE_FORMATS = Object.freeze(['png', 'jpeg', 'webp', 'svg']);
 
 /** The fields Color ▾'s Reset clears: the map, its direction and range, and the dots' sizes. */
-const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center', 'printValues', 'dotScale', 'dotSmallest', 'dotSizes', 'dotMin', 'dotMax']);
+const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center', 'printValues', 'dotScale', 'dotSmallest', 'dotSizes', 'dotMin', 'dotMax', 'heightLimits']);
 
 /**
  * Mount the menus: three buttons in `slot`, each opening a pop-over (ui/popover.js) that is filled with the same
@@ -479,6 +486,26 @@ function mount(slot, ctx) {
         ctx.set({ limits: isNumber(now[0]) || isNumber(now[1]) ? [isNumber(now[0]) ? now[0] : null, isNumber(now[1]) ? now[1] : null] : undefined },
             k === 0 ? 'color minimum' : 'color maximum');
     };
+    const pairOf = (v) => [isNumber(v && v[0]) ? v[0] : null, isNumber(v && v[1]) ? v[1] : null];
+    // Color: Min, Max (`limits`) and Center (`center`), auto with the drawn value, ↺ back to auto in one step
+    const colorRange = createRangeBoxes({ el, what: WO.rangeWhat.color, group: 'colorRange',
+        ends: [{ label: WO.min, option: 'min' }, { label: WO.max, option: 'max' }, { label: WO.center, option: 'center', hint: false }],
+        onCommit: (k, v) => (k === 2 ? flat('center', v, null, 'color center') : limit(k)(v)),
+        onReset: () => ctx.set({ limits: undefined, center: undefined }, 'color range to auto') });
+    controls.min = colorRange.fields[0];
+    controls.max = colorRange.fields[1];
+    controls.center = colorRange.fields[2];
+    controls.center.title = WO.centerDiverging;
+    // the 3D bars' height range: heights are drawn between Min and Max (stored as `heightLimits`)
+    const heightRange = createRangeBoxes({ el, what: WO.rangeWhat.height, group: 'heightRange',
+        ends: [{ label: `${W3.height} ${WO.min.toLowerCase()}`, option: 'heightMin' }, { label: `${W3.height} ${WO.max.toLowerCase()}`, option: 'heightMax' }],
+        onCommit: (k, v) => {
+            const now = pairOf(config().heightLimits);
+            now[k] = v;
+            ctx.set({ heightLimits: now[0] !== null || now[1] !== null ? now : undefined }, k === 0 ? 'height minimum' : 'height maximum');
+        },
+        onReset: () => ctx.set({ heightLimits: undefined }, 'height range to auto') });
+    const heightSection = section(W3.height, heightRange.element);
     /** A slider with its value said beside it; `onCommit` on release (one undoable step), the words follow the drag. */
     const slider = (name, label, range, say, onCommit) => {
         const out = el('output', { class: 'cgene-dot-value', data: { option: `${name}Value` } });
@@ -505,9 +532,15 @@ function mount(slot, ctx) {
         }
         ctx.set({ dotSmallest: v === DOT_PX.smallest ? undefined : v }, 'smallest dot');
     });
-    const dotSizes = section(WO.heading.dots, largestRow, smallestRow,
-        number('dotMin', WO.dotMin, (v) => flat('dotMin', v, null, 'percent at the smallest dot'), { min: 0, max: 100, step: 'any' }),
-        number('dotMax', WO.dotMax, (v) => flat('dotMax', v, null, 'percent at the largest dot'), { min: 0, max: 100, step: 'any' }));
+    // the size statistic's own range: the values at the smallest and the largest dot (stored as `dotMin`, `dotMax`);
+    // named by the statistic, which need not be a percentage
+    const sizeRange = createRangeBoxes({ el, what: WO.rangeWhat.size, group: 'sizeRange',
+        ends: [{ label: WO.sizeMin, option: 'dotMin' }, { label: WO.sizeMax, option: 'dotMax' }],
+        onCommit: (k, v) => flat(k === 0 ? 'dotMin' : 'dotMax', v, null, k === 0 ? 'size minimum' : 'size maximum'),
+        onReset: () => ctx.set({ dotMin: undefined, dotMax: undefined }, 'size range to auto') });
+    controls.dotMin = sizeRange.fields[0];
+    controls.dotMax = sizeRange.fields[1];
+    const dotSizes = section(WO.heading.dots, largestRow, smallestRow, sizeRange.element);
     const resetColor = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-color-reset', title: WO.resetColorHelp,
         on: { click: () => ctx.set(Object.fromEntries(COLOR_FIELDS.map((k) => [k, undefined])), 'reset colors') } }, WO.resetColor);
     const colorBody = el('div', { class: 'cgene-pop cgene-color-menu' },
@@ -515,12 +548,11 @@ function mount(slot, ctx) {
             select('colorScale', WO.colorScale, SCALES.map((s) => [s, scaleOptionLabel(s)]),
                 (v) => flat('colorScale', v, Z_SCALINGS.includes(config().scale) ? null : DEFAULT_SCALE, `color scale ${v}`)),
             check('reverse', WO.reverse, (on) => flat('reverse', on, false, onOff(on, `${WO.reverse} colors`))),
-            number('min', WO.min, limit(0), { step: 'any' }),
-            number('max', WO.max, limit(1), { step: 'any' }),
-            number('center', WO.center, (v) => flat('center', v, null, 'color center'), { step: 'any', title: WO.centerDiverging }),
+            colorRange.element,
             check('printValues', WO.printValues, (on) => flat('printValues', on, false, onOff(on, WO.printValues))),
             scalingNote),
         dotSizes,
+        heightSection,
         el('div', { class: 'cgene-pop__foot' }, resetColor));
 
     // ---------------------------------------------------------------- Plot Options (UX 3.1; no clustering field since WP-2)
@@ -628,10 +660,18 @@ function mount(slot, ctx) {
         controls.colorScale.value = s.colorScale;
         controls.reverse.checked = s.reverse;
         const limits = Array.isArray(c.limits) ? c.limits : [];
-        setValue(controls.min, isNumber(limits[0]) ? limits[0] : null);
-        setValue(controls.max, isNumber(limits[1]) ? limits[1] : null);
+        // the boxes say "auto" with the value drawn now; only while the pop-over is open
+        const shownModel = ctx.drawn() ? ctx.drawn().model : null;
+        if (colorBody.isConnected) {
+            colorRange.set({ limits: [...pairOf(limits), s.center], drawn: drawnRange(shownModel && shownModel.color.values) });
+            const sized = shownModel && shownModel.size && shownModel.size.values ? shownModel.size : null;
+            const unit = sized && W.statistic[sized.stat] ? ` (${W.statistic[sized.stat]})` : '';
+            sizeRange.set({ limits: [s.dotMin, s.dotMax], drawn: drawnRange(sized && sized.values), labels: [`${WO.sizeMin}${unit}`, `${WO.sizeMax}${unit}`] });
+            const h = shownModel && shownModel.view === '3d' ? shownModel.height : null;
+            heightRange.set({ limits: pairOf(c.heightLimits), drawn: drawnRange(h && h.values) });
+        }
+        heightSection.hidden = !(c.view === '3d');
         controls.center.disabled = !DIVERGING_SCALES.has(s.colorScale);
-        setValue(controls.center, s.center);
         controls.printValues.checked = s.printValues;
         controls.printValues.closest('label').hidden = dotsMode;
         scalingNote.textContent = scalingNotes(c).join(' ');
@@ -645,8 +685,6 @@ function mount(slot, ctx) {
         controls.dotScaleValue.textContent = legacy ? WO.largestPx(s.dotSizes[1]) : WO.ofCell(scale);
         setValue(controls.dotSmallest, smallest);
         controls.dotSmallestValue.textContent = WO.px(smallest);
-        setValue(controls.dotMin, s.dotMin);
-        setValue(controls.dotMax, s.dotMax);
         resetColor.disabled = !COLOR_FIELDS.some((k) => c[k] !== undefined);
 
         // Plot Options
