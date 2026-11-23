@@ -14,7 +14,7 @@ scaling, the order or the style asks the server for nothing.
 
 1. Add a **Cell-Gene Plot** panel. It shows what it still needs as a checklist, **Choose groups** and **Add genes**,
    each ticked when done.
-2. **Groups**: choose a categorical obs column, such as `cell_type`, or a grouping. The grouping list ends with
+2. **Groups**: choose **obs** and a categorical column, such as `cell_type`, or **Cell Grouping** and a grouping. The grouping list ends with
    **New grouping…**, which opens a Cell Grouping beside the plot.
 3. **Add genes ▾**: choose a gene signature or a gene table (they are listed under their own headings, then **New
    signature…**). It becomes a section showing its genes.
