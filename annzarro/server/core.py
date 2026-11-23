@@ -400,6 +400,10 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     if problems:
         raise ValueError("; ".join(problems))
 
+    # static_url(): every static file a template names carries its version (static_versions.py)
+    from annzarro.server import static_versions
+    static_versions.install(app)
+
     # site.*: the legal texts, contact, robots and security.txt (site.py); a wrong value stops the start
     from annzarro.server import site as site_module
     site_module.install(app)
