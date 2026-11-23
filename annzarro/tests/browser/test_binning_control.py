@@ -469,3 +469,16 @@ def test_screenshots(page, served, theme):
     page.select_option(f"{CTRL} .pbc-method", "manual")
     until(page, "(s) => document.querySelectorAll(s + ' .pbc-line').length > 0", CTRL)
     page.locator(BIN).screenshot(path=str(out / f"binned-card-manual-{theme}.png"))
+
+
+def test_a_grouping_card_holds_the_preview_space_until_the_histogram_arrives(page, served):
+    """The empty preview is the placeholder of a grouping's card: dropping it would make the card jump when the reply lands."""
+    held = []
+    page.route("**/data/cell_groups*", lambda route: held.append(route))
+    _open_binned(page, served, [_binned("depth")], expand=False)
+    _expand(page, 0)
+    until(page, "(s) => !!document.querySelector(s + ' .pbc-hist.is-empty')", BIN)
+    box = page.locator(f"{CTRL} .pbc-hist").bounding_box()
+    assert box and box["height"] > 20, box
+    assert held, "the reply was held back, so the card was drawn without it"
+    page.unroute("**/data/cell_groups*")  # releases the held requests

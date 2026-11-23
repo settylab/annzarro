@@ -440,3 +440,17 @@ test('the CSV uses the share base the plot shows, and the labels the caller show
     const csv = D.countCsv(config, table, { inputNames: { x: 'k' }, headers, labels });
     assert.deepEqual(csv.split('\n').slice(1), ['"Alpha, the first",30,0.3', "'=cmd,10,0.1", 'C,60,0.6']);
 });
+
+// --- an unticked level keeps its name ------------------------------------------------------------------------------
+
+test('an unticked level of a grouping source keeps its display name, where the checklist reads it', () => {
+    const young = 'g:["c:Young","bin:0"]';
+    const old = 'g:["c:Old","bin:1"]';
+    const config = norm({ mode: 'bar', x: { source: { type: 'group', key: 'G' }, levels: [young] } });
+    const reply = { axes: [{ levels: [young, '@other'], categories: [young, old], names: { [young]: 'Young | Rnase6 < 0.391', [old]: 'Old | Rnase6 > 0.391' } }],
+        counts: [30, 70], n_counted: 100 };
+    const table = tableOf(config, reply, ['x']);
+    const [labels] = M.levelLabelsOf(config, table);
+    assert.equal(labels.get(young), 'Young | Rnase6 < 0.391');
+    assert.equal(labels.get(old), 'Old | Rnase6 > 0.391', 'the unticked level is named, not keyed');
+});

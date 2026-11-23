@@ -635,7 +635,7 @@ function mount(host, ctx) {
     }
     const notes = h('div', { class: 'pbc-notes', role: 'status' }, binningNotes(binning, info, { kind }).map((n) => h('p', { class: `pbc-note pbc-note--${n.id}`, text: n.text })));
 
-    const root = h('div', { class: 'pbc', data: { method } }, rows, preview, ticks, ctx.levels || null, foot, extra, notes, message);
+    const root = h('div', { class: 'pbc', data: { method } }, rows, ...(hist || kind !== 'count' ? [preview, ticks] : []), ctx.levels || null, foot, extra, notes, message);
     host.replaceChildren(root);
 
     // the card is attached after it is built, so the focus goes back once it is in the page

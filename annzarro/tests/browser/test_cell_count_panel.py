@@ -416,3 +416,78 @@ def test_the_control_bar_is_the_one_toggle_controls_hides(page, served):
     found = page.evaluate("""async (s) => { const { controlsElementOf } = await import('/static/js/utils/controls-visibility.js');
         return controlsElementOf(document.querySelector(s + ' .tile-content')).className; }""", S)
     assert "ccnt-controls" in found
+
+
+def _bar_lefts(page):
+    """The left edge in pixels of each drawn bar of the first level, one per trace: equal when stacked, spread when side by side."""
+    return page.evaluate("""(s) => { const p = document.querySelector(s + ' .ccnt-plot');
+        return { full: p._fullLayout.barmode,
+                 lefts: [...p.querySelectorAll('.barlayer .trace')].map(t => { const b = t.querySelector('.point path');
+                     return b ? Math.round(b.getBoundingClientRect().left) : null; }) }; }""", S)
+
+
+def test_stacked_color_by_draws_stacked_bars_and_side_by_side_draws_grouped(page, served):
+    _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE, split=CONDITION)})
+    _drawn(page, "bar")
+    stacked = _bar_lefts(page)
+    assert stacked["full"] == "stack" and len(set(stacked["lefts"])) == 1, stacked
+    page.click(f"{S} .ccnt-arrangement__opt:has-text('Side by side')")
+    _drawn(page, "bar", "c.arrangement === 'dodge'")
+    assert _bar_lefts(page)["full"] == "group"
+    page.click(f"{S} .ccnt-arrangement__opt:has-text('Stacked')")
+    _drawn(page, "bar", "!c.arrangement")
+    again = _bar_lefts(page)
+    assert again["full"] == "stack" and len(set(again["lefts"])) == 1, again
+
+
+
+def test_a_statistic_is_side_by_side_and_offers_no_arrangement(page, served):
+    _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE, split=CONDITION, value={"kind": "measure"},
+                                    measure={"stat": "mean", "source": {"type": "obs", "key": "score"}})})
+    _drawn(page, "bar")
+    assert _bar_lefts(page)["full"] == "group"
+    assert not page.is_visible(f"{S} .ccnt-arrangement"), "Stacked must not be offered for bars that cannot stack"
+
+
+def test_an_unticked_level_keeps_its_name_in_the_checklist(page, served):
+    _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE)})
+    _drawn(page, "bar")
+    page.click(f"{S} [data-row='x'] .ccnt-choose")
+    names = page.eval_on_selector_all(f"{S} .ccnt-level__label", "els => els.map(e => e.textContent)")
+    page.click(f"{S} .ccnt-level:first-child input[type=checkbox]")
+    _drawn(page, "bar", "Array.isArray(c.x.levels) && c.x.levels.length === %d" % (len(names) - 1))
+    after = page.eval_on_selector_all(f"{S} .ccnt-level__label", "els => els.map(e => e.textContent)")
+    assert set(names) <= set(after), (names, after)
+    assert not [t for t in after if t.startswith(("c:", "g:"))], after
+
+
+def test_the_binning_control_shows_no_empty_preview_when_the_reply_has_no_histogram(page, served):
+    """A count plot's reply carries no histogram: the control must not leave a blank grey field under the range help."""
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    _open(page, served, {CC: _count(mode="histogram", x=depth)})
+    _drawn(page, "histogram")
+    page.click(f"{S} [data-row='x'] .ccnt-bins")
+    page.wait_for_selector(f"{S} .ccnt-binning .pbc")
+    shot = os.environ.get("FB1B_SHOT")
+    if shot:
+        page.locator(f"{S} .ccnt-binning .pbc").screenshot(path=shot)
+    empty = page.evaluate("(s) => [...document.querySelectorAll(s + ' .ccnt-binning .pbc-hist.is-empty')].filter(e => e.offsetHeight > 0).length", S)
+    assert empty == 0, "an empty preview is drawn as a grey field"
+
+
+
+def test_2d_density_contours_of_a_split_are_drawn_in_the_level_colors(page, served):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, split=CONDITION)})
+    _drawn(page, "density2d")
+    traces = page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'contour')
+        .map(t => ({ line: t.line.color, cs: t.colorscale }))""", S)
+    assert len(traces) == 2 and all(t["cs"] == [[0, t["line"]], [1, t["line"]]] for t in traces), traces
+    # what Plotly drew: the lines of one level are of one color
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot .contourlayer .contourlevel path').length > 0", S)
+    drawn = page.evaluate("""(s) => [...document.querySelectorAll(s + ' .ccnt-plot .contourlayer > g')].filter(g => g.querySelector('.contourlevel path')).map(g =>
+        [...new Set([...g.querySelectorAll('.contourlevel path')].map(p => getComputedStyle(p).stroke))])""", S)
+    assert drawn and all(len(c) == 1 for c in drawn), drawn
+    if os.environ.get("FB1C_SHOT"):
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.environ["FB1C_SHOT"])
