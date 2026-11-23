@@ -21,12 +21,28 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 | Control | What it does |
 |---|---|
 | **Mode** | The kind of plot (below) |
-| **X**, **Y** (**Slices** in a pie) | The inputs. A numeric input shows its bins on one line, "Bins: equal width · 50 · auto range", which opens the binning control; a categorical one offers **Choose levels** |
+| **X**, **Y** (**Slices** in a pie) | The inputs. A numeric input shows its bins on one line, "Bins: equal width · 50 · auto range", which opens the binning control in a pop-over; a categorical one offers **Choose levels**, also in a pop-over |
 | **Color by** | Divides each bar, curve or slice by a further input: **Stacked**, **Side by side** (**Overlaid** in a histogram) or **100%** |
 | **Height** (bar, histogram), **Color** (2D histogram, heatmap, UpSet) | What the bars or rectangles show (below) |
 | **Labels** | Printed on bars, cells, slices and regions: **None**, **Count**, **Share** or **Statistic** |
-| **Sort by height**, **Reverse**, **Horizontal** | Order and orientation of bars |
-| **Plot Options** | **Log count axis**, **Ring** (pie), **Fade by its share** (most frequent level), the density's **Bandwidth adjust**, **Scale curves by level size** and **As an image**, **Save as grouping**, **Show as table** and **Download CSV** |
+| **Sort by height**, **Reverse**, **Horizontal**, **Log count axis**, **Ring** | Order and orientation of bars, a logarithmic count axis (bar, histogram), and a pie drawn as a ring. Each is shown only in the modes that have it |
+| **Smoothing**, **Scale curves by level size**, **As an image** | The density modes' own row, with the bandwidth and range notes under it |
+| **Fade by its share** | Under the most frequent level's factor, in a 2D histogram or heatmap |
+| **Save as grouping** | On the toolbar: turns the plot's bars into a {doc}`cell-grouping` |
+| **Color ▾** | On the toolbar, where the plot has a colour scale or colours levels (below) |
+| **Download CSV** | On the toolbar: the plotted table as a CSV |
+| **Undo** | Undoes the last change |
+
+**Pop-overs.** **Choose levels**, the binning line and **Color ▾** open small windows over the plot. They never change the
+size of the panel or move the plot, and a change in one applies at once, as one undo step. **Escape**, a click outside or
+the **×** closes them, and **Escape** puts the focus back on the button that opened it. Only one is open at a time.
+
+**Colour.** **Color ▾** shows when a colour scale or a palette applies: a 2D histogram, a 2D density without a Color by,
+a heatmap's number, an UpSet coloured by a share or a statistic, and any plot with a Color by. It holds the **Map**
+(Viridis by default), **Reverse**, **Min**, **Max** and **Center** of the scale (empty means automatic; Center has no
+effect while both Min and Max are set), and the **Level palette** of a Color by's levels. **Reset** returns them all to
+the defaults. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
+gets the full colour of every level.
 
 **Colours.** The bars, slices and curves of a **Color by** input are in the colours of its levels: a column's stored
 colours when it has them, else the app's group colours; for a {doc}`cell-grouping`, the grouping's own colours of its
@@ -42,10 +58,10 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 | **Bar** | X (categorical or binned), Color by | Cells per level, and per level of Color by | Bars, vertical or horizontal |
 | **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars without gaps, stacked or overlaid |
 | **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring |
-| **2D histogram** | X and Y numeric | Cells per pair of bins, 100 × 100 by default | Rectangles |
+| **2D histogram** | X and Y numeric, Color by up to 8 levels | Cells per pair of bins, 100 × 100 by default, per level of Color by | Rectangles; with Color by, one layer per level |
 | **Heatmap** | X and Y (categorical or binned) | Cells per pair of levels | Rectangles, with values printed if asked |
 | **Density** | X numeric, Color by | 512 bins per level of Color by, smoothed in the browser | Curves |
-| **2D density** | X and Y numeric, Color by up to 8 levels | 256 × 256 bins per level, smoothed | Filled contours, or an image |
+| **2D density** | X and Y numeric, Color by up to 8 levels | 256 × 256 bins per level, smoothed | Filled contours, or an image (the default with Color by) |
 | **Venn** | 2 or 3 sets | Cells in every region | Circles with counts and shares |
 | **UpSet** | 2 to 16 sets | Cells in every exclusive intersection, and each set's size | Intersection bars over a matrix of dots, with set-size bars |
 
@@ -62,6 +78,15 @@ from 2 to 2,000.").
 **Values outside a range are left out and counted.** Set a **Range** on an equal-width input and the cells outside it
 are not counted, so the tails of a histogram are true; the strip below the plot says how many. (A grouping puts such
 cells into its end bins instead, because every cell must be in a group.)
+
+**Bins drawn.** In a histogram and a 2D histogram the binning control has a **Bins drawn** switch for each axis:
+**Evenly** draws every bin at the same width, whatever its range, with the ticks at the borders between bins labelled
+with the edge values (about twelve labels at most, thinned when there are more bins); **At their values** places each
+bin where its values lie, so a wide bin is a wide rectangle. Log, equal-count and manual bins start on Evenly, since
+at their values they crowd at one end; equal-width bins start on At their values, where both look the same. Hovering a
+bin names its real range ("depth 1.2 to 3.9"), and the zero bin is a slot of its own labelled 0. The switch changes
+only how the plot is drawn: the counts, the colour bar, the CSV and **Save as grouping** are
+the same either way. Pressing **Escape** in the binning control closes it. A density is always drawn at its values.
 
 **Choose levels** on a categorical input keeps the levels you tick, in your order, and either counts the others as one
 level or leaves them out.
@@ -80,7 +105,7 @@ Axis titles name the source and layer ("Mean of Mrpl15 · logged_counts", "% of 
 ## Densities
 
 A density is a Gaussian kernel smoothing of the binned counts, with Scott's rule per axis (`h = σ·n^(−1/(d+4))`) times
-**Bandwidth adjust** (1 by default, 0.1 to 10). The range runs from the 0.1st to the 99.9th percentile of the values,
+**Smoothing** (the bandwidth adjust: 1 by default, 0.1 to 10). The range runs from the 0.1st to the 99.9th percentile of the values,
 padded by three bandwidths, so a few extreme cells do not stretch the curve; cells outside are not counted. The plot
 states all of it: "Bandwidth 0.21 (Scott's rule × 1.0), per axis; it ignores correlation between X and Y.", "Range from
 the 0.1st to the 99.9th percentile: 82 cells outside are not counted." When very many cells make the bandwidth
@@ -88,6 +113,20 @@ narrower than the grid can show, it is raised: "Bandwidth raised to the grid's r
 
 Curves are each scaled to an area of 1 by default; **Scale curves by level size** scales them by their cells instead.
 In 2D the bandwidth is per axis and ignores the correlation between X and Y, unlike `scipy.stats.gaussian_kde`.
+
+With a **Color by**, a 2D density is drawn as an image by default: one layer per level, each running from transparent to
+the level's color, with the density as the opacity. All levels share one opacity scale, from 0 to the highest density
+of any level, so a level with little density stays faint beside a dense one; the layers blend where they overlap.
+Untick **As an image** for contours, which are drawn in each level's color. With **Scale curves by level size** off, each
+level's density has an area of 1; with it on, a level's density is weighted by its share of the cells.
+
+### 2D histogram with Color by
+
+A 2D histogram with a **Color by** draws the same kind of layers: one per level, from transparent to the level's color,
+with the count in each rectangle as the opacity on one scale (0 to the highest count of any level in any rectangle).
+This reads the Color by only while **Color** is *Count*; a share, a statistic or the most frequent level says something
+else with the rectangle's color, so the Color by row goes away and is kept for when you return to *Count*. Up to 8
+levels: with more, the plot is refused with **Remove Color by**.
 
 ## Sets: Venn and UpSet
 
@@ -149,9 +188,9 @@ stays while a new count runs.
 **The strip** below the plot says what was counted: "8,090 cells counted · 78 without a value for total_counts · 41
 outside the range".
 
-## Save as grouping, table and CSV
+## Save as grouping and CSV
 
-**Save as grouping** (Plot Options, or a click on a bar, slice or rectangle) makes a {doc}`cell-grouping` of the plot's
+**Save as grouping** (on the toolbar, or a click on a bar, slice or rectangle) makes a {doc}`cell-grouping` of the plot's
 inputs, X, Y and Color by, so its bars become groups for other plots, tables and the {doc}`cell-gene-plot`. The
 dialog states what it makes ("Factors: total_counts (50 bins), age. 214 groups.") and, when the plot left cells out of
 a range, that the grouping keeps them: "41 cells outside the range will go into the end bins (a grouping keeps every
@@ -159,5 +198,5 @@ cell)." A plot that would make more than 2,000 groups keeps the dialog with **Sa
 make 6,840 groups; a grouping holds up to 2,000. Use fewer bins first."). Densities and the sets modes have no Save as
 grouping.
 
-**Show as table** lists the plotted numbers under the plot; **Download CSV** saves them (levels, cells, share and the
-statistic).
+**Download CSV**, also on the toolbar, saves the plotted numbers (levels, cells, share and the statistic). There is no
+table of them in the panel; the CSV is the table.

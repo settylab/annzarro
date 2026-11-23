@@ -117,19 +117,17 @@ export const GROUP_STATISTICS_MODEL = createOptionsModel({
     paramValue: (recipe, key) => (key === 'detect_above' ? thresholdOf(recipe) : recipe[key]),
     grade: (method, layer, kind, ctx) => statisticGrade(method, layer, kind, ctx),
     layerLines,
+    extraMethods: [{ value: ALWAYS_OFFERED, label: NAME.count, menu: 'cell count', definition: 'Number of cells in the group. Reads no layer.' }],
     // a grouping's recipe has no `input` and no `method`: it names what it offers and nothing else
     resetFields: ['offered', 'layers']
 });
 
-/** Whether a consumer may pick `stat` (and `layer`, when given) of this grouping now. Cell count always. */
-// export-unused-ok: consumed by X3a and C2a ("no longer offered" for a statistic a grouping stopped offering)
-export function isStatisticOffered(recipe, stat, layer) {
-    return stat === ALWAYS_OFFERED || GROUP_STATISTICS_MODEL.isOffered(recipe, stat, layer);
-}
+/** Decision 31: all five statistics and Cell count on `layer`, impossible ones disabled with their reason. See options-model.js. */
+export const { methodChoices: statisticChoices, layerChoices: statisticLayerChoices, pairAfter: statisticPairAfter } = GROUP_STATISTICS_MODEL;
 
 /**
- * Where a dot plot's size starts (SHR-27): % expressing on the first offered layer, or nothing and the sentence that says
- * why when that layer cannot give it. Nothing is drawn until the user picks another layer.
+ * Where a dot plot's size starts (SHR-27): % expressing on X (or the layer picked), or nothing and the sentence that says
+ * why when that layer cannot give it. Nothing is drawn until the user picks another layer. Every layer is pickable (decision 31).
  * @param {Object} recipe - the grouping's recipe
  * @param {Object<string, string>} kinds - layer -> what it looks like; a layer not listed is not yet known
  * @param {string} [picked] - the layer the user chose
@@ -140,10 +138,7 @@ export function isStatisticOffered(recipe, stat, layer) {
 export function sizeDefault(recipe, kinds, picked) {
     const none = { stat: null, layer: null, say: '', pending: false };
     const model = GROUP_STATISTICS_MODEL;
-    if (!model.offeredMethods(recipe).includes(SIZE_STATISTIC)) return none;
-    const layers = model.offeredLayers(recipe);
-    const layer = picked === undefined || picked === null ? layers[0] : picked;
-    if (!layers.includes(layer)) return none;
+    const layer = picked === undefined || picked === null ? DEFAULT_LAYER : picked;
     const kind = kinds[layer];
     if (kind === undefined) return { stat: null, layer, say: '', pending: true };
     const g = model.gradeOption(SIZE_STATISTIC, layer, kind, recipe);

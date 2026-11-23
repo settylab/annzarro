@@ -127,13 +127,26 @@ export function groupingColours(recipe, reply) {
     };
 }
 
-/** @type {WeakMap<Object, {part: Object, map: Map<string, string>}>} a count table's axis -> its levels' colours */
+/**
+ * A count plot's factor as its levels are coloured: with the plot's own level palette (WP-6a, `config.color.palette`),
+ * that palette replaces the factor's colours, as another palette in a Cell Plot's menu does; without one, the factor's.
+ * @param {Object} config - the count plot's config
+ * @param {Object|null} part - the input's partitioning
+ * @returns {Object|null}
+ */
+export function plotPaletteOf(config, part) {
+    const palette = config && isObject(config.color) && typeof config.color.palette === 'string' ? config.color.palette : '';
+    return palette ? { ...(part || {}), colors: { palette } } : part;
+}
+
+/** @type {WeakMap<Object, {part: Object, palette: string, map: Map<string, string>}>} a count table's axis -> its levels' colours */
 const AXES = new WeakMap();
 
 /**
  * The colour of level `i` of axis `a` of a count plot's table (panels/cell-count): the colour of the input's factor
  * (a column's own, a palette, an override; for an input that is a grouping, that grouping's colours of its groups, which
- * the reply carries as `colors`). A reserved level, or one with no colour, takes `grey`.
+ * the reply carries as `colors`), or the plot's own level palette when it names one (`plotPaletteOf`). A reserved
+ * level, or one with no colour, takes `grey`.
  * @param {Object} config - the count plot's config; its inputs are partitionings
  * @param {{axes: {input: string, levels: string[], info: Object}[]}} table - from count-plot-model.js `countTable`
  * @param {number} a - the axis
@@ -144,9 +157,10 @@ const AXES = new WeakMap();
 export function tableLevelColour(config, table, a, i, grey) {
     const axis = table.axes[a];
     const part = (axis.input === 'factor' ? config.value && config.value.factor : config[axis.input]) || null;
+    const palette = config && isObject(config.color) && typeof config.color.palette === 'string' ? config.color.palette : '';
     let found = AXES.get(axis);
-    if (!found || found.part !== part) {
-        found = { part, map: factorColours(part, axis.info, axis.levels) };
+    if (!found || found.part !== part || found.palette !== palette) {
+        found = { part, palette, map: factorColours(plotPaletteOf(config, part), axis.info, axis.levels) };
         AXES.set(axis, found);
     }
     return found.map.get(axis.levels[i]) || grey;

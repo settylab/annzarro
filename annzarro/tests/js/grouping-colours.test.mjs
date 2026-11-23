@@ -166,3 +166,18 @@ test('a colour change never changes the hash a result is cached under', () => {
         colors: { by: 1, overrides: { '["c:a","c:b"]': '#123456' } } }).recipe;
     assert.equal(groupingHasher(coloured)(coloured), groupingHasher(plain)(plain));
 });
+
+// --- the Count Plot's own level palette (WP-6a) --------------------------------------------------------------------------
+
+test("a count plot's level palette replaces its split's colours; without one the split keeps the factor's", async () => {
+    const { tableLevelColour } = await resolver();
+    const info = { levels: ['c:a', 'c:b'], colors: { 'c:a': '#111111', 'c:b': '#222222' } };
+    const split = obs('x', { colors: { overrides: { 'c:b': '#abcdef' } } });
+    const table = () => ({ axes: [{ input: 'split', levels: info.levels, info }] });
+    const plain = table();
+    assert.deepEqual([0, 1].map((i) => tableLevelColour({ split }, plain, 0, i, 'grey')), ['#111111', '#abcdef']);
+    const config = { split, color: { palette: 'Dark2' } };
+    const dark = generateDiscreteColors(2, 'Dark2');
+    assert.deepEqual([0, 1].map((i) => tableLevelColour(config, plain, 0, i, 'grey')), dark, 'same axis, palette changed: not the cached colours');
+    assert.deepEqual([0, 1].map((i) => tableLevelColour({ split, color: {} }, plain, 0, i, 'grey')), ['#111111', '#abcdef']);
+});
