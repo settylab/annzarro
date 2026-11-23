@@ -33,7 +33,7 @@
  */
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
-import { plotColour, noneColour, GAP_COLOUR } from '../../utils/plot-theme.js';
+import { plotColour, noneColour, GAP_COLOUR, MODEBAR_REMOVE } from '../../utils/plot-theme.js';
 import { Config } from '../../config.js';
 import { buildPlotLayout, knownMissingSource, seriesSource, withSubsetCoverage, showsThisDataset } from './plot-make.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
@@ -752,7 +752,7 @@ async function _drawLargePlot(plotContainer, settings, data, container, id, sign
   clearForDraw(plotContainer);
   await drawPlot(plotContainer, traces, layout,
     { responsive: true, displayModeBar: true, displaylogo: false,
-      modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] },
+      modeBarButtonsToRemove: [...MODEBAR_REMOVE] },
     coverage, 'cells');
   setStatusTag(plotContainer, 'large', largePlotTag(n, settings));
   plotContainer.__isLarge = true;

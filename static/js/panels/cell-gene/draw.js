@@ -38,7 +38,7 @@
  * (a heatmap draws up to 400,000, CXG-17). Hover text is built per cell from strings made once per row and group.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
-import { PLOT_PALETTES, GAP_COLOUR } from '../../utils/plot-theme.js';
+import { PLOT_PALETTES, GAP_COLOUR, MODEBAR_REMOVE } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { annotateFigure, matrixPixels, rowCoordinates, MODEBAR_PX } from './draw-annotations.js';
 import { bars3d, footprintFromSize, axisTicks } from '../../utils/bars-3d.js';
@@ -764,7 +764,7 @@ function figure3d(model, th) {
     };
     if (model.plotTitle) layout.title = { text: esc(model.plotTitle), font: { color: th.textColor } };
     const config = { responsive: true, displaylogo: false,
-        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d', 'resetCameraDefault3d', 'resetCameraLastSave3d'] };
+        modeBarButtonsToRemove: [...MODEBAR_REMOVE, 'resetCameraDefault3d', 'resetCameraLastSave3d'] };
     return { data: [trace], layout, config, hidden: [], bars: built.drawn };
 }
 
@@ -821,7 +821,7 @@ export function buildFigure(given, theme) {
             });
         }
     }
-    const config = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] };
+    const config = { responsive: true, displaylogo: false, modeBarButtonsToRemove: [...MODEBAR_REMOVE] };
     const figure = annotateFigure({ data, layout, config }, model, th);
     // what a narrow width gave up for the matrix, for the panel's strip
     figure.hidden = hidden;
