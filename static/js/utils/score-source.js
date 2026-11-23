@@ -37,7 +37,7 @@ import { VOCABULARY } from './vocabulary.js';
 import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
-import { DEFAULT_INPUT, METHODS, SIGNATURE_MODEL, methodShort, offeredOptions } from './signature-options.js';
+import { DEFAULT_INPUT, METHODS, SIGNATURE_MODEL, methodShort } from './signature-options.js';
 import { legacyPair } from './options-model.js';
 import { createSourceAdapter, entityLabel, isSourceType, kindOfType, optionFieldsOf, scoreKeyOptions } from './score-source-panels.js';
 import { findCycle, TableResolver } from './table-resolver.js';
@@ -126,15 +126,14 @@ export function scores() {
 
 /**
  * Every source of a gene score, open or closed: signatures first, then gene tables, each in the order they were made.
- * [{id, title, open, kind: 'signature'|'table', input, options}]. `options` is the retired offered list, for the
- * Cell-Gene Plot until it moves to scoreChoices (SO-4 removes).
+ * [{id, title, open, kind: 'signature'|'table', input}].
  */
 export function sourceList() {
     const open = new Set(PanelManager.getActivePanels().map(p => p.getId()));
     const all = PanelManager.getAllPanels().filter(isSource);
     return [...all.filter(p => p.getType() === 'gene-signature'), ...all.filter(p => p.getType() !== 'gene-signature')]
         .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()), kind: kindOfType(p.getType()),
-            input: optionFieldsOf(p).input, options: scoreOptions(p.getId()) }));
+            input: optionFieldsOf(p).input }));
 }
 
 /** The source panel (a signature or a gene table) with this id, or null. */
@@ -790,35 +789,4 @@ function layerFacts(layers) {
 let _datasetLayers = null;
 export function noteDatasetLayers(list) {
     _datasetLayers = Array.isArray(list) ? [...list] : null;
-}
-
-// SO-4 removes (the Cell-Gene Plot's callers move to scoreChoices)
-
-/**
- * What a signature offered its consumers before decision 31, as one list of entries (method and layer together).
- * @param {string} id - a signature panel id
- * @returns {Array<{id: string, value: string, method: string, layer: string, label: string, short: string}>}
- */
-// SO-4 removes: replaced by scoreChoices(id)
-export function scoreOptions(id) {
-    const panel = sourcePanel(id);
-    if (!panel) return [];
-    const recipe = optionFieldsOf(panel);
-    const list = typeof panel.getOfferedOptions === 'function' ? panel.getOfferedOptions() : offeredOptions(recipe, _datasetLayers);
-    return list.filter(o => !_datasetLayers || !_datasetLayers.length || _datasetLayers.includes(o.layer)).map(o => ({
-        id: o.id, value: o.id, method: o.method, layer: o.layer, label: o.label,
-        short: methodShort(o.method)
-    }));
-}
-
-/** The label of an option a consumer holds that the signature no longer offers. */
-// SO-4 removes: nothing is "no longer offered" any more
-export function lapsedLabel(setting) {
-    return `${methodShort(subKeyOf(setting))} · ${heldLayer(setting)}`;
-}
-
-/** Open the signature's panel beside `nextTo` (the Cell-Gene Plot's "Offer other…" entry). */
-// SO-4 removes: nothing is offered any more
-export function offerOtherScores(id, nextTo = null) {
-    return openSignature(id, nextTo);
 }

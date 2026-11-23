@@ -131,7 +131,7 @@ test('the provider fills no hover line and has no notice action to offer again',
     page(signature('gene-signature-1'));
     assert.equal(provider().hover, undefined);
     assert.equal(provider().axes.includes('hover'), false);
-    for (const gone of ['OFFER_MORE', 'offerAgain', 'canOfferAgain', 'scoreHoverOptions', 'optionOf']) {
+    for (const gone of ['OFFER_MORE', 'offerAgain', 'canOfferAgain', 'scoreHoverOptions', 'optionOf', 'lapsedLabel', 'offerOtherScores', 'scoreOptions']) {
         assert.equal(gone in SS, false, `${gone} is gone`);
     }
 });
