@@ -34,7 +34,8 @@ from annzarro.tests.browser.test_cell_grouping_panel import (  # noqa: E402,F401
     _captured_url, _requests, A, GA, DATA, N, _add, _grouping, _ready, _recipe, _state, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
-CTRL = f"{A} .cgrp-binning .pbc"
+BIN = "[data-popover='binning']"                  # a binned factor's Edit pop-over
+CTRL = f"{BIN} .pbc"
 SHOTS = os.environ.get("ANNZARRO_G9B_SHOTS")
 
 
@@ -57,14 +58,19 @@ def _open_binned(page, served, partitionings, subset=None, expand=True):
 
 
 def _expand(page, i):
-    if not page.locator(f"{A} .cgrp-card[data-index='{i}'] .cgrp-card__body").count():
-        page.click(f"{A} .cgrp-card[data-index='{i}'] .cgrp-card__toggle")
+    """Open factor i's Edit pop-over (a factor just added has opened its own)."""
+    edit = f"{A} .cgrp-card[data-index='{i}'] .cgrp-card__edit"
+    try:
+        page.wait_for_selector(f"{edit}[aria-expanded='true']", timeout=1500)       # a factor just added opens its own
+    except Exception:  # noqa: BLE001 - playwright's TimeoutError: it is not open, so open it
+        page.click(edit)
+    page.wait_for_selector(f"{edit}[aria-expanded='true']")
     page.wait_for_selector(CTRL)
 
 
 def _ctrl_ready(page, card=0):
     """The reply has come: the preview is drawn."""
-    until(page, "(s) => !!document.querySelector(s + ' .pbc-hist:not(.is-empty)')", f"{A} .cgrp-card[data-index='{card}']")
+    until(page, "(s) => !!document.querySelector(s + ' .pbc-hist:not(.is-empty)')", BIN)
 
 
 def _binning(page, i=0):
@@ -93,15 +99,16 @@ def test_a_column_with_many_zeros_gets_the_zero_bin_at_once_as_one_undoable_step
     assert page.is_checked(f"{CTRL} .pbc-zero")
     _ready(page)
     _ctrl_ready(page)
-    labels = page.evaluate("(s) => [...document.querySelectorAll(s + ' .cgrp-card[data-index=\"0\"] .cgrp-level__label')].map(e => e.textContent)", A)
+    labels = page.evaluate("(s) => [...document.querySelectorAll(s + ' .cgrp-level__label')].map(e => e.textContent)", BIN)
     assert labels[0] == "depth = 0"
     zeros = int((DATA.obs["depth"] == 0).sum())
-    first = page.evaluate("(s) => document.querySelector(s + ' .cgrp-card[data-index=\"0\"] .cgrp-level__n').textContent", A)
+    first = page.evaluate("(s) => document.querySelector(s + ' .cgrp-level__n').textContent", BIN)
     assert first == f"{zeros:,}"
     # one step: the add, then the default
     assert _state(page)["undo"] == 2
     page.click(f"{A} .cgrp-undo")
     _wait_binning(page, {"method": "equal_count"})
+    _expand(page, 0)        # the click on the panel's Undo was outside the pop-over: it closed
     # it is not put back on by the repaint that follows
     page.uncheck(f"{CTRL} .pbc-zero") if page.is_checked(f"{CTRL} .pbc-zero") else None
     assert not page.is_checked(f"{CTRL} .pbc-zero")
@@ -116,7 +123,7 @@ def test_a_column_with_fewer_zeros_does_not_and_a_signed_one_has_no_zero_bin_to_
     _add(page, "column", type_="obs", key="signed")
     _expand(page, 1)
     _ctrl_ready(page, 1)
-    assert page.locator(f"{A} .cgrp-card[data-index='1'] .pbc-zero").count() == 0
+    assert page.locator(f"{CTRL} .pbc-zero").count() == 0
 
 
 def _histogram_requests(page):
@@ -127,14 +134,14 @@ def test_a_link_with_factory_binning_on_zero_heavy_data_is_never_changed_and_his
     _open_binned(page, served, [_binned("depth")], expand=False)
     _ready(page)
     assert _histogram_requests(page) == [], "a collapsed card asks for no histogram"
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__toggle")
+    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
     _ctrl_ready(page)
     assert len(_histogram_requests(page)) == 1, "expanding asks for exactly one"
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__toggle")
+    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
     waits.expect_stays(lambda: len(_histogram_requests(page)) == 1 and len(_requests_all(page)) == len(page.calls),
                        "collapsing a card must send no request", page=page)
     n = len(page.calls)
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__toggle")
+    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
     _ctrl_ready(page)
     waits.expect_stays(lambda: len(page.calls) == n, "re-expanding keeps the histogram it has", page=page)
     # the user's factory binning from a link stays as it is, however many zeros
@@ -167,9 +174,9 @@ def test_the_bins_are_listed_with_their_cells_and_one_can_be_renamed(page, serve
     _open_binned(page, served, [_binned("depth", bins=3)])
     _ready(page)
     _ctrl_ready(page)
-    card = f"{A} .cgrp-card[data-index='0']"
+    card = BIN
     rows = page.evaluate("(s) => [...document.querySelectorAll(s + ' .cgrp-level')].map(e => [e.querySelector('.cgrp-level__label').textContent, e.querySelector('.cgrp-level__n').textContent])", card)
-    summary = page.inner_text(f"{card} .cgrp-card__summary")
+    summary = page.inner_text(f"{A} .cgrp-card[data-index='0'] .cgrp-card__summary")
     assert len(rows) >= 2 and summary.endswith(f"{len(rows)} levels"), (rows, summary)
     assert all(n for _, n in rows)
     assert page.locator(f"{card} .cgrp-level__rename").count() == len(rows), "every bin row can be renamed"
@@ -199,6 +206,7 @@ def test_a_new_binned_factor_costs_at_most_two_computes_and_a_missing_factor_kee
     waits.expect_stays(lambda: not _histogram_requests(page), "nothing is computed while a factor is missing", page=page)
     page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__more")
     page.click(f"{A} .cgrp-card[data-index='0'] [data-op='remove']")
+    _expand(page, 0)        # the click on the other card's menu was outside the pop-over: it closed
     _ctrl_ready(page, 0)
     assert _histogram_requests(page)[-1]["want"]["histograms"] == [0]
 
@@ -207,7 +215,7 @@ def test_a_renamed_bin_survives_a_reload_and_keeps_its_label_when_the_edges_move
     _open_binned(page, served, [_binned("score", bins=3)])
     _ready(page)
     _ctrl_ready(page)
-    card = f"{A} .cgrp-card[data-index='0']"
+    card = BIN
     was = page.evaluate("(s) => document.querySelectorAll(s + ' .cgrp-level__label')[1].textContent", card)
     page.click(f"{card} .cgrp-level__rename >> nth=1")
     page.fill(f"{card} .cgrp-level__name", "low depth")
@@ -437,7 +445,7 @@ def test_a_column_of_one_value_says_so_and_invents_no_edge(page, served):
     _ready(page)
     until(page, "(s) => /one value/.test(document.querySelector(s + ' .pbc-notes').textContent)", CTRL)
     assert page.inner_text(f"{CTRL} .pbc-notes") == "All cells share one value."
-    labels = page.evaluate("(s) => [...document.querySelectorAll(s + ' .cgrp-card[data-index=\"0\"] .cgrp-level__label')].map(e => e.textContent)", A)
+    labels = page.evaluate("(s) => [...document.querySelectorAll(s + ' .cgrp-level__label')].map(e => e.textContent)", BIN)
     assert labels == ["constant = 2.5"]
     assert page.locator(f"{CTRL} .pbc-line").count() == 0
     assert page.locator(f"{CTRL} .pbc-freeze").is_disabled()
@@ -457,7 +465,7 @@ def test_screenshots(page, served, theme):
     _ctrl_ready(page)
     until(page, "(s) => !!document.querySelector(s + ' .pbc-zero:checked')", CTRL)
     _ready(page)
-    page.locator(f"{A} .cgrp-card[data-index='0']").screenshot(path=str(out / f"binned-card-equal-count-{theme}.png"))
+    page.locator(BIN).screenshot(path=str(out / f"binned-card-equal-count-{theme}.png"))
     page.select_option(f"{CTRL} .pbc-method", "manual")
     until(page, "(s) => document.querySelectorAll(s + ' .pbc-line').length > 0", CTRL)
-    page.locator(f"{A} .cgrp-card[data-index='0']").screenshot(path=str(out / f"binned-card-manual-{theme}.png"))
+    page.locator(BIN).screenshot(path=str(out / f"binned-card-manual-{theme}.png"))

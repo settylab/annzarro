@@ -1,6 +1,8 @@
 /* Cell Grouping panel (panels/cell-grouping.js): its styles only (the shared ones are in styles.css).
-   Zones top to bottom (UX 2.1): status, Add factor, the factor cards, the groups (G9c), Statistics offered (G9d),
-   Settings. Colours are the theme's tokens (theme.css), so light and dark follow. */
+   Zones top to bottom (UX 2.1): status, the toolbar (Add factor, Statistics, Settings, Undo), the factor cards, the groups
+   (G9c). Nothing here expands: a factor's levels or binning, Statistics offered and Settings are pop-overs (popover.css),
+   so the cards are one line each and the group list is the only zone that grows. Colours are the theme's tokens
+   (theme.css), so light and dark follow. */
 
 .tile-content > .cgrp-panel { flex: 1 1 auto; min-height: 0; }
 .cgrp-panel {
@@ -39,8 +41,13 @@
 .cgrp-empty__help { margin: 0; color: var(--az-muted); }
 
 /* 2. Add factor and its inline row */
-.cgrp-controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; padding: 6px 8px; }
-.cgrp-addzone { display: flex; flex-direction: column; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.cgrp-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; }
+/* the add zone's two children are items of the toolbar: Add factor on the row, its inline row under the whole toolbar */
+.cgrp-addzone { display: contents; }
+.cgrp-addrow { flex: 0 0 100%; order: 5; min-width: 0; }
+.cgrp-statistics { display: inline-flex; }
+.cgrp-statistics .gsig-scoring { border-top: 0; margin: 0; padding: 0; }
+.gsig-scoring--in-pop { border-top: 0; margin: 0; padding: 0; }
 .cgrp-add-wrap { position: relative; display: inline-block; }
 .cgrp-add-menu {
     position: absolute; z-index: 30; top: calc(100% + 2px); left: 0; min-width: 14rem; padding: 4px 0;
@@ -74,10 +81,11 @@
 .cgrp-card__head:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
 .cgrp-card__grip { cursor: grab; color: var(--az-muted); }
 .cgrp-card__pos { color: var(--az-muted); font-variant-numeric: tabular-nums; }
-.cgrp-card__title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cgrp-card__summary { color: var(--az-muted); white-space: nowrap; }
-.cgrp-card__preview { color: var(--az-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
-.cgrp-card__toggle { padding: 0 6px; color: var(--az-muted); text-decoration: none; }
+/* in a narrow tile the preview gives way first, then the summary, and the name last */
+.cgrp-card__title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 3rem; }
+.cgrp-card__summary { color: var(--az-muted); white-space: nowrap; flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cgrp-card__preview { color: var(--az-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1000 auto; }
+.cgrp-card__edit { flex: 0 0 auto; margin: 0 2px; padding: 0 8px; font-size: 0.75rem; }
 .cgrp-card__menu-wrap { position: relative; }
 .cgrp-card__more { padding: 0 6px; text-decoration: none; }
 .cgrp-card__menu {
@@ -86,7 +94,6 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 .cgrp-card__note { padding: 0 8px 4px; color: var(--az-danger-text); font-size: 0.75rem; }
-.cgrp-card__body { padding: 2px 8px 6px; border-top: 1px solid var(--az-border); }
 .cgrp-card__wait, .cgrp-card__follows { color: var(--az-muted); }
 .cgrp-levels__head { display: flex; justify-content: space-between; color: var(--az-muted); font-size: 0.75rem; }
 .cgrp-levels { list-style: none; margin: 0; padding: 0; }
@@ -101,22 +108,16 @@
 .cgrp-rest-row, .cgrp-levels__actions, .cgrp-keepout-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-top: 4px; }
 .cgrp-rest-opt, .cgrp-keepout-row { margin: 0; }
 
-/* 5. Settings */
-.cgrp-statistics { padding: 0 8px; }
-.cgrp-settings-zone { padding: 4px 8px 8px; border-top: 1px solid var(--az-border); margin-top: auto; }
-.cgrp-settings__head { border: 0; background: none; padding: 2px 0; color: var(--az-text); text-align: left; }
-.cgrp-settings__head::before { content: '▸ '; color: var(--az-muted); }
-.cgrp-settings__head[aria-expanded="true"]::before { content: '▾ '; }
-.cgrp-settings__summary { color: var(--az-muted); }
-.cgrp-settings__body { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 0 1rem; }
+/* 5. Settings: the pop-over's form */
+.cgrp-settings__body { display: flex; flex-direction: column; gap: 6px; }
 .cgrp-settings__line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .cgrp-settings__line .form-control { width: auto; }
 .cgrp-smallmode-opt { margin: 0; }
 .cgrp-settings__problem { color: var(--az-danger-text); font-size: 0.75rem; }
 .cgrp-settings__problem:empty { display: none; }
 
-/* Toggle Controls: the cards collapse to one line each (UX 2.1) */
-.cgrp-compact .cgrp-card__body { display: none; }
+/* Toggle Controls: the cards lose their Edit button (UX 2.1) */
+.cgrp-compact .cgrp-card__edit { display: none; }
 
 /* Narrow (about 360 px): cards show source and kind only (UX 2.6) */
 @container cgrp (max-width: 420px) {

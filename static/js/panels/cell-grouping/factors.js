@@ -8,9 +8,9 @@
  *
  * Interface words come from utils/vocabulary.js (factor, level, group, grouping).
  *
- * SEAM (G9b): a binned factor's expanded card holds `.cgrp-binning`, empty here. The binning control mounts in it
- * through `BINNING_SLOT.mount(host, {partitioning, info, commit})` once G9b registers it; until then the card lists
- * the bins with their counts and says the method and count.
+ * SEAM (G9b): the binning control mounts through `BINNING_SLOT.mount(host, {partitioning, info, commit})` once it is
+ * registered (panels/partition-options/binning-control.js): the count plot's row uses the slot. The Cell Grouping panel
+ * mounts the control directly (`mountBinningControl`) in the body of a binned factor's Edit pop-over.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { GROUPING_LIMITS, sourceName } from '../../utils/cell-grouping.js';
@@ -394,5 +394,5 @@ export function levelRows(p, info, defaults) {
  * null until then.
  * @type {{mount: (null|((host: HTMLElement, ctx: {partitioning: Object, info: Object, commit: Function}) => {destroy: Function}))}}
  */
-// export-unused-ok: G9b registers the binning control here
+// export-unused-ok: the binning control registers itself here, and the count plot reads it
 export const BINNING_SLOT = { mount: null };
