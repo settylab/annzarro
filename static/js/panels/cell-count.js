@@ -17,8 +17,9 @@
  * a cycle, out of date) go through the page's painter (utils/host-binding.js) as provider 'count-grid', as every
  * source's do: the overlay while there is no drawing, the strip's bar of a long wait that keeps the drawing (decision
  * 21), and the buttons routed by the action registry. A drawn plot's strip says the cells counted and those left out
- * (CNT-22). Save as grouping (panels/cell-count/save-grouping.js) and Show as table (table-view.js) are in Plot
- * Options; a click on a bar, slice or rectangle opens Save as grouping too (CNT-21).
+ * (CNT-22). Save as grouping (panels/cell-count/save-grouping.js) is on the toolbar, and a click on a bar, slice or
+ * rectangle opens it too (CNT-21). There is no Show as table (operator ruling, 2026-11-23); Download CSV stays on the toolbar
+ * until the shared Plot Options (WP-5a) take it into Export.
  *
  * SEAMS for the steps after this one (`PARTS`):
  *   V1   `sets`: `mount(host, ctx)` draws the set list in the Sets row (UX 4.6); `ctx.memberFor(set)` is then the wire
@@ -36,7 +37,7 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { UndoStack } from '../utils/gene-signature.js';
 import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLabelsOf } from '../utils/count-plot-model.js';
-import { countFigure, countCsv, countRows, DRAWN_MODES } from './cell-count/draw.js';
+import { countFigure, countCsv, DRAWN_MODES } from './cell-count/draw.js';
 import { densityFigure, DENSITY_MODES } from './cell-count/draw-density.js';
 import { createControls } from './cell-count/controls.js';
 import {
@@ -53,7 +54,6 @@ import { createHostBinding, isVisible, PENDING } from '../utils/host-binding.js'
 import { actions } from '../utils/source-actions.js';
 import { isPlanState, describePlan, wayOut, gridNotice, stripSentence, levelsNote } from './cell-count/states.js';
 import { saveOffered, savePlan, openSaveDialog } from './cell-count/save-grouping.js';
-import { tableView, tableElement } from './cell-count/table-view.js';
 import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
 import { parseAlsoListed } from '../utils/source-registry.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
@@ -205,10 +205,8 @@ actions.register({
         let _levelSource = null;
         let _levelHandle = null;
         let _levelInfo = null;
-        /** Save as grouping's dialog and Show as table, while open */
+        /** Save as grouping's dialog, while open */
         let _dialog = null;
-        let _tableShown = false;
-        let _tableFrom = null;
         const _listeners = [];
         /** the shape and the shown config of `_config`, made once per config */
         let _shape = null;
@@ -554,7 +552,7 @@ actions.register({
             const root = el('div', { class: 'ccnt-panel', data: { panelId: _id } });
             root.insertAdjacentHTML('afterbegin', noDatasetScreenHtml(_id));
             _controls = createControls({ D, id: _id, model: controlsModel, on: {
-                commit, undo: () => undo(), csv: downloadCsv, wayOut: takeWayOut,
+                commit, undo: () => undo(), csv: downloadCsv, saveAsGrouping, wayOut: takeWayOut,
                 setupAxis: (rowEl, axis, setting, roles) => {
                     const structure = structureRead();
                     if (structure) setupAxisSelector(rowEl, axis, setting, 'cells', structure, { consumer: MENU_CONSUMER, roles });
@@ -569,22 +567,15 @@ actions.register({
             const stateBox = el('div', { class: 'ccnt-state-box', hidden: true }, state, el('div', { class: 'ccnt-state__actions' }));
             const plotArea = el('div', { class: 'ccnt-plot-area' }, plot, stateBox);
             const strip = el('div', { class: 'ccnt-strip', role: 'status', aria: { live: 'polite' } });
-            const table = el('div', { class: 'ccnt-table', hidden: true });
             // the page's painter and action registry find this plot's records and buttons by these
             plot.__azPanelId = _id;
             plot.__azCellCount = true;
             plot.__azChooser = _controls.element.querySelector('[data-row="x"] select');
-            // Plot Options: Save as grouping and Show as table (CNT-7, UX 7)
-            const saveBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-save-btn', on: { click: saveAsGrouping } },
-                C.saveGrouping.button);
-            const tableBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-table-btn', aria: { expanded: 'false' },
-                on: { click: () => { _tableShown = !_tableShown; paintTable(); } } }, VOCABULARY.table.show);
-            _controls.optionsElement.append(saveBtn, tableBtn);
-            root.append(_controls.element, plotArea, strip, table);
+            root.append(_controls.element, plotArea, strip);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
-            _dom = { root, controls: _controls.element, plot, plotArea, state, stateBox, strip, table, saveBtn, tableBtn,
+            _dom = { root, controls: _controls.element, plot, plotArea, state, stateBox, strip,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (PARTS.sets && PARTS.sets.mount) {
                 _sets = PARTS.sets.mount(_controls.setsElement, { panelId: _id, config: () => _config, commit, silent,
@@ -612,7 +603,7 @@ actions.register({
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, notes: _notes, levelsOf, levelsSaid,
+                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
             };
         }
@@ -623,10 +614,6 @@ actions.register({
             if (!_dom) return;
             draw();
             paintState();
-            paintTable();
-            _dom.saveBtn.hidden = !saveOffered(_config);
-            _dom.saveBtn.disabled = !_drawing;
-            _dom.tableBtn.disabled = !_drawing;
             const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo];
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
@@ -663,7 +650,7 @@ actions.register({
             const levels = table.axes.filter((a) => a.input === 'split' || (config.mode === 'pie' && a.input === 'x')).map((a) => a.levels.length);
             const n = (table.top ? table.top.levels.length : 0) + levels.reduce((p, k) => p + k, 0);
             const opts = {
-                options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(Math.max(1, n)), theme: PLOT_PALETTES[theme],
+                options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(Math.max(1, n), config.color && config.color.palette), theme: PLOT_PALETTES[theme],
                 measureSource: config.measure ? measureSourceName(config.measure.source, sourceTitleOf) : undefined, titleOf: sourceTitleOf, panelId: _id
             };
             const part = PARTS.draw[config.mode];
@@ -776,25 +763,6 @@ actions.register({
                 save: (recipe) => { PanelManager.createPanelNextTo(GROUPING_TYPE, _id, recipe); },
                 close: () => { _dialog = null; }
             });
-        }
-
-        /** Show as table (UX 7): the CSV's rows, drawn again only when the drawing changes. */
-        function paintTable() {
-            const on = _tableShown && !!_drawing;
-            _dom.tableBtn.textContent = on ? VOCABULARY.table.hide : VOCABULARY.table.show;
-            _dom.tableBtn.setAttribute('aria-expanded', String(on));
-            _dom.table.hidden = !on;
-            if (!on) {
-                if (_tableFrom) D.clear(_dom.table);
-                _tableFrom = null;
-                return;
-            }
-            if (_tableFrom === _drawing) return;
-            _tableFrom = _drawing;
-            const { config, table, labels, names } = _drawing;
-            const rows = countRows(config, table, { labels, inputNames: names, headers: C.csv, titleOf: sourceTitleOf });
-            D.clear(_dom.table);
-            _dom.table.appendChild(tableElement(D, tableView(rows), _title));
         }
 
         /** The CSV of the plotted table (CNT-23). */

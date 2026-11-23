@@ -82,7 +82,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // --- the stored config -----------------------------------------------------------------------------------------------
 
-const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure', 'binSpacing'];
+const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure', 'binSpacing', 'color'];
 const INPUTS = ['x', 'y', 'split'];
 
 /** An input as a partitioning. Its bin count goes to 2,000 and is kept as typed, since the default differs by mode. */
@@ -200,8 +200,37 @@ export function normalizeCountPlot(raw) {
         const spacing = normalizeBinSpacing(raw.binSpacing, bad);
         if (spacing) out.binSpacing = spacing;
     }
+    if (raw.color !== undefined) {
+        const color = normalizeColor(raw.color, bad);
+        if (color) out.color = color;
+    }
     for (const key of Object.keys(raw)) if (!KNOWN.includes(key)) out[key] = raw[key];
     return { config: out, problems };
+}
+
+/**
+ * The colour of the plot (WP-6a): `{map?, reverse?, min?, max?, center?, palette?}`. `map` is a colour scale's name,
+ * `reverse` flips it, `min`, `max` and `center` fix the range of a colour scale (absent: automatic), `palette` names the
+ * discrete palette of a Color by's levels. A field that is not valid is reported and left out; an empty colour is none.
+ */
+function normalizeColor(raw, bad) {
+    if (!isObject(raw)) {
+        bad('color', 'bad_color');
+        return null;
+    }
+    const out = {};
+    for (const field of ['map', 'palette']) {
+        if (raw[field] === undefined) continue;
+        if (typeof raw[field] === 'string' && raw[field]) out[field] = raw[field]; else bad(`color.${field}`, 'bad_color');
+    }
+    if (raw.reverse !== undefined) {
+        if (raw.reverse === true) out.reverse = true; else if (raw.reverse !== false) bad('color.reverse', 'bad_color');
+    }
+    for (const field of ['min', 'max', 'center']) {
+        if (raw[field] === undefined) continue;
+        if (isNumber(raw[field])) out[field] = raw[field]; else bad(`color.${field}`, 'bad_color');
+    }
+    return Object.keys(out).length ? out : null;
 }
 
 /** How a binned axis is drawn: each bin at its index, all one width ('even'), or at its values ('value'). */
