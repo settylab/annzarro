@@ -42,6 +42,9 @@ const WORDS = Object.freeze({
 });
 
 const DEFAULT_PIXELS = Object.freeze({ width: 900, height: 600 });
+/** Plotly's modebar (camera, zoom, pan) at the figure's top right: about this tall, and this wide in px. */
+export const MODEBAR_PX = 36;
+const MODEBAR_WIDTH_PX = 180;
 const STRIP_PX = 10;
 const STRIP_GAP = 2;
 const BRACKET_TITLED_PX = 30;
@@ -164,8 +167,10 @@ function innerSize(layout, pixels) {
  * @param {object} model
  * @param {{w: number, h: number}} inner - the figure inside its margins, px
  * @param {number} fontPx
+ * @param {number} reachPx - how far right the matrix reaches, px from the figure's left edge: a band on top that reaches
+ *   under the modebar is moved down by its height (the legend column does the same)
  */
-function bandPixels(model, inner, fontPx) {
+function bandPixels(model, inner, fontPx, reachPx) {
     const note = model.annotations || {};
     const swap = Boolean(model.swap);
     const rows = model.rows;
@@ -195,6 +200,8 @@ function bandPixels(model, inner, fontPx) {
     px[groupLabelSide] += groupRoom + stripPx;
     px[opposite[geneLabelSide]] += geneTreePx;
     px[opposite[groupLabelSide]] += farGroupPx;
+    const pixels = model.pixels || DEFAULT_PIXELS;
+    if (px.top > 0 && reachPx > pixels.width - MODEBAR_WIDTH_PX) px.top += MODEBAR_PX;
     return { note, swap, showLabels, geneLabelSide, groupLabelSide, runs, strips, geneTrees, groupTrees, bands,
         geneRoom, groupRoom, bracketPx, stripPx, groupTreePx, geneTreePx, totalsPx, px };
 }
@@ -210,7 +217,7 @@ function bandPixels(model, inner, fontPx) {
 export function matrixPixels(model, { right, fontPx, margin }) {
     const pixels = model.pixels || DEFAULT_PIXELS;
     const inner = innerSize({ margin }, pixels);
-    const b = bandPixels(model, inner, fontPx);
+    const b = bandPixels(model, inner, fontPx, margin.l + right * inner.w);
     if (!b.bands) return model.swap ? inner.h : right * inner.w;
     return model.swap ? Math.max(inner.h - b.px.top - b.px.bottom, 0) : Math.max(right * inner.w - b.px.left - b.px.right, 0);
 }
@@ -235,7 +242,7 @@ export function annotateFigure(figure, model, theme) {
     // pixel room: the labels' lengths set the room, and how many characters fit in it; the bands' sizes in px
     const inner = innerSize(layout, pixels);
     const { note, swap, showLabels, geneLabelSide, groupLabelSide, runs, strips, geneTrees, groupTrees, bands,
-        geneRoom, groupRoom, bracketPx, stripPx, groupTreePx, px } = bandPixels(model, inner, fontPx);
+        geneRoom, groupRoom, bracketPx, stripPx, groupTreePx, px } = bandPixels(model, inner, fontPx, layout.margin.l + layout.xaxis.domain[1] * inner.w);
 
     // which axis is which: genes on x, groups on y, unless swapped; labels of genes on the near side
     const geneDim = swap ? 'y' : 'x';
