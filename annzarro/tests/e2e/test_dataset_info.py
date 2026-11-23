@@ -213,17 +213,18 @@ def test_a_dataset_without_attribution_says_so(opened):
 
 # ---- prefetch ------------------------------------------------------------------------------
 
-def _prefetched(page, count=1):
-    page.wait_for_function(
-        "(n) => performance.getEntriesByType('resource').filter((e) => e.name.includes('/datasets/info')).length >= n",
-        arg=count, timeout=15_000)
+def _prefetched(s):
+    """Wait until the page has sent its info request. The requests are counted as the page sends them,
+    not read from the browser's resource timing, whose buffer holds 250 entries and is full by then."""
+    if not s.requests:
+        s.page.wait_for_event("request", lambda r: "/datasets/info" in r.url, timeout=15_000)
 
 
 def test_the_parts_are_fetched_once_after_the_dataset_opens_and_the_dialog_needs_no_request(opened):
     go, _data = opened
     s = go("liver.zarr")
     page = s.page
-    _prefetched(page)
+    _prefetched(s)
     assert _parts(s.requests) == ["about,readme,structure"], "one request for the three parts"
     _open_dialog(page)
     assert page.locator("#dsi-pane-about .dsi-title").inner_text() == "Liver atlas"
