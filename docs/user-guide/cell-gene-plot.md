@@ -188,33 +188,73 @@ There is no separate mode for one row per cell. Two recipes give it:
 (scanpy-differences)=
 ## Differences from scanpy
 
-The plot aims at the numbers of `scanpy.pl.dotplot` and `scanpy.pl.heatmap`: mean, % expressing and mean of expressing
-cells per group are those of scanpy's `DotPlot` (`dot_color_df`, `dot_size_df`) for the same matrix and groups. Where
-it differs, or where an option maps onto something else:
+**What is equal.** For the same matrix and the same groups, the numbers of the plot are scanpy's: the CSV of a
+Cell-Gene Plot equals `sc.pl.DotPlot`'s `dot_color_df` and `dot_size_df`, and `sc.pl.MatrixPlot`'s `values_df`, within
+one part in a billion. This is tested against scanpy 1.12 through the plot's own **Download CSV**, on X, on a log layer
+and on a counts layer, with groups from obs columns and from equal-width bins, with an expression cutoff of 0 and 0.5,
+with `mean_only_expressed` off and on, and with `standard_scale` none, `var` and `group`, as dots and as a heatmap.
+
+How scanpy's options map onto the plot:
 
 | scanpy | Here |
 |---|---|
-| `var_names` as a list, or a mapping of titles to lists (`var_group_positions`, `var_group_labels`) | One section per list, with its title as a bracket |
+| `dot_color_df` (`mean_only_expressed=False`) | **Color**: Mean. The cutoff does not enter, in either |
+| `dot_color_df` with `mean_only_expressed=True`, `expression_cutoff=t` | **Color**: Mean of expressing cells, threshold `t` |
+| `dot_size_df` with `expression_cutoff=t` | **Size**: % expressing, threshold `t` (a value counts when it is above `t`, as in scanpy) |
+| `layer` | The layer of **Color**; **Size** can read another |
+| `standard_scale='var'` | **Scale**: 0 to 1 per gene |
+| `standard_scale='group'` (`'obs'` in a heatmap) | **Scale**: 0 to 1 per group |
+| `var_names` as a list, or as a mapping of titles to lists (`var_group_positions`, `var_group_labels`) | One section per list, its title drawn as a bracket |
 | `groupby`, one key or several | **Groups**: an obs column, or a grouping whose factors are the keys |
 | `categories_order` | The level order in the grouping (tick and drag levels) |
-| `num_categories` (bins of a numeric `groupby`) | Equal-width bins in a grouping. scanpy bins with `pandas.cut`, whose bins include their upper edge, `(a, b]`; bins here include their lower edge, `[a, b)`, so a cell exactly on an edge falls in the next bin up |
-| `use_raw` | Not offered. scanpy reads `.raw` by default when the AnnData has it; AnnZarro does not show `raw` in plots (the Structure tab marks it "not shown in plots"). The same figure needs the same matrix: compare against scanpy with `use_raw=False` and the layer chosen here, or store that matrix as a layer |
-| `layer` | The layer of **Color**; **Size** can read another |
-| `expression_cutoff` | The grouping's **Expressed above** threshold (`x > t`, as scanpy), and **Size threshold** in Plot Options |
-| `mean_only_expressed` | The statistic **Mean of expressing cells**. A group with no expressing cell is 0, as in scanpy, and the hover says "no expressing cells" |
-| `dot_size_df` (a fraction, 0 to 1) | % expressing, 0 to 100 |
-| `standard_scale` `var`, `group` | **0 to 1 per gene**, **0 to 1 per group**; a constant row gives 0, as in scanpy. Two z-score scalings are added |
-| `dot_color_df`, `dot_size_df` as your own matrices | Not offered; colour and size each pick a statistic and a layer |
+| `num_categories` | Equal-width bins of a grouping's factor (see below) |
 | `cmap`, `vmin`, `vmax`, `vcenter` | **Color scale**, **Min**, **Max**, **Center** |
 | `dot_min`, `dot_max`, `smallest_dot`, `largest_dot` | **% at the smallest dot**, **% at the largest dot**, **Smallest and largest dot** |
 | `swap_axes` | **Swap axes** |
 | `add_totals` | **Cells per group** and **Sort groups by size** |
-| `dendrogram`, `add_dendrogram` | **Cluster ▾** and **Dendrograms**, with scanpy's defaults (complete linkage, Pearson correlation). **The input differs**: scanpy's `sc.tl.dendrogram` clusters the groups on their mean of a representation, `X_pca` by default, which involves every gene; here the groups and the genes are clustered on the colour values as displayed, so the order depends on the genes shown and the scaling chosen |
+| `dendrogram`, `add_dendrogram` (`sc.tl.dendrogram`'s defaults) | **Cluster ▾** and **Dendrograms**: complete linkage and Pearson correlation by default (see below for the input) |
 | `title`, `colorbar_title`, `size_title`; `legend(show_size_legend, show_colorbar)` | **Plot title**, **Color bar title**, **Size legend title**; **Size legend**, **Color bar** |
 | `show_gene_labels` (heatmap) | **Gene labels**; labels also thin out when they would overlap |
 | Values printed in the cells (`matrixplot`) | **Print values in cells** |
 | A heatmap with one row per cell | No mode: see {ref}`per-cell-views` |
+| `dot_color_df`, `dot_size_df` as your own matrices | Not offered: Color and Size each pick a statistic and a layer |
 | `var_group_rotation`, `log`, `norm`, `size_exponent`, `color_on`, `dot_edge_color`, `grid`, `gene_symbols` | Not offered |
 
-Values that are not finite (NaN, infinity) are left out per gene and cell, so a group's mean is over the cells with a
-value; a group with no value for a gene has no statistic, not 0.
+Two differences of notation, not of value: **Color** and **Size** each have their own threshold where scanpy has one
+`expression_cutoff` for both, and the CSV gives the colour statistic as computed and, when a scaling is on, also as
+displayed.
+
+**The intended differences.** Each is deliberate, and each is tested.
+
+1. **% expressing is a percentage.** scanpy's `dot_size_df` is a fraction from 0 to 1; % expressing here runs from 0
+   to 100, so a CSV value is 100 times scanpy's.
+2. **Bins of a numeric column (`num_categories`).** Equal-width bins here include their lower edge, `[a, b)`, the last
+   bin both edges. scanpy bins with `pandas.cut`, whose bins include their upper edge, `(a, b]`. A cell exactly on an
+   inner edge is therefore in the upper bin here and in the lower one in scanpy. On a column whose values sit on round
+   numbers, such as a pseudotime in steps, that can move a tenth of the cells or more; on continuous values it moves
+   almost none. pandas also widens its lowest edge by 0.1% of the range, which moves no cell.
+3. **`use_raw`.** scanpy reads `.raw` by default when the AnnData has one. AnnZarro never offers `raw` as a layer (the
+   Structure tab marks it "not shown in plots", and a grouping that lists `raw` among its layers still does not get
+   it). The same figure needs the same matrix: call scanpy with `use_raw=False` and the layer chosen here, or store the
+   matrix you want as a layer.
+4. **A group with no expressing cell.** Mean of expressing cells is then 0, the number scanpy writes. The hover says
+   "no expressing cells", and so does the CSV's **Note** column, so that 0 is not read as a measured mean. A measured 0,
+   such as a mean of 0, carries no note.
+5. **A layer with negative values.** % expressing and mean of expressing cells are not computed on a layer with
+   negative values, such as a scaled X: the dots are drawn at one size, the plot says "% expressing is not available
+   on X: X has negative values. Choose a layer.", and the CSV has no size column. scanpy computes the share above the
+   cutoff on any matrix. The mean on such a layer still equals scanpy's.
+6. **A constant gene under scaling.** 0 to 1 per gene gives 0 for a constant gene, as scanpy does, never NaN. The two
+   z-score scalings, which scanpy does not have, also give 0. SDs are population SDs (ddof 0), groups with no value are
+   skipped, and nothing is clipped.
+7. **The dendrogram's input.** The method is `sc.tl.dendrogram`'s by default, complete linkage on Pearson correlation,
+   and on the same matrix the order is scipy's leaf order, for groups and for genes alike. The input differs:
+   `sc.tl.dendrogram` clusters the groups on their mean of a representation, `X_pca` by default, which involves every
+   gene; here groups and genes are clustered on the colour values as displayed, after scaling. So the order depends on
+   the genes shown and on the scaling: 0 to 1 per gene can reorder the groups, while 0 to 1 per group cannot (a linear
+   change of one group's values leaves its correlations as they were). A constant gene, or one with fewer than two
+   values in common with another, cannot be correlated: it is not clustered, is drawn last in its block, and the panel
+   counts it. **Cluster ▾** says "on the values as displayed".
+
+Values that are not finite (NaN, infinity) are left out per gene and cell, so a group's mean is over its cells with a
+value, and a group with no value for a gene has no statistic, not 0.
