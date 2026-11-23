@@ -252,6 +252,56 @@ def test_estimate_only_reads_nothing(client, layout, monkeypatch):
     assert grid["estimate"]["cells"] == len(gstore.CELL_TYPES) and grid["estimate"]["lane"] == "light"
 
 
+# --- Cell-Gene Color and Size on two layers (WP-4): no wire change ---------------------------------------------------
+
+def _layer_features(genes, layers, threshold=0):
+    return [{"id": f"{layer}:{g}", "kind": "gene", "name": g, "layer": layer, "detect_above": threshold}
+            for layer in layers for g in genes]
+
+
+def test_a_mixed_layer_request_has_the_moments_of_two_single_layer_requests(client, layout):
+    """Color on ``logged`` and Size on ``counts`` are one request whose features hold each gene once per layer; its
+    moments equal what each layer asked alone gives, value for value."""
+    genes = [gstore.gene(i) for i in (0, 1, 3, 7)]                  # GENE003: expressed by no cell
+    parts = [{"source": CELL_TYPE}]
+    frames, mixed = run(client, layout, grouping(parts, features=_layer_features(genes, ["logged", "counts"])))
+    result = frames[-1]
+    assert [f["id"] for f in result["features"]] == [f"{l}:{g}" for l in ("logged", "counts") for g in genes]
+    assert all(f["status"] == "ok" for f in result["features"])
+    progress = [f for f in frames if f["type"] == "progress" and f.get("stage") == "features"]
+    assert progress and progress[-1]["total"] == 2 * len(genes), "progress counts each gene on each layer"
+    one = {}
+    for layer in ("logged", "counts"):
+        f1, b1 = run(client, layout, grouping(parts, features=_layer_features(genes, [layer])))
+        assert f1[-1]["groups"] == result["groups"]
+        one[layer] = b1["feature_moments"]
+    both = mixed["feature_moments"]
+    assert both.shape == (2 * len(genes), len(result["groups"]), 5)
+    np.testing.assert_array_equal(both[:len(genes)], one["logged"])
+    np.testing.assert_array_equal(both[len(genes):], one["counts"])
+    assert not np.array_equal(one["logged"], one["counts"]), "the layers differ, so the test can tell them apart"
+
+
+def test_estimate_only_counts_both_layers(client, layout):
+    """The estimate a mixed-layer plot shows (``estimate_only``) charges the reads of both layers: its entries over the
+    grouping's own are the sum of each layer's, and so is the time."""
+    genes = [gstore.gene(i) for i in range(6)]
+    parts = [{"source": CELL_TYPE}]
+
+    def est(layers):
+        body = grouping(parts, features=_layer_features(genes, layers) if layers else [], estimate_only=True)
+        resp = post(client, layout, body)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        return resp.get_json()["estimate"]
+
+    base, logged, counts, both = est([]), est(["logged"]), est(["counts"]), est(["logged", "counts"])
+    read = lambda e: e["entries"] - base["entries"]                    # noqa: E731
+    assert read(logged) > 0 and read(counts) > 0
+    assert read(both) == read(logged) + read(counts)
+    assert both["seconds"] >= max(logged["seconds"], counts["seconds"])
+    assert both["seconds"] - base["seconds"] == pytest.approx((logged["seconds"] - base["seconds"]) + (counts["seconds"] - base["seconds"]), abs=0.02)
+
+
 def _slow(monkeypatch, layout_name, seconds):
     monkeypatch.setitem(gsc.RATES, layout_name, 1.0 / seconds)
 

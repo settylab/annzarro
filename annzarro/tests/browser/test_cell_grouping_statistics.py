@@ -3,9 +3,9 @@
 The store is the grouping fixture (tests/core/grouping_store.py): X is scaled (it has negative values), `logged` is
 log-normalised, `counts` holds counts.
 
-1.  The collapsed row states the defaults, mean and % expressing on X, and a default grouping stores nothing (GRP-9,
-    SHR-26).
-2.  Open, every statistic is defined, the threshold sits once at the top, and cell count is always offered. X is always
+1.  Closed, the button states the defaults (in its title and label), mean and % expressing on X, and a default grouping
+    stores nothing (GRP-9, SHR-26).
+2.  Open (a pop-over, FB-2 decision h), every statistic is defined, the threshold sits once at the top, and cell count is always offered. X is always
     offered: its box cannot be switched off.
 3.  A signed X: the sentence of SHR-27 under % expressing and the layer's row says which statistics are not available.
 4.  Picking a layer is one undoable step; the recipe stores the layer and the default is not stored.
@@ -31,7 +31,9 @@ from annzarro.tests.browser.test_cell_grouping_panel import (  # noqa: E402,F401
     A, CELL_TYPE, GA, _grouping, _open, _ready, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
-SEC = f"{A} .gsig-scoring"
+TOG = f"{A} .gsig-scoring__toggle"                 # the toolbar button: Statistics ▾
+POP = "[data-popover='statistics']"                # its pop-over, in the page's one pop-over layer
+SEC = f"{POP} .gsig-scoring"                       # what the pop-over holds: the section's body
 SIGNED = "% expressing is not available on X: X has negative values. Choose a layer."
 
 
@@ -45,12 +47,12 @@ def _recipe(page):
 
 
 def _summary(page):
-    return page.inner_text(f"{SEC} .gsig-scoring__summary")
+    return page.inner_text(f"{A} .gsig-scoring__summary")
 
 
 def _open_section(page):
-    if page.get_attribute(f"{SEC} .gsig-scoring__toggle", "aria-expanded") != "true":
-        page.click(f"{SEC} .gsig-scoring__toggle")
+    if page.get_attribute(TOG, "aria-expanded") != "true":
+        page.click(TOG)
     page.wait_for_selector(f"{SEC} .gsig-scoring__body", state="visible")
     # the layers say what they look like once the server has sampled each
     until(page, """(s) => [...document.querySelectorAll(s + ' .gsig-scoring__layer')]
@@ -69,10 +71,11 @@ def _undo_label(page):
 def test_collapsed_it_states_the_defaults_and_a_default_grouping_stores_nothing(page, served):
     _open(page, served, _cfg())
     _ready(page)
-    assert page.inner_text(f"{SEC} .gsig-scoring__label") == "Statistics offered"
+    assert page.inner_text(f"{A} .gsig-scoring__label") == "Statistics"
     assert _summary(page) == "mean, % expressing · X"
-    assert page.get_attribute(f"{SEC} .gsig-scoring__toggle", "aria-label") == "Statistics offered: mean, % expressing · X"
-    assert page.is_hidden(f"{SEC} .gsig-scoring__body")
+    assert page.get_attribute(TOG, "aria-label") == "Statistics offered: mean, % expressing · X"
+    assert page.get_attribute(TOG, "title") == "mean, % expressing · X"
+    assert page.locator(POP).count() == 0, "closed, there is no body in the page"
     assert _recipe(page) == {}, "nothing about the options is stored until it differs from the default"
     assert page.query_selector(f"{A} .cgrp-statistics .gsig-scoring") is not None, "it sits in the statistics zone"
 
@@ -81,6 +84,7 @@ def test_open_it_defines_every_statistic_and_always_offers_cell_count_and_x(page
     _open(page, served, _cfg())
     _ready(page)
     _open_section(page)
+    assert page.inner_text(f"{POP} .az-popover-title") == "Statistics offered"
     assert page.inner_text(f"{SEC} fieldset:first-of-type legend") == "Statistics"
     names = page.eval_on_selector_all(f"{SEC} [data-method] .gsig-scoring__optionname", "els => els.map(e => e.textContent)")
     assert names == ["Mean", "% expressing", "Mean of expressing cells", "Sum", "SD"]
@@ -278,7 +282,7 @@ def test_screenshots(page, served, scheme):
     _open(page, served, _cfg(offered=["mean", "pct_expressing", "sum"], layers=["logged"], detect_above=0.5))
     _ready(page)
     _open_section(page)
-    page.locator(f"{A} .cgrp-statistics").screenshot(path=os.path.join(out, f"statistics-{scheme}.png"))
+    page.locator(POP).screenshot(path=os.path.join(out, f"statistics-{scheme}.png"))
 
 
 def test_statistics_and_the_signatures_scoring_share_one_kind_request_per_dataset_and_layer(page, served):
@@ -290,7 +294,7 @@ def test_statistics_and_the_signatures_scoring_share_one_kind_request_per_datase
     page.wait_for_selector(f".tile[data-tile-id='{sig}'] .gsig-scoring")
     until(page, "() => !!document.querySelector('.tile[data-tile-id=\"gene-signature-S\"] .gsig-scoring__summary')")
     _open_section(page)
-    page.click(f".tile[data-tile-id='{sig}'] .gsig-scoring__toggle")
+    page.click(f".tile[data-tile-id='{sig}'] .gsig-scoring__toggle")        # a click outside: the pop-over closes
     until(page, """() => [...document.querySelectorAll('.tile[data-tile-id="gene-signature-S"] .gsig-scoring__layer')]
         .every(l => l.querySelector('.gsig-scoring__kind'))""")
     for layer in ("X", "logged", "counts"):

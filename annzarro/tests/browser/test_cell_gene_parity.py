@@ -72,6 +72,14 @@ SCALED = {"none": "not scaled", "var": "scaled 0 to 1 per gene", "group": "scale
 NOTE = "no expressing cells"
 
 
+def _named(stat, cut):
+    """A statistic as the CSV header names it: a thresholded one with its threshold, "% expressing (> 0.5)" (WP-4),
+    the number written as the page writes it."""
+    if stat not in ("pct_expressing", "mean_expressing"):
+        return LABEL[stat]
+    return f"{LABEL[stat]} (> {int(cut) if float(cut).is_integer() else cut})"
+
+
 # ------------------------------------------------------------------ the store, with a .raw
 
 def _make_store(path):
@@ -119,11 +127,11 @@ def _link(page, served, plot, grouping, genes=B):
 
 
 def _csv(page):
-    """Download CSV, the button in Plot Options: the header and the rows, as text."""
-    if page.locator(f"{TP} .cgene-options").is_hidden():
+    """Download CSV, the button in Plot Options ▸ Export: the header and the rows, as text."""
+    if page.locator("[data-popover='plot-options']").count() == 0:
         page.click(f"{TP} .cgene-options-btn")
     with page.expect_download() as got:
-        page.click(f"{TP} .cgene-csv-btn")
+        page.click("[data-popover='plot-options'] .cgene-csv-btn")
     with open(got.value.path(), encoding="utf-8") as f:
         rows = list(csv.reader(io.StringIO(f.read())))
     return rows[0], rows[1:]
@@ -199,13 +207,13 @@ def test_the_csv_of_a_link_equals_scanpy_dotplot(page, served, layer, groupby, c
         assert len(body) == len(B) * len(DOT[f"groups__{groupby}"])
         groups = _group_labels(body, groupby)
         key = _key(layer, groupby, cut, mo, ss)
-        title = f"{LABEL[stat]} · {layer} · "
+        title = f"{_named(stat, cut)} · {layer} · "
         _assert_close(_column(head, body, title + SCALED["none"], groups), DOT[_key(layer, groupby, cut, mo, "none") + "__color"],
                       f"dot_color_df, {key}, as computed")
         _assert_close(_column(head, body, title + SCALED[ss], groups), DOT[key + "__color"], f"dot_color_df, {key}, as displayed")
-        size_title = f"{LABEL['pct_expressing']} · {layer} · {SCALED['none']}"
+        size_title = f"{_named('pct_expressing', cut)} · {layer} · {SCALED['none']}"
         if layer == "X":
-            assert size_title not in head, "no % expressing on a layer with negative values"
+            assert not any(h.startswith(LABEL["pct_expressing"]) for h in head), "no % expressing on a layer with negative values"
             continue
         # scanpy's size is a fraction; AnnZarro's % expressing is a percentage (difference 6)
         _assert_close(_column(head, body, size_title, groups) / 100, DOT[key + "__size"], f"dot_size_df, {key}")
@@ -265,9 +273,9 @@ def test_difference_2_raw_is_never_offered_as_a_layer(page, served):
     # even a grouping whose recipe names "raw" does not get it: the dataset's layers are X and its layers
     _link(page, served, {"color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "pct_expressing", "layer": "logged"}},
           {**_grouping("cell_type"), "layers": [*LAYERS, "raw"]})
-    for sel in (".cgene-color", ".cgene-size"):
+    for sel in (".cgene-color-layer", ".cgene-size-layer"):
         values = page.locator(f"{TP} {sel}").evaluate("e => [...e.options].map(o => o.value)")
-        layers = {v.split("@", 1)[1] for v in values if "@" in v}
+        layers = {v for v in values if v != "__offer_other__"}
         assert layers == set(LAYERS), (sel, values)
 
 
@@ -283,8 +291,8 @@ def test_differences_3_and_4_no_expressing_cell_is_0_as_scanpy_and_the_csv_says_
           _grouping("cell_type"))
     head, body = _csv(page)
     assert head[-1] == "Note"
-    computed = head.index("Mean of expressing cells · logged · not scaled")
-    shown = head.index("Mean of expressing cells · logged · scaled 0 to 1 per gene")
+    computed = head.index("Mean of expressing cells (> 0.5) · logged · not scaled")
+    shown = head.index("Mean of expressing cells (> 0.5) · logged · scaled 0 to 1 per gene")
     dead = [r for r in body if r[1] == "GENE003"]
     assert len(dead) == 6
     assert all(r[computed] == "0" and r[shown] == "0" and r[-1] == NOTE for r in dead), dead
@@ -296,7 +304,7 @@ def test_differences_3_and_4_no_expressing_cell_is_0_as_scanpy_and_the_csv_says_
     for z in ("z_groups", "z_pooled"):
         _rescale(page, z)
         head, body = _csv(page)
-        j = head.index(f"Mean of expressing cells · logged · {SCALED[z]}")
+        j = head.index(f"Mean of expressing cells (> 0.5) · logged · {SCALED[z]}")
         assert all(r[j] == "0" for r in body if r[1] == "GENE003")
 
 
@@ -323,8 +331,8 @@ def test_difference_5_clustering_is_scanpys_method_on_the_displayed_values_not_o
     _link(page, served, {"color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "pct_expressing", "layer": "logged"},
                          "cluster": {"genes": "sections", "groups": "all", **CLUSTER}}, _grouping("cell_type"))
     page.click(f"{TP} .cgene-cluster-btn")
-    summary = page.locator(f"{TP} .cgene-cluster-menu .cgene-cluster-summary").inner_text()
-    assert summary == "Complete linkage, Pearson correlation, on the values as displayed. Change them in Plot Options."
+    summary = page.locator("[data-popover='cluster'] .cgene-cluster-menu .cgene-cluster-summary").inner_text()
+    assert summary == "Complete linkage, Pearson correlation, on the values as displayed."
     head, body = _csv(page)
     groups, genes = _order(body)
     types = [str(g) for g in DOT["groups__cell_type"]]
@@ -351,7 +359,7 @@ def test_difference_7_no_pct_expressing_on_a_layer_with_negative_values(page, se
     _link(page, served, {"color": {"stat": "mean", "layer": "X"}, "size": {"stat": "pct_expressing", "layer": "X"}},
           _grouping("cell_type"))
     head, body = _csv(page)
-    assert "% expressing · X · not scaled" not in head
+    assert not any(h.startswith(LABEL["pct_expressing"]) for h in head), "no size column, under any threshold"
     assert "Mean · X · not scaled" in head
     assert DOT[_key("X", "cell_type", 0.0, 0, "none") + "__size"].max() > 0, "scanpy has a size for it"
     hint = page.locator(f"{TP} .cgene-panel").inner_text()

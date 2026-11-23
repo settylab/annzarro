@@ -21,7 +21,7 @@ scaling, the order or the style asks the server for nothing.
 4. Add more sections the same way. The plot draws once the groups and the genes are known.
 
 The plot asks the server once for the groups and every gene together. Adding a gene to a signature asks for that gene
-alone, and a gene shown in two sections, or by colour and size at once, is read once.
+alone, and a gene shown in two sections, or by colour and size on one layer, is read once.
 
 ## The controls
 
@@ -29,12 +29,32 @@ alone, and a gene shown in two sections, or by colour and size at once, is read 
 |---|---|
 | What | **Groups** · **Mode** (**Dots** or **Heatmap**) · **Genes**: the section list and **Add genes ▾** |
 | Values | **Color** · **Scale** · **Size** (dots only) |
-| Layout | **Swap axes** · **Cluster ▾** · **Plot Options** |
+| Layout | **Swap axes** · **Cluster ▾** · **Color ▾** · **Plot Options** |
 
-**Color** and **Size** each choose a statistic and a layer, written `Mean · X` or `% expressing · logged_counts`. They
-list what the grouping offers (its **Statistics offered**, {doc}`cell-grouping`), then **Cell count**. With an obs
-column as the groups there is no grouping to offer more, so they list mean and % expressing on X. The defaults are
-mean for colour and % expressing for size, on X. The statistics, over the cells of a group that have a value:
+**Color** and **Size** each read their own statistic from their own layer, in one row:
+`Color [Mean ▾] of [logged ▾]` and `Size [% expressing ▾] of [counts ▾] above [0]`. A common dot plot is exactly this:
+the colour from the mean of the log-normalised layer, the size from the share of cells expressing in the raw counts.
+
+- **The statistic select** lists the statistics on offer, then **Cell count** (which reads no layer, so the layer
+  select hides).
+- **The layer select** lists the layers on offer only. A statistic a layer cannot give is greyed out there, with the
+  reason as its tooltip; one that can be computed but misleads (a mean of raw counts follows sequencing depth) carries
+  the warning as its tooltip.
+- **The threshold** appears beside a statistic that counts expressing cells (% expressing, mean of expressing cells).
+  Each of Color and Size keeps its own; a cell counts as expressing above it. Left alone, it is the grouping's
+  threshold, else 0.
+- **Offer other…**, at the end of both selects, opens the place where statistics and layers are offered.
+
+What is on offer depends on the groups. With a grouping as the groups, it is the grouping's **Statistics offered**
+({doc}`cell-grouping`); **Offer other…** opens it. With an obs column as the groups there is no grouping, so the plot
+keeps its own **Statistics offered**, shown under **Size**: mean and % expressing, on X and on the layers that look
+log-normalised and like raw counts (judged from the stored values, never from layer names). **Offer other…** opens it,
+and an edit there is one undoable step of the plot, saved with it. A choice that is no longer on offer stays selected
+and drawn, marked "(no longer offered)".
+
+**A new plot** starts with Color as the mean of the log-normalised layer and Size as % expressing in the raw counts,
+above 0, when the dataset has both kinds of layer on offer; otherwise both read X. The statistics, over the cells of a
+group that have a value:
 
 | Statistic | Is |
 |---|---|
@@ -50,7 +70,8 @@ heatmap, never a 0. The strip below the plot counts them ("12 cells of the matri
 
 **Size on a signed layer.** On a layer with negative values, such as a scaled X, % expressing cannot be computed. The
 dots are then drawn at one size, the size legend says "% expressing is not available on X: X has negative values.
-Choose a layer.", the strip says **No size**, and the Size select lists the layers that work first.
+Choose a layer.", the strip says **No size**, and the Size layer select marks X "(not available)" and offers the
+layers that work.
 
 ### Scale
 
@@ -64,10 +85,15 @@ Choose a layer.", the strip says **No size**, and the Size select lists the laye
 
 Groups with no value are skipped in every minimum, maximum, mean and SD, and a constant gene gives 0, as in scanpy.
 "All grouped cells" means the cells that are in a group: cells left out of every group do not count. A one-row section
-has no cells of its own to pool, so under the last scaling it is z-scored across its own groups; Plot Options says so.
+has no cells of its own to pool, so under the last scaling it is z-scored across its own groups; **Color ▾** says so.
 
 The colour bar names the statistic, the layer and the scaling ("Mean · X", "scaled 0 to 1 per gene"); the size legend
 names its statistic, threshold and layer ("% expressing (> 0) · logged_counts").
+
+**Cluster ▾**, **Color ▾** and **Plot Options** each open a pop-over over the plot. Opening one leaves the panel's
+layout as it is. A change applies at once and is one step of **Undo**. A pop-over closes with its button, its **×**,
+Escape (from anywhere on the page) or a click outside it; Escape and **×** return the focus to the button. One
+pop-over is open at a time.
 
 ## Sections
 
@@ -109,37 +135,53 @@ score, or a size that is not 0 to 100) gets its own colour bar or size legend, t
   clustered.
 - **Cluster groups**: **Off**, **All**, or, for a grouping of two or more factors, **Within cell_type** (the first
   factor), which keeps that factor's blocks together.
-- The linkage and distance are in Plot Options: **complete** linkage and **Pearson correlation** by default, as
-  scanpy's `sc.tl.dendrogram`; **average** and **Ward (Euclidean distance only)** are offered, and Euclidean distance.
+- **Sort groups by size**, shown while **Cluster groups** is **Off**: the groups in order of their number of cells.
+- **Linkage** and **Distance**: **complete** linkage and **Pearson correlation** by default, as scanpy's
+  `sc.tl.dendrogram`; **average** and **Ward (Euclidean distance only)** are offered, and Euclidean distance.
   Choosing Ward while correlation is set switches Distance to Euclidean and says so, with **Undo**.
+- **Dendrograms**: **Genes** and **Groups**, each shown or hidden on its own; both are on by default.
 
 Clustering runs in the browser, off the page's main thread, **on the colour values as displayed**, after scaling.
 Two rows are compared over the columns where both have a value. A row with too few values in common with the others,
 or a constant row under correlation, is not clustered and goes last ("3 rows not clustered: too few values in common,
 or constant. They are at the end."). A block of more than 2,000 rows is not clustered, with the reason. The order is
-worked out again from the settings each time and is never stored. **Dendrograms** (Plot Options) draws one per
-clustered block.
+worked out again from the settings each time and is never stored. A dendrogram is drawn for each clustered block,
+unless its **Dendrograms** box is cleared.
 
 **Swap axes** puts the genes on the other axis; brackets, strips and dendrograms follow.
 
-## Plot Options
+## Color and Plot Options
+
+**Color ▾** holds what sets how the values read:
 
 | Section | Controls |
 |---|---|
-| Dots | **Smallest and largest dot**; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`); **Size threshold**, when size should count expressing cells above another value than **Color**'s |
-| Colors | **Color scale**, **Min**, **Max**, **Center** (for a diverging scale); **Print values in cells** (heatmap) |
+| Colors | **Color scale**, **Reverse**, **Min**, **Max**, **Center** (for a diverging scale); **Print values in cells** (heatmap); the scaling's help line |
+| Dots | **Smallest and largest dot**; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`). Size's threshold sits beside **Size** in the control grid |
+
+**Reset** puts all of these back to their defaults in one step.
+
+**Plot Options** holds the rest of the figure:
+
+| Section | Controls |
+|---|---|
+| Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none) |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
 | Labels | **Gene labels**, **Group labels**; **Plot title**, **Color bar title**, **Size legend title** |
-| Clustering | **Linkage**, **Distance**, **Dendrograms** |
 | Legend | **Color bar**, **Size legend**, **Strip legend** |
-| Totals | **Cells per group** (a bar along the group axis); **Sort groups by size** |
+| Totals | **Cells per group** (a bar along the group axis) |
+| Export | **Download CSV** |
+
+The colour scale is **Reds** by default. Under a z-score scaling the default is **RdBu**, centred at 0, so that
+values above and below the mean read as opposite colours. A scale you pick yourself is kept, whatever the scaling.
 
 The group axis carries a colour strip in the grouping's colours, one per factor; small groups get "small" after their
 label. Gene and group labels thin out when they would overlap, and the hover always names the group, the gene (or the
 section and its entry), each value with its statistic and layer, and the group's cells.
 
-**Show as table** lists the plotted values; **Download CSV** gives them in long form, one row per group and row, with
-one column per statistic and headers that name the statistic, the layer and the scaling. The camera button in the
+**Download CSV** (Plot Options ▸ Export) gives the plotted values in long form, one row per group and row, with
+one column per statistic and headers that name the statistic, its threshold where it has one, the layer and the
+scaling ("% expressing (> 1) · counts · not scaled"), so two thresholds stay two columns apart. The camera button in the
 plot's toolbar saves the figure as an image, with its brackets, strips, legends and dendrograms.
 
 ## Waiting, asking first, refusals
@@ -157,7 +199,12 @@ stays.
 | Refused, cost | "Would take about 25 minutes, so it was not run. Use fewer genes, a smaller subset, or a layer stored by gene (CSC)." |
 | Refused, layout | "logged_counts is stored by cell (CSR), so 200 genes mean reading the whole matrix: …" A copy of the layer stored by gene (CSC) makes this fast: see {doc}`../data/preparing-a-store` |
 | Too large | "28 groups × 15,000 rows = 420,000 cells of the matrix; the limit is 400,000. Remove a section or use fewer groups." |
+| Too many values | "12 groups × 40,000 values per group = 480,000 values; the limit is 400,000. Color and Size read different layers, so each gene is read twice." |
 | One cell per group | "One cell per group: % expressing is 0 or 100.", with **Show as Heatmap** |
+
+When Color and Size read different layers, or one layer at two thresholds, each gene is read twice: the request
+still goes out once, the notices say so ("Reading 40 genes on 2 layers"), the estimate and the progress count both
+reads, and reading takes about twice as long. Switching back and forth costs nothing once both are held.
 
 The estimate counts the stored values to read, which the store's index gives before anything is read; time left is
 taken from the values read, not from the genes done, because one well-expressed gene can hold a hundred times the
@@ -167,6 +214,7 @@ well-expressed genes read 10.5 billion stored values in about 3 minutes, against
 | Limit | Value |
 |---|---|
 | Cells of the matrix (groups × rows) | 400,000 |
+| Values the server gathers (groups × each gene once per layer and threshold) | 400,000 |
 | Genes per section | 2,000 |
 | Groups | 2,000 (the grouping's limit) |
 | Rows clustered per block | 2,000 |

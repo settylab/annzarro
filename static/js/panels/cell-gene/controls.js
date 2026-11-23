@@ -3,9 +3,12 @@
  *
  * - THE CHOICES (pure, Node-tested): what the Groups selects list (categorical obs columns; groupings, with the ones
  *   that would close a loop unavailable and why, decision 15), the cell axis as the page's group sources name it, and
- *   what the Color and Size selects list (the statistics the grouping offers on the layers it offers, graded on what
- *   each layer holds, and Cell count; a held choice no longer offered stays, marked, SHR-26).
- * - THE CONTROL GRID (`createControls`): What (Groups, Mode), Values (Color, Scale, Size), Layout (Swap axes). The
+ *   what Color and Size each list (WP-4): a statistic select (the statistics offered, graded on the layer the measure
+ *   reads, and Cell count) and a layer select (the OFFERED layers, graded for the statistic), each ending in "Offer
+ *   other…"; a held choice no longer offered stays, marked (SHR-26); a pair a layer cannot give is disabled with its
+ *   reason (SHR-27).
+ * - THE CONTROL GRID (`createControls`): What (Groups, Mode), Values (Color, Scale, Size, each `statistic of layer
+ *   above threshold`; on an obs axis the plot's own Statistics offered), Layout (Swap axes). The
  *   section list of UX 3.2 sits in the What group (`createSectionList`). Toggle Controls hides the grid
  *   (`data-panel-controls`).
  *
@@ -17,7 +20,7 @@ import { normalizeGrouping } from '../../utils/cell-grouping.js';
 import { GROUP_STATISTICS_MODEL, ALWAYS_OFFERED, STATISTIC_INFO } from '../../utils/group-statistics.js';
 import { SCALINGS } from '../../utils/cell-gene-model.js';
 import { loopReason } from '../../utils/panel-references.js';
-import { GROUP_AXIS, OFFER_OTHER, aggregationEntries, aggregationValue, aggregationHelp } from './sections.js';
+import { GROUP_AXIS, OFFER_OTHER, aggregationEntries, aggregationValue, aggregationHelp, needsThreshold } from './sections.js';
 
 const CG = VOCABULARY.cellGene;
 
@@ -73,41 +76,86 @@ export function axisRecipe(axis) {
     return _axisRecipes.get(key);
 }
 
-const menuOf = (stat) => (STATISTIC_INFO.find((m) => m.value === stat) || { menu: stat }).menu;
+const infoOf = (stat) => STATISTIC_INFO.find((m) => m.value === stat) || null;
+const nameOf = (stat) => (infoOf(stat) || { label: stat }).label;
+const MODEL = GROUP_STATISTICS_MODEL;
+const recipeOr = (recipe) => recipe || normalizeGrouping({}).recipe;
+const OFFER_ENTRY = Object.freeze({ value: OFFER_OTHER, label: CG.sources.offerOther });
 
-/** The value of a statistic choice in a select: `stat@layer`, or `count`. */
-export function statisticValue(spec) {
-    return spec.stat === ALWAYS_OFFERED ? ALWAYS_OFFERED : `${spec.stat}@${spec.layer}`;
-}
-
-/** What a Color or Size value stands for. */
-export function parseStatistic(value) {
-    if (value === ALWAYS_OFFERED) return { stat: ALWAYS_OFFERED };
-    const at = String(value).lastIndexOf('@');
-    return { stat: value.slice(0, at), layer: value.slice(at + 1) };
+/** Where "Offer other…" leads (operator ruling Q1): the grouping's Statistics offered, or the plot's own list on an obs axis. */
+export function offerPlace(axis) {
+    return axis && axis.type === GROUP_AXIS ? 'grouping' : 'plot';
 }
 
 /**
- * What the Color and Size selects list (CXG-11, SHR-26, SHR-27): the statistics the grouping offers on the layers it
- * offers and the dataset has, those a layer cannot give left out, then Cell count. With an obs column as the cell
- * axis, the defaults of SHR-26. A held choice that is no longer offered, or that its layer cannot give, stays listed
- * and marked, so the select shows what is drawn.
- * @param {{recipe: (Object|null), layers: string[], kinds: Object<string, string>, held: Object}} opts
- * @returns {Array<{value: string, label: string, title?: string, lapsed?: boolean}>}
+ * What a measure's statistic select lists (WP-4, SHR-26, SHR-27): the statistics offered, each graded on the layer the
+ * measure reads (one that layer cannot give disabled with its reason, a `warn` one with its note as the title), a held
+ * one no longer offered kept and marked, then Cell count and "Offer other…".
+ * @param {{recipe: (Object|null), kinds: Object<string, string>, held: {stat: string, layer?: string}}} opts - `recipe`
+ *   is what is offered (the grouping's, or controls' axis offer on an obs column)
+ * @returns {Array<{value: string, label: string, title?: string, disabled?: boolean, lapsed?: boolean}>}
  */
-export function statisticChoices({ recipe, layers, kinds, held }) {
-    const r = recipe || normalizeGrouping({}).recipe;
-    const graded = GROUP_STATISTICS_MODEL.gradedOptions(r, layers, kinds);
-    const out = graded.filter((o) => o.grade !== 'cannot')
-        .map((o) => ({ value: `${o.method}@${o.layer}`, label: o.label, ...(o.note ? { title: o.note } : {}) }));
-    if (held && held.stat !== ALWAYS_OFFERED && !out.some((o) => o.value === statisticValue(held))) {
-        const cannot = graded.find((o) => o.method === held.stat && o.layer === held.layer);
-        out.push(cannot
-            ? { value: statisticValue(held), label: `${cannot.fullLabel} (not available)`, title: cannot.reason, lapsed: true }
-            : { value: statisticValue(held), label: `${menuOf(held.stat)} · ${held.layer} (no longer offered)`, lapsed: true });
+// export-unused-ok: WP-12's Height measure lists the same choices; the panel reads them through measureModel
+export function statisticList({ recipe, kinds, held }) {
+    const r = recipeOr(recipe);
+    const layer = held.stat === ALWAYS_OFFERED ? null : held.layer;
+    const out = [];
+    for (const stat of MODEL.offeredMethods(r)) {
+        const g = layer ? MODEL.gradeOption(stat, layer, kinds[layer], r) : { grade: 'ok' };
+        const mine = held.stat === stat;
+        if (g.grade === 'cannot') {
+            out.push(mine ? { value: stat, label: `${nameOf(stat)} (not available)`, title: g.reason, lapsed: true }
+                : { value: stat, label: nameOf(stat), title: g.reason, disabled: true });
+        } else {
+            out.push({ value: stat, label: nameOf(stat), ...(g.grade === 'warn' ? { title: g.reason } : {}) });
+        }
     }
-    out.push({ value: ALWAYS_OFFERED, label: CG.statistic.count });
+    if (held.stat !== ALWAYS_OFFERED && !out.some((o) => o.value === held.stat)) {
+        out.push({ value: held.stat, label: `${nameOf(held.stat)} (no longer offered)`, lapsed: true });
+    }
+    out.push({ value: ALWAYS_OFFERED, label: CG.statistic.count }, OFFER_ENTRY);
     return out;
+}
+
+/**
+ * What a measure's layer select lists (WP-4, operator ruling Q1): the OFFERED layers the dataset has, graded for the
+ * statistic (a layer that cannot give it disabled with its reason, a `warn` one with its note), a held layer no longer
+ * offered kept and marked, then "Offer other…". Empty for Cell count, which reads no layer.
+ * @param {{recipe: (Object|null), datasetLayers: string[], kinds: Object<string, string>, stat: string,
+ *   held: {stat: string, layer?: string}}} opts
+ */
+// export-unused-ok: WP-12's Height measure lists the same choices; the panel reads them through measureModel
+export function layerList({ recipe, datasetLayers, kinds, stat, held }) {
+    if (stat === ALWAYS_OFFERED) return [];
+    const r = recipeOr(recipe);
+    const have = new Set(datasetLayers);
+    const out = [];
+    for (const layer of MODEL.offeredLayers(r).filter((l) => have.has(l))) {
+        const g = MODEL.gradeOption(stat, layer, kinds[layer], r);
+        const mine = held.layer === layer;
+        if (g.grade === 'cannot') {
+            out.push(mine ? { value: layer, label: `${layer} (not available)`, title: g.reason, lapsed: true }
+                : { value: layer, label: layer, title: g.reason, disabled: true });
+        } else {
+            out.push({ value: layer, label: layer, ...(g.grade === 'warn' ? { title: g.reason } : {}) });
+        }
+    }
+    if (held.layer && !out.some((o) => o.value === held.layer)) {
+        out.push({ value: held.layer, label: `${held.layer} (${have.has(held.layer) ? 'no longer offered' : 'not in this dataset'})`, lapsed: true });
+    }
+    out.push(OFFER_ENTRY);
+    return out;
+}
+
+/**
+ * The layer a measure reads after its statistic changed: the one it read, when offered and able to give the statistic;
+ * else the first offered layer that can; else the one it read.
+ * @returns {string}
+ */
+export function pickLayer({ recipe, datasetLayers, kinds, stat, preferred }) {
+    const usable = layerList({ recipe, datasetLayers, kinds, stat, held: {} }).filter((o) => o.value !== OFFER_OTHER && !o.disabled);
+    if (usable.some((o) => o.value === preferred)) return preferred;
+    return usable.length ? usable[0].value : preferred || MODEL.defaultLayer;
 }
 
 // ================================================================================================ the control grid
@@ -115,10 +163,64 @@ export function statisticChoices({ recipe, layers, kinds, held }) {
 function options(D, select, list) {
     D.clear(select);
     for (const o of list) {
-        const opt = D.el('option', { value: o.value, text: o.label, title: o.title || undefined });
+        const opt = D.el('option', { value: o.value, text: o.label, title: o.title || undefined, class: o.lapsed ? 'cgene-lapsed' : undefined });
         if (o.disabled) opt.disabled = true;
         select.appendChild(opt);
     }
+}
+
+/**
+ * One measure's row (WP-4): `Color [mean ▾] of [logged ▾] above [0]`. The statistic, then the layer it is read on (hidden
+ * for Cell count), then the threshold when the statistic uses one. "Offer other…" in either select changes nothing here
+ * and opens where layers are offered.
+ */
+function measureRow(D, which, label, on) {
+    const { el } = D;
+    const Label = which === 'color' ? 'Color' : 'Size';
+    const back = (select, value) => { select.value = value; };
+    let held = { stat: '', layer: '' };
+    const stat = el('select', { class: `form-select form-select-sm cgene-${which}`, aria: { label: `${Label}: statistic` },
+        on: { change: () => {
+            if (stat.value === OFFER_OTHER) { back(stat, held.stat); on.offerOther(); return; }
+            on.stat(which, stat.value);
+        } } });
+    const ofWord = el('span', { class: 'cgene-measure__word', text: CG.sources.of });
+    const layer = el('select', { class: `form-select form-select-sm cgene-${which}-layer`, aria: { label: `${Label}: layer` },
+        on: { change: () => {
+            if (layer.value === OFFER_OTHER) { back(layer, held.layer); on.offerOther(); return; }
+            on.layer(which, layer.value);
+        } } });
+    const aboveWord = el('span', { class: 'cgene-measure__word', text: CG.sources.above });
+    const above = el('input', { type: 'number', step: 'any', min: '0', class: `form-control form-control-sm cgene-${which}-above`,
+        aria: { label: `${Label}: ${CG.sources.threshold}` }, title: CG.sources.thresholdHelp,
+        on: { change: () => on.above(which, above.value), keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); on.above(which, above.value); } } } });
+    const element = el('label', { class: `cgene-field cgene-field--${which} cgene-measure` }, el('span', { class: 'cgene-field__label', text: label }),
+        el('span', { class: 'cgene-measure__parts' }, stat, ofWord, layer, aboveWord, above));
+    function paint(m) {
+        held = { stat: m.stat, layer: m.layer || '' };
+        options(D, stat, m.stats);
+        stat.value = m.stat;
+        options(D, layer, m.layers);
+        const noLayer = !m.layers.length;
+        layer.hidden = noLayer;
+        ofWord.hidden = noLayer;
+        if (!noLayer) layer.value = m.layer;
+        const t = m.threshold;
+        above.hidden = t === null;
+        aboveWord.hidden = t === null;
+        if (t !== null && document.activeElement !== above) above.value = String(t);
+    }
+    return { element, paint };
+}
+
+/** What a measure shows (the panel's model of it): `threshold` null when the statistic uses none. */
+export function measureModel({ spec, recipe, datasetLayers, kinds, threshold }) {
+    return {
+        stat: spec.stat, layer: spec.layer,
+        stats: statisticList({ recipe, kinds, held: spec }),
+        layers: layerList({ recipe, datasetLayers, kinds, stat: spec.stat, held: spec }),
+        threshold: spec.stat !== ALWAYS_OFFERED && needsThreshold(spec.stat) ? threshold : null
+    };
 }
 
 /**
@@ -126,13 +228,15 @@ function options(D, select, list) {
  * @param {Object} opts
  * @param {Object} opts.D - the DOM builder (gene-set-utilities/dom.js)
  * @param {string} opts.id - the panel id (unique names)
- * @param {() => Object} opts.model - {axis, choices: {obs, groupings}, mode, color: {value, list}, size: {value, list},
+ * @param {() => Object} opts.model - {axis, choices: {obs, groupings}, mode, color, size (measureModel each), offerShown,
  *   scale, swap}
- * @param {Object} opts.on - axis(axis), newGrouping(), mode(mode), color(value), size(value), scale(value), swap(on)
+ * @param {Object} opts.on - axis(axis), newGrouping(), mode(mode), stat(which, value), layer(which, value),
+ *   above(which, text), offerOther(), scale(value), swap(on)
  * @param {HTMLElement} opts.sections - the section list's element, in the What group
  * @param {HTMLElement} opts.addGenes - Add genes, in the What group
+ * @param {HTMLElement} [opts.offer] - the plot's own Statistics offered, in the Values group, shown on an obs axis
  */
-export function createControls({ D, id, model, on, sections, addGenes }) {
+export function createControls({ D, id, model, on, sections, addGenes, offer = null }) {
     const { el } = D;
     const field = (label, control, cls) => el('label', { class: `cgene-field ${cls || ''}` }, el('span', { class: 'cgene-field__label', text: label }), control);
     let typeShown = null;          // the type select's value while no key of it is chosen yet
@@ -148,11 +252,11 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
         el('input', { type: 'radio', name: modeName, value, on: { change: (e) => { if (e.target.checked) on.mode(value); } } }), ` ${label}`);
     const mode = el('div', { class: 'cgene-mode', role: 'radiogroup', aria: { label: 'Mode' } }, radio('dots', 'Dots'), radio('heatmap', 'Heatmap'));
 
-    const color = el('select', { class: 'form-select form-select-sm cgene-color', aria: { label: 'Color' }, on: { change: () => on.color(color.value) } });
+    const color = measureRow(D, 'color', 'Color', on);
     const scaleSel = el('select', { class: 'form-select form-select-sm cgene-scale', aria: { label: 'Scale' }, on: { change: () => on.scale(scaleSel.value) } });
     options(D, scaleSel, SCALINGS.map((s) => ({ value: s, label: CG.scaling[s] })));
-    const size = el('select', { class: 'form-select form-select-sm cgene-size', aria: { label: 'Size' }, on: { change: () => on.size(size.value) } });
-    const sizeField = field('Size', size, 'cgene-field--size');
+    const size = measureRow(D, 'size', 'Size', on);
+    const offerSlot = el('div', { class: 'cgene-offer', hidden: true }, offer);
     const swap = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-swap', aria: { pressed: 'false' },
         on: { click: () => on.swap(swap.getAttribute('aria-pressed') !== 'true') } }, 'Swap axes');
     const layoutSlot = el('div', { class: 'cgene-layout-slot' });
@@ -161,7 +265,7 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
         el('div', { class: 'cgene-row' }, field('Groups', el('span', { class: 'cgene-axis' }, axisType, axisKey)), field('Mode', mode)),
         el('div', { class: 'cgene-genes' }, el('div', { class: 'cgene-genes__head' }, el('span', { class: 'cgene-field__label', text: 'Genes' }), addGenes), sections));
     const values = el('div', { class: 'cgene-group cgene-group--values', role: 'group', aria: { label: 'Values' } },
-        field('Color', color), field('Scale', scaleSel), sizeField);
+        color.element, field('Scale', scaleSel), size.element, offerSlot);
     const layout = el('div', { class: 'cgene-group cgene-group--layout', role: 'group', aria: { label: 'Layout' } }, swap, layoutSlot);
     const element = el('div', { class: 'cgene-controls', 'data-panel-controls': '' }, what, values, layout);
 
@@ -200,11 +304,10 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
         const m = model();
         paintKeys();
         for (const input of mode.querySelectorAll('input')) input.checked = input.value === m.mode;
-        options(D, color, m.color.list);
-        color.value = m.color.value;
-        options(D, size, m.size.list);
-        size.value = m.size.value;
-        sizeField.hidden = m.mode !== 'dots';
+        color.paint(m.color);
+        size.paint(m.size);
+        size.element.hidden = m.mode !== 'dots';
+        offerSlot.hidden = !m.offerShown || !offer;
         scaleSel.value = m.scale;
         swap.setAttribute('aria-pressed', m.swap ? 'true' : 'false');
         swap.classList.toggle('active', !!m.swap);
