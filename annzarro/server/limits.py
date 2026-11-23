@@ -171,6 +171,10 @@ _LABEL = {
 }
 
 
+#: The Settings page's heading of the server.* limits, after the cost limits' (cost_limits.GROUPS)
+SERVER_SUBGROUP = "Server resources"
+
+
 def limit_guide(key: str) -> str:
     """The row of ``key`` in docs/deployment/resource-limits.md (it carries ``{#limit-<key>}``)."""
     return "deployment/resource-limits.html#limit-" + key.replace("_", "-")
@@ -188,7 +192,8 @@ def _declare_policy_keys() -> None:
             name=f"limits.{key}", type=number(min=limit.minimum), default=limit.default,
             scope="config" if key in _RESTART else "server",
             description=f"{_HELP[key]} Default {limit.default:,}. Set in the config file as server.{key}.",
-            area="limits", config_path=f"server.{key}", client=False, restart=key in _RESTART, guide=limit_guide(key), label=_LABEL[key]))
+            area="limits", config_path=f"server.{key}", client=False, restart=key in _RESTART, guide=limit_guide(key), label=_LABEL[key],
+            subgroup=SERVER_SUBGROUP))
 
     def derived_max_mb(config):
         from annzarro.core import read_guard
@@ -215,12 +220,12 @@ def _declare_policy_keys() -> None:
         declare(Key(name=f"limits.{name}", type=Float(min=0), default=default, scope="config",
                     description=f"{text} Set in the config file as server.{name}.", area="limits",
                     config_path=f"server.{name}", client=False, guide=limit_guide(name),
-                    label=_LABEL[name]))
+                    label=_LABEL[name], subgroup=SERVER_SUBGROUP))
     declare(Key(name="limits.read_wait_s", type=Float(min=0), default=5, scope="config",
                 description="Seconds a pairwise read waits for the read budget before it is answered 503 read_busy. Default 5. "
                             "Set in the config file as server.read_wait_s.",
                 area="limits", config_path="server.read_wait_s", client=False, guide=limit_guide("read_wait_s"),
-                label=_LABEL["read_wait_s"]))
+                label=_LABEL["read_wait_s"], subgroup=SERVER_SUBGROUP))
 
 
 _declare_policy_keys()
@@ -265,7 +270,7 @@ def _declare_cost_keys() -> None:
         declare(Key(
             name=COST_PREFIX + name, type=number(min=c.minimum, max=c.maximum), default=c.default, scope="server",
             combine="restrict", area="limits", config_path=f"limits.{name}", client=True, guide=cost_guide(name),
-            label=c.label, section="",
+            label=c.label, section="", subgroup=cost_limits.GROUPS[c.group],
             description=f"{c.help} {where} Default {default}; a value in the config file (limits.{name}) is a "
                         f"ceiling the admin can lower."))
 

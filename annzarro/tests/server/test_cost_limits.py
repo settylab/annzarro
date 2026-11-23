@@ -46,10 +46,25 @@ def test_every_limit_ships_its_default_and_bounds_in_base_and_schema(name):
 
 
 @pytest.mark.parametrize("name", sorted(cl.COST_LIMITS))
-def test_every_limit_has_its_row_in_the_resource_limits_guide(name):
+def test_every_limit_has_its_row_in_the_resource_limits_guide_and_the_configuration_reference(name):
     with open(os.path.join(ROOT, "docs", "deployment", "resource-limits.md"), encoding="utf-8") as fh:
         text = fh.read()
     assert f"`{name}`{{#cost-{name.replace('_', '-')}}}" in text
+    with open(os.path.join(ROOT, "docs", "reference", "configuration.md"), encoding="utf-8") as fh:
+        reference = fh.read()
+    section = reference[reference.index("## `limits`"):reference.index("## `policy`")]
+    c = cl.COST_LIMITS[name]
+    default = f"{c.default:,}" if c.integer else f"{c.default:g}"
+    assert f"| `{name}` | {default} |" in section
+
+
+def test_the_settings_page_orders_the_headings_the_server_sends():
+    import re
+    from annzarro.server.limits import SERVER_SUBGROUP
+    with open(os.path.join(ROOT, "static", "js", "admin", "policy-widgets.js"), encoding="utf-8") as fh:
+        text = fh.read()
+    listed = re.search(r"const SUBGROUP_ORDER = \[([^\]]*)\]", text).group(1)
+    assert re.findall(r"'([^']+)'", listed) == [*cl.GROUPS.values(), SERVER_SUBGROUP]
 
 
 def test_the_defaults_keep_the_order_and_the_grid_defaults_are_the_engines():

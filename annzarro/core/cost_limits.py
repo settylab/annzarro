@@ -35,9 +35,14 @@ class CostLimit:
     integer: bool
     enforced: str          # "server" | "browser" | "both"
     kind: str              # "safety": protects the server or the tab | "ux": when to ask or show
-    group: str             # the Settings page's sub-group: "time" | "grouping" | "browser"
+    group: str             # the Settings page's sub-group: "time" | "grouping" | "browser" (GROUPS)
     label: str
     help: str
+
+
+#: The Settings page's headings of the groups, in order
+GROUPS = {"time": "When to ask and refuse", "grouping": "Groupings, matrices and grids",
+          "browser": "Drawn and exported in the browser"}
 
 
 def _limit(name, default, maximum, *, minimum=1, integer=True, enforced="server", kind="safety", group="grouping",
@@ -65,7 +70,7 @@ COST_LIMITS: Dict[str, CostLimit] = {c.name: c for c in (
            label="Cell-Gene matrix values",
            help="Most values one Cell-Gene matrix or grouping request may hold: groups x genes and measures on the "
                 "server, groups x drawn rows in the browser."),
-    _limit("genes_per_section", 2_000, 20_000, enforced="browser", kind="ux",
+    _limit("genes_per_section", 2_000, 20_000, enforced="browser", group="browser", kind="ux",
            label="Genes per Cell-Gene section",
            help="Most genes one section of a Cell-Gene Plot draws."),
     _limit("groups", 2_000, 20_000, minimum=2, enforced="both",
@@ -109,13 +114,13 @@ COST_LIMITS: Dict[str, CostLimit] = {c.name: c for c in (
     _limit("obsp_source_max_cells", 1_000_000, 10_000_000,
            label="Cells for an obsp source",
            help="Most cells a dataset may have for one of its obsp rows to be used as a per-cell source."),
-    _limit("cell_export_max", 1_000_000, 10_000_000, enforced="browser",
+    _limit("cell_export_max", 1_000_000, 10_000_000, enforced="browser", group="browser",
            label="Cells per grouping export",
            help="Most cells a grouping's cell export (CSV) writes; it is built in the browser tab."),
-    _limit("bars_3d_max", 40_000, 400_000, enforced="browser",
+    _limit("bars_3d_max", 40_000, 400_000, enforced="browser", group="browser",
            label="Bars in a 3D view",
            help="Most bars a 3D bar view draws (provisional: WebGL memory of the tab)."),
-    _limit("dendrogram_rows", 2_000, 20_000, minimum=2, enforced="browser",
+    _limit("dendrogram_rows", 2_000, 20_000, minimum=2, enforced="browser", group="browser",
            label="Rows clustered for a dendrogram",
            help="Most rows (or columns) clustered in the browser for a dendrogram; clustering costs memory and "
                 "time in proportion to the square of the rows."),

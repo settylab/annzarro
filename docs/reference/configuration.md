@@ -278,6 +278,54 @@ integrations:
     services: [string, gprofiler, mygene]
 ```
 
+(config-limits)=
+## `limits`
+
+The cost limits of a computation (a gene score, a grouping, a Cell-Gene or Cell Count Plot) and of what the browser
+draws or exports: when a request asks before it runs and when it is refused, by its estimated seconds, and how large a
+grouping, a matrix or a grid may get. Public: the web client reads them from `GET /api/v1/policy/effective` and keeps
+to the same numbers before it asks. Each is also a policy key `limits.<key>` that an admin can change on the
+**Settings** page without a restart ({doc}`../deployment/admin`). A value set here is a ceiling there: the admin may
+lower it, not raise it; leave a key out and the admin may set anything within its bounds, or name it in
+`policy.locked` to keep it to this file.
+
+The time tiers keep their order, `live_update_s` ≤ `ask_first_s` ≤ `refuse_s`, as must `partitionings` ≤
+`request_partitionings`: a file that breaks the order, or sets a value outside its bounds, stops the server at start
+and fails `annzarro config validate`. What each limit protects, its refusal and when to raise it are in
+{ref}`cost-limits`. The upper bounds are ten times the defaults for now, until each is measured at its maximum.
+
+| Key | Default | Bounds | Meaning |
+|---|---|---|---|
+| `ask_first_s` | 60 | 0 to 600 | Estimated seconds above which a gene score, a grouping or a Cell-Gene read asks before it runs (it then runs once the user agrees). Never above refuse_s. |
+| `refuse_s` | 600 | 0 to 6000 | Estimated seconds above which a gene score, a grouping or a Cell-Gene read is refused, even when the user agrees. Bounds the time one request may hold a compute slot. |
+| `live_update_s` | 5 | 0 to 50 | Estimated seconds below which a computation updates live while it is edited and runs in the light lane; above it, edits wait for Update. Never above ask_first_s. |
+| `progress_bar_s` | 10 | 0 to 100 | Seconds (estimated, or waited so far) after which a computation shows a progress bar. |
+| `matrix_values` | 400,000 | 1 to 4,000,000 | Most values one Cell-Gene matrix or grouping request may hold: groups x genes and measures on the server, groups x drawn rows in the browser. |
+| `genes_per_section` | 2,000 | 1 to 20,000 | Most genes one section of a Cell-Gene Plot draws. |
+| `groups` | 2,000 | 2 to 20,000 | Most levels one partitioning may make and most groups one grouping may have; a larger one is refused with too_many_groups or too_many_levels. |
+| `partitionings` | 8 | 1 to 64 | Most partitionings one grouping combines. Never above request_partitionings. |
+| `request_partitionings` | 64 | 1 to 640 | Most partitionings one grouping request holds, groupings used as sources included. |
+| `measures` | 16 | 1 to 160 | Most measures (numeric summaries) one grouping request computes. |
+| `thresholds` | 4 | 1 to 40 | Most detection thresholds one gene or source is compared with in one request. |
+| `grid_cells` | 2,097,152 | 1 to 20,971,520 | Most cells of a count plot grid (and values a grid measure accumulates: 40 bytes each). |
+| `grid_2d_bins` | 512 | 2 to 5,120 | Most bins on the x and on the y axis of a 2D count plot. |
+| `grid_2d_split` | 8 | 1 to 80 | Most levels of the third (split) axis of a 2D count plot. |
+| `grid_1d_bins` | 2,000 | 2 to 20,000 | Most bins on the x axis of a 1D count plot. |
+| `grid_1d_split` | 200 | 1 to 2,000 | Most levels of the split axis of a 1D count plot. |
+| `grid_categorical_levels` | 200 | 1 to 2,000 | Most levels on the x and on the y axis of a categorical count plot. |
+| `grid_sets` | 16 | 2 to 16 | Most sets one set count plot compares. 16 is also the most there can be (a cell's sets are a 16-bit mask), so this can only be lowered. |
+| `obsp_source_max_cells` | 1,000,000 | 1 to 10,000,000 | Most cells a dataset may have for one of its obsp rows to be used as a per-cell source. |
+| `cell_export_max` | 1,000,000 | 1 to 10,000,000 | Most cells a grouping's cell export (CSV) writes; it is built in the browser tab. |
+| `bars_3d_max` | 40,000 | 1 to 400,000 | Most bars a 3D bar view draws (provisional: WebGL memory of the tab). |
+| `dendrogram_rows` | 2,000 | 2 to 20,000 | Most rows (or columns) clustered in the browser for a dendrogram; clustering costs memory and time in proportion to the square of the rows. |
+
+```yaml
+limits:
+  ask_first_s: 30          # ask before anything estimated over 30 s
+  refuse_s: 300            # and refuse over 5 minutes
+  groups: 1000             # a lab server with less memory per worker
+```
+
 ## `policy`
 
 The policy registry holds the settings an administrator can change at run time. This file stays
