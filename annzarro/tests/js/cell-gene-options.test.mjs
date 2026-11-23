@@ -73,7 +73,7 @@ function compose(fields = {}, { rows = 6, split = 3, reply = reply2(), recipe = 
             ...extras.color, values: colour, raw: colour },
         size: config.mode !== 'dots' ? { none: '' }
             : { id: 'pct|logged', stat: 'pct_expressing', layer: 'logged', detectAbove: 0, ...extras.size, values: sized },
-        legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations
+        legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline
     };
     return { config, model, figure: D.buildFigure(model, LIGHT), extras };
 }
@@ -266,7 +266,7 @@ test('5.3 dendrogram, add_dendrogram: a tree for each clustered block; Dendrogra
     assert.equal(named(compose({}, { order: clusteredGroups() }).figure, 'dendrogram groups').length, 0);
     // the defaults are scanpy's (OD 16)
     assert.deepEqual(O.figureExtras(normalizeCellGene({}).config).cluster,
-        { genes: 'off', groups: 'off', linkage: 'complete', distance: 'correlation', dendrograms: true });
+        { genes: 'off', groups: 'off', linkage: 'complete', distance: 'correlation', dendrograms: { genes: true, groups: true } });
     // Ward is Euclidean whatever a link says (CXG-21)
     assert.equal(O.figureExtras(normalizeCellGene({ cluster: { linkage: 'ward', distance: 'correlation' } }).config).cluster.distance, 'euclidean');
 });
@@ -490,4 +490,84 @@ test('CXG-18: rows still being read are drawn as placeholders with the reading s
     const marks = one(dfig, 'rows being read');
     assert.equal(marks.x.length, 4);
     assert.ok(marks.text.every((t) => t.includes('Reading 1 gene')));
+});
+
+// ================================================================================================ 0.8.0 WP-3: defaults
+
+test('WP-3 the default color scale is Reds, in dots and in a heatmap', () => {
+    assert.equal(matrixTraces(compose().figure)[0].marker.colorscale, 'Reds');
+    assert.equal(matrixTraces(compose({ mode: 'heatmap' }).figure)[0].colorscale, 'Reds');
+});
+
+test('WP-3 a stored color scale is kept, Reds picked under a z-score included', () => {
+    assert.equal(matrixTraces(compose({ colorScale: 'Viridis' }).figure)[0].marker.colorscale, 'Viridis');
+    assert.equal(matrixTraces(compose({ colorScale: 'Reds', scale: 'z_groups' }).figure)[0].marker.colorscale, 'Reds');
+});
+
+test('WP-3 under a z-score the default is RdBu centred at 0; a stored map or center wins', () => {
+    for (const scale of ['z_groups', 'z_pooled']) {
+        const fig = compose({ scale }).figure;
+        const m = matrixTraces(fig)[0].marker;
+        assert.equal(m.colorscale, 'RdBu', scale);
+        assert.equal(m.cmin, -m.cmax, `${scale}: symmetric about 0`);
+        assert.deepEqual(O.barSettings(normalizeCellGene({ scale }).config).center, 0);
+    }
+    const picked = compose({ scale: 'z_groups', colorScale: 'Viridis' });
+    assert.equal(matrixTraces(picked.figure)[0].marker.colorscale, 'Viridis');
+    assert.equal(O.barSettings(picked.config).center, undefined, 'no centre on a sequential map');
+    assert.equal(O.barSettings(compose({ scale: 'z_groups', center: 1 }).config).center, 1);
+    assert.equal(compose({ scale: 'group' }).extras.color.colorscale, 'Reds', '0-to-1 scalings stay sequential');
+});
+
+test('WP-3 dots carry a black 0.5 px outline; width 0 draws none; a heatmap has none', () => {
+    assert.deepEqual(matrixTraces(compose().figure)[0].marker.line, { color: '#000', width: 0.5 });
+    assert.deepEqual(matrixTraces(compose({ outline: { color: '#ff0000', width: 2 } }).figure)[0].marker.line, { color: '#ff0000', width: 2 });
+    assert.equal(matrixTraces(compose({ outline: { width: 0 } }).figure)[0].marker.line, undefined);
+    const heat = matrixTraces(compose({ mode: 'heatmap' }).figure)[0];
+    assert.equal(heat.line, undefined);
+    assert.equal(heat.marker, undefined);
+});
+
+test('WP-3 the size legend dots wear the plot dots outline', () => {
+    assert.deepEqual(one(compose().figure, 'size legend').marker.line, { color: '#000', width: 0.5 });
+    assert.equal(one(compose({ outline: { width: 0 } }).figure, 'size legend').marker.line.width, 0);
+});
+
+// ================================================================================================ 0.8.0 WP-2: pop-overs
+
+/** An order whose rows and groups were both clustered as one block of four. */
+function clusteredBoth() {
+    const block = clusteredGroups().groupBlocks[0];
+    return { ...clusteredGroups(), rows: identity(6), rowBlocks: [{ ...block }] };
+}
+const CLUSTER_BOTH = { genes: 'sections', groups: 'all', linkage: 'complete', distance: 'correlation' };
+const trees = (dendrograms) => O.figureExtras(normalizeCellGene({ cluster: { ...CLUSTER_BOTH, dendrograms } }).config,
+    { reply: reply2(), recipe: TWO_FACTORS, order: clusteredBoth(), titleOf: () => undefined }).annotations.dendrograms;
+
+test('WP-2 dendrograms {genes: false} draws the groups\' tree only', () => {
+    const d = trees({ genes: false });
+    assert.equal(d.genes, undefined);
+    assert.equal(d.groups.length, 1);
+    const f = compose({ cluster: { ...CLUSTER_BOTH, dendrograms: { genes: false } } }, { order: clusteredBoth() }).figure;
+    assert.equal(named(f, 'dendrogram genes').length, 0);
+    one(f, 'dendrogram groups');
+    const g = trees({ groups: false });
+    assert.equal(g.groups, undefined);
+    assert.equal(g.genes.length, 1);
+});
+
+test('WP-2 a legacy dendrograms false hides both trees, true shows both', () => {
+    assert.deepEqual(trees(false), {});
+    const both = trees(true);
+    assert.equal(both.genes.length, 1);
+    assert.equal(both.groups.length, 1);
+    assert.deepEqual(Object.keys(trees(undefined)).sort(), ['genes', 'groups'], 'absent is both');
+    assert.deepEqual(O.figureExtras(normalizeCellGene({ cluster: { dendrograms: false } }).config).cluster.dendrograms, { genes: false, groups: false });
+    assert.deepEqual(O.figureExtras(normalizeCellGene({ cluster: { dendrograms: true } }).config).cluster.dendrograms, { genes: true, groups: true });
+});
+
+test('WP-2 Reverse reverses the color scale of dots and heatmap', () => {
+    assert.equal(matrixTraces(compose().figure)[0].marker.reversescale, undefined);
+    assert.equal(matrixTraces(compose({ reverse: true }).figure)[0].marker.reversescale, true);
+    assert.equal(matrixTraces(compose({ reverse: true, mode: 'heatmap' }).figure)[0].reversescale, true);
 });

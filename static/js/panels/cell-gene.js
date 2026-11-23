@@ -717,17 +717,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             plot.__azCellGene = true;
             plot.__azChooser = null;
             const area = el('div', { class: 'cgene-area' }, plot, el('div', { class: 'cgene-empty' }, checklist));
-            // Show as table (UX 7): Plot Options fills it
-            const table = el('div', { class: 'cgene-table', hidden: true });
-            // Cluster ▾ and Plot Options open here, the width of the control grid (panels/cell-gene/options.js)
-            const menus = el('div', { class: 'cgene-menus' });
-            _controls.element.append(el('div', { class: 'cgene-undo-wrap' }, undoBtn), menus);
-            root.append(_controls.element, message, hint, area, table);
+            // Cluster ▾, Color ▾ and Plot Options are pop-overs (cell-gene/options.js), out of the panel's flow
+            _controls.element.append(el('div', { class: 'cgene-undo-wrap' }, undoBtn));
+            root.append(_controls.element, message, hint, area);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
             plot.__azChooser = root.querySelector('.cgene-axis-key');
-            _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area, table, menus,
+            _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (typeof ResizeObserver !== 'undefined') {
                 _resize = new ResizeObserver(() => { if (_dom && _dom.plot._fullLayout) fitToContainer(_dom.plot); });
@@ -801,12 +798,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function mountParts() {
             const ctx = {
                 panelId: _id, D, config: () => _config, set: (patch, label) => commit({ ..._config, ...patch }, label), undo,
-                // the drawing as last drawn, for the clustering's sentences and Show as table
+                // the drawing as last drawn, for the clustering's sentences and Download CSV
                 drawn: () => (_shown && _shown.model ? { model: _shown.model, order: _shown.order } : null),
                 // the recipe the cell axis's groups are of, for "Within <first factor>"
                 recipe: shownRecipe, titleOf: sourceTitleOf,
-                title: () => _title,
-                menuHost: _dom.menus, tableHost: _dom.table
+                title: () => _title
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
             // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
@@ -1142,7 +1138,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 size: _config.mode !== 'dots' ? { none: '' } : sizeNone ? { none: sizeNone }
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
-                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations,
+                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline,
                 pendingText: pending ? pendingText(plan, pending) : ''
             };
             const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });

@@ -29,7 +29,7 @@ alone, and a gene shown in two sections, or by colour and size on one layer, is 
 |---|---|
 | What | **Groups** · **Mode** (**Dots** or **Heatmap**) · **Genes**: the section list and **Add genes ▾** |
 | Values | **Color** · **Scale** · **Size** (dots only) |
-| Layout | **Swap axes** · **Cluster ▾** · **Plot Options** |
+| Layout | **Swap axes** · **Cluster ▾** · **Color ▾** · **Plot Options** |
 
 **Color** and **Size** each read their own statistic from their own layer, in one row:
 `Color [Mean ▾] of [logged ▾]` and `Size [% expressing ▾] of [counts ▾] above [0]`. A common dot plot is exactly this:
@@ -85,10 +85,15 @@ layers that work.
 
 Groups with no value are skipped in every minimum, maximum, mean and SD, and a constant gene gives 0, as in scanpy.
 "All grouped cells" means the cells that are in a group: cells left out of every group do not count. A one-row section
-has no cells of its own to pool, so under the last scaling it is z-scored across its own groups; Plot Options says so.
+has no cells of its own to pool, so under the last scaling it is z-scored across its own groups; **Color ▾** says so.
 
 The colour bar names the statistic, the layer and the scaling ("Mean · X", "scaled 0 to 1 per gene"); the size legend
 names its statistic, threshold and layer ("% expressing (> 0) · logged_counts").
+
+**Cluster ▾**, **Color ▾** and **Plot Options** each open a pop-over over the plot. Opening one leaves the panel's
+layout as it is. A change applies at once and is one step of **Undo**. A pop-over closes with its button, its **×**,
+Escape (from anywhere on the page) or a click outside it; Escape and **×** return the focus to the button. One
+pop-over is open at a time.
 
 ## Sections
 
@@ -130,36 +135,51 @@ score, or a size that is not 0 to 100) gets its own colour bar or size legend, t
   clustered.
 - **Cluster groups**: **Off**, **All**, or, for a grouping of two or more factors, **Within cell_type** (the first
   factor), which keeps that factor's blocks together.
-- The linkage and distance are in Plot Options: **complete** linkage and **Pearson correlation** by default, as
-  scanpy's `sc.tl.dendrogram`; **average** and **Ward (Euclidean distance only)** are offered, and Euclidean distance.
+- **Sort groups by size**, shown while **Cluster groups** is **Off**: the groups in order of their number of cells.
+- **Linkage** and **Distance**: **complete** linkage and **Pearson correlation** by default, as scanpy's
+  `sc.tl.dendrogram`; **average** and **Ward (Euclidean distance only)** are offered, and Euclidean distance.
   Choosing Ward while correlation is set switches Distance to Euclidean and says so, with **Undo**.
+- **Dendrograms**: **Genes** and **Groups**, each shown or hidden on its own; both are on by default.
 
 Clustering runs in the browser, off the page's main thread, **on the colour values as displayed**, after scaling.
 Two rows are compared over the columns where both have a value. A row with too few values in common with the others,
 or a constant row under correlation, is not clustered and goes last ("3 rows not clustered: too few values in common,
 or constant. They are at the end."). A block of more than 2,000 rows is not clustered, with the reason. The order is
-worked out again from the settings each time and is never stored. **Dendrograms** (Plot Options) draws one per
-clustered block.
+worked out again from the settings each time and is never stored. A dendrogram is drawn for each clustered block,
+unless its **Dendrograms** box is cleared.
 
 **Swap axes** puts the genes on the other axis; brackets, strips and dendrograms follow.
 
-## Plot Options
+## Color and Plot Options
+
+**Color ▾** holds what sets how the values read:
 
 | Section | Controls |
 |---|---|
+| Colors | **Color scale**, **Reverse**, **Min**, **Max**, **Center** (for a diverging scale); **Print values in cells** (heatmap); the scaling's help line |
 | Dots | **Smallest and largest dot**; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`). Size's threshold sits beside **Size** in the control grid |
-| Colors | **Color scale**, **Min**, **Max**, **Center** (for a diverging scale); **Print values in cells** (heatmap) |
+
+**Reset** puts all of these back to their defaults in one step.
+
+**Plot Options** holds the rest of the figure:
+
+| Section | Controls |
+|---|---|
+| Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none) |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
 | Labels | **Gene labels**, **Group labels**; **Plot title**, **Color bar title**, **Size legend title** |
-| Clustering | **Linkage**, **Distance**, **Dendrograms** |
 | Legend | **Color bar**, **Size legend**, **Strip legend** |
-| Totals | **Cells per group** (a bar along the group axis); **Sort groups by size** |
+| Totals | **Cells per group** (a bar along the group axis) |
+| Export | **Download CSV** |
+
+The colour scale is **Reds** by default. Under a z-score scaling the default is **RdBu**, centred at 0, so that
+values above and below the mean read as opposite colours. A scale you pick yourself is kept, whatever the scaling.
 
 The group axis carries a colour strip in the grouping's colours, one per factor; small groups get "small" after their
 label. Gene and group labels thin out when they would overlap, and the hover always names the group, the gene (or the
 section and its entry), each value with its statistic and layer, and the group's cells.
 
-**Show as table** lists the plotted values; **Download CSV** gives them in long form, one row per group and row, with
+**Download CSV** (Plot Options ▸ Export) gives the plotted values in long form, one row per group and row, with
 one column per statistic and headers that name the statistic, its threshold where it has one, the layer and the
 scaling ("% expressing (> 1) · counts · not scaled"), so two thresholds stay two columns apart. The camera button in the
 plot's toolbar saves the figure as an image, with its brackets, strips, legends and dendrograms.

@@ -127,11 +127,11 @@ def _link(page, served, plot, grouping, genes=B):
 
 
 def _csv(page):
-    """Download CSV, the button in Plot Options: the header and the rows, as text."""
-    if page.locator(f"{TP} .cgene-options").is_hidden():
+    """Download CSV, the button in Plot Options ▸ Export: the header and the rows, as text."""
+    if page.locator("[data-popover='plot-options']").count() == 0:
         page.click(f"{TP} .cgene-options-btn")
     with page.expect_download() as got:
-        page.click(f"{TP} .cgene-csv-btn")
+        page.click("[data-popover='plot-options'] .cgene-csv-btn")
     with open(got.value.path(), encoding="utf-8") as f:
         rows = list(csv.reader(io.StringIO(f.read())))
     return rows[0], rows[1:]
@@ -331,8 +331,8 @@ def test_difference_5_clustering_is_scanpys_method_on_the_displayed_values_not_o
     _link(page, served, {"color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "pct_expressing", "layer": "logged"},
                          "cluster": {"genes": "sections", "groups": "all", **CLUSTER}}, _grouping("cell_type"))
     page.click(f"{TP} .cgene-cluster-btn")
-    summary = page.locator(f"{TP} .cgene-cluster-menu .cgene-cluster-summary").inner_text()
-    assert summary == "Complete linkage, Pearson correlation, on the values as displayed. Change them in Plot Options."
+    summary = page.locator("[data-popover='cluster'] .cgene-cluster-menu .cgene-cluster-summary").inner_text()
+    assert summary == "Complete linkage, Pearson correlation, on the values as displayed."
     head, body = _csv(page)
     groups, genes = _order(body)
     types = [str(g) for g in DOT["groups__cell_type"]]
