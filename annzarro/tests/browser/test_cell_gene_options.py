@@ -418,6 +418,9 @@ def _set_range(page, selector, value):
 
 
 _LARGEST = "(p) => p.data[0].marker.size.reduce((m, v) => (v > m ? v : m), 0)"
+# the matrix's cell on screen, px: the smaller of the gene axis's and the group axis's pitch as Plotly laid them out
+_CELL = ("(p) => { const L = p._fullLayout; const pitch = (ax) => ax._length / Math.abs(ax.range[1] - ax.range[0]);"
+         " return Math.min(pitch(L.xaxis), pitch(L.yaxis)); }")
 
 
 def test_dots_fill_their_cells_and_largest_dot_takes_a_share_of_the_cell(page, served):
@@ -425,12 +428,14 @@ def test_dots_fill_their_cells_and_largest_dot_takes_a_share_of_the_cell(page, s
     _open_color(page)
     assert page.locator(_option("dotScaleValue", "color")).inner_text() == "100% of cell"
     assert page.locator(_option("dotSmallestValue", "color")).inner_text() == "3 px"
+    # the largest dot fills its cell on screen, less 2 px (once the figure is built for the plot's settled size)
+    _redrawn(page, f"(p) => Math.abs(({_LARGEST})(p) - (({_CELL})(p) - 2)) < 1.5")
     full = page.evaluate(f"(s) => ({_LARGEST})(document.querySelector(s + ' .cgene-plot'))", TP)
     assert full > 20, f"a full cell of four genes is larger than the old 20 px: {full}"
     assert page.evaluate("(s) => document.querySelector(s + ' .cgene-plot').data[0].marker.opacity", TP) == 1
     _set_range(page, _option("dotScale", "color"), 50)
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotScale === 50", P)
-    _redrawn(page, f"(p, a) => Math.abs(({_LARGEST})(p) - a) < 0.5", full / 2)
+    _redrawn(page, f"(p) => Math.abs(({_LARGEST})(p) - (({_CELL})(p) - 2) / 2) < 1")
     assert page.locator(_option("dotScaleValue", "color")).inner_text() == "50% of cell"
     _set_range(page, _option("dotSmallest", "color"), 6)
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotSmallest === 6", P)

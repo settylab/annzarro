@@ -214,24 +214,12 @@ function bandPixels(model, inner, fontPx, reachPx) {
  *   right edge in paper units (the legend column starts past it), the font, and the figure's margins
  * @returns {number}
  */
-export function matrixPixels(model, at) {
-    const box = matrixBox(model, at);
-    return model.swap ? box.h : box.w;
-}
-
-/**
- * The matrix's box in px, across and down, before any trace is made: what matrixPixels reads along the gene axis, and
- * what draw.js divides by the rows and groups for the pitch of a cell (the largest dot fills it by default).
- * @param {object} model - with `pixels`
- * @param {{right: number, fontPx: number, margin: {l: number, r: number, t: number, b: number}}} at - as matrixPixels
- * @returns {{w: number, h: number}}
- */
-export function matrixBox(model, { right, fontPx, margin }) {
+export function matrixPixels(model, { right, fontPx, margin }) {
     const pixels = model.pixels || DEFAULT_PIXELS;
     const inner = innerSize({ margin }, pixels);
     const b = bandPixels(model, inner, fontPx, margin.l + right * inner.w);
-    if (!b.bands) return { w: right * inner.w, h: inner.h };
-    return { w: Math.max(right * inner.w - b.px.left - b.px.right, 0), h: Math.max(inner.h - b.px.top - b.px.bottom, 0) };
+    if (!b.bands) return model.swap ? inner.h : right * inner.w;
+    return model.swap ? Math.max(inner.h - b.px.top - b.px.bottom, 0) : Math.max(right * inner.w - b.px.left - b.px.right, 0);
 }
 
 /**

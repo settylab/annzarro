@@ -40,7 +40,7 @@
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { PLOT_PALETTES, GAP_COLOUR } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
-import { annotateFigure, matrixBox, matrixPixels, rowCoordinates, MODEBAR_PX } from './draw-annotations.js';
+import { annotateFigure, matrixPixels, rowCoordinates, MODEBAR_PX } from './draw-annotations.js';
 import { bars3d, footprintFromSize, axisTicks } from '../../utils/bars-3d.js';
 
 const W = VOCABULARY.cellGene;
@@ -220,21 +220,33 @@ function prepare(model) {
 }
 
 /**
- * The smallest and largest dot in px. By default the largest fills a cell of the matrix: the pitch along the genes or
- * along the groups, whichever is smaller, less DOT_GAP_PX, so the dots follow the plot's size and the number of rows and
- * groups (operator, 2026-11-23); the size legend draws them smaller when its slot cannot hold them, and says so. `size.scale` (0.1 to 1) takes that share of the cell; a `size.largest` in px (the
- * px range of a link from before) is kept as it is. The smallest dot is never larger than the largest.
+ * The matrix's cell in px, as the figure lays it out: the pitch along the genes or along the groups, whichever is
+ * smaller. The axes' domains are annotateFigure's (labels, brackets, strips, trees and totals take their room around the
+ * matrix), so the layout is made once here without the traces, which do not move it.
+ */
+function cellPixels(model, P, th, right) {
+    const base = { font: { size: th.fontSize || 12 }, margin: { ...MARGIN }, annotations: [], ...layoutAxes(model, P, th, right) };
+    if (model.plotTitle) base.title = { text: esc(model.plotTitle) };
+    const { layout } = annotateFigure({ data: [], layout: base, config: {} }, model, th);
+    const pixels = model.pixels || { width: 900, height: DEFAULT_HEIGHT };
+    const inner = { w: pixels.width - layout.margin.l - layout.margin.r, h: pixels.height - layout.margin.t - layout.margin.b };
+    const pitch = (ax, px) => ((ax.domain[1] - ax.domain[0]) * px) / Math.max(Math.abs(ax.range[1] - ax.range[0]), 1);
+    return Math.min(pitch(layout.xaxis, inner.w), pitch(layout.yaxis, inner.h));
+}
+
+/**
+ * The smallest and largest dot in px. By default the largest fills a cell of the matrix (cellPixels) less DOT_GAP_PX,
+ * so the dots follow the plot's size and the number of rows and groups (operator, 2026-11-23); the size legend draws
+ * them smaller when its slot cannot hold them, and says so. `size.scale` (0.1 to 1) takes that share of the cell; a
+ * `size.largest` in px (the px range of a link from before) is kept as it is. The smallest dot is never larger than the
+ * largest.
  */
 function dotRange(model, P, th, right) {
     const size = model.size;
     let largest = size.largest;
     if (!(largest > 0)) {
-        const box = matrixBox(model, { right, fontPx: th.fontSize || 12, margin: MARGIN });
-        const along = model.swap ? box.h : box.w;
-        const across = model.swap ? box.w : box.h;
-        const cell = Math.min(along / Math.max(P.span, 1), across / Math.max(P.G, 1));
         const scale = size.scale > 0 ? Math.min(1, size.scale) : 1;
-        largest = Math.max(MIN_LARGEST_DOT, scale * (cell - DOT_GAP_PX));
+        largest = Math.max(MIN_LARGEST_DOT, scale * (cellPixels(model, P, th, right) - DOT_GAP_PX));
     }
     return { smallest: Math.min(size.smallest > 0 ? size.smallest : SMALLEST_DOT, largest), largest };
 }

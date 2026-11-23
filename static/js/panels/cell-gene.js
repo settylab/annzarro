@@ -232,6 +232,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _drawToken = 0;
         let _state = 'empty';
         let _resize = null;
+        let _refit = null;
         /** gateMatrix's decision for the plan it was made for (CXG-17): what the plot asks of the server now */
         let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
         /** the cell axis's applied recipe as last seen: the recipe its groups are of while edits wait or are checked */
@@ -287,6 +288,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             if (_dom) binding.releaseHost(_dom.plot);
             if (_resize) _resize.disconnect();
             _resize = null;
+            clearTimeout(_refit);
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
             if (_dom && window.Plotly) window.Plotly.purge(_dom.plot);
             _initialized = false;
@@ -717,8 +719,17 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (typeof ResizeObserver !== 'undefined') {
-                _resize = new ResizeObserver(() => { if (_dom && _dom.plot._fullLayout) fitToContainer(_dom.plot); });
+                _resize = new ResizeObserver(() => {
+                    if (!_dom || !_dom.plot._fullLayout) return;
+                    fitToContainer(_dom.plot);
+                    // the figure is laid out in px (labels that fit, legend lines, dots that fill their cells): a new
+                    // size, once it settles, builds it again (no request; the values are the same)
+                    clearTimeout(_refit);
+                    _refit = setTimeout(refit, 150);
+                });
                 _resize.observe(area);
+                // the plot itself too: the status strip under it takes height from it inside the same area
+                _resize.observe(plot);
             }
             showControls();
             mountParts();
@@ -1082,6 +1093,16 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             rec.drawnKey = key;
             binding.paint(_dom.plot);
             paint();
+        }
+
+        /** Draw again when the plot's size differs from the size its figure was built for. */
+        function refit() {
+            const px = _shown && _shown.model && _shown.model.pixels;
+            if (!_dom || !px) return;
+            if (Math.abs(_dom.plot.clientWidth - px.width) > 2 || Math.abs(_dom.plot.clientHeight - px.height) > 2) {
+                _shown = null;
+                redraw();
+            }
         }
 
         function clearPlot() {
