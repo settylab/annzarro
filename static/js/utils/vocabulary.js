@@ -132,6 +132,13 @@ const cellGene = Object.freeze({
     }),
     noExpressingCells: 'no expressing cells',
     csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' }),
+    /** What a narrow plot gave up so the matrix keeps its columns readable (panels/cell-gene/draw.js fitMatrix): the strip. */
+    narrow: Object.freeze({
+        tag: 'Narrow',
+        totals: 'Totals hidden at this width.',
+        dendrogram: "The groups' dendrogram hidden at this width.",
+        legend: 'Legends narrowed at this width.'
+    }),
     /**
      * Cluster ▾ and Plot Options (UX 3.1, 3.3, 3.4; panels/cell-gene/options.js): the menus' labels, the clustering's
      * sentences (CXG-24, CXG-25, Q2) and the scaling's help lines.
