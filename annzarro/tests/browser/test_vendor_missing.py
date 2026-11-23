@@ -28,7 +28,7 @@ def _open(root, block=None):
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
             if block:
-                page.route(f"**/static/vendor/{block}", lambda route: route.fulfill(status=404, body="not found"))
+                page.route(f"**/static/vendor/{block}*", lambda route: route.fulfill(status=404, body="not found"))
             page.goto(root)
             # started (the chooser is drawn) or stopped with a notice
             page.wait_for_function("() => document.querySelector('#tile-container .tile-selector, #notification-container .notification')",

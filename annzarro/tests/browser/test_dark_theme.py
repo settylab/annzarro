@@ -272,7 +272,7 @@ def test_theme_is_set_once_before_the_first_paint(tab, server, scheme):
     # the script that sets it is the first thing in <head> that loads, before every stylesheet
     order = t.page.evaluate("""() => [...document.head.children].map(e => e.tagName === 'SCRIPT' ? 'script:' + (e.getAttribute('src') || '')
         : e.tagName === 'LINK' && e.rel === 'stylesheet' ? 'css' : null).filter(Boolean)""")
-    assert order[0].endswith("js/theme-init.js"), order
+    assert order[0].split("?")[0].endswith("js/theme-init.js"), order
     assert t.page.evaluate("document.head.querySelector('script[src*=\"theme-init\"]').async === false")
     assert t.page.evaluate("document.head.querySelector('script[src*=\"theme-init\"]').defer === false")
 
