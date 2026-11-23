@@ -9,8 +9,11 @@
  * is computed from the moments of the groups when a plot shows it.
  *
  * The panel mounts it through panels/cell-grouping.js `PARTS.statistics`: `mount(host, ctx)` returns `{update, destroy}`.
+ * The section does not fold in the panel: `host` (a slot of the toolbar) holds one button, Statistics ▾, and the section's
+ * body is the content of a wide pop-over (ui/popover.js), so opening it moves nothing.
  */
 import { DataManager } from '../../data-manager.js';
+import { createPopover } from '../../ui/popover.js';
 import { makeDom } from '../gene-set-utilities/dom.js';
 import { createOfferedSection } from '../score-options/offered-section.js';
 import { KIND_CLIENT } from '../score-options/score-options.js';
@@ -84,7 +87,7 @@ function mount(host, ctx) {
     }
 
     section = createOfferedSection({
-        D, id, model, title: STATISTICS_HELP.title, text: STATISTICS_HELP, getRecipe: () => ctx.recipe(), apply,
+        D, id, model, title: STATISTICS_HELP.title, text: STATISTICS_HELP, popover: { label: 'Statistics' }, getRecipe: () => ctx.recipe(), apply,
         getInputs: async () => layerKeys(await DataManager.getDatasetStructure(DataManager.getCurrentDataset())),
         getKind: (layer, opts) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), layer, opts),
         getInUse: () => statisticUsage(groupSources().sources.consumersOf(id)).statistics,
@@ -99,6 +102,14 @@ function mount(host, ctx) {
         }
     });
     host.append(section.element);
+    // the section's classes style its body: the pop-over's content is wrapped in a `.gsig-scoring` of its own
+    const pop = createPopover({ anchor: section.toggle, name: 'statistics', title: STATISTICS_HELP.title, wide: true,
+        render: (content) => {
+            const wrap = el('div', { class: 'gsig-scoring gsig-scoring--in-pop' }, section.body);
+            content.append(wrap);
+            section.setOpen(true);
+            return () => { section.setOpen(false); wrap.remove(); };
+        } });
     const unwatch = groupSources().sources.onSource(id, () => section.paintUsage());
 
     /** The dataset is there, or changed, or the offered layers did (a link, Back and Forward, Undo): ask what the layers look like. */
@@ -130,6 +141,7 @@ function mount(host, ctx) {
         },
         destroy() {
             unwatch();
+            pop.destroy();
             section.destroy();
             D.clear(host);
         }

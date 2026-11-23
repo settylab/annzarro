@@ -46,6 +46,8 @@ TA = "cell-table-T"
 A = f'.tile[data-tile-id="{GA}"]'
 B = f'.tile[data-tile-id="{GB}"]'
 T = f'.tile[data-tile-id="{TA}"]'
+SETTINGS = "[data-popover='settings']"
+LEVELS = "[data-popover='levels']"        # a factor's Edit pop-over (levels of a categorical or a table factor)
 CELL_TYPE = {"source": {"type": "obs", "key": "cell_type"}}
 CONDITION = {"source": {"type": "obs", "key": "condition"}}
 DATA = gstore.make_data()
@@ -239,25 +241,27 @@ def test_a_card_moves_duplicates_removes_and_renames_with_no_request(page, serve
     _ready(page)
 
     # untick T cell and leave the rest out of every group: 300 cells in no group, and the button says why
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__head")
-    page.uncheck(f"{A} .cgrp-card[data-index='0'] .cgrp-level[data-id='c:T cell'] input[type=checkbox]")
-    page.check(f"{A} .cgrp-card[data-index='0'] input.cgrp-rest[value='exclude']")
+    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.uncheck(f"{LEVELS} .cgrp-level[data-id='c:T cell'] input[type=checkbox]")
+    page.check(f"{LEVELS} input.cgrp-rest[value='exclude']")
     st = _ready(page, text=f"{_groups_of('cell_type', 'condition') - 2} groups · {N - 300:,} of {N:,} cells in a group")
     assert st["noGroup"] == "300 in no group"
     page.click(f"{A} .cgrp-nogroup")
     assert page.inner_text(f"{A} .cgrp-reasons") == "300 are in no ticked level of cell_type"
     assert page.get_attribute(f"{A} .cgrp-nogroup", "aria-expanded") == "true"
+    assert page.locator(LEVELS).count() == 0, "a click outside closes the pop-over"
     assert _recipe(page)["partitionings"][0] == {**CELL_TYPE, "levels": ["c:B cell", "c:NK cell", "c:Monocyte", "c:Dendritic", "c:Platelet"],
                                                 "rest": "exclude"}
 
     # a rename recomputes nothing and keeps the key; the hover says what it was
     asked = len(_requests(page))
     estimates = len(page.calls)
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-level[data-id='c:B cell'] .cgrp-level__rename")
-    page.fill(f"{A} .cgrp-card[data-index='0'] .cgrp-level[data-id='c:B cell'] input.cgrp-level__name", "B lymphocyte")
+    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.click(f"{LEVELS} .cgrp-level[data-id='c:B cell'] .cgrp-level__rename")
+    page.fill(f"{LEVELS} .cgrp-level[data-id='c:B cell'] input.cgrp-level__name", "B lymphocyte")
     page.keyboard.press("Enter")
-    until(page, """(s) => document.querySelector(s + " .cgrp-level[data-id='c:B cell'] .cgrp-level__label").textContent === 'B lymphocyte'""", A)
-    assert page.get_attribute(f"{A} .cgrp-level[data-id='c:B cell'] .cgrp-level__label", "title") == "Was: B cell"
+    until(page, """(s) => document.querySelector(s + " .cgrp-level[data-id='c:B cell'] .cgrp-level__label").textContent === 'B lymphocyte'""", LEVELS)
+    assert page.get_attribute(f"{LEVELS} .cgrp-level[data-id='c:B cell'] .cgrp-level__label", "title") == "Was: B cell"
     assert _recipe(page)["partitionings"][0]["labels"] == {"c:B cell": "B lymphocyte"}
     waits.expect_stays(lambda: len(_requests(page)) == asked and len(page.calls) == estimates,
                        "a rename asks for nothing: past the live delay a recompute would have been asked", page=page, seconds=0.8)
@@ -277,8 +281,8 @@ def test_job1_a_table_factor_follows_its_tables_filter(page, served):
     st = _ready(page, text=f"2 groups · {N:,} of {N:,} cells in a group")
     assert _cards(page)[0]["preview"] == "in Table 1 150 · not in Table 1 1,050"
     # keep only "in": the rest are in no group, and say so
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__head")
-    page.uncheck(f"{A} .cgrp-card[data-index='0'] input.cgrp-keepout")
+    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.uncheck(f"{LEVELS} input.cgrp-keepout")
     st = _ready(page, text=f"1 group · 150 of {N:,} cells in a group")
     page.click(f"{A} .cgrp-nogroup")
     assert page.inner_text(f"{A} .cgrp-reasons") == "1,050 are not in Table 1"
@@ -439,30 +443,31 @@ def test_settings_small_groups_keep_collect_hide_and_a_separator_that_asks_for_n
     _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE])})
     _ready(page, text=f"6 groups · {N:,} of {N:,} cells in a group")
     assert page.inner_text(f"{A} .cgrp-settings__summary") == 'Separator " | " · small groups under 10 cells kept'
-    page.click(f"{A} .cgrp-settings__head")
-    assert page.get_attribute(f"{A} .cgrp-settings__head", "aria-expanded") == "true"
-    page.check(f"{A} input.cgrp-smallmode[value='collect']")
+    page.click(f"{A} .cgrp-settings-btn")
+    assert page.get_attribute(f"{A} .cgrp-settings-btn", "aria-expanded") == "true"
+    page.check(f"{SETTINGS} input.cgrp-smallmode[value='collect']")
     # the same number of groups: wait for the small-groups line to say so
     until(page, "(s) => /collected/.test(document.querySelector(s + ' .cgrp-small').textContent)", A)
     st = _ready(page, text=f"6 groups · {N:,} of {N:,} cells in a group")
     assert st["small"] == '1 small group (under 10 cells), collected into "Small groups (under 10 cells)"'
-    page.check(f"{A} input.cgrp-smallmode[value='hide']")
+    page.check(f"{SETTINGS} input.cgrp-smallmode[value='hide']")
     st = _ready(page, text=f"5 groups · {N - 5:,} of {N:,} cells in a group")
     assert st["small"] == "1 small group (under 10 cells), hidden: their cells are in no group"
     page.click(f"{A} .cgrp-nogroup")
     assert page.inner_text(f"{A} .cgrp-reasons") == "1 small group (under 10 cells) is hidden"
     # a threshold of 46 makes Dendritic (45) small too
-    page.fill(f"{A} input.cgrp-threshold", "46")
+    page.click(f"{A} .cgrp-settings-btn")      # the click on "in no group" was outside the pop-over: it closed
+    page.fill(f"{SETTINGS} input.cgrp-threshold", "46")
     page.keyboard.press("Enter")
     _ready(page, text=f"4 groups · {N - 50:,} of {N:,} cells in a group")
     assert _recipe(page)["small"] == {"threshold": 46, "mode": "hide"}
     # an invalid threshold keeps the last valid value and says why
-    page.fill(f"{A} input.cgrp-threshold", "0")
+    page.fill(f"{SETTINGS} input.cgrp-threshold", "0")
     page.keyboard.press("Enter")
-    assert page.input_value(f"{A} input.cgrp-threshold") == "46"
-    assert page.inner_text(f"{A} .cgrp-settings__problem") == "Enter a whole number of cells, 1 or more."
+    assert page.input_value(f"{SETTINGS} input.cgrp-threshold") == "46"
+    assert page.inner_text(f"{SETTINGS} .cgrp-settings__problem") == "Enter a whole number of cells, 1 or more."
     asked = len(page.calls)
-    page.fill(f"{A} input.cgrp-separator", " / ")
+    page.fill(f"{SETTINGS} input.cgrp-separator", " / ")
     page.keyboard.press("Enter")
     until(page, "(s) => document.querySelector(s + ' .cgrp-settings__summary').textContent.startsWith('Separator \" / \"')", A)
     waits.expect_stays(lambda: len(page.calls) == asked,
@@ -575,7 +580,8 @@ def test_too_many_groups_is_refused_with_the_count_and_the_way_out(page, served)
     assert st["text"] == "6,840 groups: a grouping holds up to 2,000. Nothing was computed. many has 1,140 levels."
     assert st["actions"] == ["Choose levels of many"]
     page.click(f"{A} .cgrp-action[data-action='levels:1']")
-    assert page.get_attribute(f"{A} .cgrp-card[data-index='1'] .cgrp-card__head", "aria-expanded") == "true"
+    page.wait_for_selector(LEVELS, timeout=10000)
+    assert page.get_attribute(f"{A} .cgrp-card[data-index='1'] .cgrp-card__edit", "aria-expanded") == "true"
 
 
 # ------------------------------------------------------------------ 9. loops
@@ -639,15 +645,18 @@ def test_toggle_controls_hides_and_shows_the_grouping_bar_and_a_table_still_togg
     _ready(page)
     page.wait_for_selector(f"{T} .table-controls", timeout=30000)
     shown = "(s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && !e.closest('[hidden]'); }"
-    assert page.evaluate(shown, f"{A} .cgrp-controls") and page.evaluate(shown, f"{A} .cgrp-settings-zone")
+    # a button inside the hidden toolbar: it takes no space (the toolbar is hidden, the button's own display is not)
+    drawn = "(s) => { const e = document.querySelector(s); return !!e && e.getClientRects().length > 0; }"
+    assert page.evaluate(shown, f"{A} .cgrp-controls") and page.evaluate(drawn, f"{A} .cgrp-settings-btn")
     page.click(f"{A} .tile-toggle-controls")
     until(page, f"() => !({shown})('{A} .cgrp-controls')")
-    assert not page.evaluate(shown, f"{A} .cgrp-settings-zone"), "Settings hide with the controls (UX 2.1)"
+    assert not page.evaluate(drawn, f"{A} .cgrp-settings-btn"), "Settings hide with the controls (UX 2.1)"
+    assert not page.evaluate(drawn, f"{A} .cgrp-card__edit"), "so does Edit: the cards are one line each"
     assert page.evaluate(shown, f"{A} .cgrp-status") and page.evaluate(shown, f"{A} .cgrp-card"), "the status and the cards stay"
     assert page.evaluate(f"() => window.PanelManager.getPanel('{GA}').getConfig().controlsVisible") is False
     page.click(f"{A} .tile-toggle-controls")
     until(page, f"() => ({shown})('{A} .cgrp-controls')")
-    assert page.evaluate(shown, f"{A} .cgrp-settings-zone")
+    assert page.evaluate(drawn, f"{A} .cgrp-settings-btn") and page.evaluate(drawn, f"{A} .cgrp-card__edit")
     # a table toggles as before
     page.click(f"{T} .tile-toggle-controls")
     until(page, f"() => !({shown})('{T} .table-controls')")
@@ -711,13 +720,13 @@ def test_a_panel_nothing_uses_is_deleted_on_the_first_press(page, served):
     assert page.locator(".delete-panel-question").count() == 0
 
 
-def test_a_card_has_the_header_chevron_as_its_own_named_control(page, served):
+def test_a_card_has_edit_as_its_own_named_control_that_opens_its_popover(page, served):
     _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE])})
     _ready(page)
-    t = f"{A} .cgrp-card[data-index='0'] .cgrp-card__toggle"
-    assert page.get_attribute(t, "aria-expanded") == "false" and page.get_attribute(t, "aria-label") == "Expand cell_type"
-    assert page.locator(f"{t} i.fa-chevron-down").count() == 1
+    t = f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit"
+    assert page.get_attribute(t, "aria-expanded") == "false" and page.get_attribute(t, "aria-label") == "Edit cell_type"
+    assert page.get_attribute(t, "aria-haspopup") == "dialog"
     page.click(t)
-    assert page.get_attribute(t, "aria-expanded") == "true" and page.get_attribute(t, "aria-label") == "Collapse cell_type"
-    assert page.locator(f"{t} i.fa-chevron-up").count() == 1
-    assert page.locator(f"{A} .cgrp-card[data-index='0'] .cgrp-card__body").count() == 1
+    assert page.get_attribute(t, "aria-expanded") == "true" and page.get_attribute(t, "aria-label") == "Edit cell_type"
+    assert page.locator(f"{LEVELS} .cgrp-levels").count() == 1
+    assert page.locator(f"{A} .cgrp-card[data-index='0'] .cgrp-card__body").count() == 0, "nothing expands in the card"

@@ -50,10 +50,16 @@ table header and export that uses the grouping says the new name.
 
 ## Factors
 
-Each factor is a card: its position, its name, its kind and level count, and the first levels with their cells. Click
-the card to open it; **⋯** offers **Move up**, **Move down**, **Duplicate**, **Rename levels…** and **Remove**. Drag a
-card by **≡**, or move the focused card with **Alt+Up** and **Alt+Down**. The order of the factors is the order of the
-names and of the groups: the first factor varies slowest.
+Each factor is a card of one line: its position, its name, its kind and level count, and the first levels with their
+cells. **Edit ▾** (or a click on the card) opens the factor's levels or bins in a pop-over beside the panel, so nothing in
+the panel grows, moves or scrolls while you edit. The pop-over stays open while you work: every change applies at once
+and is one undo step. **Escape**, the **×** in its header, **Edit ▾** again, or a click outside closes it; Escape and
+the button put the focus back on **Edit ▾**. Only one pop-over is open at a time. **⋯** offers **Move up**, **Move
+down**, **Duplicate**, **Rename levels…** and **Remove**. Drag a card by **≡**, or move the focused card with **Alt+Up**
+and **Alt+Down**. The order of the factors is the order of the names and of the groups: the first factor varies slowest.
+
+The toolbar above the cards holds **Add factor ▾**, **Statistics ▾**, **Settings** and **Undo**. The list of groups takes
+the rest of the panel and is the only part that grows with it.
 
 **A categorical factor** lists its levels with their cells and a box for each:
 
@@ -75,8 +81,9 @@ subset of up to 1M cells shown.
 (grouping-bins)=
 ## Bins
 
-A numeric factor (a numeric column, a gene, a score, a cell's row of an obsp matrix) is divided into bins. Its card
-shows the distribution of the values with the edges drawn on it, and one chip per bin with its name and its cells:
+A numeric factor (a numeric column, a gene, a score, a cell's row of an obsp matrix) is divided into bins. Its **Edit ▾**
+pop-over shows the distribution of the values with the edges drawn on it, and one chip per bin with its name and its
+cells. A factor you have just added opens it for you:
 
 | Control | What it does |
 |---|---|
@@ -105,11 +112,11 @@ all 8,090 cells of the dataset.", and says what happened to the data:
 ### When the subset changes
 
 With **Edges from: cells shown**, the default, the edges are computed from the cells shown, so a new subset moves them
-and renames the bins. The card says so once, "Edges now come from the 2,431 cells shown.", with **Freeze thresholds**
+and renames the bins. The pop-over says so once, "Edges now come from the 2,431 cells shown.", with **Freeze thresholds**
 beside it. Two ways keep the bins where they are, whatever the subset:
 
 - **Freeze thresholds** keeps the current edges as manual thresholds, in one step you can undo. The method then reads
-  **Manual thresholds**, and the card says what they were frozen from ("Frozen from equal count on the cells shown.").
+  **Manual thresholds**, and the pop-over says what they were frozen from ("Frozen from equal count on the cells shown.").
 - **Edges from: all cells** takes the edges from every cell of the dataset, which no subset changes.
 
 A plot that names **one group** of the grouping by its bin (a set "Group of a grouping" in a Venn or UpSet) notices
@@ -139,7 +146,7 @@ A group with no value for the gene shows "—", never 0.
 **Export CSV** downloads the list (key, name, cells, share and the focused gene's columns), or the cross-table.
 **Export cells** downloads every cell shown with its group, up to 1,000,000 cells.
 
-**Settings** (collapsed at the bottom):
+**Settings** (a button in the toolbar; its pop-over holds):
 
 - **Separator** between the level names of a group, `|` by default (`B cell | Old`).
 - **Small groups under** 10 cells: **Keep** them (the default; they are marked), **Collect** them into one group
@@ -161,8 +168,8 @@ a plot, and enter no statistic.
 ## Statistics offered
 
 As a signature decides which scores it offers, a grouping decides which statistics per group the plots built on it
-may show: **Statistics offered**, collapsed under the list, "Plots pick from these. Nothing is computed until a plot
-shows it."
+may show: **Statistics offered**, opened by **Statistics ▾** in the toolbar, "Plots pick from these. Nothing is computed
+until a plot shows it."
 
 - **Statistics**: **Mean** (zeros included), **% expressing** (the share of the group's cells above the threshold, 0
   to 100), **Mean of expressing cells**, **Sum** and **SD**. Mean and % expressing are on by default. Cell count is

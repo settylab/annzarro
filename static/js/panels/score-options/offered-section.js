@@ -38,6 +38,9 @@ const LAYERS_SHOWN = 5;
  * @param {() => Array<{value: string, plots: number, tables: number}>} [options.getInUse] - options plots and tables use
  * @param {() => Array<{value: (string|null), plots: number, tables: number}>} [options.getLayersInUse] - layers they use
  * @param {() => void} [options.onKinds] - what a layer looks like became known: menus may change
+ * @param {{label: string}} [options.popover] - the section does not fold in place: its body is `body`, for a pop-over to
+ *   host (the host calls `setOpen(true)` when it shows it and `setOpen(false)` when it hides it), and `element` is one
+ *   button, `label` and a caret, with the summary kept in its title, its label for assistive technology and a hidden span
  * @param {Object} [options.hooks] - what the provider adds, all optional:
  *   bodyBlocks      nodes placed after the notice line, before the methods
  *   makeParams(api) called once per repaint of the rows, before them: make the parameter boxes (`api` has numberBox, field, sid)
@@ -50,7 +53,7 @@ const LAYERS_SHOWN = 5;
  *   resetPatch() -> the parameter fields a reset restores; paramsAreDefault(recipe) -> boolean
  */
 export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-scoring', getRecipe, apply, getInputs, getKind,
-    getInUse = () => [], getLayersInUse = () => [], onKinds = () => {}, hooks = {} }) {
+    getInUse = () => [], getLayersInUse = () => [], onKinds = () => {}, popover = null, hooks = {} }) {
     const { el } = D;
     const sid = (x) => `${cls}-${x}-${id}`;
     const { offeredMethods, offeredLayers } = model;
@@ -66,12 +69,13 @@ export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-sc
     const stats = new Map();            // layer -> what the server sampled of it (the share above a threshold follows from it)
     const asked = new Map();            // layer -> token of the question in flight
 
-    const toggle = el('button', { type: 'button', class: `${cls}__toggle`, id: sid('toggle'),
-        aria: { expanded: 'false', controls: sid('body') }, on: { click: () => { open = !open; if (open) askAllKinds(); paint(); } } });
-    const caret = el('span', { class: `${cls}__caret`, aria: { hidden: 'true' } }, '▸');
-    const label = el('span', { class: `${cls}__label`, text: title });
-    const summary = el('span', { class: `${cls}__summary`, id: sid('summary') });
-    toggle.append(caret, ' ', label, ' ', summary);
+    const toggle = el('button', { type: 'button', class: `${cls}__toggle${popover ? ` ${cls}__toggle--pop btn btn-sm btn-outline-secondary` : ''}`,
+        id: sid('toggle'), aria: { expanded: 'false', controls: sid('body') },
+        on: popover ? {} : { click: () => { open = !open; if (open) askAllKinds(); paint(); } } });
+    const caret = el('span', { class: `${cls}__caret`, aria: { hidden: 'true' } }, popover ? '▾' : '▸');
+    const label = el('span', { class: `${cls}__label`, text: popover ? popover.label : title });
+    const summary = el('span', { class: `${cls}__summary${popover ? ' visually-hidden' : ''}`, id: sid('summary') });
+    if (popover) toggle.append(label, ' ', caret, summary); else toggle.append(caret, ' ', label, ' ', summary);
 
     const where = el('div', { class: `${cls}__help`, data: { aggregationsHelp: '' }, text: text.where });
     const noticeLine = el('div', { class: `${cls}__notice`, role: 'status', aria: { live: 'polite' }, hidden: true });
@@ -91,7 +95,7 @@ export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-sc
         where, noticeLine, ...(hooks.bodyBlocks || []), methodSet, layerSet, resetNote, el('div', { class: `${cls}__actions` }, reset));
     // the warning for the first offered layer, in the status zone: seen with the section collapsed
     const warningLine = el('div', { class: 'gsig-inputwarn', role: 'status', hidden: true, data: { inputWarning: 'status' } });
-    const element = el('section', { class: cls, aria: { label: title } }, toggle, body);
+    const element = el('section', { class: popover ? `${cls} ${cls}--pop` : cls, aria: { label: title } }, toggle, popover ? null : body);
     const doc = () => element.ownerDocument;
 
     // ------------------------------------------------------------ numbers
@@ -105,9 +109,12 @@ export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-sc
         const error = el('div', { class: `${cls}__error`, id: sid(`${key}-error`), role: 'alert', hidden: true });
         const show = (message) => { error.hidden = !message; error.textContent = message || ''; input.classList.toggle('is-invalid', !!message);
             input.setAttribute('aria-invalid', String(!!message)); };
-        input.addEventListener('input', () => { const p = parse(input.value); show(p.ok ? '' : p.error); });
-        input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { input.value = String(read(getRecipe())); show(''); } });
+        // `dirty`: text typed and not yet applied. A pop-over host puts the focus in the first box on opening; a box that
+        // holds nothing typed must not keep the rows from being drawn (the layers' kinds arrive after it opens).
+        input.addEventListener('input', () => { input.dataset.dirty = '1'; const p = parse(input.value); show(p.ok ? '' : p.error); });
+        input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { delete input.dataset.dirty; input.value = String(read(getRecipe())); show(''); } });
         input.addEventListener('change', () => {
+            delete input.dataset.dirty;
             const p = parse(input.value);
             if (!p.ok) {
                 input.value = String(read(getRecipe()));              // the last valid value comes back
@@ -327,21 +334,23 @@ export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-sc
         summary.textContent = full;
         summary.title = full;
         toggle.setAttribute('aria-label', `${title}: ${full}`);
-        toggle.setAttribute('aria-expanded', String(open));
+        if (popover) toggle.title = full;
+        else toggle.setAttribute('aria-expanded', String(open));
         toggle.dataset.short = model.offeredSummaryShort(recipe);
-        caret.textContent = open ? '▾' : '▸';
+        if (!popover) caret.textContent = open ? '▾' : '▸';
         body.hidden = !open;
-        const typing = doc().activeElement && doc().activeElement.dataset && doc().activeElement.dataset.param
-            && body.contains(doc().activeElement);
+        const active = doc().activeElement;
+        const inBox = !!(active && active.dataset && active.dataset.param && body.contains(active));
+        const typing = inBox && (!popover || active.dataset.dirty === '1');
         if ((open || methodRows.childNodes.length === 0) && !(typing && !force)) {
             // the box being used keeps the focus across the repaint
-            const keep = typing ? doc().activeElement.dataset.param : null;
+            const keep = inBox ? active.dataset.param : null;
             if (hooks.paintExtras) hooks.paintExtras(recipe);
             paintMethods(recipe);
             paintLayers(recipe);
             if (hooks.paintParams) hooks.paintParams(recipe, element);
             paintNotice();
-            if (keep) { const again = element.querySelector(`[data-param="${keep}"]`); if (again) again.focus(); }
+            if (keep) { const again = body.querySelector(`[data-param="${keep}"]`); if (again) again.focus(); }
         }
         reset.disabled = isDefault(recipe);
         paintWarning(recipe);
@@ -394,6 +403,12 @@ export function createOfferedSection({ D, id, model, title, text, cls = 'gsig-sc
 
     return {
         element,
+        /** The button that opens the pop-over (the `popover` option). */
+        toggle,
+        /** The body, for a pop-over to host (the `popover` option); it is not in `element` then. */
+        body,
+        /** A pop-over host shows (true) or hides (false) the body. */
+        setOpen(value) { if (destroyed || open === !!value) return; open = !!value; if (open) askAllKinds(); paint(); },
         warning: warningLine,
         paint,
         /** The score's state changed (each progress frame says so): the rows are drawn again only when who uses what did. */

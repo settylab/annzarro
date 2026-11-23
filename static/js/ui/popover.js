@@ -175,7 +175,6 @@ function focusables(root) {
  * @returns {{open:Function,close:Function,toggle:Function,isOpen:Function,update:Function,destroy:Function,
  *            readonly surface:(HTMLElement|null)}}
  */
-// export-unused-ok: the pop-over API for the panel work packages (WP-2, 5a, 5b, 6, 7, 8)
 export function createPopover(cfg) {
     const { anchor, name, title = '', wide = false, menu = false, render, onClose } = cfg;
     const token = ++serial;
