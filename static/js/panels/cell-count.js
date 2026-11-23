@@ -39,6 +39,8 @@ import { UndoStack } from '../utils/gene-signature.js';
 import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLabelsOf } from '../utils/count-plot-model.js';
 import { countFigure, countCsv, DRAWN_MODES } from './cell-count/draw.js';
 import { densityFigure, DENSITY_MODES } from './cell-count/draw-density.js';
+import { pointsRefusal } from './cell-count/density-points.js';
+import { pointsRefused, pointsKey, loadCellPoints, pointsForFigure } from './cell-count/density-points-load.js';
 import { createControls } from './cell-count/controls.js';
 import {
     countReferences, shownConfig, drawOptions, inputNames, shownLabels, followFocus, measureSourceName, levelTotals,
@@ -216,6 +218,9 @@ actions.register({
         const _made = new Map();
         /** What the plot and the controls were last drawn from: drawn again only when one of these changes */
         let _drawnFrom = null;
+        /** The cells of a 2D density's Cell points layer: {key, state: 'none'|'loading'|'ready'|'refused'|'failed', data?, why?} */
+        let _points = { key: null, state: 'none' };
+        let _pointsAbort = null;
         let _controlsFrom = null;
         let _drawing = null;                 // {config, table, labels, names} of the drawing shown, for the CSV
         let _infos = {};
@@ -648,7 +653,7 @@ actions.register({
             const found = shownTable();
             const theme = currentTheme() === 'dark' ? 'dark' : 'light';
             const live = shown();
-            const from = [found && found.grid, found && found.made, live, theme, _title];
+            const from = [found && found.grid, found && found.made, live, theme, _title, _points];
             if (_drawnFrom && from.every((x, i) => x === _drawnFrom[i])) return;
             _drawnFrom = from;
             if (!found || !window.Plotly) {
@@ -674,6 +679,15 @@ actions.register({
                 options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(Math.max(1, n), config.color && config.color.palette), theme: PLOT_PALETTES[theme],
                 measureSource: config.measure ? measureSourceName(config.measure.source, sourceTitleOf) : undefined, titleOf: sourceTitleOf, panelId: _id
             };
+            const wantsPoints = config.mode === 'density2d' && opts.options.layers && opts.options.layers.points;
+            if (wantsPoints) {
+                const sa = table.axes.findIndex((x) => x.input === 'split');
+                const loaded = pointsFor(config);
+                if (loaded) opts.points = pointsForFigure(loaded, sa >= 0 ? table.axes[sa].levels : null);
+            } else if (_points.state !== 'none') {
+                if (_pointsAbort) _pointsAbort.abort();
+                _points = { key: null, state: 'none' };
+            }
             const part = PARTS.draw[config.mode];
             const fig = part ? part.figure(config, table, opts)
                 : DENSITY_MODES.includes(config.mode) ? densityFigure(config, table, opts) : countFigure(config, table, opts);
@@ -705,6 +719,38 @@ actions.register({
                 const t = table.axes.findIndex((x) => x.input === input.input);
                 if (t >= 0) _labelMaps[input.input] = defaults[t];
             });
+        }
+
+        /**
+         * The cells of the Cell points layer for this config, once loaded: null while they load, or when the layer is
+         * refused or failed (the strip says why). A change of the sources or of the cells shown loads them again.
+         */
+        function pointsFor(config) {
+            const total = cellsShown();
+            const why = pointsRefused(config, structureRead(), total);
+            if (why) {
+                if (_points.state !== 'refused' || _points.why.kind !== why.kind || _points.why.input !== why.input || _points.why.total !== why.total) _points = { key: null, state: 'refused', why };
+                return null;
+            }
+            const key = pointsKey(config, total);
+            if (_points.key === key) return _points.state === 'ready' ? _points.data : null;
+            if (_pointsAbort) _pointsAbort.abort();
+            const control = new AbortController();
+            _pointsAbort = control;
+            _points = { key, state: 'loading' };
+            const settle = (next) => { if (control.signal.aborted) return; _points = { key, ...next }; _drawnFrom = null; paint(); };
+            loadCellPoints(config, { structure: structureRead(), signal: control.signal })
+                .then((data) => settle({ state: 'ready', data }), (error) => settle({ state: 'failed', why: String(error && error.message || error) }));
+            return null;
+        }
+
+        /** What the strip says of the Cell points layer: that it loads, why it cannot be drawn, or how many cells it draws. */
+        function pointsStatus() {
+            if (!(shown().mode === 'density2d' && drawOptions(shown()).layers.points)) return '';
+            if (_points.state === 'loading') return C.points.loading;
+            if (_points.state === 'refused') return pointsRefusal(_points.why);
+            if (_points.state === 'failed') return C.points.failed(_points.why);
+            return (_notes && _notes.points) || '';
         }
 
         /** Two configs whose grids are the same request: what one draws, the other can (a mode that reads the same inputs). */
@@ -757,7 +803,7 @@ actions.register({
             if (PENDING.includes(snap.state) && snap.state !== 'idle') return C.counting(cellsShown());
             if (snap.state !== 'ready') return '';
             // a density says its range instead (UX 4.4): the cells outside it are those it does not count
-            if (_notes) return [_notes.range, _notes.floor].filter(Boolean).join(' ');
+            if (_notes) return [_notes.range, _notes.floor, pointsStatus()].filter(Boolean).join(' ');
             // the cells counted, without a value or outside the range are the coverage banner's under the plot: not said twice
             return '';
         }

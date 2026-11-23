@@ -101,7 +101,7 @@ export function largePlotReason(settings, n) {
   return largePlotRefusal(settings, n);
 }
 
-async function loadSeries(s, datasetPath, structure, signal, { axis = null, host = null, role = 'x' } = {}) {
+export async function loadSeries(s, datasetPath, structure, signal, { axis = null, host = null, role = 'x' } = {}) {
   if (s.type === 'none') return null;
   if (isProviderType(s.type)) {
     // a provider's series in this path's form (utils/source-registry.js loadLarge): the vector or the codes it

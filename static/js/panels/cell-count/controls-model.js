@@ -414,6 +414,7 @@ export function drawOptions(config) {
         scale: rows.density && config.scale === 'size' ? 'size' : 'level',
         // a 2D density's layers (opacity image, isolines, filled isolines); an old link's style maps onto them
         layers: rows.density === 2 ? densityLayers(config.layers, config.style, !!config.split) : null,
+        pointSize: Number.isFinite(config.pointSize) ? Math.min(12, Math.max(1, config.pointSize)) : 3,
         // the colour scale of a number's color (WP-6a): the map (absent is Viridis), Reverse and the fixed range
         ...(config.color && config.color.map ? { colorscale: config.color.map } : {}),
         colour: colourOf(config.color)
