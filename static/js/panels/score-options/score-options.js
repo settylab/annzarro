@@ -58,6 +58,8 @@ export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, fo
     const unwatch = onSourceStatus(id, () => scoring.paintUsage());
     /** What plots and tables are offered: every offered method of every offered layer that can be computed. */
     const getOfferedOptions = () => offeredOptions(getOptions(), null, scoring.getKinds(), scoring.getStats());
+    /** What the layers look like and what the server sampled of them, for grading a method on a layer (decision 31). */
+    const getGrading = () => ({ kinds: scoring.getKinds(), stats: scoring.getStats() });
     const inspect = createInspect({ id, D, getTitle, getRecipe: getOptions, getOptions: getOfferedOptions, focusGene });
 
     return {
@@ -65,6 +67,7 @@ export function createScoreOptions({ id, D, getOptions, setOptions, getTitle, fo
         inspect,
         warning: scoring.warning,
         getOfferedOptions,
+        getGrading,
         /** The dataset is there: read the layers and what the chosen ones look like. */
         load() {
             scoring.refreshInputs();
