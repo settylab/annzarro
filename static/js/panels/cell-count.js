@@ -59,10 +59,11 @@ import { isPlanState, describePlan, wayOut, gridNotice, levelsNote } from './cel
 import { saveOffered, savePlan, openSaveDialog } from './cell-count/save-grouping.js';
 import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
 import { parseAlsoListed } from '../utils/source-registry.js';
-import { PLOT_PALETTES } from '../utils/plot-theme.js';
+import { PLOT_PALETTES, modebarOf, MODEBAR_REMOVE } from '../utils/plot-theme.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { groupColours } from './plot-utilities/colors.js';
 import { drawPlot } from '../utils/panel-surface.js';
+import { colourBar } from './plot-utilities/colour-bar.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { installSets } from './cell-count/sets.js';
 import './partition-options/binning-control.js';
@@ -110,6 +111,26 @@ function coverageOf(table, names) {
     return new Coverage({ shown: table.total, total: table.shown, unit: 'cells', gaps });
 }
 
+
+/**
+ * The figure's colour bars made by the Cell Plot's builder (plot-utilities/colour-bar.js) from the Cell Plot's default
+ * settings: the title along the bar on its right, the same font, thickness, length and position. What the figure sets for
+ * itself (the title text, a percent tick format) is kept. Changes the traces in place.
+ */
+function withSharedColourBars(fig) {
+    const share = (holder, key) => {
+        const bar = holder && holder[key];
+        if (!bar) return;
+        const own = {};
+        for (const k of ['tickformat', 'tickvals', 'ticktext']) if (bar[k] !== undefined) own[k] = bar[k];
+        holder[key] = { ...colourBar({}, bar.title && bar.title.text), ...own };
+    };
+    for (const trace of fig.data) {
+        share(trace, 'colorbar');
+        share(trace.marker, 'colorbar');
+    }
+    return fig;
+}
 
 /** The panel type of a grouping, which Save as grouping makes. */
 const GROUPING_TYPE = 'cell-grouping';
@@ -674,6 +695,7 @@ actions.register({
             const part = PARTS.draw[config.mode];
             const fig = part ? part.figure(config, table, opts)
                 : DENSITY_MODES.includes(config.mode) ? densityFigure(config, table, opts) : countFigure(config, table, opts);
+            withSharedColourBars(fig);
             // a density's sentences (UX 4.4): the bandwidth and the floor in Plot Options, the range in the strip
             _notes = fig.notes || null;
             _colourData = colourValues(fig.data);
@@ -681,7 +703,8 @@ actions.register({
             delete _dom.root.dataset.drawn;
             const root = _dom.root;
             const plot = _dom.plot;
-            drawPlot(plot, fig.data, { ...fig.layout, autosize: true }, { displaylogo: false, responsive: true },
+            drawPlot(plot, fig.data, { ...fig.layout, autosize: true, modebar: modebarOf(PLOT_PALETTES[theme].textColor) },
+                { displaylogo: false, responsive: true, modeBarButtonsToRemove: [...MODEBAR_REMOVE] },
                 coverageOf(table, names), 'cells').then(() => {
                 // a click on a bar, slice or rectangle offers Save as grouping (CNT-21); a purge drops the listener
                 if (typeof plot.removeAllListeners === 'function') plot.removeAllListeners('plotly_click');
