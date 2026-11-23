@@ -32,7 +32,6 @@ import { longRows, longCsv } from '../../utils/cell-gene-model.js';
 import { generateDiscreteColors } from '../plot-utilities/colors.js';
 import { tableView, tableElement } from '../cell-count/table-view.js';
 import { dendrogramBlocks } from './draw-annotations.js';
-import { needsThreshold } from './sections.js';
 
 const WO = VOCABULARY.cellGene.options;
 const TABLE = VOCABULARY.table;
@@ -121,19 +120,6 @@ export function barSettings(config) {
     if (s.center !== null) out.center = s.center;
     if (s.titles.color) out.title = s.titles.color;
     return out;
-}
-
-/**
- * Plot Options' Size threshold (scanpy's `expression_cutoff` for the size statistic): a number, or null to read Size
- * with Color's threshold again.
- * @param {Object} config
- * @param {number|null} value
- * @returns {Object} the configuration with that threshold
- */
-function withSizeThreshold(config, value) {
-    const size = { ...config.size };
-    if (isNumber(value)) size.detect_above = value; else delete size.detect_above;
-    return { ...config, size };
 }
 
 /**
@@ -243,7 +229,7 @@ export function tableOf(model) {
     const R = model.rows.length;
     const columns = [];
     const add = (which, spec, valuesOf, scaling) => {
-        const main = { stat: spec.stat, layer: spec.layer, scaling, values: new Float64Array(R * G).fill(NaN) };
+        const main = { stat: spec.stat, layer: spec.layer, detectAbove: spec.detectAbove, scaling, values: new Float64Array(R * G).fill(NaN) };
         const own = new Map();
         model.rows.forEach((row, r) => {
             const mine = row.own && row.own[which];
@@ -404,12 +390,9 @@ function mount(slot, ctx) {
         const plain = !range || (range[0] === DOT_PX.smallest && range[1] === DOT_PX.largest);
         ctx.set({ dotSizes: plain ? undefined : range }, 'dot sizes');
     }
-    const sizeThreshold = number('sizeThreshold', WO.sizeThreshold, (v) => ctx.set(withSizeThreshold(config(), v), 'size threshold'),
-        { step: 'any', placeholder: WO.sameAsColor });
     const dots = section(WO.heading.dots, dotRow,
         number('dotMin', WO.dotMin, (v) => flat('dotMin', v, null, 'percent at the smallest dot'), { min: 0, max: 100, step: 'any' }),
-        number('dotMax', WO.dotMax, (v) => flat('dotMax', v, null, 'percent at the largest dot'), { min: 0, max: 100, step: 'any' }),
-        sizeThreshold);
+        number('dotMax', WO.dotMax, (v) => flat('dotMax', v, null, 'percent at the largest dot'), { min: 0, max: 100, step: 'any' }));
 
     // Colors
     const scalingNote = el('p', { class: 'cgene-scaling-note cgene-help' });
@@ -568,8 +551,6 @@ function mount(slot, ctx) {
         setValue(controls.dotLargest, range[1]);
         setValue(controls.dotMin, s.dotMin);
         setValue(controls.dotMax, s.dotMax);
-        sizeThreshold.hidden = !(c.size && needsThreshold(c.size.stat));
-        setValue(controls.sizeThreshold, c.size && isNumber(c.size.detect_above) ? c.size.detect_above : null);
         controls.colorScale.value = s.colorScale;
         const limits = Array.isArray(c.limits) ? c.limits : [];
         setValue(controls.min, isNumber(limits[0]) ? limits[0] : null);

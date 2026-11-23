@@ -1222,6 +1222,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             // for the steps after this one, and the tests
             getRecipe,
             addFactor,
+            /** Open Statistics offered: where a Cell-Gene Plot's "Offer other…" leads (WP-4). */
+            revealStatisticsOffered: () => { for (const part of _parts) if (part && part.reveal) part.reveal(); },
             undo,
             _debugState
         };

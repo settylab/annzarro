@@ -12,8 +12,8 @@
  *   (utils/host-binding.js) with its progress bar (operator decision 21); every state it has no words of its own for
  *   (a gate upstream, a cycle, the grouping's own refusal) is the generic notice of utils/source-notices.js.
  * - THE STATE WORD (`plotState`): the panel's `data-state`, for the styles and the tests.
- * - WHAT A DRAWN PLOT ADDS (`matrixTag`, `oneCellPerGroup`, `sizeFirst`): the strip's "28 groups × 63 rows", the
- *   suggestion of a heatmap when every group is one cell, and the Size select under No size.
+ * - WHAT A DRAWN PLOT ADDS (`matrixTag`, `oneCellPerGroup`): the strip's "28 groups × 63 rows" and the suggestion of
+ *   a heatmap when every group is one cell. Under No size the Size layer select itself disables what cannot give it.
  *
  * Every word is VOCABULARY.cellGene.states's. Nothing here grows with genes, cells or groups per paint: a notice is
  * worded from counts the panel made once per plan or per drawing.
@@ -25,6 +25,7 @@ import { GROUPING_LIMITS } from '../../utils/cell-grouping.js';
 import { compactCount, exactCount } from '../../utils/coverage.js';
 
 const S = VOCABULARY.cellGene.states;
+const SRC = VOCABULARY.cellGene.sources;
 const P = VOCABULARY.progress;
 
 /** The store's refusal of a request for its cost (utils/group-store.js), as against a grouping's own refusal. */
@@ -34,19 +35,33 @@ const COST_REFUSAL = 'groups_too_expensive';
 
 /**
  * Whether the plot may ask for its genes now (CXG-17), decided from counts alone, before any request.
- * @param {{sections: Array<{rows: number, genes: number}>, groups: (number|null)}} shape - each section's rows as drawn
- *   and genes read; `groups` the cell axis's groups when a ready reply says them, null while unknown
- * @returns {{ask: 'all'|'groups'|'none', tooLarge: (null|{groups: number, rows: number, count: number, limit: number})}}
+ * @param {{sections: Array<{rows: number, genes: number}>, groups: (number|null), features?: number,
+ *   reads?: {genes: number, reads: number, cause: (string|null)}}} shape - each section's rows as drawn and genes read;
+ *   `groups` the cell axis's groups when a ready reply says them, null while unknown; `features` the request's features
+ *   and `reads` how often it reads each gene (cell-gene-model.js geneReads), for the server's limit in values (WP-4)
+ * @returns {{ask: 'all'|'groups'|'none', tooLarge: (null|{groups: number, rows: number, count: number, limit: number,
+ *   reason?: 'too_many_values', features?: number, reads?: Object})}}
  *   'all': the groups and the genes in one request; 'groups': the groups alone first (more groups than are known could
  *   exceed the limit); 'none': above the limit, the genes are not asked for
  */
-export function gateMatrix({ sections, groups }) {
-    if (matrixLimits({ groups: GROUPING_LIMITS.groups, sections }).ok) return { ask: 'all', tooLarge: null };
+export function gateMatrix({ sections, groups, features = 0, reads = null }) {
+    if (matrixLimits({ groups: GROUPING_LIMITS.groups, sections, features }).ok) return { ask: 'all', tooLarge: null };
     if (!(typeof groups === 'number' && groups >= 0)) return { ask: 'groups', tooLarge: null };
-    const said = matrixLimits({ groups, sections });
+    const said = matrixLimits({ groups, sections, features });
     if (said.ok) return { ask: 'all', tooLarge: null };
     const rows = sections.reduce((a, s) => a + s.rows, 0);
+    if (said.reason === 'too_many_values') {
+        return { ask: 'none', tooLarge: { groups, rows, count: said.count, limit: said.limit, reason: said.reason, features, reads } };
+    }
     return { ask: 'none', tooLarge: { groups, rows, count: said.count, limit: said.limit } };
+}
+
+/** "3 genes", or "3 genes on 2 layers" when the request reads each gene on more than one layer or threshold (WP-4). */
+function genesRead(plot) {
+    const genes = S.genes(Math.max(0, (plot && plot.genes) || 0));
+    const r = plot && plot.reads;
+    if (!r || !r.cause || !(r.genes > 0)) return genes;
+    return SRC.geneReads(genes, Math.round(r.reads / r.genes), r.cause);
 }
 
 // ================================================================================================ the notice
@@ -102,11 +117,18 @@ export function describePlot(snap, ctx, plot, words) {
     });
     const cancel = ['score-cancel', S.buttons.cancel(sharers)];
     const est = snap.estimate || {};
-    const genes = S.genes(Math.max(0, (plot && plot.genes) || 0));
+    const genes = genesRead(plot);
     const heavy = est.lane !== 'light';
 
     if (plot && plot.tooLarge) {
         const t = plot.tooLarge;
+        if (t.reason === 'too_many_values') {
+            const r = t.reads;
+            const why = r && r.cause && r.genes > 0 ? `${SRC.readTwice[r.cause](Math.round(r.reads / r.genes))} ` : '';
+            return say('refused', 'warning', S.tags.tooLarge,
+                SRC.tooManyValues(VOCABULARY.count(t.groups, 'group'), SRC.features(t.features), exactCount(t.count), exactCount(t.limit)),
+                `${why}${SRC.tooManyValuesWayOut}`, []);
+        }
         return say('refused', 'warning', S.tags.tooLarge,
             S.tooLarge(VOCABULARY.count(t.groups, 'group'), S.rows(t.rows), exactCount(t.count), exactCount(t.limit)), S.tooLargeWayOut, []);
     }
@@ -212,17 +234,6 @@ export function oneCellPerGroup({ mode, size, sized, groups }) {
     if (mode !== 'dots' || !sized || !size || size.stat !== 'pct_expressing' || !groups.length) return false;
     for (const g of groups) if (g.n !== 1) return false;
     return true;
-}
-
-/**
- * The Size select under No size (SHR-27): the statistic held, on the layers that can give it, first; then the rest as
- * listed.
- * @param {Array<{value: string, lapsed?: boolean}>} list - controls.js statisticChoices
- * @param {{stat: string}} held
- */
-export function sizeFirst(list, held) {
-    const mine = (o) => !o.lapsed && o.value.startsWith(`${held.stat}@`);
-    return [...list.filter(mine), ...list.filter((o) => !mine(o))];
 }
 
 // ================================================================================================ the checklist

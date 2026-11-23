@@ -198,3 +198,77 @@ export function recipePatch(patch) {
     if ('detect_above' in patch) out.detect_above = patch.detect_above === 0 ? undefined : patch.detect_above;
     return out;
 }
+
+// ================================================================================================ a plot's own offer (WP-4)
+
+/**
+ * The first layer that looks log-normalised and the first that holds raw counts, by what the numbers look like
+ * (`kind` of core/matrix_kind.py), never by a layer's name; null for one not found.
+ * @param {string[]} layers - the dataset's matrices, X first
+ * @param {Object<string, string>} kinds - layer -> kind; a layer not listed is not known yet
+ * @returns {{log: (string|null), counts: (string|null)}}
+ */
+function kindLayers(layers, kinds) {
+    const first = (kind) => layers.find((l) => kinds[l] === kind) || null;
+    return { log: first('log'), counts: first('counts') };
+}
+
+/**
+ * Color and Size of a new Cell-Gene Plot (operator ruling Q2): the mean on the log-normalised layer and % expressing on
+ * the counts layer above 0, when matrix-kind facts identify both; else both on X, as before.
+ * @param {string[]} layers
+ * @param {Object<string, string>} kinds
+ * @returns {{color: Object, size: Object}}
+ */
+export function defaultMeasures(layers, kinds) {
+    const { log, counts } = kindLayers(layers, kinds);
+    if (log && counts) return { color: { stat: 'mean', layer: log }, size: { stat: SIZE_STATISTIC, layer: counts, detect_above: 0 } };
+    return { color: { stat: 'mean', layer: DEFAULT_LAYER }, size: { stat: SIZE_STATISTIC, layer: DEFAULT_LAYER } };
+}
+
+/** The layers an obs-column axis offers before the plot's own list is edited: X, then the Q2 layers identified. */
+function axisDefaultLayers(layers, kinds) {
+    const { log, counts } = kindLayers(layers, kinds);
+    return GROUP_STATISTICS_MODEL.cleanLayers([log, counts].filter(Boolean), DEFAULT_LAYER);
+}
+
+/**
+ * What a Cell-Gene Plot with an obs column as its cell axis offers Color and Size (operator ruling Q1): there is no
+ * grouping to hold the offer, so the plot keeps one in its configuration (`offer: {offered?, layers?}`). With no list
+ * of its own, the layers matrix-kind facts call log-normalised and counts count as offered beside X.
+ * @param {{offered?: string[], layers?: string[]}} offer - the plot's `offer`
+ * @param {string[]} layers - the dataset's matrices
+ * @param {Object<string, string>} kinds
+ * @returns {{offered?: string[], layers: string[]}} a recipe GROUP_STATISTICS_MODEL reads
+ */
+export function axisOfferRecipe(offer, layers, kinds) {
+    const own = offer || {};
+    const out = { layers: Array.isArray(own.layers) ? GROUP_STATISTICS_MODEL.cleanLayers(own.layers, DEFAULT_LAYER) : axisDefaultLayers(layers, kinds) };
+    if (Array.isArray(own.offered)) out.offered = GROUP_STATISTICS_MODEL.cleanOffered(own.offered);
+    return out;
+}
+
+/**
+ * An edit of the plot's offered section (panels/score-options/offered-section.js) as the plot's new `offer`: a field
+ * equal to what the plot would offer without it is not written, so the defaults keep following the dataset. A patch
+ * with both fields is the section's Reset to defaults.
+ * @param {Object} offer - the plot's `offer` now
+ * @param {Object} patch - keys of the section's option fields (offered, layers; input and method are ignored)
+ * @param {string[]} layers
+ * @param {Object<string, string>} kinds
+ * @returns {{offered?: string[], layers?: string[]}}
+ */
+export function axisOfferPatch(offer, patch, layers, kinds) {
+    if ('offered' in patch && 'layers' in patch) return {};
+    const model = GROUP_STATISTICS_MODEL;
+    const out = { ...(offer || {}) };
+    if ('offered' in patch) {
+        const list = model.cleanOffered(patch.offered);
+        if (list.join() === model.cleanOffered(DEFAULT_STATISTICS).join()) delete out.offered; else out.offered = list;
+    }
+    if ('layers' in patch) {
+        const list = model.cleanLayers(patch.layers, DEFAULT_LAYER);
+        if (list.join() === axisDefaultLayers(layers, kinds).join()) delete out.layers; else out.layers = list;
+    }
+    return out;
+}
