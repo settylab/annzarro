@@ -593,7 +593,7 @@ actions.register({
             const stateBox = el('div', { class: 'ccnt-state-box', hidden: true }, state, el('div', { class: 'ccnt-state__actions' }));
             // what the plot is doing while it keeps its drawing ("Counting N cells…"): a small overlay in its top-left corner
             const working = el('div', { class: 'ccnt-working', role: 'status', aria: { live: 'polite' }, hidden: true });
-            const plotArea = el('div', { class: 'ccnt-plot-area' }, plot, working, stateBox);
+            const plotArea = el('div', { class: 'ccnt-plot-area' }, working, plot, stateBox);
             // the page's painter and action registry find this plot's records and buttons by these
             plot.__azPanelId = _id;
             plot.__azCellCount = true;
