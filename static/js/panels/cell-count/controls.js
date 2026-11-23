@@ -353,7 +353,8 @@ export function createControls({ D, id, model, on }) {
     function paintArrangement(m, shownRows) {
         D.clear(arrangement);
         const ids = shownRows.arrangement;
-        arrangement.hidden = !ids.length || !m.config.split;
+        // means are never added or shared out of 100%, so a statistic is always drawn side by side: no choice to offer
+        arrangement.hidden = !ids.length || !m.config.split || (m.config.value && m.config.value.kind === 'measure');
         const now = m.config.arrangement || 'stack';
         const group = `ccnt-arr-${id}`;
         for (const a of ids) {

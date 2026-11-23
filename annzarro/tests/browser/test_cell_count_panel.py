@@ -416,3 +416,46 @@ def test_the_control_bar_is_the_one_toggle_controls_hides(page, served):
     found = page.evaluate("""async (s) => { const { controlsElementOf } = await import('/static/js/utils/controls-visibility.js');
         return controlsElementOf(document.querySelector(s + ' .tile-content')).className; }""", S)
     assert "ccnt-controls" in found
+
+
+def _bar_lefts(page):
+    """The left edge in pixels of each drawn bar of the first level, one per trace: equal when stacked, spread when side by side."""
+    return page.evaluate("""(s) => { const p = document.querySelector(s + ' .ccnt-plot');
+        return { full: p._fullLayout.barmode,
+                 lefts: [...p.querySelectorAll('.barlayer .trace')].map(t => { const b = t.querySelector('.point path');
+                     return b ? Math.round(b.getBoundingClientRect().left) : null; }) }; }""", S)
+
+
+def test_stacked_color_by_draws_stacked_bars_and_side_by_side_draws_grouped(page, served):
+    _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE, split=CONDITION)})
+    _drawn(page, "bar")
+    stacked = _bar_lefts(page)
+    assert stacked["full"] == "stack" and len(set(stacked["lefts"])) == 1, stacked
+    page.click(f"{S} .ccnt-arrangement__opt:has-text('Side by side')")
+    _drawn(page, "bar", "c.arrangement === 'dodge'")
+    assert _bar_lefts(page)["full"] == "group"
+    page.click(f"{S} .ccnt-arrangement__opt:has-text('Stacked')")
+    _drawn(page, "bar", "!c.arrangement")
+    again = _bar_lefts(page)
+    assert again["full"] == "stack" and len(set(again["lefts"])) == 1, again
+
+
+
+def test_a_statistic_is_side_by_side_and_offers_no_arrangement(page, served):
+    _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE, split=CONDITION, value={"kind": "measure"},
+                                    measure={"stat": "mean", "source": {"type": "obs", "key": "score"}})})
+    _drawn(page, "bar")
+    assert _bar_lefts(page)["full"] == "group"
+    assert not page.is_visible(f"{S} .ccnt-arrangement"), "Stacked must not be offered for bars that cannot stack"
+
+
+def test_an_unticked_level_keeps_its_name_in_the_checklist(page, served):
+    _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE)})
+    _drawn(page, "bar")
+    page.click(f"{S} [data-row='x'] .ccnt-choose")
+    names = page.eval_on_selector_all(f"{S} .ccnt-level__label", "els => els.map(e => e.textContent)")
+    page.click(f"{S} .ccnt-level:first-child input[type=checkbox]")
+    _drawn(page, "bar", "Array.isArray(c.x.levels) && c.x.levels.length === %d" % (len(names) - 1))
+    after = page.eval_on_selector_all(f"{S} .ccnt-level__label", "els => els.map(e => e.textContent)")
+    assert set(names) <= set(after), (names, after)
+    assert not [t for t in after if t.startswith(("c:", "g:"))], after
