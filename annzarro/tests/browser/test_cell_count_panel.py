@@ -21,6 +21,7 @@ Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWS
 import base64
 import json
 import os
+import re
 import time
 import urllib.parse
 
@@ -574,16 +575,162 @@ def test_a_2d_histogram_colored_by_a_level_draws_opacity_layers(page, served):
     assert _config(page)["split"] == CONDITION
 
 
-def test_a_2d_density_with_a_color_by_is_an_image_until_the_contours_are_chosen(page, served):
+def _density_traces(page):
+    return page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'heatmap' || t.type === 'contour')
+        .map(t => ({ type: t.type, coloring: t.contours && t.contours.coloring, lines: t.contours && t.contours.showlines }))""", S)
+
+
+def _layer(page, key, on):
+    box = f"{S} .ccnt-layer--{key}"
+    (page.check if on else page.uncheck)(box)
+
+
+_COMBOS = [("image",), ("lines",), ("fill",), ("image", "lines"), ("image", "fill"), ("fill", "lines"), ("image", "fill", "lines")]
+
+
+@pytest.mark.parametrize("split", [True, False])
+def test_the_layers_of_a_2d_density_toggle_in_any_combination(page, served, split):
     depth = {"source": {"type": "obs", "key": "depth"}}
     score = {"source": {"type": "obs", "key": "score"}}
-    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, split=CONDITION)})
+    extra = {"split": CONDITION} if split else {}
+    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, **extra)})
     _drawn(page, "density2d")
-    layers = _layers(page)
-    assert len(layers) == 2 and len({t["zmax"] for t in layers}) == 1
-    _shot(page, "density2d-image")
-    assert page.is_checked(f"{S} .ccnt-image")
-    page.uncheck(f"{S} .ccnt-image")
-    _drawn(page, "density2d", "c.style === 'contours'")
-    assert not _layers(page)
-    assert page.evaluate("(s) => document.querySelector(s + ' .ccnt-plot').data.filter(t => t.type === 'contour').length", S) == 2
+    n = 2 if split else 1
+    # the default: filled isolines, with lines when there is a Color by
+    assert [page.is_checked(f"{S} .ccnt-layer--{k}") for k in ("image", "lines", "fill")] == [False, split, True]
+    for combo in _COMBOS:
+        for key in ("image", "lines", "fill"):           # ticks first, so one layer is always left ticked
+            if key in combo and not page.is_checked(f"{S} .ccnt-layer--{key}"):
+                _layer(page, key, True)
+        for key in ("image", "lines", "fill"):
+            if key not in combo and page.is_checked(f"{S} .ccnt-layer--{key}"):
+                _layer(page, key, False)
+        until(page, "([s, want]) => JSON.stringify(Object.keys(window.PanelManager.getPanel('%s').getConfig().layers || {}).sort()) === JSON.stringify(want)" % CC,
+              [S, sorted(combo)])
+        traces = _density_traces(page)
+        assert sum(t["type"] == "heatmap" for t in traces) == (n if "image" in combo else 0), combo
+        assert sum(t["type"] == "contour" for t in traces) == (n if ("fill" in combo or "lines" in combo) else 0), combo
+        shot = os.environ.get("ANNZARRO_FB1D_SHOTS")
+        if shot:
+            _drawn(page, "density2d")
+            page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, f"{'split' if split else 'one'}-{'+'.join(combo)}.png"))
+    # the last layer cannot be unticked
+    for key in ("image", "lines"):
+        if page.is_checked(f"{S} .ccnt-layer--{key}"):
+            _layer(page, key, False)
+    page.click(f"{S} .ccnt-layer--fill")
+    assert page.is_checked(f"{S} .ccnt-layer--fill"), "the last layer stays ticked"
+
+
+def test_an_old_link_with_a_style_reads_as_layers(page, served):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, split=CONDITION, style="image")})
+    _drawn(page, "density2d")
+    assert [t["type"] for t in _density_traces(page)] == ["heatmap", "heatmap"]
+    assert page.is_checked(f"{S} .ccnt-layer--image") and not page.is_checked(f"{S} .ccnt-layer--fill")
+    _layer(page, "lines", True)
+    _drawn(page, "density2d", "c.layers && c.layers.lines && c.layers.image && c.style === undefined")
+
+
+
+@pytest.mark.parametrize("combo", [("image",), ("fill",), ("lines",), ("fill", "lines"), ("image", "fill")])
+def test_one_group_2d_density_layers_take_the_color_menu_settings(page, served, combo):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, layers={k: True for k in combo})})
+    _drawn(page, "density2d")
+    page.click(f"{S} .ccnt-color-btn")
+    page.select_option("[data-popover='color'] .ccnt-color-map", "Cividis")
+    _drawn(page, "density2d", "c.color && c.color.map === 'Cividis'")
+    page.check("[data-popover='color'] .ccnt-color-reverse")
+    page.fill("[data-popover='color'] .ccnt-color-min", "0.01")
+    page.press("[data-popover='color'] .ccnt-color-min", "Enter")
+    _drawn(page, "density2d", "c.color.reverse === true && c.color.min === 0.01")
+    traces = page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'heatmap' || t.type === 'contour')
+        .map(t => ({ cs: t.colorscale, rev: t.reversescale, zmin: t.zmin }))""", S)
+    assert traces and all(t["rev"] is True and t["zmin"] == 0.01 and t["cs"] != "Viridis" for t in traces), traces
+
+
+# ------------------------------------------------------------------ the Cell points layer of a 2D density
+
+def _caps(page, draw=None, load=None):
+    page.evaluate("""async ([draw, load]) => { const { Config } = await import('/static/js/config.js');
+        if (draw !== null) Config.DEFAULTS.DENSITY_POINTS_DRAW = draw;
+        if (load !== null) Config.DEFAULTS.DENSITY_POINTS_LOAD = load; }""", [draw, load])
+
+
+def _points(page):
+    return page.evaluate("""(s) => { const d = [...document.querySelector(s + ' .ccnt-plot').data];
+        const pts = d.filter(t => t.type === 'scattergl');
+        return { n: pts.reduce((m, t) => m + t.x.length, 0), traces: pts.length, types: d.map(t => t.type),
+                 size: pts.length ? pts[0].marker.size : null }; }""", S)
+
+
+def _strip(page):
+    return page.inner_text(f"{S} .ccnt-strip")
+
+
+def _points_config(split, **extra):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    return _count(mode="density2d", x=depth, y=score, **({"split": CONDITION} if split else {}), **extra)
+
+
+@pytest.mark.parametrize("split", [True, False])
+def test_the_cell_points_layer_alone_draws_the_cells_with_the_grid_hover_under_it(page, served, split):
+    _open(page, served, {CC: _points_config(split, layers={"points": True})})
+    _drawn(page, "density2d")
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot .scattergl, ' + s + ' .ccnt-plot canvas').length > 0", S)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    got = _points(page)
+    assert 0 < got["n"] <= N, got
+    assert got["types"].count("heatmap") == (2 if split else 1), "a transparent heatmap carries the hover"
+    assert re.search(r"Cells drawn as points: [\d,]+\.", _strip(page)), _strip(page)
+    shot = os.environ.get("ANNZARRO_FB1E_SHOTS")
+    if shot:
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, f"points-{'split' if split else 'one'}.png"))
+
+
+def test_the_cell_points_layer_combines_with_filled_isolines_and_takes_a_point_size(page, served):
+    _open(page, served, {CC: _points_config(True, layers={"fill": True, "lines": True, "points": True})})
+    _drawn(page, "density2d")
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot').length > 0 && /Cells drawn/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    got = _points(page)
+    assert got["n"] > 0 and got["types"].index("contour") < got["types"].index("scattergl") and "heatmap" not in got["types"], got
+    assert got["size"] == 3
+    page.fill(f"{S} .ccnt-point-size", "6")
+    page.press(f"{S} .ccnt-point-size", "Enter")
+    _drawn(page, "density2d", "c.pointSize === 6")
+    assert _points(page)["size"] == 6
+    shot = os.environ.get("ANNZARRO_FB1E_SHOTS")
+    if shot:
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, "points-fill-lines.png"))
+
+
+def test_the_cell_points_layer_draws_a_seeded_sample_above_the_cap_and_says_so(page, served):
+    _open(page, served, {CC: _points_config(True, layers={"fill": True})})
+    _drawn(page, "density2d")
+    _caps(page, draw=300)
+    page.check(f"{S} .ccnt-layer--points")
+    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    assert re.search(r"Cells drawn as points: 300 of 1,200 \(a sample\)\.", _strip(page)), _strip(page)
+    first = _points(page)
+    assert 0 < first["n"] <= 300
+    # the same cells again after a redraw: toggle the layer off and on
+    page.uncheck(f"{S} .ccnt-layer--points")
+    _drawn(page, "density2d", "!c.layers.points")
+    page.check(f"{S} .ccnt-layer--points")
+    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    assert _points(page)["n"] == first["n"]
+
+
+def test_the_cell_points_layer_is_refused_above_the_load_cap_and_for_a_source_it_cannot_load(page, served):
+    _open(page, served, {CC: _points_config(False, layers={"fill": True})})
+    _drawn(page, "density2d")
+    _caps(page, load=500)
+    page.check(f"{S} .ccnt-layer--points")
+    until(page, "(s) => /more than the 500/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    assert _points(page)["n"] == 0
+    assert "Turn on a subset" in _strip(page)
+    _caps(page, load=25_000_000)

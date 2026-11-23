@@ -5,9 +5,12 @@
  * closed, and a link, a panel set and a history entry carry it as configuration only (PER-1). The recipe is
  * utils/cell-grouping.js `normalizeGrouping`'s; the panel's configuration is its title and the recipe's fields.
  *
- * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the toolbar (Add factor, Statistics, Settings,
- * Undo), the factors (factors.js), the groups (G9c). Nothing in the panel expands: a factor's levels or binning, Statistics
- * offered and Settings open in pop-overs (ui/popover.js), so editing moves no box (FB-2 decision h). Every edit is one
+ * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the toolbar (Add factor, Settings, Undo), the
+ * factors (factors.js), the groups (G9c). Nothing in the panel expands: a factor's levels or binning and Settings open in
+ * pop-overs (ui/popover.js), so editing moves no box (FB-2 decision h). A grouping offers no statistics (decision 31): a
+ * plot lists every statistic and layer itself, and a recipe's retired `offered` and `layers` are kept as stored until the
+ * next edit drops them. Its method parameter `detect_above` stays on the recipe (decision 34; SO-7 edits it in a
+ * Methods ▾ pop-over in the toolbar). Every edit is one
  * undoable step. The panel watches its own
  * groups as a viewer (consumer kind `inspect`, so it is never counted as a user), through the page's group sources.
  *
@@ -18,8 +21,6 @@
  *   G9b  the binning control (partition-options/binning-control.js) mounts in the Edit pop-over of a binned factor.
  *   G9c  PARTS.groups: `mount(host, ctx)` draws the group grid in `.cgrp-groups`; `ctx.read()` is the panel's snapshot
  *        and `ctx.filterNoGroup` whether "in no group" is open.
- *   G9d  PARTS.statistics: the same, in `.cgrp-statistics` (a slot of the toolbar: its button opens the pop-over), with
- *        `ctx.recipe()` and `ctx.set(patch, label)` for the recipe's `offered`, `layers` and `detect_above`.
  *
  * It touches no DOM until init(): a closed grouping restored from a link or a panel set is constructed and never
  * initialized (PanelManager.registerClosedPanel), and is computed only when a dependant on screen needs it (PER-5).
@@ -52,7 +53,6 @@ import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/statu
 import { GROUP_GRID } from './cell-grouping/group-grid.js';
 import { mountBinningControl } from './partition-options/binning-control.js';
 import { usedByText } from '../utils/panel-users.js';
-import { STATISTICS_PART } from './cell-grouping/statistics.js';
 import {
     settingsSummary, thresholdProblem, separatorProblem, smallOf, separatorOf, storedSeparator, storedSmall, smallModeWord
 } from './cell-grouping/settings.js';
@@ -64,17 +64,18 @@ const PANEL_KEYS = ['id', 'title', 'controlsVisible', '_closed', 'active'];
 const NO_FEATURES = Object.freeze([]);
 /** The longest the first request waits for the parts' decisions, in ms. */
 const PREPARE_MS = 1500;
+/** Recipe fields decision 31 retired: read as stored, dropped by the next edit. */
+const RETIRED_FIELDS = Object.freeze(['offered', 'layers']);
 
 registerReferences(TYPE, groupingReferences);
 
 /**
  * The parts later steps draw into the panel: `{mount(host, ctx) -> {update(), destroy()}}` or null.
- * @type {{groups: ?Object, statistics: ?Object}}
+ * @type {{groups: ?Object}}
  */
-// export-unused-ok: G9c and G9d mount the group grid and Statistics offered here
-export const PARTS = { groups: null, statistics: null };
+// export-unused-ok: G9c mounts the group grid here
+export const PARTS = { groups: null };
 PARTS.groups = GROUP_GRID;
-PARTS.statistics = STATISTICS_PART;
 
 // ================================================================================================ the views
 
@@ -995,14 +996,25 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const before = _recipe;
             const looped = !!cycleIds(_id);
             _undo.push(label, [JSON.stringify(before)]);
-            _recipe = normalizeGrouping(next).recipe;
+            _recipe = normalizeGrouping(dropRetired(next)).recipe;
             const step = _undo.peek();
             if (step) step.closesLoop = !looped && !!cycleIds(_id);
             _message = { text: said, undo: !!said };
             changed();
         }
 
-        /** Set fields of the recipe (Settings, Statistics offered) as one step. */
+        /**
+         * The recipe of an edit without the fields decision 31 retired (`offered`, `layers`): they gate nothing any more.
+         * `detect_above` stays (decision 34). Undo brings the fields back with the rest of the recipe.
+         */
+        function dropRetired(next) {
+            if (!RETIRED_FIELDS.some((k) => k in next)) return next;
+            const out = { ...next };
+            for (const k of RETIRED_FIELDS) delete out[k];
+            return out;
+        }
+
+        /** Set fields of the recipe (Settings) as one step. */
         function setFields(patch, label) {
             const next = { ..._recipe };
             for (const [k, v] of Object.entries(patch)) { if (v === undefined) delete next[k]; else next[k] = v; }
@@ -1078,15 +1090,14 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const messageText = el('span', { class: 'cgrp-message__text' });
             const messageUndo = el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-message__undo', hidden: true, on: { click: () => undo() } }, 'Undo');
             const message = el('div', { class: 'cgrp-message', role: 'status', aria: { live: 'polite' } }, messageText, messageUndo);
-            // what Toggle Controls hides (UX 2.1): the toolbar, Add factor, Statistics, Settings and Undo; its forms are pop-overs
-            const statistics = el('span', { class: 'cgrp-statistics' });
-            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, statistics, _settings.element, undoBtn);
+            // what Toggle Controls hides (UX 2.1): the toolbar, Add factor, Settings and Undo; its forms are pop-overs
+            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, _settings.element, undoBtn);
             const groups = el('div', { class: 'cgrp-groups' });
             root.append(_status.element, empty, controls, message, _factors.listElement, groups);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
-            _dom = { root, controls, undoBtn, empty, message, messageText, messageUndo, groups, statistics,
+            _dom = { root, controls, undoBtn, empty, message, messageText, messageUndo, groups,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             showControls();
             mountParts();
@@ -1104,7 +1115,6 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const ctx = { panelId: _id, read: () => _snap, recipe: () => _recipe, set: setFields, shown, noGroup: () => !!_status && _status.isOpen(),
                 setFeatures, applied: () => _applied };
             if (PARTS.groups) _parts.push(PARTS.groups.mount(_dom.groups, ctx));
-            if (PARTS.statistics) _parts.push(PARTS.statistics.mount(_dom.statistics, ctx));
         }
 
         function onKey(e) {
@@ -1298,13 +1308,6 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             // for the steps after this one, and the tests
             getRecipe,
             addFactor,
-            /** Open Statistics offered: where a Cell-Gene Plot's "Offer other…" leads (WP-4). */
-            revealStatisticsOffered: () => {
-                if (!_dom) return;
-                // the button is in the toolbar: shown again if Toggle Controls hid it
-                if (_controlsVisible === false) { _controlsVisible = true; showControls(); }
-                for (const part of _parts) if (part && part.reveal) part.reveal();
-            },
             undo,
             _debugState
         };

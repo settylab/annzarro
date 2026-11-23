@@ -9,7 +9,7 @@ import { VOCABULARY } from '../../utils/vocabulary.js';
 import { sourceName } from '../../utils/cell-grouping.js';
 import { DEFAULT_BINS as GROUPING_DEFAULT_BINS, normalizeBinning } from '../../utils/binning.js';
 import {
-    modeReads, keptForOtherModes, binsRange, shareBasesFor, levelLabelsOf, MEASURE_STATS, splitUsed
+    modeReads, keptForOtherModes, densityLayers, binsRange, shareBasesFor, levelLabelsOf, MEASURE_STATS, splitUsed
 } from '../../utils/count-plot-model.js';
 import { PANEL_SOURCES, TABLE_SOURCE } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
@@ -412,8 +412,9 @@ export function drawOptions(config) {
         // a density's own (CNT-10): the bandwidth adjust, curves scaled by level size, a 2D density as an image
         adjust: rows.density && Number.isFinite(config.adjust) && config.adjust >= ADJUST.min && config.adjust <= ADJUST.max ? config.adjust : 1,
         scale: rows.density && config.scale === 'size' ? 'size' : 'level',
-        // a Color by is told apart by the density of each level's color, as an image, unless the contours are chosen
-        style: rows.density === 2 && (config.style === 'image' || (config.style === undefined && !!config.split)) ? 'image' : 'contours',
+        // a 2D density's layers (opacity image, isolines, filled isolines); an old link's style maps onto them
+        layers: rows.density === 2 ? densityLayers(config.layers, config.style, !!config.split) : null,
+        pointSize: Number.isFinite(config.pointSize) ? Math.min(12, Math.max(1, config.pointSize)) : 3,
         // the colour scale of a number's color (WP-6a): the map (absent is Viridis), Reverse and the fixed range
         ...(config.color && config.color.map ? { colorscale: config.color.map } : {}),
         colour: colourOf(config.color)
