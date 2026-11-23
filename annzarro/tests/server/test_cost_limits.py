@@ -416,3 +416,34 @@ def test_the_grid_measure_charge_grows_with_the_grid_cell_limit(layout, tmp_path
         lowered, _ = route.reservation(plan, gstore.N_OBS)
     assert raised - base == 3 * route._GRID_MEASURE_AT_LIMIT and lowered == base
     assert np.isfinite(base)
+
+
+# -- the browser's copy of the defaults -----------------------------------------------------------------------------
+
+def test_the_browsers_defaults_are_written_from_the_table():
+    """static/js/limits-defaults.json is what `python -m annzarro.core.cost_limits` writes; a stale copy fails here."""
+    with open(os.path.join(ROOT, cl.BROWSER_DEFAULTS), encoding="utf-8") as fh:
+        assert fh.read() == cl.browser_defaults_text(), "run: python -m annzarro.core.cost_limits"
+
+
+def test_the_browser_reads_every_limit_through_limits_js_and_keeps_no_copy():
+    """The numbers the browser used to hold of its own are gone: each is read from utils/limits.js."""
+    js = os.path.join(ROOT, "static", "js")
+    gone = {
+        "utils/cell-gene-model.js": ("MATRIX_CELLS_MAX", "GENES_PER_SECTION_MAX = "),
+        "panels/cell-gene/sections.js": ("GENES_PER_SECTION_MAX = ",),
+        "utils/cell-grouping.js": ("partitionings: 8", "levels: 2000"),
+        "utils/count-plot-model.js": ("GRID_CELLS_MAX", "512 * 512 * 8", "bins: 2000", "levels: 200,"),
+        "utils/set-plot-model.js": ("SETS_MAX = 16",),
+        "panels/cell-grouping/cell-export.js": ("CELL_EXPORT_LIMIT",),
+        "panels/cell-grouping/group-rows.js": ("LIVE_MAX_S = ",),
+        "utils/derived-sources.js": ("LIVE_MAX_S = ",),
+        "utils/bars-3d.js": ("BARS_3D_MAX = 40000",),
+        "utils/source-notices.js": ("BAR_AFTER_S = 10",),
+    }
+    for path, words in gone.items():
+        with open(os.path.join(js, path), encoding="utf-8") as fh:
+            text = fh.read()
+        assert "limits.js" in text, f"{path} does not read utils/limits.js"
+        for word in words:
+            assert word not in text, f"{path} still holds {word!r}"

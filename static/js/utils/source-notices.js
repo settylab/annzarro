@@ -1,5 +1,6 @@
 import { setStatusTag, setScoreNotice, setStatusProgress } from './panel-surface.js';
 import { VOCABULARY } from './vocabulary.js';
+import { limit, limitDefault } from './limits.js';
 
 /**
  * What a dependant of a derived source (a gene-signature score today, a cell grouping next) says in each state, and
@@ -270,8 +271,15 @@ export function worstNotice(notices) {
     return best;
 }
 
-/** A wait longer than this shows a progress bar (operator decision 21): by the server's estimate, or by the clock. */
-export const BAR_AFTER_S = 10;
+/** A wait longer than this shows a progress bar (operator decision 21), by default: by the server's estimate, or by the
+ *  clock. The value in force is limits.progress_bar_s (`barAfterS`). */
+// export-unused-ok: the default, for tests and the docs of the clock
+export const BAR_AFTER_S = limitDefault('progress_bar_s');
+
+/** Seconds of waiting after which a progress bar is shown: the server's limits.progress_bar_s (utils/limits.js). */
+export function barAfterS() {
+    return limit('progress_bar_s');
+}
 
 /** The notice states of a computation on its way, which may show a bar. */
 const ON_ITS_WAY = Object.freeze(['estimating', 'queued', 'computing', 'updating']);
@@ -296,7 +304,8 @@ export function progressBar(snap, elapsed, { byEstimate = true } = {}) {
     const p = snap.progress || null;
     const estimate = snap.estimate ? Number(snap.estimate.seconds) : NaN;
     const ran = p ? Number(p.running_s) : NaN;
-    const long = (byEstimate && Number.isFinite(estimate) && estimate > BAR_AFTER_S) || elapsed >= BAR_AFTER_S || (Number.isFinite(ran) && ran >= BAR_AFTER_S);
+    const after = barAfterS();
+    const long = (byEstimate && Number.isFinite(estimate) && estimate > after) || elapsed >= after || (Number.isFinite(ran) && ran >= after);
     if (!long) return null;
     const queue = queueOf(p);
     if (snap.state !== 'computing' && snap.state !== 'updating') return { determinate: false };

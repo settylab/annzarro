@@ -21,7 +21,7 @@
  *
  * A provider's painter id and its action provider id are the same string ('plot-score', 'table-score').
  */
-import { worstNotice, paintNotice, paintStripProgress, progressBar, BAR_AFTER_S } from './source-notices.js';
+import { worstNotice, paintNotice, paintStripProgress, progressBar, barAfterS } from './source-notices.js';
 import { actions } from './source-actions.js';
 
 /** The axes a source can be an x, y or z of; their notice may block the plot (a placeholder instead of a drawing). */
@@ -112,7 +112,8 @@ export function createPainter({ now = () => Date.now(), setTimer = (fn, ms) => s
     function armClock(host, st, waiting, t) {
         if (st.timer !== null) { clearTimer(st.timer); st.timer = null; }
         let left = Infinity;
-        for (const e of waiting) if (e.clockKey) left = Math.min(left, BAR_AFTER_S - elapsedOf(st, e, t));
+        const after = barAfterS();
+        for (const e of waiting) if (e.clockKey) left = Math.min(left, after - elapsedOf(st, e, t));
         if (!(left > 0) || left === Infinity) return;
         st.timer = setTimer(() => { st.timer = null; paintHost(host); }, Math.ceil(left * 1000) + 5);
     }

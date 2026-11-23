@@ -19,14 +19,22 @@ import { normalizeBinning, effectiveBinning, levelLabels } from './binning.js';
 import { RESERVED, parseLevelId } from './level-id.js';
 import { groupOf } from './categories.js';
 import { stableStringify } from './url-history.js';
+import { limit } from './limits.js';
 
 const P = VOCABULARY.phrase;
 
 const GROUPING_VERSION = 1;
 
-/** SHR-13: the most factors a grouping holds, and the most groups it makes (levels: SHR-6). */
+/**
+ * SHR-13: the most factors a grouping holds, and the most groups it makes (levels: SHR-6). The server's limits
+ * (limits.partitionings, limits.groups; utils/limits.js), read at each use, so a change by the administrator applies.
+ */
 // export-unused-ok: G9a disables Add factor at 8 factors and says why over 2,000 groups
-export const GROUPING_LIMITS = Object.freeze({ partitionings: 8, levels: 2000, groups: 2000 });
+export const GROUPING_LIMITS = Object.freeze({
+    get partitionings() { return limit('partitionings'); },
+    get levels() { return limit('groups'); },
+    get groups() { return limit('groups'); }
+});
 
 /** The statistic ids a grouping can offer to its consumers (plan 1.6). */
 export const STATISTIC_IDS = Object.freeze(['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);

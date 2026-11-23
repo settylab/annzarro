@@ -14,12 +14,11 @@ import { VOCABULARY } from '../../utils/vocabulary.js';
 import { csvField } from '../../utils/score-inspect.js';
 import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
 import { statisticColumn, statisticAvailability } from '../../utils/cell-gene-model.js';
+import { limit } from '../../utils/limits.js';
 
 const W = VOCABULARY.cellGene;
 /** The statistics offered when the recipe names none (UX 2.7). */
 const DEFAULT_OFFERED = Object.freeze(['mean', 'pct_expressing']);
-/** The live limit of an estimate when the server does not say (the derived sources' own). */
-const LIVE_MAX_S = 5;
 const DASH = '—';
 
 const keyText = (key) => key.join('\u0001');
@@ -129,8 +128,9 @@ export function focusColumns({ gene, recipe, kind = null }) {
 /** Whether an estimate is in the live tier: under the server's live limit, and neither asking first nor refused. */
 export function isLive(estimate) {
     if (!estimate || estimate.tier === 'confirm' || estimate.tier === 'refused') return false;
-    const limit = typeof estimate.live_max_s === 'number' ? estimate.live_max_s : LIVE_MAX_S;
-    return Number(estimate.seconds) < limit;
+    // the estimate's own limit; the server's limits.live_update_s when the reply does not say
+    const live = typeof estimate.live_max_s === 'number' ? estimate.live_max_s : limit('live_update_s');
+    return Number(estimate.seconds) < live;
 }
 
 /**

@@ -12,9 +12,8 @@
  */
 import { csvField } from '../../utils/score-inspect.js';
 import { PENDING } from '../../utils/host-binding.js';
+import { limit } from '../../utils/limits.js';
 
-/** The most cells a per-cell export is offered for (GRP-18). */
-const CELL_EXPORT_LIMIT = 1000000;
 
 /** Rows built before the page is given a turn. */
 const ROWS_PER_CHUNK = 50000;
@@ -30,7 +29,8 @@ const nextTurn = () => new Promise((resolve) => setTimeout(resolve, 0));
  * @returns {{enabled: boolean, reason: string}}
  */
 function offer({ cells, words }) {
-    return cells > CELL_EXPORT_LIMIT ? { enabled: false, reason: words.tooManyCells(CELL_EXPORT_LIMIT) } : { enabled: true, reason: '' };
+    const most = limit('cell_export_max');          // the most cells a per-cell export is offered for (GRP-18)
+    return cells > most ? { enabled: false, reason: words.tooManyCells(most) } : { enabled: true, reason: '' };
 }
 
 /**
