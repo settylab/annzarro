@@ -409,3 +409,70 @@ test("the page's painter routes the page's action registry", () => {
         HB.painter.paint(h);
     }
 });
+
+// ---------------------------------------------------------------- no release and reopen loop
+
+/** A binding whose records notify as soon as they are opened, as a real source does (the first snapshot). */
+function notifyingBinding(over = {}) {
+    const inner = fakeSources();
+    const open = (hostEl, role, setting, onChange) => {
+        const made = inner.open(hostEl, role, setting, onChange);
+        const handle = inner.handles[inner.handles.length - 1];
+        queueMicrotask(() => { if (!handle.released) handle.set({ state: 'computing', title: setting.key, key: `${setting.key}:1`, progress: { done: 1, total: 2 } }); });
+        return made;
+    };
+    return { ...binding({ open, ...over }), inner };
+}
+
+/** A load as a plot makes it: one attempt opens the record and throws while its value is pending; it gives up when it runs away. */
+function pendingLoad(b, h, key) {
+    const run = { attempts: 0 };
+    run.load = async (quiet) => {
+        if (++run.attempts > 40) throw new Error('runaway: the record was reopened over and over');
+        const rec = b.recordFor(h, 'color', { key });
+        rec.quiet = quiet;
+        throw Object.assign(new Error('pending'), { name: 'SourceUnavailable', state: rec.handle.read().state });
+    };
+    return run;
+}
+
+test('a host whose config does not hold the role releases the record once, and the waiting load ends instead of reopening it', async () => {
+    const { b, inner } = notifyingBinding({ stillUsed: () => false });
+    const h = { ...host(), _fullLayout: {}, data: [{}], querySelector: () => null };
+    const run = pendingLoad(b, h, 'G1');
+    await assert.rejects(b.loadWhenReady(run.load, { host: h, role: 'color' }), { name: 'AbortError' });
+    assert.ok(run.attempts <= 2, `attempts: ${run.attempts}`);
+    assert.equal(inner.handles.length, run.attempts, 'one handle per attempt, none reopened by the release');
+    assert.ok(inner.handles.every((x) => x.released));
+    assert.equal(b.recordsOf(h).size, 0);
+});
+
+test('a host that has gone ends the waiting load with no new record', async () => {
+    const { b, inner } = notifyingBinding();
+    const h = { ...host(), _fullLayout: {}, data: [{}], querySelector: () => null };
+    const run = pendingLoad(b, h, 'G1');
+    const waiting = b.loadWhenReady(run.load, { host: h, role: 'color' });
+    await new Promise((r) => setTimeout(r, 0));
+    h.isConnected = false;
+    inner.handles[0].set({ state: 'computing', title: 'G1', key: 'G1:2', progress: { done: 1, total: 2 } });
+    await assert.rejects(waiting, { name: 'AbortError' });
+    assert.ok(run.attempts <= 2, `attempts: ${run.attempts}`);
+    assert.equal(b.recordsOf(h).size, 0);
+});
+
+test('a setting that moves while a load waits ends that load; only the new one reads the new record', async () => {
+    const { b, inner } = notifyingBinding();
+    const h = { ...host(), _fullLayout: {}, data: [{}], querySelector: () => null };
+    const first = pendingLoad(b, h, 'G1');
+    const waiting = b.loadWhenReady(first.load, { host: h, role: 'color' });
+    await new Promise((r) => setTimeout(r, 0));
+    const second = pendingLoad(b, h, 'G2');
+    const next = b.loadWhenReady(second.load, { host: h, role: 'color' });
+    await assert.rejects(waiting, { name: 'AbortError' });
+    assert.ok(first.attempts <= 2, `the old load: ${first.attempts}`);
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(b.recordsOf(h).get('color').setting.key, 'G2');
+    b.releaseHost(h);
+    await assert.rejects(next, { name: 'AbortError' });
+    assert.ok(second.attempts <= 3, `the new load: ${second.attempts}`);
+});
