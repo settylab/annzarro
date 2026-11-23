@@ -1,6 +1,6 @@
 /**
- * The Cell-Gene Plot's Cluster ▾ and Plot Options (0.8.0 step X5; UX 3.1, 3.3, 3.4 and 7; CXG-6, CXG-10, CXG-12 to
- * CXG-14, CXG-20 to CXG-26; requirements 5.3, the scanpy extras).
+ * The Cell-Gene Plot's Cluster ▾, Color ▾ and Plot Options (0.8.0 step X5, pop-overs since WP-2; UX 3.1, 3.3, 3.4
+ * and 7; CXG-6, CXG-10, CXG-12 to CXG-14, CXG-20 to CXG-26; requirements 5.3, the scanpy extras).
  *
  * TWO HALVES.
  * - What the options SAY to the drawing, pure, so Node tests hold it: `figureExtras(config, ctx)` turns the style fields
@@ -8,18 +8,22 @@
  *   draw-annotations.js's (brackets, strips, totals, dendrograms, labels); `barSettings(config)` is the color bars'
  *   Min, Max, Center and title, which the drawing and the clustering both read (operator decision 19); `clusterOf`
  *   is the clustering's settings with scanpy's defaults (OD 16).
- * - The menus (`OPTIONS_PART`), mounted by panels/cell-gene.js in the control grid's Layout group: Cluster ▾ (UX 3.4)
- *   and Plot Options (UX 3.1), with Show as table and Download CSV (UX 7, CXG-20), both from the CSV's rows
- *   (utils/cell-gene-model.js `longRows`). Every change is one undoable step of the panel (`ctx.set(patch, label)`).
+ * - The menus (`OPTIONS_PART`), three buttons mounted by panels/cell-gene.js in the control grid's Layout group, each
+ *   opening a pop-over (ui/popover.js; design note options-ux-080 section 5): Cluster ▾ (scopes, Sort groups, Linkage,
+ *   Distance, the Ward note, the two Dendrograms), Color ▾ (map, Reverse, Min, Max, Center, Print values; in dots the
+ *   dot sizes and the % at the smallest and largest dot) and Plot Options (dots' outline, sections, labels, legends,
+ *   totals, Export with Download CSV from the CSV's rows, utils/cell-gene-model.js `longRows`; UX 7, CXG-20). A
+ *   pop-over never changes the size of the panel. Every change applies live as one undoable step of the panel
+ *   (`ctx.set(patch, label)`).
  *
- * STYLE FIELDS (plan 1.6: additive, default when absent, never frozen): `colorScale`, `limits: [min, max]`, `center`,
+ * STYLE FIELDS (plan 1.6: additive, default when absent, never frozen): `colorScale`, `reverse`, `limits: [min, max]`, `center`,
  * `printValues`, `dotSizes: [smallest, largest]` (px), `dotMin`, `dotMax` (% at the smallest and largest dot), `gap`
  * (0 to 3 cells), `sectionTitles`, `labels: {genes, groups}`, `titles: {plot, color, size}`, `legend: {colorBar,
- * sizeLegend, strips}`, `totals`, `sortGroups`, and `cluster.dendrograms` beside the frozen cluster fields. A field at
- * its default is written as absent, so links stay short.
+ * sizeLegend, strips}`, `totals`, `sortGroups`, and `cluster.dendrograms: {genes, groups}` beside the frozen cluster
+ * fields (a stored `true` or `false` reads as both). A field at its default is written as absent, so links stay short.
  *
  * COST. The menus repaint from the configuration and the drawing the panel last made; a repaint walks no gene, cell or
- * group. The table is built when it is shown and again only when the drawing changes.
+ * group. The CSV is built only when it is downloaded.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { Config } from '../../config.js';
@@ -28,14 +32,13 @@ import { defaultLabelMaps, sourceName } from '../../utils/cell-grouping.js';
 import { RESERVED } from '../../utils/level-id.js';
 import { GAP_COLOUR } from '../../utils/plot-theme.js';
 import { MAX_ROWS } from '../../utils/hclust.js';
-import { longRows, longCsv } from '../../utils/cell-gene-model.js';
+import { longCsv } from '../../utils/cell-gene-model.js';
 import { generateDiscreteColors } from '../plot-utilities/colors.js';
-import { tableView, tableElement } from '../cell-count/table-view.js';
+import { createPopover } from '../../ui/popover.js';
 import { dendrogramBlocks } from './draw-annotations.js';
 import { needsThreshold } from './sections.js';
 
 const WO = VOCABULARY.cellGene.options;
-const TABLE = VOCABULARY.table;
 
 const SCALES = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Viridis']);
 const DEFAULT_SCALE = 'Reds';
@@ -46,7 +49,8 @@ const OUTLINE_MAX = 3;
 const DEFAULT_GAP = 1;
 const GAP_MAX = 3;
 const DOT_PX = Object.freeze({ min: 1, max: 40, smallest: 3, largest: 20 });
-const DEFAULT_CLUSTER = Object.freeze({ genes: 'off', groups: 'off', linkage: 'complete', distance: 'correlation', dendrograms: true });
+const DEFAULT_CLUSTER = Object.freeze({ genes: 'off', groups: 'off', linkage: 'complete', distance: 'correlation',
+    dendrograms: Object.freeze({ genes: true, groups: true }) });
 const GENE_SCOPES = Object.freeze(['off', 'sections']);
 const GROUP_SCOPES = Object.freeze(['off', 'all', 'first']);
 const LINKAGES = Object.freeze(['complete', 'average', 'ward']);
@@ -63,16 +67,18 @@ const pick = (v, list, dflt) => (list.includes(v) ? v : dflt);
  * The clustering's settings: the stored ones, scanpy's defaults where absent (complete linkage, Pearson correlation,
  * OD 16), and Ward only with Euclidean distance (CXG-21).
  * @param {Object} config - the plot's configuration
- * @returns {{genes: string, groups: string, linkage: string, distance: string, dendrograms: boolean}}
+ * Dendrograms are two switches, genes and groups (WP-2); a stored `true` or `false` (before 0.8.0) reads as both.
+ * @returns {{genes: string, groups: string, linkage: string, distance: string, dendrograms: {genes: boolean, groups: boolean}}}
  */
 function clusterOf(config) {
     const c = isObject(config && config.cluster) ? config.cluster : {};
+    const d = c.dendrograms;
     const out = {
         genes: pick(c.genes, GENE_SCOPES, DEFAULT_CLUSTER.genes),
         groups: pick(c.groups, GROUP_SCOPES, DEFAULT_CLUSTER.groups),
         linkage: pick(c.linkage, LINKAGES, DEFAULT_CLUSTER.linkage),
         distance: pick(c.distance, DISTANCES, DEFAULT_CLUSTER.distance),
-        dendrograms: c.dendrograms !== false
+        dendrograms: isObject(d) ? { genes: d.genes !== false, groups: d.groups !== false } : { genes: d !== false, groups: d !== false }
     };
     if (out.linkage === 'ward') out.distance = 'euclidean';
     return out;
@@ -101,6 +107,7 @@ function styleOf(config) {
     const o = isObject(c.outline) ? c.outline : {};
     return {
         colorScale, gap, center, picked,
+        reverse: c.reverse === true,
         outline: {
             color: typeof o.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(o.color) ? o.color : DEFAULT_OUTLINE.color,
             width: isNumber(o.width) ? Math.max(0, Math.min(OUTLINE_MAX, o.width)) : DEFAULT_OUTLINE.width
@@ -200,12 +207,12 @@ function groupStrips(reply, recipe, groupOrder, titleOf) {
     });
 }
 
-/** The dendrograms of the clustered blocks, when Dendrograms is on (CXG-24). */
+/** The dendrograms of the clustered blocks, each when its Dendrograms switch is on (CXG-24, WP-2). */
 function dendrogramsOf(cluster, order) {
-    if (!cluster.dendrograms || !order) return {};
+    if (!order) return {};
     const out = {};
-    if (cluster.genes !== 'off' && order.rowBlocks && order.rowBlocks.length) out.genes = dendrogramBlocks(order.rowBlocks, order.rows);
-    if (cluster.groups !== 'off' && order.groupBlocks && order.groupBlocks.length) out.groups = dendrogramBlocks(order.groupBlocks, order.groups);
+    if (cluster.dendrograms.genes && cluster.genes !== 'off' && order.rowBlocks && order.rowBlocks.length) out.genes = dendrogramBlocks(order.rowBlocks, order.rows);
+    if (cluster.dendrograms.groups && cluster.groups !== 'off' && order.groupBlocks && order.groupBlocks.length) out.groups = dendrogramBlocks(order.groupBlocks, order.groups);
     return out;
 }
 
@@ -222,6 +229,7 @@ export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
     const s = styleOf(config);
     const cluster = clusterOf(config);
     const color = { colorscale: plotlyColorscale(s.colorScale) };
+    if (s.reverse) color.reversescale = true;
     if (config && config.mode === 'heatmap' && s.printValues) color.printValues = true;
     const size = {};
     if (s.dotSizes) [size.smallest, size.largest] = s.dotSizes;
@@ -248,7 +256,7 @@ export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
  * for Size in dots; a one-row section with a quantity of its own gets its own column, named with the section, filled
  * on its row only. Rows and groups in the drawn order.
  * @param {Object} model - the drawing model the panel last drew (draw.js)
- * @returns {Parameters<typeof longRows>[0]}
+ * @returns {Parameters<typeof import('../../utils/cell-gene-model.js').longRows>[0]}
  */
 // export-unused-ok: X6 compares the CSV of a link with the oracle
 export function tableOf(model) {
@@ -299,63 +307,31 @@ function clusterNotes(drawn) {
     return out;
 }
 
+
 /** A file name from the plot's title. */
 const fileName = (title) => `${String(title || 'cell-gene').replace(/[^\w.-]+/g, '_') || 'cell-gene'}.csv`;
 
+/** The fields Color ▾'s Reset clears: the map, its direction and range, and the dots' sizes. */
+const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center', 'printValues', 'dotSizes', 'dotMin', 'dotMax']);
+
 /**
- * Mount the menus.
+ * Mount the menus: three buttons in `slot`, each opening a pop-over (ui/popover.js) that is filled with the same
+ * controls on every open and repainted from the configuration on every change.
  * @param {HTMLElement} slot - the control grid's Layout slot
  * @param {{panelId: string, D: Object, config: () => Object, set: (patch: Object, label: string) => void, undo: () => boolean,
- *   drawn: () => ({model: Object, order: Object}|null), recipe: () => (Object|null), titleOf: Function, title: () => string,
- *   menuHost: HTMLElement, tableHost: HTMLElement}} ctx - `recipe` is the grouping recipe the cell axis's groups are of;
- *   the menus open in `menuHost`, the width of the control grid, and the table is drawn in `tableHost`
+ *   drawn: () => ({model: Object, order: Object}|null), recipe: () => (Object|null), titleOf: Function, title: () => string}} ctx -
+ *   `recipe` is the grouping recipe the cell axis's groups are of
  * @returns {{update: () => void, destroy: () => void}}
  */
 function mount(slot, ctx) {
-    const { el, clear } = ctx.D;
+    const { el } = ctx.D;
     const id = ctx.panelId;
-    const open = { cluster: false, options: false };
     let wardAfter = null;          // the configuration Ward's switch made, while its sentence and Undo show
-    let tableShown = false;
-    let tableFrom = null;
-    const listeners = [];
 
     const config = () => ctx.config();
     const stored = (key) => (isObject(config()[key]) ? config()[key] : {});
     const setCluster = (patch, label) => ctx.set({ cluster: { ...clusterOf(config()), ...patch } }, label);
 
-    // ---------------------------------------------------------------- Cluster ▾ (UX 3.4)
-    const clusterBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-cluster-btn',
-        aria: { expanded: 'false', controls: `cgene-cluster-${id}` }, on: { click: () => toggle('cluster') } }, WO.cluster);
-    const scopeRow = (scope, label) => el('div', { class: 'cgene-cluster-scope', role: 'radiogroup', aria: { label }, data: { scope } },
-        el('span', { class: 'cgene-field__label', text: label }));
-    const genesRow = scopeRow('genes', WO.clusterGenes);
-    const groupsRow = scopeRow('groups', WO.clusterGroups);
-    const summary = el('p', { class: 'cgene-cluster-summary cgene-help' });
-    const clusterMenu = el('div', { class: 'cgene-cluster-menu cgene-menu', id: `cgene-cluster-${id}`, role: 'group', aria: { label: WO.heading.clustering },
-        hidden: true }, genesRow, groupsRow, summary);
-    const note = el('div', { class: 'cgene-cluster-note cgene-help', role: 'status', aria: { live: 'polite' } });
-
-    /** A scope's radios, made again only when its entries change (a factor more or less), so focus stays put. */
-    function radios(row, scope, entries, value) {
-        const sig = JSON.stringify(entries);
-        if (row.dataset.entries !== sig) {
-            row.dataset.entries = sig;
-            const name = `cgene-cluster-${scope}-${id}`;
-            while (row.childNodes.length > 1) row.removeChild(row.lastChild);
-            for (const [v, label] of entries) {
-                row.appendChild(el('label', { class: 'cgene-radio' },
-                    el('input', { type: 'radio', name, value: v,
-                        on: { change: (e) => { if (e.target.checked) setCluster({ [scope]: v }, `cluster ${scope} ${label.toLowerCase()}`); } } }),
-                    ` ${label}`));
-            }
-        }
-        for (const input of row.querySelectorAll('input')) input.checked = input.value === value;
-    }
-
-    // ---------------------------------------------------------------- Plot Options (UX 3.1)
-    const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-options-btn',
-        aria: { expanded: 'false', controls: `cgene-options-${id}` }, on: { click: () => toggle('options') } }, WO.plotOptions);
     const controls = {};
     const field = (label, control) => el('label', { class: 'cgene-field' }, el('span', { class: 'cgene-field__label', text: label }), control);
     const check = (name, label, onChange) => {
@@ -398,8 +374,72 @@ function mount(slot, ctx) {
     };
     const flat = (key, value, dflt, label) => ctx.set({ [key]: value === dflt ? undefined : value }, label);
     const onOff = (on, label) => `${on ? '' : 'no '}${label.toLowerCase()}`;
+    const button = (cls, label) => el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary ${cls}` }, label);
 
-    // Dots
+    // ---------------------------------------------------------------- Cluster ▾ (UX 3.4; WP-2: the clustering's every field)
+    const clusterBtn = button('cgene-cluster-btn', WO.cluster);
+    const scopeRow = (scope, label) => el('div', { class: 'cgene-cluster-scope', role: 'radiogroup', aria: { label }, data: { scope } },
+        el('span', { class: 'cgene-field__label', text: label }));
+    const genesRow = scopeRow('genes', WO.clusterGenes);
+    const groupsRow = scopeRow('groups', WO.clusterGroups);
+    const sortGroups = check('sortGroups', WO.sortGroups, (on) => flat('sortGroups', on, false, onOff(on, WO.sortGroups)));
+    sortGroups.classList.add('cgene-sort-groups');
+    const summary = el('p', { class: 'cgene-cluster-summary cgene-help' });
+    const wardText = el('span', { class: 'cgene-ward-note__text', text: WO.wardSwitched });
+    const wardUndo = el('button', { type: 'button', class: 'btn btn-sm btn-link cgene-ward-undo', on: { click: () => { wardAfter = null; ctx.undo(); } } }, WO.undo);
+    const wardNote = el('div', { class: 'cgene-ward-note cgene-help', role: 'status', hidden: true }, wardText, ' ', wardUndo);
+    const dendroRow = el('div', { class: 'cgene-dendrograms', role: 'group', aria: { label: WO.dendrograms } },
+        el('span', { class: 'cgene-field__label', text: WO.dendrograms }),
+        check('dendroGenes', WO.dendrogramGenes, (on) => setCluster({ dendrograms: { ...clusterOf(config()).dendrograms, genes: on } },
+            onOff(on, `${WO.dendrogramGenes} ${WO.dendrograms}`))),
+        check('dendroGroups', WO.dendrogramGroups, (on) => setCluster({ dendrograms: { ...clusterOf(config()).dendrograms, groups: on } },
+            onOff(on, `${WO.dendrogramGroups} ${WO.dendrograms}`))));
+    const clusterBody = el('div', { class: 'cgene-pop cgene-cluster-menu', role: 'group', aria: { label: WO.heading.clustering } },
+        genesRow, groupsRow, sortGroups,
+        select('linkage', WO.linkageLabel, LINKAGES.map((l) => [l, WO.linkage[l]]), setLinkage),
+        select('distance', WO.distanceLabel, DISTANCES.map((d) => [d, WO.distance[d]]),
+            (v) => setCluster({ distance: v }, `distance ${WO.distance[v]}`)),
+        wardNote, summary, dendroRow);
+    const note = el('div', { class: 'cgene-cluster-note cgene-help', role: 'status', aria: { live: 'polite' } });
+
+    /** A scope's radios, made again only when its entries change (a factor more or less), so focus stays put. */
+    function radios(row, scope, entries, value) {
+        const sig = JSON.stringify(entries);
+        if (row.dataset.entries !== sig) {
+            row.dataset.entries = sig;
+            const name = `cgene-cluster-${scope}-${id}`;
+            while (row.childNodes.length > 1) row.removeChild(row.lastChild);
+            for (const [v, label] of entries) {
+                row.appendChild(el('label', { class: 'cgene-radio' },
+                    el('input', { type: 'radio', name, value: v,
+                        on: { change: (e) => { if (e.target.checked) setCluster({ [scope]: v }, `cluster ${scope} ${label.toLowerCase()}`); } } }),
+                    ` ${label}`));
+            }
+        }
+        for (const input of row.querySelectorAll('input')) input.checked = input.value === value;
+    }
+
+    function setLinkage(v) {
+        const c = clusterOf(config());
+        if (v === 'ward' && c.distance !== 'euclidean') {
+            // Q2: Ward needs Euclidean distance; the switch is made, said, and undone in one step
+            setCluster({ linkage: 'ward', distance: 'euclidean' }, `linkage ${WO.linkageName.ward}, distance ${WO.distance.euclidean}`);
+            wardAfter = JSON.stringify(config());
+            paint();
+            return;
+        }
+        setCluster({ linkage: v }, `linkage ${WO.linkageName[v]}`);
+    }
+
+    // ---------------------------------------------------------------- Color ▾ (WP-2, decision g: how the values are shown)
+    const colorBtn = button('cgene-color-btn', WO.colorMenu);
+    const scalingNote = el('p', { class: 'cgene-scaling-note cgene-help' });
+    const limit = (k) => (v) => {
+        const now = Array.isArray(config().limits) ? [...config().limits] : [null, null];
+        now[k] = v;
+        ctx.set({ limits: isNumber(now[0]) || isNumber(now[1]) ? [isNumber(now[0]) ? now[0] : null, isNumber(now[1]) ? now[1] : null] : undefined },
+            k === 0 ? 'color minimum' : 'color maximum');
+    };
     const dotRow = el('div', { class: 'cgene-dot-range', role: 'group', aria: { label: WO.dotSizes } },
         el('span', { class: 'cgene-field__label', text: WO.dotSizes }));
     const dotEnd = (name, which) => {
@@ -417,137 +457,69 @@ function mount(slot, ctx) {
         const plain = !range || (range[0] === DOT_PX.smallest && range[1] === DOT_PX.largest);
         ctx.set({ dotSizes: plain ? undefined : range }, 'dot sizes');
     }
+    const dotSizes = section(WO.heading.dots, dotRow,
+        number('dotMin', WO.dotMin, (v) => flat('dotMin', v, null, 'percent at the smallest dot'), { min: 0, max: 100, step: 'any' }),
+        number('dotMax', WO.dotMax, (v) => flat('dotMax', v, null, 'percent at the largest dot'), { min: 0, max: 100, step: 'any' }));
+    const resetColor = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-color-reset', title: WO.resetColorHelp,
+        on: { click: () => ctx.set(Object.fromEntries(COLOR_FIELDS.map((k) => [k, undefined])), 'reset colors') } }, WO.resetColor);
+    const colorBody = el('div', { class: 'cgene-pop cgene-color-menu' },
+        section(WO.heading.colors,
+            select('colorScale', WO.colorScale, SCALES.map((s) => [s, scaleOptionLabel(s)]),
+                (v) => flat('colorScale', v, Z_SCALINGS.includes(config().scale) ? null : DEFAULT_SCALE, `color scale ${v}`)),
+            check('reverse', WO.reverse, (on) => flat('reverse', on, false, onOff(on, `${WO.reverse} colors`))),
+            number('min', WO.min, limit(0), { step: 'any' }),
+            number('max', WO.max, limit(1), { step: 'any' }),
+            number('center', WO.center, (v) => flat('center', v, null, 'color center'), { step: 'any', title: WO.centerDiverging }),
+            check('printValues', WO.printValues, (on) => flat('printValues', on, false, onOff(on, WO.printValues))),
+            scalingNote),
+        dotSizes,
+        el('div', { class: 'cgene-pop__foot' }, resetColor));
+
+    // ---------------------------------------------------------------- Plot Options (UX 3.1; no clustering field since WP-2)
+    const optionsBtn = button('cgene-options-btn', WO.plotOptions);
     const sizeThreshold = number('sizeThreshold', WO.sizeThreshold, (v) => ctx.set(withSizeThreshold(config(), v), 'size threshold'),
         { step: 'any', placeholder: WO.sameAsColor });
     const outlineInput = el('input', { type: 'color', class: 'form-control form-control-sm form-control-color', data: { option: 'outlineColor' }, aria: { label: WO.outlineColor },
         on: { change: (e) => nested('outline', 'color', e.target.value, DEFAULT_OUTLINE.color, 'dot outline color') } });
     controls.outlineColor = outlineInput;
-    const outlineColor = field(WO.outlineColor, outlineInput);
-    const dots = section(WO.heading.dots, dotRow,
-        number('dotMin', WO.dotMin, (v) => flat('dotMin', v, null, 'percent at the smallest dot'), { min: 0, max: 100, step: 'any' }),
-        number('dotMax', WO.dotMax, (v) => flat('dotMax', v, null, 'percent at the largest dot'), { min: 0, max: 100, step: 'any' }),
+    const dots = section(WO.heading.dots,
         sizeThreshold,
-        outlineColor,
+        field(WO.outlineColor, outlineInput),
         number('outlineWidth', WO.outlineWidth, (v) => nested('outline', 'width', v === null ? DEFAULT_OUTLINE.width : Math.max(0, Math.min(OUTLINE_MAX, v)), DEFAULT_OUTLINE.width, 'dot outline width'),
             { min: 0, max: OUTLINE_MAX, step: 0.25 }));
-
-    // Colors
-    const scalingNote = el('p', { class: 'cgene-scaling-note cgene-help' });
-    const limit = (k) => (v) => {
-        const now = Array.isArray(config().limits) ? [...config().limits] : [null, null];
-        now[k] = v;
-        ctx.set({ limits: isNumber(now[0]) || isNumber(now[1]) ? [isNumber(now[0]) ? now[0] : null, isNumber(now[1]) ? now[1] : null] : undefined },
-            k === 0 ? 'color minimum' : 'color maximum');
-    };
-    const colors = section(WO.heading.colors,
-        select('colorScale', WO.colorScale, SCALES.map((s) => [s, scaleOptionLabel(s)]), (v) => flat('colorScale', v, Z_SCALINGS.includes(config().scale) ? null : DEFAULT_SCALE, `color scale ${v}`)),
-        number('min', WO.min, limit(0), { step: 'any' }),
-        number('max', WO.max, limit(1), { step: 'any' }),
-        number('center', WO.center, (v) => flat('center', v, null, 'color center'), { step: 'any', title: WO.centerDiverging }),
-        check('printValues', WO.printValues, (on) => flat('printValues', on, false, onOff(on, WO.printValues))),
-        scalingNote);
-
-    // Sections
-    const sections = section(WO.heading.sections,
-        number('gap', `${WO.gap} (${WO.gapUnit})`, (v) => flat('gap', v === null ? DEFAULT_GAP : Math.round(Math.max(0, Math.min(GAP_MAX, v))), DEFAULT_GAP, 'gap between sections'),
-            { min: 0, max: GAP_MAX, step: 1 }),
-        check('sectionTitles', WO.sectionTitles, (on) => flat('sectionTitles', on, true, onOff(on, WO.sectionTitles))));
-
-    // Labels
-    const labels = section(WO.heading.labels,
-        check('geneLabels', WO.geneLabels, (on) => nested('labels', 'genes', on, true, onOff(on, WO.geneLabels))),
-        check('groupLabels', WO.groupLabels, (on) => nested('labels', 'groups', on, true, onOff(on, WO.groupLabels))),
-        words('plotTitle', WO.plotTitle, (v) => nested('titles', 'plot', v, '', 'plot title')),
-        words('colorTitle', WO.colorTitle, (v) => nested('titles', 'color', v, '', 'color bar title')),
-        words('sizeTitle', WO.sizeTitle, (v) => nested('titles', 'size', v, '', 'size legend title')));
-
-    // Clustering
-    const wardText = el('span', { class: 'cgene-ward-note__text', text: WO.wardSwitched });
-    const wardUndo = el('button', { type: 'button', class: 'btn btn-sm btn-link cgene-ward-undo', on: { click: () => { wardAfter = null; ctx.undo(); } } }, WO.undo);
-    const wardNote = el('div', { class: 'cgene-ward-note cgene-help', role: 'status', hidden: true }, wardText, ' ', wardUndo);
-    const clustering = section(WO.heading.clustering,
-        select('linkage', WO.linkageLabel, LINKAGES.map((l) => [l, WO.linkage[l]]), setLinkage),
-        select('distance', WO.distanceLabel, DISTANCES.map((d) => [d, WO.distance[d]]),
-            (v) => setCluster({ distance: v }, `distance ${WO.distance[v]}`)),
-        wardNote,
-        check('dendrograms', WO.dendrograms, (on) => setCluster({ dendrograms: on }, onOff(on, WO.dendrograms))));
-
-    function setLinkage(v) {
-        const c = clusterOf(config());
-        if (v === 'ward' && c.distance !== 'euclidean') {
-            // Q2: Ward needs Euclidean distance; the switch is made, said, and undone in one step
-            setCluster({ linkage: 'ward', distance: 'euclidean' }, `linkage ${WO.linkageName.ward}, distance ${WO.distance.euclidean}`);
-            wardAfter = JSON.stringify(config());
-            paint();
-            return;
-        }
-        setCluster({ linkage: v }, `linkage ${WO.linkageName[v]}`);
-    }
-
-    // Legend, Totals
-    const legend = section(WO.heading.legend,
-        check('colorBar', WO.colorBar, (on) => nested('legend', 'colorBar', on, true, onOff(on, WO.colorBar))),
-        check('sizeLegend', WO.sizeLegend, (on) => nested('legend', 'sizeLegend', on, true, onOff(on, WO.sizeLegend))),
-        check('strips', WO.strips, (on) => nested('legend', 'strips', on, true, onOff(on, WO.strips))));
-    const totals = section(WO.heading.totals,
-        check('totals', WO.totals, (on) => flat('totals', on, false, onOff(on, WO.totals))),
-        check('sortGroups', WO.sortGroups, (on) => flat('sortGroups', on, false, onOff(on, WO.sortGroups))));
-
-    // Show as table and Download CSV (UX 7, CXG-20)
-    const tableBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-table-btn', aria: { expanded: 'false' },
-        on: { click: () => { tableShown = !tableShown; paintTable(); } } }, TABLE.show);
     const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-csv-btn', on: { click: downloadCsv } }, WO.csv);
-    const box = el('div', { class: 'cgene-options cgene-menu', id: `cgene-options-${id}`, role: 'group', aria: { label: WO.plotOptions }, hidden: true },
-        dots, colors, sections, labels, clustering, legend, totals, el('div', { class: 'cgene-options__foot' }, tableBtn, csvBtn));
+    const optionsBody = el('div', { class: 'cgene-pop cgene-options' },
+        dots,
+        section(WO.heading.sections,
+            number('gap', `${WO.gap} (${WO.gapUnit})`, (v) => flat('gap', v === null ? DEFAULT_GAP : Math.round(Math.max(0, Math.min(GAP_MAX, v))), DEFAULT_GAP, 'gap between sections'),
+                { min: 0, max: GAP_MAX, step: 1 }),
+            check('sectionTitles', WO.sectionTitles, (on) => flat('sectionTitles', on, true, onOff(on, WO.sectionTitles)))),
+        section(WO.heading.labels,
+            check('geneLabels', WO.geneLabels, (on) => nested('labels', 'genes', on, true, onOff(on, WO.geneLabels))),
+            check('groupLabels', WO.groupLabels, (on) => nested('labels', 'groups', on, true, onOff(on, WO.groupLabels))),
+            words('plotTitle', WO.plotTitle, (v) => nested('titles', 'plot', v, '', 'plot title')),
+            words('colorTitle', WO.colorTitle, (v) => nested('titles', 'color', v, '', 'color bar title')),
+            words('sizeTitle', WO.sizeTitle, (v) => nested('titles', 'size', v, '', 'size legend title'))),
+        section(WO.heading.legend,
+            check('colorBar', WO.colorBar, (on) => nested('legend', 'colorBar', on, true, onOff(on, WO.colorBar))),
+            check('sizeLegend', WO.sizeLegend, (on) => nested('legend', 'sizeLegend', on, true, onOff(on, WO.sizeLegend))),
+            check('strips', WO.strips, (on) => nested('legend', 'strips', on, true, onOff(on, WO.strips)))),
+        section(WO.heading.totals,
+            check('totals', WO.totals, (on) => flat('totals', on, false, onOff(on, WO.totals)))),
+        el('fieldset', { class: 'cgene-options__section cgene-export' }, el('legend', { text: WO.exportHeading }), csvBtn));
 
-    slot.append(clusterBtn, optionsBtn, note);
-    ctx.menuHost.append(clusterMenu, box);
+    slot.append(clusterBtn, colorBtn, optionsBtn, note);
 
-    // ---------------------------------------------------------------- open and close
-    function toggle(which) {
-        const was = open[which];
-        open.cluster = false;
-        open.options = false;
-        open[which] = !was;
-        paint();
-        const menu = which === 'cluster' ? clusterMenu : box;
-        if (open[which]) { const first = menu.querySelector('input, select, button'); if (first) first.focus(); }
-    }
-    function closeAll() {
-        if (!open.cluster && !open.options) return;
-        open.cluster = false;
-        open.options = false;
-        paint();
-    }
-    const onKey = (e) => {
-        if (e.key !== 'Escape' || (!open.cluster && !open.options)) return;
-        const btn = open.cluster ? clusterBtn : optionsBtn;
-        closeAll();
-        btn.focus();
-        e.stopPropagation();
-    };
-    for (const host of [slot, ctx.menuHost]) {
-        host.addEventListener('keydown', onKey);
-        listeners.push(() => host.removeEventListener('keydown', onKey));
-    }
-
-    // ---------------------------------------------------------------- the table
-    function paintTable() {
-        const drawn = ctx.drawn();
-        const on = tableShown && !!drawn;
-        tableBtn.textContent = on ? TABLE.hide : TABLE.show;
-        tableBtn.setAttribute('aria-expanded', String(on));
-        ctx.tableHost.hidden = !on;
-        if (!on) {
-            if (tableFrom) clear(ctx.tableHost);
-            tableFrom = null;
-            return;
-        }
-        if (tableFrom === drawn.model) return;
-        tableFrom = drawn.model;
-        clear(ctx.tableHost);
-        ctx.tableHost.appendChild(tableElement(ctx.D, tableView(longRows(tableOf(drawn.model))), ctx.title()));
-    }
+    // ---------------------------------------------------------------- the pop-overs (ui/popover.js)
+    const popover = (anchor, name, title, body) => createPopover({
+        anchor, name, title,
+        render: (host) => { host.appendChild(body); paint(); }
+    });
+    const pops = [
+        popover(clusterBtn, 'cluster', WO.popoverTitle.cluster, clusterBody),
+        popover(colorBtn, 'color', WO.popoverTitle.color, colorBody),
+        popover(optionsBtn, 'plot-options', WO.popoverTitle.plotOptions, optionsBody)
+    ];
 
     function downloadCsv() {
         const drawn = ctx.drawn();
@@ -573,26 +545,27 @@ function mount(slot, ctx) {
         const factors = recipe && Array.isArray(recipe.partitionings) ? recipe.partitionings.map((p) => sourceName(p.source, ctx.titleOf)) : [];
         const dotsMode = c.mode !== 'heatmap';
 
-        clusterBtn.setAttribute('aria-expanded', String(open.cluster));
-        clusterMenu.hidden = !open.cluster;
+        // Cluster ▾
         radios(genesRow, 'genes', [['off', WO.off], ['sections', WO.withinSections]], cl.genes);
         radios(groupsRow, 'groups', [['off', WO.off], ['all', WO.all], ...(factors.length >= 2 ? [['first', WO.within(factors[0])]] : [])],
             cl.groups === 'first' && factors.length < 2 ? 'off' : cl.groups);
+        controls.sortGroups.checked = s.sortGroups;
+        // sorting by size is the order of groups that are not clustered
+        sortGroups.hidden = cl.groups !== 'off';
         summary.textContent = WO.summary(WO.linkageName[cl.linkage], WO.distance[cl.distance]);
+        controls.linkage.value = cl.linkage;
+        controls.distance.value = cl.distance;
+        const corr = controls.distance.querySelector('option[value="correlation"]');
+        corr.disabled = cl.linkage === 'ward';
+        if (corr.disabled) corr.title = WO.wardOnly; else corr.removeAttribute('title');
+        if (wardAfter !== null && wardAfter !== JSON.stringify(c)) wardAfter = null;
+        wardNote.hidden = wardAfter === null;
+        controls.dendroGenes.checked = cl.dendrograms.genes;
+        controls.dendroGroups.checked = cl.dendrograms.groups;
 
-        optionsBtn.setAttribute('aria-expanded', String(open.options));
-        box.hidden = !open.options;
-        dots.hidden = !dotsMode;
-        const range = s.dotSizes || [DOT_PX.smallest, DOT_PX.largest];
-        setValue(controls.dotSmallest, range[0]);
-        setValue(controls.dotLargest, range[1]);
-        setValue(controls.dotMin, s.dotMin);
-        setValue(controls.dotMax, s.dotMax);
-        sizeThreshold.hidden = !(c.size && needsThreshold(c.size.stat));
-        setValue(controls.sizeThreshold, c.size && isNumber(c.size.detect_above) ? c.size.detect_above : null);
+        // Color ▾
         controls.colorScale.value = s.colorScale;
-        controls.outlineColor.value = s.outline.color.length === 4 ? `#${[...s.outline.color.slice(1)].map((h) => h + h).join('')}` : s.outline.color.slice(0, 7);
-        setValue(controls.outlineWidth, s.outline.width);
+        controls.reverse.checked = s.reverse;
         const limits = Array.isArray(c.limits) ? c.limits : [];
         setValue(controls.min, isNumber(limits[0]) ? limits[0] : null);
         setValue(controls.max, isNumber(limits[1]) ? limits[1] : null);
@@ -602,6 +575,20 @@ function mount(slot, ctx) {
         controls.printValues.closest('label').hidden = dotsMode;
         scalingNote.textContent = scalingNotes(c).join(' ');
         scalingNote.hidden = !scalingNote.textContent;
+        dotSizes.hidden = !dotsMode;
+        const range = s.dotSizes || [DOT_PX.smallest, DOT_PX.largest];
+        setValue(controls.dotSmallest, range[0]);
+        setValue(controls.dotLargest, range[1]);
+        setValue(controls.dotMin, s.dotMin);
+        setValue(controls.dotMax, s.dotMax);
+        resetColor.disabled = !COLOR_FIELDS.some((k) => c[k] !== undefined);
+
+        // Plot Options
+        dots.hidden = !dotsMode;
+        sizeThreshold.hidden = !(c.size && needsThreshold(c.size.stat));
+        setValue(controls.sizeThreshold, c.size && isNumber(c.size.detect_above) ? c.size.detect_above : null);
+        controls.outlineColor.value = s.outline.color.length === 4 ? `#${[...s.outline.color.slice(1)].map((h) => h + h).join('')}` : s.outline.color.slice(0, 7);
+        setValue(controls.outlineWidth, s.outline.width);
         setValue(controls.gap, s.gap);
         controls.sectionTitles.checked = s.sectionTitles;
         controls.geneLabels.checked = s.labels.genes;
@@ -610,35 +597,23 @@ function mount(slot, ctx) {
         setValue(controls.colorTitle, s.titles.color);
         setValue(controls.sizeTitle, s.titles.size);
         controls.sizeTitle.closest('label').hidden = !dotsMode;
-        controls.linkage.value = cl.linkage;
-        controls.distance.value = cl.distance;
-        const corr = controls.distance.querySelector('option[value="correlation"]');
-        corr.disabled = cl.linkage === 'ward';
-        if (corr.disabled) corr.title = WO.wardOnly; else corr.removeAttribute('title');
-        if (wardAfter !== null && wardAfter !== JSON.stringify(c)) wardAfter = null;
-        wardNote.hidden = wardAfter === null;
-        controls.dendrograms.checked = cl.dendrograms;
         controls.colorBar.checked = s.legend.colorBar;
         controls.sizeLegend.checked = s.legend.sizeLegend;
         controls.sizeLegend.closest('label').hidden = !dotsMode;
         controls.strips.checked = s.legend.strips;
         controls.totals.checked = s.totals;
-        controls.sortGroups.checked = s.sortGroups;
 
         const drawn = ctx.drawn();
         csvBtn.disabled = !drawn;
-        tableBtn.disabled = !drawn;
         note.textContent = clusterNotes(drawn).join(' ');
-        paintTable();
     }
 
     paint();
     return {
         update: paint,
         destroy() {
-            for (const stop of listeners.splice(0)) stop();
+            for (const pop of pops.splice(0)) pop.destroy();
             slot.textContent = '';
-            ctx.menuHost.textContent = '';
         }
     };
 }
