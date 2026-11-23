@@ -654,3 +654,9 @@ function mount(host, ctx) {
     return { destroy() { destroyed = true; } };
 }
 BINNING_SLOT.mount = mount;
+/**
+ * The control, for a host that does not go through the slot: any element that stays in the page while the control is
+ * drawn (a card, a pop-over's body). It reads and writes nothing outside `host` and `ctx`; the Cell Grouping panel mounts
+ * it in the body of a factor's Edit pop-over, the count plot through the slot in its own row.
+ */
+export { mount as mountBinningControl };

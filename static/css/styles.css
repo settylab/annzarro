@@ -1494,7 +1494,8 @@ button.dtsb-button.dtsb-clear:hover {
 
 /* Scores offered: what the signature offers plots and tables, and how each option is computed */
 .gsig-scoring { border-top: 1px solid var(--az-border); margin-top: 2px; padding-top: 2px; }
-.gsig-scoring__toggle { display: flex; align-items: baseline; gap: 4px; width: 100%; border: 0; background: none;
+/* in a pop-over host (Cell Grouping's Statistics) the toggle is a plain .btn instead */
+.gsig-scoring__toggle:not(.gsig-scoring__toggle--pop) { display: flex; align-items: baseline; gap: 4px; width: 100%; border: 0; background: none;
     padding: 2px 0; text-align: left; color: inherit; font-size: 0.8125rem; }
 .gsig-scoring__toggle:focus-visible { outline: 2px solid var(--az-link); outline-offset: 1px; }
 .gsig-scoring__label { font-weight: 600; flex: 0 0 auto; }

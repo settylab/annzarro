@@ -5,24 +5,27 @@
  * closed, and a link, a panel set and a history entry carry it as configuration only (PER-1). The recipe is
  * utils/cell-grouping.js `normalizeGrouping`'s; the panel's configuration is its title and the recipe's fields.
  *
- * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the factors (factors.js), the groups
- * (G9c), Statistics offered (G9d), Settings (settings.js). Every edit is one undoable step. The panel watches its own
+ * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the toolbar (Add factor, Statistics, Settings,
+ * Undo), the factors (factors.js), the groups (G9c). Nothing in the panel expands: a factor's levels or binning, Statistics
+ * offered and Settings open in pop-overs (ui/popover.js), so editing moves no box (FB-2 decision h). Every edit is one
+ * undoable step. The panel watches its own
  * groups as a viewer (consumer kind `inspect`, so it is never counted as a user), through the page's group sources.
  *
  * THE PAGE'S GROUP SOURCES are utils/group-host.js `groupSources()`: one group store and one set of group sources for
  * the page, shared with every other consumer of groups.
  *
  * SEAMS for the steps after this one:
- *   G9b  factors.js BINNING_SLOT: the binning control mounts in a binned card.
+ *   G9b  the binning control (partition-options/binning-control.js) mounts in the Edit pop-over of a binned factor.
  *   G9c  PARTS.groups: `mount(host, ctx)` draws the group grid in `.cgrp-groups`; `ctx.read()` is the panel's snapshot
  *        and `ctx.filterNoGroup` whether "in no group" is open.
- *   G9d  PARTS.statistics: the same, in `.cgrp-statistics`, with `ctx.recipe()` and `ctx.set(patch, label)` for the
- *        recipe's `offered`, `layers` and `detect_above`.
+ *   G9d  PARTS.statistics: the same, in `.cgrp-statistics` (a slot of the toolbar: its button opens the pop-over), with
+ *        `ctx.recipe()` and `ctx.set(patch, label)` for the recipe's `offered`, `layers` and `detect_above`.
  *
  * It touches no DOM until init(): a closed grouping restored from a link or a panel set is constructed and never
  * initialized (PanelManager.registerClosedPanel), and is computed only when a dependant on screen needs it (PER-5).
  */
 import { PanelManager } from '../panel-manager.js';
+import { createPopover } from '../ui/popover.js';
 import { DataManager } from '../data-manager.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
@@ -42,11 +45,11 @@ import {
     groupingReferences, missingFactors, obsmWidth, obsmKeys, obspKeys, layerList, factorKind, columnFactor, cellNamesFactor, geneFactor,
     scoreFactor, tableFactor, groupingFactor, neighborsFactor, addFactorRefusal, cellNamesRefusal, referenceChoices, moveFactor,
     duplicateFactor, removeFactor, factorTitle, factorSummary, levelPreview, tickLevel, tickAll, tickNone, sortByCells, moveLevel,
-    renameLevel, setRest, levelRows, BINNING_SLOT, SCORE_SOURCE, GROUP_SOURCE, TABLE_SOURCE
+    renameLevel, setRest, levelRows, SCORE_SOURCE, GROUP_SOURCE, TABLE_SOURCE
 } from './cell-grouping/factors.js';
 import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/status.js';
 import { GROUP_GRID } from './cell-grouping/group-grid.js';
-import './partition-options/binning-control.js';
+import { mountBinningControl } from './partition-options/binning-control.js';
 import { usedByText } from '../utils/panel-users.js';
 import { STATISTICS_PART } from './cell-grouping/statistics.js';
 import {
@@ -98,12 +101,13 @@ const ADD_ENTRIES = Object.freeze([
 function createFactors({ D, id, model, on }) {
     const { el } = D;
     const fresh = new Set();            // sources of factors added in this session that have had no preview yet (SHR-15)
-    const expanded = new Set();         // indexes of expanded cards (kept by position, as the recipe is)
+    const expanded = new Set();         // indexes of the factors whose Edit pop-over is open (by position, as the recipe is)
+    const editors = new Map();          // index -> {btn, pop, name, body, ctl, mounts}: an Edit button and its pop-over outlive a redraw
+    const openNew = new Set();          // indexes of binned factors just added: their editor opens once they are drawn (SHR-15)
     const showAll = new Set();          // cards whose long level list is shown whole
     let adding = null;                  // the entry whose inline row is open
     let renaming = null;                // {index, id} of the level being renamed
     let menuOpen = false;
-    let mounts = [];
 
     const addBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary cgrp-add',
         aria: { haspopup: 'menu', expanded: 'false', controls: `cgrp-add-menu-${id}` }, on: { click: toggleMenu } }, 'Add factor ▾');
@@ -285,7 +289,7 @@ function createFactors({ D, id, model, on }) {
             note.textContent = why || '';
             if (why) return;
             const { p, label } = make();
-            if (p.binning) { expanded.add(m.recipe.partitionings.length); fresh.add(stableStringify(p.source)); }
+            if (p.binning) { openNew.add(m.recipe.partitionings.length); fresh.add(stableStringify(p.source)); }
             adding = null;
             paintRow();
             on.add(p, label);
@@ -307,10 +311,7 @@ function createFactors({ D, id, model, on }) {
     function moveTo(i, j, name) {
         const n = model().recipe.partitionings.length;
         if (j < 0 || j >= n) return;
-        const wasOpen = expanded.has(i);
-        expanded.delete(i);
-        if (expanded.has(j)) { expanded.delete(j); expanded.add(i); }
-        if (wasOpen) expanded.add(j);
+        closeEditors();
         on.commit(moveFactor(model().recipe.partitionings, i, j), `move factor ${name}`);
         on.announce(`${name} moved to position ${j + 1} of ${n}`);
         const head = list.querySelector(`.cgrp-card[data-index="${j}"] .cgrp-card__head`);
@@ -337,17 +338,19 @@ function createFactors({ D, id, model, on }) {
         const ps = model().recipe.partitionings;
         if (op === 'up') moveTo(i, i - 1, name);
         else if (op === 'down') moveTo(i, i + 1, name);
-        else if (op === 'duplicate') on.commit(duplicateFactor(ps, i), `duplicate factor ${name}`);
+        else if (op === 'duplicate') { closeEditors(); on.commit(duplicateFactor(ps, i), `duplicate factor ${name}`); }
         else if (op === 'remove') {
-            const kept = new Set([...expanded].filter((k) => k !== i).map((k) => (k > i ? k - 1 : k)));
-            expanded.clear();
-            for (const k of kept) expanded.add(k);
+            closeEditors();
             on.commit(removeFactor(ps, i), `remove factor ${name}`, { said: `Removed ${W.factor} ${name}.` });
         } else if (op === 'rename') {
-            expanded.add(i);
-            paint();
-            const first = list.querySelector(`.cgrp-card[data-index="${i}"] .cgrp-level__rename`);
-            if (first) first.focus();
+            const entry = editors.get(i);
+            if (!entry) return;
+            // opened after the click that asked for it has finished: a click the pop-over's own anchor does not take is outside it
+            setTimeout(() => {
+                if (!entry.pop.isOpen()) entry.pop.open();
+                const first = entry.body && entry.body.querySelector('.cgrp-level__rename');
+                if (first) first.focus();
+            }, 0);
         }
     }
 
@@ -447,18 +450,76 @@ function createFactors({ D, id, model, on }) {
         ];
     }
 
-    function binnedBody(i, p, info) {
+    function binnedBody(i, p, info, entry) {
         const host = el('div', { class: 'cgrp-binning' });
         const defaults = defaultsOf(i);
         const rows = info ? levelRows(p, info, defaults) : [];
         const levels = el('ul', { class: 'cgrp-levels cgrp-bins', role: 'list' }, rows.map((r) => levelRow(i, p, info, r)));
-        if (BINNING_SLOT.mount) {
-            const mark = stableStringify(p.source);
-            mounts.push(BINNING_SLOT.mount(host, { partitioning: p, info, levels, fresh: fresh.has(mark), settled: () => fresh.delete(mark), titleOf: model().titleOf, cells: model().cells,
-                commit: (next, label) => commitFactor(i, next, label) }));
-            return [host];
-        }
-        return [host, levels];
+        const mark = stableStringify(p.source);
+        entry.mounts.push(mountBinningControl(host, { partitioning: p, info, levels, fresh: fresh.has(mark), settled: () => fresh.delete(mark),
+            titleOf: model().titleOf, cells: model().cells, commit: (next, label) => commitFactor(i, next, label) }));
+        return [host];
+    }
+
+    // ------------------------------------------------------------------ the Edit pop-over of a factor
+
+    /** The pop-over's content for factor i, now: its levels, its bins, or a table's two levels. */
+    function editorBody(i, entry) {
+        const m = model();
+        const p = m.recipe.partitionings[i];
+        if (!p) return [];
+        const info = m.infos[i] || null;
+        const kind = factorKind(p);
+        return kind === 'categorical' || kind === 'grouping' ? categoricalBody(i, p, info)
+            : kind === 'table' ? tableBody(i, p, info) : binnedBody(i, p, info, entry);
+    }
+
+    /** Draw the open pop-over of factor i again from the recipe now (every edit does), the focus kept on its place. */
+    function fillEditor(i) {
+        const entry = editors.get(i);
+        if (!entry || !entry.body) return;
+        const body = entry.body;
+        const focusables = () => [...body.querySelectorAll('input, button, select')].filter((e) => !e.disabled);
+        const at = focusables().indexOf(document.activeElement);
+        for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
+        D.clear(body);
+        const nodes = editorBody(i, entry);
+        if (!nodes.length) { entry.ctl.close(); return; }
+        body.append(...nodes);
+        if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
+        entry.ctl.update();
+    }
+
+    /** The Edit button of factor i and its pop-over, made once and kept while the factor's kind stays. */
+    function editorOf(i, kind, name) {
+        const popName = kind === 'binned' ? 'binning' : 'levels';
+        let entry = editors.get(i);
+        if (entry && entry.name !== popName) { entry.pop.destroy(); editors.delete(i); entry = null; }
+        if (entry) return entry;
+        const btn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-card__edit', data: { index: i } },
+            'Edit ', el('span', { aria: { hidden: 'true' }, text: '▾' }));
+        entry = { btn, name: popName, body: null, ctl: null, mounts: [], pop: null };
+        entry.pop = createPopover({
+            anchor: btn, name: popName, title: `${kind === 'binned' ? 'Bins of' : 'Levels of'} ${name}`, wide: true,
+            render: (body, ctl) => {
+                entry.body = body;
+                entry.ctl = ctl;
+                expanded.add(i);
+                fillEditor(i);
+                if (on.wants) on.wants();
+                return () => {
+                    for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
+                    entry.body = entry.ctl = null;
+                    expanded.delete(i);
+                };
+            }
+        });
+        editors.set(i, entry);
+        return entry;
+    }
+
+    function closeEditors() {
+        for (const entry of editors.values()) if (entry.pop.isOpen()) entry.pop.close('api');
     }
 
     function card(i, p, n) {
@@ -467,9 +528,10 @@ function createFactors({ D, id, model, on }) {
         const missing = m.missing.has(i);
         const kind = factorKind(p);
         const name = factorTitle(p, m.titleOf);
-        const open = expanded.has(i);
-        const head = el('button', { type: 'button', class: 'cgrp-card__head', aria: { expanded: String(open), controls: `cgrp-card-${id}-${i}` },
-            on: { click: () => { if (expanded.has(i)) expanded.delete(i); else expanded.add(i); paint(); },
+        const edit = editorOf(i, kind, name);
+        edit.btn.setAttribute('aria-label', `Edit ${name}`);
+        const head = el('button', { type: 'button', class: 'cgrp-card__head',
+            on: { click: () => edit.btn.click(),
                 keydown: (e) => {
                     if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
                     e.preventDefault();
@@ -479,22 +541,11 @@ function createFactors({ D, id, model, on }) {
         el('span', { class: 'cgrp-card__pos', text: String(i + 1) }),
         el('span', { class: 'cgrp-card__title', text: factorTitle(p, m.titleOf, missing) }),
         el('span', { class: 'cgrp-card__summary', text: factorSummary(p, info) }),
-        open ? null : el('span', { class: 'cgrp-card__preview', text: levelPreview(info, mergedLabels(p, i)) }));
-        // the same chevron as a tile's header: a control of its own, saying what it does
-        const toggle = el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-card__toggle',
-            aria: { expanded: String(open), controls: `cgrp-card-${id}-${i}`, label: `${open ? 'Collapse' : 'Expand'} ${name}` },
-            on: { click: () => { if (expanded.has(i)) expanded.delete(i); else expanded.add(i); paint(); } } },
-        el('i', { class: `fas ${open ? 'fa-chevron-up' : 'fa-chevron-down'}`, aria: { hidden: 'true' } }));
+        el('span', { class: 'cgrp-card__preview', text: levelPreview(info, mergedLabels(p, i)) }));
         const note = m.notes.get(i) || (missing ? 'Replace or remove it: nothing is computed until then.' : '');
         const li = el('li', { class: `cgrp-card${missing ? ' is-missing' : ''}`, data: { index: i, kind }, draggable: 'true' },
-            el('div', { class: 'cgrp-card__bar' }, head, toggle, cardMenu(i, name, n, kind)),
+            el('div', { class: 'cgrp-card__bar' }, head, edit.btn, cardMenu(i, name, n, kind)),
             el('div', { class: 'cgrp-card__note', role: 'note', hidden: !note, text: note }));
-        if (open) {
-            const body = el('div', { class: 'cgrp-card__body', id: `cgrp-card-${id}-${i}` });
-            body.append(...(kind === 'categorical' || kind === 'grouping' ? categoricalBody(i, p, info)
-                : kind === 'table' ? tableBody(i, p, info) : binnedBody(i, p, info)));
-            li.append(body);
-        }
         li.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-cgrp-factor', String(i)); e.dataTransfer.effectAllowed = 'move'; });
         li.addEventListener('dragover', (e) => { if ([...e.dataTransfer.types].includes('text/x-cgrp-factor')) e.preventDefault(); });
         li.addEventListener('drop', (e) => {
@@ -514,23 +565,42 @@ function createFactors({ D, id, model, on }) {
     }
 
     function paint() {
-        for (const mounted of mounts) if (mounted && mounted.destroy) mounted.destroy();
-        mounts = [];
         const m = model();
         const n = m.recipe.partitionings.length;
-        for (const k of [...expanded]) if (k >= n) expanded.delete(k);
+        for (const k of [...editors.keys()]) {
+            if (k < n) continue;
+            editors.get(k).pop.destroy();
+            editors.delete(k);
+        }
         const refusal = addFactorRefusal(m.recipe);
         addBtn.disabled = !!refusal;
         addBtn.title = refusal || '';
+        // a card's own buttons keep the focus across the redraw (Escape from its pop-over leaves it on Edit)
+        const had = list.contains(document.activeElement) ? document.activeElement : null;
+        const hadAt = had ? { card: had.closest('.cgrp-card'), cls: ['cgrp-card__head', 'cgrp-card__more'].find((c) => had.classList.contains(c)) } : null;
+        const hadIndex = hadAt && hadAt.card ? hadAt.card.dataset.index : null;
         D.clear(list);
         m.recipe.partitionings.forEach((p, i) => list.appendChild(card(i, p, n)));
         list.hidden = !n;
+        if (had && had.isConnected) had.focus({ preventScroll: true });
+        else if (hadAt && hadAt.cls && hadIndex !== null) {
+            const again = list.querySelector(`.cgrp-card[data-index="${hadIndex}"] .${hadAt.cls}`);
+            if (again) again.focus({ preventScroll: true });
+        }
         if (menuOpen) paintMenu();
+        // an open pop-over shows the recipe now; a factor just added opens its own
+        for (const [i, entry] of editors) if (entry.pop.isOpen()) fillEditor(i);
+        for (const i of [...openNew]) {
+            const entry = editors.get(i);
+            if (!entry) continue;
+            openNew.delete(i);
+            setTimeout(() => { if (!entry.pop.isOpen() && entry.btn.isConnected) entry.pop.open(); }, 0);
+        }
         if (on.wants) on.wants();
     }
 
     /**
-     * The positions of the expanded binned cards: they ask the server for their histogram (SHR-18).
+     * The positions of the binned factors being edited: they ask the server for their histogram (SHR-18).
      */
     function wanted() {
         const ps = model().recipe.partitionings;
@@ -540,24 +610,26 @@ function createFactors({ D, id, model, on }) {
     return {
         /** Add factor and its inline row: hidden with the controls. */
         addElement,
-        /** The cards: they stay, collapsed, when the controls are hidden. */
+        /** The cards: they stay, one line each, when the controls are hidden. */
         listElement: list,
         wanted,
         paint,
-        /** Expand a card (a status action: "Choose levels of sample"). */
+        /** Open a factor's editor (a status action: "Choose levels of sample"). */
         expand(i) {
-            expanded.add(i);
-            paint();
-            const head = list.querySelector(`.cgrp-card[data-index="${i}"] .cgrp-card__head`);
-            if (head) head.focus();
+            const entry = editors.get(i);
+            // after the click on the status action has finished: that click is outside the pop-over, which would close it
+            if (entry) setTimeout(() => { if (!entry.pop.isOpen()) entry.pop.open(); }, 0);
         },
         closeMenus() {
             closeMenu();
             for (const pop of list.querySelectorAll('.cgrp-card__menu')) pop.hidden = true;
         },
         destroy() {
-            for (const mounted of mounts) if (mounted && mounted.destroy) mounted.destroy();
-            mounts = [];
+            for (const entry of editors.values()) {
+                entry.pop.destroy();
+                for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
+            }
+            editors.clear();
         }
     };
 }
@@ -618,15 +690,16 @@ function createStatus({ D, id, on }) {
 }
 
 /**
+ * Settings: a toolbar button whose pop-over holds the separator, the small-group threshold and what happens to small
+ * groups. The button's text names it; its title (and a hidden span) say what is set, as the folded row used to.
  * @param {{D: Object, id: string, recipe: () => Object, set: (patch: Object, label: string) => void}} opts
  *   `set` takes `{separator}` or `{small}` with the defaults left out (the recipe's normaliser drops them)
  */
 function createSettings({ D, id, recipe, set }) {
     const { el } = D;
-    let open = false;
-    const summary = el('span', { class: 'cgrp-settings__summary' });
-    const head = el('button', { type: 'button', class: 'cgrp-settings__head', aria: { expanded: 'false', controls: `cgrp-settings-${id}` },
-        on: { click: () => { open = !open; paint(); } } }, el('span', { class: 'cgrp-settings__chev', aria: { hidden: 'true' } }), 'Settings ', summary);
+    const summary = el('span', { class: 'cgrp-settings__summary visually-hidden' });
+    const head = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-settings-btn' },
+        el('i', { class: 'fas fa-cog', aria: { hidden: 'true' } }), ' Settings', summary);
     const problem = el('div', { class: 'cgrp-settings__problem', role: 'status' });
     const separator = el('input', { type: 'text', class: 'form-control form-control-sm cgrp-separator', id: `cgrp-sep-${id}`,
         autocomplete: 'off', spellcheck: 'false', size: '4' });
@@ -637,7 +710,7 @@ function createSettings({ D, id, recipe, set }) {
     const radio = (value) => (modes[value] = el('input', { type: 'radio', class: 'cgrp-smallmode', name: modeName, value,
         on: { change: () => setSmall({ mode: value }, `small groups ${smallModeWord(value)}`) } }));
     const collectText = el('span');
-    const body = el('div', { class: 'cgrp-settings__body', id: `cgrp-settings-${id}`, hidden: true },
+    const body = el('div', { class: 'cgrp-settings__body', id: `cgrp-settings-${id}` },
         el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-sep-${id}`, text: 'Separator ' }), separator),
         el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-thr-${id}`, text: 'Small groups under ' }), threshold, el('span', { text: ' cells' })),
         el('div', { class: 'cgrp-settings__line', role: 'radiogroup', aria: { label: 'Small groups' } },
@@ -645,7 +718,8 @@ function createSettings({ D, id, recipe, set }) {
             el('label', { class: 'cgrp-smallmode-opt' }, radio('collect'), ' Collect into ', collectText),
             el('label', { class: 'cgrp-smallmode-opt' }, radio('hide'), ` Hide: their cells go in no ${VOCABULARY.word.group}`)),
         problem);
-    const element = el('div', { class: 'cgrp-settings' }, head, body);
+    const pop = createPopover({ anchor: head, name: 'settings', title: 'Settings',
+        render: (host) => { host.append(body); paint(); return () => body.remove(); } });
 
     function setSmall(patch, label) {
         set({ small: storedSmall({ ...smallOf(recipe()), ...patch }) }, label);
@@ -677,15 +751,14 @@ function createSettings({ D, id, recipe, set }) {
         const r = recipe();
         const small = smallOf(r);
         summary.textContent = settingsSummary(r);
-        head.setAttribute('aria-expanded', String(open));
-        body.hidden = !open;
+        head.title = summary.textContent;
         if (document.activeElement !== separator) separator.value = separatorOf(r);
         if (document.activeElement !== threshold) threshold.value = String(small.threshold);
         collectText.textContent = `"${VOCABULARY.phrase.smallGroups(small.threshold)}"`;
         for (const [value, input] of Object.entries(modes)) input.checked = value === small.mode;
     }
 
-    return { element, paint };
+    return { element: head, paint, destroy: () => pop.destroy() };
 }
 
 // ================================================================================================ the panel
@@ -802,6 +875,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             _observer = null;
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
             if (_factors) _factors.destroy();
+            if (_settings) _settings.destroy();
             _factors = _status = _settings = null;
             _initialized = false;
             _dom = null;
@@ -1000,27 +1074,25 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const messageText = el('span', { class: 'cgrp-message__text' });
             const messageUndo = el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-message__undo', hidden: true, on: { click: () => undo() } }, 'Undo');
             const message = el('div', { class: 'cgrp-message', role: 'status', aria: { live: 'polite' } }, messageText, messageUndo);
-            // what Toggle Controls hides (UX 2.1): Add factor here, and the Settings row below
-            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, undoBtn);
+            // what Toggle Controls hides (UX 2.1): the toolbar, Add factor, Statistics, Settings and Undo; its forms are pop-overs
+            const statistics = el('span', { class: 'cgrp-statistics' });
+            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, statistics, _settings.element, undoBtn);
             const groups = el('div', { class: 'cgrp-groups' });
-            const statistics = el('div', { class: 'cgrp-statistics' });
-            const settings = el('div', { class: 'cgrp-settings-zone' }, _settings.element);
-            root.append(_status.element, empty, controls, message, _factors.listElement, groups, statistics, settings);
+            root.append(_status.element, empty, controls, message, _factors.listElement, groups);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
-            _dom = { root, controls, undoBtn, empty, message, messageText, messageUndo, groups, statistics, settingsZone: settings,
+            _dom = { root, controls, undoBtn, empty, message, messageText, messageUndo, groups, statistics,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             showControls();
             mountParts();
         }
 
-        /** Toggle Controls: Add factor and Settings hide, and the cards collapse to one line each. */
+        /** Toggle Controls: the toolbar hides, and the cards lose their Edit and ⋯ buttons. */
         function showControls() {
             if (!_dom) return;
             const visible = _controlsVisible !== false;
             if (!visible || _dom.controls.dataset.controlsHidden === 'true') setControlsVisible(_dom.controls, visible);
-            _dom.settingsZone.hidden = !visible;
             _dom.root.classList.toggle('cgrp-compact', !visible);
         }
 
@@ -1223,7 +1295,12 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             getRecipe,
             addFactor,
             /** Open Statistics offered: where a Cell-Gene Plot's "Offer other…" leads (WP-4). */
-            revealStatisticsOffered: () => { for (const part of _parts) if (part && part.reveal) part.reveal(); },
+            revealStatisticsOffered: () => {
+                if (!_dom) return;
+                // the button is in the toolbar: shown again if Toggle Controls hid it
+                if (_controlsVisible === false) { _controlsVisible = true; showControls(); }
+                for (const part of _parts) if (part && part.reveal) part.reveal();
+            },
             undo,
             _debugState
         };
