@@ -1,12 +1,12 @@
 """Cell Grouping's expanding forms are pop-overs (WP-7 of the options redesign, FB-2 decision h).
 
 The operator's complaint: folding sections change the minimum size of a panel and move the whole layout. A factor's
-levels or binning, Statistics offered and Settings now open in a pop-over (static/js/ui/popover.js), so editing a
+levels or binning and Settings now open in a pop-over (static/js/ui/popover.js), so editing a
 factor moves nothing: not the Grouping tile, not its scroll position, not the tiles beside it.
 
 1.  Three tiles side by side (Grouping, Cell-Gene, Cell Count): editing a factor (a level unticked) keeps the Grouping
     tile's box and scrollTop, the other tiles' boxes and every scroll position above the tile as they were.
-2.  The same for Statistics offered and Settings.
+2.  The same for Settings (Statistics offered went with decision 31).
 3.  The keyboard path: Edit, tick, Escape, and focus is back on Edit; the edit is one undo step.
 4.  Each form lives in its own `[data-popover]` surface, and Escape closes it.
 
@@ -125,10 +125,10 @@ def test_editing_a_factor_moves_nothing_in_three_tiles(page, served):
     assert _unmoved(page, before, "closing the pop-over")
 
 
-def test_statistics_and_settings_move_nothing_in_three_tiles(page, served):
+def test_settings_move_nothing_in_three_tiles(page, served):
     _open_three(page, served)
     before = _layout(page)
-    for anchor, name in ((".gsig-scoring__toggle", "statistics"), (".cgrp-settings-btn", "settings")):
+    for anchor, name in ((".cgrp-settings-btn", "settings"),):
         page.click(f"{A} {anchor}")
         page.wait_for_selector(f"[data-popover='{name}']", timeout=10000)
         waits.expect_stays(lambda: _unmoved(page, before, f"opening {name}"),
@@ -170,17 +170,3 @@ def test_each_form_is_its_own_popover(page, served):
     _open_editor(page, 1, "[data-popover='binning']")
     page.wait_for_selector("[data-popover='binning'] .pbc", timeout=10000)
     assert page.locator("[data-popover='binning'][role='dialog']").count() == 1
-
-
-def test_reveal_statistics_offered_opens_the_statistics_popover_even_with_the_controls_hidden(page, served):
-    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE])})
-    _ready(page)
-    page.click(f"{A} .tile-toggle-controls")      # Toggle Controls hides the toolbar
-    until(page, "(s) => document.querySelector(s).getClientRects().length === 0", f"{A} .gsig-scoring__toggle")
-    assert page.locator("[data-popover='statistics']").count() == 0
-    assert page.evaluate("(s) => document.querySelector(s).getClientRects().length", f"{A} .gsig-scoring__toggle") == 0, "the toolbar is hidden"
-    page.evaluate("(id) => window.PanelManager.getPanel(id).revealStatisticsOffered()", GA)
-    page.wait_for_selector("[data-popover='statistics'] .gsig-scoring__body", timeout=10000)
-    assert page.get_attribute(f"{A} .gsig-scoring__toggle", "aria-expanded") == "true"
-    page.keyboard.press("Escape")
-    page.wait_for_selector("[data-popover='statistics']", state="detached", timeout=5000)
