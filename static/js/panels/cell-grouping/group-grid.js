@@ -311,8 +311,9 @@ function mount(host, ctx) {
     }
 
     function listParts(row) {
-        // a click on the swatch opens the browser's color picker: the group's own color, one undo step
-        const input = el('input', { type: 'color', class: 'cgg-swatch-input', tabindex: '0' });
+        // a click on the swatch opens the browser's color picker: the group's own color, one undo step (not a tab stop: the
+        // grid keeps its one)
+        const input = el('input', { type: 'color', class: 'cgg-swatch-input', tabindex: '-1' });
         const swatch = el('span', { class: 'cgg-swatch' }, input);
         const name = el('span', { class: 'cgg-name' });
         const first = el('div', { class: 'cgg-cell cgg-cell--name', role: 'gridcell' }, swatch, name);

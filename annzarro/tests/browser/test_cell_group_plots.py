@@ -169,7 +169,7 @@ def _colour_cfg(page):
 
 
 def _palette(page, n):
-    return page.evaluate("""async (n) => (await import('/static/js/panels/plot-utilities/colors.js')).generateDiscreteColors(n)""", n)
+    return page.evaluate("""async (n) => (await import('/static/js/panels/plot-utilities/colors.js')).groupColours(n)""", n)
 
 
 # ------------------------------------------------------------------ 1. colour
@@ -197,7 +197,7 @@ def test_colour_by_a_grouping_from_the_menus_in_group_order_with_its_colours(pag
     assert _legend(page) == "Grouping 1", "the legend is titled by the grouping (CAT-8)"
     traces = _traces(page)
     assert [t[0] for t in traces] == TYPES, "one entry per group, in group order"
-    assert [t[1] for t in traces] == _palette(page, 6), "the grouping's colours: the app's palette in group order (SHR-11)"
+    assert [t[1] for t in traces] == _palette(page, 6), "the grouping's colours: the app's group colours in group order, the group list's too (SHR-11)"
     assert [t[2] for t in traces] == [n for _, n in gstore.CELL_TYPES]
     assert _colour_cfg(page)["key"] == GA and _colour_cfg(page)["label"] == "Grouping 1"
     request = _computes(page)[-1]
