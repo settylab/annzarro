@@ -359,6 +359,20 @@ export function createControls({ D, id, model, on }) {
         entry.btn.textContent = `${text} ▾`;
         if (row.extra.firstChild !== entry.btn) row.extra.replaceChildren(entry.btn);
         if (entry.pop.isOpen()) fillEditor(entry);
+        flushReveal();
+    }
+
+    /**
+     * A way out asked for an editor (reveal): open it once its button exists in the kind asked. The opening waits a
+     * turn, so the click that asked is not read as a press outside the pop-over it opens.
+     */
+    let wanted = null;
+    function flushReveal() {
+        if (!wanted) return;
+        const entry = editors.get(wanted.field);
+        if (!entry || entry.kind !== wanted.what) return;
+        wanted = null;
+        setTimeout(() => { if (entry.btn.isConnected && !entry.pop.isOpen()) entry.pop.open(); }, 0);
     }
 
     function levelChooser(field, p, info, m) {
@@ -721,6 +735,7 @@ export function createControls({ D, id, model, on }) {
                 paintInputExtras(row, m.config[row.field] || null, m, shownRows);
             }
         }
+        wanted = null;       // a reveal not met by this paint is stale
         paintArrangement(m, shownRows);
         if (m.structure) paintValue(m, shownRows); else valueRow.hidden = true;
         paintLabels(m, shownRows);
@@ -743,9 +758,8 @@ export function createControls({ D, id, model, on }) {
          * @param {'levels'|'binning'} what
          */
         reveal(field, what) {
-            const entry = editors.get(field);
-            if (!entry || entry.kind !== what) return;
-            entry.pop.open();
+            wanted = { field, what };
+            flushReveal();
         },
         /** The selects are filled again: the dataset or the panels changed (a provider's entities, the structure). */
         refill() {
