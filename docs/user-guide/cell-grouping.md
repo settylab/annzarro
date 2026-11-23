@@ -20,7 +20,8 @@ gives `B cell | Old`, `B cell | Young` and so on, and a combination with no cell
 exactly one group, or in none when a rule leaves it out (see *Cells in no group*).
 
 Everything is computed on the server, over every cell shown, at any size: grouping a 95-million-cell dataset by three
-factors takes a few seconds. The browser holds the group of each cell only while a plot is coloured by the grouping.
+factors takes a few seconds. The browser holds the group of each cell only while a plot or a table shows it cell by
+cell.
 
 ## Make a grouping
 

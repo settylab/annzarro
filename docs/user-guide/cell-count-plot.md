@@ -138,7 +138,7 @@ count and the limit, and offers the fix:
 | 2D histogram, 2D density | 512 × 512 bins; Color by up to 8 levels | **Remove Color by** |
 | UpSet | 16 sets | |
 
-A set or input that is a table needs at most 1,000,000 cells shown, as a table does. Long counts follow the cost tiers
+A set that is a cell table needs at most 1,000,000 cells shown, as a table does. Long counts follow the cost tiers
 of scores (Update, asking first, refusing past 10 minutes), with a progress bar after 10 seconds; the previous drawing
 stays while a new count runs.
 

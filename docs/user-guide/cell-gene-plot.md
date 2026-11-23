@@ -12,8 +12,8 @@ scaling, the order or the style asks the server for nothing.
 
 ## Draw a dot plot
 
-1. Add a **Cell-Gene Plot** panel. It shows what it still needs: "1. Choose groups [ Groups ▾ ]  2. Add genes
-   [ Add genes ▾ ]", each step ticked when done.
+1. Add a **Cell-Gene Plot** panel. It shows what it still needs as a checklist, **Choose groups** and **Add genes**,
+   each ticked when done.
 2. **Groups**: choose a categorical obs column, such as `cell_type`, or a grouping. The grouping list ends with
    **New grouping…**, which opens a Cell Grouping beside the plot.
 3. **Add genes ▾**: choose a gene signature or a gene table (they are listed under their own headings, then **New
@@ -153,7 +153,7 @@ stays.
 | Computing | "Reading 200 genes: 120 of 200", with **Cancel**; after 10% of the work and 5 s, the time left ("about 3 minutes left") |
 | Queued | "Waiting for Cell-Gene Plot 2 to finish." when the job ahead is one of this page's, else "Waiting for the server: 1 computation ahead.", or "Sharing the server with 1 other computation." while two long jobs take turns. "Groupings and counts keep working." |
 | Out of date | "Showing the previous plot. 2 changes not applied.", with **Update** |
-| Asks first | "Reading 200 genes over 95.6 million cells: up to about 6 minutes (10.5 billion stored values).", with **Compute** and **Fewer genes** |
+| Asks first | "Reading 200 genes over 95.6M cells: up to about 6 minutes (10.5 billion stored values).", with **Compute** and **Fewer genes** |
 | Refused, cost | "Would take about 25 minutes, so it was not run. Use fewer genes, a smaller subset, or a layer stored by gene (CSC)." |
 | Refused, layout | "logged_counts is stored by cell (CSR), so 200 genes mean reading the whole matrix: …" A copy of the layer stored by gene (CSC) makes this fast: see {doc}`../data/preparing-a-store` |
 | Too large | "28 groups × 15,000 rows = 420,000 cells of the matrix; the limit is 400,000. Remove a section or use fewer groups." |
