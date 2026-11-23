@@ -15,6 +15,9 @@ const O = await import('../../../static/js/utils/signature-options.js');
 const G = await import('../../../static/js/utils/gene-signature.js');
 
 const recipe = (raw) => G.normalizeRecipe({ genes: ['A', 'B'], ...raw }).recipe;
+// The option fields as the offered model (options-model.js, kept until SO-3/SO-4 remove its last callers) reads them: a
+// recipe no longer carries `offered` or `layers` (decision 31), so these tests hand the model the normalised options.
+const offer = (raw) => ({ ...recipe(raw), ...O.normalizeOptions(raw) });
 
 test('the aggregations are listed by common use with z-score mean first, each with a one-line definition', () => {
     assert.deepEqual(O.METHODS, ['zscore_mean', 'mean', 'sum', 'control_adjusted', 'detected', 'fraction_of_total']);
@@ -26,7 +29,7 @@ test('the aggregations are listed by common use with z-score mean first, each wi
 });
 
 test('by default z-score mean, mean and sum are offered on the default layer and nothing else', () => {
-    const r = recipe({});
+    const r = offer({});
     assert.deepEqual(r.offered, ['zscore_mean', 'mean', 'sum']);
     assert.deepEqual(r.layers, ['X']);
     const menu = O.offeredOptions(r);
@@ -39,7 +42,7 @@ test('by default z-score mean, mean and sum are offered on the default layer and
 });
 
 test('with several layers the menu is every offered method of every offered layer, and names the layer', () => {
-    const r = recipe({ offered: ['mean', 'control_adjusted', 'zscore_mean'], layers: ['counts'], input: 'X' });
+    const r = offer({ offered: ['mean', 'control_adjusted', 'zscore_mean'], layers: ['counts'], input: 'X' });
     assert.deepEqual(r.offered, ['zscore_mean', 'mean', 'control_adjusted'], 'in menu order');
     assert.deepEqual(r.layers, ['X', 'counts'], 'in the order they were offered');
     const menu = O.offeredOptions(r);
@@ -52,38 +55,39 @@ test('with several layers the menu is every offered method of every offered laye
     // an offered layer the dataset lacks is not in the menu
     assert.deepEqual(O.offeredOptions(r, ['X']).map(o => o.layer), ['X', 'X', 'X']);
     // the id is the same whether one layer or two are offered: a consumer stores {column, layer}, never the id
-    assert.equal(O.offeredOptions(recipe({}))[1].id, 'mean@X');
+    assert.equal(O.offeredOptions(offer({}))[1].id, 'mean@X');
     // nothing is reordered for a default: the first entry is the first offered method on the first offered layer
-    const d = O.offeredOptions(recipe({ offered: ['sum', 'zscore_mean'], layers: ['b', 'X'], input: 'b' }));
+    const d = O.offeredOptions(offer({ offered: ['sum', 'zscore_mean'], layers: ['b', 'X'], input: 'b' }));
     assert.deepEqual(d.map(o => o.id), ['zscore_mean@b', 'zscore_mean@X', 'sum@b', 'sum@X']);
     assert.ok(d.every(o => !('isDefault' in o)), 'no default flag');
     assert.deepEqual(d[0] && [d[0].method, d[0].layer], ['zscore_mean', 'b']);
 });
 
 test('a stored list is cleaned: unknown ids dropped, duplicates once, never empty, the default always offered', () => {
-    assert.deepEqual(recipe({ offered: ['nope', 'sum', 'sum', 5, null] }).offered, ['sum']);
-    assert.equal(recipe({ offered: ['sum'] }).method, 'sum', 'the default method is the first offered when z-score mean is switched off');
-    assert.deepEqual(recipe({ offered: [] }).offered, ['zscore_mean']);
-    assert.deepEqual(recipe({ offered: 'sum' }).offered, ['zscore_mean', 'mean', 'sum'], 'not a list: the default');
-    assert.deepEqual(recipe({ layers: ['b', '', 7, 'b', 'X'], input: 'a' }).layers, ['a', 'b', 'X']);
-    assert.deepEqual(recipe({ layers: 'counts' }).layers, ['X']);
+    assert.deepEqual(offer({ offered: ['nope', 'sum', 'sum', 5, null] }).offered, ['sum']);
+    assert.equal(offer({ offered: ['sum'] }).method, 'sum', 'the default method is the first offered when z-score mean is switched off');
+    assert.deepEqual(offer({ offered: [] }).offered, ['zscore_mean']);
+    assert.deepEqual(offer({ offered: 'sum' }).offered, ['zscore_mean', 'mean', 'sum'], 'not a list: the default');
+    assert.deepEqual(offer({ layers: ['b', '', 7, 'b', 'X'], input: 'a' }).layers, ['a', 'b', 'X']);
+    assert.deepEqual(offer({ layers: 'counts' }).layers, ['X']);
 });
 
 test('an older link without the new fields reads as the defaults, and normalising changes nothing more', () => {
     const old = { genes: ['B', 'A'], down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, version: 1 };
     const r = G.normalizeRecipe(old).recipe;
-    assert.deepEqual(r.offered, ['zscore_mean', 'mean', 'sum']);
+    assert.equal('offered' in r || 'layers' in r, false, 'nothing is offered since decision 31');
+    assert.equal(r.method, 'zscore_mean');
     assert.equal(r.bins, 25);
     assert.equal(r.controls, 50);
     assert.deepEqual(recipe(JSON.parse(JSON.stringify(G.storedRecipe(r)))), r);
 });
 
 test('isOffered says what a consumer may pick, and a method switched off is simply not offered', () => {
-    const r = recipe({ offered: ['zscore_mean', 'detected'], layers: ['counts'] });
+    const r = offer({ offered: ['zscore_mean', 'detected'], layers: ['counts'] });
     assert.ok(O.isOffered(r, 'detected') && O.isOffered(r, 'zscore_mean', 'counts') && O.isOffered(r, 'detected', 'X'));
     assert.ok(!O.isOffered(r, 'mean') && !O.isOffered(r, 'sum', 'X') && !O.isOffered(r, 'detected', 'other'));
     // switching off never changes the stored consumers: the helpers answer, nothing is deleted
-    assert.ok(!O.isOffered(recipe({ offered: ['zscore_mean'] }), 'control_adjusted'));
+    assert.ok(!O.isOffered(offer({ offered: ['zscore_mean'] }), 'control_adjusted'));
 });
 
 test('each method has its own key; a parameter moves only the methods that read it', () => {
@@ -100,7 +104,7 @@ test('each method has its own key; a parameter moves only the methods that read 
     assert.deepEqual(moved({ controls: 20 }), ['control_adjusted']);
     assert.deepEqual(moved({ input: 'counts' }), [...O.METHODS], 'a layer moves every method');
     assert.deepEqual(moved({ genes: ['A', 'B', 'C'] }), [...O.METHODS]);
-    assert.deepEqual(moved({ offered: ['sum'], layers: ['counts'] }), [], 'what is offered changes no score');
+    assert.deepEqual(moved({ offered: ['zscore_mean', 'sum'], layers: ['X', 'counts'] }), [], 'an old link\'s offered lists change no score');
     assert.deepEqual(O.paramsOf(base, 'mean'), {});
     assert.deepEqual(O.paramsOf(base, 'control_adjusted'), { bins: 25, controls: 50, seed: 0 });
 });
@@ -165,7 +169,7 @@ test('fraction detected is graded against the threshold: cannot when it makes th
 });
 
 test('combinations that cannot be computed are left out of the menu but listed, with the reason, for the panel', () => {
-    const r = recipe({ offered: ['zscore_mean', 'detected', 'fraction_of_total'], layers: ['counts'] });
+    const r = offer({ offered: ['zscore_mean', 'detected', 'fraction_of_total'], layers: ['counts'] });
     const kinds = { X: 'signed', counts: 'counts' };
     const stats = { X: SMOOTH, counts: SPARSE };
     assert.deepEqual(O.offeredOptions(r, null, kinds, stats).map(o => o.id), ['zscore_mean@X', 'zscore_mean@counts', 'detected@counts', 'fraction_of_total@counts']);
@@ -177,12 +181,12 @@ test('combinations that cannot be computed are left out of the menu but listed, 
     const raised = { ...r, detect_above: 1 };
     assert.ok(O.offeredOptions(raised, null, kinds, stats).some(o => o.id === 'detected@X'));
     // a warning rides on the option as a note, never as a notice
-    const depth = O.gradedOptions(recipe({ offered: ['mean'], layers: ['counts'] }), null, kinds, stats);
+    const depth = O.gradedOptions(offer({ offered: ['mean'], layers: ['counts'] }), null, kinds, stats);
     assert.deepEqual(depth.map(o => [o.id, o.grade, o.note]), [['mean@X', 'ok', ''], ['mean@counts', 'warn', "On 'counts' this follows sequencing depth."]]);
 });
 
 test('a layer row says its properties once and only for what is offered', () => {
-    const lines = (layer, kind, patch = {}, stats) => O.layerLines(layer, recipe(patch), kind, stats).map(l => l.text);
+    const lines = (layer, kind, patch = {}, stats) => O.layerLines(layer, offer(patch), kind, stats).map(l => l.text);
     assert.deepEqual(lines('raw_counts', 'counts', { offered: ['mean', 'sum'] }), ['Raw counts: mean and sum follow sequencing depth.']);
     assert.deepEqual(lines('raw_counts', 'counts', { offered: ['zscore_mean', 'mean', 'sum'] }), ['Raw counts: z-score mean, mean and sum follow sequencing depth.']);
     assert.deepEqual(lines('raw_counts', 'counts', { offered: ['sum'] }), ['Raw counts: sum follows sequencing depth.']);
@@ -198,7 +202,7 @@ test('a layer row says its properties once and only for what is offered', () => 
 });
 
 test('under a method only what every offered layer shares is said, once; the rest stays on the rows', () => {
-    const r = (patch) => recipe(patch);
+    const r = (patch) => offer(patch);
     const text = (m, layers, patch, kinds, stats) => O.methodLines(m, layers, r(patch), kinds, stats).map(l => l.text);
     // raw_counts is the only offered layer: it applies to all of them
     assert.deepEqual(text('sum', ['raw_counts'], { offered: ['sum'] }, { raw_counts: 'counts' }), ["On 'raw_counts' this follows sequencing depth."]);
@@ -226,11 +230,11 @@ test('what a layer looks like has one word, and use is said in words', () => {
 });
 
 test('the summary names a parameter that is not at its default, after its method', () => {
-    assert.equal(O.offeredSummary(recipe({ clip: null })), 'z-score mean (not clipped), mean, sum · X');
-    assert.equal(O.offeredSummary(recipe({ clip: 3 })), 'z-score mean (clip ±3), mean, sum · X');
-    assert.equal(O.offeredSummary(recipe({ offered: ['zscore_mean', 'control_adjusted'], seed: 3, layers: ['logged_counts'], input: 'logged_counts' })),
+    assert.equal(O.offeredSummary(offer({ clip: null })), 'z-score mean (not clipped), mean, sum · X');
+    assert.equal(O.offeredSummary(offer({ clip: 3 })), 'z-score mean (clip ±3), mean, sum · X');
+    assert.equal(O.offeredSummary(offer({ offered: ['zscore_mean', 'control_adjusted'], seed: 3, layers: ['logged_counts'], input: 'logged_counts' })),
         'z-score mean, control-adjusted (seed 3) · logged_counts');
-    assert.equal(O.offeredSummary(recipe({ offered: ['detected'], detect_above: 1 })), 'fraction detected (above 1) · X');
+    assert.equal(O.offeredSummary(offer({ offered: ['detected'], detect_above: 1 })), 'fraction detected (above 1) · X');
 });
 
 test('a method with parameters can be reset on its own', () => {
@@ -255,12 +259,13 @@ test('the detection threshold is a number from 0 up and reads as 0 otherwise', (
 // `scoreOptions`; one definition, one normaliser.
 
 test('the option fields are one schema: the same keys in a signature recipe and in the options a table stores', () => {
-    assert.deepEqual([...O.OPTION_KEYS], ['input', 'method', 'offered', 'layers', 'clip', 'seed', 'bins', 'controls', 'detect_above']);
-    const options = O.normalizeOptions({});
-    assert.deepEqual(Object.keys(options).sort(), [...O.OPTION_KEYS].sort());
+    // `offered` and `layers` are read from old links only; `methods` is reserved for custom methods (after 0.8.0)
+    assert.deepEqual([...O.OPTION_KEYS], ['input', 'method', 'offered', 'layers', 'clip', 'seed', 'bins', 'controls', 'detect_above', 'methods']);
+    const options = O.writableOptions({});
+    assert.deepEqual(Object.keys(options).sort(), O.OPTION_KEYS.filter(k => !['offered', 'layers', 'methods'].includes(k)).sort());
     const r = recipe({});
-    for (const key of O.OPTION_KEYS) assert.deepEqual(r[key], options[key], key);
-    assert.deepEqual(O.pickOptions(r), options, 'what a recipe holds of it is exactly the options');
+    for (const key of Object.keys(options)) assert.deepEqual(r[key], options[key], key);
+    assert.deepEqual(O.pickOptions(r), options, 'what a recipe holds of it is exactly the options a table stores');
 });
 
 test('normalising the options: anything invalid takes its default, the default method is always offered', () => {

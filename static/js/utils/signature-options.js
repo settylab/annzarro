@@ -208,6 +208,16 @@ function paramNotes(recipe, method) {
     return notes;
 }
 
+/**
+ * Every parameter not at its default, by method, in menu order: what the Methods pop-over's button says in its title
+ * ("z-score mean: not clipped; control-adjusted: seed 3"), so no setting hides behind a closed pop-over.
+ * @param {Object} recipe - option fields
+ * @returns {Array<{method: string, notes: string[]}>}
+ */
+export function methodNotes(recipe) {
+    return METHODS.map(method => ({ method, notes: paramNotes(recipe || {}, method) })).filter(m => m.notes.length);
+}
+
 // ---------------------------------------------------------------------------
 // The sentences that state a setting: each is a function of the value in force, so none can describe another value
 
@@ -259,7 +269,23 @@ export function cleanClip(value) {
 
 
 /** The keys of the option fields, in the order they are stored. */
-export const OPTION_KEYS = Object.freeze(['input', 'method', 'offered', 'layers', 'clip', 'seed', 'bins', 'controls', 'detect_above']);
+export const OPTION_KEYS = Object.freeze(['input', 'method', 'offered', 'layers', 'clip', 'seed', 'bins', 'controls', 'detect_above', 'methods']);
+
+/**
+ * Custom methods (offered-removal-080.md section 4) come after 0.8.0; the field is reserved now, so a link made by a later
+ * version still opens here: a `methods` list is kept as it was stored, read by nothing and sent to no server. A plain
+ * JSON copy, so an edit of the copy never reaches the link it came from.
+ * @param {*} value
+ * @returns {Array|undefined}
+ */
+export function reservedMethods(value) {
+    if (!Array.isArray(value)) return undefined;
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch {
+        return undefined;
+    }
+}
 
 /**
  * The option fields a saved config describes, every one valid. Anything missing or invalid takes its default, so a
@@ -276,8 +302,10 @@ export function normalizeOptions(raw) {
     const offered = cleanOffered(src.offered, METHODS.includes(src.method) ? src.method : DEFAULT_METHOD);
     const asked = typeof src.input === 'string' && src.input ? src.input : DEFAULT_INPUT;
     const layers = cleanLayers(src.layers, asked);
+    // since decision 31 a stored recipe has no `offered`: its `method` is the method itself
+    const method = !Array.isArray(src.offered) && METHODS.includes(src.method) ? src.method : offered[0];
     return {
-        input: layers[0], method: offered[0], offered, layers,
+        input: layers[0], method, offered, layers,
         clip: 'clip' in src ? cleanClip(src.clip) : DEFAULT_CLIP,
         seed: Number.isInteger(src.seed) && src.seed >= 0 ? src.seed : null,
         bins: cleanWhole(src.bins, DEFAULT_BINS, BINS_RANGE),
@@ -295,8 +323,9 @@ export function normalizeOptions(raw) {
 export function writableOptions(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
     const pair = legacyPair(MODEL, src);
+    const methods = reservedMethods(src.methods);
     return { ...withoutLegacy(normalizeOptions({ ...src, input: pair.layer, offered: [pair.method], layers: undefined })),
-        input: pair.layer, method: pair.method };
+        input: pair.layer, method: pair.method, ...(methods ? { methods } : {}) };
 }
 
 /** Whether the PARAMETERS are the defaults (a gene table then stores nothing); the retired offered/layers are not compared. */

@@ -19,7 +19,7 @@
 import { normalizePartitioning, serverRequest, defaultLabelMaps } from './cell-grouping.js';
 import { effectiveBinning } from './binning.js';
 import { groupNeed } from './group-store.js';
-import { csvField } from './score-inspect.js';
+import { csvField } from './csv-format.js';
 import { RESERVED } from './level-id.js';
 import { stableStringify } from './url-history.js';
 

@@ -20,8 +20,8 @@ import { tableMayLoad } from './table-utilities/table-memory.js';
 import { TableResolver } from '../utils/table-resolver.js';
 import './table-utilities/table-background.js';
 import { makeDom } from './gene-set-utilities/dom.js';
-import { createScoreOptions } from './score-options/score-options.js';
-import { normalizeOptions, storedOptions, isDefaultOptions, offeredOptions } from '../utils/signature-options.js';
+import { createScoreOptions, everyOption } from './score-options/score-options.js';
+import { DEFAULT_INPUT, DEFAULT_METHOD, isDefaultParams, writableOptions } from '../utils/signature-options.js';
 import { sourceChanged, sourceRenamed, pinConsumersOf } from '../utils/score-source.js';
 
 const GeneTablePanel = (function() {
@@ -41,7 +41,7 @@ const GeneTablePanel = (function() {
         let _dataTable = null;
         let _tableListenersCleanup = null;
         let _isFirstLoad = true;
-        let _scoreOptions = null;         // Scores offered and Inspect (panels/score-options/score-options.js), shared with the gene signature
+        let _scoreOptions = null;         // Score methods ▾ and the layers' kinds (panels/score-options/score-options.js), shared with the gene signature
         
         // Initialize settings with default options
         const _settings = {
@@ -57,9 +57,8 @@ const GeneTablePanel = (function() {
             searchCaseInsensitive: true,
             currentEntries: [],
             filteredGenes: null,
-            // What this table offers plots and tables as a source of a gene score: the option fields of a signature's
-            // recipe (utils/signature-options.js), stored only when they are not the defaults. The genes are never
-            // stored: they are the rows that pass the filter.
+            // How this table's gene score is computed: the option fields of a signature's recipe (utils/signature-options.js),
+            // stored only when they are not the defaults. The genes are never stored: they are the rows that pass the filter.
             scoreOptions: null
         };
         
@@ -477,38 +476,47 @@ const GeneTablePanel = (function() {
             const before = JSON.stringify(_settings.scoreOptions);
             if ('scoreOptions' in config) {
                 const was = getScoreOptions();
-                const next = normalizeOptions(config.scoreOptions);
-                if (next.input !== was.input || JSON.stringify(next.layers) !== JSON.stringify(was.layers)) pinConsumersOf();
+                const next = writableOptions(config.scoreOptions);
+                if (next.input !== was.input) pinConsumersOf();
             }
             assignKnownSettings(_settings, config);
             if ('scoreOptions' in config && JSON.stringify(_settings.scoreOptions) !== before) {
-                // Back and Forward, a panel set: the offer changed from outside; its readers follow
-                _settings.scoreOptions = isDefaultOptions(_settings.scoreOptions) ? null : storedOptions(_settings.scoreOptions);
-                if (_scoreOptions) _scoreOptions.changed(['offered', 'layers', 'input']);
-                sourceChanged(_id, ['offered', 'layers', 'input']);
+                // Back and Forward, a panel set: the options changed from outside; their readers follow
+                _settings.scoreOptions = storableOptions(_settings.scoreOptions);
+                if (_scoreOptions) _scoreOptions.changed();
+                sourceChanged(_id, ['input', 'method', 'clip', 'seed', 'bins', 'controls', 'detect_above']);
             }
         }
 
         // -------------------------------------------------------------------
-        // a source of a gene score: Scores offered (shared with the Gene Signature, panels/score-options)
+        // a source of a gene score: Score methods ▾ (shared with the Gene Signature, panels/score-options)
 
-        /** The option fields now: the defaults until the user offers something else. */
+        /** The option fields now: the defaults until the user sets a parameter. A stored offer (decision 31) is read for its pair only. */
         function getScoreOptions() {
-            return normalizeOptions(_settings.scoreOptions);
+            return writableOptions(_settings.scoreOptions);
+        }
+
+        /**
+         * The options as the config stores them: nothing while the parameters are the defaults and the legacy pair is
+         * z-score mean of X; never `offered` or `layers`.
+         */
+        function storableOptions(raw) {
+            const o = writableOptions(raw);
+            return isDefaultParams(o) && o.input === DEFAULT_INPUT && o.method === DEFAULT_METHOD && !o.methods ? null : o;
         }
 
         /** Store a patch of option fields; nothing is stored while they are the defaults. */
         function storeScoreOptions(patch) {
             const was = getScoreOptions();
-            const next = normalizeOptions({ ...was, ...patch });
+            const next = writableOptions({ ...was, ...patch });
             // consumers with no layer take the input as it is now, before it changes: they never move with it
-            if (next.input !== was.input || JSON.stringify(next.layers) !== JSON.stringify(was.layers)) pinConsumersOf();
-            _settings.scoreOptions = isDefaultOptions(next) ? null : storedOptions(next);
+            if (next.input !== was.input) pinConsumersOf();
+            _settings.scoreOptions = storableOptions(next);
         }
 
         /**
-         * Offer other scores from outside the section (a plot's "Offer other scores…", a notice's one-click Offer again):
-         * stored, and told to the readers, as an edit in the section is.
+         * A change from outside the pop-over (a notice's one-click action, until SO-3 removes it): stored, and told to
+         * the readers, as an edit in the pop-over is.
          */
         function setScoreOptions(patch) {
             storeScoreOptions(patch);
@@ -517,9 +525,9 @@ const GeneTablePanel = (function() {
             if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
         }
 
-        /** What plots and tables are offered by this table's score: methods and layers that can be computed. */
+        /** Every method on every layer that can be computed, for the menus that still list combinations (SO-3 removes them). */
         function getOfferedOptions() {
-            return _scoreOptions ? _scoreOptions.getOfferedOptions() : offeredOptions(getScoreOptions());
+            return _scoreOptions ? _scoreOptions.getOfferedOptions() : everyOption(getScoreOptions());
         }
 
         /** What the layers look like and what was sampled of them: scoreChoices grades each method on each layer by it. */
@@ -528,20 +536,27 @@ const GeneTablePanel = (function() {
         }
 
         /**
-         * Scores offered and Inspect, in the settings area under the column chooser: the table stays a table first, and
-         * both are collapsed with a summary line until opened.
+         * The table's gene score, beside the column chooser's buttons: Score methods ▾ (the settings of each method) and
+         * Distribution (a Count Plot of the score). The table stays a table first: two buttons, nothing that folds open.
          */
         function mountScoreOptions(controlsContainer) {
             if (_scoreOptions) _scoreOptions.destroy();
             const D = makeDom(document);
-            _scoreOptions = createScoreOptions({
-                id: _id, D, getOptions: getScoreOptions, setOptions: storeScoreOptions, getTitle: () => _title,
-                focusGene: (gene) => DataManager.setFocusedGene(gene)
-            });
-            const section = D.el('div', { class: 'az-score-options', data: { scoreOptions: '' } },
-                _scoreOptions.warning, _scoreOptions.scoring.element, _scoreOptions.inspect.element);
-            controlsContainer.append(section);
+            _scoreOptions = createScoreOptions({ id: _id, D, getOptions: getScoreOptions, setOptions: storeScoreOptions, label: 'Score methods' });
+            const distribution = D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-distribution',
+                data: { distribution: '' }, title: 'Open a Count Plot of this table\'s gene score (z-score mean of X) beside the table',
+                on: { click: openDistribution } }, 'Distribution');
+            const tools = D.el('div', { class: 'az-score-options', role: 'toolbar', aria: { label: 'Gene score' }, data: { scoreOptions: '' } },
+                D.el('span', { class: 'az-score-options__label', text: 'Gene score' }), _scoreOptions.methods.button, distribution);
+            const actions = controlsContainer.querySelector('.column-actions');
+            (actions || controlsContainer).append(tools);
             _scoreOptions.paint();
+        }
+
+        /** Distribution: a Count Plot of the table's gene score beside it, on z-score mean of X. */
+        function openDistribution() {
+            const source = { type: 'gene-score', key: _id, column: DEFAULT_METHOD, layer: 'X' };
+            return PanelManager.createPanelNextTo('cell-count', _id, { mode: 'histogram', x: { source } });
         }
         
         /**
@@ -598,7 +613,7 @@ const GeneTablePanel = (function() {
             getOfferedOptions,
             getGrading,
             revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
-            _inspect: () => (_scoreOptions ? _scoreOptions.inspect : null)
+            openDistribution
         };
     }
     

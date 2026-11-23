@@ -11,7 +11,7 @@
  * order, or lacks one, can never put a value on the wrong group.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
-import { csvField } from '../../utils/score-inspect.js';
+import { csvField } from '../../utils/csv-format.js';
 import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
 import { statisticColumn, statisticAvailability } from '../../utils/cell-gene-model.js';
 

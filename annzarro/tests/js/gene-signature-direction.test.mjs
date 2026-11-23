@@ -145,7 +145,8 @@ test('undo restores both sides', () => {
 // ------------------------------------------------------------------ what can be offered
 
 test('with down genes sum, fraction detected and % of total cannot, with the reason, and leave the menus', () => {
-    const r = recipe({ genes: ['A'], down: ['B'], offered: ['zscore_mean', 'mean', 'sum', 'control_adjusted', 'detected', 'fraction_of_total'] });
+    // the graded list of every method (the offered model reads option fields: SO-3 removes it with its callers)
+    const r = { ...recipe({ genes: ['A'], down: ['B'] }), offered: ['zscore_mean', 'mean', 'sum', 'control_adjusted', 'detected', 'fraction_of_total'] };
     const graded = O.gradedOptions(r, null, { X: 'normalised' });
     const by = Object.fromEntries(graded.map(o => [o.method, o]));
     for (const m of ['zscore_mean', 'mean', 'control_adjusted']) assert.equal(by[m].grade, 'ok', m);
@@ -156,7 +157,7 @@ test('with down genes sum, fraction detected and % of total cannot, with the rea
     assert.notEqual(by.sum.reason, by.detected.reason);
     assert.deepEqual(O.offeredOptions(r, null, { X: 'normalised' }).map(o => o.method), ['zscore_mean', 'mean', 'control_adjusted']);
     // without down genes nothing changes
-    const plain = recipe({ genes: ['A'], offered: ['sum', 'detected'] });
+    const plain = { ...recipe({ genes: ['A'] }), offered: ['sum', 'detected'] };
     assert.deepEqual(O.offeredOptions(plain, null, { X: 'counts' }).map(o => o.method), ['sum', 'detected']);
     assert.equal(O.gradeOption('sum', 'X', 'normalised').grade, 'ok');
     assert.equal(O.gradeOption('sum', 'X', 'normalised', true).down, true);
@@ -188,21 +189,6 @@ test('a consumer on a method that cannot score down genes asks nothing of the se
     sig.down = [];
     sources.update('S1');                      // Update score: the edit is applied
     assert.notEqual(sum.read().state, 'nodown');
-});
-
-// ------------------------------------------------------------------ Inspect
-
-test('Inspect names each gene\'s side only when there are down genes, and the CSV keeps its header otherwise', async () => {
-    const I = await import('../../../static/js/utils/score-inspect.js');
-    const up = [{ name: 'A', status: 'used', detected: 0.5, mean: 1, sd: 1, clipped: 0, direction: 'up' }];
-    assert.equal(I.longGeneCsv([{ label: 'T', genes: up }]).split('\r\n')[0], 'combination,gene,status,detected_fraction,mean,sd,clipped_fraction');
-    const both = [...up, { name: 'B', status: 'used', detected: 0.25, mean: 2, sd: 1, clipped: 0, direction: 'down' }];
-    // one header for the whole file: a combination without down genes says up in every row
-    const lines = I.longGeneCsv([{ label: 'T', genes: both }, { label: 'U', genes: up }]).split('\r\n');
-    assert.equal(lines[0], 'combination,gene,direction,status,detected_fraction,mean,sd,clipped_fraction');
-    assert.deepEqual(lines.slice(1, 4).map(l => l.split(',').slice(0, 3).join(',')), ['T,A,up', 'T,B,down', 'U,A,up']);
-    assert.equal(I.geneRows(both, 'mean').find(r => r.name === 'B').direction, 'down');
-    assert.equal(I.geneRows([{ name: 'C', status: 'used', detected: 0.1, mean: 1, sd: 1, clipped: 0 }], 'mean')[0].direction, 'up', 'an older reply has none: up');
 });
 
 // ------------------------------------------------------------------ the sign column of a pasted table

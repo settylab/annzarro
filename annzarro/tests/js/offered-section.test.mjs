@@ -1,8 +1,7 @@
 /**
- * The shared offered section (static/js/panels/score-options/offered-section.js) in a recording DOM: over 50 store
- * events that change nothing the rows show, no node is touched; when who-uses-what does change, the rows are drawn
- * again once per change and not per event. The signature's wrapper (scoring-section.js) keeps its element ids, classes
- * and sentences. The panel in a real page is covered by annzarro/tests/browser/test_gene_score_options.py.
+ * The shared offered section (static/js/panels/score-options/offered-section.js) over a method table that is not the
+ * signature's: what the Cell Grouping's Statistics pop-over and the Cell-Gene Plot still use until SO-4 removes them
+ * (decision 31). The signature's Scores offered section is gone; its Methods pop-over is methods-popover.test.mjs.
  *
  * Run:  node --test annzarro/tests/js/offered-section.test.mjs
  */
@@ -11,10 +10,7 @@ import assert from 'node:assert/strict';
 
 const { makeDom } = await import('../../../static/js/panels/gene-set-utilities/dom.js');
 const { createOfferedSection } = await import('../../../static/js/panels/score-options/offered-section.js');
-const { createScoringSection, SCORING_HELP } = await import('../../../static/js/panels/score-options/scoring-section.js');
-const O = await import('../../../static/js/utils/signature-options.js');
 const M = await import('../../../static/js/utils/options-model.js');
-const G = await import('../../../static/js/utils/gene-signature.js');
 
 // A document that counts every change to a node, so "no mutation" is a number.
 function recordingDocument() {
@@ -67,71 +63,6 @@ function recordingDocument() {
     const doc = { activeElement: null, createElement: (t) => new Node(t, doc), createTextNode: (t) => new Text(t) };
     return { doc, log };
 }
-
-const recipe = (raw) => G.normalizeRecipe({ genes: ['A', 'B'], ...raw }).recipe;
-
-function build() {
-    const { doc, log } = recordingDocument();
-    const D = makeDom(doc);
-    const state = { recipe: recipe({}), usage: [] };
-    const section = createScoringSection({
-        D, id: 'p1', getRecipe: () => state.recipe, apply: (patch) => { state.recipe = { ...state.recipe, ...patch }; },
-        getInputs: async () => ['X', 'counts'], getKind: async () => null,
-        getInUse: () => state.usage, getLayersInUse: () => []
-    });
-    return { doc, log, state, section, D };
-}
-
-test('50 store events that change nothing the rows show touch no node, open or closed', () => {
-    for (const open of [true, false]) {
-        const { log, section } = build();
-        section.paint();
-        if (open) section.reveal();
-        assert.ok(log.length > 0, 'drawing the section does mutate');
-        const before = log.length;
-        for (let i = 0; i < 50; i++) section.paintUsage();
-        assert.equal(log.length, before, `open: ${open}`);
-    }
-});
-
-test('events that DO change who uses what repaint once per change, not once per event', () => {
-    const { log, state, section } = build();
-    section.reveal();
-    let repaints = 0;
-    let before = log.length;
-    for (let i = 0; i < 50; i++) {
-        if (i % 10 === 0) state.usage = [{ value: 'mean', plots: 1 + i / 10, tables: 0 }];
-        section.paintUsage();
-        if (log.length !== before) { repaints++; before = log.length; }
-    }
-    assert.equal(repaints, 5, 'five changes of usage, five repaints');
-});
-
-test('the signature\'s wrapper keeps the ids, classes and sentences of the section it replaced', () => {
-    const { section } = build();
-    section.reveal();
-    const el = section.element;
-    assert.equal(el.getAttribute('aria-label'), 'Scores offered');
-    assert.equal(el.className, 'gsig-scoring');
-    assert.ok(el.querySelector('[data-aggregations-help]'));
-    for (const method of O.offeredMethods(recipe({}))) assert.ok(el.querySelector(`[data-method="${method}"]`), method);
-    assert.equal(el.querySelector('[data-clip-help]').textContent, O.clipLine(10));
-    assert.equal(SCORING_HELP.where, el.querySelector('[data-aggregations-help]').textContent);
-    assert.equal(section.state().lastClip, 10);
-});
-
-test('the statement of a setting follows the setting: the clip line and the threshold line are redrawn with the value', () => {
-    const { state, section } = build();
-    state.recipe = { ...state.recipe, offered: ['zscore_mean', 'detected'] };
-    section.reveal();
-    const el = section.element;
-    assert.equal(el.querySelector('[data-clip-help]').textContent, O.clipLine(10));
-    assert.equal(el.querySelector('[data-detect-help]').textContent, O.thresholdLine(0));
-    state.recipe = { ...state.recipe, clip: null, detect_above: 0.5 };
-    section.paint();
-    assert.equal(el.querySelector('[data-clip-help]').textContent, O.clipLine(null));
-    assert.equal(el.querySelector('[data-detect-help]').textContent, O.thresholdLine(0.5));
-});
 
 test('the shared section runs over a method table that is not the signature\'s', () => {
     const { doc } = recordingDocument();
