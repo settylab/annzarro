@@ -49,11 +49,8 @@
 .ccnt-arrangement__opt:has(.ccnt-arrangement__input:checked) { background: var(--az-surface-3); border-color: var(--az-link); font-weight: 600; }
 .ccnt-arrangement__opt:has(.ccnt-arrangement__input:focus-visible) { outline: 2px solid var(--az-link); outline-offset: 1px; }
 
-/* an input's binning control and its level list, opened in place under its row (UX 4.4) */
-.ccnt-binning, .ccnt-levels {
-    margin: 2px 0 4px 4.75rem; padding: 6px 8px; border: 1px solid var(--az-border); border-radius: 4px; background: var(--az-surface);
-}
-.ccnt-binning[hidden], .ccnt-levels[hidden] { display: none; }
+/* an input's binning control and its level list live in pop-overs (ui/popover.js, WP-6a): they never change the panel's size */
+.ccnt-binning, .ccnt-levels { margin: 0; }
 .ccnt-levels__list { list-style: none; margin: 0; padding: 0; max-height: 12rem; overflow: auto; }
 .ccnt-level { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
 .ccnt-level__tick { display: inline-flex; align-items: center; gap: 4px; margin: 0; flex: 1 1 auto; min-width: 0; }
@@ -64,11 +61,23 @@
 .ccnt-rest-opt { display: inline-flex; align-items: center; gap: 2px; margin: 0; }
 
 .ccnt-row--labels .btn.active { background: var(--az-surface-3); border-color: var(--az-link); color: var(--az-text); }
-.ccnt-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-left: 4.75rem; }
-.ccnt-options[hidden], .ccnt-opt[hidden] { display: none; }
+.ccnt-row[hidden] { display: none; }
+.ccnt-opt[hidden] { display: none; }
+.ccnt-row--density > .ctl-label { flex: 0 0 4.75rem; }
+.ccnt-density-notes { flex: 1 1 100%; margin-left: 4.75rem; }
+.ccnt-density-notes[hidden] { display: none; }
 .ccnt-kept { color: var(--az-muted); font-size: 0.75rem; }
 .ccnt-kept[hidden] { display: none; }
-.ccnt-controls__foot { display: flex; justify-content: flex-end; }
+.ccnt-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.ccnt-toolbar > .btn[hidden] { display: none; }
+.ccnt-toolbar__gap { flex: 1 1 auto; }
+
+/* the Color pop-over's lines (its surface is the shared one, popover.css) */
+.ccnt-color__line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 6px; }
+.ccnt-color__line > .form-select { width: auto; max-width: 14rem; }
+.ccnt-color__limit { display: inline-flex; align-items: center; gap: 4px; }
+.ccnt-color__limit .form-control { width: 5rem; }
+.ccnt-color__problem:empty { display: none; }
 .ccnt-sets[hidden] { display: none; }
 
 /* the plot, and what it says when there is nothing to draw (never resizes the plot) */
@@ -96,15 +105,9 @@
 .ccnt-save__title { font-weight: 600; margin-bottom: 4px; }
 .ccnt-save__line { margin: 0 0 4px; }
 .ccnt-save__do { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
-/* Show as table (UX 7): under the strip, scrolled within the panel */
-.ccnt-table { flex: 0 1 auto; max-height: 40%; overflow: auto; padding: 0 8px 4px; }
-.ccnt-table[hidden] { display: none; }
-.ccnt-table caption { caption-side: top; color: var(--az-muted); }
-.ccnt-table__cut { margin: 2px 0 0; }
-
 /* narrow: the label goes above its selects (UX 4.7) */
 @container ccnt (max-width: 420px) {
     .ccnt-row > .ctl-label, .ccnt-row > .axis-selector-label { flex-basis: 100%; }
-    .ccnt-binning, .ccnt-levels, .ccnt-options { margin-left: 0; }
+    .ccnt-density-notes { margin-left: 0; }
     .ccnt-arrangement { margin-left: 0; }
 }

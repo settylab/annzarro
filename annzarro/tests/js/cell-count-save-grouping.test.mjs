@@ -1,12 +1,12 @@
 /**
- * C2b: Save as grouping and Show as table of a Cell Count Plot, without a page (CNT-7, CNT-23, UX 4.7, UX 7).
+ * C2b: Save as grouping and the CSV of a Cell Count Plot, without a page (CNT-7, CNT-23, UX 4.7, UX 7).
  *
  *   - the recipe is made by G6's model (utils/cell-grouping.js normalizeGrouping) from the plot's own inputs (X, Y,
  *     Color by), with each bin count the plot used written out, and `outside` turned to the grouping's clamp (SHR-45);
  *   - the dialog's lines: the factors with their bins, the groups the plot shows, and the clamp sentence only when cells
  *     are affected;
  *   - over the grouping limits (SHR-13), Save is refused with the reason and by how much; nothing is built;
- *   - Show as table shows exactly the CSV's rows (one column specification), cut with a sentence past its row cap.
+ *   - the CSV's rows are the plotted table's, from one column specification.
  *
  * Run:  node --test annzarro/tests/js/cell-count-save-grouping.test.mjs
  */
@@ -16,7 +16,6 @@ import assert from 'node:assert/strict';
 globalThis.fetch = async () => ({ ok: false, status: 404, statusText: 'offline in test' });
 
 const G = await import('../../../static/js/panels/cell-count/save-grouping.js');
-const T = await import('../../../static/js/panels/cell-count/table-view.js');
 const M = await import('../../../static/js/utils/count-plot-model.js');
 const D = await import('../../../static/js/panels/cell-count/draw.js');
 const { normalizeGrouping, GROUPING_LIMITS } = await import('../../../static/js/utils/cell-grouping.js');
@@ -129,26 +128,16 @@ test('the dialog\'s buttons and title are the vocabulary\'s', () => {
     assert.equal(words.cancel, 'Cancel');
 });
 
-// --- Show as table ---------------------------------------------------------------------------------------------------
+// --- the CSV (Show as table was dropped, 2026-11-23) -----------------------------------------------------------------
 
-test('Show as table holds exactly the CSV\'s rows, headers first', () => {
+test('the CSV holds the plotted rows, headers first, from one column specification', () => {
     const config = norm({ mode: 'bar', x: obs('cell_type'), split: obs('condition') });
     const grid = gridOf([['c:B', 'c:T'], ['c:ctrl', 'c:stim']], [10, 5, 7, 3]);
     const table = M.countTable(config, grid, inputsOf(config));
     const opts = { inputNames: { x: 'cell_type', split: 'condition' }, headers: VOCABULARY.countPlot.csv };
     const rows = D.countRows(config, table, opts);
-    assert.equal(M.tableCsv(rows), D.countCsv(config, table, opts), 'one column specification for the CSV and the table');
-    const view = T.tableView(rows);
-    assert.deepEqual(view.header, ['cell_type', 'condition', 'Cells', 'Share']);
-    assert.equal(view.rows.length, 4);
-    assert.deepEqual(view.rows[0].slice(0, 3), ['B', 'ctrl', 10]);
-    assert.equal(view.cut, null);
-});
-
-test('a table longer than its cap shows the first rows and says the CSV has them all', () => {
-    const header = ['x', 'Cells', 'Share'];
-    const rows = [header, ...Array.from({ length: 2500 }, (_, i) => [`l${i}`, i, null])];
-    const view = T.tableView(rows);
-    assert.equal(view.rows.length, 2000);
-    assert.equal(view.cut, 'Showing the first 2,000 of 2,500 rows; Download CSV has them all.');
+    assert.equal(M.tableCsv(rows), D.countCsv(config, table, opts), 'one column specification for the CSV and its rows');
+    assert.deepEqual(rows[0], ['cell_type', 'condition', 'Cells', 'Share']);
+    assert.equal(rows.length, 5);
+    assert.deepEqual(rows[1].slice(0, 3), ['B', 'ctrl', 10]);
 });

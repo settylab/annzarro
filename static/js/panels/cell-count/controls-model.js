@@ -9,7 +9,7 @@ import { VOCABULARY } from '../../utils/vocabulary.js';
 import { sourceName } from '../../utils/cell-grouping.js';
 import { DEFAULT_BINS as GROUPING_DEFAULT_BINS, normalizeBinning } from '../../utils/binning.js';
 import {
-    modeReads, keptForOtherModes, binsRange, shareBasesFor, levelLabelsOf, MEASURE_STATS
+    modeReads, keptForOtherModes, binsRange, shareBasesFor, levelLabelsOf, MEASURE_STATS, splitUsed
 } from '../../utils/count-plot-model.js';
 import { PANEL_SOURCES, TABLE_SOURCE } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
@@ -364,6 +364,36 @@ export function parseAdjust(text) {
 }
 
 /**
+ * What the Color pop-over offers (WP-6a): a colour map (with Reverse, min, max, centre) where the plot draws a continuous
+ * colour scale, and a level palette where it colours levels. A 2D histogram's rectangles, a 2D density without a Color by,
+ * a heatmap's number and an UpSet coloured by a share or a statistic have a scale; a Color by, a pie's slices and a
+ * heatmap's most frequent level have levels.
+ * @param {Object} config - from normalizeCountPlot
+ * @returns {{map: boolean, palette: boolean}}
+ */
+export function colorUse(config) {
+    const c = shownConfig(config);
+    const kind = (c.value && c.value.kind) || 'count';
+    const split = !!c.split && splitUsed(c);
+    const levels = split || c.mode === 'pie';
+    let map = false;
+    if (c.mode === 'hist2d') map = !split && kind !== 'top_level';
+    else if (c.mode === 'heatmap') map = kind !== 'top_level';
+    else if (c.mode === 'density2d') map = !split;
+    else if (c.mode === 'upset') map = kind === 'share' || (kind === 'measure' && !!c.measure);
+    const top = c.mode === 'heatmap' && kind === 'top_level';
+    return { map, palette: levels || top };
+}
+
+/** A typed colour limit: a number, or empty for automatic; else the sentence that says so. */
+export function parseColourLimit(text) {
+    const s = String(text).trim();
+    if (s === '') return { ok: true, value: undefined };
+    const v = Number(s);
+    return Number.isFinite(v) ? { ok: true, value: v } : { ok: false, message: C.colour.problem };
+}
+
+/**
  * The options of the drawing (draw.js `countFigure`'s `options`), from the style fields of the config: printed labels,
  * the sort, Reverse, Horizontal, the log count axis, a ring and the fade, each only where the mode has it. A field of
  * another mode's meaning (an UpSet's `labels: true`, `sort: 'size'`) is not this one's.
@@ -383,8 +413,19 @@ export function drawOptions(config) {
         adjust: rows.density && Number.isFinite(config.adjust) && config.adjust >= ADJUST.min && config.adjust <= ADJUST.max ? config.adjust : 1,
         scale: rows.density && config.scale === 'size' ? 'size' : 'level',
         // a Color by is told apart by the density of each level's color, as an image, unless the contours are chosen
-        style: rows.density === 2 && (config.style === 'image' || (config.style === undefined && !!config.split)) ? 'image' : 'contours'
+        style: rows.density === 2 && (config.style === 'image' || (config.style === undefined && !!config.split)) ? 'image' : 'contours',
+        // the colour scale of a number's color (WP-6a): the map (absent is Viridis), Reverse and the fixed range
+        ...(config.color && config.color.map ? { colorscale: config.color.map } : {}),
+        colour: colourOf(config.color)
     };
+}
+
+/** The stored colour as the figures read it: `{reverse, min?, max?, center?}`, a field only where it is stored. */
+function colourOf(color) {
+    const c = color || {};
+    const out = { reverse: c.reverse === true };
+    for (const k of ['min', 'max', 'center']) if (Number.isFinite(c[k])) out[k] = c[k];
+    return out;
 }
 
 /** The label kinds the Labels select offers: a statistic only when one is stored. */

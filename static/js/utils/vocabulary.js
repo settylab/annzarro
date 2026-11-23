@@ -370,9 +370,16 @@ const countPlot = Object.freeze({
     buttons: Object.freeze({
         sort: 'Sort by height', reverse: 'Reverse', horizontal: 'Horizontal', options: 'Plot Options', ring: 'Ring', log: 'Log count axis',
         fade: 'Fade by its share', csv: 'Download CSV', chooseLevels: `Choose ${plural.level}`, undo: 'Undo',
-        adjust: 'Bandwidth adjust', bySize: 'Scale curves by level size', image: 'As an image'
+        adjust: 'Smoothing', bySize: 'Scale curves by level size', image: 'As an image'
     }),
     adjustProblem: 'Enter a number from 0.1 to 10.',
+    /** The Color pop-over (WP-6a): the colour map, Reverse, the range and the palette of a Color by's levels. */
+    colour: Object.freeze({
+        button: 'Color', title: 'Color', map: 'Map', reverse: 'Reverse', min: 'Min', max: 'Max', center: 'Center', auto: 'auto',
+        palette: 'Level palette', paletteDefault: 'Default', reset: 'Reset',
+        problem: 'Enter a number, or leave it empty for automatic.',
+        centerNote: 'Center has no effect while both Min and Max are set.'
+    }),
     /** The inputs a mode does not read, still stored (CNT-6, UX 4.2). */
     kept: (items) => `Kept for other modes: ${items.join(' · ')}`,
     /** The compact binning line of a numeric input (UX 4.4). */
