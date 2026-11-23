@@ -82,7 +82,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // --- the stored config -----------------------------------------------------------------------------------------------
 
-const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure', 'binSpacing'];
+const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure', 'binSpacing', 'color'];
 const INPUTS = ['x', 'y', 'split'];
 
 /** An input as a partitioning. Its bin count goes to 2,000 and is kept as typed, since the default differs by mode. */
@@ -200,8 +200,37 @@ export function normalizeCountPlot(raw) {
         const spacing = normalizeBinSpacing(raw.binSpacing, bad);
         if (spacing) out.binSpacing = spacing;
     }
+    if (raw.color !== undefined) {
+        const color = normalizeColor(raw.color, bad);
+        if (color) out.color = color;
+    }
     for (const key of Object.keys(raw)) if (!KNOWN.includes(key)) out[key] = raw[key];
     return { config: out, problems };
+}
+
+/**
+ * The colour of the plot (WP-6a): `{map?, reverse?, min?, max?, center?, palette?}`. `map` is a colour scale's name,
+ * `reverse` flips it, `min`, `max` and `center` fix the range of a colour scale (absent: automatic), `palette` names the
+ * discrete palette of a Color by's levels. A field that is not valid is reported and left out; an empty colour is none.
+ */
+function normalizeColor(raw, bad) {
+    if (!isObject(raw)) {
+        bad('color', 'bad_color');
+        return null;
+    }
+    const out = {};
+    for (const field of ['map', 'palette']) {
+        if (raw[field] === undefined) continue;
+        if (typeof raw[field] === 'string' && raw[field]) out[field] = raw[field]; else bad(`color.${field}`, 'bad_color');
+    }
+    if (raw.reverse !== undefined) {
+        if (raw.reverse === true) out.reverse = true; else if (raw.reverse !== false) bad('color.reverse', 'bad_color');
+    }
+    for (const field of ['min', 'max', 'center']) {
+        if (raw[field] === undefined) continue;
+        if (isNumber(raw[field])) out[field] = raw[field]; else bad(`color.${field}`, 'bad_color');
+    }
+    return Object.keys(out).length ? out : null;
 }
 
 /** How a binned axis is drawn: each bin at its index, all one width ('even'), or at its values ('value'). */
@@ -264,6 +293,25 @@ export function keptForOtherModes(config) {
 export function splitUsed(config) {
     if (!modeReads(config.mode).split) return false;
     return config.mode !== 'hist2d' || !config.value || config.value.kind === 'count';
+}
+
+/**
+ * The layers a 2D density is drawn in: an opacity `image`, `lines` (isolines) and `fill` (isolines filled in bands), any
+ * combination. The stored `layers` win; else an old link's `style` ('image', or 'contours': isolines of a Color by's levels,
+ * filled isolines of one group); else the default: filled isolines, with lines when there is a Color by. Never none.
+ * @param {Object} [layers] - the stored `{image?, lines?, fill?}`
+ * @param {string} [style] - the stored style of an old link
+ * @param {boolean} split - whether the plot has a Color by
+ * @returns {{image: boolean, lines: boolean, fill: boolean}}
+ */
+export function densityLayers(layers, style, split) {
+    if (isObject(layers)) {
+        const out = { image: layers.image === true, lines: layers.lines === true, fill: layers.fill === true };
+        if (out.image || out.lines || out.fill) return out;
+    }
+    if (style === 'image') return { image: true, lines: false, fill: false };
+    if (style === 'contours') return split ? { image: false, lines: true, fill: false } : { image: false, lines: false, fill: true };
+    return { image: false, lines: !!split, fill: true };
 }
 
 // --- bins ------------------------------------------------------------------------------------------------------------

@@ -13,7 +13,7 @@
  * alone, and a change of statistic, scaling, order or style asks for nothing (CXG-18). The features are named by
  * sections.js `planFeatures`, which asks for a section's genes once however many rows and aggregations read them (OD
  * 15) and for a score only when a one-row section reads one (CXG-9). The option also declares the statistics it reads
- * (`statistics`), so a grouping counts this plot in "used by" (G9d).
+ * (`statistics`), so a grouping counts this plot among its users.
  *
  * NOTICES go through the page's painter (utils/host-binding.js), with this panel's records and its action provider,
  * so a computing, refused or failed plot says so over the plot as every source does, with its progress bar.
@@ -49,17 +49,18 @@ import { registerReferences, wouldLoop, dependsOn } from '../utils/panel-referen
 import { createHostBinding, isVisible } from '../utils/host-binding.js';
 import { GROUPING } from '../utils/group-sources.js';
 import { actions } from '../utils/source-actions.js';
-import { sourceList, scoreOptions, lapsedLabel, offerOtherScores, openSignature, onSourceStatus } from '../utils/score-source.js';
+import { sourceList, scoreChoices, openSignature, onSourceStatus } from '../utils/score-source.js';
 import { createSourceAdapter, KIND_HEADING } from '../utils/score-source-panels.js';
 import { TableResolver, findCycle } from '../utils/table-resolver.js';
 import { KIND_CLIENT } from './score-options/score-options.js';
 import { layerKeys } from '../utils/structure-keys.js';
 import {
-    statisticGrade, negativeValuesSentence, axisOfferRecipe, axisOfferPatch, defaultMeasures, statisticUsage, GROUP_STATISTICS_MODEL
+    statisticGrade, negativeValuesSentence, defaultMeasures
 } from '../utils/group-statistics.js';
+import { SIGNATURE_MODEL } from '../utils/signature-options.js';
+import { withoutLegacy } from '../utils/options-model.js';
 import { parseThresholdText } from '../utils/options-model.js';
 import { geneReads } from '../utils/cell-gene-model.js';
-import { createOfferedSection } from './score-options/offered-section.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
 import { buildFigure, colourBars, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
@@ -75,10 +76,10 @@ import { VOCABULARY } from '../utils/vocabulary.js';
 import {
     normalizeCellGene, cellGeneReferences, addSection, duplicateSection, removeSection, moveSection, setSectionRows,
     setSectionTitle, setRowAggregation, rowAggregationOf, sectionTitle, sectionGenes, sectionLine, tooManyGenesText,
-    parseAggregation, planFeatures, buildMatrix, heightOf, OFFER_OTHER, SAME_AS_COLOR, GROUP_AXIS
+    aggregationAfter, planFeatures, buildMatrix, heightOf, withGroupingThreshold, SAME_AS_COLOR, GROUP_AXIS
 } from './cell-gene/sections.js';
 import {
-    measureModel, offerPlace, pickLayer, axisChoices, axisSourceId, axisRecipe, createControls, createAddGenes,
+    measureModel, pickLayer, axisChoices, axisSourceId, axisRecipe, createControls, createAddGenes,
     createSectionList
 } from './cell-gene/controls.js';
 import {
@@ -111,7 +112,7 @@ const STATES = VOCABULARY.cellGene.states;
 const W3 = VOCABULARY.cellGene.view3d;
 /** A turn of the 3D camera is stored once it has rested this long (UX 6b: debounced). */
 const CAMERA_STORE_MS = 250;
-const SOURCES = VOCABULARY.cellGene.sources;
+const CGV = VOCABULARY.cellGene;
 
 /** What a notice calls things (utils/source-notices.js): the plot waits on its groups. */
 const NOTICE_WORDS = Object.freeze({
@@ -198,7 +199,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _controlsVisible = options.controlsVisible;
         let _config = configFrom(options);
         const _undo = new UndoStack();
-        /** A new plot whose Color and Size the user has not chosen: they follow matrix kind and the axis's offer (Q2) */
+        /** A new plot whose Color and Size the user has not chosen: they follow matrix kind (decision 24) */
         let _fresh = !options || (!('color' in options) && !('size' in options));
 
         // derived, never saved
@@ -216,8 +217,6 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _kindsOf = null;
         /** layers whose kind is still being asked for */
         let _kindsPending = 0;
-        /** the plot's own Statistics offered (offered-section.js), shown with an obs column as groups (Q1) */
-        let _offer = null;
         /** section source id -> {recipe key, genes, missing, total, ...}: read when a source changes, never per paint */
         const _resolved = new Map();
         /** source id -> stop listening */
@@ -289,8 +288,6 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             if (_resize) _resize.disconnect();
             _resize = null;
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
-            if (_offer) _offer.destroy();
-            _offer = null;
             if (_dom && window.Plotly) window.Plotly.purge(_dom.plot);
             _initialized = false;
             _dom = null;
@@ -323,7 +320,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     if (_kindsOf !== dataset) return;
                     if (reply && reply.kind) {
                         _kinds = { ..._kinds, [layer]: reply.kind };
-                        // the defaults of an obs axis's offer follow the kinds (Q1): the plan may read differently
+                        // a new plot's measures follow the kinds (decision 24): the plan may read differently
                         _plan = null;
                         _shown = null;
                         sync();
@@ -333,7 +330,6 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     settled();
                 }, settled);
             }
-            if (_offer) { _offer.refreshInputs(); _offer.refreshKind(); }
         }
 
         /**
@@ -350,16 +346,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         }
 
         /**
-         * `config` with a fresh plot's Color and Size (Q2) from the layers its cell axis offers (Q1: the offer stays the
-         * gate), or `config` itself when they would not change, the user chose them, or kinds are still asked for.
+         * `config` with a fresh plot's Color and Size (decision 24, kept by decision 32 on both axis kinds) from all the
+         * dataset's layers, or `config` itself when they would not change, the user chose them, or kinds are still asked
+         * for. On a grouping axis this may read two layers, as on an obs one.
          */
         function withFreshMeasures(config) {
             if (!_fresh || _kindsPending > 0) return config;
-            const axis = config.cellAxis;
-            const g = axis && axis.type === GROUP_AXIS ? panelOf(axis.key) : null;
-            const recipe = g && typeOf(g) === GROUPING_TYPE ? g.getRecipe() : axisOfferRecipe(config.offer, datasetLayers(), _kinds);
-            const have = new Set(datasetLayers());
-            const d = defaultMeasures(GROUP_STATISTICS_MODEL.offeredLayers(recipe).filter((l) => have.has(l)), _kinds);
+            const d = defaultMeasures(datasetLayers(), _kinds);
             const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
             if (same(d.color, config.color) && same(d.size, config.size)) return config;
             return { ...config, color: d.color, size: d.size };
@@ -374,20 +367,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         }
 
         /**
-         * What Color and Size may pick from (CXG-11, operator ruling Q1): the grouping's Statistics offered, or with an
-         * obs column the plot's own offer, where the log-normalised and counts layers count as offered until it is edited.
+         * The grouping's expression threshold (its method parameter, decision 34), for a measure with none of its own
+         * (CXG-9). 0 on an obs axis.
          */
-        function offerRecipe() {
-            const g = axisGrouping();
-            return g ? g.getRecipe() : obsOffer();
-        }
-
-        /** The plot's own offer as a recipe (group-statistics.js axisOfferRecipe). */
-        function obsOffer() {
-            return axisOfferRecipe(_config.offer, datasetLayers(), _kinds);
-        }
-
-        /** The grouping's expression threshold, for a statistic that has none of its own (CXG-9). */
         function baseThreshold() {
             const g = axisGrouping();
             const r = g ? g.getRecipe() : null;
@@ -451,7 +433,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                         empty: over || (counted.genes.length ? null : `No gene of ${src.title} is in this dataset.`) };
                 }
             }
-            out.optionsKey = JSON.stringify(scoreOptions(id).map((o) => o.id));
+            // a score parameter (clip, bins, …) changes what a score aggregation reads; the retired offer does not
+            out.optionsKey = out.recipe ? JSON.stringify(withoutLegacy(out.recipe)) : '';
             const scored = new Map();
             out.scoreRecipe = (column, layer) => {
                 if (!out.recipe) return null;
@@ -634,7 +617,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         const sectionName = (i) => sectionTitle(_config.sections[i], titleOfPanel);
 
         function setAxis(axis) {
-            // a fresh plot's Color and Size follow what the new groups offer (Q2), in the same step
+            // a fresh plot's Color and Size follow the layers' kinds (decision 24), in the same step
             commit(withFreshMeasures({ ..._config, cellAxis: axis }), `groups ${axis.type === 'obs' ? axis.key : titleOfPanel(axis.key)}`);
         }
 
@@ -668,12 +651,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _sections.focus(to);
         }
 
-        function setAggregation(i, which, value) {
+        /** A one-row section's Color or Size: its kind, or a score's method or layer (decision 31, item 7). */
+        function setAggregation(i, which, part, value) {
             const section = _config.sections[i];
             if (!section) return;
-            if (value === OFFER_OTHER) { offerOtherScores(section.source, _id); return; }
-            const next = parseAggregation(value, rowAggregationOf(section, which));
-            commit(setRowAggregation(_config, i, which, next), `${which === 'color' ? 'color' : 'size'} of ${sectionName(i)}`);
+            const held = rowAggregationOf(section, which);
+            const next = aggregationAfter(held, part, value, scoreChoices(section.source, { method: held.column, layer: held.layer }, { datasetLayers: datasetLayers() }));
+            if (!next) { paint(); return; }
+            commit(setRowAggregation(_config, i, which, next.agg), `${which === 'color' ? 'color' : 'size'} of ${sectionName(i)}`, { said: next.say });
         }
 
         function setAbove(i, which, text) {
@@ -698,19 +683,10 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 title: (i, text) => commit(setSectionTitle(_config, i, text), `rename ${sectionName(i)}`),
                 op: sectionOp, move, aggregation: setAggregation, above: setAbove
             } });
-            _offer = createOfferedSection({
-                D, id: _id, model: GROUP_STATISTICS_MODEL, title: SOURCES.offer.title, text: SOURCES.offer,
-                getRecipe: obsOffer, apply: applyOffer,
-                getInputs: async () => datasetLayers(),
-                getKind: (layer, opts) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), layer, opts),
-                getInUse: () => ownUsage().statistics, getLayersInUse: () => ownUsage().layers,
-                onKinds: () => paint(),
-                hooks: { pinnedLayer: GROUP_STATISTICS_MODEL.defaultLayer }
-            });
-            _controls = createControls({ D, id: _id, model: controlsModel, sections: _sections.element, addGenes: _addGenes.element, offer: _offer.element, on: {
+            _controls = createControls({ D, id: _id, model: controlsModel, sections: _sections.element, addGenes: _addGenes.element, on: {
                 axis: setAxis, newGrouping,
                 mode: (mode) => commit({ ..._config, mode }, mode === 'dots' ? 'show as dots' : 'show as a heatmap'),
-                stat: setStat, layer: setLayer, above: setThreshold, offerOther,
+                stat: setStat, layer: setLayer, above: setThreshold,
                 scale: (value) => commit({ ..._config, scale: value }, 'scale'),
                 swap: (on) => commit({ ..._config, swap: on }, 'swap axes')
             } });
@@ -752,7 +728,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         const withThreshold = (spec) => (isNumber(spec.detect_above) ? { detect_above: spec.detect_above } : {});
         const measureName = (which) => which;
 
-        /** A measure's statistic (WP-4): its layer stays when it can give the statistic, else the first offered one that can. */
+        /** A measure's statistic (WP-4, decision 31): its layer stays when it can give the statistic, else the first that can, said once. */
         function setStat(which, stat) {
             if (which === 'height') { setHeightStat(stat); return; }
             _fresh = false;
@@ -761,8 +737,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 commit({ ..._config, [which]: { ...withThreshold(spec), stat } }, `${measureName(which)} statistic`);
                 return;
             }
-            const layer = pickLayer({ recipe: offerRecipe(), datasetLayers: datasetLayers(), kinds: _kinds, stat, preferred: spec.layer });
-            commit({ ..._config, [which]: { ...withThreshold(spec), stat, layer } }, `${measureName(which)} statistic`);
+            const { layer, say } = pickLayer({ datasetLayers: datasetLayers(), kinds: _kinds, stat, preferred: spec.layer });
+            commit({ ..._config, [which]: { ...withThreshold(spec), stat, layer } }, `${measureName(which)} statistic`, { said: say });
         }
 
         /**
@@ -781,8 +757,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 commit({ ..._config, height: { ...withThreshold(spec), stat } }, 'height statistic');
                 return;
             }
-            const layer = pickLayer({ recipe: offerRecipe(), datasetLayers: datasetLayers(), kinds: _kinds, stat, preferred: spec.layer || _config.color.layer });
-            commit({ ..._config, height: { ...withThreshold(spec), stat, layer } }, 'height statistic');
+            const { layer, say } = pickLayer({ datasetLayers: datasetLayers(), kinds: _kinds, stat, preferred: spec.layer || _config.color.layer });
+            commit({ ..._config, height: { ...withThreshold(spec), stat, layer } }, 'height statistic', { said: say });
         }
 
         /** A measure's layer (WP-4): Color and Size may read different layers; each gene is then read on both. */
@@ -797,38 +773,6 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const p = parseThresholdText(text);
             if (!p.ok) { paint(); return; }
             commit({ ..._config, [which]: { ..._config[which], detect_above: p.value } }, `${measureName(which)} threshold`);
-        }
-
-        /**
-         * Offer other… (operator ruling Q1): where layers are offered. A grouping's Statistics offered when the groups are
-         * a grouping's; with an obs column, the plot's own list.
-         */
-        function offerOther() {
-            if (offerPlace(_config.cellAxis) === 'grouping') {
-                const id = _config.cellAxis.key;
-                openPanel(id, _id);
-                const g = panelOf(id);
-                // the panel may still be building its parts
-                if (g && typeof g.revealStatisticsOffered === 'function') setTimeout(() => g.revealStatisticsOffered(), 0);
-                return;
-            }
-            revealControls();
-            if (_offer) _offer.reveal();
-        }
-
-        /** An edit of the plot's own Statistics offered, as one undoable step. */
-        function applyOffer(patch) {
-            const next = axisOfferPatch(_config.offer, patch, datasetLayers(), _kinds);
-            const config = { ..._config, offer: Object.keys(next).length ? next : undefined };
-            if (!config.offer) delete config.offer;
-            commit(config, 'statistics offered');
-        }
-
-        /** What this plot reads, as the offered section counts users ("1 plot"). */
-        function ownUsage() {
-            const own = heightOf(_config);
-            const statistics = [_config.color, ...(_config.mode === 'dots' ? [_config.size] : []), ...(own ? [own] : [])].map((s) => ({ stat: s.stat, layer: s.layer }));
-            return statisticUsage([{ kind: 'plot', option: { statistics } }]);
         }
 
         function mountParts() {
@@ -887,8 +831,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         }
 
         function measure(spec) {
-            return measureModel({ spec, recipe: offerRecipe(), datasetLayers: datasetLayers(), kinds: _kinds,
-                threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold() });
+            return measureModel({ spec, datasetLayers: datasetLayers(), kinds: _kinds, threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold() });
         }
 
         /** Height's row: its own measure, or Same as Color (Color's statistics listed after it, no layer, no threshold). */
@@ -905,22 +848,37 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 axis: _config.cellAxis || null,
                 choices: axisChoices({ structure: structureRead(), self: _id, groupings: all, loops: wouldLoop }),
                 mode: _config.mode,
-                // each measure: statistic, layer (only offered ones, graded: SHR-27) and its threshold (WP-4)
+                // each measure: statistic, layer (all of them, graded: SHR-27, decision 31) and its threshold (WP-4)
                 color: measure(_config.color),
                 size: measure(_config.size),
                 // 3D's Height (UX 6b): Same as Color first; shown while 3D is on, kept while it is off
                 height: heightModel(),
                 view3d: _config.view === '3d',
-                offerShown: offerPlace(_config.cellAxis) === 'plot',
                 scale: _config.scale || 'none',
                 swap: !!_config.swap
             };
         }
 
-        /** "z-score mean · X": the score option a score aggregation reads. */
-        function scoreOptionName(source, agg) {
-            const o = scoreOptions(source).find((x) => x.method === agg.column && x.layer === agg.layer);
-            return o ? `${o.short} · ${o.layer}` : lapsedLabel({ key: source, column: agg.column, layer: agg.layer });
+        /** "z-score mean · X": the method and layer a score aggregation reads. */
+        function scoreOptionName(agg) {
+            return `${SIGNATURE_MODEL.methodShort(agg.column)} · ${agg.layer || 'X'}`;
+        }
+
+        /**
+         * What a one-row section's Color or Size shows (decision 31, item 7): its label, and for a score kind the method
+         * and layer selects (score-source.js scoreChoices: every method and layer, graded for the section's source).
+         */
+        function sectionPart(section, which, layer) {
+            const held = rowAggregationOf(section, which);
+            if (!held.column) return { held, layer, label: CGV.aggregation[held.agg], methods: null, layers: null };
+            const label = CGV.scoreAggregation[held.agg](scoreOptionName(held));
+            const c = scoreChoices(section.source, { method: held.column, layer: held.layer }, { datasetLayers: datasetLayers() });
+            const entry = (e, name) => ({ value: e.value, label: e.lapsed ? `${name} (not available)` : name, title: e.title, disabled: e.disabled, lapsed: e.lapsed });
+            const methods = c ? c.methods.map((e) => entry(e, SIGNATURE_MODEL.methodShort(e.value)))
+                : [{ value: held.column, label: SIGNATURE_MODEL.methodShort(held.column) }];
+            const layers = c ? c.layers.map((e) => ({ value: e.value, label: e.label, title: e.title, disabled: e.disabled, lapsed: e.lapsed }))
+                : [{ value: held.layer || 'X', label: held.layer || 'X' }];
+            return { held, layer, label, methods, layers };
         }
 
         function sectionsModel() {
@@ -930,11 +888,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 sections: _config.sections.map((section) => {
                     const r = resolveSource(section.source);
                     const title = sectionTitle(section, () => r.title);
-                    const part = (which, layer) => ({
-                        held: rowAggregationOf(section, which), layer,
-                        options: scoreOptions(section.source).map((o) => ({ method: o.method, layer: o.layer, short: o.short })),
-                        lapsedLabel: (setting) => lapsedLabel({ ...setting, key: section.source })
-                    });
+                    const part = (which, layer) => sectionPart(section, which, layer);
                     return {
                         title, source: title !== r.title ? r.title : null, rows: section.rows,
                         line: r.kind ? sectionLine(r) : r.empty, note: r.kind && r.empty ? r.empty : null,
@@ -1025,7 +979,6 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function paint() {
             if (!_dom) return;
             _controls.paint();
-            if (_offer && offerPlace(_config.cellAxis) === 'plot') _offer.paint();
             _sections.paint();
             _state = stateOf();
             _dom.root.dataset.state = _state;
@@ -1205,11 +1158,10 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 return f && f.moments && !(f.status && f.status.status === 'missing') ? f.moments : null;
             };
             const titles = plan.entries.map((e) => e.title);
-            const matrix = buildMatrix(plan, momentsOf, groups, _config, {
+            const matrix = buildMatrix(plan, momentsOf, groups, withGroupingThreshold(_config, baseThreshold()), {
                 titleOf: (i) => titles[i],
                 scoreName: (agg) => {
-                    const section = plan.entries.find((e) => e.section.color === agg || e.section.size === agg);
-                    const name = scoreOptionName(section ? section.section.source : '', agg);
+                    const name = scoreOptionName(agg);
                     return agg.agg === 'score_pct_above' ? `${VOCABULARY.cellGene.scoreAggregation.score_pct_above(name)} ${agg.above || 0}`
                         : VOCABULARY.cellGene.scoreAggregation.score_mean(name);
                 }

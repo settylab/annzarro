@@ -125,7 +125,12 @@ const cellGene = Object.freeze({
         score_mean: 'The signature\'s score for each cell, averaged over the group, as a cell plot colored by it would average. Computes the score.',
         score_pct_above: 'Share of the group\'s cells whose score is above the threshold; 0 to 100.'
     }),
-    /** The label of a score kind for one score option, e.g. `z-score mean · X`. */
+    /** A score kind in a one-row section's kind select; its method and layer are selects of their own (decision 31). */
+    scoreKind: Object.freeze({
+        score_mean: 'Score, averaged',
+        score_pct_above: '% of cells with score above'
+    }),
+    /** The label of a score kind for one method and layer, e.g. `z-score mean · X`. */
     scoreAggregation: Object.freeze({
         score_mean: (option) => `${option}, averaged`,
         score_pct_above: (option) => `% of cells with ${option} above`
@@ -265,26 +270,14 @@ const cellGene = Object.freeze({
         })
     }),
     /**
-     * Color and Size sources (WP-4, FB-2a): each measure's `statistic of layer above threshold`, where layers are
-     * offered, the plot's own Statistics offered on an obs axis, and the limit counted in values (finding 9).
+     * Color and Size sources (WP-4, FB-2a, decision 31): each measure's `statistic of layer above threshold`, every
+     * statistic and layer listed, and the limit counted in values (finding 9).
      */
     sources: Object.freeze({
         of: 'of',
         above: 'above',
         threshold: 'expressed above',
         thresholdHelp: 'A cell counts as expressing above this value.',
-        offerOther: 'Offer other…',
-        /** The plot's own Statistics offered, with an obs column as groups (operator ruling Q1). */
-        offer: Object.freeze({
-            title: 'Statistics offered',
-            where: 'Color and Size pick from these. With an obs column as groups, the plot keeps this list itself.',
-            methods: 'Statistics',
-            methodsNote: 'Cell count is always offered.',
-            layers: 'Color and Size choose among the offered layers.',
-            pinnedLayer: 'X is always offered.',
-            lastLayer: 'At least one layer stays offered.',
-            lastMethod: 'At least one statistic stays offered.'
-        }),
         /** "3 genes on 2 layers": genes (in words) read on `n` layers, or at `n` thresholds. */
         geneReads: (genes, n, cause) => (cause === 'layers' ? `${genes} on ${n} layers` : cause === 'thresholds' ? `${genes} at ${n} thresholds` : genes),
         tooManyValues: (groups, features, values, limit) => `${groups} × ${features} = ${values} values; the limit is ${limit}.`,
@@ -370,9 +363,18 @@ const countPlot = Object.freeze({
     buttons: Object.freeze({
         sort: 'Sort by height', reverse: 'Reverse', horizontal: 'Horizontal', options: 'Plot Options', ring: 'Ring', log: 'Log count axis',
         fade: 'Fade by its share', csv: 'Download CSV', chooseLevels: `Choose ${plural.level}`, undo: 'Undo',
-        adjust: 'Bandwidth adjust', bySize: 'Scale curves by level size', image: 'As an image'
+        adjust: 'Smoothing', bySize: 'Scale curves by level size'
     }),
+    /** The layers of a 2D density, each a box of Plot Options. */
+    layers: Object.freeze({ image: 'Density as opacity', lines: 'Isolines', fill: 'Filled isolines' }),
     adjustProblem: 'Enter a number from 0.1 to 10.',
+    /** The Color pop-over (WP-6a): the colour map, Reverse, the range and the palette of a Color by's levels. */
+    colour: Object.freeze({
+        button: 'Color', title: 'Color', map: 'Map', reverse: 'Reverse', min: 'Min', max: 'Max', center: 'Center', auto: 'auto',
+        palette: 'Level palette', paletteDefault: 'Default', reset: 'Reset',
+        problem: 'Enter a number, or leave it empty for automatic.',
+        centerNote: 'Center has no effect while both Min and Max are set.'
+    }),
     /** The inputs a mode does not read, still stored (CNT-6, UX 4.2). */
     kept: (items) => `Kept for other modes: ${items.join(' · ')}`,
     /** The compact binning line of a numeric input (UX 4.4). */

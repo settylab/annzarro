@@ -35,6 +35,3 @@
 .po-ask { display: flex; flex-direction: column; gap: 4px; }
 .po-ask[hidden] { display: none; }
 .po-ask__buttons { display: flex; gap: 4px; }
-
-/* The Count Plot section: the panel's own controls (cell-count/controls.js), one per line inside the pop-over */
-.po-options .ccnt-options { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 0; padding: 0; border: 0; }
