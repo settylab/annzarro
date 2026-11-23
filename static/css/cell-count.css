@@ -95,7 +95,14 @@
 .ccnt-state[data-state="cycle"] .ccnt-state__text { color: var(--az-danger-text); }
 .ccnt-state[data-state="empty"] .ccnt-state__text, .ccnt-state[data-state="unavailable"] .ccnt-state__text { color: var(--az-muted); }
 .ccnt-state__actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
-.ccnt-strip { flex: 0 0 auto; min-height: 1.3em; padding: 1px 8px; color: var(--az-muted); font-size: 0.75rem; }
+/* what the plot is doing, in the top-left corner of the plot: clear of the modebar (top right), the legend and the centred
+   placeholder's spinner; muted on the plot's own background; gone when the plot is ready */
+.ccnt-working {
+    position: absolute; top: 6px; left: 8px; z-index: 3; max-width: calc(100% - 240px); padding: 1px 6px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; color: var(--az-muted); background: var(--az-surface-2);
+    border: 1px solid var(--az-border); border-radius: 3px; font-size: 0.75rem; pointer-events: none;
+}
+.ccnt-working[hidden] { display: none; }
 
 /* Save as grouping (CNT-7): a dialog over the plot area, which stays as it is */
 .ccnt-save {

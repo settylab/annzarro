@@ -340,7 +340,7 @@ def test_a_density_per_condition_draws_through_v3_with_its_sentences_and_adjust(
     fig = _plot(page)
     assert sorted(t["name"] for t in fig["data"]) == sorted(DATA.obs["condition"].unique())
     assert _rows(page) == ["Mode", "X", "Color by", "Smoothing"]
-    assert page.inner_text(f"{S} .ccnt-strip").startswith("Range from the 0.1st to the 99.9th percentile")
+    assert "Range from the 0.1st to the 99.9th percentile" in page.inner_text(f"{S} .ccnt-density-notes")
     assert page.inner_text(f"{S} .ccnt-density-notes").startswith("Bandwidth ")
     asked = len(_requests(page))
     page.fill(f"{S} .ccnt-adjust", "2")
@@ -668,7 +668,7 @@ def _points(page):
 
 
 def _strip(page):
-    return page.inner_text(f"{S} .ccnt-strip")
+    return page.inner_text(f"{S} .ccnt-density-notes")
 
 
 def _points_config(split, **extra):
@@ -682,7 +682,7 @@ def test_the_cell_points_layer_alone_draws_the_cells_with_the_grid_hover_under_i
     _open(page, served, {CC: _points_config(split, layers={"points": True})})
     _drawn(page, "density2d")
     until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot .scattergl, ' + s + ' .ccnt-plot canvas').length > 0", S)
-    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     got = _points(page)
     assert 0 < got["n"] <= N, got
     assert got["types"].count("heatmap") == (2 if split else 1), "a transparent heatmap carries the hover"
@@ -695,7 +695,7 @@ def test_the_cell_points_layer_alone_draws_the_cells_with_the_grid_hover_under_i
 def test_the_cell_points_layer_combines_with_filled_isolines_and_takes_a_point_size(page, served):
     _open(page, served, {CC: _points_config(True, layers={"fill": True, "lines": True, "points": True})})
     _drawn(page, "density2d")
-    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot').length > 0 && /Cells drawn/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot').length > 0 && /Cells drawn/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     got = _points(page)
     assert got["n"] > 0 and got["types"].index("contour") < got["types"].index("scattergl") and "heatmap" not in got["types"], got
     assert got["size"] == 3
@@ -713,7 +713,7 @@ def test_the_cell_points_layer_draws_a_seeded_sample_above_the_cap_and_says_so(p
     _drawn(page, "density2d")
     _caps(page, draw=300)
     page.check(f"{S} .ccnt-layer--points")
-    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     assert re.search(r"Cells drawn as points: 300 of 1,200 \(a sample\)\.", _strip(page)), _strip(page)
     first = _points(page)
     assert 0 < first["n"] <= 300
@@ -721,7 +721,7 @@ def test_the_cell_points_layer_draws_a_seeded_sample_above_the_cap_and_says_so(p
     page.uncheck(f"{S} .ccnt-layer--points")
     _drawn(page, "density2d", "!c.layers.points")
     page.check(f"{S} .ccnt-layer--points")
-    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     assert _points(page)["n"] == first["n"]
 
 
@@ -730,7 +730,7 @@ def test_the_cell_points_layer_is_refused_above_the_load_cap_and_for_a_source_it
     _drawn(page, "density2d")
     _caps(page, load=500)
     page.check(f"{S} .ccnt-layer--points")
-    until(page, "(s) => /more than the 500/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => /more than the 500/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     assert _points(page)["n"] == 0
     assert "Turn on a subset" in _strip(page)
     _caps(page, load=25_000_000)
