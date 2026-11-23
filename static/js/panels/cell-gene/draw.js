@@ -697,7 +697,7 @@ const cross = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z
  * @param {{camera: {eye, center?, up?}, aspect: {x: number, y: number, z: number}}} opts
  * @returns {{x: {edge: 'min'|'max', xanchor: 'left'|'right'}, y: {edge: 'min'|'max', xanchor: 'left'|'right'}}}
  */
-export function sceneLabelSides({ camera, aspect }) {
+function sceneLabelSides({ camera, aspect }) {
     const eye = camera.eye;
     const center = camera.center || DEFAULT_CAMERA.center;
     const up = camera.up || DEFAULT_CAMERA.up;

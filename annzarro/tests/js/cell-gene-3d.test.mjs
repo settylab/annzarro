@@ -227,17 +227,22 @@ const ROTATED = { eye: { x: 1.6, y: 1.6, z: 1.1 }, center: { x: 0, y: 0, z: 0 },
 const labelsOf = (fig, axis) => fig.layout.scene.annotations.filter((a) => a.name === `${axis} label`);
 
 test('the label anchor: right of the scene a label starts at its tick, left of it a label ends there', () => {
-    const aspect = { x: 1, y: 0.5, z: 0.6 };
-    // the default camera looks from (+x, -y): the x axis's near edge is on the left, the y axis's on the right
-    assert.deepEqual(D.sceneLabelSides({ camera: D.DEFAULT_CAMERA, aspect }),
-        { x: { edge: 'min', xanchor: 'right' }, y: { edge: 'max', xanchor: 'left' } });
+    // 3 columns (x: -0.5..2.5) by 2 rows (y: -0.5..1.5); per axis, its labels' edge across the box and their anchor
+    const spec = { x: { labels: ['a', 'b', 'c'], positions: [0, 1, 2], extent: 3 }, y: { labels: ['p', 'q'], positions: [0, 1], extent: 2 },
+        aspect: { x: 1, y: 0.67, z: 0.6 }, z: 0, font: {} };
+    const sides = (camera) => {
+        const list = D.sceneLabels(spec, camera);
+        const one = (name, key) => { const l = list.filter((a) => a.name === name); assert.equal(new Set(l.map((a) => `${a[key]}|${a.xanchor}`)).size, 1); return l[0]; };
+        const x = one('x label', 'y');
+        const y = one('y label', 'x');
+        return { x: [x.y, x.xanchor], y: [y.x, y.xanchor] };
+    };
+    // the default camera looks from (+x, -y): the x axis's near edge (y = -0.5) is on the left, the y axis's (x = 2.5) on the right
+    assert.deepEqual(sides(D.DEFAULT_CAMERA), { x: [-0.5, 'right'], y: [2.5, 'left'] });
     // from (+x, +y) the near edges change sides, and so do the anchors
-    assert.deepEqual(D.sceneLabelSides({ camera: ROTATED, aspect }),
-        { x: { edge: 'max', xanchor: 'left' }, y: { edge: 'max', xanchor: 'right' } });
+    assert.deepEqual(sides(ROTATED), { x: [1.5, 'left'], y: [2.5, 'right'] });
     // from (-x, +y), the default turned half round: the same sides as the default
-    const behind = { ...ROTATED, eye: { x: -1.6, y: 1.6, z: 1.1 } };
-    assert.deepEqual(D.sceneLabelSides({ camera: behind, aspect }),
-        { x: { edge: 'max', xanchor: 'right' }, y: { edge: 'min', xanchor: 'left' } });
+    assert.deepEqual(sides({ ...ROTATED, eye: { x: -1.6, y: 1.6, z: 1.1 } }), { x: [1.5, 'right'], y: [-0.5, 'left'] });
 });
 
 test('3D labels are scene annotations anchored by side, Plotly\'s own centred tick labels hidden', () => {

@@ -15,6 +15,7 @@ Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWS
 """
 import os
 import re
+import time
 
 import pytest
 
@@ -233,9 +234,16 @@ def test_3d_labels_start_at_their_tick_on_the_right_and_end_there_on_the_left(pa
     page.evaluate("([s, c]) => window.Plotly.relayout(document.querySelector(s), {'scene.camera': c})",
                   [PLOT, {"eye": {"x": 1.6, "y": 1.6, "z": 1.1}, "center": {"x": 0, "y": 0, "z": 0}, "up": {"x": 0, "y": 0, "z": 1}}])
     page.wait_for_function("(s) => document.querySelector(s)._fullLayout.scene.annotations.every(a => a.name !== 'x label' || a.xanchor === 'left')", arg=PLOT)
-    page.wait_for_timeout(300)
-    boxes = _labels(page)
-    _assert_anchored(boxes, gene_side="right", group_side="left")
-    _assert_titles_clear(boxes)
+    # the labels are drawn at the camera's next frame: poll until they stand where the new anchors put them
+    end = time.time() + 10
+    while True:
+        boxes = _labels(page)
+        try:
+            _assert_anchored(boxes, gene_side="right", group_side="left")
+            _assert_titles_clear(boxes)
+            break
+        except AssertionError:
+            if time.time() > end:
+                raise
     eye = page.evaluate("(s) => document.querySelector(s)._fullLayout.scene.camera.eye", PLOT)
     assert abs(eye["x"] - 1.6) < 1e-3 and abs(eye["y"] - 1.6) < 1e-3, ("re-anchoring kept the camera", eye)
