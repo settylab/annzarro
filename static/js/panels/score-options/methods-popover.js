@@ -167,7 +167,7 @@ export function createMethodsPopover({ D, id, label = 'Methods', getRecipe, appl
     const resetNote = el('div', { class: 'gsig-scoring__notice', role: 'status', hidden: true, data: { resetNote: '' } });
     const resetAllBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-scoring__reset', data: { resetAll: '' },
         on: { click: () => resetAll(false) } }, 'Reset to defaults');
-    const content = el('div', { class: 'gsig-scoring gsig-scoring--in-pop gsig-methods', data: { methodsBody: '' } },
+    const content = el('div', { class: 'gsig-methods', data: { methodsBody: '' } },
         el('div', { class: 'gsig-scoring__body' },
             el('div', { class: 'gsig-scoring__help', data: { methodsIntro: '' }, text: METHODS_HELP.intro }),
             formula,

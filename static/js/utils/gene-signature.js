@@ -241,7 +241,7 @@ export function directionCounts(recipe) {
 }
 
 /**
- * The formula in plain words, for Scores offered, with the weighting in force (the z-score mean and the mean have one;
+ * The formula in plain words, for the Methods pop-over, with the weighting in force (the z-score mean and the mean have one;
  * control-adjusted is always by side). Empty when the signature has no down genes (nothing to say).
  * @param {Object} recipe - from normalizeRecipe
  */
