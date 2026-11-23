@@ -58,7 +58,7 @@ test('layerList: all 3 layers, X disabled for % expressing with its reason; none
 test('a default grouping-axis plot on logged and counts reads "(no longer offered)" nowhere', () => {
     const d = G.defaultMeasures(LAYERS, KINDS);
     assert.deepEqual(d.color, { stat: 'mean', layer: 'logged' });
-    assert.deepEqual(d.size, { stat: 'pct_expressing', layer: 'counts', detect_above: 0 });
+    assert.deepEqual(d.size, { stat: 'pct_expressing', layer: 'counts' }, 'no threshold of its own: it follows the grouping (decision 35)');
     for (const spec of [d.color, d.size]) {
         const m = C.measureModel({ spec, datasetLayers: LAYERS, kinds: KINDS, threshold: 0 });
         for (const o of [...m.stats, ...m.layers]) assert.ok(!/offered|not available/.test(o.label), o.label);

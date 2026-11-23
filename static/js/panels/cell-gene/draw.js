@@ -38,10 +38,11 @@
  * (a heatmap draws up to 400,000, CXG-17). Hover text is built per cell from strings made once per row and group.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
-import { PLOT_PALETTES, GAP_COLOUR } from '../../utils/plot-theme.js';
+import { PLOT_PALETTES, GAP_COLOUR, MODEBAR_REMOVE } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { annotateFigure, matrixPixels, rowCoordinates, MODEBAR_PX } from './draw-annotations.js';
 import { bars3d, footprintFromSize, axisTicks } from '../../utils/bars-3d.js';
+import { colourBar as colourBarOf } from '../plot-utilities/colour-bar.js';
 
 const W = VOCABULARY.cellGene;
 
@@ -663,15 +664,105 @@ const ASPECT_CLAMP = 4;
 const ASPECT_Z = 0.6;
 const UIREVISION_3D = 'cgene-3d';
 
-/** A scene axis of categories: ticks at the bar centres, thinned; none above LABELS_3D_MAX (the hover names them). */
-function sceneAxis(labels, positions, title, th) {
+/**
+ * The gap, px, between a category label and its tick on the box edge, on the label's side. Plotly drops a scene
+ * annotation outside the axis ranges, so the anchor is ON the edge and the gap is a screen shift.
+ */
+const LABEL_GAP_PX = 4;
+
+/**
+ * A scene axis of categories: grid lines at the bar centres, thinned, over a box that is exactly the cells. Plotly
+ * centres a 3D tick label on its tick and has no anchor for it, and sets the axis title where its own labels end, so
+ * both are hidden here and sceneLabels draws them.
+ */
+function sceneAxis(labels, positions, extent, th) {
     const base = {
-        title: { text: esc(title), font: { color: th.textColor } }, color: th.textColor, gridcolor: th.gridColor, linecolor: th.axisColor,
-        zeroline: false, showspikes: false, backgroundcolor: th.bgColor
+        title: { text: '' }, color: th.textColor, gridcolor: th.gridColor, linecolor: th.axisColor, showticklabels: false,
+        zeroline: false, showspikes: false, backgroundcolor: th.bgColor, range: [-0.5, Math.max(extent, 1) - 0.5], autorange: false
     };
-    if (labels.length > LABELS_3D_MAX) return { ...base, showticklabels: false };
+    if (labels.length > LABELS_3D_MAX) return base;
     const ticks = axisTicks(labels, LABELS_3D_MAX);
     return { ...base, tickmode: 'array', tickvals: ticks.tickvals.map((k) => positions[k]), ticktext: ticks.ticktext };
+}
+
+const minus = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const unit = (a) => { const n = Math.hypot(a.x, a.y, a.z) || 1; return { x: a.x / n, y: a.y / n, z: a.z / n }; };
+const cross = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+
+/**
+ * Where each category axis's labels go for a camera (operator: a label is never centred on its tick). Each axis's labels
+ * run along the box edge nearer the camera, and the side of the screen that edge's middle falls on sets the anchor: on
+ * the right a label starts at its tick (`left`), on the left it ends there (`right`), so it always runs outward, away
+ * from the bars. One anchor per axis, so an axis never mixes them. Screen right is forward x up, in the scene's
+ * normalised box (the aspect ratio, centred on 0), the frame Plotly's camera is given in.
+ * @param {{camera: {eye, center?, up?}, aspect: {x: number, y: number, z: number}}} opts
+ * @returns {{x: {edge: 'min'|'max', xanchor: 'left'|'right'}, y: {edge: 'min'|'max', xanchor: 'left'|'right'}}}
+ */
+function sceneLabelSides({ camera, aspect }) {
+    const eye = camera.eye;
+    const center = camera.center || DEFAULT_CAMERA.center;
+    const up = camera.up || DEFAULT_CAMERA.up;
+    const right = cross(minus(center, eye), up);
+    const side = (p) => (p.x * right.x + p.y * right.y > 0 ? 'left' : 'right');
+    const yEdge = eye.y < center.y ? 'min' : 'max';
+    const xEdge = eye.x < center.x ? 'min' : 'max';
+    const half = (edge, len) => (edge === 'min' ? -len / 2 : len / 2);
+    return {
+        x: { edge: yEdge, xanchor: side({ x: 0, y: half(yEdge, aspect.y) }) },
+        y: { edge: xEdge, xanchor: side({ x: half(xEdge, aspect.x), y: 0 }) }
+    };
+}
+
+/**
+ * The category labels as scene annotations for a camera (figure3d's `labels3d`, again for each camera the user turns
+ * to): each at its tick on the near edge of the box, on the floor, anchored by sceneLabelSides, LABEL_GAP_PX away.
+ * The axis title (`title`) stands at the middle of that edge, moved on screen along the edge's outward normal by the
+ * thickness of the label band in that direction (labels estimated at CHAR_EM per character), so it clears every label.
+ * @param {{x: {labels, positions, extent}, y: {labels, positions, extent}, aspect, z: number, font: Object}} spec
+ * @param {{eye, center?, up?}} camera
+ * @returns {Object[]}
+ */
+export function sceneLabels(spec, camera) {
+    const sides = sceneLabelSides({ camera, aspect: spec.aspect });
+    const out = [];
+    const edgeAt = (edge, extent) => (edge === 'min' ? -0.5 : Math.max(extent, 1) - 0.5);
+    const fontPx = (spec.font && spec.font.size) || 12;
+    // the screen's axes in the scene (orthographic): right, and up (Plotly's yshift is up)
+    const forward = minus(camera.center || DEFAULT_CAMERA.center, camera.eye);
+    const right = unit(cross(forward, camera.up || DEFAULT_CAMERA.up));
+    const screenUp = unit(cross(right, forward));
+    for (const dim of ['x', 'y']) {
+        const axis = spec[dim];
+        const other = spec[dim === 'x' ? 'y' : 'x'];
+        const across = edgeAt(sides[dim].edge, other.extent);
+        const shown = axis.labels.length <= LABELS_3D_MAX;
+        if (axis.title) {
+            const outward = dim === 'x' ? { x: 0, y: sides[dim].edge === 'min' ? -1 : 1, z: 0 } : { x: sides[dim].edge === 'min' ? -1 : 1, y: 0, z: 0 };
+            let ux = outward.x * right.x + outward.y * right.y;
+            let uy = outward.x * screenUp.x + outward.y * screenUp.y;
+            const n = Math.hypot(ux, uy) || 1;
+            ux /= n;
+            uy /= n;
+            const longest = shown ? axis.labels.reduce((m, l) => (String(l).length > m ? String(l).length : m), 0) : 0;
+            const labelW = LABEL_GAP_PX + longest * CHAR_EM * fontPx;
+            const titleW = String(axis.title).length * CHAR_EM * (fontPx + 1);
+            const lineH = fontPx * 1.3;
+            const push = labelW * Math.abs(ux) + lineH * Math.abs(uy) + LABEL_GAP_PX + (titleW / 2) * Math.abs(ux) + (lineH / 2) * Math.abs(uy);
+            const mid = (Math.max(axis.extent, 1) - 1) / 2;
+            out.push({ name: `${dim} title`, x: dim === 'x' ? mid : across, y: dim === 'x' ? across : mid, z: spec.z, text: axis.title,
+                showarrow: false, xanchor: 'center', yanchor: 'middle', font: { ...spec.font, size: fontPx + 1 },
+                xshift: Math.round(ux * push), yshift: Math.round(uy * push) });
+        }
+        if (!shown) continue;
+        const ticks = axisTicks(axis.labels, LABELS_3D_MAX);
+        ticks.tickvals.forEach((k, n) => {
+            const at = axis.positions[k];
+            out.push({ name: `${dim} label`, x: dim === 'x' ? at : across, y: dim === 'x' ? across : at, z: spec.z,
+                text: esc(ticks.ticktext[n]), showarrow: false, xanchor: sides[dim].xanchor, yanchor: 'middle', font: spec.font,
+                xshift: sides[dim].xanchor === 'left' ? LABEL_GAP_PX : -LABEL_GAP_PX });
+        });
+    }
+    return out;
 }
 
 /**
@@ -723,13 +814,14 @@ function figure3d(model, th) {
             }
         }
     }
-    const geneLabels = rows.map((row) => esc(row.label));
-    const groupLabels = groups.map((grp) => esc(grp.label));
+    // the names as they are: gl3d draws tick text literally, so an escaped '<' would show as '&lt;'; sceneLabels escapes
+    // them for the annotations, which Plotly reads as markup (and decodes)
+    const geneLabels = rows.map((row) => String(row.label));
+    const groupLabels = groups.map((grp) => String(grp.label));
     const legendOn = !model.legend || model.legend.colorBar !== false;
-    const colorbar = legendOn ? {
-        title: { text: fitTitle(main.lines, 24).text, side: 'top', font: { color: th.textColor } }, tickfont: { color: th.textColor },
-        x: 1, xanchor: 'left', len: 0.7, thickness: 12, outlinewidth: 0
-    } : null;
+    // the Cell Plot's colour bar (plot-utilities/colour-bar.js): its title runs along the bar, in the plot's font
+    const colorbar = legendOn ? { ...colourBarOf({ textColor: th.textColor, fontSize: th.fontSize, fontFamily: th.fontFamily, colorbarLength: 0.7 },
+        main.lines.map(esc).join(' · ')), thickness: 12, outlinewidth: 0 } : null;
     const built = bars3d({
         xs, ys, heights, footprint, hover,
         colour: { kind: 'continuous', values, colorscale: color.colorscale, cmin: main.lo, cmax: main.hi, ...(colorbar ? { colorbar } : {}) }
@@ -745,8 +837,13 @@ function figure3d(model, th) {
     const aspect = ratio >= 1 ? { x: 1, y: 1 / ratio, z: ASPECT_Z } : { x: ratio, y: 1, z: ASPECT_Z };
     const genePositions = rows.map((_, r) => P.pos[r]);
     const groupPositions = groups.map((_, g) => g);
-    const geneAxis = sceneAxis(geneLabels, genePositions, W.view3d.genes, th);
-    const groupAxis = sceneAxis(groupLabels, groupPositions, W.view3d.groups, th);
+    const geneAxis = sceneAxis(geneLabels, genePositions, P.span, th);
+    const groupAxis = sceneAxis(groupLabels, groupPositions, G, th);
+    const geneSpec = { labels: geneLabels, positions: genePositions, extent: P.span, title: esc(W.view3d.genes) };
+    const groupSpec = { labels: groupLabels, positions: groupPositions, extent: G, title: esc(W.view3d.groups) };
+    const labels3d = { x: swap ? groupSpec : geneSpec, y: swap ? geneSpec : groupSpec, aspect, z: Math.min(0, built.zRange[0]),
+        font: { color: th.textColor, size: th.fontSize || 12, family: th.fontFamily || 'Arial, Helvetica, sans-serif' } };
+    const camera = model.camera ? JSON.parse(JSON.stringify(model.camera)) : JSON.parse(JSON.stringify(DEFAULT_CAMERA));
     const zTitle = model.zTitle || (height.same ? main.lines.join(' · ') : statisticTitle(height));
     const layout = {
         paper_bgcolor: th.bgColor, plot_bgcolor: th.bgColor, showlegend: false, hovermode: 'closest', uirevision: UIREVISION_3D,
@@ -758,14 +855,14 @@ function figure3d(model, th) {
             zaxis: { title: { text: esc(zTitle), font: { color: th.textColor } }, color: th.textColor, gridcolor: th.gridColor,
                 linecolor: th.axisColor, zerolinecolor: th.axisColor, showspikes: false, backgroundcolor: th.bgColor },
             aspectmode: 'manual', aspectratio: aspect,
-            camera: model.camera ? JSON.parse(JSON.stringify(model.camera)) : JSON.parse(JSON.stringify(DEFAULT_CAMERA)),
+            camera, annotations: sceneLabels(labels3d, camera),
             bgcolor: th.bgColor
         }
     };
     if (model.plotTitle) layout.title = { text: esc(model.plotTitle), font: { color: th.textColor } };
     const config = { responsive: true, displaylogo: false,
-        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d', 'resetCameraDefault3d', 'resetCameraLastSave3d'] };
-    return { data: [trace], layout, config, hidden: [], bars: built.drawn };
+        modeBarButtonsToRemove: [...MODEBAR_REMOVE, 'resetCameraDefault3d', 'resetCameraLastSave3d'] };
+    return { data: [trace], layout, config, hidden: [], bars: built.drawn, labels3d };
 }
 
 // --- the figure -------------------------------------------------------------------------------------------------
@@ -821,7 +918,7 @@ export function buildFigure(given, theme) {
             });
         }
     }
-    const config = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] };
+    const config = { responsive: true, displaylogo: false, modeBarButtonsToRemove: [...MODEBAR_REMOVE] };
     const figure = annotateFigure({ data, layout, config }, model, th);
     // what a narrow width gave up for the matrix, for the panel's strip
     figure.hidden = hidden;

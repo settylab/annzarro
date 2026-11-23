@@ -5,12 +5,13 @@
  * closed, and a link, a panel set and a history entry carry it as configuration only (PER-1). The recipe is
  * utils/cell-grouping.js `normalizeGrouping`'s; the panel's configuration is its title and the recipe's fields.
  *
- * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the toolbar (Add factor, Settings, Undo), the
- * factors (factors.js), the groups (G9c). Nothing in the panel expands: a factor's levels or binning and Settings open in
- * pop-overs (ui/popover.js), so editing moves no box (FB-2 decision h). A grouping offers no statistics (decision 31): a
- * plot lists every statistic and layer itself, and a recipe's retired `offered` and `layers` are kept as stored until the
- * next edit drops them. Its method parameter `detect_above` stays on the recipe (decision 34; SO-7 edits it in a
- * Methods ▾ pop-over in the toolbar). Every edit is one
+ * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the toolbar (Add factor, Methods, Settings,
+ * Undo), the factors (factors.js), the groups (G9c). Nothing in the panel expands: a factor's levels or binning, Methods
+ * and Settings open in pop-overs (ui/popover.js), so editing moves no box (FB-2 decision h). A grouping offers no
+ * statistics (decision 31): a plot lists every statistic and layer itself, and a recipe's retired `offered` and `layers`
+ * are kept as stored until the next edit drops them. Methods ▾ (cell-grouping/methods.js, decision 34) sets the
+ * parameters of the statistics over a group's cells, today Expressed above (`detect_above`, outside the grouping's hash):
+ * the plots that read the grouping follow it unless a measure holds its own. Every edit is one
  * undoable step. The panel watches its own
  * groups as a viewer (consumer kind `inspect`, so it is never counted as a user), through the page's group sources.
  *
@@ -53,6 +54,8 @@ import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/statu
 import { GROUP_GRID } from './cell-grouping/group-grid.js';
 import { mountBinningControl } from './partition-options/binning-control.js';
 import { usedByText } from '../utils/panel-users.js';
+import { createCellMethods } from './cell-grouping/methods.js';
+import { methodsUsedBy } from '../utils/group-statistics.js';
 import {
     settingsSummary, thresholdProblem, separatorProblem, smallOf, separatorOf, storedSeparator, storedSmall, smallModeWord
 } from './cell-grouping/settings.js';
@@ -805,6 +808,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         let _applied = NO_FEATURES;         // the features the handle's option carries now
         let _status = null;
         let _settings = null;
+        let _methods = null;
         const _parts = [];
         const _listeners = [];
 
@@ -881,7 +885,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
             if (_factors) _factors.destroy();
             if (_settings) _settings.destroy();
-            _factors = _status = _settings = null;
+            if (_methods) _methods.destroy();
+            _factors = _status = _settings = _methods = null;
             _initialized = false;
             _dom = null;
             container.innerHTML = '';
@@ -1082,6 +1087,9 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
                 open: openPanel
             } });
             _settings = createSettings({ D, id: _id, recipe: () => _recipe, set: setFields });
+            // Methods ▾ (decision 34): each parameter edit is one step through setFields; the readers follow as for any edit
+            _methods = createCellMethods({ D, id: _id, getFields: () => _recipe, apply: setFields,
+                usedBy: () => methodsUsedBy(groupSources().sources.consumersOf(_id), titleOfPanel) });
             const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-undo', disabled: true, on: { click: () => undo() } }, 'Undo');
             const empty = el('div', { class: 'cgrp-empty', hidden: true },
                 el('p', { class: 'cgrp-empty__lead', text: `Add a ${VOCABULARY.word.factor} to divide the cells into ${VOCABULARY.plural.group}.` }),
@@ -1090,8 +1098,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const messageText = el('span', { class: 'cgrp-message__text' });
             const messageUndo = el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-message__undo', hidden: true, on: { click: () => undo() } }, 'Undo');
             const message = el('div', { class: 'cgrp-message', role: 'status', aria: { live: 'polite' } }, messageText, messageUndo);
-            // what Toggle Controls hides (UX 2.1): the toolbar, Add factor, Settings and Undo; its forms are pop-overs
-            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, _settings.element, undoBtn);
+            // what Toggle Controls hides (UX 2.1): the toolbar, Add factor, Methods, Settings and Undo; its forms are pop-overs
+            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, _methods.element, _settings.element, undoBtn);
             const groups = el('div', { class: 'cgrp-groups' });
             root.append(_status.element, empty, controls, message, _factors.listElement, groups);
             root.addEventListener('keydown', onKey);
@@ -1200,6 +1208,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const drawn = [_recipe, reply, _missing.join(','), JSON.stringify([...cardNotes(desc)]), structureRead()];
             if (!_drawn || drawn.some((x, i) => x !== _drawn[i])) { _drawn = drawn; _factors.paint(); }
             _settings.paint();
+            _methods.paint();
             const step = _undo.peek();
             _dom.undoBtn.disabled = !step;
             _dom.undoBtn.title = step ? `Undo: ${step.label}` : 'Nothing to undo';
@@ -1309,6 +1318,12 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             getRecipe,
             addFactor,
             undo,
+            /** Open Methods ▾ (where a plot's "Grouping's setting" leads); false while the panel or its toolbar is not shown. */
+            revealMethods() {
+                if (!_methods || _controlsVisible === false) return false;
+                _methods.reveal();
+                return true;
+            },
             _debugState
         };
     }

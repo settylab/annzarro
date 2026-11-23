@@ -250,7 +250,14 @@ export function bindScoreColumns(dataTable, settings, container) {
             exportState();
             // plots filtered by this table ask again: the rows they may use changed
             tellPanels(id);
+            // the notice says the state the cells now show, in the same frame: a column filled while its notice still
+            // says "Computing" for another NOTICE_MS (seconds on a busy page) is a contradiction on screen
+            clearTimeout(noticeTimer);
+            noticeTimer = null;
+            paint();
+            return;
         }
+        // progress frames (the same state, a new fraction) are throttled
         schedulePaint();
     };
 

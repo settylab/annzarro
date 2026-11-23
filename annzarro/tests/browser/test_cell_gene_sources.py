@@ -65,7 +65,7 @@ def test_a_new_plot_reads_color_on_the_log_normalised_layer_and_size_on_counts(p
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.layer === 'counts'", P, timeout=30)
     cfg = _config(page)
     assert cfg["color"] == {"stat": "mean", "layer": "logged"}
-    assert cfg["size"] == {"stat": "pct_expressing", "layer": "counts", "detect_above": 0}
+    assert cfg["size"] == {"stat": "pct_expressing", "layer": "counts"}, "no threshold stored: 0 on an obs axis, a grouping's on a grouping axis"
     assert page.input_value(f"{TP} .cgene-color") == "mean" and page.input_value(f"{TP} .cgene-color-layer") == "logged"
     assert page.input_value(f"{TP} .cgene-size") == "pct_expressing" and page.input_value(f"{TP} .cgene-size-layer") == "counts"
     assert page.input_value(f"{TP} .cgene-size-above") == "0"
