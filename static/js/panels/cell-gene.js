@@ -778,7 +778,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 return;
             }
             revealControls();
-            if (_offer) _offer.reveal();
+            if (_controls) _controls.openOffer();
         }
 
         /** An edit of the plot's own Statistics offered, as one undoable step. */

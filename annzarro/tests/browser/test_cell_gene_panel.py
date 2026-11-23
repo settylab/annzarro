@@ -46,6 +46,7 @@ S1 = "gene-signature-S1"
 S2 = "gene-signature-S2"
 S3 = "gene-signature-S3"
 TP = f'.tile[data-tile-id="{P}"]'
+VALUES = "[data-popover='values']"
 DATA = gstore.make_data()
 GENES = [gstore.gene(i) for i in range(gstore.N_VAR)]
 
@@ -234,7 +235,7 @@ def test_job2_three_lists_side_by_side(page, served):
 def _agg_options(page, which):
     return page.evaluate("""([s, w]) => { const sel = document.querySelector(s + ' .cgene-section__agg[data-which="' + w + '"]');
         return [...sel.querySelectorAll('optgroup')].map(g => [g.label, [...g.querySelectorAll('option')].map(o => o.textContent)]); }""",
-                         [TP, which])
+                         [VALUES, which])
 
 
 def test_job3_one_row_per_pathway(page, served):
@@ -243,6 +244,9 @@ def test_job3_one_row_per_pathway(page, served):
     _open(page, served, configs, open_ids=(P, S1))
     st = _drawn(page)
     assert st["rows"] == 1
+    # Color and Size open in a pop-over from the row's summary button (WP-8)
+    page.click(f"{TP} .cgene-section__values-btn")
+    page.wait_for_selector(VALUES)
     # both selects show one list under the two headings, the help line under each
     for which in ("color", "size"):
         groups = _agg_options(page, which)
@@ -251,7 +255,7 @@ def test_job3_one_row_per_pathway(page, served):
                                 "Mean of the genes' % expressing"]
         assert groups[1][1][0] == "z-score mean · X, averaged"
         assert groups[1][1][-1] == "Offer other scores…"
-    sec = page.locator(f"{TP} .cgene-section").nth(0)
+    sec = page.locator(VALUES)
     assert sec.locator(".cgene-section__agg[data-which='color']").input_value() == "mean_of_means"
     assert sec.locator(".cgene-section__agg[data-which='size']").input_value() == "mean_of_pct_expressing"
     help_color = sec.locator(".cgene-section__help[data-which='color']").inner_text()
@@ -261,7 +265,7 @@ def test_job3_one_row_per_pathway(page, served):
     # Size from the score, with its threshold box: one score feature, the threshold in the request
     n = len(page.calls)
     value = page.evaluate("""(s) => [...document.querySelector(s + ' .cgene-section__agg[data-which="size"]').options]
-        .find(o => o.textContent.startsWith('% of cells with z-score mean')).value""", TP)
+        .find(o => o.textContent.startsWith('% of cells with z-score mean')).value""", VALUES)
     sec.locator(".cgene-section__agg[data-which='size']").select_option(value)
     above = sec.locator(".cgene-section__above[data-which='size']")
     assert above.is_visible()
