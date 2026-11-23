@@ -2,9 +2,10 @@
 
 Nothing is stubbed: a real server and store. The user opens **Cell Grouping** (cell type), **Gene Signature** (three
 genes) and **Cell-Gene Plot** from "Create New Panel", takes the grouping as the groups and the signature as the genes,
-and the plot is drawn from ``POST /api/v1/data/cell_groups``. Every group's mean of each gene, in the heatmap and in the
-dots' colours, is compared with values computed here from the store's own arrays. % expressing is not asserted: X is
-scaled in this fixture, so it is 100 for every gene.
+and the plot is drawn from ``POST /api/v1/data/cell_groups``. A new plot reads Color as the mean of the log-normalised
+layer on a grouping axis too (decision 24, kept by decision 32), so every group's mean of each gene on ``logged``, in the
+heatmap and in the dots' colours, is compared with values computed here from the store's own arrays. % expressing is
+not asserted here.
 
 Needs Playwright with Chromium; skipped without it, or failed when ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -52,7 +53,7 @@ def test_the_matrix_is_drawn_from_a_grouping_and_a_signature(user, grouping_serv
     until(page, "(s) => document.querySelector(s + ' .cgene-panel').dataset.state === 'ready'", p, timeout=60)
     # the dots first: one per group and gene, the genes along the axis in the signature's order
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig()", pid)
-    assert cfg["mode"] == "dots" and cfg["color"] == {"stat": "mean", "layer": "X"}
+    assert cfg["mode"] == "dots" and cfg["color"] == {"stat": "mean", "layer": "logged"}
     dots = page.evaluate("(s) => { const d = document.querySelector(s + ' .cgene-plot'); return { ticks: d.layout.xaxis.ticktext, "
                          "x: Array.from(d.data[0].x), y: Array.from(d.data[0].y), color: Array.from(d.data[0].marker.color) }; }", p)
     assert dots["ticks"] == GENES and len(dots["x"]) == 6 * 3
@@ -64,7 +65,7 @@ def test_the_matrix_is_drawn_from_a_grouping_and_a_signature(user, grouping_serv
     levels, codes = obs_levels(store, "cell_type")
     assert z.shape == (len(levels), len(GENES))
     for j, gene in enumerate(GENES):
-        values = gene_column(store, "X", gene)
+        values = gene_column(store, "logged", gene)
         want = np.array([values[codes == k].mean() for k in range(len(levels))])
         np.testing.assert_allclose(z[:, j], want, rtol=1e-4, atol=1e-6, err_msg=gene)
         # the dots carry the same means, x = gene, y = group

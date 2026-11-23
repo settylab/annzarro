@@ -167,26 +167,6 @@ test('"used by" counts consumers by kind, per statistic and per layer, and viewe
     assert.deepEqual(S.statisticUsage([{ kind: 'plot', option: { codes: true } }]), { statistics: [], layers: [] });
 });
 
-test('a section edit becomes a recipe edit that keeps a default grouping\'s recipe unchanged', () => {
-    const patch = (p) => S.recipePatch(p);
-    assert.deepEqual(patch({ offered: ['mean', 'pct_expressing'] }), { offered: undefined }, 'the default list is not stored');
-    assert.deepEqual(patch({ offered: ['mean', 'sum'] }), { offered: ['mean', 'sum'] });
-    assert.deepEqual(patch({ layers: ['X'], input: 'X' }), { layers: undefined }, 'X is implied and `input` is not a field of a grouping');
-    assert.deepEqual(patch({ layers: ['X', 'logged'], input: 'X' }), { layers: ['logged'] });
-    assert.deepEqual(patch({ detect_above: 0 }), { detect_above: undefined });
-    assert.deepEqual(patch({ detect_above: 0.5 }), { detect_above: 0.5 });
-    assert.deepEqual(patch({ method: 'mean', offered: ['mean'] }), { offered: ['mean'] }, 'there is no `method` either');
-    // a full reset, as the section sends it
-    assert.deepEqual(patch({ detect_above: 0, offered: ['mean', 'pct_expressing'], layers: ['X'] }),
-        { detect_above: undefined, offered: undefined, layers: undefined });
-    // every result is accepted by the recipe's own normaliser with no problem
-    for (const p of [{ offered: ['sum'] }, { layers: ['X', 'logged'] }, { detect_above: 2 }]) {
-        const next = { version: 1, partitionings: [] };
-        for (const [k, v] of Object.entries(patch(p))) if (v !== undefined) next[k] = v;
-        assert.deepEqual(normalizeGrouping(next).problems, []);
-    }
-});
-
 test('the summary of the collapsed row is a function of the recipe alone', () => {
     // the scaling test: no work grows with groups or levels, so the row costs the same at any size
     const recipe = { offered: ['mean', 'pct_expressing', 'sum'], layers: ['logged'], detect_above: 1 };

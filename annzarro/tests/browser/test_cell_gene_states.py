@@ -236,8 +236,8 @@ def test_no_size_draws_one_size_says_why_and_lists_the_layers_that_work_first(pa
     until(page, "([s, want]) => (document.querySelector(s + ' .cgene-plot').textContent || '').includes(want)", [TP, sentence])
     # the Size layer select (WP-4): the held X marked, the layers that can give the size enabled
     layers = page.eval_on_selector_all(f"{TP} .cgene-size-layer option",
-                                       "os => os.filter(o => !o.disabled && !o.classList.contains('cgene-lapsed') && o.value !== '__offer_other__').map(o => o.value)")
-    assert layers == ["logged", "counts"], layers
+                                       "os => os.filter(o => !o.disabled && !o.classList.contains('cgene-lapsed')).map(o => o.value)")
+    assert layers == ["counts", "logged"], layers  # every layer, in the dataset's order (decision 31)
     assert page.input_value(f"{TP} .cgene-size") == "pct_expressing"
     assert page.locator(f"{TP} .cgene-size-layer option[value='X']").inner_text() == "X (not available)"
     # no size is asked for: only Color's genes
