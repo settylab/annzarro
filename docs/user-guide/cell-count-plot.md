@@ -39,9 +39,11 @@ the **×** closes them, and **Escape** puts the focus back on the button that op
 
 **Colour.** **Color ▾** shows when a colour scale or a palette applies: a 2D histogram, a 2D density without a Color by,
 a heatmap's number, an UpSet coloured by a share or a statistic, and any plot with a Color by. It holds the **Map**
-(Viridis by default), **Reverse**, **Min**, **Max** and **Center** of the scale (empty means automatic; Center has no
-effect while both Min and Max are set), and the **Level palette** of a Color by's levels. **Reset** returns them all to
-the defaults. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
+(Viridis by default), **Reverse**, **Min**, **Max** and **Center** of the scale (Center has no effect while both Min and Max
+are set), and the **Level palette** of a Color by's levels. **Reset** returns them all to
+the defaults. **Min** and **Max** each have a slider over the values the plot draws (a percentile of them, so a skewed count
+keeps its useful range), a number field and **auto**; an empty field is automatic too, and the field shows the data's own
+end as its hint. The sliders apply when you let go. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
 gets the full colour of every level.
 
 Switching mode keeps every input: those the new mode uses stay in place, and the others are kept for when you switch

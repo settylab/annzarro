@@ -181,8 +181,17 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
 
 | Section | Controls |
 |---|---|
-| Colors | **Color scale**, **Reverse**, **Min**, **Max**, **Center** (for a diverging scale); **Print values in cells** (heatmap); the scaling's help line |
-| Dots | **Smallest and largest dot**; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`). Size's threshold sits beside **Size** in the control grid |
+| Colors | **Color scale**, **Reverse**, **Min** and **Max** (sliders, see below), **Center** (for a diverging scale); **Print values in cells** (heatmap); the scaling's help line |
+| Dots | **Smallest and largest dot**; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`; sliders, see below). Size's threshold sits beside **Size** in the control grid |
+| Height (3D) | **Min** and **Max** of the bars' height |
+
+**Ranges.** Colour, size and, in 3D, height each have a **Min** and a **Max** over the values the plot draws: a slider, a
+number field and **auto**. The slider moves over percentiles of the drawn values, so its left end is the smallest value and
+its right end the largest, and a skewed statistic keeps its useful range under the thumb; a field takes any number, and
+an empty field or **auto** is the data's own end. The value follows the slider as you move it and the plot changes when you
+let go, as one step of **Undo**. Colour limits clip the colours, the size limits are the values at the smallest and
+largest dot, and the height limits clip the bars: one taller than **Max** is drawn at **Max**, one shorter than **Min** at
+**Min**, and a bar of 0 stays undrawn. This is the same control as the Cell Plot's colour range.
 
 **Reset** puts all of these back to their defaults in one step.
 

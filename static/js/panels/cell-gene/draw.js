@@ -20,7 +20,7 @@
  *   legend?: { colorBar?: boolean, sizeLegend?: boolean, strips?: boolean }, plotTitle?: string,
  *   outline?: { color, width }   the dots' outline, and the size legend's; absent means none; heatmap cells never have one
  *   pendingText?: string,                         what a row still being read says (rows[].pending, CXG-18)
- *   view?: '3d', height?: { same: true, values } | { same: false, stat, layer?, detectAbove?, values },
+ *   view?: '3d', height?: { same: true, values, min?, max? } | { same: false, stat, layer?, detectAbove?, values, min?, max? },
  *   camera?: { eye, center?, up? }, zTitle?: string }   the 3D view (UX 6b, WP-12), see figure3d
  * ```
  * A row with `pending: true` is a placeholder of a section still being read (CXG-18): its cells are drawn faint, with
@@ -210,6 +210,17 @@ function prepare(model) {
         return { ...k, lines, lo, hi };
     });
     return { G, pos, span, colour, size };
+}
+
+/**
+ * A bar's height under the height range (Color ▾ in 3D, `height.min`, `height.max`): the statistic limited to the range,
+ * as a color is limited to its Min and Max. A bar of 0 is not drawn, so a Min above 0 does not raise it.
+ */
+function limited(h, range) {
+    if (!Number.isFinite(h) || h === 0) return h;
+    if (range.min !== undefined && h < range.min) return range.min;
+    if (range.max !== undefined && h > range.max) return range.max;
+    return h;
 }
 
 /** A dot's diameter in px for a value on a size legend's range (dot_min to dot_max). */
@@ -711,7 +722,7 @@ function figure3d(model, th) {
             xs[i] = swap ? g : P.pos[r];
             ys[i] = swap ? P.pos[r] : g;
             const h = height.values[i];
-            heights[i] = rows[r].pending ? NaN : h;
+            heights[i] = rows[r].pending ? NaN : limited(h, height);
             const v = color.values[i];
             // a section on its own bar: its place on that bar, on the main bar's range (one mesh, one colour scale)
             values[i] = bar === main || !(bar.hi > bar.lo) ? v : main.lo + ((v - bar.lo) / (bar.hi - bar.lo)) * (main.hi - main.lo);

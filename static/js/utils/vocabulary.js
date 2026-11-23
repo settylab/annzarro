@@ -183,6 +183,7 @@ const cellGene = Object.freeze({
             dots: 'Dots', colors: 'Colors', sections: 'Sections', labels: 'Labels', clustering: 'Clustering', legend: 'Legend', totals: 'Totals'
         }),
         dotSizes: 'Smallest and largest dot',
+        rangeWhat: Object.freeze({ color: 'Color', size: 'Size', height: 'Height' }),
         dotMin: '% at the smallest dot',
         dotMax: '% at the largest dot',
         outlineColor: 'Dot outline color',
@@ -568,4 +569,13 @@ const view3d = Object.freeze({
     tooMany: (max, count, hint = 'bins') => `${view3d.tooManyBase(max, count)} ${view3d.hint[hint] || view3d.hint.bins}`
 });
 
-export const VOCABULARY = Object.freeze({ view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+/** The range control's words (ui/range-control.js): Min and Max sliders over the drawn values, a number field and auto. */
+const range = Object.freeze({
+    auto: 'auto',
+    autoHelp: 'Automatic: the smallest or largest drawn value.',
+    percentile: 'percentile of the drawn values',
+    sliderHelp: 'Moves over the drawn values: the left end is the smallest, the right end the largest.',
+    problem: 'Enter a number, or leave it empty for automatic.'
+});
+
+export const VOCABULARY = Object.freeze({ range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });

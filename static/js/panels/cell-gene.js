@@ -1251,7 +1251,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const gate3d = _config.view === '3d' ? view3dGate({ rows: R, groups: G }) : null;
             if (gate3d && gate3d.ok && matrix.height) {
                 model.view = '3d';
-                model.height = matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) };
+                model.height = { ...(matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) }), ...extras.height };
                 if (_config.camera) model.camera = _config.camera;
             }
             const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });

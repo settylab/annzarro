@@ -40,6 +40,7 @@ import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLab
 import { countFigure, countCsv, DRAWN_MODES } from './cell-count/draw.js';
 import { densityFigure, DENSITY_MODES } from './cell-count/draw-density.js';
 import { createControls } from './cell-count/controls.js';
+import { colourValues } from './cell-count/colour.js';
 import {
     countReferences, shownConfig, drawOptions, inputNames, shownLabels, followFocus, measureSourceName, levelTotals,
     isNumericSource, levelCountOf, valueDefaults, rowsOf
@@ -200,6 +201,8 @@ actions.register({
         let _infos = {};
         let _labelMaps = {};
         let _notes = null;
+        /** The numbers the colour scale is drawn over (the Color pop-over's range sliders) */
+        let _colourData = null;
         let _drawSerial = 0;
         /** Choose levels of an input no reply shows yet (a refused plan): its levels, asked for alone (axisSource) */
         let _levelSource = null;
@@ -603,7 +606,7 @@ actions.register({
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, levelsOf, levelsSaid,
+                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
             };
         }
@@ -614,7 +617,7 @@ actions.register({
             if (!_dom) return;
             draw();
             paintState();
-            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo];
+            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _colourData];
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
                 _controls.paint();
@@ -635,6 +638,7 @@ actions.register({
                 _drawing = null;
                 _drawSerial++;
                 _notes = null;
+                _colourData = null;
                 _infos = {};
                 _labelMaps = {};
                 delete _dom.root.dataset.drawn;
@@ -658,6 +662,7 @@ actions.register({
                 : DENSITY_MODES.includes(config.mode) ? densityFigure(config, table, opts) : countFigure(config, table, opts);
             // a density's sentences (UX 4.4): the bandwidth and the floor in Plot Options, the range in the strip
             _notes = fig.notes || null;
+            _colourData = colourValues(fig.data);
             const serial = ++_drawSerial;
             delete _dom.root.dataset.drawn;
             const root = _dom.root;
