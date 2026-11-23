@@ -1,10 +1,10 @@
 /**
- * F7: the panel types of 0.8.0 are registered but unreleased.
+ * F7, released in 0.8.0: the registry of panel types, with the three new types offered.
  *
- *   - panel-types.json lists cell-grouping, cell-gene and cell-count with "released": false, in the order and with
+ *   - panel-types.json lists cell-grouping, cell-gene and cell-count, released, in the order and with
  *     the labels and icons of UX 6.2; gene-count and group-stat are reserved entries that are never registered.
- *   - Config.PANEL_TYPES (the chooser, the icons) holds released types only; panelTypeInfo still names an unreleased
- *     one, so its default title is "Cell-Gene Plot 1".
+ *   - Config.PANEL_TYPES (the chooser, the icons) holds released types only, which now include the three; panelTypeInfo
+ *     names them by label.
  *   - A reserved id is skipped without an error (PER-7).
  *   - The default list of enabled types (config.js, base.yaml, schema.yaml) is exactly the released set, so flipping
  *     "released" cannot leave a type out of the chooser.
@@ -22,14 +22,14 @@ const { createPlaceholderPanel } = await import('../../../static/js/utils/placeh
 const REGISTRY = JSON.parse(readFileSync(new URL('../../../static/js/panels/panel-types.json', import.meta.url), 'utf8'));
 const entry = (type) => REGISTRY.find(e => e.type === type);
 
-test('the three new types follow Gene Signature, in the order of UX 6.2, unreleased', () => {
+test('the three new types follow Gene Signature, in the order of UX 6.2, released', () => {
     const types = REGISTRY.map(e => e.type);
     assert.deepEqual(types.slice(5, 9), ['gene-signature', 'cell-grouping', 'cell-gene', 'cell-count']);
     assert.deepEqual(
         ['cell-grouping', 'cell-gene', 'cell-count'].map(t => [entry(t).label, entry(t).icon, entry(t).released]),
-        [['Cell Grouping', 'fas fa-object-group', false],
-         ['Cell-Gene Plot', 'fas fa-braille', false],
-         ['Cell Count Plot', 'fas fa-chart-column', false]]);
+        [['Cell Grouping', 'fas fa-object-group', undefined],
+         ['Cell-Gene Plot', 'fas fa-braille', undefined],
+         ['Cell Count Plot', 'fas fa-chart-column', undefined]]);
 });
 
 test('gene-count and group-stat are reserved entries with nothing to show', () => {
@@ -39,10 +39,11 @@ test('gene-count and group-stat are reserved entries with nothing to show', () =
     }
 });
 
-test('the chooser list holds released types only; the registry still names the others', () => {
+test('the chooser list holds released types only, the three new ones among them; reserved ids stay out', () => {
     const released = REGISTRY.filter(e => !e.reserved && e.released !== false).map(e => e.type);
     assert.deepEqual(Config.PANEL_TYPES.map(p => p.type), released);
-    assert.ok(!Config.PANEL_TYPES.some(p => ['cell-grouping', 'cell-gene', 'cell-count', 'gene-count', 'group-stat'].includes(p.type)));
+    assert.ok(['cell-grouping', 'cell-gene', 'cell-count'].every(t => Config.PANEL_TYPES.some(p => p.type === t)));
+    assert.ok(!Config.PANEL_TYPES.some(p => ['gene-count', 'group-stat'].includes(p.type)));
     assert.equal(Config.panelTypeInfo('cell-gene').label, 'Cell-Gene Plot');
     assert.equal(Config.panelTypeInfo('cell-plot').label, 'Cell Plot');
     assert.equal(Config.panelTypeInfo('gene-count'), undefined);

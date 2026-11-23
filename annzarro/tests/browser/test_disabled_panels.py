@@ -30,7 +30,7 @@ from annzarro.tests.browser.test_gene_set_panel import (  # noqa: E402
 )
 from annzarro.tests.browser.test_memory_guard import _serve  # noqa: E402
 
-ALL_TYPES = ["cell-plot", "gene-plot", "cell-table", "gene-table", "gene-set", "gene-signature"]
+ALL_TYPES = ["cell-plot", "gene-plot", "cell-table", "gene-table", "gene-set", "gene-signature", "cell-grouping", "cell-gene", "cell-count"]
 
 
 class PolicyStub:

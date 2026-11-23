@@ -1,7 +1,7 @@
-"""F7: the new panel types are registered and unreleased, in a real browser.
+"""F7, released in 0.8.0: the panel type registry in a real browser.
 
-The chooser does not offer them, a reserved id is skipped without an error (PER-7), and a link that names an
-unreleased type keeps it as a placeholder with the settings it carried and its default title.
+The chooser offers the three new types, a reserved id is skipped without an error (PER-7), and a link that names
+a new type opens it with the settings it carried and its default title.
 """
 import json
 import os
@@ -16,7 +16,7 @@ else:
 from annzarro.tests.browser.test_disabled_panels import browser, env, menu, server  # noqa: E402,F401
 from annzarro.tests.browser.test_gene_set_panel import TABLE, _link  # noqa: E402
 
-RELEASED = ["cell-plot", "gene-plot", "cell-table", "gene-table", "gene-set", "gene-signature"]
+RELEASED = ["cell-plot", "gene-plot", "cell-table", "gene-table", "gene-set", "gene-signature", "cell-grouping", "cell-gene", "cell-count"]
 READY = "() => !!window.PanelManager && !!window.PanelManager.getPanel('gene-table-A')"
 
 
@@ -48,12 +48,12 @@ def test_a_reserved_type_is_skipped_without_an_error(env):
     assert any("no-such-type" in e for e in errors), errors
 
 
-def test_an_unreleased_type_is_a_placeholder_titled_by_its_label(env):
+def test_a_new_type_opened_from_a_link_keeps_its_settings_and_label(env):
     page, services, policy, root = env
     _open(page, root)
     title = page.evaluate("() => window.PanelManager.createPanelInLayout('cell-gene', {version: 1, future: {a: 1}}).getTitle()")
     assert title == "Cell-Gene Plot 1"
-    # X3a built the panel: unreleased means not offered in the chooser; a link still opens it with its settings
+    # a link opens the panel with its settings
     page.wait_for_selector('.tile[data-tile-id^="cell-gene"] .cgene-panel')
     saved = page.evaluate("() => Object.values(window.PanelManager.saveLayout().panelConfigs).find(c => c.id.startsWith('cell-gene'))")
     assert saved["future"] == {"a": 1} and saved["version"] == 1, json.dumps(saved)
