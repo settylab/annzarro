@@ -902,6 +902,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             await drawPlot(_dom.plot, figure.data, figure.layout, figure.config, Coverage.complete(values.reply.n_shown || 0, 'cells'), 'cells');
             if (token !== _drawToken || !_dom) return;
             setStatusTag(_dom.plot, 'cgene-matrix', matrixTag(figure.groups, figure.rows, figure.missing));
+            // what a narrow width gave up so the matrix stays readable (draw.js fitMatrix)
+            const gaveUp = (figure.hidden || []).map((part) => VOCABULARY.cellGene.narrow[part]).join(' ');
+            setStatusTag(_dom.plot, 'cgene-narrow', gaveUp ? { text: VOCABULARY.cellGene.narrow.tag, title: gaveUp } : null);
             const oneCell = oneCellPerGroup({ mode: _config.mode, size: _config.size, sized: sizeDrawn(), groups: values.reply.groups || [] });
             _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell };
             rec.drawnKey = key;
@@ -911,7 +914,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         function clearPlot() {
             if (_shown && _dom && window.Plotly) window.Plotly.purge(_dom.plot);
-            if (_dom) setStatusTag(_dom.plot, 'cgene-matrix', null);
+            if (_dom) { setStatusTag(_dom.plot, 'cgene-matrix', null); setStatusTag(_dom.plot, 'cgene-narrow', null); }
             _shown = null;
         }
 

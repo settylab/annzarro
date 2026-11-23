@@ -57,6 +57,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function _fit(textEl, available) {
     if (!textEl || !(available > 0) || typeof textEl.getComputedTextLength !== 'function') return;
+    // a title Plotly drew in lines (<br>) whose every line fits is left as drawn: its figure fitted it (Cell-Gene legends)
+    const lines = textEl.textContent !== textEl.__shownTitle ? textEl.querySelectorAll('tspan.line') : [];
+    if (lines.length > 1 && [...lines].every((l) => l.getComputedTextLength() <= available)) return;
     const oldTip = textEl.querySelector('title');
     if (oldTip) oldTip.remove();
     // Still our shortened text: fit the full one again. Otherwise Plotly has
@@ -93,8 +96,13 @@ export function fitPlotTitles(gd) {
         const title = cb.querySelector('.cbtitle text');
         const bar = cb.querySelector('.cbbg') || cb.querySelector('.cbfills');
         const len = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect().height : 0;
-        // vertical bars carry a rotated title along their length
-        _fit(title, len || size.h);
+        // a rotated title runs along a vertical bar's length; a level one (a title on top) runs to the figure's edge
+        const rotated = !!title && /rotate/.test(title.getAttribute('transform') || '');
+        if (title && !rotated && gd.getBoundingClientRect && title.getBoundingClientRect) {
+            _fit(title, gd.getBoundingClientRect().right - title.getBoundingClientRect().left - 4);
+        } else {
+            _fit(title, len || size.h);
+        }
     });
 }
 

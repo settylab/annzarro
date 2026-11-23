@@ -37,7 +37,7 @@
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { PLOT_PALETTES, GAP_COLOUR } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
-import { annotateFigure } from './draw-annotations.js';
+import { annotateFigure, matrixPixels } from './draw-annotations.js';
 
 const W = VOCABULARY.cellGene;
 
@@ -48,14 +48,28 @@ const SMALLEST_DOT = 3;
 const LARGEST_DOT = 20;
 const ONE_SIZE = 9;
 const REFERENCE_DOTS = 5;
+/** A reference dot of the size legend takes at least this many px, so its label never meets the next dot's. */
+const REFERENCE_LINE_PX = 16;
+/** The figure's margins, px. */
+const MARGIN = Object.freeze({ l: 10, r: 10, t: 10, b: 10 });
+/**
+ * A column of the matrix keeps at least this many px along the gene axis (a dot must be told apart from the next);
+ * at a narrow width the bands give way first (fitMatrix).
+ */
+const MIN_COLUMN_PX = Object.freeze({ dots: 10, heatmap: 4 });
 /** The plot takes the left of the figure and the legends stack in the column on its right, in paper units. */
 const LEGEND_X = 0.83;
 const PLOT_RIGHT = 0.78;
+/** The legend column is at least this wide in px, so a narrow figure's legends stay readable (the plot gives way). */
+const LEGEND_MIN_PX = 120;
 const LEGEND_SLOT_MAX = 0.3;
 /** The top of the legend column stays clear of Plotly's modebar (camera, zoom, pan), about this many px tall. */
 const MODEBAR_PX = 36;
 const DEFAULT_HEIGHT = 600;
 const MAIN = 'main';
+/** A character's width in em, on average (as draw-annotations.js measures labels), and the most lines a title wraps to. */
+const CHAR_EM = 0.58;
+const TITLE_LINES = 3;
 /** A line of a strip's legend, in px: its levels are listed while they fit, then "+ N more". */
 const LEGEND_LINE_PX = 15;
 const PENDING_DOT = 5;
@@ -238,11 +252,126 @@ function describer(model, P, dots) {
 
 // --- legends ----------------------------------------------------------------------------------------------------
 
+/** Where the legend column starts, in paper units: LEGEND_X, or further left in a narrow figure (LEGEND_MIN_PX). */
+function legendX(model, keepMin = true) {
+    if (!keepMin || !model.pixels || !(model.pixels.width > 0)) return LEGEND_X;
+    return Math.min(LEGEND_X, 1 - LEGEND_MIN_PX / Math.max(model.pixels.width - 20, 1));
+}
+
+/** How many characters a line of the legend column holds at the figure's width; with no width known, any. */
+function legendChars(model, th, x) {
+    if (!model.pixels || !(model.pixels.width > 0)) return Infinity;
+    const px = Math.max(model.pixels.width - 20, 1) * (1 - x);
+    return Math.max(4, Math.floor(px / (CHAR_EM * (th.fontSize || 12))));
+}
+
+/**
+ * A legend title fitted to the legend column: each of its lines wrapped at spaces to `chars` characters, at most
+ * TITLE_LINES lines, a word or a last line too long cut with an ellipsis. Returns the markup and, when anything was cut,
+ * the whole title for the hover (`full`, else null).
+ * @param {string[]} lines
+ * @param {number} chars
+ * @returns {{text: string, full: (string|null)}}
+ */
+function fitTitle(lines, chars) {
+    const out = [];
+    let cut = false;
+    const push = (line) => {
+        if (out.length < TITLE_LINES) { out.push(line); return; }
+        cut = true;
+        const last = out[TITLE_LINES - 1];
+        out[TITLE_LINES - 1] = `${last.slice(0, Math.max(chars - 1, 1))}…`;
+    };
+    for (const line of lines) {
+        let now = '';
+        for (const word of words(line)) {
+            const w = word.length > chars ? `${word.slice(0, chars - 1)}…` : word;
+            if (w !== word) cut = true;
+            if (!now) now = w;
+            else if (now.length + 1 + w.length <= chars) now = `${now} ${w}`;
+            else { push(now); now = w; }
+        }
+        push(now);
+    }
+    if (cut && out.length === TITLE_LINES && !out[TITLE_LINES - 1].endsWith('…')) out[TITLE_LINES - 1] = `${out[TITLE_LINES - 1].slice(0, Math.max(chars - 1, 1))}…`;
+    return { text: out.map(esc).join('<br>'), full: cut ? lines.join(' · ') : null };
+}
+
+/** The paper height a fitted title takes at the top of its slot: its lines, at most 45% of the slot. */
+function titleRoomOf(model, entry, fitted) {
+    const plotPx = Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
+    const lines = fitted.text.split('<br>').length;
+    return Math.min(entry.height * 0.45, (lines * LEGEND_LINE_PX + 4) / plotPx);
+}
+
+/** A line's words for wrapping: a bracketed part such as "(> 0)" is one word, so it never breaks inside. */
+function words(line) {
+    const out = [];
+    let open = null;
+    for (const w of String(line).split(' ')) {
+        if (open !== null) {
+            open = `${open} ${w}`;
+            if (w.includes(')')) { out.push(open); open = null; }
+        } else if (w.startsWith('(') && !w.includes(')')) {
+            open = w;
+        } else {
+            out.push(w);
+        }
+    }
+    if (open !== null) out.push(open);
+    return out;
+}
+
+/** A transparent copy of a cut title over it, whose hover gives the whole title (Plotly titles have no hover). */
+function titleHover(fitted, x, y, th) {
+    return {
+        name: 'legend title hover', xref: 'paper', yref: 'paper', x, y, xanchor: 'left', yanchor: 'top', showarrow: false,
+        align: 'left', text: fitted.text, font: { color: 'rgba(0,0,0,0)' }, hovertext: esc(fitted.full), captureevents: true,
+        hoverlabel: { bgcolor: th.bgColor, font: { color: th.textColor } }
+    };
+}
+
+/**
+ * Keep the matrix readable at a narrow width: while a column of it would get under MIN_COLUMN_PX along the gene axis,
+ * give up, in order, the totals bar, then the groups' dendrogram (both stand beside the matrix along that axis), then
+ * the legend column's minimum width. Returns the model drawn and what was given up ('totals', 'dendrogram', 'legend'),
+ * which the panel says in its strip. Nothing changes with no width known. Cost: a few passes over the labels.
+ */
+function fitMatrix(model, P, dots, th) {
+    if (!model.pixels || !(model.pixels.width > 0)) return { model, hidden: [], keepMin: true };
+    const need = P.span * MIN_COLUMN_PX[dots ? 'dots' : 'heatmap'];
+    const fontPx = th.fontSize || 12;
+    const legend = legendStack(model, P, dots, th).length > 0;
+    let m = model;
+    let keepMin = true;
+    const hidden = [];
+    const room = () => {
+        const right = legend ? legendX(m, keepMin) - (LEGEND_X - PLOT_RIGHT) : 1;
+        return matrixPixels(m, { right, fontPx, margin: MARGIN });
+    };
+    const ann = () => m.annotations || {};
+    const steps = [
+        ['totals', () => !!ann().totals, () => { m = { ...m, annotations: { ...ann(), totals: false } }; }],
+        ['dendrogram', () => !!(ann().dendrograms && ann().dendrograms.groups && ann().dendrograms.groups.length),
+            () => { m = { ...m, annotations: { ...ann(), dendrograms: { ...ann().dendrograms, groups: [] } } }; }],
+        ['legend', () => legend && !m.swap && legendX(m, true) < LEGEND_X, () => { keepMin = false; }]
+    ];
+    for (const [name, applies, apply] of steps) {
+        if (room() >= need) break;
+        if (!applies()) continue;
+        apply();
+        hidden.push(name);
+    }
+    return { model: m, hidden, keepMin };
+}
+
 /**
  * The legend column, top to bottom: one entry per color bar, then one per size legend (or the sentence that replaces it
  * under No size). `top` and `height` are paper fractions.
  */
-function legendStack(model, P, dots) {
+function legendStack(model, P, dots, th, keepMin = true) {
+    const x = legendX(model, keepMin);
+    const chars = legendChars(model, th, x);
     const items = [];
     const wanted = (k) => !model.legend || model.legend[k] !== false;
     if (wanted('colorBar')) for (const k of P.colour) items.push({ kind: 'bar', key: k.key });
@@ -257,6 +386,8 @@ function legendStack(model, P, dots) {
     items.forEach((it, i) => {
         it.top = 1 - reserve - i * slot;
         it.height = slot * 0.82;
+        it.chars = chars;
+        it.x = x;
     });
     return items;
 }
@@ -266,19 +397,26 @@ const barOf = (stack, key) => stack.find((it) => it.kind === 'bar' && it.key ===
 /** A Plotly color bar for one key, placed in its slot of the legend column. */
 function colourBar(entry, lines, th) {
     return {
-        title: { text: lines.map(esc).join('<br>'), side: 'top', font: { color: th.textColor } },
+        title: { text: fitTitle(lines, entry.chars).text, side: 'top', font: { color: th.textColor } },
         tickfont: { color: th.textColor },
-        x: LEGEND_X, xanchor: 'left', y: entry.top, yanchor: 'top', len: entry.height, lenmode: 'fraction', thickness: 12,
+        x: entry.x, xanchor: 'left', y: entry.top, yanchor: 'top', len: entry.height, lenmode: 'fraction', thickness: 12,
         outlinewidth: 0
     };
 }
 
-/** The size legend of one key: five reference dots from dot_min to dot_max, on a small subplot of its own. */
+/**
+ * The size legend of one key: up to five reference dots from dot_min to dot_max, on a small subplot of its own; fewer
+ * (at least two, the ends) when the slot is too short for each to have its line.
+ */
 function sizeLegendParts(model, k, entry, n, th) {
     const { smallest = SMALLEST_DOT, largest = LARGEST_DOT } = model.size;
-    const refs = Array.from({ length: REFERENCE_DOTS }, (_, j) => k.lo + ((k.hi - k.lo) * j) / (REFERENCE_DOTS - 1));
     const axisId = n + 2;
-    const titleRoom = Math.min(0.07, entry.height * 0.3);
+    const fitted = fitTitle(k.lines, entry.chars);
+    const titleRoom = titleRoomOf(model, entry, fitted);
+    const plotPx = Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
+    const linePx = Math.max(REFERENCE_LINE_PX, largest);
+    const count = model.pixels ? Math.max(2, Math.min(REFERENCE_DOTS, Math.floor(((entry.height - titleRoom) * plotPx) / linePx))) : REFERENCE_DOTS;
+    const refs = Array.from({ length: count }, (_, j) => k.lo + ((k.hi - k.lo) * j) / (count - 1));
     const trace = {
         type: 'scatter', mode: 'markers+text', name: 'size legend', hoverinfo: 'skip', showlegend: false,
         xaxis: `x${axisId}`, yaxis: `y${axisId}`,
@@ -287,12 +425,12 @@ function sizeLegendParts(model, k, entry, n, th) {
         marker: { size: refs.map((v) => diameterOf(v, k.lo, k.hi, smallest, largest)), color: th.axisColor, opacity: 0.55, line: { width: 0 } }
     };
     const axes = {
-        [`xaxis${axisId}`]: { domain: [LEGEND_X + 0.01, 1], range: [-0.6, 3], visible: false, fixedrange: true },
-        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, entry.top - titleRoom], range: [REFERENCE_DOTS - 0.4, -0.6], visible: false, fixedrange: true }
+        [`xaxis${axisId}`]: { domain: [entry.x + 0.01, 1], range: [-0.6, 3], visible: false, fixedrange: true },
+        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, entry.top - titleRoom], range: [count - 0.4, -0.6], visible: false, fixedrange: true }
     };
     const title = {
-        xref: 'paper', yref: 'paper', x: LEGEND_X, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,
-        align: 'left', text: k.lines.map(esc).join('<br>'), font: { color: th.textColor }
+        xref: 'paper', yref: 'paper', x: entry.x, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,
+        align: 'left', text: fitted.text, font: { color: th.textColor }, ...(fitted.full ? { hovertext: esc(fitted.full), captureevents: true } : {})
     };
     return { trace, axes, title };
 }
@@ -303,7 +441,8 @@ function sizeLegendParts(model, k, entry, n, th) {
  */
 function stripLegendParts(model, strip, entry, n, th) {
     const plotPx = Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
-    const titleRoom = Math.min(0.07, entry.height * 0.3);
+    const fitted = fitTitle([strip.title], entry.chars);
+    const titleRoom = titleRoomOf(model, entry, fitted);
     const fit = Math.max(1, Math.floor(((entry.height - titleRoom) * plotPx) / LEGEND_LINE_PX));
     const all = strip.legend;
     const shown = all.length <= fit ? all : all.slice(0, fit - 1);
@@ -320,12 +459,12 @@ function stripLegendParts(model, strip, entry, n, th) {
     };
     const top = entry.top - titleRoom;
     const axes = {
-        [`xaxis${axisId}`]: { domain: [LEGEND_X + 0.01, 1], range: [-0.6, 6], visible: false, fixedrange: true },
+        [`xaxis${axisId}`]: { domain: [entry.x + 0.01, 1], range: [-0.6, 6], visible: false, fixedrange: true },
         [`yaxis${axisId}`]: { domain: [entry.top - entry.height, top], range: [Math.max(lines, fit) - 0.5, -0.5], visible: false, fixedrange: true }
     };
     const title = {
-        name: 'strip legend title', xref: 'paper', yref: 'paper', x: LEGEND_X, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,
-        align: 'left', text: esc(strip.title), font: { color: th.textColor }
+        name: 'strip legend title', xref: 'paper', yref: 'paper', x: entry.x, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,
+        align: 'left', text: fitted.text, font: { color: th.textColor }, ...(fitted.full ? { hovertext: esc(fitted.full), captureevents: true } : {})
     };
     return { trace, axes, title };
 }
@@ -516,23 +655,25 @@ function heatmapTraces(model, P, stack, th) {
  * @param {object} model - see the top of this file
  * @param {{bgColor: string, gridColor: string, axisColor: string, textColor: string, fontFamily?: string, fontSize?: number}}
  *   [theme] - the plot's resolved colors (plot-theme.js: PLOT_PALETTES or plotColour of the panel's settings); light by default
- * @returns {{data: object[], layout: object, config: object}}
+ * @returns {{data: object[], layout: object, config: object, hidden: string[]}} `hidden`: what a narrow width gave up
+ *   so each column of the matrix keeps MIN_COLUMN_PX ('totals', 'dendrogram', 'legend'; fitMatrix)
  */
 // export-unused-ok: X3a draws the panel with it
-export function buildFigure(model, theme) {
-    if (model.mode !== 'dots' && model.mode !== 'heatmap') throw new Error(`unknown mode ${model.mode}`);
-    const dots = model.mode === 'dots';
-    if (dots && !model.size) throw new Error('dots need a size or a No size sentence');
+export function buildFigure(given, theme) {
+    if (given.mode !== 'dots' && given.mode !== 'heatmap') throw new Error(`unknown mode ${given.mode}`);
+    const dots = given.mode === 'dots';
+    if (dots && !given.size) throw new Error('dots need a size or a No size sentence');
     const th = { ...PLOT_PALETTES.light, ...theme };
-    const P = prepare(dots ? model : { ...model, size: { none: true } });
-    const stack = legendStack(model, P, dots);
-    const right = stack.length ? PLOT_RIGHT : 1;
+    const P = prepare(dots ? given : { ...given, size: { none: true } });
+    const { model, hidden, keepMin } = fitMatrix(given, P, dots, th);
+    const stack = legendStack(model, P, dots, th, keepMin);
+    const right = stack.length ? stack[0].x - (LEGEND_X - PLOT_RIGHT) : 1;
 
     const data = dots ? dotTraces(model, P, stack, th) : heatmapTraces(model, P, stack, th);
     const layout = {
         paper_bgcolor: th.bgColor, plot_bgcolor: th.bgColor, showlegend: false, hovermode: 'closest',
         font: { family: th.fontFamily || 'Arial, Helvetica, sans-serif', size: th.fontSize || 12, color: th.textColor },
-        margin: { l: 10, r: 10, t: 10, b: 10 }, annotations: [],
+        margin: { ...MARGIN }, annotations: [],
         ...layoutAxes(model, P, th, dots, right)
     };
     if (model.plotTitle) layout.title = { text: esc(model.plotTitle), font: { color: th.textColor } };
@@ -549,13 +690,19 @@ export function buildFigure(model, theme) {
             data.push(parts.trace);
             Object.assign(layout, parts.axes);
             layout.annotations.push(parts.title);
+        } else if (entry.kind === 'bar') {
+            const fitted = fitTitle(P.colour.find((k) => k.key === entry.key).lines, entry.chars);
+            if (fitted.full) layout.annotations.push(titleHover(fitted, entry.x, entry.top, th));
         } else if (entry.kind === 'none') {
             layout.annotations.push({
-                xref: 'paper', yref: 'paper', x: LEGEND_X, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,
-                align: 'left', width: 170, text: model.size.none, font: { color: th.textColor }
+                xref: 'paper', yref: 'paper', x: entry.x, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,
+                align: 'left', width: Number.isFinite(entry.chars) ? Math.max(60, Math.round(entry.chars * CHAR_EM * (th.fontSize || 12))) : 170, text: model.size.none, font: { color: th.textColor }
             });
         }
     }
     const config = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'] };
-    return annotateFigure({ data, layout, config }, model, th);
+    const figure = annotateFigure({ data, layout, config }, model, th);
+    // what a narrow width gave up for the matrix, for the panel's strip
+    figure.hidden = hidden;
+    return figure;
 }

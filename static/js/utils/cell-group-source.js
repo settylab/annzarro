@@ -602,7 +602,7 @@ registerPanelSourceType(GROUP_TYPE);
 
 registerSource({
     type: GROUP_TYPE,
-    label: GROUP_TYPE,
+    label: VOCABULARY.sourceType.grouping,
     valueType: 'categorical',
     entity: 'cells',
     consumers: ['cell-plot', 'cell-table'],
