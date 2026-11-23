@@ -13,7 +13,7 @@
  */
 import { bandwidthOf, smooth1, smooth2 } from '../../utils/kde.js';
 import { levelLabelsOf } from '../../utils/count-plot-model.js';
-import { plotlyColorscale } from '../../utils/color-scales.js';
+import { scaleKeys } from './colour.js';
 import { normalizeHex } from '../../utils/plot-theme.js';
 import { RESERVED } from '../../utils/level-id.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
@@ -25,7 +25,6 @@ export const DENSITY_MODES = Object.freeze(['density', 'density2d']);
 /** The interface text of a density (UX 4.4): the count plot's words, utils/vocabulary.js. */
 const WORDS = VOCABULARY.countPlot.density;
 
-const DEFAULT_COLORSCALE = 'Viridis';
 const CONTOURS = 6;
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -181,7 +180,7 @@ export function densityFigure(config, table, opts) {
     levels.forEach((s, i) => {
         if (sa < 0) {
             data.push({
-                ...base(i, s), type: image ? 'heatmap' : 'contour', colorscale: plotlyColorscale(options.colorscale || DEFAULT_COLORSCALE),
+                ...base(i, s), type: image ? 'heatmap' : 'contour', ...scaleKeys(options, 'z'),
                 colorbar: { title: { text: esc(title) } },
                 ...(image ? {} : { contours: { coloring: 'fill', showlines: false }, ncontours: CONTOURS * 2, line: { width: 0 } })
             });
