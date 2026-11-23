@@ -288,6 +288,13 @@ const cellGene = Object.freeze({
         above: 'above',
         threshold: 'expressed above',
         thresholdHelp: 'A cell counts as expressing above this value.',
+        /**
+         * The threshold box on a grouping axis (decision 35): empty follows the grouping's Expressed above, shown as the
+         * placeholder; a typed value overrides it for this plot.
+         */
+        thresholdAuto: (value) => `auto (grouping: ${value})`,
+        thresholdFollows: (title, value) => `Follows ${title}'s Expressed above (${value}). Type a value to override it for this plot.`,
+        thresholdOverrides: (title, value) => `Overrides ${title} (above ${value}). Clear to follow it.`,
         /** "3 genes on 2 layers": genes (in words) read on `n` layers, or at `n` thresholds. */
         geneReads: (genes, n, cause) => (cause === 'layers' ? `${genes} on ${n} layers` : cause === 'thresholds' ? `${genes} at ${n} thresholds` : genes),
         tooManyValues: (groups, features, values, limit) => `${groups} × ${features} = ${values} values; the limit is ${limit}.`,

@@ -631,7 +631,7 @@ export function createControls({ D, id, model, on }) {
         }
         pointSizeWrap.hidden = !(o.layers && o.layers.points);
         if (document.activeElement !== pointSize) pointSize.value = m.config.pointSize === undefined ? '' : String(m.config.pointSize);
-        densityNotes.textContent = shownRows.density && m.notes ? [m.notes.bandwidth, m.notes.floor].filter(Boolean).join(' ') : '';
+        densityNotes.textContent = shownRows.density ? m.densityNote || '' : '';
         densityNotes.hidden = !densityNotes.textContent;
     }
 

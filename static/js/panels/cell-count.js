@@ -591,17 +591,18 @@ actions.register({
             // what the plot area says for a plan that asks nothing: the sentence (the live region) and its way out beside it
             const state = el('div', { class: 'ccnt-state', role: 'status', aria: { live: 'polite' }, hidden: true }, el('p', { class: 'ccnt-state__text' }));
             const stateBox = el('div', { class: 'ccnt-state-box', hidden: true }, state, el('div', { class: 'ccnt-state__actions' }));
-            const plotArea = el('div', { class: 'ccnt-plot-area' }, plot, stateBox);
-            const strip = el('div', { class: 'ccnt-strip', role: 'status', aria: { live: 'polite' } });
+            // what the plot is doing while it keeps its drawing ("Counting N cells…"): a small overlay in its top-left corner
+            const working = el('div', { class: 'ccnt-working', role: 'status', aria: { live: 'polite' }, hidden: true });
+            const plotArea = el('div', { class: 'ccnt-plot-area' }, working, plot, stateBox);
             // the page's painter and action registry find this plot's records and buttons by these
             plot.__azPanelId = _id;
             plot.__azCellCount = true;
             plot.__azChooser = _controls.element.querySelector('[data-row="x"] select');
-            root.append(_controls.element, plotArea, strip);
+            root.append(_controls.element, plotArea);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
-            _dom = { root, controls: _controls.element, plot, plotArea, state, stateBox, strip,
+            _dom = { root, controls: _controls.element, plot, plotArea, state, stateBox, working,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (PARTS.sets && PARTS.sets.mount) {
                 _sets = PARTS.sets.mount(_controls.setsElement, { panelId: _id, config: () => _config, commit, silent,
@@ -629,7 +630,7 @@ actions.register({
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, levelsOf, levelsSaid,
+                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, densityNote: densityNote(), levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
             };
         }
@@ -640,7 +641,7 @@ actions.register({
             if (!_dom) return;
             draw();
             paintState();
-            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo];
+            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _points];
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
                 _controls.paint();
@@ -794,18 +795,28 @@ actions.register({
             const rec = binding.recordsOf(_dom.plot).get(ROLE);
             if (rec) rec.quiet = !!_drawing;
             binding.paint(_dom.plot);
-            _dom.strip.textContent = stripText(snap);
+            const doing = workingText(snap);
+            _dom.working.textContent = doing;
+            _dom.working.hidden = !doing;
         }
 
-        /** The line under the banner: Counting… while a drawing is kept, a density's range once ready; the banner says the cells counted (CNT-22). */
-        function stripText(snap) {
+        /** What the plot is doing while it keeps its drawing: Counting… and loading the cell points. Gone once it is ready. */
+        function workingText(snap) {
             if (!snap || !_drawing) return '';
             if (PENDING.includes(snap.state) && snap.state !== 'idle') return C.counting(cellsShown());
-            if (snap.state !== 'ready') return '';
-            // a density says its range instead (UX 4.4): the cells outside it are those it does not count
-            if (_notes) return [_notes.range, _notes.floor, pointsStatus()].filter(Boolean).join(' ');
-            // the cells counted, without a value or outside the range are the coverage banner's under the plot: not said twice
+            if (snap.state === 'ready' && shown().mode === 'density2d' && drawOptions(shown()).layers.points && _points.state === 'loading') return C.points.loading;
             return '';
+        }
+
+        /**
+         * What a density says of itself, for the note under its controls: the range its curve covers, the bandwidth floor
+         * and what the Cell points layer draws or why not. Facts of the drawing, not of its progress (the cells counted
+         * and left out are the coverage banner's).
+         */
+        function densityNote() {
+            if (!_notes || !_drawing || !DENSITY_MODES.includes(_drawing.config.mode)) return '';
+            const points = pointsStatus();
+            return [_notes.bandwidth, _notes.range, _notes.floor, points === C.points.loading ? '' : points].filter(Boolean).join(' ');
         }
 
         function nameOfInput(field) {

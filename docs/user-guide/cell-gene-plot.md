@@ -42,8 +42,12 @@ the colour from the mean of the log-normalised layer, the size from the share of
   the warning as its tooltip. Choosing a statistic the current layer cannot give moves the layer to the first one that
   can, and the status line says so once ("Layer changed to logged: % expressing is not available on X.").
 - **The threshold** appears beside a statistic that counts expressing cells (% expressing, mean of expressing cells).
-  A cell counts as expressing above it. Left alone, it is the grouping's threshold ({doc}`cell-grouping`), else 0;
-  a value typed here is that measure's own, for Color, Size and Height each.
+  A cell counts as expressing above it. When the groups are a grouping, the box is empty and reads
+  `auto (grouping: 0)`: the measure follows the grouping's **Expressed above**, set in the grouping's **Methods ▾**
+  ({doc}`cell-grouping`), and changes with it. A value typed here overrides the grouping for that measure only (Color,
+  Size and Height each have their own), and its tooltip says so ("Overrides Grouping 1 (above 0). Clear to follow
+  it."); empty the box and press **Enter** to follow the grouping again. When the groups are an obs column, the box
+  holds the measure's own threshold, 0 by default. The legends and the hover name the threshold in force either way.
 
 The lists are the same whether the groups are a grouping or an obs column: nothing has to be offered first. A choice
 stored in a link that the layer cannot give (% expressing on a scaled X) stays selected, marked "(not available)", and
