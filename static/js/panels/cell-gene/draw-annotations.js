@@ -96,8 +96,8 @@ export function dendrogramBlocks(blocks, order) {
         .map((b) => ({ merges: b.merges, positions: Int32Array.from(b.clustered, (row) => drawnAt[row]) }));
 }
 
-/** The axis coordinate of every row (gaps between sections skipped) and the axis's extent. */
-function rowCoordinates(rows) {
+/** The axis coordinate of every row (gaps between sections skipped) and the axis's extent. clicks.js reads a click by it. */
+export function rowCoordinates(rows) {
     const pos = new Array(rows.length);
     let at = 0;
     rows.forEach((row, r) => {

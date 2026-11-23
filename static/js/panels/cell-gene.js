@@ -70,6 +70,7 @@ import {
     gateMatrix, describePlot, ownJobAhead, plotState, matrixTag, oneCellPerGroup, sizeFirst, createChecklist
 } from './cell-gene/states.js';
 import { OPTIONS_PART, figureExtras, barSettings } from './cell-gene/options.js';
+import { CLICKS_PART } from './cell-gene/clicks.js';
 import { effectiveSmall } from '../utils/cell-grouping.js';
 import { RESERVED } from '../utils/level-id.js';
 
@@ -86,9 +87,9 @@ registerReferences(TYPE, cellGeneReferences);
 
 /**
  * The parts drawn into the panel: `{mount(slot, ctx) -> {update(), destroy()}}`. Cluster ▾ and Plot Options go in the
- * Layout group (panels/cell-gene/options.js).
+ * Layout group (panels/cell-gene/options.js); the clicks on the plot (CXG-15) in its area (panels/cell-gene/clicks.js).
  */
-const PARTS = Object.freeze({ options: OPTIONS_PART });
+const PARTS = Object.freeze({ options: OPTIONS_PART, clicks: CLICKS_PART });
 
 const W = VOCABULARY.word;
 const STATES = VOCABULARY.cellGene.states;
@@ -673,6 +674,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 menuHost: _dom.menus, tableHost: _dom.table
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
+            // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
+            _parts.push(PARTS.clicks.mount(_dom.area, {
+                D, plot: _dom.plot, drawn: () => (_shown ? _shown.model : null),
+                grouping: () => { const g = axisGrouping(); return g ? g.getId() : null; },
+                open: (id) => openPanel(id, _id),
+                focus: (gene) => DataManager.setFocusedGene(gene), focused: () => DataManager.getFocusedGene()
+            }));
         }
 
         /** The grouping recipe the cell axis's groups are of: the one last applied, or the stored one. */
@@ -975,7 +983,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
                 const prev = k > 0 ? matrix.rows[order.rows[k - 1]] : null;
-                return { label: row.label, section: row.section, own: row.own, pending: !!(pending && pending[r]),
+                return { kind: row.kind, label: row.label, section: row.section, own: row.own, pending: !!(pending && pending[r]),
                     gapBefore: prev && prev.section.index !== row.section.index ? extras.gap : 0 };
             });
             const sizeNone = sizeProblem();
