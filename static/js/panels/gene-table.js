@@ -22,7 +22,7 @@ import './table-utilities/table-background.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { createScoreOptions, everyOption } from './score-options/score-options.js';
 import { DEFAULT_INPUT, DEFAULT_METHOD, isDefaultParams, writableOptions } from '../utils/signature-options.js';
-import { sourceChanged, sourceRenamed, pinConsumersOf } from '../utils/score-source.js';
+import { SCORE_TYPE, sourceChanged, sourceRenamed, pinConsumersOf } from '../utils/score-source.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -555,7 +555,7 @@ const GeneTablePanel = (function() {
 
         /** Distribution: a Count Plot of the table's gene score beside it, on z-score mean of X. */
         function openDistribution() {
-            const source = { type: 'gene-score', key: _id, column: DEFAULT_METHOD, layer: 'X' };
+            const source = { type: SCORE_TYPE, key: _id, column: DEFAULT_METHOD, layer: 'X' };
             return PanelManager.createPanelNextTo('cell-count', _id, { mode: 'histogram', x: { source } });
         }
         

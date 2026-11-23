@@ -37,7 +37,7 @@ import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-v
 import { createGeneGrid } from '../utils/gene-grid.js';
 import { getFixedGenes } from './table-utilities/panel-tracker.js';
 import { DEFAULT_METHOD, OPTION_KEYS } from '../utils/signature-options.js';
-import { pinConsumersOf, sourceChanged, sourceRenamed, sourceStatus, onSourceStatus, scoreCommand } from '../utils/score-source.js';
+import { SCORE_TYPE, pinConsumersOf, sourceChanged, sourceRenamed, sourceStatus, onSourceStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
 import { createScoreOptions, everyOption } from './score-options/score-options.js';
@@ -446,7 +446,7 @@ const GeneSignaturePanel = (function() {
 
         /** Distribution: a Count Plot of the score beside the panel (what Inspect showed), on z-score mean of X. */
         function openDistribution() {
-            const source = { type: 'gene-score', key: _id, column: DEFAULT_METHOD, layer: 'X' };
+            const source = { type: SCORE_TYPE, key: _id, column: DEFAULT_METHOD, layer: 'X' };
             return PanelManager.createPanelNextTo('cell-count', _id, { mode: 'histogram', x: { source } });
         }
 
