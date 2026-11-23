@@ -579,9 +579,14 @@ const view3d = Object.freeze({
 /** The range boxes' words (ui/range-boxes.js): Min and Max boxes of one scale, auto with the value drawn, a reset. */
 const range = Object.freeze({
     auto: 'auto',
+    smallest: 'smallest',
+    largest: 'largest',
     reset: '\u21BA',
     resetHelp: (what) => `Back to auto: ${what ? `${what.toLowerCase()} ` : ''}limits follow the drawn values`,
-    problem: 'Enter a number, or leave it empty for automatic.'
+    problem: 'Enter a number, or leave it empty for automatic.',
+    follows: (end, value) => `Follows the drawn values (${end} ${value}). Type a value to fix it for this plot.`,
+    followsNone: 'Follows the drawn values. Type a value to fix it for this plot.',
+    fixed: (value) => `Fixed at ${value}. Clear to follow the drawn values.`
 });
 
 export const VOCABULARY = Object.freeze({ range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });

@@ -146,3 +146,10 @@ test('the Count Plot\'s colour values are the figure\'s scale: z of a heatmap, m
     assert.equal(colourValues([{ type: 'heatmap', z: [[1, 2]], showscale: false }]), null);
     assert.equal(colourValues([{ type: 'bar', marker: { color: '#999' } }]), null);
 });
+
+test('the title says what auto follows, in the style of the threshold box', () => {
+    const { boxes } = mount();
+    boxes.set({ limits: [null, 4, null], drawn: [0.125, 87.4] });
+    assert.equal(boxes.fields[0].title, 'Follows the drawn values (smallest 0.125). Type a value to fix it for this plot.');
+    assert.equal(boxes.fields[1].title, 'Fixed at 4. Clear to follow the drawn values.');
+});

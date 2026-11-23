@@ -78,6 +78,8 @@ export function createRangeBoxes({ el, ends, onCommit, onReset, parse = defaultP
         const drawn = ends[i].hint !== false && state.drawn ? state.drawn[at] : null;
         input.placeholder = drawn !== null && Number.isFinite(drawn) ? `${R.auto} (${formatRangeValue(drawn)})` : R.auto;
         input.classList.toggle('az-range__field--auto', !Number.isFinite(limit));
+        const hint = drawn !== null && Number.isFinite(drawn) ? formatRangeValue(drawn) : null;
+        input.title = Number.isFinite(limit) ? R.fixed(formatRangeValue(limit)) : hint !== null ? R.follows(at === 0 ? R.smallest : R.largest, hint) : R.followsNone;
     }
 
     return {
