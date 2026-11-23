@@ -33,10 +33,10 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const fmt = (n) => n.toLocaleString('en-US');
 
 /** The "+ k more" line of a capped legend. */
-export const moreLine = (k) => `+ ${fmt(k)} more`;
+const moreLine = (k) => `+ ${fmt(k)} more`;
 
 /** The title's size: set, else 4 px above the text. */
-export function titleSizeOf(style) {
+function titleSizeOf(style) {
     return style.titleSize ?? (style.fontSize || 12) + 4;
 }
 

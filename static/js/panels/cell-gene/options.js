@@ -167,7 +167,7 @@ const dotsMode = (config) => !config || config.mode !== 'heatmap';
  * they always had: the dots' outline, the sections' gap and titles, the gene and group labels (in Axes), the legends'
  * switches and titles (in Legend), the totals (Annotations). The plot title is the common Text section's (`titles.plot`).
  */
-export const PLOT_OPTION_FIELDS = Object.freeze([
+const PLOT_OPTION_FIELDS = Object.freeze([
     { id: 'outlineColor', section: 'panel:dots', type: 'color', path: 'outline.color', label: WO.outlineColor, dflt: DEFAULT_OUTLINE.color, when: dotsMode },
     { id: 'outlineWidth', section: 'panel:dots', type: 'number', path: 'outline.width', label: WO.outlineWidth, dflt: DEFAULT_OUTLINE.width,
         min: 0, max: OUTLINE_MAX, step: 0.25, when: dotsMode },

@@ -34,7 +34,7 @@ import { exportOptions } from './plot-options.js';
 import { setSessionStyle, clearSessionStyle, hasSessionStyle, onSessionStyleChange, followLook } from '../../utils/session-style.js';
 
 /** The image formats, in the order the Export section offers them. */
-export const IMAGE_FORMATS = Object.freeze(['png', 'svg', 'jpeg', 'webp']);
+const IMAGE_FORMATS = Object.freeze(['png', 'svg', 'jpeg', 'webp']);
 
 /** The plot kinds' names, as their panels are called. */
 const KIND_NAMES = Object.freeze({ 'cell-gene': 'Cell-Gene', 'cell-count': 'Cell Count' });

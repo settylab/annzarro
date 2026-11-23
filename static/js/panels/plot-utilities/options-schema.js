@@ -36,20 +36,17 @@ const _kinds = new Map();
 /** The plot kinds on the shared Plot Options: panel types (the two declared here; `kinds()` has every declared one). */
 export const PLOT_KINDS = Object.freeze(['cell-gene', 'cell-count']);
 
-/** Where the common look lives in a configuration. */
-export const LOOK_KEY = 'look';
-
 /** The common sections, in the pop-over's order; a panel's own sections go where its kind's `ORDER` puts them. */
-export const COMMON_SECTIONS = Object.freeze(['presets', 'text', 'background', 'axes', 'legend', 'margins', 'export', 'apply']);
+const COMMON_SECTIONS = Object.freeze(['presets', 'text', 'background', 'axes', 'legend', 'margins', 'export', 'apply']);
 
 /** Each kind's sections in order: the common ones and its own (`panel:<id>`). */
-export const ORDER = Object.freeze({
+const ORDER = Object.freeze({
     'cell-gene': Object.freeze(['presets', 'text', 'background', 'axes', 'panel:dots', 'panel:sections', 'legend', 'panel:annotations', 'margins', 'export', 'apply']),
     'cell-count': Object.freeze(['presets', 'text', 'background', 'axes', 'legend', 'margins', 'export', 'apply'])
 });
 
 /** The fonts offered, as Cell Plot's Plot Options names them; '' is the kind's default font. */
-export const FONT_FAMILIES = Object.freeze([
+const FONT_FAMILIES = Object.freeze([
     ['Arial, Helvetica, sans-serif', 'Arial'],
     ["'Times New Roman', Times, serif", 'Times New Roman'],
     ['Courier, monospace', 'Courier'],
@@ -59,11 +56,8 @@ export const FONT_FAMILIES = Object.freeze([
     ['"Open Sans", verdana, arial, sans-serif', 'Open Sans']
 ]);
 
-/** Where a count plot's legend can go (the Cell-Gene Plot's legends are a column on the right, always). */
-export const LEGEND_POSITIONS = Object.freeze(['right', 'bottom', 'top', 'left']);
-
 /** The legend's columns, at most (as Cell Plot's, utils/legend-options.js COLUMNS_MAX). */
-export const LEGEND_COLUMNS_MAX = 8;
+const LEGEND_COLUMNS_MAX = 8;
 
 /** The common fields. Labels are interface text in US spelling; the panel's own are its vocabulary's. */
 const COMMON_FIELDS = Object.freeze([
@@ -114,7 +108,7 @@ const COMMON_FIELDS = Object.freeze([
 ]);
 
 /** The words of each common section's heading. */
-export const SECTION_TITLES = Object.freeze({
+const SECTION_TITLES = Object.freeze({
     presets: 'Presets', text: 'Text', background: 'Background', axes: 'Axes', legend: 'Legend', margins: 'Margins', export: 'Export', apply: 'Apply'
 });
 
@@ -135,6 +129,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 const COLOR = /^#[0-9a-f]{3}([0-9a-f]{3})?([0-9a-f]{2})?$/i;
 
 /** The fields `kind` offers: the common ones it has, then its panel's. */
+// export-unused-ok: the Node tests and WP-5b's Cell Plot and Gene Plot kinds read the fields
 export function fieldsOf(kind) {
     const own = _kinds.get(kind);
     const takes = (f) => !f.applies || f.applies.includes(kind) || !!(own && own.applies && own.applies.includes(f.id));
@@ -142,6 +137,7 @@ export function fieldsOf(kind) {
 }
 
 /** A field of `kind` by id, or null. */
+// export-unused-ok: the Node tests and WP-5b's Cell Plot and Gene Plot kinds read the fields
 export function fieldOf(kind, id) {
     return fieldsOf(kind).find((f) => f.id === id) || null;
 }
@@ -232,7 +228,7 @@ export function resolveStyle(config, kind) {
 }
 
 /** The fields Apply to other panels and the session default carry. */
-export function copiedFields(kind) {
+function copiedFields(kind) {
     return fieldsOf(kind).filter((f) => f.copy !== false);
 }
 
@@ -300,7 +296,7 @@ export const PRESET_LABELS = Object.freeze({ default: 'Default', publication: 'P
  * (`registerKind`) are laid over these.
  * @returns {Object<string, *>} null for a field means its default
  */
-export function presetValues(name, kind) {
+function presetValues(name, kind) {
     const out = {};
     if (name === 'default') {
         for (const f of copiedFields(kind)) if (f.section !== 'export') out[f.id] = null;
