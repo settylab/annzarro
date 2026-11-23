@@ -14,12 +14,12 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { sourceName } from '../../utils/cell-grouping.js';
-import { binsRange } from '../../utils/count-plot-model.js';
+import { binsRange, binSpacingOf, splitUsed } from '../../utils/count-plot-model.js';
 import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
 import {
     rowsOf, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
-    setMode, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
+    setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
 } from './controls-model.js';
 
 const C = VOCABULARY.countPlot;
@@ -288,6 +288,20 @@ export function createControls({ D, id, model, on }) {
                     commit: (next, label) => {
                         const c = model().config;
                         commit({ ...c, [row.field]: fromControl(next, c.mode) }, label);
+                    },
+                    // how the bins are drawn: a 2D histogram and a histogram only; a density is smoothed on a linear grid
+                    ...(['hist2d', 'histogram'].includes(m.config.mode) && ['x', 'y'].includes(row.field) ? { spacing: {
+                        value: binSpacingOf(m.config, row.field),
+                        set: (value) => {
+                            const c = model().config;
+                            commit({ ...c, binSpacing: { ...c.binSpacing, [row.field]: value } }, `${value === 'even' ? 'even' : 'value-placed'} bins of ${C.rows[row.field] || row.field}`);
+                        }
+                    } } : {}),
+                    close: () => {
+                        open.binning.delete(row.field);
+                        paint();
+                        const back = row.extra.querySelector('.ccnt-bins');
+                        if (back) back.focus();
                     }
                 });
                 mounts.push({ row, handle });
@@ -502,13 +516,16 @@ export function createControls({ D, id, model, on }) {
     adjust.addEventListener('change', commitAdjust);
     adjust.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitAdjust(); } });
     const adjustWrap = el('label', { class: 'ccnt-opt' }, `${C.buttons.adjust} `, adjust, adjustNote);
-    const toggleField = (cls, field, value, text) => {
+    // `off` is what unticking stores (nothing, unless the field's default is the ticked state)
+    const toggleField = (cls, field, value, text, off = () => undefined) => {
         const box = el('input', { type: 'checkbox', class: cls,
-            on: { change: () => { const next = { ...model().config }; if (box.checked) next[field] = value; else delete next[field]; commit(next, `${box.checked ? '' : 'no '}${text.toLowerCase()}`.trim()); } } });
+            on: { change: () => { const next = { ...model().config }; const stored = box.checked ? value : off(next);
+                if (stored === undefined) delete next[field]; else next[field] = stored; commit(next, `${box.checked ? '' : 'no '}${text.toLowerCase()}`.trim()); } } });
         return { box, wrap: el('label', { class: 'ccnt-opt' }, box, ` ${text}`) };
     };
     const bySize = toggleField('ccnt-bysize', 'scale', 'size', C.buttons.bySize);
-    const image = toggleField('ccnt-image', 'style', 'image', C.buttons.image);
+    // with a Color by the image is the default, so leaving it is stored
+    const image = toggleField('ccnt-image', 'style', 'image', C.buttons.image, (c) => (c.split ? 'contours' : undefined));
     const densityNotes = el('div', { class: 'ccnt-help ccnt-density-notes' });
     const optionsBox = el('div', { class: 'ccnt-options', id: `ccnt-options-${id}`, role: 'group', aria: { label: C.buttons.options } },
         logWrap, ringWrap, adjustWrap, bySize.wrap, image.wrap, densityNotes);
@@ -565,7 +582,7 @@ export function createControls({ D, id, model, on }) {
         xRow.labelEl.textContent = shownRows.slices ? C.rows.slices : C.rows.x;
         xRow.wrap.hidden = !shownRows.x;
         yRow.wrap.hidden = !shownRows.y;
-        splitRow.wrap.hidden = !shownRows.split;
+        splitRow.wrap.hidden = !shownRows.split || !splitUsed(shownConfig(m.config));
         setsSlot.hidden = !shownRows.sets;
         if (m.structure) {
             for (const row of [xRow, yRow, splitRow]) {

@@ -25,11 +25,6 @@ test('the table is the grouping\'s statistics, named by the vocabulary, with cel
     }
     assert.deepEqual(S.DEFAULT_STATISTICS, ['mean', 'pct_expressing']);
     assert.equal(S.ALWAYS_OFFERED, 'count');
-    assert.equal(S.isStatisticOffered({}, 'count'), true, 'cell count is always offered');
-    assert.equal(S.isStatisticOffered({}, 'mean', 'X'), true);
-    assert.equal(S.isStatisticOffered({}, 'sum', 'X'), false);
-    assert.equal(S.isStatisticOffered({ offered: ['sum'] }, 'sum', 'X'), true);
-    assert.equal(S.isStatisticOffered({}, 'mean', 'logged'), false);
 });
 
 test('a grouping with no offered fields offers mean and % expressing on X, and says so in one row', () => {
@@ -144,9 +139,9 @@ test('a size waits for a layer on a signed X: no statistic, the sentence, until 
     const kinds = { X: 'signed', logged: 'log' };
     assert.equal(S.sizeDefault(offered, kinds).stat, null, 'the first offered layer is still X');
     assert.deepEqual(S.sizeDefault(offered, kinds, 'logged'), { stat: 'pct_expressing', layer: 'logged', say: '', pending: false });
-    assert.equal(S.sizeDefault(offered, kinds, 'nowhere').stat, null, 'a layer that is not offered gives nothing');
-    // % expressing not offered: no default size either, and no sentence about a layer
-    assert.deepEqual(S.sizeDefault({ offered: ['mean'] }, kinds), { stat: null, layer: null, say: '', pending: false });
+    // no layer is gated (decision 31): one whose kind is not known yet waits, whatever the recipe stored
+    assert.deepEqual(S.sizeDefault(offered, kinds, 'nowhere'), { stat: null, layer: 'nowhere', say: '', pending: true });
+    assert.deepEqual(S.sizeDefault({ offered: ['mean'] }, kinds, 'logged'), { stat: 'pct_expressing', layer: 'logged', say: '', pending: false });
 });
 
 test('"used by" counts consumers by kind, per statistic and per layer, and viewers not at all', () => {

@@ -522,6 +522,11 @@ const GeneTablePanel = (function() {
             return _scoreOptions ? _scoreOptions.getOfferedOptions() : offeredOptions(getScoreOptions());
         }
 
+        /** What the layers look like and what was sampled of them: scoreChoices grades each method on each layer by it. */
+        function getGrading() {
+            return _scoreOptions ? _scoreOptions.getGrading() : {};
+        }
+
         /**
          * Scores offered and Inspect, in the settings area under the column chooser: the table stays a table first, and
          * both are collapsed with a summary line until opened.
@@ -591,6 +596,7 @@ const GeneTablePanel = (function() {
             getScoreOptions,
             setScoreOptions,
             getOfferedOptions,
+            getGrading,
             revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
             _inspect: () => (_scoreOptions ? _scoreOptions.inspect : null)
         };
