@@ -310,10 +310,10 @@ test('the golden count configs read unchanged, and an UpSet\'s style fields are 
 test('the drawing\'s options are the style fields the mode has', () => {
     const bar = norm({ mode: 'bar', x: obs('cell_type'), labels: 'count', sort: 'height', reverse: true, horizontal: true, log: true, ring: true });
     assert.deepEqual(K.drawOptions(bar), { labels: 'count', sort: 'height', reverse: true, horizontal: true, log: true, ring: false, fade: false,
-        adjust: 1, scale: 'level', style: 'contours', colour: { reverse: false } });
+        adjust: 1, scale: 'level', layers: null, colour: { reverse: false } });
     const pie = { ...bar, mode: 'pie' };
     assert.deepEqual(K.drawOptions(pie), { labels: 'count', sort: 'height', reverse: true, horizontal: false, log: false, ring: true, fade: false,
-        adjust: 1, scale: 'level', style: 'contours', colour: { reverse: false } });
+        adjust: 1, scale: 'level', layers: null, colour: { reverse: false } });
     assert.equal(K.drawOptions({ ...bar, labels: 'measure' }).labels, 'none', 'no statistic to print');
     assert.deepEqual(K.labelChoices(bar).map((c) => c.label), ['None', 'Count', 'Share']);
     assert.deepEqual(K.labelChoices({ ...bar, measure: { stat: 'mean', source: { type: 'obs', key: 'depth' } } }).map((c) => c.label),
@@ -350,8 +350,8 @@ test('a density\'s own options: the bandwidth adjust from 0.1 to 10, curves by l
     assert.equal(K.rowsOf('bar').density, 0);
     const d = norm({ mode: 'density2d', x: obs('depth'), y: obs('score'), adjust: 2.5, scale: 'size', style: 'image' });
     const o = K.drawOptions(d);
-    assert.deepEqual([o.adjust, o.scale, o.style], [2.5, 'size', 'image']);
-    assert.deepEqual([K.drawOptions({ ...d, mode: 'density' }).style, K.drawOptions({ ...d, mode: 'bar' }).adjust], ['contours', 1]);
+    assert.deepEqual([o.adjust, o.scale, o.layers.image], [2.5, 'size', true]);
+    assert.deepEqual([K.drawOptions({ ...d, mode: 'density' }).layers, K.drawOptions({ ...d, mode: 'bar' }).adjust], [null, 1]);
     assert.equal(K.drawOptions({ ...d, adjust: 40 }).adjust, 1, 'out of range: the default');
     assert.deepEqual(K.parseAdjust(' 0.5 '), { ok: true, value: 0.5 });
     assert.deepEqual(K.parseAdjust(''), { ok: true, value: 1 });
@@ -370,11 +370,13 @@ test('a density never asks for a zero bin: one kept from a histogram stays store
     assert.equal(K.shownConfig(hist), hist, 'a histogram keeps it');
 });
 
-test('a 2D density with a Color by is drawn as an image unless the contours are chosen', () => {
+test('a 2D density\'s layers: the stored ones, else the old style, else the default of the Color by', () => {
     const d = norm({ mode: 'density2d', x: obs('depth'), y: obs('score') });
-    assert.equal(K.drawOptions(d).style, 'contours', 'no Color by: contours');
+    assert.deepEqual(K.drawOptions(d).layers, { image: false, lines: false, fill: true }, 'one group: filled isolines');
     const split = { ...d, split: obs('condition') };
-    assert.equal(K.drawOptions(split).style, 'image');
-    assert.equal(K.drawOptions({ ...split, style: 'contours' }).style, 'contours');
-    assert.equal(K.drawOptions({ ...split, mode: 'density' }).style, 'contours', 'a 1D density has no style');
+    assert.deepEqual(K.drawOptions(split).layers, { image: false, lines: true, fill: true }, 'a Color by: filled isolines with lines');
+    assert.deepEqual(K.drawOptions({ ...split, style: 'image' }).layers, { image: true, lines: false, fill: false });
+    assert.deepEqual(K.drawOptions({ ...split, style: 'contours' }).layers, { image: false, lines: true, fill: false });
+    assert.deepEqual(K.drawOptions({ ...split, style: 'image', layers: { image: true, lines: true } }).layers, { image: true, lines: true, fill: false });
+    assert.equal(K.drawOptions({ ...split, mode: 'density' }).layers, null, 'a 1D density has no layers');
 });

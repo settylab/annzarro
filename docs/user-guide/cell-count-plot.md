@@ -26,7 +26,7 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 | **Height** (bar, histogram), **Color** (2D histogram, heatmap, UpSet) | What the bars or rectangles show (below) |
 | **Labels** | Printed on bars, cells, slices and regions: **None**, **Count**, **Share** or **Statistic** |
 | **Sort by height**, **Reverse**, **Horizontal**, **Log count axis**, **Ring** | Order and orientation of bars, a logarithmic count axis (bar, histogram), and a pie drawn as a ring. Each is shown only in the modes that have it |
-| **Smoothing**, **Scale curves by level size**, **As an image** | The density modes' own row, with the bandwidth and range notes under it |
+| **Smoothing**, **Scale curves by level size**, and for a 2D density **Density as opacity**, **Isolines**, **Filled isolines** | The density modes' own row, with the bandwidth and range notes under it |
 | **Fade by its share** | Under the most frequent level's factor, in a 2D histogram or heatmap |
 | **Save as grouping** | On the toolbar: turns the plot's bars into a {doc}`cell-grouping` |
 | **Color ▾** | On the toolbar, where the plot has a colour scale or colours levels (below) |
@@ -59,7 +59,7 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 | **2D histogram** | X and Y numeric, Color by up to 8 levels | Cells per pair of bins, 100 × 100 by default, per level of Color by | Rectangles; with Color by, one layer per level |
 | **Heatmap** | X and Y (categorical or binned) | Cells per pair of levels | Rectangles, with values printed if asked |
 | **Density** | X numeric, Color by | 512 bins per level of Color by, smoothed in the browser | Curves |
-| **2D density** | X and Y numeric, Color by up to 8 levels | 256 × 256 bins per level, smoothed | Filled contours, or an image (the default with Color by) |
+| **2D density** | X and Y numeric, Color by up to 8 levels | 256 × 256 bins per level, smoothed | Filled isolines (the default), isolines, a density as opacity, or any mix |
 | **Venn** | 2 or 3 sets | Cells in every region | Circles with counts and shares |
 | **UpSet** | 2 to 16 sets | Cells in every exclusive intersection, and each set's size | Intersection bars over a matrix of dots, with set-size bars |
 
@@ -112,11 +112,20 @@ narrower than the grid can show, it is raised: "Bandwidth raised to the grid's r
 Curves are each scaled to an area of 1 by default; **Scale curves by level size** scales them by their cells instead.
 In 2D the bandwidth is per axis and ignores the correlation between X and Y, unlike `scipy.stats.gaussian_kde`.
 
-With a **Color by**, a 2D density is drawn as an image by default: one layer per level, each running from transparent to
-the level's color, with the density as the opacity. All levels share one opacity scale, from 0 to the highest density
-of any level, so a level with little density stays faint beside a dense one; the layers blend where they overlap.
-Untick **As an image** for contours, which are drawn in each level's color. With **Scale curves by level size** off, each
-level's density has an area of 1; with it on, a level's density is weighted by its share of the cells.
+A 2D density has three layers in **Plot Options**, which you can combine freely (at least one stays on):
+
+- **Filled isolines**: bands of the density, each band one opacity of the color, stepping up with the density.
+- **Isolines**: lines at the same density levels.
+- **Density as opacity**: a smooth image in which the density is the opacity of the color.
+
+With a **Color by** the default is *Filled isolines* with *Isolines*: each group in its own color, its bands stepping up
+from transparent, on **one set of density levels shared by all groups**, so a band means the same density in every
+group, and a group with little density stays faint beside a dense one. The layers blend where groups overlap. With one
+group the default is *Filled isolines* in a color map: **Color ▾** sets the map, **Reverse** and the **Min** and **Max**
+of the scale, and a color bar names the densities. Over *Density as opacity*, one group's filled isolines are drawn at
+reduced opacity so the image shows through. With **Scale curves by level size** off, each group's density has an area
+of 1; with it on, a group is weighted by its share of the cells. A link made with the earlier *As an image* or *contours*
+setting opens with the matching layers.
 
 ### 2D histogram with Color by
 
