@@ -50,14 +50,9 @@ const DOT_SVG_MAX = 5000;
 
 const SMALLEST_DOT = 3;
 const LARGEST_DOT = 20;
-/**
- * The largest dot fills its cell less DOT_GAP_PX, so neighbouring dots never touch, within MIN_LARGEST_DOT and
- * MAX_LARGEST_DOT: a cell of a few genes and groups is far larger than a dot that reads as one, and the size legend's
- * reference dots must still fit their slot (the px range of Color ▾ ends at 40 too).
- */
+/** The largest dot fills its cell less DOT_GAP_PX, so neighbouring dots never touch, and is never under MIN_LARGEST_DOT. */
 const DOT_GAP_PX = 2;
 const MIN_LARGEST_DOT = 4;
-const MAX_LARGEST_DOT = 40;
 const ONE_SIZE = 9;
 const REFERENCE_DOTS = 5;
 /** A reference dot of the size legend takes at least this many px, so its label never meets the next dot's. */
@@ -81,7 +76,7 @@ const MAIN = 'main';
 const CHAR_EM = 0.58;
 const TITLE_LINES = 3;
 /** A color bar: the px a line of its title takes, the least length left to the bar itself, and its padding (Plotly's ypad). */
-const BAR_TITLE_LINE_PX = 17;
+const TITLE_LINE_PX = 17;
 const BAR_MIN_PX = 20;
 const BAR_PAD_PX = 4;
 /** A line of a strip's legend, in px: its levels are listed while they fit, then "+ N more". */
@@ -226,8 +221,8 @@ function prepare(model) {
 
 /**
  * The smallest and largest dot in px. By default the largest fills a cell of the matrix: the pitch along the genes or
- * along the groups, whichever is smaller, less DOT_GAP_PX (at most MAX_LARGEST_DOT), so the dots follow the plot's size
- * and the number of rows and groups (operator, 2026-11-23). `size.scale` (0.1 to 1) takes that share of the cell; a `size.largest` in px (the
+ * along the groups, whichever is smaller, less DOT_GAP_PX, so the dots follow the plot's size and the number of rows and
+ * groups (operator, 2026-11-23); the size legend draws them smaller when its slot cannot hold them, and says so. `size.scale` (0.1 to 1) takes that share of the cell; a `size.largest` in px (the
  * px range of a link from before) is kept as it is. The smallest dot is never larger than the largest.
  */
 function dotRange(model, P, th, right) {
@@ -239,7 +234,7 @@ function dotRange(model, P, th, right) {
         const across = model.swap ? box.w : box.h;
         const cell = Math.min(along / Math.max(P.span, 1), across / Math.max(P.G, 1));
         const scale = size.scale > 0 ? Math.min(1, size.scale) : 1;
-        largest = Math.max(MIN_LARGEST_DOT, scale * Math.min(MAX_LARGEST_DOT, cell - DOT_GAP_PX));
+        largest = Math.max(MIN_LARGEST_DOT, scale * (cell - DOT_GAP_PX));
     }
     return { smallest: Math.min(size.smallest > 0 ? size.smallest : SMALLEST_DOT, largest), largest };
 }
@@ -434,7 +429,7 @@ const barOf = (stack, key) => stack.find((it) => it.kind === 'bar' && it.key ===
  * wrong with axis scaling") and drew nothing: the dots of a crowded legend column at a short plot (operator, 2026-11-23).
  */
 function barTitle(entry, lines) {
-    const fits = Math.floor((entry.px - 2 * BAR_PAD_PX - BAR_MIN_PX) / BAR_TITLE_LINE_PX);
+    const fits = Math.floor((entry.px - 2 * BAR_PAD_PX - BAR_MIN_PX) / TITLE_LINE_PX);
     return fitTitle(lines, entry.chars, Math.max(0, Math.min(TITLE_LINES, fits)));
 }
 
@@ -451,33 +446,52 @@ function colourBar(entry, lines, th) {
 
 /**
  * The size legend of one key: up to five reference dots from dot_min to dot_max, on a small subplot of its own; fewer
- * (at least two, the ends) when the slot is too short for each to have its line.
+ * (at least two, the ends) when the slot is too short for each to have its line. The dots keep two lines of the slot;
+ * the title takes the whole lines left above them (TITLE_LINE_PX each), so it never stands over the first dot's label.
+ * Dots larger than two lines of the slot hold (the largest dot fills its cell) are drawn at 1:`scale`, said under the
+ * title.
  */
 function sizeLegendParts(model, k, entry, n, th) {
     const { smallest = SMALLEST_DOT, largest = LARGEST_DOT } = model.size;
     const axisId = n + 2;
-    const fitted = fitTitle(k.lines, entry.chars);
-    const titleRoom = titleRoomOf(model, entry, fitted);
     const plotPx = Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
-    const linePx = Math.max(REFERENCE_LINE_PX, largest);
-    const count = model.pixels ? Math.max(2, Math.min(REFERENCE_DOTS, Math.floor(((entry.height - titleRoom) * plotPx) / linePx))) : REFERENCE_DOTS;
+    const slotPx = entry.height * plotPx;
+    const sized = !!model.pixels;
+    const most = sized ? Math.max(0, Math.min(TITLE_LINES, Math.floor((slotPx - 4 - 2 * REFERENCE_LINE_PX) / TITLE_LINE_PX))) : TITLE_LINES;
+    const roomOf = (lines) => slotPx - (lines ? lines * TITLE_LINE_PX + 4 : 0);
+    // the scale the dots are drawn at: 1 while two of the largest fit under the title, else the least whole 1:N that does
+    const fitLargest = Math.max(roomOf(most) / 2, 1);
+    const scale = sized && largest > fitLargest ? Math.ceil(largest / fitLargest) : 1;
+    const noted = scale > 1 && most > 0;
+    const fitted = fitTitle(k.lines, entry.chars, noted ? most - 1 : most);
+    const titleLines = fitted.text ? fitted.text.split('<br>').length : 0;
+    const lines = titleLines + (noted ? 1 : 0);
+    const titleRoom = sized ? (slotPx - roomOf(lines)) / plotPx : titleRoomOf(model, entry, fitted);
+    const drawn = { smallest: smallest / scale, largest: largest / scale };
+    const linePx = Math.max(REFERENCE_LINE_PX, drawn.largest);
+    const count = sized ? Math.max(2, Math.min(REFERENCE_DOTS, Math.floor(roomOf(lines) / linePx))) : REFERENCE_DOTS;
     const refs = Array.from({ length: count }, (_, j) => k.lo + ((k.hi - k.lo) * j) / (count - 1));
     const trace = {
         type: 'scatter', mode: 'markers+text', name: 'size legend', hoverinfo: 'skip', showlegend: false,
         xaxis: `x${axisId}`, yaxis: `y${axisId}`,
         x: refs.map(() => 0), y: refs.map((_, j) => j),
         text: refs.map((v) => (k.hi > k.lo ? fmt(v) : fmt(k.lo))), textposition: 'middle right', cliponaxis: false,
-        marker: { size: refs.map((v) => diameterOf(v, k.lo, k.hi, smallest, largest)), color: th.axisColor, opacity: 0.55, line: model.outline ? { color: model.outline.color, width: model.outline.width } : { width: 0 } }
+        marker: { size: refs.map((v) => diameterOf(v, k.lo, k.hi, drawn.smallest, drawn.largest)), color: th.axisColor, opacity: 0.55, line: model.outline ? { color: model.outline.color, width: model.outline.width } : { width: 0 } }
     };
     const axes = {
         [`xaxis${axisId}`]: { domain: [entry.x + 0.01, 1], range: [-0.6, 3], visible: false, fixedrange: true },
-        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, entry.top - titleRoom], range: [count - 0.4, -0.6], visible: false, fixedrange: true }
+        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, entry.top - titleRoom], range: [count - 0.5, -0.5], visible: false, fixedrange: true }
     };
     const title = {
         xref: 'paper', yref: 'paper', x: entry.x, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,
         align: 'left', text: fitted.text, font: { color: th.textColor }, ...(fitted.full ? { hovertext: esc(fitted.full), captureevents: true } : {})
     };
-    return { trace, axes, title };
+    // the scale the dots are drawn at, on the title's last line
+    const note = noted ? {
+        name: 'size legend scale', xref: 'paper', yref: 'paper', x: entry.x, y: entry.top - (titleLines * TITLE_LINE_PX) / plotPx,
+        xanchor: 'left', yanchor: 'top', showarrow: false, align: 'left', text: esc(W.legendScaled(scale)), font: { color: th.textColor }
+    } : null;
+    return { trace, axes, title, note };
 }
 
 /**
@@ -863,6 +877,7 @@ export function buildFigure(given, theme) {
             data.push(parts.trace);
             Object.assign(layout, parts.axes);
             layout.annotations.push(parts.title);
+            if (parts.note) layout.annotations.push(parts.note);
         } else if (entry.kind === 'bar') {
             const fitted = barTitle(entry, P.colour.find((k) => k.key === entry.key).lines);
             if (fitted.full) layout.annotations.push(titleHover(fitted, entry.x, entry.top, th));

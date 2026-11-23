@@ -388,7 +388,10 @@ export function annotateFigure(figure, model, theme) {
         const b = bandAxes(side, STRIP_GAP, stripPx - STRIP_GAP, depthRange(side, strips.length));
         const vertical = verticalSide(side);
         const cells = groups.map((_, g) => g);
-        for (const strip of strips) {
+        // the bands read in the order of the strips' legend (operator, 2026-11-23): stacked, the first strip lies next to
+        // the matrix, so on a side read toward the matrix (left, top) they are stacked last to first
+        const reading = side === 'left' || side === 'top' ? [...strips].reverse() : strips;
+        for (const strip of reading) {
             const text = groups.map((g, i) => `${esc(g.label)}<br>${esc(strip.title)}: ${esc(strip.levels ? strip.levels[i] : '')}`.replace(/: $/, ''));
             const ones = groups.map(() => 1);
             figure.data.push(b.place({

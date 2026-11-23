@@ -228,6 +228,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         const _order = createCellGeneOrder();
         /** what the plot last drew from, so a repaint with the same inputs draws nothing */
         let _shown = null;
+        /** A drawing Plotly threw on: {key} of the values it was of, until a drawing succeeds. */
+        let _drawFailed = null;
         let _drawToken = 0;
         let _state = 'empty';
         let _resize = null;
@@ -946,7 +948,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const rec = record();
             if (!rec) return 'empty';
             const snap = rec.handle.read();
-            return plotState(snap, { tooLarge: !!_gate.tooLarge, drawn: !!_shown && _shown.key === (snap.shownKey || snap.key) });
+            const state = plotState(snap, { tooLarge: !!_gate.tooLarge, drawn: !!_shown && _shown.key === (snap.shownKey || snap.key) });
+            // the values came but Plotly threw drawing them: failed, not "drawing" for good
+            return state === 'drawing' && _drawFailed && _drawFailed.key === (snap.shownKey || snap.key) ? 'failed' : state;
         }
 
         /** What the plot's notices are worded from (states.js describePlot): counts made once per plan, nothing per gene. */
@@ -1090,8 +1094,27 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             }
             if (token !== _drawToken || !_dom || !window.Plotly) return;
             // every group the reply has is drawn: the cells shown are covered; the matrix's own count is a tag of the strip
-            await drawPlot(_dom.plot, figure.data, figure.layout, figure.config, Coverage.complete(values.reply.n_shown || 0, 'cells'), 'cells');
+            try {
+                await drawPlot(_dom.plot, figure.data, figure.layout, figure.config, Coverage.complete(values.reply.n_shown || 0, 'cells'), 'cells');
+            } catch (error) {
+                // Plotly threw part-way: the div holds half a figure, and the next Plotly.react, diffed against it,
+                // redrew only part of the next one (operator, 2026-11-23: a heatmap whose annotations changed over the
+                // dots). Start clean and say so; the next change draws afresh
+                console.error(`Cell-Gene Plot ${_id}: the drawing failed`, error);
+                if (token !== _drawToken || !_dom) return;
+                window.Plotly.purge(_dom.plot);
+                _shown = null;
+                _drawFailed = { key };
+                const why = String((error && error.message) || error).replace(/[.\s]+$/, '');
+                setStatusTag(_dom.plot, 'cgene-notdrawn', { text: STATES.tags.notDrawn, title: STATES.notDrawn(why), severity: 'error' });
+                paint();
+                return;
+            }
             if (token !== _drawToken || !_dom) return;
+            if (_drawFailed) {
+                _drawFailed = null;
+                setStatusTag(_dom.plot, 'cgene-notdrawn', null);
+            }
             setStatusTag(_dom.plot, 'cgene-matrix', matrixTag(figure.groups, figure.rows, figure.missing));
             // what a narrow width gave up so the matrix stays readable (draw.js fitMatrix)
             const gaveUp = (figure.hidden || []).map((part) => VOCABULARY.cellGene.narrow[part]).join(' ');

@@ -131,6 +131,8 @@ const cellGene = Object.freeze({
         score_pct_above: (option) => `% of cells with ${option} above`
     }),
     noExpressingCells: 'no expressing cells',
+    /** A size legend whose dots are drawn smaller than the plot's, to fit their slot: 1 to `n` (draw.js sizeLegendParts). */
+    legendScaled: (n) => `(legend scaled 1:${n})`,
     csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' }),
     /** The 3D view (UX 6b, WP-12): the toggle, the Height measure, the scene's axes, the strip and the export. */
     view3d: Object.freeze({
@@ -267,8 +269,10 @@ const cellGene = Object.freeze({
         }),
         tags: Object.freeze({
             computing: 'Computing…', queued: 'Plot queued', awaiting: 'Not computed', refused: 'Plot refused', tooLarge: 'Too large',
-            failed: 'Plot failed', held: 'Out of date', noSize: 'No size'
-        })
+            failed: 'Plot failed', held: 'Out of date', noSize: 'No size', notDrawn: 'Not drawn'
+        }),
+        /** Plotly threw while drawing: the figure is cleared and the next change draws it afresh. */
+        notDrawn: (why) => `The plot could not be drawn (${why}). Change a setting to draw it again.`
     }),
     /**
      * Color and Size sources (WP-4, FB-2a): each measure's `statistic of layer above threshold`, where layers are

@@ -208,10 +208,10 @@ test('5.3 cmap, vmin, vmax, vcenter: Color scale, Min, Max and a Center for a di
 });
 
 test('5.3 dot_min, dot_max: the % at the smallest and largest dot set the size legend\'s range', () => {
-    // a figure tall enough for all five reference dots (the legend column holds four entries here; the largest dot
-    // fills its cell by default, here the 40 px most, so each reference dot takes a 40 px line)
-    const { model } = compose({ dotMin: 10, dotMax: 60 });
-    model.pixels = { width: 900, height: 1400 };
+    // a figure tall enough for all five reference dots (the legend column holds four entries here); the largest dot
+    // fills its cell by default, so here it takes a fifth of it, and each reference dot gets its 16 px line
+    const { model } = compose({ dotMin: 10, dotMax: 60, dotScale: 20 });
+    model.pixels = { width: 900, height: 1200 };
     assert.deepEqual(one(D.buildFigure(model, LIGHT), 'size legend').text, ['10', '22.5', '35', '47.5', '60']);
 });
 
@@ -593,7 +593,7 @@ test('by default the largest dot fills its cell less a 2 px gap, and follows the
         const fig = D.buildFigure(model, LIGHT);
         const sizes = matrixTraces(fig)[0].marker.size;
         const largest = arrayMaxOf(sizes);
-        const want = Math.min(40, cellPitch(fig, model) - 2);
+        const want = cellPitch(fig, model) - 2;
         assert.ok(Math.abs(largest - want) < 1.5, `${rows} rows at ${width} x ${height}: largest ${largest.toFixed(1)} px, cell less 2 ${want.toFixed(1)}`);
         assert.ok(arrayMinOf(sizes) >= 3 - 1e-9, 'the smallest dot stays 3 px');
         seen.push(largest);
@@ -602,12 +602,55 @@ test('by default the largest dot fills its cell less a 2 px gap, and follows the
     assert.ok(seen[2] < seen[0], 'more rows, smaller dots');
 });
 
-test('a few rows and groups: the largest dot stops at 40 px, so the size legend still holds its reference dots', () => {
-    const { model } = compose({});
-    model.pixels = { width: 1400, height: 1000 };
+test('a few rows and groups: the largest dot fills its cell, and the size legend draws its dots scaled to its slot, saying so', () => {
+    for (const [width, height] of [[1400, 1000], [900, 600], [700, 420]]) {
+        const { model } = compose({});
+        model.pixels = { width, height };
+        const fig = D.buildFigure(model, LIGHT);
+        const largest = arrayMaxOf(matrixTraces(fig)[0].marker.size);
+        assert.ok(Math.abs(largest - (cellPitch(fig, model) - 2)) < 1.5, `${width} x ${height}: ${largest} px fills the cell`);
+        const legend = one(fig, 'size legend');
+        const y = fig.layout[`yaxis${legend.yaxis.slice(1)}`];
+        const roomPx = (y.domain[1] - y.domain[0]) * (height - 20);
+        const linePx = roomPx / (y.range[0] - y.range[1]);
+        const drawn = arrayMaxOf(legend.marker.size);
+        assert.ok(drawn <= linePx + 1e-6, `${width} x ${height}: a ${drawn} px reference dot in its ${linePx.toFixed(1)} px line`);
+        const note = fig.layout.annotations.find((a) => a.name === 'size legend scale');
+        assert.ok(note, `${width} x ${height}: the legend says its dots are scaled`);
+        const n = Number(/1:(\d+)/.exec(note.text)[1]);
+        assert.ok(Math.abs(drawn * n - largest) < 1e-6, `${width} x ${height}: 1:${n} of ${largest}`);
+        // the note stands under the title and above the dots
+        assert.ok(note.y > y.domain[1], 'the note is above the reference dots');
+    }
+});
+
+test('dots that fit their legend are drawn there at their own size, with no note', () => {
+    const { model } = compose({}, { rows: 40, split: 3 });
     const fig = D.buildFigure(model, LIGHT);
-    assert.ok(cellPitch(fig, model) > 60, 'the cell is far larger than 40 px');
-    assert.equal(arrayMaxOf(matrixTraces(fig)[0].marker.size), 40);
+    assert.equal(arrayMaxOf(one(fig, 'size legend').marker.size), arrayMaxOf(matrixTraces(fig)[0].marker.size));
+    assert.ok(!fig.layout.annotations.some((a) => a.name === 'size legend scale'));
+});
+
+test('the size legend\'s title stands above its first reference dot, at every height', () => {
+    for (const height of [300, 360, 420, 500, 600, 800]) {
+        const { model } = compose({ titles: { size: 'Gene Signature 1 % of cells with mean · logged_counts above 0' } });
+        model.pixels = { width: 900, height };
+        const fig = D.buildFigure(model, LIGHT);
+        const legend = one(fig, 'size legend');
+        const y = fig.layout[`yaxis${legend.yaxis.slice(1)}`];
+        const plotPx = height - 20;
+        // the title: the nearest annotation above the subplot, but for the scale note
+        const titleAnn = fig.layout.annotations.filter((a) => a.xref === 'paper' && a.name !== 'size legend scale' && a.name !== 'legend title hover'
+            && a.y > y.domain[1] - 1e-9).sort((p, q) => p.y - q.y)[0];
+        assert.ok(titleAnn, `${height}: the title`);
+        const lines = (titleAnn.text ? titleAnn.text.split('<br>').length : 0) + (fig.layout.annotations.some((a) => a.name === 'size legend scale') ? 1 : 0);
+        // the title's lines, 17 px each from its top, end above the reference dots' subplot
+        const titleBottom = titleAnn.y - (lines * 17) / plotPx;
+        assert.ok(titleBottom >= y.domain[1] - 1e-9, `${height}: the title reaches ${titleBottom.toFixed(3)}, the dots start at ${y.domain[1].toFixed(3)}`);
+        // and the first dot, centred in its line, stays inside the subplot
+        const linePx = ((y.domain[1] - y.domain[0]) * plotPx) / (y.range[0] - y.range[1]);
+        assert.ok(arrayMaxOf(legend.marker.size) <= linePx + 1e-6, `${height}: dots fit their lines`);
+    }
 });
 
 test('Largest dot takes a share of the cell; Smallest dot is px; the configuration keeps both', () => {
@@ -646,5 +689,39 @@ test('dots are opaque and neither mode draws grid lines', () => {
         assert.equal(fig.layout.xaxis.showgrid, false, `${mode}: x`);
         assert.equal(fig.layout.yaxis.showgrid, false, `${mode}: y`);
         if (mode === 'dots') for (const t of matrixTraces(fig)) assert.equal(t.marker.opacity, 1);
+    }
+});
+
+// --- the strips in the order of their legend (operator, 2026-11-23) ----------------------------------------------
+
+/**
+ * The factors' bands in reading order: left to right when they stand beside the groups on y, top to bottom below the
+ * matrix when the axes are swapped. Each strip is a stacked bar, the k-th over depth [k, k + 1] of its band axis.
+ */
+function bandOrder(fig) {
+    const bars = fig.data.filter((t) => t.name === 'group strip');
+    const at = bars.map((b, k) => {
+        const vertical = b.orientation === 'h';
+        const ax = fig.layout[`${vertical ? 'x' : 'y'}axis${(vertical ? b.xaxis : b.yaxis).slice(1)}`];
+        const [r0, r1] = ax.range;
+        const t = (k + 0.5 - r0) / (r1 - r0);
+        return { k, vertical, paper: ax.domain[0] + t * (ax.domain[1] - ax.domain[0]) };
+    });
+    // left to right is paper x rising; top to bottom is paper y falling
+    return at.sort((a, b) => (a.vertical ? a.paper - b.paper : b.paper - a.paper)).map((a) => a.k);
+}
+
+/** The strips' legend titles, top to bottom. */
+const legendOrder = (fig) => fig.layout.annotations.filter((a) => a.name === 'strip legend title')
+    .sort((a, b) => b.y - a.y).map((a) => a.text);
+
+test('the factors\' bands read in the order of their legend, beside the groups and below them when swapped', () => {
+    for (const swap of [false, true]) {
+        const fig = compose({ swap }).figure;
+        const titles = legendOrder(fig);
+        assert.deepEqual(titles, ['cell_type', 'age'], `${swap}: the legend lists the factors in the grouping's order`);
+        const bars = fig.data.filter((t) => t.name === 'group strip');
+        const factorOf = (k) => (bars[k].hovertext[0].includes('cell_type:') ? 'cell_type' : 'age');
+        assert.deepEqual(bandOrder(fig).map(factorOf), titles, `${swap ? 'swapped' : 'beside the groups'}: bands in legend order`);
     }
 });

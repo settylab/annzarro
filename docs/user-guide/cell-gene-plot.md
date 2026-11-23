@@ -185,8 +185,9 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
 | Dots | **Largest dot**, a slider from 10% to 100% of a cell; **Smallest dot**, a slider in px; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`). Size's threshold sits beside **Size** in the control grid |
 
 By default the largest dot fills its cell: the spacing of the genes or of the groups, whichever is smaller, less a
-2 px gap, and at most 40 px. The dots therefore grow and shrink with the panel and with the number of genes and groups.
-**Largest dot** draws it at a share of that. The smallest dot is 3 px. A view saved before the dots filled their cells
+2 px gap. The dots therefore grow and shrink with the panel and with the number of genes and groups. **Largest dot**
+draws it at a share of that. When the size legend has too little room for dots that large, it draws its reference dots
+smaller and says so under its title, for example "(legend scaled 1:3)". The smallest dot is 3 px. A view saved before the dots filled their cells
 keeps its dot sizes in px, and **Largest dot** says so ("12 px (saved)") until you move it. Dots are opaque, and
 neither the dots nor the heatmap draw grid lines.
 
@@ -206,8 +207,9 @@ neither the dots nor the heatmap draw grid lines.
 The colour scale is **Reds** by default. Under a z-score scaling the default is **RdBu**, centred at 0, so that
 values above and below the mean read as opposite colours. A scale you pick yourself is kept, whatever the scaling.
 
-The group axis carries a colour strip in the grouping's colours, one per factor; small groups get "small" after their
-label. Gene and group labels thin out when they would overlap, and the hover always names the group, the gene (or the
+The group axis carries a colour strip in the grouping's colours, one per factor, in the order the strips' legend lists
+them (left to right beside the groups, top to bottom below them when the axes are swapped); small groups get "small"
+after their label. Gene and group labels thin out when they would overlap, and the hover always names the group, the gene (or the
 section and its entry), each value with its statistic and layer, and the group's cells.
 
 **Download CSV** (Plot Options ▸ Export) gives the plotted values in long form, one row per group and row, with
