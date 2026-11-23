@@ -155,7 +155,8 @@ test('5.3 expression_cutoff: the Size threshold Plot Options stores is what the 
     const { model } = compose({ size: config.size });
     model.size.detectAbove = 0.5;
     const fig = D.buildFigure(model, LIGHT);
-    assert.ok(fig.layout.annotations.some((a) => a.text === '% expressing (> 0.5) · logged'), 'the size legend names the threshold');
+    // the title wraps to the legend column at 900 px; read as one line it names the threshold
+    assert.ok(fig.layout.annotations.some((a) => a.text.split('<br>').join(' ') === '% expressing (> 0.5) · logged'), 'the size legend names the threshold');
 });
 
 test('5.3 mean_only_expressed: a group with no expressing cell is noted in the table and the CSV', () => {
@@ -347,6 +348,44 @@ test('the strips\' legend shows as many levels as fit and says how many more', (
     const legend = one(figure, 'strip legend');
     assert.ok(legend.text.length < 60, `${legend.text.length} shown`);
     assert.equal(legend.text[legend.text.length - 1], W.options.more(60 - (legend.text.length - 1)));
+});
+
+// ================================================================================================ legend titles at a narrow width
+
+test('legend titles fit the legend column of a narrow figure, wrapping at spaces, and a cut title keeps its whole text in hover', () => {
+    const narrow = { width: 340, height: 520 };
+    const { model } = compose({ titles: { color: 'Mean expression of the marker genes, logged counts' } });
+    model.pixels = narrow;
+    model.annotations.strips[0].title = 'cell_type_annotation_from_the_atlas';
+    const fig = D.buildFigure(model, LIGHT);
+    const bar = matrixTraces(fig)[0].marker.colorbar;
+    // the legend column keeps at least 120 px: the plot gives way, not the legends
+    assert.ok((narrow.width - 20) * (1 - bar.x) >= 120 - 1e-6, `${bar.x}`);
+    assert.ok(fig.layout.xaxis.domain[1] < bar.x, 'the matrix ends before the legend column');
+    const chars = Math.floor(((narrow.width - 20) * (1 - bar.x)) / (0.58 * 12));
+    const titles = [bar.title.text,
+        ...fig.layout.annotations.filter((a) => a.xref === 'paper' && a.name !== 'legend title hover' && a.x === bar.x && a.text).map((a) => a.text)];
+    assert.ok(titles.length >= 4, `the color bar, the size legend and two strips: ${titles.length}`);
+    for (const t of titles) {
+        const lines = t.split('<br>');
+        assert.ok(lines.length <= 3, t);
+        for (const line of lines) assert.ok(line.replace(/&amp;/g, '&').replace(/&lt;/g, '<').length <= chars, `"${line}" is over ${chars} characters`);
+    }
+    // the size legend's title wraps whole: nothing is cut, so its words read back unchanged
+    const size = fig.layout.annotations.find((a) => a.text.split('<br>').join(' ') === '% expressing (> 0) · logged');
+    assert.ok(size, 'the size legend title wraps at spaces and loses nothing');
+    assert.equal(size.hovertext, undefined);
+    assert.ok(size.text.split('<br>').some((l) => l.includes('(> 0)')), `a bracketed part never breaks: ${size.text}`);
+    // a title cut to fit has its whole text in hover: the color bar's over it, the strip's on itself
+    const barHover = fig.layout.annotations.find((a) => a.name === 'legend title hover');
+    assert.equal(barHover.hovertext, 'Mean expression of the marker genes, logged counts');
+    assert.ok(bar.title.text.endsWith('…'));
+    const strip = fig.layout.annotations.find((a) => a.name === 'strip legend title' && a.hovertext);
+    assert.equal(strip.hovertext, 'cell_type_annotation_from_the_atlas');
+    assert.ok(strip.text.endsWith('…'));
+    // with room, nothing wraps
+    const wide = compose().figure;
+    assert.deepEqual(colourBarTitles(wide), ['Mean · logged']);
 });
 
 // ================================================================================================ CXG-18 placeholders
