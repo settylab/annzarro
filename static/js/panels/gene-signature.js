@@ -585,7 +585,7 @@ const GeneSignaturePanel = (function() {
             const controls = el('div', { class: 'gsig-controls' },
                 el('div', { class: 'gsig-search-row' }, search, regex, matchCase, tickAllBtn),
                 searchNote,
-                el('div', { class: 'gsig-add-row' }, upDown, addAsWrap, focusedBtn, ...inlineButtons(), addMenuHome),
+                el('div', { class: 'gsig-add-row' }, addAsWrap, focusedBtn, ...inlineButtons(), addMenuHome, upDown),
                 dirAsk,
                 _flowHost);
 

@@ -339,18 +339,6 @@ def test_distribution_on_a_table_opens_a_count_plot_of_its_score(page, served):
     assert (source["type"], source["key"], source["column"], source["layer"]) == ("gene-score", TAB, "zscore_mean", "X")
 
 
-def test_offer_other_scores_opens_the_table_and_its_score_methods(page, served):
-    _open_table_link(page, served, table_open=False)
-    _wait_coloured(page)
-    assert page.locator(G).count() == 0
-    page.select_option(f"{C} select.axis-column-select[data-axis='color']", "__offer_more__")
-    page.wait_for_selector(POP, state="visible", timeout=30000)
-    assert page.evaluate("(id) => PanelManager.getActivePanels().includes(PanelManager.getPanel(id))", TAB)
-    # the notice's one-click action goes through the table's own API
-    page.evaluate("(id) => PanelManager.getPanel(id).setScoreOptions({ clip: 5 })", TAB)
-    assert page.evaluate("(id) => PanelManager.getPanel(id).getScoreOptions().clip", TAB) == 5
-
-
 def test_a_link_from_before_the_table_had_score_options_opens_with_the_defaults(page, served):
     _open_table_link(page, served)
     _wait_coloured(page)

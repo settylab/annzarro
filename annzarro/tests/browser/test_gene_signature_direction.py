@@ -558,7 +558,8 @@ def test_no_weighting_choice_before_the_switch(page, served):
     _expand(page)
     assert page.locator(f"{POP} [data-weighting]:visible").count() == 0
     assert page.locator(f"{POP} [data-down-weight-why]:visible").count() == 0
-    _switch_on(page)
+    _switch_on(page)                                                    # a click outside the pop-over closes it
+    _expand(page)
     page.wait_for_selector(f"{POP} [data-weighting='mean']", state="visible")
 
 
