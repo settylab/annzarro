@@ -76,7 +76,7 @@ for (const stat of ['mean', 'sd', 'pct_above', 'zscore']) {
 test('an auto colour range then starts at 0: the zeros are part of the values, none is stretched or clamped', () => {
     const t = figure({}).data[0];
     assert.equal(t.zmin, undefined, 'auto');
-    assert.equal(Math.min(...t.z.flat().filter((v) => v !== null)), 0);
+    assert.equal(t.z.flat().filter((v) => v !== null).reduce((m, v) => (v < m ? v : m), Infinity), 0);
     const mine = figure({ color: { min: 2 } }).data[0];
     assert.equal(mine.zmin, 2, 'a typed Min is still the scale\'s');
 });
