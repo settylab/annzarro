@@ -494,4 +494,14 @@ const table = Object.freeze({
     cut: (shown, all) => `Showing the first ${fmt(shown)} of ${fmt(all)} rows; Download CSV has them all.`
 });
 
-export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+/**
+ * The 3D view's refusal (UX 6b): one base sentence and a hint per panel, so each panel names what to reduce.
+ * `tooMany(max, count, hint)` reads "3D draws at most 40,000 bars; this plot has 262,144. Use fewer bins."
+ */
+const view3d = Object.freeze({
+    tooManyBase: (max, count) => `3D draws at most ${fmt(max)} bars; this plot has ${fmt(count)}.`,
+    hint: Object.freeze({ bins: 'Use fewer bins.', matrix: 'Use fewer genes or groups.' }),
+    tooMany: (max, count, hint = 'bins') => `${view3d.tooManyBase(max, count)} ${view3d.hint[hint] || view3d.hint.bins}`
+});
+
+export const VOCABULARY = Object.freeze({ view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
