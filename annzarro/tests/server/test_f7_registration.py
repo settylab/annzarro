@@ -1,4 +1,4 @@
-"""F7: unreleased and reserved panel types have no policy switch; the two compute settings exist with their defaults."""
+"""F7: reserved panel types have no policy switch, every other type has one; the two compute settings exist with their defaults."""
 import json
 import os
 
@@ -13,10 +13,12 @@ load_declarations()
 CONFIG = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "config")
 
 
-def test_unreleased_and_reserved_types_have_no_switch():
+def test_reserved_types_have_no_switch_and_the_new_types_have_one():
     entries = panel_types()
     unreleased = {e["type"] for e in entries if e.get("released") is False or e.get("reserved")}
-    assert {"cell-grouping", "cell-gene", "cell-count", "gene-count", "group-stat"} <= unreleased
+    assert unreleased == {"gene-count", "group-stat"}
+    for t in ("cell-grouping", "cell-gene", "cell-count"):
+        assert REGISTRY.get(f"panel.{t}.enabled") is not None, t
     for t in unreleased:
         assert REGISTRY.get(f"panel.{t}.enabled") is None, t
     released = {e["type"] for e in entries} - unreleased

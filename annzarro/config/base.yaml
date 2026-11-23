@@ -378,6 +378,9 @@ ui:
     - gene-table
     - gene-set
     - gene-signature
+    - cell-grouping
+    - cell-gene
+    - cell-count
   
   # Default visualization settings
   defaults:
