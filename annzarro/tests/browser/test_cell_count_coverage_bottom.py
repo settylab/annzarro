@@ -70,4 +70,4 @@ def test_the_details_open_over_the_plot_without_resizing_the_panel_and_the_foote
     assert "outside the range" in page.inner_text(f"{S} .ps-pop")
     page.keyboard.press("Escape")
     # the footer says nothing the banner says: no counted / outside-the-range sentence
-    assert page.inner_text(f"{S} .ccnt-strip") == ""
+    assert page.query_selector(f"{S} .ccnt-strip") is None, "there is no footer line under the banner"
