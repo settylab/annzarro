@@ -26,7 +26,24 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 | **Height** (bar, histogram), **Color** (2D histogram, heatmap, UpSet) | What the bars or rectangles show (below) |
 | **Labels** | Printed on bars, cells, slices and regions: **None**, **Count**, **Share** or **Statistic** |
 | **Sort by height**, **Reverse**, **Horizontal** | Order and orientation of bars |
-| **Plot Options** | **Log count axis**, **Ring** (pie), **Fade by its share** (most frequent level), the density's **Bandwidth adjust**, **Scale curves by level size** and **As an image**, **Save as grouping**, **Show as table** and **Download CSV** |
+| **Plot Options** | The look of the figure (below), and in its **Count plot** section **Log count axis**, **Ring** (pie), **Fade by its share** (most frequent level), the density's **Bandwidth adjust**, **Scale curves by level size** and **As an image**, **Save as grouping** and **Show as table** |
+
+**Plot Options** opens a pop-over over the plot, the same as the Cell-Gene Plot's, with this plot's own defaults. It
+leaves the panel's layout as it is and closes with its button, its **×**, Escape or a click outside it.
+
+| Section | Controls |
+|---|---|
+| Text | **Font**, **Font size**, **Text color**, **Plot title**, **Title size** |
+| Background | **Background** |
+| Axes | **Grid lines** (on by default), **Grid color**, **Grid width** |
+| Count plot | The controls of this plot named above |
+| Legend | **Show legend**, **Position** (right, bottom, top or left), **Space** (at most this share of the width for a legend beside the plot; longer labels are cut short, with the full name in hover), **Columns**, **Entries, at most** (25) |
+| Margins | Room added on each side, in px |
+| Export | **PNG**, **SVG**, **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV** |
+| Apply | **Apply to other Cell Count plots**; **Make this the session default**, **Back to built-in** |
+
+A legend with more levels than **Entries, at most** lists the first ones and a last line "+ 3 more"; every level is still
+drawn, and a click on an entry still hides its bars. A pie's slices listed this way are not hidden by a click.
 
 Switching mode keeps every input: those the new mode uses stay in place, and the others are kept for when you switch
 back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: in Table 1, in Table 2".

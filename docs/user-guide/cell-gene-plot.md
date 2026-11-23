@@ -186,16 +186,28 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
 
 **Reset** puts all of these back to their defaults in one step.
 
-**Plot Options** holds the rest of the figure:
+**Plot Options** holds the rest of the figure. It is the same pop-over as the Cell Count Plot's, with this plot's own
+defaults and sections:
 
 | Section | Controls |
 |---|---|
+| Text | **Font**, **Font size**, **Text color** (**Auto** follows the app theme), **Plot title**, **Title size** |
+| Background | **Background** (**Auto** follows the app theme) |
+| Axes | **Grid lines** (off by default; on the matrix only), **Grid color**, **Grid width**; **Gene labels**, **Group labels** |
 | Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none) |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
-| Labels | **Gene labels**, **Group labels**; **Plot title**, **Color bar title**, **Size legend title** |
-| Legend | **Color bar**, **Size legend**, **Strip legend** |
+| Legend | **Space** (the legend column's share of the width; empty lets the figure decide), **Columns** and **Entries, at most** (20) of the strip legends; **Color bar**, **Size legend**, **Strip legend**; **Color bar title**, **Size legend title** |
 | Totals | **Cells per group** (a bar along the group axis) |
-| Export | **PNG**, **JPEG**, **WEBP**, **SVG** (not in 3D) · **Download CSV** |
+| Margins | Room added on each side, in px, to the room the labels take |
+| Export | **PNG**, **SVG** (not in 3D), **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV** |
+| Apply | **Apply to other Cell-Gene plots**; **Make this the session default**, **Back to built-in** |
+
+Text, Legend, Export and the plot's own sections start open; the others unfold with a click, and each keeps its state
+while the page is open. **Reset** under a section puts its fields back to their defaults. A strip legend with more
+levels than **Entries, at most** lists the first ones and a last line "+ 12 more"; one that does not fit its slot is
+cut the same way, and two columns hold twice as many. **Apply to other Cell-Gene plots** gives every other Cell-Gene
+Plot this plot's look (not its titles), after a question. A plot made from the panel chooser starts on the session
+default and follows it until you change its look; see {doc}`plot-options`.
 
 The colour scale is **Reds** by default. Under a z-score scaling the default is **RdBu**, centred at 0, so that
 values above and below the mean read as opposite colours. A scale you pick yourself is kept, whatever the scaling.

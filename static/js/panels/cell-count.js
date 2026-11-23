@@ -595,7 +595,7 @@ actions.register({
                 sections: { 'panel:count': { title: 'Count plot', element: _controls.optionsElement } },
                 exportImage: (format, settings) => { if (_dom && _drawing) exportPlot(_dom.plot, format, settings, 'full'); },
                 plotSize: () => (_dom ? { width: _dom.plot.clientWidth, height: _dom.plot.clientHeight } : {}),
-                csv: downloadCsv, canExport: () => !!_drawing,
+                csv: downloadCsv, canExport: () => !!_drawing, plot: () => plot,
                 classes: { csv: 'ccnt-csv' }
             });
             root.append(_controls.element, plotArea, strip, table);

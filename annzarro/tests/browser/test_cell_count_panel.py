@@ -43,6 +43,8 @@ GA = "cell-grouping-G"
 TA = "cell-table-T"
 SIG = "gene-signature-S"
 S = f'.tile[data-tile-id="{CC}"]'
+# Plot Options is a pop-over in the body-level layer since WP-5a (its Count plot section holds the density row)
+PO = "[data-popover='plot-options']"
 CELL_TYPE = {"source": {"type": "obs", "key": "cell_type"}}
 CONDITION = {"source": {"type": "obs", "key": "condition"}}
 DATA = gstore.make_data()
@@ -124,7 +126,8 @@ def _config(page, pid=CC):
 
 def _plot(page):
     return page.evaluate("""(s) => { const p = document.querySelector(s + ' .ccnt-plot');
-        return { data: p.data.map(t => ({ type: t.type, name: t.name, x: t.x && Array.from(t.x), y: t.y && Array.from(t.y),
+        // the legend's proxies (WP-5a: a legend over its cap, in columns or with a space) are entries, not data
+        return { data: p.data.filter(t => t.meta !== 'az-legend').map(t => ({ type: t.type, name: t.name, x: t.x && Array.from(t.x), y: t.y && Array.from(t.y),
                      z: t.z && t.z.map(r => Array.from(r)), labels: t.labels, values: t.values })),
                  layout: { barmode: p.layout.barmode, barnorm: p.layout.barnorm, xaxis: p.layout.xaxis, yaxis: p.layout.yaxis } }; }""", S)
 
@@ -341,16 +344,16 @@ def test_a_density_per_condition_draws_through_v3_with_its_sentences_and_adjust(
     assert _rows(page) == ["Mode", "X", "Color by", "Labels"]
     assert page.inner_text(f"{S} .ccnt-strip").startswith("Range from the 0.1st to the 99.9th percentile")
     page.click(f"{S} .ccnt-options-btn")
-    assert page.inner_text(f"{S} .ccnt-density-notes").startswith("Bandwidth ")
+    assert page.inner_text(f"{PO} .ccnt-density-notes").startswith("Bandwidth ")
     asked = len(_requests(page))
-    page.fill(f"{S} .ccnt-adjust", "2")
-    page.press(f"{S} .ccnt-adjust", "Enter")
+    page.fill(f"{PO} .ccnt-adjust", "2")
+    page.press(f"{PO} .ccnt-adjust", "Enter")
     _drawn(page, "density", "c.adjust === 2")
-    assert "× 2" in page.inner_text(f"{S} .ccnt-density-notes")
+    assert "× 2" in page.inner_text(f"{PO} .ccnt-density-notes")
     assert len(_requests(page)) == asked, "the bandwidth is the browser's: nothing is asked"
-    page.fill(f"{S} .ccnt-adjust", "40")
-    page.press(f"{S} .ccnt-adjust", "Enter")
-    until(page, "(s) => document.querySelector(s + ' .ccnt-adjust__problem').textContent === 'Enter a number from 0.1 to 10.'", S)
+    page.fill(f"{PO} .ccnt-adjust", "40")
+    page.press(f"{PO} .ccnt-adjust", "Enter")
+    until(page, "(s) => document.querySelector(s + ' .ccnt-adjust__problem').textContent === 'Enter a number from 0.1 to 10.'", PO)
     assert _config(page)["adjust"] == 2
 
 
@@ -584,8 +587,8 @@ def test_a_2d_density_with_a_color_by_is_an_image_until_the_contours_are_chosen(
     assert len(layers) == 2 and len({t["zmax"] for t in layers}) == 1
     _shot(page, "density2d-image")
     page.click(f"{S} .ccnt-options-btn")
-    assert page.is_checked(f"{S} .ccnt-image")
-    page.uncheck(f"{S} .ccnt-image")
+    assert page.is_checked(f"{PO} .ccnt-image")
+    page.uncheck(f"{PO} .ccnt-image")
     _drawn(page, "density2d", "c.style === 'contours'")
     assert not _layers(page)
     assert page.evaluate("(s) => document.querySelector(s + ' .ccnt-plot').data.filter(t => t.type === 'contour').length", S) == 2

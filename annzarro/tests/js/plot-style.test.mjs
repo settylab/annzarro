@@ -86,8 +86,8 @@ const proxies = (fig) => fig.data.filter((t) => t.meta === 'az-legend');
 
 test('each kind has the common sections in order, with its own sections between them', () => {
     assert.deepEqual(S.sectionsOf(CG).map((s) => s.id),
-        ['text', 'background', 'axes', 'panel:dots', 'panel:sections', 'legend', 'panel:annotations', 'margins', 'export', 'apply']);
-    assert.deepEqual(S.sectionsOf(CC).map((s) => s.id), ['text', 'background', 'axes', 'panel:count', 'legend', 'margins', 'export', 'apply']);
+        ['presets', 'text', 'background', 'axes', 'panel:dots', 'panel:sections', 'legend', 'panel:annotations', 'margins', 'export', 'apply']);
+    assert.deepEqual(S.sectionsOf(CC).map((s) => s.id), ['presets', 'text', 'background', 'axes', 'panel:count', 'legend', 'margins', 'export', 'apply']);
     // the Cell-Gene Plot's fields of before are in the schema, at the keys they always had
     const cg = Object.fromEntries(S.fieldsOf(CG).map((f) => [f.id, f.path]));
     assert.equal(cg.outlineWidth, 'outline.width');
@@ -266,4 +266,51 @@ test('the session default of the new kinds keeps their look by path, and a plot 
     // a stored default is cleaned by path: what is not a look of the kind is dropped
     assert.deepEqual(SS.cleanSessionStyles({ 'cell-gene': { 'look.fontSize': 14, 'titles.plot': 'no', evil: 1 } }), { 'cell-gene': { 'look.fontSize': 14 } });
     SS.clearSessionStyle();
+});
+
+// ================================================================================================ 5. every option that applies
+
+test('a field that does not apply to a kind is not offered: the count plot has axis titles, tick labels and zero lines, the Cell-Gene Plot not', () => {
+    const cg = new Set(S.fieldsOf(CG).map((f) => f.id));
+    const cc = new Set(S.fieldsOf(CC).map((f) => f.id));
+    for (const id of ['axisLines', 'axisColor', 'axisWidth', 'tickMarks', 'grid', 'legendColumns', 'legendMax', 'legendSpace']) {
+        assert.ok(cg.has(id) && cc.has(id), id);
+    }
+    for (const id of ['axisTitles', 'tickLabels', 'zeroLines', 'tickCount', 'legendTitle', 'legendColumnGap', 'legendPosition', 'showLegend']) {
+        assert.ok(cc.has(id) && !cg.has(id), id);
+    }
+    for (const id of ['geneLabels', 'groupLabels', 'outlineWidth', 'totals']) assert.ok(cg.has(id) && !cc.has(id), id);
+});
+
+test('axis lines, tick marks and the count plot\'s axis titles, tick labels, zero lines and tick count reach the figure', () => {
+    const cg = cellGene({ look: { axisLines: true, axisColor: '#ff0000', axisWidth: 2, tickMarks: true } }).figure.layout;
+    assert.equal(cg.xaxis.showline, true);
+    assert.equal(cg.xaxis.linecolor, '#ff0000');
+    assert.equal(cg.yaxis.linewidth, 2);
+    assert.equal(cg.yaxis.ticks, 'outside');
+    const cc = count({ look: { axisTitles: false, tickLabels: false, zeroLines: false, tickCount: 4 } }).figure.layout;
+    assert.equal(cc.yaxis.title.text, '');
+    assert.equal(cc.yaxis.showticklabels, false);
+    assert.equal(cc.yaxis.zeroline, false);
+    assert.equal(cc.yaxis.nticks, 4, 'the count axis takes the tick count');
+    assert.equal(cc.xaxis.nticks, undefined, 'a category axis keeps a tick per level');
+});
+
+test('presets: Publication and Bare set the look of the kind; Default puts every copied field back', () => {
+    const pub = S.applyPreset({ titles: { plot: 'Kept' } }, 'publication', CC);
+    assert.deepEqual(pub.look, { bgColor: '#ffffff', textColor: '#000000', axisColor: '#000000', fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: 16, grid: false, axisLines: true, axisWidth: 1.5, tickMarks: true, zeroLines: false });
+    assert.equal(pub.titles.plot, 'Kept');
+    const bare = S.applyPreset({}, 'bare', CG);
+    assert.deepEqual(bare.legend, { colorBar: false, sizeLegend: false, strips: false }, 'the Cell-Gene legends are off');
+    assert.equal(bare.look, undefined, 'no grid is already the Cell-Gene default');
+    assert.deepEqual(S.applyPreset(pub, 'default', CC), { titles: { plot: 'Kept' } });
+});
+
+test('a declared kind (WP-5b) brings its own order, defaults and the fields it takes', () => {
+    S.registerKind('test-kind', { order: ['text', 'axes', 'export'], defaults: { fontSize: 14, grid: false }, applies: ['zeroLines'] });
+    assert.deepEqual(S.sectionsOf('test-kind').map((s) => s.id), ['text', 'axes', 'export']);
+    assert.equal(S.resolveStyle({}, 'test-kind').fontSize, 14);
+    assert.ok(S.fieldOf('test-kind', 'zeroLines'));
+    assert.equal(S.fieldOf('test-kind', 'legendPosition'), null);
 });

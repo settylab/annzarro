@@ -34,6 +34,8 @@ served = cc.served
 page = cc.page
 
 CC, S, DATA, N = cc.CC, cc.S, cc.DATA, cc.N
+# Plot Options is a pop-over in the body-level layer since WP-5a; Save as grouping and Show as table are in its Count plot section
+PO = cc.PO
 _count, _open, _drawn, _config, _plot, _requests = cc._count, cc._open, cc._drawn, cc._config, cc._plot, cc._requests
 
 
@@ -272,7 +274,7 @@ def test_save_as_grouping_makes_a_grouping_of_the_plots_inputs_with_the_same_gro
     groups = int((DATA.obs.groupby(["cell_type", "condition"], observed=True).size() > 0).sum())
     asked = len(_requests(page))
     page.click(f"{S} .ccnt-options-btn")
-    page.click(f"{S} .ccnt-save-btn")
+    page.click(f"{PO} .ccnt-save-btn")
     d = _dialog(page)
     assert d == {"title": "Save as grouping", "lines": [f"Factors: cell_type, condition. {groups} groups."], "disabled": False, "why": "", "role": "dialog"}
     assert len(_requests(page)) == asked, "the dialog says what the plot already knows"
@@ -292,7 +294,7 @@ def test_save_as_grouping_is_refused_over_the_grouping_limits_and_opens_from_a_c
     _open(page, served, {CC: _count(mode="histogram", x=obs("depth", binning={"method": "equal_width", "bins": 1500}))})
     _drawn(page, "histogram")
     page.click(f"{S} .ccnt-options-btn")
-    page.click(f"{S} .ccnt-save-btn")
+    page.click(f"{PO} .ccnt-save-btn")
     d = _dialog(page)
     reason = "depth has 1,500 bins; a factor of a grouping holds up to 1,000. Use fewer bins first."
     assert d["disabled"] is True and d["why"] == reason
@@ -316,7 +318,7 @@ def test_show_as_table_is_the_csv_as_an_html_table(page, served):
     _open(page, served, {CC: _count(mode="bar", x=cc.CELL_TYPE, split=cc.CONDITION)})
     _drawn(page, "bar")
     page.click(f"{S} .ccnt-options-btn")
-    page.click(f"{S} .ccnt-table-btn")
+    page.click(f"{PO} .ccnt-table-btn")
     page.wait_for_selector(f"{S} .ccnt-table table")
     head = page.evaluate("(s) => [...document.querySelectorAll(s + ' .ccnt-table thead th')].map(t => [t.textContent, t.getAttribute('scope')])", S)
     assert head == [["cell_type", "col"], ["condition", "col"], ["Cells", "col"], ["Share", "col"]]
@@ -324,6 +326,6 @@ def test_show_as_table_is_the_csv_as_an_html_table(page, served):
     want = DATA.obs.groupby(["cell_type", "condition"], observed=True).size()
     got = {(r[0], r[1]): int(r[2]) for r in body}
     assert {k: v for k, v in got.items() if v} == {k: int(v) for k, v in want.items() if v}
-    assert page.inner_text(f"{S} .ccnt-table-btn") == "Hide table"
-    page.click(f"{S} .ccnt-table-btn")
+    assert page.inner_text(f"{PO} .ccnt-table-btn") == "Hide table"
+    page.click(f"{PO} .ccnt-table-btn")
     page.wait_for_selector(f"{S} .ccnt-table table", state="detached")

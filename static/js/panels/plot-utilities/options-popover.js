@@ -3,9 +3,9 @@
  * and 33): one renderer of options-schema.js on the pop-over primitive (ui/popover.js), with each kind's defaults, for
  * the Cell-Gene Plot and the Cell Count Plot. WP-5b puts the Cell Plot and Gene Plot on it.
  *
- * WHAT IT SHOWS, top to bottom (`ORDER` of the schema): Text, Background, Axes, the panel's own sections, Legend,
+ * WHAT IT SHOWS, top to bottom (`ORDER` of the schema): Presets (Default, Publication, Bare: one step each), Text, Background, Axes, the panel's own sections, Legend,
  * Margins, Export, Apply. Each section folds (`<details>`; folding inside the pop-over moves nothing in the panel), its
- * open state kept per kind for the page's life; Text, Legend, Export and the panel's own sections start open. A common
+ * open state kept per kind for the page's life; Presets, Text, Legend, Export and the panel's own sections start open. A common
  * section has a Reset that puts its fields back to the kind's defaults.
  *  - A field (`data-option=<id>`) edits the configuration live, one undoable step with a label (`ctx.commit`). A number
  *    box commits on change or Enter; empty is the default. A colour that follows the app theme has Auto.
@@ -27,9 +27,10 @@
  */
 import { createPopover } from '../../ui/popover.js';
 import {
-    sectionsOf, readField, writeField, defaultOf, helpOf, isSet, pickLook, adoptLook, resolveStyle
+    sectionsOf, readField, writeField, defaultOf, helpOf, isSet, pickLook, adoptLook, resolveStyle, applyPreset, PRESETS, PRESET_LABELS
 } from './options-schema.js';
 import { exportSettings } from './plot-style.js';
+import { exportOptions } from './plot-options.js';
 import { setSessionStyle, clearSessionStyle, hasSessionStyle, onSessionStyleChange, followLook } from '../../utils/session-style.js';
 
 /** The image formats, in the order the Export section offers them. */
@@ -39,7 +40,7 @@ export const IMAGE_FORMATS = Object.freeze(['png', 'svg', 'jpeg', 'webp']);
 const KIND_NAMES = Object.freeze({ 'cell-gene': 'Cell-Gene', 'cell-count': 'Cell Count' });
 
 /** Sections that start open; the rest fold until opened. */
-const OPEN_FIRST = new Set(['text', 'legend', 'export']);
+const OPEN_FIRST = new Set(['presets', 'text', 'legend', 'export']);
 
 /** Per kind and section, whether it was left open (for the page's life). */
 const _open = new Map();
@@ -89,6 +90,7 @@ function stepLabel(field, value) {
  * @param {() => boolean} [ctx.canExport] - whether there is a drawing to export
  * @param {(format: string) => string} [ctx.exportOff] - why a format is off now ('' when it is not)
  * @param {{export?: string, exportBtn?: string, csv?: string}} [ctx.classes] - the panel's own class names (test hooks)
+ * @param {() => (HTMLElement|null)} [ctx.plot] - the graph: its modebar camera exports at the size and scale set here
  * @returns {{update: Function, destroy: Function, popover: Object, body: HTMLElement}}
  */
 export function mountPlotOptions(ctx) {
@@ -235,6 +237,10 @@ export function mountPlotOptions(ctx) {
             body.prepend(el('div', { class: 'po-buttons po-export-formats' }, imageBtns));
             if (csvBtn) body.append(el('div', { class: 'po-buttons' }, csvBtn));
         }
+        if (sec.id === 'presets') {
+            body.append(el('div', { class: 'po-buttons po-presets' }, PRESETS.map((p) => el('button', { type: 'button',
+                class: 'btn btn-sm btn-outline-secondary po-preset', data: { preset: p }, on: { click: () => preset(p) } }, PRESET_LABELS[p]))));
+        }
         if (sec.id === 'apply') {
             body.append(el('div', { class: 'po-buttons' }, applyBtn), ask, applyDone,
                 sessionState, el('div', { class: 'po-buttons' }, sessionSet, sessionReset));
@@ -247,6 +253,18 @@ export function mountPlotOptions(ctx) {
         details.append(body);
         sectionEls.set(sec.id, details);
         root.append(details);
+    }
+
+    /**
+     * A preset is one undoable step. Publication and Bare give the plot a look of its own; Default puts it back on the
+     * session default (the built-in look when none is set), as Cell Plot's Default does.
+     */
+    function preset(name) {
+        const now = config();
+        const next = name === 'default' ? followLook(now, kind) : applyPreset(now, name, kind);
+        if (name !== 'default') delete next.styleDefault;
+        if (JSON.stringify(next) === JSON.stringify(now)) return;
+        ctx.commit(next, `${PRESET_LABELS[name].toLowerCase()} preset`);
     }
 
     function resetSection(sec) {
@@ -281,7 +299,7 @@ export function mountPlotOptions(ctx) {
             if (!sec) continue;
             const own = sec.panel ? panelSections[id] : null;
             const fields = sec.fields;
-            const anyShown = (own && own.element) || fields.some((f) => !controls.get(f.id).wrap.hidden) || id === 'export' || id === 'apply';
+            const anyShown = (own && own.element) || fields.some((f) => !controls.get(f.id).wrap.hidden) || id === 'export' || id === 'apply' || id === 'presets';
             details.hidden = !anyShown || (own && typeof own.when === 'function' && !own.when(c));
             if (own && typeof own.paint === 'function') own.paint();
             const reset = details.querySelector('.po-reset');
@@ -315,6 +333,9 @@ export function mountPlotOptions(ctx) {
         }
     };
     _mounted.add(me);
+    // the modebar camera (plot-aesthetics-menu.js registerCameraExport) exports at Export's size and scale too
+    const gd = ctx.plot ? ctx.plot() : null;
+    if (gd) gd.__exportOptions = () => exportOptions(exportSettings(resolveStyle(config(), kind), ctx.plotSize ? ctx.plotSize() : {}));
     // a plot on Default takes the session default when it is made (after the panel's own set-up)
     setTimeout(() => { if (_mounted.has(me)) me.follow(); }, 0);
 

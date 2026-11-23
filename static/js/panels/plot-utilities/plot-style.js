@@ -8,7 +8,8 @@
  *  - Text: the font's family, size and colour on the layout; the plot title (a count plot's; the Cell-Gene Plot draws
  *    its own) and its size.
  *  - Background: the paper and the plot area.
- *  - Axes: grid lines on, off, their colour and width. On the Cell-Gene Plot only its main axes (`xaxis`, `yaxis`): the
+ *  - Axes: grid lines on, off, their colour and width; axis lines (colour, width) and tick marks; on a count plot also
+ *    axis titles, tick labels, zero lines and the tick count (an axis with ticks of its own keeps them). On the Cell-Gene Plot only its main axes (`xaxis`, `yaxis`): the
  *    legend column's small axes and the annotation bands' are left alone. On a count plot every 2D axis; grid on keeps
  *    an axis that draws none on purpose (UpSet's rows) without one.
  *  - Margins: added to the margins the builder made for its labels (they are room, not positions).
@@ -104,7 +105,8 @@ function countLegend(figure, s) {
     const pos = PLACES[s.legendPosition] ? s.legendPosition : 'right';
     const columns = Math.max(1, s.legendColumns || 1);
     const useProxies = capped || columns > 1 || !!s.legendSpace;
-    L.meta = { ...(L.meta || {}), azLegendPosition: pos, azLegendColumns: columns };
+    L.meta = { ...(L.meta || {}), azLegendPosition: pos, azLegendColumns: columns, azLegendGap: s.legendColumnGap ?? 24 };
+    if (s.legendTitle === false && L.legend && L.legend.title) L.legend = { ...L.legend, title: { ...L.legend.title, text: '' } };
     if (s.legendSpace) L.meta.azLegendShare = s.legendSpace / 100; else delete L.meta.azLegendShare;
     if (pos !== 'right' || useProxies) L.legend = { ...(L.legend || {}), ...PLACES[pos] };
     if (!useProxies) return { entries: n, shown: n, more: 0, proxies: false };
@@ -169,6 +171,22 @@ export function applyPlotStyle(figure, style, kind) {
             else if (kind === 'cell-gene') axis.showgrid = true;
             if (s.gridColor) axis.gridcolor = s.gridColor;
             axis.gridwidth = s.gridWidth;
+            // axis lines and tick marks (both kinds); the count plot's titles, tick labels, zero lines and tick count
+            axis.showline = !!s.axisLines;
+            if (s.axisLines) {
+                axis.linewidth = s.axisWidth;
+                if (s.axisColor) axis.linecolor = s.axisColor;
+            }
+            if (s.tickMarks) {
+                axis.ticks = 'outside';
+                if (s.axisColor) axis.tickcolor = s.axisColor;
+            }
+            if (kind === 'cell-count') {
+                if (s.axisTitles === false && axis.title) axis.title = { ...(typeof axis.title === 'object' ? axis.title : {}), text: '' };
+                if (s.tickLabels === false) axis.showticklabels = false;
+                if (s.zeroLines === false) axis.zeroline = false;
+                if (s.tickCount && !axis.tickvals) axis.nticks = s.tickCount;
+            }
             L[key] = axis;
         }
     }

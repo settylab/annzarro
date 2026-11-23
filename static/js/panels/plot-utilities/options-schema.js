@@ -10,33 +10,42 @@
  * controls, cell-count/controls.js). A panel's fields may also join a common section: Cell-Gene's gene and group labels
  * are in Axes, its colour bar, size legend and strip switches and titles in Legend.
  *
- * FIELDS. `{ id, section, type, path, label, dflt, min, max, step, choices, kinds, copy, when, help }`:
+ * FIELDS. `{ id, section, type, path, label, dflt, min, max, step, choices, applies, copy, when, help }`:
  *  - `type`: 'number' (an empty box is the default), 'check', 'select', 'color' (with Auto: the app theme), 'text'.
  *  - `path`: where the value lives in the panel's configuration, dotted. The common look is under `look`
  *    (`look.fontSize`); a panel field keeps the key it always had (`outline.width`, `labels.genes`), so links made before
  *    this keep their meaning. A value at its default is written as absent, and an object left empty goes (links stay short).
  *  - `dflt`: a value, or `{ [kind]: value }` for a per-kind default (the Cell-Gene Plot draws no grid by default, the
  *    count plot does; the legend's entry cap differs).
- *  - `kinds`: the kinds that offer it (all when absent). `copy`: whether Apply to other panels and the session default
+ *  - `applies`: the kinds it applies to (every kind when absent). A field that does not apply to a kind is not shown in
+ *    its pop-over at all, never greyed. `copy`: whether Apply to other panels and the session default
  *    carry it (true when absent; a plot's own title is not a look and is not copied). `when(config)`: shown only then.
  *
  * Both kinds also have the session default (`STYLE_TYPES` of utils/session-style.js gains them): a plot made from the
  * chooser is on Default (`styleDefault: true`) and follows it; any change of its look gives it its own.
  */
 
-/** The plot kinds on the shared Plot Options: panel types. */
+/**
+ * KINDS. A kind is declared with `registerKind(kind, { order, defaults, applies, presets })`: its sections in order,
+ * its own defaults by field id (over a field's `dflt`), the common fields it takes beyond those that apply to every
+ * kind, and its presets' values. The Cell-Gene Plot and the Cell Count Plot are declared below; WP-5b declares the
+ * Cell Plot and the Gene Plot the same way and registers their own fields with `registerPanelFields`.
+ */
+const _kinds = new Map();
+
+/** The plot kinds on the shared Plot Options: panel types (the two declared here; `kinds()` has every declared one). */
 export const PLOT_KINDS = Object.freeze(['cell-gene', 'cell-count']);
 
 /** Where the common look lives in a configuration. */
 export const LOOK_KEY = 'look';
 
 /** The common sections, in the pop-over's order; a panel's own sections go where its kind's `ORDER` puts them. */
-export const COMMON_SECTIONS = Object.freeze(['text', 'background', 'axes', 'legend', 'margins', 'export', 'apply']);
+export const COMMON_SECTIONS = Object.freeze(['presets', 'text', 'background', 'axes', 'legend', 'margins', 'export', 'apply']);
 
 /** Each kind's sections in order: the common ones and its own (`panel:<id>`). */
 export const ORDER = Object.freeze({
-    'cell-gene': Object.freeze(['text', 'background', 'axes', 'panel:dots', 'panel:sections', 'legend', 'panel:annotations', 'margins', 'export', 'apply']),
-    'cell-count': Object.freeze(['text', 'background', 'axes', 'panel:count', 'legend', 'margins', 'export', 'apply'])
+    'cell-gene': Object.freeze(['presets', 'text', 'background', 'axes', 'panel:dots', 'panel:sections', 'legend', 'panel:annotations', 'margins', 'export', 'apply']),
+    'cell-count': Object.freeze(['presets', 'text', 'background', 'axes', 'panel:count', 'legend', 'margins', 'export', 'apply'])
 });
 
 /** The fonts offered, as Cell Plot's Plot Options names them; '' is the kind's default font. */
@@ -72,12 +81,24 @@ const COMMON_FIELDS = Object.freeze([
     { id: 'grid', section: 'axes', type: 'check', path: 'look.grid', label: 'Grid lines', dflt: { 'cell-gene': false, 'cell-count': true } },
     { id: 'gridColor', section: 'axes', type: 'color', path: 'look.gridColor', label: 'Grid color', dflt: null },
     { id: 'gridWidth', section: 'axes', type: 'number', path: 'look.gridWidth', label: 'Grid width (px)', dflt: 1, min: 0.25, max: 4, step: 0.25 },
+    { id: 'axisLines', section: 'axes', type: 'check', path: 'look.axisLines', label: 'Axis lines', dflt: false },
+    { id: 'axisColor', section: 'axes', type: 'color', path: 'look.axisColor', label: 'Axis color', dflt: null },
+    { id: 'axisWidth', section: 'axes', type: 'number', path: 'look.axisWidth', label: 'Axis line width (px)', dflt: 1, min: 0.25, max: 6, step: 0.25 },
+    { id: 'tickMarks', section: 'axes', type: 'check', path: 'look.tickMarks', label: 'Tick marks', dflt: false },
+    { id: 'axisTitles', section: 'axes', type: 'check', path: 'look.axisTitles', label: 'Axis titles', dflt: true, applies: ['cell-count'] },
+    { id: 'tickLabels', section: 'axes', type: 'check', path: 'look.tickLabels', label: 'Tick labels', dflt: true, applies: ['cell-count'] },
+    { id: 'zeroLines', section: 'axes', type: 'check', path: 'look.zeroLines', label: 'Zero lines', dflt: true, applies: ['cell-count'] },
+    { id: 'tickCount', section: 'axes', type: 'number', path: 'look.tickCount', label: 'Ticks, about', dflt: null, min: 2, max: 30, step: 1,
+        applies: ['cell-count'], help: 'Empty: automatic. Category axes keep one tick per level.' },
     // ---------------------------------------------------------------- Legend
-    { id: 'showLegend', section: 'legend', type: 'check', path: 'look.showLegend', label: 'Show legend', dflt: true, kinds: ['cell-count'] },
-    { id: 'legendPosition', section: 'legend', type: 'select', path: 'look.legendPosition', label: 'Position', dflt: 'right', kinds: ['cell-count'],
+    { id: 'showLegend', section: 'legend', type: 'check', path: 'look.showLegend', label: 'Show legend', dflt: true, applies: ['cell-count'] },
+    { id: 'legendPosition', section: 'legend', type: 'select', path: 'look.legendPosition', label: 'Position', dflt: 'right', applies: ['cell-count'],
         choices: [['right', 'Right'], ['bottom', 'Bottom'], ['top', 'Top'], ['left', 'Left']] },
     { id: 'legendSpace', section: 'legend', type: 'number', path: 'look.legendSpace', label: 'Space (% of width)', dflt: null, min: 10, max: 60, step: 1,
         help: { 'cell-gene': 'Empty: as wide as the figure allows.', 'cell-count': 'Beside the plot. Empty: up to 60 %; longer labels are cut short.' } },
+    { id: 'legendTitle', section: 'legend', type: 'check', path: 'look.legendTitle', label: 'Legend title', dflt: true, applies: ['cell-count'] },
+    { id: 'legendColumnGap', section: 'legend', type: 'number', path: 'look.legendColumnGap', label: 'Column gap (px)', dflt: 24, min: 0, max: 80, step: 1,
+        applies: ['cell-count'] },
     { id: 'legendColumns', section: 'legend', type: 'number', path: 'look.legendColumns', label: 'Columns', dflt: 1, min: 1, max: LEGEND_COLUMNS_MAX, step: 1 },
     { id: 'legendMax', section: 'legend', type: 'number', path: 'look.legendMax', label: 'Entries, at most', dflt: { 'cell-gene': 20, 'cell-count': 25 },
         min: 1, max: 500, step: 1, help: 'Past it: the first ones, then "+ N more".' },
@@ -94,7 +115,7 @@ const COMMON_FIELDS = Object.freeze([
 
 /** The words of each common section's heading. */
 export const SECTION_TITLES = Object.freeze({
-    text: 'Text', background: 'Background', axes: 'Axes', legend: 'Legend', margins: 'Margins', export: 'Export', apply: 'Apply'
+    presets: 'Presets', text: 'Text', background: 'Background', axes: 'Axes', legend: 'Legend', margins: 'Margins', export: 'Export', apply: 'Apply'
 });
 
 const _panelFields = new Map();
@@ -106,7 +127,7 @@ const _panelFields = new Map();
  * @param {Object[]} fields
  */
 export function registerPanelFields(kind, fields) {
-    _panelFields.set(kind, Object.freeze(fields.map((f) => Object.freeze({ ...f, kinds: [kind] }))));
+    _panelFields.set(kind, Object.freeze(fields.map((f) => Object.freeze({ ...f, applies: [kind] }))));
 }
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -115,7 +136,9 @@ const COLOR = /^#[0-9a-f]{3}([0-9a-f]{3})?([0-9a-f]{2})?$/i;
 
 /** The fields `kind` offers: the common ones it has, then its panel's. */
 export function fieldsOf(kind) {
-    return [...COMMON_FIELDS.filter((f) => !f.kinds || f.kinds.includes(kind)), ...(_panelFields.get(kind) || [])];
+    const own = _kinds.get(kind);
+    const takes = (f) => !f.applies || f.applies.includes(kind) || !!(own && own.applies && own.applies.includes(f.id));
+    return [...COMMON_FIELDS.filter(takes), ...(_panelFields.get(kind) || [])];
 }
 
 /** A field of `kind` by id, or null. */
@@ -125,6 +148,8 @@ export function fieldOf(kind, id) {
 
 /** The field's default for `kind`. */
 export function defaultOf(field, kind) {
+    const own = _kinds.get(kind);
+    if (own && own.defaults && field.id in own.defaults) return own.defaults[field.id];
     const d = field.dflt;
     return isObject(d) && !Array.isArray(d) && Object.keys(d).some((k) => PLOT_KINDS.includes(k)) ? (kind in d ? d[kind] : null) : (d === undefined ? null : d);
 }
@@ -244,8 +269,57 @@ export function lookDiff(look) {
 /** The sections of `kind` in order, each `{ id, title?, panel: boolean, fields }` (a panel section's title is its own). */
 export function sectionsOf(kind) {
     const fields = fieldsOf(kind);
-    return (ORDER[kind] || COMMON_SECTIONS).map((id) => {
+    const own = _kinds.get(kind);
+    return ((own && own.order) || ORDER[kind] || COMMON_SECTIONS).map((id) => {
         const panel = id.startsWith('panel:');
         return { id, panel, title: panel ? undefined : SECTION_TITLES[id], fields: fields.filter((f) => f.section === id) };
     });
+}
+
+/**
+ * Declare a kind (WP-5b: the Cell Plot and the Gene Plot): `order` its sections, `defaults` its own default per field
+ * id, `applies` the ids of common fields limited to other kinds that it takes too, `presets` its preset values.
+ * @param {string} kind
+ * @param {{order?: string[], defaults?: Object, applies?: string[], presets?: Object}} spec
+ */
+// export-unused-ok: WP-5b declares the Cell Plot and Gene Plot with it
+export function registerKind(kind, spec) {
+    _kinds.set(kind, Object.freeze({ ...spec }));
+}
+
+/** The preset names, in the order Presets offers them. */
+export const PRESETS = Object.freeze(['default', 'publication', 'bare']);
+
+/** The words of the presets' buttons. */
+export const PRESET_LABELS = Object.freeze({ default: 'Default', publication: 'Publication', bare: 'Bare' });
+
+/**
+ * A preset's values by field id. Default puts every copied field back to the kind's default (the titles stay).
+ * Publication, as Cell Plot's: white background, black text and lines, Arial 16, no grid, axis lines and tick marks
+ * on. Bare: only the data (no grid, no axis lines, no tick marks, no legends, no extra margins). A kind's own presets
+ * (`registerKind`) are laid over these.
+ * @returns {Object<string, *>} null for a field means its default
+ */
+export function presetValues(name, kind) {
+    const out = {};
+    if (name === 'default') {
+        for (const f of copiedFields(kind)) if (f.section !== 'export') out[f.id] = null;
+    } else if (name === 'publication') {
+        Object.assign(out, { bgColor: '#ffffff', textColor: '#000000', axisColor: '#000000', fontFamily: 'Arial, Helvetica, sans-serif',
+            fontSize: 16, grid: false, axisLines: true, axisWidth: 1.5, tickMarks: true, zeroLines: false });
+    } else if (name === 'bare') {
+        Object.assign(out, { grid: false, axisLines: false, tickMarks: false, showLegend: false, colorBar: false, sizeLegend: false,
+            strips: false, marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0 });
+    }
+    const own = _kinds.get(kind);
+    Object.assign(out, own && own.presets && own.presets[name]);
+    const ids = new Set(fieldsOf(kind).map((f) => f.id));
+    return Object.fromEntries(Object.entries(out).filter(([id]) => ids.has(id)));
+}
+
+/** `config` with a preset on it (a copy). */
+export function applyPreset(config, name, kind) {
+    let out = config;
+    for (const [id, v] of Object.entries(presetValues(name, kind))) out = writeField(out, fieldOf(kind, id), v, kind);
+    return out;
 }
