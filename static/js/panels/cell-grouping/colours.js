@@ -28,7 +28,7 @@ export function toHex(color) {
  * @param {string} kind - the card's kind: categorical, grouping or binned
  * @returns {{value: string, text: string}[]} `value` '' is the default of the factor, which is not stored
  */
-export function factorPalettes(p, info, kind) {
+function factorPalettes(p, info, kind) {
     const lists = listAvailableColormaps();
     if (kind === 'binned') {
         return [{ value: '', text: 'Viridis (default)' }, ...(lists['Continuous Palettes'] || []).filter((n) => n !== 'viridis').map((n) => ({ value: n, text: n }))];
@@ -41,7 +41,7 @@ export function factorPalettes(p, info, kind) {
 }
 
 /** The palettes a grouping offers for its own colors. */
-export function groupPalettes() {
+function groupPalettes() {
     const lists = listAvailableColormaps();
     return [{ value: '', text: 'Default' }, ...(lists['Discrete Palettes'] || []).map((n) => ({ value: n, text: n }))];
 }
@@ -56,7 +56,7 @@ function patched(colors, patch) {
 }
 
 /** A partitioning or recipe with its `colors` changed by `patch`, the field left out when nothing is set. */
-export function withColors(holder, patch) {
+function withColors(holder, patch) {
     const next = { ...holder };
     const colors = patched(holder.colors, patch);
     if (colors) next.colors = colors; else delete next.colors;
@@ -70,12 +70,12 @@ export function withOverride(holder, id, css) {
 }
 
 /** `holder` with every override removed (and with `all`, the palette and `by` too). */
-export function withoutOverrides(holder, all = false) {
+function withoutOverrides(holder, all = false) {
     return all ? withColors(holder, { palette: undefined, overrides: undefined, by: undefined }) : withColors(holder, { overrides: undefined });
 }
 
 /** How many colors the user has set by hand on `holder`. */
-export const overrideCount = (holder) => (holder.colors && isObject(holder.colors.overrides)
+const overrideCount = (holder) => (holder.colors && isObject(holder.colors.overrides)
     ? Object.values(holder.colors.overrides).filter(isColourString).length : 0);
 
 function selectOf(el, className, label, options, value) {
