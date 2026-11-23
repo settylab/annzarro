@@ -20,6 +20,7 @@ import { binsRange, binSpacingOf, splitUsed } from '../../utils/count-plot-model
 import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
 import { createPopover } from '../../ui/popover.js';
+import { createPlotToolbar } from '../../ui/plot-toolbar.js';
 import { Config } from '../../config.js';
 import { scaleOptionLabel } from '../../utils/color-scales.js';
 import { listAvailableColormaps } from '../plot-utilities/colors.js';
@@ -631,7 +632,8 @@ export function createControls({ D, id, model, on }) {
     // Download CSV is in its Export section
     const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-options-btn' }, C.buttons.options);
     const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-undo', disabled: true, on: { click: () => on.undo() } }, C.buttons.undo);
-    const toolbar = el('div', { class: 'ccnt-toolbar' }, saveBtn, colorBtn, el('span', { class: 'ccnt-toolbar__gap' }), undoBtn, optionsBtn);
+    // the shared plot toolbar (ui/plot-toolbar.js): the same order, styles and places in every plot panel
+    const toolbar = createPlotToolbar({ className: 'ccnt-toolbar', actions: [saveBtn], menus: [colorBtn], undo: undoBtn, options: optionsBtn }).element;
 
     // Color: the colour map, Reverse, the range, the level palette. Every edit applies live as one undoable step.
     const colorPop = createPopover({

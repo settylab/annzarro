@@ -35,3 +35,11 @@
 .po-ask { display: flex; flex-direction: column; gap: 4px; }
 .po-ask[hidden] { display: none; }
 .po-ask__buttons { display: flex; gap: 4px; }
+
+/* The plot toolbar (static/js/ui/plot-toolbar.js): one row ending every plot panel's control grid,
+   [actions] [menus] ... [Undo] [Plot Options], the same in every panel */
+.az-plot-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; width: 100%; padding-top: 4px; }
+.az-plot-toolbar > .btn { white-space: nowrap; }
+.az-plot-toolbar__gap { flex: 1 1 auto; min-width: 8px; }
+.az-plot-toolbar .az-gear { margin-right: 2px; }
+.az-plot-toolbar > .btn[hidden] { display: none; }

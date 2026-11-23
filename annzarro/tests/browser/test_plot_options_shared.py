@@ -252,6 +252,38 @@ def test_plot_options_leaves_the_panel_box_unchanged(page, served, which):
     assert page.evaluate("([t, b]) => document.activeElement === document.querySelector(t + ' ' + b)", [tile, button])
 
 
+# ------------------------------------------------------------------ 5b. the plot toolbar, the same in every plot panel
+
+TOOLBAR = """(t) => [...document.querySelector(t + ' .az-plot-toolbar').children].filter((b) => b.matches('.btn') && !b.hidden)
+    .map((b) => ({ text: b.textContent.trim(), slot: b.dataset.toolbarSlot, cls: b.className }))"""
+
+
+@pytest.mark.parametrize("which", ["cell-gene", "cell-count"])
+def test_plot_options_is_the_last_toolbar_button_and_undo_sits_just_before_it(page, served, which):
+    """Design note section 4 and the operator (2026-11-23): one toolbar row ends every plot's grid,
+    [actions] [menus] ... [Undo] [Plot Options]. WP-5b adds the Cell Plot and the Gene Plot here."""
+    if which == "cell-gene":
+        _cg(page, served)
+        tile, first = TP, ["3D", "Cluster ▾", "Color ▾"]
+    else:
+        _cc(page, served)
+        tile, first = SC, ["Save as grouping"]
+    assert page.locator(f"{tile} .az-plot-toolbar").count() == 1, "one toolbar row"
+    buttons = page.evaluate(TOOLBAR, tile)
+    assert [b["text"] for b in buttons][-2:] == ["Undo", "Plot Options"]
+    assert [b["slot"] for b in buttons][-2:] == ["undo", "options"]
+    assert [b["text"] for b in buttons][:len(first)] == first
+    assert all("btn btn-sm btn-outline-secondary" in b["cls"] for b in buttons), "the same button style throughout"
+    # Plot Options sits at the row's right end, Undo just left of it, on one line
+    boxes = page.evaluate("(t) => { const r = document.querySelector(t + ' .az-plot-toolbar').getBoundingClientRect();"
+                          " const o = document.querySelector(t + ' .az-plot-toolbar [data-toolbar-slot=options]').getBoundingClientRect();"
+                          " const u = document.querySelector(t + ' .az-plot-toolbar [data-toolbar-slot=undo]').getBoundingClientRect();"
+                          " return [r.right, o.left, o.right, o.top, u.right, u.top]; }", tile)
+    row_right, o_left, o_right, o_top, u_right, u_top = boxes
+    assert abs(row_right - o_right) <= 2
+    assert u_right <= o_left and o_left - u_right <= 8 and abs(o_top - u_top) <= 1
+
+
 # ------------------------------------------------------------------ 6. screenshots
 
 @pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")

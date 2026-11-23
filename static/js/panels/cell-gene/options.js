@@ -515,7 +515,14 @@ function mount(slot, ctx) {
     // ---------------------------------------------------------------- Plot Options: the shared pop-over (WP-5a)
     const optionsBtn = button('cgene-options-btn', WO.plotOptions);
 
-    slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn, note);
+    // the shared plot toolbar (ui/plot-toolbar.js) when the panel gives one: 3D an action, Cluster and Color its menus,
+    // Plot Options last; the clustering's sentence stays in the grid
+    if (ctx.toolbar) {
+        ctx.toolbar.add({ actions: [view3dBtn], menus: [clusterBtn, colorBtn], options: optionsBtn });
+        slot.append(note);
+    } else {
+        slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn, note);
+    }
 
     // ---------------------------------------------------------------- the pop-overs (ui/popover.js)
     const popover = (anchor, name, title, body) => createPopover({

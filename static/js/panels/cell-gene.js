@@ -66,6 +66,7 @@ import { buildFigure, colourBars, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
 import { recordCameraOnRelease } from '../utils/scene-camera.js';
 import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
+import { createPlotToolbar } from '../ui/plot-toolbar.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
 import { resolveStyle } from './plot-utilities/options-schema.js';
 import { applyPlotStyle, styleTheme, cellGeneLegend } from './plot-utilities/plot-style.js';
@@ -207,6 +208,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let D = null;
         let _dom = null;
         let _controls = null;
+        /** The shared plot toolbar of the grid (ui/plot-toolbar.js). */
+        let _toolbar = null;
         let _sections = null;
         let _addGenes = null;
         let _checklist = null;
@@ -708,7 +711,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             plot.__azChooser = null;
             const area = el('div', { class: 'cgene-area' }, plot, el('div', { class: 'cgene-empty' }, checklist));
             // Cluster ▾, Color ▾ and Plot Options are pop-overs (cell-gene/options.js), out of the panel's flow
-            _controls.element.append(el('div', { class: 'cgene-undo-wrap' }, undoBtn));
+            // the shared plot toolbar (ui/plot-toolbar.js): [3D] [Cluster ▾] [Color ▾] ... [Undo] [Plot Options], as in every plot
+            _toolbar = createPlotToolbar({ className: 'cgene-toolbar', undo: undoBtn });
+            _controls.element.append(_toolbar.element);
             root.append(_controls.element, message, hint, area);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
@@ -791,7 +796,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 commit: (next, label) => commit(next, label),
                 replace: (next) => { _config = normalizeCellGene(next).config; changed(); },
                 plotSize: () => (_dom ? { width: _dom.plot.clientWidth, height: _dom.plot.clientHeight } : {}),
-                plot: () => (_dom ? _dom.plot : null)
+                plot: () => (_dom ? _dom.plot : null),
+                toolbar: _toolbar
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
             // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
