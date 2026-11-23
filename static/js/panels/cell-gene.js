@@ -456,12 +456,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 const r = resolveSource(section.source);
                 return { section, genes: r.genes, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
             });
+            const threshold = baseThreshold();
             const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null,
-                height: heightOf(_config), threshold: baseThreshold() });
+                height: heightOf(_config), threshold });
             const rowsOf = new Array(entries.length).fill(0);
             for (const row of features.rows) rowsOf[row.section]++;
             const wires = features.features.map((f) => f.wire);
-            _plan = { ...features, entries, reads: geneReads(wires), featureCount: wires.length, option: { features: features.features.map((f) => f.wire), statistics: features.statistics },
+            _plan = { ...features, threshold, entries, reads: geneReads(wires), featureCount: wires.length, option: { features: features.features.map((f) => f.wire), statistics: features.statistics },
                 optionKey: features.features.map((f) => f.key).join('\u0003') + JSON.stringify(features.statistics),
                 // what the matrix limit and the notices read: each section's rows and genes, the genes read
                 shape: entries.map((e, i) => ({ rows: rowsOf[i], genes: e.genes.length })),
@@ -765,12 +766,26 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             commit({ ..._config, [which]: { ..._config[which], layer } }, `${measureName(which)} layer`);
         }
 
-        /** A measure's expression threshold, beside it (WP-4): a number from 0 up, else the box shows the one in force. */
+        /**
+         * A measure's expression threshold, beside it (WP-4): a number from 0 up, else the box shows the one in force. On a
+         * grouping axis the box is an override of the grouping's Expressed above (decision 35): emptied, the measure follows
+         * the grouping again.
+         */
         function setThreshold(which, text) {
-            if (which !== 'height') _fresh = false;
+            const spec = _config[which];
+            if (axisGrouping() && String(text).trim() === '') {
+                if (!spec || !isNumber(spec.detect_above)) { paint(); return; }
+                if (which !== 'height') _fresh = false;
+                const next = { ...spec };
+                delete next.detect_above;
+                commit({ ..._config, [which]: next }, `${measureName(which)} threshold follows the grouping`);
+                return;
+            }
             const p = parseThresholdText(text);
             if (!p.ok) { paint(); return; }
-            commit({ ..._config, [which]: { ..._config[which], detect_above: p.value } }, `${measureName(which)} threshold`);
+            if (spec && spec.detect_above === p.value) { paint(); return; }
+            if (which !== 'height') _fresh = false;
+            commit({ ..._config, [which]: { ...spec, detect_above: p.value } }, `${measureName(which)} threshold`);
         }
 
         function mountParts() {
@@ -823,7 +838,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         }
 
         function measure(spec) {
-            return measureModel({ spec, datasetLayers: datasetLayers(), kinds: _kinds, threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold() });
+            const g = axisGrouping();
+            return measureModel({ spec, datasetLayers: datasetLayers(), kinds: _kinds, threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold(),
+                grouping: g ? { title: g.getTitle(), value: baseThreshold() } : null });
         }
 
         /** Height's row: its own measure, or Same as Color (Color's statistics listed after it, no layer, no threshold). */
@@ -939,6 +956,15 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          */
         function snapshotChanged(snap) {
             if (!_dom) return;
+            // the grouping's Expressed above was edited (Methods ▾, decision 34): it is outside the grouping's hash, so the
+            // groups stay; the measures that follow it are read again at the new threshold
+            if (_plan && _plan.threshold !== baseThreshold()) {
+                _plan = null;
+                sync();
+                paint();
+                redraw();
+                return;
+            }
             // the groups changed since they were counted (the grouping was edited): unknown again, so with rows that could
             // exceed the limit the groups go first, before any gene (CXG-17, Q4)
             if (_gate.ask === 'all' && _gate.groupsOf && !sameGroups(groupsIdentity(axisId()), _gate.groupsOf)) {
@@ -1215,7 +1241,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const gate3d = _config.view === '3d' ? view3dGate({ rows: R, groups: G }) : null;
             if (gate3d && gate3d.ok && matrix.height) {
                 model.view = '3d';
-                model.height = matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) };
+                model.height = { ...(matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) }), ...extras.height };
                 if (_config.camera) model.camera = _config.camera;
             }
             const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });

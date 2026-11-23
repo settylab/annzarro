@@ -22,6 +22,9 @@ import { isScoreColumn, sameScoreColumn } from '../utils/score-column.js';
 import { pinLayers, sourceInput } from '../utils/score-source.js';
 import { removeColumnFromChooser } from './table-utilities/table-ui-make.js';
 import { TableResolver } from '../utils/table-resolver.js';
+import { makeDom } from './gene-set-utilities/dom.js';
+import { createCellMethods } from './cell-grouping/methods.js';
+import { METHODS_TEXT, cleanMethods, tableDefinition } from '../utils/group-statistics.js';
 import './table-utilities/table-background.js';
 
 const CellTablePanel = (function() {
@@ -60,6 +63,11 @@ const CellTablePanel = (function() {
         
         // Override with provided options
         Object.assign(_settings, options);
+        // Methods ▾ (decision 34): the parameters of the statistics over the table's cells, `methods` in the
+        // configuration only when one is not at its default. Kept apart from the DataTable's settings.
+        let _methods = cleanMethods(options.methods);
+        let _methodsUi = null;
+        delete _settings.methods;
         // A "focused cell/gene" placeholder from an older view names the
         // entity focused now (the view's own focus is restored first), and
         // never follows the focus after that (issue #9)
@@ -76,6 +84,7 @@ const CellTablePanel = (function() {
                 // Store references for later use
                 _tableContainer = tableContainer;
                 _controlsContainer = controlsContainer;
+                mountMethods();
                 
                 // Manually update the UI based on dataset loading status
                 const isDatasetLoaded = DataManager.isDatasetLoaded();
@@ -101,6 +110,28 @@ const CellTablePanel = (function() {
             }
         }
         
+        /**
+         * Methods ▾ beside the table's actions (decision 34). A Gene Plot reads these when it colours by this table's
+         * cells (SO-8c); each edit is saved with the panel.
+         */
+        function mountMethods() {
+            const host = _controlsContainer && _controlsContainer.querySelector('.action-buttons');
+            if (!host) return;
+            if (_methodsUi) _methodsUi.destroy();
+            _methodsUi = createCellMethods({ D: makeDom(document), id: _id, intro: METHODS_TEXT.tableIntro, definitionOf: tableDefinition, getFields: () => _methods,
+                apply: (patch) => setMethods({ ..._methods, ...patch }) });
+            host.prepend(_methodsUi.element);
+        }
+
+        /** The method fields become `next` (cleaned); the saved state hears it. */
+        function setMethods(next) {
+            const clean = cleanMethods(Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined)));
+            if (JSON.stringify(clean) === JSON.stringify(_methods)) return;
+            _methods = clean;
+            if (_methodsUi) _methodsUi.paint();
+            if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+        }
+
         /**
          * Handle dataset loaded event
          * @param {string} datasetPath - The path to the loaded dataset
@@ -323,6 +354,7 @@ const CellTablePanel = (function() {
                 _dataTable = null;
             }
             forgetMemory(_id);
+            if (_methodsUi) { _methodsUi.destroy(); _methodsUi = null; }
             // a closed table wants its scores only when something that filters by it needs them
             TableScores.release(_id);
             // its filter is now its closed selection (set above); nothing is rebuilt
@@ -451,8 +483,10 @@ const CellTablePanel = (function() {
          * @returns {Object} - Panel configuration
          */
         function getConfig() {
-            // the DataTable's live views (the rows passing the filter) are read when read
-            return configOf(_settings, { title: _title });
+            // the DataTable's live views (the rows passing the filter) are read when read; `methods` only when not default
+            const config = configOf(_settings, { title: _title });
+            if (Object.keys(_methods).length) config.methods = { ..._methods };
+            return config;
         }
         
         /**
@@ -470,6 +504,8 @@ const CellTablePanel = (function() {
             // Update other settings; never the read-only views of the live
             // DataTable (searchBuilderConfig, currentEntries)
             assignKnownSettings(_settings, config);
+            // Methods ▾: a whole configuration (Back and Forward, a link) without `methods` is at the defaults
+            if ('methods' in config || 'columns' in config) setMethods(cleanMethods(config.methods));
         }
         
         /**
@@ -570,7 +606,11 @@ const CellTablePanel = (function() {
             setTitle,
             getType,
             getConfig,
-            updateConfig
+            updateConfig,
+            /** The method fields (decision 34), for a Gene Plot that reads this table's cells (SO-8c): `{detect_above?}`. */
+            getMethods: () => ({ ..._methods }),
+            /** Open Methods ▾; false while the table's controls are not shown. */
+            revealMethods: () => { if (!_methodsUi || (_controlsContainer && _controlsContainer.style.display === 'none')) return false; _methodsUi.reveal(); return true; }
         };
     }
     

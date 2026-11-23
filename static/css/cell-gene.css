@@ -185,3 +185,5 @@
 .cgene-measure__word { color: var(--az-muted); font-size: 0.75rem; }
 .cgene-measure__word[hidden] { display: none; }
 .cgene-measure .form-control { width: 5rem; }
+/* decision 35: on a grouping axis the box overrides the grouping's Expressed above; empty, it shows "auto (grouping: 0)" */
+.cgene-measure .form-control.cgene-measure__above--grouping { width: 9.5rem; }

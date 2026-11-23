@@ -71,13 +71,14 @@ test('a stored `offer` (WP-4, retired by decision 31) loads with no problem and 
 
 // ------------------------------------------------------------------ a new plot's defaults (Q2)
 
-test('a new plot: Color mean on the log-normalised layer, Size % expressing on counts above 0, when kinds identify both', () => {
+test('a new plot: Color mean on the log-normalised layer, Size % expressing on counts, when kinds identify both', () => {
+    // Size stores no threshold: it follows the grouping's Expressed above, 0 by default (decision 35)
     assert.deepEqual(G.defaultMeasures(LAYERS, KINDS),
-        { color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'counts', detect_above: 0 } });
+        { color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'counts' } });
     assert.deepEqual(G.defaultMeasures(['X', 'raw', 'lognorm'], { X: 'signed', raw: 'other', lognorm: 'log' }),
         { color: { stat: 'mean', layer: 'X' }, size: { stat: 'pct_expressing', layer: 'X' } }, 'no counts layer: X for both');
     assert.deepEqual(G.defaultMeasures(['X', 'n1', 'n2'], { X: 'log', n1: 'counts', n2: 'log' }),
-        { color: { stat: 'mean', layer: 'X' }, size: { stat: 'pct_expressing', layer: 'n1', detect_above: 0 } });
+        { color: { stat: 'mean', layer: 'X' }, size: { stat: 'pct_expressing', layer: 'n1' } });
 });
 
 // ------------------------------------------------------------------ the request and the limit (finding 9)

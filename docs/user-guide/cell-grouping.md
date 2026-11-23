@@ -58,7 +58,7 @@ the button put the focus back on **Edit ▾**. Only one pop-over is open at a ti
 down**, **Duplicate**, **Rename levels…** and **Remove**. Drag a card by **≡**, or move the focused card with **Alt+Up**
 and **Alt+Down**. The order of the factors is the order of the names and of the groups: the first factor varies slowest.
 
-The toolbar above the cards holds **Add factor ▾**, **Settings** and **Undo**. The list of groups takes
+The toolbar above the cards holds **Add factor ▾**, **Methods ▾**, **Settings** and **Undo**. The list of groups takes
 the rest of the panel and is the only part that grows with it.
 
 **A categorical factor** lists its levels with their cells and a box for each:
@@ -149,6 +149,23 @@ the cells of each combination; an empty combination is a muted 0, because it is 
 - **Small groups under** 10 cells: **Keep** them (the default; they are marked), **Collect** them into one group
   "Small groups (under 10 cells)", or **Hide** them (their cells go in no group).
 
+**Methods ▾** (a button in the toolbar) sets how the statistics over a group's cells are computed, for every plot
+that reads the grouping and on every layer. Plots still choose the statistic and the layer themselves; nothing here
+limits what they can pick. The pop-over lists each statistic with its definition: **Mean**, **% expressing**, **Mean of
+expressing cells**, **Sum** and **SD**. Under the two that count expressing cells sits their one parameter:
+
+- **Expressed above** (0 by default, any number from 0 up): a cell counts as expressing when its value is above it.
+  Type a number and press **Enter**, or leave the box; a value that is not a number from 0 up is refused with the
+  reason and the box goes back to the value in force.
+
+Each change is one step that **Undo** takes back. The groups stay as they are (the threshold is not part of what makes
+them), and every Cell-Gene Plot on the grouping reads its genes again at the new threshold, unless a measure of that
+plot sets its own ({doc}`cell-gene-plot`). The foot of the pop-over says which plots read the grouping and with what
+("Used by: Cell-Gene Plot 1 (mean · logged, % expressing · counts)"), and **Reset to defaults** puts every parameter
+back. While a parameter is not at its default the button carries a dot and its tooltip names the setting
+("expressed above 2"). **Escape**, the **×** or a click outside closes the pop-over; opening it moves nothing in the
+panel.
+
 Names are made in the browser from the levels and their renames; two groups that end up with the same name get
 `(2)`, `(3)`. Colours: a grouping of one categorical column takes that column's colours, so it matches a plot coloured
 by the column; any other grouping takes the palette in group order. One grouping has the same colours in every panel,
@@ -169,14 +186,14 @@ a plot, and enter no statistic.
 | **Cell Plot** colour, x, y, z and hover | Choose **Cell Grouping** in the type list (beside obs, obsm, obsp, layer and **Gene score**), or a grouping at the end of the obs column list, under **Groupings**; **New grouping…** ends the list. Colour draws one legend entry per group, in group order, with the grouping's colours, and every categorical legend option applies. The hover reads `Grouping 1: B cell \| Old` |
 | **Cell Table** | The column chooser has a **Cell Grouping** tab. The column shows each cell's group, sorts in group order and filters with **Equals** like a categorical column |
 | **Cell-Gene Plot** | As **Groups** ({doc}`cell-gene-plot`) |
-
-A grouping chooses no statistics for the plots built on it: each plot lists every statistic and every layer itself
-({doc}`cell-gene-plot`). The grouping keeps its threshold for % expressing and mean of expressing cells, "Expressed
-above" (0 by default), and a Cell-Gene Plot built on it reads that threshold unless a measure sets its own. A link
-saved by an earlier 0.8.0 build may still carry a grouping's own list of statistics and layers: it loads without a
-message, changes nothing, and the grouping's next edit drops it.
 | **Cell Count Plot** | As X, Y or **Color by**, and one group of it as a set ({doc}`cell-count-plot`) |
 | **Another grouping** | As a factor: its groups become the levels |
+
+A grouping chooses no statistics for the plots built on it: each plot lists every statistic and every layer itself
+({doc}`cell-gene-plot`). The grouping sets how they are computed, in **Methods ▾**: a Cell-Gene Plot built on it reads
+its **Expressed above** unless a measure sets its own. A link saved by an earlier 0.8.0 build may still carry a
+grouping's own list of statistics and layers: it loads without a message, changes nothing, and the grouping's next
+edit drops it.
 
 From any of them, **Open grouping** opens the grouping's panel beside it.
 
