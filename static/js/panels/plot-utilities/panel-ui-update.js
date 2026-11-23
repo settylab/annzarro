@@ -2,8 +2,7 @@ import { DataManager } from '../../data-manager.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
-import { SLIDER_STEPS, pointSizeScale, opacityScale, trackValue } from '../../utils/slider-scales.js';
-import { rangeScales, sliderValue, sliderTrack } from '../../utils/range-control-model.js';
+import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { noteDatasetLayers } from '../../utils/score-source.js';
 import { refreshHoverGroups } from './hover-columns.js';
@@ -933,7 +932,14 @@ export function showScalePreview($container, id, settings) {
  * move over |value|, the min thumb mirrored, so min = -max position for
  * position as the centring handlers require.
  */
-export const colorSliderScales = rangeScales;
+export function colorSliderScales(values, centered) {
+  if (!centered) {
+    const scale = quantileScale(values);
+    return scale && { min: scale, max: scale };
+  }
+  const abs = quantileScale(values, { transform: Math.abs });
+  return abs && { min: mirroredScale(abs), max: abs };
+}
 
 /**
  * A colour bound as the Min/Max boxes show it: in data units, also under a
@@ -945,13 +951,14 @@ export function colorBoundText(settings, v) {
 
 /** The colour value a min/max slider shows (its scale, else its raw value). */
 export function colorSliderValue(slider) {
-  return sliderValue(jQuery(slider).data('scale'), slider.value);
+  const scale = jQuery(slider).data('scale');
+  return scale ? valueAt(scale, slider.value) : parseFloat(slider.value);
 }
 
 /** Put a colour min/max thumb on `value`; outside the data it pins to an end. */
 export function showColorBound($slider, value, side) {
   const scale = $slider.data('scale');
-  $slider.val(sliderTrack(scale, value, side));
+  $slider.val(scale ? trackValue(scale, value, side) : value);
 }
 
 /**

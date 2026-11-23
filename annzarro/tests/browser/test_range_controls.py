@@ -1,11 +1,12 @@
-"""The range control in the Cell-Gene and Count Plots' Color pop-overs, in a real browser: Min and Max sliders over the
-drawn statistic, a number field and auto, the way the Cell Plot's colour range has them.
+"""The range boxes in the Cell-Gene and Count Plots' Color pop-overs, in a real browser: Min and Max (and Center) of each
+scale in one box style. An unset box reads "auto (value drawn)", never empty; a set box shows its number; the scale's
+reset (the arrow) returns it to auto in one undo step.
 
-1.  Cell-Gene colour: the Max slider changes the stored limit, the field and the figure's cmax.
-2.  Cell-Gene size (dots): the size statistic's slider changes the stored dotMax and the dots' sizes.
-3.  Cell-Gene 3D height: the Height range limits the bars; auto clears it.
-4.  Count Plot colour: the Min and Max sliders change the stored limits and the trace's zmin and zmax.
-5.  A typed limit and auto still work beside the sliders; an old link's fields (`limits`, `dotMin`, `dotMax`) are read.
+1.  Cell-Gene colour: Min, Max and Center boxes reach cmin, cmax; auto with the drawn value; reset, then Undo.
+2.  Cell-Gene size (dots): "Size min (% expressing)" and "Size max (% expressing)", stored as dotMin and dotMax; the dots' sizes follow.
+3.  Cell-Gene 3D height: new Height min and max boxes limit the bars; reset, then Undo.
+4.  Count Plot colour: Min, Max and Center, auto with the drawn value, reset, then Undo.
+5.  An old link's fields (`limits`, `dotMin`, `dotMax`) are read.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -29,12 +30,6 @@ CC, CS = cc.CC, cc.S
 POP = "[data-popover='color']"
 
 
-def _slide(page, selector, track):
-    """Move a range input to `track` as a user's drag does: input while it moves, change on release."""
-    page.eval_on_selector(selector, "(e, v) => { e.value = String(v); e.dispatchEvent(new Event('input', { bubbles: true }));"
-                          " e.dispatchEvent(new Event('change', { bubbles: true })); }", track)
-
-
 def _gene(page, served, **fields):
     _open(page, served, {P: _plot(cellAxis=OBS, sections=[{"source": S1}], **fields), S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, S1))
     _drawn(page)
@@ -47,87 +42,143 @@ def _redrawn(page, check):
           [PLOT, check], timeout=30)
 
 
-def _cmax(page):
-    return page.evaluate("(s) => document.querySelector(s).data[0].marker.cmax", PLOT)
+def _box(page, option):
+    return f"{POP} [data-option='{option}']"
 
 
-def test_cell_gene_colour_max_slider_changes_cmax_and_the_field(page, served):
+def _type(page, selector, text):
+    page.fill(selector, text)
+    page.press(selector, "Enter")
+
+
+def _placeholder(page, option):
+    return page.eval_on_selector(_box(page, option), "e => e.placeholder")
+
+
+def _cfg(page, field):
+    return page.evaluate("([id, f]) => window.PanelManager.getPanel(id).getConfig()[f]", [P, field])
+
+
+def test_an_unset_scale_reads_auto_with_the_drawn_value_and_never_empty(page, served):
     _gene(page, served)
-    before = _cmax(page)
-    assert page.eval_on_selector(f"{POP} [data-option='max']", "e => e.placeholder").startswith("auto"), "automatic: the data's end is the placeholder"
-    _slide(page, f"{POP} [data-option='maxSlider']", 500)
-    until(page, "(id) => { const l = window.PanelManager.getPanel(id).getConfig().limits; return Array.isArray(l) && typeof l[1] === 'number'; }", P)
-    limit = _config(page)["limits"][1]
-    assert limit < before, (limit, before)
-    _redrawn(page, f"(p) => p.data[0].marker.cmax === {limit}")
-    assert float(page.input_value(f"{POP} [data-option='max']")) == limit
-    # auto puts it back to the data's own end
-    page.click(f"{POP} [data-option='maxAuto']")
+    for option in ("min", "max", "dotMin", "dotMax"):
+        text = _placeholder(page, option)
+        assert text.startswith("auto (") and text.endswith(")"), (option, text)
+        assert page.input_value(_box(page, option)) == ""
+    assert _placeholder(page, "center") == "auto"
+    drawn = page.evaluate("(s) => { const m = document.querySelector(s).data[0].marker; return [m.cmin, m.cmax]; }", PLOT)
+    assert float(_placeholder(page, "max")[6:-1]) == pytest.approx(drawn[1], rel=0.01, abs=0.01)
+
+
+def test_cell_gene_colour_boxes_reach_the_figure_and_reset_to_auto_with_undo(page, served):
+    _gene(page, served)
+    _type(page, _box(page, "max"), "2")
+    until(page, "(id) => JSON.stringify(window.PanelManager.getPanel(id).getConfig().limits) === '[null,2]'", P)
+    _redrawn(page, "(p) => p.data[0].marker.cmax === 2")
+    assert page.input_value(_box(page, "max")) == "2"
+    assert page.is_enabled(_box(page, "colorRange"))
+    page.click(_box(page, "colorRange"))
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().limits === undefined", P)
-    _redrawn(page, f"(p) => p.data[0].marker.cmax === {before}")
+    assert page.input_value(_box(page, "max")) == "" and _placeholder(page, "max").startswith("auto (")
+    page.click(f"{TP} .cgene-undo")
+    until(page, "(id) => JSON.stringify(window.PanelManager.getPanel(id).getConfig().limits) === '[null,2]'", P)
+    page.click(f"{TP} .cgene-color-btn")      # a press outside closed the pop-over
+    page.wait_for_selector(POP)
+    assert page.input_value(_box(page, "max")) == "2", "Undo restores the value"
 
 
-def test_cell_gene_size_slider_changes_the_dot_sizes_and_keeps_the_stored_field(page, served):
+def test_the_size_boxes_are_named_by_the_statistic_and_keep_the_stored_fields(page, served):
     _gene(page, served)
+    labels = page.eval_on_selector_all(f"{POP} .az-range__label", "els => els.map(e => e.textContent)")
+    assert "Size min (% expressing)" in labels and "Size max (% expressing)" in labels, labels
+    assert not any("% at the" in t for t in labels), labels
     sizes = "(s) => JSON.stringify(Array.from(document.querySelector(s).data[0].marker.size))"
     first = page.evaluate(sizes, PLOT)
-    _slide(page, f"{POP} [data-option='dotMaxSlider']", 300)
-    until(page, "(id) => typeof window.PanelManager.getPanel(id).getConfig().dotMax === 'number'", P)
-    assert _config(page)["dotMax"] > 0
+    _type(page, _box(page, "dotMax"), "20")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotMax === 20", P)
     until(page, "([s, was]) => JSON.stringify(Array.from(document.querySelector(s).data[0].marker.size)) !== was", [PLOT, first], timeout=30)
-    # the Min end: its stored field is dotMin
-    _slide(page, f"{POP} [data-option='dotMinSlider']", 600)
-    until(page, "(id) => typeof window.PanelManager.getPanel(id).getConfig().dotMin === 'number'", P)
-    assert _config(page)["dotMin"] > 0
+    _type(page, _box(page, "dotMin"), "5")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotMin === 5", P)
+    page.click(_box(page, "sizeRange"))
+    until(page, "(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return c.dotMin === undefined && c.dotMax === undefined; }", P)
+    assert _placeholder(page, "dotMax").startswith("auto (")
+    page.click(f"{TP} .cgene-undo")
+    until(page, "(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return c.dotMin === 5 && c.dotMax === 20; }", P)
 
 
-def test_cell_gene_3d_height_range_limits_the_bars_and_auto_clears_it(page, served):
+def test_cell_gene_3d_height_boxes_limit_the_bars_and_reset_with_undo(page, served):
     _gene(page, served, view="3d")
-    tops = "(s) => { const m = document.querySelector(s).data[0]; let top = 0; for (let k = 0; k < m.z.length; k++) if (m.z[k] > top) top = m.z[k]; return top; }"
     _redrawn(page, "(p) => p.data[0].type === 'mesh3d'")
-    top = page.evaluate(tops, PLOT)
-    assert page.locator(f"{POP} [data-option='heightMaxSlider']").is_visible()
-    _slide(page, f"{POP} [data-option='heightMaxSlider']", 400)
-    until(page, "(id) => { const l = window.PanelManager.getPanel(id).getConfig().heightLimits; return Array.isArray(l) && typeof l[1] === 'number'; }", P)
-    limit = _config(page)["heightLimits"][1]
-    assert 0 < limit < top
-    until(page, "([s, lim]) => { const m = document.querySelector(s).data[0]; let top = 0; for (let k = 0; k < m.z.length; k++) if (m.z[k] > top) top = m.z[k];"
-                " return Math.abs(top - lim) < 1e-6 * Math.max(1, lim); }", [PLOT, limit], timeout=30)
-    page.click(f"{POP} [data-option='heightMaxAuto']")
+    top = "(s) => { const m = document.querySelector(s).data[0]; let t = 0; for (let k = 0; k < m.z.length; k++) if (m.z[k] > t) t = m.z[k]; return t; }"
+    drawn = page.evaluate(top, PLOT)
+    assert _placeholder(page, "heightMax").startswith("auto (")
+    limit = round(drawn / 2, 3)
+    _type(page, _box(page, "heightMax"), str(limit))
+    until(page, "([id, v]) => { const l = window.PanelManager.getPanel(id).getConfig().heightLimits; return Array.isArray(l) && l[1] === v; }", [P, limit])
+    until(page, "([s, v]) => { const m = document.querySelector(s).data[0]; let t = 0; for (let k = 0; k < m.z.length; k++) if (m.z[k] > t) t = m.z[k]; return Math.abs(t - v) < 1e-6; }",
+          [PLOT, limit], timeout=30)
+    page.click(_box(page, "heightRange"))
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().heightLimits === undefined", P)
+    page.click(f"{TP} .cgene-undo")
+    until(page, "([id, v]) => { const l = window.PanelManager.getPanel(id).getConfig().heightLimits; return Array.isArray(l) && l[1] === v; }", [P, limit])
+    page.click(f"{TP} .cgene-color-btn")
+    page.wait_for_selector(POP)
+    assert page.input_value(_box(page, "heightMax")) == str(limit)
 
 
-def test_cell_gene_2d_has_no_height_range(page, served):
+def test_cell_gene_2d_has_no_height_boxes(page, served):
     _gene(page, served)
-    assert page.locator(f"{POP} [data-option='heightMaxSlider']").is_hidden()
+    assert page.locator(_box(page, "heightMax")).is_hidden()
 
 
-def test_an_old_link_with_limits_dotmin_and_dotmax_shows_them_on_the_sliders(page, served):
+def test_an_old_link_with_limits_dotmin_and_dotmax_shows_them_in_the_boxes(page, served):
     _gene(page, served, limits=[0.1, 0.9], dotMin=5, dotMax=60)
-    assert float(page.input_value(f"{POP} [data-option='min']")) == 0.1
-    assert float(page.input_value(f"{POP} [data-option='max']")) == 0.9
-    assert float(page.input_value(f"{POP} [data-option='dotMin']")) == 5
-    assert float(page.input_value(f"{POP} [data-option='dotMax']")) == 60
-    assert page.eval_on_selector(f"{POP} [data-option='maxSlider']", "e => Number(e.value)") > 0
+    assert float(page.input_value(_box(page, "min"))) == 0.1
+    assert float(page.input_value(_box(page, "max"))) == 0.9
+    assert float(page.input_value(_box(page, "dotMin"))) == 5
+    assert float(page.input_value(_box(page, "dotMax"))) == 60
     _redrawn(page, "(p) => p.data[0].marker.cmin === 0.1 && p.data[0].marker.cmax === 0.9")
 
 
-def test_count_colour_sliders_change_zmin_and_zmax(page, served):
+def test_count_colour_boxes_read_auto_reach_the_trace_and_reset_with_undo(page, served):
     cc._open(page, served, {CC: cc._count(mode="hist2d", x={"source": {"type": "obs", "key": "depth"}}, y={"source": {"type": "obs", "key": "score"}})})
     cc._drawn(page, "hist2d")
     page.click(f"{CS} .ccnt-color-btn")
     page.wait_for_selector(POP)
-    zmax = page.evaluate("(s) => Math.max(...document.querySelector(s + ' .ccnt-plot').data[0].z.flat().filter(v => v !== null))", CS)
-    _slide(page, f"{POP} [data-option='maxSlider']", 500)
-    cc._drawn(page, "hist2d", "typeof c.color.max === 'number'")
-    limit = cc._config(page)["color"]["max"]
-    assert 0 < limit < zmax
-    until(page, "([s, v]) => document.querySelector(s + ' .ccnt-plot').data[0].zmax === v", [CS, limit], timeout=30)
-    assert float(page.input_value(f"{POP} .ccnt-color-max")) == limit
-    _slide(page, f"{POP} [data-option='minSlider']", 300)
-    cc._drawn(page, "hist2d", "typeof c.color.min === 'number'")
-    low = cc._config(page)["color"]["min"]
-    until(page, "([s, v]) => document.querySelector(s + ' .ccnt-plot').data[0].zmin === v", [CS, low], timeout=30)
-    # a typed limit and auto beside the sliders
-    page.click(f"{POP} [data-option='minAuto']")
-    cc._drawn(page, "hist2d", "c.color.min === undefined")
+    assert _placeholder(page, "max").startswith("auto (") and _placeholder(page, "min").startswith("auto (")
+    assert _placeholder(page, "center") == "auto"
+    assert page.input_value(_box(page, "max")) == ""
+    _type(page, f"{POP} .ccnt-color-max", "3")
+    _type(page, f"{POP} .ccnt-color-min", "1")
+    cc._drawn(page, "hist2d", "c.color.max === 3 && c.color.min === 1")
+    until(page, "(s) => { const t = document.querySelector(s + ' .ccnt-plot').data[0]; return t.zmax === 3 && t.zmin === 1; }", CS, timeout=30)
+    page.click(_box(page, "colorRange"))
+    cc._drawn(page, "hist2d", "c.color === undefined")
+    assert page.input_value(_box(page, "max")) == "" and _placeholder(page, "max").startswith("auto (")
+    page.click(f"{CS} .ccnt-undo")
+    cc._drawn(page, "hist2d", "c.color.max === 3 && c.color.min === 1")
+    page.click(f"{CS} .ccnt-color-btn")
+    page.wait_for_selector(POP)
+    assert page.input_value(_box(page, "max")) == "3", "Undo restores the value"
+
+
+SHOTS = os.environ.get("ANNZARRO_SHOTS")
+
+
+@pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")
+def test_screenshots_of_the_range_controls(page, served):
+    os.makedirs(SHOTS, exist_ok=True)
+    _gene(page, served, view="3d")
+    _type(page, _box(page, "max"), "1")
+    until(page, "(id) => !!window.PanelManager.getPanel(id).getConfig().limits", P)
+    page.locator(POP).screenshot(path=os.path.join(SHOTS, "cell-gene-color-popover.png"))
+    page.locator(TP).screenshot(path=os.path.join(SHOTS, "cell-gene-3d-limited.png"))
+    page.keyboard.press("Escape")
+    cc._open(page, served, {CC: cc._count(mode="hist2d", x={"source": {"type": "obs", "key": "depth"}}, y={"source": {"type": "obs", "key": "score"}})})
+    cc._drawn(page, "hist2d")
+    page.click(f"{CS} .ccnt-color-btn")
+    page.wait_for_selector(POP)
+    _type(page, f"{POP} .ccnt-color-max", "3")
+    cc._drawn(page, "hist2d", "c.color.max === 3")
+    page.locator(POP).screenshot(path=os.path.join(SHOTS, "count-color-popover.png"))
+    page.locator(CS).screenshot(path=os.path.join(SHOTS, "count-plot-limited.png"))

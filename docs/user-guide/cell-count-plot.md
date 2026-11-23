@@ -41,9 +41,8 @@ the **×** closes them, and **Escape** puts the focus back on the button that op
 a heatmap's number, an UpSet coloured by a share or a statistic, and any plot with a Color by. It holds the **Map**
 (Viridis by default), **Reverse**, **Min**, **Max** and **Center** of the scale (Center has no effect while both Min and Max
 are set), and the **Level palette** of a Color by's levels. **Reset** returns them all to
-the defaults. **Min** and **Max** each have a slider over the values the plot draws (a percentile of them, so a skewed count
-keeps its useful range), a number field and **auto**; an empty field is automatic too, and the field shows the data's own
-end as its hint. The sliders apply when you let go. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
+the defaults. A box that is not set says "auto" with the value the plot draws, such as "auto (412)"; type a number to fix it, or clear
+the box. The **↺** button beside the boxes returns **Min**, **Max** and **Center** to auto in one undo step. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
 gets the full colour of every level.
 
 Switching mode keeps every input: those the new mode uses stay in place, and the others are kept for when you switch

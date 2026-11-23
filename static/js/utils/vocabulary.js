@@ -189,8 +189,8 @@ const cellGene = Object.freeze({
         }),
         dotSizes: 'Smallest and largest dot',
         rangeWhat: Object.freeze({ color: 'Color', size: 'Size', height: 'Height' }),
-        dotMin: '% at the smallest dot',
-        dotMax: '% at the largest dot',
+        sizeMin: 'Size min',
+        sizeMax: 'Size max',
         outlineColor: 'Dot outline color',
         outlineWidth: 'Dot outline width (px)',
         colorScale: 'Color scale',
@@ -564,12 +564,11 @@ const view3d = Object.freeze({
     tooMany: (max, count, hint = 'bins') => `${view3d.tooManyBase(max, count)} ${view3d.hint[hint] || view3d.hint.bins}`
 });
 
-/** The range control's words (ui/range-control.js): Min and Max sliders over the drawn values, a number field and auto. */
+/** The range boxes' words (ui/range-boxes.js): Min and Max boxes of one scale, auto with the value drawn, a reset. */
 const range = Object.freeze({
     auto: 'auto',
-    autoHelp: 'Automatic: the smallest or largest drawn value.',
-    percentile: 'percentile of the drawn values',
-    sliderHelp: 'Moves over the drawn values: the left end is the smallest, the right end the largest.',
+    reset: '\u21BA',
+    resetHelp: (what) => `Back to auto: ${what ? `${what.toLowerCase()} ` : ''}limits follow the drawn values`,
     problem: 'Enter a number, or leave it empty for automatic.'
 });
 

@@ -47,10 +47,10 @@
 /* The anchor while its pop-over is open: a pressed look that works in both themes. */
 .az-popover-anchor-open { background: var(--az-accent-bg); border-color: var(--az-link); color: var(--az-link); }
 
-/* The range control (static/js/ui/range-control.js): Min and Max sliders over the drawn values, a number field, auto */
-.az-range { display: flex; flex-direction: column; gap: 4px; }
-.az-range__row { display: grid; grid-template-columns: minmax(2.5rem, 6.5rem) minmax(4rem, 1fr) 5.5rem auto; align-items: center; gap: 6px; }
-.az-range__label { margin: 0; font-size: 0.8125rem; overflow-wrap: anywhere; }
-.az-range__slider { margin: 0; min-width: 0; }
-.az-range__field { width: 5.5rem; }
-.az-range__auto { padding: 0 6px; font-size: 0.75rem; }
+/* The range boxes (static/js/ui/range-boxes.js): the boxes of one scale and its reset; an auto box reads as a value */
+.az-range { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.az-range__box { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+.az-range__label { font-size: 0.8125rem; }
+.az-range__field { width: 7.5rem; }
+.az-range__field--auto::placeholder { color: var(--az-muted); opacity: 1; font-style: italic; }
+.az-range__reset { padding: 0 6px; line-height: 1.4; }

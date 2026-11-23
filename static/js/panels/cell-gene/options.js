@@ -36,10 +36,11 @@ import { MAX_ROWS } from '../../utils/hclust.js';
 import { longCsv } from '../../utils/cell-gene-model.js';
 import { generateDiscreteColors } from '../plot-utilities/colors.js';
 import { createPopover } from '../../ui/popover.js';
-import { createRangeControl } from '../../ui/range-control.js';
+import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import { dendrogramBlocks } from './draw-annotations.js';
 import { BARS_3D_MAX, checkBarCap } from '../../utils/bars-3d.js';
 
+const W = VOCABULARY.cellGene;
 const WO = VOCABULARY.cellGene.options;
 const W3 = VOCABULARY.cellGene.view3d;
 
@@ -472,18 +473,25 @@ function mount(slot, ctx) {
         ctx.set({ limits: isNumber(now[0]) || isNumber(now[1]) ? [isNumber(now[0]) ? now[0] : null, isNumber(now[1]) ? now[1] : null] : undefined },
             k === 0 ? 'color minimum' : 'color maximum');
     };
-    const colorRange = createRangeControl({ el, what: WO.rangeWhat.color, ends: [{ key: 'min', label: WO.min, option: 'min' }, { key: 'max', label: WO.max, option: 'max' }],
-        onCommit: (k, v) => limit(k)(v) });
+    const pairOf = (v) => [isNumber(v && v[0]) ? v[0] : null, isNumber(v && v[1]) ? v[1] : null];
+    // Color: Min, Max (`limits`) and Center (`center`), auto with the drawn value, ↺ back to auto in one step
+    const colorRange = createRangeBoxes({ el, what: WO.rangeWhat.color, group: 'colorRange',
+        ends: [{ label: WO.min, option: 'min' }, { label: WO.max, option: 'max' }, { label: WO.center, option: 'center', hint: false }],
+        onCommit: (k, v) => (k === 2 ? flat('center', v, null, 'color center') : limit(k)(v)),
+        onReset: () => ctx.set({ limits: undefined, center: undefined }, 'color range to auto') });
     controls.min = colorRange.fields[0];
     controls.max = colorRange.fields[1];
+    controls.center = colorRange.fields[2];
+    controls.center.title = WO.centerDiverging;
     // the 3D bars' height range: heights are drawn between Min and Max (stored as `heightLimits`)
-    const heightRange = createRangeControl({ el, what: WO.rangeWhat.height, ends: [{ key: 'min', label: WO.min, option: 'heightMin' }, { key: 'max', label: WO.max, option: 'heightMax' }],
+    const heightRange = createRangeBoxes({ el, what: WO.rangeWhat.height, group: 'heightRange',
+        ends: [{ label: `${W3.height} ${WO.min.toLowerCase()}`, option: 'heightMin' }, { label: `${W3.height} ${WO.max.toLowerCase()}`, option: 'heightMax' }],
         onCommit: (k, v) => {
-            const now = Array.isArray(config().heightLimits) ? [...config().heightLimits] : [null, null];
+            const now = pairOf(config().heightLimits);
             now[k] = v;
-            ctx.set({ heightLimits: isNumber(now[0]) || isNumber(now[1]) ? [isNumber(now[0]) ? now[0] : null, isNumber(now[1]) ? now[1] : null] : undefined },
-                k === 0 ? 'height minimum' : 'height maximum');
-        } });
+            ctx.set({ heightLimits: now[0] !== null || now[1] !== null ? now : undefined }, k === 0 ? 'height minimum' : 'height maximum');
+        },
+        onReset: () => ctx.set({ heightLimits: undefined }, 'height range to auto') });
     const heightSection = section(W3.height, heightRange.element);
     const dotRow = el('div', { class: 'cgene-dot-range', role: 'group', aria: { label: WO.dotSizes } },
         el('span', { class: 'cgene-field__label', text: WO.dotSizes }));
@@ -502,10 +510,12 @@ function mount(slot, ctx) {
         const plain = !range || (range[0] === DOT_PX.smallest && range[1] === DOT_PX.largest);
         ctx.set({ dotSizes: plain ? undefined : range }, 'dot sizes');
     }
-    // the size statistic's own range: the values at the smallest and the largest dot (stored as `dotMin`, `dotMax`)
-    const sizeRange = createRangeControl({ el, what: WO.rangeWhat.size, ends: [{ key: 'min', label: WO.dotMin, option: 'dotMin' },
-        { key: 'max', label: WO.dotMax, option: 'dotMax' }],
-    onCommit: (k, v) => flat(k === 0 ? 'dotMin' : 'dotMax', v, null, k === 0 ? 'percent at the smallest dot' : 'percent at the largest dot') });
+    // the size statistic's own range: the values at the smallest and the largest dot (stored as `dotMin`, `dotMax`);
+    // named by the statistic, which need not be a percentage
+    const sizeRange = createRangeBoxes({ el, what: WO.rangeWhat.size, group: 'sizeRange',
+        ends: [{ label: WO.sizeMin, option: 'dotMin' }, { label: WO.sizeMax, option: 'dotMax' }],
+        onCommit: (k, v) => flat(k === 0 ? 'dotMin' : 'dotMax', v, null, k === 0 ? 'size minimum' : 'size maximum'),
+        onReset: () => ctx.set({ dotMin: undefined, dotMax: undefined }, 'size range to auto') });
     controls.dotMin = sizeRange.fields[0];
     controls.dotMax = sizeRange.fields[1];
     const dotSizes = section(WO.heading.dots, dotRow, sizeRange.element);
@@ -517,7 +527,6 @@ function mount(slot, ctx) {
                 (v) => flat('colorScale', v, Z_SCALINGS.includes(config().scale) ? null : DEFAULT_SCALE, `color scale ${v}`)),
             check('reverse', WO.reverse, (on) => flat('reverse', on, false, onOff(on, `${WO.reverse} colors`))),
             colorRange.element,
-            number('center', WO.center, (v) => flat('center', v, null, 'color center'), { step: 'any', title: WO.centerDiverging }),
             check('printValues', WO.printValues, (on) => flat('printValues', on, false, onOff(on, WO.printValues))),
             scalingNote),
         dotSizes,
@@ -616,19 +625,18 @@ function mount(slot, ctx) {
         controls.colorScale.value = s.colorScale;
         controls.reverse.checked = s.reverse;
         const limits = Array.isArray(c.limits) ? c.limits : [];
-        // the sliders move over the drawn values (utils/range-control-model.js); only while the pop-over is open
+        // the boxes say "auto" with the value drawn now; only while the pop-over is open
         const shownModel = ctx.drawn() ? ctx.drawn().model : null;
-        const limitsOf = (v) => [isNumber(v && v[0]) ? v[0] : null, isNumber(v && v[1]) ? v[1] : null];
         if (colorBody.isConnected) {
-            colorRange.set({ values: shownModel ? shownModel.color.values : null, limits: limitsOf(limits) });
-            sizeRange.set({ values: shownModel && shownModel.size && shownModel.size.values ? shownModel.size.values : null,
-                limits: [s.dotMin, s.dotMax] });
+            colorRange.set({ limits: [...pairOf(limits), s.center], drawn: drawnRange(shownModel && shownModel.color.values) });
+            const sized = shownModel && shownModel.size && shownModel.size.values ? shownModel.size : null;
+            const unit = sized && W.statistic[sized.stat] ? ` (${W.statistic[sized.stat]})` : '';
+            sizeRange.set({ limits: [s.dotMin, s.dotMax], drawn: drawnRange(sized && sized.values), labels: [`${WO.sizeMin}${unit}`, `${WO.sizeMax}${unit}`] });
             const h = shownModel && shownModel.view === '3d' ? shownModel.height : null;
-            heightRange.set({ values: h ? h.values : null, limits: limitsOf(c.heightLimits) });
+            heightRange.set({ limits: pairOf(c.heightLimits), drawn: drawnRange(h && h.values) });
         }
         heightSection.hidden = !(c.view === '3d');
         controls.center.disabled = !DIVERGING_SCALES.has(s.colorScale);
-        setValue(controls.center, s.center);
         controls.printValues.checked = s.printValues;
         controls.printValues.closest('label').hidden = dotsMode;
         scalingNote.textContent = scalingNotes(c).join(' ');

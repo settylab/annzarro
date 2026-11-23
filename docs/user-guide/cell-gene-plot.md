@@ -183,17 +183,17 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
 
 | Section | Controls |
 |---|---|
-| Colors | **Color scale**, **Reverse**, **Min** and **Max** (sliders, see below), **Center** (for a diverging scale); **Print values in cells** (heatmap); the scaling's help line |
-| Dots | **Smallest and largest dot**; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`; sliders, see below). Size's threshold sits beside **Size** in the control grid |
+| Colors | **Color scale**, **Reverse**, **Min**, **Max** and **Center** (see below) (for a diverging scale); **Print values in cells** (heatmap); the scaling's help line |
+| Dots | **Smallest and largest dot**; **Size min** and **Size max** (scanpy's `dot_min`, `dot_max`; see below). Size's threshold sits beside **Size** in the control grid |
 | Height (3D) | **Min** and **Max** of the bars' height |
 
-**Ranges.** Colour, size and, in 3D, height each have a **Min** and a **Max** over the values the plot draws: a slider, a
-number field and **auto**. The slider moves over percentiles of the drawn values, so its left end is the smallest value and
-its right end the largest, and a skewed statistic keeps its useful range under the thumb; a field takes any number, and
-an empty field or **auto** is the data's own end. The value follows the slider as you move it and the plot changes when you
-let go, as one step of **Undo**. Colour limits clip the colours, the size limits are the values at the smallest and
-largest dot, and the height limits clip the bars: one taller than **Max** is drawn at **Max**, one shorter than **Min** at
-**Min**, and a bar of 0 stays undrawn. This is the same control as the Cell Plot's colour range.
+**Ranges.** Colour, size and, in 3D, height each have **Min** and **Max** boxes in one style (colour also has **Center**).
+A box that is not set says "auto" with the value the plot draws, such as "auto (0.12)", so it never looks empty; type a
+number to fix it, or clear the box. The **↺** button beside each scale returns its boxes to auto in one undo step, and
+**Reset** at the foot puts the whole pop-over back. Colour limits clip the colours. **Size min** and **Size max** are the
+values of the size statistic at the smallest and largest dot, named by the statistic ("Size min (% expressing)"), since it
+need not be a percentage. The height limits clip the bars: one taller than **Max** is drawn at **Max**, one shorter than
+**Min** at **Min**, and a bar of 0 stays undrawn.
 
 **Reset** puts all of these back to their defaults in one step.
 
@@ -294,7 +294,7 @@ How scanpy's options map onto the plot:
 | `categories_order` | The level order in the grouping (tick and drag levels) |
 | `num_categories` | Equal-width bins of a grouping's factor (see below) |
 | `cmap`, `vmin`, `vmax`, `vcenter` | **Color scale**, **Min**, **Max**, **Center** |
-| `dot_min`, `dot_max`, `smallest_dot`, `largest_dot` | **% at the smallest dot**, **% at the largest dot**, **Smallest and largest dot** |
+| `dot_min`, `dot_max`, `smallest_dot`, `largest_dot` | **Size min**, **Size max**, **Smallest and largest dot** |
 | `swap_axes` | **Swap axes** |
 | `add_totals` | **Cells per group** and **Sort groups by size** |
 | `dendrogram`, `add_dendrogram` (`sc.tl.dendrogram`'s defaults) | **Cluster ▾** and **Dendrograms**: complete linkage and Pearson correlation by default (see below for the input) |
