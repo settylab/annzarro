@@ -14,6 +14,7 @@
 import { bandwidthOf, smooth1, smooth2 } from '../../utils/kde.js';
 import { levelLabelsOf, densityLayers } from '../../utils/count-plot-model.js';
 import { scaleKeys } from './colour.js';
+import { pointTraces, pointsNote, POINT_SIZE } from './density-points.js';
 import { normalizeHex } from '../../utils/plot-theme.js';
 import { RESERVED } from '../../utils/level-id.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
@@ -207,6 +208,19 @@ export function densityFigure(config, table, opts) {
                 // over the image, the bands let it show through
                 ...(layers.image ? { opacity: IMAGE_UNDER } : {}) });
         }
+    }
+    if (layers.points && opts.points) {
+        // each cell a point at its place, drawn over the other layers; the points' own hover is off, the grid's is the hover
+        const pts = opts.points;
+        const one = sa < 0;
+        if (!layers.image && !contoured) {
+            levels.forEach((s, i) => data.push({ ...base(i, s), type: 'heatmap', showscale: false, zmin: 0, zmax: peak,
+                colorscale: [[0, 'rgba(0, 0, 0, 0)'], [1, 'rgba(0, 0, 0, 0)']] }));
+        }
+        const size = Number.isFinite(options.pointSize) ? Math.min(POINT_SIZE.max, Math.max(POINT_SIZE.min, options.pointSize)) : POINT_SIZE.default;
+        data.push(...pointTraces(pts, { gx, gy, smooth, peak, colors, size, scale: one ? scaleKeys(options, 'marker') : {},
+            bar: one && !layers.image && !contoured ? { title: esc(title) } : null }));
+        notes.points = pointsNote(pts.x.length, pts.total);
     }
     // heatmaps and contours carry no legend of their own in every bundle: a marker names each level
     if (sa >= 0) {
