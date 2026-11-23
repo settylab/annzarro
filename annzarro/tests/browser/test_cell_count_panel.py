@@ -473,3 +473,21 @@ def test_the_binning_control_shows_no_empty_preview_when_the_reply_has_no_histog
         page.locator(f"{S} .ccnt-binning .pbc").screenshot(path=shot)
     empty = page.evaluate("(s) => [...document.querySelectorAll(s + ' .ccnt-binning .pbc-hist.is-empty')].filter(e => e.offsetHeight > 0).length", S)
     assert empty == 0, "an empty preview is drawn as a grey field"
+
+
+
+def test_2d_density_contours_of_a_split_are_drawn_in_the_level_colors(page, served):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, split=CONDITION)})
+    _drawn(page, "density2d")
+    traces = page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'contour')
+        .map(t => ({ line: t.line.color, cs: t.colorscale }))""", S)
+    assert len(traces) == 2 and all(t["cs"] == [[0, t["line"]], [1, t["line"]]] for t in traces), traces
+    # what Plotly drew: the lines of one level are of one color
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot .contourlayer .contourlevel path').length > 0", S)
+    drawn = page.evaluate("""(s) => [...document.querySelectorAll(s + ' .ccnt-plot .contourlayer > g')].filter(g => g.querySelector('.contourlevel path')).map(g =>
+        [...new Set([...g.querySelectorAll('.contourlevel path')].map(p => getComputedStyle(p).stroke))])""", S)
+    assert drawn and all(len(c) == 1 for c in drawn), drawn
+    if os.environ.get("FB1C_SHOT"):
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.environ["FB1C_SHOT"])

@@ -185,7 +185,8 @@ export function densityFigure(config, table, opts) {
         } else if (image) {
             data.push({ ...base(i, s), type: 'heatmap', showscale: false, colorscale: [[0, withAlpha(colors[i], 0)], [1, colors[i]]] });
         } else {
-            data.push({ ...base(i, s), type: 'contour', showscale: false, ncontours: CONTOURS, contours: { coloring: 'lines' }, line: { color: colors[i], width: 2 } });
+            data.push({ ...base(i, s), type: 'contour', showscale: false, ncontours: CONTOURS, contours: { coloring: 'lines' },
+                colorscale: [[0, colors[i]], [1, colors[i]]], line: { color: colors[i], width: 2 } });
         }
     });
     // heatmaps and contours carry no legend of their own in every bundle: a marker names each level

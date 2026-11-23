@@ -65,11 +65,16 @@ function oneD(name, options, split = false) {
     return { c, config, table, figure: D.densityFigure(config, table, opts(options)) };
 }
 
-function twoD(name, options) {
+function twoD(name, options, split = false) {
     const c = oracle.cases[name];
-    const config = norm({ mode: 'density2d', x: obs('score'), y: obs('depth') });
+    const config = norm({ mode: 'density2d', x: obs('score'), y: obs('depth'), ...(split ? { split: obs('cell_type') } : {}) });
     const axes = [axisOf(c, 0), axisOf(c, 1)];
-    const table = M.countTable(config, gridOf(axes, dense(c), c.n_in), [{ input: 'x' }, { input: 'y' }]);
+    let counts = dense(c);
+    if (split) {
+        axes.push({ levels: ['c:a', 'c:b'], n_outside: [0, 0] });
+        counts = Array.from(counts).flatMap((n) => [Math.floor(n / 3), n - Math.floor(n / 3)]);
+    }
+    const table = M.countTable(config, gridOf(axes, counts, c.n_in), axes.map((_, i) => ({ input: ['x', 'y', 'split'][i] })));
     return { c, config, table, figure: D.densityFigure(config, table, opts(options)) };
 }
 
@@ -219,4 +224,15 @@ test('no cell in any bin draws no curve and the sentences still read', () => {
     const table = M.countTable(config, gridOf([axis], new Array(c.grid).fill(0), 0), [{ input: 'x' }]);
     const f = D.densityFigure(config, table, opts());
     assert.deepEqual(f.data, []);
+});
+
+test('2D contours of a split are drawn in each level\'s own color, not the default colorscale', () => {
+    const { figure } = twoD('umap__a1', { adjust: 1, style: 'contours' }, true);
+    const contours = figure.data.filter((t) => t.type === 'contour');
+    assert.equal(contours.length, 2);
+    for (const t of contours) {
+        assert.equal(t.contours.coloring, 'lines');
+        assert.deepEqual(t.colorscale, [[0, t.line.color], [1, t.line.color]], 'Plotly colors contour lines from the colorscale, not from line.color');
+    }
+    assert.notEqual(contours[0].line.color, contours[1].line.color);
 });
