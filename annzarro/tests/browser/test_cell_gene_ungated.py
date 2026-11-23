@@ -11,6 +11,8 @@ counts, as core/matrix_kind.py reads them from the stored values.
 4.  An old link whose grouping stored "Expressed above" 1 draws Size above 1; the grouping's next edit drops the field
     and the plot keeps drawing above 1 (decision 32).
 5.  A one-row section's Color reads a score by kind, method and layer: three selects, every method and layer listed.
+6.  Screenshots of the plot's controls, the values pop-over and the grouping's toolbar (only when ANNZARRO_SHOTS names a
+    directory).
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -27,6 +29,7 @@ from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401
     GA, GENES, P, S1, TP, VALUES, _config, _drawn, _features, _open, _plot, _sig, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
+SHOTS = os.environ.get("ANNZARRO_SHOTS")
 TG = f'.tile[data-tile-id="{GA}"]'
 OBS = {"type": "obs", "key": "cell_type"}
 AXIS = {"type": "cell-group", "key": GA}
@@ -129,3 +132,18 @@ def test_a_one_row_score_reads_kind_method_and_layer_from_three_selects(page, se
     page.select_option(f"{VALUES} .cgene-section__agg[data-which='color']", "mean_of_means")
     until(page, "(id) => !('color' in window.PanelManager.getPanel(id).getConfig().sections[0])", P)
     assert page.locator(f"{VALUES} .cgene-section__method[data-which='color']").is_hidden()
+
+
+@pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")
+def test_screenshots_of_the_ungated_controls(page, served):
+    plot = _plot(cellAxis=AXIS, sections=[{"source": S1, "rows": "genes"},
+                                          {"source": S1, "rows": "set", "size": {"agg": "score_pct_above", "column": "mean", "layer": "logged", "above": 1}}])
+    _open(page, served, {P: plot, GA: _grouping(), S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, GA))
+    _drawn(page)
+    _kinds_known(page)
+    os.makedirs(SHOTS, exist_ok=True)
+    page.locator(TP).screenshot(path=os.path.join(SHOTS, "so4-cg-grouping-axis.png"))
+    page.locator(TG).screenshot(path=os.path.join(SHOTS, "so4-grouping-toolbar.png"))
+    page.click(f"{TP} .cgene-section__values-btn")
+    page.locator(VALUES).wait_for(state="visible")
+    page.screenshot(path=os.path.join(SHOTS, "so4-values-popover.png"))

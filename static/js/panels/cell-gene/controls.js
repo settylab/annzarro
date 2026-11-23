@@ -386,16 +386,17 @@ export function createSectionList({ D, id, model, on }) {
             options(D, layer, part.layers);
             layer.value = held.layer || 'X';
         }
-        const ofWord = el('span', { class: 'cgene-measure__word', text: CG.sources.of, hidden: !scored });
         const thresholded = held.agg === 'score_pct_above';
-        const aboveWord = el('span', { class: 'cgene-measure__word', text: CG.sources.above, hidden: !thresholded });
         const above = el('input', { type: 'number', step: 'any', class: 'form-control form-control-sm cgene-section__above', data: { which },
-            aria: { label: 'Threshold' }, hidden: !thresholded, value: thresholded ? String(held.above || 0) : '0',
+            aria: { label: 'Threshold' }, value: thresholded ? String(held.above || 0) : '0',
             on: { change: () => on.above(i, which, above.value), keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); on.above(i, which, above.value); } } } });
         const help = el('div', { class: 'cgene-section__help', data: { which }, text: aggregationHelp(held, part.layer) });
         return el('div', { class: 'cgene-section__value', data: { which } },
             el('span', { class: 'cgene-field__label', text: name }), kind,
-            el('span', { class: 'cgene-section__score', hidden: !scored }, method, ofWord, layer, aboveWord, above), help);
+            el('span', { class: 'cgene-section__score', hidden: !scored }, method,
+                el('span', { class: 'cgene-section__pair' }, el('span', { class: 'cgene-measure__word', text: CG.sources.of }), layer),
+                el('span', { class: 'cgene-section__pair', hidden: !thresholded }, el('span', { class: 'cgene-measure__word', text: CG.sources.above }), above)),
+            help);
     }
 
     /** The pop-over's body: the section's Color and Size blocks, drawn from the model as it is now. */

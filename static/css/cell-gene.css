@@ -112,6 +112,7 @@
 .cgene-section__score { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .cgene-section__score[hidden],
 .cgene-section__score [hidden] { display: none; }
+.cgene-section__pair { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .cgene-section__method, .cgene-section__layer { width: auto; min-width: 0; max-width: 100%; }
 .cgene-section__above { width: 5rem; }
 .cgene-section__help { grid-column: 2; color: var(--az-muted); font-size: 0.75rem; }

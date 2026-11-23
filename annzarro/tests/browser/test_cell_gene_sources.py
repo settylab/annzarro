@@ -39,7 +39,8 @@ def test_size_on_counts_on_an_obs_axis_is_one_post_with_each_gene_on_both_layers
     _layer_usable(page, "size", "counts")
     values = page.eval_on_selector_all(f"{TP} .cgene-size-layer option", "os => os.map(o => o.value)")
     assert sorted(values) == ["X", "counts", "logged"] and values[0] == "X", values
-    assert page.locator(f"{TP} .cgene-size-layer option[value='X']").evaluate("o => o.disabled"), "% expressing cannot be read on a signed X"
+    # every layer is listed at once; X is disabled once its kind is read (a layer's kind arrives on its own)
+    until(page, "(s) => document.querySelector(s + ' .cgene-size-layer option[value=\"X\"]').disabled", TP, timeout=30)
     page.select_option(f"{TP} .cgene-size-layer", "counts")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.layer === 'counts'", P)
     # the threshold sits beside Size
