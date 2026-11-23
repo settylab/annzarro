@@ -390,6 +390,9 @@ const label = (text, ...inner) => h('label', { class: 'pbc-field' }, h('span', {
  * @param {(source: Object) => (string|undefined)} [ctx.titleOf]
  * @param {'grouping'|'count'} [ctx.kind]
  * @param {number} [ctx.max] - the most bins this host takes
+ * @param {{value: 'even'|'value', set: (value: 'even'|'value') => void}} [ctx.spacing] - a count plot only: how this
+ *   axis draws its bins ("Bins drawn: Evenly / At their values", WP-9); a host that gives none shows no such row
+ * @param {() => void} [ctx.close] - Escape in the control (outside a field that is being typed in) calls it
  * @returns {{destroy: Function}}
  */
 function mount(host, ctx) {
@@ -522,6 +525,20 @@ function mount(host, ctx) {
         h('div', { class: 'pbc-help pbc-range-help', text: rangeHelp(kind) }));
     }
 
+    // ---- count plot only: how the bins are drawn (WP-9)
+    if (kind === 'count' && ctx.spacing && method !== 'categories') {
+        const spacingGroup = `pbc-spacing-${serial}`;
+        const drawn = (value, text, tip) => {
+            const input = h('input', { type: 'radio', name: spacingGroup, value, class: `pbc-spacing-${value}`, checked: ctx.spacing.value === value,
+                on: { change: () => { if (input.checked && ctx.spacing.value !== value) ctx.spacing.set(value); } } });
+            return h('label', { class: 'pbc-radio', title: tip }, input, ` ${text}`);
+        };
+        rows.push(h('div', { class: 'pbc-row pbc-spacing' },
+            h('div', { class: 'pbc-edges', role: 'radiogroup', aria: { label: 'Bins drawn' } }, h('span', { class: 'pbc-field__name', text: 'Bins drawn' }),
+                drawn('even', 'Evenly', 'Every bin the same width, with the edges on the axis.'),
+                drawn('value', 'At their values', 'Each bin as wide as its range of values.'))));
+    }
+
     // ---- the preview with the edges on it (SHR-18), and the sliders (GRP-5)
     const values = lineValues(binning, info);
     const preview = h('div', { class: `pbc-hist${hist ? '' : ' is-empty'}`, role: 'group', aria: { label: `Distribution of ${name} with the edges` } });
@@ -636,6 +653,15 @@ function mount(host, ctx) {
     const notes = h('div', { class: 'pbc-notes', role: 'status' }, binningNotes(binning, info, { kind }).map((n) => h('p', { class: `pbc-note pbc-note--${n.id}`, text: n.text })));
 
     const root = h('div', { class: 'pbc', data: { method } }, rows, ...(hist || kind !== 'count' ? [preview, ticks] : []), ctx.levels || null, foot, extra, notes, message);
+    // Escape closes the control, unless a field that is being typed in took it (it undoes the draft instead)
+    if (ctx.close) {
+        root.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape' || e.defaultPrevented || e.target.matches('input[type="text"]')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            ctx.close();
+        });
+    }
     host.replaceChildren(root);
 
     // the card is attached after it is built, so the focus goes back once it is in the page
