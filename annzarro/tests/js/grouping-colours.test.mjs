@@ -202,3 +202,15 @@ test("a count plot's level palette replaces its split's colours; without one the
     assert.deepEqual([0, 1].map((i) => tableLevelColour(config, plain, 0, i, 'grey')), dark, 'same axis, palette changed: not the cached colours');
     assert.deepEqual([0, 1].map((i) => tableLevelColour({ split, color: {} }, plain, 0, i, 'grey')), ['#111111', '#abcdef']);
 });
+
+test('a count plot gets its level colours as #rrggbb, which its layers and points add an alpha to', async () => {
+    const { asHex, tableLevelColour } = await resolver();
+    assert.equal(asHex('#ABC'), '#aabbcc');
+    assert.equal(asHex('#11223380'), '#112233');
+    assert.equal(asHex('rgb(17, 34, 51)'), '#112233');
+    assert.equal(asHex('rgba(17,34,51,0.5)'), '#112233');
+    assert.equal(asHex('red'), 'red', 'a name stays as it is outside a browser');
+    const info = { levels: ['c:a', 'c:b'], colors: { 'c:a': '#ABC', 'c:b': '#11223380' } };
+    const table = { axes: [{ input: 'split', levels: info.levels, info }] };
+    assert.deepEqual([0, 1].map((i) => tableLevelColour({ split: obs('x') }, table, 0, i, 'grey')), ['#aabbcc', '#112233']);
+});

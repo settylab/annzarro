@@ -16,7 +16,7 @@ import {
 } from '../../utils/count-plot-model.js';
 import { defaultLabelMaps } from '../../utils/cell-grouping.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
-import { factorColours, tableLevelColour, plotPaletteOf } from '../../utils/grouping-colours.js';
+import { asHex, factorColours, tableLevelColour, plotPaletteOf } from '../../utils/grouping-colours.js';
 import { scaleKeys } from './colour.js';
 
 /** The modes this module draws; the others (density, Venn, UpSet) have their own drawing. */
@@ -338,7 +338,7 @@ function rectFigure(config, table, opts) {
     const extra = [];
     if (top) {
         const topColours = factorColours(plotPaletteOf(config, config.value.factor), top.info, top.levels);
-        const topColour = (id) => topColours.get(id) || opts.theme.notInTableColor;
+        const topColour = (id) => (topColours.get(id) ? asHex(topColours.get(id)) : opts.theme.notInTableColor);
         const colors = top.levels.flatMap((id) => Array.from({ length: stepsOf }, (__, s) => {
             const base = topColour(id);
             return stepsOf === 1 ? base : faded(base, opts.theme.bgColor, FADE_FROM + (1 - FADE_FROM) * ((s + 1) / stepsOf));

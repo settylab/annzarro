@@ -35,25 +35,23 @@ alone, and a gene shown in two sections, or by colour and size on one layer, is 
 `Color [Mean ▾] of [logged ▾]` and `Size [% expressing ▾] of [counts ▾] above [0]`. A common dot plot is exactly this:
 the colour from the mean of the log-normalised layer, the size from the share of cells expressing in the raw counts.
 
-- **The statistic select** lists the statistics on offer, then **Cell count** (which reads no layer, so the layer
-  select hides).
-- **The layer select** lists the layers on offer only. A statistic a layer cannot give is greyed out there, with the
+- **The statistic select** lists all five statistics, then **Cell count** (which reads no layer, so the layer select
+  hides).
+- **The layer select** lists every layer of the dataset. A statistic a layer cannot give is greyed out there, with the
   reason as its tooltip; one that can be computed but misleads (a mean of raw counts follows sequencing depth) carries
-  the warning as its tooltip.
+  the warning as its tooltip. Choosing a statistic the current layer cannot give moves the layer to the first one that
+  can, and the status line says so once ("Layer changed to logged: % expressing is not available on X.").
 - **The threshold** appears beside a statistic that counts expressing cells (% expressing, mean of expressing cells).
-  Each of Color and Size keeps its own; a cell counts as expressing above it. Left alone, it is the grouping's
-  threshold, else 0.
-- **Offer other…**, at the end of both selects, opens the place where statistics and layers are offered.
+  A cell counts as expressing above it. Left alone, it is the grouping's threshold ({doc}`cell-grouping`), else 0;
+  a value typed here is that measure's own, for Color, Size and Height each.
 
-What is on offer depends on the groups. With a grouping as the groups, it is the grouping's **Statistics offered**
-({doc}`cell-grouping`); **Offer other…** opens it. With an obs column as the groups there is no grouping, so the plot
-keeps its own **Statistics offered**, shown under **Size**: mean and % expressing, on X and on the layers that look
-log-normalised and like raw counts (judged from the stored values, never from layer names). **Offer other…** opens it,
-and an edit there is one undoable step of the plot, saved with it. A choice that is no longer on offer stays selected
-and drawn, marked "(no longer offered)".
+The lists are the same whether the groups are a grouping or an obs column: nothing has to be offered first. A choice
+stored in a link that the layer cannot give (% expressing on a scaled X) stays selected, marked "(not available)", and
+draws nothing until you choose another layer.
 
 **A new plot** starts with Color as the mean of the log-normalised layer and Size as % expressing in the raw counts,
-above 0, when the dataset has both kinds of layer on offer; otherwise both read X. The statistics, over the cells of a
+above 0, when the dataset has both kinds of layer (judged from the stored values, never from layer names); otherwise
+both read X. This holds with a grouping as the groups too, so such a plot may read two layers. The statistics, over the cells of a
 group that have a value:
 
 | Statistic | Is |
@@ -70,7 +68,7 @@ heatmap, never a 0. The strip below the plot counts them ("12 cells of the matri
 
 **Size on a signed layer.** On a layer with negative values, such as a scaled X, % expressing cannot be computed. The
 dots are then drawn at one size, the size legend says "% expressing is not available on X: X has negative values.
-Choose a layer.", the strip says **No size**, and the Size layer select marks X "(not available)" and offers the
+Choose a layer.", the strip says **No size**, and the Size layer select marks X "(not available)" and lists the
 layers that work.
 
 ### Scale
@@ -109,9 +107,10 @@ Each section is a row of the list: its title, the source and its gene count, **G
   with no gene the dataset has says so in the plot.
 - A section shows up to 2,000 genes: "DE genes has 5,120 genes; a section shows up to 2,000. Filter the table."
 
-**One row** stands for the whole list. Its **Color** and **Size** each choose from one list, in two parts:
+**One row** stands for the whole list. Its **Color** and **Size** open from the row's summary button, and each first
+chooses a kind, in two parts:
 
-| Entry | Is |
+| Kind | Is |
 |---|---|
 | *From the genes* | |
 | Mean of the genes' means | Each gene's mean in the group, averaged over the genes. Reads the genes once. |
@@ -119,10 +118,13 @@ Each section is a row of the list: its title, the source and its gene count, **G
 | Mean of the genes' z-scores | Each gene's group mean as a z-score against all grouped cells, averaged. |
 | Mean of the genes' % expressing | Each gene's % expressing in the group, averaged; 0 to 100. |
 | *From the score* | |
-| `<score option>`, averaged | The signature's score for each cell, averaged over the group, as a cell plot colored by it would average. Computes the score. |
-| % of cells with `<score option>` above | Share of the group's cells whose score is above the threshold; 0 to 100. |
+| Score, averaged | The signature's score for each cell, averaged over the group, as a cell plot colored by it would average. Computes the score. |
+| % of cells with score above | Share of the group's cells whose score is above the threshold; 0 to 100. |
 
-The score entries are the signature's offered scores ({ref}`gene-signature-scoring`), with **Offer other scores…**.
+A score kind then reads `[method ▾] of [layer ▾]`, and the share above a threshold adds `above [0]`. Both selects list
+every score method and every layer; a pair the source cannot score is greyed out with the reason, and choosing a
+method the layer cannot give moves the layer and says so. A new score starts on z-score mean of X. The method's
+parameters are the source's ({ref}`gene-signature-scoring`).
 The defaults are "Mean of the genes' means" and "Mean of the genes' % expressing", which need no score: choosing only
 "From the genes" entries asks for no score at all. A one-row section whose values are not on the gene rows' scale (a
 score, or a size that is not 0 to 100) gets its own colour bar or size legend, titled with the section.
@@ -167,6 +169,9 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
 - **Left out.** 3D does not draw dendrograms, colour strips, section brackets, totals or printed values; the status
   strip says so (**3D**). A missing value or a value of 0 has no bar. Above 60 genes or groups their labels are hidden
   and the hover names each bar.
+- **Labels.** Gene and group names run outward from their tick: on the right of the scene a name starts at its tick,
+  on the left it ends there, never centred over the bars. When the scene is turned to another side, the names move to
+  the edge nearer you once the mouse is released, with each axis's title beyond them.
 - **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
   step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
 - **Limit.** 3D draws at most 40,000 bars (genes × groups). Above that **3D** is greyed out and says why ("Use fewer

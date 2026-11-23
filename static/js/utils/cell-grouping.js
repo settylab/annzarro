@@ -2,8 +2,8 @@
  * The recipe of a cell grouping and what is made of it: the versioned normaliser, the hash a result is cached under,
  * the names of the groups, and the request body (plan 1.6, PER-3, SHR-8 to SHR-12).
  *
- * A grouping's recipe is `{version, partitionings, separator?, small?, offered?, layers?, detect_above?, colors?,
- * groupOverrides?}` and a
+ * A grouping's recipe is `{version, partitionings, separator?, small?, detect_above?, colors?, groupOverrides?}` (with
+ * the retired `offered?, layers?` of decision 31 read as stored, never flagged) and a
  * partitioning (a factor; the count plot's inputs are the same shape) is `{source, levels?, rest?, labels?, binning?,
  * colors?}`. `colors` is how it is coloured (utils/grouping-colours.js): a factor's is `{palette?: string,
  * overrides?: {levelId: css}}`, a grouping's `{by?: factor index, palette?: string}` (`by` absent: the grouping's own
@@ -260,16 +260,14 @@ export function normalizeGrouping(raw) {
         const small = normalizeSmall(raw.small, bad);
         if (small) out.small = small;
     }
-    if (raw.offered !== undefined) {
-        const list = Array.isArray(raw.offered) ? raw.offered : [];
-        const kept = unique(list.filter((id) => STATISTIC_IDS.includes(id)));
-        if (!Array.isArray(raw.offered) || kept.length !== unique(list).length) bad('offered', 'bad_offered');
+    // `offered` and `layers` were retired by decision 31: kept as stored while valid, never flagged, dropped by the
+    // panel's next edit. `detect_above` stays: the grouping's method parameter (decision 34)
+    if (Array.isArray(raw.offered)) {
+        const kept = unique(raw.offered.filter((id) => STATISTIC_IDS.includes(id)));
         if (kept.length) out.offered = kept;
     }
-    if (raw.layers !== undefined) {
-        const list = Array.isArray(raw.layers) ? raw.layers : [];
-        const kept = unique(list.filter((name) => typeof name === 'string'));
-        if (!Array.isArray(raw.layers) || kept.length !== unique(list).length) bad('layers', 'bad_layers');
+    if (Array.isArray(raw.layers)) {
+        const kept = unique(raw.layers.filter((name) => typeof name === 'string' && name !== ''));
         if (kept.length) out.layers = kept;
     }
     if (raw.detect_above !== undefined) {

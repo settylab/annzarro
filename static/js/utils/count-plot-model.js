@@ -295,6 +295,25 @@ export function splitUsed(config) {
     return config.mode !== 'hist2d' || !config.value || config.value.kind === 'count';
 }
 
+/**
+ * The layers a 2D density is drawn in: an opacity `image`, `lines` (isolines), `fill` (isolines filled in bands) and `points` (each cell
+ * a point at its place), any combination. The stored `layers` win; else an old link's `style` ('image', or 'contours': isolines of a Color by's levels,
+ * filled isolines of one group); else the default: filled isolines, with lines when there is a Color by. Never none.
+ * @param {Object} [layers] - the stored `{image?, lines?, fill?}`
+ * @param {string} [style] - the stored style of an old link
+ * @param {boolean} split - whether the plot has a Color by
+ * @returns {{image: boolean, lines: boolean, fill: boolean}}
+ */
+export function densityLayers(layers, style, split) {
+    if (isObject(layers)) {
+        const out = { image: layers.image === true, lines: layers.lines === true, fill: layers.fill === true, points: layers.points === true };
+        if (out.image || out.lines || out.fill || out.points) return out;
+    }
+    if (style === 'image') return { image: true, lines: false, fill: false, points: false };
+    if (style === 'contours') return split ? { image: false, lines: true, fill: false, points: false } : { image: false, lines: false, fill: true, points: false };
+    return { image: false, lines: !!split, fill: true, points: false };
+}
+
 // --- bins ------------------------------------------------------------------------------------------------------------
 
 /**

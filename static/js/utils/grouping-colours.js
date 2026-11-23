@@ -151,6 +151,35 @@ export function plotPaletteOf(config, part) {
     return palette ? { ...(part || {}), colors: { palette } } : part;
 }
 
+/**
+ * A colour as `#rrggbb` where it can be read as one: `#rgb`, `#rgba`, `#rrggbbaa` (the alpha dropped), `rgb()`/`rgba()`,
+ * and in a browser any CSS colour (a dataset's `uns` may store `red`); anything else unchanged. A count plot draws its
+ * levels with an alpha of its own (layers, densities, points), which needs the six hex digits.
+ * @param {string} css
+ * @returns {string}
+ */
+export function asHex(css) {
+    if (typeof css !== 'string') return css;
+    const s = css.trim().toLowerCase();
+    let m = /^#([0-9a-f]{3,4})$/.exec(s);
+    if (m) return `#${m[1].slice(0, 3).split('').map((c) => c + c).join('')}`;
+    m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/.exec(s);
+    if (m) return `#${m[1]}`;
+    m = /^rgba?\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*(?:[,/]\s*[\d.]+%?\s*)?\)$/.exec(s);
+    if (m) return `#${m.slice(1, 4).map((v) => Math.min(255, Number(v)).toString(16).padStart(2, '0')).join('')}`;
+    if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+        const canvas = document.createElement('canvas');
+        const probe = canvas && canvas.getContext ? canvas.getContext('2d') : null;
+        if (probe) {
+            probe.fillStyle = '#000001';
+            probe.fillStyle = s;
+            const out = String(probe.fillStyle);
+            if (/^#[0-9a-f]{6}$/i.test(out) && out !== '#000001') return out.toLowerCase();
+        }
+    }
+    return css;
+}
+
 /** @type {WeakMap<Object, {part: Object, palette: string, map: Map<string, string>}>} a count table's axis -> its levels' colours */
 const AXES = new WeakMap();
 
@@ -158,7 +187,7 @@ const AXES = new WeakMap();
  * The colour of level `i` of axis `a` of a count plot's table (panels/cell-count): the colour of the input's factor
  * (a column's own, a palette, an override; for an input that is a grouping, that grouping's colours of its groups, which
  * the reply carries as `colors`), or the plot's own level palette when it names one (`plotPaletteOf`). A reserved
- * level, or one with no colour, takes `grey`.
+ * level, or one with no colour, takes `grey`. A colour comes as `#rrggbb` where it can be read as one (`asHex`).
  * @param {Object} config - the count plot's config; its inputs are partitionings
  * @param {{axes: {input: string, levels: string[], info: Object}[]}} table - from count-plot-model.js `countTable`
  * @param {number} a - the axis
@@ -175,5 +204,6 @@ export function tableLevelColour(config, table, a, i, grey) {
         found = { part, palette, map: factorColours(plotPaletteOf(config, part), axis.info, axis.levels) };
         AXES.set(axis, found);
     }
-    return found.map.get(axis.levels[i]) || grey;
+    const colour = found.map.get(axis.levels[i]);
+    return colour ? asHex(colour) : grey;
 }
