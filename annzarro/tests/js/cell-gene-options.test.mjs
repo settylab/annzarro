@@ -207,9 +207,26 @@ test('5.3 cmap, vmin, vmax, vcenter: Color scale, Min, Max and a Center for a di
 });
 
 test('5.3 dot_min, dot_max: the % at the smallest and largest dot set the size legend\'s range', () => {
-    const fig = compose({ dotMin: 10, dotMax: 60 }).figure;
-    const legend = one(fig, 'size legend');
-    assert.deepEqual(legend.text, ['10', '22.5', '35', '47.5', '60']);
+    // a figure tall enough for all five reference dots (the legend column holds four entries here)
+    const { model } = compose({ dotMin: 10, dotMax: 60 });
+    model.pixels = { width: 900, height: 1200 };
+    assert.deepEqual(one(D.buildFigure(model, LIGHT), 'size legend').text, ['10', '22.5', '35', '47.5', '60']);
+});
+
+test('the size legend\'s reference dots never crowd their labels: fewer of them, still from dot_min to dot_max, in a short slot', () => {
+    for (const height of [600, 420, 300]) {
+        const { model } = compose({ dotMin: 10, dotMax: 60 });
+        model.pixels = { width: 900, height };
+        const fig = D.buildFigure(model, LIGHT);
+        const legend = one(fig, 'size legend');
+        assert.ok(legend.text.length >= 2 && legend.text.length <= 5, `${height}: ${legend.text}`);
+        assert.equal(legend.text[0], '10');
+        assert.equal(legend.text[legend.text.length - 1], '60');
+        // each dot's line, in px: the subplot's height over its range
+        const y = fig.layout[`yaxis${legend.yaxis.slice(1)}`];
+        const linePx = ((y.domain[1] - y.domain[0]) * (height - 20)) / (y.range[0] - y.range[1]);
+        assert.ok(linePx >= 16 - 1e-6 || legend.text.length === 2, `${height}: ${linePx.toFixed(1)} px per reference dot`);
+    }
 });
 
 test('5.3 smallest_dot, largest_dot: one range of dot sizes in px', () => {
@@ -386,6 +403,31 @@ test('legend titles fit the legend column of a narrow figure, wrapping at spaces
     // with room, nothing wraps
     const wide = compose().figure;
     assert.deepEqual(colourBarTitles(wide), ['Mean · logged']);
+});
+
+// ================================================================================================ the matrix first
+
+test('at 340 px the matrix keeps 10 px a column: totals go first, then the groups\' dendrogram, then the legend\'s width, each named', () => {
+    const cluster = { genes: 'off', groups: 'all', linkage: 'complete', distance: 'correlation' };
+    const { model } = compose({ totals: true, cluster }, { order: clusteredGroups() });
+    const span = 7;          // six genes and a gap of one between the two sections
+    const columnPx = (fig, width) => ((fig.layout.xaxis.domain[1] - fig.layout.xaxis.domain[0]) * (width - 20)) / span;
+
+    const wide = D.buildFigure({ ...model, pixels: { width: 900, height: 600 } }, LIGHT);
+    assert.deepEqual(wide.hidden, [], 'with room, nothing is given up');
+    one(wide, 'cells per group');
+    one(wide, 'dendrogram groups');
+
+    const narrow = D.buildFigure({ ...model, pixels: { width: 340, height: 600 } }, LIGHT);
+    assert.ok(narrow.hidden.length >= 1, 'something gave way');
+    assert.deepEqual(narrow.hidden, ['totals', 'dendrogram', 'legend'].slice(0, narrow.hidden.length), 'in that order');
+    assert.equal(named(narrow, 'cells per group').length, 0, 'the totals are the first to go');
+    if (narrow.hidden.includes('dendrogram')) assert.equal(named(narrow, 'dendrogram groups').length, 0);
+    // the matrix keeps its minimum, unless everything that could give way already has
+    assert.ok(columnPx(narrow, 340) >= 10 - 1e-6 || narrow.hidden.length === 3, `${columnPx(narrow, 340).toFixed(1)} px a column`);
+    // each dropped part has its sentence for the strip
+    for (const part of narrow.hidden) assert.ok(W.narrow[part], part);
+    assert.equal(W.narrow.totals, 'Totals hidden at this width.');
 });
 
 // ================================================================================================ CXG-18 placeholders
