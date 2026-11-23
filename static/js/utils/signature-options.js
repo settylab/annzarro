@@ -20,8 +20,8 @@
  */
 
 import {
-    andList, cleanThreshold, cleanWhole, createOptionsModel, figure, kindWord, parseClipText, parseSeedText, parseThresholdText,
-    parseWholeText, useText
+    legacyPair, andList, cleanThreshold, cleanWhole, createOptionsModel, figure, kindWord, parseClipText, parseSeedText, parseThresholdText,
+    parseWholeText, useText, withoutLegacy
 } from './options-model.js';
 
 // The pure parts every method table shares live in options-model.js; this file is the gene signature's method table,
@@ -286,6 +286,26 @@ export function normalizeOptions(raw) {
     };
 }
 
+/**
+ * The option fields a config STORES since decision 31: `normalizeOptions` minus the retired `offered` and `layers`, which
+ * are only read to find the old default pair (`method` the first offered, `input` the stored input, else the first
+ * layer) and never written back. A link made before keeps drawing what it drew.
+ * @param {Object} [raw]
+ */
+export function writableOptions(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const pair = legacyPair(MODEL, src);
+    return { ...withoutLegacy(normalizeOptions({ ...src, input: pair.layer, offered: [pair.method], layers: undefined })),
+        input: pair.layer, method: pair.method };
+}
+
+/** Whether the PARAMETERS are the defaults (a gene table then stores nothing); the retired offered/layers are not compared. */
+export function isDefaultParams(options) {
+    const a = writableOptions(options);
+    const b = writableOptions({});
+    return ['clip', 'seed', 'bins', 'controls', 'detect_above'].every(key => JSON.stringify(a[key]) === JSON.stringify(b[key]));
+}
+
 /** The option fields as a config stores them: a plain copy. */
 export function storedOptions(options) {
     const o = normalizeOptions(options);
@@ -329,6 +349,8 @@ const MODEL = createOptionsModel({
 });
 
 export const SIGNATURE_MODEL = MODEL;
+/** Decision 31: every method on `layer` (all six), every impossible one disabled with its reason. See options-model.js. */
+export const { methodChoices: scoreMethodChoices, layerChoices: scoreLayerChoices, pairAfter: scorePairAfter } = MODEL;
 export const {
     methodInfo, methodLabel, methodShort, isMethodDefault, cleanOffered, cleanLayers, offeredMethods, offeredLayers, isOffered,
     gradedOptions, offeredOptions, methodLines, layerLines, offeredSummary, offeredSummaryShort, paramsOf

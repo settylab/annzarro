@@ -237,6 +237,11 @@ const GeneSignaturePanel = (function() {
             return _scoreOptions ? _scoreOptions.getOfferedOptions() : offeredOptions(_recipe);
         }
 
+        /** What the layers look like and what was sampled of them: scoreChoices grades each method on each layer by it. */
+        function getGrading() {
+            return _scoreOptions ? _scoreOptions.getGrading() : {};
+        }
+
         function getId() { return _id; }
         function getTitle() { return _title; }
         function setTitle(title) { _title = title; sourceRenamed(_id); }
@@ -1124,6 +1129,7 @@ const GeneSignaturePanel = (function() {
             // for the steps after this one
             getRecipe,
             getOfferedOptions,
+            getGrading,
             /** What the default score depends on, as text: equal recipes give equal text (the tests compare it across a link). */
             getRecipeHash: () => recipeHash(_recipe),
             revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
