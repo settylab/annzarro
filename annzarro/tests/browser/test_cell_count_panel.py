@@ -459,3 +459,17 @@ def test_an_unticked_level_keeps_its_name_in_the_checklist(page, served):
     after = page.eval_on_selector_all(f"{S} .ccnt-level__label", "els => els.map(e => e.textContent)")
     assert set(names) <= set(after), (names, after)
     assert not [t for t in after if t.startswith(("c:", "g:"))], after
+
+
+def test_the_binning_control_shows_no_empty_preview_when_the_reply_has_no_histogram(page, served):
+    """A count plot's reply carries no histogram: the control must not leave a blank grey field under the range help."""
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    _open(page, served, {CC: _count(mode="histogram", x=depth)})
+    _drawn(page, "histogram")
+    page.click(f"{S} [data-row='x'] .ccnt-bins")
+    page.wait_for_selector(f"{S} .ccnt-binning .pbc")
+    shot = os.environ.get("FB1B_SHOT")
+    if shot:
+        page.locator(f"{S} .ccnt-binning .pbc").screenshot(path=shot)
+    empty = page.evaluate("(s) => [...document.querySelectorAll(s + ' .ccnt-binning .pbc-hist.is-empty')].filter(e => e.offsetHeight > 0).length", S)
+    assert empty == 0, "an empty preview is drawn as a grey field"
