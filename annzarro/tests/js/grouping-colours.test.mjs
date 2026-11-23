@@ -15,7 +15,6 @@ const { generateDiscreteColors, groupColours } = await import('../../../static/j
 
 const obs = (key, extra = {}) => ({ source: { type: 'obs', key }, ...extra });
 const g = (...key) => ({ key, n: 20 });
-const keyId = (key) => JSON.stringify(key);
 
 // --- one factor ---------------------------------------------------------------------------------------------------------
 
@@ -124,13 +123,29 @@ test('"colour groups by factor k" gives each group the colour of its level of fa
     assert.deepEqual(groupingColours({ ...recipe, colors: { by: 7 } }, reply).groups, groupColours(4), 'a factor that is not there: own palette');
 });
 
-test('a grouping palette names the colours of the groups; group overrides win over everything', async () => {
+test('a grouping palette names the colours of the groups; a group\'s own colour, by its generated name, wins over everything', async () => {
     const { groupingColours } = await resolver();
     const { recipe, reply } = two();
     const named = groupingColours({ ...recipe, colors: { palette: 'Set2' } }, reply);
     assert.deepEqual(named.groups, groupColours(4, 'Set2'));
-    const over = groupingColours({ ...recipe, colors: { by: 1, overrides: { [keyId(['c:B', 'c:trt'])]: '#123456', [keyId(['c:T', 'c:ctl'])]: 'bad!' } } }, reply);
-    assert.deepEqual(over.groups, ['#0000b0', '#123456', '#0000b0', '#b0b000']);
+    const generated = ['B | ctl', 'B | trt', 'T | ctl', 'T | trt'];
+    const coloured = { ...recipe, colors: { by: 1 }, groupOverrides: [{ name: 'B | trt', color: '#123456' }, { name: 'T | ctl', color: 'bad!' },
+        { name: 'T | trt', label: 'renamed, no colour' }] };
+    assert.deepEqual(groupingColours(coloured, reply, generated).groups, ['#0000b0', '#123456', '#0000b0', '#b0b000']);
+    assert.deepEqual(groupingColours(coloured, reply).groups, ['#0000b0', '#b0b000', '#0000b0', '#b0b000'], 'no names given: no group\'s own colour');
+});
+
+test('a group\'s own colour applies while a group has its generated name, and stays stored, inactive, while none does', async () => {
+    const { groupingColours, groupOverrideState } = await resolver();
+    const { recipe, reply } = two();
+    const stored = { ...recipe, groupOverrides: [{ name: 'B | trt', color: '#123456' }, { name: 'Gone | trt', color: '#654321' }] };
+    const now = ['B | ctl', 'B | trt', 'T | ctl', 'T | trt'];
+    assert.equal(groupingColours(stored, reply, now).groups[1], '#123456');
+    assert.deepEqual(groupOverrideState(stored, now), { active: [stored.groupOverrides[0]], inactive: [stored.groupOverrides[1]] });
+    // the level B renamed: its groups have other names now, and the colour applies to none of them
+    const renamed = ['Bee | ctl', 'Bee | trt', 'T | ctl', 'T | trt'];
+    assert.ok(!groupingColours(stored, reply, renamed).groups.includes('#123456'));
+    assert.deepEqual(groupOverrideState(stored, renamed).inactive.map((o) => o.name), ['B | trt', 'Gone | trt']);
 });
 
 test('the collected small group has no colour, past 64 groups the colours repeat by colour group', async () => {
@@ -149,11 +164,17 @@ test('the collected small group has no colour, past 64 groups the colours repeat
 
 test('colors is kept when set, dropped when invalid or at its defaults, so a default recipe stores nothing', () => {
     const raw = { version: 1, partitionings: [obs('x', { colors: { palette: 'Set1', overrides: { 'c:a': '#abcdef', 'c:b': 'bad!' } } })],
-        colors: { by: 0, palette: 'tab10', overrides: { '["c:a"]': '#123456' } } };
-    const { recipe } = normalizeGrouping(raw);
+        colors: { by: 0, palette: 'tab10' },
+        groupOverrides: [{ name: 'a', color: '#123456' }, { name: 'b', label: 'Bee' }, { name: 'c', color: 'bad!' }, { name: '' }, 'x',
+            { name: 'a', color: '#654321', future: 1 }] };
+    const { recipe, problems } = normalizeGrouping(raw);
     assert.deepEqual(recipe.partitionings[0].colors, { palette: 'Set1', overrides: { 'c:a': '#abcdef' } });
-    assert.deepEqual(recipe.colors, { by: 0, palette: 'tab10', overrides: { '["c:a"]': '#123456' } });
-    const bare = normalizeGrouping({ version: 1, partitionings: [obs('x', { colors: {} })], colors: { by: 'own', palette: '', overrides: {} } }).recipe;
+    assert.deepEqual(recipe.colors, { by: 0, palette: 'tab10' });
+    assert.deepEqual(recipe.groupOverrides, [{ name: 'b', label: 'Bee' }, { name: 'a', color: '#654321', future: 1 }],
+        'one entry per name, the last wins; an entry with only its name goes; unknown fields kept');
+    assert.ok(problems.some((p) => p.reason === 'bad_group_overrides'));
+    assert.equal(normalizeGrouping({ version: 1, partitionings: [obs('x')], groupOverrides: [] }).recipe.groupOverrides, undefined);
+    const bare = normalizeGrouping({ version: 1, partitionings: [obs('x', { colors: {} })], colors: { by: 'own', palette: '' } }).recipe;
     assert.equal('colors' in bare, false);
     assert.equal('colors' in bare.partitionings[0], false);
     assert.equal(normalizePartitioning(obs('x', { colors: { overrides: { 'c:a': 'bad!' } } })).partitioning.colors, undefined);
@@ -163,7 +184,7 @@ test('colors is kept when set, dropped when invalid or at its defaults, so a def
 test('a colour change never changes the hash a result is cached under', () => {
     const plain = normalizeGrouping({ version: 1, partitionings: [obs('x'), obs('y')] }).recipe;
     const coloured = normalizeGrouping({ version: 1, partitionings: [obs('x', { colors: { palette: 'Set1' } }), obs('y')],
-        colors: { by: 1, overrides: { '["c:a","c:b"]': '#123456' } } }).recipe;
+        colors: { by: 1 }, groupOverrides: [{ name: 'a | b', color: '#123456' }] }).recipe;
     assert.equal(groupingHasher(coloured)(coloured), groupingHasher(plain)(plain));
 });
 

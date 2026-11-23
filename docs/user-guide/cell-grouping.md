@@ -174,11 +174,14 @@ palette in group order, repeating by the 64 colour groups. Under **Settings** â–
 **Own palette** (the default) or one of the factors, so that every group takes the colour of its level of that factor;
 **Palette** changes the own palette; and **Reset group colors (n)** removes the n colours you set by hand. Click a
 group's swatch in the group list, or press **Enter** or **Space** on a focused row, to give that group a colour of its
-own; it wins over everything else. A Count Plot's level palette (under its **Color** button) and a Cell Plot's own
-palette select still recolour that plot alone.
+own; it wins over everything else. That colour is kept under the group's generated name (its level labels joined by
+the separator), not its place in the list: when another dataset, another factor or moved bins leave no group of that
+name, the colour applies to no group and is kept, and it applies again as soon as a group of that name is back. A Count
+Plot's level palette (under its **Color** button) and a Cell Plot's own palette select still recolour that plot alone.
 
-The settings are stored in the recipe (`colors`, only what is not at its default), so a link or a panel set carries them
-and a link made before colours existed opens unchanged. They are no part of what is computed.
+The settings are stored in the recipe (`colors` for palettes, `groupOverrides` for single groups, only what is not at
+its default), so a link or a panel set carries them and a link made before colours existed opens unchanged. They are no
+part of what is computed.
 
 ### Cells in no group
 

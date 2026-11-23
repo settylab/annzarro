@@ -74,9 +74,35 @@ function withoutOverrides(holder, all = false) {
     return all ? withColors(holder, { palette: undefined, overrides: undefined, by: undefined }) : withColors(holder, { overrides: undefined });
 }
 
-/** How many colors the user has set by hand on `holder`. */
+/**
+ * A recipe's `groupOverrides` (decision 38) with the color of the group of generated name `name` set (or, with no `css`,
+ * removed); the entry keeps its other fields (a label), and an entry left with nothing but its name goes. Undefined when
+ * none is left.
+ */
+export function withGroupColor(recipe, name, css) {
+    const list = Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : [];
+    const at = list.findIndex((o) => o.name === name);
+    const entry = { ...(at >= 0 ? list[at] : { name }) };
+    if (css) entry.color = css; else delete entry.color;
+    const next = list.filter((_, i) => i !== at);
+    if (Object.keys(entry).length > 1) next.splice(at >= 0 ? at : next.length, 0, entry);
+    return next.length ? next : undefined;
+}
+
+/** A recipe's `groupOverrides` with every group's color removed, its labels kept; undefined when none is left. */
+function withoutGroupColors(recipe) {
+    const list = (Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : []).map((o) => {
+        const out = { ...o };
+        delete out.color;
+        return out;
+    }).filter((o) => Object.keys(o).length > 1);
+    return list.length ? list : undefined;
+}
+
+/** How many colors the user has set by hand: on a factor, its level overrides; on a recipe, its groups' colors. */
 const overrideCount = (holder) => (holder.colors && isObject(holder.colors.overrides)
     ? Object.values(holder.colors.overrides).filter(isColourString).length : 0);
+const groupColorCount = (recipe) => (Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides.filter((o) => isColourString(o.color)).length : 0);
 
 function selectOf(el, className, label, options, value) {
     const select = el('select', { class: `form-select form-select-sm ${className}`, aria: { label } });
@@ -117,7 +143,7 @@ export function levelSwatch({ D, id, label, colour, pick }) {
  * The Colors section of Settings: what the groups are colored by (several factors), their palette, and the reset of
  * the colors set by hand. Shown for a grouping of two factors or more; a grouping of one has its factor's colors.
  * @param {{D: Object, id: string, recipe: () => Object, names: () => string[], set: (patch: Object, label: string) => void}} opts
- *   `set` takes `{colors}` for the recipe (undefined when nothing is left)
+ *   `set` takes `{colors}` or `{groupOverrides}` for the recipe (undefined when nothing is left)
  * @returns {{element: HTMLElement, paint: () => void}}
  */
 export function groupColorsSection({ D, id, recipe, names, set }) {
@@ -134,7 +160,7 @@ export function groupColorsSection({ D, id, recipe, names, set }) {
     by.addEventListener('change', () => change({ by: by.value === 'own' ? undefined : Number(by.value) },
         by.value === 'own' ? 'color groups by their own palette' : `color groups by ${by.selectedOptions[0].textContent}`));
     palette.addEventListener('change', () => change({ palette: palette.value }, `group palette ${palette.value || 'default'}`));
-    reset.addEventListener('click', () => set({ colors: withoutOverrides(recipe()).colors }, 'reset group colors'));
+    reset.addEventListener('click', () => set({ groupOverrides: withoutGroupColors(recipe()) }, 'reset group colors'));
 
     function paint() {
         const r = recipe();
@@ -150,7 +176,7 @@ export function groupColorsSection({ D, id, recipe, names, set }) {
         }
         palette.value = (r.colors && r.colors.palette) || '';
         palette.disabled = by.value !== 'own';
-        const n = overrideCount(r);
+        const n = groupColorCount(r);
         reset.textContent = `Reset group colors (${n})`;
         reset.disabled = n === 0;
     }

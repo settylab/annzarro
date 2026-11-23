@@ -264,13 +264,13 @@ def test_color_groups_by_a_factor_a_group_override_and_its_reset(page, served):
     page.keyboard.press("Escape")
     page.fill(f"{A} .cgg-row:has(.cgg-name:text-is('B cell | treated')) .cgg-swatch input[type=color]", "#fedcba")
     until(page, "([s]) => { const gd = document.querySelector(s + ' .js-plotly-plot'); return !!gd && gd.data.some(d => d.name === 'B cell | treated' && d.marker.color === '#fedcba'); }", [C])
-    assert _config(page)["colors"]["overrides"] == {json.dumps(["c:B cell", "c:treated"], separators=(",", ":")): "#fedcba"}
+    assert _config(page)["groupOverrides"] == [{"name": "B cell | treated", "color": "#fedcba"}], "keyed by the generated name (decision 38)"
     page.click(SETTINGS_BUTTON)
     page.wait_for_selector(SETTINGS, state="visible")
     assert page.inner_text(f"{SETTINGS} .cgrp-group-reset") == "Reset group colors (1)"
     page.click(f"{SETTINGS} .cgrp-group-reset")
     until(page, "([s]) => { const gd = document.querySelector(s + ' .js-plotly-plot'); return !!gd && !gd.data.some(d => d.marker && d.marker.color === '#fedcba'); }", [C])
-    assert "overrides" not in _config(page).get("colors", {})
+    assert "groupOverrides" not in _config(page)
 
 
 def test_a_group_color_is_set_from_the_keyboard_and_the_grid_keeps_one_tab_stop(page, served):
@@ -294,9 +294,8 @@ def test_a_group_color_is_set_from_the_keyboard_and_the_grid_keeps_one_tab_stop(
 # ------------------------------------------------------------------ 5. a link
 
 def test_a_link_keeps_the_palettes_and_the_overrides(page, served):
-    key = json.dumps(["c:B cell", "c:ctrl"], separators=(",", ":"))
     cfg = _grouping(partitionings=[{**CELL_TYPE, "colors": {"palette": "Set1", "overrides": {"c:T cell": "#123456"}}}, CONDITION],
-                    colors={"by": 0, "overrides": {key: "#fedcba"}})
+                    colors={"by": 0}, groupOverrides=[{"name": "B cell | ctrl", "color": "#fedcba"}, {"name": "Gone | ctrl", "color": "#010203"}])
     _open(page, served, {P: _plot(color=by(GA)), GA: cfg}, (P, GA))
     _wait_plot(page, GROUP_NAMES)
     plot = _plot_colours(page)
@@ -305,4 +304,6 @@ def test_a_link_keeps_the_palettes_and_the_overrides(page, served):
     assert _rgb(page, [plot["T cell | ctrl"]]) == _rgb(page, ["#123456"]), "the level override"
     got = _config(page)
     assert got["colors"] == cfg["colors"] and got["partitionings"][0]["colors"] == cfg["partitionings"][0]["colors"]
+    assert got["groupOverrides"] == cfg["groupOverrides"], "an override no group has now stays stored"
+    assert _rgb(page, ["#010203"])[0] not in _rgb(page, list(plot.values())), "and applies to none"
     assert N == 1200

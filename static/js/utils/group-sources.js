@@ -32,7 +32,7 @@
  */
 import { createDerivedSources } from './derived-sources.js';
 import { VOCABULARY } from './vocabulary.js';
-import { normalizeGrouping, groupingHasher, groupNames, serverRequest, MAX_NESTING } from './cell-grouping.js';
+import { normalizeGrouping, groupingHasher, groupNames, generatedGroupNames, serverRequest, MAX_NESTING } from './cell-grouping.js';
 import { groupNeed } from './group-store.js';
 import { labelledGroups } from './group-reference.js';
 import { groupLevelId } from './level-id.js';
@@ -408,6 +408,8 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
         const out = { ...structure, partitionings };
         if (live.separator === undefined) delete out.separator; else out.separator = live.separator;
         if (live.colors === undefined) delete out.colors; else out.colors = live.colors;
+        // a group's own colour and name (decision 38) are the recipe's now too: an edit of one asks for nothing
+        if (live.groupOverrides === undefined) delete out.groupOverrides; else out.groupOverrides = live.groupOverrides;
         return out;
     }
 
@@ -455,13 +457,15 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
 
     /**
      * The colours of a reply (utils/grouping-colours.js), as the recipe has them now: `groups` one per group of the reply
-     * (the grey of a group with no colour filled in) and `factors` a Map per factor. Made once per reply and recipe.
+     * (the grey of a group with no colour filled in), `factors` a Map per factor, and `generated` each group's generated
+     * name, which a group's own colour is keyed by (decision 38). Made once per reply and recipe.
      */
     function coloursOf(id, reply) {
         const r = readingOf(id, reply);
         if (!r.colours) {
-            const got = groupingColours(r.recipe, r.reading);
-            r.colours = { factors: got.factors, groups: got.groups.map((c) => c || NO_COLOUR) };
+            const generated = generatedGroupNames(r.recipe, r.reading, host.sourceTitle);
+            const got = groupingColours(r.recipe, r.reading, generated);
+            r.colours = { factors: got.factors, groups: got.groups.map((c) => c || NO_COLOUR), generated };
         }
         return r.colours;
     }
@@ -533,7 +537,7 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
          * and recipe.
          * @param {string} id
          * @param {Object} reply - a snapshot's `values.reply`
-         * @returns {{groups: string[], factors: Map<string, string>[]}}
+         * @returns {{groups: string[], factors: Map<string, string>[], generated: string[]}}
          */
         coloursOf,
 

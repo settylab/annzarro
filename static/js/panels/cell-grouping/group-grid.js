@@ -22,8 +22,7 @@ import { codesRefusal } from '../../utils/cell-group-source.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { cellExportEntry } from './cell-export.js';
 import { sourceName } from '../../utils/cell-grouping.js';
-import { groupId } from '../../utils/grouping-colours.js';
-import { toHex, withOverride } from './colours.js';
+import { toHex, withGroupColor } from './colours.js';
 import { noGroupReasons } from './status.js';
 import { smallOf } from './settings.js';
 import {
@@ -334,7 +333,11 @@ function mount(host, ctx) {
     function pickColor(row, css) {
         const r = shownRows[Number(row.dataset.shownIndex)];
         if (!r || !r.key || typeof ctx.set !== 'function') return;
-        ctx.set({ colors: withOverride(ctx.recipe(), groupId(r.key), css).colors }, `color group ${r.name}`);
+        // keyed by the group's generated name (decision 38): it holds while a group of that name exists
+        const s = ctx.shown();
+        const name = s ? groupSources().sources.coloursOf(ctx.panelId, s.reply).generated[r.index] : undefined;
+        if (typeof name !== 'string') return;
+        ctx.set({ groupOverrides: withGroupColor(ctx.recipe(), name, css) }, `color group ${r.name}`);
     }
 
     /** Open the color picker of a row's group from the keyboard; false when the row's group takes no color (a reason). */

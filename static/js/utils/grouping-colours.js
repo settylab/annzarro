@@ -14,8 +14,8 @@
  * A reserved level (other, small, missing, zero, in, out) has no colour: the consumer draws its theme's grey.
  *
  * A grouping (`groupingColours`), by priority for each group:
- *   1. `recipe.colors.overrides[groupId]`, a valid colour; the id is the canonical JSON of the group's key
- *      (level-id.js `canonKey`), so it is the same text in every link;
+ *   1. the `color` of the `recipe.groupOverrides` entry named as the group's generated name (cell-grouping.js
+ *      `generatedGroupNames`, operator decision 38); an entry whose name no group has now applies to none and stays;
  *   2. a grouping of one factor: that factor's colour of the group's level;
  *   3. `recipe.colors.by` = factor k: the colour of the group's level of factor k;
  *   4. `recipe.colors.palette` (a named palette) or the app's group colours, by the group's place in group order,
@@ -24,7 +24,7 @@
  *
  * Pure, so Node tests cover it.
  */
-import { canonKey, parseLevelId, RESERVED } from './level-id.js';
+import { parseLevelId, RESERVED } from './level-id.js';
 import { isColourString } from './uns-palette.js';
 import { GROUP_COLOURS, groupOf } from './categories.js';
 import { generateDiscreteColors, groupColours } from '../panels/plot-utilities/colors.js';
@@ -92,8 +92,17 @@ export function factorColours(partitioning, info, levels) {
     return out;
 }
 
-/** The text a group's override is stored under: the canonical JSON of its key. */
-export const groupId = (key) => canonKey(key);
+/**
+ * A grouping's own settings of single groups (`groupOverrides`, decision 38), split by whether a group has its name now.
+ * @param {Object} recipe
+ * @param {string[]} generated - the generated name of each group of the reply (cell-grouping.js `generatedGroupNames`)
+ * @returns {{active: Object[], inactive: Object[]}} the entries, in stored order
+ */
+export function groupOverrideState(recipe, generated) {
+    const list = recipe && Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : [];
+    const names = new Set(Array.isArray(generated) ? generated : []);
+    return { active: list.filter((o) => names.has(o.name)), inactive: list.filter((o) => !names.has(o.name)) };
+}
 
 const isCollected = (key) => Array.isArray(key) && key.length === 1 && key[0] === RESERVED.small;
 
@@ -101,23 +110,26 @@ const isCollected = (key) => Array.isArray(key) && key.length === 1 && key[0] ==
  * The colour of each group of a reply, and of each factor's levels.
  * @param {Object} recipe - the grouping's recipe (from normalizeGrouping), the one the reply is of
  * @param {Object} reply - the server's reply: `partitionings[i].{levels, colors}` and `groups[].key`
+ * @param {string[]} [generated] - the generated name of each group (cell-grouping.js `generatedGroupNames`); without it no
+ *   group's own colour applies
  * @returns {{groups: (string|null)[], factors: Map<string, string>[]}} `groups` has one entry per group of the reply,
  *   null for a group with no colour (the collected small group)
  */
-export function groupingColours(recipe, reply) {
+export function groupingColours(recipe, reply, generated) {
     const parts = recipe && Array.isArray(recipe.partitionings) ? recipe.partitionings : [];
     const infos = reply && Array.isArray(reply.partitionings) ? reply.partitionings : [];
     const groups = reply && Array.isArray(reply.groups) ? reply.groups : [];
     const factors = parts.map((p, i) => factorColours(p, infos[i] || {}, infos[i] && infos[i].levels));
     const spec = recipe && isObject(recipe.colors) ? recipe.colors : {};
-    const overrides = isObject(spec.overrides) ? spec.overrides : {};
+    const overrides = new Map((recipe && Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : [])
+        .filter((o) => isObject(o) && valid(o.color)).map((o) => [o.name, o.color]));
     const by = Number.isInteger(spec.by) && spec.by >= 0 && spec.by < parts.length ? spec.by : null;
     const own = named(GROUP_COLOURS, spec.palette) || groupColours(GROUP_COLOURS);
     const of = (factor, key) => (factors[factor] && factors[factor].get(key[factor])) || null;
     return {
         factors,
         groups: groups.map((g, i) => {
-            const mine = overrides[groupId(g.key)];
+            const mine = Array.isArray(generated) ? overrides.get(generated[i]) : undefined;
             if (valid(mine)) return mine;
             if (isCollected(g.key)) return null;
             if (parts.length === 1) return of(0, g.key);
