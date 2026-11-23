@@ -16,7 +16,7 @@ import {
 } from '../../utils/count-plot-model.js';
 import { defaultLabelMaps } from '../../utils/cell-grouping.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
-import { plotlyColorscale } from '../../utils/color-scales.js';
+import { scaleKeys } from './colour.js';
 
 /** The modes this module draws; the others (density, Venn, UpSet) have their own drawing. */
 // export-unused-ok: C2a offers the count modes that draw here
@@ -25,7 +25,6 @@ export const DRAWN_MODES = Object.freeze(['bar', 'histogram', 'hist2d', 'heatmap
 /** How many steps of fade a rectangle's share of its most frequent level is drawn in (CNT-18). */
 const FADE_STEPS = 4;
 const FADE_FROM = 0.3;
-const DEFAULT_COLORSCALE = 'Viridis';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const num = (v) => (Number.isInteger(v) ? v.toLocaleString('en-US') : String(Number(v.toPrecision(4))));
@@ -352,8 +351,7 @@ function rectFigure(config, table, opts) {
     } else {
         const diverging = config.value && config.value.kind === 'measure' && config.measure.stat === 'zscore';
         Object.assign(trace, {
-            colorscale: plotlyColorscale(diverging ? 'RdBu' : opts.options.colorscale || DEFAULT_COLORSCALE), reversescale: diverging,
-            ...(diverging ? { zmid: 0 } : {}),
+            ...scaleKeys(opts.options, 'z', diverging ? { map: 'RdBu', reverse: true, center: 0 } : {}),
             colorbar: { title: { text: esc(spec.title) }, tickformat: spec.percent ? '.0%' : undefined }
         });
     }
@@ -380,6 +378,12 @@ function withAlpha(colour, alpha) {
 /** The opacity of a level's color where its count is highest: below 1, so a level under another still shows. */
 const LAYER_ALPHA = 0.9;
 
+/** The top of the layers' scale: the config's Max where it is set, else the highest count. */
+function layerMax(opts, peak) {
+    const max = opts.options && opts.options.colour ? opts.options.colour.max : undefined;
+    return Number.isFinite(max) && max > 0 ? max : peak || 1;
+}
+
 /**
  * A 2D histogram with a Color by: one layer of rectangles per level, each from transparent to the level's color, the
  * count as the opacity on one scale for every level (0 to the highest count of any level in any rectangle), so a level
@@ -404,7 +408,7 @@ function layerFigure(config, table, opts) {
         type: 'heatmap', x: xs, y: ys, name: esc(labelAt(table.axes[sa].levels[s], sa)), showscale: false, showlegend: false, hoverongaps: false,
         z: yo.map((yl) => xo.map((xl) => (table.count[at(xl, yl, s)] > 0 ? table.count[at(xl, yl, s)] : null))),
         hovertext: yo.map((yl) => xo.map((xl) => hoverOf(config, table, opts, at(xl, yl, s), labelAt))), hoverinfo: 'text',
-        zmin: 0, zmax: peak || 1, colorscale: [[0, withAlpha(colors[s], 0)], [1, withAlpha(colors[s], LAYER_ALPHA)]]
+        zmin: 0, zmax: layerMax(opts, peak), colorscale: [[0, withAlpha(colors[s], 0)], [1, withAlpha(colors[s], LAYER_ALPHA)]]
     }));
     const markers = levels.map((s) => ({
         type: 'scatter', mode: 'markers', x: [null], y: [null], name: esc(labelAt(table.axes[sa].levels[s], sa)), hoverinfo: 'skip',
@@ -483,6 +487,7 @@ export function countFigure(config, table, opts) {
  * @param {Object} table
  * @param {{labels?: Map[], inputNames: Object, headers: {count: string, share: string, measure?: string}, titleOf?: Function}} opts
  */
+// export-unused-ok: the CSV's rows; Node tests read them (Show as table, their other reader, was dropped in WP-6a)
 export function countRows(config, table, opts) {
     return tableRows(config, table, {
         labelOf: labelFn(labelMapsOf(config, table, opts)), inputNames: opts.inputNames, headers: opts.headers, shareBase: valueOf(config).base
