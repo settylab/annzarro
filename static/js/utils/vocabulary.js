@@ -370,8 +370,10 @@ const countPlot = Object.freeze({
     buttons: Object.freeze({
         sort: 'Sort by height', reverse: 'Reverse', horizontal: 'Horizontal', options: 'Plot Options', ring: 'Ring', log: 'Log count axis',
         fade: 'Fade by its share', csv: 'Download CSV', chooseLevels: `Choose ${plural.level}`, undo: 'Undo',
-        adjust: 'Smoothing', bySize: 'Scale curves by level size', image: 'As an image'
+        adjust: 'Smoothing', bySize: 'Scale curves by level size'
     }),
+    /** The layers of a 2D density, each a box of Plot Options. */
+    layers: Object.freeze({ image: 'Density as opacity', lines: 'Isolines', fill: 'Filled isolines' }),
     adjustProblem: 'Enter a number from 0.1 to 10.',
     /** The Color pop-over (WP-6a): the colour map, Reverse, the range and the palette of a Color by's levels. */
     colour: Object.freeze({
