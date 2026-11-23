@@ -1295,7 +1295,12 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             getRecipe,
             addFactor,
             /** Open Statistics offered: where a Cell-Gene Plot's "Offer other…" leads (WP-4). */
-            revealStatisticsOffered: () => { for (const part of _parts) if (part && part.reveal) part.reveal(); },
+            revealStatisticsOffered: () => {
+                if (!_dom) return;
+                // the button is in the toolbar: shown again if Toggle Controls hid it
+                if (_controlsVisible === false) { _controlsVisible = true; showControls(); }
+                for (const part of _parts) if (part && part.reveal) part.reveal();
+            },
             undo,
             _debugState
         };

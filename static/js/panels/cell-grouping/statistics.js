@@ -134,8 +134,8 @@ function mount(host, ctx) {
     paint();
 
     return {
-        /** Open the section and put the cursor on it: where a Cell-Gene Plot's "Offer other…" leads (WP-4). */
-        reveal: () => section.reveal(),
+        /** Open the pop-over: where a Cell-Gene Plot's "Offer other…" leads (WP-4). Its anchor must be shown. */
+        reveal: () => { if (!pop.isOpen()) pop.open(); },
         update() {
             refresh();
             paint();

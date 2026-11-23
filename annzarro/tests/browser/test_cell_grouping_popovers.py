@@ -170,3 +170,17 @@ def test_each_form_is_its_own_popover(page, served):
     _open_editor(page, 1, "[data-popover='binning']")
     page.wait_for_selector("[data-popover='binning'] .pbc", timeout=10000)
     assert page.locator("[data-popover='binning'][role='dialog']").count() == 1
+
+
+def test_reveal_statistics_offered_opens_the_statistics_popover_even_with_the_controls_hidden(page, served):
+    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE])})
+    _ready(page)
+    page.click(f"{A} .tile-toggle-controls")      # Toggle Controls hides the toolbar
+    until(page, "(s) => document.querySelector(s).getClientRects().length === 0", f"{A} .gsig-scoring__toggle")
+    assert page.locator("[data-popover='statistics']").count() == 0
+    assert page.evaluate("(s) => document.querySelector(s).getClientRects().length", f"{A} .gsig-scoring__toggle") == 0, "the toolbar is hidden"
+    page.evaluate("(id) => window.PanelManager.getPanel(id).revealStatisticsOffered()", GA)
+    page.wait_for_selector("[data-popover='statistics'] .gsig-scoring__body", timeout=10000)
+    assert page.get_attribute(f"{A} .gsig-scoring__toggle", "aria-expanded") == "true"
+    page.keyboard.press("Escape")
+    page.wait_for_selector("[data-popover='statistics']", state="detached", timeout=5000)
