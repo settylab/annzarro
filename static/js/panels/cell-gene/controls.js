@@ -166,18 +166,31 @@ function measureRow(D, which, label, on) {
         const t = m.threshold;
         above.hidden = t === null;
         aboveWord.hidden = t === null;
-        if (t !== null && document.activeElement !== above) above.value = String(t);
+        // on a grouping axis the box overrides the grouping's Expressed above (decision 35): empty while it follows it,
+        // and "auto (grouping: 1)" says the value in force
+        const g = m.grouping;
+        above.classList.toggle('cgene-measure__above--grouping', !!g);
+        above.placeholder = g ? CG.sources.thresholdAuto(g.value) : '';
+        above.title = !g ? CG.sources.thresholdHelp
+            : m.own === null ? CG.sources.thresholdFollows(g.title, g.value) : CG.sources.thresholdOverrides(g.title, g.value);
+        if (t !== null && document.activeElement !== above) above.value = g && m.own === null ? '' : String(t);
     }
     return { element, paint };
 }
 
-/** What a measure shows (the panel's model of it): `threshold` null when the statistic uses none. */
-export function measureModel({ spec, datasetLayers, kinds, threshold }) {
+/**
+ * What a measure shows (the panel's model of it): `threshold` (the one in force) null when the statistic uses none;
+ * `own` the measure's stored threshold or null; `grouping` `{title, value}` of the axis grouping, whose Expressed above a
+ * measure with no threshold of its own follows (decision 35), or null on an obs axis.
+ */
+export function measureModel({ spec, datasetLayers, kinds, threshold, grouping = null }) {
+    const own = typeof spec.detect_above === 'number' && Number.isFinite(spec.detect_above) ? spec.detect_above : null;
     return {
         stat: spec.stat, layer: spec.layer,
         stats: statisticList({ kinds, held: spec }),
         layers: layerList({ datasetLayers, kinds, stat: spec.stat, held: spec }),
-        threshold: spec.stat !== ALWAYS_OFFERED && needsThreshold(spec.stat) ? threshold : null
+        threshold: spec.stat !== ALWAYS_OFFERED && needsThreshold(spec.stat) ? threshold : null,
+        own, grouping
     };
 }
 
