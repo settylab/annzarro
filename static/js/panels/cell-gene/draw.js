@@ -252,6 +252,9 @@ function describer(model, P, dots) {
 
 /** Where the legend column starts, in paper units: LEGEND_X, or further left in a narrow figure (LEGEND_MIN_PX). */
 function legendX(model, keepMin = true) {
+    // the space Plot Options sets for the legend column (WP-5a, model.legendLayout: plot-style.js cellGeneLegend)
+    const space = model.legendLayout && model.legendLayout.space;
+    if (space > 0) return Math.max(0.4, Math.min(0.95, 1 - space));
     if (!keepMin || !model.pixels || !(model.pixels.width > 0)) return LEGEND_X;
     return Math.min(LEGEND_X, 1 - LEGEND_MIN_PX / Math.max(model.pixels.width - 20, 1));
 }
@@ -442,23 +445,32 @@ function stripLegendParts(model, strip, entry, n, th) {
     const fitted = fitTitle([strip.title], entry.chars);
     const titleRoom = titleRoomOf(model, entry, fitted);
     const fit = Math.max(1, Math.floor(((entry.height - titleRoom) * plotPx) / LEGEND_LINE_PX));
+    // Plot Options' columns and cap (WP-5a, model.legendLayout): the levels fill the columns top to bottom, at most
+    // `max` of them, and the last line says how many more there are
+    const { columns = 1, max = Infinity } = model.legendLayout || {};
     const all = strip.legend;
-    const shown = all.length <= fit ? all : all.slice(0, fit - 1);
+    const room = fit * columns;
+    const keep = Math.min(all.length, max);
+    const shown = keep === all.length && keep <= room ? all : all.slice(0, Math.min(keep, room - 1));
     const more = all.length - shown.length;
     const lines = shown.length + (more ? 1 : 0);
+    const perColumn = Math.max(1, Math.ceil(lines / columns));
+    const step = 6.6 / columns;
+    const chars = Number.isFinite(entry.chars) && columns > 1 ? Math.max(3, Math.floor(entry.chars / columns) - 3) : Infinity;
+    const cut = (label) => (label.length > chars ? `${label.slice(0, chars - 1)}…` : label);
     const axisId = n + 2;
     const trace = {
         type: 'scatter', mode: 'markers+text', name: 'strip legend', hoverinfo: 'skip', showlegend: false,
         xaxis: `x${axisId}`, yaxis: `y${axisId}`,
-        x: Array.from({ length: lines }, () => 0), y: Array.from({ length: lines }, (_, j) => j),
-        text: [...shown.map((e) => esc(e.label)), ...(more ? [esc(W.options.more(more))] : [])], textposition: 'middle right', cliponaxis: false,
+        x: Array.from({ length: lines }, (_, j) => Math.floor(j / perColumn) * step), y: Array.from({ length: lines }, (_, j) => j % perColumn),
+        text: [...shown.map((e) => esc(cut(String(e.label)))), ...(more ? [esc(W.options.more(more))] : [])], textposition: 'middle right', cliponaxis: false,
         marker: { symbol: 'square', size: 10, color: [...shown.map((e) => e.colour), ...(more ? ['rgba(0,0,0,0)'] : [])], line: { width: 0 } },
         textfont: { color: th.textColor }
     };
     const top = entry.top - titleRoom;
     const axes = {
         [`xaxis${axisId}`]: { domain: [entry.x + 0.01, 1], range: [-0.6, 6], visible: false, fixedrange: true },
-        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, top], range: [Math.max(lines, fit) - 0.5, -0.5], visible: false, fixedrange: true }
+        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, top], range: [Math.max(perColumn, fit) - 0.5, -0.5], visible: false, fixedrange: true }
     };
     const title = {
         name: 'strip legend title', xref: 'paper', yref: 'paper', x: entry.x, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,

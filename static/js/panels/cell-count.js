@@ -57,6 +57,10 @@ import { tableView, tableElement } from './cell-count/table-view.js';
 import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
 import { parseAlsoListed } from '../utils/source-registry.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
+import { resolveStyle } from './plot-utilities/options-schema.js';
+import { applyPlotStyle, styleTheme } from './plot-utilities/plot-style.js';
+import { mountPlotOptions } from './plot-utilities/options-popover.js';
+import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { groupColours } from './plot-utilities/colors.js';
 import { drawPlot } from '../utils/panel-surface.js';
@@ -185,6 +189,8 @@ actions.register({
         let D = null;
         let _controls = null;
         let _sets = null;
+        /** The shared Plot Options pop-over (WP-5a). */
+        let _options = null;
         let _handle = null;
         let _snap = null;
         let _visible = true;
@@ -384,6 +390,8 @@ actions.register({
             if (_controls) _controls.destroy();
             if (_sets) _sets.destroy();
             _sets = null;
+            if (_options) _options.destroy();
+            _options = null;
             if (_dom && window.Plotly && _dom.plot) window.Plotly.purge(_dom.plot);
             _controls = null;
             _initialized = false;
@@ -580,6 +588,16 @@ actions.register({
             const tableBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-table-btn', aria: { expanded: 'false' },
                 on: { click: () => { _tableShown = !_tableShown; paintTable(); } } }, VOCABULARY.table.show);
             _controls.optionsElement.append(saveBtn, tableBtn);
+            // Plot Options: the shared pop-over (WP-5a); the panel's own controls are its Count Plot section
+            _options = mountPlotOptions({
+                anchor: _controls.optionsButton, kind: TYPE, panelId: _id, config: () => _config,
+                commit, replace: (next) => { _config = normalizeCountPlot(next).config; changed(); },
+                sections: { 'panel:count': { title: 'Count plot', element: _controls.optionsElement } },
+                exportImage: (format, settings) => { if (_dom && _drawing) exportPlot(_dom.plot, format, settings, 'full'); },
+                plotSize: () => (_dom ? { width: _dom.plot.clientWidth, height: _dom.plot.clientHeight } : {}),
+                csv: downloadCsv, canExport: () => !!_drawing,
+                classes: { csv: 'ccnt-csv' }
+            });
             root.append(_controls.element, plotArea, strip, table);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
@@ -633,6 +651,7 @@ actions.register({
                 _controls.paint();
                 if (_sets) _sets.paint();
             }
+            if (_options) _options.update();
         }
 
         /** The plot, made again only when the table, the config or the theme changed: never per progress frame. */
@@ -662,13 +681,16 @@ actions.register({
             const labels = shownLabels(config, table, live, sourceTitleOf);
             const levels = table.axes.filter((a) => a.input === 'split' || (config.mode === 'pie' && a.input === 'x')).map((a) => a.levels.length);
             const n = (table.top ? table.top.levels.length : 0) + levels.reduce((p, k) => p + k, 0);
+            // the shared Plot Options (WP-5a): the font and colours the builders colour their parts with, then the rest
+            const look = resolveStyle(live, TYPE);
             const opts = {
-                options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(Math.max(1, n)), theme: PLOT_PALETTES[theme],
+                options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(Math.max(1, n)), theme: styleTheme(look, PLOT_PALETTES[theme]),
                 measureSource: config.measure ? measureSourceName(config.measure.source, sourceTitleOf) : undefined, titleOf: sourceTitleOf, panelId: _id
             };
             const part = PARTS.draw[config.mode];
             const fig = part ? part.figure(config, table, opts)
                 : DENSITY_MODES.includes(config.mode) ? densityFigure(config, table, opts) : countFigure(config, table, opts);
+            applyPlotStyle(fig, look, TYPE);
             // a density's sentences (UX 4.4): the bandwidth and the floor in Plot Options, the range in the strip
             _notes = fig.notes || null;
             const serial = ++_drawSerial;

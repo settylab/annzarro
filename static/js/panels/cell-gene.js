@@ -66,6 +66,8 @@ import { roundCamera } from '../utils/view-rounding.js';
 import { recordCameraOnRelease } from '../utils/scene-camera.js';
 import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
+import { resolveStyle } from './plot-utilities/options-schema.js';
+import { applyPlotStyle, styleTheme, cellGeneLegend } from './plot-utilities/plot-style.js';
 import { drawPlot, fitToContainer } from '../utils/panel-surface.js';
 import { Coverage } from '../utils/coverage.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
@@ -839,7 +841,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 title: () => _title,
                 // the matrix drawn, for the 3D cap; the image export of Plot Options
                 shape: () => (_shown ? { rows: _shown.rows, groups: _shown.groups } : null),
-                exportImage: (format) => { if (_dom && _shown) exportPlot(_dom.plot, format, {}, 'full'); }
+                exportImage: (format, settings = {}) => { if (_dom && _shown) exportPlot(_dom.plot, format, settings, 'full'); },
+                // the shared Plot Options (WP-5a): a whole configuration as one undoable step, or (the session default
+                // followed) without one; the plot's size on screen, for an export of the size shown
+                commit: (next, label) => commit(next, label),
+                replace: (next) => { _config = normalizeCellGene(next).config; changed(); },
+                plotSize: () => (_dom ? { width: _dom.plot.clientWidth, height: _dom.plot.clientHeight } : {}),
+                plot: () => (_dom ? _dom.plot : null)
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
             // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
@@ -1223,6 +1231,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const names = groupSources().sources.namesOf(axisId(), reply);
             const permute = (arr) => (arr ? reorder(arr, order.rows, order.groups, G) : arr);
             const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf });
+            const look = resolveStyle(_config, TYPE);
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
                 const prev = k > 0 ? matrix.rows[order.rows[k - 1]] : null;
@@ -1245,6 +1254,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
                 legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline,
+                // the shared Plot Options' legend column: space, columns, cap (WP-5a)
+                legendLayout: cellGeneLegend(look),
                 pendingText: pending ? pendingText(plan, pending) : ''
             };
             // 3D (UX 6b): within the bar cap; above it the plot is drawn in 2D and the strip says why
@@ -1254,7 +1265,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 model.height = matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) };
                 if (_config.camera) model.camera = _config.camera;
             }
-            const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });
+            // the shared Plot Options (WP-5a): the font and colours the builder measures with, then the rest of the look
+            const figure = applyPlotStyle(buildFigure(model, styleTheme(look, PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'])), look, TYPE);
             if (gate3d && !gate3d.ok) figure.refused3d = gate3d.text;
             if (model.view === '3d' && window.Plotly && window.Plotly.Icons) {
                 figure.config.modeBarButtonsToAdd = [{ name: 'resetCameraCellGene', title: W3.resetCamera, icon: window.Plotly.Icons.home, click: (gd) => resetCamera(gd) }];

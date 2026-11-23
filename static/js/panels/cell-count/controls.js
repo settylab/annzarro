@@ -477,8 +477,9 @@ export function createControls({ D, id, model, on }) {
     const sortBtn = pressed('ccnt-sort', C.buttons.sort, 'sort', 'height');
     const reverseBtn = pressed('ccnt-reverse', C.buttons.reverse, 'reverse', true);
     const horizontalBtn = pressed('ccnt-horizontal', C.buttons.horizontal, 'horizontal', true);
-    const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-options-btn', aria: { expanded: 'false', controls: `ccnt-options-${id}` },
-        on: { click: () => { open.options = !open.options; paint(); } } }, C.buttons.options);
+    // Plot Options: the shared pop-over (WP-5a, plot-utilities/options-popover.js) the panel mounts on this button; the
+    // box below is its Count Plot section
+    const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-options-btn' }, C.buttons.options);
     const logBox = el('input', { type: 'checkbox', class: 'ccnt-log',
         on: { change: () => { const next = { ...model().config }; if (logBox.checked) next.log = true; else delete next.log; commit(next, logBox.checked ? 'log count axis' : 'linear count axis'); } } });
     const ringBox = el('input', { type: 'checkbox', class: 'ccnt-ring',
@@ -509,9 +510,8 @@ export function createControls({ D, id, model, on }) {
     const bySize = toggleField('ccnt-bysize', 'scale', 'size', C.buttons.bySize);
     const image = toggleField('ccnt-image', 'style', 'image', C.buttons.image);
     const densityNotes = el('div', { class: 'ccnt-help ccnt-density-notes' });
-    const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-csv', on: { click: () => on.csv() } }, C.buttons.csv);
-    const optionsBox = el('div', { class: 'ccnt-options', id: `ccnt-options-${id}`, role: 'group', aria: { label: C.buttons.options }, hidden: true },
-        logWrap, ringWrap, adjustWrap, bySize.wrap, image.wrap, csvBtn, densityNotes);
+    const optionsBox = el('div', { class: 'ccnt-options', id: `ccnt-options-${id}`, role: 'group', aria: { label: C.buttons.options } },
+        logWrap, ringWrap, adjustWrap, bySize.wrap, image.wrap, densityNotes);
     const labelsRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--labels' },
         el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, optionsBtn);
 
@@ -526,8 +526,6 @@ export function createControls({ D, id, model, on }) {
         show(sortBtn, shownRows.sort, o.sort === 'height');
         show(reverseBtn, shownRows.reverse, o.reverse);
         show(horizontalBtn, shownRows.horizontal, o.horizontal);
-        optionsBtn.setAttribute('aria-expanded', String(open.options));
-        optionsBox.hidden = !open.options;
         logWrap.hidden = !shownRows.log;
         logBox.checked = o.log;
         ringWrap.hidden = !shownRows.ring;
@@ -540,7 +538,6 @@ export function createControls({ D, id, model, on }) {
         image.box.checked = o.style === 'image';
         densityNotes.textContent = shownRows.density && m.notes ? [m.notes.bandwidth, m.notes.floor].filter(Boolean).join(' ') : '';
         densityNotes.hidden = !densityNotes.textContent;
-        csvBtn.disabled = !m.canExport;
     }
 
     // ---------------------------------------------------------------- the bar
@@ -552,7 +549,7 @@ export function createControls({ D, id, model, on }) {
     const kept = el('div', { class: 'ccnt-kept', role: 'note' });
     const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-undo', disabled: true, on: { click: () => on.undo() } }, C.buttons.undo);
     const element = el('div', { class: 'ccnt-controls', 'data-panel-controls': '' },
-        modeRow, xRow.wrap, yRow.wrap, splitRow.wrap, setsSlot, valueRow, measureRow.element, factorRow.element, labelsRow, optionsBox, kept,
+        modeRow, xRow.wrap, yRow.wrap, splitRow.wrap, setsSlot, valueRow, measureRow.element, factorRow.element, labelsRow, kept,
         el('div', { class: 'ccnt-controls__foot' }, undoBtn));
 
     function commit(next, label) {
@@ -591,8 +588,10 @@ export function createControls({ D, id, model, on }) {
         element,
         /** Where the sets of Venn and UpSet are drawn (V1). */
         setsElement: setsSlot,
-        /** Plot Options' box, where the panel adds Save as grouping and Show as table (C2b). */
+        /** Plot Options' Count Plot section, where the panel adds Save as grouping and Show as table (C2b). */
         optionsElement: optionsBox,
+        /** The Plot Options button: the panel mounts the shared pop-over on it (WP-5a). */
+        optionsButton: optionsBtn,
         paint,
         /**
          * Open an input's Choose levels or binning control in place and focus it: the way out of a refusal (UX 4.3).

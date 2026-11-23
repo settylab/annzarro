@@ -36,6 +36,8 @@ import { MAX_ROWS } from '../../utils/hclust.js';
 import { longCsv } from '../../utils/cell-gene-model.js';
 import { generateDiscreteColors } from '../plot-utilities/colors.js';
 import { createPopover } from '../../ui/popover.js';
+import { registerPanelFields } from '../plot-utilities/options-schema.js';
+import { mountPlotOptions } from '../plot-utilities/options-popover.js';
 import { dendrogramBlocks } from './draw-annotations.js';
 import { BARS_3D_MAX, checkBarCap } from '../../utils/bars-3d.js';
 
@@ -155,6 +157,32 @@ function scalingNotes(config) {
     if (!scale || scale === 'none') return [];
     return scale === 'z_pooled' ? [WO.scalingNote, WO.pooledNote] : [WO.scalingNote];
 }
+
+// ================================================================================================ Plot Options' fields
+
+const dotsMode = (config) => !config || config.mode !== 'heatmap';
+
+/**
+ * The Cell-Gene Plot's own fields of the shared Plot Options (WP-5a, plot-utilities/options-schema.js), at the keys
+ * they always had: the dots' outline, the sections' gap and titles, the gene and group labels (in Axes), the legends'
+ * switches and titles (in Legend), the totals (Annotations). The plot title is the common Text section's (`titles.plot`).
+ */
+export const PLOT_OPTION_FIELDS = Object.freeze([
+    { id: 'outlineColor', section: 'panel:dots', type: 'color', path: 'outline.color', label: WO.outlineColor, dflt: DEFAULT_OUTLINE.color, when: dotsMode },
+    { id: 'outlineWidth', section: 'panel:dots', type: 'number', path: 'outline.width', label: WO.outlineWidth, dflt: DEFAULT_OUTLINE.width,
+        min: 0, max: OUTLINE_MAX, step: 0.25, when: dotsMode },
+    { id: 'gap', section: 'panel:sections', type: 'number', path: 'gap', label: `${WO.gap} (${WO.gapUnit})`, dflt: DEFAULT_GAP, min: 0, max: GAP_MAX, step: 1 },
+    { id: 'sectionTitles', section: 'panel:sections', type: 'check', path: 'sectionTitles', label: WO.sectionTitles, dflt: true },
+    { id: 'geneLabels', section: 'axes', type: 'check', path: 'labels.genes', label: WO.geneLabels, dflt: true },
+    { id: 'groupLabels', section: 'axes', type: 'check', path: 'labels.groups', label: WO.groupLabels, dflt: true },
+    { id: 'colorBar', section: 'legend', type: 'check', path: 'legend.colorBar', label: WO.colorBar, dflt: true },
+    { id: 'sizeLegend', section: 'legend', type: 'check', path: 'legend.sizeLegend', label: WO.sizeLegend, dflt: true, when: dotsMode },
+    { id: 'strips', section: 'legend', type: 'check', path: 'legend.strips', label: WO.strips, dflt: true },
+    { id: 'colorTitle', section: 'legend', type: 'text', path: 'titles.color', label: WO.colorTitle, dflt: '', copy: false },
+    { id: 'sizeTitle', section: 'legend', type: 'text', path: 'titles.size', label: WO.sizeTitle, dflt: '', copy: false, when: dotsMode },
+    { id: 'totals', section: 'panel:annotations', type: 'check', path: 'totals', label: WO.totals, dflt: false }
+]);
+registerPanelFields('cell-gene', PLOT_OPTION_FIELDS);
 
 // ================================================================================================ strips and trees
 
@@ -325,9 +353,6 @@ function clusterNotes(drawn) {
 /** A file name from the plot's title. */
 const fileName = (title) => `${String(title || 'cell-gene').replace(/[^\w.-]+/g, '_') || 'cell-gene'}.csv`;
 
-/** The image formats of Plot Options' Export. */
-const IMAGE_FORMATS = Object.freeze(['png', 'jpeg', 'webp', 'svg']);
-
 /** The fields Color ▾'s Reset clears: the map, its direction and range, and the dots' sizes. */
 const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center', 'printValues', 'dotSizes', 'dotMin', 'dotMax']);
 
@@ -348,7 +373,6 @@ function mount(slot, ctx) {
     let wardAfter = null;          // the configuration Ward's switch made, while its sentence and Undo show
 
     const config = () => ctx.config();
-    const stored = (key) => (isObject(config()[key]) ? config()[key] : {});
     const setCluster = (patch, label) => ctx.set({ cluster: { ...clusterOf(config()), ...patch } }, label);
 
     const controls = {};
@@ -371,14 +395,6 @@ function mount(slot, ctx) {
         controls[name] = input;
         return field(label, input);
     };
-    const words = (name, label, onCommit) => {
-        const input = el('input', { type: 'text', class: 'form-control form-control-sm cgene-title-input', data: { option: name }, aria: { label }, autocomplete: 'off' });
-        const commitIt = () => onCommit(input.value.trim());
-        input.addEventListener('change', commitIt);
-        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitIt(); } });
-        controls[name] = input;
-        return field(label, input);
-    };
     const select = (name, label, entries, onChange) => {
         const s = el('select', { class: 'form-select form-select-sm', data: { option: name }, aria: { label }, on: { change: () => onChange(s.value) } },
             entries.map(([v, t]) => el('option', { value: v, text: t })));
@@ -386,11 +402,6 @@ function mount(slot, ctx) {
         return field(label, s);
     };
     const section = (heading, ...children) => el('fieldset', { class: 'cgene-options__section' }, el('legend', { text: heading }), ...children);
-    const nested = (key, sub, value, dflt, label) => {
-        const next = { ...stored(key) };
-        if (value === dflt) delete next[sub]; else next[sub] = value;
-        ctx.set({ [key]: Object.keys(next).length ? next : undefined }, label);
-    };
     const flat = (key, value, dflt, label) => ctx.set({ [key]: value === dflt ? undefined : value }, label);
     const onOff = (on, label) => `${on ? '' : 'no '}${label.toLowerCase()}`;
     const button = (cls, label) => el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary ${cls}` }, label);
@@ -501,38 +512,8 @@ function mount(slot, ctx) {
         dotSizes,
         el('div', { class: 'cgene-pop__foot' }, resetColor));
 
-    // ---------------------------------------------------------------- Plot Options (UX 3.1; no clustering field since WP-2)
+    // ---------------------------------------------------------------- Plot Options: the shared pop-over (WP-5a)
     const optionsBtn = button('cgene-options-btn', WO.plotOptions);
-    const outlineInput = el('input', { type: 'color', class: 'form-control form-control-sm form-control-color', data: { option: 'outlineColor' }, aria: { label: WO.outlineColor },
-        on: { change: (e) => nested('outline', 'color', e.target.value, DEFAULT_OUTLINE.color, 'dot outline color') } });
-    controls.outlineColor = outlineInput;
-    const dots = section(WO.heading.dots,
-        field(WO.outlineColor, outlineInput),
-        number('outlineWidth', WO.outlineWidth, (v) => nested('outline', 'width', v === null ? DEFAULT_OUTLINE.width : Math.max(0, Math.min(OUTLINE_MAX, v)), DEFAULT_OUTLINE.width, 'dot outline width'),
-            { min: 0, max: OUTLINE_MAX, step: 0.25 }));
-    const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-csv-btn', on: { click: downloadCsv } }, WO.csv);
-    // the plot as an image; SVG of a 3D scene would be a raster picture inside SVG, so it is greyed in 3D (UX 6b)
-    const imageBtns = IMAGE_FORMATS.map((format) => el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-export-btn',
-        data: { format }, on: { click: () => { if (ctx.exportImage) ctx.exportImage(format); } } }, format.toUpperCase()));
-    const optionsBody = el('div', { class: 'cgene-pop cgene-options' },
-        dots,
-        section(WO.heading.sections,
-            number('gap', `${WO.gap} (${WO.gapUnit})`, (v) => flat('gap', v === null ? DEFAULT_GAP : Math.round(Math.max(0, Math.min(GAP_MAX, v))), DEFAULT_GAP, 'gap between sections'),
-                { min: 0, max: GAP_MAX, step: 1 }),
-            check('sectionTitles', WO.sectionTitles, (on) => flat('sectionTitles', on, true, onOff(on, WO.sectionTitles)))),
-        section(WO.heading.labels,
-            check('geneLabels', WO.geneLabels, (on) => nested('labels', 'genes', on, true, onOff(on, WO.geneLabels))),
-            check('groupLabels', WO.groupLabels, (on) => nested('labels', 'groups', on, true, onOff(on, WO.groupLabels))),
-            words('plotTitle', WO.plotTitle, (v) => nested('titles', 'plot', v, '', 'plot title')),
-            words('colorTitle', WO.colorTitle, (v) => nested('titles', 'color', v, '', 'color bar title')),
-            words('sizeTitle', WO.sizeTitle, (v) => nested('titles', 'size', v, '', 'size legend title'))),
-        section(WO.heading.legend,
-            check('colorBar', WO.colorBar, (on) => nested('legend', 'colorBar', on, true, onOff(on, WO.colorBar))),
-            check('sizeLegend', WO.sizeLegend, (on) => nested('legend', 'sizeLegend', on, true, onOff(on, WO.sizeLegend))),
-            check('strips', WO.strips, (on) => nested('legend', 'strips', on, true, onOff(on, WO.strips)))),
-        section(WO.heading.totals,
-            check('totals', WO.totals, (on) => flat('totals', on, false, onOff(on, WO.totals)))),
-        el('fieldset', { class: 'cgene-options__section cgene-export' }, el('legend', { text: WO.exportHeading }), ...imageBtns, csvBtn));
 
     slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn, note);
 
@@ -543,9 +524,19 @@ function mount(slot, ctx) {
     });
     const pops = [
         popover(clusterBtn, 'cluster', WO.popoverTitle.cluster, clusterBody),
-        popover(colorBtn, 'color', WO.popoverTitle.color, colorBody),
-        popover(optionsBtn, 'plot-options', WO.popoverTitle.plotOptions, optionsBody)
+        popover(colorBtn, 'color', WO.popoverTitle.color, colorBody)
     ];
+    // the 3D drawing has no vector image: SVG would be a raster picture inside SVG (UX 6b)
+    const drawn3d = () => { const d = ctx.drawn(); return !!(d && d.model && d.model.view === '3d'); };
+    const options = mountPlotOptions({
+        anchor: optionsBtn, kind: 'cell-gene', panelId: id, config,
+        commit: ctx.commit || ((next, label) => ctx.set(next, label)), replace: ctx.replace || ((next) => ctx.set(next, '')),
+        sections: { 'panel:dots': { title: WO.heading.dots, when: dotsMode }, 'panel:sections': { title: WO.heading.sections },
+            'panel:annotations': { title: WO.heading.totals } },
+        exportImage: ctx.exportImage, plotSize: ctx.plotSize, csv: downloadCsv, canExport: () => !!ctx.drawn(),
+        exportOff: (format) => (format === 'svg' && drawn3d() ? W3.svgOff : ''),
+        classes: { export: 'cgene-export', exportBtn: 'cgene-export-btn', csv: 'cgene-csv-btn' }
+    });
 
     function downloadCsv() {
         const drawn = ctx.drawn();
@@ -609,26 +600,7 @@ function mount(slot, ctx) {
         setValue(controls.dotMax, s.dotMax);
         resetColor.disabled = !COLOR_FIELDS.some((k) => c[k] !== undefined);
 
-        // Plot Options
-        dots.hidden = !dotsMode;
-        controls.outlineColor.value = s.outline.color.length === 4 ? `#${[...s.outline.color.slice(1)].map((h) => h + h).join('')}` : s.outline.color.slice(0, 7);
-        setValue(controls.outlineWidth, s.outline.width);
-        setValue(controls.gap, s.gap);
-        controls.sectionTitles.checked = s.sectionTitles;
-        controls.geneLabels.checked = s.labels.genes;
-        controls.groupLabels.checked = s.labels.groups;
-        setValue(controls.plotTitle, s.titles.plot);
-        setValue(controls.colorTitle, s.titles.color);
-        setValue(controls.sizeTitle, s.titles.size);
-        controls.sizeTitle.closest('label').hidden = !dotsMode;
-        controls.colorBar.checked = s.legend.colorBar;
-        controls.sizeLegend.checked = s.legend.sizeLegend;
-        controls.sizeLegend.closest('label').hidden = !dotsMode;
-        controls.strips.checked = s.legend.strips;
-        controls.totals.checked = s.totals;
-
         const drawn = ctx.drawn();
-        csvBtn.disabled = !drawn;
         note.textContent = clusterNotes(drawn).join(' ');
 
         // 3D: pressed while stored; over the cap it cannot be turned on, and says why (a stored 3D can always be turned off)
@@ -639,12 +611,7 @@ function mount(slot, ctx) {
         view3dBtn.classList.toggle('active', in3d);
         view3dBtn.disabled = !gate.ok && !in3d;
         view3dBtn.title = !gate.ok ? gate.text : in3d ? W3.buttonOnHelp : W3.buttonHelp;
-        const drawn3d = !!(drawn && drawn.model && drawn.model.view === '3d');
-        for (const b of imageBtns) {
-            const svgOff = b.dataset.format === 'svg' && drawn3d;
-            b.disabled = !drawn || svgOff;
-            if (svgOff) b.title = W3.svgOff; else b.removeAttribute('title');
-        }
+        options.update();
     }
 
     paint();
@@ -652,6 +619,7 @@ function mount(slot, ctx) {
         update: paint,
         destroy() {
             for (const pop of pops.splice(0)) pop.destroy();
+            options.destroy();
             slot.textContent = '';
         }
     };
