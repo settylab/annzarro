@@ -1,11 +1,15 @@
 /**
  * The recipe of a cell grouping and what is made of it: the versioned normaliser, the hash a result is cached under,
- * the names and colours of the groups, and the request body (plan 1.6, PER-3, SHR-8 to SHR-12).
+ * the names of the groups, and the request body (plan 1.6, PER-3, SHR-8 to SHR-12).
  *
- * A grouping's recipe is `{version, partitionings, separator?, small?, offered?, layers?, detect_above?}` and a
- * partitioning (a factor; the count plot's inputs are the same shape) is `{source, levels?, rest?, labels?, binning?}`.
- * It is stored without its defaults, with every unknown field kept, so an older build opening a newer link loses
- * nothing. After release 0.8.0 a change to this schema needs a new version and a migration.
+ * A grouping's recipe is `{version, partitionings, separator?, small?, offered?, layers?, detect_above?, colors?}` and a
+ * partitioning (a factor; the count plot's inputs are the same shape) is `{source, levels?, rest?, labels?, binning?,
+ * colors?}`. `colors` is how it is coloured (utils/grouping-colours.js): a factor's is `{palette?: string,
+ * overrides?: {levelId: css}}`, a grouping's `{by?: factor index, palette?: string, overrides?: {groupId: css}}`
+ * (`by` absent: the grouping's own palette). Colours are drawn from the reply and the recipe now, never computed, so
+ * they are no part of the hash. It is stored without its defaults, with every unknown field kept, so an older build
+ * opening a newer link loses nothing, and a recipe from before colours loads unchanged. After release 0.8.0 a change to
+ * this schema needs a new version and a migration.
  *
  * The server's reply is read as `{partitionings: [{levels, edges?, bins_made?, degenerate?, value?, boolean?, names?,
  * colors?}], groups: [{key, n}]}`: for each partitioning the ids of its levels in order (with the bin edges the engine
@@ -17,7 +21,7 @@
 import { VOCABULARY } from './vocabulary.js';
 import { normalizeBinning, effectiveBinning, levelLabels } from './binning.js';
 import { RESERVED, parseLevelId } from './level-id.js';
-import { groupOf } from './categories.js';
+import { isColourString } from './uns-palette.js';
 import { stableStringify } from './url-history.js';
 
 const P = VOCABULARY.phrase;
@@ -34,8 +38,8 @@ const SMALL_MODES = Object.freeze(['keep', 'collect', 'hide']);
 const DEFAULT_SMALL = Object.freeze({ threshold: 10, mode: 'keep' });
 const DEFAULT_SEPARATOR = ' | ';
 const SOURCE_FIELDS = ['type', 'key', 'column', 'layer'];
-const PARTITIONING_FIELDS = ['source', 'levels', 'rest', 'labels', 'binning'];
-const GROUPING_FIELDS = ['version', 'partitionings', 'separator', 'small', 'offered', 'layers', 'detect_above'];
+const PARTITIONING_FIELDS = ['source', 'levels', 'rest', 'labels', 'binning', 'colors'];
+const GROUPING_FIELDS = ['version', 'partitionings', 'separator', 'small', 'offered', 'layers', 'detect_above', 'colors'];
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const unknownFields = (raw, known, into) => {
@@ -43,6 +47,44 @@ const unknownFields = (raw, known, into) => {
     return into;
 };
 const unique = (list) => [...new Set(list)];
+
+/** A map of id to colour, the valid ones; `bad` is called once when one is dropped. */
+function colourMap(raw, bad, field) {
+    if (!isObject(raw)) {
+        bad(field, 'bad_colors');
+        return null;
+    }
+    const kept = Object.fromEntries(Object.entries(raw).filter(([, css]) => isColourString(css)));
+    if (Object.keys(kept).length !== Object.keys(raw).length) bad(field, 'bad_colors');
+    return Object.keys(kept).length ? kept : null;
+}
+
+/**
+ * A `colors` field in its stored form: `{palette?, overrides?}` of a factor, plus `by` for a grouping. Invalid parts are
+ * dropped and reported, a default (`by: 'own'`, an empty palette or map) is not stored, unknown fields are kept; null
+ * when nothing is left.
+ */
+function normalizeColors(raw, bad, field, grouping) {
+    if (!isObject(raw)) {
+        bad(field, 'bad_colors');
+        return null;
+    }
+    const out = {};
+    if (grouping && raw.by !== undefined && raw.by !== 'own') {
+        if (Number.isInteger(raw.by) && raw.by >= 0) out.by = raw.by;
+        else bad(`${field}.by`, 'bad_colors');
+    }
+    if (raw.palette !== undefined && raw.palette !== '') {
+        if (typeof raw.palette === 'string') out.palette = raw.palette;
+        else bad(`${field}.palette`, 'bad_colors');
+    }
+    if (raw.overrides !== undefined) {
+        const overrides = colourMap(raw.overrides, bad, `${field}.overrides`);
+        if (overrides) out.overrides = overrides;
+    }
+    unknownFields(raw, grouping ? ['by', 'palette', 'overrides'] : ['palette', 'overrides'], out);
+    return Object.keys(out).length ? out : null;
+}
 
 /** A source setting `{type, key, column?, layer?}`, or null when it has no type or key. */
 function normalizeSource(raw, problems) {
@@ -102,6 +144,10 @@ export function normalizePartitioning(raw, binning) {
         const bin = normalizeBinning(raw.binning, binning);
         out.binning = bin.binning;
         for (const p of bin.problems) bad(`binning.${p.field}`, p.reason);
+    }
+    if (raw.colors !== undefined) {
+        const colors = normalizeColors(raw.colors, bad, 'colors', false);
+        if (colors) out.colors = colors;
     }
     return { partitioning: unknownFields(raw, PARTITIONING_FIELDS, out), problems };
 }
@@ -191,6 +237,10 @@ export function normalizeGrouping(raw) {
     if (raw.detect_above !== undefined) {
         if (typeof raw.detect_above !== 'number' || !Number.isFinite(raw.detect_above)) bad('detect_above', 'bad_detect_above');
         else if (raw.detect_above !== 0) out.detect_above = raw.detect_above;
+    }
+    if (raw.colors !== undefined) {
+        const colors = normalizeColors(raw.colors, bad, 'colors', true);
+        if (colors) out.colors = colors;
     }
     return { recipe: unknownFields(raw, GROUPING_FIELDS, out), problems };
 }
@@ -344,21 +394,6 @@ export function groupNames(recipe, reply, titleOf) {
         seen.set(name, n);
         return n === 1 ? name : P.suffixed(name, n);
     });
-}
-
-/**
- * The colour of each group (SHR-11): a grouping of one categorical factor takes that column's colours, where the reply
- * has them; any other takes the palette in group order, repeating by the 64 colour groups of a large category list.
- * @param {Object} recipe - from normalizeGrouping
- * @param {Object} reply - the server's reply
- * @param {string[]} palette
- * @returns {string[]} one per group of the reply, in its order
- */
-// export-unused-ok: G8a colours a plot by a grouping
-export function groupColours(recipe, reply, palette) {
-    const one = recipe.partitionings.length === 1 && !recipe.partitionings[0].binning;
-    const own = one && reply.partitionings && reply.partitionings[0] && reply.partitionings[0].colors;
-    return reply.groups.map((g, i) => (own && own[g.key[0]]) || palette[groupOf(i) % palette.length]);
 }
 
 /** @type {WeakMap<Object, Object>} flags -> packed: a table's cells are packed once while the host holds one array for them */

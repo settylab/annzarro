@@ -15,7 +15,7 @@ import { bandwidthOf, smooth1, smooth2 } from '../../utils/kde.js';
 import { levelLabelsOf } from '../../utils/count-plot-model.js';
 import { plotlyColorscale } from '../../utils/color-scales.js';
 import { normalizeHex } from '../../utils/plot-theme.js';
-import { RESERVED } from '../../utils/level-id.js';
+import { tableLevelColour } from '../../utils/grouping-colours.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 
 /** The modes this module draws. */
@@ -54,12 +54,9 @@ function baseLayout(opts, extra) {
     return { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: theme.bgColor, font: { color: theme.textColor }, margin: { l: 60, r: 20, t: 20, b: 50 }, ...extra };
 }
 
-/** The color of level `i` of the split: the level's own, the theme's grey for a reserved level, else the palette's. */
-function colorOf(table, a, i, opts) {
-    const id = table.axes[a].levels[i];
-    if (id === RESERVED.other || id === RESERVED.small) return opts.theme.notInTableColor;
-    const own = table.axes[a].info.colors;
-    return (own && own[id]) || opts.palette[i % opts.palette.length];
+/** The color of level `i` of the split: the factor's (utils/grouping-colours.js), the theme's grey for a level with none. */
+function colorOf(config, table, a, i, opts) {
+    return tableLevelColour(config, table, a, i, opts.theme.notInTableColor);
 }
 
 /** The pre-pass of an axis: what E4 read before binning. */
@@ -100,7 +97,7 @@ const total = (a) => { let m = 0; for (let i = 0; i < a.length; i++) m += a[i]; 
  *   bandwidth adjust (default 1), a split's curves each scaled to 1 (default) or by the size of their level, a 2D density
  *   as filled contours (default) or an image, and the color map of a 2D density without a split
  * @param {Object} opts.inputNames - the title of each input (`x`, `y`, `split`)
- * @param {string[]} opts.palette - colors of a split's levels, repeated past its length
+ * @param {string[]} opts.palette - the color of a plot with no split, its first
  * @param {Object} opts.theme - the plot theme's colors, as the other count figures take them
  * @param {Map[]} [opts.labels] - one Map per table axis, level id to the label shown; defaults to `levelLabelsOf`
  * @param {Function} [opts.titleOf] - the title of the panel behind a source, for the default labels
@@ -150,7 +147,7 @@ export function densityFigure(config, table, opts) {
     });
     const words = WORDS;
     const title = bySize && sa >= 0 ? words.axisBySize : words.axis;
-    const colors = levels.map((s) => (s >= 0 ? colorOf(table, sa, s, opts) : opts.palette[0]));
+    const colors = levels.map((s) => (s >= 0 ? colorOf(config, table, sa, s, opts) : opts.palette[0]));
     const legend = sa >= 0 ? { showlegend: true, legend: { title: { text: esc(opts.inputNames.split) } } } : { showlegend: false };
 
     if (!two) {

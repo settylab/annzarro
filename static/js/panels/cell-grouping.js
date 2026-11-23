@@ -49,6 +49,8 @@ import {
 } from './cell-grouping/factors.js';
 import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/status.js';
 import { GROUP_GRID } from './cell-grouping/group-grid.js';
+import { factorColorsSection, levelSwatch, groupColorsSection, withOverride } from './cell-grouping/colours.js';
+import { factorColours } from '../utils/grouping-colours.js';
 import { mountBinningControl } from './partition-options/binning-control.js';
 import { usedByText } from '../utils/panel-users.js';
 import { STATISTICS_PART } from './cell-grouping/statistics.js';
@@ -404,6 +406,9 @@ function createFactors({ D, id, model, on }) {
             li.append(label);
         }
         li.append(count);
+        // the level's color (utils/grouping-colours.js): a swatch that opens the browser's color picker
+        const colour = colorsOf(i).get(r.id);
+        if (colour) li.append(levelSwatch({ D, id: r.id, label: r.label, colour, pick: (css) => commitFactor(i, withOverride(p, r.id, css), `color level ${r.label}`) }));
         if (r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table' || factorKind(p) === 'binned') {
             li.append(el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-level__rename', title: `Rename ${r.label}`,
                 aria: { label: `Rename ${r.label}` }, on: { click: () => { renaming = { index: i, id: r.id }; paint(); } } }, '✎'));
@@ -413,6 +418,13 @@ function createFactors({ D, id, model, on }) {
 
     function defaultsOf(i) {
         return model().labels[i] || new Map();
+    }
+
+    /** Factor i's colors as the recipe has them now: level id to colour (no reserved level, no level not drawn). */
+    function colorsOf(i) {
+        const p = model().recipe.partitionings[i];
+        const info = model().infos[i];
+        return p && info ? factorColours(p, info, info.levels) : new Map();
     }
 
     function categoricalBody(i, p, info) {
@@ -470,8 +482,13 @@ function createFactors({ D, id, model, on }) {
         if (!p) return [];
         const info = m.infos[i] || null;
         const kind = factorKind(p);
-        return kind === 'categorical' || kind === 'grouping' ? categoricalBody(i, p, info)
+        const body = kind === 'categorical' || kind === 'grouping' ? categoricalBody(i, p, info)
             : kind === 'table' ? tableBody(i, p, info) : binnedBody(i, p, info, entry);
+        // a table's two levels have no colors of their own: they are in the table or not (grey)
+        if (info && kind !== 'table') {
+            body.push(factorColorsSection({ D, p, info, kind, name: factorTitle(p, m.titleOf), commit: (next, label) => commitFactor(i, next, label) }));
+        }
+        return body;
     }
 
     /** Draw the open pop-over of factor i again from the recipe now (every edit does), the focus kept on its place. */
@@ -692,10 +709,11 @@ function createStatus({ D, id, on }) {
 /**
  * Settings: a toolbar button whose pop-over holds the separator, the small-group threshold and what happens to small
  * groups. The button's text names it; its title (and a hidden span) say what is set, as the folded row used to.
- * @param {{D: Object, id: string, recipe: () => Object, set: (patch: Object, label: string) => void}} opts
- *   `set` takes `{separator}` or `{small}` with the defaults left out (the recipe's normaliser drops them)
+ * @param {{D: Object, id: string, recipe: () => Object, set: (patch: Object, label: string) => void, names: () => string[]}} opts
+ *   `set` takes `{separator}`, `{small}` or `{colors}` with the defaults left out (the recipe's normaliser drops them);
+ *   `names` the title of each factor, for "Color groups by"
  */
-function createSettings({ D, id, recipe, set }) {
+function createSettings({ D, id, recipe, set, names }) {
     const { el } = D;
     const summary = el('span', { class: 'cgrp-settings__summary visually-hidden' });
     const head = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-settings-btn' },
@@ -710,6 +728,7 @@ function createSettings({ D, id, recipe, set }) {
     const radio = (value) => (modes[value] = el('input', { type: 'radio', class: 'cgrp-smallmode', name: modeName, value,
         on: { change: () => setSmall({ mode: value }, `small groups ${smallModeWord(value)}`) } }));
     const collectText = el('span');
+    const colors = groupColorsSection({ D, id, recipe, names, set });
     const body = el('div', { class: 'cgrp-settings__body', id: `cgrp-settings-${id}` },
         el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-sep-${id}`, text: 'Separator ' }), separator),
         el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-thr-${id}`, text: 'Small groups under ' }), threshold, el('span', { text: ' cells' })),
@@ -717,7 +736,7 @@ function createSettings({ D, id, recipe, set }) {
             el('label', { class: 'cgrp-smallmode-opt' }, radio('keep'), ' Keep'),
             el('label', { class: 'cgrp-smallmode-opt' }, radio('collect'), ' Collect into ', collectText),
             el('label', { class: 'cgrp-smallmode-opt' }, radio('hide'), ` Hide: their cells go in no ${VOCABULARY.word.group}`)),
-        problem);
+        colors.element, problem);
     const pop = createPopover({ anchor: head, name: 'settings', title: 'Settings',
         render: (host) => { host.append(body); paint(); return () => body.remove(); } });
 
@@ -756,6 +775,7 @@ function createSettings({ D, id, recipe, set }) {
         if (document.activeElement !== threshold) threshold.value = String(small.threshold);
         collectText.textContent = `"${VOCABULARY.phrase.smallGroups(small.threshold)}"`;
         for (const [value, input] of Object.entries(modes)) input.checked = value === small.mode;
+        colors.paint();
     }
 
     return { element: head, paint, destroy: () => pop.destroy() };
@@ -1065,7 +1085,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
                 announce: (text) => say(text),
                 open: openPanel
             } });
-            _settings = createSettings({ D, id: _id, recipe: () => _recipe, set: setFields });
+            _settings = createSettings({ D, id: _id, recipe: () => _recipe, set: setFields,
+                names: () => _recipe.partitionings.map((p) => factorTitle(p, sourceTitleOf)) });
             const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-undo', disabled: true, on: { click: () => undo() } }, 'Undo');
             const empty = el('div', { class: 'cgrp-empty', hidden: true },
                 el('p', { class: 'cgrp-empty__lead', text: `Add a ${VOCABULARY.word.factor} to divide the cells into ${VOCABULARY.plural.group}.` }),

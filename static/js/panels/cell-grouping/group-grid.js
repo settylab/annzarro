@@ -21,9 +21,9 @@ import { groupSources, sourceTitleOf } from '../../utils/group-host.js';
 import { codesRefusal } from '../../utils/cell-group-source.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { cellExportEntry } from './cell-export.js';
-import { groupColours as colorsOf, sourceName } from '../../utils/cell-grouping.js';
-import { groupColours as hueColours } from '../plot-utilities/colors.js';
-import { GROUP_COLOURS } from '../../utils/categories.js';
+import { sourceName } from '../../utils/cell-grouping.js';
+import { groupId } from '../../utils/grouping-colours.js';
+import { toHex, withOverride } from './colours.js';
 import { noGroupReasons } from './status.js';
 import { smallOf } from './settings.js';
 import {
@@ -41,7 +41,6 @@ const PLAIN_SOURCES = Object.freeze(['obs', 'obsm', 'layer', 'obsp']);
 const LABEL_WIDTH = 160;
 const COLUMN_WIDTH = 84;
 const SMALL_TITLE = 'Under 10 cells: statistics are unreliable';
-const PALETTE = hueColours(GROUP_COLOURS);
 
 /**
  * Hand a text to the user as a file.
@@ -133,7 +132,8 @@ function mount(host, ctx) {
         if (!s) return null;
         const reply = s.reply;
         const names = groupSources().sources.namesOf(ctx.panelId, reply);
-        const colors = colorsOf(s.made, reply, PALETTE);
+        // the colours the recipe has now (a colour change asks for nothing), the same in every panel that draws the groups
+        const colors = groupSources().sources.coloursOf(ctx.panelId, reply).groups;
         const rows = groupRows({ reply, names, colors, small: smallOf(s.made) });
         const levelName = (j, id) => {
             const k = s.index.indexOf(j);
@@ -311,16 +311,26 @@ function mount(host, ctx) {
     }
 
     function listParts(row) {
-        const swatch = el('span', { class: 'cgg-swatch', aria: { hidden: 'true' } });
+        // a click on the swatch opens the browser's color picker: the group's own color, one undo step
+        const input = el('input', { type: 'color', class: 'cgg-swatch-input', tabindex: '0' });
+        const swatch = el('span', { class: 'cgg-swatch' }, input);
         const name = el('span', { class: 'cgg-name' });
         const first = el('div', { class: 'cgg-cell cgg-cell--name', role: 'gridcell' }, swatch, name);
         const cells = el('div', { class: 'cgg-cell cgg-num cgg-cells cgg-narrow-hide', role: 'gridcell' });
         const share = el('div', { class: 'cgg-cell cgg-num cgg-share cgg-narrow-hide', role: 'gridcell' });
         row.append(first, cells, share);
-        return { first, swatch, name, cells, share, pill: null, vals: [] };
+        input.addEventListener('change', () => pickColor(row, input.value));
+        return { first, swatch, input, name, cells, share, pill: null, vals: [] };
     }
 
     const parts = new WeakMap();
+
+    /** The user chose a color for the group of a row: it is the group's override. */
+    function pickColor(row, css) {
+        const r = shownRows[Number(row.dataset.shownIndex)];
+        if (!r || !r.key || typeof ctx.set !== 'function') return;
+        ctx.set({ colors: withOverride(ctx.recipe(), groupId(r.key), css).colors }, `color group ${r.name}`);
+    }
 
     function buildListRow(row) {
         row.classList.add('cgg-row');
@@ -337,8 +347,14 @@ function mount(host, ctx) {
         row.classList.toggle('cgg-row--reason', reasons);
         p.name.textContent = r.name;
         p.name.title = r.name;
+        row.dataset.shownIndex = String(i);
         p.swatch.style.backgroundColor = r.color || 'transparent';
         p.swatch.hidden = !r.color;
+        const input = p.input;
+        input.setAttribute('aria-label', `Color of ${r.name}`);
+        input.title = `Set the color of ${r.name}`;
+        input.value = toHex(r.color);
+        input.disabled = reasons || !r.key;
         if (r.small && !p.pill) {
             p.pill = el('span', { class: 'cgg-small', title: SMALL_TITLE }, 'small');
             p.first.append(' ', p.pill);

@@ -1005,6 +1005,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 }
             }
             if (snap.state === 'ready' && snap.values && (!_shown || _shown.key !== (snap.shownKey || snap.key))) { redraw(); return; }
+            // a color changed in the grouping: the strips and their legend are drawn again, with nothing asked of the server
+            if (snap.state === 'ready' && snap.values && snap.values.reply && _shown && _shown.colours
+                && groupSources().sources.coloursOf(axisId(), snap.values.reply).factors !== _shown.colours) { redraw(); return; }
             // a section added while the others are drawn: its placeholder rows, once per plan, not per progress frame (CXG-18)
             if (snap.state === 'updating' && snap.values && _plan && _pending.now !== _plan && _planOf.has(snap.values) && _planOf.get(snap.values) !== _plan) {
                 redraw();
@@ -1077,13 +1080,15 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 binding.paint(_dom.plot);
             }
             if (snap.state !== 'ready' && !pending && _shown) { paint(); return; }
-            const inputs = [values, shownPlan, _config, _kinds, currentTheme()];
+            // the colors of the groups are an input: a color changed in the grouping draws the strips again, asking nothing
+            const inputs = [values, shownPlan, _config, _kinds, currentTheme(), groupSources().sources.coloursOf(axisId(), values.reply).factors];
             if (_shown && _shown.inputs.every((x, i) => x === inputs[i])) { paint(); return; }
             let figure;
             let order;
             let model;
+            let colours;
             try {
-                ({ figure, order, model } = await drawFigure(values, plan, shownPlan, pending));
+                ({ figure, order, model, colours } = await drawFigure(values, plan, shownPlan, pending));
             } catch (error) {
                 console.error(`Cell-Gene Plot ${_id}:`, error);
                 return;
@@ -1102,7 +1107,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 : want3d && figure.refused3d ? { text: W3.offTag, title: figure.refused3d, severity: 'warning', pop: { text: figure.refused3d } } : null);
             watchCamera(model.view === '3d');
             const oneCell = oneCellPerGroup({ mode: _config.mode, size: _config.size, sized: sizeDrawn(), groups: values.reply.groups || [] });
-            _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell };
+            _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell, colours };
             rec.drawnKey = key;
             binding.paint(_dom.plot);
             paint();
@@ -1222,7 +1227,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 cluster: style.cluster, sortBySize: style.sortBySize });
             const names = groupSources().sources.namesOf(axisId(), reply);
             const permute = (arr) => (arr ? reorder(arr, order.rows, order.groups, G) : arr);
-            const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf });
+            const colours = groupSources().sources.coloursOf(axisId(), reply).factors;
+            const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf, colors: colours });
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
                 const prev = k > 0 ? matrix.rows[order.rows[k - 1]] : null;
@@ -1265,7 +1271,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 if (pending && pending[r]) continue;
                 for (let i = r * G, end = i + G; i < end; i++) if (Number.isNaN(matrix.color.values[i])) missing++;
             }
-            return { figure: { ...figure, rows: rows.length, groups: model.groups.length, missing }, order, model };
+            return { figure: { ...figure, rows: rows.length, groups: model.groups.length, missing }, order, model, colours };
         }
 
         /** "Reading 12 genes": what the placeholder rows of a plan say (CXG-18), from the genes of their sections. */

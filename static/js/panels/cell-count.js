@@ -660,10 +660,8 @@ actions.register({
             const table = countTable(config, grid, inputs);
             const names = inputNames(config, sourceTitleOf);
             const labels = shownLabels(config, table, live, sourceTitleOf);
-            const levels = table.axes.filter((a) => a.input === 'split' || (config.mode === 'pie' && a.input === 'x')).map((a) => a.levels.length);
-            const n = (table.top ? table.top.levels.length : 0) + levels.reduce((p, k) => p + k, 0);
             const opts = {
-                options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(Math.max(1, n)), theme: PLOT_PALETTES[theme],
+                options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(1), theme: PLOT_PALETTES[theme],
                 measureSource: config.measure ? measureSourceName(config.measure.source, sourceTitleOf) : undefined, titleOf: sourceTitleOf, panelId: _id
             };
             const part = PARTS.draw[config.mode];

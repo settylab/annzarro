@@ -17,6 +17,7 @@ import {
 import { defaultLabelMaps } from '../../utils/cell-grouping.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
 import { plotlyColorscale } from '../../utils/color-scales.js';
+import { factorColours, tableLevelColour } from '../../utils/grouping-colours.js';
 
 /** The modes this module draws; the others (density, Venn, UpSet) have their own drawing. */
 // export-unused-ok: C2a offers the count modes that draw here
@@ -93,11 +94,8 @@ const labelMapsOf = (config, table, opts) => opts.labels || levelLabelsOf(config
 /** The label of a level of axis `a`: the caller's, or the id (a level the labels do not know). */
 const labelFn = (maps) => (id, a) => (maps[a] && maps[a].get(id)) || id;
 
-function colorOf(table, a, i, opts) {
-    const id = table.axes[a].levels[i];
-    if (id === RESERVED.other || id === RESERVED.small) return opts.theme.notInTableColor;
-    const own = table.axes[a].info.colors;
-    return (own && own[id]) || opts.palette[i % opts.palette.length];
+function colorOf(config, table, a, i, opts) {
+    return tableLevelColour(config, table, a, i, opts.theme.notInTableColor);
 }
 
 /**
@@ -176,7 +174,7 @@ function barFigure(config, table, opts) {
         const trace = {
             type: 'bar', orientation: horizontal ? 'h' : 'v',
             [horizontal ? 'y' : 'x']: along, [horizontal ? 'x' : 'y']: order.map((l) => (Number.isFinite(spec.values[at(l)]) ? spec.values[at(l)] : null)),
-            marker: { color: s === null ? opts.palette[0] : colorOf(table, sa, s, opts) },
+            marker: { color: s === null ? opts.palette[0] : colorOf(config, table, sa, s, opts) },
             hovertext: order.map((l) => hoverOf(config, table, opts, at(l), labelAt)), hoverinfo: 'text',
             showlegend: s !== null, cliponaxis: false
         };
@@ -276,14 +274,16 @@ function rectFigure(config, table, opts) {
     if (labelsOn) Object.assign(trace, { text, texttemplate: '%{text}' });
     const extra = [];
     if (top) {
-        const colors = top.levels.flatMap((_, i) => Array.from({ length: stepsOf }, (__, s) => {
-            const base = opts.palette[i % opts.palette.length];
+        const topColours = factorColours(config.value.factor, top.info, top.levels);
+        const topColour = (id) => topColours.get(id) || opts.theme.notInTableColor;
+        const colors = top.levels.flatMap((id) => Array.from({ length: stepsOf }, (__, s) => {
+            const base = topColour(id);
             return stepsOf === 1 ? base : faded(base, opts.theme.bgColor, FADE_FROM + (1 - FADE_FROM) * ((s + 1) / stepsOf));
         }));
         Object.assign(trace, { colorscale: steppedScale(colors), zmin: -0.5, zmax: colors.length - 0.5, showscale: false });
-        top.levels.forEach((id, i) => extra.push({
+        top.levels.forEach((id) => extra.push({
             type: 'scatter', mode: 'markers', x: [null], y: [null], name: esc(names.get(id) || id), hoverinfo: 'skip',
-            marker: { symbol: 'square', size: 10, color: opts.palette[i % opts.palette.length] }
+            marker: { symbol: 'square', size: 10, color: topColour(id) }
         }));
     } else {
         const diverging = config.value && config.value.kind === 'measure' && config.measure.stat === 'zscore';
@@ -316,7 +316,7 @@ function pieFigure(config, table, opts) {
     const trace = {
         type: 'pie', sort: false, direction: 'clockwise', hole: ring ? 0.5 : 0,
         labels: order.map((l) => esc(labelAt(table.axes[a].levels[l], a))), values: order.map((l) => table.count[l]),
-        marker: { colors: order.map((l) => colorOf(table, a, l, opts)) },
+        marker: { colors: order.map((l) => colorOf(config, table, a, l, opts)) },
         hovertext: order.map((l) => hoverOf(config, table, opts, l, labelAt)), hoverinfo: 'text',
         textinfo: labelsOn === 'count' ? 'value' : labelsOn === 'share' ? 'percent' : 'none', textposition: 'auto'
     };
@@ -338,7 +338,7 @@ function pieFigure(config, table, opts) {
  * @param {Object} opts.words - the interface text: `count`, `fill`, `hoverCount`, `hoverShare` (strings) and
  *   `share(base, inputNames)`, `measure(stat, source, above)` and `topLevel(factorName)` (functions)
  * @param {Object} opts.inputNames - the title of each input by its name (`x`, `y`, `split`, `factor`)
- * @param {string[]} opts.palette - colors of a categorical input's levels, repeated past its length
+ * @param {string[]} opts.palette - the color of a plot with no split, its first (the levels are colored by utils/grouping-colours.js)
  * @param {Object} opts.theme - the plot theme's `textColor`, `axisColor`, `gridColor`, `zeroLineColor`, `bgColor`, `notInTableColor`
  * @param {Map[]} [opts.labels] - one Map per table axis, level id to the label shown; defaults to `levelLabelsOf`. The
  *   most frequent level's factor is labelled from the table's `top.info` and the factor's own `labels`
