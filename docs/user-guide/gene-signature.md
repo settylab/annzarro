@@ -116,19 +116,31 @@ line under the title says what uses it ("Used by 1 plot, 1 Gene Set Analysis").
 
 ## Colour or position a Cell Plot by a score
 
-A signature gives every cell one number. A Cell Plot can take it as its **x**, **y**, **colour** or
-**hover**: choose **Gene score** among the sources (beside obs, obsm, obsp and layer), then pick the
-signature by name. Every signature is listed, open or closed.
+A signature gives every cell one number. A Cell Plot can take it as its **x**, **y**, **z** or **colour**: choose
+**Gene score** among the sources (beside obs, obsm, obsp and layer), then pick the signature by name. Every signature
+is listed, open or closed. A score is not a hover column: colour the plot by it and the hover shows its value as `c`.
+A link or panel set that lists a score among the hover columns opens without that column and says nothing about it.
 The score works in large-plot mode too (colour and axes; the tooltip shows the
 colour's score).
 
-A score is chosen in three steps, as an embedding is: the source (**Gene score**), the signature, and one of
-the options it offers. The third menu is one list of what the signature offers, method and layer together
-("z-score mean", or "mean · counts" when several layers are offered); a new plot starts on its first entry.
-Each axis, the colour and the hover can use a different signature or a different option of the same one; the
-same choice on two axes is computed once. A cell table's **Gene score** tab lists the same options. The same signature over two layers is two scores; a layer the dataset does not have, or an option the signature stopped offering, is stated over the plot.
+A score is chosen in four selects: the source (**Gene score**), the signature, the **method** and the **layer**.
+The method select lists all six methods and the layer select lists X and every layer of the dataset, so a menu never
+grows with the number of combinations. A new plot starts on z-score mean over X. A combination that cannot be computed
+is greyed out in the other select, with the reason when you point at it: under **% of total**, a scaled layer such as
+X is greyed out ("Has negative values"). Choose the layer first to reach a method that needs it. When one select
+leaves the other on a combination that cannot be computed, the other moves to the first one that can, and a line under
+the selects says so once ("Layer changed to logged: % of total is not available on X."). A link that holds such a
+combination keeps it, marked "(not available)", and the plot says why.
+
+**Control-adjusted** and **% of total** read the whole matrix once besides the signature's genes; their entries say
+so when you point at them, and the usual cost tiers apply: a slow score asks first, and one that would take more than
+10 minutes is refused.
+
+Each axis and the colour can use a different signature or a different method or layer of the same one; the same
+choice on two axes is computed once. The same signature over two layers is two scores. A layer the dataset does not
+have stays in the layer select, marked "(not in this dataset)", and is stated over the plot.
 The score can be on any axis, x, y and z (3D) included, against another score, an obs column or a gene.
-In large-plot mode x, y and colour take a score; 3D and extra hover columns are not available there.
+In large-plot mode x, y and colour take a score; 3D is not available there.
 
 The score is worked out on the server, over all the cells of the dataset, and the plot gets the value
 for the cells it shows. It is worked out when a plot needs it, with no panel open: a closed signature, or
@@ -323,8 +335,8 @@ the same: the score, the cost estimate and its three tiers, the methods and laye
 **Update score**, and **Inspect**.
 
 Choose **Gene score** as a plot's source (or on a Cell Table's **Gene score** tab) and the list of sources shows
-**Gene signatures** and **Gene tables** under their own headings when both exist. Pick a table, then an
-option, as for a signature. The label names the table ("Gene Table 1 · mean").
+**Gene signatures** and **Gene tables** under their own headings when both exist. Pick a table, then a method
+and a layer, as for a signature. The label names the table ("Gene Table 1 · mean").
 
 **What the genes are.** The rows that pass the table's filter now: its conditions and its search box, the same
 rows that a Gene Plot filtered by the table or a Gene Set Analysis panel reads. Change the filter and the
@@ -351,9 +363,12 @@ nothing. Gene Set Analysis and Gene Plot filters read the table as before.
 
 A Cell Table can show a signature's score as a column, so you can sort the cells by it, filter on it and
 export it. Open the table's
-column chooser, choose the **Gene score** tab, and tick the options you want under a signature: the same
-list of method and layer a plot's menu has. Tick as many as you like: several signatures, and several options
-of one, are several columns, and each is computed once however many plots and tables use it.
+column chooser and choose the **Gene score** tab. Under each signature are the score columns the table has
+("mean · counts"), each with its tick box, then one row: **[method] on [layer] Add column**. Choose a method and a
+layer, graded as a plot's selects are, and press **Add column**: the column is ticked, and **Apply Changes** puts it
+in the table. The tab never lists every combination of method and layer. Add as many as you like: several
+signatures, and several methods or layers of one, are several columns, and each is computed once however many plots
+and tables use it.
 
 The table appears at once. A score that is not there yet shows as `T cell score (computing)`, with
 `computing…` in its cells, and the column fills in where it is when the score arrives: the table is not

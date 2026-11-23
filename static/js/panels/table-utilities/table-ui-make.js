@@ -14,6 +14,7 @@ import { getColumnDisplayName } from './table-data.js';
 import { isDerived } from '../../utils/line-select.js';
 import { isScoreColumn, subOf } from '../../utils/score-column.js';
 import { tableHalfOf, tableProviders } from '../../utils/table-source.js';
+import { bindPairSelects } from '../../utils/pair-selects.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -347,10 +348,102 @@ function checkboxIdFor(column, panelId) {
 }
 
 /**
- * The tab of a source in a Cell Table's chooser: every entity (open or closed), and under each what it gives a column
- * (a score's aggregations, over its layers: the source's levels, utils/source-registry.js). Several entities and several
- * options of one can be ticked at once: each is a column. Rebuilt whenever panels come, go or are renamed, since an
- * entity can be made at any time. The words and the options are the provider's (utils/table-source.js `chooser`).
+ * One option of an entity in a Cell Table's chooser: a checkbox that is a column while ticked.
+ * @param {Object} item - the column it stands for: {type, key, column, layer}
+ * @param {{text: string, note?: string}} sub - its text, and what the provider says of it here
+ * @param {{title: string}} entity
+ * @param {string} id - the table panel's id
+ * @param {Object} settings
+ */
+function sourceOptionRow(item, sub, entity, id, settings) {
+    const div = document.createElement('div');
+    div.className = 'form-check py-0 ms-3';
+    const checkbox = document.createElement('input');
+    checkbox.className = 'form-check-input column-checkbox';
+    checkbox.type = 'checkbox';
+    checkbox.id = checkboxIdFor(item, id);
+    checkbox.setAttribute('data-type', item.type);
+    checkbox.setAttribute('data-key', item.key);
+    checkbox.setAttribute('data-column', item.column);
+    if (item.layer) checkbox.setAttribute('data-layer', item.layer);
+    checkbox.setAttribute('data-label', entity.title);
+    checkbox.dataset.scoreBound = '1';
+    checkbox.addEventListener('change', () => updateSelectedColumnsList(id, settings));
+    const label = document.createElement('label');
+    label.className = 'form-check-label';
+    label.htmlFor = checkbox.id;
+    label.textContent = sub.text;
+    div.dataset.search = `${entity.title} ${sub.text}`.toLowerCase();
+    div.append(checkbox, label);
+    // what the provider says of the option here (it cannot be filtered on in this table: operator decision 15)
+    if (sub.note) {
+        const why = document.createElement('div');
+        why.className = 'form-text mt-0 az-option-note';
+        why.id = `${checkbox.id}-note`;
+        why.textContent = sub.note;
+        checkbox.setAttribute('aria-describedby', why.id);
+        div.appendChild(why);
+    }
+    return { div, checkbox };
+}
+
+/**
+ * The add row under an entity's ticked columns, `[method] on [layer] [Add column]` (decision 31): the chooser lists
+ * no method x layer pairs. Add ticks the column (made here when it is not listed yet); Apply takes it into the table.
+ * @param {Object} provider
+ * @param {Object} entity
+ * @param {HTMLElement} group - the entity's group; new columns go before the row
+ * @param {string} id - the table panel's id
+ * @param {Object} settings
+ */
+function sourceAddRow(provider, entity, group, id, settings) {
+    const add = provider.table.chooser.add;
+    const row = document.createElement('div');
+    row.className = 'az-score-add ms-3';
+    const method = document.createElement('select');
+    method.className = 'form-select form-select-sm az-score-add-method';
+    method.setAttribute('aria-label', `Method of a new ${entity.title} column`);
+    const on = document.createElement('span');
+    on.className = 'az-score-add-on';
+    on.textContent = 'on';
+    const layer = document.createElement('select');
+    layer.className = 'form-select form-select-sm az-score-add-layer';
+    layer.setAttribute('aria-label', `Layer of a new ${entity.title} column`);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-sm btn-outline-primary az-score-add-btn';
+    button.textContent = 'Add column';
+    const note = document.createElement('div');
+    note.className = 'form-text mt-0 az-score-add-note';
+    note.setAttribute('role', 'status');
+    const pair = bindPairSelects({
+        method, layer, note,
+        start: () => add.start(entity),
+        menus: (p) => add.menus(entity, p),
+        after: (changed, value, p) => add.after(entity, changed, value, p)
+    });
+    button.addEventListener('click', () => {
+        const p = pair.value();
+        const item = { type: provider.type, key: entity.id, column: p.method, layer: p.layer };
+        let box = document.getElementById(checkboxIdFor(item, id));
+        if (!box) {
+            const made = sourceOptionRow(item, { text: add.label(p) }, entity, id, settings);
+            group.insertBefore(made.div, row);
+            box = made.checkbox;
+        }
+        box.checked = true;
+        note.textContent = `Added ${add.label(p)}. Apply to show it.`;
+        updateSelectedColumnsList(id, settings);
+    });
+    row.append(method, on, layer, button);
+    group.append(row, note);
+}
+
+/**
+ * The tab of a source in a Cell Table's chooser: every entity (open or closed), and under each its ticked columns,
+ * then (for a provider with an add row) `[method] on [layer] [Add column]`. Several entities and several columns of
+ * one can be ticked at once: each is a column. Rebuilt whenever panels come, go or are renamed, since an entity can be
+ * made at any time. The words and the options are the provider's (utils/table-source.js `chooser`).
  * @param {Object} provider - a registered source with a table half
  * @param {string} id - the table panel's id
  * @param {Object} settings - the panel settings
@@ -392,51 +485,14 @@ export function buildSourceTab(provider, id, settings, structure = null) {
         heading.textContent = chooser.entityLabel(entity);
         heading.title = entity.open ? chooser.entityLabel(entity) : `${chooser.entityLabel(entity)} (closed)`;
         group.appendChild(heading);
-        // what the entity offers (method and layer together, as in a plot's menu), and any ticked column
-        // it no longer offers (kept, so the table still has it)
-        // every column stores the layer it was given: a signature's first offered layer changes when the user unticks it
+        // every column stores the layer it was given
         for (const sub of chooser.options(entity, ticked, id)) {
-            const layer = sub.layer;
-            const item = { type: provider.type, key: entity.id, column: sub.column, layer };
-            const div = document.createElement('div');
-            div.className = 'form-check py-0 ms-3';
-            const checkbox = document.createElement('input');
-            checkbox.className = 'form-check-input column-checkbox';
-            checkbox.type = 'checkbox';
-            checkbox.id = checkboxIdFor(item, id);
-            checkbox.setAttribute('data-type', item.type);
-            checkbox.setAttribute('data-key', item.key);
-            checkbox.setAttribute('data-column', item.column);
-            if (layer) checkbox.setAttribute('data-layer', layer);
-            checkbox.setAttribute('data-label', entity.title);
-            checkbox.dataset.scoreBound = '1';
-            checkbox.checked = ticked.some(c => c.key === entity.id && subOf(c) === sub.column && chooser.layerOf(c) === (layer || ''));
-            checkbox.addEventListener('change', () => updateSelectedColumnsList(id, settings));
-            const label = document.createElement('label');
-            label.className = 'form-check-label';
-            label.htmlFor = checkbox.id;
-            label.textContent = sub.text;
-            div.dataset.search = `${entity.title} ${sub.text}`.toLowerCase();
-            div.append(checkbox, label);
-            // what the provider says of the option here (it cannot be filtered on in this table: operator decision 15)
-            if (sub.note) {
-                const why = document.createElement('div');
-                why.className = 'form-text mt-0 az-option-note';
-                why.id = `${checkbox.id}-note`;
-                why.textContent = sub.note;
-                checkbox.setAttribute('aria-describedby', why.id);
-                div.appendChild(why);
-            }
+            const item = { type: provider.type, key: entity.id, column: sub.column, layer: sub.layer };
+            const { div, checkbox } = sourceOptionRow(item, sub, entity, id, settings);
+            checkbox.checked = ticked.some(c => c.key === entity.id && subOf(c) === sub.column && chooser.layerOf(c) === (sub.layer || ''));
             group.appendChild(div);
         }
-        if (chooser.more) {
-            const more = document.createElement('button');
-            more.type = 'button';
-            more.className = 'btn btn-link btn-sm az-score-offer-more ms-3 p-0';
-            more.textContent = chooser.more.text;
-            more.addEventListener('click', () => chooser.more.run(entity, id));
-            group.appendChild(more);
-        }
+        if (chooser.add) sourceAddRow(provider, entity, group, id, settings);
         list.appendChild(group);
     }
     if (search && !search.dataset.scoreBound) {
@@ -444,9 +500,11 @@ export function buildSourceTab(provider, id, settings, structure = null) {
         search.addEventListener('input', (e) => {
             const text = e.target.value.toLowerCase();
             for (const group of pane.querySelectorAll('.az-score-group')) {
-                let any = false;
+                const heading = group.querySelector('.az-score-group-title');
+                const named = !!heading && heading.textContent.toLowerCase().includes(text);
+                let any = named;
                 for (const row of group.querySelectorAll('.form-check')) {
-                    const match = row.dataset.search.includes(text);
+                    const match = named || row.dataset.search.includes(text);
                     row.style.display = match ? '' : 'none';
                     any = any || match;
                 }
@@ -932,9 +990,8 @@ function updateSelectedColumnsList(id, settings) {
         removeButton.innerHTML = '<i class="fas fa-times"></i>';
         removeButton.title = 'Remove from selection';
         removeButton.addEventListener('click', () => {
-            // Uncheck the corresponding checkbox
-            const checkboxId = `checkbox-${type}-${key}-${column}-${id}`.replace(/\s+/g, '_');
-            const checkbox = document.getElementById(checkboxId);
+            // Uncheck the corresponding checkbox (a score column's id names its layer)
+            const checkbox = document.getElementById(checkboxIdFor(entry, id));
             if (checkbox) {
                 checkbox.checked = false;
             }

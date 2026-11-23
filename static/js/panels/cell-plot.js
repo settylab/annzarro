@@ -1,4 +1,5 @@
 import { pinLayers } from '../utils/score-source.js';
+import { shownHoverInfo } from './plot-utilities/hover-columns.js';
 import { releaseSourceHost } from '../utils/source-registry.js';
 import { cancelIndexBuild } from './plot-utilities/large-plot.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
@@ -70,6 +71,8 @@ const CellPlotPanel = (function() {
         // Override with provided options, if any (colour bounds stored in
         // data units go back to drawn units: array-stats.js restoreColorRange)
         Object.assign(_settings, restoreColorRange(options));
+        // a hover entry no picker lists any more (a gene score, decision 32) goes quietly
+        _settings.hoverInfo = shownHoverInfo(_settings.hoverInfo, 'cells');
         // On Default (made from the chooser, or saved on Default): the look is the session's default, whichever
         // session this opens in (utils/session-style.js)
         if (_settings.styleDefault === true) followSessionDefault(_settings, 'cell-plot');
@@ -635,6 +638,7 @@ const CellPlotPanel = (function() {
             Object.keys(config).forEach(key => {
                 _settings[key] = config[key];
             });
+            if ('hoverInfo' in config) _settings.hoverInfo = shownHoverInfo(_settings.hoverInfo, 'cells');
         }
 
         /**
@@ -656,6 +660,7 @@ const CellPlotPanel = (function() {
                     _settings[key] = config[key];
                 }
             });
+            if ('hoverInfo' in config) _settings.hoverInfo = shownHoverInfo(_settings.hoverInfo, 'cells');
         }
         
         // Public API

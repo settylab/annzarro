@@ -294,7 +294,7 @@ function tableIdOf(host) {
  * against every action. A table has no other source to choose, so it has no "Choose another": it removes the column.
  * @param {Object} deps
  */
-export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compute, cancel, retry, update, canOffer, offerAgain: offer, panelOf: panel,
+export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compute, cancel, retry, update, panelOf: panel,
     openSource, filtersOn = () => false, unfilter = () => {} }) {
     const table = (host) => { const id = idOf(host); return id && hasColumns(id) ? id : null; };
     const all = (run) => ({ target: table, run: (id) => { run(id); } });
@@ -307,7 +307,6 @@ export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compu
             'score-cancel': all(cancel),
             'score-retry': all(retry),
             'score-update': all(update),
-            'score-offer': { target: worst((w) => canOffer(w.column)), run: (w) => { offer(w.column); } },
             'score-open': { target: worst((w) => !!panel(w.column.key)), run: (w, host) => { openSource(w.column.key, idOf(host), w.column); } },
             // the conditions on the column go, and the column stays (a loop through the filter ends: decision 18)
             'score-unfilter': { target: worst((w, host) => filtersOn(host, w)), run: (w, host) => { unfilter(host, w); } },
@@ -325,8 +324,6 @@ actions.register(createTableActions({
     cancel: (id) => TableScores.cancel(id),
     retry: (id) => TableScores.retry(id),
     update: (id) => TableScores.update(id),
-    canOffer: (column) => TableScores.canOffer(column),
-    offerAgain: (column) => TableScores.offer(column),
     panelOf,
     openSource: (key, hostId, column) => TableScores.open(column, hostId),
     filtersOn: (host, entry) => { const dt = TABLES.get(host); return !!dt && referencedKeys(dt.searchBuilder.getDetails()).has(entry.key); },

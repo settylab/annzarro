@@ -67,8 +67,6 @@ const PASSING = Object.freeze(['idle', 'estimating', 'queued', 'computing']);
  *   itself when `recipe()` makes a fresh one each time)
  * @param {(option: Object) => boolean} [options.isOption] - false for an option of another source type, left over
  *   while a consumer switches: nothing is asked for it
- * @param {(source: Object, option: Object) => (Object|null)} [options.lapsedOf] - null while the source offers the
- *   option; otherwise fields of a `lapsed` snapshot, which keeps drawing what it has
  * @param {Record<string, string>} [options.failureStates] - a store failure reason stated as a state of its own
  * @param {(values: *) => number} [options.countOf] - the cells a value covers, checked against `context().cells`
  * @param {string} [options.kind] - a source's kind when it does not say
@@ -79,7 +77,7 @@ const PASSING = Object.freeze(['idle', 'estimating', 'queued', 'computing']);
  */
 export function createDerivedSources({ store, sources, context, variantOf, hashOf = () => null, editHashOf, keyOf,
     copyOf = (recipe) => recipe,
-    isOption = () => true, lapsedOf = null, failureStates = {}, countOf = (values) => values.length,
+    isOption = () => true, failureStates = {}, countOf = (values) => values.length,
     kind: defaultKind = null, thing = 'value', liveDelayMs = 350,
     setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (t) => clearTimeout(t) }) {
     /** @type {Set<Object>} every handle, in the order consumers came */
@@ -209,13 +207,9 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         store.attach(key, spec, handle);      // may tell the handles on `key` at once: the handle is on it already
     }
 
-    /** Where a consumer stands. An option the source no longer offers is kept and goes on drawing (`lapsed`). */
+    /** Where a consumer stands. */
     function read(handle) {
-        const snap = readOne(handle);
-        if (!lapsedOf) return snap;
-        const src = sources.get(handle.id);
-        const lapsed = src ? lapsedOf(src, handle.option) : null;
-        return lapsed ? { ...snap, lapsed: true, ...lapsed } : snap;
+        return readOne(handle);
     }
 
     function readOne(handle) {

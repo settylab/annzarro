@@ -39,14 +39,14 @@ test('an action is available exactly when it runs, for every action of a fake pr
         owns: (host) => host.owned,
         actions: {
             'score-compute': { target: (host) => host.can ? host : null, run: () => { spy.calls++; } },
-            'score-offer': { target: () => null, run: () => { spy.calls++; } }
+            'score-retry': { target: () => null, run: () => { spy.calls++; } }
         }
     });
     const hosts = [{ name: 'can', owned: true, can: true }, { name: 'cannot', owned: true, can: false }, { name: 'foreign', owned: false, can: true }];
     assert.equal(checkContract(registry, hosts, [spy]), hosts.length * A.actions.known.length);
     assert.equal(registry.run('score-compute', hosts[0]), true);
     assert.equal(spy.calls > 0, true);
-    assert.equal(registry.available('score-offer', hosts[0]), false, 'a target of null is not available');
+    assert.equal(registry.available('score-retry', hosts[0]), false, 'a target of null is not available');
     assert.equal(registry.available('score-choose', hosts[0]), false, 'an action the provider lacks');
     assert.equal(registry.available('score-compute', hosts[2]), false, 'a host nobody owns');
 });
@@ -78,8 +78,6 @@ test('the plot provider: every action of every state of its host agrees with its
         shownRecord: (host) => host.rec,
         recordsOf: (host) => new Map(host.rec ? [['color', host.rec]] : []),
         sourcePanel: (id) => (id === 'sig' ? { id } : null),
-        canOffer: (setting) => !!setting && setting.key === 'sig',
-        offerAgain: spied(() => true, spy),
         update: spied(() => true, spy),
         openSource: spied(() => ({}), spy),
         chooser: (host) => host.chooser || null,
@@ -97,7 +95,6 @@ test('the plot provider: every action of every state of its host agrees with its
     const registry = A.actions.fresh();
     registry.register(make({}));
     assert.ok(checkContract(registry, hosts, [spy]) >= 4 * A.actions.known.length);
-    assert.equal(registry.available('score-offer', hosts[2]), false, 'offering again to a source that is gone');
     assert.equal(registry.available('score-open', hosts[2]), false);
     assert.equal(registry.available('score-choose', hosts[3]), false, 'no select to focus');
     assert.equal(registry.available('score-choose', hosts[1]), true);
@@ -112,8 +109,6 @@ test('the table provider: every action of every state of its host agrees with it
         hasColumns: (id) => id === 't1',
         worstOf: (host) => host.worst || null,
         compute: spied(() => {}, spy), cancel: spied(() => {}, spy), retry: spied(() => {}, spy), update: spied(() => {}, spy),
-        canOffer: (setting) => setting.key === 'sig',
-        offerAgain: spied(() => true, spy),
         panelOf: (id) => (id === 'sig' ? {} : id === 't1' ? { removeColumn: spied(() => {}, spy) } : null),
         openSource: spied(() => ({}), spy)
     });
@@ -127,13 +122,15 @@ test('the table provider: every action of every state of its host agrees with it
     const registry = A.actions.fresh();
     registry.register(make());
     checkContract(registry, hosts, [spy]);
-    assert.equal(registry.available('score-offer', hosts[4]), false);
     assert.equal(registry.available('score-open', hosts[4]), false);
-    assert.equal(registry.available('score-offer', hosts[3]), true);
     assert.equal(registry.available('score-remove', hosts[3]), true);
     assert.equal(registry.available('score-choose', hosts[3]), false, 'a table has no other source to choose');
     assert.equal(registry.available('score-compute', hosts[1]), false);
     assert.equal(registry.available('score-compute', hosts[2]), true);
+});
+
+test('decision 31: no notice offers an option again, since nothing is offered', () => {
+    assert.equal(A.actions.known.includes('score-offer'), false);
 });
 
 test('the page registers the plot provider and the table provider, once each', () => {
