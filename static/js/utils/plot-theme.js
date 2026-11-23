@@ -142,6 +142,13 @@ export function withAlpha(colour, alpha) {
  * the plot's text colour: faint at rest, full when pressed or hovered.
  */
 export function modebarColours(settings, theme = currentTheme()) {
-    const text = plotColour(settings, 'textColor', theme);
+    return modebarOf(plotColour(settings, 'textColor', theme));
+}
+
+/** The toolbar's colours from a text colour: no box, the text colour faint at rest and full when pressed. */
+export function modebarOf(text) {
     return { bgcolor: 'rgba(0, 0, 0, 0)', color: withAlpha(text, 0.55), activecolor: text };
 }
+
+/** The toolbar buttons no panel offers: box and lasso select, and Autoscale (a plot's Reset axes does it). */
+export const MODEBAR_REMOVE = Object.freeze(['lasso2d', 'select2d', 'autoScale2d']);
