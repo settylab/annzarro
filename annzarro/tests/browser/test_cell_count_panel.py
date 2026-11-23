@@ -21,6 +21,7 @@ Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWS
 import base64
 import json
 import os
+import re
 import time
 import urllib.parse
 
@@ -649,3 +650,87 @@ def test_one_group_2d_density_layers_take_the_color_menu_settings(page, served, 
     traces = page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'heatmap' || t.type === 'contour')
         .map(t => ({ cs: t.colorscale, rev: t.reversescale, zmin: t.zmin }))""", S)
     assert traces and all(t["rev"] is True and t["zmin"] == 0.01 and t["cs"] != "Viridis" for t in traces), traces
+
+
+# ------------------------------------------------------------------ the Cell points layer of a 2D density
+
+def _caps(page, draw=None, load=None):
+    page.evaluate("""async ([draw, load]) => { const { Config } = await import('/static/js/config.js');
+        if (draw !== null) Config.DEFAULTS.DENSITY_POINTS_DRAW = draw;
+        if (load !== null) Config.DEFAULTS.DENSITY_POINTS_LOAD = load; }""", [draw, load])
+
+
+def _points(page):
+    return page.evaluate("""(s) => { const d = [...document.querySelector(s + ' .ccnt-plot').data];
+        const pts = d.filter(t => t.type === 'scattergl');
+        return { n: pts.reduce((m, t) => m + t.x.length, 0), traces: pts.length, types: d.map(t => t.type),
+                 size: pts.length ? pts[0].marker.size : null }; }""", S)
+
+
+def _strip(page):
+    return page.inner_text(f"{S} .ccnt-strip")
+
+
+def _points_config(split, **extra):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    return _count(mode="density2d", x=depth, y=score, **({"split": CONDITION} if split else {}), **extra)
+
+
+@pytest.mark.parametrize("split", [True, False])
+def test_the_cell_points_layer_alone_draws_the_cells_with_the_grid_hover_under_it(page, served, split):
+    _open(page, served, {CC: _points_config(split, layers={"points": True})})
+    _drawn(page, "density2d")
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot .scattergl, ' + s + ' .ccnt-plot canvas').length > 0", S)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    got = _points(page)
+    assert 0 < got["n"] <= N, got
+    assert got["types"].count("heatmap") == (2 if split else 1), "a transparent heatmap carries the hover"
+    assert re.search(r"Cells drawn as points: [\d,]+\.", _strip(page)), _strip(page)
+    shot = os.environ.get("ANNZARRO_FB1E_SHOTS")
+    if shot:
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, f"points-{'split' if split else 'one'}.png"))
+
+
+def test_the_cell_points_layer_combines_with_filled_isolines_and_takes_a_point_size(page, served):
+    _open(page, served, {CC: _points_config(True, layers={"fill": True, "lines": True, "points": True})})
+    _drawn(page, "density2d")
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot').length > 0 && /Cells drawn/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    got = _points(page)
+    assert got["n"] > 0 and got["types"].index("contour") < got["types"].index("scattergl") and "heatmap" not in got["types"], got
+    assert got["size"] == 3
+    page.fill(f"{S} .ccnt-point-size", "6")
+    page.press(f"{S} .ccnt-point-size", "Enter")
+    _drawn(page, "density2d", "c.pointSize === 6")
+    assert _points(page)["size"] == 6
+    shot = os.environ.get("ANNZARRO_FB1E_SHOTS")
+    if shot:
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, "points-fill-lines.png"))
+
+
+def test_the_cell_points_layer_draws_a_seeded_sample_above_the_cap_and_says_so(page, served):
+    _open(page, served, {CC: _points_config(True, layers={"fill": True})})
+    _drawn(page, "density2d")
+    _caps(page, draw=300)
+    page.check(f"{S} .ccnt-layer--points")
+    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    assert re.search(r"Cells drawn as points: 300 of 1,200 \(a sample\)\.", _strip(page)), _strip(page)
+    first = _points(page)
+    assert 0 < first["n"] <= 300
+    # the same cells again after a redraw: toggle the layer off and on
+    page.uncheck(f"{S} .ccnt-layer--points")
+    _drawn(page, "density2d", "!c.layers.points")
+    page.check(f"{S} .ccnt-layer--points")
+    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    assert _points(page)["n"] == first["n"]
+
+
+def test_the_cell_points_layer_is_refused_above_the_load_cap_and_for_a_source_it_cannot_load(page, served):
+    _open(page, served, {CC: _points_config(False, layers={"fill": True})})
+    _drawn(page, "density2d")
+    _caps(page, load=500)
+    page.check(f"{S} .ccnt-layer--points")
+    until(page, "(s) => /more than the 500/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    assert _points(page)["n"] == 0
+    assert "Turn on a subset" in _strip(page)
+    _caps(page, load=25_000_000)

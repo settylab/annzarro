@@ -589,10 +589,20 @@ export function createControls({ D, id, model, on }) {
             } } });
         return { key, box, wrap: el('label', { class: 'ccnt-opt ccnt-layer-opt' }, box, ` ${C.layers[key]}`) };
     };
-    const layerBoxes = ['image', 'lines', 'fill'].map(layerBox);
+    const layerBoxes = ['image', 'lines', 'fill', 'points'].map(layerBox);
+    // the point size of the Cell points layer, a number of pixels from 1 to 12
+    const pointSize = el('input', { type: 'number', class: 'form-control form-control-sm ccnt-point-size', min: String(1), max: String(12), step: '1', placeholder: '3', autocomplete: 'off', aria: { label: C.points.size } });
+    pointSize.addEventListener('change', () => {
+        const c = model().config;
+        const v = Number(pointSize.value);
+        const next = { ...c };
+        if (pointSize.value === '' || !Number.isFinite(v) || v === 3) delete next.pointSize; else next.pointSize = Math.min(12, Math.max(1, Math.round(v)));
+        if (JSON.stringify(next) !== JSON.stringify(c)) commit(next, `point size ${next.pointSize === undefined ? 3 : next.pointSize}`);
+    });
+    const pointSizeWrap = el('label', { class: 'ccnt-opt ccnt-point-size-opt' }, `${C.points.size} `, pointSize);
     const densityNotes = el('div', { class: 'ccnt-help ccnt-density-notes' });
     const densityRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--density' },
-        el('label', { class: 'ctl-label', for: `ccnt-adjust-${id}`, text: C.buttons.adjust }), adjust, adjustNote, bySize.wrap, ...layerBoxes.map((l) => l.wrap), densityNotes);
+        el('label', { class: 'ctl-label', for: `ccnt-adjust-${id}`, text: C.buttons.adjust }), adjust, adjustNote, bySize.wrap, ...layerBoxes.map((l) => l.wrap), pointSizeWrap, densityNotes);
 
     function paintLabels(m, shownRows) {
         const o = drawOptions(m.config);
@@ -619,6 +629,8 @@ export function createControls({ D, id, model, on }) {
             l.wrap.hidden = shownRows.density !== 2;
             l.box.checked = !!(o.layers && o.layers[l.key]);
         }
+        pointSizeWrap.hidden = !(o.layers && o.layers.points);
+        if (document.activeElement !== pointSize) pointSize.value = m.config.pointSize === undefined ? '' : String(m.config.pointSize);
         densityNotes.textContent = shownRows.density && m.notes ? [m.notes.bandwidth, m.notes.floor].filter(Boolean).join(' ') : '';
         densityNotes.hidden = !densityNotes.textContent;
     }
