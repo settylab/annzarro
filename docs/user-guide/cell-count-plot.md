@@ -115,6 +115,7 @@ A 2D density has three layers in **Plot Options**, which you can combine freely 
 - **Filled isolines**: bands of the density, each band one opacity of the color, stepping up with the density.
 - **Isolines**: lines at the same density levels.
 - **Density as opacity**: a smooth image in which the density is the opacity of the color.
+- **Cell points**: each cell as a point at its place, drawn over the other layers.
 
 With a **Color by** the default is *Filled isolines* with *Isolines*: each group in its own color, its bands stepping up
 from transparent, on **one set of density levels shared by all groups**, so a band means the same density in every
@@ -124,6 +125,17 @@ of the scale, and a color bar names the densities. Over *Density as opacity*, on
 reduced opacity so the image shows through. With **Scale curves by level size** off, each group's density has an area
 of 1; with it on, a group is weighted by its share of the cells. A link made with the earlier *As an image* or *contours*
 setting opens with the matching layers.
+
+**Cell points** colors each cell by the density of its group where it lies: with a Color by, in the group's color with
+the density as the opacity, in eight steps on the same scale as the other layers; with one group, on the color map. The
+density at a cell is read from the same smoothed grid the isolines come from, so the points and the contours agree. The
+positions of the cells are loaded as a Cell Plot loads them, so **X** and **Y** must be an obs column, an embedding or a
+gene, and a Color by an obs column of categories; for anything else the strip says what to change. **Point size** (1 to
+12 pixels, 3 by default) sits beside the layer. The plot draws at most 1,000,000 points: above that it draws a seeded
+random sample (the same cells each time) and the strip says "Cells drawn as points: 1,000,000 of 12,345,678 (a sample)."
+The density itself always counts every cell. With more than 25,000,000 cells shown the layer is not drawn, because every
+cell's position would have to be loaded: turn on a subset. Hovering shows the density grid's x, y, group and density at
+that place, not a single cell, and the CSV stays the table of counts.
 
 ### 2D histogram with Color by
 
