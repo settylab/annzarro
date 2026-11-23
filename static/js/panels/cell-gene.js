@@ -62,7 +62,7 @@ import { withoutLegacy } from '../utils/options-model.js';
 import { parseThresholdText } from '../utils/options-model.js';
 import { geneReads } from '../utils/cell-gene-model.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
-import { buildFigure, colourBars, DEFAULT_CAMERA } from './cell-gene/draw.js';
+import { buildFigure, colourBars, sceneLabels, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
 import { recordCameraOnRelease } from '../utils/scene-camera.js';
 import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
@@ -1087,7 +1087,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const want3d = _config.view === '3d';
             setStatusTag(_dom.plot, 'cgene-3d', model.view === '3d' ? { text: W3.tag, title: W3.leftOut, pop: { text: W3.leftOut } }
                 : want3d && figure.refused3d ? { text: W3.offTag, title: figure.refused3d, severity: 'warning', pop: { text: figure.refused3d } } : null);
-            watchCamera(model.view === '3d');
+            watchCamera(model.view === '3d' ? figure.labels3d : null);
             const oneCell = oneCellPerGroup({ mode: _config.mode, size: _config.size, sized: sizeDrawn(), groups: values.reply.groups || [] });
             _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell };
             rec.drawnKey = key;
@@ -1114,9 +1114,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         /**
          * Keep the 3D camera in the configuration as the user turns it (UX 6b, Q17): stored once it rests, rounded, with no
          * undo step and no redraw; the default camera is stored as none. Off in 2D. The listener is set again on each draw
-         * (a purge drops it).
+         * (a purge drops it). The category labels follow at once: turned to the other side, they change edge and anchor
+         * (draw.js sceneLabels; `labels` is the drawing's labels3d, null in 2D).
          */
-        function watchCamera(on) {
+        function watchCamera(labels) {
+            const on = !!labels;
             const gd = _dom && _dom.plot;
             if (!gd || typeof gd.on !== 'function') return;
             if (gd.__azCgCamera && typeof gd.removeListener === 'function') gd.removeListener('plotly_relayout', gd.__azCgCamera);
@@ -1128,10 +1130,20 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             gd.__azCgCamera = (ev) => {
                 const camera = ev && ev['scene.camera'];
                 if (!camera) return;
+                relabel(gd, labels, camera);
                 clearTimeout(timer);
                 timer = setTimeout(() => storeCamera(camera), CAMERA_STORE_MS);
             };
             gd.on('plotly_relayout', gd.__azCgCamera);
+        }
+
+        /** The labels for a camera, set only when an edge or an anchor changed (the relayout carries no camera). */
+        function relabel(gd, labels, camera) {
+            if (!window.Plotly || !gd.layout || !gd.layout.scene) return;
+            const next = sceneLabels(labels, camera);
+            const key = (list) => (list || []).map((a) => `${a.xanchor}|${a.x}|${a.y}`).join(',');
+            if (key(next) === key(gd.layout.scene.annotations)) return;
+            window.Plotly.relayout(gd, { 'scene.annotations': next });
         }
 
         const sameCamera = (a, b) => ['eye', 'center', 'up'].every((k) => ['x', 'y', 'z'].every((d) => Math.abs(((a[k] || {})[d] || 0) - ((b[k] || {})[d] || 0)) < 1e-3));
