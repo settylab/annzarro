@@ -36,7 +36,7 @@
 .cgene-mode, .cgene-section__rows { display: inline-flex; gap: 8px; align-items: center; }
 .cgene-radio { display: inline-flex; align-items: center; gap: 2px; margin: 0; white-space: nowrap; }
 .cgene-swap.active { background-color: var(--az-accent-bg); }
-.cgene-layout-slot { display: inline-flex; gap: 6px; }
+.cgene-layout-slot { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .cgene-layout-slot:empty { display: none; }
 .cgene-undo-wrap { align-self: flex-start; }
 
@@ -110,30 +110,24 @@
 .cgene-section__help { grid-column: 2 / 4; color: var(--az-muted); font-size: 0.75rem; }
 .cgene-lapsed { font-style: italic; }
 
-/* Cluster ▾ and Plot Options (X5, UX 3.1 and 3.4): the buttons in the Layout group, the menus open the width of the
-   control grid below it, the clustering's sentences beside the buttons */
-.cgene-cluster-btn, .cgene-options-btn { white-space: nowrap; }
-.cgene-menus { flex: 1 1 100%; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.cgene-menus:empty { display: none; }
-.cgene-menu {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 6px 16px;
-    padding: 6px 8px;
-    border: 1px solid var(--az-border-soft);
-    border-radius: 4px;
-    background-color: var(--az-surface-2);
-}
-.cgene-menu[hidden] { display: none; }
-.cgene-cluster-menu { flex-direction: column; gap: 4px; }
+/* Cluster ▾, Color ▾ and Plot Options (X5; pop-overs since 0.8.0 WP-2, static/js/ui/popover.js): the buttons in the
+   Layout group with the clustering's sentences beside them; the controls live in a body-level pop-over surface, so
+   opening one never changes the panel's size */
+.cgene-swap, .cgene-cluster-btn, .cgene-color-btn, .cgene-options-btn { white-space: nowrap; }
+.cgene-pop { display: flex; flex-direction: column; gap: 10px; }
+.cgene-cluster-menu { gap: 6px; }
 .cgene-cluster-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .cgene-cluster-scope .cgene-field__label { min-width: 6.5rem; }
 .cgene-help { margin: 0; color: var(--az-muted); font-size: 0.75rem; }
 .cgene-help[hidden] { display: none; }
 .cgene-cluster-note { flex: 1 1 100%; }
 .cgene-cluster-note:empty { display: none; }
-.cgene-options__section { display: flex; flex-direction: column; gap: 4px; min-width: 12rem; margin: 0; padding: 0; border: 0; }
+.cgene-dendrograms { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.cgene-dendrograms .cgene-field__label { min-width: 6.5rem; }
+.cgene-pop .cgene-field { display: flex; justify-content: space-between; gap: 8px; }
+.cgene-pop .cgene-field[hidden] { display: none; }
+.cgene-pop .cgene-field .form-select { max-width: 13rem; }
+.cgene-options__section { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; border: 0; }
 .cgene-options__section[hidden] { display: none; }
 .cgene-options__section > legend { float: none; width: auto; margin: 0 0 2px; padding: 0; font-size: 0.6875rem; font-weight: 600;
     color: var(--az-muted); text-transform: uppercase; letter-spacing: 0.03em; }
@@ -143,14 +137,14 @@
 .cgene-title-input { width: 11rem; }
 .cgene-dot-range { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
 .cgene-dot-range input[type="range"] { width: 6rem; }
-.cgene-options__foot { flex: 1 1 100%; display: flex; gap: 6px; }
+.cgene-pop .cgene-dot-range .cgene-field__label { flex: 1 1 100%; }
+.cgene-pop .cgene-dot-range input[type="range"] { flex: 1 1 0; min-width: 0; }
+.cgene-export { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.cgene-export > legend { flex: 1 1 100%; }
+.cgene-pop__foot { display: flex; justify-content: flex-end; }
 .cgene-ward-note { display: flex; align-items: center; gap: 4px; }
 .cgene-ward-note[hidden] { display: none; }
 .cgene-ward-undo { padding: 0; font-size: 0.75rem; }
-/* Show as table (UX 7): below the plot */
-.cgene-table { flex: 0 1 auto; max-height: 40%; overflow: auto; padding: 0 8px 4px; }
-.cgene-table[hidden] { display: none; }
-.cgene-table caption { caption-side: top; color: var(--az-muted); }
 
 /* status line and the plot */
 .cgene-message { padding: 0 8px; color: var(--az-muted); font-size: 0.75rem; min-height: 1.1em; }
@@ -179,3 +173,11 @@
     .cgene-section__above { grid-column: 2; }
     .cgene-section__help { grid-column: 1 / 3; }
 }
+
+/* WP-4: each measure in one row, `Color [Mean ▾] of [logged ▾] above [0]`; the plot's own Statistics offered under it */
+.cgene-measure__parts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.cgene-measure__word { color: var(--az-muted); font-size: 0.75rem; }
+.cgene-measure__word[hidden] { display: none; }
+.cgene-measure .form-control { width: 5rem; }
+.cgene-offer { max-width: 30rem; }
+.cgene-offer[hidden] { display: none; }

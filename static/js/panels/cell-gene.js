@@ -49,7 +49,12 @@ import { createSourceAdapter, KIND_HEADING } from '../utils/score-source-panels.
 import { TableResolver, findCycle } from '../utils/table-resolver.js';
 import { KIND_CLIENT } from './score-options/score-options.js';
 import { layerKeys } from '../utils/structure-keys.js';
-import { statisticGrade, negativeValuesSentence } from '../utils/group-statistics.js';
+import {
+    statisticGrade, negativeValuesSentence, axisOfferRecipe, axisOfferPatch, defaultMeasures, statisticUsage, GROUP_STATISTICS_MODEL
+} from '../utils/group-statistics.js';
+import { parseThresholdText } from '../utils/options-model.js';
+import { geneReads } from '../utils/cell-gene-model.js';
+import { createOfferedSection } from './score-options/offered-section.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
 import { buildFigure, colourBars } from './cell-gene/draw.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
@@ -63,11 +68,11 @@ import {
     parseAggregation, planFeatures, buildMatrix, OFFER_OTHER, GROUP_AXIS
 } from './cell-gene/sections.js';
 import {
-    statisticChoices, parseStatistic, statisticValue, axisChoices, axisSourceId, axisRecipe, createControls, createAddGenes,
+    measureModel, offerPlace, pickLayer, axisChoices, axisSourceId, axisRecipe, createControls, createAddGenes,
     createSectionList
 } from './cell-gene/controls.js';
 import {
-    gateMatrix, describePlot, ownJobAhead, plotState, matrixTag, oneCellPerGroup, sizeFirst, createChecklist
+    gateMatrix, describePlot, ownJobAhead, plotState, matrixTag, oneCellPerGroup, createChecklist
 } from './cell-gene/states.js';
 import { OPTIONS_PART, figureExtras, barSettings } from './cell-gene/options.js';
 import { CLICKS_PART } from './cell-gene/clicks.js';
@@ -93,6 +98,7 @@ const PARTS = Object.freeze({ options: OPTIONS_PART, clicks: CLICKS_PART });
 
 const W = VOCABULARY.word;
 const STATES = VOCABULARY.cellGene.states;
+const SOURCES = VOCABULARY.cellGene.sources;
 
 /** What a notice calls things (utils/source-notices.js): the plot waits on its groups. */
 const NOTICE_WORDS = Object.freeze({
@@ -179,6 +185,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _controlsVisible = options.controlsVisible;
         let _config = configFrom(options);
         const _undo = new UndoStack();
+        /** A new plot whose Color and Size the user has not chosen: they follow matrix kind and the axis's offer (Q2) */
+        let _fresh = !options || (!('color' in options) && !('size' in options));
 
         // derived, never saved
         let _initialized = false;
@@ -193,6 +201,10 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _message = '';
         let _kinds = {};
         let _kindsOf = null;
+        /** layers whose kind is still being asked for */
+        let _kindsPending = 0;
+        /** the plot's own Statistics offered (offered-section.js), shown with an obs column as groups (Q1) */
+        let _offer = null;
         /** section source id -> {recipe key, genes, missing, total, ...}: read when a source changes, never per paint */
         const _resolved = new Map();
         /** source id -> stop listening */
@@ -264,6 +276,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             if (_resize) _resize.disconnect();
             _resize = null;
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
+            if (_offer) _offer.destroy();
+            _offer = null;
             if (_dom && window.Plotly) window.Plotly.purge(_dom.plot);
             _initialized = false;
             _dom = null;
@@ -284,15 +298,58 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             if (_kindsOf === dataset) return;
             _kindsOf = dataset;
             _kinds = {};
-            for (const layer of datasetLayers()) {
+            const layers = datasetLayers();
+            _kindsPending = layers.length;
+            const settled = () => {
+                if (_kindsOf !== dataset) return;
+                _kindsPending--;
+                if (_kindsPending <= 0) freshDefaults();
+            };
+            for (const layer of layers) {
                 Promise.resolve(KIND_CLIENT.kind(dataset, layer, { suggest: false })).then((reply) => {
-                    if (_kindsOf !== dataset || !reply || !reply.kind) return;
-                    _kinds = { ..._kinds, [layer]: reply.kind };
-                    _shown = null;
-                    paint();
-                    redraw();
-                }, () => {});
+                    if (_kindsOf !== dataset) return;
+                    if (reply && reply.kind) {
+                        _kinds = { ..._kinds, [layer]: reply.kind };
+                        // the defaults of an obs axis's offer follow the kinds (Q1): the plan may read differently
+                        _plan = null;
+                        _shown = null;
+                        sync();
+                        paint();
+                        redraw();
+                    }
+                    settled();
+                }, settled);
             }
+            if (_offer) { _offer.refreshInputs(); _offer.refreshKind(); }
+        }
+
+        /**
+         * A new plot's Color and Size from what the layers hold (operator ruling Q2), once every layer's kind is known:
+         * the mean on the log-normalised layer and % expressing on the counts layer when both are identified. Not an
+         * edit, so no undo step; never once the user has chosen either.
+         */
+        function freshDefaults() {
+            if (!_fresh || _kindsPending > 0) return;
+            const next = withFreshMeasures(_config);
+            if (next === _config) return;
+            _config = normalizeCellGene(next).config;
+            changed();
+        }
+
+        /**
+         * `config` with a fresh plot's Color and Size (Q2) from the layers its cell axis offers (Q1: the offer stays the
+         * gate), or `config` itself when they would not change, the user chose them, or kinds are still asked for.
+         */
+        function withFreshMeasures(config) {
+            if (!_fresh || _kindsPending > 0) return config;
+            const axis = config.cellAxis;
+            const g = axis && axis.type === GROUP_AXIS ? panelOf(axis.key) : null;
+            const recipe = g && typeOf(g) === GROUPING_TYPE ? g.getRecipe() : axisOfferRecipe(config.offer, datasetLayers(), _kinds);
+            const have = new Set(datasetLayers());
+            const d = defaultMeasures(GROUP_STATISTICS_MODEL.offeredLayers(recipe).filter((l) => have.has(l)), _kinds);
+            const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+            if (same(d.color, config.color) && same(d.size, config.size)) return config;
+            return { ...config, color: d.color, size: d.size };
         }
 
         /** The grouping of the cell axis, when it is one, or null (an obs column, or none). */
@@ -303,15 +360,24 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             return typeOf(p) === GROUPING_TYPE ? p : null;
         }
 
-        /** The grouping's recipe for what it offers (CXG-11); null with an obs column (the defaults of SHR-26). */
+        /**
+         * What Color and Size may pick from (CXG-11, operator ruling Q1): the grouping's Statistics offered, or with an
+         * obs column the plot's own offer, where the log-normalised and counts layers count as offered until it is edited.
+         */
         function offerRecipe() {
             const g = axisGrouping();
-            return g ? g.getRecipe() : null;
+            return g ? g.getRecipe() : obsOffer();
+        }
+
+        /** The plot's own offer as a recipe (group-statistics.js axisOfferRecipe). */
+        function obsOffer() {
+            return axisOfferRecipe(_config.offer, datasetLayers(), _kinds);
         }
 
         /** The grouping's expression threshold, for a statistic that has none of its own (CXG-9). */
         function baseThreshold() {
-            const r = offerRecipe();
+            const g = axisGrouping();
+            const r = g ? g.getRecipe() : null;
             return r && isNumber(r.detect_above) ? r.detect_above : 0;
         }
 
@@ -399,7 +465,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null, threshold: baseThreshold() });
             const rowsOf = new Array(entries.length).fill(0);
             for (const row of features.rows) rowsOf[row.section]++;
-            _plan = { ...features, entries, option: { features: features.features.map((f) => f.wire), statistics: features.statistics },
+            const wires = features.features.map((f) => f.wire);
+            _plan = { ...features, entries, reads: geneReads(wires), featureCount: wires.length, option: { features: features.features.map((f) => f.wire), statistics: features.statistics },
                 optionKey: features.features.map((f) => f.key).join('\u0003') + JSON.stringify(features.statistics),
                 // what the matrix limit and the notices read: each section's rows and genes, the genes read
                 shape: entries.map((e, i) => ({ rows: rowsOf[i], genes: e.genes.length })),
@@ -449,7 +516,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function gateFor(plan, id) {
             if (_gate.planKey === plan.optionKey && _gate.axis === id && _gate.ask === 'all') return _gate;
             const known = knownGroups(id);
-            _gate = { ...gateMatrix({ sections: plan.shape, groups: known ? known.count : null }), planKey: plan.optionKey, axis: id,
+            _gate = { ...gateMatrix({ sections: plan.shape, groups: known ? known.count : null, features: plan.featureCount, reads: plan.reads }), planKey: plan.optionKey, axis: id,
                 groupsOf: known ? known.groupsOf : null };
             return _gate;
         }
@@ -540,6 +607,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             }
             const keys = Object.keys(config).filter((k) => !PANEL_KEYS.includes(k));
             if (!keys.length) return;
+            if (keys.includes('color') || keys.includes('size')) _fresh = false;
             // Back and Forward give a whole configuration (it has the version); a remap gives the fields it rewrote.
             // Either way the configuration as saved, with no undo step
             _config = configFrom('version' in config ? config : { ..._config, ...config });
@@ -552,7 +620,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         const sectionName = (i) => sectionTitle(_config.sections[i], titleOfPanel);
 
         function setAxis(axis) {
-            commit({ ..._config, cellAxis: axis }, `groups ${axis.type === 'obs' ? axis.key : titleOfPanel(axis.key)}`);
+            // a fresh plot's Color and Size follow what the new groups offer (Q2), in the same step
+            commit(withFreshMeasures({ ..._config, cellAxis: axis }), `groups ${axis.type === 'obs' ? axis.key : titleOfPanel(axis.key)}`);
         }
 
         function newGrouping() {
@@ -615,11 +684,19 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 title: (i, text) => commit(setSectionTitle(_config, i, text), `rename ${sectionName(i)}`),
                 op: sectionOp, move, aggregation: setAggregation, above: setAbove
             } });
-            _controls = createControls({ D, id: _id, model: controlsModel, sections: _sections.element, addGenes: _addGenes.element, on: {
+            _offer = createOfferedSection({
+                D, id: _id, model: GROUP_STATISTICS_MODEL, title: SOURCES.offer.title, text: SOURCES.offer,
+                getRecipe: obsOffer, apply: applyOffer,
+                getInputs: async () => datasetLayers(),
+                getKind: (layer, opts) => KIND_CLIENT.kind(DataManager.getCurrentDataset(), layer, opts),
+                getInUse: () => ownUsage().statistics, getLayersInUse: () => ownUsage().layers,
+                onKinds: () => paint(),
+                hooks: { pinnedLayer: GROUP_STATISTICS_MODEL.defaultLayer }
+            });
+            _controls = createControls({ D, id: _id, model: controlsModel, sections: _sections.element, addGenes: _addGenes.element, offer: _offer.element, on: {
                 axis: setAxis, newGrouping,
                 mode: (mode) => commit({ ..._config, mode }, mode === 'dots' ? 'show as dots' : 'show as a heatmap'),
-                color: (value) => commit({ ..._config, color: { ...withThreshold(_config.color), ...parseStatistic(value) } }, 'color'),
-                size: (value) => commit({ ..._config, size: { ...withThreshold(_config.size), ...parseStatistic(value) } }, 'size'),
+                stat: setStat, layer: setLayer, above: setThreshold, offerOther,
                 scale: (value) => commit({ ..._config, scale: value }, 'scale'),
                 swap: (on) => commit({ ..._config, swap: on }, 'swap axes')
             } });
@@ -640,17 +717,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             plot.__azCellGene = true;
             plot.__azChooser = null;
             const area = el('div', { class: 'cgene-area' }, plot, el('div', { class: 'cgene-empty' }, checklist));
-            // Show as table (UX 7): Plot Options fills it
-            const table = el('div', { class: 'cgene-table', hidden: true });
-            // Cluster ▾ and Plot Options open here, the width of the control grid (panels/cell-gene/options.js)
-            const menus = el('div', { class: 'cgene-menus' });
-            _controls.element.append(el('div', { class: 'cgene-undo-wrap' }, undoBtn), menus);
-            root.append(_controls.element, message, hint, area, table);
+            // Cluster ▾, Color ▾ and Plot Options are pop-overs (cell-gene/options.js), out of the panel's flow
+            _controls.element.append(el('div', { class: 'cgene-undo-wrap' }, undoBtn));
+            root.append(_controls.element, message, hint, area);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
             plot.__azChooser = root.querySelector('.cgene-axis-key');
-            _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area, table, menus,
+            _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (typeof ResizeObserver !== 'undefined') {
                 _resize = new ResizeObserver(() => { if (_dom && _dom.plot._fullLayout) fitToContainer(_dom.plot); });
@@ -662,16 +736,73 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         /** A statistic setting keeps its own threshold across a change of statistic or layer (CXG-9). */
         const withThreshold = (spec) => (isNumber(spec.detect_above) ? { detect_above: spec.detect_above } : {});
+        const measureName = (which) => (which === 'color' ? 'color' : 'size');
+
+        /** A measure's statistic (WP-4): its layer stays when it can give the statistic, else the first offered one that can. */
+        function setStat(which, stat) {
+            _fresh = false;
+            const spec = _config[which];
+            if (stat === 'count') {
+                commit({ ..._config, [which]: { ...withThreshold(spec), stat } }, `${measureName(which)} statistic`);
+                return;
+            }
+            const layer = pickLayer({ recipe: offerRecipe(), datasetLayers: datasetLayers(), kinds: _kinds, stat, preferred: spec.layer });
+            commit({ ..._config, [which]: { ...withThreshold(spec), stat, layer } }, `${measureName(which)} statistic`);
+        }
+
+        /** A measure's layer (WP-4): Color and Size may read different layers; each gene is then read on both. */
+        function setLayer(which, layer) {
+            _fresh = false;
+            commit({ ..._config, [which]: { ..._config[which], layer } }, `${measureName(which)} layer`);
+        }
+
+        /** A measure's expression threshold, beside it (WP-4): a number from 0 up, else the box shows the one in force. */
+        function setThreshold(which, text) {
+            _fresh = false;
+            const p = parseThresholdText(text);
+            if (!p.ok) { paint(); return; }
+            commit({ ..._config, [which]: { ..._config[which], detect_above: p.value } }, `${measureName(which)} threshold`);
+        }
+
+        /**
+         * Offer other… (operator ruling Q1): where layers are offered. A grouping's Statistics offered when the groups are
+         * a grouping's; with an obs column, the plot's own list.
+         */
+        function offerOther() {
+            if (offerPlace(_config.cellAxis) === 'grouping') {
+                const id = _config.cellAxis.key;
+                openPanel(id, _id);
+                const g = panelOf(id);
+                // the panel may still be building its parts
+                if (g && typeof g.revealStatisticsOffered === 'function') setTimeout(() => g.revealStatisticsOffered(), 0);
+                return;
+            }
+            revealControls();
+            if (_offer) _offer.reveal();
+        }
+
+        /** An edit of the plot's own Statistics offered, as one undoable step. */
+        function applyOffer(patch) {
+            const next = axisOfferPatch(_config.offer, patch, datasetLayers(), _kinds);
+            const config = { ..._config, offer: Object.keys(next).length ? next : undefined };
+            if (!config.offer) delete config.offer;
+            commit(config, 'statistics offered');
+        }
+
+        /** What this plot reads, as the offered section counts users ("1 plot"). */
+        function ownUsage() {
+            const statistics = [_config.color, ...(_config.mode === 'dots' ? [_config.size] : [])].map((s) => ({ stat: s.stat, layer: s.layer }));
+            return statisticUsage([{ kind: 'plot', option: { statistics } }]);
+        }
 
         function mountParts() {
             const ctx = {
                 panelId: _id, D, config: () => _config, set: (patch, label) => commit({ ..._config, ...patch }, label), undo,
-                // the drawing as last drawn, for the clustering's sentences and Show as table
+                // the drawing as last drawn, for the clustering's sentences and Download CSV
                 drawn: () => (_shown && _shown.model ? { model: _shown.model, order: _shown.order } : null),
                 // the recipe the cell axis's groups are of, for "Within <first factor>"
                 recipe: shownRecipe, titleOf: sourceTitleOf,
-                title: () => _title,
-                menuHost: _dom.menus, tableHost: _dom.table
+                title: () => _title
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
             // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
@@ -710,8 +841,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             return ['signature', 'table'].map((kind) => ({ heading: KIND_HEADING[kind], items: list.filter((s) => s.kind === kind) }));
         }
 
-        function statisticList(spec) {
-            return statisticChoices({ recipe: offerRecipe(), layers: datasetLayers(), kinds: _kinds, held: spec });
+        function measure(spec) {
+            return measureModel({ spec, recipe: offerRecipe(), datasetLayers: datasetLayers(), kinds: _kinds,
+                threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold() });
         }
 
         function controlsModel() {
@@ -720,9 +852,10 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 axis: _config.cellAxis || null,
                 choices: axisChoices({ structure: structureRead(), self: _id, groupings: all, loops: wouldLoop }),
                 mode: _config.mode,
-                color: { value: statisticValue(_config.color), list: statisticList(_config.color) },
-                // under No size, the layers that can give the size first (SHR-27)
-                size: { value: statisticValue(_config.size), list: sizeProblem() ? sizeFirst(statisticList(_config.size), _config.size) : statisticList(_config.size) },
+                // each measure: statistic, layer (only offered ones, graded: SHR-27) and its threshold (WP-4)
+                color: measure(_config.color),
+                size: measure(_config.size),
+                offerShown: offerPlace(_config.cellAxis) === 'plot',
                 scale: _config.scale || 'none',
                 swap: !!_config.swap
             };
@@ -774,6 +907,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const cells = DataManager.getCells();
             return {
                 genes: plan ? plan.geneCount : 0,
+                // each gene read once per layer and threshold (WP-4): the notices count both layers
+                reads: plan ? plan.reads : null,
                 cells: cells && Number.isFinite(Number(cells.length)) ? Number(cells.length) : null,
                 layer: (_config.color && _config.color.layer) || null,
                 tooLarge: _gate.tooLarge,
@@ -812,7 +947,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             }
             // the groups the limit waits for are known, or the groups changed: decide again (CXG-17)
             if (snap.state === 'ready' && snap.values && snap.values.reply && Array.isArray(snap.values.reply.groups)) {
-                const grown = _plan && gateMatrix({ sections: _plan.shape, groups: snap.values.reply.groups.length }).ask !== 'all';
+                const grown = _plan && gateMatrix({ sections: _plan.shape, groups: snap.values.reply.groups.length, features: _plan.featureCount,
+                    reads: _plan.reads }).ask !== 'all';
                 if (_gate.ask !== 'all' || grown) {
                     regate();
                     paint();
@@ -833,6 +969,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function paint() {
             if (!_dom) return;
             _controls.paint();
+            if (_offer && offerPlace(_config.cellAxis) === 'plot') _offer.paint();
             _sections.paint();
             _state = stateOf();
             _dom.root.dataset.state = _state;
@@ -1001,7 +1138,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 size: _config.mode !== 'dots' ? { none: '' } : sizeNone ? { none: sizeNone }
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
-                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations,
+                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline,
                 pendingText: pending ? pendingText(plan, pending) : ''
             };
             const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });

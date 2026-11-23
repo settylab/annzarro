@@ -152,7 +152,7 @@ const cellGene = Object.freeze({
         withinSections: 'Within sections',
         all: 'All',
         within: (factor) => `Within ${factor}`,
-        summary: (linkage, distance) => `${linkage} linkage, ${distance}, on the values as displayed. Change them in Plot Options.`,
+        summary: (linkage, distance) => `${linkage} linkage, ${distance}, on the values as displayed.`,
         /** The Linkage select's entries, and the linkage as the summary names it. */
         linkage: Object.freeze({ complete: 'complete', average: 'average', ward: 'Ward (Euclidean distance only)' }),
         linkageName: Object.freeze({ complete: 'Complete', average: 'Average', ward: 'Ward' }),
@@ -168,8 +168,8 @@ const cellGene = Object.freeze({
         dotSizes: 'Smallest and largest dot',
         dotMin: '% at the smallest dot',
         dotMax: '% at the largest dot',
-        sizeThreshold: 'Size threshold',
-        sameAsColor: 'as Color',
+        outlineColor: 'Dot outline color',
+        outlineWidth: 'Dot outline width (px)',
         colorScale: 'Color scale',
         min: 'Min',
         max: 'Max',
@@ -196,7 +196,16 @@ const cellGene = Object.freeze({
         pooledNote: 'A one-row section has no pooled cells of its own, so it is z-scored across its own groups.',
         csv: 'Download CSV',
         /** The strips' legend, past the levels it has room for. */
-        more: (n) => `+ ${fmt(n)} more`
+        more: (n) => `+ ${fmt(n)} more`,
+        // 0.8.0 WP-2: Cluster ▾, Color ▾ and Plot Options as pop-overs (design note options-ux-080, decisions c to g)
+        colorMenu: 'Color ▾',
+        popoverTitle: Object.freeze({ cluster: 'Cluster', color: 'Color', plotOptions: 'Plot Options' }),
+        reverse: 'Reverse',
+        dendrogramGenes: 'Genes',
+        dendrogramGroups: 'Groups',
+        exportHeading: 'Export',
+        resetColor: 'Reset',
+        resetColorHelp: 'The color scale, its direction and range, and the dot sizes go back to their defaults.'
     }),
     /**
      * What the plot says in each of its states (UX 3.5; SHR-27, SHR-32, SHR-47, SHR-48, CXG-17, CXG-19, CXG-27):
@@ -237,6 +246,37 @@ const cellGene = Object.freeze({
             computing: 'Computing…', queued: 'Plot queued', awaiting: 'Not computed', refused: 'Plot refused', tooLarge: 'Too large',
             failed: 'Plot failed', held: 'Out of date', noSize: 'No size'
         })
+    }),
+    /**
+     * Color and Size sources (WP-4, FB-2a): each measure's `statistic of layer above threshold`, where layers are
+     * offered, the plot's own Statistics offered on an obs axis, and the limit counted in values (finding 9).
+     */
+    sources: Object.freeze({
+        of: 'of',
+        above: 'above',
+        threshold: 'expressed above',
+        thresholdHelp: 'A cell counts as expressing above this value.',
+        offerOther: 'Offer other…',
+        /** The plot's own Statistics offered, with an obs column as groups (operator ruling Q1). */
+        offer: Object.freeze({
+            title: 'Statistics offered',
+            where: 'Color and Size pick from these. With an obs column as groups, the plot keeps this list itself.',
+            methods: 'Statistics',
+            methodsNote: 'Cell count is always offered.',
+            layers: 'Color and Size choose among the offered layers.',
+            pinnedLayer: 'X is always offered.',
+            lastLayer: 'At least one layer stays offered.',
+            lastMethod: 'At least one statistic stays offered.'
+        }),
+        /** "3 genes on 2 layers": genes (in words) read on `n` layers, or at `n` thresholds. */
+        geneReads: (genes, n, cause) => (cause === 'layers' ? `${genes} on ${n} layers` : cause === 'thresholds' ? `${genes} at ${n} thresholds` : genes),
+        tooManyValues: (groups, features, values, limit) => `${groups} × ${features} = ${values} values; the limit is ${limit}.`,
+        features: (n) => `${n.toLocaleString('en-US')} ${n === 1 ? 'value per group' : 'values per group'}`,
+        readTwice: Object.freeze({
+            layers: (n) => `Color and Size read different layers, so each gene is read ${n === 2 ? 'twice' : `${n} times`}.`,
+            thresholds: (n) => `Color and Size use different thresholds, so each gene is read ${n === 2 ? 'twice' : `${n} times`}.`
+        }),
+        tooManyValuesWayOut: 'Remove a section, use fewer groups, or read Color and Size on one layer.'
     })
 });
 
@@ -494,4 +534,14 @@ const table = Object.freeze({
     cut: (shown, all) => `Showing the first ${fmt(shown)} of ${fmt(all)} rows; Download CSV has them all.`
 });
 
-export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+/**
+ * The 3D view's refusal (UX 6b): one base sentence and a hint per panel, so each panel names what to reduce.
+ * `tooMany(max, count, hint)` reads "3D draws at most 40,000 bars; this plot has 262,144. Use fewer bins."
+ */
+const view3d = Object.freeze({
+    tooManyBase: (max, count) => `3D draws at most ${fmt(max)} bars; this plot has ${fmt(count)}.`,
+    hint: Object.freeze({ bins: 'Use fewer bins.', matrix: 'Use fewer genes or groups.' }),
+    tooMany: (max, count, hint = 'bins') => `${view3d.tooManyBase(max, count)} ${view3d.hint[hint] || view3d.hint.bins}`
+});
+
+export const VOCABULARY = Object.freeze({ view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });

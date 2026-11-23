@@ -13,11 +13,12 @@
  *   rows: [{ label, gapBefore?,                   the gene axis, in order; `gapBefore` empty positions before it
  *            section?: { index, title },          the row's section (needed when `own` is given)
  *            own?: { color?: { id, label }, size?: { id, label } } }],   a one-row section's own quantity
- *   color: { id, stat, layer?, detectAbove?, scaling, values, raw?, noExpressing?, colorscale,
+ *   color: { id, stat, layer?, detectAbove?, scaling, values, raw?, noExpressing?, colorscale, reversescale?,
  *            min?, max?, center?, title?, printValues? },
  *   size:  { id, stat, layer?, detectAbove?, values, dotMin?, dotMax?, smallest?, largest?, title? }
  *        | { none: sentence },                    No size: one dot size, the legend replaced by the sentence
  *   legend?: { colorBar?: boolean, sizeLegend?: boolean, strips?: boolean }, plotTitle?: string,
+ *   outline?: { color, width }   the dots' outline, and the size legend's; absent means none; heatmap cells never have one
  *   pendingText?: string }                        what a row still being read says (rows[].pending, CXG-18)
  * ```
  * A row with `pending: true` is a placeholder of a section still being read (CXG-18): its cells are drawn faint, with
@@ -416,7 +417,7 @@ function sizeLegendParts(model, k, entry, n, th) {
         xaxis: `x${axisId}`, yaxis: `y${axisId}`,
         x: refs.map(() => 0), y: refs.map((_, j) => j),
         text: refs.map((v) => (k.hi > k.lo ? fmt(v) : fmt(k.lo))), textposition: 'middle right', cliponaxis: false,
-        marker: { size: refs.map((v) => diameterOf(v, k.lo, k.hi, smallest, largest)), color: th.axisColor, opacity: 0.55, line: { width: 0 } }
+        marker: { size: refs.map((v) => diameterOf(v, k.lo, k.hi, smallest, largest)), color: th.axisColor, opacity: 0.55, line: model.outline ? { color: model.outline.color, width: model.outline.width } : { width: 0 } }
     };
     const axes = {
         [`xaxis${axisId}`]: { domain: [entry.x + 0.01, 1], range: [-0.6, 3], visible: false, fixedrange: true },
@@ -535,6 +536,8 @@ function dotTraces(model, P, stack, th) {
         total += x.length;
         const entry = barOf(stack, k.key);
         const marker = { size: sizes, color: colours, colorscale: color.colorscale, cmin: k.lo, cmax: k.hi, showscale: Boolean(entry) };
+        if (color.reversescale) marker.reversescale = true;
+        if (model.outline) marker.line = { color: model.outline.color, width: model.outline.width };
         if (entry) marker.colorbar = colourBar(entry, k.lines, th);
         return { type: 'scatter', mode: 'markers', x, y, text, hoverinfo: 'text', showlegend: false, marker };
     });
@@ -606,6 +609,7 @@ function heatmapTraces(model, P, stack, th) {
             type: 'heatmap', x: xs, y: ys, z, text, hoverinfo: 'text', hoverongaps: false,
             colorscale: color.colorscale, zmin: k.lo, zmax: k.hi, showscale: Boolean(entry)
         };
+        if (color.reversescale) trace.reversescale = true;
         if (entry) trace.colorbar = colourBar(entry, k.lines, th);
         if (color.printValues) trace.texttemplate = '%{z:.2~f}';
         return trace;

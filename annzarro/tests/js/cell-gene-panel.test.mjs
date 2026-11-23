@@ -12,7 +12,8 @@
  *     only summaries ask for no score, a change of statistic on the same layer asks for nothing new;
  *   - the matrix (SHR-21, CXG-8, CXG-16): gene rows and aggregated rows from the moments, missing never 0;
  *   - the controls (UX 3.1, CXG-2, CXG-11): the Groups choices (categorical obs columns, groupings, a loop unavailable
- *     with its reason) and the Color and Size choices from what the grouping offers, "no longer offered" kept.
+ *     with its reason) and the Color and Size statistic and layer choices from what the grouping offers, "no longer
+ *     offered" kept (WP-4; tests/js/cell-gene-sources.test.mjs has the obs axis's own offer).
  *
  * Run:  node --test annzarro/tests/js/cell-gene-panel.test.mjs
  */
@@ -33,7 +34,7 @@ import {
     aggregationValue, parseAggregation, aggregationHelp, planFeatures, buildMatrix, OFFER_OTHER, sectionTitle
 } from '../../../static/js/panels/cell-gene/sections.js';
 import {
-    statisticChoices, parseStatistic, statisticValue, axisChoices, axisSourceId, axisRecipe
+    statisticList, layerList, axisChoices, axisSourceId, axisRecipe
 } from '../../../static/js/panels/cell-gene/controls.js';
 
 const golden = (name) => JSON.parse(readFileSync(new URL(`../data/golden/${name}.json`, import.meta.url), 'utf8'));
@@ -414,28 +415,34 @@ test('the cell axis as the page\'s group sources read it: a grouping by its id, 
     assert.equal(axisRecipe({ type: 'obs', key: 'cell_type' }), r, 'the same object until it changes');
 });
 
-test('Color and Size list what the grouping offers on the layers it offers, and Cell count (CXG-11)', () => {
+test('Color and Size list the statistics and the layers the grouping offers, graded, then Cell count (CXG-11, WP-4)', () => {
     const recipe = normalizeGrouping({ offered: ['mean', 'pct_expressing', 'sd'], layers: ['logged'] }).recipe;
-    const list = statisticChoices({ recipe, layers: ['X', 'logged', 'counts'], kinds: { X: 'signed', logged: 'log' }, held: { stat: 'mean', layer: 'X' } });
-    const values = list.map((e) => e.value);
-    assert.deepEqual(values, ['mean@X', 'mean@logged', 'pct_expressing@logged', 'sd@X', 'sd@logged', 'count']);
-    assert.ok(!values.includes('pct_expressing@X'), '% expressing cannot be read on a signed X (OD 8)');
-    assert.deepEqual(parseStatistic('pct_expressing@logged'), { stat: 'pct_expressing', layer: 'logged' });
-    assert.deepEqual(parseStatistic('count'), { stat: 'count' });
-    assert.equal(statisticValue({ stat: 'count', layer: 'X' }), 'count');
-    assert.equal(list.find((e) => e.value === 'mean@X').label, 'mean · X');
+    const kinds = { X: 'signed', logged: 'log' };
+    const datasetLayers = ['X', 'logged', 'counts'];
+    const stats = statisticList({ recipe, kinds, held: { stat: 'mean', layer: 'X' } });
+    assert.deepEqual(stats.map((e) => e.value), ['mean', 'pct_expressing', 'sd', 'count', OFFER_OTHER]);
+    assert.equal(stats.find((e) => e.value === 'pct_expressing').disabled, true, '% expressing cannot be read on a signed X (OD 8)');
+    assert.equal(stats.find((e) => e.value === 'mean').label, 'Mean');
+    const layers = layerList({ recipe, datasetLayers, kinds, stat: 'mean', held: { stat: 'mean', layer: 'X' } });
+    assert.deepEqual(layers.map((e) => e.value), ['X', 'logged', OFFER_OTHER], 'only the offered layers (operator ruling Q1)');
+    const pct = layerList({ recipe, datasetLayers, kinds, stat: 'pct_expressing', held: { stat: 'pct_expressing', layer: 'logged' } });
+    assert.deepEqual(pct.filter((e) => !e.disabled).map((e) => e.value), ['logged', OFFER_OTHER]);
+    assert.deepEqual(layerList({ recipe, datasetLayers, kinds, stat: 'count', held: { stat: 'count' } }), [], 'Cell count reads no layer');
 });
 
-test('a statistic the grouping stopped offering stays listed, marked (SHR-26)', () => {
+test('a statistic or a layer the grouping stopped offering stays listed, marked (SHR-26)', () => {
     const recipe = normalizeGrouping({}).recipe;
-    const list = statisticChoices({ recipe, layers: ['X', 'logged'], kinds: {}, held: { stat: 'sd', layer: 'logged' } });
-    const held = list.find((e) => e.value === 'sd@logged');
-    assert.ok(held);
-    assert.equal(held.label, 'SD · logged (no longer offered)');
-    assert.equal(held.lapsed, true);
+    const held = { stat: 'sd', layer: 'logged' };
+    const stat = statisticList({ recipe, kinds: {}, held }).find((e) => e.value === 'sd');
+    assert.equal(stat.label, 'SD (no longer offered)');
+    assert.equal(stat.lapsed, true);
+    const layer = layerList({ recipe, datasetLayers: ['X', 'logged'], kinds: {}, stat: 'sd', held }).find((e) => e.value === 'logged');
+    assert.equal(layer.label, 'logged (no longer offered)');
+    assert.equal(layer.lapsed, true);
 });
 
-test('an obs column as the cell axis offers the defaults of SHR-26 (CXG-11)', () => {
-    const list = statisticChoices({ recipe: null, layers: ['X', 'logged'], kinds: {}, held: { stat: 'mean', layer: 'X' } });
-    assert.deepEqual(list.map((e) => e.value), ['mean@X', 'pct_expressing@X', 'count']);
+test('an obs column as the cell axis offers the defaults of SHR-26 while no layer kind is known (CXG-11)', () => {
+    const held = { stat: 'mean', layer: 'X' };
+    assert.deepEqual(statisticList({ recipe: null, kinds: {}, held }).map((e) => e.value), ['mean', 'pct_expressing', 'count', OFFER_OTHER]);
+    assert.deepEqual(layerList({ recipe: null, datasetLayers: ['X', 'logged'], kinds: {}, stat: 'mean', held }).map((e) => e.value), ['X', OFFER_OTHER]);
 });

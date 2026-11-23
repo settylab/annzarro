@@ -134,6 +134,8 @@ function mount(host, ctx) {
     paint();
 
     return {
+        /** Open the section and put the cursor on it: where a Cell-Gene Plot's "Offer other…" leads (WP-4). */
+        reveal: () => section.reveal(),
         update() {
             refresh();
             paint();

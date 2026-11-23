@@ -234,8 +234,12 @@ def test_no_size_draws_one_size_says_why_and_lists_the_layers_that_work_first(pa
     sentence = "% expressing is not available on X: X has negative values. Choose a layer."
     until(page, "(s) => { const t = document.querySelector(s + ' .ps-tag[data-tag=\"cgene-nosize\"]'); return t && t.textContent === 'No size'; }", TP)
     until(page, "([s, want]) => (document.querySelector(s + ' .cgene-plot').textContent || '').includes(want)", [TP, sentence])
-    values = page.eval_on_selector_all(f"{TP} .cgene-size option", "os => os.map(o => o.value)")
-    assert values[:2] == ["pct_expressing@logged", "pct_expressing@counts"], values
+    # the Size layer select (WP-4): the held X marked, the layers that can give the size enabled
+    layers = page.eval_on_selector_all(f"{TP} .cgene-size-layer option",
+                                       "os => os.filter(o => !o.disabled && !o.classList.contains('cgene-lapsed') && o.value !== '__offer_other__').map(o => o.value)")
+    assert layers == ["logged", "counts"], layers
+    assert page.input_value(f"{TP} .cgene-size") == "pct_expressing"
+    assert page.locator(f"{TP} .cgene-size-layer option[value='X']").inner_text() == "X (not available)"
     # no size is asked for: only Color's genes
     assert {f["layer"] for f in _features(page.calls)} == {"X"}
 
