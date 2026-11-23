@@ -228,6 +228,8 @@ export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
     const outline = s.outline.width > 0 ? { color: s.outline.color, width: s.outline.width } : null;
     return {
         color, size, outline, legend: s.legend, plotTitle: s.titles.plot || undefined, gap: s.gap, sortBySize: s.sortGroups, cluster,
+        // the 3D labels' Side and Justify, as stored (sections.js cleans them; draw.js sceneLabels reads them)
+        labels3d: isObject(config && config.labels3d) ? config.labels3d : undefined,
         annotations: {
             brackets: { titles: s.sectionTitles },
             totals: s.totals,
@@ -501,6 +503,23 @@ function mount(slot, ctx) {
         dotSizes,
         el('div', { class: 'cgene-pop__foot' }, resetColor));
 
+    // ---------------------------------------------------------------- 3D labels (operator: side and justification)
+    /** One field of `labels3d`, its default absent; Side Fixed keeps the edges the labels are on now (ctx.labelEdges). */
+    const setLabels3d = (patch, label) => {
+        const next = { ...stored('labels3d'), ...patch };
+        if (next.side !== 'fixed') { delete next.side; delete next.edges; }
+        if (!next.justify || next.justify === 'auto') delete next.justify;
+        ctx.set({ labels3d: Object.keys(next).length ? next : undefined }, label);
+    };
+    const labels3dSection = section(W3.labels.heading,
+        select('labels3dSide', W3.labels.side, [['auto', W3.labels.sides.auto], ['fixed', W3.labels.sides.fixed]],
+            (v) => setLabels3d(v === 'fixed' ? { side: 'fixed', edges: ctx.labelEdges ? ctx.labelEdges() : undefined } : { side: 'auto' },
+                `3D labels ${W3.labels.sides[v].toLowerCase()}`)),
+        select('labels3dJustify', W3.labels.justify, ['auto', 'left', 'right', 'center'].map((v) => [v, W3.labels.justifies[v]]),
+            (v) => setLabels3d({ justify: v }, `3D labels justified ${W3.labels.justifies[v].toLowerCase()}`)));
+    labels3dSection.classList.add('cgene-labels3d');
+    labels3dSection.title = W3.labels.help;
+
     // ---------------------------------------------------------------- Plot Options (UX 3.1; no clustering field since WP-2)
     const optionsBtn = button('cgene-options-btn', WO.plotOptions);
     const outlineInput = el('input', { type: 'color', class: 'form-control form-control-sm form-control-color', data: { option: 'outlineColor' }, aria: { label: WO.outlineColor },
@@ -532,6 +551,7 @@ function mount(slot, ctx) {
             check('strips', WO.strips, (on) => nested('legend', 'strips', on, true, onOff(on, WO.strips)))),
         section(WO.heading.totals,
             check('totals', WO.totals, (on) => flat('totals', on, false, onOff(on, WO.totals)))),
+        labels3dSection,
         el('fieldset', { class: 'cgene-options__section cgene-export' }, el('legend', { text: WO.exportHeading }), ...imageBtns, csvBtn));
 
     slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn, note);
@@ -626,6 +646,11 @@ function mount(slot, ctx) {
         controls.sizeLegend.closest('label').hidden = !dotsMode;
         controls.strips.checked = s.legend.strips;
         controls.totals.checked = s.totals;
+        // 3D labels: shown in 3D only
+        const l3 = isObject(c.labels3d) ? c.labels3d : {};
+        labels3dSection.hidden = c.view !== '3d';
+        controls.labels3dSide.value = l3.side === 'fixed' ? 'fixed' : 'auto';
+        controls.labels3dJustify.value = l3.justify || 'auto';
 
         const drawn = ctx.drawn();
         csvBtn.disabled = !drawn;

@@ -21,7 +21,8 @@
  *   outline?: { color, width }   the dots' outline, and the size legend's; absent means none; heatmap cells never have one
  *   pendingText?: string,                         what a row still being read says (rows[].pending, CXG-18)
  *   view?: '3d', height?: { same: true, values } | { same: false, stat, layer?, detectAbove?, values },
- *   camera?: { eye, center?, up? }, zTitle?: string }   the 3D view (UX 6b, WP-12), see figure3d
+ *   camera?: { eye, center?, up? }, zTitle?: string,    the 3D view (UX 6b, WP-12), see figure3d
+ *   labels3d?: { side?, edges?, justify? } }           its labels' Side and Justify (Plot Options ▸ 3D labels)
  * ```
  * A row with `pending: true` is a placeholder of a section still being read (CXG-18): its cells are drawn faint, with
  * `pendingText` in the hover, never as missing values. A strip of draw-annotations.js with a `legend` ({label, colour}
@@ -698,19 +699,43 @@ const cross = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z
  * @param {{camera: {eye, center?, up?}, aspect: {x: number, y: number, z: number}}} opts
  * @returns {{x: {edge: 'min'|'max', xanchor: 'left'|'right'}, y: {edge: 'min'|'max', xanchor: 'left'|'right'}}}
  */
-function sceneLabelSides({ camera, aspect }) {
-    const eye = camera.eye;
-    const center = camera.center || DEFAULT_CAMERA.center;
-    const up = camera.up || DEFAULT_CAMERA.up;
-    const right = cross(minus(center, eye), up);
+function sceneLabelSides({ camera, aspect, options = {} }) {
+    // straight down (or up) neither the nearer edges nor the screen's right are set by the camera: the default view's are used
+    const c0 = camera.center || DEFAULT_CAMERA.center;
+    const look = Math.hypot(camera.eye.x - c0.x, camera.eye.y - c0.y) < 1e-6 ? DEFAULT_CAMERA : camera;
+    const eye = look.eye;
+    const center = look.center || DEFAULT_CAMERA.center;
+    const right = screenRight(look);
     const side = (p) => (p.x * right.x + p.y * right.y > 0 ? 'left' : 'right');
-    const yEdge = eye.y < center.y ? 'min' : 'max';
-    const xEdge = eye.x < center.x ? 'min' : 'max';
+    // Side (Plot Options ▸ 3D labels): Auto, the edges nearer the camera; Fixed, the edges stored when it was chosen
+    const fixed = options.side === 'fixed' && options.edges ? options.edges : null;
+    const yEdge = fixed ? fixed.x : eye.y < center.y ? 'min' : 'max';
+    const xEdge = fixed ? fixed.y : eye.x < center.x ? 'min' : 'max';
     const half = (edge, len) => (edge === 'min' ? -len / 2 : len / 2);
+    // Justify: Auto runs outward from the bars; Left, Right or Center set every label's anchor
+    const justify = JUSTIFY.includes(options.justify) ? options.justify : null;
+    const anchor = (p) => justify || side(p);
     return {
-        x: { edge: yEdge, xanchor: side({ x: 0, y: half(yEdge, aspect.y) }) },
-        y: { edge: xEdge, xanchor: side({ x: half(xEdge, aspect.x), y: 0 }) }
+        x: { edge: yEdge, xanchor: anchor({ x: 0, y: half(yEdge, aspect.y) }) },
+        y: { edge: xEdge, xanchor: anchor({ x: half(xEdge, aspect.x), y: 0 }) }
     };
+}
+
+/** The anchors Justify may set (UX: Plot Options ▸ 3D labels); Auto is none of them. */
+const JUSTIFY = Object.freeze(['left', 'right', 'center']);
+
+/** The screen's right in the scene: forward x up, in the frame Plotly's camera is given in. */
+function screenRight(camera) {
+    return cross(minus(camera.center || DEFAULT_CAMERA.center, camera.eye), camera.up || DEFAULT_CAMERA.up);
+}
+
+/**
+ * The edges the labels are on for a camera (Auto's choice), as Side Fixed stores them: `{x, y}`, each 'min' or 'max', the
+ * edge across the box from that axis's labels.
+ */
+export function labelEdges(camera, aspect) {
+    const sides = sceneLabelSides({ camera, aspect });
+    return { x: sides.x.edge, y: sides.y.edge };
 }
 
 /**
@@ -718,12 +743,14 @@ function sceneLabelSides({ camera, aspect }) {
  * to): each at its tick on the near edge of the box, on the floor, anchored by sceneLabelSides, LABEL_GAP_PX away.
  * The axis title (`title`) stands at the middle of that edge, moved on screen along the edge's outward normal by the
  * thickness of the label band in that direction (labels estimated at CHAR_EM per character), so it clears every label.
- * @param {{x: {labels, positions, extent}, y: {labels, positions, extent}, aspect, z: number, font: Object}} spec
+ * @param {{x: {labels, positions, extent}, y: {labels, positions, extent}, aspect, z: number, font: Object,
+ *   options?: {side?: 'fixed', edges?: {x, y}, justify?: 'left'|'right'|'center'}}} spec - `options` is the plot's
+ *   `labels3d` (Plot Options ▸ 3D labels)
  * @param {{eye, center?, up?}} camera
  * @returns {Object[]}
  */
 export function sceneLabels(spec, camera) {
-    const sides = sceneLabelSides({ camera, aspect: spec.aspect });
+    const sides = sceneLabelSides({ camera, aspect: spec.aspect, options: spec.options || {} });
     const out = [];
     const edgeAt = (edge, extent) => (edge === 'min' ? -0.5 : Math.max(extent, 1) - 0.5);
     const fontPx = (spec.font && spec.font.size) || 12;
@@ -759,7 +786,7 @@ export function sceneLabels(spec, camera) {
             const at = axis.positions[k];
             out.push({ name: `${dim} label`, x: dim === 'x' ? at : across, y: dim === 'x' ? across : at, z: spec.z,
                 text: esc(ticks.ticktext[n]), showarrow: false, xanchor: sides[dim].xanchor, yanchor: 'middle', font: spec.font,
-                xshift: sides[dim].xanchor === 'left' ? LABEL_GAP_PX : -LABEL_GAP_PX });
+                xshift: sides[dim].xanchor === 'left' ? LABEL_GAP_PX : sides[dim].xanchor === 'right' ? -LABEL_GAP_PX : 0 });
         });
     }
     return out;
@@ -842,6 +869,7 @@ function figure3d(model, th) {
     const geneSpec = { labels: geneLabels, positions: genePositions, extent: P.span, title: esc(W.view3d.genes) };
     const groupSpec = { labels: groupLabels, positions: groupPositions, extent: G, title: esc(W.view3d.groups) };
     const labels3d = { x: swap ? groupSpec : geneSpec, y: swap ? geneSpec : groupSpec, aspect, z: Math.min(0, built.zRange[0]),
+        options: model.labels3d || {},
         font: { color: th.textColor, size: th.fontSize || 12, family: th.fontFamily || 'Arial, Helvetica, sans-serif' } };
     const camera = model.camera ? JSON.parse(JSON.stringify(model.camera)) : JSON.parse(JSON.stringify(DEFAULT_CAMERA));
     const zTitle = model.zTitle || (height.same ? main.lines.join(' · ') : statisticTitle(height));

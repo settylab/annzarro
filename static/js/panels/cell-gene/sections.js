@@ -88,6 +88,33 @@ function cleanCamera(raw) {
     return out;
 }
 
+const LABEL_SIDES = Object.freeze(['auto', 'fixed']);
+const LABEL_JUSTIFY = Object.freeze(['auto', 'left', 'right', 'center']);
+const EDGES = Object.freeze(['min', 'max']);
+/** The edges of the default camera, for a fixed Side stored without its own (draw.js labelEdges of DEFAULT_CAMERA). */
+const DEFAULT_LABEL_EDGES = Object.freeze({ x: 'min', y: 'max' });
+
+/**
+ * The 3D labels' Side and Justify (Plot Options ▸ 3D labels): `{side?: 'fixed', edges?: {x, y}, justify?: 'left'|'right'|
+ * 'center'}`, Auto left out; null when nothing but defaults is left.
+ */
+function cleanLabels3d(raw, problems) {
+    if (!isObject(raw)) {
+        problems.push('labels3d: not an object, left out');
+        return null;
+    }
+    const out = {};
+    if ('side' in raw && !LABEL_SIDES.includes(raw.side)) problems.push(`labels3d: side ${JSON.stringify(raw.side)} is not auto or fixed, auto used`);
+    if ('justify' in raw && !LABEL_JUSTIFY.includes(raw.justify)) problems.push(`labels3d: justify ${JSON.stringify(raw.justify)} is not known, auto used`);
+    if (raw.side === 'fixed') {
+        const e = raw.edges;
+        out.side = 'fixed';
+        out.edges = isObject(e) && EDGES.includes(e.x) && EDGES.includes(e.y) ? { x: e.x, y: e.y } : { ...DEFAULT_LABEL_EDGES };
+    }
+    if (LABEL_JUSTIFY.includes(raw.justify) && raw.justify !== 'auto') out.justify = raw.justify;
+    return Object.keys(out).length ? out : null;
+}
+
 /** A one-row section's aggregation `{agg}` or `{agg, column, layer, above?}`; null when it cannot be kept. */
 function cleanAggregation(raw) {
     if (!isObject(raw)) return null;
@@ -131,7 +158,8 @@ function cleanSection(raw, i, problems) {
  * when not the default. A stored `offer` (the plot's own offered statistics of WP-4, retired by decision 31) is read
  * and dropped, with no problem said. The 3D view
  * (UX 6b, WP-12): `view: '3d'` (absent is 2D), `height` (the bars' own measure; absent is "Same as Color", and a stored
- * one is kept while 3D is off), `camera` (the 3D camera, stored without an undo step).
+ * one is kept while 3D is off), `camera` (the 3D camera, stored without an undo step), `labels3d` (its labels' Side and
+ * Justify, Plot Options ▸ 3D labels, defaults absent).
  * @param {Object} raw
  * @returns {{config: Object, problems: string[]}}
  */
@@ -168,6 +196,10 @@ export function normalizeCellGene(raw) {
     if (!VIEWS.includes(src.view)) {
         if ('view' in src && src.view !== undefined) problems.push(`view ${JSON.stringify(src.view)} is not 3d, 2D used`);
         delete config.view;
+    }
+    if ('labels3d' in src) {
+        const labels = src.labels3d === undefined ? null : cleanLabels3d(src.labels3d, problems);
+        if (labels) config.labels3d = labels; else delete config.labels3d;
     }
     if ('camera' in src) {
         const camera = cleanCamera(src.camera);

@@ -303,3 +303,84 @@ def test_long_gene_names_and_marked_up_group_names_in_3d(page, served):
       Plotly.Fx.loneHover({x: 100, y: 100, text: t}, {container: fl._hoverlayer.node(), outerContainer: fl._paper.node(), gd: g});
       return [...fl._hoverlayer.node().querySelectorAll('text')].map(e => e.textContent).join('|'); }""")
     assert "Young | Rnase6 < 0.391 & x" in hover, hover
+
+
+ANCHORS = """(s) => { const g = document.querySelector(s); const a = g._fullLayout.scene.annotations;
+  const of = (n) => { const l = a.filter(x => x.name === n); return {edge: n === 'x label' ? l[0].y : l[0].x, xanchor: [...new Set(l.map(x => x.xanchor))].join()}; };
+  return {genes: of('x label'), groups: of('y label')}; }"""
+
+
+EYE = "(s) => document.querySelector(s)._fullLayout.scene._scene.getCamera().eye"
+
+
+def _drag_until(page, reached, release=True):
+    """A real mouse drag on the scene: down near its right edge, then leftward in small moves until `reached(eye)` (the
+    camera lags the mouse and is damped, so the turn per pixel depends on the frames drawn), then up, or held."""
+    box = page.locator(PLOT).bounding_box()
+    x, y = box["x"] + box["width"] - 60, box["y"] + box["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    left = box["x"] + 40
+    while x > left:
+        x -= 6
+        page.mouse.move(x, y)
+        if reached(page.evaluate(EYE, PLOT)):
+            break
+    else:
+        raise AssertionError(("the drag did not turn the camera there", page.evaluate(EYE, PLOT)))
+    if release:
+        page.mouse.up()
+
+
+@pytest.mark.parametrize("mode", ["heatmap", "dots"])
+def test_labels_switch_sides_while_the_scene_is_dragged(page, served, mode):
+    _open3d(page, served, view="3d", mode=mode)
+    _mesh_drawn(page)
+    _labels(page)
+    assert page.evaluate(ANCHORS, PLOT) == {"genes": {"edge": -0.5, "xanchor": "right"}, "groups": {"edge": 3.5, "xanchor": "left"}}
+    # a quarter turn by mouse, still held: the camera now looks from +x, and the labels have already moved
+    _drag_until(page, lambda eye: eye["y"] > 0.3, release=False)
+    until(page, "([s, want]) => JSON.stringify((" + ANCHORS + ")(s)) === want",
+          [PLOT, '{"genes":{"edge":5.5,"xanchor":"left"},"groups":{"edge":3.5,"xanchor":"right"}}'], timeout=10)
+    page.mouse.up()
+    # released, and the scene not reset: the camera stays turned, the labels where the drag put them
+    eye = page.evaluate("(s) => document.querySelector(s)._fullLayout.scene._scene.getCamera().eye", PLOT)
+    assert eye["y"] > 0, eye
+    until(page, "(id) => { const c = window.PanelManager.getPanel(id).getConfig().camera; return !!c && c.eye.y > 0; }", P)
+    assert page.evaluate(ANCHORS, PLOT)["genes"]["xanchor"] == "left"
+
+
+def test_3d_label_options_side_and_justify_are_undoable_and_hidden_in_2d(page, served):
+    st = _open3d(page, served, mode="heatmap")
+    page.click(f"{TP} .cgene-options-btn")
+    section = "[data-popover='plot-options'] .cgene-labels3d"
+    page.wait_for_selector("[data-popover='plot-options']", state="visible")
+    assert page.locator(section).is_hidden(), "only in 3D"
+    page.keyboard.press("Escape")
+    page.click(f"{TP} .cgene-3d-btn")
+    _mesh_drawn(page)
+    _labels(page)
+    undo = _state(page)["undo"]
+    page.click(f"{TP} .cgene-options-btn")
+    page.wait_for_selector(section, state="visible")
+    assert page.input_value(f"{section} [data-option='labels3dSide']") == "auto"
+    assert page.input_value(f"{section} [data-option='labels3dJustify']") == "auto"
+    page.select_option(f"{section} [data-option='labels3dJustify']", "center")
+    until(page, "(id) => JSON.stringify(window.PanelManager.getPanel(id).getConfig().labels3d) === JSON.stringify({justify: 'center'})", P)
+    until(page, "(s) => document.querySelector(s)._fullLayout.scene.annotations.filter(a => a.name.endsWith(' label')).every(a => a.xanchor === 'center')", PLOT)
+    assert _state(page)["undo"] == undo + 1, "one undo step"
+    # Fixed: the edges the labels are on now stay as the scene is dragged round
+    page.select_option(f"{section} [data-option='labels3dSide']", "fixed")
+    until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().labels3d || {}).side === 'fixed'", P)
+    assert _config(page)["labels3d"] == {"side": "fixed", "edges": {"x": "min", "y": "max"}, "justify": "center"}
+    assert _state(page)["undo"] == undo + 2
+    page.click("[data-popover='plot-options'] .az-popover-close")
+    page.wait_for_selector("[data-popover='plot-options']", state="hidden")
+    # dragged round until the camera looks from -x (the other side of the box)
+    _drag_until(page, lambda eye: eye["x"] < -0.3)
+    assert page.evaluate(ANCHORS, PLOT) == {"genes": {"edge": -0.5, "xanchor": "center"}, "groups": {"edge": 3.5, "xanchor": "center"}}
+    # Undo, twice: back to Auto, where a drag moves the labels again
+    page.click(f"{TP} .cgene-undo")
+    page.click(f"{TP} .cgene-undo")
+    until(page, "(id) => !('labels3d' in window.PanelManager.getPanel(id).getConfig())", P)
+    assert st["rows"] > 0

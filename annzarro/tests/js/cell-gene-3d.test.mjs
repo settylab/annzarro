@@ -313,3 +313,56 @@ test('the 3D colour bar is the Cell Plot\'s (plot-utilities/colour-bar.js): its 
     assert.equal(colorbar.len, 0.7);
     assert.equal(D.buildFigure(model({ legend: { colorBar: false } }), LIGHT).data[0].showscale, false);
 });
+
+// ------------------------------------------------------------------ the 3D labels' options (operator: side and justification)
+
+const SPEC = { x: { labels: ['a', 'b', 'c'], positions: [0, 1, 2], extent: 3 }, y: { labels: ['p', 'q'], positions: [0, 1], extent: 2 },
+    aspect: { x: 1, y: 0.67, z: 0.6 }, z: 0, font: {} };
+const placed = (list, name) => {
+    const l = list.filter((a) => a.name === name);
+    return { edge: name === 'x label' ? l[0].y : l[0].x, xanchor: [...new Set(l.map((a) => a.xanchor))].join(), xshift: [...new Set(l.map((a) => a.xshift))].join() };
+};
+
+test('labels3d is kept in the configuration only when not the default, and a fixed side keeps its edges', () => {
+    const keep = { side: 'fixed', edges: { x: 'max', y: 'min' }, justify: 'center' };
+    assert.deepEqual(S.normalizeCellGene({ labels3d: keep }).config.labels3d, keep);
+    assert.equal('labels3d' in S.normalizeCellGene({ labels3d: { side: 'auto', justify: 'auto' } }).config, false, 'defaults are absent');
+    assert.deepEqual(S.normalizeCellGene({ labels3d: { justify: 'left' } }).config.labels3d, { justify: 'left' });
+    const bad = S.normalizeCellGene({ labels3d: { side: 'sideways', justify: 'up' } });
+    assert.equal('labels3d' in bad.config, false);
+    assert.equal(bad.problems.length, 2, bad.problems.join('; '));
+    // a fixed side with no edges stored is the default camera's edges
+    assert.deepEqual(S.normalizeCellGene({ labels3d: { side: 'fixed' } }).config.labels3d, { side: 'fixed', edges: { x: 'min', y: 'max' } });
+});
+
+test('Side Fixed keeps the edges as the camera turns; Justify Auto still runs outward for the camera', () => {
+    const fixed = { ...SPEC, options: { side: 'fixed', edges: { x: 'min', y: 'max' } } };
+    // from (+x, +y) Auto moves the genes to the edge now nearer (1.5); Fixed keeps them at -0.5, whose middle is now on the
+    // left of the screen, so they end at their ticks
+    assert.deepEqual(placed(D.sceneLabels(SPEC, ROTATED), 'x label'), { edge: 1.5, xanchor: 'left', xshift: '4' });
+    assert.deepEqual(placed(D.sceneLabels(fixed, ROTATED), 'x label'), { edge: -0.5, xanchor: 'right', xshift: '-4' });
+    assert.deepEqual(placed(D.sceneLabels(fixed, D.DEFAULT_CAMERA), 'x label'), { edge: -0.5, xanchor: 'right', xshift: '-4' });
+});
+
+test('Justify Left, Right or Center sets every label\'s anchor whatever the camera; Center sits on the tick', () => {
+    for (const camera of [D.DEFAULT_CAMERA, ROTATED]) {
+        assert.deepEqual(placed(D.sceneLabels({ ...SPEC, options: { justify: 'left' } }, camera), 'y label').xanchor, 'left');
+        assert.deepEqual(placed(D.sceneLabels({ ...SPEC, options: { justify: 'right' } }, camera), 'x label').xshift, '-4');
+        assert.deepEqual(placed(D.sceneLabels({ ...SPEC, options: { justify: 'center' } }, camera), 'x label').xanchor, 'center');
+        assert.deepEqual(placed(D.sceneLabels({ ...SPEC, options: { justify: 'center' } }, camera), 'y label').xshift, '0');
+    }
+});
+
+test('looking straight down, the anchors stay those of the default view rather than collapsing to one side', () => {
+    const above = { eye: { x: 0, y: 0, z: 2.5 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 } };
+    const list = D.sceneLabels(SPEC, above);
+    assert.notEqual(placed(list, 'x label').xanchor, placed(list, 'y label').xanchor);
+});
+
+test('the options reach the figure: figureExtras passes labels3d, and the 3D figure draws with it', () => {
+    const config = { mode: 'heatmap', view: '3d', labels3d: { justify: 'center' } };
+    assert.deepEqual(O.figureExtras(config).labels3d, { justify: 'center' });
+    const fig = D.buildFigure(model({ rows: 2, groups: 2, labels3d: { justify: 'center' } }), LIGHT);
+    assert.ok(fig.layout.scene.annotations.filter((a) => a.name.endsWith(' label')).every((a) => a.xanchor === 'center'));
+    assert.deepEqual(fig.labels3d.options, { justify: 'center' });
+});

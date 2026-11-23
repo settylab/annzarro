@@ -170,8 +170,10 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
   strip says so (**3D**). A missing value or a value of 0 has no bar. Above 60 genes or groups their labels are hidden
   and the hover names each bar.
 - **Labels.** Gene and group names run outward from their tick: on the right of the scene a name starts at its tick,
-  on the left it ends there, never centred over the bars. When the scene is turned to another side, the names move to
-  the edge nearer you once the mouse is released, with each axis's title beyond them.
+  on the left it ends there, never centred over the bars. As the scene is turned they move to the edges nearer you,
+  while it turns, with each axis's title beyond them. **Plot Options ▸ 3D labels** changes this: **Side** **Fixed**
+  keeps the names on the edges they are on now, however the scene is turned, and **Justify** **Left**, **Right** or
+  **Center** sets every name's alignment instead of running it outward. Each change is one step of **Undo**.
 - **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
   step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
 - **Limit.** 3D draws at most 40,000 bars (genes × groups). Above that **3D** is greyed out and says why ("Use fewer
@@ -200,6 +202,7 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
 | Labels | **Gene labels**, **Group labels**; **Plot title**, **Color bar title**, **Size legend title** |
 | Legend | **Color bar**, **Size legend**, **Strip legend** |
 | Totals | **Cells per group** (a bar along the group axis) |
+| 3D labels | **Side** (Auto, Fixed) and **Justify** (Auto, Left, Right, Center); in 3D only |
 | Export | **PNG**, **JPEG**, **WEBP**, **SVG** (not in 3D) · **Download CSV** |
 
 The colour scale is **Reds** by default. Under a z-score scaling the default is **RdBu**, centred at 0, so that

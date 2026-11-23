@@ -152,7 +152,17 @@ const cellGene = Object.freeze({
         leftOut: '3D does not draw dendrograms, strips, section brackets, totals or printed values.',
         offTag: '2D',
         resetCamera: 'Reset camera',
-        svgOff: '3D exports as an image only.'
+        svgOff: '3D exports as an image only.',
+        /** Plot Options ▸ 3D labels: where the gene and group names stand, and which way they run. */
+        labels: Object.freeze({
+            heading: '3D labels',
+            side: 'Side',
+            sides: Object.freeze({ auto: 'Auto', fixed: 'Fixed' }),
+            justify: 'Justify',
+            justifies: Object.freeze({ auto: 'Auto', left: 'Left', right: 'Right', center: 'Center' }),
+            help: 'Side Auto puts the names on the edges nearer you as the plot turns; Fixed keeps the edges they are on now. '
+                + 'Justify Auto runs each name outward from the bars.'
+        })
     }),
     /** What a narrow plot gave up so the matrix keeps its columns readable (panels/cell-gene/draw.js fitMatrix): the strip. */
     narrow: Object.freeze({

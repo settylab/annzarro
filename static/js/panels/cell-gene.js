@@ -62,7 +62,7 @@ import { withoutLegacy } from '../utils/options-model.js';
 import { parseThresholdText } from '../utils/options-model.js';
 import { geneReads } from '../utils/cell-gene-model.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
-import { buildFigure, colourBars, sceneLabels, DEFAULT_CAMERA } from './cell-gene/draw.js';
+import { buildFigure, colourBars, sceneLabels, labelEdges, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
 import { recordCameraOnRelease } from '../utils/scene-camera.js';
 import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
@@ -783,7 +783,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 title: () => _title,
                 // the matrix drawn, for the 3D cap; the image export of Plot Options
                 shape: () => (_shown ? { rows: _shown.rows, groups: _shown.groups } : null),
-                exportImage: (format) => { if (_dom && _shown) exportPlot(_dom.plot, format, {}, 'full'); }
+                exportImage: (format) => { if (_dom && _shown) exportPlot(_dom.plot, format, {}, 'full'); },
+                // Side Fixed (Plot Options ▸ 3D labels) keeps the edges the labels are on now
+                labelEdges: () => {
+                    const fl = _dom && _dom.plot && _dom.plot._fullLayout;
+                    const scene = fl && fl.scene && fl.scene._scene;
+                    const camera = scene && typeof scene.getCamera === 'function' ? scene.getCamera() : _config.camera || DEFAULT_CAMERA;
+                    return labelEdges(camera, fl && fl.scene ? fl.scene.aspectratio : { x: 1, y: 1, z: 0.6 });
+                }
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
             // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
@@ -1071,7 +1078,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          * Keep the 3D camera in the configuration as the user turns it (UX 6b, Q17): stored once it rests, rounded, with no
          * undo step and no redraw; the default camera is stored as none. Off in 2D. The listener is set again on each draw
          * (a purge drops it). The category labels follow at once: turned to the other side, they change edge and anchor
-         * (draw.js sceneLabels; `labels` is the drawing's labels3d, null in 2D).
+         * (draw.js sceneLabels; `labels` is the drawing's labels3d, null in 2D). They follow WHILE the scene is dragged:
+         * a mouse drag sends only plotly_relayouting until the button is released, and plotly_relayout once after.
          */
         function watchCamera(labels) {
             const on = !!labels;
@@ -1086,20 +1094,39 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             gd.__azCgCamera = (ev) => {
                 const camera = ev && ev['scene.camera'];
                 if (!camera) return;
-                relabel(gd, labels, camera);
+                relabel(gd, labels, camera, { settled: true });
                 clearTimeout(timer);
                 timer = setTimeout(() => storeCamera(camera), CAMERA_STORE_MS);
             };
             gd.on('plotly_relayout', gd.__azCgCamera);
+            if (gd.__azCgDragging && typeof gd.removeListener === 'function') gd.removeListener('plotly_relayouting', gd.__azCgDragging);
+            gd.__azCgDragging = (ev) => { const camera = ev && ev['scene.camera']; if (camera) relabel(gd, labels, camera, { settled: false }); };
+            gd.on('plotly_relayouting', gd.__azCgDragging);
         }
 
-        /** The labels for a camera, set only when an edge or an anchor changed (the relayout carries no camera). */
-        function relabel(gd, labels, camera) {
-            if (!window.Plotly || !gd.layout || !gd.layout.scene) return;
+        /**
+         * The labels for a camera, changed only when an edge or an anchor did. While the scene is dragged (`settled`
+         * false) in place: the scene draws its annotations from these objects on each frame of the drag, so they move
+         * with it, where a Plotly.relayout mid-drag would put the camera back where the layout last had it. Once the
+         * camera has settled (the plotly_relayout after a drag, or a camera set at once), one relayout of the
+         * annotations draws them for good.
+         */
+        function relabel(gd, labels, camera, { settled }) {
+            if (!window.Plotly || !gd.layout || !gd.layout.scene || !gd._fullLayout || !gd._fullLayout.scene) return;
             const next = sceneLabels(labels, camera);
-            const key = (list) => (list || []).map((a) => `${a.xanchor}|${a.x}|${a.y}`).join(',');
-            if (key(next) === key(gd.layout.scene.annotations)) return;
-            window.Plotly.relayout(gd, { 'scene.annotations': next });
+            const key = (list) => (list || []).map((a) => `${a.xanchor}|${a.x}|${a.y}|${a.xshift}|${a.yshift}`).join(',');
+            const mine = gd.layout.scene.annotations || [];
+            const full = gd._fullLayout.scene.annotations || [];
+            if (settled) {
+                if (key(next) !== key(mine) || gd.__azCgLabelsMoved) window.Plotly.relayout(gd, { 'scene.annotations': next });
+                gd.__azCgLabelsMoved = false;
+                return;
+            }
+            if (key(next) === key(full) || mine.length !== next.length || full.length !== next.length) return;
+            const FIELDS = ['x', 'y', 'xanchor', 'xshift', 'yshift'];
+            // a field a label leaves out is Plotly's default (0 for the shifts), never undefined (a NaN transform)
+            next.forEach((a, i) => { for (const f of FIELDS) full[i][f] = a[f] !== undefined ? a[f] : 0; });
+            gd.__azCgLabelsMoved = true;
         }
 
         const sameCamera = (a, b) => ['eye', 'center', 'up'].every((k) => ['x', 'y', 'z'].every((d) => Math.abs(((a[k] || {})[d] || 0) - ((b[k] || {})[d] || 0)) < 1e-3));
@@ -1208,7 +1235,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 size: _config.mode !== 'dots' ? { none: '' } : sizeNone ? { none: sizeNone }
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
-                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline,
+                legend: extras.legend, plotTitle: extras.plotTitle, labels3d: extras.labels3d, annotations: extras.annotations, outline: extras.outline,
                 pendingText: pending ? pendingText(plan, pending) : ''
             };
             // 3D (UX 6b): within the bar cap; above it the plot is drawn in 2D and the strip says why
