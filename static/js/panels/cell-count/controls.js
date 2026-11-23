@@ -339,7 +339,7 @@ export function createControls({ D, id, model, on }) {
                 }));
             }
         } else {
-            body.append(...levelChooser(row.field, p, m.infos[row.field] || (m.levelsOf ? m.levelsOf(row.field) : null), m));
+            body.appendChild(el('div', { class: 'ccnt-levels' }, ...levelChooser(row.field, p, m.infos[row.field] || (m.levelsOf ? m.levelsOf(row.field) : null), m)));
         }
         if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
         entry.ctl.update();
@@ -555,7 +555,6 @@ export function createControls({ D, id, model, on }) {
     };
     adjust.addEventListener('change', commitAdjust);
     adjust.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitAdjust(); } });
-    const adjustWrap = el('label', { class: 'ccnt-opt', for: `ccnt-adjust-${id}` }, `${C.buttons.adjust} `);
     // `off` is what unticking stores (nothing, unless the field's default is the ticked state)
     const toggleField = (cls, field, value, text, off = () => undefined) => {
         const box = el('input', { type: 'checkbox', class: cls,
@@ -568,7 +567,7 @@ export function createControls({ D, id, model, on }) {
     const image = toggleField('ccnt-image', 'style', 'image', C.buttons.image, (c) => (c.split ? 'contours' : undefined));
     const densityNotes = el('div', { class: 'ccnt-help ccnt-density-notes' });
     const densityRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--density' },
-        el('span', { class: 'ctl-label', text: 'Density' }), adjustWrap, adjust, adjustNote, bySize.wrap, image.wrap, densityNotes);
+        el('label', { class: 'ctl-label', for: `ccnt-adjust-${id}`, text: C.buttons.adjust }), adjust, adjustNote, bySize.wrap, image.wrap, densityNotes);
 
     function paintLabels(m, shownRows) {
         const o = drawOptions(m.config);

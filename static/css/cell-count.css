@@ -63,7 +63,6 @@
 .ccnt-row--labels .btn.active { background: var(--az-surface-3); border-color: var(--az-link); color: var(--az-text); }
 .ccnt-row[hidden] { display: none; }
 .ccnt-opt[hidden] { display: none; }
-.ccnt-row--density > .ctl-label { flex: 0 0 4.75rem; }
 .ccnt-density-notes { flex: 1 1 100%; margin-left: 4.75rem; }
 .ccnt-density-notes[hidden] { display: none; }
 .ccnt-kept { color: var(--az-muted); font-size: 0.75rem; }
