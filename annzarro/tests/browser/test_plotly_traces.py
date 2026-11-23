@@ -1,7 +1,7 @@
 """Every plot type AnnZarro draws is in the bundled Plotly build.
 
 static/vendor/js/plotly-2.35.3-annzarro.min.js holds only the scatter, scattergl,
-scatter3d, heatmap, bar, pie and contour traces (scripts/build-plotly-bundle.sh). A trace type missing from
+scatter3d, mesh3d, heatmap, bar, pie and contour traces (scripts/build-plotly-bundle.sh). A trace type missing from
 it does not fail loudly: plotly.js warns "Unrecognized trace type" and draws
 nothing, or falls back to a scatter. This opens each kind of plot the app makes
 
@@ -246,5 +246,41 @@ def test_bundle_stays_within_its_size_budget():
 def test_build_script_lists_exactly_the_traces_the_app_draws():
     text = open(os.path.join(REPO, "scripts", "build-plotly-bundle.sh")).read()
     line = next(l for l in text.splitlines() if l.startswith("TRACES="))
-    assert set(line.split("=", 1)[1].split(",")) == {"scatter", "scattergl", "scatter3d",
+    assert set(line.split("=", 1)[1].split(",")) == {"scatter", "scattergl", "scatter3d", "mesh3d",
                                                     "heatmap", "bar", "pie", "contour"}
+
+
+MESH = """async () => {
+  const div = document.createElement('div');
+  div.style.width = '400px'; div.style.height = '300px';
+  document.body.appendChild(div);
+  // one box of utils/bars-3d.js: 8 vertices, 10 triangles, intensity per vertex
+  const x = [-1, 1, 1, -1, -1, 1, 1, -1], y = [-1, -1, 1, 1, -1, -1, 1, 1], z = [0, 0, 0, 0, 2, 2, 2, 2];
+  const tri = [4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7];
+  await Plotly.newPlot(div, [{type: 'mesh3d', x, y, z, i: tri.filter((_, k) => k % 3 === 0), j: tri.filter((_, k) => k % 3 === 1),
+    k: tri.filter((_, k) => k % 3 === 2), intensity: z, intensitymode: 'vertex', colorscale: 'Reds', flatshading: true}]);
+  const t = div._fullData[0];
+  const out = {type: t.type, module: !!(t._module && t._module.name === 'mesh3d'), scene: !!(div._fullLayout.scene && div._fullLayout.scene._scene)};
+  out.png = (await Plotly.toImage(div, {format: 'png', width: 300, height: 200})).startsWith('data:image/png');
+  Plotly.purge(div); div.remove();
+  return out;
+}"""
+
+
+def test_mesh3d_draws_as_itself_in_a_scene(server):
+    """The 3D bars (utils/bars-3d.js, WP-10 to WP-12) are one mesh3d: missing from the bundle it fell back to a scatter."""
+    root, store = server
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 800, "height": 600})
+            problems = []
+            page.on("console", lambda m: problems.append(f"{m.type}: {m.text}") if m.type in ("warning", "error") else None)
+            page.goto(root + "/?dataset_path=" + urllib.parse.quote(store, safe="/"))
+            page.wait_for_function("typeof Plotly !== 'undefined'")
+            got = page.evaluate(MESH)
+            assert got == {"type": "mesh3d", "module": True, "scene": True, "png": True}, got
+            bad = [m for m in problems if "nrecognized" in m]
+            assert not bad, bad
+        finally:
+            browser.close()

@@ -13,8 +13,8 @@
 # scripts/plotly_licences.py).
 #
 # The traces are the ones static/js creates: scatter (the colour-scale probe), scattergl (every
-# 2D plot), scatter3d (3D plots), and heatmap, bar, pie and contour (the Cell-Gene and Cell Count
-# plots). No transforms. plotly.js's tool always adds the calendars
+# 2D plot), scatter3d (3D plots), mesh3d (the 3D bars of utils/bars-3d.js: Cell-Gene and Cell
+# Count in 3D), and heatmap, bar, pie and contour (the Cell-Gene and Cell Count plots). No transforms. plotly.js's tool always adds the calendars
 # component and the core, which carry the layout features AnnZarro uses (legend, colour bar,
 # shapes, annotations, modebar, image export). Update the list below together with any new trace
 # type in static/js; the browser test annzarro/tests/browser/test_plotly_traces.py fails when a trace type
@@ -34,7 +34,7 @@ set -eu
 
 TAG=v2.35.3
 COMMIT=0c13c691e257045d7903c62d9c234a6cdbc0be53
-TRACES=scatter,scattergl,scatter3d,heatmap,bar,pie,contour
+TRACES=scatter,scattergl,scatter3d,mesh3d,heatmap,bar,pie,contour
 OUT_NAME=plotly-2.35.3-annzarro.min.js
 
 here=$(cd "$(dirname "$0")" && pwd)

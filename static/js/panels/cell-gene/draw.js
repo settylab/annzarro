@@ -19,7 +19,9 @@
  *        | { none: sentence },                    No size: one dot size, the legend replaced by the sentence
  *   legend?: { colorBar?: boolean, sizeLegend?: boolean, strips?: boolean }, plotTitle?: string,
  *   outline?: { color, width }   the dots' outline, and the size legend's; absent means none; heatmap cells never have one
- *   pendingText?: string }                        what a row still being read says (rows[].pending, CXG-18)
+ *   pendingText?: string,                         what a row still being read says (rows[].pending, CXG-18)
+ *   view?: '3d', height?: { same: true, values } | { same: false, stat, layer?, detectAbove?, values },
+ *   camera?: { eye, center?, up? }, zTitle?: string }   the 3D view (UX 6b, WP-12), see figure3d
  * ```
  * A row with `pending: true` is a placeholder of a section still being read (CXG-18): its cells are drawn faint, with
  * `pendingText` in the hover, never as missing values. A strip of draw-annotations.js with a `legend` ({label, colour}
@@ -39,6 +41,7 @@ import { VOCABULARY } from '../../utils/vocabulary.js';
 import { PLOT_PALETTES, GAP_COLOUR } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { annotateFigure, matrixBox, matrixPixels, rowCoordinates, MODEBAR_PX } from './draw-annotations.js';
+import { bars3d, footprintFromSize, axisTicks } from '../../utils/bars-3d.js';
 
 const W = VOCABULARY.cellGene;
 
@@ -696,6 +699,124 @@ function heatmapTraces(model, P, stack, th) {
     return layers;
 }
 
+// --- 3D (UX 6b, WP-12) ------------------------------------------------------------------------------------------
+
+/** The camera of a new 3D view (UX 6b). */
+export const DEFAULT_CAMERA = Object.freeze({
+    eye: Object.freeze({ x: 1.6, y: -1.6, z: 1.1 }), center: Object.freeze({ x: 0, y: 0, z: 0 }), up: Object.freeze({ x: 0, y: 0, z: 1 })
+});
+/** Above this many categories on an axis its labels are hidden; the hover names each bar (UX 6b). */
+const LABELS_3D_MAX = 60;
+/** x:y of the scene follows the bar counts, clamped to 1:4..4:1; z is this share of the longer side. */
+const ASPECT_CLAMP = 4;
+const ASPECT_Z = 0.6;
+const UIREVISION_3D = 'cgene-3d';
+
+/** A scene axis of categories: ticks at the bar centres, thinned; none above LABELS_3D_MAX (the hover names them). */
+function sceneAxis(labels, positions, title, th) {
+    const base = {
+        title: { text: esc(title), font: { color: th.textColor } }, color: th.textColor, gridcolor: th.gridColor, linecolor: th.axisColor,
+        zeroline: false, showspikes: false, backgroundcolor: th.bgColor
+    };
+    if (labels.length > LABELS_3D_MAX) return { ...base, showticklabels: false };
+    const ticks = axisTicks(labels, LABELS_3D_MAX);
+    return { ...base, tickmode: 'array', tickvals: ticks.tickvals.map((k) => positions[k]), ticktext: ticks.ticktext };
+}
+
+/**
+ * The 3D figure (UX 6b): one `mesh3d` of bars (utils/bars-3d.js), genes along x and groups along y (swapped with Swap
+ * axes), the height up. Colour, height and, in dots, Size (the footprint's area, footprintFromSize) are all shown. A
+ * missing value is not drawn, nor is a bar of height 0; a row being read (CXG-18) has no bar yet. Under a scaling every
+ * row shares one colour range; unscaled, a one-row section with a quantity of its own is coloured by where it lies on
+ * its own bar, as the clustering reads it, and its hover gives its own value. Dendrograms, strips, brackets, totals,
+ * printed values and the size legend are not drawn (the panel's strip says so); the order still applies.
+ */
+function figure3d(model, th) {
+    const dots = model.mode === 'dots';
+    const P = prepare(dots ? model : { ...model, size: { none: true } });
+    const { groups, rows, color, size, swap } = model;
+    const G = P.G;
+    const R = rows.length;
+    const height = model.height || { same: true, values: color.values };
+    const main = P.colour.find((k) => k.key === MAIN) || P.colour[0];
+    const rangeOf = new Map();
+    for (const k of P.colour) for (const r of k.rows) rangeOf.set(r, k);
+    const sizeKey = dots && P.size.length ? new Map(P.size.map((k) => [k.key, k])) : null;
+
+    const n = R * G;
+    const xs = new Float64Array(n);
+    const ys = new Float64Array(n);
+    const heights = new Float64Array(n);
+    const values = new Float64Array(n);
+    const footprint = sizeKey ? new Float64Array(n) : null;
+    const hover = new Array(n);
+    const describe = describer(model, P, dots);
+    const heightLine = height.same ? W.view3d.heightAsColor : `${W.view3d.height} · ${esc(statisticTitle(height))}`;
+    for (let r = 0; r < R; r++) {
+        const bar = rangeOf.get(r) || main;
+        const sk = sizeKey ? sizeKey.get(sizeKeyOf(model, rows[r])) : null;
+        for (let g = 0; g < G; g++) {
+            const i = r * G + g;
+            xs[i] = swap ? g : P.pos[r];
+            ys[i] = swap ? P.pos[r] : g;
+            const h = height.values[i];
+            heights[i] = rows[r].pending ? NaN : h;
+            const v = color.values[i];
+            // a section on its own bar: its place on that bar, on the main bar's range (one mesh, one colour scale)
+            values[i] = bar === main || !(bar.hi > bar.lo) ? v : main.lo + ((v - bar.lo) / (bar.hi - bar.lo)) * (main.hi - main.lo);
+            if (footprint) footprint[i] = sk ? footprintFromSize(size.values[i], sk.hi) : 1;
+            if (Number.isFinite(h) && Number.isFinite(v)) {
+                const [groupLine, rowLine, ...rest] = describe(r, g, i).split('<br>');
+                const ownHeight = height.same ? heightLine : `${heightLine}: ${fmt(h)}`;
+                hover[i] = [rowLine, groupLine, ...rest, ownHeight].join('<br>');
+            }
+        }
+    }
+    const geneLabels = rows.map((row) => esc(row.label));
+    const groupLabels = groups.map((grp) => esc(grp.label));
+    const legendOn = !model.legend || model.legend.colorBar !== false;
+    const colorbar = legendOn ? {
+        title: { text: fitTitle(main.lines, 24).text, side: 'top', font: { color: th.textColor } }, tickfont: { color: th.textColor },
+        x: 1, xanchor: 'left', len: 0.7, thickness: 12, outlinewidth: 0
+    } : null;
+    const built = bars3d({
+        xs, ys, heights, footprint, hover,
+        colour: { kind: 'continuous', values, colorscale: color.colorscale, cmin: main.lo, cmax: main.hi, ...(colorbar ? { colorbar } : {}) }
+    });
+    const trace = built.trace;
+    if (color.reversescale) trace.reversescale = true;
+    trace.name = 'bars';
+
+    // x:y by the bar counts (clamped), z a share of the longer side
+    const xCount = swap ? G : P.span;
+    const yCount = swap ? P.span : G;
+    const ratio = Math.min(ASPECT_CLAMP, Math.max(1 / ASPECT_CLAMP, Math.max(xCount, 1) / Math.max(yCount, 1)));
+    const aspect = ratio >= 1 ? { x: 1, y: 1 / ratio, z: ASPECT_Z } : { x: ratio, y: 1, z: ASPECT_Z };
+    const genePositions = rows.map((_, r) => P.pos[r]);
+    const groupPositions = groups.map((_, g) => g);
+    const geneAxis = sceneAxis(geneLabels, genePositions, W.view3d.genes, th);
+    const groupAxis = sceneAxis(groupLabels, groupPositions, W.view3d.groups, th);
+    const zTitle = model.zTitle || (height.same ? main.lines.join(' · ') : statisticTitle(height));
+    const layout = {
+        paper_bgcolor: th.bgColor, plot_bgcolor: th.bgColor, showlegend: false, hovermode: 'closest', uirevision: UIREVISION_3D,
+        font: { family: th.fontFamily || 'Arial, Helvetica, sans-serif', size: th.fontSize || 12, color: th.textColor },
+        margin: { l: 0, r: 0, t: model.plotTitle ? 40 : 10, b: 0 }, annotations: [],
+        scene: {
+            xaxis: swap ? groupAxis : geneAxis,
+            yaxis: swap ? geneAxis : groupAxis,
+            zaxis: { title: { text: esc(zTitle), font: { color: th.textColor } }, color: th.textColor, gridcolor: th.gridColor,
+                linecolor: th.axisColor, zerolinecolor: th.axisColor, showspikes: false, backgroundcolor: th.bgColor },
+            aspectmode: 'manual', aspectratio: aspect,
+            camera: model.camera ? JSON.parse(JSON.stringify(model.camera)) : JSON.parse(JSON.stringify(DEFAULT_CAMERA)),
+            bgcolor: th.bgColor
+        }
+    };
+    if (model.plotTitle) layout.title = { text: esc(model.plotTitle), font: { color: th.textColor } };
+    const config = { responsive: true, displaylogo: false,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d', 'resetCameraDefault3d', 'resetCameraLastSave3d'] };
+    return { data: [trace], layout, config, hidden: [], bars: built.drawn };
+}
+
 // --- the figure -------------------------------------------------------------------------------------------------
 
 /**
@@ -703,7 +824,8 @@ function heatmapTraces(model, P, stack, th) {
  * @param {{bgColor: string, gridColor: string, axisColor: string, textColor: string, fontFamily?: string, fontSize?: number}}
  *   [theme] - the plot's resolved colors (plot-theme.js: PLOT_PALETTES or plotColour of the panel's settings); light by default
  * @returns {{data: object[], layout: object, config: object, hidden: string[]}} `hidden`: what a narrow width gave up
- *   so each column of the matrix keeps MIN_COLUMN_PX ('totals', 'dendrogram', 'legend'; fitMatrix)
+ *   so each column of the matrix keeps MIN_COLUMN_PX ('totals', 'dendrogram', 'legend'; fitMatrix). With `view: '3d'`
+ *   the figure is figure3d's (one mesh3d in a scene), with `bars` the bars drawn
  */
 // export-unused-ok: X3a draws the panel with it
 export function buildFigure(given, theme) {
@@ -711,6 +833,7 @@ export function buildFigure(given, theme) {
     const dots = given.mode === 'dots';
     if (dots && !given.size) throw new Error('dots need a size or a No size sentence');
     const th = { ...PLOT_PALETTES.light, ...theme };
+    if (given.view === '3d') return figure3d(given, th);
     const P = prepare(dots ? given : { ...given, size: { none: true } });
     const fitted = fitMatrix(given, P, dots, th);
     const { hidden, keepMin } = fitted;

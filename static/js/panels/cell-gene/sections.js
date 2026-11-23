@@ -32,6 +32,9 @@ const CG = VOCABULARY.cellGene;
 /** The source type of a grouping as a cell axis: the provider's (utils/cell-group-source.js), never a literal here. */
 export const GROUP_AXIS = cellGroupType();
 
+/** The value of "Same as Color" in Height's statistic select (UX 6b): stored as no `height`. */
+export const SAME_AS_COLOR = '__same_as_color__';
+
 /** The value of "Offer other scores…" in a one-row section's selects. */
 export const OFFER_OTHER = '__offer_other__';
 
@@ -91,6 +94,19 @@ function cleanOffer(raw, problems) {
     return Object.keys(out).length ? out : null;
 }
 
+/** The views a plot can be drawn in (UX 6b): absent is 2D. */
+const VIEWS = Object.freeze(['3d']);
+
+const isPoint = (v) => isObject(v) && isNumber(v.x) && isNumber(v.y) && isNumber(v.z);
+
+/** A stored 3D camera `{eye, center?, up?}` (UX 6b), as Plotly's `scene.camera` gives it; null when it cannot be read. */
+function cleanCamera(raw) {
+    if (!isObject(raw) || !isPoint(raw.eye)) return null;
+    const out = { eye: { x: raw.eye.x, y: raw.eye.y, z: raw.eye.z } };
+    for (const key of ['center', 'up']) if (isPoint(raw[key])) out[key] = { x: raw[key].x, y: raw[key].y, z: raw[key].z };
+    return out;
+}
+
 /** A one-row section's aggregation `{agg}` or `{agg, column, layer, above?}`; null when it cannot be kept. */
 function cleanAggregation(raw) {
     if (!isObject(raw)) return null;
@@ -131,7 +147,9 @@ function cleanSection(raw, i, problems) {
  * The configuration of a Cell-Gene Plot (plan 1.6, `cell-gene` version 1), as a link, a panel set and a history entry
  * carry it. Known fields are cleaned; unknown ones (style fields of later steps, a newer build's) are kept as they are.
  * `version`, `mode`, `sections`, `color` and `size` are always written; `cellAxis` once chosen; `scale` and `swap` only
- * when not the default; `offer` (the plot's own offered statistics and layers on an obs axis) once edited.
+ * when not the default; `offer` (the plot's own offered statistics and layers on an obs axis) once edited. The 3D view
+ * (UX 6b, WP-12): `view: '3d'` (absent is 2D), `height` (the bars' own measure; absent is "Same as Color", and a stored
+ * one is kept while 3D is off), `camera` (the 3D camera, stored without an undo step).
  * @param {Object} raw
  * @returns {{config: Object, problems: string[]}}
  */
@@ -159,6 +177,26 @@ export function normalizeCellGene(raw) {
     }
     config.color = cleanStatistic(src.color, DEFAULT_COLOR, 'color', problems);
     config.size = cleanStatistic(src.size, DEFAULT_SIZE, 'size', problems);
+    if ('height' in src) {
+        if (isObject(src.height)) {
+            config.height = cleanStatistic(src.height, DEFAULT_COLOR, 'height', problems);
+        } else {
+            if (src.height !== undefined) problems.push('height: not a statistic setting, Same as Color used');
+            delete config.height;
+        }
+    }
+    if (!VIEWS.includes(src.view)) {
+        if ('view' in src && src.view !== undefined) problems.push(`view ${JSON.stringify(src.view)} is not 3d, 2D used`);
+        delete config.view;
+    }
+    if ('camera' in src) {
+        const camera = cleanCamera(src.camera);
+        if (camera) config.camera = camera;
+        else {
+            if (src.camera !== undefined) problems.push('camera: not a camera, the default used');
+            delete config.camera;
+        }
+    }
     if (!SCALINGS.includes(src.scale) || src.scale === 'none') {
         if ('scale' in src && src.scale !== 'none') problems.push(`scale ${JSON.stringify(src.scale)} is not known, none used`);
         delete config.scale;
@@ -168,6 +206,16 @@ export function normalizeCellGene(raw) {
         delete config.swap;
     }
     return { config, problems };
+}
+
+/**
+ * The Height measure the plot reads of its own (UX 6b): the stored `height` while 3D is on, else null. Null is "Same as
+ * Color" in 3D (the bars are the colour's values, its scaling included) and nothing to read in 2D.
+ * @param {Object} config - a normalised configuration
+ * @returns {{stat: string, layer?: string, detect_above?: number}|null}
+ */
+export function heightOf(config) {
+    return config && config.view === '3d' && isObject(config.height) ? config.height : null;
 }
 
 /** A one-row section's aggregation for Color or Size: the stored one, or the cheap default (CXG-5). */
@@ -378,12 +426,15 @@ const SUMMARY_STAT = Object.freeze({ mean_of_means: 'mean', sum_of_means: 'mean'
  *   that method on that layer (null when it cannot be read now)
  * @param {{stat: string, layer?: string, detect_above?: number}} input.color
  * @param {{stat: string, layer?: string, detect_above?: number}|null} input.size - null when the plot draws no size
+ * @param {{stat: string, layer?: string, detect_above?: number}|null} [input.height] - the 3D bars' own measure
+ *   (heightOf), null for "Same as Color" or 2D. On Color's or Size's layer and threshold it adds no feature (UX 6b)
  * @param {number} [input.threshold] - the grouping's expression threshold, for a statistic with none of its own
  * @returns {{features: Array<{key: string, wire: Object}>, rows: Object[], statistics: Array<{stat: string, layer?: string}>}}
- *   `rows`, in order: `{kind: 'gene', section, label, color, size}` (feature keys, null for count or no size);
- *   `{kind: 'set', section, label, color: {agg, keys|key}, size: {...}|null}`; `{kind: 'empty', section, label}`
+ *   `rows`, in order: `{kind: 'gene', section, label, color, size, height?}` (feature keys, null for count or no size);
+ *   `{kind: 'set', section, label, color: {agg, keys|key}, size: {...}|null, height?: {keys}}`; `{kind: 'empty', section,
+ *   label}`. `height` is there only with a height of its own: a one-row section's is the mean over its genes.
  */
-export function planFeatures({ sections, color, size, threshold = 0 }) {
+export function planFeatures({ sections, color, size, height = null, threshold = 0 }) {
     const features = new Map();
     const statistics = [];
     const noteStatistic = (stat, layer) => {
@@ -393,7 +444,7 @@ export function planFeatures({ sections, color, size, threshold = 0 }) {
     // per layer, the threshold a statistic with none of its own reads, so it shares features with one that has one
     const shared = new Map();
     const ownThreshold = (spec) => (isNumber(spec.detect_above) ? spec.detect_above : threshold);
-    for (const spec of [color, size]) {
+    for (const spec of [color, size, height]) {
         if (spec && spec.stat !== 'count' && needsThreshold(spec.stat) && !shared.has(spec.layer)) shared.set(spec.layer, ownThreshold(spec));
     }
     const thresholdFor = (stat, spec) => (needsThreshold(stat) ? ownThreshold(spec) : (shared.has(spec.layer) ? shared.get(spec.layer) : threshold));
@@ -445,14 +496,22 @@ export function planFeatures({ sections, color, size, threshold = 0 }) {
             return;
         }
         if (section.rows === 'set') {
-            rows.push({ kind: 'set', section: index, label: entry.title,
+            const row = { kind: 'set', section: index, label: entry.title,
                 color: aggregated(rowAggregationOf(section, 'color'), color, entry),
-                size: size ? aggregated(rowAggregationOf(section, 'size'), size, entry) : null });
+                size: size ? aggregated(rowAggregationOf(section, 'size'), size, entry) : null };
+            // a one-row section's own height: the height statistic's mean over the section's genes
+            if (height) row.height = { keys: stat(height, genes) };
+            rows.push(row);
             return;
         }
         const c = stat(color, genes);
         const z = stat(size, genes);
-        genes.forEach((g, k) => rows.push({ kind: 'gene', section: index, label: g, color: c[k], size: z ? z[k] : null }));
+        const h = stat(height, genes);
+        genes.forEach((g, k) => {
+            const row = { kind: 'gene', section: index, label: g, color: c[k], size: z ? z[k] : null };
+            if (h) row.height = h[k];
+            rows.push(row);
+        });
     });
     return { features: [...features].map(([key, wire]) => ({ key, wire })), rows, statistics };
 }
@@ -471,9 +530,10 @@ const NO_GENE_MOMENTS = null;
  * @param {ReturnType<typeof planFeatures>} plan
  * @param {(key: string) => (Float64Array|null)} momentsOf
  * @param {Array<{n: number}>} groups - the reply's groups, in order
- * @param {Object} config - the plot's configuration (color, size, scale, mode)
+ * @param {Object} config - the plot's configuration (color, size, scale, mode, view, height)
  * @param {{titleOf?: (index: number) => string, scoreName?: (agg: Object) => string}} [names]
- * @returns {{rows: Object[], color: Object, size: (Object|null)}}
+ * @returns {{rows: Object[], color: Object, size: (Object|null), height: (Object|null)}} `height` in 3D only: `{same:
+ *   true, values}` (the colour's values as displayed) or the own measure, unscaled (UX 6b)
  */
 export function buildMatrix(plan, momentsOf, groups, config, names = {}) {
     const G = groups.length;
@@ -491,6 +551,19 @@ export function buildMatrix(plan, momentsOf, groups, config, names = {}) {
     const references = [];
     const rows = [];
     const moments = (key) => (key ? momentsOf(key) || NO_GENE_MOMENTS : NO_GENE_MOMENTS);
+    const height = heightOf(config);
+    const heightValues = height ? new Float64Array(R * G).fill(NaN) : null;
+    /** A one-row section's own height: the mean over its genes with a value (a gene with none is skipped). */
+    const meanOver = (keys) => {
+        const total = new Float64Array(G);
+        const seen = new Uint32Array(G);
+        for (const key of keys) {
+            const col = one(height, key);
+            if (!col) continue;
+            for (let g = 0; g < G; g++) if (!Number.isNaN(col[g])) { total[g] += col[g]; seen[g]++; }
+        }
+        return Float64Array.from(total, (t, g) => (seen[g] ? t / seen[g] : NaN));
+    };
 
     const one = (spec, key) => {
         if (spec.stat === 'count') return statisticColumn('count', null, G, sizes);
@@ -522,6 +595,7 @@ export function buildMatrix(plan, momentsOf, groups, config, names = {}) {
             if (c) raw.set(c, at);
             if (c && color.stat !== 'count') noExpressing.set(noExpressingCells(color.stat, moments(row.color), G), at);
             if (size) { const z = one(size, row.size); if (z) sizeValues.set(z, at); }
+            if (height) { const h = one(height, row.height); if (h) heightValues.set(h, at); }
             const m = color.stat === 'count' ? null : moments(row.color);
             references.push(m ? pooledReference(m, G) : null);
             rows.push({ kind: 'gene', label: row.label, section });
@@ -535,6 +609,7 @@ export function buildMatrix(plan, momentsOf, groups, config, names = {}) {
                 if (z.values) sizeValues.set(z.values, at);
                 own.size = { id: aggregationId(row.size.agg, size), label: aggregationName(row.size.agg) };
             }
+            if (height && row.height) heightValues.set(meanOver(row.height.keys), at);
             rows.push({ kind: 'set', label: row.label, section, own });
         } else {
             references.push(null);
@@ -556,7 +631,11 @@ export function buildMatrix(plan, momentsOf, groups, config, names = {}) {
         color: { id: colorId, stat: color.stat, layer: color.layer, detectAbove: needsThreshold(color.stat) ? color.detect_above || 0 : undefined,
             scaling, values, raw, noExpressing },
         size: size ? { id: sizeId, stat: size.stat, layer: size.layer, detectAbove: needsThreshold(size.stat) ? size.detect_above || 0 : undefined,
-            values: sizeValues } : null
+            values: sizeValues } : null,
+        height: config.view !== '3d' ? null : height
+            ? { same: false, stat: height.stat, layer: height.layer, detectAbove: needsThreshold(height.stat) ? height.detect_above || 0 : undefined,
+                values: heightValues }
+            : { same: true, values }
     };
 }
 

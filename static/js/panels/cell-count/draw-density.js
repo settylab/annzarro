@@ -148,6 +148,8 @@ export function densityFigure(config, table, opts) {
         if (bySize && everyone > 0) for (let k = 0; k < f.length; k++) f[k] *= sizes[i] / everyone;
         return f;
     });
+    /** The opacity of a level's color where its density is highest: below 1, so a level under another still shows. */
+    const IMAGE_ALPHA = 0.9;
     const words = WORDS;
     const title = bySize && sa >= 0 ? words.axisBySize : words.axis;
     const colors = levels.map((s) => (s >= 0 ? colorOf(table, sa, s, opts) : opts.palette[0]));
@@ -174,6 +176,7 @@ export function densityFigure(config, table, opts) {
         x: gx.centres, y: gy.centres, z: rows(smooth[i]), name: esc(labelOf(s)),
         hovertemplate: `${esc(opts.inputNames.x)}: %{x:.4g}<br>${esc(opts.inputNames.y)}: %{y:.4g}<br>${esc(title)}: %{z:.3g}<extra>${esc(labelOf(s))}</extra>`
     });
+    const peak = smooth.reduce((m, f) => { for (let k = 0; k < f.length; k++) if (f[k] > m) m = f[k]; return m; }, 0) || 1;
     const data = [];
     levels.forEach((s, i) => {
         if (sa < 0) {
@@ -183,9 +186,12 @@ export function densityFigure(config, table, opts) {
                 ...(image ? {} : { contours: { coloring: 'fill', showlines: false }, ncontours: CONTOURS * 2, line: { width: 0 } })
             });
         } else if (image) {
-            data.push({ ...base(i, s), type: 'heatmap', showscale: false, colorscale: [[0, withAlpha(colors[i], 0)], [1, colors[i]]] });
+            // the density is the opacity of the level's color, on one scale for every level: a level with little density stays faint
+            data.push({ ...base(i, s), type: 'heatmap', showscale: false, zmin: 0, zmax: peak,
+                colorscale: [[0, withAlpha(colors[i], 0)], [1, withAlpha(colors[i], IMAGE_ALPHA)]] });
         } else {
-            data.push({ ...base(i, s), type: 'contour', showscale: false, ncontours: CONTOURS, contours: { coloring: 'lines' }, line: { color: colors[i], width: 2 } });
+            data.push({ ...base(i, s), type: 'contour', showscale: false, ncontours: CONTOURS, contours: { coloring: 'lines' },
+                colorscale: [[0, colors[i]], [1, colors[i]]], line: { color: colors[i], width: 2 } });
         }
     });
     // heatmaps and contours carry no legend of their own in every bundle: a marker names each level

@@ -1,0 +1,222 @@
+/**
+ * WP-12 (UX 6b): the Cell-Gene Plot in 3D. Bars on a grid of genes x groups, one `mesh3d` (utils/bars-3d.js); the bar
+ * height is a third measure, "Same as Color" by default.
+ *
+ *   - a 3D figure for a dots model is one mesh3d with one box per drawn cell; Size is the footprint's area;
+ *   - "Same as Color" heights are the colour's values as displayed (its statistic, layer, threshold and scaling);
+ *   - a Height source of its own adds a feature only when its layer (or threshold) is new, and matrixLimits counts it;
+ *   - over the bar cap the 3D button is refused with the matrix wording;
+ *   - 3D draws no dendrograms, strips, brackets or totals;
+ *   - the configuration keeps `view`, `height` and `camera`; the CSV gets a Height column only when it differs.
+ *
+ * Run:  node --test annzarro/tests/js/cell-gene-3d.test.mjs
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+const D = await import('../../../static/js/panels/cell-gene/draw.js');
+const S = await import('../../../static/js/panels/cell-gene/sections.js');
+const M = await import('../../../static/js/utils/cell-gene-model.js');
+const O = await import('../../../static/js/panels/cell-gene/options.js');
+const B = await import('../../../static/js/utils/bars-3d.js');
+const { PLOT_PALETTES } = await import('../../../static/js/utils/plot-theme.js');
+
+const LIGHT = PLOT_PALETTES.light;
+
+/** `rows` genes in `groups` groups; colour r + 1 + g / 10, size 10 * (g + 1) (percent). */
+function model({ rows = 3, groups = 2, mode = 'dots', ...over } = {}) {
+    const colour = new Float64Array(rows * groups);
+    const size = new Float64Array(rows * groups);
+    for (let r = 0; r < rows; r++) {
+        for (let g = 0; g < groups; g++) {
+            colour[r * groups + g] = r + 1 + g / 10;
+            size[r * groups + g] = 10 * (g + 1);
+        }
+    }
+    return {
+        mode, view: '3d',
+        groups: Array.from({ length: groups }, (_, g) => ({ label: `group ${g}`, n: 100 * (g + 1) })),
+        rows: Array.from({ length: rows }, (_, r) => ({ label: `Gene${r}`, section: { index: 0, title: 's' } })),
+        color: { id: 'mean|X', stat: 'mean', layer: 'X', scaling: 'none', values: colour, colorscale: 'Reds' },
+        size: { id: 'pct|X', stat: 'pct_expressing', layer: 'X', detectAbove: 0, values: size },
+        height: { same: true, values: colour },
+        ...over
+    };
+}
+
+const meshes = (fig) => fig.data.filter((t) => t.type === 'mesh3d');
+/** The top of each bar: the z of its 5th vertex (bars-3d.js corner order). */
+const tops = (mesh) => Array.from({ length: mesh.x.length / B.VERTICES_PER_BAR }, (_, b) => mesh.z[b * B.VERTICES_PER_BAR + 4]);
+/** The side of each bar's footprint. */
+const sides = (mesh) => Array.from({ length: mesh.x.length / B.VERTICES_PER_BAR }, (_, b) => mesh.x[b * 8 + 1] - mesh.x[b * 8]);
+
+// ------------------------------------------------------------------ the figure
+
+test('a 3D figure for a dots model is one mesh3d with a bar per drawn cell, in a scene', () => {
+    const fig = D.buildFigure(model({ rows: 3, groups: 4 }), LIGHT);
+    assert.equal(fig.data.length, 1, fig.data.map((t) => t.type).join());
+    const [mesh] = meshes(fig);
+    assert.equal(mesh.x.length, 12 * B.VERTICES_PER_BAR);
+    assert.equal(mesh.i.length, 12 * B.TRIANGLES_PER_BAR);
+    assert.ok(fig.layout.scene, 'a 3D scene');
+    assert.equal(fig.layout.scene.aspectmode, 'manual');
+    assert.equal(fig.layout.scene.zaxis.title.text, 'Mean · X');
+    assert.deepEqual(fig.layout.scene.camera.eye, { x: 1.6, y: -1.6, z: 1.1 }, 'the default camera');
+    // a missing value is not drawn
+    const m = model({ rows: 3, groups: 4 });
+    m.color.values[5] = NaN;
+    assert.equal(meshes(D.buildFigure(m, LIGHT))[0].x.length, 11 * B.VERTICES_PER_BAR);
+});
+
+test('in dots the footprint area encodes Size; a heatmap has one footprint', () => {
+    const dots = meshes(D.buildFigure(model({ rows: 1, groups: 4 }), LIGHT))[0];
+    const s = sides(dots);
+    // size 10, 20, 30, 40 percent: area proportional, so side proportional to sqrt
+    for (let g = 0; g < 4; g++) assert.ok(Math.abs(s[g] / s[3] - Math.sqrt((g + 1) / 4)) < 1e-6, `${s}`);
+    const heat = meshes(D.buildFigure(model({ rows: 1, groups: 4, mode: 'heatmap', size: { none: '' } }), LIGHT))[0];
+    assert.equal(new Set(sides(heat).map((v) => v.toFixed(6))).size, 1);
+});
+
+test('"Same as Color": the bars are the colour values; an own height is drawn as given, hover names all three', () => {
+    const same = meshes(D.buildFigure(model({ rows: 2, groups: 2 }), LIGHT))[0];
+    assert.deepEqual(tops(same).map((v) => Math.round(v * 1000) / 1000), [1, 1.1, 2, 2.1]);
+    const intensity = Array.from({ length: 4 }, (_, b) => same.intensity[b * 8]);
+    assert.deepEqual(intensity.map((v) => Math.round(v * 1000) / 1000), [1, 1.1, 2, 2.1]);
+    const own = model({ rows: 2, groups: 2, height: { same: false, stat: 'sum', layer: 'counts', values: Float64Array.of(5, 6, 7, 8) } });
+    const fig = D.buildFigure(own, LIGHT);
+    const mesh = meshes(fig)[0];
+    assert.deepEqual(tops(mesh), [5, 6, 7, 8]);
+    assert.equal(fig.layout.scene.zaxis.title.text, 'Sum · counts');
+    const text = mesh.hovertext[0];
+    const lines = text.split('<br>');
+    assert.equal(lines[0], 'Gene0');
+    assert.match(lines[1], /^group 0 · Cells: 100$/);
+    assert.match(lines[2], /^Mean · X: 1$/);
+    assert.match(lines[3], /^% expressing \(> 0\) · X: 10$/);
+    assert.match(lines[4], /^Height · Sum · counts: 5$/);
+});
+
+test("view '3d' drops the dendrogram, strip, bracket and totals traces; 2D keeps them", () => {
+    const merges = Float64Array.from([0, 1, 0.5, 2]);
+    const annotations = {
+        brackets: { titles: true }, totals: true,
+        strips: [{ title: 'cell_type', colours: ['#e41a1c', '#377eb8'], levels: ['B', 'T'] }],
+        dendrograms: { groups: [{ merges, positions: [0, 1] }], genes: [{ merges, positions: [0, 1] }] }
+    };
+    const twoD = D.buildFigure(model({ rows: 2, groups: 2, view: undefined, annotations }), LIGHT);
+    const names = twoD.data.map((t) => t.name);
+    for (const n of ['dendrogram genes', 'dendrogram groups', 'group strip', 'cells per group']) assert.ok(names.includes(n), `2D has ${n}: ${names}`);
+    const threeD = D.buildFigure(model({ rows: 2, groups: 2, annotations }), LIGHT);
+    assert.deepEqual(threeD.data.map((t) => t.type), ['mesh3d']);
+    assert.ok(!(threeD.layout.annotations || []).some((a) => a.name === 'section title'));
+});
+
+test('a stored camera is drawn; z-scored heights hang below 0', () => {
+    const camera = { eye: { x: 0.5, y: -2, z: 0.4 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 } };
+    const fig = D.buildFigure(model({ camera }), LIGHT);
+    assert.deepEqual(fig.layout.scene.camera, camera);
+    assert.ok(fig.layout.uirevision, 'a uirevision, so a redraw in place keeps the camera on screen');
+    const m = model({ rows: 1, groups: 2 });
+    m.color.values = Float64Array.of(-1, 1);
+    m.height = { same: true, values: m.color.values };
+    assert.deepEqual(tops(meshes(D.buildFigure(m, LIGHT))[0]), [-1, 1]);
+});
+
+// ------------------------------------------------------------------ the measure
+
+const sections = (genes) => [{ section: { source: 's', rows: 'genes' }, genes, title: 's', scoreRecipe: () => null }];
+const GENES = ['A', 'B', 'C'];
+
+test('"Same as Color" heights equal the colour values as displayed, scaling included', () => {
+    const config = S.normalizeCellGene({ mode: 'heatmap', view: '3d', scale: 'z_groups', sections: [{ source: 's' }], color: { stat: 'mean', layer: 'X' } }).config;
+    assert.equal(config.height, undefined, '"Same as Color" is stored as absent');
+    const plan = S.planFeatures({ sections: sections(GENES), color: config.color, size: null, height: S.heightOf(config) });
+    const moments = new Map(plan.features.map((f, k) => [f.key, Float64Array.from([4, 4 * (k + 1), 20 * (k + 1), 2, 3, 5, 5 * k + 9, 30, 3, 4])]));
+    const matrix = S.buildMatrix(plan, (key) => moments.get(key), [{ n: 4 }, { n: 5 }], config);
+    assert.ok(matrix.height.same);
+    assert.deepEqual(Array.from(matrix.height.values), Array.from(matrix.color.values));
+    assert.notDeepEqual(Array.from(matrix.color.values), Array.from(matrix.color.raw), 'the colours are scaled');
+});
+
+test('a Height source of its own adds a feature only when its layer or threshold is new', () => {
+    const color = { stat: 'mean', layer: 'X' };
+    const size = { stat: 'pct_expressing', layer: 'X' };
+    const base = S.planFeatures({ sections: sections(GENES), color, size }).features.length;
+    assert.equal(base, 3);
+    assert.equal(S.planFeatures({ sections: sections(GENES), color, size, height: { stat: 'sum', layer: 'X' } }).features.length, 3,
+        'Sum on X reads the moments Color and Size read');
+    assert.equal(S.planFeatures({ sections: sections(GENES), color, size, height: { stat: 'mean_expressing', layer: 'X' } }).features.length, 3,
+        'a threshold statistic at the shared threshold adds nothing');
+    const counts = S.planFeatures({ sections: sections(GENES), color, size, height: { stat: 'sum', layer: 'counts' } });
+    assert.equal(counts.features.length, 6, 'one more per gene on a new layer');
+    assert.deepEqual(counts.features.filter((f) => f.wire.layer === 'counts').map((f) => f.wire.name), GENES);
+    assert.ok(counts.rows.every((r) => typeof r.height === 'string'));
+    assert.ok(counts.statistics.some((s) => s.stat === 'sum' && s.layer === 'counts'), 'the grouping counts the plot among its users');
+    const above = S.planFeatures({ sections: sections(GENES), color, size, height: { stat: 'pct_expressing', layer: 'X', detect_above: 2 } });
+    assert.equal(above.features.length, 6, 'a new threshold on the same layer is a feature per gene too');
+});
+
+test('an own height is unscaled, and the plan with a height on a third layer is counted by matrixLimits', () => {
+    const config = S.normalizeCellGene({ mode: 'dots', view: '3d', scale: 'var', sections: [{ source: 's' }], height: { stat: 'sum', layer: 'counts' } }).config;
+    assert.deepEqual(config.height, { stat: 'sum', layer: 'counts' });
+    const plan = S.planFeatures({ sections: sections(['A']), color: config.color, size: config.size, height: S.heightOf(config) });
+    const moments = new Map(plan.features.map((f) => [f.key, f.wire.layer === 'counts' ? Float64Array.of(2, 40, 900, 2, 40, 3, 90, 3000, 3, 90)
+        : Float64Array.of(2, 1, 1, 1, 1, 3, 3, 4, 2, 3)]));
+    const matrix = S.buildMatrix(plan, (key) => moments.get(key), [{ n: 2 }, { n: 3 }], config);
+    assert.equal(matrix.height.same, false);
+    assert.deepEqual(Array.from(matrix.height.values), [40, 90], 'the sums, not scaled 0 to 1');
+    // 10 sections of 2,000 genes, 12 groups: Color and Size on X are 20,000 features (240,000 values) ...
+    const big = Array.from({ length: 10 }, (_, s) => ({ section: { source: `s${s}`, rows: 'genes' },
+        genes: Array.from({ length: 2000 }, (_, k) => `G${s}_${k}`), title: `s${s}`, scoreRecipe: () => null }));
+    const shape = big.map(() => ({ rows: 2000, genes: 2000 }));
+    const two = S.planFeatures({ sections: big, color: { stat: 'mean', layer: 'X' }, size: { stat: 'pct_expressing', layer: 'X' } });
+    assert.deepEqual(M.matrixLimits({ groups: 12, sections: shape, features: two.features.length }), { ok: true });
+    // ... and a Height on counts makes them 40,000 (480,000 values): refused
+    const three = S.planFeatures({ sections: big, color: { stat: 'mean', layer: 'X' }, size: { stat: 'pct_expressing', layer: 'X' }, height: { stat: 'sum', layer: 'counts' } });
+    assert.deepEqual(M.matrixLimits({ groups: 12, sections: shape, features: three.features.length }),
+        { ok: false, reason: 'too_many_values', count: 480000, limit: 400000 });
+});
+
+test('heightOf: absent, or 2D, reads no height of its own; a stored height is kept while 3D is off', () => {
+    const own = { stat: 'sum', layer: 'counts' };
+    assert.equal(S.heightOf(S.normalizeCellGene({ view: '3d' }).config), null);
+    assert.equal(S.heightOf(S.normalizeCellGene({ height: own }).config), null, 'not drawn in 2D, so not read');
+    assert.deepEqual(S.normalizeCellGene({ height: own }).config.height, own, 'kept for when 3D is on again');
+    assert.deepEqual(S.heightOf(S.normalizeCellGene({ view: '3d', height: own }).config), own);
+});
+
+test('the configuration keeps view, height and camera, and drops what it cannot read', () => {
+    const camera = { eye: { x: 1, y: 2, z: 3 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 } };
+    const { config, problems } = S.normalizeCellGene({ view: '3d', camera, height: { stat: 'sd', layer: 'logged' } });
+    assert.equal(config.view, '3d');
+    assert.deepEqual(config.camera, camera);
+    assert.deepEqual(problems, []);
+    const bad = S.normalizeCellGene({ view: 'vr', camera: { eye: 'up' }, height: 'tall' });
+    assert.equal('view' in bad.config, false);
+    assert.equal('camera' in bad.config, false);
+    assert.equal('height' in bad.config, false);
+    assert.equal(bad.problems.length, 3, bad.problems.join('; '));
+});
+
+// ------------------------------------------------------------------ the cap and the CSV
+
+test('the cap check refuses with the matrix wording; a lowered max refuses a small grid', () => {
+    const over = O.view3dGate({ rows: 300, groups: 200 });
+    assert.equal(over.ok, false);
+    assert.equal(over.text, '3D draws at most 40,000 bars; this plot has 60,000. Use fewer genes or groups.');
+    assert.equal(O.view3dGate({ rows: 200, groups: 200 }).ok, true);
+    const small = O.view3dGate({ rows: 4, groups: 6, max: 10 });
+    assert.equal(small.text, '3D draws at most 10 bars; this plot has 24. Use fewer genes or groups.');
+});
+
+test('the CSV gets a Height column only when its source differs from Color', () => {
+    const m = model({ rows: 1, groups: 2 });
+    const head = (mm) => M.longRows(O.tableOf(mm))[0];
+    assert.ok(!head(m).some((h) => /^Height/.test(h)), head(m).join(' | '));
+    const own = model({ rows: 1, groups: 2, height: { same: false, stat: 'sum', layer: 'counts', values: Float64Array.of(5, 6) } });
+    const rows = M.longRows(O.tableOf(own));
+    const k = rows[0].indexOf('Height · Sum · counts · not scaled');
+    assert.ok(k > 0, rows[0].join(' | '));
+    assert.deepEqual(rows.slice(1).map((r) => r[k]), ['5', '6']);
+    assert.ok(!head(model({ rows: 1, groups: 2, view: undefined, height: own.height })).some((h) => /^Height/.test(h)), 'not in 2D');
+});

@@ -132,6 +132,23 @@ const cellGene = Object.freeze({
     }),
     noExpressingCells: 'no expressing cells',
     csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' }),
+    /** The 3D view (UX 6b, WP-12): the toggle, the Height measure, the scene's axes, the strip and the export. */
+    view3d: Object.freeze({
+        button: '3D',
+        buttonHelp: 'Show the matrix as 3D bars: height and color, and in dots the footprint area for Size.',
+        buttonOnHelp: 'Back to the 2D plot.',
+        height: 'Height',
+        sameAsColor: 'Same as Color',
+        heightAsColor: 'Height: as Color',
+        heightHelp: 'Same as Color draws the colors\' numbers, scaling included. A statistic of its own is drawn unscaled.',
+        genes: 'Genes',
+        groups: 'Groups',
+        tag: '3D',
+        leftOut: '3D does not draw dendrograms, strips, section brackets, totals or printed values.',
+        offTag: '2D',
+        resetCamera: 'Reset camera',
+        svgOff: '3D exports as an image only.'
+    }),
     /** What a narrow plot gave up so the matrix keeps its columns readable (panels/cell-gene/draw.js fitMatrix): the strip. */
     narrow: Object.freeze({
         tag: 'Narrow',
