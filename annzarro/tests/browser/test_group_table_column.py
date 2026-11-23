@@ -186,13 +186,16 @@ def test_the_chooser_has_a_cell_group_tab_and_a_ticked_grouping_is_a_column_name
     assert sorted(boxes) == [["cell-group", GA, False, False, "Grouping 1"], ["cell-group", GB, False, False, "Grouping 2"]], \
         "every grouping, open or closed, by its title"
     page.evaluate("(id) => { const b = document.querySelector('#cell-group-content-' + id + ' .column-checkbox[data-key=\"%s\"]'); b.click(); }" % GA, TA)
+    # the grouping's own panel is open: its groups (and the focused gene's statistics, G9c) are asked without codes, in
+    # requests whose order against the table's depends on timing alone, so the table's request is told by what it asks
+    before = len(_computes(page))
+    assert not any(c["want"]["codes"] for c in _computes(page)), "no one reads the codes before the table has the column"
     page.click(f"#apply-columns-{TA}")
     until(page, "([box]) => [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].some(th => th.textContent.trim().startsWith('Grouping 1'))", [BOX])
     cols = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.map(c => [c.type, c.key, c.label || null])", TA)
     assert ["cell-group", GA, "Grouping 1"] in cols
     _filled(page, _index(page, "Grouping 1"))
-    req = _computes(page)[-1]
-    assert req["want"]["codes"] is True, "a table reads the codes"
+    assert any(c["want"]["codes"] is True for c in _computes(page)[before:]), "a table reads the codes"
 
 
 # ------------------------------------------------------------------ 2. cells and sort
