@@ -1001,7 +1001,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 size: _config.mode !== 'dots' ? { none: '' } : sizeNone ? { none: sizeNone }
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
-                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations,
+                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline,
                 pendingText: pending ? pendingText(plan, pending) : ''
             };
             const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });

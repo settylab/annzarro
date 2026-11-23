@@ -73,7 +73,7 @@ function compose(fields = {}, { rows = 6, split = 3, reply = reply2(), recipe = 
             ...extras.color, values: colour, raw: colour },
         size: config.mode !== 'dots' ? { none: '' }
             : { id: 'pct|logged', stat: 'pct_expressing', layer: 'logged', detectAbove: 0, ...extras.size, values: sized },
-        legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations
+        legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline
     };
     return { config, model, figure: D.buildFigure(model, LIGHT), extras };
 }
@@ -489,4 +489,45 @@ test('CXG-18: rows still being read are drawn as placeholders with the reading s
     const marks = one(dfig, 'rows being read');
     assert.equal(marks.x.length, 4);
     assert.ok(marks.text.every((t) => t.includes('Reading 1 gene')));
+});
+
+// ================================================================================================ 0.8.0 WP-3: defaults
+
+test('WP-3 the default color scale is Reds, in dots and in a heatmap', () => {
+    assert.equal(matrixTraces(compose().figure)[0].marker.colorscale, 'Reds');
+    assert.equal(matrixTraces(compose({ mode: 'heatmap' }).figure)[0].colorscale, 'Reds');
+});
+
+test('WP-3 a stored color scale is kept, Reds picked under a z-score included', () => {
+    assert.equal(matrixTraces(compose({ colorScale: 'Viridis' }).figure)[0].marker.colorscale, 'Viridis');
+    assert.equal(matrixTraces(compose({ colorScale: 'Reds', scale: 'z_groups' }).figure)[0].marker.colorscale, 'Reds');
+});
+
+test('WP-3 under a z-score the default is RdBu centred at 0; a stored map or center wins', () => {
+    for (const scale of ['z_groups', 'z_pooled']) {
+        const fig = compose({ scale }).figure;
+        const m = matrixTraces(fig)[0].marker;
+        assert.equal(m.colorscale, 'RdBu', scale);
+        assert.equal(m.cmin, -m.cmax, `${scale}: symmetric about 0`);
+        assert.deepEqual(O.barSettings(normalizeCellGene({ scale }).config).center, 0);
+    }
+    const picked = compose({ scale: 'z_groups', colorScale: 'Viridis' });
+    assert.equal(matrixTraces(picked.figure)[0].marker.colorscale, 'Viridis');
+    assert.equal(O.barSettings(picked.config).center, undefined, 'no centre on a sequential map');
+    assert.equal(O.barSettings(compose({ scale: 'z_groups', center: 1 }).config).center, 1);
+    assert.equal(compose({ scale: 'group' }).extras.color.colorscale, 'Reds', '0-to-1 scalings stay sequential');
+});
+
+test('WP-3 dots carry a black 0.5 px outline; width 0 draws none; a heatmap has none', () => {
+    assert.deepEqual(matrixTraces(compose().figure)[0].marker.line, { color: '#000', width: 0.5 });
+    assert.deepEqual(matrixTraces(compose({ outline: { color: '#ff0000', width: 2 } }).figure)[0].marker.line, { color: '#ff0000', width: 2 });
+    assert.equal(matrixTraces(compose({ outline: { width: 0 } }).figure)[0].marker.line, undefined);
+    const heat = matrixTraces(compose({ mode: 'heatmap' }).figure)[0];
+    assert.equal(heat.line, undefined);
+    assert.equal(heat.marker, undefined);
+});
+
+test('WP-3 the size legend dots wear the plot dots outline', () => {
+    assert.deepEqual(one(compose().figure, 'size legend').marker.line, { color: '#000', width: 0.5 });
+    assert.equal(one(compose({ outline: { width: 0 } }).figure, 'size legend').marker.line.width, 0);
 });

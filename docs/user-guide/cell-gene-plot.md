@@ -126,13 +126,16 @@ clustered block.
 
 | Section | Controls |
 |---|---|
-| Dots | **Smallest and largest dot**; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`); **Size threshold**, when size should count expressing cells above another value than **Color**'s |
+| Dots | **Smallest and largest dot**; **% at the smallest dot** and **% at the largest dot** (scanpy's `dot_min`, `dot_max`); **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none); **Size threshold**, when size should count expressing cells above another value than **Color**'s |
 | Colors | **Color scale**, **Min**, **Max**, **Center** (for a diverging scale); **Print values in cells** (heatmap) |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
 | Labels | **Gene labels**, **Group labels**; **Plot title**, **Color bar title**, **Size legend title** |
 | Clustering | **Linkage**, **Distance**, **Dendrograms** |
 | Legend | **Color bar**, **Size legend**, **Strip legend** |
 | Totals | **Cells per group** (a bar along the group axis); **Sort groups by size** |
+
+The colour scale is **Reds** by default. Under a z-score scaling the default is **RdBu**, centred at 0, so that
+values above and below the mean read as opposite colours. A scale you pick yourself is kept, whatever the scaling.
 
 The group axis carries a colour strip in the grouping's colours, one per factor; small groups get "small" after their
 label. Gene and group labels thin out when they would overlap, and the hover always names the group, the gene (or the
