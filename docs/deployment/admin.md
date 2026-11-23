@@ -335,6 +335,9 @@ store_unreadable` until it is repaired.
 | [`panel.gene-table.enabled`]{#policy-panel-gene-table-enabled} | Gene Table |
 | [`panel.gene-set.enabled`]{#policy-panel-gene-set-enabled} | Gene Set Analysis |
 | [`panel.gene-signature.enabled`]{#policy-panel-gene-signature-enabled} | Gene Signature |
+| [`panel.cell-grouping.enabled`]{#policy-panel-cell-grouping-enabled} | Cell Grouping |
+| [`panel.cell-gene.enabled`]{#policy-panel-cell-gene-enabled} | Cell-Gene Plot |
+| [`panel.cell-count.enabled`]{#policy-panel-cell-count-enabled} | Cell Count Plot |
 
 A disabled type is missing from the panel menu. A saved panel set or
 `#view=` link that holds one opens with a placeholder, "Disabled by the administrator", and keeps

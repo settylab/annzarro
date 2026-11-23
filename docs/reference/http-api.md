@@ -463,8 +463,170 @@ with its `queue`; a wait longer than 30 seconds ends in an `error` frame with re
 
 Requests whose estimate is under 5 seconds and that read no whole matrix run in the light lane (two at a time per
 worker); every other request takes the heavy slot, which one job at a time holds and gives back between read batches
-when another waits. The estimate names the lane. The full reference of the request, the frames and the blocks
-follows with the Cell Grouping feature.
+when another waits. The estimate names the lane.
+
+The web client's Cell Grouping, Cell-Gene Plot and Cell Count Plot ({doc}`../user-guide/cell-grouping`,
+{doc}`../user-guide/cell-gene-plot`, {doc}`../user-guide/cell-count-plot`) are built on this route alone: the browser
+never holds the per-cell data of these views, only the counts, the moments and, for a grouping that colours a plot, one
+code per cell.
+
+### The request
+
+```json
+{"shape": "grouping",
+ "partitionings": [
+   {"source": {"type": "obs", "key": "cell_type"}},
+   {"source": {"type": "obs", "key": "depth"},
+    "binning": {"method": "equal_count", "bins": 2, "zero_bin": true}}],
+ "features": [{"id": "f0", "kind": "gene", "name": "Cd3e", "layer": "logged"}],
+ "want": {"codes": true}}
+```
+
+| Field | Shape | Meaning |
+|---|---|---|
+| `shape` | both | `grouping` (the default) or `grid` |
+| `partitionings` | both | the list of partitionings (below). A grouping takes up to 8, counted again across nesting up to 64 (`422 too_many_partitionings`); a grid takes the axes of its `mode` |
+| `sets` | both | the bitsets of cell tables, by the `ref` a `table` source names: `{"s0": {"encoding": "bitset-base64", "length": 8090, "data": "..."}}`. Cell `i` of the cells shown is bit `i & 7`, least significant first, of byte `i >> 3` (numpy's `packbits(..., bitorder="little")`); bits past `length` are 0. A `length` other than the number of cells shown is `400 set_length_mismatch` |
+| `subset` | both | the cells shown, a subset spec as the score route takes it (the `?subset=` of the other routes, as a string or as its JSON); absent, every cell |
+| `small` | grouping | `{"threshold": 10, "mode": "keep"}`: groups with fewer cells than `threshold` are kept (`keep`), collected into one group with the key `["@small"]` (`collect`), or put in no group (`hide`) |
+| `features` | grouping | rows of a Cell-Gene Plot: `{"id", "kind": "gene", "name", "layer": "X", "detect_above": 0}`, or `{"id", "kind": "score", "recipe", "column", "layer", "above": 0}`, where `recipe` is the score route's ({ref}`http-gene-score`) and `column` (the method) and `layer` (its input) override it |
+| `measures` | both | one numeric per-cell source per measure: `{"id", "source", "above": 0}`, the source an `obs`, `obsm`, `layer`, `obsp` or `gene-score` source as below. A grouping takes up to 16, a grid 1 (`too_many_measures`) |
+| `want` | grouping | `{"codes": false, "histograms": []}`: whether to send one code per cell, and the indices of the binned partitionings whose distribution (a 100-bin count with its share of zeros) to send |
+| `mode` | grid | `1d` (x, then an optional split), `2d` (x, y, an optional split), `categorical` (x, y, and an optional factor whose most frequent level is wanted) or `sets` (2 to 16 binary partitionings) |
+| `density` | grid | `true` for the two passes of a density (`1d` and `2d` only): the first takes each density axis's `n`, SD and its 0.1st and 99.9th percentiles, the second bins the range those give, padded by 3 bandwidths. The smoothing is the browser's |
+| `estimate_only`, `confirm` | both | as on the score route |
+
+A **partitioning** is `{source, binning?, levels?, rest?, member?}`:
+
+- `source` is the setting a cell plot stores. `obs` (`key`; the name of the obs index gives one level per cell),
+  `obsm`, `layer` and `obsp` (`key` and `column`: the embedding's column, the gene, the cell whose row is read),
+  `table` (`ref` into `sets`), `gene-score` (`recipe`, the score route's, with `column` the method and `layer` the
+  input) and `cell-group` (`recipe`: `{partitionings, small?}`, another grouping written out inline, up to 4 deep,
+  `nested_too_deep` beyond). The server never sees a panel, so a `key` on the last three is accepted and not used.
+- `binning` makes a numeric source into bins: `{method, bins, thresholds, zero_bin, range, edges_from, outside}`.
+  `method` is `equal_count` (the default), `equal_width`, `log`, `manual` (with `thresholds`) or `categories` (one level
+  per value). `bins` is 2 to 1,000 in a grouping; on a grid an axis takes up to its mode's level limit (below:
+  2,000 for the x of a 1D grid, 512 per axis in 2D). Other counts are `400 bad_bins`. Bins are closed below and open above, the last one closed.
+  `zero_bin: true` gives exact zeros a level of their own. `range` is `[lo, hi]` with `null` for a side taken from the
+  data. `edges_from` is `shown` (the default: edges from the cells shown) or `all` (from every cell of the dataset,
+  the same for every subset). `outside` is `clamp` (values outside a stored range fall into the end bins) or
+  `exclude` (they are left out and counted); a grouping takes `clamp` only, since every cell shown must be in a level.
+- `levels` keeps some categories, by their level ids, in that order, and `rest` says where the others go: `other`
+  (one level `@other`, the default) or `exclude` (no group). On a table, `rest: "exclude"` drops the `@out` level.
+- `member` makes the partitioning strictly in or out, for the sets of a Venn or UpSet: `{"levels": [ids]}`,
+  `{"op": ">" | ">=" | "<" | "<=", "value": x}` or `{"group": [ids]}` (one group of a `cell-group` source). A cell
+  without a value is out.
+
+**Level ids** are typed, so a category can never be taken for a reserved level: `c:<text>` for a category (`c:B cell`,
+and `c:other` for a category called "other"), `bin:<i>` from 0 upward, and the reserved `@zero`, `@in`, `@out`,
+`@other` and `@na` (no value). A category's text is the value as written, a boolean is `c:true` or `c:false`, an
+integer its digits, and a float is written as JavaScript writes a number (`3.0` is `c:3`); a column in which two
+values give the same text is refused (`ambiguous_categories`). A level of a `cell-group` source is `g:` followed by the
+JSON of the group's key. A group's **key** is the list of its level ids, one per partitioning. Names, colours and the
+separator never reach the server: the browser makes them from the keys.
+
+Unknown fields are refused everywhere, so fields can be added later: on the body `400 bad_request` for a field no
+shape takes and `400 unknown_field` for one this shape does not take, and the same for a field of a partitioning,
+a source, a binning, a member or `small`.
+
+### The estimate
+
+`estimate_only: true` reads no data and answers `200`:
+
+```json
+{"estimate": {"auto_max_s": 60.0, "entries": 675, "lane": "light", "layout": "csc", "live_max_s": 5.0, "max_s": 600.0,
+              "n_cells": 1200, "seconds": 0.2, "tier": "auto",
+              "parts": [{"entries": 0, "layout": "column", "seconds": 0.0, "type": "obs"},
+                        {"entries": 0, "layout": "column", "seconds": 0.0, "type": "obs"}]},
+ "missing": {}}
+```
+
+`entries` are the stored values the genes, scores and measures will read, known from the store's index; `parts` is
+the cost of each partitioning; `lane` is where the request will run; `missing` lists genes the dataset does not have
+(`{"genes": [...]}`). The tiers are the score route's: up to 60 s runs, up to 10 minutes needs `confirm: true` (`409
+confirmation_required` otherwise), and beyond is `413 groups_too_expensive`, whose message says what would help. An
+`obsm` column is charged its whole matrix, because the store's chunks hold every column of a row range together.
+
+### The stream
+
+Otherwise the reply is `application/x-annzarro-groups-stream`, JSON frames one per line, then after the `result` frame
+the binary blocks it lists, little-endian, in the order listed:
+
+```
+{"type": "start", "codes": "miss", "lane": "light", "entries_total": 675, "queue": {"ahead": 0, "sharing": 0}}
+{"type": "progress", "stage": "groups", "done": 1, "total": 2, "entries_done": 0, "entries_total": 675, "running_s": 0.015, "queue": {"ahead": 0, "sharing": 0}}
+{"type": "progress", "stage": "features", "done": 1, "total": 1, "entries_done": 675, "entries_total": 675, "running_s": 0.03, "queue": {"ahead": 0, "sharing": 0}}
+{"type": "result", "version": 1, "shape": "grouping", "n_shown": 1200, "n_grouped": 1200,
+ "partitionings": [
+   {"kind": "categorical", "levels": [{"id": "c:B cell", "n": 500}, {"id": "c:T cell", "n": 300}, ...],
+    "categories": ["c:B cell", "c:T cell", ...], "n_no_value": 0},
+   {"kind": "binned", "levels": [{"id": "@zero", "n": 732}, {"id": "bin:0", "n": 234, "lo": 0.0917, "hi": 2.6165},
+                                 {"id": "bin:1", "n": 234, "lo": 2.6165, "hi": 15.6397}],
+    "edges": [0.0917, 2.6165, 15.6397], "edges_from": "shown", "edges_n": 1200, "bins_asked": 2, "bins_made": 2,
+    "degenerate": false, "outside": "clamp", "n_no_value": 0, "n_outside": [0, 0]}],
+ "groups": [{"key": ["c:B cell", "@zero"], "n": 313}, {"key": ["c:B cell", "bin:0"], "n": 91}, ...],
+ "small": {"threshold": 10, "mode": "keep", "n_small": 4},
+ "features": [{"id": "f0", "status": "ok"}], "measures": [],
+ "moments": ["n", "sum", "sumsq", "n_above", "sum_above"],
+ "blocks": [{"name": "codes", "dtype": "uint8", "length": 1200},
+            {"name": "feature_moments", "dtype": "float64", "shape": [1, 17, 5]}]}
+<1,200 bytes of codes><680 bytes of moments>
+```
+
+- `start` says whether the grouping came from the worker's **code cache** (`codes: "hit"`, nothing of the grouping is
+  read again) or not (`miss`), the lane, the stored entries to read and the place in the queue. A grid has no `codes`.
+- `progress` frames carry the `stage` (`groups`, `features` or `grid`), what is done of it, the stored entries read of
+  all to read, the seconds the job has held its lane (waits and give-way pauses left out, so `entries_done /
+  running_s` is a rate) and `queue`: `ahead`, the jobs before this one in its lane, and `sharing`, those it takes turns
+  with. The server never says whose a job is.
+- `result` of a grouping: the cells shown and those in a group; per partitioning its levels in order with their cells,
+  and for a binned one the edges, the population they came from (`edges_from`, `edges_n`), the bins asked and made
+  (equal edges merge, so fewer may be made), whether every value was equal (`degenerate`), the cells without a value
+  and those clamped below and above (`n_outside`), and, when asked, its `histogram`; `categories` lists every category
+  of a categorical column, and kept levels that hold no cell are listed with `n` 0 under `absent`. `groups` is in the
+  order the groups are drawn, and a group's index there is its code. Each `features` and `measures` entry has a
+  `status`: `ok`, `missing` (a gene the dataset lacks) or `no_score` with its `reason`.
+- The blocks of a grouping: `codes` (`uint8` up to 255 groups, the value 255 meaning no group; else `uint16` and
+  65535), one per cell shown, when `want.codes` asked; `feature_moments` and `measure_moments`, `float64` of shape
+  `[features, groups, 5]`.
+- `result` of a grid: `axes`, each with its levels (ids only), the same binning fields and `n_outside` (each cell left
+  out counted once, on the first axis whose range it fails), and for a density `density: {n, sigma, bandwidth,
+  quantiles, range}`; `n_counted`, the cells counted. Its blocks: `counts` (`uint32`, one per combination of levels,
+  empty ones included, the first axis slowest) and `measure_moments` (`[1, combinations, 5]`). A grid never sends
+  codes. An axis lists every declared level (all categories, kept or not, all bins) and of `@other`, `@na` and `@zero`
+  only those that hold a cell; `@in` and `@out` are always listed.
+- `error`: `{"reason", "message"}` when the work fails after the stream began. The status is already `200`, so a
+  stream that ends without a `result` frame has failed.
+
+**The moments.** For each group and each feature or measure, five numbers over the group's cells with a finite value
+`x`: `n`, the sum of `x`, the sum of `x²`, the number of cells with `x` above the threshold (`detect_above` of a
+gene, `above` of a score or measure), and the sum of `x` over those. Every statistic the plots offer (mean, %
+expressing, mean of expressing cells, sum, SD, the z-scores) and every scaling is derived from them in the browser, so
+a change of statistic or scaling sends no request. A value that is not finite is left out of all five; a cell in no
+group is in no group's moments.
+
+**A limit met once the levels are known** is a `result` with `refused` and no blocks, for example
+`{"refused": {"reason": "grid_too_large", "count": 7864320, "limit": 2097152, "mode": "2d", "levels": [512, 512]}}`.
+The reasons: `too_many_levels` (a partitioning over 2,000 levels holding a cell), `too_many_groups` (over 2,000
+groups), `too_many_categories`, `ambiguous_categories`, `too_many_bins` and `grid_too_large` (a grid over its mode's
+limits, below). `too_many_values` refuses a grouping whose groups times features and measures pass 400,000.
+
+| Grid `mode` | Axes | Levels per axis | Refused |
+|---|---|---|---|
+| `1d` | x, split | 2,000 × 200 | `422` (`grid_too_large`, `too_many_bins`, `too_many_levels`) when the sizes are known from the request, else in the `result` once the levels are read |
+| `2d` | x, y, split | 512 × 512 × 8 | the same |
+| `categorical` | x, y, factor | 200 × 200 | the same |
+| `sets` | 2 to 16 sets | in or out | `422 too_many_sets`, `too_few_sets` |
+
+Measures are counted over at most 2,097,152 combinations (512 × 512 × 8, 84 MB of moments).
+
+**Memory and turns.** A request holds its estimate on the worker's compute ledger while it runs
+(`server.compute_budget_mb`, {doc}`../deployment/resource-limits`) and waits when it does not fit, after the code cache
+has been emptied. A worker keeps the codes of the groupings it resolved, up to `server.group_code_cache_mb`, so a plot
+coloured by a grouping and a Cell-Gene Plot over it read the grouping once; a cached grouping is dropped when its
+store's freshness check sees it change (Refresh dataset forces the check). A request kept waiting only by its own
+user's running computations waits without the 30-second limit and is told its place every 5 seconds; behind another
+user's work the wait ends after 30 seconds in the `read_busy` error frame.
 
 (http-matrix-kind)=
 ### What an input looks like
@@ -809,7 +971,8 @@ same; what differs for a restricted user:
 | 409 | `confirmation_required` | a gene score whose estimate is over 60 s and not over 10 minutes, sent without `confirm: true` |
 | 413 | `score_too_expensive` | a gene score estimated over 10 minutes |
 | 413 | `groups_too_expensive` | a `POST /data/cell_groups` request estimated over 10 minutes ({ref}`http-cell-groups`) |
-| 422 | `grid_too_large`, `too_many_sets`, `too_many_partitionings`, `obsp_too_large` | `POST /data/cell_groups`: a limit met before any read, with `count` and `limit` |
+| 400 | `bad_request`, `unknown_field`, `bad_bins`, `bad_thresholds`, `set_length_mismatch`, `nested_too_deep` | `POST /data/cell_groups`: a request the server cannot use ({ref}`http-cell-groups`) |
+| 422 | `grid_too_large`, `too_many_bins`, `too_many_levels`, `too_many_sets`, `too_few_sets`, `too_many_partitionings`, `too_many_thresholds`, `obsp_too_large` | `POST /data/cell_groups`: a limit met before any read, with `count` and `limit` |
 | 413 | `request_too_large` | the request body is over `server.max_request_mb` (64 MB; panel-set saves and imports) |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
 | 431 | (none) | `annzarro start` only: the request line and headers together are over 262,144 bytes (waitress answers, not the app; under gunicorn a header field over `server.limit_request_field_size` is a `400`) |

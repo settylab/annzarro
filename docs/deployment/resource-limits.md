@@ -21,7 +21,7 @@ request slowly. The reverse proxy in front ({doc}`lab-server`) is the defence fo
 | `name_search_timeout_s`{#limit-name-search-timeout-s} | 10 | CPU: a regex name search over millions of names answers with the matches found so far when it runs out of time (`partial: true`, `timed_out: true`) | partial `200` | the host is slow and the dataset has more than about 10 million names; 0 turns it off |
 | `read_user_share_percent`{#limit-read-user-share-percent} | 50 | Fairness: the pairwise-read budget (`read_budget_mb`) and the subset budget (`subset_budget_mb`) are shared; one user (one address, with login off; one /64 for IPv6) may hold this share of each | `503 read_busy` | few users and one big matrix; 0 gives a user the whole of both budgets |
 | `subset_budget_mb`{#limit-subset-budget-mb}, `subset_wait_s`{#limit-subset-wait-s} | 15% of RAM, 30 | Memory and threads: a subset is a pass over a column of every cell, charged 55 bytes per cell, the worst measured at 95.6 million cells (5 GB for one subset read as a Python list; a numeric filter on the array holds about 19 bytes per cell, and six at once held 10.8 GB), and any request can name a new seed or filter. One user holds at most `read_user_share_percent` of the budget while another waits, and has at most one request waiting | `503 read_busy` after the wait | many users open the largest datasets at once and filters queue longer than 30 s; give the host more RAM or raise the budget |
-| `compute_budget_mb`{#limit-compute-budget-mb}, `group_code_cache_mb`{#limit-group-code-cache-mb} | 4608, 512 | Memory: gene scores and cell groupings read whole matrices, up to 2.3 GB for one job at 100 million cells; every job in flight in one worker is charged its estimate against `compute_budget_mb` (4.5 GB a worker, so 18 GB for 4 workers), and the code cache of `group_code_cache_mb` is emptied first to make room | the job waits; its progress shows its place in the queue | the host has more RAM and jobs queue behind each other, or less and a worker is killed; a value below the largest single job makes every job run alone |
+| `compute_budget_mb`{#limit-compute-budget-mb}, `group_code_cache_mb`{#limit-group-code-cache-mb} | 4608, 512 | Memory: gene scores and cell groupings read whole matrices, up to 2.3 GB for one job at 100 million cells; every job in flight in one worker is charged its estimate against `compute_budget_mb` (4.5 GB a worker, so 18 GB for 4 workers), and the code cache of `group_code_cache_mb` is emptied first to make room | the job waits; its progress shows its place in the queue | the host has more RAM and jobs queue behind each other, or less and a worker is killed; a value below the largest single job makes every job run alone ({ref}`compute-memory`) |
 | `max_read_mb`{#limit-max-read-mb}, `read_budget_mb`{#limit-read-budget-mb} | 5% of RAM (256 MB to 4 GB), twice `max_read_mb` | Memory: one read of an `obsp` or `varp` matrix is estimated from the store's metadata before any chunk is read, and all such reads in flight in one worker share the budget | `413 read_too_large`, `503 read_busy` | the host has the RAM and legitimate matrices are refused; 0 uses the default |
 | `read_wait_s`{#limit-read-wait-s} | 5 | Threads: how long a pairwise read waits for the budget before it is answered | `503 read_busy` | reads queue behind each other on a busy host |
 | `remote_request_timeout_s`{#limit-remote-request-timeout-s} | 120 on a shared server, 600 on a single-user one | Threads: one request's reads from a remote store (`s3://`, `gs://`, `https://`), however many chunks. A single wait is bounded by `remote_connect_timeout_s` and `remote_read_timeout_s`; this bounds the sum | `504 remote_deadline` | a store is slow and legitimate requests need longer; 0 turns it off |
@@ -49,6 +49,39 @@ shapes with `400 regex_too_complex` (a repeat inside a repeat such as `(a+)+`, a
 a repeat, more than four open-ended repeats) before any name is read. Plain text search, the
 default, is not affected. `regex` is a dependency of AnnZarro; if it is missing, regex search is
 refused with `400 regex_unavailable` instead of running unguarded.
+
+(compute-memory)=
+## Memory for scores, groupings and counts
+
+Gene scores, Cell Groupings, the Cell-Gene Plot and the Cell Count Plot all compute on the server, over every cell of
+a dataset. Each worker process keeps one ledger of what its computations hold, bounded by `compute_budget_mb`, and a
+computation is charged its estimate before it starts. One that does not fit waits, after the cache of group codes has
+been emptied to make room, and the panel that asked shows its place in the queue. The bound is enforced, not
+estimated: a worker never holds more than its ledger for these computations.
+
+What one worker holds at once at 100 million cells, with the default bound:
+
+| Held by one worker | Memory |
+|---|---|
+| The heavy slot: one gene job's read-ahead and the segments it works on, **or** one gene score (500 genes) | up to 2.3 GB |
+| One grouping being resolved: its codes, one source column and its working space. A second runs beside it only if both fit | up to 1.5 GB |
+| The cache of group codes (`group_code_cache_mb`), emptied first when room is needed | up to 0.5 GB |
+| Jobs that have given the heavy slot to another: their running sums only, their read-ahead freed | under 0.1 GB |
+| **The bound, `compute_budget_mb`** | **4.5 GB** |
+
+That is **4.5 GB per worker, so 18 GB for the 4 workers a server may run**, at 100 million cells. At 10 million cells
+the same work holds under 1 GB per worker. Size the host for the bound times the workers, plus what the rest of the
+server holds (the name index and the readers' caches, {doc}`../reference/configuration`). A lower `compute_budget_mb`
+is valid down to the largest single computation; requests then run one after another instead of side by side, which
+is slower but safe.
+
+Light requests, those estimated under 5 seconds that read no whole matrix (most groupings and counts), run two at a
+time per worker beside the heavy slot and never wait for it. A long heavy job gives the slot back between read batches
+when another job waits, so it delays a later one by one batch at most.
+
+Measured on a 95.6-million-cell dataset stored by gene, with one worker and the defaults: opening a panel set with one
+grouping and three plots that use it took 9.8 s with an empty cache and 5.0 s with the grouping's codes cached. One plot of genes over that grouping reserved 2.7 GB and used at most 1.4 GB. With 4
+workers the same panel set resolved the grouping once in each worker that served it (4 copies of 96 MB of codes).
 
 ## Other limits
 
