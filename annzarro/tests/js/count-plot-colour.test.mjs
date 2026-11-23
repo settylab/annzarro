@@ -84,7 +84,7 @@ test('a z-score keeps its diverging map around zero until a map is chosen', () =
     assert.equal(t.zmid, 0);
 });
 
-test('the layers of a 2D histogram by a Color by take the palette passed and the max as the top of their scale', () => {
+test('the layers of a 2D histogram by a Color by take their levels\' colours (grouping-colours.js) and the max as the top of their scale', () => {
     const config = norm({ mode: 'hist2d', x: { source: { type: 'obs', key: 'a' }, binning: { method: 'equal_width', bins: 2 } },
         y: { source: { type: 'obs', key: 'b' }, binning: { method: 'equal_width', bins: 2 } }, split: obs('s'), color: { max: 7 } });
     const edges = { edges: [0, 1, 2], bins_made: 2, degenerate: false };
@@ -94,7 +94,10 @@ test('the layers of a 2D histogram by a Color by take the palette passed and the
     const layers = fig.data.filter((t) => t.type === 'heatmap');
     assert.equal(layers.length, 2);
     assert.ok(layers.every((t) => t.zmax === 7), 'Max is the top of every level\'s scale');
-    assert.ok(layers[0].colorscale[1][1].startsWith('rgba(17, 17, 17'), 'the palette\'s first colour');
+    // the split's first level, a column with no colours of its own: the app's first group colour, #1f77b4 (decision 33)
+    assert.ok(layers[0].colorscale[1][1].startsWith('rgba(31, 119, 180'), 'the first level\'s colour');
+    const dark = D.countFigure({ ...config, color: { ...config.color, palette: 'Dark2' } }, table, opts(config)).data.filter((t) => t.type === 'heatmap');
+    assert.ok(dark[0].colorscale[1][1].startsWith('rgba(27, 158, 119'), 'the plot\'s level palette replaces them');
 });
 
 function twoD(config) {

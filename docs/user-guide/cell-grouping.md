@@ -173,8 +173,9 @@ change a Cell Plot coloured by the bare column: that plot has its own palette se
 palette in group order, repeating by the 64 colour groups. Under **Settings** ▸ **Colors**, **Color groups by** chooses
 **Own palette** (the default) or one of the factors, so that every group takes the colour of its level of that factor;
 **Palette** changes the own palette; and **Reset group colors (n)** removes the n colours you set by hand. Click a
-group's swatch in the group list to give that group a colour of its own; it wins over everything else. A Cell Plot's
-own palette select still recolours that plot alone.
+group's swatch in the group list, or press **Enter** or **Space** on a focused row, to give that group a colour of its
+own; it wins over everything else. A Count Plot's level palette (under its **Color** button) and a Cell Plot's own
+palette select still recolour that plot alone.
 
 The settings are stored in the recipe (`colors`, only what is not at its default), so a link or a panel set carries them
 and a link made before colours existed opens unchanged. They are no part of what is computed.

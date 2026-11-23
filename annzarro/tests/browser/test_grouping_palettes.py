@@ -273,6 +273,24 @@ def test_color_groups_by_a_factor_a_group_override_and_its_reset(page, served):
     assert "overrides" not in _config(page).get("colors", {})
 
 
+def test_a_group_color_is_set_from_the_keyboard_and_the_grid_keeps_one_tab_stop(page, served):
+    """Enter or Space on a focused row opens its group's color picker; the picker is no extra tab stop."""
+    _open(page, served, {P: _plot(color=by(GA)), GA: _grouping(partitionings=TWO)}, (P, GA))
+    _wait_plot(page, GROUP_NAMES)
+    page.evaluate("""() => { window.__picked = []; const own = HTMLInputElement.prototype.showPicker;
+        HTMLInputElement.prototype.showPicker = function () { window.__picked.push(this.getAttribute('aria-label')); }; window.__own = own; }""")
+    row = f"{A} .cgg-row:has(.cgg-name:text-is('B cell | treated'))"
+    assert page.get_attribute(row, "aria-keyshortcuts") == "Enter Space"
+    page.focus(row)
+    page.keyboard.press("Enter")
+    page.keyboard.press(" ")
+    assert page.evaluate("() => window.__picked") == ["Color of B cell | treated"] * 2
+    assert page.locator(f"{A} .cgg-grid [tabindex='0']").count() == 1, "the row is the grid's one tab stop"
+    # what the picker gives is the group's own color, as a click on the swatch gives it
+    page.fill(f"{row} .cgg-swatch input[type=color]", "#fedcba")
+    until(page, "([s]) => { const gd = document.querySelector(s + ' .js-plotly-plot'); return !!gd && gd.data.some(d => d.name === 'B cell | treated' && d.marker.color === '#fedcba'); }", [C])
+
+
 # ------------------------------------------------------------------ 5. a link
 
 def test_a_link_keeps_the_palettes_and_the_overrides(page, served):

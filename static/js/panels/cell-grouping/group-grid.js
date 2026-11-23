@@ -311,8 +311,8 @@ function mount(host, ctx) {
     }
 
     function listParts(row) {
-        // a click on the swatch opens the browser's color picker: the group's own color, one undo step (not a tab stop: the
-        // grid keeps its one)
+        // a click on the swatch opens the browser's color picker: the group's own color, one undo step. It is not a tab stop
+        // (the grid keeps its one, the row): Enter or Space on a focused row opens it (openPicker)
         const input = el('input', { type: 'color', class: 'cgg-swatch-input', tabindex: '-1' });
         const swatch = el('span', { class: 'cgg-swatch' }, input);
         const name = el('span', { class: 'cgg-name' });
@@ -321,6 +321,10 @@ function mount(host, ctx) {
         const share = el('div', { class: 'cgg-cell cgg-num cgg-share cgg-narrow-hide', role: 'gridcell' });
         row.append(first, cells, share);
         input.addEventListener('change', () => pickColor(row, input.value));
+        row.addEventListener('keydown', (e) => {
+            if (e.target !== row || (e.key !== 'Enter' && e.key !== ' ') || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (openPicker(row)) e.preventDefault();
+        });
         return { first, swatch, input, name, cells, share, pill: null, vals: [] };
     }
 
@@ -331,6 +335,17 @@ function mount(host, ctx) {
         const r = shownRows[Number(row.dataset.shownIndex)];
         if (!r || !r.key || typeof ctx.set !== 'function') return;
         ctx.set({ colors: withOverride(ctx.recipe(), groupId(r.key), css).colors }, `color group ${r.name}`);
+    }
+
+    /** Open the color picker of a row's group from the keyboard; false when the row's group takes no color (a reason). */
+    function openPicker(row) {
+        const p = parts.get(row);
+        if (!p || p.swatch.hidden || p.input.disabled) return false;
+        if (typeof p.input.showPicker === 'function') {
+            try { p.input.showPicker(); return true; } catch { /* not allowed here: a click opens it */ }
+        }
+        p.input.click();
+        return true;
     }
 
     function buildListRow(row) {
@@ -356,6 +371,8 @@ function mount(host, ctx) {
         input.title = `Set the color of ${r.name}`;
         input.value = toHex(r.color);
         input.disabled = reasons || !r.key;
+        // the row says its keys: Enter or Space opens its group's color picker
+        if (input.disabled || !r.color) row.removeAttribute('aria-keyshortcuts'); else row.setAttribute('aria-keyshortcuts', 'Enter Space');
         if (r.small && !p.pill) {
             p.pill = el('span', { class: 'cgg-small', title: SMALL_TITLE }, 'small');
             p.first.append(' ', p.pill);
