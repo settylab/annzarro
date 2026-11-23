@@ -9,7 +9,7 @@ genes GENE000 to GENE039, X signed, layers ``logged`` and ``counts``.
 3.  Job 2, "three gene lists side by side": three sections with their titles and gene counts, a gene not in the dataset
     counted on its row (CXG-3, CXG-6, CXG-8, UX 3.2).
 4.  Job 3, "one row per pathway": a one-row section; Color and Size each choose from one list under "From the genes"
-    and "From the score", with the help line, the threshold box and Offer other scores…; only summaries send no score
+    and "From the score" (a score kind then picks its method and layer), with the help line and the threshold box; only summaries send no score
     request, a score aggregation sends one (OD 15, CXG-5, CXG-9).
 5.  Requested once: a section's genes as rows and as one row are asked for once, and adding a gene to the signature
     asks for that gene alone (CXG-18).
@@ -175,9 +175,8 @@ def test_nothing_chosen_says_what_to_pick_and_asks_nothing(page, served):
 
 def test_job1_marker_genes_as_a_dot_plot(page, served):
     genes = GENES[:5]
-    # the grouping offers sum and the logged layer, so Color can change statistic on the layer it reads (CXG-11)
-    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}],
-                "offered": ["mean", "pct_expressing", "sum"], "layers": ["logged"]}
+    # every statistic is listed on every layer (decision 31), so Color can change statistic on the layer it reads (CXG-11)
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}]}
     _open(page, served, {P: _plot(cellAxis={"type": "cell-group", "key": GA}, sections=[{"source": S1, "rows": "genes"}]),
                          S1: _sig(S1, "Markers", genes), GA: grouping}, open_ids=(P, S1))
     st = _drawn(page)
@@ -247,14 +246,13 @@ def test_job3_one_row_per_pathway(page, served):
     # Color and Size open in a pop-over from the row's summary button (WP-8)
     page.click(f"{TP} .cgene-section__values-btn")
     page.wait_for_selector(VALUES)
-    # both selects show one list under the two headings, the help line under each
+    # both kind selects list the summaries and the two score kinds under the two headings, the help line under each
     for which in ("color", "size"):
         groups = _agg_options(page, which)
         assert [g[0] for g in groups] == ["From the genes", "From the score"]
         assert groups[0][1] == ["Mean of the genes' means", "Sum of the genes' means", "Mean of the genes' z-scores",
                                 "Mean of the genes' % expressing"]
-        assert groups[1][1][0] == "z-score mean · X, averaged"
-        assert groups[1][1][-1] == "Offer other scores…"
+        assert groups[1][1] == ["Score, averaged", "% of cells with score above"]
     sec = page.locator(VALUES)
     assert sec.locator(".cgene-section__agg[data-which='color']").input_value() == "mean_of_means"
     assert sec.locator(".cgene-section__agg[data-which='size']").input_value() == "mean_of_pct_expressing"
@@ -264,9 +262,10 @@ def test_job3_one_row_per_pathway(page, served):
     assert [f["kind"] for f in _features(page.calls)] == ["gene"] * 6
     # Size from the score, with its threshold box: one score feature, the threshold in the request
     n = len(page.calls)
-    value = page.evaluate("""(s) => [...document.querySelector(s + ' .cgene-section__agg[data-which="size"]').options]
-        .find(o => o.textContent.startsWith('% of cells with z-score mean')).value""", VALUES)
-    sec.locator(".cgene-section__agg[data-which='size']").select_option(value)
+    sec.locator(".cgene-section__agg[data-which='size']").select_option("score_pct_above")
+    # a new score starts on z-score mean · X (decision 32), its method and layer in selects of their own
+    assert sec.locator(".cgene-section__method[data-which='size']").input_value() == "zscore_mean"
+    assert sec.locator(".cgene-section__layer[data-which='size']").input_value() == "X"
     above = sec.locator(".cgene-section__above[data-which='size']")
     assert above.is_visible()
     assert above.input_value() == "0"
@@ -281,9 +280,9 @@ def test_job3_one_row_per_pathway(page, served):
     until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().sections[0].size || {}).above === 0.5", P)
     cfg = _config(page)
     assert cfg["sections"][0]["size"] == {"agg": "score_pct_above", "column": "zscore_mean", "layer": "X", "above": 0.5}
-    # Offer other scores… opens the signature on what it offers and changes nothing here
-    sec.locator(".cgene-section__agg[data-which='color']").select_option("__offer_other__")
-    assert sec.locator(".cgene-section__agg[data-which='color']").input_value() == "mean_of_means"
+    # nothing is offered: no select of the pop-over leads elsewhere (decision 31)
+    texts = page.eval_on_selector_all(f"{VALUES} option", "os => os.map(o => o.textContent)")
+    assert not any("offer" in t.lower() for t in texts), texts
     assert _config(page)["sections"][0].get("color") is None
 
 

@@ -12,8 +12,8 @@
  * floor. The panel shows them in Plot Options and the status strip.
  */
 import { bandwidthOf, smooth1, smooth2 } from '../../utils/kde.js';
-import { levelLabelsOf } from '../../utils/count-plot-model.js';
-import { plotlyColorscale } from '../../utils/color-scales.js';
+import { levelLabelsOf, densityLayers } from '../../utils/count-plot-model.js';
+import { scaleKeys } from './colour.js';
 import { normalizeHex } from '../../utils/plot-theme.js';
 import { RESERVED } from '../../utils/level-id.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
@@ -25,7 +25,6 @@ export const DENSITY_MODES = Object.freeze(['density', 'density2d']);
 /** The interface text of a density (UX 4.4): the count plot's words, utils/vocabulary.js. */
 const WORDS = VOCABULARY.countPlot.density;
 
-const DEFAULT_COLORSCALE = 'Viridis';
 const CONTOURS = 6;
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -148,6 +147,9 @@ export function densityFigure(config, table, opts) {
         if (bySize && everyone > 0) for (let k = 0; k < f.length; k++) f[k] *= sizes[i] / everyone;
         return f;
     });
+    /** The opacity of a level's color where its density is highest: below 1, so a level under another still shows. */
+    const IMAGE_ALPHA = 0.9;
+    const IMAGE_UNDER = 0.55;
     const words = WORDS;
     const title = bySize && sa >= 0 ? words.axisBySize : words.axis;
     const colors = levels.map((s) => (s >= 0 ? colorOf(table, sa, s, opts) : opts.palette[0]));
@@ -168,27 +170,44 @@ export function densityFigure(config, table, opts) {
         };
     }
     const [gx, gy] = grids;
-    const image = options.style === 'image';
+    const layers = densityLayers(options.layers, options.style, sa >= 0);
     const rows = (f) => Array.from({ length: gy.bins }, (_, iy) => Array.from({ length: gx.bins }, (_, ix) => f[ix * gy.bins + iy]));
     const base = (i, s) => ({
         x: gx.centres, y: gy.centres, z: rows(smooth[i]), name: esc(labelOf(s)),
         hovertemplate: `${esc(opts.inputNames.x)}: %{x:.4g}<br>${esc(opts.inputNames.y)}: %{y:.4g}<br>${esc(title)}: %{z:.3g}<extra>${esc(labelOf(s))}</extra>`
     });
+    const peak = smooth.reduce((m, f) => { for (let k = 0; k < f.length; k++) if (f[k] > m) m = f[k]; return m; }, 0) || 1;
     const data = [];
-    levels.forEach((s, i) => {
-        if (sa < 0) {
-            data.push({
-                ...base(i, s), type: image ? 'heatmap' : 'contour', colorscale: plotlyColorscale(options.colorscale || DEFAULT_COLORSCALE),
-                colorbar: { title: { text: esc(title) } },
-                ...(image ? {} : { contours: { coloring: 'fill', showlines: false }, ncontours: CONTOURS * 2, line: { width: 0 } })
-            });
-        } else if (image) {
-            data.push({ ...base(i, s), type: 'heatmap', showscale: false, colorscale: [[0, withAlpha(colors[i], 0)], [1, colors[i]]] });
-        } else {
-            data.push({ ...base(i, s), type: 'contour', showscale: false, ncontours: CONTOURS, contours: { coloring: 'lines' },
-                colorscale: [[0, colors[i]], [1, colors[i]]], line: { color: colors[i], width: 2 } });
+    const contoured = layers.fill || layers.lines;
+    if (sa >= 0) {
+        // the density is the opacity of each level's color, on one scale for every level: a level with little density stays
+        // faint. The same density levels bound every level's bands, so a band is one opacity wherever it is
+        const step = peak / (CONTOURS + 1);
+        const bands = { start: step, end: step * CONTOURS, size: step };
+        const scaled = { zmin: 0, zmax: peak, showscale: false };
+        if (layers.image) {
+            levels.forEach((s, i) => data.push({ ...base(i, s), type: 'heatmap', ...scaled,
+                colorscale: [[0, withAlpha(colors[i], 0)], [1, withAlpha(colors[i], IMAGE_ALPHA)]] }));
         }
-    });
+        if (contoured) {
+            levels.forEach((s, i) => data.push({ ...base(i, s), type: 'contour', ...scaled, contours: { coloring: layers.fill ? 'fill' : 'lines', showlines: layers.lines, ...bands },
+                colorscale: layers.fill ? [[0, withAlpha(colors[i], 0)], [1, withAlpha(colors[i], IMAGE_ALPHA)]] : [[0, colors[i]], [1, colors[i]]],
+                line: { color: colors[i], width: 2 } }));
+        }
+    } else {
+        // one group: the density takes a color map the user chooses (map, direction, range) and a color bar
+        const scale = scaleKeys(options, 'z');
+        const last = contoured ? 'contour' : 'heatmap';
+        const bar = (type) => ({ showscale: type === last, ...(type === last ? { colorbar: { title: { text: esc(title) } } } : {}) });
+        if (layers.image) data.push({ ...base(0, -1), type: 'heatmap', ...scale, ...bar('heatmap') });
+        if (contoured) {
+            data.push({ ...base(0, -1), type: 'contour', ...scale, ...bar('contour'), ncontours: CONTOURS * 2,
+                contours: { coloring: layers.fill ? 'fill' : 'lines', showlines: layers.lines },
+                line: layers.fill ? { color: opts.theme.axisColor, width: 1 } : { width: 2 },
+                // over the image, the bands let it show through
+                ...(layers.image ? { opacity: IMAGE_UNDER } : {}) });
+        }
+    }
     // heatmaps and contours carry no legend of their own in every bundle: a marker names each level
     if (sa >= 0) {
         levels.forEach((s, i) => data.push({ type: 'scatter', mode: 'markers', x: [null], y: [null], name: esc(labelOf(s)), hoverinfo: 'skip',

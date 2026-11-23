@@ -16,6 +16,7 @@
  */
 import { fmtPercent } from '../../utils/csv-format.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
+import { scaleKeys } from './colour.js';
 
 const VENN_MAX_SETS = 3;
 const UPSET_MAX_SETS = 16;
@@ -146,7 +147,7 @@ function upsetFigure(plot, theme, opts) {
         type: 'bar', name: 'intersections', xaxis: 'x', yaxis: 'y', x: cols, y: regions.map(r => r.count),
         text: barLabels, textposition: 'outside', cliponaxis: false, hovertext: hover, hoverinfo: 'text', customdata: plot.shown,
         marker: colored
-            ? { color: colourValues, colorscale: 'Viridis', showscale: true,
+            ? { color: colourValues, ...scaleKeys(opts, 'marker', {}), showscale: true,
                 colorbar: { title: { text: plot.color.label, side: 'right' }, ...(plot.color.kind === 'share' ? { tickformat: '.0%' } : {}) } }
             : { color: theme.noneColor }
     };
@@ -211,7 +212,8 @@ function upsetFigure(plot, theme, opts) {
 
 /**
  * The figure of a SetPlot. `theme` is a palette of plot-theme.js (the plot's own colours, light or dark).
- * `options`: `labels` ('both' | 'count' | 'share' | 'none'; Venn defaults to both, UpSet to count), `logCounts`, and the
+ * `options`: `labels` ('both' | 'count' | 'share' | 'none'; Venn defaults to both, UpSet to count), `logCounts`, `colorscale` and `colour`
+ * (the colour map, Reverse and range of an UpSet's coloured bars: colour.js), and the
  * panel's `width` in pixels (UpSet thins its bar labels and moves the set sizes under the matrix when it is small).
  */
 // export-unused-ok: C3's draw.js and the panel dispatch to it for the Venn and UpSet modes
