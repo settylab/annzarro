@@ -200,6 +200,7 @@ const cellGene = Object.freeze({
         dotMax: '% at the largest dot',
         outlineColor: 'Dot outline color',
         outlineWidth: 'Dot outline width (px)',
+        dotOpacity: 'Dot opacity',
         colorScale: 'Color scale',
         min: 'Min',
         max: 'Max',

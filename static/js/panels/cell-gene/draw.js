@@ -19,6 +19,8 @@
  *        | { none: sentence },                    No size: one dot size, the legend replaced by the sentence
  *   legend?: { colorBar?: boolean, sizeLegend?: boolean, strips?: boolean }, plotTitle?: string,
  *   outline?: { color, width }   the dots' outline, and the size legend's; absent means none; heatmap cells never have one
+ *   dotOpacity?: number          the dots' opacity, 0.1 to 1 (1, opaque, when absent); the size legend's dots take the same
+ *                                share of their own; a heatmap has none
  *   pendingText?: string,                         what a row still being read says (rows[].pending, CXG-18)
  *   view?: '3d', height?: { same: true, values } | { same: false, stat, layer?, detectAbove?, values },
  *   camera?: { eye, center?, up? }, zTitle?: string }   the 3D view (UX 6b, WP-12), see figure3d
@@ -250,6 +252,15 @@ function dotRange(model, P, th, right) {
         largest = Math.max(MIN_LARGEST_DOT, scale * (cellPixels(model, P, th, right) - DOT_GAP_PX));
     }
     return { smallest: Math.min(size.smallest > 0 ? size.smallest : SMALLEST_DOT, largest), largest };
+}
+
+/** The size legend's grey reference dots, at Dot opacity 1. */
+const LEGEND_DOT_OPACITY = 0.55;
+
+/** Dot opacity, 0.1 to 1; 1 when absent. */
+function dotOpacityOf(model) {
+    const v = model.dotOpacity;
+    return typeof v === 'number' && Number.isFinite(v) ? Math.max(0.1, Math.min(1, v)) : 1;
 }
 
 /** A dot's diameter in px for a value on a size legend's range (dot_min to dot_max). */
@@ -489,7 +500,7 @@ function sizeLegendParts(model, k, entry, n, th) {
         xaxis: `x${axisId}`, yaxis: `y${axisId}`,
         x: refs.map(() => 0), y: refs.map((_, j) => j),
         text: refs.map((v) => (k.hi > k.lo ? fmt(v) : fmt(k.lo))), textposition: 'middle right', cliponaxis: false,
-        marker: { size: refs.map((v) => diameterOf(v, k.lo, k.hi, drawn.smallest, drawn.largest)), color: th.axisColor, opacity: 0.55, line: model.outline ? { color: model.outline.color, width: model.outline.width } : { width: 0 } }
+        marker: { size: refs.map((v) => diameterOf(v, k.lo, k.hi, drawn.smallest, drawn.largest)), color: th.axisColor, opacity: LEGEND_DOT_OPACITY * dotOpacityOf(model), line: model.outline ? { color: model.outline.color, width: model.outline.width } : { width: 0 } }
     };
     const axes = {
         [`xaxis${axisId}`]: { domain: [entry.x + 0.01, 1], range: [-0.6, 3], visible: false, fixedrange: true },
@@ -613,8 +624,8 @@ function dotTraces(model, P, stack, th) {
         }
         total += x.length;
         const entry = barOf(stack, k.key);
-        // opaque: Plotly draws a marker with sizes per point at 0.7 opacity unless told
-        const marker = { size: sizes, color: colours, colorscale: color.colorscale, cmin: k.lo, cmax: k.hi, showscale: Boolean(entry), opacity: 1 };
+        // Dot opacity, opaque by default: Plotly draws a marker with sizes per point at 0.7 unless told
+        const marker = { size: sizes, color: colours, colorscale: color.colorscale, cmin: k.lo, cmax: k.hi, showscale: Boolean(entry), opacity: dotOpacityOf(model) };
         if (color.reversescale) marker.reversescale = true;
         if (model.outline) marker.line = { color: model.outline.color, width: model.outline.width };
         if (entry) marker.colorbar = colourBar(entry, k.lines, th);

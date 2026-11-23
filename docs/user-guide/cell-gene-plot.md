@@ -193,8 +193,8 @@ By default the largest dot fills its cell: the spacing of the genes or of the gr
 2 px gap. The dots therefore grow and shrink with the panel and with the number of genes and groups. **Largest dot**
 draws it at a share of that. When the size legend has too little room for dots that large, it draws its reference dots
 smaller and says so under its title, for example "(legend scaled 1:3)". The smallest dot is 3 px. A view saved before the dots filled their cells
-keeps its dot sizes in px, and **Largest dot** says so ("12 px (saved)") until you move it. Dots are opaque, and
-neither the dots nor the heatmap draw grid lines.
+keeps its dot sizes in px, and **Largest dot** says so ("12 px (saved)") until you move it. Dots are opaque unless
+you lower **Dot opacity** in Plot Options, and neither the dots nor the heatmap draw grid lines.
 
 **Reset** puts all of these back to their defaults in one step.
 
@@ -202,7 +202,7 @@ neither the dots nor the heatmap draw grid lines.
 
 | Section | Controls |
 |---|---|
-| Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none) |
+| Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none); **Dot opacity**, a slider and a box from 0.1 to 1 (opaque by default), for the dots and the size legend's dots |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
 | Labels | **Gene labels**, **Group labels**; **Plot title**, **Color bar title**, **Size legend title** |
 | Legend | **Color bar**, **Size legend**, **Strip legend** |

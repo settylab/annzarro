@@ -457,6 +457,28 @@ def test_a_link_from_before_keeps_its_dot_px_until_largest_dot_is_moved(page, se
     _redrawn(page, f"(p) => ({_LARGEST})(p) > 12")
 
 
+def test_dot_opacity_in_plot_options_redraws_and_undo_restores_it(page, served):
+    _one_plot(page, served)
+    _redrawn(page, "(p) => p.data[0].marker.opacity === 1")
+    _open_options(page)
+    assert page.locator(_option("dotOpacityNumber")).input_value() == "1"
+    _set_range(page, _option("dotOpacity"), 0.5)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotOpacity === 0.5", P)
+    _redrawn(page, "(p) => p.data[0].marker.opacity === 0.5 && p.data.find(t => t.name === 'size legend').marker.opacity < 0.5")
+    assert page.locator(_option("dotOpacityNumber")).input_value() == "0.5"
+    # the number box sets it too
+    page.fill(_option("dotOpacityNumber"), "0.3")
+    page.press(_option("dotOpacityNumber"), "Enter")
+    _redrawn(page, "(p) => p.data[0].marker.opacity === 0.3")
+    assert page.locator(_option("dotOpacity")).input_value() == "0.3"
+    page.click(f"{TP} .cgene-undo")
+    page.click(f"{TP} .cgene-undo")
+    until(page, "(id) => !('dotOpacity' in window.PanelManager.getPanel(id).getConfig())", P)
+    _redrawn(page, "(p) => p.data[0].marker.opacity === 1")
+    _open_options(page)
+    assert page.locator(_option("dotOpacityNumber")).input_value() == "1"
+
+
 def test_hiding_one_dendrogram_keeps_the_other(page, served):
     _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
                                   cluster={"genes": "sections", "groups": "all", "linkage": "complete", "distance": "correlation"},

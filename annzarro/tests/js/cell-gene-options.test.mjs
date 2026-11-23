@@ -73,7 +73,7 @@ function compose(fields = {}, { rows = 6, split = 3, reply = reply2(), recipe = 
             ...extras.color, values: colour, raw: colour },
         size: config.mode !== 'dots' ? { none: '' }
             : { id: 'pct|logged', stat: 'pct_expressing', layer: 'logged', detectAbove: 0, ...extras.size, values: sized },
-        legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline
+        legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline, dotOpacity: extras.dotOpacity
     };
     return { config, model, figure: D.buildFigure(model, LIGHT), extras };
 }
@@ -724,4 +724,23 @@ test('the factors\' bands read in the order of their legend, beside the groups a
         const factorOf = (k) => (bars[k].hovertext[0].includes('cell_type:') ? 'cell_type' : 'age');
         assert.deepEqual(bandOrder(fig).map(factorOf), titles, `${swap ? 'swapped' : 'beside the groups'}: bands in legend order`);
     }
+});
+
+// --- dot opacity (operator, 2026-11-23) ----------------------------------------------------------------------------
+
+test('Dot opacity: the dots and the size legend\'s dots follow it, opaque by default; a heatmap is unaffected', () => {
+    const legendAt = (fig) => one(fig, 'size legend').marker.opacity;
+    const opaque = compose({}).figure;
+    for (const t of matrixTraces(opaque)) assert.equal(t.marker.opacity, 1);
+    const base = legendAt(opaque);
+    const half = compose({ dotOpacity: 0.5 }).figure;
+    for (const t of matrixTraces(half)) assert.equal(t.marker.opacity, 0.5);
+    assert.ok(Math.abs(legendAt(half) - base * 0.5) < 1e-9, `the legend's dots at the same share: ${legendAt(half)} of ${base}`);
+    // the range is 0.1 to 1
+    for (const t of matrixTraces(compose({ dotOpacity: 0 }).figure)) assert.equal(t.marker.opacity, 0.1);
+    for (const t of matrixTraces(compose({ dotOpacity: 3 }).figure)) assert.equal(t.marker.opacity, 1);
+    // a heatmap has no dots: its tiles carry no opacity of the setting
+    for (const t of matrixTraces(compose({ mode: 'heatmap', dotOpacity: 0.5 }).figure)) assert.ok(t.opacity === undefined || t.opacity === 1, `${t.opacity}`);
+    const c = normalizeCellGene({ version: 1, mode: 'dots', dotOpacity: 0.4, sections: [] }).config;
+    assert.equal(c.dotOpacity, 0.4, 'the configuration keeps it');
 });

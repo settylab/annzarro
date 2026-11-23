@@ -11,7 +11,7 @@
  * - The menus (`OPTIONS_PART`), three buttons mounted by panels/cell-gene.js in the control grid's Layout group, each
  *   opening a pop-over (ui/popover.js; design note options-ux-080 section 5): Cluster ▾ (scopes, Sort groups, Linkage,
  *   Distance, the Ward note, the two Dendrograms), Color ▾ (map, Reverse, Min, Max, Center, Print values; in dots the
- *   largest dot as a share of its cell, the smallest dot in px, and the % at the smallest and largest dot) and Plot Options (dots' outline, sections, labels, legends,
+ *   largest dot as a share of its cell, the smallest dot in px, and the % at the smallest and largest dot) and Plot Options (dots' outline and opacity, sections, labels, legends,
  *   totals, Export with Download CSV from the CSV's rows, utils/cell-gene-model.js `longRows`; UX 7, CXG-20). A
  *   pop-over never changes the size of the panel. Every change applies live as one undoable step of the panel
  *   (`ctx.set(patch, label)`). Before them, the `3D` toggle (UX 6b, WP-12): `view: '3d'`, disabled with its reason
@@ -19,7 +19,7 @@
  *
  * STYLE FIELDS (plan 1.6: additive, default when absent, never frozen): `colorScale`, `reverse`, `limits: [min, max]`, `center`,
  * `printValues`, `dotScale` (10 to 100: the % of its cell the largest dot fills; absent, 100), `dotSmallest` (px),
- * `dotSizes: [smallest, largest]` (px; written before the dots filled their cells, still read: a link that has it draws
+ * `dotOpacity` (0.1 to 1; absent, 1), `dotSizes: [smallest, largest]` (px; written before the dots filled their cells, still read: a link that has it draws
  * those px until Largest dot is moved), `dotMin`, `dotMax` (% at the smallest and largest dot), `gap`
  * (0 to 3 cells), `sectionTitles`, `labels: {genes, groups}`, `titles: {plot, color, size}`, `legend: {colorBar,
  * sizeLegend, strips}`, `totals`, `sortGroups`, and `cluster.dendrograms: {genes, groups}` beside the frozen cluster
@@ -50,6 +50,8 @@ const Z_DEFAULT_SCALE = 'RdBu';
 const Z_SCALINGS = Object.freeze(['z_groups', 'z_pooled']);
 const DEFAULT_OUTLINE = Object.freeze({ color: '#000', width: 0.5 });
 const OUTLINE_MAX = 3;
+/** Dot opacity: the slider's ends and step; 1 (the default) is opaque. */
+const DOT_OPACITY = Object.freeze({ min: 0.1, max: 1, step: 0.05 });
 const DEFAULT_GAP = 1;
 const GAP_MAX = 3;
 const DOT_PX = Object.freeze({ min: 1, max: 40, smallest: 3, largest: 20 });
@@ -119,6 +121,7 @@ function styleOf(config) {
             width: isNumber(o.width) ? Math.max(0, Math.min(OUTLINE_MAX, o.width)) : DEFAULT_OUTLINE.width
         },
         printValues: c.printValues === true,
+        dotOpacity: isNumber(c.dotOpacity) ? Math.max(DOT_OPACITY.min, Math.min(DOT_OPACITY.max, c.dotOpacity)) : DOT_OPACITY.max,
         dotSizes: rangeOf(c.dotSizes, DOT_PX.min, DOT_PX.max),
         dotScale: isNumber(c.dotScale) ? Math.max(DOT_SCALE.min, Math.min(DOT_SCALE.max, c.dotScale)) : null,
         dotSmallest: isNumber(c.dotSmallest) ? Math.max(DOT_PX.min, Math.min(DOT_PX.max, c.dotSmallest)) : null,
@@ -237,7 +240,7 @@ export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
     if (s.titles.size) size.title = s.titles.size;
     const outline = s.outline.width > 0 ? { color: s.outline.color, width: s.outline.width } : null;
     return {
-        color, size, outline, legend: s.legend, plotTitle: s.titles.plot || undefined, gap: s.gap, sortBySize: s.sortGroups, cluster,
+        color, size, outline, dotOpacity: s.dotOpacity, legend: s.legend, plotTitle: s.titles.plot || undefined, gap: s.gap, sortBySize: s.sortGroups, cluster,
         annotations: {
             brackets: { titles: s.sectionTitles },
             totals: s.totals,
@@ -525,10 +528,23 @@ function mount(slot, ctx) {
     const outlineInput = el('input', { type: 'color', class: 'form-control form-control-sm form-control-color', data: { option: 'outlineColor' }, aria: { label: WO.outlineColor },
         on: { change: (e) => nested('outline', 'color', e.target.value, DEFAULT_OUTLINE.color, 'dot outline color') } });
     controls.outlineColor = outlineInput;
+    // Dot opacity: a slider and a number box that say the same value; either commits one undoable step
+    const setOpacity = (v) => {
+        if (v === null || !Number.isFinite(v)) { paint(); return; }
+        const o = Math.round(Math.max(DOT_OPACITY.min, Math.min(DOT_OPACITY.max, v)) * 100) / 100;
+        flat('dotOpacity', o, DOT_OPACITY.max, 'dot opacity');
+    };
+    controls.dotOpacity = el('input', { type: 'range', class: 'form-range', min: DOT_OPACITY.min, max: DOT_OPACITY.max, step: DOT_OPACITY.step,
+        data: { option: 'dotOpacity' }, aria: { label: WO.dotOpacity },
+        on: { input: (e) => { controls.dotOpacityNumber.value = e.target.value; }, change: (e) => setOpacity(Number(e.target.value)) } });
+    const opacityNumber = number('dotOpacityNumber', WO.dotOpacity, setOpacity, { min: DOT_OPACITY.min, max: DOT_OPACITY.max, step: DOT_OPACITY.step });
+    opacityNumber.classList.add('cgene-dot-opacity');
+    opacityNumber.insertBefore(controls.dotOpacity, controls.dotOpacityNumber);
     const dots = section(WO.heading.dots,
         field(WO.outlineColor, outlineInput),
         number('outlineWidth', WO.outlineWidth, (v) => nested('outline', 'width', v === null ? DEFAULT_OUTLINE.width : Math.max(0, Math.min(OUTLINE_MAX, v)), DEFAULT_OUTLINE.width, 'dot outline width'),
-            { min: 0, max: OUTLINE_MAX, step: 0.25 }));
+            { min: 0, max: OUTLINE_MAX, step: 0.25 }),
+        opacityNumber);
     const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-csv-btn', on: { click: downloadCsv } }, WO.csv);
     // the plot as an image; SVG of a 3D scene would be a raster picture inside SVG, so it is greyed in 3D (UX 6b)
     const imageBtns = IMAGE_FORMATS.map((format) => el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-export-btn',
@@ -637,6 +653,8 @@ function mount(slot, ctx) {
         dots.hidden = !dotsMode;
         controls.outlineColor.value = s.outline.color.length === 4 ? `#${[...s.outline.color.slice(1)].map((h) => h + h).join('')}` : s.outline.color.slice(0, 7);
         setValue(controls.outlineWidth, s.outline.width);
+        setValue(controls.dotOpacity, s.dotOpacity);
+        setValue(controls.dotOpacityNumber, s.dotOpacity);
         setValue(controls.gap, s.gap);
         controls.sectionTitles.checked = s.sectionTitles;
         controls.geneLabels.checked = s.labels.genes;

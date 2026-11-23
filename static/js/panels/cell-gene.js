@@ -1252,7 +1252,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 size: _config.mode !== 'dots' ? { none: '' } : sizeNone ? { none: sizeNone }
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
-                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline,
+                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline, dotOpacity: extras.dotOpacity,
                 pendingText: pending ? pendingText(plan, pending) : ''
             };
             // 3D (UX 6b): within the bar cap; above it the plot is drawn in 2D and the strip says why
