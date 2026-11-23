@@ -176,7 +176,7 @@ function options(D, select, list) {
  */
 function measureRow(D, which, label, on) {
     const { el } = D;
-    const Label = which === 'color' ? 'Color' : 'Size';
+    const Label = label;
     const back = (select, value) => { select.value = value; };
     let held = { stat: '', layer: '' };
     const stat = el('select', { class: `form-select form-select-sm cgene-${which}`, aria: { label: `${Label}: statistic` },
@@ -228,8 +228,8 @@ export function measureModel({ spec, recipe, datasetLayers, kinds, threshold }) 
  * @param {Object} opts
  * @param {Object} opts.D - the DOM builder (gene-set-utilities/dom.js)
  * @param {string} opts.id - the panel id (unique names)
- * @param {() => Object} opts.model - {axis, choices: {obs, groupings}, mode, color, size (measureModel each), offerShown,
- *   scale, swap}
+ * @param {() => Object} opts.model - {axis, choices: {obs, groupings}, mode, color, size, height (measureModel each;
+ *   height's statistics start with Same as Color), view3d, offerShown, scale, swap}
  * @param {Object} opts.on - axis(axis), newGrouping(), mode(mode), stat(which, value), layer(which, value),
  *   above(which, text), offerOther(), scale(value), swap(on)
  * @param {HTMLElement} opts.sections - the section list's element, in the What group
@@ -256,6 +256,9 @@ export function createControls({ D, id, model, on, sections, addGenes, offer = n
     const scaleSel = el('select', { class: 'form-select form-select-sm cgene-scale', aria: { label: 'Scale' }, on: { change: () => on.scale(scaleSel.value) } });
     options(D, scaleSel, SCALINGS.map((s) => ({ value: s, label: CG.scaling[s] })));
     const size = measureRow(D, 'size', 'Size', on);
+    // the 3D bars' height (UX 6b, WP-12): its statistic select starts with Same as Color; shown while 3D is on
+    const height = measureRow(D, 'height', CG.view3d.height, on);
+    height.element.title = CG.view3d.heightHelp;
     const offerSlot = el('div', { class: 'cgene-offer', hidden: true }, offer);
     const swap = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-swap', aria: { pressed: 'false' },
         on: { click: () => on.swap(swap.getAttribute('aria-pressed') !== 'true') } }, 'Swap axes');
@@ -265,7 +268,7 @@ export function createControls({ D, id, model, on, sections, addGenes, offer = n
         el('div', { class: 'cgene-row' }, field('Groups', el('span', { class: 'cgene-axis' }, axisType, axisKey)), field('Mode', mode)),
         el('div', { class: 'cgene-genes' }, el('div', { class: 'cgene-genes__head' }, el('span', { class: 'cgene-field__label', text: 'Genes' }), addGenes), sections));
     const values = el('div', { class: 'cgene-group cgene-group--values', role: 'group', aria: { label: 'Values' } },
-        color.element, field('Scale', scaleSel), size.element, offerSlot);
+        color.element, field('Scale', scaleSel), size.element, height.element, offerSlot);
     const layout = el('div', { class: 'cgene-group cgene-group--layout', role: 'group', aria: { label: 'Layout' } }, swap, layoutSlot);
     const element = el('div', { class: 'cgene-controls', 'data-panel-controls': '' }, what, values, layout);
 
@@ -307,6 +310,8 @@ export function createControls({ D, id, model, on, sections, addGenes, offer = n
         color.paint(m.color);
         size.paint(m.size);
         size.element.hidden = m.mode !== 'dots';
+        if (m.height) height.paint(m.height);
+        height.element.hidden = !m.height || !m.view3d;
         offerSlot.hidden = !m.offerShown || !offer;
         scaleSel.value = m.scale;
         swap.setAttribute('aria-pressed', m.swap ? 'true' : 'false');

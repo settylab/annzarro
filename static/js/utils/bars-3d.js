@@ -20,7 +20,6 @@
 import { VOCABULARY } from './vocabulary.js';
 
 /** At most this many bars in 3D. Provisional: WP-13 measures the real one. */
-// export-unused-ok: the 3D builder API for WP-11 (Cell Count) and WP-12 (Cell-Gene)
 export const BARS_3D_MAX = 40000;
 /** Fraction of its cell a bar fills, so neighbours stay apart (UX 6b). */
 // export-unused-ok: the 3D builder API for WP-11 (Cell Count) and WP-12 (Cell-Gene)
@@ -44,14 +43,12 @@ const TRI = [
 ];
 
 /** Is the bar count within the cap? `{ok, count, max, text}`; `text` is the refusal and `hint` picks its last sentence. */
-// export-unused-ok: the 3D builder API for WP-11 (Cell Count) and WP-12 (Cell-Gene)
 export function checkBarCap(count, { max = BARS_3D_MAX, hint = 'bins' } = {}) {
     const ok = Number.isFinite(count) && count <= max;
     return { ok, count, max, text: ok ? '' : VOCABULARY.view3d.tooMany(max, count, hint) };
 }
 
 /** The footprint scale for a Size value: the side scales with sqrt(size / sizeMax), so the AREA encodes Size. */
-// export-unused-ok: the 3D builder API for WP-12 (Cell-Gene dots)
 export function footprintFromSize(size, sizeMax) {
     if (!(sizeMax > 0) || !Number.isFinite(size) || size < 0) return NaN;
     return Math.sqrt(Math.min(size, sizeMax) / sizeMax);
@@ -61,7 +58,6 @@ export function footprintFromSize(size, sizeMax) {
  * Tick arrays for one category axis: a tick at each index, labels thinned to at most `maxTicks` (every step-th, always
  * keeping the first). Positions are the bar centres.
  */
-// export-unused-ok: the 3D builder API for WP-11 (Cell Count) and WP-12 (Cell-Gene)
 export function axisTicks(labels, maxTicks = 40) {
     const n = labels ? labels.length : 0;
     if (n === 0) return { tickvals: [], ticktext: [] };
@@ -95,7 +91,6 @@ export function axisTicks(labels, maxTicks = 40) {
  * @returns {{trace: object, ticks: {x: object, y: object}, drawn: number, skipped: {nan: number, zero: number,
  *           footprint: number}, zRange: [number, number]}}
  */
-// export-unused-ok: the 3D builder API for WP-11 (Cell Count) and WP-12 (Cell-Gene)
 export function bars3d({ xs, ys, heights, footprint = null, fill = BAR_FILL, colour, hover = null, xLabels = null, yLabels = null, maxTicks = 40 }) {
     const n = heights.length;
     const continuous = colour && colour.kind === 'continuous';
