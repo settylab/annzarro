@@ -31,6 +31,7 @@ import { describeScore } from './score-notices.js';
 import { paintProgress, sentenceOf, coverageKindOf } from './source-notices.js';
 import { actions } from './source-actions.js';
 import { createHostBinding, isHover, isVisible, panelIdOf, PENDING } from './host-binding.js';
+import { VOCABULARY } from './vocabulary.js';
 import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
@@ -651,7 +652,7 @@ function scoreSubKeyMenu(setting) {
  * score's, so a table's score and a plot's share one computation.
  */
 const scoreTable = {
-    tab: 'gene-score',
+    tab: VOCABULARY.sourceType.score,
     watch: (column, { host, visible, onChange }) => scores().sources.watch(column.key, {
         kind: 'table', sub: subKeyOf(column), layer: column.layer || '', host, role: 'column', visible, onChange
     }),
@@ -683,7 +684,7 @@ const scoreTable = {
 
 registerSource({
     type: SCORE_TYPE,
-    label: 'gene-score',
+    label: VOCABULARY.sourceType.score,
     valueType: 'numerical',
     entity: 'cells',
     consumers: ['cell-plot', 'cell-table'],

@@ -474,6 +474,12 @@ const cellExport = Object.freeze({
     failed: 'The cells could not be exported: the groups could not be read'
 });
 
+/**
+ * What a menu of source types and a column chooser's tab call a source a panel makes, beside the dataset's own obs,
+ * obsm, obsp and layers (whose AnnData names stay). Never the provider's type id.
+ */
+const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping' });
+
 /** Show as table (UX 7): a plot's CSV rows as an HTML table, in every plot that offers it (count plot, Cell-Gene Plot). */
 const table = Object.freeze({
     show: 'Show as table',
@@ -481,4 +487,4 @@ const table = Object.freeze({
     cut: (shown, all) => `Showing the first ${fmt(shown)} of ${fmt(all)} rows; Download CSV has them all.`
 });
 
-export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table });
+export const VOCABULARY = Object.freeze({ word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
