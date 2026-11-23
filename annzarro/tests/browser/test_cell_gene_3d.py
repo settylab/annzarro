@@ -189,11 +189,15 @@ LABEL_BOXES = """(s) => { const g = document.querySelector(s); const fl = g._ful
 TICK_PX = 6   # the label's gap from its tick (draw.js LABEL_GAP_PX, 4) and a little rounding
 
 
-def _labels(page):
+def _labels_of(page, selector):
     page.wait_for_function("(s) => { const g = document.querySelector(s); return g._fullLayout.scene.annotations.length > 0"
                            " && g._fullLayout.scene.annotations.every((a, i) => a._pdata"
-                           " && g.querySelector(`g.annotation-scene[data-index=\"${i}\"] rect.bg`)); }", arg=PLOT)
-    return page.evaluate(LABEL_BOXES, PLOT)
+                           " && g.querySelector(`g.annotation-scene[data-index=\"${i}\"] rect.bg`)); }", arg=selector)
+    return page.evaluate(LABEL_BOXES, selector)
+
+
+def _labels(page):
+    return _labels_of(page, PLOT)
 
 
 def _assert_anchored(boxes, gene_side, group_side):
@@ -247,3 +251,55 @@ def test_3d_labels_start_at_their_tick_on_the_right_and_end_there_on_the_left(pa
                 raise
     eye = page.evaluate("(s) => document.querySelector(s)._fullLayout.scene.camera.eye", PLOT)
     assert abs(eye["x"] - 1.6) < 1e-3 and abs(eye["y"] - 1.6) < 1e-3, ("re-anchoring kept the camera", eye)
+
+
+LONG = ["Interleukin_receptor_subunit_alpha_1", "TNF_receptor_superfamily_member_4", "Major_histocompatibility_DRB1"]
+GROUPS = ["Young | Rnase6 < 0.391 & x", "Old | Rnase6 >= 0.391", "Young | \"quoted\" 'single'"]
+
+# the figure draw.js builds, drawn in a page of the app: long gene names (a centred label would visibly miss its tick)
+# and group names holding < > & " '
+DRAW_MODEL = """async ([genes, groups, camera]) => {
+  const D = await import('/static/js/panels/cell-gene/draw.js');
+  const R = genes.length, G = groups.length;
+  const colour = Float64Array.from({length: R * G}, (_, i) => 1 + (i % 5));
+  const model = {mode: 'heatmap', view: '3d', groups: groups.map((label, g) => ({label, n: 10 * (g + 1)})),
+    rows: genes.map((label) => ({label, section: {index: 0, title: 's'}})),
+    color: {id: 'm', stat: 'mean', layer: 'X', scaling: 'none', values: colour, colorscale: 'Reds'},
+    size: {none: ''}, height: {same: true, values: colour}, ...(camera ? {camera} : {})};
+  const fig = D.buildFigure(model, {});
+  let div = document.getElementById('az-test-3d');
+  if (!div) { div = document.createElement('div'); div.id = 'az-test-3d'; document.body.prepend(div); }
+  div.style.cssText = 'position:fixed;left:0;top:0;width:900px;height:700px;z-index:99999;background:#fff';
+  await Plotly.newPlot(div, fig.data, fig.layout, fig.config);
+  return true;
+}"""
+
+
+def test_long_gene_names_and_marked_up_group_names_in_3d(page, served):
+    _open3d(page, served)
+    for camera in (None, {"eye": {"x": 1.6, "y": 1.6, "z": 1.1}, "center": {"x": 0, "y": 0, "z": 0}, "up": {"x": 0, "y": 0, "z": 1}}):
+        page.evaluate(DRAW_MODEL, [LONG, GROUPS, camera])
+        gene_side, group_side = ("left", "right") if camera is None else ("right", "left")
+        end = time.time() + 10
+        while True:
+            boxes = _labels_of(page, "#az-test-3d")
+            try:
+                assert sorted(b["text"] for b in boxes if b["name"] == "x label") == sorted(LONG)
+                _assert_anchored(boxes, gene_side=gene_side, group_side=group_side)
+                _assert_titles_clear(boxes)
+                break
+            except AssertionError:
+                if time.time() > end:
+                    raise
+        assert all(b["right"] - b["left"] > 150 for b in boxes if b["name"] == "x label"), "long names, so a centred one would miss"
+    # what is on screen is the name itself: a literal < > & " ', never an entity
+    shown = page.eval_on_selector_all("#az-test-3d g.annotation-scene text", "ts => ts.map(t => t.textContent)")
+    for name in GROUPS:
+        assert name in shown, (name, shown)
+    assert not any("&lt;" in t or "&amp;" in t for t in shown), shown
+    # and in the hover (SVG text as the annotations are): the bar's hover text drawn as Plotly draws a hover label
+    hover = page.evaluate("""() => { const g = document.getElementById('az-test-3d'); const t = g.data[0].hovertext.find(h => h.includes('Rnase6 &lt;'));
+      const fl = g._fullLayout;
+      Plotly.Fx.loneHover({x: 100, y: 100, text: t}, {container: fl._hoverlayer.node(), outerContainer: fl._paper.node(), gd: g});
+      return [...fl._hoverlayer.node().querySelectorAll('text')].map(e => e.textContent).join('|'); }""")
+    assert "Young | Rnase6 < 0.391 & x" in hover, hover

@@ -42,6 +42,7 @@ import { PLOT_PALETTES, GAP_COLOUR } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
 import { annotateFigure, matrixPixels, rowCoordinates, MODEBAR_PX } from './draw-annotations.js';
 import { bars3d, footprintFromSize, axisTicks } from '../../utils/bars-3d.js';
+import { colourBar as colourBarOf } from '../plot-utilities/colour-bar.js';
 
 const W = VOCABULARY.cellGene;
 
@@ -757,7 +758,7 @@ export function sceneLabels(spec, camera) {
         ticks.tickvals.forEach((k, n) => {
             const at = axis.positions[k];
             out.push({ name: `${dim} label`, x: dim === 'x' ? at : across, y: dim === 'x' ? across : at, z: spec.z,
-                text: ticks.ticktext[n], showarrow: false, xanchor: sides[dim].xanchor, yanchor: 'middle', font: spec.font,
+                text: esc(ticks.ticktext[n]), showarrow: false, xanchor: sides[dim].xanchor, yanchor: 'middle', font: spec.font,
                 xshift: sides[dim].xanchor === 'left' ? LABEL_GAP_PX : -LABEL_GAP_PX });
         });
     }
@@ -813,13 +814,14 @@ function figure3d(model, th) {
             }
         }
     }
-    const geneLabels = rows.map((row) => esc(row.label));
-    const groupLabels = groups.map((grp) => esc(grp.label));
+    // the names as they are: gl3d draws tick text literally, so an escaped '<' would show as '&lt;'; sceneLabels escapes
+    // them for the annotations, which Plotly reads as markup (and decodes)
+    const geneLabels = rows.map((row) => String(row.label));
+    const groupLabels = groups.map((grp) => String(grp.label));
     const legendOn = !model.legend || model.legend.colorBar !== false;
-    const colorbar = legendOn ? {
-        title: { text: fitTitle(main.lines, 24).text, side: 'top', font: { color: th.textColor } }, tickfont: { color: th.textColor },
-        x: 1, xanchor: 'left', len: 0.7, thickness: 12, outlinewidth: 0
-    } : null;
+    // the Cell Plot's colour bar (plot-utilities/colour-bar.js): its title runs along the bar, in the plot's font
+    const colorbar = legendOn ? { ...colourBarOf({ textColor: th.textColor, fontSize: th.fontSize, fontFamily: th.fontFamily, colorbarLength: 0.7 },
+        main.lines.map(esc).join(' · ')), thickness: 12, outlinewidth: 0 } : null;
     const built = bars3d({
         xs, ys, heights, footprint, hover,
         colour: { kind: 'continuous', values, colorscale: color.colorscale, cmin: main.lo, cmax: main.hi, ...(colorbar ? { colorbar } : {}) }

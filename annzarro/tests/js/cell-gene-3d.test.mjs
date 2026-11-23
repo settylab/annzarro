@@ -286,3 +286,30 @@ test('3D labels: swapped axes keep each axis\'s own side; above 60 categories an
     assert.equal(labelsOf(many, 'x').length, 0);
     assert.equal(labelsOf(many, 'y').length, 2);
 });
+
+test('3D text: gl3d tick text is the name as it is; annotations, hover and 2D keep the markup escaping Plotly decodes', () => {
+    const NAME = 'Young | Rnase6 < 0.391 & x';
+    const QUOTES = 'a > "b" \'c\' ≥ d';
+    const m = model({ rows: 1, groups: 2 });
+    m.groups = [{ label: NAME, n: 10 }, { label: QUOTES, n: 20 }];
+    const fig = D.buildFigure(m, LIGHT);
+    // the hidden gl3d tick text (drawn literally by Plotly): the literal characters, never an entity
+    assert.deepEqual(fig.layout.scene.yaxis.ticktext, [NAME, QUOTES]);
+    // the annotations are SVG text, which Plotly reads as markup and decodes: '<' and '&' escaped there, nothing else
+    const labels = fig.layout.scene.annotations.filter((a) => a.name === 'y label').map((a) => a.text);
+    assert.deepEqual(labels, ['Young | Rnase6 &lt; 0.391 &amp; x', 'a > "b" \'c\' ≥ d']);
+    const hover = fig.data[0].hovertext.find((t) => t.includes('Rnase6'));
+    assert.match(hover, /^Gene0<br>Young \| Rnase6 &lt; 0\.391 &amp; x · Cells: 10<br>/);
+    // 2D as before: its tick text is markup too
+    const twoD = D.buildFigure({ ...m, view: undefined }, LIGHT);
+    assert.deepEqual(twoD.layout.yaxis.ticktext, ['Young | Rnase6 &lt; 0.391 &amp; x', 'a > "b" \'c\' ≥ d']);
+});
+
+test('the 3D colour bar is the Cell Plot\'s (plot-utilities/colour-bar.js): its title runs along the bar', () => {
+    const { colorbar } = D.buildFigure(model(), LIGHT).data[0];
+    assert.equal(colorbar.title.side, 'right');
+    assert.equal(colorbar.title.text, 'Mean · X');
+    assert.equal(colorbar.title.font.color, LIGHT.textColor);
+    assert.equal(colorbar.len, 0.7);
+    assert.equal(D.buildFigure(model({ legend: { colorBar: false } }), LIGHT).data[0].showscale, false);
+});
