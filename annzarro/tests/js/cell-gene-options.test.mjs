@@ -430,6 +430,38 @@ test('at 340 px the matrix keeps 10 px a column: totals go first, then the group
     assert.equal(W.narrow.totals, 'Totals hidden at this width.');
 });
 
+// ================================================================================================ the modebar
+
+/** The highest top, in px below the figure's top, of the matrix and every band around it (not the legend column). */
+function bandsTopPx(fig, height) {
+    const innerH = height - fig.layout.margin.t - fig.layout.margin.b;
+    let top = 0;
+    for (const [key, axis] of Object.entries(fig.layout)) {
+        const id = /^yaxis(\d*)$/.exec(key);
+        if (!id || !axis.domain) continue;
+        const n = Number(id[1] || 1);
+        if (n > 1 && n < 90) continue;          // legend subplots (size and strip legends)
+        if (axis.domain[1] > top) top = axis.domain[1];
+    }
+    return fig.layout.margin.t + (1 - top) * innerH;
+}
+
+test('at 340 px the bands above the matrix stay clear of the modebar, and at 900 px nothing moves for it', () => {
+    const MODEBAR_PX = 36;
+    const narrow = compose().model;
+    narrow.pixels = { width: 340, height: 600 };
+    const fig = D.buildFigure(narrow, LIGHT);
+    one(fig, 'section brackets');
+    assert.ok(bandsTopPx(fig, 600) >= MODEBAR_PX - 1e-6, `the highest band is ${bandsTopPx(fig, 600).toFixed(1)} px below the top`);
+    // wide, the matrix ends left of the modebar: the bands reach the top as before
+    const wide = compose().figure;
+    assert.ok(bandsTopPx(wide, 600) < MODEBAR_PX, `${bandsTopPx(wide, 600).toFixed(1)} px`);
+    // swapped, the band on top is the groups' far side: it keeps clear too
+    const swapped = compose({ swap: true, totals: true }).model;
+    swapped.pixels = { width: 340, height: 600 };
+    assert.ok(bandsTopPx(D.buildFigure(swapped, LIGHT), 600) >= MODEBAR_PX - 1e-6);
+});
+
 // ================================================================================================ CXG-18 placeholders
 
 test('CXG-18: rows still being read are drawn as placeholders with the reading sentence, not as missing values', () => {
