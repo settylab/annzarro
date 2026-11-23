@@ -1,0 +1,48 @@
+/*
+ * Pop-over (static/js/ui/popover.js): one non-modal surface in a body-level layer, position: fixed, so it never
+ * changes the size or flow of a panel. Colours are the --az-* tokens of theme.css (light and dark); only the
+ * shadow is local, because a shadow needs more weight on a dark page.
+ * z-index 1040: above the tiles and the Plotly modebar (1001), below Bootstrap's modals (1055).
+ */
+:root { --az-popover-shadow: 0 6px 20px rgba(0, 0, 0, 0.16); }
+:root[data-theme="dark"] { --az-popover-shadow: 0 6px 24px rgba(0, 0, 0, 0.6); }
+
+#az-popover-layer { position: static; }
+
+.az-popover {
+    position: fixed; z-index: 1040; box-sizing: border-box; display: flex; flex-direction: column;
+    left: 0; top: 0; width: 320px; max-width: calc(100vw - 16px); overflow: hidden;
+    background: var(--az-surface); color: var(--az-text);
+    border: 1px solid var(--az-control-border); border-radius: 6px; box-shadow: var(--az-popover-shadow);
+    font-size: 0.875rem;
+}
+.az-popover:focus { outline: none; }
+.az-popover-wide { width: 440px; }
+.az-popover-sheet { width: calc(100vw - 16px); }
+
+.az-popover-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: 0 0 auto;
+    padding: 6px 6px 6px 12px; background: var(--az-surface-2); border-bottom: 1px solid var(--az-border);
+}
+.az-popover-title { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.az-popover-close {
+    flex: 0 0 auto; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 4px;
+    background: transparent; color: var(--az-text-2); font-size: 1.4rem; line-height: 1; cursor: pointer;
+}
+.az-popover-close:hover { background: var(--az-surface-3); color: var(--az-text); }
+.az-popover-close:focus-visible { outline: 2px solid var(--az-focus-border); outline-offset: 1px; }
+
+/* The body scrolls inside the surface; the header stays. */
+.az-popover-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 12px; }
+
+.az-popover-menu { min-width: 12rem; padding: 4px 0; overflow-y: auto; }
+.az-popover-menu [role="menuitem"] {
+    display: block; width: 100%; padding: 6px 12px; border: 0; background: transparent; color: inherit;
+    text-align: left; cursor: pointer;
+}
+.az-popover-menu [role="menuitem"]:hover,
+.az-popover-menu [role="menuitem"]:focus { background: var(--az-surface-3); outline: none; }
+.az-popover-menu [role="menuitem"]:focus-visible { outline: 2px solid var(--az-focus-border); outline-offset: -2px; }
+
+/* The anchor while its pop-over is open: a pressed look that works in both themes. */
+.az-popover-anchor-open { background: var(--az-accent-bg); border-color: var(--az-link); color: var(--az-link); }
