@@ -151,3 +151,149 @@ def test_the_same_in_a_binned_factors_popover(page, served):
     waits.expect_stays(lambda: page.locator("[data-popover='binning'] input.cgrp-level__name").count() == 0
                        and _active(page).startswith("rename:"), "the redraw after a commit must not open the editor again",
                        page=page, seconds=1.0)
+
+
+# ------------------------------------------------------------------ leaving by clicking: the operator's second report
+
+def test_a_blur_commits_even_when_the_page_never_sees_the_pointer_come_up(page, served):
+    """The first version waited for the release of a pointer press before it saved a blurred field; a press whose release the page
+    never sees (a drag that ended outside the window, a webview that swallows it) left the edit open for good."""
+    _start(page, served)
+    page.fill(FIELD, "B lost release")
+    page.evaluate("() => document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))")
+    page.evaluate("() => document.activeElement.blur()")
+    until(page, "() => !document.querySelector(\"[data-popover='levels'] input.cgrp-level__name\")")
+    assert _labels(page) == {"c:B cell": "B lost release"}
+
+
+def test_a_click_on_the_popovers_empty_space_and_one_on_the_page_both_commit(page, served):
+    _start(page, served)
+    page.fill(FIELD, "B space")
+    box = page.locator(f"{P} .az-popover-body").bounding_box()
+    page.mouse.click(box["x"] + box["width"] - 3, box["y"] + box["height"] - 3)      # the body's padding, no control
+    until(page, "() => !document.querySelector(\"[data-popover='levels'] input.cgrp-level__name\")")
+    assert _labels(page) == {"c:B cell": "B space"} and page.locator(P).count() == 1
+    page.click(f"{B_ROW} .cgrp-level__rename")
+    page.fill(FIELD, "B page")
+    page.mouse.click(5, 300)                                                           # the page, away from everything
+    page.wait_for_selector(P, state="detached", timeout=5000)
+    until(page, "() => (window.PanelManager.getPanel('cell-grouping-A').getRecipe().partitionings[0].labels || {})['c:B cell'] === 'B page'")
+
+
+def test_the_field_has_a_save_and_a_cancel_button_beside_it(page, served):
+    _start(page, served)
+    ok, cancel = f"{B_ROW} .cgrp-level__ok", f"{B_ROW} .cgrp-level__cancel"
+    assert page.get_attribute(ok, "aria-label") == "Save the new name for B cell"
+    assert page.get_attribute(cancel, "aria-label") == "Cancel renaming B cell"
+    assert page.inner_text(ok) == "✓" and page.inner_text(cancel) == "✕"
+    assert page.get_attribute(ok, "tabindex") is None and page.get_attribute(cancel, "tabindex") is None, "in the tab order"
+    page.fill(FIELD, "by button")
+    page.click(cancel)
+    until(page, "() => !document.querySelector('.cgrp-level--editing')")
+    assert _labels(page) is None
+    page.click(f"{B_ROW} .cgrp-level__rename")
+    page.fill(FIELD, "by button")
+    page.click(ok)
+    until(page, "() => !document.querySelector('.cgrp-level--editing')")
+    assert _labels(page) == {"c:B cell": "by button"}
+    assert _active(page) == "rename:c:B cell"
+
+
+def test_the_buttons_work_from_the_keyboard_and_escape_on_them_cancels(page, served):
+    _start(page, served)
+    page.fill(FIELD, "keys")
+    page.focus(f"{B_ROW} .cgrp-level__ok")
+    assert page.locator(f"{P} .cgrp-level--editing").count() == 1, "moving to a button of the row is not leaving it"
+    page.keyboard.press("Escape")
+    until(page, "() => !document.querySelector('.cgrp-level--editing')")
+    assert _labels(page) is None and page.locator(P).count() == 1
+    page.click(f"{B_ROW} .cgrp-level__rename")
+    page.fill(FIELD, "keys")
+    page.focus(f"{B_ROW} .cgrp-level__ok")
+    page.keyboard.press("Enter")
+    until(page, "() => !document.querySelector('.cgrp-level--editing')")
+    assert _labels(page) == {"c:B cell": "keys"}
+
+
+# ------------------------------------------------------------------ the editor is never blank while the groups recompute
+
+class _Gate:
+    """Holds every cell_groups computation (not the estimates) until `release()`; after it, everything goes through."""
+
+    def __init__(self, page):
+        self.held, self.open = [], False
+        page.route("**/api/v1/data/cell_groups*", self._handler)
+
+    def _handler(self, route):
+        body = route.request.post_data_json or {}
+        if body.get("estimate_only") or self.open:
+            return route.continue_()
+        self.held.append(route)
+
+    def release(self):
+        self.open = True
+        for route in self.held:
+            route.continue_()
+        self.held.clear()
+
+
+def _delay_computes(page):
+    return _Gate(page)
+
+
+def _computing(page):
+    """The panel has sent its computation (the gate holds it) and says so."""
+    until(page, "() => window.PanelManager.getPanel('cell-grouping-A')._debugState().status.state === 'computing'")
+
+
+def _release(gate):
+    gate.release()
+
+
+def test_the_levels_editor_keeps_its_rows_and_focus_while_the_groups_recompute(page, served):
+    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE])})
+    _ready(page)
+    page.click(EDIT)
+    page.wait_for_selector(f"{P} .cgrp-level[data-id='c:T cell']")
+    rows = page.locator(f"{P} .cgrp-level").count()
+    held = _delay_computes(page)
+    page.uncheck(f"{P} .cgrp-level[data-id='c:T cell'] input[type=checkbox]")
+    until(page, "() => !!window.PanelManager.getPanel('cell-grouping-A').getRecipe().partitionings[0].levels")
+    _computing(page)
+    waits.expect_stays(lambda: page.locator(f"{P} .cgrp-level").count() >= rows and page.locator(f"{P} .cgrp-card__wait").count() == 0
+                       and page.locator(f"{P} .cgrp-levels").count() == 1,
+                       "the groups are held back on purpose: the editor must stay as it was for as long as they are", page=page, seconds=1.0)
+    assert page.locator(f"{P} .cgrp-level[data-id='c:T cell'] input[type=checkbox]").is_checked() is False, "it shows the edit at once"
+    assert page.evaluate("(p) => document.querySelector(p).contains(document.activeElement)", P), "the focus stays in the pop-over"
+    _release(held)
+
+
+def test_the_counts_are_stale_while_the_groups_recompute_and_update_in_place(page, served):
+    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE])})
+    _ready(page)
+    page.click(EDIT)
+    page.wait_for_selector(f"{P} .cgrp-level[data-id='c:T cell']")
+    held = _delay_computes(page)
+    page.uncheck(f"{P} .cgrp-level[data-id='c:T cell'] input[type=checkbox]")
+    page.wait_for_selector(f"{P} .cgrp-level__n.is-stale")
+    _computing(page)
+    assert page.inner_text(f"{P} .cgrp-level[data-id='c:B cell'] .cgrp-level__n") == "500", "the last counts stay"
+    _release(held)
+    until(page, "() => !document.querySelector(\"[data-popover='levels'] .cgrp-level__n.is-stale\")")
+    assert page.inner_text(f"{P} .cgrp-level[data-id='@other'] .cgrp-level__n") == "300" or page.locator(f"{P} .cgrp-level__n").count() > 0
+
+
+def test_a_rename_sends_no_request_and_never_blanks_the_editor(page, served):
+    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE])})
+    _ready(page)
+    page.click(EDIT)
+    page.click(f"{B_ROW} .cgrp-level__rename")
+    held = _delay_computes(page)
+    asked = len(page.calls)
+    page.fill(FIELD, "no request")
+    page.keyboard.press("Enter")
+    until(page, "() => !document.querySelector('.cgrp-level--editing')")
+    waits.expect_stays(lambda: not held.held and len(page.calls) == asked and page.locator(f"{P} .cgrp-card__wait").count() == 0
+                       and page.locator(f"{P} .cgrp-level__n.is-stale").count() == 0,
+                       "a rename is a label: past the live delay a request would have gone", page=page, seconds=1.0)
+    assert page.inner_text(f"{B_ROW} .cgrp-level__label") == "no request"

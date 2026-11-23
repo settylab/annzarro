@@ -81,13 +81,6 @@ PARTS.groups = GROUP_GRID;
 const W = VOCABULARY.word;
 const fmt = (n) => Number(n).toLocaleString('en-US');
 
-/** Whether a pointer button is held: a field left by a press is saved when it is released. */
-let pointerIsDown = false;
-if (typeof document !== 'undefined') {
-    document.addEventListener('pointerdown', () => { pointerIsDown = true; }, true);
-    for (const type of ['pointerup', 'pointercancel']) document.addEventListener(type, () => { pointerIsDown = false; }, true);
-}
-
 const ADD_ENTRIES = Object.freeze([
     { entry: 'column', label: 'Column…' },
     { entry: 'cells', label: 'Cell names' },
@@ -116,6 +109,7 @@ function createFactors({ D, id, model, on }) {
     let adding = null;                  // the entry whose inline row is open
     let renaming = null;                // {index, id, draft?} of the level being renamed (draft: the text typed so far)
     let pendingLeave = null;            // leaves the field being edited, saving it: run when its pop-over closes
+    let staleNow = new Set();           // the factors whose editor shows counts of an earlier reply (set when an editor is drawn)
     let focusRow = null;                // {index, id}: the level row whose rename button takes the focus after the next redraw
     let menuOpen = false;
 
@@ -421,23 +415,42 @@ function createFactors({ D, id, model, on }) {
             else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); }
             else if (e.key === 'Tab') { e.preventDefault(); leave(true, neighbour(e.shiftKey ? -1 : 1)); }
         });
-        // Leaving by the pointer saves, but after the click has landed: a redraw between its press and release would take the
-        // control it pressed from under it.
-        input.addEventListener('focusout', () => {
+        // Leaving the field by a click saves it, but after the click has landed: a redraw between its press and release
+        // would take the control it pressed from under it. The first of the click, the release or a short timer decides, so a
+        // release the page never sees cannot strand the edit.
+        li.addEventListener('focusout', (e) => {
             if (finished) return;
-            // a redraw that takes the field away (the server's reply) blurs it too: that is no way out, the edit goes on in
-            // the field the redraw makes from `renaming` and its draft
-            const later = () => setTimeout(() => { if (input.isConnected) leave(true); }, 0);
-            if (pointerIsDown) document.addEventListener('pointerup', later, { once: true, capture: true }); else later();
+            if (e.relatedTarget && li.contains(e.relatedTarget)) return;      // between the field and its two buttons
+            let done = false;
+            const later = () => {
+                if (done) return;
+                done = true;
+                document.removeEventListener('click', later, true);
+                document.removeEventListener('pointerup', later, true);
+                // a redraw that takes the field away (the server's reply) blurs it too: that is no way out, the edit goes on in
+                // the field the redraw makes from `renaming` and its draft
+                setTimeout(() => { if (input.isConnected) leave(true); }, 0);
+            };
+            document.addEventListener('click', later, true);
+            document.addEventListener('pointerup', later, true);
+            setTimeout(later, 350);
         });
+        // ✓ and ✕ beside the field: real buttons, in the tab order after it. A press on them leaves the focus in the field.
+        const ok = el('button', { type: 'button', class: 'btn btn-sm btn-outline-success cgrp-level__ok', title: 'Save the name',
+            data: { azOwnEscape: '' }, aria: { label: `Save the new name for ${r.label}` },
+            on: { mousedown: (e) => e.preventDefault(), click: () => leave(true), keydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } } } }, '✓');
+        const cancel = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-level__cancel', title: 'Cancel',
+            data: { azOwnEscape: '' }, aria: { label: `Cancel renaming ${r.label}` },
+            on: { mousedown: (e) => e.preventDefault(), click: () => leave(false), keydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } } } }, '✕');
         li.classList.add('cgrp-level--editing');
-        li.append(input, count);
+        li.append(input, ok, cancel, count);
         setTimeout(() => { if (input.isConnected) { input.focus(); input.select(); } }, 0);
         return li;
     }
 
     function levelRow(i, p, info, r) {
-        const count = el('span', { class: 'cgrp-level__n', text: r.n === null ? '' : fmt(r.n) });
+        const count = el('span', { class: `cgrp-level__n${staleNow.has(i) ? ' is-stale' : ''}`, text: r.n === null ? '' : fmt(r.n),
+            title: staleNow.has(i) ? 'Counts as last computed; they update when the groups are ready.' : undefined });
         const label = el('span', { class: 'cgrp-level__label', text: r.label, title: r.was ? `Was: ${r.was}` : undefined });
         const li = el('li', { class: 'cgrp-level', data: { id: r.id } });
         if (renaming && renaming.index === i && renaming.id === r.id) return editedRow(i, p, info, r, li, count);
@@ -517,6 +530,7 @@ function createFactors({ D, id, model, on }) {
     /** The pop-over's content for factor i, now: its levels, its bins, or a table's two levels. */
     function editorBody(i, entry) {
         const m = model();
+        staleNow = m.stale;
         const p = m.recipe.partitionings[i];
         if (!p) return [];
         const info = m.infos[i] || null;
@@ -853,6 +867,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         let _usedBy = '';
         let _usedTimer = null;
         let _factors = null;
+        const _lastFactor = new Map();      // a factor's source -> the last partitioning of a reply it had, for its editor while the next reply is on its way
         let _asked = [];                    // the histograms the handle asks for: the expanded binned cards
         let _features = NO_FEATURES;        // the focused gene's feature, set by the group grid (G9c): it rides this panel's own request
         let _applied = NO_FEATURES;         // the features the handle's option carries now
@@ -1179,14 +1194,33 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
 
         function factorsModel() {
             const s = shown();
-            const infos = _recipe.partitionings.map((_, i) => (s && s.index[i] >= 0 ? s.reading.partitionings[s.index[i]] : null));
-            const labels = _recipe.partitionings.map((_, i) => (s && s.index[i] >= 0 ? s.defaults[s.index[i]] : new Map()));
+            // A factor edited has no partitioning in the reply on screen until the next reply lands (the reply was made for the
+            // recipe before): its editor keeps the last one it had, its counts marked stale, and never goes blank.
+            const infos = [];
+            const labels = [];
+            const stale = new Set();
+            _recipe.partitionings.forEach((p, i) => {
+                const mark = stableStringify(p.source);
+                if (s && s.index[i] >= 0) {
+                    const info = s.reading.partitionings[s.index[i]];
+                    infos.push(info);
+                    labels.push(s.defaults[s.index[i]]);
+                    _lastFactor.delete(mark);
+                    _lastFactor.set(mark, { info, labels: s.defaults[s.index[i]] });
+                    if (_lastFactor.size > 40) _lastFactor.delete(_lastFactor.keys().next().value);
+                    return;
+                }
+                const kept = _lastFactor.get(mark);
+                infos.push(kept ? kept.info : null);
+                labels.push(kept ? kept.labels : new Map());
+                if (kept) stale.add(i);
+            });
             const notes = cardNotes(currentStatus());
             const all = PanelManager.getAllPanels();
             const ofType = (type) => all.filter((p) => typeOf(p) === type).map((p) => ({ id: p.getId(), title: p.getTitle() }));
             const cells = DataManager.getCells();
             return {
-                self: _id, recipe: _recipe, infos, labels, missing: new Set(_missing), notes,
+                self: _id, recipe: _recipe, infos, labels, stale, missing: new Set(_missing), notes,
                 structure: structureRead(), cells: cells ? cells.length : 0, titleOf: sourceTitle, hasGene,
                 focusedGene: DataManager.getFocusedGene(), focusedCell: focusedCellName(),
                 choices: { groupings: ofType(TYPE), tables: ofType('cell-table'), scores: scoreChoices() }
