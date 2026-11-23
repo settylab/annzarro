@@ -65,7 +65,7 @@ with the edge values (about twelve labels at most, thinned when there are more b
 bin where its values lie, so a wide bin is a wide rectangle. Log, equal-count and manual bins start on Evenly, since
 at their values they crowd at one end; equal-width bins start on At their values, where both look the same. Hovering a
 bin names its real range ("depth 1.2 to 3.9"), and the zero bin is a slot of its own labelled 0. The switch changes
-only how the plot is drawn: the counts, the colour bar, the CSV, the exported figure's data and **Save as grouping** are
+only how the plot is drawn: the counts, the colour bar, the CSV, Show as table and **Save as grouping** are
 the same either way. Pressing **Escape** in the binning control closes it. A density is always drawn at its values.
 
 **Choose levels** on a categorical input keeps the levels you tick, in your order, and either counts the others as one
