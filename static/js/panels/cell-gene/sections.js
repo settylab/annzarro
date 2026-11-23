@@ -26,6 +26,7 @@ import {
 import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
 import { stableStringify } from '../../utils/url-history.js';
 import { cellGroupType } from '../../utils/cell-group-source.js';
+import { DEFAULT_METHOD } from '../../utils/signature-options.js';
 
 const CG = VOCABULARY.cellGene;
 
@@ -34,9 +35,6 @@ export const GROUP_AXIS = cellGroupType();
 
 /** The value of "Same as Color" in Height's statistic select (UX 6b): stored as no `height`. */
 export const SAME_AS_COLOR = '__same_as_color__';
-
-/** The value of "Offer other scores…" in a one-row section's selects. */
-export const OFFER_OTHER = '__offer_other__';
 
 /** The most genes a section draws (CXG-17); utils/cell-gene-model.js `matrixLimits` holds the same number. */
 const GENES_PER_SECTION_MAX = 2000;
@@ -75,23 +73,6 @@ function cleanStatistic(raw, fallback, what, problems) {
         delete out.detect_above;
     }
     return out;
-}
-
-/**
- * The plot's own offer (WP-4, operator ruling Q1): with an obs column as the cell axis there is no grouping to say what
- * Color and Size may read, so the plot keeps `{offered?, layers?}` itself. Text layers and known statistics are kept;
- * null when nothing is left.
- */
-function cleanOffer(raw, problems) {
-    if (!isObject(raw)) {
-        problems.push('offer: not an object, left out');
-        return null;
-    }
-    const out = {};
-    if (Array.isArray(raw.layers)) out.layers = [...new Set(raw.layers.filter(isText))];
-    if (Array.isArray(raw.offered)) out.offered = [...new Set(raw.offered.filter((s) => STATISTIC_IDS.includes(s) && s !== 'count'))];
-    for (const key of ['layers', 'offered']) if (out[key] && !out[key].length) delete out[key];
-    return Object.keys(out).length ? out : null;
 }
 
 /** The views a plot can be drawn in (UX 6b): absent is 2D. */
@@ -147,7 +128,8 @@ function cleanSection(raw, i, problems) {
  * The configuration of a Cell-Gene Plot (plan 1.6, `cell-gene` version 1), as a link, a panel set and a history entry
  * carry it. Known fields are cleaned; unknown ones (style fields of later steps, a newer build's) are kept as they are.
  * `version`, `mode`, `sections`, `color` and `size` are always written; `cellAxis` once chosen; `scale` and `swap` only
- * when not the default; `offer` (the plot's own offered statistics and layers on an obs axis) once edited. The 3D view
+ * when not the default. A stored `offer` (the plot's own offered statistics of WP-4, retired by decision 31) is read
+ * and dropped, with no problem said. The 3D view
  * (UX 6b, WP-12): `view: '3d'` (absent is 2D), `height` (the bars' own measure; absent is "Same as Color", and a stored
  * one is kept while 3D is off), `camera` (the 3D camera, stored without an undo step).
  * @param {Object} raw
@@ -171,10 +153,8 @@ export function normalizeCellGene(raw) {
     const sections = Array.isArray(src.sections) ? src.sections : [];
     if ('sections' in src && !Array.isArray(src.sections)) problems.push('sections: not a list, none kept');
     config.sections = sections.map((s, i) => cleanSection(s, i, problems)).filter(Boolean);
-    if ('offer' in src) {
-        const offer = cleanOffer(src.offer, problems);
-        if (offer) config.offer = offer; else delete config.offer;
-    }
+    // decision 31: nothing is offered, so the plot's own offer of WP-4 has no meaning left
+    delete config.offer;
     config.color = cleanStatistic(src.color, DEFAULT_COLOR, 'color', problems);
     config.size = cleanStatistic(src.size, DEFAULT_SIZE, 'size', problems);
     if ('height' in src) {
@@ -216,6 +196,26 @@ export function normalizeCellGene(raw) {
  */
 export function heightOf(config) {
     return config && config.view === '3d' && isObject(config.height) ? config.height : null;
+}
+
+/**
+ * The measures as drawn: each (Color, Size, a Height of its own) with no `detect_above` of its own reads the grouping's
+ * expression threshold (decision 34, CXG-9), so the legends, hover and CSV name the threshold the values were read at.
+ * Never stored: the grouping keeps its threshold and a later edit of it reaches the plot.
+ * @param {Object} config - a normalised configuration
+ * @param {*} threshold - the grouping recipe's `detect_above` (0 or none: nothing to fill)
+ * @returns {Object} `config` itself when nothing is filled, else a copy
+ */
+export function withGroupingThreshold(config, threshold) {
+    if (!isNumber(threshold) || threshold === 0 || !isObject(config)) return config;
+    let out = config;
+    for (const which of ['color', 'size', 'height']) {
+        const spec = config[which];
+        if (!isObject(spec) || isNumber(spec.detect_above)) continue;
+        if (out === config) out = { ...config };
+        out[which] = { ...spec, detect_above: threshold };
+    }
+    return out;
 }
 
 /** A one-row section's aggregation for Color or Size: the stored one, or the cheap default (CXG-5). */
@@ -351,56 +351,55 @@ export function tooManyGenesText(title, total) {
 
 const SUMMARIES = Object.keys(ROW_AGGREGATIONS).filter((k) => ROW_AGGREGATIONS[k].kind === 'summary');
 const SCORE_KINDS = Object.keys(ROW_AGGREGATIONS).filter((k) => ROW_AGGREGATIONS[k].kind === 'score');
-const SEP = '\u0001';
+/** What a new score kind reads (decision 32: a new score consumer starts on z-score mean · X). */
+const NEW_SCORE = Object.freeze({ column: DEFAULT_METHOD, layer: DEFAULT_LAYER });
 
-/** The value of an aggregation in a select: the summary's id, or the score kind with its option. */
-export function aggregationValue(rowAgg) {
-    return ROW_AGGREGATIONS[rowAgg.agg].kind === 'summary' ? rowAgg.agg : [rowAgg.agg, rowAgg.column, rowAgg.layer || DEFAULT_LAYER].join(SEP);
+const isScoreKind = (rowAgg) => !!rowAgg && !!ROW_AGGREGATIONS[rowAgg.agg] && ROW_AGGREGATIONS[rowAgg.agg].kind === 'score';
+
+/**
+ * The KIND select of a one-row section's Color or Size (OD 15, CXG-5, UX 3.2, decision 31): "From the genes" (the four
+ * summaries), then "From the score" (the two score kinds). For a score kind the method and the layer are two selects
+ * of their own (score-source.js `scoreChoices`), listing every method and every layer, so this list never grows with
+ * them and nothing in it is "offered".
+ * @returns {Array<{heading: string, entries: Array<{value: string, label: string}>}>}
+ */
+export function aggregationEntries() {
+    return [
+        { heading: CG.aggregationHeading.summary, entries: SUMMARIES.map((agg) => ({ value: agg, label: CG.aggregation[agg] })) },
+        { heading: CG.aggregationHeading.score, entries: SCORE_KINDS.map((agg) => ({ value: agg, label: CG.scoreKind[agg] })) }
+    ];
 }
 
 /**
- * What a select's value stands for: an aggregation, or OFFER_OTHER. A score kind chosen again on the same option keeps
- * the threshold it had (`held`); a new one starts with none written (0).
+ * A one-row section's Color or Size after the user touched one of its three selects (decision 31): `kind`, `method` or
+ * `layer`. A score kind chosen from a summary starts on z-score mean · X; one chosen from the other score kind keeps
+ * the method and layer (and its threshold when it is the same kind). The method or layer select touched wins; the
+ * other moves only when the pair is now impossible, and `say` names the move once ("Layer changed to logged: …").
+ * @param {Object} held - the aggregation now (rowAggregationOf)
+ * @param {'kind'|'method'|'layer'} part
+ * @param {string} value
+ * @param {?{after: (changed: string, value: string, pair: Object) => {method: string, layer: string, say: string}}} [choices]
+ *   score-source.js `scoreChoices` of the section's source; null when it cannot be read (the pair is then taken as given)
+ * @returns {?{agg: Object, say: string}} null when the edit means nothing (a method on a summary)
  */
-export function parseAggregation(value, held) {
-    if (value === OFFER_OTHER) return OFFER_OTHER;
-    if (SUMMARIES.includes(value)) return { agg: value };
-    const [agg, column, layer] = String(value).split(SEP);
-    const out = { agg, column, layer };
-    if (held && held.agg === agg && held.column === column && (held.layer || DEFAULT_LAYER) === layer && isNumber(held.above)) out.above = held.above;
-    return out;
-}
-
-/** "z-score mean · X": a score option as a score aggregation names it. */
-const optionName = (o) => `${o.short} · ${o.layer}`;
-
-/**
- * The one list a one-row section's Color and Size each show (OD 15, CXG-5, UX 3.2): "From the genes" (the summaries),
- * then "From the score" (each offered score option, averaged and as a share above a threshold, then Offer other
- * scores…). A held score option the source no longer offers stays, marked, so the select still shows what is drawn.
- * @param {Object} opts
- * @param {Object} opts.held - the aggregation the select holds
- * @param {Array<{method: string, layer: string, short: string}>} opts.options - the source's offered score options
- *   (score-source.js scoreOptions), which leave out what it cannot score
- * @param {(setting: Object) => string} [opts.lapsedLabel] - score-source.js lapsedLabel of a gene-score setting
- * @returns {Array<{heading: string, entries: Array<{value: string, label: string, lapsed?: boolean}>}>}
- */
-export function aggregationEntries({ held, options, lapsedLabel = null }) {
-    const summary = SUMMARIES.map((agg) => ({ value: agg, label: CG.aggregation[agg] }));
-    const score = [];
-    for (const o of options) {
-        for (const agg of SCORE_KINDS) {
-            score.push({ value: aggregationValue({ agg, column: o.method, layer: o.layer }), label: CG.scoreAggregation[agg](optionName(o)) });
+export function aggregationAfter(held, part, value, choices = null) {
+    if (part === 'kind') {
+        if (SUMMARIES.includes(value)) return { agg: { agg: value }, say: '' };
+        if (!SCORE_KINDS.includes(value)) return null;
+        if (isScoreKind(held)) {
+            const out = { agg: value, column: held.column, layer: held.layer || DEFAULT_LAYER };
+            if (held.agg === value && isNumber(held.above)) out.above = held.above;
+            return { agg: out, say: '' };
         }
+        const pair = choices ? choices.after('method', NEW_SCORE.column, { layer: NEW_SCORE.layer }) : { method: NEW_SCORE.column, layer: NEW_SCORE.layer, say: '' };
+        return { agg: { agg: value, column: pair.method, layer: pair.layer || NEW_SCORE.layer }, say: pair.say || '' };
     }
-    if (held && ROW_AGGREGATIONS[held.agg] && ROW_AGGREGATIONS[held.agg].kind === 'score'
-        && !score.some((e) => e.value === aggregationValue(held))) {
-        const setting = { column: held.column, layer: held.layer };
-        const name = lapsedLabel ? lapsedLabel(setting) : `${held.column} · ${held.layer || DEFAULT_LAYER} (no longer offered)`;
-        score.push({ value: aggregationValue(held), label: CG.scoreAggregation[held.agg](name), lapsed: true });
-    }
-    score.push({ value: OFFER_OTHER, label: 'Offer other scores…' });
-    return [{ heading: CG.aggregationHeading.summary, entries: summary }, { heading: CG.aggregationHeading.score, entries: score }];
+    if (!isScoreKind(held) || (part !== 'method' && part !== 'layer')) return null;
+    const layer = held.layer || DEFAULT_LAYER;
+    const pair = part === 'method' ? { layer } : { method: held.column };
+    const r = choices ? choices.after(part, value, pair)
+        : { method: part === 'method' ? value : held.column, layer: part === 'layer' ? value : layer, say: '' };
+    return { agg: { ...held, column: r.method, layer: r.layer || layer }, say: r.say || '' };
 }
 
 /** The help line under a select (UX 3.2): the aggregation's, and for a summary the layer it reads. */

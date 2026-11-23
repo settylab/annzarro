@@ -106,11 +106,16 @@
 /* WP-8: a one-row section's Color and Size live in a pop-over; its row shows one summary button, a single line */
 .cgene-section__summary { padding: 2px 0 0 18px; min-width: 0; }
 .cgene-section__values-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.cgene-section__value { display: grid; grid-template-columns: 2.6rem minmax(0, 1fr) 5rem; gap: 2px 6px; align-items: center; }
+.cgene-section__value { display: grid; grid-template-columns: 2.6rem minmax(0, 1fr); gap: 2px 6px; align-items: center; }
 .cgene-section__agg { min-width: 0; }
+/* decision 31: a score kind reads `[method ▾] of [layer ▾] above [t]`, every method and layer listed */
+.cgene-section__score { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.cgene-section__score[hidden],
+.cgene-section__score [hidden] { display: none; }
+.cgene-section__pair { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.cgene-section__method, .cgene-section__layer { width: auto; min-width: 0; max-width: 100%; }
 .cgene-section__above { width: 5rem; }
-.cgene-section__above[hidden] { display: none; }
-.cgene-section__help { grid-column: 2 / 4; color: var(--az-muted); font-size: 0.75rem; }
+.cgene-section__help { grid-column: 2; color: var(--az-muted); font-size: 0.75rem; }
 .cgene-lapsed { font-style: italic; }
 
 /* Cluster ▾, Color ▾ and Plot Options (X5; pop-overs since 0.8.0 WP-2, static/js/ui/popover.js): the buttons in the
@@ -173,15 +178,11 @@
 
 /* narrow: the groups stack */
 @media (max-width: 640px) {
-    .cgene-section__value { grid-template-columns: 2.6rem minmax(0, 1fr); }
-    .cgene-section__above { grid-column: 2; }
     .cgene-section__help { grid-column: 1 / 3; }
 }
 
-/* WP-4: each measure in one row, `Color [Mean ▾] of [logged ▾] above [0]`; the plot's own Statistics offered under it */
+/* WP-4: each measure in one row, `Color [Mean ▾] of [logged ▾] above [0]` */
 .cgene-measure__parts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .cgene-measure__word { color: var(--az-muted); font-size: 0.75rem; }
 .cgene-measure__word[hidden] { display: none; }
 .cgene-measure .form-control { width: 5rem; }
-.cgene-offer { max-width: 30rem; }
-.cgene-offer[hidden] { display: none; }

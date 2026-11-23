@@ -45,9 +45,6 @@
 /* the add zone's two children are items of the toolbar: Add factor on the row, its inline row under the whole toolbar */
 .cgrp-addzone { display: contents; }
 .cgrp-addrow { flex: 0 0 100%; order: 5; min-width: 0; }
-.cgrp-statistics { display: inline-flex; }
-.cgrp-statistics .gsig-scoring { border-top: 0; margin: 0; padding: 0; }
-.gsig-scoring--in-pop { border-top: 0; margin: 0; padding: 0; }
 .cgrp-add-wrap { position: relative; display: inline-block; }
 .cgrp-add-menu {
     position: absolute; z-index: 30; top: calc(100% + 2px); left: 0; min-width: 14rem; padding: 4px 0;

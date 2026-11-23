@@ -52,7 +52,7 @@ import { registerReferences } from '../utils/panel-references.js';
 import { VOCABULARY } from '../utils/vocabulary.js';
 import { createHostBinding, isVisible, PENDING } from '../utils/host-binding.js';
 import { actions } from '../utils/source-actions.js';
-import { isPlanState, describePlan, wayOut, gridNotice, stripSentence, levelsNote } from './cell-count/states.js';
+import { isPlanState, describePlan, wayOut, gridNotice, levelsNote } from './cell-count/states.js';
 import { saveOffered, savePlan, openSaveDialog } from './cell-count/save-grouping.js';
 import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
 import { parseAlsoListed } from '../utils/source-registry.js';
@@ -728,14 +728,15 @@ actions.register({
             _dom.strip.textContent = stripText(snap);
         }
 
-        /** The strip under the plot: Counting… while a drawing is kept, the cells counted once ready (CNT-22). */
+        /** The line under the banner: Counting… while a drawing is kept, a density's range once ready; the banner says the cells counted (CNT-22). */
         function stripText(snap) {
             if (!snap || !_drawing) return '';
             if (PENDING.includes(snap.state) && snap.state !== 'idle') return C.counting(cellsShown());
             if (snap.state !== 'ready') return '';
             // a density says its range instead (UX 4.4): the cells outside it are those it does not count
             if (_notes) return [_notes.range, _notes.floor].filter(Boolean).join(' ');
-            return stripSentence(_drawing.table, _drawing.names);
+            // the cells counted, without a value or outside the range are the coverage banner's under the plot: not said twice
+            return '';
         }
 
         function nameOfInput(field) {

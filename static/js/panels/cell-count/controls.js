@@ -569,19 +569,30 @@ export function createControls({ D, id, model, on }) {
     };
     adjust.addEventListener('change', commitAdjust);
     adjust.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitAdjust(); } });
-    // `off` is what unticking stores (nothing, unless the field's default is the ticked state)
-    const toggleField = (cls, field, value, text, off = () => undefined) => {
+    const toggleField = (cls, field, value, text) => {
         const box = el('input', { type: 'checkbox', class: cls,
-            on: { change: () => { const next = { ...model().config }; const stored = box.checked ? value : off(next);
-                if (stored === undefined) delete next[field]; else next[field] = stored; commit(next, `${box.checked ? '' : 'no '}${text.toLowerCase()}`.trim()); } } });
+            on: { change: () => { const next = { ...model().config }; if (box.checked) next[field] = value; else delete next[field]; commit(next, `${box.checked ? '' : 'no '}${text.toLowerCase()}`.trim()); } } });
         return { box, wrap: el('label', { class: 'ccnt-opt' }, box, ` ${text}`) };
     };
     const bySize = toggleField('ccnt-bysize', 'scale', 'size', C.buttons.bySize);
-    // with a Color by the image is the default, so leaving it is stored
-    const image = toggleField('ccnt-image', 'style', 'image', C.buttons.image, (c) => (c.split ? 'contours' : undefined));
+    // a 2D density's layers: any combination, never none (the last one ticked stays ticked)
+    const layerBox = (key) => {
+        const box = el('input', { type: 'checkbox', class: `ccnt-layer ccnt-layer--${key}`, data: { layer: key },
+            on: { change: () => {
+                const c = model().config;
+                const now = drawOptions(c).layers;
+                const next = { ...now, [key]: box.checked };
+                if (!next.image && !next.lines && !next.fill) { box.checked = true; return; }
+                const out = { ...c, layers: Object.fromEntries(Object.entries(next).filter(([, on2]) => on2)) };
+                delete out.style;
+                commit(out, `${box.checked ? '' : 'no '}${C.layers[key].toLowerCase()}`.trim());
+            } } });
+        return { key, box, wrap: el('label', { class: 'ccnt-opt ccnt-layer-opt' }, box, ` ${C.layers[key]}`) };
+    };
+    const layerBoxes = ['image', 'lines', 'fill'].map(layerBox);
     const densityNotes = el('div', { class: 'ccnt-help ccnt-density-notes' });
     const densityRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--density' },
-        el('label', { class: 'ctl-label', for: `ccnt-adjust-${id}`, text: C.buttons.adjust }), adjust, adjustNote, bySize.wrap, image.wrap, densityNotes);
+        el('label', { class: 'ctl-label', for: `ccnt-adjust-${id}`, text: C.buttons.adjust }), adjust, adjustNote, bySize.wrap, ...layerBoxes.map((l) => l.wrap), densityNotes);
 
     function paintLabels(m, shownRows) {
         const o = drawOptions(m.config);
@@ -604,8 +615,10 @@ export function createControls({ D, id, model, on }) {
         if (document.activeElement !== adjust) adjust.value = m.config.adjust === undefined ? '' : String(m.config.adjust);
         bySize.wrap.hidden = !(shownRows.density && m.config.split);
         bySize.box.checked = o.scale === 'size';
-        image.wrap.hidden = shownRows.density !== 2;
-        image.box.checked = o.style === 'image';
+        for (const l of layerBoxes) {
+            l.wrap.hidden = shownRows.density !== 2;
+            l.box.checked = !!(o.layers && o.layers[l.key]);
+        }
         densityNotes.textContent = shownRows.density && m.notes ? [m.notes.bandwidth, m.notes.floor].filter(Boolean).join(' ') : '';
         densityNotes.hidden = !densityNotes.textContent;
     }

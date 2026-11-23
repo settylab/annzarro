@@ -20,8 +20,6 @@ import {
     gateMatrix, describePlot, ownJobAhead, plotState, matrixTag, oneCellPerGroup
 } from '../../../static/js/panels/cell-gene/states.js';
 import { layerList, statisticList } from '../../../static/js/panels/cell-gene/controls.js';
-import { OFFER_OTHER } from '../../../static/js/panels/cell-gene/sections.js';
-import { normalizeGrouping } from '../../../static/js/utils/cell-grouping.js';
 
 /** The generic words the panel gives the fallback notice (panels/cell-gene.js NOTICE_WORDS). */
 const WORDS = Object.freeze({
@@ -229,16 +227,15 @@ test('One cell per group: suggested only for dots sized by % expressing, over gr
     assert.equal(oneCellPerGroup({ mode: 'dots', size, sized: true, groups: [] }), false);
 });
 
-test('No size: the Size layer select keeps the statistic and offers the layers that can give it (WP-4)', () => {
-    const recipe = normalizeGrouping({ layers: ['logged_counts', 'raw_counts'] }).recipe;
+test('No size: the Size layer select keeps the statistic and lists the layers that can give it (WP-4, decision 31)', () => {
     const kinds = { X: 'signed', logged_counts: 'log', raw_counts: 'counts' };
     const held = { stat: 'pct_expressing', layer: 'X' };
-    const list = layerList({ recipe, datasetLayers: ['X', 'logged_counts', 'raw_counts'], kinds, stat: held.stat, held });
-    assert.deepEqual(list.filter((o) => !o.disabled && !o.lapsed && o.value !== OFFER_OTHER).map((o) => o.value), ['logged_counts', 'raw_counts']);
+    const list = layerList({ datasetLayers: ['X', 'logged_counts', 'raw_counts'], kinds, stat: held.stat, held });
+    assert.deepEqual(list.filter((o) => !o.disabled && !o.lapsed).map((o) => o.value), ['logged_counts', 'raw_counts']);
     const x = list.find((o) => o.value === 'X');
     assert.equal(x.label, 'X (not available)', 'the held layer stays, marked, so the select shows what is held');
     assert.equal(x.lapsed, true);
-    assert.equal(statisticList({ recipe, kinds, held }).find((o) => o.value === 'pct_expressing').label, '% expressing (not available)');
+    assert.equal(statisticList({ kinds, held }).find((o) => o.value === 'pct_expressing').label, '% expressing (not available)');
 });
 
 test('the state word follows the snapshot and the drawing', () => {

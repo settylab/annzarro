@@ -15,7 +15,7 @@
  *   utils/source-notices.js (`gridNotice`), as every source's do: the overlay, the strip tag, the progress bar of
  *   operator decision 21, and the buttons routed by the action registry.
  *
- * And the strip of a drawn plot (`stripSentence`, CNT-22).
+ * And the sentence of a drawn plot's cells counted (`stripSentence`, CNT-22); the page says it in the coverage banner.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { describeSource } from '../../utils/source-notices.js';
@@ -205,6 +205,7 @@ export function gridNotice(snap, ctx, cells) {
  * @param {{shown: number, total: number, noValue: Object<string, number>, outside: number}} table - from countTable
  * @param {Object<string, string>} names - each input's name
  */
+// export-unused-ok: the sentence of the cells counted, read by Node tests; the coverage banner says it on the page
 export function stripSentence(table, names) {
     const parts = [C.strip.counted(table.total)];
     let accounted = 0;
