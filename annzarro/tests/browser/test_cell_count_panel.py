@@ -211,25 +211,25 @@ def test_job2_a_histogram_per_sample_with_the_inline_binning(page, served):
     assert page.inner_text(line).startswith("Bins: equal width · 50 · auto range")
 
     page.click(line)
-    page.wait_for_selector(f"{S} .ccnt-binning .pbc")
-    assert page.inner_text(f"{S} .ccnt-binning .pbc-range-help") == "Values outside are left out and counted."
-    assert page.input_value(f"{S} .ccnt-binning .pbc-bins") == "50"
-    page.fill(f"{S} .ccnt-binning .pbc-bins", "20")
-    page.press(f"{S} .ccnt-binning .pbc-bins", "Enter")
+    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc")
+    assert page.inner_text(f"[data-popover='binning'] .ccnt-binning .pbc-range-help") == "Values outside are left out and counted."
+    assert page.input_value(f"[data-popover='binning'] .ccnt-binning .pbc-bins") == "50"
+    page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "20")
+    page.press(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "Enter")
     _drawn(page, "histogram", "c.x.binning && c.x.binning.bins === 20")
     assert {len(t["x"]) for t in _plot(page)["data"]} == {20}
     assert page.inner_text(line).startswith("Bins: equal width · 20 · auto range")
 
     # a range: the cells below it are left out (CNT-9, SHR-45)
-    page.fill(f"{S} .ccnt-binning .pbc-range-lo", "1")
-    page.press(f"{S} .ccnt-binning .pbc-range-lo", "Enter")
+    page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-range-lo", "1")
+    page.press(f"[data-popover='binning'] .ccnt-binning .pbc-range-lo", "Enter")
     _drawn(page, "histogram", "c.x.binning && Array.isArray(c.x.binning.range) && c.x.binning.range[0] === 1")
     assert sum(sum(t["y"]) for t in _plot(page)["data"]) == int((DATA.obs["depth"] >= 1).sum())
     assert _config(page)["x"] == {"source": {"type": "obs", "key": "depth"}, "binning": {"method": "equal_width", "bins": 20, "range": [1, None]}}
 
     # a count the grouping's control would have dropped (its default, 10) is kept
-    page.fill(f"{S} .ccnt-binning .pbc-bins", "10")
-    page.press(f"{S} .ccnt-binning .pbc-bins", "Enter")
+    page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "10")
+    page.press(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "Enter")
     _drawn(page, "histogram", "c.x.binning && c.x.binning.bins === 10")
     assert {len(t["x"]) for t in _plot(page)["data"]} == {10}
 
@@ -287,8 +287,8 @@ def test_a_mode_change_keeps_every_input_and_lists_what_the_mode_does_not_read(p
 
     page.select_option(f"{S} .ccnt-mode", "hist2d")
     until(page, "(s) => document.querySelector(s + ' .ccnt-panel').dataset.state === 'empty'", S)
-    assert _rows(page) == ["Mode", "X", "Y", "Color", "Labels"]
-    assert page.inner_text(f"{S} .ccnt-kept") == "Kept for other modes: Color by obs condition"
+    assert _rows(page) == ["Mode", "X", "Y", "Color by", "Color", "Labels"], "a 2D histogram reads Color by"
+    assert not page.is_visible(f"{S} .ccnt-kept")
     assert _state_text(page) == "Choose Y to count cells."
 
     page.select_option(f"{S} .ccnt-mode", "pie")
@@ -338,9 +338,8 @@ def test_a_density_per_condition_draws_through_v3_with_its_sentences_and_adjust(
     _drawn(page, "density")
     fig = _plot(page)
     assert sorted(t["name"] for t in fig["data"]) == sorted(DATA.obs["condition"].unique())
-    assert _rows(page) == ["Mode", "X", "Color by", "Labels"]
+    assert _rows(page) == ["Mode", "X", "Color by", "Smoothing"]
     assert page.inner_text(f"{S} .ccnt-strip").startswith("Range from the 0.1st to the 99.9th percentile")
-    page.click(f"{S} .ccnt-options-btn")
     assert page.inner_text(f"{S} .ccnt-density-notes").startswith("Bandwidth ")
     asked = len(_requests(page))
     page.fill(f"{S} .ccnt-adjust", "2")
@@ -416,3 +415,175 @@ def test_the_control_bar_is_the_one_toggle_controls_hides(page, served):
     found = page.evaluate("""async (s) => { const { controlsElementOf } = await import('/static/js/utils/controls-visibility.js');
         return controlsElementOf(document.querySelector(s + ' .tile-content')).className; }""", S)
     assert "ccnt-controls" in found
+
+
+def _bar_lefts(page):
+    """The left edge in pixels of each drawn bar of the first level, one per trace: equal when stacked, spread when side by side."""
+    return page.evaluate("""(s) => { const p = document.querySelector(s + ' .ccnt-plot');
+        return { full: p._fullLayout.barmode,
+                 lefts: [...p.querySelectorAll('.barlayer .trace')].map(t => { const b = t.querySelector('.point path');
+                     return b ? Math.round(b.getBoundingClientRect().left) : null; }) }; }""", S)
+
+
+def test_stacked_color_by_draws_stacked_bars_and_side_by_side_draws_grouped(page, served):
+    _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE, split=CONDITION)})
+    _drawn(page, "bar")
+    stacked = _bar_lefts(page)
+    assert stacked["full"] == "stack" and len(set(stacked["lefts"])) == 1, stacked
+    page.click(f"{S} .ccnt-arrangement__opt:has-text('Side by side')")
+    _drawn(page, "bar", "c.arrangement === 'dodge'")
+    assert _bar_lefts(page)["full"] == "group"
+    page.click(f"{S} .ccnt-arrangement__opt:has-text('Stacked')")
+    _drawn(page, "bar", "!c.arrangement")
+    again = _bar_lefts(page)
+    assert again["full"] == "stack" and len(set(again["lefts"])) == 1, again
+
+
+
+def test_a_statistic_is_side_by_side_and_offers_no_arrangement(page, served):
+    _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE, split=CONDITION, value={"kind": "measure"},
+                                    measure={"stat": "mean", "source": {"type": "obs", "key": "score"}})})
+    _drawn(page, "bar")
+    assert _bar_lefts(page)["full"] == "group"
+    assert not page.is_visible(f"{S} .ccnt-arrangement"), "Stacked must not be offered for bars that cannot stack"
+
+
+def test_an_unticked_level_keeps_its_name_in_the_checklist(page, served):
+    _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE)})
+    _drawn(page, "bar")
+    page.click(f"{S} [data-row='x'] .ccnt-choose")
+    names = page.eval_on_selector_all(f"[data-popover='levels'] .ccnt-level__label", "els => els.map(e => e.textContent)")
+    page.click(f"[data-popover='levels'] .ccnt-level:first-child input[type=checkbox]")
+    _drawn(page, "bar", "Array.isArray(c.x.levels) && c.x.levels.length === %d" % (len(names) - 1))
+    after = page.eval_on_selector_all(f"[data-popover='levels'] .ccnt-level__label", "els => els.map(e => e.textContent)")
+    assert set(names) <= set(after), (names, after)
+    assert not [t for t in after if t.startswith(("c:", "g:"))], after
+
+
+def test_the_binning_control_shows_no_empty_preview_when_the_reply_has_no_histogram(page, served):
+    """A count plot's reply carries no histogram: the control must not leave a blank grey field under the range help."""
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    _open(page, served, {CC: _count(mode="histogram", x=depth)})
+    _drawn(page, "histogram")
+    page.click(f"{S} [data-row='x'] .ccnt-bins")
+    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc")
+    shot = os.environ.get("FB1B_SHOT")
+    if shot:
+        page.locator(f"[data-popover='binning'] .ccnt-binning .pbc").screenshot(path=shot)
+    empty = page.evaluate("(s) => [...document.querySelectorAll('[data-popover=binning] .ccnt-binning .pbc-hist.is-empty')].filter(e => e.offsetHeight > 0).length", S)
+    assert empty == 0, "an empty preview is drawn as a grey field"
+
+
+
+def test_2d_density_contours_of_a_split_are_drawn_in_the_level_colors(page, served):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, split=CONDITION, style="contours")})
+    _drawn(page, "density2d")
+    traces = page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'contour')
+        .map(t => ({ line: t.line.color, cs: t.colorscale }))""", S)
+    assert len(traces) == 2 and all(t["cs"] == [[0, t["line"]], [1, t["line"]]] for t in traces), traces
+    # what Plotly drew: the lines of one level are of one color
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot .contourlayer .contourlevel path').length > 0", S)
+    drawn = page.evaluate("""(s) => [...document.querySelectorAll(s + ' .ccnt-plot .contourlayer > g')].filter(g => g.querySelector('.contourlevel path')).map(g =>
+        [...new Set([...g.querySelectorAll('.contourlevel path')].map(p => getComputedStyle(p).stroke))])""", S)
+    assert drawn and all(len(c) == 1 for c in drawn), drawn
+    if os.environ.get("FB1C_SHOT"):
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.environ["FB1C_SHOT"])
+
+
+# ------------------------------------------------------------------ even-width bins (WP-9)
+
+LOG_DEPTH = {"source": {"type": "obs", "key": "depth"}, "binning": {"method": "log", "bins": 8}}
+
+
+def _pixel_steps(page):
+    """The pixel distance between neighbouring bin centers of the 2D histogram's x axis, and its tick texts."""
+    return page.evaluate("""(s) => { const p = document.querySelector(s + ' .ccnt-plot'); const ax = p._fullLayout.xaxis;
+        const x = Array.from(p.data[0].x); const steps = x.slice(1).map((v, i) => Math.abs(ax.l2p(v) - ax.l2p(x[i])));
+        return { steps, x, ticks: Array.from(p.querySelectorAll('.xtick text')).map(t => t.textContent) }; }""", S)
+
+
+def test_log_bins_of_a_2d_histogram_are_drawn_evenly_and_the_switch_restores_the_values(page, served):
+    _open(page, served, {CC: _count(mode="hist2d", x=LOG_DEPTH, y={"source": {"type": "obs", "key": "score"}})})
+    _drawn(page, "hist2d")
+    even = _pixel_steps(page)
+    assert even["x"] == list(range(len(even["x"]))) and len(even["x"]) >= 6
+    assert max(even["steps"]) - min(even["steps"]) < 0.5, even["steps"]
+    assert 2 <= len(even["ticks"]) <= 13
+
+    page.click(f"{S} [data-row='x'] .ccnt-bins")
+    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc-spacing")
+    assert page.is_checked(f"[data-popover='binning'] .ccnt-binning .pbc-spacing-even")
+    page.check(f"[data-popover='binning'] .ccnt-binning .pbc-spacing-value")
+    _drawn(page, "hist2d", "c.binSpacing && c.binSpacing.x === 'value'")
+    values = _pixel_steps(page)
+    assert values["x"] != even["x"]
+    assert max(values["steps"]) / min(values["steps"]) > 1.5, values["steps"]
+    assert _config(page)["binSpacing"] == {"x": "value"}
+    # a draw-only switch asks the engine for nothing
+    n = len(_requests(page))
+    page.check(f"[data-popover='binning'] .ccnt-binning .pbc-spacing-even")
+    _drawn(page, "hist2d", "c.binSpacing && c.binSpacing.x === 'even'")
+    assert len(_requests(page)) == n
+
+
+def test_equal_width_bins_default_to_their_values_and_escape_closes_the_binning_control(page, served):
+    _open(page, served, {CC: _count(mode="hist2d", x={"source": {"type": "obs", "key": "depth"}}, y={"source": {"type": "obs", "key": "score"}})})
+    _drawn(page, "hist2d")
+    assert _pixel_steps(page)["x"] != list(range(100))
+    toggle = f"{S} [data-row='x'] .ccnt-bins"
+    page.click(toggle)
+    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc-spacing")
+    assert page.is_checked(f"[data-popover='binning'] .ccnt-binning .pbc-spacing-value")
+    page.focus(f"[data-popover='binning'] .ccnt-binning .pbc-method")
+    page.keyboard.press("Escape")
+    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc", state="detached")
+    assert page.get_attribute(toggle, "aria-expanded") == "false"
+
+
+
+def _shot(page, name):
+    """A screenshot of the plot when ANNZARRO_FB1C_SHOTS names a folder (for a look at the figure, not an assertion)."""
+    folder = os.environ.get("ANNZARRO_FB1C_SHOTS")
+    if folder:
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(folder, f"{name}.png"))
+
+
+def _layers(page):
+    return page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'heatmap')
+        .map(t => ({ name: t.name, zmin: t.zmin, zmax: t.zmax, cs: t.colorscale }))""", S)
+
+
+def test_a_2d_histogram_colored_by_a_level_draws_opacity_layers(page, served):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    _open(page, served, {CC: _count(mode="hist2d", x=depth, y=score, split=CONDITION)})
+    _drawn(page, "hist2d")
+    assert _rows(page) == ["Mode", "X", "Y", "Color by", "Color", "Labels"]
+    layers = _layers(page)
+    assert sorted(t["name"] for t in layers) == sorted(DATA.obs["condition"].unique())
+    assert len({t["zmax"] for t in layers}) == 1 and all(t["zmin"] == 0 for t in layers), layers
+    sent = _requests(page)[-1]
+    assert [p["source"]["key"] for p in sent["partitionings"]] == ["depth", "score", "condition"]
+    _shot(page, "hist2d-color-by")
+    # a color that says something else takes the rectangles back: the Color by row goes and is kept
+    page.select_option(f"{S} .ccnt-value", "top_level")
+    _drawn(page, "hist2d", "c.value && c.value.kind === 'top_level'")
+    assert "Color by" not in _rows(page)
+    assert _config(page)["split"] == CONDITION
+
+
+def test_a_2d_density_with_a_color_by_is_an_image_until_the_contours_are_chosen(page, served):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, split=CONDITION)})
+    _drawn(page, "density2d")
+    layers = _layers(page)
+    assert len(layers) == 2 and len({t["zmax"] for t in layers}) == 1
+    _shot(page, "density2d-image")
+    assert page.is_checked(f"{S} .ccnt-image")
+    page.uncheck(f"{S} .ccnt-image")
+    _drawn(page, "density2d", "c.style === 'contours'")
+    assert not _layers(page)
+    assert page.evaluate("(s) => document.querySelector(s + ' .ccnt-plot').data.filter(t => t.type === 'contour').length", S) == 2

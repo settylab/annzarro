@@ -64,7 +64,7 @@ const MODES = Object.freeze({
     pie: { x: true, wire: 'categorical', dimension: 'one' },
     histogram: { x: true, split: true, wire: '1d', dimension: 'one', numeric: ['x'] },
     density: { x: true, split: true, wire: '1d', dimension: 'one', numeric: ['x'], density: true },
-    hist2d: { x: true, y: true, wire: '2d', dimension: 'two', numeric: ['x', 'y'] },
+    hist2d: { x: true, y: true, split: true, wire: '2d', dimension: 'two', numeric: ['x', 'y'] },
     density2d: { x: true, y: true, split: true, wire: '2d', dimension: 'two', numeric: ['x', 'y'], density: true },
     heatmap: { x: true, y: true, wire: 'categorical', dimension: 'two' },
     venn: { sets: true, wire: 'sets', setsMax: 3 },
@@ -86,7 +86,7 @@ function modeLimits(mode) {
         heatmap: { x: { levels: cat, bins: cat }, y: { levels: cat, bins: cat } },
         histogram: { x: { bins: bins1 }, split: { levels: split1 } },
         density: { x: { bins: bins1 }, split: { levels: split1 } },
-        hist2d: { x: { bins: bins2 }, y: { bins: bins2 }, factor: { levels: split2 } },
+        hist2d: { x: { bins: bins2 }, y: { bins: bins2 }, split: { levels: split2 }, factor: { levels: split2 } },
         density2d: { x: { bins: bins2 }, y: { bins: bins2 }, split: { levels: split2 } }
     };
     return all[mode];
@@ -97,7 +97,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // --- the stored config -----------------------------------------------------------------------------------------------
 
-const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure'];
+const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure', 'binSpacing', 'color'];
 const INPUTS = ['x', 'y', 'split'];
 
 /** An input as a partitioning. Its bin count goes to 2,000 and is kept as typed, since the default differs by mode. */
@@ -211,8 +211,73 @@ export function normalizeCountPlot(raw) {
         const measure = normalizeMeasure(raw.measure, bad);
         if (measure) out.measure = measure;
     }
+    if (raw.binSpacing !== undefined) {
+        const spacing = normalizeBinSpacing(raw.binSpacing, bad);
+        if (spacing) out.binSpacing = spacing;
+    }
+    if (raw.color !== undefined) {
+        const color = normalizeColor(raw.color, bad);
+        if (color) out.color = color;
+    }
     for (const key of Object.keys(raw)) if (!KNOWN.includes(key)) out[key] = raw[key];
     return { config: out, problems };
+}
+
+/**
+ * The colour of the plot (WP-6a): `{map?, reverse?, min?, max?, center?, palette?}`. `map` is a colour scale's name,
+ * `reverse` flips it, `min`, `max` and `center` fix the range of a colour scale (absent: automatic), `palette` names the
+ * discrete palette of a Color by's levels. A field that is not valid is reported and left out; an empty colour is none.
+ */
+function normalizeColor(raw, bad) {
+    if (!isObject(raw)) {
+        bad('color', 'bad_color');
+        return null;
+    }
+    const out = {};
+    for (const field of ['map', 'palette']) {
+        if (raw[field] === undefined) continue;
+        if (typeof raw[field] === 'string' && raw[field]) out[field] = raw[field]; else bad(`color.${field}`, 'bad_color');
+    }
+    if (raw.reverse !== undefined) {
+        if (raw.reverse === true) out.reverse = true; else if (raw.reverse !== false) bad('color.reverse', 'bad_color');
+    }
+    for (const field of ['min', 'max', 'center']) {
+        if (raw[field] === undefined) continue;
+        if (isNumber(raw[field])) out[field] = raw[field]; else bad(`color.${field}`, 'bad_color');
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+/** How a binned axis is drawn: each bin at its index, all one width ('even'), or at its values ('value'). */
+const BIN_SPACINGS = Object.freeze(['even', 'value']);
+
+/** `{x?, y?}` of the stored spacings; a value that is not one is reported and left out. */
+function normalizeBinSpacing(raw, bad) {
+    if (!isObject(raw)) {
+        bad('binSpacing', 'bad_bin_spacing');
+        return null;
+    }
+    const out = {};
+    for (const [axis, value] of Object.entries(raw)) {
+        if (!['x', 'y'].includes(axis) || !BIN_SPACINGS.includes(value)) bad(`binSpacing.${axis}`, 'bad_bin_spacing');
+        else out[axis] = value;
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+/**
+ * How input `input` ('x', 'y') of a config draws its bins: the stored choice, or the default of its binning: equal-width
+ * bins are drawn at their values (both ways look the same), log, equal-count and manual bins evenly (WP-9).
+ * @param {Object} config - from normalizeCountPlot
+ * @param {string} input
+ * @returns {'even'|'value'}
+ */
+export function binSpacingOf(config, input) {
+    const stored = config.binSpacing && config.binSpacing[input];
+    if (BIN_SPACINGS.includes(stored)) return stored;
+    const p = config[input];
+    const method = (p && isObject(p.binning) && p.binning.method) || 'equal_width';
+    return method === 'equal_width' ? 'value' : 'even';
 }
 
 // --- inputs per mode (CNT-6) -----------------------------------------------------------------------------------------
@@ -233,7 +298,16 @@ export function modeReads(mode) {
 export function keptForOtherModes(config) {
     const reads = modeReads(config.mode);
     const stored = (field) => (field === 'sets' ? Array.isArray(config.sets) && config.sets.length > 0 : config[field] !== undefined);
-    return [...INPUTS, 'sets'].filter((field) => stored(field) && !reads[field]);
+    return [...INPUTS, 'sets'].filter((field) => stored(field) && (!reads[field] || (field === 'split' && !splitUsed(config))));
+}
+
+/**
+ * Whether the mode reads the config's Color by now: a bar, a histogram or a density always does; a 2D histogram while its
+ * rectangles show counts (a share, a statistic or the most frequent level says something else with their color).
+ */
+export function splitUsed(config) {
+    if (!modeReads(config.mode).split) return false;
+    return config.mode !== 'hist2d' || !config.value || config.value.kind === 'count';
 }
 
 // --- bins ------------------------------------------------------------------------------------------------------------
@@ -349,7 +423,8 @@ export function planGrid(config, ctx) {
     } else {
         if (!config.x) return { state: 'empty', reason: 'choose_x' };
         if (mode.y && !config.y) return { state: 'empty', reason: 'choose_y' };
-        const wanted = INPUTS.filter((input) => mode[input] && config[input]).map((input) => [input, config[input]]);
+        // a 2D histogram's Color by splits its counts into layers; it is read only while the rectangles show counts
+        const wanted = INPUTS.filter((input) => mode[input] && config[input] && !(input === 'split' && !splitUsed(config))).map((input) => [input, config[input]]);
         if (config.value && config.value.kind === 'top_level' && TOP_LEVEL_MODES.includes(config.mode)) wanted.push(['factor', config.value.factor]);
         const plan = wanted.map(([input, p]) => {
             const numeric = isBinned(p, ctx);

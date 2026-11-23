@@ -109,7 +109,9 @@ function figure(config, table, opts) {
     const states = inst ? inst.statesOf(sets).rows.map((r) => r.state) : [];
     const plot = setPlotModel(config, table, { names, states, words: { ...(opts.words || C), measureSource: opts.measureSource } });
     if (inst) inst.drew(sets, plot, states);
-    const fig = buildFigure(plot, opts.theme, { width: inst ? inst.width() : undefined });
+    const fig = buildFigure(plot, opts.theme, {
+        width: inst ? inst.width() : undefined, colorscale: opts.options && opts.options.colorscale, colour: opts.options && opts.options.colour
+    });
     return { data: fig.data, layout: fig.layout };
 }
 

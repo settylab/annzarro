@@ -291,7 +291,8 @@ export function defaultLabelMaps(recipe, reply, titleOf) {
         const name = sourceName(p.source, titleOf);
         const map = new Map();
         if (p.binning) for (const { id, label } of levelLabels(p.binning, info, name)) map.set(id, label);
-        for (const id of info.levels || []) if (!map.has(id)) map.set(id, plainLabel(id, name, info));
+        // a category the plot does not show (unticked) still has its name, which the checklist reads
+        for (const id of [...(info.levels || []), ...(info.categories || [])]) if (!map.has(id)) map.set(id, plainLabel(id, name, info));
         return { map, name, info };
     });
     const seen = new Map();

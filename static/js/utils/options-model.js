@@ -15,6 +15,8 @@
  *                   provider's grading of a method on a layer of this kind. ctx = { stats, label, ...context(recipe) }
  *   context         (recipe) -> the recipe-dependent facts grade needs (the signature's `hasDown`, its threshold)
  *   layerLines      (layer, recipe, kind, stats, offered) -> lines for a LAYER's row (default: none)
+ *   extraMethods    entries listed after the table that read no layer: { value, label, menu, definition } (a grouping's
+ *                   cell count). They are always usable and have no layer
  *   resetFields     the option fields a reset writes and `isDefaultOffer` compares (default: input, method, offered,
  *                   layers). A grouping's recipe has no input and no method: it names offered and layers only
  *
@@ -22,6 +24,11 @@
  * lines under a method, the parameters of a method and the parsing of what is typed. The fields it reads from a recipe
  * are `input`, `method`, `offered` and `layers`; a recipe without `input` reads as the default layer, one without
  * `method` as the default method.
+ *
+ * Decision 31 (SO-1): nothing is "offered". `methodChoices`, `layerChoices` and `pairAfter` list ALL methods and ALL of
+ * the dataset's layers, grade each pair, and say which impossible pair is disabled and why; `legacyPair` and
+ * `withoutLegacy` only READ a stored `offered`/`layers` to find the old default pair and never write it back. The
+ * offered-based functions below stay for the panels that still call them (// SO-2/3/4 removes).
  *
  * Switching an option off never breaks a consumer that uses it: it keeps its setting and shows that the option is no
  * longer offered, with a way to offer it again (`offeredOptions` leaves it out, `isOffered` says).
@@ -125,7 +132,7 @@ export function createOptionsModel(spec) {
     const {
         methods, defaultMethod, defaultOffered, defaultLayer = 'X', paramDefaults = {}, sameParam = strictSame,
         paramNotes = () => [], paramLines = {}, grade, context = () => ({}), layerLines: customLayerLines = () => [],
-        resetFields = ['input', 'method', 'offered', 'layers']
+        resetFields = ['input', 'method', 'offered', 'layers'], extraMethods = []
     } = spec;
     if (!Array.isArray(methods) || !methods.length) throw new Error('options-model: a method table is required');
     if (typeof grade !== 'function') throw new Error('options-model: a grading function is required');
@@ -296,12 +303,147 @@ export function createOptionsModel(spec) {
             && offeredLayers(recipe).join() === [defaultLayer].join();
     }
 
-    return Object.freeze({
+
+    // ---------------------------------------------------------------------------------------- ungated lists (decision 31)
+
+    const extraInfo = (method) => extraMethods.find(m => m.value === method) || null;
+    /** Whether `method` reads no layer (a grouping's cell count). */
+    const readsNoLayer = (method) => !!extraInfo(method);
+
+    /** One graded entry of a select: disabled when the pair cannot be computed, the reason as its title. */
+    function choice(value, label, g, extra) {
+        return {
+            value, label, grade: g.grade, code: g.code, reason: g.reason, note: g.grade === 'warn' ? g.reason : '',
+            title: g.grade === 'ok' ? '' : g.reason, disabled: g.grade === 'cannot', ...extra
+        };
+    }
+    const OK = Object.freeze({ grade: 'ok', code: '', reason: '' });
+
+    /**
+     * The METHOD select: every method of the table (and the extras that read no layer), each graded on `layer`. A pair
+     * that cannot be computed is `disabled` with its reason as `title`; a `warn` one stays enabled with its note as the
+     * title. The `held` method stays selectable when impossible, marked `lapsed` and labelled "(not available)": a link
+     * that stored it keeps drawing nothing and says why (SHR-27).
+     * @param {{recipe?: Object, layer?: (string|null), kinds?: Object<string, string>, stats?: Object<string, Object>, held?: string}} opts
+     *   `layer` null/undefined grades nothing
+     * @returns {Array<{value: string, label: string, name: string, definition: string, grade: string, code: string,
+     *   reason: string, note: string, title: string, disabled: boolean, lapsed?: boolean}>}
+     */
+    function methodChoices({ recipe = {}, layer, kinds = {}, stats = {}, held } = {}) {
+        const out = methods.map((m) => {
+            const g = layer ? gradeOf(m.value, layer, kinds[layer], recipe, { stats: stats[layer] }) : OK;
+            return choice(m.value, m.menu, g, { name: m.label, definition: m.definition });
+        });
+        for (const m of extraMethods) out.push(choice(m.value, m.menu, OK, { name: m.label, definition: m.definition || '' }));
+        return out.map((e) => (e.disabled && e.value === held
+            ? { ...e, disabled: false, lapsed: true, label: `${e.label} (not available)` } : e));
+    }
+
+    /**
+     * The LAYER select: every layer of the dataset (X first as given), each graded for `method`. Empty for a method
+     * that reads no layer. A `held` layer the dataset lacks is kept and marked, an impossible one as in `methodChoices`.
+     * @param {{recipe?: Object, method: string, datasetLayers?: string[], kinds?: Object<string, string>,
+     *   stats?: Object<string, Object>, held?: string}} opts
+     */
+    function layerChoices({ recipe = {}, method, datasetLayers, kinds = {}, stats = {}, held } = {}) {
+        if (readsNoLayer(method)) return [];
+        const layers = [...new Set(Array.isArray(datasetLayers) && datasetLayers.length ? datasetLayers : [defaultLayer])];
+        const out = layers.map((layer) => {
+            const g = method ? gradeOf(method, layer, kinds[layer], recipe, { stats: stats[layer] }) : OK;
+            const e = choice(layer, layer, g, {});
+            return e.disabled && layer === held ? { ...e, disabled: false, lapsed: true, label: `${layer} (not available)` } : e;
+        });
+        if (held && !layers.includes(held)) out.push(choice(held, `${held} (not in this dataset)`, OK, { lapsed: true }));
+        return out;
+    }
+
+    /**
+     * Both selects after the user touched one: the select touched wins and the other moves, to the first usable value,
+     * only when its value is now impossible. `say` names it once ("Layer changed to logged: % expressing is not
+     * available on X."); `impossible` is true when nothing else works, and the pair is then left as the user made it.
+     * @param {'method'|'layer'} changed - the select the user touched
+     * @param {string} value - what it now says
+     * @param {{method?: string, layer?: string}} pair - the other select's value (the touched one's old value is ignored)
+     * @param {{recipe?: Object, datasetLayers?: string[], kinds?: Object, stats?: Object}} [ctx]
+     * @returns {{method: string, layer: (string|null), moved: ('method'|'layer'|null), say: string, impossible?: boolean}}
+     */
+    function pairAfter(changed, value, pair, ctx = {}) {
+        const { recipe = {}, datasetLayers, kinds = {}, stats = {} } = ctx;
+        const usable = (list) => list.filter(e => !e.disabled);
+        if (changed === 'method') {
+            const method = value;
+            if (readsNoLayer(method)) return { method, layer: null, moved: null, say: '' };
+            const layers = layerChoices({ recipe, method, datasetLayers, kinds, stats });
+            const have = pair && pair.layer ? layers.find(e => e.value === pair.layer) : null;
+            if (have && !have.disabled) return { method, layer: have.value, moved: null, say: '' };
+            const next = usable(layers)[0];
+            if (!next) return { method, layer: (pair && pair.layer) || defaultLayer, moved: null, say: '', impossible: true };
+            const wasLayer = (pair && pair.layer) || defaultLayer;
+            return { method, layer: next.value, moved: 'layer',
+                say: `Layer changed to ${next.value}: ${methodShort(method)} is not available on ${wasLayer}.` };
+        }
+        const layer = value;
+        const wasMethod = pair && pair.method;
+        if (wasMethod && readsNoLayer(wasMethod)) return { method: wasMethod, layer, moved: null, say: '' };
+        const list = methodChoices({ recipe, layer, kinds, stats });
+        const have = wasMethod ? list.find(e => e.value === wasMethod) : null;
+        if (have && !have.disabled) return { method: have.value, layer, moved: null, say: '' };
+        const next = usable(list)[0];
+        if (!next) return { method: wasMethod || defaultMethod, layer, moved: null, say: '', impossible: true };
+        return { method: next.value, layer, moved: 'method',
+            say: `Method changed to ${next.label}: ${methodShort(wasMethod || defaultMethod)} is not available on ${layer}.` };
+    }
+
+    /** What a stored `offered`/`layers` meant as the default pair: see `legacyPair` below. */
+    const legacy = (raw) => legacyPair(api, raw);
+
+    const api = {
         methods: Object.freeze([...methods]), defaultMethod, defaultOffered: Object.freeze([...defaultOffered]), defaultLayer,
         paramDefaults, methodInfo, methodLabel, methodShort, isMethodDefault, cleanOffered, cleanLayers, offeredMethods,
         offeredLayers, inputOf, isOffered, gradedOptions, offeredOptions, methodLines, layerLines, offeredSummary, offeredSummaryShort,
         paramsOf, usersOfParam, paramLine, defaultFields, isDefaultOffer,
         /** One method × layer, graded (the provider's grading with the recipe's facts filled in). */
-        gradeOption: (method, layer, kind, recipe, extra) => gradeOf(method, layer, kind, recipe, extra)
-    });
+        gradeOption: (method, layer, kind, recipe, extra) => gradeOf(method, layer, kind, recipe, extra),
+        methodChoices, layerChoices, pairAfter, readsNoLayer, legacyPair: legacy
+    };
+    return Object.freeze(api);
+}
+
+// ---------------------------------------------------------------------------
+// The free forms, for a caller that holds a model as `source`, and the readers of the retired `offered`/`layers`
+
+/** `model.methodChoices` with the model as `source`. */
+// export-unused-ok: the free form SO-2/3/4 callers use when they hold a model as `source`
+export const methodChoices = ({ source, ...rest }) => source.methodChoices(rest);
+/** `model.layerChoices` with the model as `source`. */
+// export-unused-ok: the free form SO-2/3/4 callers use when they hold a model as `source`
+export const layerChoices = ({ source, ...rest }) => source.layerChoices(rest);
+/** `model.pairAfter`; the model is `ctx.source`. */
+// export-unused-ok: the free form SO-2/3/4 callers use when they hold a model as `source`
+export const pairAfter = (changed, value, pair, { source, ...rest }) => source.pairAfter(changed, value, pair, rest);
+
+/**
+ * What a stored `offered`/`layers` meant before decision 31, as the pair an unset consumer resolved to: the first
+ * offered method (menu order, or the stored `method` once `offered` is gone) on `input`, or on the first layer when no input was stored, else X. Only READ it, to keep
+ * an old link drawing what it drew; nothing writes `offered` or `layers` back (`withoutLegacy`).
+ * @param {Object} model - an options model
+ * @param {Object} [raw] - a stored recipe or options
+ * @returns {{method: string, layer: string}}
+ */
+export function legacyPair(model, raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    // a recipe stripped of `offered` (what is stored now) keeps its `method`; an old one names it by its first offered
+    const method = !Array.isArray(src.offered) && model.methodInfo(src.method) ? src.method
+        : model.cleanOffered(src.offered, model.methodInfo(src.method) ? src.method : model.defaultMethod)[0];
+    let layer = typeof src.input === 'string' && src.input ? src.input : '';
+    if (!layer && Array.isArray(src.layers)) layer = src.layers.find(name => typeof name === 'string' && name !== '') || '';
+    return { method, layer: layer || model.defaultLayer };
+}
+
+/** A copy of stored options or a recipe without the retired `offered` and `layers`. */
+export function withoutLegacy(raw) {
+    const out = { ...(raw && typeof raw === 'object' ? raw : {}) };
+    delete out.offered;
+    delete out.layers;
+    return out;
 }
