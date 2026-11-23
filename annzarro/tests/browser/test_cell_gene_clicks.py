@@ -28,6 +28,7 @@ from annzarro.tests.browser import waits  # noqa: E402
 
 GROUPING = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}]}
 MENU = f"{TP} .cgene-group-menu"
+OTHER = GENES[-1]
 FOCUSED = "() => import('/static/js/data-manager.js').then(m => m.DataManager.getFocusedGene())"
 
 
@@ -37,6 +38,12 @@ def _focused(page):
 
 def _until_focused(page, gene):
     until(page, f"() => ({FOCUSED})().then(g => g === {gene!r})", timeout=30)
+
+
+def _focus_first(page, gene=OTHER):
+    """Focus a gene the plot does not draw, so a click's focus is told from the one the dataset opened with."""
+    page.evaluate("(g) => import('/static/js/data-manager.js').then(m => m.DataManager.setFocusedGene(g))", gene)
+    _until_focused(page, gene)
 
 
 def _at(page, x, y):
@@ -91,7 +98,7 @@ def test_a_click_on_a_dot_or_a_heatmap_cell_focuses_its_gene_and_marks_its_label
     _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}]),
                          S1: _sig(S1, "Markers", genes)}, open_ids=(P, S1))
     _drawn(page)
-    assert _focused(page) is None
+    _focus_first(page)
     page.mouse.click(*_at(page, _gene_position(page, genes[1]), 0))
     _until_focused(page, genes[1])
     until(page, "([s, t]) => { const g = [...document.querySelectorAll(s + ' .cgene-plot g.xtick')].find(e => e.textContent === t); "
@@ -113,6 +120,7 @@ def test_a_click_on_a_gene_label_focuses_it(page, served):
     _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}]),
                          S1: _sig(S1, "Markers", genes)}, open_ids=(P, S1))
     _drawn(page)
+    _focus_first(page)
     page.mouse.click(*_tick(page, "x", genes[3]))
     _until_focused(page, genes[3])
     assert not _menu_shown(page), "a gene's label offers nothing: it focuses"
@@ -124,9 +132,10 @@ def test_a_one_row_section_is_no_gene_and_a_click_on_it_does_nothing(page, serve
     _open(page, served, {P: _plot(cellAxis={"type": "cell-group", "key": GA}, sections=[{"source": S1, "rows": "set"}]),
                          S1: _sig(S1, "Markers", GENES[:4]), GA: GROUPING}, open_ids=(P, S1))
     _drawn(page)
+    _focus_first(page)
     page.mouse.click(*_at(page, 0, 0))
     page.mouse.click(*_tick(page, "x", "Markers"))
-    waits.expect_stays(lambda: _focused(page) is None and not _menu_shown(page),
+    waits.expect_stays(lambda: _focused(page) == OTHER and not _menu_shown(page),
                        "a click on a one-row section must do nothing; there is no change to wait for", page=page, seconds=1.0)
 
 
@@ -138,6 +147,7 @@ def test_a_group_label_offers_open_grouping_which_shows_the_grouping(page, serve
     _drawn(page)
     grouping_tile = f'.tile[data-tile-id="{GA}"]'
     assert page.locator(grouping_tile).count() == 0, "the grouping starts closed"
+    _focus_first(page)
 
     # Escape takes the offer back
     page.mouse.click(*_tick(page, "y", index=1))
@@ -150,7 +160,7 @@ def test_a_group_label_offers_open_grouping_which_shows_the_grouping(page, serve
     item = page.locator(f"{MENU} [role='menuitem']")
     assert item.count() == 1
     assert item.inner_text() == "Open grouping"
-    assert _focused(page) is None, "a group's label focuses no gene"
+    assert _focused(page) == OTHER, "a group's label focuses no gene"
     item.click()
     page.wait_for_selector(grouping_tile, timeout=30000)
     page.wait_for_selector(MENU, state="hidden")
@@ -162,7 +172,8 @@ def test_with_an_obs_column_a_group_label_offers_nothing(page, served):
     _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}]),
                          S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, S1))
     _drawn(page)
+    _focus_first(page)
     page.mouse.click(*_tick(page, "y", index=1))
-    waits.expect_stays(lambda: not _menu_shown(page) and _focused(page) is None,
+    waits.expect_stays(lambda: not _menu_shown(page) and _focused(page) == OTHER,
                        "an obs column has no grouping to open, so the click must offer nothing; nothing to wait for",
                        page=page, seconds=1.0)
