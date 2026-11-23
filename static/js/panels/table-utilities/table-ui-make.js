@@ -432,7 +432,7 @@ function sourceAddRow(provider, entity, group, id, settings) {
             box = made.checkbox;
         }
         box.checked = true;
-        note.textContent = `Added ${add.label(p)}. Apply to show it.`;
+        note.textContent = `Added ${add.label(p)}. Apply Changes to show it in the table.`;
         updateSelectedColumnsList(id, settings);
     });
     row.append(method, on, layer, button);

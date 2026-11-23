@@ -165,9 +165,9 @@ def test_a_table_built_before_its_signature_existed_pins_its_column_when_the_sig
     # the signature's first layer changes (an old recipe's input): the column stays on X and asks for nothing on counts;
     # X is simply a layer it reads, so there is nothing to say (decision 31)
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ layers: ['counts'], input: 'counts' })")
-    # time for the column to move to counts, were it going to; it must stay on X
-    page.wait_for_timeout(800)
-    assert _inputs(page) == ["X"], "never moved to the new first layer"
+    from annzarro.tests.browser import waits
+    waits.expect_stays(lambda: _inputs(page) == ["X"], "the column must never move to the new first layer; no event marks a move that does not happen",
+                       page=page, seconds=0.8)
     T._wait_no_notice(page)
     cols = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score')", T.TID)
     assert [(c["column"], c.get("layer")) for c in cols] == [("zscore_mean", "X")]

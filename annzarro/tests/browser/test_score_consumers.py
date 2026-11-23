@@ -28,6 +28,7 @@ else:
     playwright = pytest.importorskip("playwright.sync_api")
 
 from annzarro.tests.browser.test_cell_gene_panel import served, GENES  # noqa: E402,F401
+from annzarro.tests.browser import waits  # noqa: E402
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
 SIG = "gene-signature-S1"
@@ -44,12 +45,18 @@ LAYER = f"{C} select.axis-layer-select[data-axis='color']"
 OPTIONS = "(s) => [...document.querySelector(s).options].map(o => ({ value: o.value, text: o.textContent, disabled: o.disabled, title: o.title }))"
 
 
+OPAQUE = """(el) => { for (let e = el; e; e = e.parentElement) { if (getComputedStyle(e).opacity !== '1') return false; }
+    return true; }"""
+
+
 def _shot(locator, name):
     """A screenshot for a review, only when ANNZARRO_SHOTS names a folder."""
     folder = os.environ.get("ANNZARRO_SHOTS")
     if folder:
         os.makedirs(folder, exist_ok=True)
-        locator.page.wait_for_timeout(400)          # a tab's fade-in
+        # a tab fades in: shoot once it and every box around it are fully opaque
+        locator.wait_for(state="visible")
+        locator.page.wait_for_function(OPAQUE, arg=locator.element_handle())
         locator.screenshot(path=os.path.join(folder, name))
 
 
@@ -205,11 +212,10 @@ def test_an_old_link_with_a_score_hover_column_loads_without_error_and_drops_it(
              {"type": "gene-score", "key": SIG, "column": "mean", "layer": "counts", "label": "B cell markers"}]
     page.goto(_url(served, [PLOT], {PLOT: _cell(color={"type": "obs", "key": "cell_type", "column": ""}, hoverInfo=hover), SIG: _sig()}))
     until(page, "(t) => { const gd = document.querySelector(t + ' .js-plotly-plot'); return !!(gd && gd.data && gd.data.length); }", C, timeout=60)
-    page.wait_for_timeout(1500)
     info = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().hoverInfo", PLOT)
     assert info == hover[:2], info
-    assert page.scores == [], "nothing is computed for the dropped hover line"
-    assert page.locator(f"{C} .score-notice").count() == 0, "and nothing is said about it"
+    waits.expect_stays(lambda: page.scores == [] and page.locator(f"{C} .score-notice").count() == 0,
+                       "a dropped hover line asks for no score and says nothing; no event marks its absence", page=page, seconds=1.5)
     # the plot's hover still lists what it kept
     assert page.evaluate("(t) => [...document.querySelector(t + ' select.hover-columns-select').selectedOptions].map(o => o.value)", C) == ["cell_type"]
 
