@@ -103,11 +103,13 @@ function layerLines(layer, recipe, kind, stats, offered) {
 const thresholdOf = (recipe) => (typeof recipe.detect_above === 'number' && Number.isFinite(recipe.detect_above) ? recipe.detect_above : 0);
 
 /** What the detection threshold does: names the statistics that use it and the value in force. */
+// export-unused-ok: the model's line for detect_above; Node tests (group-statistics.test.mjs) hold its wording
 export function thresholdLine(recipe) {
     return `Used by ${menuNames(THRESHOLD_USERS)}. Now: above ${figure(thresholdOf(recipe))}.`;
 }
 
-/** The grouping's statistics as an options model (SHR-25). */
+/** The group statistics as an options model (SHR-25). */
+// export-unused-ok: the `source` of options-model.js's free forms (methodChoices, layerChoices, pairAfter); Node tests read it
 export const GROUP_STATISTICS_MODEL = createOptionsModel({
     methods: STATISTIC_INFO, defaultMethod: 'mean', defaultOffered: DEFAULT_STATISTICS, defaultLayer: DEFAULT_LAYER,
     paramDefaults: { pct_expressing: { detect_above: 0 }, mean_expressing: { detect_above: 0 } },
@@ -154,6 +156,7 @@ export function sizeDefault(recipe, kinds, picked) {
  * @returns {{statistics: Array<Object>, layers: Array<Object>}} usage rows `{value, plots, tables, groupings}`, statistics in
  *   menu order, layers in the order first read
  */
+// export-unused-ok: kept by decision 31's SO-1 row (who reads which statistic); the Statistics pop-over that showed it is gone
 export function statisticUsage(handles) {
     const stats = new Map();
     const layers = new Map();
