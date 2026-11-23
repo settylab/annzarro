@@ -87,10 +87,10 @@ ON_SCREEN = """(s) => { const p = document.querySelector(s + ' .cgene-plot');
   return { tiles: p.querySelectorAll('.cartesianlayer .subplot.xy .hm image').length,
            dots: p.querySelectorAll('.cartesianlayer .subplot.xy .scatterlayer .trace:first-child .point').length }; }"""
 
-# Plotly throwing part-way through a draw, as a color bar whose title outgrew its slot made it do: the next draw is
-# given a color bar 1 px long under a three-line title, once
-BREAK_NEXT_DRAW = """() => { const real = Plotly.react; Plotly.react = function (gd, data, layout, config) {
-  Plotly.react = real;
+# Plotly throwing part-way through a draw, as a color bar whose title outgrew its slot made it do: while armed, every
+# draw is given a color bar 1 px long under a three-line title (a redraw for a new size included)
+BREAK_DRAWS = """() => { const real = Plotly.react; window.__breakDraws = true; Plotly.react = function (gd, data, layout, config) {
+  if (!window.__breakDraws) return real.call(this, gd, data, layout, config);
   const t = data.find(d => (d.marker && d.marker.colorbar) || d.colorbar); const cb = (t.marker && t.marker.colorbar) || t.colorbar;
   cb.len = 1; cb.lenmode = 'pixels'; cb.title = { text: 'a<br>b<br>c', side: 'top' };
   return real.call(this, gd, data, layout, config); }; }"""
@@ -104,11 +104,13 @@ def test_a_draw_that_threw_does_not_leave_the_next_one_stale(page, served):
     _drawn(page)
     shown = page.evaluate(ON_SCREEN, TP)
     assert shown["dots"] > 0 and shown["tiles"] == 0, shown
-    page.evaluate(BREAK_NEXT_DRAW)
+    page.evaluate(BREAK_DRAWS)
     page.locator(f"{TP} .cgene-section").nth(1).locator(".cgene-section__menu-btn").click()
     page.locator(f"{TP} .cgene-section__menu:not([hidden]) .cgene-section__menu-item[data-op='remove']").click()
     # the failed draw is said, not left as "drawing" for good
     until(page, "(s) => document.querySelector(s + ' .cgene-panel').dataset.state === 'failed'", TP, timeout=30)
+    assert page.locator(f"{TP} .cgene-plot").evaluate("(p) => !p.data || !p.data.length"), "the half-drawn figure is cleared"
+    page.evaluate("() => { window.__breakDraws = false; }")
     page.click(f"{TP} .cgene-mode input[value='heatmap']")
     until(page, f"(s) => {{ const o = ({ON_SCREEN})(s); return o.tiles > 0 && o.dots === 0; }}", TP, timeout=30)
     assert page.evaluate("(s) => document.querySelector(s + ' .cgene-panel').dataset.state", TP) == "ready"
