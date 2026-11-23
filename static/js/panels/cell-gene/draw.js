@@ -37,7 +37,7 @@
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { PLOT_PALETTES, GAP_COLOUR } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
-import { annotateFigure, matrixPixels } from './draw-annotations.js';
+import { annotateFigure, matrixPixels, rowCoordinates } from './draw-annotations.js';
 
 const W = VOCABULARY.cellGene;
 
@@ -190,13 +190,9 @@ export function colourBars(matrix, sections, settings) {
 function prepare(model) {
     const { groups, rows, color } = model;
     const G = groups.length;
-    const pos = new Array(rows.length);
-    let at = 0;
-    rows.forEach((row, r) => {
-        at += (row.gapBefore || 0) + (r === 0 ? 0 : 1);
-        pos[r] = at;
-    });
-    const span = rows.length === 0 ? 0 : at + 1;
+    // one rule for where rows go, the annotations' (gaps between sections skipped); no rows span nothing here
+    const { pos, extent } = rowCoordinates(rows);
+    const span = rows.length === 0 ? 0 : extent;
 
     const colour = colourBars({ values: color.values, rows: rows.length, groups: G }, sectionsOf(rows), color)
         .map((bar) => ({ key: bar.key, rows: Array.from(bar.rows), lines: bar.lines, lo: bar.lo, hi: bar.hi }));
