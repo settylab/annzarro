@@ -60,9 +60,6 @@ const TYPE = 'cell-grouping';
 const DEFAULT_TITLE = 'Grouping 1';
 /** Keys of a configuration that are the panel's own, not the recipe's. */
 const PANEL_KEYS = ['id', 'title', 'controlsVisible', '_closed', 'active'];
-const NO_FEATURES = Object.freeze([]);
-/** The longest the first request waits for the parts' decisions, in ms. */
-const PREPARE_MS = 1500;
 /** Recipe fields decision 31 retired: read as stored, dropped by the next edit. */
 const RETIRED_FIELDS = Object.freeze(['offered', 'layers']);
 
@@ -869,8 +866,6 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         let _factors = null;
         const _lastFactor = new Map();      // a factor's source -> the last partitioning of a reply it had, for its editor while the next reply is on its way
         let _asked = [];                    // the histograms the handle asks for: the expanded binned cards
-        let _features = NO_FEATURES;        // the focused gene's feature, set by the group grid (G9c): it rides this panel's own request
-        let _applied = NO_FEATURES;         // the features the handle's option carries now
         let _status = null;
         let _settings = null;
         const _parts = [];
@@ -911,21 +906,10 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             try { await loadStructure(); } catch (error) { console.error(`Cell grouping ${_id}:`, error); }
             if (!_initialized) return;
             checkMissing();
-            await prepareParts();
             if (!_initialized) return;
             watch();
             groupSources().sources.recheck();
             refresh();
-        }
-
-        /**
-         * The parts that need to decide something before the first request (the group grid: whether the focused gene is
-         * cheap enough to ride it) say so; the first request waits for them for a moment at most.
-         */
-        async function prepareParts() {
-            const decisions = _parts.map((part) => (part && part.prepare ? part.prepare() : null));
-            if (!decisions.some(Boolean)) return;
-            await Promise.race([Promise.all(decisions), new Promise((resolve) => setTimeout(resolve, PREPARE_MS))]);
         }
 
         /** Read the handle again (a gate that changed without a store event: the structure came) and paint. */
@@ -963,9 +947,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             if (!_recipe.partitionings.length) { release(); return; }
             if (_handle) return;
             _asked = _factors ? _factors.wanted() : [];
-            _applied = _features;
             _handle = groupSources().sources.watch(_id, {
-                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: { histograms: _asked, features: _applied },
+                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: { histograms: _asked },
                 visible: () => _visible && !!_dom && _dom.root.isConnected,
                 onChange: (snap) => { _snap = snap; noteKey(snap); paint(); syncHistograms(); }
             });
@@ -983,16 +966,9 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             // positions of the recipe now; a request for an older recipe leaves out the ones it lacks (serverRequest)
             const ps = _recipe.partitionings;
             const now = [...new Set([..._asked.filter((k) => ps[k] && ps[k].binning), ..._factors.wanted()])].sort((a, b) => a - b);
-            if (now.join() === _asked.join() && _features === _applied) return;
+            if (now.join() === _asked.join()) return;
             _asked = now;
-            _applied = _features;
-            _handle.setOption({ histograms: now, features: _applied });
-        }
-
-        /** The group grid asks for a feature (the focused gene's moments) with this panel's own request; null stops asking. */
-        function setFeatures(wires) {
-            _features = wires && wires.length ? Object.freeze([...wires]) : NO_FEATURES;
-            syncHistograms();
+            _handle.setOption({ histograms: now });
         }
 
         function release() {
@@ -1180,8 +1156,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         }
 
         function mountParts() {
-            const ctx = { panelId: _id, read: () => _snap, recipe: () => _recipe, set: setFields, shown, noGroup: () => !!_status && _status.isOpen(),
-                setFeatures, applied: () => _applied };
+            const ctx = { panelId: _id, read: () => _snap, recipe: () => _recipe, set: setFields, shown, noGroup: () => !!_status && _status.isOpen() };
             if (PARTS.groups) _parts.push(PARTS.groups.mount(_dom.groups, ctx));
         }
 
