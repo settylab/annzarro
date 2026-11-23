@@ -258,7 +258,7 @@ def test_the_banner_says_the_cells_counted_without_a_value_and_outside_the_range
         f"{counted:,} of {N:,} cells shown",
         f"pseudotime: filtered out ({missing} cells) -- without a value for pseudotime",
         f"filtered out ({outside} cells) -- outside the range"]
-    assert page.inner_text(f"{S} .ccnt-strip") == ""
+    assert page.query_selector(f"{S} .ccnt-strip") is None, "there is no footer line under the banner"
 
 
 # ------------------------------------------------------------------ 4. Save as grouping

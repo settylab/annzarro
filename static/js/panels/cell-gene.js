@@ -62,7 +62,7 @@ import { withoutLegacy } from '../utils/options-model.js';
 import { parseThresholdText } from '../utils/options-model.js';
 import { geneReads } from '../utils/cell-gene-model.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
-import { buildFigure, colourBars, DEFAULT_CAMERA } from './cell-gene/draw.js';
+import { buildFigure, colourBars, sceneLabels, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
 import { recordCameraOnRelease } from '../utils/scene-camera.js';
 import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
@@ -461,12 +461,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 const r = resolveSource(section.source);
                 return { section, genes: r.genes, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
             });
+            const threshold = baseThreshold();
             const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null,
-                height: heightOf(_config), threshold: baseThreshold() });
+                height: heightOf(_config), threshold });
             const rowsOf = new Array(entries.length).fill(0);
             for (const row of features.rows) rowsOf[row.section]++;
             const wires = features.features.map((f) => f.wire);
-            _plan = { ...features, entries, reads: geneReads(wires), featureCount: wires.length, option: { features: features.features.map((f) => f.wire), statistics: features.statistics },
+            _plan = { ...features, threshold, entries, reads: geneReads(wires), featureCount: wires.length, option: { features: features.features.map((f) => f.wire), statistics: features.statistics },
                 optionKey: features.features.map((f) => f.key).join('\u0003') + JSON.stringify(features.statistics),
                 // what the matrix limit and the notices read: each section's rows and genes, the genes read
                 shape: entries.map((e, i) => ({ rows: rowsOf[i], genes: e.genes.length })),
@@ -772,12 +773,26 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             commit({ ..._config, [which]: { ..._config[which], layer } }, `${measureName(which)} layer`);
         }
 
-        /** A measure's expression threshold, beside it (WP-4): a number from 0 up, else the box shows the one in force. */
+        /**
+         * A measure's expression threshold, beside it (WP-4): a number from 0 up, else the box shows the one in force. On a
+         * grouping axis the box is an override of the grouping's Expressed above (decision 35): emptied, the measure follows
+         * the grouping again.
+         */
         function setThreshold(which, text) {
-            if (which !== 'height') _fresh = false;
+            const spec = _config[which];
+            if (axisGrouping() && String(text).trim() === '') {
+                if (!spec || !isNumber(spec.detect_above)) { paint(); return; }
+                if (which !== 'height') _fresh = false;
+                const next = { ...spec };
+                delete next.detect_above;
+                commit({ ..._config, [which]: next }, `${measureName(which)} threshold follows the grouping`);
+                return;
+            }
             const p = parseThresholdText(text);
             if (!p.ok) { paint(); return; }
-            commit({ ..._config, [which]: { ..._config[which], detect_above: p.value } }, `${measureName(which)} threshold`);
+            if (spec && spec.detect_above === p.value) { paint(); return; }
+            if (which !== 'height') _fresh = false;
+            commit({ ..._config, [which]: { ...spec, detect_above: p.value } }, `${measureName(which)} threshold`);
         }
 
         function mountParts() {
@@ -837,7 +852,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         }
 
         function measure(spec) {
-            return measureModel({ spec, datasetLayers: datasetLayers(), kinds: _kinds, threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold() });
+            const g = axisGrouping();
+            return measureModel({ spec, datasetLayers: datasetLayers(), kinds: _kinds, threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold(),
+                grouping: g ? { title: g.getTitle(), value: baseThreshold() } : null });
         }
 
         /** Height's row: its own measure, or Same as Color (Color's statistics listed after it, no layer, no threshold). */
@@ -953,6 +970,15 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          */
         function snapshotChanged(snap) {
             if (!_dom) return;
+            // the grouping's Expressed above was edited (Methods ▾, decision 34): it is outside the grouping's hash, so the
+            // groups stay; the measures that follow it are read again at the new threshold
+            if (_plan && _plan.threshold !== baseThreshold()) {
+                _plan = null;
+                sync();
+                paint();
+                redraw();
+                return;
+            }
             // the groups changed since they were counted (the grouping was edited): unknown again, so with rows that could
             // exceed the limit the groups go first, before any gene (CXG-17, Q4)
             if (_gate.ask === 'all' && _gate.groupsOf && !sameGroups(groupsIdentity(axisId()), _gate.groupsOf)) {
@@ -1067,7 +1093,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const want3d = _config.view === '3d';
             setStatusTag(_dom.plot, 'cgene-3d', model.view === '3d' ? { text: W3.tag, title: W3.leftOut, pop: { text: W3.leftOut } }
                 : want3d && figure.refused3d ? { text: W3.offTag, title: figure.refused3d, severity: 'warning', pop: { text: figure.refused3d } } : null);
-            watchCamera(model.view === '3d');
+            watchCamera(model.view === '3d' ? figure.labels3d : null);
             const oneCell = oneCellPerGroup({ mode: _config.mode, size: _config.size, sized: sizeDrawn(), groups: values.reply.groups || [] });
             _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell };
             rec.drawnKey = key;
@@ -1084,9 +1110,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         /**
          * Keep the 3D camera in the configuration as the user turns it (UX 6b, Q17): stored once it rests, rounded, with no
          * undo step and no redraw; the default camera is stored as none. Off in 2D. The listener is set again on each draw
-         * (a purge drops it).
+         * (a purge drops it). The category labels follow at once: turned to the other side, they change edge and anchor
+         * (draw.js sceneLabels; `labels` is the drawing's labels3d, null in 2D).
          */
-        function watchCamera(on) {
+        function watchCamera(labels) {
+            const on = !!labels;
             const gd = _dom && _dom.plot;
             if (!gd || typeof gd.on !== 'function') return;
             if (gd.__azCgCamera && typeof gd.removeListener === 'function') gd.removeListener('plotly_relayout', gd.__azCgCamera);
@@ -1098,10 +1126,20 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             gd.__azCgCamera = (ev) => {
                 const camera = ev && ev['scene.camera'];
                 if (!camera) return;
+                relabel(gd, labels, camera);
                 clearTimeout(timer);
                 timer = setTimeout(() => storeCamera(camera), CAMERA_STORE_MS);
             };
             gd.on('plotly_relayout', gd.__azCgCamera);
+        }
+
+        /** The labels for a camera, set only when an edge or an anchor changed (the relayout carries no camera). */
+        function relabel(gd, labels, camera) {
+            if (!window.Plotly || !gd.layout || !gd.layout.scene) return;
+            const next = sceneLabels(labels, camera);
+            const key = (list) => (list || []).map((a) => `${a.xanchor}|${a.x}|${a.y}`).join(',');
+            if (key(next) === key(gd.layout.scene.annotations)) return;
+            window.Plotly.relayout(gd, { 'scene.annotations': next });
         }
 
         const sameCamera = (a, b) => ['eye', 'center', 'up'].every((k) => ['x', 'y', 'z'].every((d) => Math.abs(((a[k] || {})[d] || 0) - ((b[k] || {})[d] || 0)) < 1e-3));

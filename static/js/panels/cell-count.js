@@ -39,6 +39,8 @@ import { UndoStack } from '../utils/gene-signature.js';
 import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLabelsOf } from '../utils/count-plot-model.js';
 import { countFigure, countCsv, DRAWN_MODES } from './cell-count/draw.js';
 import { densityFigure, DENSITY_MODES } from './cell-count/draw-density.js';
+import { pointsRefusal } from './cell-count/density-points.js';
+import { pointsRefused, pointsKey, loadCellPoints, pointsForFigure } from './cell-count/density-points-load.js';
 import { createControls } from './cell-count/controls.js';
 import {
     countReferences, shownConfig, drawOptions, inputNames, shownLabels, followFocus, measureSourceName, levelTotals,
@@ -56,7 +58,7 @@ import { isPlanState, describePlan, wayOut, gridNotice, levelsNote } from './cel
 import { saveOffered, savePlan, openSaveDialog } from './cell-count/save-grouping.js';
 import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
 import { parseAlsoListed } from '../utils/source-registry.js';
-import { PLOT_PALETTES } from '../utils/plot-theme.js';
+import { PLOT_PALETTES, modebarOf, MODEBAR_REMOVE } from '../utils/plot-theme.js';
 import { resolveStyle } from './plot-utilities/options-schema.js';
 import { applyPlotStyle, styleTheme } from './plot-utilities/plot-style.js';
 import { mountPlotOptions } from './plot-utilities/options-popover.js';
@@ -64,6 +66,7 @@ import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { groupColours } from './plot-utilities/colors.js';
 import { drawPlot } from '../utils/panel-surface.js';
+import { colourBar } from './plot-utilities/colour-bar.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { installSets } from './cell-count/sets.js';
 import './partition-options/binning-control.js';
@@ -111,6 +114,26 @@ function coverageOf(table, names) {
     return new Coverage({ shown: table.total, total: table.shown, unit: 'cells', gaps });
 }
 
+
+/**
+ * The figure's colour bars made by the Cell Plot's builder (plot-utilities/colour-bar.js) from the Cell Plot's default
+ * settings: the title along the bar on its right, the same font, thickness, length and position. What the figure sets for
+ * itself (the title text, a percent tick format) is kept. Changes the traces in place.
+ */
+function withSharedColourBars(fig) {
+    const share = (holder, key) => {
+        const bar = holder && holder[key];
+        if (!bar) return;
+        const own = {};
+        for (const k of ['tickformat', 'tickvals', 'ticktext']) if (bar[k] !== undefined) own[k] = bar[k];
+        holder[key] = { ...colourBar({}, bar.title && bar.title.text), ...own };
+    };
+    for (const trace of fig.data) {
+        share(trace, 'colorbar');
+        share(trace.marker, 'colorbar');
+    }
+    return fig;
+}
 
 /** The panel type of a grouping, which Save as grouping makes. */
 const GROUPING_TYPE = 'cell-grouping';
@@ -201,6 +224,9 @@ actions.register({
         const _made = new Map();
         /** What the plot and the controls were last drawn from: drawn again only when one of these changes */
         let _drawnFrom = null;
+        /** The cells of a 2D density's Cell points layer: {key, state: 'none'|'loading'|'ready'|'refused'|'failed', data?, why?} */
+        let _points = { key: null, state: 'none' };
+        let _pointsAbort = null;
         let _controlsFrom = null;
         let _drawing = null;                 // {config, table, labels, names} of the drawing shown, for the CSV
         let _infos = {};
@@ -573,17 +599,18 @@ actions.register({
             // what the plot area says for a plan that asks nothing: the sentence (the live region) and its way out beside it
             const state = el('div', { class: 'ccnt-state', role: 'status', aria: { live: 'polite' }, hidden: true }, el('p', { class: 'ccnt-state__text' }));
             const stateBox = el('div', { class: 'ccnt-state-box', hidden: true }, state, el('div', { class: 'ccnt-state__actions' }));
-            const plotArea = el('div', { class: 'ccnt-plot-area' }, plot, stateBox);
-            const strip = el('div', { class: 'ccnt-strip', role: 'status', aria: { live: 'polite' } });
+            // what the plot is doing while it keeps its drawing ("Counting N cells…"): a small overlay in its top-left corner
+            const working = el('div', { class: 'ccnt-working', role: 'status', aria: { live: 'polite' }, hidden: true });
+            const plotArea = el('div', { class: 'ccnt-plot-area' }, working, plot, stateBox);
             // the page's painter and action registry find this plot's records and buttons by these
             plot.__azPanelId = _id;
             plot.__azCellCount = true;
             plot.__azChooser = _controls.element.querySelector('[data-row="x"] select');
-            root.append(_controls.element, plotArea, strip);
+            root.append(_controls.element, plotArea);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
-            _dom = { root, controls: _controls.element, plot, plotArea, state, stateBox, strip,
+            _dom = { root, controls: _controls.element, plot, plotArea, state, stateBox, working,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             // Plot Options: the shared pop-over (WP-5a) on the toolbar's last button, with Download CSV in its Export
             _options = mountPlotOptions({
@@ -620,7 +647,7 @@ actions.register({
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, levelsOf, levelsSaid,
+                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, densityNote: densityNote(), levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
             };
         }
@@ -631,7 +658,7 @@ actions.register({
             if (!_dom) return;
             draw();
             paintState();
-            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo];
+            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _points];
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
                 _controls.paint();
@@ -645,7 +672,7 @@ actions.register({
             const found = shownTable();
             const theme = currentTheme() === 'dark' ? 'dark' : 'light';
             const live = shown();
-            const from = [found && found.grid, found && found.made, live, theme, _title];
+            const from = [found && found.grid, found && found.made, live, theme, _title, _points];
             if (_drawnFrom && from.every((x, i) => x === _drawnFrom[i])) return;
             _drawnFrom = from;
             if (!found || !window.Plotly) {
@@ -673,9 +700,20 @@ actions.register({
                 options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(Math.max(1, n), config.color && config.color.palette), theme: styleTheme(look, PLOT_PALETTES[theme]),
                 measureSource: config.measure ? measureSourceName(config.measure.source, sourceTitleOf) : undefined, titleOf: sourceTitleOf, panelId: _id
             };
+            const wantsPoints = config.mode === 'density2d' && opts.options.layers && opts.options.layers.points;
+            if (wantsPoints) {
+                const sa = table.axes.findIndex((x) => x.input === 'split');
+                const loaded = pointsFor(config);
+                if (loaded) opts.points = pointsForFigure(loaded, sa >= 0 ? table.axes[sa].levels : null);
+            } else if (_points.state !== 'none') {
+                if (_pointsAbort) _pointsAbort.abort();
+                _points = { key: null, state: 'none' };
+            }
             const part = PARTS.draw[config.mode];
             const fig = part ? part.figure(config, table, opts)
                 : DENSITY_MODES.includes(config.mode) ? densityFigure(config, table, opts) : countFigure(config, table, opts);
+            withSharedColourBars(fig);
+            // the shared Plot Options (WP-5a) after the shared colour bars: it sets no colour bar of its own
             applyPlotStyle(fig, look, TYPE);
             // a density's sentences (UX 4.4): the bandwidth and the floor in Plot Options, the range in the strip
             _notes = fig.notes || null;
@@ -683,7 +721,8 @@ actions.register({
             delete _dom.root.dataset.drawn;
             const root = _dom.root;
             const plot = _dom.plot;
-            drawPlot(plot, fig.data, { ...fig.layout, autosize: true }, { displaylogo: false, responsive: true },
+            drawPlot(plot, fig.data, { ...fig.layout, autosize: true, modebar: modebarOf(PLOT_PALETTES[theme].textColor) },
+                { displaylogo: false, responsive: true, modeBarButtonsToRemove: [...MODEBAR_REMOVE] },
                 coverageOf(table, names), 'cells').then(() => {
                 // a click on a bar, slice or rectangle offers Save as grouping (CNT-21); a purge drops the listener
                 if (typeof plot.removeAllListeners === 'function') plot.removeAllListeners('plotly_click');
@@ -703,6 +742,38 @@ actions.register({
                 const t = table.axes.findIndex((x) => x.input === input.input);
                 if (t >= 0) _labelMaps[input.input] = defaults[t];
             });
+        }
+
+        /**
+         * The cells of the Cell points layer for this config, once loaded: null while they load, or when the layer is
+         * refused or failed (the strip says why). A change of the sources or of the cells shown loads them again.
+         */
+        function pointsFor(config) {
+            const total = cellsShown();
+            const why = pointsRefused(config, structureRead(), total);
+            if (why) {
+                if (_points.state !== 'refused' || _points.why.kind !== why.kind || _points.why.input !== why.input || _points.why.total !== why.total) _points = { key: null, state: 'refused', why };
+                return null;
+            }
+            const key = pointsKey(config, total);
+            if (_points.key === key) return _points.state === 'ready' ? _points.data : null;
+            if (_pointsAbort) _pointsAbort.abort();
+            const control = new AbortController();
+            _pointsAbort = control;
+            _points = { key, state: 'loading' };
+            const settle = (next) => { if (control.signal.aborted) return; _points = { key, ...next }; _drawnFrom = null; paint(); };
+            loadCellPoints(config, { structure: structureRead(), signal: control.signal })
+                .then((data) => settle({ state: 'ready', data }), (error) => settle({ state: 'failed', why: String(error && error.message || error) }));
+            return null;
+        }
+
+        /** What the strip says of the Cell points layer: that it loads, why it cannot be drawn, or how many cells it draws. */
+        function pointsStatus() {
+            if (!(shown().mode === 'density2d' && drawOptions(shown()).layers.points)) return '';
+            if (_points.state === 'loading') return C.points.loading;
+            if (_points.state === 'refused') return pointsRefusal(_points.why);
+            if (_points.state === 'failed') return C.points.failed(_points.why);
+            return (_notes && _notes.points) || '';
         }
 
         /** Two configs whose grids are the same request: what one draws, the other can (a mode that reads the same inputs). */
@@ -746,18 +817,28 @@ actions.register({
             const rec = binding.recordsOf(_dom.plot).get(ROLE);
             if (rec) rec.quiet = !!_drawing;
             binding.paint(_dom.plot);
-            _dom.strip.textContent = stripText(snap);
+            const doing = workingText(snap);
+            _dom.working.textContent = doing;
+            _dom.working.hidden = !doing;
         }
 
-        /** The line under the banner: Counting… while a drawing is kept, a density's range once ready; the banner says the cells counted (CNT-22). */
-        function stripText(snap) {
+        /** What the plot is doing while it keeps its drawing: Counting… and loading the cell points. Gone once it is ready. */
+        function workingText(snap) {
             if (!snap || !_drawing) return '';
             if (PENDING.includes(snap.state) && snap.state !== 'idle') return C.counting(cellsShown());
-            if (snap.state !== 'ready') return '';
-            // a density says its range instead (UX 4.4): the cells outside it are those it does not count
-            if (_notes) return [_notes.range, _notes.floor].filter(Boolean).join(' ');
-            // the cells counted, without a value or outside the range are the coverage banner's under the plot: not said twice
+            if (snap.state === 'ready' && shown().mode === 'density2d' && drawOptions(shown()).layers.points && _points.state === 'loading') return C.points.loading;
             return '';
+        }
+
+        /**
+         * What a density says of itself, for the note under its controls: the range its curve covers, the bandwidth floor
+         * and what the Cell points layer draws or why not. Facts of the drawing, not of its progress (the cells counted
+         * and left out are the coverage banner's).
+         */
+        function densityNote() {
+            if (!_notes || !_drawing || !DENSITY_MODES.includes(_drawing.config.mode)) return '';
+            const points = pointsStatus();
+            return [_notes.bandwidth, _notes.range, _notes.floor, points === C.points.loading ? '' : points].filter(Boolean).join(' ');
         }
 
         function nameOfInput(field) {

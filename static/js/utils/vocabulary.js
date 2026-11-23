@@ -278,6 +278,13 @@ const cellGene = Object.freeze({
         above: 'above',
         threshold: 'expressed above',
         thresholdHelp: 'A cell counts as expressing above this value.',
+        /**
+         * The threshold box on a grouping axis (decision 35): empty follows the grouping's Expressed above, shown as the
+         * placeholder; a typed value overrides it for this plot.
+         */
+        thresholdAuto: (value) => `auto (grouping: ${value})`,
+        thresholdFollows: (title, value) => `Follows ${title}'s Expressed above (${value}). Type a value to override it for this plot.`,
+        thresholdOverrides: (title, value) => `Overrides ${title} (above ${value}). Clear to follow it.`,
         /** "3 genes on 2 layers": genes (in words) read on `n` layers, or at `n` thresholds. */
         geneReads: (genes, n, cause) => (cause === 'layers' ? `${genes} on ${n} layers` : cause === 'thresholds' ? `${genes} at ${n} thresholds` : genes),
         tooManyValues: (groups, features, values, limit) => `${groups} × ${features} = ${values} values; the limit is ${limit}.`,
@@ -366,7 +373,7 @@ const countPlot = Object.freeze({
         adjust: 'Smoothing', bySize: 'Scale curves by level size'
     }),
     /** The layers of a 2D density, each a box of Plot Options. */
-    layers: Object.freeze({ image: 'Density as opacity', lines: 'Isolines', fill: 'Filled isolines' }),
+    layers: Object.freeze({ image: 'Density as opacity', lines: 'Isolines', fill: 'Filled isolines', points: 'Cell points' }),
     adjustProblem: 'Enter a number from 0.1 to 10.',
     /** The Color pop-over (WP-6a): the colour map, Reverse, the range and the palette of a Color by's levels. */
     colour: Object.freeze({
@@ -426,6 +433,18 @@ const countPlot = Object.freeze({
         overBins: (name, n, max) => `${name} has ${fmt(n)} bins; a ${word.factor} of a ${word.grouping} holds up to ${fmt(max)}. Use fewer bins first.`,
         cancel: 'Cancel',
         save: 'Save'
+    }),
+    /** A 2D density drawn on the cell locations: the strip's notice and why it is refused. */
+    points: Object.freeze({
+        label: 'Cell points',
+        size: 'Point size',
+        all: (n) => `Cells drawn as points: ${n.toLocaleString('en-US')}.`,
+        sample: (drawn, total) => `Cells drawn as points: ${drawn.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} (a sample).`,
+        tooMany: (total, limit) => `Cell points load the position of every cell, and ${total.toLocaleString('en-US')} cells are more than the ${limit.toLocaleString('en-US')} it takes. Turn on a subset to use them.`,
+        source: (input) => (input === 'split' ? 'Cell points take a Color by that is an obs column of categories.'
+            : `Cell points take the ${input.toUpperCase()} axis from an obs column, an embedding or a gene.`),
+        loading: 'Loading cell locations…',
+        failed: (why) => `Cell points could not be loaded: ${why}`
     }),
     /** A density's sentences (CNT-10, UX 4.4): in Plot Options and the strip. */
     density: Object.freeze({

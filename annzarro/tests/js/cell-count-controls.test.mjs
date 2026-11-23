@@ -310,10 +310,10 @@ test('the golden count configs read unchanged, and an UpSet\'s style fields are 
 test('the drawing\'s options are the style fields the mode has', () => {
     const bar = norm({ mode: 'bar', x: obs('cell_type'), labels: 'count', sort: 'height', reverse: true, horizontal: true, log: true, ring: true });
     assert.deepEqual(K.drawOptions(bar), { labels: 'count', sort: 'height', reverse: true, horizontal: true, log: true, ring: false, fade: false,
-        adjust: 1, scale: 'level', layers: null, colour: { reverse: false } });
+        adjust: 1, scale: 'level', layers: null, pointSize: 3, colour: { reverse: false } });
     const pie = { ...bar, mode: 'pie' };
     assert.deepEqual(K.drawOptions(pie), { labels: 'count', sort: 'height', reverse: true, horizontal: false, log: false, ring: true, fade: false,
-        adjust: 1, scale: 'level', layers: null, colour: { reverse: false } });
+        adjust: 1, scale: 'level', layers: null, pointSize: 3, colour: { reverse: false } });
     assert.equal(K.drawOptions({ ...bar, labels: 'measure' }).labels, 'none', 'no statistic to print');
     assert.deepEqual(K.labelChoices(bar).map((c) => c.label), ['None', 'Count', 'Share']);
     assert.deepEqual(K.labelChoices({ ...bar, measure: { stat: 'mean', source: { type: 'obs', key: 'depth' } } }).map((c) => c.label),
@@ -372,11 +372,11 @@ test('a density never asks for a zero bin: one kept from a histogram stays store
 
 test('a 2D density\'s layers: the stored ones, else the old style, else the default of the Color by', () => {
     const d = norm({ mode: 'density2d', x: obs('depth'), y: obs('score') });
-    assert.deepEqual(K.drawOptions(d).layers, { image: false, lines: false, fill: true }, 'one group: filled isolines');
+    assert.deepEqual(K.drawOptions(d).layers, { image: false, lines: false, fill: true, points: false }, 'one group: filled isolines');
     const split = { ...d, split: obs('condition') };
-    assert.deepEqual(K.drawOptions(split).layers, { image: false, lines: true, fill: true }, 'a Color by: filled isolines with lines');
-    assert.deepEqual(K.drawOptions({ ...split, style: 'image' }).layers, { image: true, lines: false, fill: false });
-    assert.deepEqual(K.drawOptions({ ...split, style: 'contours' }).layers, { image: false, lines: true, fill: false });
-    assert.deepEqual(K.drawOptions({ ...split, style: 'image', layers: { image: true, lines: true } }).layers, { image: true, lines: true, fill: false });
+    assert.deepEqual(K.drawOptions(split).layers, { image: false, lines: true, fill: true, points: false }, 'a Color by: filled isolines with lines');
+    assert.deepEqual(K.drawOptions({ ...split, style: 'image' }).layers, { image: true, lines: false, fill: false, points: false });
+    assert.deepEqual(K.drawOptions({ ...split, style: 'contours' }).layers, { image: false, lines: true, fill: false, points: false });
+    assert.deepEqual(K.drawOptions({ ...split, style: 'image', layers: { image: true, lines: true } }).layers, { image: true, lines: true, fill: false, points: false });
     assert.equal(K.drawOptions({ ...split, mode: 'density' }).layers, null, 'a 1D density has no layers');
 });

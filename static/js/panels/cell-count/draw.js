@@ -56,6 +56,19 @@ function valueSpec(config, table, opts) {
     return { kind: 'count', values: heightValues(config, table), title: words.count, show: num, percent: false };
 }
 
+/**
+ * Whether a tile without cells is a real 0 of the colour's statistic (a count, a share, a sum) and so is drawn in the
+ * scale's 0 colour; the others (mean, SD, % above, z-score) are undefined with no cells and the tile stays empty.
+ */
+function zeroIsValue(config, spec) {
+    return spec.kind === 'count' || spec.kind === 'share' || (spec.kind === 'measure' && config.measure.stat === 'sum');
+}
+
+/** The hover line of a zero tile whose statistic the table has no number for: "Share: 0%", "sum of score: 0". */
+function zeroLine(config, spec, opts) {
+    return `${spec.kind === 'share' ? opts.words.hoverShare : spec.title}: ${spec.show(0)}`;
+}
+
 /** The numbers a printed label shows (CNT-19), chosen apart from height and color; null for none. */
 function labelSpec(config, table, opts) {
     const kind = opts.options.labels;
@@ -319,14 +332,19 @@ function rectFigure(config, table, opts) {
         for (const xl of xo) {
             const r = at(xl, yl);
             let v = null;
+            let zeroed = false;
             if (top) {
                 if (top.level[r] >= 0) v = top.level[r] * stepsOf + (stepsOf === 1 ? 0 : Math.min(stepsOf - 1, Math.floor(top.share[r] * stepsOf)));
-            } else if (Number.isFinite(spec.values[r]) && !(hist2d && spec.kind === 'count' && spec.values[r] === 0)) {
+            } else if (Number.isFinite(spec.values[r])) {
                 v = spec.values[r];
+            } else if (hist2d && table.count[r] === 0 && zeroIsValue(config, spec)) {
+                v = 0;
+                zeroed = true;       // a tile without cells is a real 0 of this statistic, drawn in the scale's 0 colour
             }
             zr.push(v);
             hr.push(hoverOf(config, table, opts, r, labelAt) + (top && top.level[r] >= 0
-                ? `<br>${esc(names.get(top.levels[top.level[r]]) || top.levels[top.level[r]])}: ${pct(top.share[r])}` : ''));
+                ? `<br>${esc(names.get(top.levels[top.level[r]]) || top.levels[top.level[r]])}: ${pct(top.share[r])}` : '')
+                + (zeroed && spec.kind !== 'count' ? `<br>${esc(zeroLine(config, spec, opts))}` : ''));
             tr.push(textOf(labelsOn, r));
         }
         z.push(zr);
@@ -406,7 +424,8 @@ function layerFigure(config, table, opts) {
     const ys = yo.map((l, i) => (yb ? yb.centers[l] : i));
     const layers = levels.map((s) => ({
         type: 'heatmap', x: xs, y: ys, name: esc(labelAt(table.axes[sa].levels[s], sa)), showscale: false, showlegend: false, hoverongaps: false,
-        z: yo.map((yl) => xo.map((xl) => (table.count[at(xl, yl, s)] > 0 ? table.count[at(xl, yl, s)] : null))),
+        // an empty tile of a level is a real 0 (the transparent end of its scale), so its hover says "0 cells"
+        z: yo.map((yl) => xo.map((xl) => table.count[at(xl, yl, s)])),
         hovertext: yo.map((yl) => xo.map((xl) => hoverOf(config, table, opts, at(xl, yl, s), labelAt))), hoverinfo: 'text',
         zmin: 0, zmax: layerMax(opts, peak), colorscale: [[0, withAlpha(colors[s], 0)], [1, withAlpha(colors[s], LAYER_ALPHA)]]
     }));
