@@ -29,6 +29,11 @@
  *        `barSettings`). A section added while the others are drawn shows placeholder rows until its genes are read
  *        (CXG-18, `pendingRows`).
  *
+ * 3D (UX 6b, WP-12). `view: '3d'` draws the matrix as bars (draw.js figure3d), the height a third measure: "Same as
+ * Color" (no `height` stored) or a statistic of its own, read in the same request (`planFeatures` adds a feature only
+ * for a layer or threshold Color and Size do not read). Over the bar cap the plot is drawn in 2D and the strip says why.
+ * The camera is kept in the configuration as the user turns it, without an undo step; Reset camera clears it.
+ *
  * It touches no DOM until init(): a closed plot restored from a link or a panel set is constructed and never
  * initialised, and computes nothing (PER-5).
  */
@@ -56,7 +61,10 @@ import { parseThresholdText } from '../utils/options-model.js';
 import { geneReads } from '../utils/cell-gene-model.js';
 import { createOfferedSection } from './score-options/offered-section.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
-import { buildFigure, colourBars } from './cell-gene/draw.js';
+import { buildFigure, colourBars, DEFAULT_CAMERA } from './cell-gene/draw.js';
+import { roundCamera } from '../utils/view-rounding.js';
+import { recordCameraOnRelease } from '../utils/scene-camera.js';
+import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
 import { drawPlot, fitToContainer } from '../utils/panel-surface.js';
 import { Coverage } from '../utils/coverage.js';
@@ -65,7 +73,7 @@ import { VOCABULARY } from '../utils/vocabulary.js';
 import {
     normalizeCellGene, cellGeneReferences, addSection, duplicateSection, removeSection, moveSection, setSectionRows,
     setSectionTitle, setRowAggregation, rowAggregationOf, sectionTitle, sectionGenes, sectionLine, tooManyGenesText,
-    parseAggregation, planFeatures, buildMatrix, OFFER_OTHER, GROUP_AXIS
+    parseAggregation, planFeatures, buildMatrix, heightOf, OFFER_OTHER, SAME_AS_COLOR, GROUP_AXIS
 } from './cell-gene/sections.js';
 import {
     measureModel, offerPlace, pickLayer, axisChoices, axisSourceId, axisRecipe, createControls, createAddGenes,
@@ -74,7 +82,7 @@ import {
 import {
     gateMatrix, describePlot, ownJobAhead, plotState, matrixTag, oneCellPerGroup, createChecklist
 } from './cell-gene/states.js';
-import { OPTIONS_PART, figureExtras, barSettings } from './cell-gene/options.js';
+import { OPTIONS_PART, figureExtras, barSettings, view3dGate } from './cell-gene/options.js';
 import { CLICKS_PART } from './cell-gene/clicks.js';
 import { effectiveSmall } from '../utils/cell-grouping.js';
 import { RESERVED } from '../utils/level-id.js';
@@ -98,6 +106,9 @@ const PARTS = Object.freeze({ options: OPTIONS_PART, clicks: CLICKS_PART });
 
 const W = VOCABULARY.word;
 const STATES = VOCABULARY.cellGene.states;
+const W3 = VOCABULARY.cellGene.view3d;
+/** A turn of the 3D camera is stored once it has rested this long (UX 6b: debounced). */
+const CAMERA_STORE_MS = 250;
 const SOURCES = VOCABULARY.cellGene.sources;
 
 /** What a notice calls things (utils/source-notices.js): the plot waits on its groups. */
@@ -462,7 +473,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 const r = resolveSource(section.source);
                 return { section, genes: r.genes, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
             });
-            const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null, threshold: baseThreshold() });
+            const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null,
+                height: heightOf(_config), threshold: baseThreshold() });
             const rowsOf = new Array(entries.length).fill(0);
             for (const row of features.rows) rowsOf[row.section]++;
             const wires = features.features.map((f) => f.wire);
@@ -736,10 +748,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         /** A statistic setting keeps its own threshold across a change of statistic or layer (CXG-9). */
         const withThreshold = (spec) => (isNumber(spec.detect_above) ? { detect_above: spec.detect_above } : {});
-        const measureName = (which) => (which === 'color' ? 'color' : 'size');
+        const measureName = (which) => which;
 
         /** A measure's statistic (WP-4): its layer stays when it can give the statistic, else the first offered one that can. */
         function setStat(which, stat) {
+            if (which === 'height') { setHeightStat(stat); return; }
             _fresh = false;
             const spec = _config[which];
             if (stat === 'count') {
@@ -750,15 +763,35 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             commit({ ..._config, [which]: { ...withThreshold(spec), stat, layer } }, `${measureName(which)} statistic`);
         }
 
+        /**
+         * Height's statistic (UX 6b): Same as Color stores none; a statistic of its own starts from Color's layer and
+         * threshold, so the bars read what the colors read until a layer is chosen.
+         */
+        function setHeightStat(stat) {
+            if (stat === SAME_AS_COLOR) {
+                const next = { ..._config };
+                delete next.height;
+                commit(next, 'height same as color');
+                return;
+            }
+            const spec = _config.height || _config.color;
+            if (stat === 'count') {
+                commit({ ..._config, height: { ...withThreshold(spec), stat } }, 'height statistic');
+                return;
+            }
+            const layer = pickLayer({ recipe: offerRecipe(), datasetLayers: datasetLayers(), kinds: _kinds, stat, preferred: spec.layer || _config.color.layer });
+            commit({ ..._config, height: { ...withThreshold(spec), stat, layer } }, 'height statistic');
+        }
+
         /** A measure's layer (WP-4): Color and Size may read different layers; each gene is then read on both. */
         function setLayer(which, layer) {
-            _fresh = false;
+            if (which !== 'height') _fresh = false;
             commit({ ..._config, [which]: { ..._config[which], layer } }, `${measureName(which)} layer`);
         }
 
         /** A measure's expression threshold, beside it (WP-4): a number from 0 up, else the box shows the one in force. */
         function setThreshold(which, text) {
-            _fresh = false;
+            if (which !== 'height') _fresh = false;
             const p = parseThresholdText(text);
             if (!p.ok) { paint(); return; }
             commit({ ..._config, [which]: { ..._config[which], detect_above: p.value } }, `${measureName(which)} threshold`);
@@ -791,7 +824,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         /** What this plot reads, as the offered section counts users ("1 plot"). */
         function ownUsage() {
-            const statistics = [_config.color, ...(_config.mode === 'dots' ? [_config.size] : [])].map((s) => ({ stat: s.stat, layer: s.layer }));
+            const own = heightOf(_config);
+            const statistics = [_config.color, ...(_config.mode === 'dots' ? [_config.size] : []), ...(own ? [own] : [])].map((s) => ({ stat: s.stat, layer: s.layer }));
             return statisticUsage([{ kind: 'plot', option: { statistics } }]);
         }
 
@@ -802,7 +836,10 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 drawn: () => (_shown && _shown.model ? { model: _shown.model, order: _shown.order } : null),
                 // the recipe the cell axis's groups are of, for "Within <first factor>"
                 recipe: shownRecipe, titleOf: sourceTitleOf,
-                title: () => _title
+                title: () => _title,
+                // the matrix drawn, for the 3D cap; the image export of Plot Options
+                shape: () => (_shown ? { rows: _shown.rows, groups: _shown.groups } : null),
+                exportImage: (format) => { if (_dom && _shown) exportPlot(_dom.plot, format, {}, 'full'); }
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
             // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
@@ -846,6 +883,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold() });
         }
 
+        /** Height's row: its own measure, or Same as Color (Color's statistics listed after it, no layer, no threshold). */
+        function heightModel() {
+            const own = _config.height;
+            const m = measure(own || _config.color);
+            const stats = [{ value: SAME_AS_COLOR, label: W3.sameAsColor }, ...m.stats];
+            return own ? { ...m, stats } : { ...m, stat: SAME_AS_COLOR, layer: undefined, stats, layers: [], threshold: null };
+        }
+
         function controlsModel() {
             const all = PanelManager.getAllPanels().filter((p) => typeOf(p) === GROUPING_TYPE).map((p) => ({ id: p.getId(), title: p.getTitle() }));
             return {
@@ -855,6 +900,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 // each measure: statistic, layer (only offered ones, graded: SHR-27) and its threshold (WP-4)
                 color: measure(_config.color),
                 size: measure(_config.size),
+                // 3D's Height (UX 6b): Same as Color first; shown while 3D is on, kept while it is off
+                height: heightModel(),
+                view3d: _config.view === '3d',
                 offerShown: offerPlace(_config.cellAxis) === 'plot',
                 scale: _config.scale || 'none',
                 swap: !!_config.swap
@@ -998,7 +1046,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const snap = rec ? rec.handle.read() : null;
             if (snap && snap.state === 'ready' && snap.values && !_planOf.has(snap.values)) _planOf.set(snap.values, rec.plan || currentPlan());
             const values = snap && snap.values;
-            const plan = values ? _planOf.get(values) : null;
+            let plan = values ? _planOf.get(values) : null;
+            // a newer plan asking for the same features reads these values as well, and may read them differently: a
+            // Height of its own on Color's layer adds no feature but gives each row its height (UX 6b)
+            if (plan && snap.state === 'ready' && _plan && _plan !== plan && _plan.optionKey === plan.optionKey) {
+                plan = _plan;
+                _planOf.set(values, plan);
+            }
             // the genes were not asked for (above the limit, or the groups first): there is nothing to draw
             if (_gate.ask !== 'all' && snap && snap.state === 'ready') { clearPlot(); paint(); return; }
             if (!values || !plan || !values.reply) {
@@ -1042,6 +1096,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             // what a narrow width gave up so the matrix stays readable (draw.js fitMatrix)
             const gaveUp = (figure.hidden || []).map((part) => VOCABULARY.cellGene.narrow[part]).join(' ');
             setStatusTag(_dom.plot, 'cgene-narrow', gaveUp ? { text: VOCABULARY.cellGene.narrow.tag, title: gaveUp } : null);
+            // 3D: what it leaves out; over the cap, why the plot is in 2D (UX 6b)
+            const want3d = _config.view === '3d';
+            setStatusTag(_dom.plot, 'cgene-3d', model.view === '3d' ? { text: W3.tag, title: W3.leftOut, pop: { text: W3.leftOut } }
+                : want3d && figure.refused3d ? { text: W3.offTag, title: figure.refused3d, severity: 'warning', pop: { text: figure.refused3d } } : null);
+            watchCamera(model.view === '3d');
             const oneCell = oneCellPerGroup({ mode: _config.mode, size: _config.size, sized: sizeDrawn(), groups: values.reply.groups || [] });
             _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell };
             rec.drawnKey = key;
@@ -1051,8 +1110,55 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         function clearPlot() {
             if (_shown && _dom && window.Plotly) window.Plotly.purge(_dom.plot);
-            if (_dom) { setStatusTag(_dom.plot, 'cgene-matrix', null); setStatusTag(_dom.plot, 'cgene-narrow', null); }
+            if (_dom) { setStatusTag(_dom.plot, 'cgene-matrix', null); setStatusTag(_dom.plot, 'cgene-narrow', null); setStatusTag(_dom.plot, 'cgene-3d', null); }
             _shown = null;
+        }
+
+        /**
+         * Keep the 3D camera in the configuration as the user turns it (UX 6b, Q17): stored once it rests, rounded, with no
+         * undo step and no redraw; the default camera is stored as none. Off in 2D. The listener is set again on each draw
+         * (a purge drops it).
+         */
+        function watchCamera(on) {
+            const gd = _dom && _dom.plot;
+            if (!gd || typeof gd.on !== 'function') return;
+            if (gd.__azCgCamera && typeof gd.removeListener === 'function') gd.removeListener('plotly_relayout', gd.__azCgCamera);
+            gd.__azCgCamera = null;
+            if (!on) return;
+            // a turn released outside the plot is recorded too (scene-camera.js)
+            recordCameraOnRelease();
+            let timer = null;
+            gd.__azCgCamera = (ev) => {
+                const camera = ev && ev['scene.camera'];
+                if (!camera) return;
+                clearTimeout(timer);
+                timer = setTimeout(() => storeCamera(camera), CAMERA_STORE_MS);
+            };
+            gd.on('plotly_relayout', gd.__azCgCamera);
+        }
+
+        const sameCamera = (a, b) => ['eye', 'center', 'up'].every((k) => ['x', 'y', 'z'].every((d) => Math.abs(((a[k] || {})[d] || 0) - ((b[k] || {})[d] || 0)) < 1e-3));
+
+        /** The camera into the configuration: a view, like Cell Plot's zoom, so no undo step and no redraw. */
+        function storeCamera(camera) {
+            if (_config.view !== '3d') return;
+            const rounded = roundCamera(camera);
+            const next = { ..._config };
+            if (sameCamera(rounded, DEFAULT_CAMERA)) delete next.camera; else next.camera = rounded;
+            if (JSON.stringify(next) === JSON.stringify(_config)) return;
+            _config = normalizeCellGene(next).config;
+            if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+        }
+
+        /** Reset camera (the modebar): the default view, and no stored camera. */
+        function resetCamera(gd) {
+            if ('camera' in _config) {
+                const next = { ..._config };
+                delete next.camera;
+                _config = normalizeCellGene(next).config;
+                if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+            }
+            if (window.Plotly) window.Plotly.relayout(gd, { 'scene.camera': JSON.parse(JSON.stringify(DEFAULT_CAMERA)) });
         }
 
         /**
@@ -1141,7 +1247,18 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline,
                 pendingText: pending ? pendingText(plan, pending) : ''
             };
+            // 3D (UX 6b): within the bar cap; above it the plot is drawn in 2D and the strip says why
+            const gate3d = _config.view === '3d' ? view3dGate({ rows: R, groups: G }) : null;
+            if (gate3d && gate3d.ok && matrix.height) {
+                model.view = '3d';
+                model.height = matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) };
+                if (_config.camera) model.camera = _config.camera;
+            }
             const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });
+            if (gate3d && !gate3d.ok) figure.refused3d = gate3d.text;
+            if (model.view === '3d' && window.Plotly && window.Plotly.Icons) {
+                figure.config.modeBarButtonsToAdd = [{ name: 'resetCameraCellGene', title: W3.resetCamera, icon: window.Plotly.Icons.home, click: (gd) => resetCamera(gd) }];
+            }
             // the cells of the matrix with no value, for the strip (CXG-16): once per drawing; placeholders are not missing
             let missing = 0;
             for (let r = 0; r < R; r++) {
