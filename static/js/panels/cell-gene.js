@@ -233,6 +233,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _state = 'empty';
         let _resize = null;
         let _refit = null;
+        /** A redraw building the figure once more at the plot's settled size (redraw's end): no third build from it. */
+        let _settling = false;
         /** gateMatrix's decision for the plan it was made for (CXG-17): what the plot asks of the server now */
         let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
         /** the cell axis's applied recipe as last seen: the recipe its groups are of while edits wait or are checked */
@@ -1091,15 +1093,27 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const oneCell = oneCellPerGroup({ mode: _config.mode, size: _config.size, sized: sizeDrawn(), groups: values.reply.groups || [] });
             _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell };
             rec.drawnKey = key;
+            // the figure is laid out in px for the plot's size when it was built; the drawing's notice and status strip
+            // can take height from it since. Build it once more at the size it has now, before the panel says it is
+            // drawn, so nothing redraws it later at idle (a menu opened on a label would lose its anchor)
+            if (!_settling && sizeMoved(model.pixels)) {
+                _settling = true;
+                _shown = null;
+                try { await redraw(); } finally { _settling = false; }
+                return;
+            }
             binding.paint(_dom.plot);
             paint();
         }
 
+        /** Whether the plot's size differs from `px` (the size a figure was built for) by more than a pixel. */
+        function sizeMoved(px) {
+            return !!(px && _dom && (Math.abs(_dom.plot.clientWidth - px.width) > 1 || Math.abs(_dom.plot.clientHeight - px.height) > 1));
+        }
+
         /** Draw again when the plot's size differs from the size its figure was built for. */
         function refit() {
-            const px = _shown && _shown.model && _shown.model.pixels;
-            if (!_dom || !px) return;
-            if (Math.abs(_dom.plot.clientWidth - px.width) > 2 || Math.abs(_dom.plot.clientHeight - px.height) > 2) {
+            if (_shown && _shown.model && sizeMoved(_shown.model.pixels)) {
                 _shown = null;
                 redraw();
             }
