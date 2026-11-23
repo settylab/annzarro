@@ -6,9 +6,9 @@
  * It is the METHOD TABLE of group statistics for the shared options model (utils/options-model.js, SHR-25); the
  * signature's (utils/signature-options.js) is the other. Decision 31: nothing is offered. Every consumer lists all five
  * statistics and Cell count on all layers (`statisticChoices`, `statisticLayerChoices`), and a pair a layer cannot give
- * is disabled with its reason (SHR-27, `core/matrix_kind.py` through `statisticAvailability`). The threshold lives on
- * each measure (CXG-9). A grouping recipe's retired `offered`, `layers` and `detect_above` are only read: the last is
- * pinned once into the plots that relied on it (panels/cell-gene/sections.js `pinThreshold`).
+ * is disabled with its reason (SHR-27, `core/matrix_kind.py` through `statisticAvailability`). The threshold is the
+ * grouping's method parameter (`detect_above`, decision 34); a measure may hold its own (CXG-9). A grouping recipe's
+ * retired `offered` and `layers` are only read.
  *
  * Cell count needs no feature and no layer: it is listed after the table, never graded.
  */

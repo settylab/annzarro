@@ -42,7 +42,8 @@ the colour from the mean of the log-normalised layer, the size from the share of
   the warning as its tooltip. Choosing a statistic the current layer cannot give moves the layer to the first one that
   can, and the status line says so once ("Layer changed to logged: % expressing is not available on X.").
 - **The threshold** appears beside a statistic that counts expressing cells (% expressing, mean of expressing cells).
-  Each of Color, Size and Height keeps its own; a cell counts as expressing above it. It is 0 until you change it.
+  A cell counts as expressing above it. Left alone, it is the grouping's threshold ({doc}`cell-grouping`), else 0;
+  a value typed here is that measure's own, for Color, Size and Height each.
 
 The lists are the same whether the groups are a grouping or an obs column: nothing has to be offered first. A choice
 stored in a link that the layer cannot give (% expressing on a scaled X) stays selected, marked "(not available)", and

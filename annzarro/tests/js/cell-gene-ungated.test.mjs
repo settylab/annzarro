@@ -6,8 +6,8 @@
  *   longer offered)", on a grouping axis or an obs one.
  * - A one-row section's Color and Size are three selects: the kind (4 summaries, 2 score kinds), then for a score kind
  *   its method and layer.
- * - A grouping's retired "Expressed above" (`detect_above`) is pinned once into the plot's measures, so an old link
- *   draws the same plot (decision 32); the plot's own `offer` of WP-4 is read and dropped.
+ * - A grouping keeps its "Expressed above" (`detect_above`, decision 34) and a measure with no threshold of its own reads
+ *   it, so an old link draws the same plot; the plot's own `offer` of WP-4 is read and dropped.
  *
  * Run:  node --test annzarro/tests/js/cell-gene-ungated.test.mjs
  */
@@ -127,27 +127,27 @@ function momentsOf(groups, t) {
     return m;
 }
 
-test('golden link: a grouping with detect_above 1 still draws "% expressing (> 1)" once the grouping drops it', () => {
+test('golden link: a grouping with detect_above 1 draws "% expressing (> 1)", read from the grouping (decision 34)', () => {
     const link = golden('link_cell_gene_grouping_detect_above');
     const grouping = normalizeGrouping(link.grouping);
-    assert.deepEqual(grouping.problems, [], 'the retired fields load with no problem said');
-    assert.equal(grouping.recipe.detect_above, 1, 'read as stored until the grouping is next edited');
+    assert.deepEqual(grouping.problems, [], 'the retired offered and layers load with no problem said');
+    assert.equal(grouping.recipe.detect_above, 1, 'the grouping keeps its method parameter');
     const { config, problems } = S.normalizeCellGene(link.plot);
     assert.deepEqual(problems, []);
     assert.ok(!('offer' in config), 'the plot\'s own offer of WP-4 is read and dropped');
-    const pinned = S.pinThreshold(config, grouping.recipe.detect_above);
-    assert.equal(pinned.size.detect_above, 1);
-    assert.equal(pinned.color.detect_above, 1, 'Color pinned too: its one-row summaries read the threshold');
-    assert.equal(S.pinThreshold(pinned, grouping.recipe.detect_above), pinned, 'pinned once');
-    assert.equal(S.pinThreshold(config, undefined), config, 'nothing to pin once the grouping dropped it');
+    assert.ok(!('detect_above' in config.size), 'nothing is copied into the plot');
 
-    // the plot as drawn after the grouping's next edit (no detect_above left on it): the same threshold, the same values
-    const sections = pinned.sections.map((section) => ({ section, genes: ['G1', 'G2'], title: 'Sig', scoreRecipe: () => null }));
-    const plan = S.planFeatures({ sections, color: pinned.color, size: pinned.size });
+    // the plot reads the grouping's threshold for a measure with none of its own, as the panel does (baseThreshold)
+    const sections = config.sections.map((section) => ({ section, genes: ['G1', 'G2'], title: 'Sig', scoreRecipe: () => null }));
+    const plan = S.planFeatures({ sections, color: config.color, size: config.size, threshold: grouping.recipe.detect_above });
     assert.ok(plan.features.every((f) => f.wire.detect_above === 1), 'every gene is read above 1');
     const cells = [[0, 0.5, 2, 3], [1, 1.5, 4, 0]];
     const by = new Map(plan.features.map((f) => [f.key, momentsOf(cells, f.wire.detect_above)]));
-    const matrix = S.buildMatrix(plan, (key) => by.get(key) || null, [{ n: 4 }, { n: 4 }], pinned);
+    const drawn = S.withGroupingThreshold(config, grouping.recipe.detect_above);
+    assert.equal(drawn.size.detect_above, 1, 'drawn at the grouping\'s threshold');
+    assert.equal(S.withGroupingThreshold(config, 0), config, 'nothing to fill at 0');
+    assert.equal(S.withGroupingThreshold(drawn, 2), drawn, 'a measure\'s own threshold wins');
+    const matrix = S.buildMatrix(plan, (key) => by.get(key) || null, [{ n: 4 }, { n: 4 }], drawn);
     assert.equal(matrix.size.detectAbove, 1);
     assert.deepEqual(Array.from(matrix.size.values.subarray(0, 2)), [50, 50], 'a cell counts as expressing above 1 (above 0 it would be 75, 75)');
     const fig = D.buildFigure({ mode: 'dots', groups: [{ label: 'a', n: 4 }, { label: 'b', n: 4 }], rows: matrix.rows,

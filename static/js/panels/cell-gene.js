@@ -74,7 +74,7 @@ import { VOCABULARY } from '../utils/vocabulary.js';
 import {
     normalizeCellGene, cellGeneReferences, addSection, duplicateSection, removeSection, moveSection, setSectionRows,
     setSectionTitle, setRowAggregation, rowAggregationOf, sectionTitle, sectionGenes, sectionLine, tooManyGenesText,
-    aggregationAfter, planFeatures, buildMatrix, heightOf, pinThreshold, SAME_AS_COLOR, GROUP_AXIS
+    aggregationAfter, planFeatures, buildMatrix, heightOf, withGroupingThreshold, SAME_AS_COLOR, GROUP_AXIS
 } from './cell-gene/sections.js';
 import {
     measureModel, pickLayer, axisChoices, axisSourceId, axisRecipe, createControls, createAddGenes,
@@ -365,21 +365,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         }
 
         /**
-         * The grouping's retired "Expressed above" (decision 32), copied once into each measure that has no threshold of
-         * its own (sections.js pinThreshold), so the plot draws as before. Not an edit: no undo step and no history entry
-         * (the next save carries it, as pinScoreLayers' pins). Called before every request (`sync`), and by the grouping
-         * before its next edit drops the field (panels/cell-grouping.js), so a closed plot pins too.
-         * @returns {boolean} whether the configuration changed
+         * The grouping's expression threshold (its method parameter, decision 34), for a measure with none of its own
+         * (CXG-9). 0 on an obs axis.
          */
-        function pinGroupingThreshold() {
-            const axis = _config.cellAxis;
-            const g = axis && axis.type === GROUP_AXIS ? panelOf(axis.key) : null;
-            const recipe = g && typeOf(g) === GROUPING_TYPE ? g.getRecipe() : null;
-            const next = pinThreshold(_config, recipe ? recipe.detect_above : undefined);
-            if (next === _config) return false;
-            _config = normalizeCellGene(next).config;
-            _plan = null;
-            return true;
+        function baseThreshold() {
+            const g = axisGrouping();
+            const r = g ? g.getRecipe() : null;
+            return r && isNumber(r.detect_above) ? r.detect_above : 0;
         }
 
         // ---------------------------------------------------------------- the sections' genes
@@ -465,7 +457,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 return { section, genes: r.genes, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
             });
             const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null,
-                height: heightOf(_config) });
+                height: heightOf(_config), threshold: baseThreshold() });
             const rowsOf = new Array(entries.length).fill(0);
             for (const row of features.rows) rowsOf[row.section]++;
             const wires = features.features.map((f) => f.wire);
@@ -488,7 +480,6 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         /** Watch the cell axis with what the plot draws, or stop: nothing is asked with no groups or no genes (CXG-2). */
         function sync() {
-            pinGroupingThreshold();
             if (!_dom) return;
             const host = _dom.plot;
             const id = axisId();
@@ -832,7 +823,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         }
 
         function measure(spec) {
-            return measureModel({ spec, datasetLayers: datasetLayers(), kinds: _kinds, threshold: isNumber(spec.detect_above) ? spec.detect_above : 0 });
+            return measureModel({ spec, datasetLayers: datasetLayers(), kinds: _kinds, threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold() });
         }
 
         /** Height's row: its own measure, or Same as Color (Color's statistics listed after it, no layer, no threshold). */
@@ -1159,7 +1150,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 return f && f.moments && !(f.status && f.status.status === 'missing') ? f.moments : null;
             };
             const titles = plan.entries.map((e) => e.title);
-            const matrix = buildMatrix(plan, momentsOf, groups, _config, {
+            const matrix = buildMatrix(plan, momentsOf, groups, withGroupingThreshold(_config, baseThreshold()), {
                 titleOf: (i) => titles[i],
                 scoreName: (agg) => {
                     const name = scoreOptionName(agg);
@@ -1329,7 +1320,6 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             axisSnapshot: () => { const rec = record(); return rec ? rec.handle.read() : null; },
             plotFacts,
             fewerGenes,
-            pinGroupingThreshold,
             redraw,
             snapshotChanged,
             undo,

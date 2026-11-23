@@ -8,8 +8,8 @@ counts, as core/matrix_kind.py reads them from the stored values.
     selects list every layer of the dataset; nothing reads "Offer other…".
 2.  A new plot on a grouping axis takes decision 24's measures from all the layers: Size on ``counts``.
 3.  The grouping's toolbar has no Statistics ▾ button.
-4.  An old link whose grouping stored "Expressed above" 1 draws Size above 1; the grouping's next edit drops the field
-    and the plot keeps drawing above 1 (decision 32).
+4.  A link whose grouping holds "Expressed above" 1 draws Size above 1, read from the grouping (decision 34); the
+    grouping's next edit drops the retired offered and layers, keeps the threshold, and the plot still draws above 1.
 5.  A one-row section's Color reads a score by kind, method and layer: three selects, every method and layer listed.
 6.  Screenshots of the plot's controls, the values pop-over and the grouping's toolbar (only when ANNZARRO_SHOTS names a
     directory).
@@ -84,26 +84,25 @@ def test_the_grouping_toolbar_has_no_statistics_button(page, served):
     assert page.evaluate("(id) => typeof window.PanelManager.getPanel(id).revealStatisticsOffered", GA) == "undefined"
 
 
-def test_an_old_grouping_threshold_is_pinned_into_the_plot_and_survives_the_groupings_next_edit(page, served):
+def test_the_groupings_threshold_is_read_by_the_plot_and_survives_the_groupings_next_edit(page, served):
     old = _grouping(offered=["mean", "pct_expressing", "sd"], layers=["logged"], detect_above=1)
     _open(page, served, {P: _plot(cellAxis=AXIS, sections=[{"source": S1, "rows": "genes"}]), GA: old, S1: _sig(S1, "Markers", GENES[:3])},
           open_ids=(P, GA))
     _drawn(page)
     cfg = _config(page)
-    assert cfg["size"]["detect_above"] == 1 and cfg["color"]["detect_above"] == 1, cfg
+    assert "detect_above" not in cfg["size"], "nothing is copied into the plot: it reads the grouping (decision 34)"
     assert all(f["detect_above"] == 1 for f in _features(page.calls)), "every gene is read above 1"
     hover = page.evaluate("(s) => JSON.stringify(document.querySelector(s + ' .cgene-plot').data[0].hovertext"
                           " || document.querySelector(s + ' .cgene-plot').data[0].text)", TP)
     assert "% expressing (> 1) · logged" in hover, hover[:300]
-    assert page.input_value(f"{TP} .cgene-size-above") == "1", "the threshold box shows the pinned value"
-    # the grouping's next edit drops its retired fields; the plot keeps its pinned threshold and asks for nothing new
+    assert page.input_value(f"{TP} .cgene-size-above") == "1", "the threshold box shows the grouping's value"
+    # the grouping's next edit drops the retired offered and layers and keeps its threshold; the plot still reads above 1
     n = len(page.calls)
     page.evaluate("(id) => window.PanelManager.getPanel(id).addFactor({source: {type: 'obs', key: 'condition'}})", GA)
-    until(page, "(id) => !('detect_above' in window.PanelManager.getPanel(id).getConfig())", GA)
+    until(page, "(id) => !('offered' in window.PanelManager.getPanel(id).getConfig())", GA)
     grouping = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig()", GA)
-    assert "offered" not in grouping and "layers" not in grouping, grouping
+    assert "layers" not in grouping and grouping["detect_above"] == 1, grouping
     _drawn(page)
-    assert _config(page)["size"]["detect_above"] == 1
     assert all(f["detect_above"] == 1 for f in _features(page.calls[n:])), "the new groups are read above 1 still"
 
 

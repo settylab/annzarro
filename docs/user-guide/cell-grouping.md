@@ -172,11 +172,11 @@ a plot, and enter no statistic.
 | **Cell Table** | The column chooser has a **Cell Grouping** tab. The column shows each cell's group, sorts in group order and filters with **Equals** like a categorical column |
 | **Cell-Gene Plot** | As **Groups** ({doc}`cell-gene-plot`) |
 
-A grouping chooses no statistics for the plots built on it. Each plot lists every statistic and every layer itself,
-and keeps its own threshold for % expressing ({doc}`cell-gene-plot`). A link saved by an earlier 0.8.0 build may
-still carry a grouping's own statistics, layers and "Expressed above" threshold: they load without a message, a
-Cell-Gene Plot copies the threshold into its own Color, Size and Height so it draws as before, and the grouping's next
-edit drops them.
+A grouping chooses no statistics for the plots built on it: each plot lists every statistic and every layer itself
+({doc}`cell-gene-plot`). The grouping keeps its threshold for % expressing and mean of expressing cells, "Expressed
+above" (0 by default), and a Cell-Gene Plot built on it reads that threshold unless a measure sets its own. A link
+saved by an earlier 0.8.0 build may still carry a grouping's own list of statistics and layers: it loads without a
+message, changes nothing, and the grouping's next edit drops it.
 | **Cell Count Plot** | As X, Y or **Color by**, and one group of it as a set ({doc}`cell-count-plot`) |
 | **Another grouping** | As a factor: its groups become the levels |
 

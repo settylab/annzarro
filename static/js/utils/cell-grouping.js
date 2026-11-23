@@ -2,8 +2,8 @@
  * The recipe of a cell grouping and what is made of it: the versioned normaliser, the hash a result is cached under,
  * the names and colours of the groups, and the request body (plan 1.6, PER-3, SHR-8 to SHR-12).
  *
- * A grouping's recipe is `{version, partitionings, separator?, small?}` (with the retired `offered?, layers?,
- * detect_above?` of decision 31 read as stored, never flagged) and a
+ * A grouping's recipe is `{version, partitionings, separator?, small?, detect_above?}` (with the retired `offered?,
+ * layers?` of decision 31 read as stored, never flagged) and a
  * partitioning (a factor; the count plot's inputs are the same shape) is `{source, levels?, rest?, labels?, binning?}`.
  * It is stored without its defaults, with every unknown field kept, so an older build opening a newer link loses
  * nothing. After release 0.8.0 a change to this schema needs a new version and a migration.
@@ -177,8 +177,8 @@ export function normalizeGrouping(raw) {
         const small = normalizeSmall(raw.small, bad);
         if (small) out.small = small;
     }
-    // retired by decision 31: kept as stored while valid, never flagged, dropped by the panel's next edit (a Cell-Gene
-    // Plot pins `detect_above` into its measures first, decision 32)
+    // `offered` and `layers` were retired by decision 31: kept as stored while valid, never flagged, dropped by the
+    // panel's next edit. `detect_above` stays: the grouping's method parameter (decision 34)
     if (Array.isArray(raw.offered)) {
         const kept = unique(raw.offered.filter((id) => STATISTIC_IDS.includes(id)));
         if (kept.length) out.offered = kept;
@@ -187,7 +187,10 @@ export function normalizeGrouping(raw) {
         const kept = unique(raw.layers.filter((name) => typeof name === 'string' && name !== ''));
         if (kept.length) out.layers = kept;
     }
-    if (typeof raw.detect_above === 'number' && Number.isFinite(raw.detect_above) && raw.detect_above !== 0) out.detect_above = raw.detect_above;
+    if (raw.detect_above !== undefined) {
+        if (typeof raw.detect_above !== 'number' || !Number.isFinite(raw.detect_above)) bad('detect_above', 'bad_detect_above');
+        else if (raw.detect_above !== 0) out.detect_above = raw.detect_above;
+    }
     return { recipe: unknownFields(raw, GROUPING_FIELDS, out), problems };
 }
 

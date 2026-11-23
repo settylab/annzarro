@@ -199,16 +199,14 @@ export function heightOf(config) {
 }
 
 /**
- * The grouping's retired "Expressed above" (decision 32, Q6), copied once into the plot: every measure (Color, Size,
- * a Height of its own) that stores no `detect_above` gets the grouping's, so the plot draws exactly as before the
- * grouping lost it, its one-row summaries and a later change of statistic included. Cell count is pinned too: a switch
- * from it to % expressing read the grouping's threshold before. Pure; the panel calls it on load and before the
- * grouping's next edit drops the field (panels/cell-grouping.js), as `pinScoreLayers` pins layers.
+ * The measures as drawn: each (Color, Size, a Height of its own) with no `detect_above` of its own reads the grouping's
+ * expression threshold (decision 34, CXG-9), so the legends, hover and CSV name the threshold the values were read at.
+ * Never stored: the grouping keeps its threshold and a later edit of it reaches the plot.
  * @param {Object} config - a normalised configuration
- * @param {*} threshold - the grouping recipe's `detect_above`; nothing is pinned unless it is a number other than 0
- * @returns {Object} `config` itself when nothing changes, else a new configuration
+ * @param {*} threshold - the grouping recipe's `detect_above` (0 or none: nothing to fill)
+ * @returns {Object} `config` itself when nothing is filled, else a copy
  */
-export function pinThreshold(config, threshold) {
+export function withGroupingThreshold(config, threshold) {
     if (!isNumber(threshold) || threshold === 0 || !isObject(config)) return config;
     let out = config;
     for (const which of ['color', 'size', 'height']) {
@@ -429,8 +427,7 @@ const SUMMARY_STAT = Object.freeze({ mean_of_means: 'mean', sum_of_means: 'mean'
  * @param {{stat: string, layer?: string, detect_above?: number}|null} input.size - null when the plot draws no size
  * @param {{stat: string, layer?: string, detect_above?: number}|null} [input.height] - the 3D bars' own measure
  *   (heightOf), null for "Same as Color" or 2D. On Color's or Size's layer and threshold it adds no feature (UX 6b)
- * @param {number} [input.threshold] - the threshold a statistic with none of its own reads (0; a grouping's retired one
- *   is pinned into the measures first, `pinThreshold`)
+ * @param {number} [input.threshold] - the grouping's expression threshold, for a statistic with none of its own
  * @returns {{features: Array<{key: string, wire: Object}>, rows: Object[], statistics: Array<{stat: string, layer?: string}>}}
  *   `rows`, in order: `{kind: 'gene', section, label, color, size, height?}` (feature keys, null for count or no size);
  *   `{kind: 'set', section, label, color: {agg, keys|key}, size: {...}|null, height?: {keys}}`; `{kind: 'empty', section,

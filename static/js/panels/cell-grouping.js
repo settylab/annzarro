@@ -8,8 +8,9 @@
  * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the toolbar (Add factor, Settings, Undo), the
  * factors (factors.js), the groups (G9c). Nothing in the panel expands: a factor's levels or binning and Settings open in
  * pop-overs (ui/popover.js), so editing moves no box (FB-2 decision h). A grouping offers no statistics (decision 31): a
- * plot lists every statistic and layer itself, and a recipe's retired `offered`, `layers` and `detect_above` are kept
- * as stored until the next edit drops them, after each Cell-Gene Plot has pinned the threshold (decision 32). Every edit is one
+ * plot lists every statistic and layer itself, and a recipe's retired `offered` and `layers` are kept as stored until the
+ * next edit drops them. Its method parameter `detect_above` stays on the recipe (decision 34; SO-7 edits it in a
+ * Methods ▾ pop-over in the toolbar). Every edit is one
  * undoable step. The panel watches its own
  * groups as a viewer (consumer kind `inspect`, so it is never counted as a user), through the page's group sources.
  *
@@ -63,7 +64,7 @@ const NO_FEATURES = Object.freeze([]);
 /** The longest the first request waits for the parts' decisions, in ms. */
 const PREPARE_MS = 1500;
 /** Recipe fields decision 31 retired: read as stored, dropped by the next edit. */
-const RETIRED_FIELDS = Object.freeze(['offered', 'layers', 'detect_above']);
+const RETIRED_FIELDS = Object.freeze(['offered', 'layers']);
 
 registerReferences(TYPE, groupingReferences);
 
@@ -999,15 +1000,11 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         }
 
         /**
-         * The recipe of an edit without the fields decision 31 retired (`offered`, `layers`, `detect_above`). Before the
-         * threshold goes, every Cell-Gene Plot on this grouping copies it into its measures (decision 32), so none
-         * draws differently. Undo brings the fields back with the rest of the recipe.
+         * The recipe of an edit without the fields decision 31 retired (`offered`, `layers`): they gate nothing any more.
+         * `detect_above` stays (decision 34). Undo brings the fields back with the rest of the recipe.
          */
         function dropRetired(next) {
             if (!RETIRED_FIELDS.some((k) => k in next)) return next;
-            if (_recipe.detect_above !== undefined) {
-                for (const p of PanelManager.getAllPanels()) if (p && typeof p.pinGroupingThreshold === 'function') p.pinGroupingThreshold();
-            }
             const out = { ...next };
             for (const k of RETIRED_FIELDS) delete out[k];
             return out;
