@@ -180,7 +180,7 @@ def test_the_chooser_has_a_cell_group_tab_and_a_ticked_grouping_is_a_column_name
     _open(page, served, configs, open_ids=(TA, GA))
     until(page, "(id) => !!document.querySelector('#cell-group-content-' + id + ' .column-checkbox')", TA)
     tabs = page.evaluate("(t) => [...document.querySelectorAll(t + ' .data-type-tabs .nav-tabs button')].map(b => b.textContent.trim())", T)
-    assert "cell-group" in tabs, tabs
+    assert "Cell Grouping" in tabs and "cell-group" not in tabs and "gene-score" not in tabs, tabs
     boxes = page.evaluate("""(id) => [...document.querySelectorAll('#cell-group-content-' + id + ' .column-checkbox')]
         .map(b => [b.dataset.type, b.dataset.key, b.checked, b.disabled, b.nextElementSibling.textContent])""", TA)
     assert sorted(boxes) == [["cell-group", GA, False, False, "Grouping 1"], ["cell-group", GB, False, False, "Grouping 2"]], \

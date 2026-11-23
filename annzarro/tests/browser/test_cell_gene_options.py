@@ -34,7 +34,7 @@ from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 from annzarro.tests.browser import waits  # noqa: E402
 
 SHOTS = os.environ.get("ANNZARRO_SHOTS")
-TWO = {"id": GA, "title": "Grouping 1", "version": 1,
+TWO = {"id": GA, "title": "Grouping 1", "version": 1, "layers": ["logged"],
        "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}, {"source": {"type": "obs", "key": "condition"}}]}
 
 
@@ -121,7 +121,7 @@ def test_the_live_panel_draws_brackets_strips_dendrograms_and_marks_small_groups
     _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
                                   cluster={"genes": "off", "groups": "all", "linkage": "complete", "distance": "correlation"},
                                   sections=[{"source": S1, "rows": "genes"}, {"source": S2, "rows": "genes"}]),
-                         S1: _sig(S1, "B markers", GENES[:4]), S2: _sig(S2, "T markers", GENES[6:10])}, open_ids=(P, S1, S2))
+                         S1: _sig(S1, "B markers", GENES[:4]), S2: _sig(S2, "T markers", GENES[6:10])}, open_ids=(P,))
     _drawn(page)
     _redrawn(page, "(p) => p.data.some(t => t.name === 'dendrogram groups')")
     names = _trace_names(page)
@@ -133,6 +133,30 @@ def test_the_live_panel_draws_brackets_strips_dendrograms_and_marks_small_groups
     # cell_type's level of 5 cells is under the small-group threshold (10): its label says "small"
     groups = _ticks(page, "yaxis")
     assert sum(1 for t in groups if "<i>small</i>" in t) == 1, groups
+
+
+# ------------------------------------------------------------------ 1c. words, never ids; a fresh panel's defaults
+
+def _no_lapsed(page):
+    texts = page.evaluate("(s) => [...document.querySelectorAll(s + ' select option')].map(o => o.textContent)", TP)
+    assert not any("no longer offered" in t for t in texts), [t for t in texts if "no longer" in t]
+    assert "no longer offered" not in page.locator(f"{TP} .cgene-panel").inner_text()
+
+
+@pytest.mark.parametrize("axis", ["obs", "grouping"])
+def test_a_fresh_panel_names_its_groups_source_in_words_and_offers_its_own_defaults(page, served, axis):
+    """A new plot's Color and Size are its own defaults, so nothing reads "(no longer offered)"; the Groups type select
+    shows words, never a provider's type id."""
+    cell_axis = {"type": "obs", "key": "cell_type"} if axis == "obs" else {"type": "cell-group", "key": GA}
+    plot = {"id": P, "title": "Cell-Gene Plot 1", "cellAxis": cell_axis, "sections": [{"source": S1, "rows": "genes"}]}
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}]}
+    _open(page, served, {P: plot, S1: _sig(S1, "Markers", GENES[:4]), GA: grouping}, open_ids=(P, S1, GA))
+    until(page, "(s) => { const e = document.querySelector(s + ' .cgene-panel'); return !!e && !['empty', 'nodata'].includes(e.dataset.state); }", TP)
+    shown = page.evaluate("(s) => [...document.querySelectorAll(s + ' .cgene-axis-type option')].map(o => [o.value, o.textContent])", TP)
+    assert shown == [["obs", "obs"], ["cell-group", "Cell Grouping"]], shown
+    config = _config(page)
+    assert config["color"] == {"stat": "mean", "layer": "X"} and config["size"] == {"stat": "pct_expressing", "layer": "X"}
+    _no_lapsed(page)
 
 
 # ------------------------------------------------------------------ 2. Ward (Q2)

@@ -178,8 +178,8 @@ shows it."
 
 | Where | How |
 |---|---|
-| **Cell Plot** colour, x, y, z and hover | At the end of the obs column list, under **Groupings**, or under the groupings' own entry of the type list; **New grouping…** ends the list. Colour draws one legend entry per group, in group order, with the grouping's colours, and every categorical legend option applies. The hover reads `Grouping 1: B cell \| Old` |
-| **Cell Table** | The column chooser has a tab for groupings. The column shows each cell's group, sorts in group order and filters with **Equals** like a categorical column |
+| **Cell Plot** colour, x, y, z and hover | Choose **Cell Grouping** in the type list (beside obs, obsm, obsp, layer and **Gene score**), or a grouping at the end of the obs column list, under **Groupings**; **New grouping…** ends the list. Colour draws one legend entry per group, in group order, with the grouping's colours, and every categorical legend option applies. The hover reads `Grouping 1: B cell \| Old` |
+| **Cell Table** | The column chooser has a **Cell Grouping** tab. The column shows each cell's group, sorts in group order and filters with **Equals** like a categorical column |
 | **Cell-Gene Plot** | As **Groups** ({doc}`cell-gene-plot`) |
 | **Cell Count Plot** | As X, Y or **Color by**, and one group of it as a set ({doc}`cell-count-plot`) |
 | **Another grouping** | As a factor: its groups become the levels |

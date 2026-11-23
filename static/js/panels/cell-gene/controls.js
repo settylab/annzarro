@@ -139,7 +139,7 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
 
     const axisType = el('select', { class: 'form-select form-select-sm cgene-axis-type', aria: { label: 'Groups: source type' },
         on: { change: () => { typeShown = axisType.value; paintKeys(); } } });
-    options(D, axisType, [{ value: 'obs', label: 'obs' }, { value: GROUP_AXIS, label: GROUP_AXIS }]);
+    options(D, axisType, [{ value: 'obs', label: 'obs' }, { value: GROUP_AXIS, label: VOCABULARY.sourceType.grouping }]);
     const axisKey = el('select', { class: 'form-select form-select-sm cgene-axis-key', aria: { label: `Groups: column or ${VOCABULARY.word.grouping}` },
         on: { change: onKey } });
 

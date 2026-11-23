@@ -155,7 +155,8 @@ test('5.3 expression_cutoff: the Size threshold Plot Options stores is what the 
     const { model } = compose({ size: config.size });
     model.size.detectAbove = 0.5;
     const fig = D.buildFigure(model, LIGHT);
-    assert.ok(fig.layout.annotations.some((a) => a.text === '% expressing (> 0.5) · logged'), 'the size legend names the threshold');
+    // the title wraps to the legend column at 900 px; read as one line it names the threshold
+    assert.ok(fig.layout.annotations.some((a) => a.text.split('<br>').join(' ') === '% expressing (> 0.5) · logged'), 'the size legend names the threshold');
 });
 
 test('5.3 mean_only_expressed: a group with no expressing cell is noted in the table and the CSV', () => {
@@ -206,9 +207,26 @@ test('5.3 cmap, vmin, vmax, vcenter: Color scale, Min, Max and a Center for a di
 });
 
 test('5.3 dot_min, dot_max: the % at the smallest and largest dot set the size legend\'s range', () => {
-    const fig = compose({ dotMin: 10, dotMax: 60 }).figure;
-    const legend = one(fig, 'size legend');
-    assert.deepEqual(legend.text, ['10', '22.5', '35', '47.5', '60']);
+    // a figure tall enough for all five reference dots (the legend column holds four entries here)
+    const { model } = compose({ dotMin: 10, dotMax: 60 });
+    model.pixels = { width: 900, height: 1200 };
+    assert.deepEqual(one(D.buildFigure(model, LIGHT), 'size legend').text, ['10', '22.5', '35', '47.5', '60']);
+});
+
+test('the size legend\'s reference dots never crowd their labels: fewer of them, still from dot_min to dot_max, in a short slot', () => {
+    for (const height of [600, 420, 300]) {
+        const { model } = compose({ dotMin: 10, dotMax: 60 });
+        model.pixels = { width: 900, height };
+        const fig = D.buildFigure(model, LIGHT);
+        const legend = one(fig, 'size legend');
+        assert.ok(legend.text.length >= 2 && legend.text.length <= 5, `${height}: ${legend.text}`);
+        assert.equal(legend.text[0], '10');
+        assert.equal(legend.text[legend.text.length - 1], '60');
+        // each dot's line, in px: the subplot's height over its range
+        const y = fig.layout[`yaxis${legend.yaxis.slice(1)}`];
+        const linePx = ((y.domain[1] - y.domain[0]) * (height - 20)) / (y.range[0] - y.range[1]);
+        assert.ok(linePx >= 16 - 1e-6 || legend.text.length === 2, `${height}: ${linePx.toFixed(1)} px per reference dot`);
+    }
 });
 
 test('5.3 smallest_dot, largest_dot: one range of dot sizes in px', () => {
@@ -347,6 +365,69 @@ test('the strips\' legend shows as many levels as fit and says how many more', (
     const legend = one(figure, 'strip legend');
     assert.ok(legend.text.length < 60, `${legend.text.length} shown`);
     assert.equal(legend.text[legend.text.length - 1], W.options.more(60 - (legend.text.length - 1)));
+});
+
+// ================================================================================================ legend titles at a narrow width
+
+test('legend titles fit the legend column of a narrow figure, wrapping at spaces, and a cut title keeps its whole text in hover', () => {
+    const narrow = { width: 340, height: 520 };
+    const { model } = compose({ titles: { color: 'Mean expression of the marker genes, logged counts' } });
+    model.pixels = narrow;
+    model.annotations.strips[0].title = 'cell_type_annotation_from_the_atlas';
+    const fig = D.buildFigure(model, LIGHT);
+    const bar = matrixTraces(fig)[0].marker.colorbar;
+    // the legend column keeps at least 120 px: the plot gives way, not the legends
+    assert.ok((narrow.width - 20) * (1 - bar.x) >= 120 - 1e-6, `${bar.x}`);
+    assert.ok(fig.layout.xaxis.domain[1] < bar.x, 'the matrix ends before the legend column');
+    const chars = Math.floor(((narrow.width - 20) * (1 - bar.x)) / (0.58 * 12));
+    const titles = [bar.title.text,
+        ...fig.layout.annotations.filter((a) => a.xref === 'paper' && a.name !== 'legend title hover' && a.x === bar.x && a.text).map((a) => a.text)];
+    assert.ok(titles.length >= 4, `the color bar, the size legend and two strips: ${titles.length}`);
+    for (const t of titles) {
+        const lines = t.split('<br>');
+        assert.ok(lines.length <= 3, t);
+        for (const line of lines) assert.ok(line.replace(/&amp;/g, '&').replace(/&lt;/g, '<').length <= chars, `"${line}" is over ${chars} characters`);
+    }
+    // the size legend's title wraps whole: nothing is cut, so its words read back unchanged
+    const size = fig.layout.annotations.find((a) => a.text.split('<br>').join(' ') === '% expressing (> 0) · logged');
+    assert.ok(size, 'the size legend title wraps at spaces and loses nothing');
+    assert.equal(size.hovertext, undefined);
+    assert.ok(size.text.split('<br>').some((l) => l.includes('(> 0)')), `a bracketed part never breaks: ${size.text}`);
+    // a title cut to fit has its whole text in hover: the color bar's over it, the strip's on itself
+    const barHover = fig.layout.annotations.find((a) => a.name === 'legend title hover');
+    assert.equal(barHover.hovertext, 'Mean expression of the marker genes, logged counts');
+    assert.ok(bar.title.text.endsWith('…'));
+    const strip = fig.layout.annotations.find((a) => a.name === 'strip legend title' && a.hovertext);
+    assert.equal(strip.hovertext, 'cell_type_annotation_from_the_atlas');
+    assert.ok(strip.text.endsWith('…'));
+    // with room, nothing wraps
+    const wide = compose().figure;
+    assert.deepEqual(colourBarTitles(wide), ['Mean · logged']);
+});
+
+// ================================================================================================ the matrix first
+
+test('at 340 px the matrix keeps 10 px a column: totals go first, then the groups\' dendrogram, then the legend\'s width, each named', () => {
+    const cluster = { genes: 'off', groups: 'all', linkage: 'complete', distance: 'correlation' };
+    const { model } = compose({ totals: true, cluster }, { order: clusteredGroups() });
+    const span = 7;          // six genes and a gap of one between the two sections
+    const columnPx = (fig, width) => ((fig.layout.xaxis.domain[1] - fig.layout.xaxis.domain[0]) * (width - 20)) / span;
+
+    const wide = D.buildFigure({ ...model, pixels: { width: 900, height: 600 } }, LIGHT);
+    assert.deepEqual(wide.hidden, [], 'with room, nothing is given up');
+    one(wide, 'cells per group');
+    one(wide, 'dendrogram groups');
+
+    const narrow = D.buildFigure({ ...model, pixels: { width: 340, height: 600 } }, LIGHT);
+    assert.ok(narrow.hidden.length >= 1, 'something gave way');
+    assert.deepEqual(narrow.hidden, ['totals', 'dendrogram', 'legend'].slice(0, narrow.hidden.length), 'in that order');
+    assert.equal(named(narrow, 'cells per group').length, 0, 'the totals are the first to go');
+    if (narrow.hidden.includes('dendrogram')) assert.equal(named(narrow, 'dendrogram groups').length, 0);
+    // the matrix keeps its minimum, unless everything that could give way already has
+    assert.ok(columnPx(narrow, 340) >= 10 - 1e-6 || narrow.hidden.length === 3, `${columnPx(narrow, 340).toFixed(1)} px a column`);
+    // each dropped part has its sentence for the strip
+    for (const part of narrow.hidden) assert.ok(W.narrow[part], part);
+    assert.equal(W.narrow.totals, 'Totals hidden at this width.');
 });
 
 // ================================================================================================ CXG-18 placeholders

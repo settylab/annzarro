@@ -96,8 +96,8 @@ export function dendrogramBlocks(blocks, order) {
         .map((b) => ({ merges: b.merges, positions: Int32Array.from(b.clustered, (row) => drawnAt[row]) }));
 }
 
-/** The axis coordinate of every row (gaps between sections skipped) and the axis's extent. */
-function rowCoordinates(rows) {
+/** The axis coordinate of every row (gaps between sections skipped) and the axis's extent. clicks.js reads a click by it. */
+export function rowCoordinates(rows) {
     const pos = new Array(rows.length);
     let at = 0;
     rows.forEach((row, r) => {
@@ -159,51 +159,30 @@ function innerSize(layout, pixels) {
 }
 
 /**
- * @param {{data: object[], layout: object, config: object}} figure - draw.js's buildFigure(model, theme), changed here
- * @param {object} model - see the top of this file
- * @param {object} [theme] - the palette the figure was built with
- * @returns {{data: object[], layout: object, config: object}} the same figure
+ * The bands' sizes in px around the matrix (labels, brackets, strips, trees, totals) for a model, from its rows and
+ * groups and their labels only. annotateFigure places the bands with it; matrixPixels asks it before any trace is made.
+ * @param {object} model
+ * @param {{w: number, h: number}} inner - the figure inside its margins, px
+ * @param {number} fontPx
  */
-// export-unused-ok: draw.js calls it at the end of buildFigure
-export function annotateFigure(figure, model, theme) {
-    const th = { ...PLOT_PALETTES.light, ...theme };
-    const { layout } = figure;
+function bandPixels(model, inner, fontPx) {
     const note = model.annotations || {};
     const swap = Boolean(model.swap);
-    const fontPx = (layout.font && layout.font.size) || 12;
-    const pixels = model.pixels || DEFAULT_PIXELS;
     const rows = model.rows;
     const groups = model.groups;
-    const { pos, extent: geneExtent } = rowCoordinates(rows);
-    const groupExtent = Math.max(groups.length, 1);
     const showLabels = { genes: !(note.labels && note.labels.genes === false), groups: !(note.labels && note.labels.groups === false) };
-
-    // which axis is which: genes on x, groups on y, unless swapped; labels of genes on the near side
-    const geneDim = swap ? 'y' : 'x';
-    const groupDim = swap ? 'x' : 'y';
     const geneLabelSide = swap ? 'left' : 'top';
     const groupLabelSide = swap ? 'bottom' : 'left';
-    const geneAxis = layout[`${geneDim}axis`];
-    const groupAxis = layout[`${groupDim}axis`];
-
     const runs = note.brackets ? sectionRuns(rows) : [];
     const strips = note.strips || [];
     const geneTrees = (note.dendrograms && note.dendrograms.genes) || [];
     const groupTrees = (note.dendrograms && note.dendrograms.groups) || [];
-    const bands = runs.length > 0 || strips.length > 0 || note.totals || geneTrees.length > 0 || groupTrees.length > 0;
+    const bands = runs.length > 0 || strips.length > 0 || !!note.totals || geneTrees.length > 0 || groupTrees.length > 0;
 
-    const smallWord = ` <i>${WORDS.small}</i>`;
-
-    // pixel room: the labels' lengths set the room, and how many characters fit in it
-    const inner = innerSize(layout, pixels);
     const capAlong = (dim) => LABEL_ROOM_MAX * (dim === 'x' ? inner.w : inner.h);
     const geneRoom = bands && showLabels.genes ? labelRoom(rows.map((r) => r.label), fontPx, capAlong(swap ? 'x' : 'y')) : 0;
     const groupRoom = bands && showLabels.groups ? labelRoom(groups.map((g) => (g.small ? `${g.label} ${WORDS.small}` : g.label)), fontPx, capAlong(swap ? 'y' : 'x')) : 0;
-    const charsIn = (room) => Math.max(Math.floor((room - LABEL_PAD) / (CHAR_EM * fontPx)), 3);
-    const geneChars = bands ? charsIn(geneRoom) : Infinity;
-    const groupChars = bands ? charsIn(groupRoom) : Infinity;
 
-    // band sizes in px, then the matrix's domain inside them
     const bracketPx = runs.length ? (note.brackets.titles === false ? BRACKET_BARE_PX : BRACKET_TITLED_PX) : 0;
     const stripPx = strips.length ? strips.length * STRIP_PX + STRIP_GAP : 0;
     const groupTreePx = groupTrees.length ? TREE_PX : 0;
@@ -216,6 +195,58 @@ export function annotateFigure(figure, model, theme) {
     px[groupLabelSide] += groupRoom + stripPx;
     px[opposite[geneLabelSide]] += geneTreePx;
     px[opposite[groupLabelSide]] += farGroupPx;
+    return { note, swap, showLabels, geneLabelSide, groupLabelSide, runs, strips, geneTrees, groupTrees, bands,
+        geneRoom, groupRoom, bracketPx, stripPx, groupTreePx, geneTreePx, totalsPx, px };
+}
+
+/**
+ * The px the matrix gets along its gene axis, before any trace is made: what draw.js weighs to keep a column of the
+ * matrix wide enough at a narrow width (it drops bands first).
+ * @param {object} model - with `pixels`
+ * @param {{right: number, fontPx: number, margin: {l: number, r: number, t: number, b: number}}} at - the matrix's
+ *   right edge in paper units (the legend column starts past it), the font, and the figure's margins
+ * @returns {number}
+ */
+export function matrixPixels(model, { right, fontPx, margin }) {
+    const pixels = model.pixels || DEFAULT_PIXELS;
+    const inner = innerSize({ margin }, pixels);
+    const b = bandPixels(model, inner, fontPx);
+    if (!b.bands) return model.swap ? inner.h : right * inner.w;
+    return model.swap ? Math.max(inner.h - b.px.top - b.px.bottom, 0) : Math.max(right * inner.w - b.px.left - b.px.right, 0);
+}
+
+/**
+ * @param {{data: object[], layout: object, config: object}} figure - draw.js's buildFigure(model, theme), changed here
+ * @param {object} model - see the top of this file
+ * @param {object} [theme] - the palette the figure was built with
+ * @returns {{data: object[], layout: object, config: object}} the same figure
+ */
+// export-unused-ok: draw.js calls it at the end of buildFigure
+export function annotateFigure(figure, model, theme) {
+    const th = { ...PLOT_PALETTES.light, ...theme };
+    const { layout } = figure;
+    const fontPx = (layout.font && layout.font.size) || 12;
+    const pixels = model.pixels || DEFAULT_PIXELS;
+    const rows = model.rows;
+    const groups = model.groups;
+    const { pos, extent: geneExtent } = rowCoordinates(rows);
+    const groupExtent = Math.max(groups.length, 1);
+
+    // pixel room: the labels' lengths set the room, and how many characters fit in it; the bands' sizes in px
+    const inner = innerSize(layout, pixels);
+    const { note, swap, showLabels, geneLabelSide, groupLabelSide, runs, strips, geneTrees, groupTrees, bands,
+        geneRoom, groupRoom, bracketPx, stripPx, groupTreePx, px } = bandPixels(model, inner, fontPx);
+
+    // which axis is which: genes on x, groups on y, unless swapped; labels of genes on the near side
+    const geneDim = swap ? 'y' : 'x';
+    const groupDim = swap ? 'x' : 'y';
+    const geneAxis = layout[`${geneDim}axis`];
+    const groupAxis = layout[`${groupDim}axis`];
+
+    const smallWord = ` <i>${WORDS.small}</i>`;
+    const charsIn = (room) => Math.max(Math.floor((room - LABEL_PAD) / (CHAR_EM * fontPx)), 3);
+    const geneChars = bands ? charsIn(geneRoom) : Infinity;
+    const groupChars = bands ? charsIn(groupRoom) : Infinity;
     if (bands && layout.title) layout.margin.t = Math.max(layout.margin.t, 40);
 
     const wide = innerSize(layout, pixels);
