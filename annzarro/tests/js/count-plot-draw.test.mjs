@@ -454,3 +454,108 @@ test('an unticked level of a grouping source keeps its display name, where the c
     assert.equal(labels.get(young), 'Young | Rnase6 < 0.391');
     assert.equal(labels.get(old), 'Old | Rnase6 > 0.391', 'the unticked level is named, not keyed');
 });
+
+// --- even-width bins (WP-9, decision 28) -----------------------------------------------------------------------------
+
+const binned = (mode, method, levels, edges, over = {}) => {
+    const input = (key, extra = {}) => ({ source: { type: 'obs', key }, binning: { method, ...extra } });
+    const config = norm({ mode, x: input('a', over.xBinning), ...(mode === 'hist2d' ? { y: input('b') } : {}), ...(over.config || {}) });
+    const xAxis = { levels, edges };
+    const axes = mode === 'hist2d' ? [xAxis, { levels: ['bin:0', 'bin:1'], edges: [1, 2, 3] }] : [xAxis];
+    const counts = Array.from({ length: levels.length * (mode === 'hist2d' ? 2 : 1) }, (_, i) => i + 1);
+    return { config, table: tableOf(config, { axes, counts, n_counted: 100 }, mode === 'hist2d' ? ['x', 'y'] : ['x']) };
+};
+const LOG = ['bin:0', 'bin:1', 'bin:2'];
+const LOG_EDGES = [1, 10, 100, 1000];
+
+test('log bins of a 2D histogram are drawn at their index, with ticks at the borders labelled by the edges', () => {
+    const { config, table } = binned('hist2d', 'log', LOG, LOG_EDGES);
+    const f = D.countFigure(config, table, opts());
+    assert.deepEqual(f.data[0].x, [0, 1, 2]);
+    assert.deepEqual(f.layout.xaxis.tickvals, [-0.5, 0.5, 1.5, 2.5]);
+    assert.deepEqual(f.layout.xaxis.ticktext, ['1', '10', '100', '1000']);
+    assert.equal(f.layout.xaxis.tickmode, 'array');
+    assert.equal(f.layout.xaxis.zeroline, false, 'index 0 is not the value 0');
+});
+
+test('an index axis shows the real range of a bin in the hover', () => {
+    const { config, table } = binned('hist2d', 'log', LOG, LOG_EDGES);
+    const hover = D.countFigure(config, table, opts()).data[0].hovertext;
+    assert.match(hover[0][1], /10 to 100/);
+    assert.match(hover[0][0], /1 to 10/);
+    assert.match(hover[1][2], /2 to 3/);
+});
+
+test('equal-width bins stay at their values by default, and the switch moves either kind', () => {
+    const eq = binned('hist2d', 'equal_width', LOG, [0, 10, 20, 30]);
+    assert.equal(M.binSpacingOf(eq.config, 'x'), 'value');
+    assert.deepEqual(D.countFigure(eq.config, eq.table, opts()).data[0].x, [5, 15, 25]);
+    const forced = norm({ ...eq.config, binSpacing: { x: 'even' } });
+    assert.deepEqual(D.countFigure(forced, eq.table, opts()).data[0].x, [0, 1, 2]);
+    const lg = binned('hist2d', 'log', LOG, LOG_EDGES);
+    assert.equal(M.binSpacingOf(lg.config, 'x'), 'even');
+    const atValues = norm({ ...lg.config, binSpacing: { x: 'value' } });
+    assert.deepEqual(D.countFigure(atValues, lg.table, opts()).data[0].x, [5.5, 55, 550]);
+});
+
+test('equal-count and manual bins default to even too, and a missing switch is the default', () => {
+    assert.equal(M.binSpacingOf(norm({ mode: 'hist2d', x: { source: { type: 'obs', key: 'a' }, binning: { method: 'equal_count' } } }), 'x'), 'even');
+    assert.equal(M.binSpacingOf(norm({ mode: 'hist2d', x: { source: { type: 'obs', key: 'a' }, binning: { method: 'manual', thresholds: [1, 2] } } }), 'x'), 'even');
+    assert.equal(M.binSpacingOf(norm({ mode: 'hist2d', x: obs('a') }), 'x'), 'value');
+});
+
+test('a histogram of log bins is bars of one width at the indexes', () => {
+    const { config, table } = binned('histogram', 'log', LOG, LOG_EDGES);
+    const f = D.countFigure(config, table, opts());
+    assert.deepEqual(f.data[0].x, [0, 1, 2]);
+    assert.deepEqual(f.data[0].width, [1, 1, 1]);
+    assert.deepEqual(f.layout.xaxis.ticktext, ['1', '10', '100', '1000']);
+    assert.match(f.data[0].hovertext[1], /10 to 100/);
+});
+
+test('the zero bin is a slot of its own at the left, labelled 0', () => {
+    const { config, table } = binned('hist2d', 'log', ['@zero', 'bin:0', 'bin:1'], [1, 10, 100], { xBinning: { zero_bin: true } });
+    const f = D.countFigure(config, table, opts());
+    assert.deepEqual(f.data[0].x, [0, 1, 2]);
+    assert.equal(f.layout.xaxis.ticktext[0], '0');
+    assert.match(f.data[0].hovertext[0][0], /a = 0/);
+    assert.match(f.data[0].hovertext[0][1], /1 to 10/);
+});
+
+test('negative edges are labelled as they are', () => {
+    const { config, table } = binned('hist2d', 'equal_count', LOG, [-5, -1.234567, 0.5, 8], {});
+    const f = D.countFigure(config, table, opts());
+    assert.deepEqual(f.layout.xaxis.ticktext, ['-5', '-1.23', '0.5', '8']);
+    assert.match(f.data[0].hovertext[0][0], /-5 to -1.23/);
+});
+
+test('manual bins have open ends: no tick outside the thresholds, and the end bins read < and >=', () => {
+    const { config, table } = binned('hist2d', 'manual', LOG, [5, 10], { xBinning: { thresholds: [5, 10] } });
+    const f = D.countFigure(config, table, opts());
+    assert.deepEqual(f.data[0].x, [0, 1, 2]);
+    assert.deepEqual(f.layout.xaxis.tickvals, [0.5, 1.5]);
+    assert.deepEqual(f.layout.xaxis.ticktext, ['5', '10']);
+    const hover = f.data[0].hovertext[0];
+    assert.match(hover[0], /a &lt; 5/);
+    assert.match(hover[1], /5 to 10/);
+    assert.match(hover[2], /≥ 10/);
+});
+
+test('many bins thin to about twelve labelled ticks, each at a border', () => {
+    const levels = Array.from({ length: 60 }, (_, i) => `bin:${i}`);
+    const edges = Array.from({ length: 61 }, (_, i) => 2 ** (i / 6));
+    const { config, table } = binned('histogram', 'log', levels, edges);
+    const f = D.countFigure(config, table, opts());
+    const { tickvals, ticktext } = f.layout.xaxis;
+    assert.ok(tickvals.length <= 13 && tickvals.length >= 6, String(tickvals.length));
+    assert.equal(tickvals.length, ticktext.length);
+    assert.ok(tickvals.every((v) => Number.isInteger(v + 0.5)));
+});
+
+test('the colour bar and the counts do not change with the drawing', () => {
+    const lg = binned('hist2d', 'log', LOG, LOG_EDGES);
+    const a = D.countFigure(lg.config, lg.table, opts()).data[0];
+    const b = D.countFigure(norm({ ...lg.config, binSpacing: { x: 'value', y: 'value' } }), lg.table, opts()).data[0];
+    assert.deepEqual(a.z, b.z);
+    assert.deepEqual(a.colorbar, b.colorbar);
+});

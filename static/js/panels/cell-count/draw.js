@@ -12,7 +12,7 @@
  * plot theme's colors. A level's label is never made here.
  */
 import {
-    axisOrder, heightValues, shareValues, measureValues, levelLabelsOf, levelsAt, tableRows, tableCsv
+    axisOrder, binSpacingOf, heightValues, shareValues, measureValues, levelLabelsOf, levelsAt, tableRows, tableCsv
 } from '../../utils/count-plot-model.js';
 import { defaultLabelMaps } from '../../utils/cell-grouping.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
@@ -125,6 +125,62 @@ function binPositions(table, a) {
     return { centers, widths };
 }
 
+/** A bin edge as a tick or a hover shows it: three significant figures. */
+const edgeText = (v) => String(Number(Number(v).toPrecision(3)));
+
+/** Ticks of an index axis are thinned to about this many labels. */
+const MAX_BORDER_LABELS = 12;
+
+/**
+ * The bins of axis `a` drawn evenly (WP-9, decision 28): each level at its index in `order` with width 1, and the ticks
+ * at the borders between them (`k - 0.5`), labelled with the edges and thinned to about twelve labels. A bin's own
+ * range is in its label, so the hover keeps it. Null when the axis is not a run of bins (a no-value level, categories):
+ * it is then drawn as before. A manual binning's end bins are open, so the border outside them has no edge and no tick;
+ * a zero bin is a slot at its place labelled 0.
+ * @param {Object} table
+ * @param {number} a - the axis
+ * @param {number[]} order - the level indexes in drawing order
+ * @returns {{positions: number[], tickvals: number[], ticktext: string[]}|null}
+ */
+function evenBins(table, a, order) {
+    const { levels, info } = table.axes[a];
+    const edges = info.edges;
+    if (!Array.isArray(edges) || edges.length < 1) return null;
+    const manual = edges.length < levels.filter((id) => id !== RESERVED.zero).length + 1;
+    const ranges = [];
+    for (const l of order) {
+        const id = levels[l];
+        if (id === RESERVED.zero) { ranges.push({ lo: 0, hi: null, zero: true }); continue; }
+        const level = parseLevelId(id);
+        if (!level || level.kind !== 'bin') return null;
+        const i = level.index;
+        if (manual) ranges.push({ lo: i === 0 ? null : edges[i - 1], hi: i < edges.length ? edges[i] : null });
+        else if (i + 1 < edges.length) ranges.push({ lo: edges[i], hi: edges[i + 1] });
+        else return null;
+    }
+    const n = order.length;
+    const all = [];
+    for (let k = 0; k <= n; k++) {
+        const next = k < n ? ranges[k] : null;
+        const prev = k > 0 ? ranges[k - 1] : null;
+        let value = null;
+        if (next && (next.zero || next.lo !== null)) value = next.zero ? 0 : next.lo;
+        else if (prev && !prev.zero && prev.hi !== null) value = prev.hi;
+        if (value !== null) all.push({ at: k - 0.5, text: edgeText(value), k });
+    }
+    const step = Math.max(1, Math.ceil((n + 1) / MAX_BORDER_LABELS));
+    const kept = all.filter((t) => t.k % step === 0);
+    return { positions: order.map((_, k) => k), tickvals: kept.map((t) => t.at), ticktext: kept.map((t) => t.text) };
+}
+
+/** The bins of axis `a` as the figure draws them: evenly (index axis) or at their values, per the config's switch. */
+function drawnBins(config, table, input, order) {
+    const a = axisOf(table, input);
+    if (a < 0) return { even: null, values: null };
+    const even = binSpacingOf(config, input) === 'even' ? evenBins(table, a, order) : null;
+    return { even, values: even ? null : binPositions(table, a) };
+}
+
 // --- shared layout ---------------------------------------------------------------------------------------------------
 
 function axisStyle(theme, extra) {
@@ -165,8 +221,11 @@ function barFigure(config, table, opts) {
     const maps = labelMapsOf(config, table, opts);
     const labelAt = labelFn(maps);
     const { horizontal, log, sort, reverse } = opts.options;
-    const bins = histogram ? binPositions(table, xa) : null;
-    const order = bins ? axisOrder(table, xa, null, {}) : axisOrder(table, xa, spec.values, { sort, reverse });
+    const inOrder = histogram ? axisOrder(table, xa, null, {}) : null;
+    const drawn = histogram ? drawnBins(config, table, 'x', inOrder) : { even: null, values: null };
+    const bins = drawn.values;
+    const even = drawn.even;
+    const order = bins || even ? inOrder : axisOrder(table, xa, spec.values, { sort, reverse });
     const xLabels = order.map((l) => labelAt(table.axes[xa].levels[l], xa));
     const splits = sa >= 0 ? Array.from({ length: table.dims[sa] }, (_, i) => i) : [null];
     const mode = barMode(config, spec, histogram);
@@ -181,6 +240,7 @@ function barFigure(config, table, opts) {
             showlegend: s !== null, cliponaxis: false
         };
         if (bins) trace.width = order.map((l) => bins.widths[l]);
+        if (even) trace.width = order.map(() => 1);
         if (s !== null) trace.name = esc(labelAt(table.axes[sa].levels[s], sa));
         if (labelsOn) Object.assign(trace, { text: order.map((l) => textOf(labelsOn, at(l))), textposition: 'auto' });
         if (histogram && mode.barmode === 'overlay') trace.opacity = 0.6;
@@ -192,7 +252,8 @@ function barFigure(config, table, opts) {
         ...(log && spec.kind === 'count' ? { type: 'log' } : { rangemode: spec.kind === 'measure' ? 'normal' : 'tozero' }),
         ...(spec.percent && !mode.barnorm ? { tickformat: '.0%' } : {}), ...(mode.barnorm ? { ticksuffix: '%' } : {})
     };
-    const level = bins ? { title: { text: esc(xTitle) }, ...(reverse ? { autorange: 'reversed' } : {}) }
+    const level = even ? { title: { text: esc(xTitle) }, tickmode: 'array', tickvals: even.tickvals, ticktext: even.ticktext, zeroline: false, ...(reverse ? { autorange: 'reversed' } : {}) }
+        : bins ? { title: { text: esc(xTitle) }, ...(reverse ? { autorange: 'reversed' } : {}) }
         : categoryAxis(opts.theme, xLabels, xTitle, horizontal ? { autorange: 'reversed' } : {});
     const layout = baseLayout(opts, {
         ...mode, bargap: histogram ? 0.02 : 0.15, showlegend: sa >= 0,
@@ -241,7 +302,10 @@ function rectFigure(config, table, opts) {
     const { reverse } = opts.options;
     const orderOf = (a) => axisOrder(table, a, null, { reverse: hist2d ? false : reverse });
     const [xo, yo] = [orderOf(xa), orderOf(ya)];
-    const [xb, yb] = hist2d ? [binPositions(table, xa), binPositions(table, ya)] : [null, null];
+    const drawnX = hist2d ? drawnBins(config, table, 'x', xo) : { even: null, values: null };
+    const drawnY = hist2d ? drawnBins(config, table, 'y', yo) : { even: null, values: null };
+    const [xb, yb] = [drawnX.values, drawnY.values];
+    const [xe, ye] = [drawnX.even, drawnY.even];
     const top = spec.kind === 'top_level' ? table.top : null;
     const names = top ? topLabels(config, table, opts) : null;
     const stepsOf = top && opts.options.fade ? FADE_STEPS : 1;
@@ -293,13 +357,15 @@ function rectFigure(config, table, opts) {
             colorbar: { title: { text: esc(spec.title) }, tickformat: spec.percent ? '.0%' : undefined }
         });
     }
-    const axisFor = (a, positions, order, title, extra2) => (positions
+    const axisFor = (a, positions, order, title, extra2, even) => (even
+        ? axisStyle(opts.theme, { title: { text: esc(title) }, tickmode: 'array', tickvals: even.tickvals, ticktext: even.ticktext, zeroline: false, ...extra2 })
+        : positions
         ? axisStyle(opts.theme, { title: { text: esc(title) }, ...extra2 })
         : categoryAxis(opts.theme, order.map((l) => labelAt(table.axes[a].levels[l], a)), title, extra2));
     const layout = baseLayout(opts, {
         showlegend: !!top, ...(top ? { legend: { title: { text: esc(opts.inputNames.factor) } } } : {}),
-        xaxis: axisFor(xa, xb, xo, opts.inputNames.x, {}),
-        yaxis: axisFor(ya, yb, yo, opts.inputNames.y, hist2d ? {} : { autorange: 'reversed' })
+        xaxis: axisFor(xa, xb, xo, opts.inputNames.x, {}, xe),
+        yaxis: axisFor(ya, yb, yo, opts.inputNames.y, hist2d ? {} : { autorange: 'reversed' }, ye)
     });
     return { data: [trace, ...extra], layout };
 }
