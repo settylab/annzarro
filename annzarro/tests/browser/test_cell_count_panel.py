@@ -769,3 +769,45 @@ def test_cell_points_take_a_number_as_color_by_binned_by_the_reply_s_edges(page,
     if shot:
         page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, "points-binned.png"))
 
+
+
+def test_cell_points_reload_when_the_grouping_is_edited_and_match_its_new_groups(page, served):
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [CONDITION]}
+    count = _points_config({"source": {"type": "cell-group", "key": GA}}, layers={"points": True})
+    _open(page, served, {CC: count, GA: grouping}, open_ids=(CC, GA))
+    _drawn(page, "density2d")
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S, timeout=60)
+    before = _points(page)
+    assert len(_point_colours(page)) == 2
+    # tick off a level of the grouping and leave the unticked cells out: one group is left
+    edited = {"id": GA, "title": "Grouping 1", "version": 1,
+              "partitionings": [{**CONDITION, "levels": ["c:ctrl"], "rest": "exclude"}]}
+    page.evaluate("(cfg) => window.PanelManager.getPanel('%s').setConfig(cfg)" % GA, edited)
+    # the points reload against the new groups: the cells of the group that is left, the others in no group and not drawn
+    until(page, """([s, n]) => { const m = /Cells drawn as points: ([\\d,]+) of/.exec(document.querySelector(s + ' .ccnt-strip').textContent);
+        return !!m && Number(m[1].replace(/,/g, '')) !== n; }""", [S, before["n"]], timeout=60)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S, timeout=60)
+    after = _points(page)
+    assert len(_point_colours(page)) == 1, "the one group left is the one color drawn"
+    drawn = int(re.search(r"Cells drawn as points: ([\d,]+) of", _strip(page)).group(1).replace(",", ""))
+    assert drawn == after["n"], "the notice counts the points on the plot"
+    assert 0 < after["n"] < before["n"], (before, after)
+    ctrl = int((DATA.obs["condition"] == "ctrl").sum())
+    assert after["n"] <= ctrl, "only the cells of the one group are drawn"
+
+
+def test_cell_points_reload_when_an_edit_makes_new_groups_the_old_codes_do_not_hold(page, served):
+    """A third bin has no level in the codes the points were loaded with: only a reload can draw it."""
+    def depth(bins):
+        return {"source": {"type": "obs", "key": "score"}, "binning": {"method": "equal_width", "bins": bins}}
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [depth(2)]}
+    count = _points_config({"source": {"type": "cell-group", "key": GA}}, layers={"points": True})
+    _open(page, served, {CC: count, GA: grouping}, open_ids=(CC, GA))
+    _drawn(page, "density2d")
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S, timeout=60)
+    assert len(_point_colours(page)) == 2
+    page.evaluate("(cfg) => window.PanelManager.getPanel('%s').setConfig(cfg)" % GA,
+                  {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [depth(3)]})
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot').length > 0", S)
+    until(page, """(s) => new Set([...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'scattergl')
+        .map(t => String(t.marker.color).replace(/, [\\d.]+\\)$/, ')'))).size === 3""", S, timeout=60)
