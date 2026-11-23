@@ -246,14 +246,19 @@ def test_the_route_states_are_the_painters_with_its_progress_bar_cancel_and_retr
 
 # ------------------------------------------------------------------ 3. the strip
 
-def test_the_strip_says_the_cells_counted_without_a_value_and_outside_the_range(page, served):
+def test_the_banner_says_the_cells_counted_without_a_value_and_outside_the_range(page, served):
     pt = DATA.obs["pseudotime"]
     _open(page, served, {CC: _count(mode="histogram", x=obs("pseudotime", binning={"method": "equal_width", "range": [0.5, None]}))})
     _drawn(page, "histogram")
     missing = int(pt.isna().sum())
     outside = int((pt < 0.5).sum())
     counted = N - missing - outside
-    assert page.inner_text(f"{S} .ccnt-strip") == f"{counted:,} cells counted · {missing} without a value for pseudotime · {outside} outside the range"
+    # the coverage banner under the plot says it, once; the footer line says nothing more
+    assert page.get_attribute(f"{S} .plot-status", "data-summary").splitlines() == [
+        f"{counted:,} of {N:,} cells shown",
+        f"pseudotime: filtered out ({missing} cells) -- without a value for pseudotime",
+        f"filtered out ({outside} cells) -- outside the range"]
+    assert page.inner_text(f"{S} .ccnt-strip") == ""
 
 
 # ------------------------------------------------------------------ 4. Save as grouping
