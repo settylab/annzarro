@@ -32,3 +32,21 @@ export function scaleKeys(options, family, fallback = {}) {
     if (Number.isFinite(centre)) keys[mid] = centre;
     return keys;
 }
+
+/**
+ * The numbers a figure's colour scale is drawn over: the `z` of its heatmap or contour, else the marker colours of a
+ * trace that shows a colour bar. The Color pop-over's range sliders move over them. Null when the figure has no
+ * numeric colour scale (a level palette, a most-frequent-level heatmap).
+ * @param {Object[]} data - the Plotly traces
+ * @returns {Float64Array|null}
+ */
+export function colourValues(data) {
+    const out = [];
+    for (const t of data || []) {
+        const source = Array.isArray(t.z) && (t.colorbar || t.showscale) ? t.z.flat()
+            : t.marker && t.marker.showscale && Array.isArray(t.marker.color) ? t.marker.color : null;
+        if (!source) continue;
+        for (const v of source) if (typeof v === 'number' && Number.isFinite(v)) out.push(v);
+    }
+    return out.length ? Float64Array.from(out) : null;
+}

@@ -198,8 +198,9 @@ const cellGene = Object.freeze({
             dots: 'Dots', colors: 'Colors', sections: 'Sections', labels: 'Labels', clustering: 'Clustering', legend: 'Legend', totals: 'Totals'
         }),
         dotSizes: 'Smallest and largest dot',
-        dotMin: '% at the smallest dot',
-        dotMax: '% at the largest dot',
+        rangeWhat: Object.freeze({ color: 'Color', size: 'Size', height: 'Height' }),
+        sizeMin: 'Size min',
+        sizeMax: 'Size max',
         outlineColor: 'Dot outline color',
         outlineWidth: 'Dot outline width (px)',
         colorScale: 'Color scale',
@@ -592,4 +593,17 @@ const view3d = Object.freeze({
     tooMany: (max, count, hint = 'bins') => `${view3d.tooManyBase(max, count)} ${view3d.hint[hint] || view3d.hint.bins}`
 });
 
-export const VOCABULARY = Object.freeze({ view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+/** The range boxes' words (ui/range-boxes.js): Min and Max boxes of one scale, auto with the value drawn, a reset. */
+const range = Object.freeze({
+    auto: 'auto',
+    smallest: 'smallest',
+    largest: 'largest',
+    reset: '\u21BA',
+    resetHelp: (what) => `Back to auto: ${what ? `${what.toLowerCase()} ` : ''}limits follow the drawn values`,
+    problem: 'Enter a number, or leave it empty for automatic.',
+    follows: (end, value) => `Follows the drawn values (${end} ${value}). Type a value to override it for this plot.`,
+    followsNone: 'Follows the drawn values. Type a value to override it for this plot.',
+    fixed: (value) => `Overrides the drawn values (set to ${value}). Clear to follow them.`
+});
+
+export const VOCABULARY = Object.freeze({ range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
