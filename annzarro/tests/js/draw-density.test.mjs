@@ -353,7 +353,8 @@ test('the points layer draws the loaded cells over the other layers, with the gr
         assert.equal(carriers.length, split ? 2 : 1, 'a transparent heatmap per level carries the hover');
         assert.ok(carriers.every((t) => t.colorscale.flat().filter((v) => typeof v === 'string').every((c) => c === 'rgba(0, 0, 0, 0)')));
         assert.ok(carriers.every((t) => /Density/.test(t.hovertemplate)));
-        assert.equal(fig.notes.points, 'Cells drawn as points: 500.');
+        const drawn = fig.data.filter((t) => t.type === 'scattergl').reduce((n, t) => n + t.x.length, 0);
+        assert.equal(fig.notes.points, `Cells drawn as points: ${drawn.toLocaleString('en-US')} of 500.`, 'the notice counts the points drawn');
         // with filled isolines the points sit above them and no carrier is needed
         const both = D.densityFigure(alone.config, alone.table, opts({ adjust: 1, layers: { points: true, fill: true } }, { points: pts }));
         assert.equal(both.data.filter((t) => t.type === 'heatmap').length, 0);
@@ -367,7 +368,8 @@ test('the points layer says it is a sample, takes the point size from the option
     const { config, table } = twoD('umap__a1', { adjust: 1 }, true);
     const pts = { ...cells(300, 2), total: 12_345_678 };
     const fig = D.densityFigure(config, table, opts({ adjust: 1, layers: { points: true }, pointSize: 5 }, { points: pts }));
-    assert.equal(fig.notes.points, 'Cells drawn as points: 300 of 12,345,678 (a sample).');
+    const drawnSample = fig.data.filter((t) => t.type === 'scattergl').reduce((n, t) => n + t.x.length, 0);
+    assert.equal(fig.notes.points, `Cells drawn as points: ${drawnSample} of a random sample of 300 of the 12,345,678 cells.`);
     assert.ok(fig.data.filter((t) => t.type === 'scattergl').every((t) => t.marker.size === 5));
     const bare = D.densityFigure(config, table, opts({ adjust: 1, layers: { points: true } }));
     assert.equal(bare.data.filter((t) => t.type === 'scattergl').length, 0);

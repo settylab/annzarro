@@ -431,8 +431,8 @@ const countPlot = Object.freeze({
     points: Object.freeze({
         label: 'Cell points',
         size: 'Point size',
-        all: (n) => `Cells drawn as points: ${n.toLocaleString('en-US')}.`,
-        sample: (drawn, total) => `Cells drawn as points: ${drawn.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} (a sample).`,
+        all: (drawn, total) => `Cells drawn as points: ${drawn.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}.`,
+        sample: (drawn, loaded, total) => `Cells drawn as points: ${drawn.toLocaleString('en-US')} of a random sample of ${loaded.toLocaleString('en-US')} of the ${total.toLocaleString('en-US')} cells.`,
         tooMany: (total, limit) => `Cell points load the position of every cell, and ${total.toLocaleString('en-US')} cells are more than the ${limit.toLocaleString('en-US')} it takes. Turn on a subset to use them.`,
         source: (input) => (input === 'split' ? 'Cell points take a Color by that is an obs column of categories.'
             : `Cell points take the ${input.toUpperCase()} axis from an obs column, an embedding or a gene.`),

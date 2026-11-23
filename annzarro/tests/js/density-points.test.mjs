@@ -68,8 +68,11 @@ test('the sample above the cap is exactly the cap, sorted, the same for one seed
 });
 
 test('the words: all the cells, or a sample of how many, and why the option is refused', () => {
-    assert.equal(P.pointsNote(500, 500), 'Cells drawn as points: 500.');
-    assert.equal(P.pointsNote(1_000_000, 12_345_678), 'Cells drawn as points: 1,000,000 of 12,345,678 (a sample).');
+    // the cells actually drawn, of those loaded, of the cells shown: it cannot disagree with the strip's own counts
+    assert.equal(P.pointsNote(500, 500, 500), 'Cells drawn as points: 500 of 500.');
+    assert.equal(P.pointsNote(1199, 1200, 1200), 'Cells drawn as points: 1,199 of 1,200.', 'one cell outside the range is not drawn');
+    assert.equal(P.pointsNote(998_812, 1_000_000, 12_345_678),
+        'Cells drawn as points: 998,812 of a random sample of 1,000,000 of the 12,345,678 cells.');
     assert.match(P.pointsRefusal({ kind: 'too_many', total: 30_000_000, limit: 25_000_000 }), /30,000,000 cells.*25,000,000.*subset/);
     assert.match(P.pointsRefusal({ kind: 'source', input: 'split' }), /Color by/);
     assert.match(P.pointsRefusal({ kind: 'source', input: 'x' }), /X/);

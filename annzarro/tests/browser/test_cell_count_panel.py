@@ -674,7 +674,8 @@ def _strip(page):
 def _points_config(split, **extra):
     depth = {"source": {"type": "obs", "key": "depth"}}
     score = {"source": {"type": "obs", "key": "score"}}
-    return _count(mode="density2d", x=depth, y=score, **({"split": CONDITION} if split else {}), **extra)
+    by = split if isinstance(split, dict) else (CONDITION if split else None)
+    return _count(mode="density2d", x=depth, y=score, **({"split": by} if by else {}), **extra)
 
 
 @pytest.mark.parametrize("split", [True, False])
@@ -686,7 +687,7 @@ def test_the_cell_points_layer_alone_draws_the_cells_with_the_grid_hover_under_i
     got = _points(page)
     assert 0 < got["n"] <= N, got
     assert got["types"].count("heatmap") == (2 if split else 1), "a transparent heatmap carries the hover"
-    assert re.search(r"Cells drawn as points: [\d,]+\.", _strip(page)), _strip(page)
+    assert re.search(r"Cells drawn as points: [\d,]+ of [\d,]+\.", _strip(page)), _strip(page)
     shot = os.environ.get("ANNZARRO_FB1E_SHOTS")
     if shot:
         page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, f"points-{'split' if split else 'one'}.png"))
@@ -713,15 +714,17 @@ def test_the_cell_points_layer_draws_a_seeded_sample_above_the_cap_and_says_so(p
     _drawn(page, "density2d")
     _caps(page, draw=300)
     page.check(f"{S} .ccnt-layer--points")
-    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
-    assert re.search(r"Cells drawn as points: 300 of 1,200 \(a sample\)\.", _strip(page)), _strip(page)
+    until(page, "(s) => /a random sample/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    assert re.search(r"Cells drawn as points: [\d,]+ of a random sample of 300 of the 1,200 cells\.", _strip(page)), _strip(page)
+    drawn = int(re.search(r"Cells drawn as points: ([\d,]+) of", _strip(page)).group(1).replace(",", ""))
+    assert drawn == _points(page)["n"], "the notice counts the points on the plot"
     first = _points(page)
     assert 0 < first["n"] <= 300
     # the same cells again after a redraw: toggle the layer off and on
     page.uncheck(f"{S} .ccnt-layer--points")
     _drawn(page, "density2d", "!c.layers.points")
     page.check(f"{S} .ccnt-layer--points")
-    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => /a random sample/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
     assert _points(page)["n"] == first["n"]
 
 
@@ -734,3 +737,35 @@ def test_the_cell_points_layer_is_refused_above_the_load_cap_and_for_a_source_it
     assert _points(page)["n"] == 0
     assert "Turn on a subset" in _strip(page)
     _caps(page, load=25_000_000)
+
+
+def _point_colours(page):
+    """The rgb of each point trace (a level's color): the colors the points are drawn in."""
+    return page.evaluate("""(s) => [...new Set([...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'scattergl')
+        .map(t => String(t.marker.color).replace(/, [\\d.]+\\)$/, ')')))]""", S)
+
+
+def test_cell_points_take_a_grouping_as_color_by_and_match_its_groups(page, served):
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [CONDITION]}
+    count = _points_config({"source": {"type": "cell-group", "key": GA}}, layers={"points": True})
+    _open(page, served, {CC: count, GA: grouping}, open_ids=(CC, GA))
+    _drawn(page, "density2d")
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S, timeout=60)
+    colours = _point_colours(page)
+    assert len(colours) == 2, colours
+    # the groups of the grouping are the grid's levels: each is drawn in the color of its legend entry
+    legend = page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'scatter' && t.name)
+        .map(t => t.marker.color)""", S)
+    assert len(legend) == 2
+
+
+def test_cell_points_take_a_number_as_color_by_binned_by_the_reply_s_edges(page, served):
+    score = {"source": {"type": "obs", "key": "score"}, "binning": {"method": "equal_width", "bins": 3}}
+    _open(page, served, {CC: _points_config(score, layers={"points": True})})
+    _drawn(page, "density2d")
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S, timeout=60)
+    assert len(_point_colours(page)) == 3, _point_colours(page)
+    shot = os.environ.get("ANNZARRO_FB1F_SHOTS")
+    if shot:
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, "points-binned.png"))
+
