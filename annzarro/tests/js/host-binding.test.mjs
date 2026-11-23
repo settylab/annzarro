@@ -461,7 +461,7 @@ test('a host that has gone ends the waiting load with no new record', async () =
 });
 
 test('a setting that moves while a load waits ends that load; only the new one reads the new record', async () => {
-    const { b, inner } = notifyingBinding();
+    const { b } = notifyingBinding();
     const h = { ...host(), _fullLayout: {}, data: [{}], querySelector: () => null };
     const first = pendingLoad(b, h, 'G1');
     const waiting = b.loadWhenReady(first.load, { host: h, role: 'color' });
