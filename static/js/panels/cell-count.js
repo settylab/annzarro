@@ -42,6 +42,7 @@ import { densityFigure, DENSITY_MODES } from './cell-count/draw-density.js';
 import { pointsRefusal } from './cell-count/density-points.js';
 import { pointsRefused, pointsKey, loadCellPoints, pointsForFigure } from './cell-count/density-points-load.js';
 import { createControls } from './cell-count/controls.js';
+import { colourValues } from './cell-count/colour.js';
 import {
     countReferences, shownConfig, drawOptions, inputNames, shownLabels, followFocus, measureSourceName, levelTotals,
     isNumericSource, levelCountOf, valueDefaults, rowsOf
@@ -226,6 +227,8 @@ actions.register({
         let _infos = {};
         let _labelMaps = {};
         let _notes = null;
+        /** The numbers the colour scale is drawn over (the Color pop-over's range sliders) */
+        let _colourData = null;
         let _drawSerial = 0;
         /** Choose levels of an input no reply shows yet (a refused plan): its levels, asked for alone (axisSource) */
         let _levelSource = null;
@@ -630,7 +633,7 @@ actions.register({
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, densityNote: densityNote(), levelsOf, levelsSaid,
+                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
             };
         }
@@ -641,7 +644,7 @@ actions.register({
             if (!_dom) return;
             draw();
             paintState();
-            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _points];
+            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _points, _colourData];
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
                 _controls.paint();
@@ -662,6 +665,7 @@ actions.register({
                 _drawing = null;
                 _drawSerial++;
                 _notes = null;
+                _colourData = null;
                 _infos = {};
                 _labelMaps = {};
                 delete _dom.root.dataset.drawn;
@@ -695,6 +699,7 @@ actions.register({
             withSharedColourBars(fig);
             // a density's sentences (UX 4.4): the bandwidth and the floor in Plot Options, the range in the strip
             _notes = fig.notes || null;
+            _colourData = colourValues(fig.data);
             const serial = ++_drawSerial;
             delete _dom.root.dataset.drawn;
             const root = _dom.root;
