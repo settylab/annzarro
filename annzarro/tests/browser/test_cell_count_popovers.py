@@ -135,3 +135,24 @@ def test_color_shows_when_a_colour_scale_or_a_level_palette_applies_and_the_map_
     _drawn(page, "hist2d", "c.color && c.color.palette === 'tab10'")
     cols = page.evaluate("(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'scatter').map(t => t.marker.color)", S)
     assert cols[0] == "#1f77b4", cols
+
+
+def test_screenshots_of_the_toolbar_and_each_popover(page, served):
+    """Screenshots for a look, when ANNZARRO_WP6A_SHOTS names a folder (nothing is asserted beyond the pop-overs opening)."""
+    folder = os.environ.get("ANNZARRO_WP6A_SHOTS")
+    if not folder:
+        pytest.skip("set ANNZARRO_WP6A_SHOTS to take the screenshots")
+    shot = lambda name: page.screenshot(path=os.path.join(folder, f"{name}.png"))  # noqa: E731
+    _open(page, served, {CC: _count(mode="hist2d", x=obs("depth"), y=obs("score"))})
+    _drawn(page, "hist2d")
+    page.locator(f"{S} .ccnt-controls").screenshot(path=os.path.join(folder, "toolbar.png"))
+    for name, button, popover in [("binning", ".ccnt-bins", "binning"), ("color", ".ccnt-color-btn", "color")]:
+        page.click(f"{S} {button}")
+        page.wait_for_selector(f"[data-popover='{popover}']")
+        shot(name)
+        page.keyboard.press("Escape")
+    _open(page, served, {CC: _count(mode="bar", x=cc.CELL_TYPE, split=cc.CONDITION)})
+    _drawn(page, "bar")
+    page.click(f"{S} .ccnt-choose")
+    page.wait_for_selector("[data-popover='levels']")
+    shot("levels")
