@@ -10,7 +10,7 @@ export { pointStyleBase };
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { colorbarPosition, tickKeys, axisPaths } from './plot-options.js';
 import { colourBar } from './colour-bar.js';
-import { plotColour, modebarColours, constantColour } from '../../utils/plot-theme.js';
+import { plotColour, modebarColours, constantColour, MODEBAR_REMOVE } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
@@ -2995,7 +2995,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
@@ -3025,7 +3025,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
@@ -3181,7 +3181,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
@@ -3227,7 +3227,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
@@ -3341,7 +3341,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
@@ -3364,7 +3364,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
