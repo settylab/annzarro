@@ -173,3 +173,69 @@ def test_over_the_cap_the_3d_button_is_disabled_and_a_stored_3d_is_drawn_in_2d(p
     assert tag["text"] == "2D" and re.match(r"3D draws at most 10 bars", tag["title"]), tag
     assert page.is_enabled(f"{TP} .cgene-3d-btn")
     assert page.get_attribute(f"{TP} .cgene-3d-btn", "aria-pressed") == "true"
+
+
+# the labels on screen: each label's box, and the pixel of its tick on the box edge (Plotly's projection, _pdata)
+LABEL_BOXES = """(s) => { const g = document.querySelector(s); const fl = g._fullLayout; const sz = fl._size; const d = fl.scene.domain;
+  const svg = g.querySelector('.main-svg').getBoundingClientRect();
+  return fl.scene.annotations.map((a, i) => { const p = a._pdata; const el = g.querySelector(`g.annotation-scene[data-index="${i}"] rect.bg`);
+    if (!p || !el) return null; const r = el.getBoundingClientRect();
+    return { name: a.name, text: a.text, xanchor: a.xanchor,
+      tickX: sz.l + d.x[0] * sz.w + 0.5 * (1 + p[0] / p[3]) * sz.w * (d.x[1] - d.x[0]),
+      tickY: sz.t + (1 - d.y[1]) * sz.h + 0.5 * (1 - p[1] / p[3]) * sz.h * (d.y[1] - d.y[0]),
+      left: r.left - svg.left, right: r.right - svg.left, top: r.top - svg.top, bottom: r.bottom - svg.top,
+      mid: (r.top + r.bottom) / 2 - svg.top }; }); }"""
+TICK_PX = 6   # the label's gap from its tick (draw.js LABEL_GAP_PX, 4) and a little rounding
+
+
+def _labels(page):
+    page.wait_for_function("(s) => { const g = document.querySelector(s); return g._fullLayout.scene.annotations.length > 0"
+                           " && g._fullLayout.scene.annotations.every((a, i) => a._pdata"
+                           " && g.querySelector(`g.annotation-scene[data-index=\"${i}\"] rect.bg`)); }", arg=PLOT)
+    return page.evaluate(LABEL_BOXES, PLOT)
+
+
+def _assert_anchored(boxes, gene_side, group_side):
+    """A label on the right starts at its tick, one on the left ends there; never centred on it."""
+    for b in (b for b in boxes if b["name"].endswith(" label")):
+        side = gene_side if b["name"] == "x label" else group_side
+        edge = b["left"] if side == "right" else b["right"]
+        assert abs(edge - b["tickX"]) <= TICK_PX, (side, b)
+        assert abs((b["left"] + b["right"]) / 2 - b["tickX"]) > TICK_PX, ("centred", b)
+        assert abs(b["mid"] - b["tickY"]) <= TICK_PX, ("not on its tick's line", b)
+
+
+def _assert_titles_clear(boxes):
+    """Each axis title over no label."""
+    titles = [b for b in boxes if b["name"].endswith(" title")]
+    assert sorted(t["text"] for t in titles) == ["Genes", "Groups"]
+    for t in titles:
+        for b in (b for b in boxes if b["name"].endswith(" label")):
+            apart = t["right"] <= b["left"] or b["right"] <= t["left"] or t["bottom"] <= b["top"] or b["bottom"] <= t["top"]
+            assert apart, ("title over a label", t, b)
+
+
+def test_3d_labels_start_at_their_tick_on_the_right_and_end_there_on_the_left(page, served):
+    _open3d(page, served, genes=6, view="3d")
+    _mesh_drawn(page)
+    boxes = _labels(page)
+    assert sorted(b["text"] for b in boxes if b["name"] == "x label") == sorted(GENES[:6])
+    assert len([b for b in boxes if b["name"] == "y label"]) == _state(page)["groups"]
+    # the default camera: the genes along the front-left edge, the groups along the front-right edge
+    assert {b["xanchor"] for b in boxes if b["name"] == "x label"} == {"right"}
+    assert {b["xanchor"] for b in boxes if b["name"] == "y label"} == {"left"}
+    _assert_anchored(boxes, gene_side="left", group_side="right")
+    _assert_titles_clear(boxes)
+    centre = page.evaluate("(s) => { const z = document.querySelector(s)._fullLayout._size; return z.l + z.w / 2; }", PLOT)
+    assert all(b["tickX"] < centre for b in boxes if b["name"] == "x label")
+    assert all(b["tickX"] > centre for b in boxes if b["name"] == "y label")
+    # turned to look from (+x, +y): the genes move to the other edge, the right of the screen, and their anchor follows
+    page.evaluate("([s, c]) => window.Plotly.relayout(document.querySelector(s), {'scene.camera': c})",
+                  [PLOT, {"eye": {"x": 1.6, "y": 1.6, "z": 1.1}, "center": {"x": 0, "y": 0, "z": 0}, "up": {"x": 0, "y": 0, "z": 1}}])
+    page.wait_for_function("(s) => document.querySelector(s)._fullLayout.scene.annotations.every(a => a.name !== 'x label' || a.xanchor === 'left')", arg=PLOT)
+    page.wait_for_timeout(300)
+    boxes = _labels(page)
+    _assert_anchored(boxes, gene_side="right", group_side="left")
+    _assert_titles_clear(boxes)
+    eye = page.evaluate("(s) => document.querySelector(s)._fullLayout.scene.camera.eye", PLOT)
+    assert abs(eye["x"] - 1.6) < 1e-3 and abs(eye["y"] - 1.6) < 1e-3, ("re-anchoring kept the camera", eye)

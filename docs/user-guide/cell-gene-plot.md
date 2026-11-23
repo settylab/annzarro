@@ -167,6 +167,9 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
 - **Left out.** 3D does not draw dendrograms, colour strips, section brackets, totals or printed values; the status
   strip says so (**3D**). A missing value or a value of 0 has no bar. Above 60 genes or groups their labels are hidden
   and the hover names each bar.
+- **Labels.** Gene and group names run outward from their tick: on the right of the scene a name starts at its tick,
+  on the left it ends there, never centred over the bars. When the scene is turned to another side, the names move to
+  the edge nearer you once the mouse is released, with each axis's title beyond them.
 - **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
   step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
 - **Limit.** 3D draws at most 40,000 bars (genes × groups). Above that **3D** is greyed out and says why ("Use fewer

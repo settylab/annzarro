@@ -220,3 +220,64 @@ test('the CSV gets a Height column only when its source differs from Color', () 
     assert.deepEqual(rows.slice(1).map((r) => r[k]), ['5', '6']);
     assert.ok(!head(model({ rows: 1, groups: 2, view: undefined, height: own.height })).some((h) => /^Height/.test(h)), 'not in 2D');
 });
+
+// ------------------------------------------------------------------ the 3D labels (operator: never centred on their tick)
+
+const ROTATED = { eye: { x: 1.6, y: 1.6, z: 1.1 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 } };
+const labelsOf = (fig, axis) => fig.layout.scene.annotations.filter((a) => a.name === `${axis} label`);
+
+test('the label anchor: right of the scene a label starts at its tick, left of it a label ends there', () => {
+    const aspect = { x: 1, y: 0.5, z: 0.6 };
+    // the default camera looks from (+x, -y): the x axis's near edge is on the left, the y axis's on the right
+    assert.deepEqual(D.sceneLabelSides({ camera: D.DEFAULT_CAMERA, aspect }),
+        { x: { edge: 'min', xanchor: 'right' }, y: { edge: 'max', xanchor: 'left' } });
+    // from (+x, +y) the near edges change sides, and so do the anchors
+    assert.deepEqual(D.sceneLabelSides({ camera: ROTATED, aspect }),
+        { x: { edge: 'max', xanchor: 'left' }, y: { edge: 'max', xanchor: 'right' } });
+    // from (-x, +y), the default turned half round: the same sides as the default
+    const behind = { ...ROTATED, eye: { x: -1.6, y: 1.6, z: 1.1 } };
+    assert.deepEqual(D.sceneLabelSides({ camera: behind, aspect }),
+        { x: { edge: 'max', xanchor: 'right' }, y: { edge: 'min', xanchor: 'left' } });
+});
+
+test('3D labels are scene annotations anchored by side, Plotly\'s own centred tick labels hidden', () => {
+    const fig = D.buildFigure(model({ rows: 3, groups: 4 }), LIGHT);
+    const { xaxis } = fig.layout.scene;
+    assert.deepEqual(xaxis.range, [-0.5, 2.5], 'the box is the cells, so the labels sit just outside it');
+    const genes = labelsOf(fig, 'x');
+    const groups = labelsOf(fig, 'y');
+    assert.deepEqual(genes.map((a) => a.text), ['Gene0', 'Gene1', 'Gene2']);
+    assert.deepEqual(groups.map((a) => a.text), ['group 0', 'group 1', 'group 2', 'group 3']);
+    assert.ok(genes.every((a) => a.xanchor === 'right' && a.yanchor === 'middle' && a.showarrow === false));
+    assert.ok(groups.every((a) => a.xanchor === 'left'));
+    assert.deepEqual(genes.map((a) => a.x), [0, 1, 2]);
+    // on the near edge (Plotly drops a scene annotation outside the box), a few px off it on the label's side
+    assert.ok(genes.every((a) => a.y === -0.5 && a.xshift < 0), 'the near edge');
+    assert.ok(groups.every((a) => a.x === 2.5 && a.xshift > 0));
+    // a stored camera from the other side: the anchors follow it
+    const turned = D.buildFigure(model({ rows: 3, groups: 4, camera: ROTATED }), LIGHT);
+    assert.ok(labelsOf(turned, 'x').every((a) => a.xanchor === 'left' && a.y === 3.5));
+    assert.ok(labelsOf(turned, 'y').every((a) => a.xanchor === 'right'));
+    // and the panel re-anchors a drawn figure for a camera turned by the user
+    assert.deepEqual(D.sceneLabels(fig.labels3d, ROTATED), turned.layout.scene.annotations);
+    // Plotly's own labels and titles are hidden; each title is drawn beyond its labels, away from the box on screen
+    assert.equal(xaxis.showticklabels, false);
+    assert.equal(xaxis.title.text, '');
+    const [gt] = fig.layout.scene.annotations.filter((a) => a.name === 'x title');
+    const [yt] = fig.layout.scene.annotations.filter((a) => a.name === 'y title');
+    assert.equal(gt.text, 'Genes');
+    assert.equal(yt.text, 'Groups');
+    // default camera: the genes' edge is lower left, the groups' lower right
+    assert.ok(gt.xshift < -30 && gt.yshift < 0, JSON.stringify(gt));
+    assert.ok(yt.xshift > 30 && yt.yshift < 0, JSON.stringify(yt));
+});
+
+test('3D labels: swapped axes keep each axis\'s own side; above 60 categories an axis has none', () => {
+    const swapped = D.buildFigure(model({ rows: 3, groups: 4, swap: true }), LIGHT);
+    assert.deepEqual(labelsOf(swapped, 'x').map((a) => a.text), ['group 0', 'group 1', 'group 2', 'group 3']);
+    assert.ok(labelsOf(swapped, 'x').every((a) => a.xanchor === 'right'));
+    assert.ok(labelsOf(swapped, 'y').every((a) => a.xanchor === 'left'));
+    const many = D.buildFigure(model({ rows: 61, groups: 2 }), LIGHT);
+    assert.equal(labelsOf(many, 'x').length, 0);
+    assert.equal(labelsOf(many, 'y').length, 2);
+});
