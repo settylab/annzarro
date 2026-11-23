@@ -230,6 +230,9 @@ export function createPopover(cfg) {
 
     function onDocKey(e) {
         if (e.key !== 'Escape' || !isOpen) return;
+        // A control inside the surface that has an Escape of its own (a field being edited: Escape cancels the edit) marks
+        // itself `data-az-own-escape` and handles the key; the next Escape, from elsewhere, closes the pop-over.
+        if (e.target && e.target.closest && e.target.closest('[data-az-own-escape]') && surface && surface.contains(e.target)) return;
         e.stopPropagation();
         e.preventDefault();
         close('escape');

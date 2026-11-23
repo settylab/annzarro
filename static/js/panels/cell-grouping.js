@@ -81,6 +81,13 @@ PARTS.groups = GROUP_GRID;
 const W = VOCABULARY.word;
 const fmt = (n) => Number(n).toLocaleString('en-US');
 
+/** Whether a pointer button is held: a field left by a press is saved when it is released. */
+let pointerIsDown = false;
+if (typeof document !== 'undefined') {
+    document.addEventListener('pointerdown', () => { pointerIsDown = true; }, true);
+    for (const type of ['pointerup', 'pointercancel']) document.addEventListener(type, () => { pointerIsDown = false; }, true);
+}
+
 const ADD_ENTRIES = Object.freeze([
     { entry: 'column', label: 'Column…' },
     { entry: 'cells', label: 'Cell names' },
@@ -107,7 +114,9 @@ function createFactors({ D, id, model, on }) {
     const openNew = new Set();          // indexes of binned factors just added: their editor opens once they are drawn (SHR-15)
     const showAll = new Set();          // cards whose long level list is shown whole
     let adding = null;                  // the entry whose inline row is open
-    let renaming = null;                // {index, id} of the level being renamed
+    let renaming = null;                // {index, id, draft?} of the level being renamed (draft: the text typed so far)
+    let pendingLeave = null;            // leaves the field being edited, saving it: run when its pop-over closes
+    let focusRow = null;                // {index, id}: the level row whose rename button takes the focus after the next redraw
     let menuOpen = false;
 
     const addBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary cgrp-add',
@@ -370,27 +379,68 @@ function createFactors({ D, id, model, on }) {
         return out;
     }
 
+    /** Whether a level row has a rename button. */
+    function canRename(p, r) {
+        return r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table' || factorKind(p) === 'binned';
+    }
+
+    const RENAME_HINT = 'Enter saves, Escape cancels, Tab saves and moves to the next level.';
+
+    /**
+     * The row whose name is being edited. Every way out is a rule: Enter saves and leaves the field; Escape cancels and leaves
+     * it (the pop-over's own Escape stands aside for a field marked `data-az-own-escape`, so a second Escape closes the pop-over);
+     * Tab saves and edits the next level's name (Shift+Tab the previous); leaving the field by a click or by closing saves.
+     * After a way out the focus is on the row's rename button, never in a new edit.
+     */
+    function editedRow(i, p, info, r, li, count) {
+        const mine = renaming;
+        const input = el('input', { type: 'text', class: 'form-control form-control-sm cgrp-level__name', value: mine.draft !== undefined ? mine.draft : r.label,
+            title: RENAME_HINT, data: { azOwnEscape: '' }, aria: { label: `New name for ${r.label}`, description: RENAME_HINT } });
+        let finished = false;
+        /** Leave the field: `keep` saves it, `move` (a level id) starts the next edit, else the focus goes to the row's button. */
+        const leave = (keep, move = null) => {
+            if (finished) return;
+            finished = true;
+            pendingLeave = null;
+            const started = renaming === mine;          // a click on another level's ✎ may have started its edit already
+            if (started) renaming = move ? { index: i, id: move } : null;
+            if (!move && started) focusRow = { index: i, id: r.id };
+            const next = renameLevel(p, r.id, input.value, defaultsOf(i).get(r.id));
+            if (keep && JSON.stringify(next) !== JSON.stringify(p)) commitFactor(i, next, `rename level ${r.was || r.label}`);
+            else paint();
+        };
+        pendingLeave = () => leave(true);
+        const neighbour = (by) => {
+            const rows = levelRows(p, info, defaultsOf(i)).filter((x) => canRename(p, x));
+            const at = rows.findIndex((x) => x.id === r.id);
+            return rows[at + by] ? rows[at + by].id : null;
+        };
+        input.addEventListener('input', () => { mine.draft = input.value; });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); leave(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); }
+            else if (e.key === 'Tab') { e.preventDefault(); leave(true, neighbour(e.shiftKey ? -1 : 1)); }
+        });
+        // Leaving by the pointer saves, but after the click has landed: a redraw between its press and release would take the
+        // control it pressed from under it.
+        input.addEventListener('focusout', () => {
+            if (finished) return;
+            // a redraw that takes the field away (the server's reply) blurs it too: that is no way out, the edit goes on in
+            // the field the redraw makes from `renaming` and its draft
+            const later = () => setTimeout(() => { if (input.isConnected) leave(true); }, 0);
+            if (pointerIsDown) document.addEventListener('pointerup', later, { once: true, capture: true }); else later();
+        });
+        li.classList.add('cgrp-level--editing');
+        li.append(input, count);
+        setTimeout(() => { if (input.isConnected) { input.focus(); input.select(); } }, 0);
+        return li;
+    }
+
     function levelRow(i, p, info, r) {
         const count = el('span', { class: 'cgrp-level__n', text: r.n === null ? '' : fmt(r.n) });
         const label = el('span', { class: 'cgrp-level__label', text: r.label, title: r.was ? `Was: ${r.was}` : undefined });
         const li = el('li', { class: 'cgrp-level', data: { id: r.id } });
-        if (renaming && renaming.index === i && renaming.id === r.id) {
-            const input = el('input', { type: 'text', class: 'form-control form-control-sm cgrp-level__name', value: r.label,
-                aria: { label: `New name for ${r.label}` } });
-            const done = (keep) => {
-                const text = input.value;
-                renaming = null;
-                if (keep) commitFactor(i, renameLevel(p, r.id, text, defaultsOf(i).get(r.id)), `rename level ${r.was || r.label}`);
-                else paint();
-            };
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); done(true); }
-                else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
-            });
-            li.append(input, count);
-            setTimeout(() => { input.focus(); input.select(); }, 0);
-            return li;
-        }
+        if (renaming && renaming.index === i && renaming.id === r.id) return editedRow(i, p, info, r, li, count);
         if (r.tickable) {
             const box = el('input', { type: 'checkbox', checked: r.ticked, aria: { label: r.label } });
             box.addEventListener('change', () => commitFactor(i, tickLevel(p, info, r.id, box.checked), `${box.checked ? 'tick' : 'untick'} ${r.label}`));
@@ -405,7 +455,7 @@ function createFactors({ D, id, model, on }) {
             li.append(label);
         }
         li.append(count);
-        if (r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table' || factorKind(p) === 'binned') {
+        if (canRename(p, r)) {
             li.append(el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-level__rename', title: `Rename ${r.label}`,
                 aria: { label: `Rename ${r.label}` }, on: { click: () => { renaming = { index: i, id: r.id }; paint(); } } }, '✎'));
         }
@@ -487,7 +537,11 @@ function createFactors({ D, id, model, on }) {
         const nodes = editorBody(i, entry);
         if (!nodes.length) { entry.ctl.close(); return; }
         body.append(...nodes);
-        if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
+        if (focusRow && focusRow.index === i) {
+            const button = body.querySelector(`.cgrp-level[data-id="${CSS.escape(focusRow.id)}"] .cgrp-level__rename`);
+            focusRow = null;
+            if (button) button.focus({ preventScroll: true });
+        } else if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
         entry.ctl.update();
     }
 
@@ -509,6 +563,9 @@ function createFactors({ D, id, model, on }) {
                 fillEditor(i);
                 if (on.wants) on.wants();
                 return () => {
+                    if (pendingLeave) pendingLeave();          // a name being edited is saved by closing
+                    renaming = null;
+                    focusRow = null;
                     for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
                     entry.body = entry.ctl = null;
                     expanded.delete(i);

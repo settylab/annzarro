@@ -102,6 +102,9 @@
 .cgrp-level__n { margin-left: auto; font-variant-numeric: tabular-nums; }
 .cgrp-level__rename { padding: 0 4px; text-decoration: none; }
 .cgrp-level__name { max-width: 14rem; }
+/* the row being renamed: a field, a tinted row and a bar at its edge; every other row is plain */
+.cgrp-level--editing { background: var(--az-accent-bg); box-shadow: inset 3px 0 0 var(--az-link); padding-left: 4px; border-radius: 3px; }
+.cgrp-level--editing .cgrp-level__name { border-color: var(--az-link); flex: 1 1 auto; }
 .cgrp-rest-row, .cgrp-levels__actions, .cgrp-keepout-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-top: 4px; }
 .cgrp-rest-opt, .cgrp-keepout-row { margin: 0; }
 

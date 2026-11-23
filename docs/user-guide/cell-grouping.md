@@ -67,6 +67,8 @@ the rest of the panel and is the only part that grows with it.
   other'**, or are left out: **Leave out of all groups** puts their cells in no group.
 - Drag ticked levels to change their order. **Tick all**, **Tick none** and **Sort by cells** help with long lists.
 - **✎** renames a level. The new name is used everywhere the grouping is shown; hovering the level shows what it was.
+  While you type, **Enter** saves, **Escape** cancels (a second Escape closes the pop-over), **Tab** saves and moves to the
+  next level's name, and a click anywhere else saves. The focus then stays on the level, not in a new edit.
   A rename never changes which cells are in the group, and never makes the server compute anything.
 - A boolean column's levels are the column's name and `not` the name, for example `is_doublet` and `not is_doublet`.
 - A column with more than 2,000 levels that hold a cell is refused: "cell_id has 8,090 levels; a factor holds up to
