@@ -153,9 +153,31 @@ A group with no value for the gene shows "—", never 0.
   "Small groups (under 10 cells)", or **Hide** them (their cells go in no group).
 
 Names are made in the browser from the levels and their renames; two groups that end up with the same name get
-`(2)`, `(3)`. Colours: a grouping of one categorical column takes that column's colours, so it matches a plot coloured
-by the column; any other grouping takes the palette in group order. One grouping has the same colours in every panel,
-but its colours can change when a new subset changes which groups exist.
+`(2)`, `(3)`.
+
+### Colours
+
+One grouping has the same colours in every panel: the group list, a Cell Plot coloured by it (large plots too), the
+Cell-Gene Plot's strips and their legend, and a Cell Count Plot split by it. Nothing is asked of the server when you
+change a colour, and the change is one undo step.
+
+**Factor colours.** A categorical column takes the colours the dataset stores for it (`uns["<column>_colors"]`, used
+when it holds at least as many colours as the column has categories, as scanpy does; each category keeps its colour
+whichever cells are shown). Otherwise it takes the app's group colours in level order. A binned factor takes a
+sequential map (viridis) over its bins, in order. In a factor's **Edit ▾** pop-over, **Colors** has a **Palette**
+(**Dataset colors** when the column has them, **Default**, or a named palette; a binned factor offers sequential maps), a
+colour swatch on each level that opens the browser's colour picker, and **Reset colors**. A factor's palette does not
+change a Cell Plot coloured by the bare column: that plot has its own palette select.
+
+**Group colours.** A grouping of one factor shows that factor's colours. A grouping of several factors has its own
+palette in group order, repeating by the 64 colour groups. Under **Settings** ▸ **Colors**, **Color groups by** chooses
+**Own palette** (the default) or one of the factors, so that every group takes the colour of its level of that factor;
+**Palette** changes the own palette; and **Reset group colors (n)** removes the n colours you set by hand. Click a
+group's swatch in the group list to give that group a colour of its own; it wins over everything else. A Cell Plot's
+own palette select still recolours that plot alone.
+
+The settings are stored in the recipe (`colors`, only what is not at its default), so a link or a panel set carries them
+and a link made before colours existed opens unchanged. They are no part of what is computed.
 
 ### Cells in no group
 

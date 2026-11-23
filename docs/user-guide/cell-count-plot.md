@@ -28,6 +28,10 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 | **Sort by height**, **Reverse**, **Horizontal** | Order and orientation of bars |
 | **Plot Options** | **Log count axis**, **Ring** (pie), **Fade by its share** (most frequent level), the density's **Bandwidth adjust**, **Scale curves by level size** and **As an image**, **Save as grouping**, **Show as table** and **Download CSV** |
 
+**Colours.** The bars, slices and curves of a **Color by** input are in the colours of its levels: a column's stored
+colours when it has them, else the app's group colours; for a {doc}`cell-grouping`, the grouping's own colours of its
+groups, so a bar is the colour of the group's swatch (see Colours in {doc}`cell-grouping`).
+
 Switching mode keeps every input: those the new mode uses stay in place, and the others are kept for when you switch
 back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: in Table 1, in Table 2".
 

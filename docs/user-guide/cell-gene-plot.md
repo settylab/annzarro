@@ -200,7 +200,7 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
 The colour scale is **Reds** by default. Under a z-score scaling the default is **RdBu**, centred at 0, so that
 values above and below the mean read as opposite colours. A scale you pick yourself is kept, whatever the scaling.
 
-The group axis carries a colour strip in the grouping's colours, one per factor; small groups get "small" after their
+The group axis carries a colour strip in the grouping's colours, one per factor (the colours of its **Colors** settings, {doc}`cell-grouping`; a colour changed there redraws the strips and their legend at once); small groups get "small" after their
 label. Gene and group labels thin out when they would overlap, and the hover always names the group, the gene (or the
 section and its entry), each value with its statistic and layer, and the group's cells.
 
