@@ -591,9 +591,9 @@ const range = Object.freeze({
     reset: '\u21BA',
     resetHelp: (what) => `Back to auto: ${what ? `${what.toLowerCase()} ` : ''}limits follow the drawn values`,
     problem: 'Enter a number, or leave it empty for automatic.',
-    follows: (end, value) => `Follows the drawn values (${end} ${value}). Type a value to fix it for this plot.`,
-    followsNone: 'Follows the drawn values. Type a value to fix it for this plot.',
-    fixed: (value) => `Fixed at ${value}. Clear to follow the drawn values.`
+    follows: (end, value) => `Follows the drawn values (${end} ${value}). Type a value to override it for this plot.`,
+    followsNone: 'Follows the drawn values. Type a value to override it for this plot.',
+    fixed: (value) => `Overrides the drawn values (set to ${value}). Clear to follow them.`
 });
 
 export const VOCABULARY = Object.freeze({ range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });

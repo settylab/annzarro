@@ -150,6 +150,6 @@ test('the Count Plot\'s colour values are the figure\'s scale: z of a heatmap, m
 test('the title says what auto follows, in the style of the threshold box', () => {
     const { boxes } = mount();
     boxes.set({ limits: [null, 4, null], drawn: [0.125, 87.4] });
-    assert.equal(boxes.fields[0].title, 'Follows the drawn values (smallest 0.125). Type a value to fix it for this plot.');
-    assert.equal(boxes.fields[1].title, 'Fixed at 4. Clear to follow the drawn values.');
+    assert.equal(boxes.fields[0].title, 'Follows the drawn values (smallest 0.125). Type a value to override it for this plot.');
+    assert.equal(boxes.fields[1].title, 'Overrides the drawn values (set to 4). Clear to follow them.');
 });
