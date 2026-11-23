@@ -11,6 +11,9 @@ colour-scales
 tables-and-filters
 gene-set
 gene-signature
+cell-grouping
+cell-gene-plot
+cell-count-plot
 panel-sets
 share-links
 plot-options
