@@ -205,7 +205,7 @@ export function normalizeCountPlot(raw) {
 }
 
 /** How a binned axis is drawn: each bin at its index, all one width ('even'), or at its values ('value'). */
-export const BIN_SPACINGS = Object.freeze(['even', 'value']);
+const BIN_SPACINGS = Object.freeze(['even', 'value']);
 
 /** `{x?, y?}` of the stored spacings; a value that is not one is reported and left out. */
 function normalizeBinSpacing(raw, bad) {
