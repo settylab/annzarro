@@ -88,7 +88,7 @@ def test_page_and_assets_carry_the_prefix(tmp_path, passthrough):
     html = client.get("/explore/" if passthrough else "/").get_data(as_text=True)
     assert '<meta name="annzarro-root" content="/explore">' in html
     assert 'src="/explore/static/js/main.js"' in html
-    assert 'href="/explore/static/vendor/css/bootstrap.min.css"' in html
+    assert 'href="/explore/static/vendor/css/bootstrap.min.css?v=' in html
     assert 'src="/static/' not in html and 'href="/static/' not in html
     api = "/explore/api/v1/config" if passthrough else "/api/v1/config"
     assert client.get(api).status_code == 200

@@ -36,7 +36,7 @@ VENDOR_SENTINEL = os.path.join(VENDOR_DIR, "js", "bootstrap.bundle.min.js")
 
 def _referenced_vendor_files():
     html = open(INDEX_HTML).read()
-    refs = set(re.findall(r"filename='vendor/([^']+)'", html))
+    refs = set(re.findall(r"(?:filename=|static_url\()'vendor/([^']+)'", html))
     return refs
 
 
