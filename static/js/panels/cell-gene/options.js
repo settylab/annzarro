@@ -14,7 +14,8 @@
  *   dot sizes and the % at the smallest and largest dot) and Plot Options (dots' outline, sections, labels, legends,
  *   totals, Export with Download CSV from the CSV's rows, utils/cell-gene-model.js `longRows`; UX 7, CXG-20). A
  *   pop-over never changes the size of the panel. Every change applies live as one undoable step of the panel
- *   (`ctx.set(patch, label)`).
+ *   (`ctx.set(patch, label)`). Before them, the `3D` toggle (UX 6b, WP-12): `view: '3d'`, disabled with its reason
+ *   over the bar cap (`view3dGate`); in 3D, Plot Options' Export greys SVG ("3D exports as an image only").
  *
  * STYLE FIELDS (plan 1.6: additive, default when absent, never frozen): `colorScale`, `reverse`, `limits: [min, max]`, `center`,
  * `printValues`, `dotSizes: [smallest, largest]` (px), `dotMin`, `dotMax` (% at the smallest and largest dot), `gap`
@@ -36,8 +37,10 @@ import { longCsv } from '../../utils/cell-gene-model.js';
 import { generateDiscreteColors } from '../plot-utilities/colors.js';
 import { createPopover } from '../../ui/popover.js';
 import { dendrogramBlocks } from './draw-annotations.js';
+import { BARS_3D_MAX, checkBarCap } from '../../utils/bars-3d.js';
 
 const WO = VOCABULARY.cellGene.options;
+const W3 = VOCABULARY.cellGene.view3d;
 
 const SCALES = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Viridis']);
 const DEFAULT_SCALE = 'Reds';
@@ -235,12 +238,34 @@ export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
     };
 }
 
+// ================================================================================================ 3D
+
+/**
+ * The bar cap in force: BARS_3D_MAX, or a lower one the browser tests set before the app loads (`window.__azBars3dMax`,
+ * as `window.__azTableLimits` sets the table's limits), so a small grid can stand for one over the cap.
+ */
+function barMax() {
+    const set = typeof window !== 'undefined' ? window.__azBars3dMax : undefined;
+    return typeof set === 'number' && set > 0 ? set : BARS_3D_MAX;
+}
+
+/**
+ * Whether the matrix may be drawn in 3D (UX 6b): one bar per row and group, at most the cap. Refused with the matrix's
+ * words ("Use fewer genes or groups.").
+ * @param {{rows: number, groups: number, max?: number}} shape
+ * @returns {{ok: boolean, count: number, max: number, text: string}}
+ */
+export function view3dGate({ rows, groups, max = barMax() }) {
+    return checkBarCap(rows * groups, { max, hint: 'matrix' });
+}
+
 // ================================================================================================ the table
 
 /**
  * The drawing as the CSV's table (CXG-20): one column for Color as computed, one as displayed when a scaling is on, one
  * for Size in dots; a one-row section with a quantity of its own gets its own column, named with the section, filled
- * on its row only. Rows and groups in the drawn order.
+ * on its row only. In 3D a Height of its own gets a column, after the rest (UX 6b); "Same as Color" is the Color column.
+ * Rows and groups in the drawn order.
  * @param {Object} model - the drawing model the panel last drew (draw.js)
  * @returns {Parameters<typeof import('../../utils/cell-gene-model.js').longRows>[0]}
  */
@@ -269,6 +294,9 @@ export function tableOf(model) {
     columns.push(...add('color', color, () => color.raw || color.values, 'none'));
     if (color.scaling && color.scaling !== 'none') columns.push(...add('color', color, () => color.values, color.scaling));
     if (model.mode === 'dots' && model.size && model.size.values) columns.push(...add('size', model.size, () => model.size.values, 'none'));
+    const h = model.view === '3d' ? model.height : null;
+    // the header leads with "Height" where a section's own column leads with its section: "Height · Sum · counts · not scaled"
+    if (h && !h.same) columns.push({ section: W3.height, stat: h.stat, layer: h.layer, detectAbove: h.detectAbove, scaling: 'none', values: h.values });
     return {
         groups: model.groups.map((g) => ({ label: g.label, n: g.n })),
         rows: model.rows.map((row) => ({ section: row.section ? row.section.title : '', label: row.label })),
@@ -297,6 +325,9 @@ function clusterNotes(drawn) {
 /** A file name from the plot's title. */
 const fileName = (title) => `${String(title || 'cell-gene').replace(/[^\w.-]+/g, '_') || 'cell-gene'}.csv`;
 
+/** The image formats of Plot Options' Export. */
+const IMAGE_FORMATS = Object.freeze(['png', 'jpeg', 'webp', 'svg']);
+
 /** The fields Color ▾'s Reset clears: the map, its direction and range, and the dots' sizes. */
 const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center', 'printValues', 'dotSizes', 'dotMin', 'dotMax']);
 
@@ -305,8 +336,10 @@ const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center',
  * controls on every open and repainted from the configuration on every change.
  * @param {HTMLElement} slot - the control grid's Layout slot
  * @param {{panelId: string, D: Object, config: () => Object, set: (patch: Object, label: string) => void, undo: () => boolean,
- *   drawn: () => ({model: Object, order: Object}|null), recipe: () => (Object|null), titleOf: Function, title: () => string}} ctx -
- *   `recipe` is the grouping recipe the cell axis's groups are of
+ *   drawn: () => ({model: Object, order: Object}|null), recipe: () => (Object|null), titleOf: Function, title: () => string,
+ *   shape?: () => ({rows: number, groups: number}|null), exportImage?: (format: string) => void}} ctx - `recipe` is the
+ *   grouping recipe the cell axis's groups are of; `shape` the matrix's rows and groups (the 3D cap); `exportImage`
+ *   saves the plot as an image
  * @returns {{update: () => void, destroy: () => void}}
  */
 function mount(slot, ctx) {
@@ -361,6 +394,13 @@ function mount(slot, ctx) {
     const flat = (key, value, dflt, label) => ctx.set({ [key]: value === dflt ? undefined : value }, label);
     const onOff = (on, label) => `${on ? '' : 'no '}${label.toLowerCase()}`;
     const button = (cls, label) => el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary ${cls}` }, label);
+
+    // ---------------------------------------------------------------- 3D (UX 6b, WP-12): a view, one undoable step
+    const view3dBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-3d-btn', aria: { pressed: 'false' },
+        on: { click: () => {
+            const on = config().view === '3d';
+            ctx.set({ view: on ? undefined : '3d' }, on ? 'show in 2D' : 'show in 3D');
+        } } }, W3.button);
 
     // ---------------------------------------------------------------- Cluster ▾ (UX 3.4; WP-2: the clustering's every field)
     const clusterBtn = button('cgene-cluster-btn', WO.cluster);
@@ -471,6 +511,9 @@ function mount(slot, ctx) {
         number('outlineWidth', WO.outlineWidth, (v) => nested('outline', 'width', v === null ? DEFAULT_OUTLINE.width : Math.max(0, Math.min(OUTLINE_MAX, v)), DEFAULT_OUTLINE.width, 'dot outline width'),
             { min: 0, max: OUTLINE_MAX, step: 0.25 }));
     const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-csv-btn', on: { click: downloadCsv } }, WO.csv);
+    // the plot as an image; SVG of a 3D scene would be a raster picture inside SVG, so it is greyed in 3D (UX 6b)
+    const imageBtns = IMAGE_FORMATS.map((format) => el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-export-btn',
+        data: { format }, on: { click: () => { if (ctx.exportImage) ctx.exportImage(format); } } }, format.toUpperCase()));
     const optionsBody = el('div', { class: 'cgene-pop cgene-options' },
         dots,
         section(WO.heading.sections,
@@ -489,9 +532,9 @@ function mount(slot, ctx) {
             check('strips', WO.strips, (on) => nested('legend', 'strips', on, true, onOff(on, WO.strips)))),
         section(WO.heading.totals,
             check('totals', WO.totals, (on) => flat('totals', on, false, onOff(on, WO.totals)))),
-        el('fieldset', { class: 'cgene-options__section cgene-export' }, el('legend', { text: WO.exportHeading }), csvBtn));
+        el('fieldset', { class: 'cgene-options__section cgene-export' }, el('legend', { text: WO.exportHeading }), ...imageBtns, csvBtn));
 
-    slot.append(clusterBtn, colorBtn, optionsBtn, note);
+    slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn, note);
 
     // ---------------------------------------------------------------- the pop-overs (ui/popover.js)
     const popover = (anchor, name, title, body) => createPopover({
@@ -587,6 +630,21 @@ function mount(slot, ctx) {
         const drawn = ctx.drawn();
         csvBtn.disabled = !drawn;
         note.textContent = clusterNotes(drawn).join(' ');
+
+        // 3D: pressed while stored; over the cap it cannot be turned on, and says why (a stored 3D can always be turned off)
+        const in3d = c.view === '3d';
+        const shape = ctx.shape ? ctx.shape() : null;
+        const gate = shape ? view3dGate(shape) : { ok: true, text: '' };
+        view3dBtn.setAttribute('aria-pressed', in3d ? 'true' : 'false');
+        view3dBtn.classList.toggle('active', in3d);
+        view3dBtn.disabled = !gate.ok && !in3d;
+        view3dBtn.title = !gate.ok ? gate.text : in3d ? W3.buttonOnHelp : W3.buttonHelp;
+        const drawn3d = !!(drawn && drawn.model && drawn.model.view === '3d');
+        for (const b of imageBtns) {
+            const svgOff = b.dataset.format === 'svg' && drawn3d;
+            b.disabled = !drawn || svgOff;
+            if (svgOff) b.title = W3.svgOff; else b.removeAttribute('title');
+        }
     }
 
     paint();

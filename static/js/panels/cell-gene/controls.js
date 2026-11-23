@@ -20,6 +20,7 @@ import { normalizeGrouping } from '../../utils/cell-grouping.js';
 import { GROUP_STATISTICS_MODEL, ALWAYS_OFFERED, STATISTIC_INFO } from '../../utils/group-statistics.js';
 import { SCALINGS } from '../../utils/cell-gene-model.js';
 import { loopReason } from '../../utils/panel-references.js';
+import { createPopover } from '../../ui/popover.js';
 import { GROUP_AXIS, OFFER_OTHER, aggregationEntries, aggregationValue, aggregationHelp, needsThreshold } from './sections.js';
 
 const CG = VOCABULARY.cellGene;
@@ -176,7 +177,7 @@ function options(D, select, list) {
  */
 function measureRow(D, which, label, on) {
     const { el } = D;
-    const Label = which === 'color' ? 'Color' : 'Size';
+    const Label = label;
     const back = (select, value) => { select.value = value; };
     let held = { stat: '', layer: '' };
     const stat = el('select', { class: `form-select form-select-sm cgene-${which}`, aria: { label: `${Label}: statistic` },
@@ -228,8 +229,8 @@ export function measureModel({ spec, recipe, datasetLayers, kinds, threshold }) 
  * @param {Object} opts
  * @param {Object} opts.D - the DOM builder (gene-set-utilities/dom.js)
  * @param {string} opts.id - the panel id (unique names)
- * @param {() => Object} opts.model - {axis, choices: {obs, groupings}, mode, color, size (measureModel each), offerShown,
- *   scale, swap}
+ * @param {() => Object} opts.model - {axis, choices: {obs, groupings}, mode, color, size, height (measureModel each;
+ *   height's statistics start with Same as Color), view3d, offerShown, scale, swap}
  * @param {Object} opts.on - axis(axis), newGrouping(), mode(mode), stat(which, value), layer(which, value),
  *   above(which, text), offerOther(), scale(value), swap(on)
  * @param {HTMLElement} opts.sections - the section list's element, in the What group
@@ -256,6 +257,9 @@ export function createControls({ D, id, model, on, sections, addGenes, offer = n
     const scaleSel = el('select', { class: 'form-select form-select-sm cgene-scale', aria: { label: 'Scale' }, on: { change: () => on.scale(scaleSel.value) } });
     options(D, scaleSel, SCALINGS.map((s) => ({ value: s, label: CG.scaling[s] })));
     const size = measureRow(D, 'size', 'Size', on);
+    // the 3D bars' height (UX 6b, WP-12): its statistic select starts with Same as Color; shown while 3D is on
+    const height = measureRow(D, 'height', CG.view3d.height, on);
+    height.element.title = CG.view3d.heightHelp;
     const offerSlot = el('div', { class: 'cgene-offer', hidden: true }, offer);
     const swap = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-swap', aria: { pressed: 'false' },
         on: { click: () => on.swap(swap.getAttribute('aria-pressed') !== 'true') } }, 'Swap axes');
@@ -265,7 +269,7 @@ export function createControls({ D, id, model, on, sections, addGenes, offer = n
         el('div', { class: 'cgene-row' }, field('Groups', el('span', { class: 'cgene-axis' }, axisType, axisKey)), field('Mode', mode)),
         el('div', { class: 'cgene-genes' }, el('div', { class: 'cgene-genes__head' }, el('span', { class: 'cgene-field__label', text: 'Genes' }), addGenes), sections));
     const values = el('div', { class: 'cgene-group cgene-group--values', role: 'group', aria: { label: 'Values' } },
-        color.element, field('Scale', scaleSel), size.element, offerSlot);
+        color.element, field('Scale', scaleSel), size.element, height.element, offerSlot);
     const layout = el('div', { class: 'cgene-group cgene-group--layout', role: 'group', aria: { label: 'Layout' } }, swap, layoutSlot);
     const element = el('div', { class: 'cgene-controls', 'data-panel-controls': '' }, what, values, layout);
 
@@ -307,6 +311,8 @@ export function createControls({ D, id, model, on, sections, addGenes, offer = n
         color.paint(m.color);
         size.paint(m.size);
         size.element.hidden = m.mode !== 'dots';
+        if (m.height) height.paint(m.height);
+        height.element.hidden = !m.height || !m.view3d;
         offerSlot.hidden = !m.offerShown || !offer;
         scaleSel.value = m.scale;
         swap.setAttribute('aria-pressed', m.swap ? 'true' : 'false');
@@ -398,6 +404,17 @@ export function createSectionList({ D, id, model, on }) {
     let menuAt = null;
     let drawnKey = null;
     let dragFrom = null;
+    const values = new Map();      // section index -> {button, pop}: the row's summary button and its pop-over, kept across repaints
+
+    /** What a part (Color or Size) of a one-row section reads, as its select names it. */
+    function partLabel(part) {
+        const value = aggregationValue(part.held);
+        for (const group of aggregationEntries({ held: part.held, options: part.options, lapsedLabel: part.lapsedLabel })) {
+            const found = group.entries.find((e) => e.value === value);
+            if (found) return found.label;
+        }
+        return value;
+    }
 
     function aggregationBlock(i, which, part) {
         const held = part.held;
@@ -421,6 +438,51 @@ export function createSectionList({ D, id, model, on }) {
         const help = el('div', { class: 'cgene-section__help', data: { which }, text: aggregationHelp(held, part.layer) });
         return el('div', { class: 'cgene-section__value', data: { which } },
             el('span', { class: 'cgene-field__label', text: which === 'color' ? 'Color' : 'Size' }), select, above, help);
+    }
+
+    /** The pop-over's body: the section's Color and Size blocks, drawn from the model as it is now. */
+    function fillValues(i, body) {
+        const s = model().sections[i];
+        D.clear(body);
+        if (!s || s.rows !== 'set') return;
+        body.appendChild(el('div', { class: 'cgene-section__values' }, aggregationBlock(i, 'color', s.color), s.size ? aggregationBlock(i, 'size', s.size) : null));
+    }
+
+    /** The summary button of a one-row section (WP-8): "Color: … · Size: …", opening Color and Size in a pop-over. */
+    function valuesButton(s, i) {
+        let held = values.get(i);
+        if (!held) {
+            const button = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-section__values-btn' });
+            const pop = createPopover({ anchor: button, name: 'values', title: 'Color and Size',
+                render: (body) => { fillValues(i, body); } });
+            held = { button, pop };
+            values.set(i, held);
+        }
+        const text = s.size ? `Color: ${partLabel(s.color)} · Size: ${partLabel(s.size)}` : `Color: ${partLabel(s.color)}`;
+        held.button.textContent = `${text} ▾`;
+        held.button.title = text;
+        held.button.setAttribute('aria-label', `Color and Size of ${s.title}: ${text}`);
+        return held.button;
+    }
+
+    /** Keep the buttons of the one-row sections only, and refresh a pop-over that is open (its select values follow the model). */
+    function syncValues(m) {
+        for (const [i, held] of [...values]) {
+            const s = m.sections[i];
+            if (!s || s.rows !== 'set') { held.pop.destroy(); values.delete(i); continue; }
+            if (held.pop.isOpen()) refreshValues(i, held.pop.surface.querySelector('.az-popover-body'), held.pop);
+        }
+    }
+
+    function refreshValues(i, body, pop) {
+        const active = document.activeElement;
+        const keep = active && body.contains(active) ? { cls: active.className.split(' ').find((c) => c.startsWith('cgene-section__')), which: active.dataset.which } : null;
+        fillValues(i, body);
+        if (keep) {
+            const target = body.querySelector(`.${keep.cls}${keep.which ? `[data-which="${keep.which}"]` : ''}`);
+            if (target) target.focus();
+        }
+        pop.update();
     }
 
     function rowsGroup(i, rows) {
@@ -460,8 +522,7 @@ export function createSectionList({ D, id, model, on }) {
             rowsGroup(i, s.rows), el('span', { class: 'cgene-section__more' }, menuBtn, sectionMenu(i, n)));
         const li = el('li', { class: 'cgene-section', tabindex: '0', draggable: 'true', data: { index: i }, aria: { label: s.title } }, head,
             s.note ? el('div', { class: 'cgene-section__note', role: 'note', text: s.note }) : null,
-            s.rows === 'set' ? el('div', { class: 'cgene-section__values' }, aggregationBlock(i, 'color', s.color),
-                s.size ? aggregationBlock(i, 'size', s.size) : null) : null);
+            s.rows === 'set' ? el('div', { class: 'cgene-section__summary' }, valuesButton(s, i)) : null);
         li.addEventListener('keydown', (e) => {
             if (e.target !== li || !e.altKey) return;
             if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); on.move(i, i - 1); }
@@ -482,6 +543,7 @@ export function createSectionList({ D, id, model, on }) {
             which: active.dataset ? active.dataset.which : undefined } : null;
         D.clear(list);
         m.sections.forEach((s, i) => list.appendChild(row(s, i, m.sections.length)));
+        syncValues(m);
         if (!focus) return;
         const li = list.querySelector(`.cgene-section[data-index="${focus.index}"]`);
         if (!li) return;
