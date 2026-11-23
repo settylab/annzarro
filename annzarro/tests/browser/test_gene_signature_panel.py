@@ -661,7 +661,8 @@ def test_the_menu_offers_the_panel_when_nothing_is_switched_off(page, served):
     page.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}")
     page.wait_for_selector(".panel-type-option[data-type='gene-signature']", timeout=30000)
     types = page.locator(".panel-type-option").evaluate_all("els => els.map(e => e.dataset.type)")
-    assert types[-1] == "gene-signature" and "gene-set" in types
+    # Gene Signature follows Gene Set Analysis, and the three types of 0.8.0 come after it
+    assert types.index("gene-signature") == types.index("gene-set") + 1 and types[-3:] == ["cell-grouping", "cell-gene", "cell-count"]
 
 
 def test_a_new_dataset_keeps_the_recipe_and_recounts_the_missing_genes(page, served):
