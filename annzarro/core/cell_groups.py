@@ -47,15 +47,24 @@ import numpy as np
 
 from . import binning as bn
 from . import cell_sources as cs
+from . import cost_limits
 from . import gene_score as gs
 from .remote import is_remote_path
 
 ALGORITHM_VERSION = 1
 
 #: The group limit (operator decision P1): the most levels a partitioning may make and the most groups a grouping
-#: may have. One constant; GROUPING_LIMITS names its uses.
-GROUP_LIMIT = 2000
-GROUPING_LIMITS = dict(partitionings=8, levels=GROUP_LIMIT, groups=GROUP_LIMIT)
+#: may have. These are the defaults of limits.groups and limits.partitionings; ``grouping_limits()`` names the values
+#: in force (the request's, annzarro/core/cost_limits.py).
+GROUP_LIMIT = cost_limits.COST_LIMITS["groups"].default
+GROUPING_LIMITS = dict(partitionings=cost_limits.COST_LIMITS["partitionings"].default, levels=GROUP_LIMIT,
+                       groups=GROUP_LIMIT)
+
+
+def grouping_limits() -> Dict[str, int]:
+    """The grouping limits in force: partitionings per grouping, levels per partitioning, groups per grouping."""
+    groups = cost_limits.get("groups")
+    return dict(partitionings=cost_limits.get("partitionings"), levels=groups, groups=groups)
 
 SMALL_THRESHOLD = 10
 SMALL_MODES = ("keep", "collect", "hide")
@@ -334,7 +343,7 @@ def _parse_partitioning(raw: Any, depth: int) -> Partitioning:
 def _parse_grouping(parts: Any, small: Any, depth: int) -> Grouping:
     if not isinstance(parts, list) or not parts:
         raise _bad("A grouping needs at least one partitioning.")
-    limit = GROUPING_LIMITS["partitionings"]
+    limit = grouping_limits()["partitionings"]
     if len(parts) > limit:
         raise GroupError(422, "too_many_partitionings", f"A grouping has at most {limit} factors; this one has "
                          f"{len(parts)}.", count=len(parts), limit=limit)
@@ -488,7 +497,7 @@ class Plan:
 
     def estimate(self) -> Dict[str, Any]:
         return {"seconds": round(self.seconds, 2), "tier": self.tier,
-                "live_max_s": gs.LIVE_MAX_S, "auto_max_s": gs.AUTO_MAX_S, "max_s": gs.CONFIRM_MAX_S,
+                **gs.tier_limits(),
                 "entries": self.entries, "layout": self.layout, "n_cells": self.n_cells, "lane": self.lane,
                 "parts": [{"type": p.spec.source["type"], "seconds": round(p.seconds, 3), "entries": p.entries,
                            "layout": p.layout} for p in self.top.parts]}
@@ -620,9 +629,10 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
     entries = sum(p.entries for p in parts if p.nested is None)
     layouts = sorted({p.layout for p in parts if p.entries})
     tier = gs.tier_of(seconds)
-    lane = "light" if seconds <= gs.LIVE_MAX_S and not any(p.whole_matrix for p in parts) else "heavy"
+    lane = "light" if seconds <= gs.live_max_s() and not any(p.whole_matrix for p in parts) else "heavy"
+    # the group limit decides whether a grouping is refused, so a grouping resolved under another is another entry
     key = json.dumps({"v": ALGORITHM_VERSION, "shape": request.shape, "grouping": top.describe(request),
-                      "subset": request.subset}, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                      "subset": request.subset, "limits": grouping_limits()}, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return Plan(reader=reader, dataset_path=dataset_path, request=request, top=top, n_cells=n_cells,
                 seconds=seconds, entries=entries, layout=layouts[0] if len(layouts) == 1 else
                 ("mixed" if layouts else "column"), tier=tier, lane=lane,
@@ -788,8 +798,9 @@ class _Levels:
             self._prepare_categorical()
         else:
             self._prepare_binned()
-        if self.n_levels > GROUPING_LIMITS["levels"]:
-            raise _Refused(reason="too_many_levels", count=self.n_levels, limit=GROUPING_LIMITS["levels"],
+        limit = grouping_limits()["levels"]
+        if self.n_levels > limit:
+            raise _Refused(reason="too_many_levels", count=self.n_levels, limit=limit,
                            partitioning=self.index)
 
     def _prepare_set(self) -> None:
@@ -999,7 +1010,7 @@ class _Levels:
 
     def _prepare_index(self) -> None:
         n = self.ctx.n_shown
-        limit = GROUPING_LIMITS["levels"]
+        limit = grouping_limits()["levels"]
         if n > limit:
             raise _Refused(reason="too_many_levels", count=n, limit=limit, partitioning=self.index)
         rows = self.ctx.rows if self.ctx.rows is not None else np.arange(n, dtype=np.int64)
@@ -1072,8 +1083,8 @@ class _Levels:
             yield from slabs
         if first.kind == "category":
             ids = [canonical_label(v) for v in first.categories]
-            limit = GROUPING_LIMITS["levels"] if self.level_limit is None else \
-                min(self.level_limit, GROUPING_LIMITS["levels"])
+            levels = grouping_limits()["levels"]
+            limit = levels if self.level_limit is None else min(self.level_limit, levels)
             if len(ids) > limit and self.part.member is None and self.part.spec.levels is None:
                 self._from_occupied(ids, rest(), limit)
             else:
@@ -1192,7 +1203,7 @@ class _Fold:
                 ok = (r != none) & (lv != lv_none)
                 yield a, b, ok, r * width + lv
         occupied = self._occupied((c[ok] for _, _, ok, c in combined()), self.k * width)
-        if last and occupied.size > GROUPING_LIMITS["groups"]:
+        if last and occupied.size > grouping_limits()["groups"]:
             self.k, self.over = int(occupied.size), True
             return
         new_dtype = np.uint16 if occupied.size < NONE16 else np.uint32
@@ -1339,7 +1350,7 @@ def _resolving(gp: GroupingPlan, ctx: _Ctx) -> Iterator[Tuple[str, Any]]:
     fold = _Fold(ctx.n_shown)
     made: List[_Levels] = []
     every_cell_grouped = not any(p.spec.rest == "exclude" and p.member is None for p in gp.parts)
-    limit = GROUPING_LIMITS["groups"]
+    limit = grouping_limits()["groups"]
     try:
         for i, part in enumerate(gp.parts):
             ctx.check()
@@ -1361,8 +1372,8 @@ def _resolving(gp: GroupingPlan, ctx: _Ctx) -> Iterator[Tuple[str, Any]]:
                     raise _Refused(reason="too_many_groups", count=int(fold.k), limit=limit)
             yield "part", i + 1
         counts = None if fold.over else fold.compact(apply=False)
-        if fold.k > GROUPING_LIMITS["groups"]:
-            raise _Refused(reason="too_many_groups", count=int(fold.k), limit=GROUPING_LIMITS["groups"])
+        if fold.k > limit:
+            raise _Refused(reason="too_many_groups", count=int(fold.k), limit=limit)
     except _Refused as r:
         result.refused = {**r.refused, "levels": [lv.n_levels for lv in made]}
         return result
