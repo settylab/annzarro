@@ -477,7 +477,7 @@ def test_a_grouping_card_holds_the_preview_space_until_the_histogram_arrives(pag
     page.route("**/data/cell_groups*", lambda route: held.append(route))
     _open_binned(page, served, [_binned("depth")], expand=False)
     _expand(page, 0)
-    until(page, "(s) => !!document.querySelector(s + ' .pbc-hist.is-empty')", f"{A} .cgrp-card[data-index='0']")
+    until(page, "(s) => !!document.querySelector(s + ' .pbc-hist.is-empty')", BIN)
     box = page.locator(f"{CTRL} .pbc-hist").bounding_box()
     assert box and box["height"] > 20, box
     assert held, "the reply was held back, so the card was drawn without it"
