@@ -38,7 +38,11 @@ const WO = VOCABULARY.cellGene.options;
 const TABLE = VOCABULARY.table;
 
 const SCALES = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Viridis']);
-const DEFAULT_SCALE = 'Viridis';
+const DEFAULT_SCALE = 'Reds';
+const Z_DEFAULT_SCALE = 'RdBu';
+const Z_SCALINGS = Object.freeze(['z_groups', 'z_pooled']);
+const DEFAULT_OUTLINE = Object.freeze({ color: '#000', width: 0.5 });
+const OUTLINE_MAX = 3;
 const DEFAULT_GAP = 1;
 const GAP_MAX = 3;
 const DOT_PX = Object.freeze({ min: 1, max: 40, smallest: 3, largest: 20 });
@@ -89,10 +93,18 @@ function styleOf(config) {
     const labels = isObject(c.labels) ? c.labels : {};
     const titles = isObject(c.titles) ? c.titles : {};
     const gap = isNumber(c.gap) ? Math.round(Math.max(0, Math.min(GAP_MAX, c.gap))) : DEFAULT_GAP;
-    const colorScale = pick(c.colorScale, SCALES, DEFAULT_SCALE);
+    // A stored map is the user's pick and is kept; with none stored the default follows the scaling (Reds, RdBu under a z-score)
+    const picked = SCALES.includes(c.colorScale);
+    const zScored = Z_SCALINGS.includes(c.scale);
+    const colorScale = picked ? c.colorScale : zScored ? Z_DEFAULT_SCALE : DEFAULT_SCALE;
+    const center = isNumber(c.center) && DIVERGING_SCALES.has(colorScale) ? c.center : !picked && !isNumber(c.center) && zScored ? 0 : null;
+    const o = isObject(c.outline) ? c.outline : {};
     return {
-        colorScale, gap,
-        center: isNumber(c.center) && DIVERGING_SCALES.has(colorScale) ? c.center : null,
+        colorScale, gap, center, picked,
+        outline: {
+            color: typeof o.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(o.color) ? o.color : DEFAULT_OUTLINE.color,
+            width: isNumber(o.width) ? Math.max(0, Math.min(OUTLINE_MAX, o.width)) : DEFAULT_OUTLINE.width
+        },
         printValues: c.printValues === true,
         dotSizes: rangeOf(c.dotSizes, DOT_PX.min, DOT_PX.max),
         dotMin: isNumber(c.dotMin) ? c.dotMin : null,
@@ -216,8 +228,9 @@ export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
     if (s.dotMin !== null) size.dotMin = s.dotMin;
     if (s.dotMax !== null) size.dotMax = s.dotMax;
     if (s.titles.size) size.title = s.titles.size;
+    const outline = s.outline.width > 0 ? { color: s.outline.color, width: s.outline.width } : null;
     return {
-        color, size, legend: s.legend, plotTitle: s.titles.plot || undefined, gap: s.gap, sortBySize: s.sortGroups, cluster,
+        color, size, outline, legend: s.legend, plotTitle: s.titles.plot || undefined, gap: s.gap, sortBySize: s.sortGroups, cluster,
         annotations: {
             brackets: { titles: s.sectionTitles },
             totals: s.totals,
@@ -406,10 +419,17 @@ function mount(slot, ctx) {
     }
     const sizeThreshold = number('sizeThreshold', WO.sizeThreshold, (v) => ctx.set(withSizeThreshold(config(), v), 'size threshold'),
         { step: 'any', placeholder: WO.sameAsColor });
+    const outlineInput = el('input', { type: 'color', class: 'form-control form-control-sm form-control-color', data: { option: 'outlineColor' }, aria: { label: WO.outlineColor },
+        on: { change: (e) => nested('outline', 'color', e.target.value, DEFAULT_OUTLINE.color, 'dot outline color') } });
+    controls.outlineColor = outlineInput;
+    const outlineColor = field(WO.outlineColor, outlineInput);
     const dots = section(WO.heading.dots, dotRow,
         number('dotMin', WO.dotMin, (v) => flat('dotMin', v, null, 'percent at the smallest dot'), { min: 0, max: 100, step: 'any' }),
         number('dotMax', WO.dotMax, (v) => flat('dotMax', v, null, 'percent at the largest dot'), { min: 0, max: 100, step: 'any' }),
-        sizeThreshold);
+        sizeThreshold,
+        outlineColor,
+        number('outlineWidth', WO.outlineWidth, (v) => nested('outline', 'width', v === null ? DEFAULT_OUTLINE.width : Math.max(0, Math.min(OUTLINE_MAX, v)), DEFAULT_OUTLINE.width, 'dot outline width'),
+            { min: 0, max: OUTLINE_MAX, step: 0.25 }));
 
     // Colors
     const scalingNote = el('p', { class: 'cgene-scaling-note cgene-help' });
@@ -420,7 +440,7 @@ function mount(slot, ctx) {
             k === 0 ? 'color minimum' : 'color maximum');
     };
     const colors = section(WO.heading.colors,
-        select('colorScale', WO.colorScale, SCALES.map((s) => [s, scaleOptionLabel(s)]), (v) => flat('colorScale', v, DEFAULT_SCALE, `color scale ${v}`)),
+        select('colorScale', WO.colorScale, SCALES.map((s) => [s, scaleOptionLabel(s)]), (v) => flat('colorScale', v, Z_SCALINGS.includes(config().scale) ? null : DEFAULT_SCALE, `color scale ${v}`)),
         number('min', WO.min, limit(0), { step: 'any' }),
         number('max', WO.max, limit(1), { step: 'any' }),
         number('center', WO.center, (v) => flat('center', v, null, 'color center'), { step: 'any', title: WO.centerDiverging }),
@@ -571,6 +591,8 @@ function mount(slot, ctx) {
         sizeThreshold.hidden = !(c.size && needsThreshold(c.size.stat));
         setValue(controls.sizeThreshold, c.size && isNumber(c.size.detect_above) ? c.size.detect_above : null);
         controls.colorScale.value = s.colorScale;
+        controls.outlineColor.value = s.outline.color.length === 4 ? `#${[...s.outline.color.slice(1)].map((h) => h + h).join('')}` : s.outline.color.slice(0, 7);
+        setValue(controls.outlineWidth, s.outline.width);
         const limits = Array.isArray(c.limits) ? c.limits : [];
         setValue(controls.min, isNumber(limits[0]) ? limits[0] : null);
         setValue(controls.max, isNumber(limits[1]) ? limits[1] : null);
