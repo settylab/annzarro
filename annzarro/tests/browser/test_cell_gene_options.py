@@ -1,5 +1,5 @@
-"""The Cell-Gene Plot's Cluster menu and Plot Options in a real browser (X5; UX 3.1, 3.3, 3.4, 7; CXG-18, CXG-20 to
-CXG-26).
+"""The Cell-Gene Plot's Cluster, Color and Plot Options pop-overs in a real browser (X5, WP-2; UX 3.1, 3.3, 3.4, 7;
+CXG-18, CXG-20 to CXG-26).
 
 The store is the grouping fixture (tests/core/grouping_store.py): 1,200 cells, cell_type with 6 levels, condition with
 2, 40 genes, GENE003 expressed by no cell (a constant row, which correlation cannot cluster).
@@ -8,11 +8,13 @@ The store is the grouping fixture (tests/core/grouping_store.py): 1,200 cells, c
     grouping of two factors or more; the line naming the linkage and distance; clustering reorders the drawing and asks
     for nothing; a row left out is counted in the rows-left-out sentence and drawn last (UX 3.4, CXG-22 to CXG-24).
 2.  Ward while correlation is set switches Distance to Euclidean and says so, with Undo (Q2).
-3.  Plot Options reach the drawing and ask for nothing: totals, section titles, dendrograms, the strips' legend, the
-    scaling help line with the pooled note.
-4.  Show as table is the CSV: the same header and rows as Download CSV (UX 7, CXG-20).
+3.  Color ▾ and Plot Options reach the drawing and ask for nothing: totals, section titles, the strips' legend, the
+    color scale and center, the scaling help line with the pooled note.
+4.  Download CSV, in Plot Options ▸ Export (UX 7, CXG-20; Show as table is gone, WP-2).
 5.  A newly added section shows progress on its own rows while the others stay drawn (CXG-18).
 6.  Screenshots in light and dark (written only when ANNZARRO_SHOTS names a directory).
+7.  WP-2: the three are pop-overs. A click outside and Escape close them, focus goes back to the button, the plot box
+    does not move, the clustering's fields are all in Cluster and min/max in Color, each dendrogram hides on its own.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -46,20 +48,27 @@ def _ticks(page, axis="xaxis"):
     return page.evaluate("([s, a]) => document.querySelector(s + ' .cgene-plot').layout[a].ticktext", [TP, axis])
 
 
-def _option(name):
-    return f"{TP} .cgene-options [data-option='{name}']"
+def _option(name, pop="plot-options"):
+    return f"[data-popover='{pop}'] [data-option='{name}']"
+
+
+def _open_pop(page, name, button):
+    """Open a pop-over by its button, unless it is open (one is open page-wide; it is not in the tile)."""
+    if page.locator(f"[data-popover='{name}']").count() == 0:
+        page.click(f"{TP} {button}")
+    page.wait_for_selector(f"[data-popover='{name}']")
 
 
 def _open_options(page):
-    if page.locator(f"{TP} .cgene-options").is_hidden():
-        page.click(f"{TP} .cgene-options-btn")
-    page.wait_for_selector(f"{TP} .cgene-options:not([hidden])")
+    _open_pop(page, "plot-options", ".cgene-options-btn")
+
+
+def _open_color(page):
+    _open_pop(page, "color", ".cgene-color-btn")
 
 
 def _open_cluster(page):
-    if page.locator(f"{TP} .cgene-cluster-menu").is_hidden():
-        page.click(f"{TP} .cgene-cluster-btn")
-    page.wait_for_selector(f"{TP} .cgene-cluster-menu:not([hidden])")
+    _open_pop(page, "cluster", ".cgene-cluster-btn")
 
 
 def _redrawn(page, check, arg=None):
@@ -76,7 +85,7 @@ def test_the_cluster_menu_offers_its_scopes_states_the_method_and_counts_rows_le
                          S1: _sig(S1, "Markers", genes)}, open_ids=(P, S1))
     _drawn(page)
     _open_cluster(page)
-    menu = page.locator(f"{TP} .cgene-cluster-menu")
+    menu = page.locator("[data-popover='cluster'] .cgene-cluster-menu")
     gene_values = menu.locator("[data-scope='genes'] input[type=radio]")
     assert [gene_values.nth(i).get_attribute("value") for i in range(gene_values.count())] == ["off", "sections"]
     group_values = menu.locator("[data-scope='groups'] input[type=radio]")
@@ -84,7 +93,7 @@ def test_the_cluster_menu_offers_its_scopes_states_the_method_and_counts_rows_le
         "a grouping of one factor has no Within"
     assert "Off" in menu.inner_text() and "Within sections" in menu.inner_text()
     assert menu.locator(".cgene-cluster-summary").inner_text() == \
-        "Complete linkage, Pearson correlation, on the values as displayed. Change them in Plot Options."
+        "Complete linkage, Pearson correlation, on the values as displayed."
     n = len(page.calls)
     menu.locator("[data-scope='genes'] input[value='sections']").check()
     until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().cluster || {}).genes === 'sections'", P)
@@ -106,9 +115,9 @@ def test_within_the_first_factor_is_offered_for_a_grouping_of_two_factors(page, 
                          S1: _sig(S1, "Markers", GENES[:4]), GA: TWO}, open_ids=(P, S1))
     _drawn(page)
     _open_cluster(page)
-    radios = page.locator(f"{TP} .cgene-cluster-menu [data-scope='groups'] label")
+    radios = page.locator("[data-popover='cluster'] [data-scope='groups'] label")
     assert [radios.nth(i).inner_text().strip() for i in range(radios.count())] == ["Off", "All", "Within cell_type"]
-    page.check(f"{TP} .cgene-cluster-menu [data-scope='groups'] input[value='first']")
+    page.check("[data-popover='cluster'] [data-scope='groups'] input[value='first']")
     until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().cluster || {}).groups === 'first'", P)
     # a dendrogram per block of the first factor, drawn beside the groups
     _redrawn(page, "(p) => p.data.some(t => t.name === 'dendrogram groups')")
@@ -165,22 +174,20 @@ def test_ward_switches_distance_to_euclidean_says_so_and_undo_restores_it(page, 
     _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}]),
                          S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, S1))
     _drawn(page)
-    _open_options(page)
-    linkage = page.locator(_option("linkage"))
+    _open_cluster(page)
+    linkage = page.locator(_option("linkage", "cluster"))
     labels = linkage.locator("option")
     assert [labels.nth(i).inner_text() for i in range(labels.count())] == ["complete", "average", "Ward (Euclidean distance only)"]
     linkage.select_option("ward")
     until(page, "(id) => { const c = window.PanelManager.getPanel(id).getConfig().cluster || {}; return c.linkage === 'ward' && c.distance === 'euclidean'; }", P)
-    note = page.locator(f"{TP} .cgene-ward-note")
+    note = page.locator("[data-popover='cluster'] .cgene-ward-note")
     assert note.locator(".cgene-ward-note__text").inner_text() == "Ward needs Euclidean distance, so Distance is now Euclidean."
-    assert page.locator(_option("distance")).input_value() == "euclidean"
+    assert page.locator(_option("distance", "cluster")).input_value() == "euclidean"
     # correlation cannot be chosen while Ward is the linkage, and says why
-    corr = page.locator(f"{_option('distance')} option[value='correlation']")
+    corr = page.locator(f"{_option('distance', 'cluster')} option[value='correlation']")
     assert corr.evaluate("(o) => o.disabled") is True
     assert "Ward" in (corr.get_attribute("title") or "")
-    _open_cluster(page)
-    assert page.locator(f"{TP} .cgene-cluster-summary").inner_text().startswith("Ward linkage, Euclidean, on the values as displayed.")
-    _open_options(page)
+    assert page.locator("[data-popover='cluster'] .cgene-cluster-summary").inner_text().startswith("Ward linkage, Euclidean, on the values as displayed.")
     note.locator(".cgene-ward-undo").click()
     until(page, "(id) => { const c = window.PanelManager.getPanel(id).getConfig().cluster || {}; return (c.linkage || 'complete') === 'complete' && (c.distance || 'correlation') === 'correlation'; }", P)
     assert note.is_hidden()
@@ -196,10 +203,11 @@ def test_plot_options_reach_the_drawing_and_ask_for_nothing(page, served):
     names = _trace_names(page)
     assert "section brackets" in names and names.count("group strip") == 2 and names.count("strip legend") == 2, names
     n = len(page.calls)
-    _open_options(page)
-    help_text = page.locator(f"{TP} .cgene-options .cgene-scaling-note").inner_text()
+    _open_color(page)
+    help_text = page.locator("[data-popover='color'] .cgene-scaling-note").inner_text()
     assert "Groups with no value are skipped; a constant gene gives 0." in help_text
     assert "across its own groups" in help_text, "under z_pooled a one-row section is z-scored across its own groups"
+    _open_options(page)
     page.check(_option("totals"))
     _redrawn(page, "(p) => p.data.some(t => t.name === 'cells per group')")
     page.uncheck(_option("sectionTitles"))
@@ -209,10 +217,11 @@ def test_plot_options_reach_the_drawing_and_ask_for_nothing(page, served):
     page.fill(_option("plotTitle"), "Markers by type")
     page.press(_option("plotTitle"), "Enter")
     _redrawn(page, "(p) => !!p.layout.title && p.layout.title.text === 'Markers by type'")
-    page.select_option(_option("colorScale"), "RdBu")
-    page.wait_for_selector(f"{_option('center')}:not([disabled])")
-    page.fill(_option("center"), "0")
-    page.press(_option("center"), "Enter")
+    _open_color(page)
+    page.select_option(_option("colorScale", "color"), "RdBu")
+    page.wait_for_selector(f"{_option('center', 'color')}:not([disabled])")
+    page.fill(_option("center", "color"), "0")
+    page.press(_option("center", "color"), "Enter")
     _redrawn(page, "(p) => { const m = p.data[0].marker; return m.colorscale === 'RdBu' && Math.abs(m.cmin + m.cmax) < 1e-9; }")
     config = _config(page)
     assert config["totals"] is True and config["sectionTitles"] is False and config["colorScale"] == "RdBu" and config["center"] == 0
@@ -222,6 +231,7 @@ def test_plot_options_reach_the_drawing_and_ask_for_nothing(page, served):
     page.click(f"{TP} .cgene-undo")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().center === undefined", P)
     # Size threshold (scanpy's expression_cutoff for the size): stored on Size, and the genes are read with it
+    _open_options(page)
     page.fill(_option("sizeThreshold"), "0.5")
     page.press(_option("sizeThreshold"), "Enter")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.detect_above === 0.5", P)
@@ -229,31 +239,22 @@ def test_plot_options_reach_the_drawing_and_ask_for_nothing(page, served):
     assert any(f.get("detect_above") == 0.5 for c in page.calls[n:] for f in (c.get("features") or [])), "the genes are asked with the threshold"
 
 
-# ------------------------------------------------------------------ 4. Show as table
+# ------------------------------------------------------------------ 4. Download CSV (Show as table is gone, WP-2)
 
-def test_show_as_table_is_the_csv(page, served):
+def test_download_csv_is_in_plot_options_export(page, served):
     _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}]),
                          S1: _sig(S1, "Markers", GENES[:3])}, open_ids=(P, S1))
     _drawn(page)
     _open_options(page)
-    page.click(f"{TP} .cgene-table-btn")
-    table = page.locator(f"{TP} .cgene-table table")
-    table.wait_for()
-    head = [h.strip() for h in table.locator("thead th").all_inner_texts()]
-    body = table.locator("tbody tr")
-    assert body.count() == 3 * 6, "one row per gene and group"
     with page.expect_download() as got:
-        page.click(f"{TP} .cgene-csv-btn")
+        page.click("[data-popover='plot-options'] .cgene-export .cgene-csv-btn")
     text = open(got.value.path(), encoding="utf-8").read()
     rows = list(csv.reader(io.StringIO(text)))
-    assert rows[0] == head
-    assert len(rows) - 1 == body.count()
-    first = [c.strip() for c in body.nth(0).locator("td").all_inner_texts()]
-    assert first == rows[1]
+    head = rows[0]
+    assert len(rows) - 1 == 3 * 6, "one row per gene and group"
     assert head[:4] == ["Section", "Row", "Group", "Cells"]
     assert head[4] == "Mean · logged · not scaled"
-    page.click(f"{TP} .cgene-table-btn")
-    page.wait_for_selector(f"{TP} .cgene-table", state="hidden")
+    assert [r[1] for r in rows[1::6]] == GENES[:3], "the rows in the drawn order"
 
 
 # ------------------------------------------------------------------ 5. CXG-18
@@ -293,6 +294,136 @@ def test_a_new_section_shows_progress_on_its_own_rows_while_the_others_stay_draw
     _redrawn(page, "(p) => !p.data.some(t => t.name === 'rows being read') && p.layout.xaxis.ticktext.length === 5")
 
 
+# ------------------------------------------------------------------ 7. WP-2: Cluster, Color and Plot Options are pop-overs
+
+def _pop(name):
+    """A pop-over's surface: one body-level layer, one open page-wide (static/js/ui/popover.js)."""
+    return f"[data-popover='{name}']"
+
+
+BUTTONS = {"cluster": ".cgene-cluster-btn", "color": ".cgene-color-btn", "plot-options": ".cgene-options-btn"}
+
+
+def _one_plot(page, served):
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}]),
+                         S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, S1))
+    _drawn(page)
+
+
+def _area_box(page):
+    return page.evaluate("(s) => { const r = document.querySelector(s + ' .cgene-area').getBoundingClientRect();"
+                         " return [r.width, r.height]; }", TP)
+
+
+# A control each surface shows, wherever the surface is (the old inline blocks and the pop-overs alike)
+SHOWS = {"cluster": "[data-scope='genes'] input[value='sections']", "color": "[data-option='max']",
+         "plot-options": "[data-option='totals']"}
+
+
+def _frames(page):
+    page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+
+
+@pytest.mark.parametrize("name", ["plot-options", "cluster"])
+def test_a_click_outside_closes_plot_options_and_cluster(page, served, name):
+    _one_plot(page, served)
+    page.click(f"{TP} {BUTTONS[name]}")
+    page.wait_for_selector(SHOWS[name])
+    # a press in the plot area, outside the surface and its button
+    box = page.locator(f"{TP} .cgene-area").bounding_box()
+    page.mouse.click(box["x"] + box["width"] - 4, box["y"] + box["height"] - 4)
+    page.wait_for_selector(SHOWS[name], state="hidden")
+    assert page.locator(_pop(name)).count() == 0
+    assert page.locator(f"{TP} {BUTTONS[name]}").get_attribute("aria-expanded") == "false"
+
+
+@pytest.mark.parametrize("name", ["plot-options", "cluster", "color"])
+def test_escape_closes_and_focus_returns_to_the_button(page, served, name):
+    _one_plot(page, served)
+    page.click(f"{TP} {BUTTONS[name]}")
+    page.wait_for_selector(SHOWS[name])
+    assert page.evaluate("(n) => !!document.activeElement.closest(`[data-popover='${n}']`)", name), "focus goes into the pop-over"
+    # Escape closes from anywhere, not only with focus inside the surface (finding 2)
+    page.evaluate("() => document.activeElement.blur()")
+    page.keyboard.press("Escape")
+    page.wait_for_selector(SHOWS[name], state="hidden")
+    assert page.evaluate("([s, b]) => document.activeElement === document.querySelector(s + ' ' + b)", [TP, BUTTONS[name]])
+    # and from inside it
+    page.click(f"{TP} {BUTTONS[name]}")
+    page.wait_for_selector(SHOWS[name])
+    page.keyboard.press("Escape")
+    page.wait_for_selector(SHOWS[name], state="hidden")
+    assert page.evaluate("([s, b]) => document.activeElement === document.querySelector(s + ' ' + b)", [TP, BUTTONS[name]])
+
+
+def test_the_plot_box_is_the_same_with_cluster_open_and_closed(page, served):
+    _one_plot(page, served)
+    closed = _area_box(page)
+    page.click(f"{TP} .cgene-cluster-btn")
+    page.wait_for_selector(SHOWS["cluster"])
+    _frames(page)
+    assert _area_box(page) == closed, "opening Cluster moves nothing in the panel"
+    page.click(f"{TP} .cgene-options-btn")
+    page.wait_for_selector(SHOWS["plot-options"])
+    _frames(page)
+    assert _area_box(page) == closed, "nor does Plot Options"
+    assert page.locator(_pop("plot-options")).count() == 1
+
+
+def test_there_is_no_show_as_table(page, served):
+    _one_plot(page, served)
+    page.click(f"{TP} .cgene-options-btn")
+    page.wait_for_selector(_pop("plot-options"))
+    assert page.locator(".cgene-table-btn").count() == 0
+    assert page.locator(f"{TP} .cgene-table").count() == 0
+    # Download CSV is in Plot Options' Export group
+    assert page.locator(f"{_pop('plot-options')} .cgene-export .cgene-csv-btn").count() == 1
+
+
+def test_the_clustering_fields_are_in_cluster_and_none_in_plot_options(page, served):
+    _one_plot(page, served)
+    page.click(f"{TP} .cgene-cluster-btn")
+    page.wait_for_selector(_pop("cluster"))
+    for name in ("linkage", "distance", "dendroGenes", "dendroGroups", "sortGroups"):
+        assert page.locator(f"{_pop('cluster')} [data-option='{name}']").count() == 1, name
+    assert page.locator(f"{_pop('cluster')} select[data-option='linkage']").is_visible()
+    page.click(f"{TP} .cgene-options-btn")
+    page.wait_for_selector(_pop("plot-options"))
+    for name in ("linkage", "distance", "dendroGenes", "dendroGroups", "dendrograms", "sortGroups"):
+        assert page.locator(f"{_pop('plot-options')} [data-option='{name}']").count() == 0, name
+
+
+def test_min_and_max_are_in_color(page, served):
+    _one_plot(page, served)
+    page.click(f"{TP} .cgene-color-btn")
+    page.wait_for_selector(_pop("color"))
+    for name in ("colorScale", "reverse", "min", "max", "center", "dotSmallest", "dotLargest", "dotMin", "dotMax"):
+        assert page.locator(f"{_pop('color')} [data-option='{name}']").count() == 1, name
+    page.fill(f"{_pop('color')} [data-option='max']", "2")
+    page.press(f"{_pop('color')} [data-option='max']", "Enter")
+    until(page, "(id) => JSON.stringify(window.PanelManager.getPanel(id).getConfig().limits) === '[null,2]'", P)
+    _redrawn(page, "(p) => p.data[0].marker.cmax === 2")
+    assert page.locator(_pop("color")).count() == 1, "an edit applies live and leaves the pop-over open"
+    page.click(f"{TP} .cgene-options-btn")
+    page.wait_for_selector(_pop("plot-options"))
+    for name in ("colorScale", "min", "max", "center", "printValues", "dotSmallest", "dotMin", "dotMax"):
+        assert page.locator(f"{_pop('plot-options')} [data-option='{name}']").count() == 0, name
+
+
+def test_hiding_one_dendrogram_keeps_the_other(page, served):
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
+                                  cluster={"genes": "sections", "groups": "all", "linkage": "complete", "distance": "correlation"},
+                                  sections=[{"source": S1, "rows": "genes"}]), S1: _sig(S1, "Markers", GENES[:6])}, open_ids=(P, S1))
+    _drawn(page)
+    _redrawn(page, "(p) => p.data.some(t => t.name === 'dendrogram genes') && p.data.some(t => t.name === 'dendrogram groups')")
+    page.click(f"{TP} .cgene-cluster-btn")
+    page.uncheck(f"{_pop('cluster')} [data-option='dendroGenes']")
+    _redrawn(page, "(p) => !p.data.some(t => t.name === 'dendrogram genes') && p.data.some(t => t.name === 'dendrogram groups')")
+    assert _config(page)["cluster"]["dendrograms"] == {"genes": False, "groups": True}
+    page.click(f"{TP} .cgene-undo")
+    _redrawn(page, "(p) => p.data.some(t => t.name === 'dendrogram genes')")
+
+
 # ------------------------------------------------------------------ 6. screenshots
 
 @pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")
@@ -310,7 +441,9 @@ def test_screenshots_of_the_options_and_the_strip_legend(page, served, dark):
     theme = "dark" if dark else "light"
     page.locator(TP).screenshot(path=os.path.join(SHOTS, f"x5-plot-{theme}.png"))
     _open_options(page)
-    page.locator(TP).screenshot(path=os.path.join(SHOTS, f"x5-options-{theme}.png"))
+    page.screenshot(path=os.path.join(SHOTS, f"x5-options-{theme}.png"))
     page.click(f"{TP} .cgene-options-btn")
     _open_cluster(page)
-    page.locator(TP).screenshot(path=os.path.join(SHOTS, f"x5-cluster-{theme}.png"))
+    page.screenshot(path=os.path.join(SHOTS, f"x5-cluster-{theme}.png"))
+    _open_color(page)
+    page.screenshot(path=os.path.join(SHOTS, f"wp2-color-{theme}.png"))

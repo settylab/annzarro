@@ -265,7 +265,7 @@ test('5.3 dendrogram, add_dendrogram: a tree for each clustered block; Dendrogra
     assert.equal(named(compose({}, { order: clusteredGroups() }).figure, 'dendrogram groups').length, 0);
     // the defaults are scanpy's (OD 16)
     assert.deepEqual(O.figureExtras(normalizeCellGene({}).config).cluster,
-        { genes: 'off', groups: 'off', linkage: 'complete', distance: 'correlation', dendrograms: true });
+        { genes: 'off', groups: 'off', linkage: 'complete', distance: 'correlation', dendrograms: { genes: true, groups: true } });
     // Ward is Euclidean whatever a link says (CXG-21)
     assert.equal(O.figureExtras(normalizeCellGene({ cluster: { linkage: 'ward', distance: 'correlation' } }).config).cluster.distance, 'euclidean');
 });
@@ -530,4 +530,43 @@ test('WP-3 dots carry a black 0.5 px outline; width 0 draws none; a heatmap has 
 test('WP-3 the size legend dots wear the plot dots outline', () => {
     assert.deepEqual(one(compose().figure, 'size legend').marker.line, { color: '#000', width: 0.5 });
     assert.equal(one(compose({ outline: { width: 0 } }).figure, 'size legend').marker.line.width, 0);
+});
+
+// ================================================================================================ 0.8.0 WP-2: pop-overs
+
+/** An order whose rows and groups were both clustered as one block of four. */
+function clusteredBoth() {
+    const block = clusteredGroups().groupBlocks[0];
+    return { ...clusteredGroups(), rows: identity(6), rowBlocks: [{ ...block }] };
+}
+const CLUSTER_BOTH = { genes: 'sections', groups: 'all', linkage: 'complete', distance: 'correlation' };
+const trees = (dendrograms) => O.figureExtras(normalizeCellGene({ cluster: { ...CLUSTER_BOTH, dendrograms } }).config,
+    { reply: reply2(), recipe: TWO_FACTORS, order: clusteredBoth(), titleOf: () => undefined }).annotations.dendrograms;
+
+test('WP-2 dendrograms {genes: false} draws the groups\' tree only', () => {
+    const d = trees({ genes: false });
+    assert.equal(d.genes, undefined);
+    assert.equal(d.groups.length, 1);
+    const f = compose({ cluster: { ...CLUSTER_BOTH, dendrograms: { genes: false } } }, { order: clusteredBoth() }).figure;
+    assert.equal(named(f, 'dendrogram genes').length, 0);
+    one(f, 'dendrogram groups');
+    const g = trees({ groups: false });
+    assert.equal(g.groups, undefined);
+    assert.equal(g.genes.length, 1);
+});
+
+test('WP-2 a legacy dendrograms false hides both trees, true shows both', () => {
+    assert.deepEqual(trees(false), {});
+    const both = trees(true);
+    assert.equal(both.genes.length, 1);
+    assert.equal(both.groups.length, 1);
+    assert.deepEqual(Object.keys(trees(undefined)).sort(), ['genes', 'groups'], 'absent is both');
+    assert.deepEqual(O.figureExtras(normalizeCellGene({ cluster: { dendrograms: false } }).config).cluster.dendrograms, { genes: false, groups: false });
+    assert.deepEqual(O.figureExtras(normalizeCellGene({ cluster: { dendrograms: true } }).config).cluster.dendrograms, { genes: true, groups: true });
+});
+
+test('WP-2 Reverse reverses the color scale of dots and heatmap', () => {
+    assert.equal(matrixTraces(compose().figure)[0].marker.reversescale, undefined);
+    assert.equal(matrixTraces(compose({ reverse: true }).figure)[0].marker.reversescale, true);
+    assert.equal(matrixTraces(compose({ reverse: true, mode: 'heatmap' }).figure)[0].reversescale, true);
 });

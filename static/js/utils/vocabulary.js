@@ -152,7 +152,7 @@ const cellGene = Object.freeze({
         withinSections: 'Within sections',
         all: 'All',
         within: (factor) => `Within ${factor}`,
-        summary: (linkage, distance) => `${linkage} linkage, ${distance}, on the values as displayed. Change them in Plot Options.`,
+        summary: (linkage, distance) => `${linkage} linkage, ${distance}, on the values as displayed.`,
         /** The Linkage select's entries, and the linkage as the summary names it. */
         linkage: Object.freeze({ complete: 'complete', average: 'average', ward: 'Ward (Euclidean distance only)' }),
         linkageName: Object.freeze({ complete: 'Complete', average: 'Average', ward: 'Ward' }),
@@ -198,7 +198,16 @@ const cellGene = Object.freeze({
         pooledNote: 'A one-row section has no pooled cells of its own, so it is z-scored across its own groups.',
         csv: 'Download CSV',
         /** The strips' legend, past the levels it has room for. */
-        more: (n) => `+ ${fmt(n)} more`
+        more: (n) => `+ ${fmt(n)} more`,
+        // 0.8.0 WP-2: Cluster ▾, Color ▾ and Plot Options as pop-overs (design note options-ux-080, decisions c to g)
+        colorMenu: 'Color ▾',
+        popoverTitle: Object.freeze({ cluster: 'Cluster', color: 'Color', plotOptions: 'Plot Options' }),
+        reverse: 'Reverse',
+        dendrogramGenes: 'Genes',
+        dendrogramGroups: 'Groups',
+        exportHeading: 'Export',
+        resetColor: 'Reset',
+        resetColorHelp: 'The color scale, its direction and range, and the dot sizes go back to their defaults.'
     }),
     /**
      * What the plot says in each of its states (UX 3.5; SHR-27, SHR-32, SHR-47, SHR-48, CXG-17, CXG-19, CXG-27):

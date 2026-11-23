@@ -13,7 +13,7 @@
  *   rows: [{ label, gapBefore?,                   the gene axis, in order; `gapBefore` empty positions before it
  *            section?: { index, title },          the row's section (needed when `own` is given)
  *            own?: { color?: { id, label }, size?: { id, label } } }],   a one-row section's own quantity
- *   color: { id, stat, layer?, detectAbove?, scaling, values, raw?, noExpressing?, colorscale,
+ *   color: { id, stat, layer?, detectAbove?, scaling, values, raw?, noExpressing?, colorscale, reversescale?,
  *            min?, max?, center?, title?, printValues? },
  *   size:  { id, stat, layer?, detectAbove?, values, dotMin?, dotMax?, smallest?, largest?, title? }
  *        | { none: sentence },                    No size: one dot size, the legend replaced by the sentence
@@ -536,6 +536,7 @@ function dotTraces(model, P, stack, th) {
         total += x.length;
         const entry = barOf(stack, k.key);
         const marker = { size: sizes, color: colours, colorscale: color.colorscale, cmin: k.lo, cmax: k.hi, showscale: Boolean(entry) };
+        if (color.reversescale) marker.reversescale = true;
         if (model.outline) marker.line = { color: model.outline.color, width: model.outline.width };
         if (entry) marker.colorbar = colourBar(entry, k.lines, th);
         return { type: 'scatter', mode: 'markers', x, y, text, hoverinfo: 'text', showlegend: false, marker };
@@ -608,6 +609,7 @@ function heatmapTraces(model, P, stack, th) {
             type: 'heatmap', x: xs, y: ys, z, text, hoverinfo: 'text', hoverongaps: false,
             colorscale: color.colorscale, zmin: k.lo, zmax: k.hi, showscale: Boolean(entry)
         };
+        if (color.reversescale) trace.reversescale = true;
         if (entry) trace.colorbar = colourBar(entry, k.lines, th);
         if (color.printValues) trace.texttemplate = '%{z:.2~f}';
         return trace;
