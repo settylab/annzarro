@@ -236,3 +236,17 @@ test('2D contours of a split are drawn in each level\'s own color, not the defau
     }
     assert.notEqual(contours[0].line.color, contours[1].line.color);
 });
+
+test('a 2D image of a split shows every level\'s density as opacity on one scale: 0 to the highest density of any level', () => {
+    for (const scale of ['level', 'size']) {
+        const { figure } = twoD('umap__a1', { adjust: 1, style: 'image', scale }, true);
+        const layers = figure.data.filter((t) => t.type === 'heatmap');
+        assert.equal(layers.length, 2);
+        const peak = layers.reduce((m, t) => t.z.flat().reduce((a, v) => (v > a ? v : a), m), 0);
+        for (const t of layers) {
+            assert.equal(t.zmin, 0, scale);
+            assert.ok(Math.abs(t.zmax - peak) < 1e-12 * peak, `${scale}: zmax ${t.zmax} is the common peak ${peak}`);
+            assert.match(t.colorscale[0][1], /, 0\)$/, 'the lowest density is transparent');
+        }
+    }
+});

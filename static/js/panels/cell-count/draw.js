@@ -304,6 +304,55 @@ function rectFigure(config, table, opts) {
     return { data: [trace, ...extra], layout };
 }
 
+/** `colour` ('#rrggbb') as an rgba() of `alpha`; any other color is kept. */
+function withAlpha(colour, alpha) {
+    if (!/^#[0-9a-f]{6}$/i.test(colour)) return colour;
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(colour.slice(i, i + 2), 16));
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/** The opacity of a level's color where its count is highest: below 1, so a level under another still shows. */
+const LAYER_ALPHA = 0.9;
+
+/**
+ * A 2D histogram with a Color by: one layer of rectangles per level, each from transparent to the level's color, the
+ * count as the opacity on one scale for every level (0 to the highest count of any level in any rectangle), so a level
+ * with few cells stays faint. A marker names each level in the legend, as a rectangle's most frequent level does.
+ */
+function layerFigure(config, table, opts) {
+    const xa = axisOf(table, 'x');
+    const ya = axisOf(table, 'y');
+    const sa = axisOf(table, 'split');
+    const labelAt = labelFn(labelMapsOf(config, table, opts));
+    const [xo, yo] = [xa, ya].map((a) => axisOrder(table, a, null, { reverse: false }));
+    const [xb, yb] = [binPositions(table, xa), binPositions(table, ya)];
+    const at = (xl, yl, s) => xl * table.stride[xa] + yl * table.stride[ya] + s * table.stride[sa];
+    let peak = 0;
+    for (let r = 0; r < table.count.length; r++) if (table.count[r] > peak) peak = table.count[r];
+    const levels = Array.from({ length: table.dims[sa] }, (_, s) => s);
+    const colors = levels.map((s) => colorOf(table, sa, s, opts));
+    const xs = xo.map((l, i) => (xb ? xb.centers[l] : i));
+    const ys = yo.map((l, i) => (yb ? yb.centers[l] : i));
+    const layers = levels.map((s) => ({
+        type: 'heatmap', x: xs, y: ys, name: esc(labelAt(table.axes[sa].levels[s], sa)), showscale: false, showlegend: false, hoverongaps: false,
+        z: yo.map((yl) => xo.map((xl) => (table.count[at(xl, yl, s)] > 0 ? table.count[at(xl, yl, s)] : null))),
+        hovertext: yo.map((yl) => xo.map((xl) => hoverOf(config, table, opts, at(xl, yl, s), labelAt))), hoverinfo: 'text',
+        zmin: 0, zmax: peak || 1, colorscale: [[0, withAlpha(colors[s], 0)], [1, withAlpha(colors[s], LAYER_ALPHA)]]
+    }));
+    const markers = levels.map((s) => ({
+        type: 'scatter', mode: 'markers', x: [null], y: [null], name: esc(labelAt(table.axes[sa].levels[s], sa)), hoverinfo: 'skip',
+        marker: { symbol: 'square', size: 10, color: colors[s] }
+    }));
+    const axisFor = (a, positions, order, title) => (positions
+        ? axisStyle(opts.theme, { title: { text: esc(title) } })
+        : categoryAxis(opts.theme, order.map((l) => labelAt(table.axes[a].levels[l], a)), title));
+    const layout = baseLayout(opts, {
+        showlegend: true, legend: { title: { text: esc(opts.inputNames.split) } },
+        xaxis: axisFor(xa, xb, xo, opts.inputNames.x), yaxis: axisFor(ya, yb, yo, opts.inputNames.y)
+    });
+    return { data: [...layers, ...markers], layout };
+}
+
 // --- pie -------------------------------------------------------------------------------------------------------------
 
 function pieFigure(config, table, opts) {
@@ -351,7 +400,7 @@ export function countFigure(config, table, opts) {
     switch (config.mode) {
         case 'bar':
         case 'histogram': return barFigure(config, table, opts);
-        case 'hist2d':
+        case 'hist2d': return axisOf(table, 'split') >= 0 ? layerFigure(config, table, opts) : rectFigure(config, table, opts);
         case 'heatmap': return rectFigure(config, table, opts);
         case 'pie': return pieFigure(config, table, opts);
         default: throw new Error(`The count plot draws ${DRAWN_MODES.join(', ')} here; ${config.mode} has its own drawing.`);

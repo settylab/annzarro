@@ -48,7 +48,7 @@ test('each mode shows the rows of UX 4.2 and no other', () => {
     assert.deepEqual(shown('bar'), ['x', 'split', 'height']);
     assert.deepEqual(shown('histogram'), ['x', 'split', 'height']);
     assert.deepEqual(shown('pie'), ['x']);
-    assert.deepEqual(shown('hist2d'), ['x', 'y', 'color']);
+    assert.deepEqual(shown('hist2d'), ['x', 'y', 'split', 'color']);
     assert.deepEqual(shown('heatmap'), ['x', 'y', 'color']);
     assert.deepEqual(shown('density'), ['x', 'split']);
     assert.deepEqual(shown('density2d'), ['x', 'y', 'split']);
@@ -368,4 +368,13 @@ test('a density never asks for a zero bin: one kept from a histogram stays store
     const plan = M.planGrid(shown, { isNumeric: () => true, levelCount: () => null });
     assert.equal(plan.request.partitionings[0].binning.zero_bin, undefined);
     assert.equal(K.shownConfig(hist), hist, 'a histogram keeps it');
+});
+
+test('a 2D density with a Color by is drawn as an image unless the contours are chosen', () => {
+    const d = norm({ mode: 'density2d', x: obs('depth'), y: obs('score') });
+    assert.equal(K.drawOptions(d).style, 'contours', 'no Color by: contours');
+    const split = { ...d, split: obs('condition') };
+    assert.equal(K.drawOptions(split).style, 'image');
+    assert.equal(K.drawOptions({ ...split, style: 'contours' }).style, 'contours');
+    assert.equal(K.drawOptions({ ...split, mode: 'density' }).style, 'contours', 'a 1D density has no style');
 });

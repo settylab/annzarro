@@ -38,10 +38,10 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 | **Bar** | X (categorical or binned), Color by | Cells per level, and per level of Color by | Bars, vertical or horizontal |
 | **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars without gaps, stacked or overlaid |
 | **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring |
-| **2D histogram** | X and Y numeric | Cells per pair of bins, 100 × 100 by default | Rectangles |
+| **2D histogram** | X and Y numeric, Color by up to 8 levels | Cells per pair of bins, 100 × 100 by default, per level of Color by | Rectangles; with Color by, one layer per level |
 | **Heatmap** | X and Y (categorical or binned) | Cells per pair of levels | Rectangles, with values printed if asked |
 | **Density** | X numeric, Color by | 512 bins per level of Color by, smoothed in the browser | Curves |
-| **2D density** | X and Y numeric, Color by up to 8 levels | 256 × 256 bins per level, smoothed | Filled contours, or an image |
+| **2D density** | X and Y numeric, Color by up to 8 levels | 256 × 256 bins per level, smoothed | Filled contours, or an image (the default with Color by) |
 | **Venn** | 2 or 3 sets | Cells in every region | Circles with counts and shares |
 | **UpSet** | 2 to 16 sets | Cells in every exclusive intersection, and each set's size | Intersection bars over a matrix of dots, with set-size bars |
 
@@ -84,6 +84,20 @@ narrower than the grid can show, it is raised: "Bandwidth raised to the grid's r
 
 Curves are each scaled to an area of 1 by default; **Scale curves by level size** scales them by their cells instead.
 In 2D the bandwidth is per axis and ignores the correlation between X and Y, unlike `scipy.stats.gaussian_kde`.
+
+With a **Color by**, a 2D density is drawn as an image by default: one layer per level, each running from transparent to
+the level's color, with the density as the opacity. All levels share one opacity scale, from 0 to the highest density
+of any level, so a level with little density stays faint beside a dense one; the layers blend where they overlap.
+Untick **As an image** for contours, which are drawn in each level's color. With **Scale curves by level size** off, each
+level's density has an area of 1; with it on, a level's density is weighted by its share of the cells.
+
+### 2D histogram with Color by
+
+A 2D histogram with a **Color by** draws the same kind of layers: one per level, from transparent to the level's color,
+with the count in each rectangle as the opacity on one scale (0 to the highest count of any level in any rectangle).
+This reads the Color by only while **Color** is *Count*; a share, a statistic or the most frequent level says something
+else with the rectangle's color, so the Color by row goes away and is kept for when you return to *Count*. Up to 8
+levels: with more, the plot is refused with **Remove Color by**.
 
 ## Sets: Venn and UpSet
 

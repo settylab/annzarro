@@ -287,8 +287,8 @@ def test_a_mode_change_keeps_every_input_and_lists_what_the_mode_does_not_read(p
 
     page.select_option(f"{S} .ccnt-mode", "hist2d")
     until(page, "(s) => document.querySelector(s + ' .ccnt-panel').dataset.state === 'empty'", S)
-    assert _rows(page) == ["Mode", "X", "Y", "Color", "Labels"]
-    assert page.inner_text(f"{S} .ccnt-kept") == "Kept for other modes: Color by obs condition"
+    assert _rows(page) == ["Mode", "X", "Y", "Color by", "Color", "Labels"], "a 2D histogram reads Color by"
+    assert not page.is_visible(f"{S} .ccnt-kept")
     assert _state_text(page) == "Choose Y to count cells."
 
     page.select_option(f"{S} .ccnt-mode", "pie")
@@ -479,7 +479,7 @@ def test_the_binning_control_shows_no_empty_preview_when_the_reply_has_no_histog
 def test_2d_density_contours_of_a_split_are_drawn_in_the_level_colors(page, served):
     depth = {"source": {"type": "obs", "key": "depth"}}
     score = {"source": {"type": "obs", "key": "score"}}
-    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, split=CONDITION)})
+    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, split=CONDITION, style="contours")})
     _drawn(page, "density2d")
     traces = page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'contour')
         .map(t => ({ line: t.line.color, cs: t.colorscale }))""", S)
@@ -491,3 +491,50 @@ def test_2d_density_contours_of_a_split_are_drawn_in_the_level_colors(page, serv
     assert drawn and all(len(c) == 1 for c in drawn), drawn
     if os.environ.get("FB1C_SHOT"):
         page.locator(f"{S} .ccnt-plot").screenshot(path=os.environ["FB1C_SHOT"])
+
+
+def _shot(page, name):
+    """A screenshot of the plot when ANNZARRO_FB1C_SHOTS names a folder (for a look at the figure, not an assertion)."""
+    folder = os.environ.get("ANNZARRO_FB1C_SHOTS")
+    if folder:
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(folder, f"{name}.png"))
+
+
+def _layers(page):
+    return page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'heatmap')
+        .map(t => ({ name: t.name, zmin: t.zmin, zmax: t.zmax, cs: t.colorscale }))""", S)
+
+
+def test_a_2d_histogram_colored_by_a_level_draws_opacity_layers(page, served):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    _open(page, served, {CC: _count(mode="hist2d", x=depth, y=score, split=CONDITION)})
+    _drawn(page, "hist2d")
+    assert _rows(page) == ["Mode", "X", "Y", "Color by", "Color", "Labels"]
+    layers = _layers(page)
+    assert sorted(t["name"] for t in layers) == sorted(DATA.obs["condition"].unique())
+    assert len({t["zmax"] for t in layers}) == 1 and all(t["zmin"] == 0 for t in layers), layers
+    sent = _requests(page)[-1]
+    assert [p["source"]["key"] for p in sent["partitionings"]] == ["depth", "score", "condition"]
+    _shot(page, "hist2d-color-by")
+    # a color that says something else takes the rectangles back: the Color by row goes and is kept
+    page.select_option(f"{S} .ccnt-value", "top_level")
+    _drawn(page, "hist2d", "c.value && c.value.kind === 'top_level'")
+    assert "Color by" not in _rows(page)
+    assert _config(page)["split"] == CONDITION
+
+
+def test_a_2d_density_with_a_color_by_is_an_image_until_the_contours_are_chosen(page, served):
+    depth = {"source": {"type": "obs", "key": "depth"}}
+    score = {"source": {"type": "obs", "key": "score"}}
+    _open(page, served, {CC: _count(mode="density2d", x=depth, y=score, split=CONDITION)})
+    _drawn(page, "density2d")
+    layers = _layers(page)
+    assert len(layers) == 2 and len({t["zmax"] for t in layers}) == 1
+    _shot(page, "density2d-image")
+    page.click(f"{S} .ccnt-options-btn")
+    assert page.is_checked(f"{S} .ccnt-image")
+    page.uncheck(f"{S} .ccnt-image")
+    _drawn(page, "density2d", "c.style === 'contours'")
+    assert not _layers(page)
+    assert page.evaluate("(s) => document.querySelector(s + ' .ccnt-plot').data.filter(t => t.type === 'contour').length", S) == 2

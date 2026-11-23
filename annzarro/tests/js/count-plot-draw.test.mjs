@@ -454,3 +454,27 @@ test('an unticked level of a grouping source keeps its display name, where the c
     assert.equal(labels.get(young), 'Young | Rnase6 < 0.391');
     assert.equal(labels.get(old), 'Old | Rnase6 > 0.391', 'the unticked level is named, not keyed');
 });
+
+test('a 2D histogram with a Color by is one transparent-to-color layer per level, opacity on one scale of counts', () => {
+    const config = norm({ mode: 'hist2d', split: obs('k'), x: { source: { type: 'obs', key: 'a' }, binning: { method: 'equal_width', bins: 3 } },
+        y: { source: { type: 'obs', key: 'b' }, binning: { method: 'equal_width', bins: 2 } } });
+    // x by y by level, the level innermost: level a counts 1..6, level b counts 10 for the first rectangle only
+    const counts = [1, 10, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0];
+    const table = tableOf(config, { axes: [{ levels: ['bin:0', 'bin:1', 'bin:2'] }, { levels: ['bin:0', 'bin:1'] }, { levels: ['c:a', 'c:b'] }], counts, n_counted: 36 }, ['x', 'y', 'split']);
+    const f = D.countFigure(config, table, opts());
+    const layers = f.data.filter((t) => t.type === 'heatmap');
+    assert.equal(layers.length, 2);
+    assert.deepEqual(layers[0].z, [[1, 3, 5], [2, 4, 6]]);
+    assert.deepEqual(layers[1].z, [[10, null, null], [null, null, null]], 'a level with no cell in a rectangle leaves it empty');
+    for (const t of layers) {
+        assert.equal(t.zmin, 0);
+        assert.equal(t.zmax, 10, 'one scale for every level: the highest count of any');
+        assert.match(t.colorscale[0][1], /, 0\)$/);
+        assert.equal(t.showscale, false);
+    }
+    assert.deepEqual(layers.map((t) => t.colorscale[1][1].replace(/[^#0-9a-f]/gi, '').slice(0, 7)).length, 2);
+    const names = f.data.filter((t) => t.type === 'scatter').map((t) => t.name);
+    assert.deepEqual(names, ['a', 'b'], 'a legend entry for each level');
+    assert.equal(f.layout.showlegend, true);
+    assert.equal(f.layout.legend.title.text, 'condition');
+});
