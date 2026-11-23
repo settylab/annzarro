@@ -28,8 +28,8 @@ alone, and a gene shown in two sections, or by colour and size on one layer, is 
 | Group | Controls |
 |---|---|
 | What | **Groups** · **Mode** (**Dots** or **Heatmap**) · **Genes**: the section list and **Add genes ▾** |
-| Values | **Color** · **Scale** · **Size** (dots only) |
-| Layout | **Swap axes** · **Cluster ▾** · **Color ▾** · **Plot Options** |
+| Values | **Color** · **Scale** · **Size** (dots only) · **Height** (3D only) |
+| Layout | **Swap axes** · **3D** · **Cluster ▾** · **Color ▾** · **Plot Options** |
 
 **Color** and **Size** each read their own statistic from their own layer, in one row:
 `Color [Mean ▾] of [logged ▾]` and `Size [% expressing ▾] of [counts ▾] above [0]`. A common dot plot is exactly this:
@@ -150,6 +150,31 @@ unless its **Dendrograms** box is cleared.
 
 **Swap axes** puts the genes on the other axis; brackets, strips and dendrograms follow.
 
+## 3D
+
+**3D** draws the matrix as bars standing on a floor of genes by groups, so a value can be read from its height as well
+as its colour. It is a view, not a mode: the groups, sections, statistics, scaling, order and clustering stay as they
+are, and pressing **3D** again returns to the 2D plot. Turning it on or off is one step of **Undo**.
+
+- **Height** appears under **Size** while 3D is on. **Same as Color**, the default, draws the colour's numbers: its
+  statistic, layer, threshold and scaling, so a z-score hangs bars below 0. Any other choice is a statistic of its own,
+  picked as **Color** and **Size** are (statistic, layer, threshold) and drawn unscaled. A height on a layer or
+  threshold that Color and Size do not read reads each gene once more, and counts towards the limit of values. The
+  choice is kept when 3D is off.
+- **In dots**, the footprint of each bar is its Size: the bar's area grows with the value, as a dot's does. A heatmap's
+  bars all have one footprint.
+- **The hover** names the gene, the group and its cells, then Color, Size and Height.
+- **Left out.** 3D does not draw dendrograms, colour strips, section brackets, totals or printed values; the status
+  strip says so (**3D**). A missing value or a value of 0 has no bar. Above 60 genes or groups their labels are hidden
+  and the hover names each bar.
+- **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
+  step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
+- **Limit.** 3D draws at most 40,000 bars (genes × groups). Above that **3D** is greyed out and says why ("Use fewer
+  genes or groups."); a plot saved in 3D that has grown past it is drawn in 2D, and the strip says **2D** with the
+  reason.
+- **Export.** PNG, JPEG and WEBP work as in 2D. SVG is greyed out in 3D: a 3D scene can only be saved as an image.
+  **Download CSV** gains a Height column when Height is not **Same as Color**.
+
 ## Color and Plot Options
 
 **Color ▾** holds what sets how the values read:
@@ -170,7 +195,7 @@ unless its **Dendrograms** box is cleared.
 | Labels | **Gene labels**, **Group labels**; **Plot title**, **Color bar title**, **Size legend title** |
 | Legend | **Color bar**, **Size legend**, **Strip legend** |
 | Totals | **Cells per group** (a bar along the group axis) |
-| Export | **Download CSV** |
+| Export | **PNG**, **JPEG**, **WEBP**, **SVG** (not in 3D) · **Download CSV** |
 
 The colour scale is **Reds** by default. Under a z-score scaling the default is **RdBu**, centred at 0, so that
 values above and below the mean read as opposite colours. A scale you pick yourself is kept, whatever the scaling.
@@ -181,8 +206,9 @@ section and its entry), each value with its statistic and layer, and the group's
 
 **Download CSV** (Plot Options ▸ Export) gives the plotted values in long form, one row per group and row, with
 one column per statistic and headers that name the statistic, its threshold where it has one, the layer and the
-scaling ("% expressing (> 1) · counts · not scaled"), so two thresholds stay two columns apart. The camera button in the
-plot's toolbar saves the figure as an image, with its brackets, strips, legends and dendrograms.
+scaling ("% expressing (> 1) · counts · not scaled"), so two thresholds stay two columns apart. The image buttons
+beside it, and the camera button in the plot's toolbar, save the figure as an image, with its brackets, strips, legends
+and dendrograms.
 
 ## Waiting, asking first, refusals
 
