@@ -183,10 +183,4 @@
 .cgene-measure__word[hidden] { display: none; }
 .cgene-measure .form-control { width: 5rem; }
 .cgene-offer { max-width: 30rem; }
-/* WP-8: the plot's own Statistics offered opens in a pop-over from one summary button; the section's own fold is not used there */
-.cgene-offer__open { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.cgene-offer__label { font-weight: 600; }
-.cgene-offer__label::after { content: ':'; }
-.az-popover-body .gsig-scoring { border-top: 0; margin-top: 0; padding-top: 0; }
-.az-popover-body .gsig-scoring__toggle { display: none; }
 .cgene-offer[hidden] { display: none; }

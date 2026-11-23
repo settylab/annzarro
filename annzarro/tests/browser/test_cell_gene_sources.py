@@ -83,7 +83,7 @@ def test_offer_other_opens_the_plots_own_offer_on_an_obs_axis_and_the_groupings_
     until(page, "(t) => document.querySelector(t).getAttribute('aria-expanded') === 'true'", toggle)
     assert page.input_value(f"{TP} .cgene-color-layer") == "logged", "the select still shows what is drawn"
     # an edit of the plot's own offer is one undoable step, kept in its configuration
-    page.uncheck("[data-popover='statistics'] [data-layer-offer='counts']")
+    page.uncheck(f"{TP} [data-layer-offer='counts']")
     until(page, "(id) => JSON.stringify(window.PanelManager.getPanel(id).getConfig().offer) === JSON.stringify({layers: ['X', 'logged']})", P)
     values = page.eval_on_selector_all(f"{TP} .cgene-color-layer option", "os => os.map(o => o.value)")
     assert values == ["X", "logged", OFFER_OTHER], values

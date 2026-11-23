@@ -225,37 +225,6 @@ export function measureModel({ spec, recipe, datasetLayers, kinds, threshold }) 
 }
 
 /**
- * The plot's own Statistics offered as a pop-over (WP-8): one summary button in the Values group opens the offered
- * section (offered-section.js) in a pop-over, so opening it moves nothing else. The section keeps living in a hidden
- * store while closed, so its state and its summary stay current; its own fold toggle is hidden by CSS inside the pop-over
- * and the section is opened when the pop-over opens.
- */
-function createOfferHost({ D, id, offer }) {
-    const { el } = D;
-    const store = el('div', { class: 'cgene-offer__store', hidden: true }, offer);
-    const label = el('span', { class: 'cgene-offer__label', text: CG.sources.offer.title });
-    const summary = el('span', { class: 'cgene-offer__summary' });
-    const button = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-offer__open', id: `cgene-offer-open-${id}` },
-        label, ' ', summary, ' ▾');
-    const pop = createPopover({ anchor: button, name: 'statistics', title: CG.sources.offer.title, wide: true,
-        render: (body) => {
-            body.appendChild(offer);
-            const toggle = offer.querySelector('[aria-expanded]');
-            if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
-            return () => store.appendChild(offer);
-        } });
-    function sync() {
-        const at = offer.querySelector('.gsig-scoring__summary');
-        const text = at ? at.textContent.trim() : '';
-        if (summary.textContent !== text) summary.textContent = text;
-    }
-    const watched = offer.querySelector('.gsig-scoring__summary');
-    if (watched && typeof MutationObserver === 'function') new MutationObserver(sync).observe(watched, { childList: true, characterData: true, subtree: true });
-    sync();
-    return { element: el('div', { class: 'cgene-offer__host' }, button, store), sync, open: () => { sync(); pop.open(); }, close: () => pop.close('api') };
-}
-
-/**
  * The control grid of UX 3.1.
  * @param {Object} opts
  * @param {Object} opts.D - the DOM builder (gene-set-utilities/dom.js)
@@ -288,8 +257,7 @@ export function createControls({ D, id, model, on, sections, addGenes, offer = n
     const scaleSel = el('select', { class: 'form-select form-select-sm cgene-scale', aria: { label: 'Scale' }, on: { change: () => on.scale(scaleSel.value) } });
     options(D, scaleSel, SCALINGS.map((s) => ({ value: s, label: CG.scaling[s] })));
     const size = measureRow(D, 'size', 'Size', on);
-    const offerHost = offer ? createOfferHost({ D, id, offer }) : null;
-    const offerSlot = el('div', { class: 'cgene-offer', hidden: true }, offerHost ? offerHost.element : null);
+    const offerSlot = el('div', { class: 'cgene-offer', hidden: true }, offer);
     const swap = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-swap', aria: { pressed: 'false' },
         on: { click: () => on.swap(swap.getAttribute('aria-pressed') !== 'true') } }, 'Swap axes');
     const layoutSlot = el('div', { class: 'cgene-layout-slot' });
@@ -341,13 +309,12 @@ export function createControls({ D, id, model, on, sections, addGenes, offer = n
         size.paint(m.size);
         size.element.hidden = m.mode !== 'dots';
         offerSlot.hidden = !m.offerShown || !offer;
-        if (offerHost) { if (offerSlot.hidden) offerHost.close(); else offerHost.sync(); }
         scaleSel.value = m.scale;
         swap.setAttribute('aria-pressed', m.swap ? 'true' : 'false');
         swap.classList.toggle('active', !!m.swap);
     }
 
-    return { element, layoutSlot, paint, openOffer: () => { if (offerHost && !offerSlot.hidden) offerHost.open(); } };
+    return { element, layoutSlot, paint };
 }
 
 // ================================================================================================ the section list
