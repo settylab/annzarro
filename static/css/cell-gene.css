@@ -44,7 +44,7 @@
 .cgene-genes { display: flex; flex-direction: column; gap: 4px; }
 .cgene-genes__head { display: flex; align-items: center; gap: 8px; }
 .cgene-add-wrap { position: relative; }
-.cgene-add-menu {
+.cgene-add-menu, .cgene-group-menu {
     position: absolute;
     z-index: 30;
     top: 100%;
@@ -58,8 +58,8 @@
     border-radius: 4px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
-.cgene-add-heading { padding: 4px 10px 2px; color: var(--az-muted); font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.03em; }
-.cgene-add-item, .cgene-section__menu-item {
+.cgene-add-heading, .cgene-group-menu__head { padding: 4px 10px 2px; color: var(--az-muted); font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.cgene-add-item, .cgene-section__menu-item, .cgene-group-menu__item {
     display: block;
     width: 100%;
     padding: 3px 10px;
@@ -68,7 +68,8 @@
     background: none;
     border: 0;
 }
-.cgene-add-item:hover, .cgene-add-item:focus, .cgene-section__menu-item:hover:not(:disabled), .cgene-section__menu-item:focus {
+.cgene-add-item:hover, .cgene-add-item:focus, .cgene-group-menu__item:hover, .cgene-group-menu__item:focus,
+.cgene-section__menu-item:hover:not(:disabled), .cgene-section__menu-item:focus {
     background-color: var(--az-accent-bg);
     outline: none;
 }
