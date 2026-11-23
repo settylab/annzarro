@@ -136,6 +136,8 @@ const cellGene = Object.freeze({
         score_pct_above: (option) => `% of cells with ${option} above`
     }),
     noExpressingCells: 'no expressing cells',
+    /** A size legend whose dots are drawn smaller than the plot's, to fit their slot: 1 to `n` (draw.js sizeLegendParts). */
+    legendScaled: (n) => `(legend scaled 1:${n})`,
     csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' }),
     /** The 3D view (UX 6b, WP-12): the toggle, the Height measure, the scene's axes, the strip and the export. */
     view3d: Object.freeze({
@@ -187,12 +189,19 @@ const cellGene = Object.freeze({
         heading: Object.freeze({
             dots: 'Dots', colors: 'Colors', sections: 'Sections', labels: 'Labels', clustering: 'Clustering', legend: 'Legend', totals: 'Totals'
         }),
-        dotSizes: 'Smallest and largest dot',
+        largestDot: 'Largest dot',
+        smallestDot: 'Smallest dot',
+        /** Largest dot's value: the share of its cell it fills. */
+        ofCell: (pct) => `${fmt(pct)}% of cell`,
+        /** Largest dot of a link saved before the dots filled their cells: its px, until the slider is moved. */
+        largestPx: (px) => `${fmt(px)} px (saved)`,
+        px: (n) => `${fmt(n)} px`,
         rangeWhat: Object.freeze({ color: 'Color', size: 'Size', height: 'Height' }),
         sizeMin: 'Size min',
         sizeMax: 'Size max',
         outlineColor: 'Dot outline color',
         outlineWidth: 'Dot outline width (px)',
+        dotOpacity: 'Dot opacity',
         colorScale: 'Color scale',
         min: 'Min',
         max: 'Max',
@@ -267,8 +276,10 @@ const cellGene = Object.freeze({
         }),
         tags: Object.freeze({
             computing: 'Computing…', queued: 'Plot queued', awaiting: 'Not computed', refused: 'Plot refused', tooLarge: 'Too large',
-            failed: 'Plot failed', held: 'Out of date', noSize: 'No size'
-        })
+            failed: 'Plot failed', held: 'Out of date', noSize: 'No size', notDrawn: 'Not drawn'
+        }),
+        /** Plotly threw while drawing: the figure is cleared and the next change draws it afresh. */
+        notDrawn: (why) => `The plot could not be drawn (${why}). Change a setting to draw it again.`
     }),
     /**
      * Color and Size sources (WP-4, FB-2a, decision 31): each measure's `statistic of layer above threshold`, every
