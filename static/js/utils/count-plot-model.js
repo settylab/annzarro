@@ -82,7 +82,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // --- the stored config -----------------------------------------------------------------------------------------------
 
-const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure'];
+const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure', 'binSpacing'];
 const INPUTS = ['x', 'y', 'split'];
 
 /** An input as a partitioning. Its bin count goes to 2,000 and is kept as typed, since the default differs by mode. */
@@ -196,8 +196,44 @@ export function normalizeCountPlot(raw) {
         const measure = normalizeMeasure(raw.measure, bad);
         if (measure) out.measure = measure;
     }
+    if (raw.binSpacing !== undefined) {
+        const spacing = normalizeBinSpacing(raw.binSpacing, bad);
+        if (spacing) out.binSpacing = spacing;
+    }
     for (const key of Object.keys(raw)) if (!KNOWN.includes(key)) out[key] = raw[key];
     return { config: out, problems };
+}
+
+/** How a binned axis is drawn: each bin at its index, all one width ('even'), or at its values ('value'). */
+const BIN_SPACINGS = Object.freeze(['even', 'value']);
+
+/** `{x?, y?}` of the stored spacings; a value that is not one is reported and left out. */
+function normalizeBinSpacing(raw, bad) {
+    if (!isObject(raw)) {
+        bad('binSpacing', 'bad_bin_spacing');
+        return null;
+    }
+    const out = {};
+    for (const [axis, value] of Object.entries(raw)) {
+        if (!['x', 'y'].includes(axis) || !BIN_SPACINGS.includes(value)) bad(`binSpacing.${axis}`, 'bad_bin_spacing');
+        else out[axis] = value;
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+/**
+ * How input `input` ('x', 'y') of a config draws its bins: the stored choice, or the default of its binning: equal-width
+ * bins are drawn at their values (both ways look the same), log, equal-count and manual bins evenly (WP-9).
+ * @param {Object} config - from normalizeCountPlot
+ * @param {string} input
+ * @returns {'even'|'value'}
+ */
+export function binSpacingOf(config, input) {
+    const stored = config.binSpacing && config.binSpacing[input];
+    if (BIN_SPACINGS.includes(stored)) return stored;
+    const p = config[input];
+    const method = (p && isObject(p.binning) && p.binning.method) || 'equal_width';
+    return method === 'equal_width' ? 'value' : 'even';
 }
 
 // --- inputs per mode (CNT-6) -----------------------------------------------------------------------------------------

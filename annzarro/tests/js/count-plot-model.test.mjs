@@ -581,6 +581,19 @@ test('H4: readGrid reads the group store\'s value, and one value is one grid', (
     assert.equal(M.countTable(config, M.readGrid(value), [{ input: 'x' }]), M.countTable(config, M.readGrid(value), [{ input: 'x' }]));
 });
 
+test('binSpacing is kept per axis, a bad value is reported and dropped, and a config without it loads as before', () => {
+    const ok = M.normalizeCountPlot({ version: 1, mode: 'hist2d', binSpacing: { x: 'even', y: 'value' } });
+    assert.deepEqual(ok.config.binSpacing, { x: 'even', y: 'value' });
+    assert.deepEqual(ok.problems, []);
+    const bad = M.normalizeCountPlot({ version: 1, mode: 'hist2d', binSpacing: { x: 'wide', y: 'even' } });
+    assert.deepEqual(bad.config.binSpacing, { y: 'even' });
+    assert.ok(bad.problems.some((p) => p.field === 'binSpacing.x'));
+    const old = M.normalizeCountPlot({ version: 1, mode: 'hist2d' });
+    assert.equal(old.config.binSpacing, undefined);
+    assert.deepEqual(old.problems, []);
+});
+
+
 const N = (c) => M.normalizeCountPlot({ version: 1, ...c }).config;
 test('a 2D histogram with a Color by asks the grid for x, y and the levels, only while it shows counts', () => {
     const base = { mode: 'hist2d', x: obs('depth'), y: obs('pseudotime'), split: obs('cell_type') };

@@ -14,7 +14,7 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { sourceName } from '../../utils/cell-grouping.js';
-import { binsRange, splitUsed } from '../../utils/count-plot-model.js';
+import { binsRange, binSpacingOf, splitUsed } from '../../utils/count-plot-model.js';
 import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
 import {
@@ -288,6 +288,20 @@ export function createControls({ D, id, model, on }) {
                     commit: (next, label) => {
                         const c = model().config;
                         commit({ ...c, [row.field]: fromControl(next, c.mode) }, label);
+                    },
+                    // how the bins are drawn: a 2D histogram and a histogram only; a density is smoothed on a linear grid
+                    ...(['hist2d', 'histogram'].includes(m.config.mode) && ['x', 'y'].includes(row.field) ? { spacing: {
+                        value: binSpacingOf(m.config, row.field),
+                        set: (value) => {
+                            const c = model().config;
+                            commit({ ...c, binSpacing: { ...c.binSpacing, [row.field]: value } }, `${value === 'even' ? 'even' : 'value-placed'} bins of ${C.rows[row.field] || row.field}`);
+                        }
+                    } } : {}),
+                    close: () => {
+                        open.binning.delete(row.field);
+                        paint();
+                        const back = row.extra.querySelector('.ccnt-bins');
+                        if (back) back.focus();
                     }
                 });
                 mounts.push({ row, handle });

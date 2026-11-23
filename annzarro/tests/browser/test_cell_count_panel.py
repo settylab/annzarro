@@ -493,6 +493,57 @@ def test_2d_density_contours_of_a_split_are_drawn_in_the_level_colors(page, serv
         page.locator(f"{S} .ccnt-plot").screenshot(path=os.environ["FB1C_SHOT"])
 
 
+# ------------------------------------------------------------------ even-width bins (WP-9)
+
+LOG_DEPTH = {"source": {"type": "obs", "key": "depth"}, "binning": {"method": "log", "bins": 8}}
+
+
+def _pixel_steps(page):
+    """The pixel distance between neighbouring bin centers of the 2D histogram's x axis, and its tick texts."""
+    return page.evaluate("""(s) => { const p = document.querySelector(s + ' .ccnt-plot'); const ax = p._fullLayout.xaxis;
+        const x = Array.from(p.data[0].x); const steps = x.slice(1).map((v, i) => Math.abs(ax.l2p(v) - ax.l2p(x[i])));
+        return { steps, x, ticks: Array.from(p.querySelectorAll('.xtick text')).map(t => t.textContent) }; }""", S)
+
+
+def test_log_bins_of_a_2d_histogram_are_drawn_evenly_and_the_switch_restores_the_values(page, served):
+    _open(page, served, {CC: _count(mode="hist2d", x=LOG_DEPTH, y={"source": {"type": "obs", "key": "score"}})})
+    _drawn(page, "hist2d")
+    even = _pixel_steps(page)
+    assert even["x"] == list(range(len(even["x"]))) and len(even["x"]) >= 6
+    assert max(even["steps"]) - min(even["steps"]) < 0.5, even["steps"]
+    assert 2 <= len(even["ticks"]) <= 13
+
+    page.click(f"{S} [data-row='x'] .ccnt-bins")
+    page.wait_for_selector(f"{S} .ccnt-binning .pbc-spacing")
+    assert page.is_checked(f"{S} .ccnt-binning .pbc-spacing-even")
+    page.check(f"{S} .ccnt-binning .pbc-spacing-value")
+    _drawn(page, "hist2d", "c.binSpacing && c.binSpacing.x === 'value'")
+    values = _pixel_steps(page)
+    assert values["x"] != even["x"]
+    assert max(values["steps"]) / min(values["steps"]) > 1.5, values["steps"]
+    assert _config(page)["binSpacing"] == {"x": "value"}
+    # a draw-only switch asks the engine for nothing
+    n = len(_requests(page))
+    page.check(f"{S} .ccnt-binning .pbc-spacing-even")
+    _drawn(page, "hist2d", "c.binSpacing && c.binSpacing.x === 'even'")
+    assert len(_requests(page)) == n
+
+
+def test_equal_width_bins_default_to_their_values_and_escape_closes_the_binning_control(page, served):
+    _open(page, served, {CC: _count(mode="hist2d", x={"source": {"type": "obs", "key": "depth"}}, y={"source": {"type": "obs", "key": "score"}})})
+    _drawn(page, "hist2d")
+    assert _pixel_steps(page)["x"] != list(range(100))
+    toggle = f"{S} [data-row='x'] .ccnt-bins"
+    page.click(toggle)
+    page.wait_for_selector(f"{S} .ccnt-binning .pbc-spacing")
+    assert page.is_checked(f"{S} .ccnt-binning .pbc-spacing-value")
+    page.focus(f"{S} .ccnt-binning .pbc-method")
+    page.keyboard.press("Escape")
+    page.wait_for_selector(f"{S} .ccnt-binning .pbc", state="detached")
+    assert page.get_attribute(toggle, "aria-expanded") == "false"
+
+
+
 def _shot(page, name):
     """A screenshot of the plot when ANNZARRO_FB1C_SHOTS names a folder (for a look at the figure, not an assertion)."""
     folder = os.environ.get("ANNZARRO_FB1C_SHOTS")

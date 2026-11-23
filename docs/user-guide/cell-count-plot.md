@@ -59,6 +59,15 @@ from 2 to 2,000.").
 are not counted, so the tails of a histogram are true; the strip below the plot says how many. (A grouping puts such
 cells into its end bins instead, because every cell must be in a group.)
 
+**Bins drawn.** In a histogram and a 2D histogram the binning control has a **Bins drawn** switch for each axis:
+**Evenly** draws every bin at the same width, whatever its range, with the ticks at the borders between bins labelled
+with the edge values (about twelve labels at most, thinned when there are more bins); **At their values** places each
+bin where its values lie, so a wide bin is a wide rectangle. Log, equal-count and manual bins start on Evenly, since
+at their values they crowd at one end; equal-width bins start on At their values, where both look the same. Hovering a
+bin names its real range ("depth 1.2 to 3.9"), and the zero bin is a slot of its own labelled 0. The switch changes
+only how the plot is drawn: the counts, the colour bar, the CSV, Show as table and **Save as grouping** are
+the same either way. Pressing **Escape** in the binning control closes it. A density is always drawn at its values.
+
 **Choose levels** on a categorical input keeps the levels you tick, in your order, and either counts the others as one
 level or leaves them out.
 
