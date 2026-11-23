@@ -518,7 +518,7 @@ function createFactors({ D, id, model, on }) {
         const host = el('div', { class: 'cgrp-binning' });
         const defaults = defaultsOf(i);
         const rows = info ? levelRows(p, info, defaults) : [];
-        const levels = el('ul', { class: 'cgrp-levels cgrp-bins', role: 'list' }, rows.map((r) => levelRow(i, p, info, r)));
+        const levels = el('ul', { class: `cgrp-levels cgrp-bins${staleNow.has(i) ? ' is-stale' : ''}`, role: 'list' }, rows.map((r) => levelRow(i, p, info, r)));
         const mark = stableStringify(p.source);
         entry.mounts.push(mountBinningControl(host, { partitioning: p, info, levels, fresh: fresh.has(mark), settled: () => fresh.delete(mark),
             titleOf: model().titleOf, cells: model().cells, commit: (next, label) => commitFactor(i, next, label) }));
