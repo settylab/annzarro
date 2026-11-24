@@ -387,11 +387,18 @@ const countPlot = Object.freeze({
         adjust: 'Smoothing', bySize: 'Scale curves by level size'
     }),
     /** The layers of a 2D density, each a box of Plot Options. */
-    layers: Object.freeze({ image: 'Density as opacity', lines: 'Isolines', fill: 'Filled isolines', points: 'Cell points' }),
+    layers: Object.freeze({
+        image: 'Density as opacity', imageOne: 'Density as color scale', lines: 'Isolines', fill: 'Filled isolines', points: 'Cell points',
+        last: 'At least one layer stays on: with none, nothing would be drawn.'
+    }),
     adjustProblem: 'Enter a number from 0.1 to 10.',
-    /** The Color pop-over (WP-6a): the colour map, Reverse, the range and the palette of a Color by's levels. */
+    /**
+     * The Display pop-over (WP-6a, renamed: it holds how the data is drawn, not only its color): the colour map, Reverse, the
+     * range (of the colour scale, or of a density), the palette of a Color by's levels, and the Cell points' size and opacity.
+     */
     colour: Object.freeze({
-        button: 'Color', title: 'Color', map: 'Map', reverse: 'Reverse', min: 'Min', max: 'Max', center: 'Center', auto: 'auto',
+        button: 'Display', title: 'Display', map: 'Map', reverse: 'Reverse', min: 'Min', max: 'Max', center: 'Center', auto: 'auto',
+        densityRange: 'Density range', points: 'Cell points', pointSize: 'Size', pointOpacity: 'Opacity', pointFade: 'Density as opacity',
         palette: 'Level palette', paletteDefault: 'Default', reset: 'Reset',
         problem: 'Enter a number, or leave it empty for automatic.',
         centerNote: 'Center has no effect while both Min and Max are set.'

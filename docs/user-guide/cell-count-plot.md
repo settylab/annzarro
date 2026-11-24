@@ -29,21 +29,22 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 | **Smoothing**, **Scale curves by level size**, and for a 2D density **Density as opacity**, **Isolines**, **Filled isolines** | The density modes' own row, with the bandwidth and range notes under it |
 | **Fade by its share** | Under the most frequent level's factor, in a 2D histogram or heatmap |
 | **Save as grouping** | On the toolbar: turns the plot's bars into a {doc}`cell-grouping` |
-| **Color ▾** | On the toolbar, where the plot has a colour scale or colours levels (below) |
+| **Display ▾** | On the toolbar, where the plot has a colour scale, colours levels, or is a 2D density (below) |
 | **Download CSV** | On the toolbar: the plotted table as a CSV |
 | **Undo** | Undoes the last change |
 
-**Pop-overs.** **Choose levels**, the binning line and **Color ▾** open small windows over the plot. They never change the
+**Pop-overs.** **Choose levels**, the binning line and **Display ▾** open small windows over the plot. They never change the
 size of the panel or move the plot, and a change in one applies at once, as one undo step. **Escape**, a click outside or
 the **×** closes them, and **Escape** puts the focus back on the button that opened it. Only one is open at a time.
 
-**Colour.** **Color ▾** shows when a colour scale or a palette applies: a 2D histogram, a 2D density without a Color by,
-a heatmap's number, an UpSet coloured by a share or a statistic, and any plot with a Color by. It holds the **Map**
-(Viridis by default), **Reverse**, **Min**, **Max** and **Center** of the scale (Center has no effect while both Min and Max
-are set), and the **Level palette** of a Color by's levels. **Reset** returns them all to
-the defaults. A box that is not set says "auto" with the value the plot draws, such as "auto (412)"; type a number to fix it, or clear
-the box. The **↺** button beside the boxes returns **Min**, **Max** and **Center** to auto in one undo step. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
-gets the full colour of every level.
+**Display.** **Display ▾** holds how the data is drawn: the colour scale and palette, the density range, and the Cell points'
+size and opacity. It shows when a colour scale or a palette applies: a 2D histogram, a 2D density, a heatmap's number, an UpSet
+coloured by a share or a statistic, and any plot with a Color by. It holds the **Map** (Viridis by default), **Reverse**,
+**Min**, **Max** and **Center** of the scale (Center has no effect while both Min and Max are set), and the **Level palette**
+of a Color by's levels. **Reset** returns them all to the defaults. A box that is not set says "auto" with the value the plot
+draws, such as "auto (412)"; type a number to fix it, or clear the box. The **↺** button beside the boxes returns **Min**,
+**Max** and **Center** to auto in one undo step. A 2D histogram with a Color by has no scale, only the palette, and **Max**
+is then the cell count that gets the full colour of every level. For a 2D density the boxes are the **Density range** (below).
 
 **Colours.** The bars, slices and curves of a **Color by** input are in the colours of its levels: a column's stored
 colours when it has them, else the app's group colours; for a {doc}`cell-grouping`, the grouping's own colours of its
@@ -115,30 +116,34 @@ narrower than the grid can show, it is raised: "Bandwidth raised to the grid's r
 Curves are each scaled to an area of 1 by default; **Scale curves by level size** scales them by their cells instead.
 In 2D the bandwidth is per axis and ignores the correlation between X and Y, unlike `scipy.stats.gaussian_kde`.
 
-A 2D density has three layers in **Plot Options**, which you can combine freely (at least one stays on):
+A 2D density has four layers in its row of controls, which you can combine freely. At least one stays on: with **Cell points**
+on, the three density layers can all be switched off, leaving the points alone; unticking the last layer is refused and the
+status line says why.
 
 - **Filled isolines**: bands of the density, each band one opacity of the color, stepping up with the density.
 - **Isolines**: lines at the same density levels.
-- **Density as opacity**: a smooth image in which the density is the opacity of the color.
+- **Density as opacity** (with a Color by) or **Density as color scale** (one group): a smooth image of the density, as the
+  opacity of each group's color, or on the color map.
 - **Cell points**: each cell as a point at its place, drawn over the other layers.
 
 With a **Color by** the default is *Filled isolines* with *Isolines*: each group in its own color, its bands stepping up
 from transparent, on **one set of density levels shared by all groups**, so a band means the same density in every
 group, and a group with little density stays faint beside a dense one. The layers blend where groups overlap. With one
-group the default is *Filled isolines* in a color map: **Color ▾** sets the map, **Reverse** and the **Min** and **Max**
-of the scale, and a color bar names the densities. Over *Density as opacity*, one group's filled isolines are drawn at
+group the default is *Filled isolines* in a color map: **Display ▾** sets the map, **Reverse** and the **Min** and **Max**
+of the scale, and a color bar always shows the full scale, even when only isolines are drawn. Over *Density as opacity*, one group's filled isolines are drawn at
 reduced opacity so the image shows through. With **Scale curves by level size** off, each group's density has an area
 of 1; with it on, a group is weighted by its share of the cells. A link made with the earlier *As an image* or *contours*
 setting opens with the matching layers.
 
-**Cell points** colors each cell by the density of its group where it lies: with a Color by, in the group's color with
-the density as the opacity, in eight steps on the same scale as the other layers; with one group, on the color map. The
+**Cell points** colors each cell by the density of its group where it lies: with a Color by, in the group's color; with one group, on the color map. The
 density at a cell is read from the same smoothed grid the isolines come from, so the points and the contours agree. The
 positions of the cells are loaded as a Cell Plot loads them, so **X** and **Y** must be an obs column, an embedding, a
 gene or a gene score. The Color by can be an obs column of categories, a {doc}`cell-grouping` (each cell in its
 group's color), or a number, which each cell is binned into by the plot's own bin edges; for anything else the strip says
-what to change. **Point size** (1 to
-12 pixels, 3 by default) sits beside the layer. The plot draws at most 1,000,000 points: above that it draws a seeded
+what to change. The **Display ▾** pop-over holds the points' **Size** (1 to
+12 pixels, 3 by default) and **Opacity** (0.05 to 1, 1 by default, with or without a Color by); with a Color by, **Density as
+opacity** lets the points take the density as their opacity, up to that opacity. The **Density range** (**Min** and **Max**
+of the density) maps the opacity, spaces the isoline levels and steps the points alike, in every layer and every group. The plot draws at most 1,000,000 points: above that it draws a seeded
 random sample (the same cells each time) and the strip says "Cells drawn as points: 998,812 of a random sample of 1,000,000 of the 12,345,678 cells." The first number is the points on the plot: cells outside the density's range are not drawn
 The density itself always counts every cell. With more than 25,000,000 cells shown the layer is not drawn, because every
 cell's position would have to be loaded: turn on a subset. Hovering shows the density grid's x, y, group and density at

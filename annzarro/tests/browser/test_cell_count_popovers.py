@@ -88,7 +88,7 @@ def test_the_toolbar_is_save_as_grouping_color_then_undo_and_save_works_from_it(
     depth, score = obs("depth"), obs("score")
     _open(page, served, {CC: _count(mode="hist2d", x=depth, y=score)})
     _drawn(page, "hist2d")
-    assert page.evaluate(TOOLBAR, S) == ["Save as grouping", "Color ▾", "Download CSV", "Undo"]
+    assert page.evaluate(TOOLBAR, S) == ["Save as grouping", "Display ▾", "Download CSV", "Undo"]
     assert page.query_selector(f"{S} .ccnt-table-btn") is None
     page.click(f"{S} .ccnt-toolbar .ccnt-save-btn")
     page.wait_for_selector(f"{S} .ccnt-save")
@@ -98,11 +98,11 @@ def test_the_toolbar_is_save_as_grouping_color_then_undo_and_save_works_from_it(
 def test_color_shows_when_a_colour_scale_or_a_level_palette_applies_and_the_map_reaches_the_plot(page, served):
     _open(page, served, {CC: _count(mode="bar", x=cc.CELL_TYPE)})
     _drawn(page, "bar")
-    assert "Color ▾" not in page.evaluate(TOOLBAR, S), "a plain bar has nothing to colour"
+    assert "Display ▾" not in page.evaluate(TOOLBAR, S), "a plain bar has nothing to colour"
     page.select_option(f"{S} .ccnt-mode", "hist2d")
     page.evaluate(f"""() => window.PanelManager.getPanel('{CC}').updateConfig({{ x: {{ source: {{ type: 'obs', key: 'depth' }} }}, y: {{ source: {{ type: 'obs', key: 'score' }} }} }})""")
     _drawn(page, "hist2d")
-    assert "Color ▾" in page.evaluate(TOOLBAR, S)
+    assert "Display ▾" in page.evaluate(TOOLBAR, S)
     before = page.evaluate(BOX, S)
     page.click(f"{S} .ccnt-color-btn")
     page.wait_for_selector("[data-popover='color']")
