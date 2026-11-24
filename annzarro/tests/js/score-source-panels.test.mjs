@@ -37,7 +37,7 @@ function table({ id = 'gene-table-1', title = 'Gene Table 1', entries = [0, 2, 4
 }
 const signature = (id, genes) => ({ getId: () => id, getTitle: () => 'Sig', getType: () => 'gene-signature',
     getRecipe: () => ({ genes, down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, bins: 25, controls: 50, detect_above: 0,
-        version: 1, offered: ['zscore_mean', 'mean', 'sum'], layers: ['X'], directions: false, down_weight: 'gene' }) });
+        version: 1, directions: false, down_weight: 'gene' }) });
 
 function adapterOf(panels, { open = new Set(), resolver = null } = {}) {
     return P.createSourceAdapter({
@@ -63,7 +63,8 @@ test('an open table\'s genes are the rows that pass its filter, sorted, with the
     assert.deepEqual(r.genes, ['A1', 'C3', 'E5']);
     assert.deepEqual(r.down, []);
     assert.equal(r.method, 'zscore_mean');
-    assert.deepEqual(r.offered, ['zscore_mean', 'mean', 'sum']);
+    assert.equal(r.input, 'X');
+    assert.equal('offered' in r, false, 'nothing is offered since decision 31');
     assert.equal(source.gate('p'), null);
 });
 
@@ -80,10 +81,11 @@ test('the same options give the same recipe fields as a signature: one schema', 
     const t = table({ options: opts });
     const sources = adapterOf(new Map([[t.id, t], ['gene-signature-1', signature('gene-signature-1', ['A1'])]]), { open: new Set([t.id]) });
     const fromTable = sources.get(t.id).recipe();
-    for (const key of ['input', 'method', 'offered', 'layers', 'clip', 'seed', 'bins', 'controls', 'detect_above', 'version']) {
+    for (const key of ['input', 'method', 'clip', 'seed', 'bins', 'controls', 'detect_above', 'version']) {
         assert.deepEqual(fromTable[key], key in opts ? opts[key] : sources.get('gene-signature-1').recipe()[key] ?? fromTable[key], key);
     }
     assert.equal(fromTable.method, 'mean');
+    assert.equal('offered' in fromTable || 'layers' in fromTable, false, 'the retired fields are read, never carried');
     assert.deepEqual(Object.keys(fromTable).sort(), Object.keys(sources.get('gene-signature-1').recipe()).sort(), 'same fields');
 });
 

@@ -73,7 +73,7 @@ function compose(fields = {}, { rows = 6, split = 3, reply = reply2(), recipe = 
             ...extras.color, values: colour, raw: colour },
         size: config.mode !== 'dots' ? { none: '' }
             : { id: 'pct|logged', stat: 'pct_expressing', layer: 'logged', detectAbove: 0, ...extras.size, values: sized },
-        legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline
+        legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline, dotOpacity: extras.dotOpacity
     };
     return { config, model, figure: D.buildFigure(model, LIGHT), extras };
 }
@@ -208,8 +208,9 @@ test('5.3 cmap, vmin, vmax, vcenter: Color scale, Min, Max and a Center for a di
 });
 
 test('5.3 dot_min, dot_max: the % at the smallest and largest dot set the size legend\'s range', () => {
-    // a figure tall enough for all five reference dots (the legend column holds four entries here)
-    const { model } = compose({ dotMin: 10, dotMax: 60 });
+    // a figure tall enough for all five reference dots (the legend column holds four entries here); the largest dot
+    // fills its cell by default, so here it takes a fifth of it, and each reference dot gets its 16 px line
+    const { model } = compose({ dotMin: 10, dotMax: 60, dotScale: 20 });
     model.pixels = { width: 900, height: 1200 };
     assert.deepEqual(one(D.buildFigure(model, LIGHT), 'size legend').text, ['10', '22.5', '35', '47.5', '60']);
 });
@@ -570,4 +571,176 @@ test('WP-2 Reverse reverses the color scale of dots and heatmap', () => {
     assert.equal(matrixTraces(compose().figure)[0].marker.reversescale, undefined);
     assert.equal(matrixTraces(compose({ reverse: true }).figure)[0].marker.reversescale, true);
     assert.equal(matrixTraces(compose({ reverse: true, mode: 'heatmap' }).figure)[0].reversescale, true);
+});
+
+// --- dots fill their cells, opaque, no grid (operator, 2026-11-23) ------------------------------------------------
+
+const arrayMaxOf = (a) => a.reduce((m, v) => (v > m ? v : m), -Infinity);
+const arrayMinOf = (a) => a.reduce((m, v) => (v < m ? v : m), Infinity);
+
+/** The matrix's cell in px, read from the figure: the gene axis's and the group axis's pitch, the smaller. */
+function cellPitch(fig, model) {
+    const inner = { w: model.pixels.width - 20, h: model.pixels.height - 20 };
+    const along = (ax, px) => ((ax.domain[1] - ax.domain[0]) * px) / Math.abs(ax.range[1] - ax.range[0]);
+    return Math.min(along(fig.layout.xaxis, inner.w), along(fig.layout.yaxis, inner.h));
+}
+
+test('by default the largest dot fills its cell less a 2 px gap, and follows the plot size and the number of rows', () => {
+    const seen = [];
+    for (const [rows, width, height] of [[40, 900, 600], [40, 1400, 600], [60, 900, 600], [24, 700, 900], [80, 1200, 500]]) {
+        const { model } = compose({}, { rows, split: 3 });
+        model.pixels = { width, height };
+        const fig = D.buildFigure(model, LIGHT);
+        const sizes = matrixTraces(fig)[0].marker.size;
+        const largest = arrayMaxOf(sizes);
+        const want = cellPitch(fig, model) - 2;
+        assert.ok(Math.abs(largest - want) < 1.5, `${rows} rows at ${width} x ${height}: largest ${largest.toFixed(1)} px, cell less 2 ${want.toFixed(1)}`);
+        assert.ok(arrayMinOf(sizes) >= 3 - 1e-9, 'the smallest dot stays 3 px');
+        seen.push(largest);
+    }
+    assert.ok(seen[1] > seen[0], 'a wider plot, larger dots');
+    assert.ok(seen[2] < seen[0], 'more rows, smaller dots');
+});
+
+test('a few rows and groups: the largest dot fills its cell, and the size legend draws its dots scaled to its slot, saying so', () => {
+    for (const [width, height] of [[1400, 1000], [900, 600], [700, 420]]) {
+        const { model } = compose({});
+        model.pixels = { width, height };
+        const fig = D.buildFigure(model, LIGHT);
+        const largest = arrayMaxOf(matrixTraces(fig)[0].marker.size);
+        assert.ok(Math.abs(largest - (cellPitch(fig, model) - 2)) < 1.5, `${width} x ${height}: ${largest} px fills the cell`);
+        const legend = one(fig, 'size legend');
+        const y = fig.layout[`yaxis${legend.yaxis.slice(1)}`];
+        const roomPx = (y.domain[1] - y.domain[0]) * (height - 20);
+        const linePx = roomPx / (y.range[0] - y.range[1]);
+        const drawn = arrayMaxOf(legend.marker.size);
+        assert.ok(drawn <= linePx + 1e-6, `${width} x ${height}: a ${drawn} px reference dot in its ${linePx.toFixed(1)} px line`);
+        const note = fig.layout.annotations.find((a) => a.name === 'size legend scale');
+        assert.ok(note, `${width} x ${height}: the legend says its dots are scaled`);
+        const n = Number(/1:(\d+)/.exec(note.text)[1]);
+        assert.ok(Math.abs(drawn * n - largest) < 1e-6, `${width} x ${height}: 1:${n} of ${largest}`);
+        // the note stands under the title and above the dots
+        assert.ok(note.y > y.domain[1], 'the note is above the reference dots');
+    }
+});
+
+test('dots that fit their legend are drawn there at their own size, with no note', () => {
+    const { model } = compose({}, { rows: 40, split: 3 });
+    const fig = D.buildFigure(model, LIGHT);
+    assert.equal(arrayMaxOf(one(fig, 'size legend').marker.size), arrayMaxOf(matrixTraces(fig)[0].marker.size));
+    assert.ok(!fig.layout.annotations.some((a) => a.name === 'size legend scale'));
+});
+
+test('the size legend\'s title stands above its first reference dot, at every height', () => {
+    for (const height of [300, 360, 420, 500, 600, 800]) {
+        const { model } = compose({ titles: { size: 'Gene Signature 1 % of cells with mean · logged_counts above 0' } });
+        model.pixels = { width: 900, height };
+        const fig = D.buildFigure(model, LIGHT);
+        const legend = one(fig, 'size legend');
+        const y = fig.layout[`yaxis${legend.yaxis.slice(1)}`];
+        const plotPx = height - 20;
+        // the title: the nearest annotation above the subplot, but for the scale note
+        const titleAnn = fig.layout.annotations.filter((a) => a.xref === 'paper' && a.name !== 'size legend scale' && a.name !== 'legend title hover'
+            && a.y > y.domain[1] - 1e-9).sort((p, q) => p.y - q.y)[0];
+        assert.ok(titleAnn, `${height}: the title`);
+        const lines = (titleAnn.text ? titleAnn.text.split('<br>').length : 0) + (fig.layout.annotations.some((a) => a.name === 'size legend scale') ? 1 : 0);
+        // the title's lines, 17 px each from its top, end above the reference dots' subplot
+        const titleBottom = titleAnn.y - (lines * 17) / plotPx;
+        assert.ok(titleBottom >= y.domain[1] - 1e-9, `${height}: the title reaches ${titleBottom.toFixed(3)}, the dots start at ${y.domain[1].toFixed(3)}`);
+        // and the first dot, centred in its line, stays inside the subplot
+        const linePx = ((y.domain[1] - y.domain[0]) * plotPx) / (y.range[0] - y.range[1]);
+        assert.ok(arrayMaxOf(legend.marker.size) <= linePx + 1e-6, `${height}: dots fit their lines`);
+    }
+});
+
+test('Largest dot takes a share of the cell; Smallest dot is px; the configuration keeps both', () => {
+    const at = (fields) => {
+        const { model } = compose(fields, { rows: 40, split: 3 });
+        const fig = D.buildFigure(model, LIGHT);
+        const sizes = matrixTraces(fig)[0].marker.size;
+        return { lo: arrayMinOf(sizes), hi: arrayMaxOf(sizes), cell: cellPitch(fig, model) };
+    };
+    const full = at({});
+    const half = at({ dotScale: 50 });
+    assert.ok(Math.abs(half.hi - (full.cell - 2) / 2) < 1, `50%: ${half.hi} of ${full.cell}`);
+    assert.equal(at({ dotScale: 3 }).hi, at({ dotScale: 10 }).hi, 'the share stops at 10%');
+    assert.equal(at({ dotSmallest: 6 }).lo, 6);
+    assert.ok(Math.abs(at({ dotSmallest: 6 }).hi - full.hi) < 1e-9, 'the smallest dot leaves the largest as it is');
+    // a smallest dot larger than a small cell's largest is drawn at the largest
+    const tiny = at({ dotScale: 10, dotSmallest: 30 });
+    assert.equal(tiny.lo, tiny.hi);
+    const c = normalizeCellGene({ version: 1, mode: 'dots', dotScale: 50, dotSmallest: 6, sections: [] }).config;
+    assert.ok(c.dotScale === 50 && c.dotSmallest === 6, 'both are kept by the configuration');
+});
+
+test('a link from before keeps its px range: dotSizes draws those px until Largest dot is moved', () => {
+    const old = compose({ dotSizes: [5, 12] }, { rows: 40, split: 3 }).figure;
+    const sizes = matrixTraces(old)[0].marker.size;
+    assert.equal(arrayMinOf(sizes), 5);
+    assert.equal(arrayMaxOf(sizes), 12);
+    const moved = matrixTraces(compose({ dotSizes: [5, 12], dotScale: 100 }, { rows: 40, split: 3 }).figure)[0].marker.size;
+    assert.equal(arrayMinOf(moved), 5, 'the smallest of the old range stays');
+    assert.ok(arrayMaxOf(moved) > 12, 'the largest fills the cell');
+});
+
+test('dots are opaque and neither mode draws grid lines', () => {
+    for (const mode of ['dots', 'heatmap']) {
+        const fig = compose({ mode }).figure;
+        assert.equal(fig.layout.xaxis.showgrid, false, `${mode}: x`);
+        assert.equal(fig.layout.yaxis.showgrid, false, `${mode}: y`);
+        if (mode === 'dots') for (const t of matrixTraces(fig)) assert.equal(t.marker.opacity, 1);
+    }
+});
+
+// --- the strips in the order of their legend (operator, 2026-11-23) ----------------------------------------------
+
+/**
+ * The factors' bands in reading order: left to right when they stand beside the groups on y, top to bottom below the
+ * matrix when the axes are swapped. Each strip is a stacked bar, the k-th over depth [k, k + 1] of its band axis.
+ */
+function bandOrder(fig) {
+    const bars = fig.data.filter((t) => t.name === 'group strip');
+    const at = bars.map((b, k) => {
+        const vertical = b.orientation === 'h';
+        const ax = fig.layout[`${vertical ? 'x' : 'y'}axis${(vertical ? b.xaxis : b.yaxis).slice(1)}`];
+        const [r0, r1] = ax.range;
+        const t = (k + 0.5 - r0) / (r1 - r0);
+        return { k, vertical, paper: ax.domain[0] + t * (ax.domain[1] - ax.domain[0]) };
+    });
+    // left to right is paper x rising; top to bottom is paper y falling
+    return at.sort((a, b) => (a.vertical ? a.paper - b.paper : b.paper - a.paper)).map((a) => a.k);
+}
+
+/** The strips' legend titles, top to bottom. */
+const legendOrder = (fig) => fig.layout.annotations.filter((a) => a.name === 'strip legend title')
+    .sort((a, b) => b.y - a.y).map((a) => a.text);
+
+test('the factors\' bands read in the order of their legend, beside the groups and below them when swapped', () => {
+    for (const swap of [false, true]) {
+        const fig = compose({ swap }).figure;
+        const titles = legendOrder(fig);
+        assert.deepEqual(titles, ['cell_type', 'age'], `${swap}: the legend lists the factors in the grouping's order`);
+        const bars = fig.data.filter((t) => t.name === 'group strip');
+        const factorOf = (k) => (bars[k].hovertext[0].includes('cell_type:') ? 'cell_type' : 'age');
+        assert.deepEqual(bandOrder(fig).map(factorOf), titles, `${swap ? 'swapped' : 'beside the groups'}: bands in legend order`);
+    }
+});
+
+// --- dot opacity (operator, 2026-11-23) ----------------------------------------------------------------------------
+
+test('Dot opacity: the dots and the size legend\'s dots follow it, opaque by default; a heatmap is unaffected', () => {
+    const legendAt = (fig) => one(fig, 'size legend').marker.opacity;
+    const opaque = compose({}).figure;
+    for (const t of matrixTraces(opaque)) assert.equal(t.marker.opacity, 1);
+    const base = legendAt(opaque);
+    const half = compose({ dotOpacity: 0.5 }).figure;
+    for (const t of matrixTraces(half)) assert.equal(t.marker.opacity, 0.5);
+    assert.ok(Math.abs(legendAt(half) - base * 0.5) < 1e-9, `the legend's dots at the same share: ${legendAt(half)} of ${base}`);
+    // the range is 0.1 to 1
+    for (const t of matrixTraces(compose({ dotOpacity: 0 }).figure)) assert.equal(t.marker.opacity, 0.1);
+    for (const t of matrixTraces(compose({ dotOpacity: 3 }).figure)) assert.equal(t.marker.opacity, 1);
+    // a heatmap has no dots: its tiles carry no opacity of the setting
+    for (const t of matrixTraces(compose({ mode: 'heatmap', dotOpacity: 0.5 }).figure)) assert.ok(t.opacity === undefined || t.opacity === 1, `${t.opacity}`);
+    const c = normalizeCellGene({ version: 1, mode: 'dots', dotOpacity: 0.4, sections: [] }).config;
+    assert.equal(c.dotOpacity, 0.4, 'the configuration keeps it');
 });

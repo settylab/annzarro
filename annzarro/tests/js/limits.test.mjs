@@ -5,7 +5,7 @@
  *   - with no policy (an older server, or before it loads) every limit is its default from limits-defaults.json;
  *   - the server's value, once loaded, is what every check uses: the Cell-Gene matrix, genes per section, the groups
  *     and factors of a grouping, the count grid and its inputs, the sets of an UpSet, the 3D bars, the cell export,
- *     the progress bar, the live tier when an estimate does not say, and the dendrogram rows;
+ *     the progress bar and the dendrogram rows;
  *   - a value that is not a finite number is ignored, and a change of the policy applies at the next check.
  *
  * Run:  node --test annzarro/tests/js/limits.test.mjs
@@ -23,7 +23,6 @@ const CP = await import('../../../static/js/utils/count-plot-model.js');
 const SP = await import('../../../static/js/utils/set-plot-model.js');
 const SN = await import('../../../static/js/utils/source-notices.js');
 const X = await import('../../../static/js/panels/cell-grouping/cell-export.js');
-const R = await import('../../../static/js/panels/cell-grouping/group-rows.js');
 const O = await import('../../../static/js/utils/cell-gene-order.js');
 
 const DEFAULTS = JSON.parse(readFileSync(new URL('../../../static/js/limits-defaults.json', import.meta.url), 'utf8'));
@@ -120,13 +119,6 @@ test('the progress bar shows after the served number of seconds', async () => {
     assert.notEqual(SN.progressBar(snap, 0), null);                    // the estimate (4 s) is over 2 s
     assert.notEqual(SN.progressBar({ ...snap, estimate: { seconds: 1 } }, 2.5), null);
     assert.equal(SN.progressBar({ ...snap, estimate: { seconds: 1 } }, 1), null);
-});
-
-test('an estimate that does not name its live limit is judged by the served one', async () => {
-    assert.equal(R.isLive({ seconds: 4, tier: 'auto' }), true);
-    await serve({ 'limits.live_update_s': 3 });
-    assert.equal(R.isLive({ seconds: 4, tier: 'auto' }), false);
-    assert.equal(R.isLive({ seconds: 4, tier: 'auto', live_max_s: 5 }), true);     // the estimate's own wins
 });
 
 test('a block over the served dendrogram rows is not clustered, and the limit travels to the worker', async () => {

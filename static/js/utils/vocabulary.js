@@ -110,6 +110,8 @@ const cellGene = Object.freeze({
         z_pooled: 'z-score per gene, against all grouped cells'
     }),
     aggregationHeading: Object.freeze({ summary: 'From the genes', score: 'From the score' }),
+    /** Why a source with down genes has no summary (decision 40). */
+    downGenesNoSummary: 'A summary of the genes cannot be computed with down genes: it would count them as up genes. The row is the score.',
     /** The summaries' menu labels; a score kind's label is built from the score option by `aggregationOf`. */
     aggregation: Object.freeze({
         mean_of_means: "Mean of the genes' means",
@@ -125,12 +127,19 @@ const cellGene = Object.freeze({
         score_mean: 'The signature\'s score for each cell, averaged over the group, as a cell plot colored by it would average. Computes the score.',
         score_pct_above: 'Share of the group\'s cells whose score is above the threshold; 0 to 100.'
     }),
-    /** The label of a score kind for one score option, e.g. `z-score mean · X`. */
+    /** A score kind in a one-row section's kind select; its method and layer are selects of their own (decision 31). */
+    scoreKind: Object.freeze({
+        score_mean: 'Score, averaged',
+        score_pct_above: '% of cells with score above'
+    }),
+    /** The label of a score kind for one method and layer, e.g. `z-score mean · X`. */
     scoreAggregation: Object.freeze({
         score_mean: (option) => `${option}, averaged`,
         score_pct_above: (option) => `% of cells with ${option} above`
     }),
     noExpressingCells: 'no expressing cells',
+    /** A size legend whose dots are drawn smaller than the plot's, to fit their slot: 1 to `n` (draw.js sizeLegendParts). */
+    legendScaled: (n) => `(legend scaled 1:${n})`,
     csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' }),
     /** The 3D view (UX 6b, WP-12): the toggle, the Height measure, the scene's axes, the strip and the export. */
     view3d: Object.freeze({
@@ -178,15 +187,25 @@ const cellGene = Object.freeze({
         wardOnly: 'Ward needs Euclidean distance.',
         undo: 'Undo',
         leftOut: (n, noun) => `${fmt(n)} ${n === 1 ? noun : `${noun}s`} not clustered: too few values in common, or constant. They are at the end.`,
+        /** The status strip's tag when the clustering left rows or groups out; its pop-over gives the sentences. */
+        notClusteredTag: 'Partly clustered',
         tooMany: (title, n, limit) => `Not clustered: ${title} has ${fmt(n)} rows; clustering stops at ${fmt(limit)}.`,
         heading: Object.freeze({
             dots: 'Dots', colors: 'Colors', sections: 'Sections', labels: 'Labels', clustering: 'Clustering', legend: 'Legend', totals: 'Totals'
         }),
-        dotSizes: 'Smallest and largest dot',
-        dotMin: '% at the smallest dot',
-        dotMax: '% at the largest dot',
+        largestDot: 'Largest dot',
+        smallestDot: 'Smallest dot',
+        /** Largest dot's value: the share of its cell it fills. */
+        ofCell: (pct) => `${fmt(pct)}% of cell`,
+        /** Largest dot of a link saved before the dots filled their cells: its px, until the slider is moved. */
+        largestPx: (px) => `${fmt(px)} px (saved)`,
+        px: (n) => `${fmt(n)} px`,
+        rangeWhat: Object.freeze({ color: 'Color', size: 'Size', height: 'Height' }),
+        sizeMin: 'Size min',
+        sizeMax: 'Size max',
         outlineColor: 'Dot outline color',
         outlineWidth: 'Dot outline width (px)',
+        dotOpacity: 'Dot opacity',
         colorScale: 'Color scale',
         min: 'Min',
         max: 'Max',
@@ -261,30 +280,27 @@ const cellGene = Object.freeze({
         }),
         tags: Object.freeze({
             computing: 'Computing…', queued: 'Plot queued', awaiting: 'Not computed', refused: 'Plot refused', tooLarge: 'Too large',
-            failed: 'Plot failed', held: 'Out of date', noSize: 'No size'
-        })
+            failed: 'Plot failed', held: 'Out of date', noSize: 'No size', notDrawn: 'Not drawn'
+        }),
+        /** Plotly threw while drawing: the figure is cleared and the next change draws it afresh. */
+        notDrawn: (why) => `The plot could not be drawn (${why}). Change a setting to draw it again.`
     }),
     /**
-     * Color and Size sources (WP-4, FB-2a): each measure's `statistic of layer above threshold`, where layers are
-     * offered, the plot's own Statistics offered on an obs axis, and the limit counted in values (finding 9).
+     * Color and Size sources (WP-4, FB-2a, decision 31): each measure's `statistic of layer above threshold`, every
+     * statistic and layer listed, and the limit counted in values (finding 9).
      */
     sources: Object.freeze({
         of: 'of',
         above: 'above',
         threshold: 'expressed above',
         thresholdHelp: 'A cell counts as expressing above this value.',
-        offerOther: 'Offer other…',
-        /** The plot's own Statistics offered, with an obs column as groups (operator ruling Q1). */
-        offer: Object.freeze({
-            title: 'Statistics offered',
-            where: 'Color and Size pick from these. With an obs column as groups, the plot keeps this list itself.',
-            methods: 'Statistics',
-            methodsNote: 'Cell count is always offered.',
-            layers: 'Color and Size choose among the offered layers.',
-            pinnedLayer: 'X is always offered.',
-            lastLayer: 'At least one layer stays offered.',
-            lastMethod: 'At least one statistic stays offered.'
-        }),
+        /**
+         * The threshold box on a grouping axis (decision 35): empty follows the grouping's Expressed above, shown as the
+         * placeholder; a typed value overrides it for this plot.
+         */
+        thresholdAuto: (value) => `auto (grouping: ${value})`,
+        thresholdFollows: (title, value) => `Follows ${title}'s Expressed above (${value}). Type a value to override it for this plot.`,
+        thresholdOverrides: (title, value) => `Overrides ${title} (above ${value}). Clear to follow it.`,
         /** "3 genes on 2 layers": genes (in words) read on `n` layers, or at `n` thresholds. */
         geneReads: (genes, n, cause) => (cause === 'layers' ? `${genes} on ${n} layers` : cause === 'thresholds' ? `${genes} at ${n} thresholds` : genes),
         tooManyValues: (groups, features, values, limit) => `${groups} × ${features} = ${values} values; the limit is ${limit}.`,
@@ -345,7 +361,19 @@ const countPlot = Object.freeze({
         mode: 'Mode', x: 'X', y: 'Y', split: 'Color by', slices: 'Slices', height: 'Height', color: 'Color', labels: 'Labels',
         sets: capital(plural.set), factor: 'Of', source: 'Of', above: 'Above'
     }),
-    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', fill: '100%', overlay: 'Overlaid' }),
+    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', overlay: 'Overlaid', fill: '100%' }),
+    /** Why an arrangement does not apply (its title, where it is disabled). */
+    arrangementRefused: Object.freeze({
+        dodgeBins: 'Bins of a number cannot sit side by side. Overlaid shows each level over the others.'
+    }),
+    /** Why a view cannot draw the X (the Mode select's title of a disabled view). */
+    viewRefused: Object.freeze({ histogramNumeric: 'Histogram needs a numeric axis.' }),
+    /** What a switch of view by the X axis type says, once. */
+    viewSwitched: Object.freeze({
+        toHistogram: 'A number as X: shown as Histogram. Bar shows its bins as categories.',
+        toBar: 'Histogram needs a numeric axis: shown as Bar.',
+        fallback: 'Histogram needs a numeric axis, so this plot is drawn as Bar.'
+    }),
     /** The entries of Height and Color (UX 4.5), and the help line of each. */
     value: Object.freeze({
         count: 'Count',
@@ -370,12 +398,21 @@ const countPlot = Object.freeze({
     buttons: Object.freeze({
         sort: 'Sort by height', reverse: 'Reverse', horizontal: 'Horizontal', options: 'Plot Options', ring: 'Ring', log: 'Log count axis',
         fade: 'Fade by its share', csv: 'Download CSV', chooseLevels: `Choose ${plural.level}`, undo: 'Undo',
-        adjust: 'Smoothing', bySize: 'Scale curves by level size', image: 'As an image'
+        adjust: 'Smoothing', bySize: 'Scale curves by level size'
+    }),
+    /** The layers of a 2D density, each a box of Plot Options. */
+    layers: Object.freeze({
+        image: 'Density as opacity', imageOne: 'Density as color scale', lines: 'Isolines', fill: 'Filled isolines', points: 'Cell points',
+        last: 'At least one layer stays on: with none, nothing would be drawn.'
     }),
     adjustProblem: 'Enter a number from 0.1 to 10.',
-    /** The Color pop-over (WP-6a): the colour map, Reverse, the range and the palette of a Color by's levels. */
+    /**
+     * The Display pop-over (WP-6a, renamed: it holds how the data is drawn, not only its color): the colour map, Reverse, the
+     * range (of the colour scale, or of a density), the palette of a Color by's levels, and the Cell points' size and opacity.
+     */
     colour: Object.freeze({
-        button: 'Color', title: 'Color', map: 'Map', reverse: 'Reverse', min: 'Min', max: 'Max', center: 'Center', auto: 'auto',
+        button: 'Display', title: 'Display', map: 'Map', reverse: 'Reverse', min: 'Min', max: 'Max', center: 'Center', auto: 'auto',
+        densityRange: 'Density range', points: 'Cell points', pointSize: 'Size', pointOpacity: 'Opacity', pointFade: 'Density as opacity',
         palette: 'Level palette', paletteDefault: 'Default', reset: 'Reset',
         problem: 'Enter a number, or leave it empty for automatic.',
         centerNote: 'Center has no effect while both Min and Max are set.'
@@ -431,6 +468,17 @@ const countPlot = Object.freeze({
         overBins: (name, n, max) => `${name} has ${fmt(n)} bins; a ${word.factor} of a ${word.grouping} holds up to ${fmt(max)}. Use fewer bins first.`,
         cancel: 'Cancel',
         save: 'Save'
+    }),
+    /** A 2D density drawn on the cell locations: the strip's notice and why it is refused. */
+    points: Object.freeze({
+        label: 'Cell points',
+        all: (drawn, total) => `Cells drawn as points: ${drawn.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}.`,
+        sample: (drawn, loaded, total) => `Cells drawn as points: ${drawn.toLocaleString('en-US')} of a random sample of ${loaded.toLocaleString('en-US')} of the ${total.toLocaleString('en-US')} cells.`,
+        tooMany: (total, limit) => `Cell points load the position of every cell, and ${total.toLocaleString('en-US')} cells are more than the ${limit.toLocaleString('en-US')} it takes. Turn on a subset to use them.`,
+        source: (input) => (input === 'split' ? 'Cell points take a Color by that is an obs column of categories.'
+            : `Cell points take the ${input.toUpperCase()} axis from an obs column, an embedding or a gene.`),
+        loading: 'Loading cell locations…',
+        failed: (why) => `Cell points could not be loaded: ${why}`
     }),
     /** A density's sentences (CNT-10, UX 4.4): in Plot Options and the strip. */
     density: Object.freeze({
@@ -568,4 +616,17 @@ const view3d = Object.freeze({
     tooMany: (max, count, hint = 'bins') => `${view3d.tooManyBase(max, count)} ${view3d.hint[hint] || view3d.hint.bins}`
 });
 
-export const VOCABULARY = Object.freeze({ view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+/** The range boxes' words (ui/range-boxes.js): Min and Max boxes of one scale, auto with the value drawn, a reset. */
+const range = Object.freeze({
+    auto: 'auto',
+    smallest: 'smallest',
+    largest: 'largest',
+    reset: '\u21BA',
+    resetHelp: (what) => `Back to auto: ${what ? `${what.toLowerCase()} ` : ''}limits follow the drawn values`,
+    problem: 'Enter a number, or leave it empty for automatic.',
+    follows: (end, value) => `Follows the drawn values (${end} ${value}). Type a value to override it for this plot.`,
+    followsNone: 'Follows the drawn values. Type a value to override it for this plot.',
+    fixed: (value) => `Overrides the drawn values (set to ${value}). Clear to follow them.`
+});
+
+export const VOCABULARY = Object.freeze({ range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });

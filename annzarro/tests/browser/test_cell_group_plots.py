@@ -169,7 +169,7 @@ def _colour_cfg(page):
 
 
 def _palette(page, n):
-    return page.evaluate("""async (n) => (await import('/static/js/panels/plot-utilities/colors.js')).generateDiscreteColors(n)""", n)
+    return page.evaluate("""async (n) => (await import('/static/js/panels/plot-utilities/colors.js')).groupColours(n)""", n)
 
 
 # ------------------------------------------------------------------ 1. colour
@@ -197,7 +197,7 @@ def test_colour_by_a_grouping_from_the_menus_in_group_order_with_its_colours(pag
     assert _legend(page) == "Grouping 1", "the legend is titled by the grouping (CAT-8)"
     traces = _traces(page)
     assert [t[0] for t in traces] == TYPES, "one entry per group, in group order"
-    assert [t[1] for t in traces] == _palette(page, 6), "the grouping's colours: the app's palette in group order (SHR-11)"
+    assert [t[1] for t in traces] == _palette(page, 6), "the grouping's colours: the app's group colours in group order, the group list's too (SHR-11)"
     assert [t[2] for t in traces] == [n for _, n in gstore.CELL_TYPES]
     assert _colour_cfg(page)["key"] == GA and _colour_cfg(page)["label"] == "Grouping 1"
     request = _computes(page)[-1]
@@ -521,3 +521,63 @@ def test_the_first_palette_option_names_the_groupings_colors_and_another_palette
     page.select_option(f'{C} select.axis-key-select[data-axis="color"]', "condition")
     _wait_legend(page, gstore.CONDITIONS)
     until(page, "(id) => document.querySelector(`#category-palette-${id} option[value=\"uns\"]`).textContent === 'As stored in adata.uns'", P)
+
+
+# ------------------------------------------------------------------ 8. a colour axis switched while its grouping loads
+
+def test_switching_the_colour_axis_while_the_grouping_loads_settles_with_no_runaway_loads(page, served):
+    """The record of the grouping is let go when the plot no longer reads it; the load waiting on it must end with it,
+    not reopen it (a release and reopen loop froze the page)."""
+    _open(page, served, {P: _plot(), GA: _grouping()}, open_ids=(P, GA))
+    _menus(page)
+    page.evaluate("""async (type) => { const { getSource } = await import('/static/js/utils/source-registry.js');
+        const p = getSource(type); window.__loads = 0;
+        for (const name of ['load', 'loadLarge']) { const orig = p[name]; p[name] = (...a) => { window.__loads++; return orig.apply(p, a); }; } }""", "cell-group")
+    held = []
+    page.route(ROUTE, lambda route: held.append(route))
+    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "cell-group")
+    until(page, """(t) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="color"] option`)].some(o => o.value === 'cell-grouping-A')""", C)
+    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', GA)
+    until(page, "() => window.__loads >= 1")
+    # the grouping is still computing: the colour goes back to a column
+    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "obs")
+    until(page, """(t) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="color"] option`)].some(o => o.value === 'cell_type')""", C)
+    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', "cell_type")
+    for route in held:
+        route.continue_()
+    page.unroute(ROUTE)
+    _wait_legend(page, TYPES)
+    assert _colour_cfg(page)["type"] == "obs"
+    settled = page.evaluate("() => window.__loads")
+    waits.expect_stays(lambda: page.evaluate("() => window.__loads") == settled, "a settled plot asks for nothing more", page=page, seconds=1.5)
+    assert settled <= 8, f"the grouping was loaded {settled} times"
+
+
+def test_a_load_for_a_host_whose_config_does_not_hold_the_role_ends_and_does_not_reopen_it(page, served):
+    """A host that asks for a grouping its panel's config does not hold (a Count Plot's colour, or a Cell Plot between
+    two axis changes) is released at the record's first change; the load waiting on it ends. It used to reopen it
+    at once, over and over: a release and reopen loop that froze the page."""
+    _open(page, served, {P: _plot(), GA: _grouping()}, open_ids=(P, GA))
+    _menus(page)
+    held = []
+    page.route(ROUTE, lambda route: held.append(route))
+    result = page.evaluate("""async ([plot, key]) => {
+        const { getSource } = await import('/static/js/utils/source-registry.js');
+        const p = getSource('cell-group');
+        let loads = 0;
+        const orig = p.load;
+        p.load = (...a) => { loads++; return orig.apply(p, a); };
+        const host = document.querySelector(plot + ' .js-plotly-plot');
+        const started = performance.now();
+        const outcome = await Promise.race([
+            p.load({ type: 'cell-group', key, column: '' }, { host, role: 'color', axis: null, expected: 1200, unit: 'cells' }).then(() => 'loaded', (e) => e.name),
+            new Promise((r) => setTimeout(() => r('still waiting'), 3000))]);
+        return { outcome, loads, ms: Math.round(performance.now() - started) };
+    }""", [C, GA])
+    for route in held:
+        route.continue_()
+    page.unroute(ROUTE)
+    assert result["outcome"] in ("AbortError", "SourceUnavailable", "still waiting"), result
+    assert result["loads"] <= 3, f"the grouping was loaded {result['loads']} times: {result}"
+    # the page answers, and nothing keeps loading
+    assert page.evaluate("() => 1 + 1") == 2

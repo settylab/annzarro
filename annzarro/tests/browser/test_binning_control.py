@@ -70,7 +70,8 @@ def _expand(page, i):
 
 def _ctrl_ready(page, card=0):
     """The reply has come: the preview is drawn."""
-    until(page, "(s) => !!document.querySelector(s + ' .pbc-hist:not(.is-empty)')", BIN)
+    # drawn from the reply of THIS binning: while the next reply is on its way the editor shows the last one, marked stale
+    until(page, "(s) => !!document.querySelector(s + ' .pbc-hist:not(.is-empty)') && !document.querySelector(s + ' .is-stale')", BIN)
 
 
 def _binning(page, i=0):

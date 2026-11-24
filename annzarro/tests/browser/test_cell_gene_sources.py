@@ -3,12 +3,11 @@
 The store is the grouping fixture (tests/core/grouping_store.py): X signed, ``logged`` log-normalised and ``counts``
 raw counts, as core/matrix_kind.py reads them from the stored values (never from the names).
 
-1.  An obs column as groups: Size's layer select offers ``counts`` (the log-normalised and counts layers count as
-    offered, operator ruling Q1); choosing it before the genes are added sends one POST whose features hold each gene on
-    both layers once (no wire change).
-2.  A new plot: Color = mean on the log-normalised layer, Size = % expressing on counts above 0 (Q2).
-3.  "Offer other…" opens where layers are offered: the plot's own Statistics offered on an obs axis (an edit there is
-    one undoable step of the plot), the grouping's Statistics offered on a grouping axis.
+1.  An obs column as groups: Size's layer select lists every layer (decision 31); choosing ``counts`` before the genes
+    are added sends one POST whose features hold each gene on both layers once (no wire change).
+2.  A new plot: Color = mean on the log-normalised layer, Size = % expressing on counts above 0 (decision 24).
+3.  Nothing is offered on either axis kind: the plot has no Statistics offered of its own, and a grouping as the groups
+    lists the same layers as an obs column.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -26,7 +25,6 @@ from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
 OBS = {"type": "obs", "key": "cell_type"}
-OFFER_OTHER = "__offer_other__"
 
 
 def _layer_usable(page, which, layer):
@@ -37,11 +35,12 @@ def _layer_usable(page, which, layer):
 def test_size_on_counts_on_an_obs_axis_is_one_post_with_each_gene_on_both_layers_once(page, served):
     genes = GENES[:4]
     _open(page, served, {P: _plot(cellAxis=OBS, sections=[]), S1: _sig(S1, "Markers", genes)}, open_ids=(P, S1))
-    # the layer select lists the offered layers only: X, and the log-normalised and counts layers by matrix kind
+    # the layer select lists every layer of the dataset (decision 31), graded
     _layer_usable(page, "size", "counts")
     values = page.eval_on_selector_all(f"{TP} .cgene-size-layer option", "os => os.map(o => o.value)")
-    assert values == ["X", "logged", "counts", OFFER_OTHER], values
-    assert page.locator(f"{TP} .cgene-size-layer option[value='X']").evaluate("o => o.disabled"), "% expressing cannot be read on a signed X"
+    assert sorted(values) == ["X", "counts", "logged"] and values[0] == "X", values
+    # every layer is listed at once; X is disabled once its kind is read (a layer's kind arrives on its own)
+    until(page, "(s) => document.querySelector(s + ' .cgene-size-layer option[value=\"X\"]').disabled", TP, timeout=30)
     page.select_option(f"{TP} .cgene-size-layer", "counts")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.layer === 'counts'", P)
     # the threshold sits beside Size
@@ -66,36 +65,25 @@ def test_a_new_plot_reads_color_on_the_log_normalised_layer_and_size_on_counts(p
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.layer === 'counts'", P, timeout=30)
     cfg = _config(page)
     assert cfg["color"] == {"stat": "mean", "layer": "logged"}
-    assert cfg["size"] == {"stat": "pct_expressing", "layer": "counts", "detect_above": 0}
+    assert cfg["size"] == {"stat": "pct_expressing", "layer": "counts"}, "no threshold stored: 0 on an obs axis, a grouping's on a grouping axis"
     assert page.input_value(f"{TP} .cgene-color") == "mean" and page.input_value(f"{TP} .cgene-color-layer") == "logged"
     assert page.input_value(f"{TP} .cgene-size") == "pct_expressing" and page.input_value(f"{TP} .cgene-size-layer") == "counts"
     assert page.input_value(f"{TP} .cgene-size-above") == "0"
     assert page.locator(f"{TP} .cgene-undo").is_disabled(), "a default is not an edit"
 
 
-def test_offer_other_opens_the_plots_own_offer_on_an_obs_axis_and_the_groupings_on_a_grouping_axis(page, served):
+def test_nothing_is_offered_on_either_axis_kind(page, served):
     grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}]}
     _open(page, served, {P: _plot(cellAxis=OBS, sections=[]), GA: grouping}, open_ids=(P, GA))
     _layer_usable(page, "color", "counts")
-    toggle = f"#gsig-scoring-toggle-{P}"
-    assert page.get_attribute(toggle, "aria-expanded") == "false"
-    page.select_option(f"{TP} .cgene-color-layer", OFFER_OTHER)
-    until(page, "(t) => document.querySelector(t).getAttribute('aria-expanded') === 'true'", toggle)
-    assert page.input_value(f"{TP} .cgene-color-layer") == "logged", "the select still shows what is drawn"
-    # an edit of the plot's own offer is one undoable step, kept in its configuration
-    page.uncheck(f"{TP} [data-layer-offer='counts']")
-    until(page, "(id) => JSON.stringify(window.PanelManager.getPanel(id).getConfig().offer) === JSON.stringify({layers: ['X', 'logged']})", P)
-    values = page.eval_on_selector_all(f"{TP} .cgene-color-layer option", "os => os.map(o => o.value)")
-    assert values == ["X", "logged", OFFER_OTHER], values
-    page.click(f"{TP} .cgene-undo")
-    until(page, "(id) => !('offer' in window.PanelManager.getPanel(id).getConfig())", P)
-    # a grouping as the groups: its Statistics offered opens instead, and the plot's own list is not shown
+    obs = page.eval_on_selector_all(f"{TP} .cgene-color-layer option", "os => os.map(o => o.value)")
+    assert page.locator(f"{TP} .cgene-offer, {TP} .gsig-scoring").count() == 0, "the plot keeps no Statistics offered"
+    # a grouping as the groups lists the same layers: no gate (SHR-26 retired)
     page.select_option(f"{TP} .cgene-axis-type", "cell-group")
     page.select_option(f"{TP} .cgene-axis-key", GA)
-    until(page, "(s) => document.querySelector(s + ' .cgene-offer').hidden", TP)
+    until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().cellAxis || {}).type === 'cell-group'", P)
+    _layer_usable(page, "color", "counts")
     values = page.eval_on_selector_all(f"{TP} .cgene-color-layer option", "os => os.map(o => o.value)")
-    assert values[0] == "X" and "counts" not in values, "the grouping offers X only: the gate (SHR-26)"
-    group_toggle = f"#gsig-scoring-toggle-{GA}"
-    assert page.get_attribute(group_toggle, "aria-expanded") == "false"
-    page.select_option(f"{TP} .cgene-color-layer", OFFER_OTHER)
-    until(page, "(t) => document.querySelector(t).getAttribute('aria-expanded') === 'true'", group_toggle)
+    assert values == obs, (values, obs)
+    texts = page.eval_on_selector_all(f"{TP} .cgene-controls option", "os => os.map(o => o.textContent)")
+    assert not any("offer" in t.lower() for t in texts), texts

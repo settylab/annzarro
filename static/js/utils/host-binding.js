@@ -302,6 +302,9 @@ export function createHostBinding({ id, open, matches, describe, stillUsed = () 
         if (!rec) return;
         rec.handle.release();
         map.delete(role);
+        // a load waiting on this record ends with it: it must not reopen what was let go (that is a loop the moment the
+        // reason for letting go is still there), a new load for the next setting makes its own record
+        for (const wake of rec.waiters.splice(0)) wake(true);
         if (!map.size) {
             live.delete(host);
             unwatchVisibility(host, visibilityChanged);
@@ -310,9 +313,12 @@ export function createHostBinding({ id, open, matches, describe, stillUsed = () 
     }
 
     function changed(host, rec, snap) {
+        // a record nothing reads any more goes, and what waits on it ends with it (release wakes the waiters as dropped)
+        if (!host.isConnected || !stillUsed(rec)) {
+            if (recordsOf(host).get(rec.role) === rec) release(host, rec.role);
+            return;
+        }
         if (rec.waiters.length) for (const wake of rec.waiters.splice(0)) wake();
-        if (!host.isConnected) { release(host, rec.role); return; }
-        if (!stillUsed(rec)) { release(host, rec.role); return; }
         const showing = snap.values ? (snap.shownKey || snap.key) : null;
         const moved = (rec.drawnKey !== undefined && showing !== rec.drawnKey) || stale(rec, snap);
         if (!rec.quiet && snap.state !== 'updating' && moved) refreshSoon(host);
@@ -339,13 +345,16 @@ export function createHostBinding({ id, open, matches, describe, stillUsed = () 
         return rec;
     }
 
-    /** Wait for the next change of a record; an abort rejects, and its listener goes with the wait. */
+    /**
+     * Wait for the next change of a record; an abort rejects, and its listener goes with the wait. Resolves true when the
+     * record was let go (or there is none) instead of changing: what waited on it is over.
+     */
     function nextChange(host, role, signal) {
         const rec = recordsOf(host).get(role);
         return new Promise((resolve, reject) => {
-            if (!rec) { resolve(); return; }
+            if (!rec) { resolve(true); return; }
             const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
-            rec.waiters.push(() => { if (signal) signal.removeEventListener('abort', onAbort); resolve(); });
+            rec.waiters.push((dropped = false) => { if (signal) signal.removeEventListener('abort', onAbort); resolve(dropped); });
             if (signal) signal.addEventListener('abort', onAbort, { once: true });
         });
     }
@@ -374,7 +383,9 @@ export function createHostBinding({ id, open, matches, describe, stillUsed = () 
                     throw error;
                 }
                 if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
-                await nextChange(host, role, signal);
+                // the record this attempt waits on, and nothing else: if it is let go while we wait the load is over (a
+                // generation: each reopening is an attempt's own, never a wake's)
+                if (await nextChange(host, role, signal)) throw new DOMException('Aborted', 'AbortError');
             }
         }
     }

@@ -12,10 +12,11 @@
  * floor. The panel shows them in Plot Options and the status strip.
  */
 import { bandwidthOf, smooth1, smooth2 } from '../../utils/kde.js';
-import { levelLabelsOf } from '../../utils/count-plot-model.js';
+import { levelLabelsOf, densityLayers } from '../../utils/count-plot-model.js';
 import { scaleKeys } from './colour.js';
+import { pointTraces, pointsNote, POINT_SIZE } from './density-points.js';
 import { normalizeHex } from '../../utils/plot-theme.js';
-import { RESERVED } from '../../utils/level-id.js';
+import { tableLevelColour } from '../../utils/grouping-colours.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 
 /** The modes this module draws. */
@@ -53,12 +54,9 @@ function baseLayout(opts, extra) {
     return { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: theme.bgColor, font: { color: theme.textColor }, margin: { l: 60, r: 20, t: 20, b: 50 }, ...extra };
 }
 
-/** The color of level `i` of the split: the level's own, the theme's grey for a reserved level, else the palette's. */
-function colorOf(table, a, i, opts) {
-    const id = table.axes[a].levels[i];
-    if (id === RESERVED.other || id === RESERVED.small) return opts.theme.notInTableColor;
-    const own = table.axes[a].info.colors;
-    return (own && own[id]) || opts.palette[i % opts.palette.length];
+/** The color of level `i` of the split: the factor's (utils/grouping-colours.js), the theme's grey for a level with none. */
+function colorOf(config, table, a, i, opts) {
+    return tableLevelColour(config, table, a, i, opts.theme.notInTableColor);
 }
 
 /** The pre-pass of an axis: what E4 read before binning. */
@@ -99,7 +97,7 @@ const total = (a) => { let m = 0; for (let i = 0; i < a.length; i++) m += a[i]; 
  *   bandwidth adjust (default 1), a split's curves each scaled to 1 (default) or by the size of their level, a 2D density
  *   as filled contours (default) or an image, and the color map of a 2D density without a split
  * @param {Object} opts.inputNames - the title of each input (`x`, `y`, `split`)
- * @param {string[]} opts.palette - colors of a split's levels, repeated past its length
+ * @param {string[]} opts.palette - the color of a plot with no split, its first
  * @param {Object} opts.theme - the plot theme's colors, as the other count figures take them
  * @param {Map[]} [opts.labels] - one Map per table axis, level id to the label shown; defaults to `levelLabelsOf`
  * @param {Function} [opts.titleOf] - the title of the panel behind a source, for the default labels
@@ -149,9 +147,10 @@ export function densityFigure(config, table, opts) {
     });
     /** The opacity of a level's color where its density is highest: below 1, so a level under another still shows. */
     const IMAGE_ALPHA = 0.9;
+    const IMAGE_UNDER = 0.55;
     const words = WORDS;
     const title = bySize && sa >= 0 ? words.axisBySize : words.axis;
-    const colors = levels.map((s) => (s >= 0 ? colorOf(table, sa, s, opts) : opts.palette[0]));
+    const colors = levels.map((s) => (s >= 0 ? colorOf(config, table, sa, s, opts) : opts.palette[0]));
     const legend = sa >= 0 ? { showlegend: true, legend: { title: { text: esc(opts.inputNames.split) } } } : { showlegend: false };
 
     if (!two) {
@@ -169,7 +168,7 @@ export function densityFigure(config, table, opts) {
         };
     }
     const [gx, gy] = grids;
-    const image = options.style === 'image';
+    const layers = densityLayers(options.layers, options.style, sa >= 0);
     const rows = (f) => Array.from({ length: gy.bins }, (_, iy) => Array.from({ length: gx.bins }, (_, ix) => f[ix * gy.bins + iy]));
     const base = (i, s) => ({
         x: gx.centres, y: gy.centres, z: rows(smooth[i]), name: esc(labelOf(s)),
@@ -177,30 +176,74 @@ export function densityFigure(config, table, opts) {
     });
     const peak = smooth.reduce((m, f) => { for (let k = 0; k < f.length; k++) if (f[k] > m) m = f[k]; return m; }, 0) || 1;
     const data = [];
-    levels.forEach((s, i) => {
-        if (sa < 0) {
-            data.push({
-                ...base(i, s), type: image ? 'heatmap' : 'contour', ...scaleKeys(options, 'z'),
-                colorbar: { title: { text: esc(title) } },
-                ...(image ? {} : { contours: { coloring: 'fill', showlines: false }, ncontours: CONTOURS * 2, line: { width: 0 } })
-            });
-        } else if (image) {
-            // the density is the opacity of the level's color, on one scale for every level: a level with little density stays faint
-            data.push({ ...base(i, s), type: 'heatmap', showscale: false, zmin: 0, zmax: peak,
-                colorscale: [[0, withAlpha(colors[i], 0)], [1, withAlpha(colors[i], IMAGE_ALPHA)]] });
-        } else {
-            data.push({ ...base(i, s), type: 'contour', showscale: false, ncontours: CONTOURS, contours: { coloring: 'lines' },
-                colorscale: [[0, colors[i]], [1, colors[i]]], line: { color: colors[i], width: 2 } });
+    const contoured = layers.fill || layers.lines;
+    // the density range of the Display pop-over: Min and Max of the density, the plot's own range when not set. It maps
+    // the opacity, spaces the isoline levels and steps the points' opacity alike
+    const colour = options.colour || {};
+    const lo = Number.isFinite(colour.min) ? colour.min : 0;
+    const hi = Number.isFinite(colour.max) ? colour.max : peak;
+    if (sa >= 0) {
+        // the density is the opacity of each level's color, on one scale for every level: a level with little density stays
+        // faint. The same density levels bound every level's bands, so a band is one opacity wherever it is
+        const step = (hi - lo) / (CONTOURS + 1);
+        const bands = { start: lo + step, end: lo + step * CONTOURS, size: step };
+        const scaled = { zmin: lo, zmax: hi, showscale: false };
+        if (layers.image) {
+            levels.forEach((s, i) => data.push({ ...base(i, s), type: 'heatmap', ...scaled,
+                colorscale: [[0, withAlpha(colors[i], 0)], [1, withAlpha(colors[i], IMAGE_ALPHA)]] }));
         }
-    });
+        if (contoured) {
+            levels.forEach((s, i) => data.push({ ...base(i, s), type: 'contour', ...scaled, contours: { coloring: layers.fill ? 'fill' : 'lines', showlines: layers.lines, ...bands },
+                colorscale: layers.fill ? [[0, withAlpha(colors[i], 0)], [1, withAlpha(colors[i], IMAGE_ALPHA)]] : [[0, colors[i]], [1, colors[i]]],
+                line: { color: colors[i], width: 2 } }));
+        }
+    } else {
+        // one group: the density takes a color map the user chooses (map, direction, range) and a color bar
+        const scale = scaleKeys(options, 'z');
+        // isolines alone draw only their few levels in a color bar: a transparent heatmap carries the full scale instead
+        const linesOnly = layers.lines && !layers.fill && !layers.image;
+        const last = linesOnly ? 'heatmap' : contoured ? 'contour' : 'heatmap';
+        const bar = (type) => ({ showscale: type === last, ...(type === last ? { colorbar: { title: { text: esc(title) } } } : {}) });
+        if (layers.image || linesOnly) {
+            data.push({ ...base(0, -1), type: 'heatmap', ...scale, ...bar('heatmap'),
+                ...(linesOnly ? { opacity: 0, hoverinfo: 'skip' } : {}) });
+        }
+        // set Min or Max and the isoline levels span the range, as the colors do
+        const levelsOf = colour.min !== undefined || colour.max !== undefined ? { start: lo, end: hi, size: (hi - lo) / (CONTOURS * 2) } : {};
+        if (contoured) {
+            data.push({ ...base(0, -1), type: 'contour', ...scale, ...bar('contour'), ncontours: CONTOURS * 2,
+                contours: { coloring: layers.fill ? 'fill' : 'lines', showlines: layers.lines, ...levelsOf },
+                line: layers.fill ? { color: opts.theme.axisColor, width: 1 } : { width: 2 },
+                // over the image, the bands let it show through
+                ...(layers.image ? { opacity: IMAGE_UNDER } : {}) });
+        }
+    }
+    if (layers.points && opts.points) {
+        // each cell a point at its place, drawn over the other layers; the points' own hover is off, the grid's is the hover
+        const pts = opts.points;
+        const one = sa < 0;
+        if (!layers.image && !contoured) {
+            levels.forEach((s, i) => data.push({ ...base(i, s), type: 'heatmap', showscale: false, zmin: lo, zmax: hi,
+                colorscale: [[0, 'rgba(0, 0, 0, 0)'], [1, 'rgba(0, 0, 0, 0)']] }));
+        }
+        const size = Number.isFinite(options.pointSize) ? Math.min(POINT_SIZE.max, Math.max(POINT_SIZE.min, options.pointSize)) : POINT_SIZE.default;
+        const opacity = Number.isFinite(options.pointOpacity) ? options.pointOpacity : 1;
+        const drawn = pointTraces(pts, { gx, gy, smooth, peak: hi, floor: lo, colors, size, opacity, fade: !!options.pointFade && !one,
+            scale: one ? scaleKeys(options, 'marker') : {},
+            bar: one && !layers.image && !contoured ? { title: esc(title) } : null });
+        data.push(...drawn);
+        notes.points = pointsNote(drawn.reduce((n, t) => n + t.x.length, 0), pts.x.length, pts.total);
+    }
     // heatmaps and contours carry no legend of their own in every bundle: a marker names each level
     if (sa >= 0) {
         levels.forEach((s, i) => data.push({ type: 'scatter', mode: 'markers', x: [null], y: [null], name: esc(labelOf(s)), hoverinfo: 'skip',
             marker: { symbol: 'square', size: 10, color: colors[i] } }));
         data.forEach((t) => { if (t.type !== 'scatter') t.showlegend = false; });
     }
+    // what the range boxes of the pop-over show as "auto": the lowest and the highest density drawn
+    const lowest = smooth.reduce((m, f) => { for (let k = 0; k < f.length; k++) if (f[k] < m) m = f[k]; return m; }, peak);
     return {
-        data, notes, floored, bandwidth: hs.map((h) => h.h),
+        data, notes, floored, bandwidth: hs.map((h) => h.h), colourData: Float64Array.of(lowest, peak),
         layout: layout({ ...legend,
             xaxis: axisStyle(opts.theme, { title: { text: esc(opts.inputNames.x) }, range: [gx.lo, gx.hi] }),
             yaxis: axisStyle(opts.theme, { title: { text: esc(opts.inputNames.y) }, range: [gy.lo, gy.hi] }) })

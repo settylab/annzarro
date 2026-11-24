@@ -270,13 +270,12 @@ def test_difference_2_raw_is_never_offered_as_a_layer(page, served):
     scanpy's only when the same matrix is chosen (here, scanpy with use_raw=False and the same layer)."""
     _, store = served
     assert "X" in zarr_compat.open_group(store, mode="r")["raw"], "the dataset has a .raw"
-    # even a grouping whose recipe names "raw" does not get it: the dataset's layers are X and its layers
+    # even a grouping whose (retired) recipe names "raw" does not get it: the dataset's layers are X and its layers
     _link(page, served, {"color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "pct_expressing", "layer": "logged"}},
           {**_grouping("cell_type"), "layers": [*LAYERS, "raw"]})
     for sel in (".cgene-color-layer", ".cgene-size-layer"):
         values = page.locator(f"{TP} {sel}").evaluate("e => [...e.options].map(o => o.value)")
-        layers = {v for v in values if v != "__offer_other__"}
-        assert layers == set(LAYERS), (sel, values)
+        assert set(values) == set(LAYERS), (sel, values)
 
 
 # ------------------------------------------------------------------ 3 and 4. no expressing cell; a constant gene
@@ -363,4 +362,4 @@ def test_difference_7_no_pct_expressing_on_a_layer_with_negative_values(page, se
     assert "Mean · X · not scaled" in head
     assert DOT[_key("X", "cell_type", 0.0, 0, "none") + "__size"].max() > 0, "scanpy has a size for it"
     hint = page.locator(f"{TP} .cgene-panel").inner_text()
-    assert "is not available on X: X has negative values. Choose a layer." in hint, hint
+    assert "cannot be computed on 'X': it has negative values. Choose a layer." in hint, hint

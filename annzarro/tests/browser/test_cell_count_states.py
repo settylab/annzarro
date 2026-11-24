@@ -183,13 +183,14 @@ def test_too_many_bins_for_bar_opens_the_binning_control_and_a_histogram_of_a_ca
     page.press(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "Enter")
     _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 40")
 
+    # a Histogram given categories from outside (Back and Forward, a remap) is drawn as Bar and says so once
+    # (the views follow the X axis type, 0.8.0): never the old unusable state
     page.select_option(f"{S} .ccnt-mode", "histogram")
+    _drawn(page, "histogram")
     page.evaluate(f"""() => window.PanelManager.getPanel('{CC}').updateConfig({{ x: {{ source: {{ type: 'obs', key: 'cell_type' }} }} }})""")
-    until(page, "(s) => { const b = document.querySelector(s + ' .ccnt-state'); return b && !b.hidden && b.dataset.state === 'unusable'; }", S)
-    assert _state(page) == {"text": "Histogram needs a numeric X. cell_type is categorical.", "state": "unusable", "actions": ["Show as Bar"]}
-    page.click(f"{S} .ccnt-state-box button:has-text('Show as Bar')")
     _drawn(page, "bar", "c.x.source.key === 'cell_type'")
-    assert _undo_label(page) == "Undo: mode Bar"
+    assert page.inner_text(f"{S} .ccnt-view-note") == "Histogram needs a numeric axis, so this plot is drawn as Bar."
+    assert _state(page) is None
 
 
 # ------------------------------------------------------------------ 2. the route's states through the painter
@@ -246,14 +247,19 @@ def test_the_route_states_are_the_painters_with_its_progress_bar_cancel_and_retr
 
 # ------------------------------------------------------------------ 3. the strip
 
-def test_the_strip_says_the_cells_counted_without_a_value_and_outside_the_range(page, served):
+def test_the_banner_says_the_cells_counted_without_a_value_and_outside_the_range(page, served):
     pt = DATA.obs["pseudotime"]
     _open(page, served, {CC: _count(mode="histogram", x=obs("pseudotime", binning={"method": "equal_width", "range": [0.5, None]}))})
     _drawn(page, "histogram")
     missing = int(pt.isna().sum())
     outside = int((pt < 0.5).sum())
     counted = N - missing - outside
-    assert page.inner_text(f"{S} .ccnt-strip") == f"{counted:,} cells counted · {missing} without a value for pseudotime · {outside} outside the range"
+    # the coverage banner under the plot says it, once; the footer line says nothing more
+    assert page.get_attribute(f"{S} .plot-status", "data-summary").splitlines() == [
+        f"{counted:,} of {N:,} cells shown",
+        f"pseudotime: filtered out ({missing} cells) -- without a value for pseudotime",
+        f"filtered out ({outside} cells) -- outside the range"]
+    assert page.query_selector(f"{S} .ccnt-strip") is None, "there is no footer line under the banner"
 
 
 # ------------------------------------------------------------------ 4. Save as grouping
@@ -311,13 +317,14 @@ def test_save_as_grouping_is_refused_over_the_grouping_limits_and_opens_from_a_c
 # ------------------------------------------------------------------ 5. no Show as table; Download CSV on the toolbar
 
 def test_there_is_no_show_as_table_and_the_csv_downloads_from_the_toolbar(page, served):
-    """Show as table was dropped (operator ruling, 2026-11-23); the CSV it mirrored stays, on the toolbar until the shared Plot Options."""
+    """Show as table was dropped (operator ruling, 2026-11-23); the CSV it mirrored stays, in Plot Options ▸ Export (WP-5a)."""
     _open(page, served, {CC: _count(mode="bar", x=cc.CELL_TYPE, split=cc.CONDITION)})
     _drawn(page, "bar")
     assert page.query_selector(f"{S} .ccnt-table-btn") is None and page.query_selector(f"{S} .ccnt-table") is None
     assert "Show as table" not in page.inner_text(f"{S} .ccnt-panel")
     with page.expect_download() as info:
-        page.click(f"{S} .ccnt-toolbar .ccnt-csv")
+        page.click(f"{S} .ccnt-toolbar .ccnt-options-btn")
+        page.click("[data-popover='plot-options'] [data-section='export'] .ccnt-csv")
     lines = open(info.value.path(), encoding="utf-8").read().strip().splitlines()
     assert lines[0].split(",")[:4] == ["cell_type", "condition", "Cells", "Share"]
     want = DATA.obs.groupby(["cell_type", "condition"], observed=True).size()

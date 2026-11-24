@@ -191,6 +191,16 @@ diverging map, genes with a value near 0 and genes outside the table look alike.
 toggle, or a colour map without grey, when that matters ({doc}`colour-scales`).
 ```
 
+## Statistics over a table's cells
+
+A Cell Table has **Methods ▾** beside **Export CSV**. It sets how statistics over the table's cells (the rows that pass
+its filter) are computed, on every layer, as a Cell Grouping's **Methods ▾** does for its groups
+({doc}`cell-grouping`): it lists **Mean**, **% expressing**, **Mean of expressing cells**, **Sum** and **SD** with their
+definitions, and **Expressed above** (0 by default), the value above which a cell counts as expressing. Plots choose the
+statistic and the layer; nothing here limits what they can pick. The setting is kept with the table in panel sets and
+share links (only when it is not the default), **Reset to defaults** puts it back, and a dot on the button shows that
+it is changed. A plot that reads a table's cells this way is a later addition; until then the setting changes no plot.
+
 ## Export a table
 
 Click **Export CSV** in the table's controls. The file, named after the table title and the date
@@ -216,5 +226,6 @@ matrix, read once when it is added.
 
 A gene table can also be the **source of a score** for every cell: the rows that pass its filter are the genes, and
 each cell gets one number from them, to colour a plot by or to rank cells in a Cell Table. The table's controls
-have **Scores offered** and **Inspect** for it, closed until you open them. It works exactly as a Gene Signature
+have **Score methods ▾**, the settings of each score method in a pop-over, and **Distribution**, which opens a Count
+Plot of the score. It works exactly as a Gene Signature
 does, with the filter in place of ticked genes: see {ref}`gene-table-score`.

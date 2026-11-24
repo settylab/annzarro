@@ -5,9 +5,13 @@
  * closed, and a link, a panel set and a history entry carry it as configuration only (PER-1). The recipe is
  * utils/cell-grouping.js `normalizeGrouping`'s; the panel's configuration is its title and the recipe's fields.
  *
- * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the toolbar (Add factor, Statistics, Settings,
- * Undo), the factors (factors.js), the groups (G9c). Nothing in the panel expands: a factor's levels or binning, Statistics
- * offered and Settings open in pop-overs (ui/popover.js), so editing moves no box (FB-2 decision h). Every edit is one
+ * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the toolbar (Add factor, Methods, Settings,
+ * Undo), the factors (factors.js), the groups (G9c). Nothing in the panel expands: a factor's levels or binning, Methods
+ * and Settings open in pop-overs (ui/popover.js), so editing moves no box (FB-2 decision h). A grouping offers no
+ * statistics (decision 31): a plot lists every statistic and layer itself, and a recipe's retired `offered` and `layers`
+ * are kept as stored until the next edit drops them. Methods ▾ (cell-grouping/methods.js, decision 34) sets the
+ * parameters of the statistics over a group's cells, today Expressed above (`detect_above`, outside the grouping's hash):
+ * the plots that read the grouping follow it unless a measure holds its own. Every edit is one
  * undoable step. The panel watches its own
  * groups as a viewer (consumer kind `inspect`, so it is never counted as a user), through the page's group sources.
  *
@@ -18,8 +22,6 @@
  *   G9b  the binning control (partition-options/binning-control.js) mounts in the Edit pop-over of a binned factor.
  *   G9c  PARTS.groups: `mount(host, ctx)` draws the group grid in `.cgrp-groups`; `ctx.read()` is the panel's snapshot
  *        and `ctx.filterNoGroup` whether "in no group" is open.
- *   G9d  PARTS.statistics: the same, in `.cgrp-statistics` (a slot of the toolbar: its button opens the pop-over), with
- *        `ctx.recipe()` and `ctx.set(patch, label)` for the recipe's `offered`, `layers` and `detect_above`.
  *
  * It touches no DOM until init(): a closed grouping restored from a link or a panel set is constructed and never
  * initialized (PanelManager.registerClosedPanel), and is computed only when a dependant on screen needs it (PER-5).
@@ -32,7 +34,8 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { UndoStack } from '../utils/gene-signature.js';
 import { normalizeGrouping, defaultLabelMaps, sourceName } from '../utils/cell-grouping.js';
-import { sourceList as scoreSources } from '../utils/score-source.js';
+import { sourceList as scoreSources, noteDatasetLayers, scorePairMenus, scorePairAfter, scoreStartPair } from '../utils/score-source.js';
+import { bindPairSelects } from '../utils/pair-selects.js';
 import {
     groupSources, panelOf, typeOf, isOpen, titleOfPanel, cycleIds, hasGene, loadStructure, structureNow, structureRead, resetStructure,
     sourceTitleOf
@@ -49,9 +52,12 @@ import {
 } from './cell-grouping/factors.js';
 import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/status.js';
 import { GROUP_GRID } from './cell-grouping/group-grid.js';
+import { factorColorsSection, levelSwatch, groupColorsSection, withOverride } from './cell-grouping/colours.js';
+import { factorColours } from '../utils/grouping-colours.js';
 import { mountBinningControl } from './partition-options/binning-control.js';
 import { usedByText } from '../utils/panel-users.js';
-import { STATISTICS_PART } from './cell-grouping/statistics.js';
+import { createCellMethods } from './cell-grouping/methods.js';
+import { methodsUsedBy } from '../utils/group-statistics.js';
 import {
     settingsSummary, thresholdProblem, separatorProblem, smallOf, separatorOf, storedSeparator, storedSmall, smallModeWord
 } from './cell-grouping/settings.js';
@@ -60,20 +66,18 @@ const TYPE = 'cell-grouping';
 const DEFAULT_TITLE = 'Grouping 1';
 /** Keys of a configuration that are the panel's own, not the recipe's. */
 const PANEL_KEYS = ['id', 'title', 'controlsVisible', '_closed', 'active'];
-const NO_FEATURES = Object.freeze([]);
-/** The longest the first request waits for the parts' decisions, in ms. */
-const PREPARE_MS = 1500;
+/** Recipe fields decision 31 retired: read as stored, dropped by the next edit. */
+const RETIRED_FIELDS = Object.freeze(['offered', 'layers']);
 
 registerReferences(TYPE, groupingReferences);
 
 /**
  * The parts later steps draw into the panel: `{mount(host, ctx) -> {update(), destroy()}}` or null.
- * @type {{groups: ?Object, statistics: ?Object}}
+ * @type {{groups: ?Object}}
  */
-// export-unused-ok: G9c and G9d mount the group grid and Statistics offered here
-export const PARTS = { groups: null, statistics: null };
+// export-unused-ok: G9c mounts the group grid here
+export const PARTS = { groups: null };
 PARTS.groups = GROUP_GRID;
-PARTS.statistics = STATISTICS_PART;
 
 // ================================================================================================ the views
 
@@ -106,7 +110,10 @@ function createFactors({ D, id, model, on }) {
     const openNew = new Set();          // indexes of binned factors just added: their editor opens once they are drawn (SHR-15)
     const showAll = new Set();          // cards whose long level list is shown whole
     let adding = null;                  // the entry whose inline row is open
-    let renaming = null;                // {index, id} of the level being renamed
+    let renaming = null;                // {index, id, draft?} of the level being renamed (draft: the text typed so far)
+    let pendingLeave = null;            // leaves the field being edited, saving it: run when its pop-over closes
+    let staleNow = new Set();           // the factors whose editor shows counts of an earlier reply (set when an editor is drawn)
+    let focusRow = null;                // {index, id}: the level row whose rename button takes the focus after the next redraw
     let menuOpen = false;
 
     const addBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary cgrp-add',
@@ -245,23 +252,26 @@ function createFactors({ D, id, model, on }) {
         } else if (adding === 'score') {
             const scores = referenceChoices(m.self, m.choices.scores);
             const src = select('cgrp-addrow__key', 'Score', scores.map((c) => option(c.id, c.title, { disabled: c.disabled, title: c.reason })));
-            const opt = select('cgrp-addrow__column', 'Score option', []);
-            const fillOpt = () => {
-                D.clear(opt);
-                const found = m.choices.scores.find((c) => c.id === src.value);
-                for (const o of (found && found.options) || []) opt.appendChild(option(`${o.method}\u0001${o.layer}`, o.label));
-            };
-            src.addEventListener('change', fillOpt);
+            // decision 31: the method, then the layer, each listing every entry; an impossible pair is disabled with its reason
+            const method = select('cgrp-addrow__column cgrp-addrow__method', 'Method', []);
+            const layer = select('cgrp-addrow__layer', 'Layer', []);
             const first = scores.find((c) => !c.disabled);
             if (first) src.value = first.id;
-            fillOpt();
-            parts.push(src, opt);
+            noteDatasetLayers(['X', ...layerList(s)]);
+            const pair = bindPairSelects({
+                method, layer, note,
+                start: () => scoreStartPair(src.value),
+                menus: (p) => scorePairMenus(src.value, p),
+                after: (changed, value, p) => scorePairAfter(src.value, changed, value, p)
+            });
+            src.addEventListener('change', () => pair.reset());
+            parts.push(src, method, layer);
             make = () => {
-                const [method, layer] = opt.value.split('\u0001');
-                return { p: scoreFactor(src.value, method, layer), label: `add factor ${m.titleOf({ type: SCORE_SOURCE, key: src.value }) || src.value}` };
+                const p = pair.value();
+                return { p: scoreFactor(src.value, p.method, p.layer), label: `add factor ${m.titleOf({ type: SCORE_SOURCE, key: src.value }) || src.value}` };
             };
             validate = () => (!scores.length ? 'There is no gene signature or gene table to score.'
-                : !src.value || (src.selectedOptions[0] && src.selectedOptions[0].disabled) ? 'Choose a score.' : !opt.value ? 'This source offers no score option.' : null);
+                : !src.value || (src.selectedOptions[0] && src.selectedOptions[0].disabled) ? 'Choose a score.' : null);
         } else if (adding === 'table') {
             const tables = referenceChoices(m.self, m.choices.tables);
             const src = select('cgrp-addrow__key', 'Cell table', tables.map((c) => option(c.id, c.title, { disabled: c.disabled, title: c.reason })));
@@ -369,27 +379,101 @@ function createFactors({ D, id, model, on }) {
         return out;
     }
 
+    /** Whether a level row has a rename button. */
+    function canRename(p, r) {
+        return r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table' || factorKind(p) === 'binned';
+    }
+
+    const RENAME_HINT = 'Enter saves, Escape cancels, Tab saves and moves to the next level.';
+
+    /**
+     * The row whose name is being edited. Every way out is a rule: Enter saves and leaves the field; Escape cancels and leaves
+     * it (the pop-over's own Escape stands aside for a field marked `data-az-own-escape`, so a second Escape closes the pop-over);
+     * Tab saves and edits the next level's name (Shift+Tab the previous); leaving the field by a click or by closing saves.
+     * After a way out the focus is on the row's rename button, never in a new edit.
+     */
+    function editedRow(i, p, info, r, li, count) {
+        const mine = renaming;
+        const input = el('input', { type: 'text', class: 'form-control form-control-sm cgrp-level__name', value: mine.draft !== undefined ? mine.draft : r.label,
+            title: RENAME_HINT, data: { azOwnEscape: '' }, aria: { label: `New name for ${r.label}`, description: RENAME_HINT } });
+        let finished = false;
+        /** Leave the field: `keep` saves it, `move` (a level id) starts the next edit, else the focus goes to the row's button. */
+        const leave = (keep, move = null) => {
+            if (finished) return;
+            finished = true;
+            pendingLeave = null;
+            const started = renaming === mine;          // a click on another level's ✎ may have started its edit already
+            if (started) renaming = move ? { index: i, id: move } : null;
+            if (!move && started) focusRow = { index: i, id: r.id };
+            const next = renameLevel(p, r.id, input.value, defaultsOf(i).get(r.id));
+            if (keep && JSON.stringify(next) !== JSON.stringify(p)) commitFactor(i, next, `rename level ${r.was || r.label}`);
+            else paint();
+        };
+        pendingLeave = () => leave(true);
+        const neighbour = (by) => {
+            const rows = levelRows(p, info, defaultsOf(i)).filter((x) => canRename(p, x));
+            const at = rows.findIndex((x) => x.id === r.id);
+            return rows[at + by] ? rows[at + by].id : null;
+        };
+        input.addEventListener('input', () => { mine.draft = input.value; });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); leave(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); }
+            else if (e.key === 'Tab') { e.preventDefault(); leave(true, neighbour(e.shiftKey ? -1 : 1)); }
+        });
+        // Leaving the field by a click saves it, but after the click has landed: a redraw between its press and release
+        // would take the control it pressed from under it. The first of the click, the release or a short timer decides, so a
+        // release the page never sees cannot strand the edit.
+        li.addEventListener('focusout', (e) => {
+            if (finished) return;
+            if (e.relatedTarget && li.contains(e.relatedTarget)) return;      // between the field and its two buttons
+            let done = false;
+            const later = () => {
+                if (done) return;
+                done = true;
+                document.removeEventListener('click', later, true);
+                document.removeEventListener('pointerup', later, true);
+                // a redraw that takes the field away (the server's reply) blurs it too: that is no way out, the edit goes on in
+                // the field the redraw makes from `renaming` and its draft
+                setTimeout(() => { if (input.isConnected) leave(true); }, 0);
+            };
+            document.addEventListener('click', later, true);
+            document.addEventListener('pointerup', later, true);
+            setTimeout(later, 350);
+        });
+        // ✓ and ✕ beside the field: real buttons, in the tab order after it. A press on them leaves the focus in the field.
+        const ok = el('button', { type: 'button', class: 'btn btn-sm btn-outline-success cgrp-level__ok', title: 'Save the name',
+            data: { azOwnEscape: '' }, aria: { label: `Save the new name for ${r.label}` },
+            on: { mousedown: (e) => e.preventDefault(), click: () => leave(true), keydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } } } }, '✓');
+        const cancel = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-level__cancel', title: 'Cancel',
+            data: { azOwnEscape: '' }, aria: { label: `Cancel renaming ${r.label}` },
+            on: { mousedown: (e) => e.preventDefault(), click: () => leave(false), keydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } } } }, '✕');
+        li.classList.add('cgrp-level--editing');
+        // the level's own color beside its name (the same picker and the same override as the swatch of its row): naming and coloring in one place
+        const colour = colorsOf(i).get(r.id);
+        const swatch = colour ? levelSwatch({ D, id: r.id, label: r.label, colour, pick: (css) => commitFactor(i, withOverride(p, r.id, css), `color level ${r.label}`) }) : null;
+        if (swatch) {
+            swatch.title = `Color of ${r.label} (Alt+C)`;
+            swatch.setAttribute('aria-keyshortcuts', 'Alt+C');
+            swatch.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } });
+            swatch.dataset.azOwnEscape = '';
+            input.addEventListener('keydown', (e) => {
+                if (!e.altKey || e.key.toLowerCase() !== 'c') return;
+                e.preventDefault();
+                if (typeof swatch.showPicker === 'function') { try { swatch.showPicker(); } catch { swatch.click(); } } else swatch.click();
+            });
+        }
+        li.append(...(swatch ? [swatch] : []), input, ok, cancel, count);
+        setTimeout(() => { if (input.isConnected) { input.focus(); input.select(); } }, 0);
+        return li;
+    }
+
     function levelRow(i, p, info, r) {
-        const count = el('span', { class: 'cgrp-level__n', text: r.n === null ? '' : fmt(r.n) });
+        const count = el('span', { class: `cgrp-level__n${staleNow.has(i) ? ' is-stale' : ''}`, text: r.n === null ? '' : fmt(r.n),
+            title: staleNow.has(i) ? 'Counts as last computed; they update when the groups are ready.' : undefined });
         const label = el('span', { class: 'cgrp-level__label', text: r.label, title: r.was ? `Was: ${r.was}` : undefined });
         const li = el('li', { class: 'cgrp-level', data: { id: r.id } });
-        if (renaming && renaming.index === i && renaming.id === r.id) {
-            const input = el('input', { type: 'text', class: 'form-control form-control-sm cgrp-level__name', value: r.label,
-                aria: { label: `New name for ${r.label}` } });
-            const done = (keep) => {
-                const text = input.value;
-                renaming = null;
-                if (keep) commitFactor(i, renameLevel(p, r.id, text, defaultsOf(i).get(r.id)), `rename level ${r.was || r.label}`);
-                else paint();
-            };
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); done(true); }
-                else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
-            });
-            li.append(input, count);
-            setTimeout(() => { input.focus(); input.select(); }, 0);
-            return li;
-        }
+        if (renaming && renaming.index === i && renaming.id === r.id) return editedRow(i, p, info, r, li, count);
         if (r.tickable) {
             const box = el('input', { type: 'checkbox', checked: r.ticked, aria: { label: r.label } });
             box.addEventListener('change', () => commitFactor(i, tickLevel(p, info, r.id, box.checked), `${box.checked ? 'tick' : 'untick'} ${r.label}`));
@@ -404,7 +488,10 @@ function createFactors({ D, id, model, on }) {
             li.append(label);
         }
         li.append(count);
-        if (r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table' || factorKind(p) === 'binned') {
+        // the level's color (utils/grouping-colours.js): a swatch that opens the browser's color picker
+        const colour = colorsOf(i).get(r.id);
+        if (colour) li.append(levelSwatch({ D, id: r.id, label: r.label, colour, pick: (css) => commitFactor(i, withOverride(p, r.id, css), `color level ${r.label}`) }));
+        if (canRename(p, r)) {
             li.append(el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-level__rename', title: `Rename ${r.label}`,
                 aria: { label: `Rename ${r.label}` }, on: { click: () => { renaming = { index: i, id: r.id }; paint(); } } }, '✎'));
         }
@@ -413,6 +500,13 @@ function createFactors({ D, id, model, on }) {
 
     function defaultsOf(i) {
         return model().labels[i] || new Map();
+    }
+
+    /** Factor i's colors as the recipe has them now: level id to colour (no reserved level, no level not drawn). */
+    function colorsOf(i) {
+        const p = model().recipe.partitionings[i];
+        const info = model().infos[i];
+        return p && info ? factorColours(p, info, info.levels) : new Map();
     }
 
     function categoricalBody(i, p, info) {
@@ -454,7 +548,7 @@ function createFactors({ D, id, model, on }) {
         const host = el('div', { class: 'cgrp-binning' });
         const defaults = defaultsOf(i);
         const rows = info ? levelRows(p, info, defaults) : [];
-        const levels = el('ul', { class: 'cgrp-levels cgrp-bins', role: 'list' }, rows.map((r) => levelRow(i, p, info, r)));
+        const levels = el('ul', { class: `cgrp-levels cgrp-bins${staleNow.has(i) ? ' is-stale' : ''}`, role: 'list' }, rows.map((r) => levelRow(i, p, info, r)));
         const mark = stableStringify(p.source);
         entry.mounts.push(mountBinningControl(host, { partitioning: p, info, levels, fresh: fresh.has(mark), settled: () => fresh.delete(mark),
             titleOf: model().titleOf, cells: model().cells, commit: (next, label) => commitFactor(i, next, label) }));
@@ -466,12 +560,18 @@ function createFactors({ D, id, model, on }) {
     /** The pop-over's content for factor i, now: its levels, its bins, or a table's two levels. */
     function editorBody(i, entry) {
         const m = model();
+        staleNow = m.stale;
         const p = m.recipe.partitionings[i];
         if (!p) return [];
         const info = m.infos[i] || null;
         const kind = factorKind(p);
-        return kind === 'categorical' || kind === 'grouping' ? categoricalBody(i, p, info)
+        const body = kind === 'categorical' || kind === 'grouping' ? categoricalBody(i, p, info)
             : kind === 'table' ? tableBody(i, p, info) : binnedBody(i, p, info, entry);
+        // a table's two levels have no colors of their own: they are in the table or not (grey)
+        if (info && kind !== 'table') {
+            body.push(factorColorsSection({ D, p, info, kind, name: factorTitle(p, m.titleOf), commit: (next, label) => commitFactor(i, next, label) }));
+        }
+        return body;
     }
 
     /** Draw the open pop-over of factor i again from the recipe now (every edit does), the focus kept on its place. */
@@ -486,7 +586,11 @@ function createFactors({ D, id, model, on }) {
         const nodes = editorBody(i, entry);
         if (!nodes.length) { entry.ctl.close(); return; }
         body.append(...nodes);
-        if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
+        if (focusRow && focusRow.index === i) {
+            const button = body.querySelector(`.cgrp-level[data-id="${CSS.escape(focusRow.id)}"] .cgrp-level__rename`);
+            focusRow = null;
+            if (button) button.focus({ preventScroll: true });
+        } else if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
         entry.ctl.update();
     }
 
@@ -508,6 +612,9 @@ function createFactors({ D, id, model, on }) {
                 fillEditor(i);
                 if (on.wants) on.wants();
                 return () => {
+                    if (pendingLeave) pendingLeave();          // a name being edited is saved by closing
+                    renaming = null;
+                    focusRow = null;
                     for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
                     entry.body = entry.ctl = null;
                     expanded.delete(i);
@@ -692,10 +799,11 @@ function createStatus({ D, id, on }) {
 /**
  * Settings: a toolbar button whose pop-over holds the separator, the small-group threshold and what happens to small
  * groups. The button's text names it; its title (and a hidden span) say what is set, as the folded row used to.
- * @param {{D: Object, id: string, recipe: () => Object, set: (patch: Object, label: string) => void}} opts
- *   `set` takes `{separator}` or `{small}` with the defaults left out (the recipe's normaliser drops them)
+ * @param {{D: Object, id: string, recipe: () => Object, set: (patch: Object, label: string) => void, names: () => string[]}} opts
+ *   `set` takes `{separator}`, `{small}` or `{colors}` with the defaults left out (the recipe's normaliser drops them);
+ *   `names` the title of each factor, for "Color groups by"
  */
-function createSettings({ D, id, recipe, set }) {
+function createSettings({ D, id, recipe, set, names }) {
     const { el } = D;
     const summary = el('span', { class: 'cgrp-settings__summary visually-hidden' });
     const head = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-settings-btn' },
@@ -710,6 +818,7 @@ function createSettings({ D, id, recipe, set }) {
     const radio = (value) => (modes[value] = el('input', { type: 'radio', class: 'cgrp-smallmode', name: modeName, value,
         on: { change: () => setSmall({ mode: value }, `small groups ${smallModeWord(value)}`) } }));
     const collectText = el('span');
+    const colors = groupColorsSection({ D, id, recipe, names, set });
     const body = el('div', { class: 'cgrp-settings__body', id: `cgrp-settings-${id}` },
         el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-sep-${id}`, text: 'Separator ' }), separator),
         el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-thr-${id}`, text: 'Small groups under ' }), threshold, el('span', { text: ' cells' })),
@@ -717,7 +826,7 @@ function createSettings({ D, id, recipe, set }) {
             el('label', { class: 'cgrp-smallmode-opt' }, radio('keep'), ' Keep'),
             el('label', { class: 'cgrp-smallmode-opt' }, radio('collect'), ' Collect into ', collectText),
             el('label', { class: 'cgrp-smallmode-opt' }, radio('hide'), ` Hide: their cells go in no ${VOCABULARY.word.group}`)),
-        problem);
+        colors.element, problem);
     const pop = createPopover({ anchor: head, name: 'settings', title: 'Settings',
         render: (host) => { host.append(body); paint(); return () => body.remove(); } });
 
@@ -756,6 +865,7 @@ function createSettings({ D, id, recipe, set }) {
         if (document.activeElement !== threshold) threshold.value = String(small.threshold);
         collectText.textContent = `"${VOCABULARY.phrase.smallGroups(small.threshold)}"`;
         for (const [value, input] of Object.entries(modes)) input.checked = value === small.mode;
+        colors.paint();
     }
 
     return { element: head, paint, destroy: () => pop.destroy() };
@@ -795,11 +905,11 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         let _usedBy = '';
         let _usedTimer = null;
         let _factors = null;
+        const _lastFactor = new Map();      // a factor's source -> the last partitioning of a reply it had, for its editor while the next reply is on its way
         let _asked = [];                    // the histograms the handle asks for: the expanded binned cards
-        let _features = NO_FEATURES;        // the focused gene's feature, set by the group grid (G9c): it rides this panel's own request
-        let _applied = NO_FEATURES;         // the features the handle's option carries now
         let _status = null;
         let _settings = null;
+        let _methods = null;
         const _parts = [];
         const _listeners = [];
 
@@ -838,21 +948,10 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             try { await loadStructure(); } catch (error) { console.error(`Cell grouping ${_id}:`, error); }
             if (!_initialized) return;
             checkMissing();
-            await prepareParts();
             if (!_initialized) return;
             watch();
             groupSources().sources.recheck();
             refresh();
-        }
-
-        /**
-         * The parts that need to decide something before the first request (the group grid: whether the focused gene is
-         * cheap enough to ride it) say so; the first request waits for them for a moment at most.
-         */
-        async function prepareParts() {
-            const decisions = _parts.map((part) => (part && part.prepare ? part.prepare() : null));
-            if (!decisions.some(Boolean)) return;
-            await Promise.race([Promise.all(decisions), new Promise((resolve) => setTimeout(resolve, PREPARE_MS))]);
         }
 
         /** Read the handle again (a gate that changed without a store event: the structure came) and paint. */
@@ -876,7 +975,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
             if (_factors) _factors.destroy();
             if (_settings) _settings.destroy();
-            _factors = _status = _settings = null;
+            if (_methods) _methods.destroy();
+            _factors = _status = _settings = _methods = null;
             _initialized = false;
             _dom = null;
             container.innerHTML = '';
@@ -890,9 +990,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             if (!_recipe.partitionings.length) { release(); return; }
             if (_handle) return;
             _asked = _factors ? _factors.wanted() : [];
-            _applied = _features;
             _handle = groupSources().sources.watch(_id, {
-                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: { histograms: _asked, features: _applied },
+                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: { histograms: _asked },
                 visible: () => _visible && !!_dom && _dom.root.isConnected,
                 onChange: (snap) => { _snap = snap; noteKey(snap); paint(); syncHistograms(); }
             });
@@ -910,16 +1009,9 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             // positions of the recipe now; a request for an older recipe leaves out the ones it lacks (serverRequest)
             const ps = _recipe.partitionings;
             const now = [...new Set([..._asked.filter((k) => ps[k] && ps[k].binning), ..._factors.wanted()])].sort((a, b) => a - b);
-            if (now.join() === _asked.join() && _features === _applied) return;
+            if (now.join() === _asked.join()) return;
             _asked = now;
-            _applied = _features;
-            _handle.setOption({ histograms: now, features: _applied });
-        }
-
-        /** The group grid asks for a feature (the focused gene's moments) with this panel's own request; null stops asking. */
-        function setFeatures(wires) {
-            _features = wires && wires.length ? Object.freeze([...wires]) : NO_FEATURES;
-            syncHistograms();
+            _handle.setOption({ histograms: now });
         }
 
         function release() {
@@ -991,14 +1083,25 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const before = _recipe;
             const looped = !!cycleIds(_id);
             _undo.push(label, [JSON.stringify(before)]);
-            _recipe = normalizeGrouping(next).recipe;
+            _recipe = normalizeGrouping(dropRetired(next)).recipe;
             const step = _undo.peek();
             if (step) step.closesLoop = !looped && !!cycleIds(_id);
             _message = { text: said, undo: !!said };
             changed();
         }
 
-        /** Set fields of the recipe (Settings, Statistics offered) as one step. */
+        /**
+         * The recipe of an edit without the fields decision 31 retired (`offered`, `layers`): they gate nothing any more.
+         * `detect_above` stays (decision 34). Undo brings the fields back with the rest of the recipe.
+         */
+        function dropRetired(next) {
+            if (!RETIRED_FIELDS.some((k) => k in next)) return next;
+            const out = { ...next };
+            for (const k of RETIRED_FIELDS) delete out[k];
+            return out;
+        }
+
+        /** Set fields of the recipe (Settings) as one step. */
         function setFields(patch, label) {
             const next = { ..._recipe };
             for (const [k, v] of Object.entries(patch)) { if (v === undefined) delete next[k]; else next[k] = v; }
@@ -1065,7 +1168,11 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
                 announce: (text) => say(text),
                 open: openPanel
             } });
-            _settings = createSettings({ D, id: _id, recipe: () => _recipe, set: setFields });
+            _settings = createSettings({ D, id: _id, recipe: () => _recipe, set: setFields,
+                names: () => _recipe.partitionings.map((p) => factorTitle(p, sourceTitleOf)) });
+            // Methods ▾ (decision 34): each parameter edit is one step through setFields; the readers follow as for any edit
+            _methods = createCellMethods({ D, id: _id, getFields: () => _recipe, apply: setFields,
+                usedBy: () => methodsUsedBy(groupSources().sources.consumersOf(_id), titleOfPanel) });
             const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-undo', disabled: true, on: { click: () => undo() } }, 'Undo');
             const empty = el('div', { class: 'cgrp-empty', hidden: true },
                 el('p', { class: 'cgrp-empty__lead', text: `Add a ${VOCABULARY.word.factor} to divide the cells into ${VOCABULARY.plural.group}.` }),
@@ -1074,15 +1181,14 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const messageText = el('span', { class: 'cgrp-message__text' });
             const messageUndo = el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-message__undo', hidden: true, on: { click: () => undo() } }, 'Undo');
             const message = el('div', { class: 'cgrp-message', role: 'status', aria: { live: 'polite' } }, messageText, messageUndo);
-            // what Toggle Controls hides (UX 2.1): the toolbar, Add factor, Statistics, Settings and Undo; its forms are pop-overs
-            const statistics = el('span', { class: 'cgrp-statistics' });
-            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, statistics, _settings.element, undoBtn);
+            // what Toggle Controls hides (UX 2.1): the toolbar, Add factor, Methods, Settings and Undo; its forms are pop-overs
+            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, _methods.element, _settings.element, undoBtn);
             const groups = el('div', { class: 'cgrp-groups' });
             root.append(_status.element, empty, controls, message, _factors.listElement, groups);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
             container.appendChild(root);
-            _dom = { root, controls, undoBtn, empty, message, messageText, messageUndo, groups, statistics,
+            _dom = { root, controls, undoBtn, empty, message, messageText, messageUndo, groups,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             showControls();
             mountParts();
@@ -1097,10 +1203,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         }
 
         function mountParts() {
-            const ctx = { panelId: _id, read: () => _snap, recipe: () => _recipe, set: setFields, shown, noGroup: () => !!_status && _status.isOpen(),
-                setFeatures, applied: () => _applied };
+            const ctx = { panelId: _id, read: () => _snap, recipe: () => _recipe, set: setFields, shown, noGroup: () => !!_status && _status.isOpen() };
             if (PARTS.groups) _parts.push(PARTS.groups.mount(_dom.groups, ctx));
-            if (PARTS.statistics) _parts.push(PARTS.statistics.mount(_dom.statistics, ctx));
         }
 
         function onKey(e) {
@@ -1112,14 +1216,33 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
 
         function factorsModel() {
             const s = shown();
-            const infos = _recipe.partitionings.map((_, i) => (s && s.index[i] >= 0 ? s.reading.partitionings[s.index[i]] : null));
-            const labels = _recipe.partitionings.map((_, i) => (s && s.index[i] >= 0 ? s.defaults[s.index[i]] : new Map()));
+            // A factor edited has no partitioning in the reply on screen until the next reply lands (the reply was made for the
+            // recipe before): its editor keeps the last one it had, its counts marked stale, and never goes blank.
+            const infos = [];
+            const labels = [];
+            const stale = new Set();
+            _recipe.partitionings.forEach((p, i) => {
+                const mark = stableStringify(p.source);
+                if (s && s.index[i] >= 0) {
+                    const info = s.reading.partitionings[s.index[i]];
+                    infos.push(info);
+                    labels.push(s.defaults[s.index[i]]);
+                    _lastFactor.delete(mark);
+                    _lastFactor.set(mark, { info, labels: s.defaults[s.index[i]] });
+                    if (_lastFactor.size > 40) _lastFactor.delete(_lastFactor.keys().next().value);
+                    return;
+                }
+                const kept = _lastFactor.get(mark);
+                infos.push(kept ? kept.info : null);
+                labels.push(kept ? kept.labels : new Map());
+                if (kept) stale.add(i);
+            });
             const notes = cardNotes(currentStatus());
             const all = PanelManager.getAllPanels();
             const ofType = (type) => all.filter((p) => typeOf(p) === type).map((p) => ({ id: p.getId(), title: p.getTitle() }));
             const cells = DataManager.getCells();
             return {
-                self: _id, recipe: _recipe, infos, labels, missing: new Set(_missing), notes,
+                self: _id, recipe: _recipe, infos, labels, stale, missing: new Set(_missing), notes,
                 structure: structureRead(), cells: cells ? cells.length : 0, titleOf: sourceTitle, hasGene,
                 focusedGene: DataManager.getFocusedGene(), focusedCell: focusedCellName(),
                 choices: { groupings: ofType(TYPE), tables: ofType('cell-table'), scores: scoreChoices() }
@@ -1152,7 +1275,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
 
         function scoreChoices() {
             try {
-                return scoreSources().map((s) => ({ id: s.id, title: s.title, options: (s.options || []).map((o) => ({ method: o.method, layer: o.layer, label: o.label })) }));
+                return scoreSources().map((s) => ({ id: s.id, title: s.title }));
             } catch (error) {
                 console.error(`Cell grouping ${_id}:`, error);
                 return [];
@@ -1186,6 +1309,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const drawn = [_recipe, reply, _missing.join(','), JSON.stringify([...cardNotes(desc)]), structureRead()];
             if (!_drawn || drawn.some((x, i) => x !== _drawn[i])) { _drawn = drawn; _factors.paint(); }
             _settings.paint();
+            _methods.paint();
             const step = _undo.peek();
             _dom.undoBtn.disabled = !step;
             _dom.undoBtn.title = step ? `Undo: ${step.label}` : 'Nothing to undo';
@@ -1294,14 +1418,13 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             // for the steps after this one, and the tests
             getRecipe,
             addFactor,
-            /** Open Statistics offered: where a Cell-Gene Plot's "Offer other…" leads (WP-4). */
-            revealStatisticsOffered: () => {
-                if (!_dom) return;
-                // the button is in the toolbar: shown again if Toggle Controls hid it
-                if (_controlsVisible === false) { _controlsVisible = true; showControls(); }
-                for (const part of _parts) if (part && part.reveal) part.reveal();
-            },
             undo,
+            /** Open Methods ▾ (where a plot's "Grouping's setting" leads); false while the panel or its toolbar is not shown. */
+            revealMethods() {
+                if (!_methods || _controlsVisible === false) return false;
+                _methods.reveal();
+                return true;
+            },
             _debugState
         };
     }

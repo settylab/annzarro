@@ -48,6 +48,11 @@
 .ccnt-arrangement__input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
 .ccnt-arrangement__opt:has(.ccnt-arrangement__input:checked) { background: var(--az-surface-3); border-color: var(--az-link); font-weight: 600; }
 .ccnt-arrangement__opt:has(.ccnt-arrangement__input:focus-visible) { outline: 2px solid var(--az-link); outline-offset: 1px; }
+/* an arrangement that does not apply (side by side of a histogram's bins): greyed, its title says why */
+.ccnt-arrangement__opt:has(.ccnt-arrangement__input:disabled) { opacity: 0.5; cursor: not-allowed; }
+/* a switch of view by the X axis type, said once beside the Mode select */
+.ccnt-view-note { margin-left: 6px; }
+.ccnt-view-note[hidden] { display: none; }
 
 /* an input's binning control and its level list live in pop-overs (ui/popover.js, WP-6a): they never change the panel's size */
 .ccnt-binning, .ccnt-levels { margin: 0; }
@@ -80,8 +85,10 @@
 .ccnt-sets[hidden] { display: none; }
 
 /* the plot, and what it says when there is nothing to draw (never resizes the plot) */
-.ccnt-plot-area { position: relative; flex: 1 1 auto; min-height: 160px; }
-.ccnt-plot { position: absolute; inset: 0; }
+/* The plot, then the coverage banner under it (the status strip panel-surface.js inserts after the plot, as in the Cell and
+   Gene Plots); the state box covers both while there is nothing to draw. */
+.ccnt-plot-area { position: relative; flex: 1 1 auto; min-height: 160px; display: flex; flex-direction: column; }
+.ccnt-plot { position: relative; flex: 1 1 auto; min-height: 0; }
 .ccnt-state-box {
     position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 6px; padding: 12px; text-align: center; color: var(--az-text); background: var(--az-surface); z-index: 2;
@@ -93,7 +100,14 @@
 .ccnt-state[data-state="cycle"] .ccnt-state__text { color: var(--az-danger-text); }
 .ccnt-state[data-state="empty"] .ccnt-state__text, .ccnt-state[data-state="unavailable"] .ccnt-state__text { color: var(--az-muted); }
 .ccnt-state__actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
-.ccnt-strip { flex: 0 0 auto; min-height: 1.3em; padding: 1px 8px; color: var(--az-muted); font-size: 0.75rem; }
+/* what the plot is doing, in the top-left corner of the plot: clear of the modebar (top right), the legend and the centred
+   placeholder's spinner; muted on the plot's own background; gone when the plot is ready */
+.ccnt-working {
+    position: absolute; top: 6px; left: 8px; z-index: 3; max-width: calc(100% - 240px); padding: 1px 6px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; color: var(--az-muted); background: var(--az-surface-2);
+    border: 1px solid var(--az-border); border-radius: 3px; font-size: 0.75rem; pointer-events: none;
+}
+.ccnt-working[hidden] { display: none; }
 
 /* Save as grouping (CNT-7): a dialog over the plot area, which stays as it is */
 .ccnt-save {

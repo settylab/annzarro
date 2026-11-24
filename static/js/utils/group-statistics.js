@@ -1,18 +1,18 @@
 /**
- * What a Cell Grouping offers its consumers (GRP-9, SHR-25 to SHR-27): the statistics a plot or a table may read per
- * group, the layers it may read them from, and the one detection threshold two of them share. Pure (no DOM, no page
+ * The per-group statistics a plot reads of a gene (the Cell-Gene Plot's Color, Size and Height; SHR-25, SHR-27, decision
+ * 31): what each is, how it grades on a layer, and the one detection threshold two of them read. Pure (no DOM, no page
  * state), so Node tests hold it and the Cell-Gene Plot's menus build on it.
  *
- * It is the grouping's METHOD TABLE for the shared options model (utils/options-model.js, SHR-25); the signature's
- * (utils/signature-options.js) is the other. A grouping's recipe stores three option fields: `offered` (statistic ids),
- * `layers` and `detect_above`. It has no `input` and no `method`: the default layer is X and it is always offered
- * (SHR-26, OD 8). No layer is ever chosen by guessing what a matrix holds, so a statistic that a layer cannot give is
- * left out of menus for that layer (SHR-27, `core/matrix_kind.py` through `statisticAvailability`) and a size waits
- * until a layer is picked.
+ * It is the METHOD TABLE of group statistics for the shared options model (utils/options-model.js, SHR-25); the
+ * signature's (utils/signature-options.js) is the other. Decision 31: every consumer lists all five
+ * statistics and Cell count on all layers (`statisticChoices`, `statisticLayerChoices`), and a pair a layer cannot give
+ * is disabled with its reason (SHR-27, `core/matrix_kind.py` through `statisticAvailability`). The threshold is the
+ * grouping's method parameter (`detect_above`, decision 34); a measure may hold its own (CXG-9). A grouping recipe's
+ * retired `offered` and `layers` are only read.
  *
- * Cell count needs no feature and no layer: it is always offered and is not in the table.
+ * Cell count needs no feature and no layer: it is listed after the table, never graded.
  */
-import { createOptionsModel, andList, figure } from './options-model.js';
+import { REASON, createOptionsModel, andList, figure, quoted } from './options-model.js';
 import { STATISTIC_IDS } from './cell-grouping.js';
 import { statisticAvailability } from './cell-gene-model.js';
 import { VOCABULARY } from './vocabulary.js';
@@ -35,12 +35,12 @@ export const STATISTIC_INFO = Object.freeze([
         definition: 'Spread over the group\'s cells.' }
 ]);
 
-/** Offered until the grouping says otherwise (SHR-26). */
+/** The statistics a new plot starts on, and what an old link's empty `offered` meant (SHR-26). */
 // export-unused-ok: consumed by X3a (a new plot's first statistics)
 export const DEFAULT_STATISTICS = Object.freeze(['mean', 'pct_expressing']);
-/** The statistic that is offered whatever the recipe says: it reads no feature. */
+/** The statistic every menu lists after the table: it reads no feature and no layer. */
 // export-unused-ok: consumed by X3a and C2a (cell count is in every menu)
-export const ALWAYS_OFFERED = 'count';
+export const CELL_COUNT = 'count';
 const DEFAULT_LAYER = 'X';
 const THRESHOLD_USERS = STATISTIC_INFO.filter((m) => m.needs.includes('detect_above')).map((m) => m.value);
 /** The statistic a dot plot's size starts on (SHR-27). */
@@ -48,10 +48,10 @@ const SIZE_STATISTIC = 'pct_expressing';
 /** The statistics that follow how deeply a cell was sequenced, on raw counts. */
 const DEPTH_STATISTICS = Object.freeze(['mean', 'sum', 'sd']);
 
-/** "% expressing is not available on X: X has negative values. Choose a layer." (SHR-27) */
+/** "% expressing cannot be computed on 'X': it has negative values. Choose a layer." (SHR-27) */
 // export-unused-ok: consumed by X3a (the control says it where a size would have been)
 export function negativeValuesSentence(stat, layer) {
-    return `${NAME[stat]} is not available on ${layer}: ${layer} has negative values. Choose a layer.`;
+    return `${REASON.cannotOn(NAME[stat], quoted(layer), 'it has negative values.')} Choose a layer.`;
 }
 
 /**
@@ -60,21 +60,19 @@ export function negativeValuesSentence(stat, layer) {
  * @param {string} stat
  * @param {string} layer
  * @param {string} [kind] - counts, normalised, log, signed or other; undefined while unknown, and then nothing is assumed
- * @param {{label?: string}} [ctx] - what to call the layer in the sentence (the panel says "every offered layer" when all share the issue)
  * @returns {{grade: 'ok'|'warn'|'cannot', code: string, reason: string}}
  */
 // export-unused-ok: consumed by X3a and C2a (menus grade a statistic on a layer)
-export function statisticGrade(stat, layer, kind, ctx = {}) {
-    const name = ctx.label || `'${layer}'`;
+export function statisticGrade(stat, layer, kind) {
+    const name = quoted(layer);
     if (!statisticAvailability(stat, kind).available) {
-        return { grade: 'cannot', code: 'negative_values',
-            reason: ctx.label ? `${NAME[stat]} is not available on ${ctx.label}: they have negative values.` : negativeValuesSentence(stat, layer) };
+        return { grade: 'cannot', code: 'negative_values', reason: negativeValuesSentence(stat, layer) };
     }
     if (kind === 'counts' && DEPTH_STATISTICS.includes(stat)) {
-        return { grade: 'warn', code: 'depth', reason: `On ${name} this follows sequencing depth.` };
+        return { grade: 'warn', code: 'depth', reason: REASON.note(NAME[stat], name, 'follows sequencing depth.') };
     }
     if (kind === 'log' && stat === 'sum') {
-        return { grade: 'warn', code: 'log', reason: `On ${name} a sum of log values is not a total of the counts. It is usually read from counts.` };
+        return { grade: 'warn', code: 'log', reason: REASON.note(NAME[stat], name, 'is a sum of log values, not a total of the counts: it is usually read from counts.') };
     }
     return { grade: 'ok', code: '', reason: '' };
 }
@@ -82,44 +80,97 @@ export function statisticGrade(stat, layer, kind, ctx = {}) {
 const info = (stat) => STATISTIC_INFO.find((m) => m.value === stat);
 const menuNames = (ids) => andList(ids.map((id) => info(id).menu));
 
-/** What to say on a LAYER's row: its properties, each once and short, only when they matter for an offered statistic. */
-function layerLines(layer, recipe, kind, stats, offered) {
-    const lines = [];
-    const cannot = THRESHOLD_USERS.filter((s) => !statisticAvailability(s, kind).available);
-    if (cannot.length && THRESHOLD_USERS.some((s) => offered.includes(s))) {
-        lines.push({ grade: 'cannot', code: 'negative_values',
-            text: `${menuNames(cannot)} are not available on ${layer}: ${layer} has negative values.` });
-    }
-    const depth = offered.filter((s) => DEPTH_STATISTICS.includes(s));
-    if (kind === 'counts' && depth.length) {
-        lines.push({ grade: 'warn', code: 'depth', text: `Raw counts: ${menuNames(depth)} follow${depth.length === 1 ? 's' : ''} sequencing depth.` });
-    }
-    if (kind === 'log' && offered.includes('sum')) {
-        lines.push({ grade: 'warn', code: 'log', text: 'Log values: a sum of them is not a total of the counts. It is usually read from counts.' });
-    }
-    return lines;
-}
-
 const thresholdOf = (recipe) => (typeof recipe.detect_above === 'number' && Number.isFinite(recipe.detect_above) ? recipe.detect_above : 0);
 
 /** What the detection threshold does: names the statistics that use it and the value in force. */
+// export-unused-ok: the model's line for detect_above; Node tests (group-statistics.test.mjs) hold its wording
 export function thresholdLine(recipe) {
     return `Used by ${menuNames(THRESHOLD_USERS)}. Now: above ${figure(thresholdOf(recipe))}.`;
 }
 
-/** The grouping's statistics as an options model (SHR-25). */
+// ================================================================================================ Methods ▾ (decision 34)
+
+/**
+ * The words of the Methods pop-over of a Cell Grouping and a Cell Table (offered-removal-080.md 10.2): the source sets
+ * the parameters of each statistic, for every layer; plots choose the statistic and the layer. Nothing is gated.
+ */
+export const METHODS_TEXT = Object.freeze({
+    label: 'Methods',
+    title: 'Methods',
+    intro: 'Statistics over a group\'s cells. Plots choose the statistic and the layer; these settings apply on every layer.',
+    tableIntro: 'Statistics over the table\'s cells. Plots choose the statistic and the layer; these settings apply on every layer.',
+    plainTitle: 'The settings of each statistic',
+    notUsed: 'No plot reads these statistics yet.',
+    reset: 'Reset to defaults'
+});
+
+/** A statistic's definition over a Cell Table's cells rather than a group's (the table's Methods ▾). */
+export function tableDefinition(m) {
+    return m.definition.replace(/the group's cells/g, 'the table\'s cells');
+}
+
+/**
+ * The parameters of the statistics, listed under the last statistic that uses each. Only Expressed above today (mean,
+ * sum and SD take none; scaling is a plot option).
+ */
+export const METHOD_PARAMS = Object.freeze([
+    Object.freeze({ key: 'detect_above', label: 'Expressed above', default: 0, users: THRESHOLD_USERS, after: THRESHOLD_USERS[THRESHOLD_USERS.length - 1],
+        name: 'A cell counts as expressing above this value', line: thresholdLine })
+]);
+
+/**
+ * The method fields of a Cell Table's configuration (`methods: {detect_above}`), cleaned: a parameter at its default or
+ * not valid is left out, so the field is omitted at default and a link stays as short as before.
+ * @param {*} raw
+ * @returns {{detect_above?: number}}
+ */
+export function cleanMethods(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    const t = raw.detect_above;
+    if (typeof t === 'number' && Number.isFinite(t) && t > 0) out.detect_above = t;
+    return out;
+}
+
+/** The parameters not at their default, in words ("expressed above 2"); empty when all are. Said on the button's title. */
+export function methodsSummary(fields) {
+    const t = thresholdOf(fields || {});
+    return t !== 0 ? `expressed above ${figure(t)}` : '';
+}
+
+/**
+ * Who reads a source's statistics, one entry per consumer panel: "Cell-Gene Plot 1 (% expressing · counts, mean · logged)".
+ * @param {Array<{kind: string, panelId?: string, option?: {statistics?: Array<{stat: string, layer?: string}>}}>} handles
+ * @param {(panelId: string) => string} titleOf - a panel's title ('' for one not found)
+ * @returns {string[]}
+ */
+export function methodsUsedBy(handles, titleOf) {
+    const byPanel = new Map();
+    for (const h of handles || []) {
+        if (countsAs(h.kind) === null || !h.panelId) continue;
+        const pairs = byPanel.get(h.panelId) || [];
+        for (const r of (h.option && h.option.statistics) || []) {
+            const known = info(r.stat);
+            const text = known ? `${known.menu} · ${r.layer || DEFAULT_LAYER}` : 'cell count';
+            if (!pairs.includes(text)) pairs.push(text);
+        }
+        byPanel.set(h.panelId, pairs);
+    }
+    return [...byPanel].map(([pid, pairs]) => {
+        const title = titleOf(pid) || pid;
+        return pairs.length ? `${title} (${pairs.join(', ')})` : title;
+    });
+}
+
+/** The group statistics as an options model (SHR-25). */
+// export-unused-ok: the `source` of options-model.js's free forms (methodChoices, layerChoices, pairAfter); Node tests read it
 export const GROUP_STATISTICS_MODEL = createOptionsModel({
     methods: STATISTIC_INFO, defaultMethod: 'mean', defaultOffered: DEFAULT_STATISTICS, defaultLayer: DEFAULT_LAYER,
     paramDefaults: { pct_expressing: { detect_above: 0 }, mean_expressing: { detect_above: 0 } },
     sameParam: (key, have, want) => (have === undefined ? 0 : have) === want,
-    paramNotes: (recipe, method) => (info(method).needs.includes('detect_above') && thresholdOf(recipe) !== 0 ? [`above ${thresholdOf(recipe)}`] : []),
-    paramLines: { detect_above: thresholdLine },
     paramValue: (recipe, key) => (key === 'detect_above' ? thresholdOf(recipe) : recipe[key]),
-    grade: (method, layer, kind, ctx) => statisticGrade(method, layer, kind, ctx),
-    layerLines,
-    extraMethods: [{ value: ALWAYS_OFFERED, label: NAME.count, menu: 'cell count', definition: 'Number of cells in the group. Reads no layer.' }],
-    // a grouping's recipe has no `input` and no `method`: it names what it offers and nothing else
-    resetFields: ['offered', 'layers']
+    grade: (method, layer, kind) => statisticGrade(method, layer, kind),
+    extraMethods: [{ value: CELL_COUNT, label: NAME.count, menu: 'cell count', definition: 'Number of cells in the group. Reads no layer.' }]
 });
 
 /** Decision 31: all five statistics and Cell count on `layer`, impossible ones disabled with their reason. See options-model.js. */
@@ -154,6 +205,7 @@ export function sizeDefault(recipe, kinds, picked) {
  * @returns {{statistics: Array<Object>, layers: Array<Object>}} usage rows `{value, plots, tables, groupings}`, statistics in
  *   menu order, layers in the order first read
  */
+// export-unused-ok: kept by decision 31's SO-1 row (who reads which statistic); the Statistics pop-over that showed it is gone
 export function statisticUsage(handles) {
     const stats = new Map();
     const layers = new Map();
@@ -167,34 +219,13 @@ export function statisticUsage(handles) {
         if (field === null) continue;
         const read = (handle.option && handle.option.statistics) || [];
         for (const stat of new Set(read.map((r) => r.stat))) bump(stats, stat, field);
-        for (const layer of new Set(read.filter((r) => r.stat !== ALWAYS_OFFERED).map((r) => r.layer || DEFAULT_LAYER))) bump(layers, layer, field);
+        for (const layer of new Set(read.filter((r) => r.stat !== CELL_COUNT).map((r) => r.layer || DEFAULT_LAYER))) bump(layers, layer, field);
     }
     const order = [...STATISTIC_IDS];
     return { statistics: [...stats.values()].sort((a, b) => order.indexOf(a.value) - order.indexOf(b.value)), layers: [...layers.values()] };
 }
 
-/**
- * The section's edit as an edit of a grouping's recipe: its fields only, and a field at its default is removed, so a
- * default grouping's recipe (and its link) is the same as before it had this section. `undefined` removes a field.
- * @param {Object} patch - keys of the section's option fields (offered, layers, detect_above; input and method are dropped)
- * @returns {Object}
- */
-export function recipePatch(patch) {
-    const model = GROUP_STATISTICS_MODEL;
-    const out = {};
-    if ('offered' in patch) {
-        const list = model.cleanOffered(patch.offered);
-        out.offered = list.join() === model.cleanOffered(DEFAULT_STATISTICS).join() ? undefined : list;
-    }
-    if ('layers' in patch) {
-        const rest = model.cleanLayers(patch.layers, DEFAULT_LAYER).filter((name) => name !== DEFAULT_LAYER);
-        out.layers = rest.length ? rest : undefined;
-    }
-    if ('detect_above' in patch) out.detect_above = patch.detect_above === 0 ? undefined : patch.detect_above;
-    return out;
-}
-
-// ================================================================================================ a plot's own offer (WP-4)
+// ================================================================================================ a new plot's measures (decision 24)
 
 /**
  * The first layer that looks log-normalised and the first that holds raw counts, by what the numbers look like
@@ -209,61 +240,16 @@ function kindLayers(layers, kinds) {
 }
 
 /**
- * Color and Size of a new Cell-Gene Plot (operator ruling Q2): the mean on the log-normalised layer and % expressing on
- * the counts layer above 0, when matrix-kind facts identify both; else both on X, as before.
- * @param {string[]} layers
+ * Color and Size of a new Cell-Gene Plot (decision 24, kept by decision 32 on both axis kinds): the mean on the
+ * log-normalised layer and % expressing on the counts layer (above the grouping's threshold, 0 by default), when matrix-kind facts identify both among ALL the
+ * dataset's layers; else both on X.
+ * @param {string[]} layers - the dataset's matrices, X first
  * @param {Object<string, string>} kinds
  * @returns {{color: Object, size: Object}}
  */
 export function defaultMeasures(layers, kinds) {
     const { log, counts } = kindLayers(layers, kinds);
-    if (log && counts) return { color: { stat: 'mean', layer: log }, size: { stat: SIZE_STATISTIC, layer: counts, detect_above: 0 } };
+    // no threshold of its own: Size follows the grouping's Expressed above (decision 35), 0 unless the grouping says otherwise
+    if (log && counts) return { color: { stat: 'mean', layer: log }, size: { stat: SIZE_STATISTIC, layer: counts } };
     return { color: { stat: 'mean', layer: DEFAULT_LAYER }, size: { stat: SIZE_STATISTIC, layer: DEFAULT_LAYER } };
-}
-
-/** The layers an obs-column axis offers before the plot's own list is edited: X, then the Q2 layers identified. */
-function axisDefaultLayers(layers, kinds) {
-    const { log, counts } = kindLayers(layers, kinds);
-    return GROUP_STATISTICS_MODEL.cleanLayers([log, counts].filter(Boolean), DEFAULT_LAYER);
-}
-
-/**
- * What a Cell-Gene Plot with an obs column as its cell axis offers Color and Size (operator ruling Q1): there is no
- * grouping to hold the offer, so the plot keeps one in its configuration (`offer: {offered?, layers?}`). With no list
- * of its own, the layers matrix-kind facts call log-normalised and counts count as offered beside X.
- * @param {{offered?: string[], layers?: string[]}} offer - the plot's `offer`
- * @param {string[]} layers - the dataset's matrices
- * @param {Object<string, string>} kinds
- * @returns {{offered?: string[], layers: string[]}} a recipe GROUP_STATISTICS_MODEL reads
- */
-export function axisOfferRecipe(offer, layers, kinds) {
-    const own = offer || {};
-    const out = { layers: Array.isArray(own.layers) ? GROUP_STATISTICS_MODEL.cleanLayers(own.layers, DEFAULT_LAYER) : axisDefaultLayers(layers, kinds) };
-    if (Array.isArray(own.offered)) out.offered = GROUP_STATISTICS_MODEL.cleanOffered(own.offered);
-    return out;
-}
-
-/**
- * An edit of the plot's offered section (panels/score-options/offered-section.js) as the plot's new `offer`: a field
- * equal to what the plot would offer without it is not written, so the defaults keep following the dataset. A patch
- * with both fields is the section's Reset to defaults.
- * @param {Object} offer - the plot's `offer` now
- * @param {Object} patch - keys of the section's option fields (offered, layers; input and method are ignored)
- * @param {string[]} layers
- * @param {Object<string, string>} kinds
- * @returns {{offered?: string[], layers?: string[]}}
- */
-export function axisOfferPatch(offer, patch, layers, kinds) {
-    if ('offered' in patch && 'layers' in patch) return {};
-    const model = GROUP_STATISTICS_MODEL;
-    const out = { ...(offer || {}) };
-    if ('offered' in patch) {
-        const list = model.cleanOffered(patch.offered);
-        if (list.join() === model.cleanOffered(DEFAULT_STATISTICS).join()) delete out.offered; else out.offered = list;
-    }
-    if ('layers' in patch) {
-        const list = model.cleanLayers(patch.layers, DEFAULT_LAYER);
-        if (list.join() === axisDefaultLayers(layers, kinds).join()) delete out.layers; else out.layers = list;
-    }
-    return out;
 }

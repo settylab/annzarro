@@ -15,8 +15,9 @@
  * notice over the plot. When the state changes, the plot is drawn again.
  *
  * The plots reach all of it through the provider registered at the end (utils/source-registry.js): its key
- * list, its third menu of offered options, its loads (the regular plot's and the large plot's), titles,
- * placeholder and its Hover picker entries.
+ * list, its method and layer selects (decision 31: every method, every layer, an impossible pair disabled with its
+ * reason), its loads (the regular plot's and the large plot's), titles and placeholder. A score is not a Hover picker
+ * entry (decision 32): a link that stored one drops it on load (panels/plot-utilities/hover-columns.js).
  */
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
@@ -27,6 +28,7 @@ import { createScoreStore } from './score-store.js';
 import { createLimiter, DEFAULT_MAX_ACTIVE } from './derived-store.js';
 import { createScoreSources } from './score-sources.js';
 import { createScoreApi } from './gene-score-client.js';
+import { createKindClient } from './matrix-kind-client.js';
 import { describeScore } from './score-notices.js';
 import { paintProgress, sentenceOf, coverageKindOf } from './source-notices.js';
 import { actions } from './source-actions.js';
@@ -35,7 +37,7 @@ import { VOCABULARY } from './vocabulary.js';
 import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
-import { DEFAULT_INPUT, DEFAULT_OFFERED, METHODS, SIGNATURE_MODEL, methodShort, offeredOptions, isOffered } from './signature-options.js';
+import { DEFAULT_INPUT, METHODS, SIGNATURE_MODEL, methodShort } from './signature-options.js';
 import { legacyPair } from './options-model.js';
 import { createSourceAdapter, entityLabel, isSourceType, kindOfType, optionFieldsOf, scoreKeyOptions } from './score-source-panels.js';
 import { findCycle, TableResolver } from './table-resolver.js';
@@ -47,8 +49,7 @@ const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
 /**
  * The series of a score, waiting for it while it is pending when the plot has a drawing to keep. The old
  * drawing stays, the plot's own loading pill shows (the caller's), and nothing is claimed about the score
- * (no notice, no tag, no gene count) until it is known to last: refused, failed, asks first, cancelled, not
- * offered, deleted. With no drawing yet, or in those states, it throws as loadScoreSeries does.
+ * (no notice, no tag, no gene count) until it is known to last: refused, failed, asks first, cancelled, deleted. With no drawing yet, or in those states, it throws as loadScoreSeries does.
  * @param {Object} setting
  * @param {Object} opts - as loadScoreSeries
  * @param {AbortSignal|null} [signal]
@@ -56,9 +57,6 @@ const SUB_LABELS = Object.fromEntries(METHODS.map(m => [m, methodShort(m)]));
 function loadScoreSeriesWhenReady(setting, opts, signal = null) {
     return binding().loadWhenReady((quiet) => loadScoreSeries(setting, { ...opts, quiet }), opts, signal);
 }
-
-/** The last entry of a score's option list: opens the signature panel on what it offers. */
-export const OFFER_MORE = '__offer_more__';
 
 /** The value that is not a signature: "New signature..." in the key list. */
 export const NEW_SIGNATURE = '__new_signature__';
@@ -95,7 +93,6 @@ function signatureAdapter() {
         active: (panel) => PanelManager.getActivePanels().includes(panel),
         geneNames: () => DataManager.getGenes(),
         off: () => !Policy.panelEnabled('gene-signature'),
-        offers: (recipe, sub, layer) => isOffered(recipe, sub, layer || undefined),
         resolver: tableResolver
     });
 }
@@ -127,30 +124,16 @@ export function scores() {
     return { store: _store, sources: _sources };
 }
 
-/** The aggregations a signature panel offers consumers, first the default: [{value, label}]. */
-function offeredSubs(panel) {
-    if (!isSource(panel)) return METHODS.map(value => ({ value, label: SUB_LABELS[value] }));
-    // a signature's recipe, or a table's option fields: both have the default method
-    const recipe = optionFieldsOf(panel);
-    const seen = [];
-    // what the panel offers (impossible combinations left out), the default first
-    for (const o of (typeof panel.getOfferedOptions === 'function' ? panel.getOfferedOptions() : offeredOptions(recipe))) {
-        if (!seen.includes(o.method)) seen.push(o.method);
-    }
-    seen.sort((a, b) => (a === recipe.method ? -1 : b === recipe.method ? 1 : 0));
-    return seen.map(value => ({ value, label: SUB_LABELS[value] || value }));
-}
-
 /**
  * Every source of a gene score, open or closed: signatures first, then gene tables, each in the order they were made.
- * [{id, title, open, kind: 'signature'|'table', subs, input, options}].
+ * [{id, title, open, kind: 'signature'|'table', input}].
  */
 export function sourceList() {
     const open = new Set(PanelManager.getActivePanels().map(p => p.getId()));
     const all = PanelManager.getAllPanels().filter(isSource);
     return [...all.filter(p => p.getType() === 'gene-signature'), ...all.filter(p => p.getType() !== 'gene-signature')]
-        .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()), kind: kindOfType(p.getType()), subs: offeredSubs(p),
-            input: optionFieldsOf(p).input, options: scoreOptions(p.getId()) }));
+        .map(p => ({ id: p.getId(), title: p.getTitle(), open: open.has(p.getId()), kind: kindOfType(p.getType()),
+            input: optionFieldsOf(p).input }));
 }
 
 /** The source panel (a signature or a gene table) with this id, or null. */
@@ -160,7 +143,7 @@ function sourcePanel(id) {
 }
 
 /**
- * The layer a source reads when a consumer names none: its first offered layer now. Null when there is no such source.
+ * The layer a source reads when a consumer names none: its stored `input` now. Null when there is no such source.
  * @param {string} id - a source's panel id
  * @returns {string|null}
  */
@@ -251,9 +234,8 @@ function stillUsed(rec) {
     const panel = rec.panelId ? PanelManager.getPanel(rec.panelId) : null;
     if (!panel || typeof panel.getConfig !== 'function') return true;
     const cfg = panel.getConfig();
-    if (isHover(rec.role)) {
-        return (cfg.hoverInfo || []).some(h => h && h.type === SCORE_TYPE && h.key === rec.sigId && subKeyOf(h) === rec.sub && layerOf(h) === (rec.layer || ''));
-    }
+    // a score is no hover line any more (decision 32)
+    if (isHover(rec.role)) return false;
     const s = cfg[rec.role];
     return !!(s && s.type === SCORE_TYPE && s.key === rec.sigId && subKeyOf(s) === rec.sub && layerOf(s) === (rec.layer || ''));
 }
@@ -378,7 +360,7 @@ export function loadScoreSeries(setting, { host, role, expected, unit = 'cells',
  * every state of a host against every action; the page registers its own below.
  * @param {Object} deps
  */
-export function createPlotActions({ shownRecord: shown, recordsOf: records, sourcePanel: panelOf, canOffer, offerAgain: offer, update, openSource,
+export function createPlotActions({ shownRecord: shown, recordsOf: records, sourcePanel: panelOf, update, openSource,
     chooser, panelIdOf: hostPanelId }) {
     const ofShown = (host) => shown(host) || null;
     const record = (run) => ({ target: ofShown, run });
@@ -387,7 +369,6 @@ export function createPlotActions({ shownRecord: shown, recordsOf: records, sour
         owns: (host) => !!shown(host),
         actions: {
             'score-compute': { target: (host) => (records(host).size ? host : null), run: (host) => { for (const r of records(host).values()) r.handle.compute(); } },
-            'score-offer': { target: (host) => { const rec = shown(host); return rec && canOffer(rec.setting) ? rec : null; }, run: (rec) => { offer(rec.setting); } },
             'score-cancel': record((rec) => { rec.handle.cancel(); }),
             'score-retry': record((rec) => { rec.handle.retry(); }),
             'score-update': record((rec) => { update(rec.sigId); }),
@@ -409,7 +390,7 @@ function sourceChooser(host, rec) {
 
 actions.register(createPlotActions({
     shownRecord: (host) => binding().shownRecord(host), recordsOf: (host) => binding().recordsOf(host), sourcePanel,
-    canOffer: (setting) => !!offerTarget(setting), offerAgain, openSource: openSignature,
+    openSource: openSignature,
     update: (id) => scores().sources.update(id), chooser: sourceChooser, panelIdOf
 }));
 
@@ -434,13 +415,13 @@ export function openSignature(id, nextTo = null) {
 // events from the page
 
 /** The option fields that change what plots and tables may pick: their menus and titles follow an edit of one. */
-const MENU_KEYS = ['offered', 'layers', 'input', 'method', 'detect_above'];
+const MENU_KEYS = ['input', 'method', 'detect_above', 'clip', 'bins', 'controls', 'seed'];
 
 /**
  * A source changed: its genes (a signature's list, the rows a table's filter passes) or the option fields named in
  * `keys`, by an edit in its panel or from outside (a saved config, Back and Forward). The plots and tables that read
- * its score follow by the rules for an edit (utils/score-sources.js), and the menus that list what it offers are
- * rebuilt when what they list changed.
+ * its score follow by the rules for an edit (utils/score-sources.js), and the menus that grade its methods on its
+ * layers are rebuilt when a field they grade by changed.
  * @param {string} id - the source's panel id
  * @param {string[]} [keys] - the option fields that changed, if any
  */
@@ -461,7 +442,7 @@ export function scoreCommand(id, command) {
     return false;
 }
 
-/** A source was renamed, or what it offers changed: the menus that list it are rebuilt and the titles of the plots that show it follow. */
+/** A source was renamed, or a field its menus grade by changed: the menus that list it are rebuilt and the titles of the plots that show it follow. */
 export function sourceRenamed(id) {
     if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
     if (!_sources) return;
@@ -533,14 +514,6 @@ function loadForPlot(setting, { host, role, axis, expected, unit, signal }) {
         return Promise.reject(unavailable(notice.headline, notice,
             Coverage.missing(GAP.UNAVAILABLE, notice.headline, { source: 'gene score', unit, total: expected, kind: 'stopped' })));
     }
-    // a hover line does not hold the plot back: it is left out until the score is ready, and the plot draws again then
-    if (isHover(role)) {
-        try {
-            return loadScoreSeries(setting, { host, role, expected, unit });
-        } catch (error) {
-            return Promise.reject(error);
-        }
-    }
     return loadScoreSeriesWhenReady(setting, { host, role, expected, unit }, signal);
 }
 
@@ -555,51 +528,111 @@ async function loadLargeForPlot(setting, { host, role, expected, signal }) {
 }
 
 // ---------------------------------------------------------------------------
-// the Hover picker's entries of a score (panels/plot-utilities/hover-columns.js asks the provider)
+// the two selects of a consumer: method, then layer (decision 31)
 
-/** The picker's value for a score: `gene-score:<signature id>:<method>:<layer>` (layer empty for the signature's default). */
-const SCORE_PREFIX = `${SCORE_TYPE}:`;
+/** The methods whose server cost is a whole pass over the matrix besides the genes' reads (offered-removal-080.md, 7). */
+const WHOLE_MATRIX = new Set(['control_adjusted', 'fraction_of_total']);
+const WHOLE_MATRIX_NOTE = 'Reads the whole matrix once.';
 
-/** The picker value of one score. */
-export const scoreValue = (id, method, layer = '') => `${SCORE_PREFIX}${id}:${method}:${layer || ''}`;
+/** The layer a setting reads: its own, else (a link made before layers were stored) the source's input. */
+const heldLayer = (setting) => layerOf(setting) || sourceInput(setting && setting.key) || DEFAULT_INPUT;
+/** The method a setting reads: its column when that is a method, else the default (an empty column). */
+const heldMethod = (setting) => (METHODS.includes(subKeyOf(setting)) ? subKeyOf(setting) : DEFAULT_METHOD);
 
-/** `{key, column, layer}` of a picker value of a score (layer only when the value names one). */
-export function parseScoreValue(value) {
-    const rest = value.slice(SCORE_PREFIX.length);
-    const parts = rest.split(':');
-    if (parts.length < 3) return { key: parts[0], column: parts[1] || DEFAULT_METHOD };
-    const layer = parts.pop();
-    const column = parts.pop();
-    return { key: parts.join(':'), column, ...(layer ? { layer } : {}) };
-}
-
-/** The picker value of a stored hover entry that reads a score; one with no layer reads the source's own. */
-export function hoverScoreValue(h, inputOf = () => DEFAULT_INPUT) {
-    return scoreValue(h.key, h.column || DEFAULT_METHOD, h.layer || inputOf(h.key) || DEFAULT_INPUT);
+/** One select entry of a graded choice: disabled with its reason as title; a costly method says so. */
+function entryOf(c, costly = false) {
+    const title = [c.title, costly && !c.disabled ? WHOLE_MATRIX_NOTE : ''].filter(Boolean).join(' ');
+    return { value: c.value, text: c.label, disabled: !!c.disabled, title };
 }
 
 /**
- * The picker's entries for gene scores: each score a source offers (`source.options`: [{method, layer, label}]), then
- * any value in `kept` that it no longer offers (kept and marked, so the plot still has it). A source's first entry is
- * named by the source alone.
- * @param {Array<{id: string, title: string, kind?: string, options?: Object[]}>} sources
- * @param {Iterable<string>} kept - picker values chosen now
- * @returns {Array<{value: string, label: string}>}
+ * Both selects of source `id` for the pair a consumer holds: every method graded on its layer, every layer of the
+ * dataset graded for its method; an impossible pair it holds stays, "(not available)". A source that is gone lists
+ * every method ungraded and the held layer alone.
+ * @param {string} id
+ * @param {{method: string, layer: string}} pair
+ * @returns {{methods: Array<{value, text, disabled, title}>, layers: Array<{value, text, disabled, title}>}}
  */
-export function scoreHoverOptions(sources, kept) {
-    const out = [];
-    for (const source of sources) {
-        const mine = (source.options || []).map(o => ({ value: scoreValue(source.id, o.method, o.layer), label: o.label }));
-        for (const value of kept) {
-            const got = parseScoreValue(value);
-            if (got.key === source.id && !mine.some(m => m.value === value)) {
-                mine.push({ value, label: `${methodShort(got.column)}${got.layer ? ` · ${got.layer}` : ''} (no longer offered)` });
-            }
-        }
-        const name = entityLabel(source);
-        mine.forEach((o, i) => out.push({ value: o.value, label: i === 0 ? name : `${name} · ${o.label}` }));
+export function scorePairMenus(id, pair) {
+    const choices = scoreChoices(id, pair);
+    if (!choices) {
+        return { methods: METHODS.map(m => ({ value: m, text: methodShort(m), disabled: false, title: '' })),
+            layers: [{ value: pair.layer, text: pair.layer, disabled: false, title: '' }] };
     }
-    return out;
+    return { methods: choices.methods.map(c => entryOf(c, WHOLE_MATRIX.has(c.value))), layers: choices.layers.map(c => entryOf(c)) };
+}
+
+/**
+ * The pair after the user touched one select: the touched one wins, the other moves to its first usable value only
+ * when it became impossible, and `say` names that move once ("Layer changed to logged: ...").
+ * @param {string} id
+ * @param {'method'|'layer'} changed
+ * @param {string} value
+ * @param {{method: string, layer: string}} pair - what the consumer held
+ * @returns {{method: string, layer: string, say: string}}
+ */
+export function scorePairAfter(id, changed, value, pair) {
+    const choices = scoreChoices(id, pair);
+    const next = changed === 'method' ? { method: value, layer: pair.layer } : { method: pair.method, layer: value };
+    if (!choices) return { ...next, say: '' };
+    const p = choices.after(changed, value, pair);
+    return { method: p.method, layer: p.layer || next.layer, say: p.say || '' };
+}
+
+/**
+ * Where a new consumer of source `id` starts (decision 32): z-score mean · X, or the first usable layer for it when
+ * that pair cannot be computed. A source with a stored offered list (a link made before decision 31) starts where
+ * it started then: its first offered method on its first offered layer (legacyPair).
+ * @param {string} id
+ * @returns {{method: string, layer: string}}
+ */
+export function scoreStartPair(id) {
+    const choices = scoreChoices(id);
+    const want = choices ? choices.legacy : { method: DEFAULT_METHOD, layer: DEFAULT_INPUT };
+    if (!choices) return want;
+    const p = choices.after('method', want.method, want);
+    return { method: p.method, layer: p.layer || want.layer };
+}
+
+/** Whether a setting holds no score choice of its own yet: no method (a column left over from another source) and no layer. */
+const holdsNoPair = (setting) => !METHODS.includes(setting.column) && !setting.layer;
+
+/**
+ * The method select of a gene score (the registry's subKeyMenu) and the entry that is chosen, without changing
+ * anything. `adopt` is set when the consumer holds no pair yet, so it starts on scoreStartPair.
+ * @param {Object} setting
+ */
+function scoreSubKeyMenu(setting) {
+    if (!setting.key) return { options: METHODS.map(m => ({ value: m, text: methodShort(m), column: m })), chosen: null, adopt: null };
+    const start = holdsNoPair(setting) ? scoreStartPair(setting.key) : null;
+    const pair = start || { method: heldMethod(setting), layer: heldLayer(setting) };
+    const { methods } = scorePairMenus(setting.key, pair);
+    return {
+        options: methods.map(o => ({ ...o, column: o.value })),
+        chosen: pair.method,
+        adopt: start ? { column: start.method, layer: start.layer } : null
+    };
+}
+
+/** The layer select of a gene score (the registry's layerMenu): every layer, graded for the method the setting holds. */
+function scoreLayerMenu(setting) {
+    if (!setting.key) return null;
+    const pair = { method: heldMethod(setting), layer: heldLayer(setting) };
+    return { options: scorePairMenus(setting.key, pair).layers, chosen: pair.layer };
+}
+
+/** The setting's pair after the user touched one of its selects (the registry's pairAfter). */
+function scoreSettingAfter(setting, changed, value) {
+    const p = scorePairAfter(setting.key, changed, value, { method: heldMethod(setting), layer: heldLayer(setting) });
+    return { column: p.method, layer: p.layer, say: p.say };
+}
+
+/** "mean · counts" for a table column, "(not available)" when the pair cannot be computed. */
+function columnPairLabel(column) {
+    const pair = { method: heldMethod(column), layer: heldLayer(column) };
+    const menus = scoreChoices(column.key, pair);
+    const lapsed = menus && menus.layers.some(l => l.value === pair.layer && l.lapsed);
+    return `${methodShort(pair.method)} · ${pair.layer}${lapsed ? ' (not available)' : ''}`;
 }
 
 /**
@@ -621,34 +654,6 @@ function scoreKeyEntries(list, setting) {
 }
 
 /**
- * The third menu of a gene score and the entry that is chosen, without changing anything: ONE list of what the
- * signature's panel offers, method and layer together (scoreOptions), then the choice the consumer holds if it is
- * no longer offered (kept, labelled), then the way to offer more. The method is stored in `column`, the layer beside
- * it. `adopt` is set when the consumer holds none, so the first entry becomes its choice.
- * @param {Object} setting
- */
-function scoreSubKeyMenu(setting) {
-    const offered = scoreOptions(setting.key);
-    const options = offered.map(o => ({ value: o.value, text: o.label, column: o.method, layer: o.layer }));
-    const wanted = optionOf(setting);
-    let chosen = wanted ? wanted.value : null;
-    let adopt = null;
-    // a column left over from another source (an obsm dimension) is not a lapsed choice: only a method is
-    if (!wanted && setting.key && offered.length && (METHODS.includes(setting.column) || setting.layer)) {
-        // the id form of the offered entries: `method@layer`
-        const method = setting.column || DEFAULT_METHOD;
-        chosen = `${method}@${setting.layer || sourceInput(setting.key) || DEFAULT_INPUT}`;
-        options.push({ value: chosen, text: lapsedLabel(setting), column: method, layer: setting.layer || '' });
-    } else if (!wanted && offered.length) {
-        chosen = offered[0].value;
-        adopt = { column: offered[0].method, layer: offered[0].layer };
-    }
-    // not a choice: the way to the signature's own list of offers; the consumer keeps what it had
-    if (setting.key && offered.length) options.push({ value: OFFER_MORE, text: 'Offer other scores…', run: (s, nextTo) => offerOtherScores(s.key, nextTo) });
-    return { options, chosen, adopt };
-}
-
-/**
  * The table half of the provider (utils/table-source.js): a score as a column of a Cell Table. The column's handle is the
  * score's, so a table's score and a plot's share one computation.
  */
@@ -661,25 +666,22 @@ const scoreTable = {
     update: (column) => scores().sources.update(column.key),
     label: (column) => scoreLabel(column),
     fullLabel: (column) => scoreFullLabel(column),
-    canOffer: (column) => canOfferAgain(column),
-    offer: (column) => offerAgain(column),
     open: (column, hostId) => openSignature(column.key, hostId),
     chooser: {
         layerOf: (column) => column.layer || sourceInput(column.key) || DEFAULT_INPUT,
         entityLabel,
-        /** What the signature offers (method and layer together), then a ticked column it no longer offers. */
-        options: (sig, ticked) => {
-            const entries = scoreOptions(sig.id).map(o => ({ column: o.method, layer: o.layer, text: o.label }));
-            for (const t of ticked) {
-                if (t.key === sig.id && !entries.some(e => e.column === subKeyOf(t) && e.layer === (t.layer || sig.input))) {
-                    entries.push({ column: subKeyOf(t), layer: t.layer || sig.input, text: lapsedLabel(t) });
-                }
-            }
-            return entries;
+        /** The source's ticked columns only ("mean · counts"); the add row below them adds another. */
+        options: (sig, ticked) => ticked.filter(t => t.key === sig.id)
+            .map(t => ({ column: heldMethod(t), layer: heldLayer(t), text: columnPairLabel(t) })),
+        /** The add row, `[method] on [layer] [Add column]`: the two selects of a plot's axis. */
+        add: {
+            start: (sig) => scoreStartPair(sig.id),
+            menus: (sig, pair) => scorePairMenus(sig.id, pair),
+            after: (sig, changed, value, pair) => scorePairAfter(sig.id, changed, value, pair),
+            label: (pair) => `${methodShort(pair.method)} · ${pair.layer}`
         },
         note: (structure) => noteDatasetLayers(layerKeys(structure)),
-        empty: { text: 'No signatures or gene tables yet.', button: 'New signature…' },
-        more: { text: 'Offer other scores…', run: (sig, nextTo) => offerOtherScores(sig.id, nextTo) }
+        empty: { text: 'No signatures or gene tables yet.', button: 'New signature…' }
     }
 };
 
@@ -689,7 +691,7 @@ registerSource({
     valueType: 'numerical',
     entity: 'cells',
     consumers: ['cell-plot', 'cell-table'],
-    axes: ['x', 'y', 'z', 'color', 'hover', 'column'],
+    axes: ['x', 'y', 'z', 'color', 'column'],
     largeAxes: ['x', 'y', 'color'],
     defaultSub: DEFAULT_METHOD,
     layered: true,
@@ -697,22 +699,12 @@ registerSource({
     keyEntries: scoreKeyEntries,
     newEntity: { value: NEW_SIGNATURE, run: (nextTo) => (PanelManager.createPanelNextTo('gene-signature', nextTo) || null) },
     /** The aggregations the server computes, z-score mean first; a new method is a new entry in METHODS. */
-    subKeys: (id) => {
-        const panel = sourcePanel(id);
-        if (panel) return offeredSubs(panel);
-        // no id: every aggregation; an id nothing answers to (a deleted signature): the ones offered by default
-        return (id ? DEFAULT_OFFERED : METHODS).map(value => ({ value, label: SUB_LABELS[value] || value }));
-    },
+    subKeys: () => METHODS.map(value => ({ value, label: SUB_LABELS[value] || value })),
     subKeyMenu: scoreSubKeyMenu,
+    layerMenu: scoreLayerMenu,
+    pairAfter: scoreSettingAfter,
     load: loadForPlot,
     loadLarge: loadLargeForPlot,
-    hover: {
-        group: 'Gene scores',
-        options: (kept) => scoreHoverOptions(sourceList(), kept),
-        valueOf: (setting) => hoverScoreValue(setting, sourceInput),
-        parse: parseScoreValue,
-        label: scoreLabel
-    },
     table: scoreTable,
     titleOf: (setting) => `gene score ${scoreTitle(setting)}`,
     placeholder: drawScorePlaceholder,
@@ -729,18 +721,22 @@ registerSource({
  * that stored neither resolved to before decision 31 (read from the retired `offered`/`layers`, never written back).
  * @param {string} id - a signature (or gene table) panel id
  * @param {{method?: string, layer?: string}} [held] - the consumer's setting; `layer` '' or absent reads as the source's input
- * @param {{datasetLayers?: string[]}} [opts] - the dataset's layers, X first (default: those noted by noteDatasetLayers)
+ * @param {{datasetLayers?: string[], facts?: Function}} [opts] - the dataset's layers, X first (default: those noted by
+ *   noteDatasetLayers); `facts(layers)` -> {kinds, stats}: what the page knows each layer looks like (default: layerFacts)
  * @returns {{methods: Array<Object>, layers: Array<Object>, legacy: {method: string, layer: string}, after: Function}|null}
  *   null when the source is gone; `after(changed, value, pair)` is `pairAfter` with this source's context
  */
-export function scoreChoices(id, held = {}, { datasetLayers = _datasetLayers } = {}) {
+export function scoreChoices(id, held = {}, { datasetLayers = _datasetLayers, facts = layerFacts } = {}) {
     const panel = sourcePanel(id);
     if (!panel) return null;
     const recipe = optionFieldsOf(panel);
+    const layers = datasetLayers && datasetLayers.length ? datasetLayers : [recipe.input || DEFAULT_INPUT];
+    // what each layer looks like: the page's answers (a closed source grades too), then what its open panel sampled
+    const page = facts(layers);
     const grading = typeof panel.getGrading === 'function' ? panel.getGrading() : {};
-    const kinds = grading.kinds || {};
-    const stats = grading.stats || {};
-    const ctx = { recipe, datasetLayers: datasetLayers && datasetLayers.length ? datasetLayers : [recipe.input || DEFAULT_INPUT], kinds, stats };
+    const kinds = { ...page.kinds, ...(grading.kinds || {}) };
+    const stats = { ...page.stats, ...(grading.stats || {}) };
+    const ctx = { recipe, datasetLayers: layers, kinds, stats };
     const legacy = legacyPair(SIGNATURE_MODEL, recipe);
     const method = held.method || legacy.method;
     const layer = held.layer || legacy.layer;
@@ -752,100 +748,45 @@ export function scoreChoices(id, held = {}, { datasetLayers = _datasetLayers } =
     };
 }
 
+/** What the layers look like, for the menus: one sample per dataset and layer for the whole page, no alternative sought. */
+let _kindClient = null;
+/** `${dataset}\u0001${layer}` -> {kind, stats}, or null while asked (a failed answer stays null: the layer grades ok). */
+const _layerFacts = new Map();
+
+/**
+ * What the page knows each layer looks like ({kinds, stats} by layer), asking the server for the others once
+ * (offered-removal-080.md, section 7): until an answer comes a layer grades `ok`, and when it comes the menus are
+ * built again. Nothing is asked outside a page (Node tests pass their own `facts`).
+ * @param {string[]} layers
+ */
+function layerFacts(layers) {
+    const kinds = {};
+    const stats = {};
+    const page = typeof window !== 'undefined' && typeof document !== 'undefined';
+    const dataset = page ? (DataManager.getCurrentDataset() || '') : '';
+    for (const layer of layers) {
+        const key = `${dataset}\u0001${layer}`;
+        if (page && dataset && !_layerFacts.has(key)) {
+            _layerFacts.set(key, null);
+            if (!_kindClient) _kindClient = createKindClient({ url: Config.API.MATRIX_KIND });
+            Promise.resolve(_kindClient.kind(dataset, layer, { suggest: false })).then((reply) => {
+                if (!reply || !reply.kind) return;
+                _layerFacts.set(key, { kind: reply.kind, stats: reply.stats || null });
+                // the menus grade by it now
+                if (DataManager.getCurrentDataset() === dataset) document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
+            }, () => {});
+        }
+        const known = _layerFacts.get(key);
+        if (known) {
+            kinds[layer] = known.kind;
+            if (known.stats) stats[layer] = known.stats;
+        }
+    }
+    return { kinds, stats };
+}
+
 /** The dataset's layers (X first), noted from its structure when a menu is built. */
 let _datasetLayers = null;
 export function noteDatasetLayers(list) {
     _datasetLayers = Array.isArray(list) ? [...list] : null;
-}
-
-// SO-2/3/4 removes (the shims below stay until the callers move to scoreChoices)
-
-/**
- * What a signature offers its consumers, as one list of entries (method and layer together, in the
- * order of offeredOptions). `layer` is what a consumer stores: '' for the signature's default layer.
- * @param {string} id - a signature panel id
- * @returns {Array<{id: string, value: string, method: string, layer: string, label: string, short: string}>}
- */
-// SO-2/3/4 removes: replaced by scoreChoices(id)
-export function scoreOptions(id) {
-    const panel = sourcePanel(id);
-    if (!panel) return [];
-    const recipe = optionFieldsOf(panel);
-    // the panel's own graded list: a combination that cannot be computed (a share on a log layer) is left out
-    const list = typeof panel.getOfferedOptions === 'function' ? panel.getOfferedOptions() : offeredOptions(recipe, _datasetLayers);
-    return list.filter(o => !_datasetLayers || !_datasetLayers.length || _datasetLayers.includes(o.layer)).map(o => ({
-        id: o.id, value: o.id, method: o.method, layer: o.layer, label: o.label,
-        short: methodShort(o.method)
-    }));
-}
-
-/** The entry a consumer's setting stands for in a signature's options, or null when it is not offered. */
-// SO-2/3/4 removes: replaced by scoreChoices(id, setting)
-export function optionOf(setting) {
-    const sub = subKeyOf(setting);
-    // no layer: the setting follows the signature's default layer (a link made before the layer was stored)
-    const layer = layerOf(setting) || sourceInput(setting.key) || DEFAULT_INPUT;
-    return scoreOptions(setting.key).find(o => o.method === sub && o.layer === layer) || null;
-}
-
-/** The label of an option a consumer holds that the signature no longer offers. */
-// SO-2/3/4 removes: nothing is "no longer offered" any more
-export function lapsedLabel(setting) {
-    const panel = sourcePanel(setting && setting.key);
-    const several = panel ? new Set(offeredOptions(optionFieldsOf(panel), _datasetLayers).map(o => o.layer)).size > 1 : false;
-    const layer = layerOf(setting);
-    const base = methodShort(subKeyOf(setting));
-    return `${several || layer ? `${base} · ${layer || sourceInput(setting.key) || DEFAULT_INPUT}` : base} (no longer offered)`;
-}
-
-/**
- * "Offer other scores…": open (or reopen) the signature's panel beside `nextTo`, expand its offered
- * options and put the cursor there.
- * @param {string} id - the signature
- * @param {string|null} nextTo - the panel the request came from
- */
-export function offerOtherScores(id, nextTo = null) {
-    const panel = openSignature(id, nextTo);
-    if (panel && typeof panel.revealScoresOffered === 'function') {
-        // the panel may still be building its sections
-        setTimeout(() => panel.revealScoresOffered(), 0);
-    }
-    return panel;
-}
-
-/**
- * Where an option a consumer holds would be offered again: the source panel and how it takes the change, or null when
- * the source is gone or cannot take it (so the notice does not offer what cannot be done).
- * @param {{key: string, column?: string, layer?: string}} setting - the consumer's setting
- * @returns {null|{apply: () => void}}
- */
-function offerTarget(setting) {
-    const panel = sourcePanel(setting && setting.key);
-    if (!panel) return null;
-    const method = subKeyOf(setting);
-    const layer = layerOf(setting);
-    const recipe = optionFieldsOf(panel);
-    const offered = [...new Set([...(recipe.offered || []), method])];
-    const layers = layer && !(recipe.layers || []).includes(layer) ? [...(recipe.layers || [recipe.input]), layer] : recipe.layers;
-    const patch = { offered, ...(layers ? { layers } : {}) };
-    // a gene table stores the option fields under one key; a signature keeps them in its recipe
-    const take = typeof panel.setScoreOptions === 'function' ? panel.setScoreOptions : typeof panel.updateConfig === 'function' ? panel.updateConfig : null;
-    return take ? { apply: () => { take.call(panel, patch); scores().sources.recheck(); } } : null;
-}
-
-/** Whether a consumer's option could be offered again now (the notice's one-click action, for a plot and a table column alike). */
-export function canOfferAgain(setting) {
-    return !!offerTarget(setting);
-}
-
-/**
- * Offer again the option a consumer holds that its source stopped offering.
- * @param {{key: string, column?: string, layer?: string}} setting - the consumer's setting
- * @returns {boolean} whether the source took it
- */
-export function offerAgain(setting) {
-    const target = offerTarget(setting);
-    if (!target) return false;
-    target.apply();
-    return true;
 }

@@ -220,3 +220,96 @@ test('the CSV gets a Height column only when its source differs from Color', () 
     assert.deepEqual(rows.slice(1).map((r) => r[k]), ['5', '6']);
     assert.ok(!head(model({ rows: 1, groups: 2, view: undefined, height: own.height })).some((h) => /^Height/.test(h)), 'not in 2D');
 });
+
+// ------------------------------------------------------------------ the 3D labels (operator: never centred on their tick)
+
+const ROTATED = { eye: { x: 1.6, y: 1.6, z: 1.1 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 } };
+const labelsOf = (fig, axis) => fig.layout.scene.annotations.filter((a) => a.name === `${axis} label`);
+
+test('the label anchor: right of the scene a label starts at its tick, left of it a label ends there', () => {
+    // 3 columns (x: -0.5..2.5) by 2 rows (y: -0.5..1.5); per axis, its labels' edge across the box and their anchor
+    const spec = { x: { labels: ['a', 'b', 'c'], positions: [0, 1, 2], extent: 3 }, y: { labels: ['p', 'q'], positions: [0, 1], extent: 2 },
+        aspect: { x: 1, y: 0.67, z: 0.6 }, z: 0, font: {} };
+    const sides = (camera) => {
+        const list = D.sceneLabels(spec, camera);
+        const one = (name, key) => { const l = list.filter((a) => a.name === name); assert.equal(new Set(l.map((a) => `${a[key]}|${a.xanchor}`)).size, 1); return l[0]; };
+        const x = one('x label', 'y');
+        const y = one('y label', 'x');
+        return { x: [x.y, x.xanchor], y: [y.x, y.xanchor] };
+    };
+    // the default camera looks from (+x, -y): the x axis's near edge (y = -0.5) is on the left, the y axis's (x = 2.5) on the right
+    assert.deepEqual(sides(D.DEFAULT_CAMERA), { x: [-0.5, 'right'], y: [2.5, 'left'] });
+    // from (+x, +y) the near edges change sides, and so do the anchors
+    assert.deepEqual(sides(ROTATED), { x: [1.5, 'left'], y: [2.5, 'right'] });
+    // from (-x, +y), the default turned half round: the same sides as the default
+    assert.deepEqual(sides({ ...ROTATED, eye: { x: -1.6, y: 1.6, z: 1.1 } }), { x: [1.5, 'right'], y: [-0.5, 'left'] });
+});
+
+test('3D labels are scene annotations anchored by side, Plotly\'s own centred tick labels hidden', () => {
+    const fig = D.buildFigure(model({ rows: 3, groups: 4 }), LIGHT);
+    const { xaxis } = fig.layout.scene;
+    assert.deepEqual(xaxis.range, [-0.5, 2.5], 'the box is the cells, so the labels sit just outside it');
+    const genes = labelsOf(fig, 'x');
+    const groups = labelsOf(fig, 'y');
+    assert.deepEqual(genes.map((a) => a.text), ['Gene0', 'Gene1', 'Gene2']);
+    assert.deepEqual(groups.map((a) => a.text), ['group 0', 'group 1', 'group 2', 'group 3']);
+    assert.ok(genes.every((a) => a.xanchor === 'right' && a.yanchor === 'middle' && a.showarrow === false));
+    assert.ok(groups.every((a) => a.xanchor === 'left'));
+    assert.deepEqual(genes.map((a) => a.x), [0, 1, 2]);
+    // on the near edge (Plotly drops a scene annotation outside the box), a few px off it on the label's side
+    assert.ok(genes.every((a) => a.y === -0.5 && a.xshift < 0), 'the near edge');
+    assert.ok(groups.every((a) => a.x === 2.5 && a.xshift > 0));
+    // a stored camera from the other side: the anchors follow it
+    const turned = D.buildFigure(model({ rows: 3, groups: 4, camera: ROTATED }), LIGHT);
+    assert.ok(labelsOf(turned, 'x').every((a) => a.xanchor === 'left' && a.y === 3.5));
+    assert.ok(labelsOf(turned, 'y').every((a) => a.xanchor === 'right'));
+    // and the panel re-anchors a drawn figure for a camera turned by the user
+    assert.deepEqual(D.sceneLabels(fig.labels3d, ROTATED), turned.layout.scene.annotations);
+    // Plotly's own labels and titles are hidden; each title is drawn beyond its labels, away from the box on screen
+    assert.equal(xaxis.showticklabels, false);
+    assert.equal(xaxis.title.text, '');
+    const [gt] = fig.layout.scene.annotations.filter((a) => a.name === 'x title');
+    const [yt] = fig.layout.scene.annotations.filter((a) => a.name === 'y title');
+    assert.equal(gt.text, 'Genes');
+    assert.equal(yt.text, 'Groups');
+    // default camera: the genes' edge is lower left, the groups' lower right
+    assert.ok(gt.xshift < -30 && gt.yshift < 0, JSON.stringify(gt));
+    assert.ok(yt.xshift > 30 && yt.yshift < 0, JSON.stringify(yt));
+});
+
+test('3D labels: swapped axes keep each axis\'s own side; above 60 categories an axis has none', () => {
+    const swapped = D.buildFigure(model({ rows: 3, groups: 4, swap: true }), LIGHT);
+    assert.deepEqual(labelsOf(swapped, 'x').map((a) => a.text), ['group 0', 'group 1', 'group 2', 'group 3']);
+    assert.ok(labelsOf(swapped, 'x').every((a) => a.xanchor === 'right'));
+    assert.ok(labelsOf(swapped, 'y').every((a) => a.xanchor === 'left'));
+    const many = D.buildFigure(model({ rows: 61, groups: 2 }), LIGHT);
+    assert.equal(labelsOf(many, 'x').length, 0);
+    assert.equal(labelsOf(many, 'y').length, 2);
+});
+
+test('3D text: gl3d tick text is the name as it is; annotations, hover and 2D keep the markup escaping Plotly decodes', () => {
+    const NAME = 'Young | Rnase6 < 0.391 & x';
+    const QUOTES = 'a > "b" \'c\' ≥ d';
+    const m = model({ rows: 1, groups: 2 });
+    m.groups = [{ label: NAME, n: 10 }, { label: QUOTES, n: 20 }];
+    const fig = D.buildFigure(m, LIGHT);
+    // the hidden gl3d tick text (drawn literally by Plotly): the literal characters, never an entity
+    assert.deepEqual(fig.layout.scene.yaxis.ticktext, [NAME, QUOTES]);
+    // the annotations are SVG text, which Plotly reads as markup and decodes: '<' and '&' escaped there, nothing else
+    const labels = fig.layout.scene.annotations.filter((a) => a.name === 'y label').map((a) => a.text);
+    assert.deepEqual(labels, ['Young | Rnase6 &lt; 0.391 &amp; x', 'a > "b" \'c\' ≥ d']);
+    const hover = fig.data[0].hovertext.find((t) => t.includes('Rnase6'));
+    assert.match(hover, /^Gene0<br>Young \| Rnase6 &lt; 0\.391 &amp; x · Cells: 10<br>/);
+    // 2D as before: its tick text is markup too
+    const twoD = D.buildFigure({ ...m, view: undefined }, LIGHT);
+    assert.deepEqual(twoD.layout.yaxis.ticktext, ['Young | Rnase6 &lt; 0.391 &amp; x', 'a > "b" \'c\' ≥ d']);
+});
+
+test('the 3D colour bar is the Cell Plot\'s (plot-utilities/colour-bar.js): its title runs along the bar', () => {
+    const { colorbar } = D.buildFigure(model(), LIGHT).data[0];
+    assert.equal(colorbar.title.side, 'right');
+    assert.equal(colorbar.title.text, 'Mean · X');
+    assert.equal(colorbar.title.font.color, LIGHT.textColor);
+    assert.equal(colorbar.len, 0.7);
+    assert.equal(D.buildFigure(model({ legend: { colorBar: false } }), LIGHT).data[0].showscale, false);
+});

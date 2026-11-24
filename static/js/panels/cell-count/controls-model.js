@@ -9,7 +9,7 @@ import { VOCABULARY } from '../../utils/vocabulary.js';
 import { sourceName } from '../../utils/cell-grouping.js';
 import { DEFAULT_BINS as GROUPING_DEFAULT_BINS, normalizeBinning } from '../../utils/binning.js';
 import {
-    modeReads, keptForOtherModes, binsRange, shareBasesFor, levelLabelsOf, MEASURE_STATS, splitUsed
+    modeReads, keptForOtherModes, densityLayers, binsRange, shareBasesFor, levelLabelsOf, MEASURE_STATS, splitUsed
 } from '../../utils/count-plot-model.js';
 import { PANEL_SOURCES, TABLE_SOURCE } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
@@ -23,7 +23,8 @@ const P = VOCABULARY.phrase;
 /** What a stored config's mode shows (UX 4.2): its rows, the value it shows and the options that are its own. */
 const MODE_ROWS = Object.freeze({
     bar: { value: 'height', arrangement: ['stack', 'dodge', 'fill'], labels: true, sort: true, horizontal: true, log: true, binned: ['x', 'split'] },
-    histogram: { value: 'height', arrangement: ['stack', 'dodge'], labels: true, horizontal: true, log: true, binned: ['x', 'split'] },
+    // a number's bins at their values: the same arrangements as Bar where they apply, side by side disabled (bins cannot)
+    histogram: { value: 'height', arrangement: ['stack', 'dodge', 'overlay', 'fill'], labels: true, horizontal: true, log: true, binned: ['x', 'split'] },
     pie: { slices: true, labels: true, sort: true, ring: true, binned: ['x'] },
     hist2d: { value: 'color', labels: true, binned: ['x', 'y', 'split'] },
     heatmap: { value: 'color', labels: true, reverse: true, binned: ['x', 'y'] },
@@ -52,6 +53,83 @@ export function rowsOf(mode) {
 }
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// ------------------------------------------------------------------------------------- the views follow the X axis type
+
+/** Whether an input is a number the engine bins (an integer read by its values is categories). */
+function binnedNumber(p, isNumeric) {
+    return !!p && !!isNumeric && isNumeric(p.source) && !(isObject(p.binning) && p.binning.method === 'categories');
+}
+
+// The shared reason builder (options-model.js REASON, SO-2) phrases what a method cannot compute on a layer; a view that
+// needs a kind of axis is not one of its forms, so the Mode select's reason is its own (vocabulary.js viewRefused)
+const reasonText = (key) => C.viewRefused[key];
+
+/**
+ * Why a mode cannot draw the config's X (graded like every choice: the Mode select disables it with this as its
+ * title), or '' when it can. Histogram needs a number the engine bins; with no X yet nothing is graded.
+ * @param {Object} config
+ * @param {string} mode
+ * @param {(source: Object) => boolean} isNumeric
+ */
+export function modeRefusal(config, mode, isNumeric) {
+    if (mode === 'histogram' && config.x && !binnedNumber(config.x, isNumeric)) return reasonText('histogramNumeric');
+    return '';
+}
+
+/**
+ * The view after an edit, by the X axis type: a number chosen as X while the plot is a Bar makes it a Histogram (the
+ * default for a number; Bar stays one click away and is kept when chosen for a number); categories while it is a
+ * Histogram make it a Bar. Only a change of X switches; any other edit, and the other modes, are left as they are.
+ * @param {Object} before - the config before the edit
+ * @param {Object} next - the config the edit makes
+ * @param {(source: Object) => boolean} isNumeric
+ * @returns {{config: Object, note: string}} `note` says a switch once ('' when there is none)
+ */
+export function viewForX(before, next, isNumeric) {
+    const was = before && before.x;
+    const now = next.x;
+    const xChanged = JSON.stringify(was ? was.source : null) !== JSON.stringify(now ? now.source : null)
+        || binnedNumber(was, isNumeric) !== binnedNumber(now, isNumeric);
+    if (next.mode === 'histogram' && now && !binnedNumber(now, isNumeric)) {
+        return { config: { ...next, mode: 'bar' }, note: C.viewSwitched.toBar };
+    }
+    if (xChanged && next.mode === 'bar' && (!before || before.mode === 'bar') && binnedNumber(now, isNumeric) && !binnedNumber(was, isNumeric)) {
+        return { config: { ...next, mode: 'histogram' }, note: C.viewSwitched.toHistogram };
+    }
+    return { config: next, note: '' };
+}
+
+/**
+ * A stored Histogram whose X is not a number the engine bins (a link, a panel set): drawn as Bar instead, never a
+ * misleading histogram, with a note said once. Null when the config needs nothing.
+ * @param {Object} config
+ * @param {(source: Object) => boolean} isNumeric
+ * @returns {{config: Object, note: string}|null}
+ */
+export function histogramFallback(config, isNumeric) {
+    if (config.mode !== 'histogram' || !config.x || binnedNumber(config.x, isNumeric)) return null;
+    return { config: { ...config, mode: 'bar' }, note: C.viewSwitched.fallback };
+}
+
+/** Why an arrangement does not apply to the mode, or '' when it does. */
+function arrangementRefusal(config, id) {
+    if (config.mode === 'histogram' && id === 'dodge') return C.arrangementRefused.dodgeBins;
+    return '';
+}
+
+/**
+ * The arrangement radios of a Color by: each arrangement of the mode, one that does not apply disabled with the reason
+ * as its title (graded like every choice).
+ * @param {Object} config
+ * @returns {Array<{value: string, label: string, disabled: boolean, title: string}>}
+ */
+export function arrangementChoices(config) {
+    return rowsOf(config.mode).arrangement.map((id) => {
+        const title = arrangementRefusal(config, id);
+        return { value: id, label: C.arrangement[id], disabled: !!title, title };
+    });
+}
 
 /**
  * How an input's source is named in a line: the panel's title for a source another panel makes, else its type and its
@@ -371,6 +449,7 @@ export function parseAdjust(text) {
  * @param {Object} config - from normalizeCountPlot
  * @returns {{map: boolean, palette: boolean}}
  */
+// export-unused-ok: the colour tests state it
 export function colorUse(config) {
     const c = shownConfig(config);
     const kind = (c.value && c.value.kind) || 'count';
@@ -383,6 +462,20 @@ export function colorUse(config) {
     else if (c.mode === 'upset') map = kind === 'share' || (kind === 'measure' && !!c.measure);
     const top = c.mode === 'heatmap' && kind === 'top_level';
     return { map, palette: levels || top };
+}
+
+/**
+ * What the Display pop-over holds for a config: what `colorUse` says (a colour map, a level palette), and for a 2D density
+ * the range of its density, with the point size and opacity once Cell points is a layer (and, with a Color by, whether
+ * the points may take the density as their opacity).
+ * @returns {{map: boolean, palette: boolean, range: boolean, points: boolean, fade: boolean}}
+ */
+export function popoverUse(config) {
+    const use = colorUse(config);
+    const c = shownConfig(config);
+    const density = c.mode === 'density2d';
+    const layers = density ? densityLayers(c.layers, c.style, !!c.split) : null;
+    return { ...use, range: density, points: !!(layers && layers.points), fade: !!(layers && layers.points && c.split) };
 }
 
 /** A typed colour limit: a number, or empty for automatic; else the sentence that says so. */
@@ -412,8 +505,12 @@ export function drawOptions(config) {
         // a density's own (CNT-10): the bandwidth adjust, curves scaled by level size, a 2D density as an image
         adjust: rows.density && Number.isFinite(config.adjust) && config.adjust >= ADJUST.min && config.adjust <= ADJUST.max ? config.adjust : 1,
         scale: rows.density && config.scale === 'size' ? 'size' : 'level',
-        // a Color by is told apart by the density of each level's color, as an image, unless the contours are chosen
-        style: rows.density === 2 && (config.style === 'image' || (config.style === undefined && !!config.split)) ? 'image' : 'contours',
+        // a 2D density's layers (opacity image, isolines, filled isolines); an old link's style maps onto them
+        layers: rows.density === 2 ? densityLayers(config.layers, config.style, !!config.split) : null,
+        pointSize: Number.isFinite(config.pointSize) ? Math.min(12, Math.max(1, config.pointSize)) : 3,
+        // the points' opacity is 1 unless stored (a Color by does not lower it); the density as their opacity is an option
+        pointOpacity: Number.isFinite(config.pointOpacity) && config.pointOpacity >= 0.05 && config.pointOpacity <= 1 ? config.pointOpacity : 1,
+        pointFade: config.pointFade === true,
         // the colour scale of a number's color (WP-6a): the map (absent is Viridis), Reverse and the fixed range
         ...(config.color && config.color.map ? { colorscale: config.color.map } : {}),
         colour: colourOf(config.color)

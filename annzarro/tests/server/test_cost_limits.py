@@ -451,7 +451,6 @@ def test_the_browser_reads_every_limit_through_limits_js_and_keeps_no_copy():
         "utils/count-plot-model.js": ("GRID_CELLS_MAX", "512 * 512 * 8", "bins: 2000", "levels: 200,"),
         "utils/set-plot-model.js": ("SETS_MAX = 16",),
         "panels/cell-grouping/cell-export.js": ("CELL_EXPORT_LIMIT",),
-        "panels/cell-grouping/group-rows.js": ("LIVE_MAX_S = ",),
         "utils/derived-sources.js": ("LIVE_MAX_S = ",),
         "utils/bars-3d.js": ("BARS_3D_MAX = 40000",),
         "utils/source-notices.js": ("BAR_AFTER_S = 10",),

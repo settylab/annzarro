@@ -729,6 +729,37 @@ def test_colors_come_from_the_uns_palette_when_it_has_one_per_category(store, tm
     assert res.partitionings[2]["colors"] == {"c:false": "#000000", "c:true": "#ffffff"}
 
 
+def _store_with_colors(store, tmp_path, name, palette):
+    path = str(tmp_path / f"{name}.zarr")
+    shutil.copytree(store, path)
+    root = zarr_compat.open_group(path, mode="r+")
+    uns = root["uns"] if "uns" in root else root.create_group("uns")
+    zarr_compat.write_strings(uns, "cell_type_colors", palette)
+    zarr_compat.consolidate(path)
+    return path
+
+
+def test_a_uns_palette_longer_than_the_categories_is_used_by_category_index(store, tmp_path):
+    """Scanpy takes the stored colours when there are at least as many as categories (decision 33); the extra ones are unused."""
+    palette = ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666", "#777777", "#888888", "#999999"]
+    path = _store_with_colors(store, tmp_path, "longer", palette)
+    res = run(path, [{"source": {"type": "obs", "key": "cell_type"}}])
+    assert res.partitionings[0]["colors"] == {"c:" + n: c for (n, _), c in zip(gs.CELL_TYPES, palette)}
+
+
+def test_a_subset_of_cells_keeps_each_categorys_colour(store, tmp_path):
+    """The ids are the column's full category list, so the colour of a category does not depend on which cells are shown."""
+    palette = ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666"]
+    path = _store_with_colors(store, tmp_path, "subset", palette)
+    full = run(path, [{"source": {"type": "obs", "key": "cell_type"}}])
+    types = gs.make_data().obs["cell_type"].to_numpy()
+    rows = np.flatnonzero(types == gs.CELL_TYPES[-1][0])
+    part = run(path, [{"source": {"type": "obs", "key": "cell_type"}}], rows=rows).partitionings[0]
+    assert [g["key"] for g in run(path, [{"source": {"type": "obs", "key": "cell_type"}}], rows=rows).groups] == [["c:" + gs.CELL_TYPES[-1][0]]]
+    assert part["colors"] == full.partitionings[0]["colors"]
+    assert part["colors"]["c:" + gs.CELL_TYPES[-1][0]] == palette[len(gs.CELL_TYPES) - 1]
+
+
 @pytest.mark.parametrize("rng_", [[None, 6.0], [3.0, None]], ids=["low-automatic", "high-automatic"])
 def test_a_range_with_one_automatic_side_takes_it_from_the_values(store, data, rng_):
     res = run(store, [{"source": {"type": "obs", "key": "score"},

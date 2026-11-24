@@ -74,7 +74,7 @@ export function coverageKindOf(snap) {
 
 /** Notice states, most urgent first: a plot with two sources states the worst. A state not listed is the least urgent. */
 export const PRIORITY = ['nolayer', 'nodown', 'notcells', 'unset', 'deleted', 'off', 'cycle', 'failed', 'refused', 'ask', 'awaiting', 'cancelled', 'noscore',
-    'nogenes', 'nofactors', 'building', 'estimating', 'queued', 'computing', 'updating', 'held', 'notoffered'];
+    'nogenes', 'nofactors', 'building', 'estimating', 'queued', 'computing', 'updating', 'held'];
 
 const RANK = new Map(PRIORITY.map((state, i) => [state, i]));
 

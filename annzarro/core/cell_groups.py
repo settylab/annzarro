@@ -1105,16 +1105,19 @@ class _Levels:
                        "not_categorical", partitioning=self.index)
 
     def _uns_colors(self, ids: List[str]) -> None:
-        """``colors``, ``{id: css}``, from ``uns/<key>_colors`` when it has one entry per category (SHR-11), in the
-        column's category order (a boolean's is [False, True], as scanpy writes it)."""
+        """``colors``, ``{id: css}``, from ``uns/<key>_colors`` when it has at least one entry per category, as scanpy
+        takes them (SHR-11, decision 33): entry i is the colour of category i of the column's full category list (ids),
+        whichever cells are shown, and entries past the categories are unused. A boolean's list is [False, True], as
+        scanpy writes it."""
         name = f"{self.part.spec.source['key']}_colors"
         with cs.root(self.ctx.reader, self.ctx.dataset_path) as root:
             if "uns" not in root or name not in root["uns"] or cs.is_group(root["uns"][name]):
                 return
             values = np.asarray(root["uns"][name][...]).reshape(-1).tolist()
         values = [v.decode("utf-8") if isinstance(v, bytes) else v for v in values]
-        if len(values) == len(ids) and all(isinstance(v, str) and v for v in values):
-            self.info["colors"] = dict(zip(ids, values))
+        used = values[:len(ids)]
+        if ids and len(used) == len(ids) and all(isinstance(v, str) and v for v in used):
+            self.info["colors"] = dict(zip(ids, used))
 
 
 def _bool_codes(values: np.ndarray) -> np.ndarray:
