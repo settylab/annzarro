@@ -76,7 +76,8 @@ export function setGlMarkers(gd, styleOf) {
     const style = styles[i];
     if (!style) return {};                                   // {}: this group unchanged
     const change = {};
-    if (style.size !== undefined) rescalePads(gd._fullData[i], opts.size, style.size);
+    // how far (px) an axis end could move: plot-update.js refitAfterResize fits the axes again only for a pixel or more
+    if (style.size !== undefined) gd.__azPadMoved = Math.max(gd.__azPadMoved || 0, rescalePads(gd._fullData[i], opts.size, style.size));
     for (const key of ['size', 'opacity']) {
       if (style[key] === undefined) continue;
       change[key] = style[key];
@@ -105,18 +106,22 @@ const TOO_MANY_POINTS = 1e5;
  */
 function rescalePads(full, from, to) {
   const ext = full && full._extremes;
-  if (!ext || typeof to !== 'number' || !(to > 0)) return;
+  let moved = 0;
+  if (!ext || typeof to !== 'number' || !(to > 0)) return moved;
   const big = (full._length || 0) >= TOO_MANY_POINTS;
   const ratio = typeof from === 'number' && from > 0 ? to / from : null;
   for (const axis of Object.values(ext)) {
     for (const side of ['min', 'max']) {
       for (const e of (axis && axis[side]) || []) {
         if (!e || typeof e.pad !== 'number') continue;
+        const was = e.pad;
         if (big) e.pad = Math.max(to, 3);
         else if (ratio !== null) e.pad *= ratio;
+        moved = Math.max(moved, Math.abs(e.pad - was));
       }
     }
   }
+  return moved;
 }
 
 /**
