@@ -12,7 +12,7 @@
  * plot theme's colors. A level's label is never made here.
  */
 import {
-    axisOrder, binSpacingOf, heightValues, shareValues, measureValues, levelLabelsOf, levelsAt, tableRows, tableCsv
+    arrangementShown, axisOrder, binSpacingOf, heightValues, shareValues, measureValues, levelLabelsOf, levelsAt, tableRows, tableCsv
 } from '../../utils/count-plot-model.js';
 import { defaultLabelMaps } from '../../utils/cell-grouping.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
@@ -214,10 +214,14 @@ function categoryAxis(theme, labels, title, extra = {}) {
 
 // --- bar and histogram -----------------------------------------------------------------------------------------------
 
-function barMode(config, spec, histogram) {
+/** The translucency of overlaid bars: each level over the others, the ones behind still seen. */
+const OVERLAY_OPACITY = 0.6;
+
+function barMode(config, spec) {
     if (spec.kind === 'measure') return { barmode: 'group' };
-    const arrangement = config.arrangement || 'stack';
-    if (arrangement === 'dodge') return { barmode: histogram ? 'overlay' : 'group' };
+    const arrangement = arrangementShown(config);
+    if (arrangement === 'overlay') return { barmode: 'overlay' };
+    if (arrangement === 'dodge') return { barmode: 'group' };
     if (arrangement === 'fill') return { barmode: 'stack', barnorm: 'percent' };
     return { barmode: 'stack' };
 }
@@ -238,7 +242,7 @@ function barFigure(config, table, opts) {
     const order = bins || even ? inOrder : axisOrder(table, xa, spec.values, { sort, reverse });
     const xLabels = order.map((l) => labelAt(table.axes[xa].levels[l], xa));
     const splits = sa >= 0 ? Array.from({ length: table.dims[sa] }, (_, i) => i) : [null];
-    const mode = barMode(config, spec, histogram);
+    const mode = barMode(config, spec);
     const data = splits.map((s) => {
         const at = (l) => l * table.stride[xa] + (s === null ? 0 : s * table.stride[sa]);
         const along = order.map((l, k) => (bins ? bins.centers[l] : k));
@@ -253,7 +257,7 @@ function barFigure(config, table, opts) {
         if (even) trace.width = order.map(() => 1);
         if (s !== null) trace.name = esc(labelAt(table.axes[sa].levels[s], sa));
         if (labelsOn) Object.assign(trace, { text: order.map((l) => textOf(labelsOn, at(l))), textposition: 'auto' });
-        if (histogram && mode.barmode === 'overlay') trace.opacity = 0.6;
+        if (mode.barmode === 'overlay') trace.opacity = OVERLAY_OPACITY;
         return trace;
     });
     const xTitle = opts.inputNames.x;

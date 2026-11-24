@@ -306,10 +306,9 @@ def test_a_mode_change_keeps_every_input_and_lists_what_the_mode_does_not_read(p
     assert len(_plot(page)["data"]) == 2, "Color by is back"
     assert _config(page)["split"] == CONDITION and _config(page)["x"] == CELL_TYPE
 
-    # a histogram of a categorical X: the input stays, and the plot says why it cannot be drawn
-    page.select_option(f"{S} .ccnt-mode", "histogram")
-    until(page, "(s) => document.querySelector(s + ' .ccnt-panel').dataset.state === 'unusable'", S)
-    assert _state_text(page) == "Histogram needs a numeric X. cell_type is categorical."
+    # a histogram of a categorical X is not offered: the Mode select disables it with why (the views follow the X)
+    hist = page.evaluate("(s) => { const o = [...document.querySelectorAll(s + ' .ccnt-mode option')].find(o => o.value === 'histogram'); return [o.disabled, o.title]; }", S)
+    assert hist == [True, "Histogram needs a numeric axis."]
     assert _config(page)["x"] == CELL_TYPE
 
 

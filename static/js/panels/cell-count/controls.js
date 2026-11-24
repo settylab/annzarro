@@ -16,7 +16,7 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { sourceName } from '../../utils/cell-grouping.js';
-import { binsRange, binSpacingOf, splitUsed } from '../../utils/count-plot-model.js';
+import { arrangementShown, binsRange, binSpacingOf, splitUsed } from '../../utils/count-plot-model.js';
 import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
 import { createPopover } from '../../ui/popover.js';
@@ -27,7 +27,7 @@ import { listAvailableColormaps } from '../plot-utilities/colors.js';
 import { DEFAULT_COLORSCALE } from './colour.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import {
-    popoverUse, parseColourLimit, rowsOf, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
+    popoverUse, parseColourLimit, rowsOf, modeRefusal, arrangementChoices, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
     setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
 } from './controls-model.js';
 
@@ -38,7 +38,6 @@ const COLOR_MAPS = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.C
 
 // ================================================================================================ the view
 
-const ARRANGEMENT_WORD = (mode, id) => (mode === 'histogram' && id === 'dodge' ? C.arrangement.overlay : C.arrangement[id]);
 
 /** The input rows of the bar: `field` in the config, the select's axis name and the roles its type menu lists. */
 const INPUT_ROWS = Object.freeze([
@@ -91,6 +90,19 @@ export function createControls({ D, id, model, on }) {
         }
         modeSelect.value = m.config.mode;
     }
+
+    /** The Mode select graded by the X now: a view that cannot draw it (Histogram of categories) disabled with why. */
+    function gradeModes(m) {
+        for (const o of modeSelect.options) {
+            const drawable = m.drawable(o.value);
+            const why = drawable ? modeRefusal(m.config, o.value, m.isNumeric) : C.notDrawn(C.modes[o.value]);
+            o.disabled = !!why && o.value !== m.config.mode;
+            o.title = why;
+        }
+    }
+    // a switch of view by the X axis type, said once under the Mode select (viewForX, histogramFallback)
+    const viewNote = el('div', { class: 'ccnt-help ccnt-view-note', role: 'status', hidden: true });
+    modeRow.appendChild(viewNote);
 
     // ---------------------------------------------------------------- an input row (the cell plot's selects)
     function selectsRow(field, axis, label) {
@@ -424,16 +436,21 @@ export function createControls({ D, id, model, on }) {
         const ids = shownRows.arrangement;
         // means are never added or shared out of 100%, so a statistic is always drawn side by side: no choice to offer
         arrangement.hidden = !ids.length || !m.config.split || (m.config.value && m.config.value.kind === 'measure');
-        const now = m.config.arrangement || 'stack';
+        if (!ids.length) return;
+        // graded like every choice: one that does not apply is disabled with why; the one checked is the one drawn
+        const now = arrangementShown(m.config);
         const group = `ccnt-arr-${id}`;
-        for (const a of ids) {
-            const input = el('input', { type: 'radio', name: group, value: a, checked: a === now, class: 'ccnt-arrangement__input',
-                on: { change: () => {
+        for (const choice of arrangementChoices(m.config)) {
+            const a = choice.value;
+            const input = el('input', { type: 'radio', name: group, value: a, checked: a === now, disabled: choice.disabled,
+                class: 'ccnt-arrangement__input', on: { change: () => {
                     const next = { ...model().config };
                     if (a === 'stack') delete next.arrangement; else next.arrangement = a;
-                    commit(next, `${ARRANGEMENT_WORD(m.config.mode, a).toLowerCase()} bars`);
+                    commit(next, `${choice.label.toLowerCase()} bars`);
                 } } });
-            arrangement.appendChild(el('label', { class: 'ccnt-arrangement__opt' }, input, ` ${ARRANGEMENT_WORD(m.config.mode, a)}`));
+            const opt = el('label', { class: 'ccnt-arrangement__opt' }, input, ` ${choice.label}`);
+            if (choice.title) opt.title = choice.title;
+            arrangement.appendChild(opt);
         }
     }
 
@@ -780,6 +797,9 @@ export function createControls({ D, id, model, on }) {
         const shownRows = rowsOf(m.config.mode);
         if (!modesFilled) { fillModes(); modesFilled = true; }
         modeSelect.value = m.config.mode;
+        gradeModes(m);
+        viewNote.textContent = m.viewNote || '';
+        viewNote.hidden = !m.viewNote;
         xRow.labelEl.textContent = shownRows.slices ? C.rows.slices : C.rows.x;
         xRow.wrap.hidden = !shownRows.x;
         yRow.wrap.hidden = !shownRows.y;

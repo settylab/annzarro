@@ -46,7 +46,7 @@ import { createControls } from './cell-count/controls.js';
 import { colourValues } from './cell-count/colour.js';
 import {
     countReferences, shownConfig, drawOptions, inputNames, shownLabels, followFocus, measureSourceName, levelTotals,
-    isNumericSource, levelCountOf, valueDefaults, rowsOf
+    isNumericSource, levelCountOf, valueDefaults, rowsOf, viewForX, histogramFallback
 } from './cell-count/controls-model.js';
 import {
     AXIS_PREFIX, groupSources, panelOf, isOpen, cycleIds, loadStructure, structureRead, resetStructure, sourceTitleOf
@@ -236,6 +236,8 @@ actions.register({
         let _infos = {};
         let _labelMaps = {};
         let _notes = null;
+        /** A switch of view by the X axis type, said once (controls-model.js viewForX, histogramFallback); cleared by the next edit */
+        let _viewNote = '';
         /** The numbers the colour scale is drawn over (the Color pop-over's range sliders) */
         let _colourData = null;
         let _drawSerial = 0;
@@ -392,6 +394,7 @@ actions.register({
             try { await loadStructure(); } catch (error) { console.error(`Cell count plot ${_id}:`, error); }
             if (!_initialized) return;
             _structureVersion++;
+            fallBack();
             if (_controls) _controls.refill();
             follow();
             watch();
@@ -527,7 +530,10 @@ actions.register({
         /** One undoable step: the config becomes `next`. */
         function commit(next, label) {
             const before = _config;
-            const now = normalizeCountPlot(next).config;
+            // the view follows the X axis type: a number as X makes a Bar a Histogram, categories make a Histogram a Bar
+            const view = structureRead() ? viewForX(before, normalizeCountPlot(next).config, page.isNumeric) : { config: next, note: '' };
+            _viewNote = view.note;
+            const now = normalizeCountPlot(view.config).config;
             if (JSON.stringify(now) === JSON.stringify(before)) { paint(); return; }
             _undo.push(label, [JSON.stringify(before)]);
             _config = now;
@@ -544,6 +550,7 @@ actions.register({
             const step = _undo.pop();
             if (!step) return false;
             _config = normalizeCountPlot(JSON.parse(step.before[0])).config;
+            _viewNote = '';
             changed();
             return true;
         }
@@ -569,7 +576,20 @@ actions.register({
             if (!keys.length) return;
             // Back and Forward give a whole configuration (it has the version); a remap gives the fields it rewrote
             _config = configFrom('version' in config ? config : { ..._config, ...config });
+            fallBack();
             if (_initialized) changed();
+        }
+
+        /**
+         * A stored Histogram whose X is not a number the engine bins (a link, a panel set, Back and Forward) is drawn as Bar,
+         * never as a misleading histogram, and says so once. No step of its own: the link's figure was never a histogram.
+         */
+        function fallBack() {
+            if (!structureRead()) return;
+            const back = histogramFallback(_config, page.isNumeric);
+            if (!back) return;
+            _config = normalizeCountPlot(back.config).config;
+            _viewNote = back.note;
         }
 
         function onFocus() {
@@ -656,7 +676,7 @@ actions.register({
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
+                isNumeric: page.isNumeric, drawable, viewNote: _viewNote, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
             };
         }
@@ -667,7 +687,7 @@ actions.register({
             if (!_dom) return;
             draw();
             paintState();
-            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _points, _colourData];
+            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _points, _colourData, _viewNote];
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
                 _controls.paint();
