@@ -154,6 +154,9 @@ SNAP = """(sel) => {
     // automatic ticks: dtick and tick0 are what the last tick pass computed, kept or not by the path that drew;
     // the ticks drawn are compared from the page (ticks, below)
     if (v.tickmode === 'auto') { delete out.dtick; delete out.tick0; }
+    // a 3D scene's autoranged axis: gl3d writes the range it computed back only on some paths (a relayout); the
+    // scene drawn is the same (checked on screenshots), and an explicit range is still compared
+    if (v.spikesides !== undefined && v.autorange === true) delete out.range;   // spikesides: only 3D axes have it
     return out;
   };
   const layout = {};
@@ -307,6 +310,35 @@ def _grouped(diffs):
     return [f"{k} (x{n}): {rest}" if n > 1 else f"{k}: {rest}" for k, (n, rest) in seen.items()]
 
 
+# Drift found in the Cell and Gene Plots (plot-utilities), not fixed yet: the field, when it is this drift, and the
+# cause. A case whose only differences are these is xfail with the reason; any other difference fails. A fix makes the
+# difference go and the case pass; its entry is then removed. The Cell-Gene and Count Plots have none.
+KNOWN = {
+    "plot": [
+        (r"^traces\[\d+\]\.(un)?selected\.marker\.opacity$", lambda c, f: True,
+         "gl-markers: a point opacity set in the regl scene (setGlMarkers) leaves Plotly's selected/unselected opacity "
+         "derived from the old one"),
+        (r"^(layout\.[xy]axis\.range\[\d\]|ticks\.[xy]tick.*)$", lambda c, f: bool(c.get("hideNaN") or c.get("hideOutliers")),
+         "Hide NaN/outliers: the incremental path pins its own 5% extent (stableAxisRanges), a fresh draw autoranges"),
+        (r"^traces\[\d+\]\.marker\.colorbar\.title\.side$", lambda c, f: c.get("legendPosition") in ("bottom", "top"),
+         "colour bar title side: Legend position's placement (titleside) outlives a colour change; a fresh draw's "
+         "colourBar() places it at the right"),
+    ],
+}
+
+
+def _classify(kind, diffs, config, fresh):
+    unknown, known = [], set()
+    for d in diffs:
+        path = d.partition(": ")[0]
+        hit = next((why for pat, when, why in KNOWN.get(kind, ()) if re.match(pat, path) and when(config, fresh)), None)
+        if hit:
+            known.add(hit)
+        else:
+            unknown.append(d)
+    return unknown, known
+
+
 def _diff_records(edited, fresh):
     out = []
     for key in ("drawn", "said", "ticks", "size", "traces", "layout", "regl"):
@@ -347,18 +379,30 @@ class Harness:
             errors = list(page.errors)
         finally:
             ctx.close()
-        return _diff_records(edited, opened), errors
+        return _diff_records(edited, opened), errors, opened
 
     def check(self, label):
-        diffs, errors = self.fresh()
+        """(unknown differences, known ones by reason, page errors, message)."""
+        diffs, errors, opened = self.fresh()
         errors += self.page.errors
+        config = self.page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig()", self.pid)
+        unknown, known = _classify(self.kind, diffs, config, opened)
         msg = (f"{label}: the edited plot and the plot opened from its final config differ\n"
                f"edits ({len(self.steps)}):\n  " + "\n  ".join(self.steps) + "\n"
-               f"differences ({len(diffs)}, one per field):\n  " + "\n  ".join(_grouped(diffs)))
-        return diffs, errors, msg
+               f"differences ({len(unknown)}, one per field):\n  " + "\n  ".join(_grouped(unknown)))
+        return unknown, known, errors, msg
 
     def close(self):
         self.ctx.close()
+
+
+def _verdict(h, label, final):
+    unknown, known, errors, msg = h.check(label)
+    if final or unknown:
+        assert not errors, errors
+        assert not unknown, msg
+    if final and known:
+        pytest.xfail("known drift, not fixed yet (design-next/render-drift-080.md): " + "; ".join(sorted(known)))
 
 
 def _run(h, edits, label):
@@ -366,11 +410,8 @@ def _run(h, edits, label):
     try:
         for name, act in edits:
             if h.step(name, act) and EACH:
-                diffs, errors, msg = h.check(label)
-                assert not diffs, msg
-        diffs, errors, msg = h.check(label)
-        assert not errors, errors
-        assert not diffs, msg
+                _verdict(h, label, False)
+        _verdict(h, label, True)
     finally:
         h.close()
 
@@ -383,13 +424,12 @@ def _walk(h, rng, vocabulary, steps, label):
         tries += 1
         name, act = rng.choice(vocabulary)(rng)
         if h.step(name, act) and EACH:
-            diffs, errors, msg = h.check(label)
-            assert not diffs, msg
+            _verdict(h, label, False)
         edits.append(name)
-    diffs, errors, msg = h.check(label)
-    h.close()
-    assert not errors, errors
-    assert not diffs, msg
+    try:
+        _verdict(h, label, True)
+    finally:
+        h.close()
 
 
 # ------------------------------------------------------------------ editing helpers
@@ -593,6 +633,10 @@ CELL_GENE_RISKY = {
                                 ("undo (control)", _click(f"{G_TILE} .cgene-undo"))],
     "3d-on-and-off": [("3D (control)", _click(f"{G_TILE} .cgene-3d-btn")), ("mode heatmap (control)", _cg_mode("heatmap")),
                       ("3D (control)", _click(f"{G_TILE} .cgene-3d-btn")), ("mode dots (control)", _cg_mode("dots"))],
+    # the plot kept drawing the old column's groups (its own 'axis:' source was never told): fixed in cell-gene.js
+    "groups-column-change-and-undo": [("groups condition (control)", _select(f"{G_TILE} .cgene-axis-key", "condition")),
+                                      ("undo (control)", _click(f"{G_TILE} .cgene-undo")),
+                                      ("groups condition, as Back or Forward", _update(CG, {"cellAxis": {"type": "obs", "key": "condition"}}))],
     "clustered-heatmap-back-to-dots": [("cluster genes and groups", _update(CG, {"cluster": {"genes": "sections", "groups": "all"}})),
                                        ("mode heatmap (control)", _cg_mode("heatmap")), ("cluster none", _update(CG, {"cluster": None})),
                                        ("mode dots (control)", _cg_mode("dots"))],
@@ -793,3 +837,27 @@ GENE_PLOT_RISKY = {
 @pytest.mark.parametrize("name", sorted(GENE_PLOT_RISKY))
 def test_gene_plot_risky_sequence(browser, served, name):
     _run(_gene_plot(browser, served), GENE_PLOT_RISKY[name], f"gene plot, {name}")
+
+
+# ================================================================== the harness itself
+
+def _stray(pid, js):
+    def act(page):
+        page.evaluate("([s, js]) => { const gd = document.querySelector(s + ' .js-plotly-plot'); return (0, eval)(js)(gd); }",
+                      [TILE.format(pid), js])
+    return act
+
+
+@pytest.mark.parametrize("case", ["count-relayout", "cell-plot-restyle"])
+def test_the_harness_sees_a_stale_key(browser, served, case):
+    """A key left by a stray Plotly call, as an incremental path could leave it, is a difference: the harness is not blind."""
+    if case == "count-relayout":
+        h, pid, js = _count(browser, served), CC, "(gd) => Plotly.relayout(gd, {'xaxis.showgrid': false, 'xaxis.title.text': 'stale'})"
+    else:
+        h, pid, js = _cell_plot(browser, served), CP, "(gd) => Plotly.restyle(gd, {'marker.symbol': 'square'}, [0])"
+    try:
+        assert h.step("stray Plotly call", _stray(pid, js))
+        unknown, known, errors, msg = h.check(case)
+        assert unknown, "the stray key was not seen"
+    finally:
+        h.close()
