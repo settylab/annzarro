@@ -345,6 +345,8 @@ def test_the_section_list_edits_are_undoable_steps(page, served):
     page.locator("[data-popover='section-menu'] .cgene-section__menu-item[data-op='down']").click()
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[1].title === 'B cells'", P)
     assert "moved to position 2 of 2" in page.locator(f"{TP} .cgene-message").inner_text()
+    # the menu closes after its item ran and gives focus back to ⋯ (ui/popover.js): only then focus the section
+    page.wait_for_selector("[data-popover='section-menu']", state="detached", timeout=5000)
     page.locator(f"{TP} .cgene-section").nth(1).focus()
     page.keyboard.press("Alt+ArrowUp")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].title === 'B cells'", P)
