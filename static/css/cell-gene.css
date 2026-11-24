@@ -24,14 +24,14 @@
     overflow: auto;
 }
 .cgene-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.cgene-group--what { flex: 1 1 360px; }
-.cgene-group--values { flex: 0 1 auto; }
+.cgene-group--head { flex: 1 1 100%; }
 .cgene-row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
 .cgene-field { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
 .cgene-field[hidden] { display: none; }
 .cgene-field__label { color: var(--az-muted); font-size: 0.75rem; white-space: nowrap; }
 .cgene-field .form-select { width: auto; max-width: 16rem; }
 .cgene-axis { display: inline-flex; gap: 4px; }
+.cgene-field .form-select.cgene-scale { width: 7.5rem; }
 .cgene-section__rows { display: inline-flex; gap: 8px; align-items: center; }
 .cgene-radio { display: inline-flex; align-items: center; gap: 2px; margin: 0; white-space: nowrap; }
 .cgene-swap.active { background-color: var(--az-accent-bg); }
@@ -40,8 +40,7 @@
 .cgene-undo-wrap { align-self: flex-start; }
 
 /* the genes: Add genes and the section list (UX 3.2) */
-.cgene-genes { display: flex; flex-direction: column; gap: 4px; }
-.cgene-genes__head { display: flex; align-items: center; gap: 8px; }
+.cgene-genes { display: flex; flex-direction: column; gap: 4px; flex: 1 1 100%; min-width: 0; }
 .cgene-add-wrap { position: relative; }
 .cgene-add-menu, .cgene-group-menu {
     position: absolute;
@@ -158,10 +157,6 @@
 
 /* narrow: the groups stack */
 
-/* WP-4: each measure in one row, `Color [Mean ▾] of [logged ▾] above [0]` */
+/* each measure on one line, `Color [logged ▾] [x̄]` (the threshold is in the button's pop-over) */
 .cgene-measure__parts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.cgene-measure__word { color: var(--az-muted); font-size: 0.75rem; }
-.cgene-measure__word[hidden] { display: none; }
-.cgene-measure .form-control { width: 5rem; }
-/* decision 35: on a grouping axis the box overrides the grouping's Expressed above; empty, it shows "auto (grouping: 0)" */
-.cgene-measure .form-control.cgene-measure__above--grouping { width: 9.5rem; }
+.cgene-measure__parts > .cgene-agg { align-self: stretch; min-width: 2rem; padding: 0 0.5rem; font-size: 0.8125rem; line-height: 1; color: var(--az-text); border-color: var(--az-control-border); opacity: 1; }

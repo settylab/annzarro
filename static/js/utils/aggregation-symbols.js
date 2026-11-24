@@ -22,6 +22,12 @@ export const STAT_SYMBOLS = Object.freeze({
     zscore_mean: sym('z', true), mean: sym('x', true), pct_expressing: sym('%'), mean_expressing: sym('x⁺', true), sum: sym('Σ'), sd: sym('σ')
 });
 
+/**
+ * What the Cell-Gene Plot's Color, Size and Height choose from: the group statistics, Cell count (`n`) and, for Height,
+ * "Same as Color" (`=`).
+ */
+export const MEASURE_SYMBOLS = Object.freeze({ ...STAT_SYMBOLS, count: sym('n'), same: sym('=') });
+
 /** The element of a symbol: a span in the symbol column of the button and of the menu. */
 export function symbolSpan(symbol, className = 'axis-agg-sym') {
     const span = document.createElement('span');

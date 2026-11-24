@@ -29,6 +29,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401 (the fixtures)
     served, page, _open, _plot, _sig, _state, _drawn, _features, _settle, P, TP, S1, GA, GENES)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
@@ -238,7 +239,7 @@ def test_no_size_draws_one_size_says_why_and_lists_the_layers_that_work_first(pa
     layers = page.eval_on_selector_all(f"{TP} .cgene-size-layer option",
                                        "os => os.filter(o => !o.disabled && !o.classList.contains('cgene-lapsed')).map(o => o.value)")
     assert layers == ["counts", "logged"], layers  # every layer, in the dataset's order (decision 31)
-    assert page.input_value(f"{TP} .cgene-size") == "pct_expressing"
+    assert CC.chosen_stat(page, TP, "size") == "pct_expressing"
     assert page.locator(f"{TP} .cgene-size-layer option[value='X']").inner_text() == "X (not available)"
     # no size is asked for: only Color's genes
     assert {f["layer"] for f in _features(page.calls)} == {"X"}

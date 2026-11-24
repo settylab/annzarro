@@ -34,6 +34,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser import test_focus_outside_subset as _focus  # noqa: E402
 from annzarro.tests.browser import waits  # noqa: E402
 from annzarro.tests.browser.test_names_dataset_scope import _serve  # noqa: E402
@@ -194,7 +195,7 @@ def test_job1_marker_genes_as_a_dot_plot(page, served):
     until(page, "(s) => document.querySelector(s + ' .cgene-plot').data[0].type === 'heatmap'", TP)
     assert len(page.calls) == n
     # so is a change of statistic on the same layer, or of the scale
-    page.select_option(f"{TP} .cgene-color", "sum")
+    CC.pick_stat(page, TP, "color", "sum")
     assert page.input_value(f"{TP} .cgene-color-layer") == "logged", "the layer stays: it can give the sum (WP-4)"
     page.select_option(f"{TP} .cgene-scale", "var")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().scale === 'var'", P)

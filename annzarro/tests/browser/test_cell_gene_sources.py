@@ -20,6 +20,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401
     GA, GENES, P, S1, TP, _config, _drawn, _features, _open, _plot, _sig, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
@@ -44,8 +45,8 @@ def test_size_on_counts_on_an_obs_axis_is_one_post_with_each_gene_on_both_layers
     page.select_option(f"{TP} .cgene-size-layer", "counts")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.layer === 'counts'", P)
     # the threshold sits beside Size
-    assert page.locator(f"{TP} .cgene-size-above").is_visible()
-    assert page.locator(f"{TP} .cgene-color-above").is_hidden(), "a mean uses no threshold"
+    assert CC.above(page, TP, "size") is not None
+    assert CC.above(page, TP, "color") is None, "a mean uses no threshold"
     page.click(f"{TP} .cgene-add")
     page.locator(f"{TP} .cgene-add-menu [role='menuitem']", has_text="Markers").click()
     st = _drawn(page)
@@ -66,9 +67,9 @@ def test_a_new_plot_reads_color_on_the_log_normalised_layer_and_size_on_counts(p
     cfg = _config(page)
     assert cfg["color"] == {"stat": "mean", "layer": "logged"}
     assert cfg["size"] == {"stat": "pct_expressing", "layer": "counts"}, "no threshold stored: 0 on an obs axis, a grouping's on a grouping axis"
-    assert page.input_value(f"{TP} .cgene-color") == "mean" and page.input_value(f"{TP} .cgene-color-layer") == "logged"
-    assert page.input_value(f"{TP} .cgene-size") == "pct_expressing" and page.input_value(f"{TP} .cgene-size-layer") == "counts"
-    assert page.input_value(f"{TP} .cgene-size-above") == "0"
+    assert CC.chosen_stat(page, TP, "color") == "mean" and page.input_value(f"{TP} .cgene-color-layer") == "logged"
+    assert CC.chosen_stat(page, TP, "size") == "pct_expressing" and page.input_value(f"{TP} .cgene-size-layer") == "counts"
+    assert CC.above(page, TP, "size")["value"] == "0"
     assert page.locator(f"{TP} .cgene-undo").is_disabled(), "a default is not an edit"
 
 
