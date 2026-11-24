@@ -152,7 +152,9 @@ const KIND_LABEL = Object.freeze({
     // a derived source (a gene score, a grouping) whose value is not there: still on its way, or stopped (refused,
     // failed, cancelled, deleted, asks first); its notice says which. One the dataset truly lacks keeps UNAVAILABLE's.
     pending: 'not ready yet',
-    stopped: 'not available'
+    stopped: 'not available',
+    // a gene signature's banner: the dataset's genes that are not ticked ("5 of 3,000 genes selected")
+    unselected: 'not selected'
 });
 
 /**
@@ -1046,7 +1048,7 @@ export function exactCount(n) {
 
 /** Short chip text per kind of hidden point (or a function of the gap); see `breakdown`. */
 const KIND_CHIP = Object.freeze({
-    coords: 'no coordinates', table: 'table filter', nan: 'NaN hidden', outliers: 'outliers hidden',
+    coords: 'no coordinates', table: 'table filter', nan: 'NaN hidden', outliers: 'outliers hidden', unselected: 'not selected',
     unmapped: (g) => `not found in ${g.source || 'the service'}`
 });
 
@@ -1065,13 +1067,15 @@ const KIND_ORDER = Object.freeze({ outside: 0, coords: 1, '': 2, table: 3, nan: 
  * carry no count.
  *
  * @param {Coverage} coverage
+ * @param {{verb?: string}} [opts] - the word after the count: 'shown' (a plot, a table), or 'selected' (a gene
+ *   signature's banner, "5 of 3,000 genes selected")
  * @returns {{shown: ?number, total: ?number, hidden: ?number, unit: string,
  *   severity: string, headline: string, headlineExact: string,
  *   rows: Array<{kind: string, reason: string, chip: string, label: string,
  *   count: number}>, notes: Array<{reason: string, label: string}>,
  *   unattributed: number}}
  */
-export function breakdown(coverage) {
+export function breakdown(coverage, { verb = 'shown' } = {}) {
     const cov = coverage instanceof Coverage ? coverage : Coverage.unreported();
     const { shown, total, unit } = cov;
     const counted = typeof shown === 'number' && typeof total === 'number';
@@ -1098,7 +1102,7 @@ export function breakdown(coverage) {
     const unattributed = counted ? Math.max(0, hidden - sum) : 0;
     if (unattributed > 0) {
         rows.push({ kind: 'unattributed', reason: GAP.UNREPORTED, chip: 'no reason given',
-            label: GAP_LABEL[GAP.UNREPORTED] + ' -- nothing says why these are not shown', count: unattributed });
+            label: `${GAP_LABEL[GAP.UNREPORTED]} -- nothing says why these are not ${verb}`, count: unattributed });
     }
     let headline;
     let headlineExact;
@@ -1107,13 +1111,15 @@ export function breakdown(coverage) {
     } else if (hidden === 0) {
         headline = countNoun(total, unit, compactCount);
         headlineExact = countNoun(total, unit, exactCount);
+        // a count of something other than what is drawn says so: "All 3,000 genes selected"
+        if (verb !== 'shown') { headline = `All ${headline} ${verb}`; headlineExact = `All ${headlineExact} ${verb}`; }
     } else {
         let a = compactCount(shown);
         const b = compactCount(total);
         // "95.6M of 95.6M" would say nothing is missing
         if (a === b) a = exactCount(shown);
-        headline = `${a} of ${b} ${unit} shown`;
-        headlineExact = `${exactCount(shown)} of ${exactCount(total)} ${unit} shown`;
+        headline = `${a} of ${b} ${unit} ${verb}`;
+        headlineExact = `${exactCount(shown)} of ${exactCount(total)} ${unit} ${verb}`;
     }
     return { shown, total, hidden, unit, severity: cov.isComplete ? 'ok' : cov.severity,
         headline, headlineExact, rows, notes, unattributed };
