@@ -51,9 +51,9 @@ test('a Venn of three sets draws three circles, lettered, with the count and sha
     assert.ok(labels.text.every(t => /\d/.test(t)));
     assert.ok(labels.text[0].includes('100'), 'count of region A only');
     assert.ok(labels.text[0].includes('%'), 'and its share');
-    const letters = fig.layout.annotations.map(a => a.text);
-    for (const l of ['A', 'B', 'C']) assert.ok(letters.includes(l), `letter ${l}`);
-    assert.ok(!letters.some(t => t.includes('Table 1')), 'Venn is lettered, names stay in the set list');
+    const labels2 = fig.layout.annotations.map(a => a.text);
+    for (const l of ['A', 'B', 'C']) assert.ok(labels2.some(t => t.startsWith(`${l} · `)), `letter ${l} and its set's name`);
+    assert.ok(labels2.some(t => t.includes('in Table 1')), 'each circle names its set');
 });
 
 test('every Venn label lies inside exactly the circles its key says (not area-proportional, but never wrong)', () => {

@@ -364,6 +364,7 @@ const countPlot = Object.freeze({
     arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', fill: '100%', overlay: 'Overlaid' }),
     /** The entries of Height and Color (UX 4.5), and the help line of each. */
     value: Object.freeze({
+        none: 'None',
         count: 'Count',
         share: Object.freeze({
             all: `Share of all ${word.cellsShown}`, x: 'Share within each X', split: 'Share within each color',
@@ -374,6 +375,7 @@ const countPlot = Object.freeze({
         groups: Object.freeze({ share: 'Share', stat: capital(word.statistic) })
     }),
     valueHelp: Object.freeze({
+        none: 'One color for every bar',
         count: 'Cells in the bar.',
         countColor: 'Cells in the rectangle.',
         share: 'As percent.',
