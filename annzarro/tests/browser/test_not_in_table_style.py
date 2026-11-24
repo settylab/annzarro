@@ -91,6 +91,11 @@ def test_switching_the_table_on_equals_a_link_that_names_it(page, server):
     page.fill(SEARCH, "cell_01")
     page.wait_for_function("(id) => document.querySelector(`.tile[data-tile-id=\"${id}\"] .js-plotly-plot`)"
                            ".data.some(t => t.name === 'Not in table' && t.x && t.x.length)", arg=A, timeout=30000)
+    # settled, as the linked plot is (_settled): the switch changes what the strip above the plot says, the plot area
+    # grows, and the automatic style follows the new area once the resize has settled (plot-make.js __azFollowView).
+    # Compared before that, the grey points still had the opacity for the old area (0.99 against 1)
+    page.wait_for_function("""(id) => { const gd = document.querySelector(`.tile[data-tile-id="${id}"] .js-plotly-plot`);
+        const f = gd.__azFollowView; return !!f && !f.pending() && !gd.__azRestyling; }""", arg=A, timeout=30000)
     switched = _grey_is_curve(page, A)
     assert switched == linked
 

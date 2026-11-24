@@ -28,12 +28,13 @@ The header and the dataset bar under it. Numbers match the list below.
 2. **Refresh dataset**, the icon beside the button, reopens the current dataset. The server first
    re-checks the store against the disk and, if any file changed (an in-place write of values
    included), serves the change from then on, to every user; the panels then read the dataset
-   again, past this browser's copies. On your own machine, and for admins of a hosted server, it
-   also clears the server's cache for that dataset. Use it after the store on disk changed.
+   again, past this browser's copies, each plot keeping its zoom and 3D camera. On your own machine,
+   and for admins of a hosted server, it also clears the server's cache for that dataset. Use it
+   after the store on disk changed.
    A store with too many files to check within the server's 3 s budget cannot be fully checked: the
    app then says so ("Refresh may not show every change"), because a write that only overwrote
    data chunks may not show for a user other than an admin. An admin's Refresh dataset (or a server
-   restart) picks it up, and says so when it did. A panel's **Refresh** gives the same notice. (In
+   restart) picks it up, and says so when it did. (In
    the browser, **Ctrl+R** reloads the page as usual; the desktop app binds it to Refresh dataset.)
 3. **Previous gene / Next gene** step through the genes you focused in this session.
 4. **Focused Gene** is the gene every gene-dependent panel follows ({doc}`focus-and-lock`).

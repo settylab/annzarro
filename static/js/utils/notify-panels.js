@@ -22,7 +22,12 @@ export function notifyEach(panels, updateType, updateData, report = defaultRepor
         // a panel whose data does not depend on which cells are shown is not
         // told that other cells are (utils/subset-reads.js)
         if (updateType === 'subsetChanged' && typeof panel.readsCellSubset === 'function'
-            && !panel.readsCellSubset()) continue;
+            && !panel.readsCellSubset()) {
+            // what it holds is still current: said so, or its later edits took its data for another dataset's
+            // and were dropped (a Gene Plot's point size after a subset change; render drift, decision 39)
+            if (typeof panel.subsetUnread === 'function') panel.subsetUnread();
+            continue;
+        }
         const id = typeof panel.getId === 'function' ? panel.getId() : undefined;
         let result;
         try {

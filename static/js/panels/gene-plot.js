@@ -541,8 +541,11 @@ const GenePlotPanel = (function() {
                     // Another dataset's coordinates: the zoom and camera chosen
                     // on the previous one do not apply (the plot is drawn into
                     // the same graph, under the new dataset's uirevision)
-                    _settings.viewport2D = null;
-                    _settings.viewport3D = null;
+                    // A Refresh of the same dataset (the header's) re-reads it: the same coordinates, so the view stays
+                    if (!(updateData && updateData.refresh)) {
+                        _settings.viewport2D = null;
+                        _settings.viewport3D = null;
+                    }
                     await refreshPlot(signal);
                     
                     // If we get here, the operation completed successfully
@@ -645,6 +648,8 @@ const GenePlotPanel = (function() {
             setConfig,
             updateConfig,
             onDataUpdate,
+            // a subset change it does not read: the series it holds stay current (plot-update.js isPlotDataCurrent)
+            subsetUnread: () => { if (_data && _data.generation !== null && _data.generation !== undefined) _data.generation = DataManager.getDatasetGeneration(); },
             // whether other cells change what it draws (utils/subset-reads.js)
             readsCellSubset: () => readsCellSubset('genes', [_settings.x, _settings.y, _settings.z, _settings.color, ...(_settings.hoverInfo || [])], _settings.tableFilter)
         };

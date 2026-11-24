@@ -342,8 +342,11 @@ const DataManager = (function() {
         }
         clearDatasetCache(datasetPath);
         _cellRows = { datasetPath: null, rows: new Map(), hints: new Map() };
-        // Optionally re-fetch structure/cells/genes
-        return setCurrentDataset(datasetPath);
+        // The caches only: the header's Refresh then opens the dataset once (main.js _loadDataset), which reads the
+        // structure and the names and tells the panels when they are there. Reading them here as well ran a second
+        // load beside that one, and a Gene Plot drawn between the two found no gene names ("this dataset reported no
+        // gene names") until the next Refresh.
+        return undefined;
     }
 
     /**

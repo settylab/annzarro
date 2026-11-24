@@ -283,8 +283,9 @@ def test_automatic_point_style(server):
             assert "active" not in page.get_attribute(f"#point-size-auto-{PID}", "class")
             assert "active" in page.get_attribute(f"#point-opacity-auto-{PID}", "class")
 
-            # a refresh redraws (and recomputes automatic values): the user's size stays
-            page.click(f"#refresh-plot-{PID}")
+            # a Refresh redraws (and recomputes automatic values): the user's size stays (the header's; the plot's own
+            # Refresh is gone, decision 39)
+            page.click("#refresh-dataset")
             page.wait_for_timeout(1500)
             assert _marker(page)["size"] == 2.35
 
