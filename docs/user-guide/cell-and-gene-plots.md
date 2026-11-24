@@ -116,17 +116,17 @@ CSR) can be an axis or a colour too; its columns are offered by position (0, 1, 
 
 ### Colour or place a gene plot by a group of cells
 
-Choose **layer** as the type of the colour, x, y or z axis (each has its own), then the layer, and pick a group in the item
-list that follows. The list has the focused cell first and then **Cell groupings**: every group of every grouping, as
-"Grouping 1 › B cell", open or closed. Each gene's value is then one statistic of that gene over the cells of that group of a
-Cell Grouping ({doc}`cell-grouping`). The list is the dropdown of every group; a grouping with more than 50 groups also has a
-filter field beside it that narrows the dropdown by the name shown (a label you gave the group) or the group's generated
-name, and shows only the headings with a hit. After the list a button holds the **aggregation**: its symbol (x̄ mean, % expressing,
-Σ sum, σ SD), opening the statistics, each as a symbol and a name, with one the layer cannot give disabled and its reason as
-the hint ("% expressing cannot be computed on 'X': it has negative values"). The row is one line: source, layer, item,
-aggregation. Nothing is asked of the server until a group is chosen; then one request returns the five moments of every
-gene over the group, and the plot is coloured from them. A group chosen first starts on mean of `X`, and choosing another
-layer after it asks again; choose the layer first, then the group, for one request. Switching  to another statistic of the same layer, or back, asks for nothing. Another group or layer asks once, and
+Choose **layer** as the type of the colour, x, y or z axis (each has its own), then the layer, and pick a grouping in the item
+list that follows. The list has the focused cell first and then **Cell groupings**, one entry per grouping by its name, open or
+closed. A select of that grouping's groups follows it, by their names (a label you gave a group shows), in the grouping's order, all
+of them; the first group is chosen. Changing the grouping keeps the group if the new one has a group of the same name, else takes
+its first. Each gene's value is then one statistic of that gene over the cells of that group of a Cell Grouping
+({doc}`cell-grouping`). After the selects a button holds the **aggregation**: its symbol (x̄ mean, % expressing, Σ sum,
+σ SD), opening the statistics, each as a symbol and a name, with one the layer cannot give disabled and its reason as the hint
+("% expressing cannot be computed on 'X': it has negative values"). The row is one line: source, layer, grouping, group,
+aggregation; the grouping and the group share the width the item has on every other row. Nothing is asked of the server until a
+group is chosen; then one request returns the five moments of every gene over the group, and the plot is coloured from them.
+Choosing another layer asks again. Switching   to another statistic of the same layer, or back, asks for nothing. Another group or layer asks once, and
 so does an edit of the grouping's **Expressed above** in its **Methods ▾**, which % expressing and mean of expressing
 cells read. The statistics have the Cell-Gene Plot's names and units (% expressing is 0 to 100). The colour bar is titled by the
 grouping and the group, then the statistic and the layer ("% expressing (> 0) · logged").

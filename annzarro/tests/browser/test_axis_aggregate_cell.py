@@ -67,6 +67,7 @@ def test_the_item_picker_lists_signatures_in_sections_and_a_set_shows_the_aggreg
     assert page.evaluate("(s) => document.querySelector(s + ' .axis-agg-sym').classList.contains('agg-sym--over')", button), "z with a bar over it, drawn by CSS"
     assert _setting(page, "color")["type"] == "gene-score" and _setting(page, "color")["key"] == SIG
     assert page.input_value(_sel("color", "type")) == "layer", "the row reads layer, item, aggregation"
+    assert page.locator(f"{C} select.axis-member-select, {C} input.group-filter").count() == 0, "a signature is a set itself: no member select, and no filter field in any row"
     assert [g for _, _, g in _options(page, "color", "column") if g][:1] == ["Genes"], _options(page, "color", "column")
     gene = next(t for _, t, g in _options(page, "color", "column") if g == "Genes")
     _item(page, "color", gene)

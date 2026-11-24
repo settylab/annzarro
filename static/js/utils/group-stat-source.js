@@ -96,7 +96,7 @@ const MENUS = new Map();
 function menuReply(id) {
     let held = MENUS.get(id);
     if (!held) {
-        held = { reply: null, handle: null, names: null, off: null };
+        held = { reply: null, handle: null, names: null, title: '', off: null };
         MENUS.set(id, held);
         held.handle = groupSources().sources.watch(id, {
             consumer: { kind: 'plot', role: 'menu', panelId: null, host: null }, option: {}, visible: () => true,
@@ -111,10 +111,13 @@ function menuReply(id) {
         held.reply = snap.values && snap.values.reply ? snap.values.reply : null;
         // a rename of a group (or of a level) is an edit of the grouping that asks for nothing: the menus and the plots'
         // titles name it again (the names are made once per reply and recipe, so this is false until they change)
+        held.title = groupingTitle({ key: id });
         held.off = groupSources().sources.onSource(id, () => {
             const names = held.reply ? groupSources().sources.namesOf(id, held.reply) : null;
-            if (names === held.names) return;
+            const title = groupingTitle({ key: id });
+            if (names === held.names && title === held.title) return;
             held.names = names;
+            held.title = title;
             if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
         });
         held.names = held.reply ? groupSources().sources.namesOf(id, held.reply) : null;
@@ -155,7 +158,7 @@ function groupMenu(setting) {
     const id = setting && setting.key;
     const reply = id && groupingPanel(id) ? menuReply(id) : null;
     const choose = { value: '', text: id ? (reply ? 'Choose a group' : 'Groups…') : 'Choose a grouping first', column: '', disabled: true };
-    if (!reply) return { options: [choose], chosen: '', adopt: null, search: true };
+    if (!reply) return { options: [choose], chosen: '', adopt: null };
     const names = groupSources().sources.namesOf(id, reply);
     // a group is found by the name it is shown with (a label the user gave it) and by its generated name
     const generated = groupSources().sources.coloursOf(id, reply).generated;
@@ -166,7 +169,7 @@ function groupMenu(setting) {
         const was = Array.isArray(setting.groupWas) ? setting.groupWas.join(' | ') : held;
         options.push({ value: held, text: `${was} (no longer a group)`, column: held });
     }
-    return { options, chosen: held, adopt: null, search: true };
+    return { options, chosen: held, adopt: null };
 }
 
 /** The statistic select (the registry's statMenu): every statistic graded on the layer the setting holds. */
@@ -487,30 +490,47 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
  */
 const A = VOCABULARY.aggregation;
 const groupAggregate = {
-    sections: () => {
-        const { sources } = groupSources();
-        const entries = [];
-        for (const g of groupingList()) {
-            const reply = menuReply(g.id);
-            if (!reply) continue;
-            const names = sources.namesOf(g.id, reply);
-            const generated = sources.coloursOf(g.id, reply).generated;
-            reply.groups.forEach((group, i) => entries.push({ entry: JSON.stringify([g.id, M.columnOf(group.key)]), text: `${g.title} \u203a ${names[i]}`,
-                alt: `${generated[i]} ${names[i]}` }));
-        }
-        return [{ heading: A.sections.groupings, entries }];
-    },
-    start: (entry, layer) => {
-        const [id, column] = JSON.parse(entry);
+    // the item column lists the groupings by their names; the group is the row's next select (`members`)
+    sections: () => [{ heading: A.sections.groupings, entries: groupingList().map((g) => {
+        menuReply(g.id);                       // its groups are asked for now, so they are there when it is picked
+        return { entry: g.id, text: g.title };
+    }) }],
+    /**
+     * A grouping newly picked on a layer: the group the row had, if the grouping has one of that name, else its first; none
+     * (nothing is asked) while its groups are not known yet.
+     */
+    start: (id, layer, previous = null) => {
         const reply = menuReply(id);
-        const key = M.groupKeyOf({ column });
-        const labelled = reply && key ? groupSources().sources.labelsOf(id, reply) : null;
-        const ref = labelled ? referToGroup(labelled, key) : null;
-        const held = { type: TYPE, key: id, column, stat: M.DEFAULT_STAT, layer, groupWas: ref ? ref.groupWas : key };
+        const { sources } = groupSources();
+        let column = '';
+        let groupWas;
+        if (reply && reply.groups.length) {
+            const names = sources.namesOf(id, reply);
+            const was = previous && previous.type === TYPE ? groupNameOf(previous) : '';
+            const at = Math.max(0, was ? names.indexOf(was) : 0);
+            column = M.columnOf(reply.groups[at].key);
+            groupWas = referToGroup(sources.labelsOf(id, reply), reply.groups[at].key).groupWas;
+        }
+        const held = { type: TYPE, key: id, column, stat: previous && previous.type === TYPE ? M.statOf(previous) : M.DEFAULT_STAT, layer, ...(groupWas ? { groupWas } : {}) };
         const p = M.pairAfter(held, 'layer', layer, kindsNow(), layersNow());
         return { ...held, stat: p.stat, layer: p.layer, label: groupingTitle({ key: id }) };
     },
-    entryOf: (setting) => JSON.stringify([setting.key, setting.column || '']),
+    /** The groups of the row's grouping by their names, in the grouping's order; null when it has none to list (gone, no reply). */
+    members: (setting) => {
+        const id = setting.key;
+        const reply = id && groupingPanel(id) ? menuReply(id) : null;
+        const choose = { value: '', text: reply ? 'Choose a group' : 'Groups\u2026', disabled: true };
+        if (!id || !groupingPanel(id)) return null;
+        if (!reply) return { options: [choose], chosen: '' };
+        const names = groupSources().sources.namesOf(id, reply);
+        const options = [choose, ...reply.groups.map((g, i) => ({ value: M.columnOf(g.key), text: names[i] }))];
+        const held = setting.column || '';
+        if (held && M.groupKeyOf(setting) && !options.some((o) => o.value === held)) {
+            options.push({ value: held, text: `${Array.isArray(setting.groupWas) ? setting.groupWas.join(' | ') : held} (no longer a group)` });
+        }
+        return { options, chosen: held };
+    },
+    entryOf: (setting) => setting.key,
     layerOf: (setting) => M.layerOf(setting),
     methods: (setting) => ({
         options: M.statMenu(setting, kindsNow(), layoutsNow()).options.map(o => ({ value: o.value, name: STATISTIC_INFO.find(m => m.value === o.value).label, symbol: STAT_SYMBOLS[o.value],
@@ -518,7 +538,7 @@ const groupAggregate = {
         chosen: M.statOf(setting)
     }),
     layers: (setting) => layerMenu(setting),
-    after: (setting, kind, value) => settingAfter(setting, kind === 'method' ? 'stat' : kind, value),
+    after: (setting, kind, value) => settingAfter(setting, kind === 'method' ? 'stat' : kind === 'member' ? 'column' : kind, value),
     symbolOf: (setting) => STAT_SYMBOLS[M.statOf(setting)]
 };
 

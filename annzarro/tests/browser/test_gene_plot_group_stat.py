@@ -27,6 +27,7 @@ else:
 from annzarro.tests.browser import axis_sets, waits  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import DATA, _url, page, served  # noqa: E402,F401
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
+from annzarro.tests.core import grouping_store as gstore  # noqa: E402
 
 G, GA = "gene-plot-G", "cell-grouping-A"
 C = f'.tile[data-tile-id="{G}"]'
@@ -112,9 +113,17 @@ def _close(got, want):
 
 # ------------------------------------------------------------------ helpers of the row: layer, item picker, aggregation
 
-def _entry(group_key=B_KEY, grouping=GA):
-    """The item picker's value of a group: the grouping and the group's key."""
-    return axis_sets.set_value("group-stat", json.dumps([grouping, group_key], separators=(",", ":")))
+def _entry(grouping=GA):
+    """The item picker's value of a grouping: the groups of it are the row's next select."""
+    return axis_sets.set_value("group-stat", grouping)
+
+
+def _member(axis="color"):
+    return axis_sets.sel(C, axis, "member")
+
+
+def _members(page, axis="color"):
+    return page.evaluate("(s) => [...document.querySelector(s).options].map(o => [o.value, o.textContent, o.disabled])", _member(axis))
 
 
 def _items(page, axis="color"):
@@ -135,14 +144,14 @@ def _computes_genes(request):
     return "/data/cell_groups" in request.url and request.method == "POST" and body.get("shape") == "genes" and not body.get("estimate_only")
 
 
-def _pick_group(page, axis="color", layer="logged", group_key=B_KEY):
-    """Layer source, its layer, then the group in the item picker: one request when the group is chosen."""
+def _pick_grouping(page, axis="color", layer="logged", grouping=GA):
+    """Layer source, its layer, then the grouping in the item picker: the row takes its first group (one request)."""
     page.select_option(axis_sets.sel(C, axis, "type"), "layer")
     until(page, "([s]) => document.querySelector(s).options.length > 1", [axis_sets.sel(C, axis, "key")])
     if page.input_value(axis_sets.sel(C, axis, "key")) != layer:
         page.select_option(axis_sets.sel(C, axis, "key"), layer)
-    until(page, "([s, v]) => [...document.querySelector(s).options].some(o => o.value === v)", [axis_sets.sel(C, axis, "column"), _entry(group_key)])
-    page.select_option(axis_sets.sel(C, axis, "column"), _entry(group_key))
+    until(page, "([s, v]) => [...document.querySelector(s).options].some(o => o.value === v)", [axis_sets.sel(C, axis, "column"), _entry(grouping)])
+    page.select_option(axis_sets.sel(C, axis, "column"), _entry(grouping))
     page.wait_for_selector(axis_sets.button(C, axis))
 
 
@@ -154,18 +163,24 @@ def test_the_path_through_the_row_sends_one_request_and_a_switch_of_statistic_se
     shown = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"color\"] option')].map(o => o.value)", C)
     assert "group-stat" not in shown, f"a group is no source: it is picked in the item picker of a layer ({shown})"
     page.select_option(axis_sets.sel(C, "color", "type"), "layer")
-    until(page, "(s) => [...document.querySelector(s).options].some(o => o.textContent.includes('B cell'))", axis_sets.sel(C, "color", "column"))
+    until(page, "(s) => [...document.querySelector(s).options].some(o => o.textContent === 'Grouping 1')", axis_sets.sel(C, "color", "column"))
     items = _items(page)
-    groups = [(t, g) for _, t, g, _ in items if g == "Cell groupings"]
-    assert groups[0] == ("Grouping 1 \u203a B cell", "Cell groupings") and len(groups) == 6, groups
+    groupings = [(t, g) for _, t, g, _ in items if g == "Cell groupings"]
+    assert groupings == [("Grouping 1", "Cell groupings")], "one entry per grouping, by its name: the groups are the next select"
     assert not [g for _, _, g, _ in items if g == "Gene signatures"], "a Gene Plot lists cell sets only"
-    assert not _genes(page), "nothing is asked before a group is chosen"
+    assert not page.is_visible(_member()) if page.locator(_member()).count() else True
+    assert not _genes(page), "nothing is asked before a grouping is chosen"
     layers = [o["v"] for o in axis_sets.layer_options(page, C, "color")]
     assert "logged" in layers and "X" in layers, layers
     page.select_option(axis_sets.sel(C, "color", "key"), "logged")
-    waits.expect_stays(lambda: not _genes(page), "no group is chosen: nothing is asked", page=page, seconds=1.0)
+    waits.expect_stays(lambda: not _genes(page), "no grouping is chosen: nothing is asked", page=page, seconds=1.0)
     with page.expect_request(_computes_genes):
         page.select_option(axis_sets.sel(C, "color", "column"), _entry())
+    # the groups of the grouping follow, in its order, all of them, with the first chosen
+    until(page, "([s]) => !!document.querySelector(s) && document.querySelector(s).options.length === 7", [_member()])
+    members = _members(page)
+    assert members[0] == ["", "Choose a group", True] and [t for _, t, _ in members[1:]] == [n for n, _ in gstore.CELL_TYPES], members
+    assert page.input_value(_member()) == B_KEY
     page.wait_for_selector(axis_sets.button(C, "color"))
     _wait_stat(page, "mean")
     assert len(_genes(page)) == 1, _genes(page)
@@ -229,8 +244,9 @@ def test_a_renamed_level_keeps_the_colour_and_the_group_is_listed_by_its_new_nam
     _wait_colours(page, 40)
     assert _close(_colours(page), _numbers("mean"))
     assert _notice(page) is None, "a rename is display only: no notice"
-    names = [t for _, t, _, _ in _items(page)]
-    assert "Grouping 1 \u203a B lymphocyte" in names and not any("B cell" in n for n in names), names
+    names = [t for _, t, _ in _members(page)]
+    assert "B lymphocyte" in names and "B cell" not in names, names
+    assert page.evaluate("(s) => document.querySelector(s).selectedOptions[0].textContent", _member()) == "B lymphocyte"
     assert _config(page)["column"] == B_KEY
 
 
@@ -256,10 +272,10 @@ def test_a_group_renamed_live_in_the_grouping_grid_keeps_colouring_with_the_new_
     page.wait_for_selector(FIELD)
     page.fill(FIELD, "B lymphocytes")
     page.keyboard.press("Enter")
-    until(page, """(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis="color"] option')].some(o => o.textContent === 'Grouping 1 \u203a B lymphocytes')""", C)
-    names = [t for _, t, _, _ in _items(page)]
-    assert "Grouping 1 \u203a B cell" not in names, names
-    assert page.evaluate("(s) => document.querySelector(s).selectedOptions[0].textContent", axis_sets.sel(C, "color", "column")) == "Grouping 1 \u203a B lymphocytes"
+    until(page, """(s) => [...document.querySelectorAll(s + ' option')].some(o => o.textContent === 'B lymphocytes')""", _member())
+    names = [t for _, t, _ in _members(page)]
+    assert "B cell" not in names, names
+    assert page.evaluate("(s) => document.querySelector(s).selectedOptions[0].textContent", _member()) == "B lymphocytes"
     until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().color.labelFull || '').includes('B lymphocytes')", G)
     assert _config(page)["column"] == B_KEY, "the key is the group's; the name is display"
     assert _notice(page) is None
@@ -280,70 +296,91 @@ def test_a_group_removed_live_from_the_grouping_says_it_is_no_longer_a_group(pag
     waits.expect_stays(lambda: len(_genes(page)) == asked, "a group that is gone asks for nothing", page=page, seconds=1.0)
 
 
-FILTER = 'input.group-filter[data-axis="color"]'
 COLUMN = 'select.axis-column-select[data-axis="color"]'
-
-
-def _visible_items(page):
-    return [(v, t) for v, t, _, hidden in _items(page) if not hidden]
 
 
 def _many(page, served, **grouping):
     many = {"source": {"type": "obs", "key": "many"}}
     _open(page, served, {G: _plot(), GA: _grouping(partitionings=[many], **grouping)})
     until(page, "(t) => !!document.querySelector(t + ' select.axis-type-select[data-axis=\"color\"] option[value=\"layer\"]')", C)
-    page.select_option(axis_sets.sel(C, "color", "type"), "layer")
-    page.wait_for_selector(f"{C} {FILTER}", timeout=60000)
+    _pick_grouping(page)
+    until(page, "([s]) => !!document.querySelector(s) && document.querySelector(s).options.length > 1000", [_member()])
 
 
-def test_a_grouping_of_many_groups_is_a_normal_dropdown_with_every_group_and_a_filter_beside_it(page, served):
+def test_a_grouping_of_many_groups_lists_every_group_in_a_native_select_and_has_no_filter_field(page, served):
     _many(page, served)
-    select = f"{C} {COLUMN}"
-    assert page.is_visible(select) and page.is_enabled(select), "the dropdown is there, as for every other source"
-    groups = [(v, t) for v, t in _visible_items(page) if t.startswith("Grouping 1")]
-    assert len(groups) == 1200, "no typing: all 1,200 groups are listed"
-    page.fill(f"{C} {FILTER}", "m0007")
-    shown = [t for v, t in _visible_items(page) if v and t.startswith("Grouping 1")]
-    assert shown == ["Grouping 1 \u203a m0007"], shown
+    select = _member()
+    assert page.is_visible(select) and page.is_enabled(select), "the groups are a select like every other"
+    assert page.evaluate("(s) => { const e = document.querySelector(s); return e.tagName === 'SELECT' && e.className.includes('form-select-sm') && e.tabIndex >= 0; }", select)
+    options = _members(page)
+    assert [t for v, t, _ in options if v] == [f"m{i:04d}" for i in range(1200)], "all 1,200 groups, in the grouping's order, with no typing"
+    assert page.locator(f"{C} input.group-filter, {C} .axis-selector input[type=search]").count() == 0, "no filter field in any axis row"
+    # choosing one is a native choice: one request for that group
     with page.expect_request(_computes_genes) as asked:
-        page.press(f"{C} {FILTER}", "Enter")
+        page.select_option(select, json.dumps(["c:m0007"], separators=(",", ":")))
     assert json.loads(asked.value.post_data)["group"] == ["c:m0007"]
-    _wait_colours(page, 40)
     assert _config(page)["column"] == json.dumps(["c:m0007"], separators=(",", ":"))
-    assert len([1 for v, t in _visible_items(page) if t.startswith("Grouping 1")]) == 1200, "the list is whole again once a group is chosen"
-    assert page.input_value(f"{C} {FILTER}") == ""
-    assert page.evaluate("(s) => document.querySelector(s).selectedOptions[0].textContent", select) == "Grouping 1 \u203a m0007"
+    assert page.evaluate("(s) => document.querySelector(s).selectedOptions[0].textContent", select) == "m0007"
+    assert len(_members(page)) == 1201
 
 
-def test_the_dropdown_keeps_its_keyboard_after_the_filter(page, served):
-    _many(page, served)
-    page.fill(f"{C} {FILTER}", "m001")
-    page.press(f"{C} {FILTER}", "ArrowDown")
-    assert page.evaluate("(s) => document.activeElement === document.querySelector(s)", f"{C} {COLUMN}"), "Down goes to the select"
-    # Escape clears the filter; the select answers type-ahead as any select does (its options are the groups' names)
-    page.press(f"{C} {FILTER}", "Escape")
-    assert len([1 for v, t in _visible_items(page) if t.startswith("Grouping 1")]) == 1200
-    # the select itself is the native one: focusable, with every option a real entry the arrow keys and type-ahead reach
-    assert page.evaluate("(s) => { const e = document.querySelector(s); return e.tagName === 'SELECT' && !e.hidden && e.tabIndex >= 0; }", f"{C} {COLUMN}")
-    page.press(f"{C} {FILTER}", "ArrowDown")
-    assert page.evaluate("(s) => document.activeElement === document.querySelector(s)", f"{C} {COLUMN}")
-
-
-def test_the_filter_finds_a_group_by_the_label_it_was_given_and_by_its_generated_name(page, served):
+def test_a_group_with_a_custom_name_is_listed_by_it_and_a_renamed_grouping_by_its_new_name(page, served):
     _many(page, served, groupOverrides=[{"name": "m0100", "label": "Zeta cluster"}])
-    names = [t for _, t in _visible_items(page)]
-    assert "Grouping 1 \u203a Zeta cluster" in names and "Grouping 1 \u203a m0100" not in names, "the dropdown lists the displayed name"
-    page.fill(f"{C} {FILTER}", "zeta")
-    assert [t for v, t in _visible_items(page) if v and t.startswith("Grouping 1")] == ["Grouping 1 \u203a Zeta cluster"], "the label the user gave"
-    # the section keeps its header while it has a hit, and the headers of sections with none are gone
-    headers = page.evaluate("(s) => [...document.querySelector(s).querySelectorAll('optgroup')].filter(g => !g.hidden).map(g => g.label)", f"{C} {COLUMN}")
-    assert headers == ["Cell groupings"], headers
-    page.fill(f"{C} {FILTER}", "m0100")
-    assert [t for v, t in _visible_items(page) if v and t.startswith("Grouping 1")] == ["Grouping 1 \u203a Zeta cluster"], "and the generated name it is keyed by"
-    page.fill(f"{C} {FILTER}", "nothing like it")
-    assert [t for v, t in _visible_items(page) if v and t.startswith("Grouping 1")] == []
-    page.fill(f"{C} {FILTER}", "")
-    assert len([1 for v, t in _visible_items(page) if t.startswith("Grouping 1")]) == 1200
+    names = [t for _, t, _ in _members(page)]
+    assert "Zeta cluster" in names and "m0100" not in names, "the select lists the displayed name"
+    page.evaluate("(id) => window.PanelManager.getPanel(id).setTitle('Many')", GA)
+    until(page, "(s) => [...document.querySelector(s).options].some(o => o.textContent === 'Many')", axis_sets.sel(C, "color", "column"))
+    items = [t for _, t, g, _ in _items(page) if g == "Cell groupings"]
+    assert items == ["Many"], items
+
+
+def test_switching_the_grouping_keeps_the_group_of_the_same_name_or_takes_the_first_with_one_request(page, served):
+    # Grouping 2 is the cell types without Platelet: another key, so another request, and no group called Platelet
+    other = {"id": "cell-grouping-B", "title": "Grouping 2", "version": 1, "partitionings": [{**CELL_TYPE, "levels": ["c:B cell", "c:T cell", "c:NK cell"], "rest": "exclude"}]}
+    t_cell = json.dumps(["c:T cell"], separators=(",", ":"))
+    platelet = json.dumps(["c:Platelet"], separators=(",", ":"))
+    _open(page, served, {G: _plot(color=_stat(column=t_cell, groupWas=["T cell"])), GA: _grouping(), "cell-grouping-B": other})
+    page.wait_for_selector(_member(), timeout=30000)
+    until(page, "([s, v]) => [...document.querySelector(s).options].some(o => o.value === v)", [axis_sets.sel(C, "color", "column"), _entry("cell-grouping-B")])
+    # the groups of Grouping 2 are known (it is asked for when listed): a grouping picked before they are shows no group yet
+    until(page, """async () => { const R = await import('/static/js/utils/source-registry.js');
+        const m = R.getSource('group-stat').aggregate.members({ type: 'group-stat', key: 'cell-grouping-B', column: '' });
+        return !!m && m.options.length > 1; }""")
+    n = len(_genes(page))
+    with page.expect_request(_computes_genes) as asked:
+        page.select_option(axis_sets.sel(C, "color", "column"), _entry("cell-grouping-B"))
+    assert json.loads(asked.value.post_data)["group"] == ["c:T cell"], "T cell is a group of both: it is kept"
+    assert page.input_value(_member()) == t_cell and _config(page)["key"] == "cell-grouping-B"
+    waits.expect_stays(lambda: len(_genes(page)) == n + 1, "one request for the switch, and the plot redraws once", page=page, seconds=1.0)
+    # a group the other grouping lacks: the first group of it
+    page.select_option(axis_sets.sel(C, "color", "column"), _entry())
+    page.select_option(_member(), platelet)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().color.column === '[\"c:Platelet\"]'", G)
+    with page.expect_request(_computes_genes) as asked:
+        page.select_option(axis_sets.sel(C, "color", "column"), _entry("cell-grouping-B"))
+    assert json.loads(asked.value.post_data)["group"] == ["c:B cell"], "Platelet is not in Grouping 2: its first group"
+    assert page.input_value(_member()) == B_KEY
+
+
+def test_the_columns_of_a_grouping_row_a_plain_row_and_a_row_with_a_lock_keep_their_edges(page, served):
+    _open(page, served, {G: _plot(x=_stat(), y={"type": "layer", "key": "logged", "column": "CELL0003"}, color=_stat(stat="sd")), GA: _grouping()})
+    page.wait_for_selector(axis_sets.button(C, "x"), timeout=30000)
+    edges = page.evaluate("""(t) => Object.fromEntries(['x', 'y', 'color'].map((a) => {
+        const row = document.querySelector(t + ` select.axis-type-select[data-axis="${a}"]`).closest('.axis-selector');
+        const left = (s) => { const e = row.querySelector(s); return e ? Math.round(e.getBoundingClientRect().left) : null; };
+        const right = (s) => { const e = row.querySelector(s); return e ? Math.round(e.getBoundingClientRect().right) : null; };
+        const last = [...row.children].filter((e) => e.offsetParent !== null).pop();
+        return [a, { type: left('.axis-type-select'), key: left('.axis-key-select'), item: left('.axis-column-select'), member: left('.axis-member-select'),
+                     itemRight: right('.axis-column-select'), memberRight: right('.axis-member-select'), rowRight: Math.round(row.getBoundingClientRect().right),
+                     button: Math.round(last.getBoundingClientRect().left) }];
+    }))""", C)
+    assert len({e["type"] for e in edges.values()}) == 1 and len({e["key"] for e in edges.values()}) == 1 and len({e["item"] for e in edges.values()}) == 1, edges
+    assert edges["x"]["member"] and edges["color"]["member"] and edges["y"]["member"] is None, "only a grouping's row has the group select"
+    # the item column and the group select share the width the item column has on a plain row
+    assert abs(edges["x"]["memberRight"] - edges["y"]["itemRight"]) <= 2, edges
+    assert edges["x"]["memberRight"] - edges["x"]["item"] == edges["y"]["itemRight"] - edges["y"]["item"] or abs((edges["x"]["memberRight"] - edges["x"]["item"]) - (edges["y"]["itemRight"] - edges["y"]["item"])) <= 2, edges
+    # the aggregation button of a grouping's row and the lock of a plain row are in the same place
+    assert abs(edges["x"]["button"] - edges["y"]["button"]) <= 2 and abs(edges["color"]["button"] - edges["x"]["button"]) <= 2, edges
 
 
 # ------------------------------------------------------------------ every axis
@@ -448,22 +485,15 @@ SHOTS = os.environ.get("ANNZARRO_SHOTS")
 
 
 @pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")
-def test_screenshots_of_the_gene_plot_rows_and_the_open_item_picker(page, served):
-    """(b) X on a group (x with a bar) with the item picker open, its sections listed; (c) a plain row beside an aggregated one."""
-    # the grouping is closed (its tile not in the layout), so the plot has the width a plot has
+def test_screenshots_of_a_grouping_row_above_a_plain_row(page, served):
+    """X on grouping > group (type, layer, grouping, group, x with a bar) above a plain Y row."""
     _open(page, served, {G: _plot(x=_stat(), y={"type": "layer", "key": "logged", "column": "CELL0003"}), GA: _grouping()}, open_ids=(G,))
     page.wait_for_selector(axis_sets.button(C, "x"), timeout=30000)
     os.makedirs(SHOTS, exist_ok=True)
-    select = axis_sets.sel(C, "x", "column")
     for theme in ("light", "dark"):
         page.evaluate("(t) => { document.documentElement.setAttribute('data-theme', t); document.documentElement.setAttribute('data-bs-theme', t); }", theme)
         box = page.locator(f"{C} .plot-controls").bounding_box()
-        page.screenshot(path=os.path.join(SHOTS, f"agg-c-gene-plain-beside-aggregated-{theme}.png"), clip={**box, "height": 150})
-        # a native dropdown is not in a page screenshot: the list is unfolded in place, as the browser would show it
-        page.evaluate("""(s) => { const e = document.querySelector(s); const r = e.getBoundingClientRect(); e.__was = e.getAttribute('style') || '';
-            e.size = 11; e.style.position = 'fixed'; e.style.zIndex = '9999'; e.style.height = 'auto'; e.style.left = r.left + 'px'; e.style.top = (r.bottom + 3) + 'px'; e.style.width = '340px'; }""", select)
-        page.screenshot(path=os.path.join(SHOTS, f"agg-b-gene-group-item-picker-open-{theme}.png"), clip={**box, "height": 360})
-        page.evaluate("(s) => { const e = document.querySelector(s); e.removeAttribute('size'); e.setAttribute('style', e.__was); }", select)
+        page.screenshot(path=os.path.join(SHOTS, f"agg-d-gene-grouping-group-above-plain-{theme}.png"), clip={**box, "height": 150})
 
 
 # ------------------------------------------------------------------ G1a: z-score mean of a group
