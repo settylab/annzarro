@@ -239,6 +239,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
         /** the cell axis's applied recipe as last seen: the recipe its groups are of while edits wait or are checked */
         let _applied = null;
+        /** the obs column's recipe the page's group sources were last told of for this plot's own cell axis */
+        let _axisRecipeSaid = null;
         /** pendingRows's answer for the plan last looked at (CXG-18): {now, held, rows} */
         let _pending = { now: null, held: null, rows: null };
 
@@ -593,11 +595,27 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         /** The configuration changed: what is asked, what is drawn, the saved state and the history follow. */
         function changed({ quiet = false } = {}) {
             _plan = null;
+            axisRecipeChanged();
             watchSources();
             sync();
             paint();
             redraw();
             if (!quiet && window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+        }
+
+        /**
+         * An obs cell axis is this plot's own source ('axis:<id>', group-host.js), read through `axisSource()`: a new
+         * column is a new recipe under the same id, which the group sources hear of only when told. Untold, the plot
+         * kept drawing the groups of the column it had (an edit, Undo, Back or Forward of Groups), while a link of the
+         * same configuration drew the new ones.
+         */
+        function axisRecipeChanged() {
+            const axis = _config.cellAxis;
+            const recipe = axis && axis.type === 'obs' ? axisRecipe(axis) : null;
+            if (!recipe || recipe === _axisRecipeSaid) return;
+            const had = _axisRecipeSaid;
+            _axisRecipeSaid = recipe;
+            if (had && _initialized) groupSources().sources.sourceChanged(axisId());
         }
 
         function updateConfig(config) {
