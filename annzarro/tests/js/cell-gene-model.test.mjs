@@ -386,7 +386,7 @@ test('the statistic, scaling and aggregation words of UX 3.2 and 3.3', () => {
     }
     for (const kind of M.LEGACY_ROW_AGGREGATIONS) assert.ok(W.rowStep.legacy[kind], kind);
     assert.equal(W.rowStep.detectedPerCell, 'Genes detected per cell');
-    assert.equal(W.rowStep.cannot('Sum of the gene rows', 'SD', 'why.'), 'Sum of the gene rows cannot be computed with SD: why.');
+    assert.deepEqual(W.rowStep.why.sum_sd, ['SD', 'a sum of spreads is not the spread of the set.']);
     assert.equal(W.noExpressingCells, 'no expressing cells');
     assert.equal(W.csv.note, 'Note');
 });

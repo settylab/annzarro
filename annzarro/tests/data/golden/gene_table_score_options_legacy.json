@@ -1,0 +1,11 @@
+{
+ "input": "counts",
+ "method": "mean",
+ "offered": ["mean", "sum"],
+ "layers": ["counts", "X"],
+ "clip": 10,
+ "seed": null,
+ "bins": 25,
+ "controls": 50,
+ "detect_above": 0
+}

@@ -112,7 +112,7 @@ const cellGene = Object.freeze({
     /**
      * A one-row section's Color or Size (decision 40, one-row-ux-080.md): the channel's statistic and layer are the cell
      * step; the row chooses only the gene step, combining the gene rows or scoring each cell by a method of the source.
-     * Reasons use the shared phrasing "X cannot be computed with Y: why" (options-model.js REASON).
+     * Reasons are phrased by options-model.js REASON.cannotWith from `why`: [what, why].
      */
     rowStep: Object.freeze({
         heading: Object.freeze({ rows: 'Combine the gene rows', score: 'Score each cell' }),
@@ -126,7 +126,6 @@ const cellGene = Object.freeze({
         from: (channel) => `from ${channel}`,
         change: (channel) => `Change in ${channel}`,
         changeHelp: (channel) => `One-row sections use the plot's ${channel} statistic and layer, so a set's row compares with its genes' rows. Change them in ${channel}.`,
-        cannot: (name, what, why) => `${name} cannot be computed with ${what}: ${why}`,
         why: Object.freeze({
             count: ['cell count', 'cell count does not depend on genes.'],
             down: ['down genes', 'it would count them as up genes. Score each cell instead.'],
@@ -419,11 +418,18 @@ const countPlot = Object.freeze({
         adjust: 'Smoothing', bySize: 'Scale curves by level size'
     }),
     /** The layers of a 2D density, each a box of Plot Options. */
-    layers: Object.freeze({ image: 'Density as opacity', lines: 'Isolines', fill: 'Filled isolines', points: 'Cell points' }),
+    layers: Object.freeze({
+        image: 'Density as opacity', imageOne: 'Density as color scale', lines: 'Isolines', fill: 'Filled isolines', points: 'Cell points',
+        last: 'At least one layer stays on: with none, nothing would be drawn.'
+    }),
     adjustProblem: 'Enter a number from 0.1 to 10.',
-    /** The Color pop-over (WP-6a): the colour map, Reverse, the range and the palette of a Color by's levels. */
+    /**
+     * The Display pop-over (WP-6a, renamed: it holds how the data is drawn, not only its color): the colour map, Reverse, the
+     * range (of the colour scale, or of a density), the palette of a Color by's levels, and the Cell points' size and opacity.
+     */
     colour: Object.freeze({
-        button: 'Color', title: 'Color', map: 'Map', reverse: 'Reverse', min: 'Min', max: 'Max', center: 'Center', auto: 'auto',
+        button: 'Display', title: 'Display', map: 'Map', reverse: 'Reverse', min: 'Min', max: 'Max', center: 'Center', auto: 'auto',
+        densityRange: 'Density range', points: 'Cell points', pointSize: 'Size', pointOpacity: 'Opacity', pointFade: 'Density as opacity',
         palette: 'Level palette', paletteDefault: 'Default', reset: 'Reset',
         problem: 'Enter a number, or leave it empty for automatic.',
         centerNote: 'Center has no effect while both Min and Max are set.'
@@ -483,7 +489,6 @@ const countPlot = Object.freeze({
     /** A 2D density drawn on the cell locations: the strip's notice and why it is refused. */
     points: Object.freeze({
         label: 'Cell points',
-        size: 'Point size',
         all: (drawn, total) => `Cells drawn as points: ${drawn.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}.`,
         sample: (drawn, loaded, total) => `Cells drawn as points: ${drawn.toLocaleString('en-US')} of a random sample of ${loaded.toLocaleString('en-US')} of the ${total.toLocaleString('en-US')} cells.`,
         tooMany: (total, limit) => `Cell points load the position of every cell, and ${total.toLocaleString('en-US')} cells are more than the ${limit.toLocaleString('en-US')} it takes. Turn on a subset to use them.`,

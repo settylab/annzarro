@@ -3,8 +3,8 @@
  *
  * Top to bottom: Mode; X (Slices for a pie); Y; Color by with its arrangement; Height or Color, with the source of a
  * statistic or the factor of the most frequent level under it; Labels, Sort by height, Reverse, Horizontal, Log axis and
- * Ring; the density row (Smoothing, Scale by level size, Image); and the toolbar: Save as grouping, Color, Download CSV
- * and Undo. A row the mode does not read is hidden, and what it holds stays stored: one muted line lists it ("Kept for
+ * Ring; the density row (Smoothing, Scale by level size, Image); and the toolbar: Save as grouping, Color, Undo and
+ * Plot Options (the shared pop-over, WP-5a, with Download CSV in its Export). A row the mode does not read is hidden, and what it holds stays stored: one muted line lists it ("Kept for
  * other modes"). A numeric input carries the compact binning line, which opens the shared binning control in a pop-over;
  * a categorical one offers Choose levels in a pop-over; Color opens the colour map, its range and the level palette in
  * one. A pop-over never changes the size or flow of the panel (ui/popover.js, WP-6a). What each choice writes is controls-model.js's; panels/cell-count.js commits
@@ -20,13 +20,14 @@ import { binsRange, binSpacingOf, splitUsed } from '../../utils/count-plot-model
 import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
 import { createPopover } from '../../ui/popover.js';
+import { createPlotToolbar } from '../../ui/plot-toolbar.js';
 import { Config } from '../../config.js';
 import { scaleOptionLabel } from '../../utils/color-scales.js';
 import { listAvailableColormaps } from '../plot-utilities/colors.js';
 import { DEFAULT_COLORSCALE } from './colour.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import {
-    colorUse, parseColourLimit, rowsOf, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
+    popoverUse, parseColourLimit, rowsOf, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
     setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
 } from './controls-model.js';
 
@@ -576,34 +577,34 @@ export function createControls({ D, id, model, on }) {
         return { box, wrap: el('label', { class: 'ccnt-opt' }, box, ` ${text}`) };
     };
     const bySize = toggleField('ccnt-bysize', 'scale', 'size', C.buttons.bySize);
-    // a 2D density's layers: any combination, never none (the last one ticked stays ticked)
+    // a 2D density's layers: any combination, never none. Cell points counts, so with it on the density layers can all go; the
+    // last one left stays and the status line says why
+    let layerNote = null;
     const layerBox = (key) => {
         const box = el('input', { type: 'checkbox', class: `ccnt-layer ccnt-layer--${key}`, data: { layer: key },
             on: { change: () => {
                 const c = model().config;
                 const now = drawOptions(c).layers;
                 const next = { ...now, [key]: box.checked };
-                if (!next.image && !next.lines && !next.fill) { box.checked = true; return; }
+                if (!next.image && !next.lines && !next.fill && !next.points) {
+                    box.checked = true;
+                    layerNote = { text: C.layers.last, config: c };
+                    paintLabels(model(), rowsOf(c.mode));
+                    return;
+                }
                 const out = { ...c, layers: Object.fromEntries(Object.entries(next).filter(([, on2]) => on2)) };
                 delete out.style;
-                commit(out, `${box.checked ? '' : 'no '}${C.layers[key].toLowerCase()}`.trim());
+                commit(out, `${box.checked ? '' : 'no '}${layerWord(key, !!c.split).toLowerCase()}`.trim());
             } } });
-        return { key, box, wrap: el('label', { class: 'ccnt-opt ccnt-layer-opt' }, box, ` ${C.layers[key]}`) };
+        const text = document.createTextNode('');
+        return { key, box, text, wrap: el('label', { class: 'ccnt-opt ccnt-layer-opt' }, box, text) };
     };
+    // the density image is opacity where each group has its color, and a color scale where there is one group
+    const layerWord = (key, split) => (key === 'image' && !split ? C.layers.imageOne : C.layers[key]);
     const layerBoxes = ['image', 'lines', 'fill', 'points'].map(layerBox);
-    // the point size of the Cell points layer, a number of pixels from 1 to 12
-    const pointSize = el('input', { type: 'number', class: 'form-control form-control-sm ccnt-point-size', min: String(1), max: String(12), step: '1', placeholder: '3', autocomplete: 'off', aria: { label: C.points.size } });
-    pointSize.addEventListener('change', () => {
-        const c = model().config;
-        const v = Number(pointSize.value);
-        const next = { ...c };
-        if (pointSize.value === '' || !Number.isFinite(v) || v === 3) delete next.pointSize; else next.pointSize = Math.min(12, Math.max(1, Math.round(v)));
-        if (JSON.stringify(next) !== JSON.stringify(c)) commit(next, `point size ${next.pointSize === undefined ? 3 : next.pointSize}`);
-    });
-    const pointSizeWrap = el('label', { class: 'ccnt-opt ccnt-point-size-opt' }, `${C.points.size} `, pointSize);
     const densityNotes = el('div', { class: 'ccnt-help ccnt-density-notes' });
     const densityRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--density' },
-        el('label', { class: 'ctl-label', for: `ccnt-adjust-${id}`, text: C.buttons.adjust }), adjust, adjustNote, bySize.wrap, ...layerBoxes.map((l) => l.wrap), pointSizeWrap, densityNotes);
+        el('label', { class: 'ctl-label', for: `ccnt-adjust-${id}`, text: C.buttons.adjust }), adjust, adjustNote, bySize.wrap, ...layerBoxes.map((l) => l.wrap), densityNotes);
 
     function paintLabels(m, shownRows) {
         const o = drawOptions(m.config);
@@ -629,21 +630,23 @@ export function createControls({ D, id, model, on }) {
         for (const l of layerBoxes) {
             l.wrap.hidden = shownRows.density !== 2;
             l.box.checked = !!(o.layers && o.layers[l.key]);
+            l.text.textContent = ` ${layerWord(l.key, !!m.config.split)}`;
         }
-        pointSizeWrap.hidden = !(o.layers && o.layers.points);
-        if (document.activeElement !== pointSize) pointSize.value = m.config.pointSize === undefined ? '' : String(m.config.pointSize);
-        densityNotes.textContent = shownRows.density ? m.densityNote || '' : '';
+        if (layerNote && layerNote.config !== m.config) layerNote = null;
+        densityNotes.textContent = shownRows.density ? (layerNote ? layerNote.text : m.densityNote || '') : '';
         densityNotes.hidden = !densityNotes.textContent;
     }
 
-    // ---------------------------------------------------------------- the toolbar: Save as grouping, Color, Download CSV, Undo
+    // ---------------------------------------------------------------- the toolbar: Save as grouping, Color, Undo, Plot Options
     const saveBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-save-btn', on: { click: () => on.saveAsGrouping() } },
         C.saveGrouping.button);
     const colorBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-color-btn' }, `${CL.button} ▾`);
-    // temporary: Download CSV goes to Plot Options ▸ Export when the shared Plot Options land (WP-5a)
-    const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-csv', on: { click: () => on.csv() } }, C.buttons.csv);
+    // Plot Options: the shared pop-over (WP-5a, plot-utilities/options-popover.js), mounted by the panel on this button;
+    // Download CSV is in its Export section
+    const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-options-btn' }, C.buttons.options);
     const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-undo', disabled: true, on: { click: () => on.undo() } }, C.buttons.undo);
-    const toolbar = el('div', { class: 'ccnt-toolbar' }, saveBtn, colorBtn, el('span', { class: 'ccnt-toolbar__gap' }), csvBtn, undoBtn);
+    // the shared plot toolbar (ui/plot-toolbar.js): the same order, styles and places in every plot panel
+    const toolbar = createPlotToolbar({ className: 'ccnt-toolbar', actions: [saveBtn], menus: [colorBtn], undo: undoBtn, options: optionsBtn }).element;
 
     // Color: the colour map, Reverse, the range, the level palette. Every edit applies live as one undoable step.
     const colorPop = createPopover({
@@ -669,7 +672,7 @@ export function createControls({ D, id, model, on }) {
     function fillColor() {
         if (!colorState.body) return;
         const m = model();
-        const use = colorUse(m.config);
+        const use = popoverUse(m.config);
         const c = m.config.color || {};
         const body = colorState.body;
         const focusables = () => [...body.querySelectorAll('input, button, select')].filter((e) => !e.disabled);
@@ -686,21 +689,24 @@ export function createControls({ D, id, model, on }) {
                 on: { change: () => withColor((o) => { if (reverse.checked) o.reverse = true; else delete o.reverse; }, reverse.checked ? 'reverse color map' : 'color map as is') } });
             body.append(line(el('label', { for: idOf('map'), text: CL.map }), map),
                 line(el('label', { class: 'ccnt-opt' }, reverse, ` ${CL.reverse}`)));
+        }
+        if (use.map || use.range) {
+            if (use.range && !use.map) body.append(el('p', { class: 'ccnt-color__heading', text: CL.densityRange }));
             const problem = el('span', { class: 'ccnt-help ccnt-color__problem', role: 'alert' });
-            // Min, Max and Center: boxes saying "auto" with the drawn value, and ↺ back to auto (ui/range-boxes.js)
+            // Min, Max and Center: boxes saying "auto" with the drawn value, and ↺ back to auto (ui/range-boxes.js). With a map
+            // they are the colour scale's; for a density they are the density's, mapping its opacity and isoline levels alike
             const setLimit = (key, text, value) => withColor((o) => { if (value === null) delete o[key]; else o[key] = value; },
-                `color ${text.toLowerCase()} ${value === null ? 'auto' : value}`);
-            const KEYS = [['min', CL.min], ['max', CL.max], ['center', CL.center]];
-            const range = createRangeBoxes({ el, what: CL.button, group: 'colorRange', inputType: 'text', onProblem: (msg) => { problem.textContent = msg; },
+                `${use.map ? 'color' : 'density'} ${text.toLowerCase()} ${value === null ? 'auto' : value}`);
+            const ENDS = [{ label: CL.min, key: 'min', className: 'ccnt-color-min' }, { label: CL.max, key: 'max', className: 'ccnt-color-max' }];
+            if (use.map) ENDS.push({ label: CL.center, key: 'center', className: 'ccnt-color-center', hint: false });
+            const range = createRangeBoxes({ el, what: use.map ? CL.button : CL.densityRange, group: 'colorRange', inputType: 'text', onProblem: (msg) => { problem.textContent = msg; },
                 parse: parseColourLimit,
-                ends: [{ label: CL.min, option: 'min', className: 'ccnt-color-min', id: idOf('min') },
-                    { label: CL.max, option: 'max', className: 'ccnt-color-max', id: idOf('max') },
-                    { label: CL.center, option: 'center', className: 'ccnt-color-center', id: idOf('center'), hint: false }],
-                onCommit: (k, v) => setLimit(KEYS[k][0], KEYS[k][1], v),
-                onReset: () => withColor((o) => { delete o.min; delete o.max; delete o.center; }, 'color range to auto') });
-            range.set({ limits: [c.min, c.max, c.center], drawn: drawnRange(m.colourData) });
+                ends: ENDS.map((e) => ({ label: e.label, option: e.key, className: e.className, id: idOf(e.key), ...(e.hint === false ? { hint: false } : {}) })),
+                onCommit: (k, v) => setLimit(ENDS[k].key, ENDS[k].label, v),
+                onReset: () => withColor((o) => { delete o.min; delete o.max; delete o.center; }, `${use.map ? 'color' : 'density'} range to auto`) });
+            range.set({ limits: ENDS.map((e) => c[e.key]), drawn: drawnRange(m.colourData) });
             body.append(range.element, problem);
-            if (Number.isFinite(c.center) && Number.isFinite(c.min) && Number.isFinite(c.max)) body.append(el('p', { class: 'ccnt-help', text: CL.centerNote }));
+            if (use.map && Number.isFinite(c.center) && Number.isFinite(c.min) && Number.isFinite(c.max)) body.append(el('p', { class: 'ccnt-help', text: CL.centerNote }));
         }
         if (use.palette) {
             const palette = el('select', { class: 'form-select form-select-sm ccnt-color-palette', id: idOf('palette'),
@@ -711,20 +717,47 @@ export function createControls({ D, id, model, on }) {
             if (palette.value !== (c.palette || '')) palette.value = '';
             body.append(line(el('label', { for: idOf('palette'), text: CL.palette }), palette));
         }
-        body.append(line(el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-color-reset', disabled: !m.config.color,
-            on: { click: () => { const next = { ...model().config }; delete next.color; commit(next, 'reset color'); } } }, CL.reset)));
+        if (use.points) {
+            // the Cell points layer: its size and opacity live here, so no control outside a pop-over moves the panel
+            const o = drawOptions(m.config);
+            body.append(el('p', { class: 'ccnt-color__heading', text: CL.points }));
+            const stored = (key, value, dflt, label, make) => {
+                const next = { ...model().config };
+                if (value === undefined || value === dflt) delete next[key]; else next[key] = value;
+                if (JSON.stringify(next) !== JSON.stringify(model().config)) commit(next, make(value === undefined ? dflt : value));
+            };
+            const size = el('input', { type: 'number', class: 'form-control form-control-sm ccnt-point-size', id: idOf('size'), min: '1', max: '12', step: '1',
+                placeholder: '3', autocomplete: 'off', value: m.config.pointSize === undefined ? '' : String(m.config.pointSize) });
+            size.addEventListener('change', () => {
+                const v = Number(size.value);
+                stored('pointSize', size.value === '' || !Number.isFinite(v) ? undefined : Math.min(12, Math.max(1, Math.round(v))), 3, CL.pointSize, (x) => `point size ${x}`);
+            });
+            const opacity = el('input', { type: 'number', class: 'form-control form-control-sm ccnt-point-opacity', id: idOf('opacity'), min: '0.05', max: '1', step: '0.05',
+                placeholder: '1', autocomplete: 'off', value: m.config.pointOpacity === undefined ? '' : String(m.config.pointOpacity) });
+            opacity.addEventListener('change', () => {
+                const v = Number(opacity.value);
+                stored('pointOpacity', opacity.value === '' || !Number.isFinite(v) ? undefined : Math.min(1, Math.max(0.05, v)), 1, CL.pointOpacity, (x) => `point opacity ${x}`);
+            });
+            body.append(line(el('label', { for: idOf('size'), text: CL.pointSize }), size), line(el('label', { for: idOf('opacity'), text: CL.pointOpacity }), opacity));
+            if (use.fade) {
+                const fade = el('input', { type: 'checkbox', class: 'ccnt-point-fade', checked: o.pointFade,
+                    on: { change: () => stored('pointFade', fade.checked ? true : undefined, undefined, CL.pointFade, () => `${fade.checked ? '' : 'no '}${CL.pointFade.toLowerCase()}`) } });
+                body.append(line(el('label', { class: 'ccnt-opt' }, fade, ` ${CL.pointFade}`)));
+            }
+        }
+        body.append(line(el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-color-reset', disabled: !(m.config.color || m.config.pointSize !== undefined || m.config.pointOpacity !== undefined || m.config.pointFade),
+            on: { click: () => { const next = { ...model().config }; for (const k of ['color', 'pointSize', 'pointOpacity', 'pointFade']) delete next[k]; commit(next, 'reset display'); } } }, CL.reset)));
         if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
         colorState.ctl.update();
     }
 
     function paintToolbar(m) {
-        const use = colorUse(m.config);
-        colorBtn.hidden = !(use.map || use.palette);
+        const use = popoverUse(m.config);
+        colorBtn.hidden = !(use.map || use.palette || use.range || use.points);
         if (colorBtn.hidden && colorPop.isOpen()) colorPop.close('api');
         else if (colorPop.isOpen()) fillColor();
         saveBtn.hidden = !m.canSave;
         saveBtn.disabled = !m.canExport;
-        csvBtn.disabled = !m.canExport;
     }
 
     // ---------------------------------------------------------------- the bar
@@ -775,6 +808,8 @@ export function createControls({ D, id, model, on }) {
         element,
         /** Where the sets of Venn and UpSet are drawn (V1). */
         setsElement: setsSlot,
+        /** The Plot Options button: the panel mounts the shared pop-over on it (WP-5a). */
+        optionsButton: optionsBtn,
         paint,
         /**
          * Open an input's Choose levels or binning pop-over and focus it: the way out of a refusal (UX 4.3).

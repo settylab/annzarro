@@ -29,7 +29,8 @@ alone, and a gene shown in two sections, or by colour and size on one layer, is 
 |---|---|
 | What | **Groups** · **Mode** (**Dots** or **Heatmap**) · **Genes**: the section list and **Add genes ▾** |
 | Values | **Color** · **Scale** · **Size** (dots only) · **Height** (3D only) |
-| Layout | **Swap axes** · **3D** · **Cluster ▾** · **Color ▾** · **Plot Options** |
+| Layout | **Swap axes** |
+| Toolbar (the last row) | **3D** · **Cluster ▾** · **Color ▾**, then at its right end **Undo** and **Plot Options**, in the same places as in the Cell Count Plot |
 
 **Color** and **Size** each read their own statistic from their own layer, in one row:
 `Color [Mean ▾] of [logged ▾]` and `Size [% expressing ▾] of [counts ▾] above [0]`. A common dot plot is exactly this:
@@ -40,7 +41,7 @@ the colour from the mean of the log-normalised layer, the size from the share of
 - **The layer select** lists every layer of the dataset. A statistic a layer cannot give is greyed out there, with the
   reason as its tooltip; one that can be computed but misleads (a mean of raw counts follows sequencing depth) carries
   the warning as its tooltip. Choosing a statistic the current layer cannot give moves the layer to the first one that
-  can, and the status line says so once ("Layer changed to logged: % expressing is not available on X.").
+  can, and the status line says so once ("Layer changed to logged: % expressing cannot be computed on 'X'.").
 - **The threshold** appears beside a statistic that counts expressing cells (% expressing, mean of expressing cells).
   A cell counts as expressing above it. When the groups are a grouping, the box is empty and reads
   `auto (grouping: 0)`: the measure follows the grouping's **Expressed above**, set in the grouping's **Methods ▾**
@@ -49,7 +50,7 @@ the colour from the mean of the log-normalised layer, the size from the share of
   it."); empty the box and press **Enter** to follow the grouping again. When the groups are an obs column, the box
   holds the measure's own threshold, 0 by default. The legends and the hover name the threshold in force either way.
 
-The lists are the same whether the groups are a grouping or an obs column: nothing has to be offered first. A choice
+The lists are the same whether the groups are a grouping or an obs column: nothing has to be set up first. A choice
 stored in a link that the layer cannot give (% expressing on a scaled X) stays selected, marked "(not available)", and
 draws nothing until you choose another layer.
 
@@ -71,7 +72,7 @@ A gene with no value in a group (all of its values missing) has no statistic the
 heatmap, never a 0. The strip below the plot counts them ("12 cells of the matrix have no value").
 
 **Size on a signed layer.** On a layer with negative values, such as a scaled X, % expressing cannot be computed. The
-dots are then drawn at one size, the size legend says "% expressing is not available on X: X has negative values.
+dots are then drawn at one size, the size legend says "% expressing cannot be computed on 'X': it has negative values.
 Choose a layer.", the strip says **No size**, and the Size layer select marks X "(not available)" and lists the
 layers that work.
 
@@ -222,16 +223,29 @@ need not be a percentage. The height limits clip the bars: one taller than **Max
 
 **Reset** puts all of these back to their defaults in one step.
 
-**Plot Options** holds the rest of the figure:
+**Plot Options** holds the rest of the figure. It is the same pop-over as the Cell Count Plot's, with this plot's own
+defaults and sections:
 
 | Section | Controls |
 |---|---|
+| Presets | **Default** (the session default, or the built-in look), **Publication** (white, black text and lines, Arial 16), **Bare** (no grid, axis lines or legends) |
+| Text | **Font**, **Font size**, **Text color** (**Auto** follows the app theme), **Plot title**, **Title size** |
+| Background | **Background** (**Auto** follows the app theme) |
+| Axes | **Grid lines** (off by default; on the matrix only), **Grid color**, **Grid width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**; **Gene labels**, **Group labels** |
 | Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none); **Dot opacity**, a slider and a box from 0.1 to 1 (opaque by default), for the dots and the size legend's dots |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
-| Labels | **Gene labels**, **Group labels**; **Plot title**, **Color bar title**, **Size legend title** |
-| Legend | **Color bar**, **Size legend**, **Strip legend** |
+| Legend | **Space** (the legend column's share of the width; empty lets the figure decide), **Columns** and **Entries, at most** (20) of the strip legends; **Color bar**, **Size legend**, **Strip legend**; **Color bar title**, **Size legend title** |
 | Totals | **Cells per group** (a bar along the group axis) |
-| Export | **PNG**, **JPEG**, **WEBP**, **SVG** (not in 3D) · **Download CSV** |
+| Margins | Room added on each side, in px, to the room the labels take |
+| Export | **PNG**, **SVG** (not in 3D), **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV** |
+| Apply | **Apply to other Cell-Gene plots**; **Make this the session default**, **Back to built-in** |
+
+Presets, Text, Legend, Export and the plot's own sections start open; the others unfold with a click, and each keeps its state
+while the page is open. **Reset** under a section puts its fields back to their defaults. A strip legend with more
+levels than **Entries, at most** lists the first ones and a last line "+ 12 more"; one that does not fit its slot is
+cut the same way, and two columns hold twice as many. **Apply to other Cell-Gene plots** gives every other Cell-Gene
+Plot this plot's look (not its titles), after a question. A plot made from the panel chooser starts on the session
+default and follows it until you change its look; see {doc}`plot-options`.
 
 The colour scale is **Reds** by default. Under a z-score scaling the default is **RdBu**, centred at 0, so that
 values above and below the mean read as opposite colours. A scale you pick yourself is kept, whatever the scaling.
@@ -330,8 +344,8 @@ How scanpy's options map onto the plot:
 | `show_gene_labels` (heatmap) | **Gene labels**; labels also thin out when they would overlap |
 | Values printed in the cells (`matrixplot`) | **Print values in cells** |
 | A heatmap with one row per cell | No mode: see {ref}`per-cell-views` |
-| `dot_color_df`, `dot_size_df` as your own matrices | Not offered: Color and Size each pick a statistic and a layer |
-| `var_group_rotation`, `log`, `norm`, `size_exponent`, `color_on`, `dot_edge_color`, `grid`, `gene_symbols` | Not offered |
+| `dot_color_df`, `dot_size_df` as your own matrices | Not available: Color and Size each pick a statistic and a layer |
+| `var_group_rotation`, `log`, `norm`, `size_exponent`, `color_on`, `dot_edge_color`, `grid`, `gene_symbols` | Not available |
 
 Two differences of notation, not of value: **Color** and **Size** each have their own threshold where scanpy has one
 `expression_cutoff` for both, and the CSV gives the colour statistic as computed and, when a scaling is on, also as

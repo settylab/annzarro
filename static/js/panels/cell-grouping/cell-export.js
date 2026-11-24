@@ -10,7 +10,7 @@
  *
  * Nothing here reaches the page: the page's side comes in as `deps`, so the panel passes its own and a test passes fakes.
  */
-import { csvField } from '../../utils/score-inspect.js';
+import { csvField } from '../../utils/csv-format.js';
 import { PENDING } from '../../utils/host-binding.js';
 
 /** The most cells a per-cell export is offered for (GRP-18). */

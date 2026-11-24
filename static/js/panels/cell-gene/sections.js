@@ -31,6 +31,7 @@ import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
 import { stableStringify } from '../../utils/url-history.js';
 import { cellGroupType } from '../../utils/cell-group-source.js';
 import { DEFAULT_METHOD, METHODS, methodShort } from '../../utils/signature-options.js';
+import { REASON } from '../../utils/options-model.js';
 
 const CG = VOCABULARY.cellGene;
 
@@ -484,10 +485,10 @@ export function rowStepName(step, stat, { alone = false } = {}) {
     return alone ? CG.rowStep.score(methodShort(step)) : methodShort(step);
 }
 
-/** Why a gene step is greyed out: "Sum of the gene rows cannot be computed with SD: ..." (the shared REASON phrasing). */
+/** Why a gene step is greyed out: "Sum of the gene rows cannot be computed with SD: ..." (options-model.js REASON). */
 export function rowStepReason(step, stat, reason) {
     const [what, why] = CG.rowStep.why[reason];
-    return CG.rowStep.cannot(rowStepName(step, stat), what, why);
+    return REASON.cannotWith(rowStepName(step, stat), what, why);
 }
 
 /**
@@ -675,6 +676,7 @@ const quantityId = (stat, layer, t) => `${stat}|${stat === 'count' ? '' : layer}
  * @param {{genes: string, above?: number}} step - effectiveRowStep
  * @param {{stat: string, layer?: string, detect_above?: number}} channel - with the threshold in force
  */
+// export-unused-ok: the one-row Node tests read a row's legend name and id through it
 export function rowQuantity(step, channel) {
     const t = channel.detect_above || 0;
     const q = CG.rowStep.quantity;

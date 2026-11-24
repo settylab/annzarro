@@ -18,11 +18,12 @@
  * signature keeps filtering, because its genes are its recipe and need no
  * computation. `selectionIsLive` tells those readers so.
  *
- * Its score, one number per cell, is offered to Cell Plots and Cell Tables as
- * the `gene-score` source (utils/score-source.js); what is offered and how it
- * is computed is the panel's Scores offered section, and Inspect shows what a
- * score is made of (panels/score-options). More ways to add genes plug in
- * through ADD_SOURCES (paste and upload).
+ * Its score, one number per cell, is a `gene-score` source of Cell Plots, Cell
+ * Tables and Count Plots (utils/score-source.js): each chooses a method and a
+ * layer, and the panel's Methods pop-over holds the settings of each method
+ * (panels/score-options). Distribution opens a Count Plot of the score beside
+ * the panel. Up/Down, beside Add from, lets genes count against the score. More
+ * ways to add genes plug in through ADD_SOURCES (paste and upload).
  *
  * It touches no DOM and adds no listener until init(): a closed panel
  * restored from a link or a panel set is constructed and never initialized
@@ -35,8 +36,8 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { createGeneGrid } from '../utils/gene-grid.js';
 import { getFixedGenes } from './table-utilities/panel-tracker.js';
-import { OPTION_KEYS, offeredOptions } from '../utils/signature-options.js';
-import { pinConsumersOf, sourceChanged, sourceRenamed, sourceStatus, onSourceStatus, scoreCommand } from '../utils/score-source.js';
+import { DEFAULT_METHOD, OPTION_KEYS } from '../utils/signature-options.js';
+import { SCORE_TYPE, pinConsumersOf, sourceChanged, sourceRenamed, sourceStatus, onSourceStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
 import { createScoreOptions } from './score-options/score-options.js';
@@ -108,7 +109,8 @@ const GeneSignaturePanel = (function() {
         let _dom = null;
         let D = null;
         let _grid = null;
-        let _scoreOptions = null;         // Scores offered and Inspect (panels/score-options/score-options.js), shared with the gene table
+        let _scoreOptions = null;         // the Methods pop-over and the layers' kinds (panels/score-options/score-options.js), shared with the gene table
+        let _askOff = false;              // Up/Down switched off while down genes exist: the question is in place
         const _undo = new UndoStack();
         const _idMaps = new Map();        // dataset + column -> Promise of id -> gene name, read only when a paste needs it
         let _flow = null;                 // an inline flow (paste and upload) replacing the list: {node, opener, onClose}
@@ -133,7 +135,7 @@ const GeneSignaturePanel = (function() {
             if (loaded) loadGenes();
             rebuildRows({ top: true });
             paint();
-            if (loaded) _scoreOptions.load();        // the layers, and what the offered ones look like
+            if (loaded) _scoreOptions.load();        // the layers, and what each looks like
             _unwatchScore = onSourceStatus(_id, paintScore);
             // a panel opened under an id the page already uses (Back and Forward, a reopened signature, a panel set)
             // is what a plot filtered by that id has not read yet; a table says as much when its rows are in
@@ -179,7 +181,7 @@ const GeneSignaturePanel = (function() {
         /** Replace the recipe's lists and settings (keys of a recipe), as a saved config would. */
         function setRecipe(next) {
             // consumers with no layer take the input as it is now, before it changes: they never move with it
-            if (('input' in next && next.input !== _recipe.input) || ('layers' in next && JSON.stringify(next.layers) !== JSON.stringify(_recipe.layers))) pinConsumersOf();
+            if (('input' in next || 'layers' in next || 'offered' in next) && normalizeSettings({ ..._recipe, ...next }, false).input !== _recipe.input) pinConsumersOf();
             if (!('genes' in next) && !('down' in next)) {
                 // settings only: the lists stay as they are
                 Object.assign(_recipe, normalizeSettings({ ..._recipe, ...next }, _recipe.down.length > 0));
@@ -232,11 +234,6 @@ const GeneSignaturePanel = (function() {
             }
         }
 
-        /** What plots and tables are offered: every offered method of every offered layer, those that cannot be computed left out. */
-        function getOfferedOptions() {
-            return _scoreOptions ? _scoreOptions.getOfferedOptions() : offeredOptions(_recipe);
-        }
-
         /** What the layers look like and what was sampled of them: scoreChoices grades each method on each layer by it. */
         function getGrading() {
             return _scoreOptions ? _scoreOptions.getGrading() : {};
@@ -257,9 +254,10 @@ const GeneSignaturePanel = (function() {
         }
 
         /**
-         * An edit in Scores offered: part of the recipe, so it reaches the link and the score's key. The list of genes
-         * did not change, so what is filtered by this signature is not told. (The component tells the readers.)
-         * @param {Object} patch - option fields of the recipe (input, clip, seed, method, offered, layers...)
+         * An edit in the Methods pop-over or of Up/Down: part of the recipe, so it reaches the link and the score's key.
+         * The list of genes did not change, so what is filtered by this signature is not told. (The component tells the
+         * readers.)
+         * @param {Object} patch - fields of the recipe (clip, seed, bins, controls, detect_above, down_weight, directions)
          */
         function storeOptions(patch) {
             setRecipe(patch);
@@ -423,6 +421,30 @@ const GeneSignaturePanel = (function() {
             say(`${fmtCount(n)} down gene${n === 1 ? '' : 's'} now count${n === 1 ? 's' : ''} as up.`);
         }
 
+        /**
+         * Up/Down pressed. Turned on, genes can be added and set as down. Turned off with down genes present, it asks first,
+         * since they would silently count as up: Count as up (one undoable step) or Keep.
+         */
+        function onDirectionSwitch(on) {
+            if (on) { _askOff = false; setDirections(true); return; }
+            if (_recipe.down.length) { _askOff = true; paint(); return; }
+            _askOff = false;
+            setDirections(false);
+        }
+
+        /** Up/Down as an edit of the recipe: its readers and the saved state are told, as for a Methods edit. */
+        function setDirections(on) {
+            storeOptions({ directions: on });
+            sourceChanged(_id, ['directions']);
+            if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+        }
+
+        /** Distribution: a Count Plot of the score beside the panel (what Inspect showed), on z-score mean of X. */
+        function openDistribution() {
+            const source = { type: SCORE_TYPE, key: _id, column: DEFAULT_METHOD, layer: 'X' };
+            return PanelManager.createPanelNextTo('cell-count', _id, { mode: 'histogram', x: { source } });
+        }
+
         /** Tick every gene the search shows. */
         function tickAll() {
             if (_view !== 'all' || !_matches || !_matches.length) return;
@@ -514,14 +536,16 @@ const GeneSignaturePanel = (function() {
             const definition = el('div', { class: 'gsig-definition', id: sid('definition') });
             const usedBy = el('div', { class: 'gsig-usedby' });
             const scoreLine = el('div', { class: 'gsig-score', hidden: true });
-            _scoreOptions = createScoreOptions({
-                id: _id, D, getOptions: getRecipe, setOptions: storeOptions, getTitle: () => _title,
-                focusGene: (gene) => DataManager.setFocusedGene(gene),
-                directions: { countAsUp: countDownAsUp }
-            });
+            _scoreOptions = createScoreOptions({ id: _id, D, getOptions: getRecipe, setOptions: storeOptions, directions: true });
+            // the score's toolbar: the settings of each method, and the score's distribution in a Count Plot (Inspect's job)
+            const distributionBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-distribution',
+                data: { distribution: '' }, title: 'Open a Count Plot of this score (z-score mean of X) beside the panel',
+                on: { click: openDistribution } }, 'Distribution');
+            const tools = el('span', { class: 'gsig-status__tools', role: 'toolbar', aria: { label: 'Score' } },
+                _scoreOptions.methods.button, distributionBtn);
             status.append(
-                el('div', { class: 'gsig-status__row' }, summary),
-                definition, usedBy, scoreLine, _scoreOptions.warning, _scoreOptions.scoring.element);
+                el('div', { class: 'gsig-status__row' }, summary, tools),
+                definition, usedBy, scoreLine);
 
             const search = el('input', { type: 'search', class: 'form-control form-control-sm gsig-search', id: sid('search'),
                 placeholder: 'Search genes', autocomplete: 'off', spellcheck: 'false', aria: { label: 'Search genes', describedby: sid('searchnote') },
@@ -541,18 +565,23 @@ const GeneSignaturePanel = (function() {
             const addMenuHome = el('span', { class: 'gsig-menu-wrap' }, addFrom, addMenu);
             const focusedBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary gsig-focused', hidden: true,
                 on: { click: addFocused } });
-            // Score some genes as down is on: what Add from, Paste and the focused gene add as
+            // Up/Down is on: what Add from, Paste and the focused gene add as
             const addAsBtn = (value, text) => el('button', { type: 'button', role: 'radio', class: 'gsig-segopt', data: { addAsValue: value },
                 on: { click: () => { _addAs = value; paint(); } } }, text);
             const addAsUp = addAsBtn('up', 'Up'), addAsDown = addAsBtn('down', 'Down');
             const addAsSel = el('div', { class: 'gsig-addas', id: sid('addas'), role: 'radiogroup', data: { addAs: '' },
                 aria: { label: 'Add as' } }, addAsUp, addAsDown);
             const addAsWrap = el('span', { class: 'gsig-addas-wrap', hidden: true }, el('span', { text: 'Add as ' }), addAsSel);
+            // Up/Down: some genes count against the score (a property of the gene list; how they weigh is in Methods)
+            const upDown = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-updown', id: sid('updown'),
+                data: { directions: '' }, aria: { pressed: 'false' }, on: { click: () => onDirectionSwitch(!_recipe.directions) } }, 'Up/Down');
+            const dirAsk = el('div', { class: 'gsig-scoring__notice gsig-dirask', role: 'status', hidden: true, data: { directionAsk: '' } });
             const _flowHost = el('div', { class: 'gsig-flow', hidden: true });
             const controls = el('div', { class: 'gsig-controls' },
                 el('div', { class: 'gsig-search-row' }, search, regex, matchCase, tickAllBtn),
                 searchNote,
-                el('div', { class: 'gsig-add-row' }, addAsWrap, focusedBtn, ...inlineButtons(), addMenuHome),
+                el('div', { class: 'gsig-add-row' }, addAsWrap, focusedBtn, ...inlineButtons(), addMenuHome, upDown),
+                dirAsk,
                 _flowHost);
 
             const allBtn = el('button', { type: 'button', role: 'radio', class: 'gsig-seg', on: { click: () => setView('all') } });
@@ -590,12 +619,12 @@ const GeneSignaturePanel = (function() {
             root.addEventListener('keydown', onPanelKey);
             root.addEventListener('dragover', onPanelDragOver);
             root.addEventListener('drop', onPanelDrop);
-            root.append(status, controls, listbar, dirBar, message, note, empty, _grid.element, _scoreOptions.inspect.element);
+            root.append(status, controls, listbar, dirBar, message, note, empty, _grid.element);
             _container.innerHTML = '';
             _container.appendChild(root);
             _dom = { root, controls, flowHost: _flowHost, status, summary, definition, usedBy, scoreLine, search, regex, matchCase, tickAllBtn, searchNote,
                 addFrom, addMenu, addMenuHome, focusedBtn, allBtn, selBtn, undoBtn, clearBtn, listbar, message, note, empty,
-                addAsWrap, addAsSel, addAsUp, addAsDown, dirBar, filterSel, setUpBtn, setDownBtn,
+                addAsWrap, addAsSel, addAsUp, addAsDown, dirBar, filterSel, setUpBtn, setDownBtn, upDown, dirAsk, distributionBtn,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
         }
 
@@ -609,7 +638,7 @@ const GeneSignaturePanel = (function() {
             _dom.summary.textContent = n
                 ? `${fmtCount(n)} ${n === 1 ? 'gene' : 'genes'} selected${counts ? `: ${counts}` : ''}`
                 : 'Tick genes to build a score.';
-            // no single definition here: a signature offers several, and the Scores offered row below states them
+            // no single definition here: each plot or table chooses its method and layer (the Methods pop-over holds their settings)
             const sides = loaded ? emptySideNote() : '';
             _dom.definition.textContent = [missing ? `${fmtCount(missing)} not in this dataset.` : '', sides].filter(Boolean).join(' ');
             _dom.definition.hidden = !_dom.definition.textContent;
@@ -689,9 +718,24 @@ const GeneSignaturePanel = (function() {
             return '';
         }
 
-        /** The controls that exist only while Score some genes as down is on. */
+        /** Up/Down, and the controls that exist only while it is on. */
         function paintDirections() {
             const on = !!_recipe.directions;
+            _dom.upDown.setAttribute('aria-pressed', String(on));
+            _dom.upDown.classList.toggle('active', on);
+            _dom.upDown.title = on ? 'Some genes count against the score. Click to score every gene as up.'
+                : 'Score some genes as down: they count against the score';
+            const n = _recipe.down.length;
+            _askOff = _askOff && n > 0 && on;
+            _dom.dirAsk.hidden = !_askOff;
+            D.clear(_dom.dirAsk);
+            if (_askOff) {
+                _dom.dirAsk.append(`${fmtCount(n)} down gene${n === 1 ? '' : 's'} will count as up. `,
+                    D.el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { countAsUp: '' },
+                        on: { click: () => { _askOff = false; countDownAsUp(); } } }, 'Count as up'), ' ',
+                    D.el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link', data: { keepDown: '' },
+                        on: { click: () => { _askOff = false; paint(); } } }, 'Keep'));
+            }
             _dom.addAsWrap.hidden = !on;
             for (const [btn, v] of [[_dom.addAsUp, 'up'], [_dom.addAsDown, 'down']]) {
                 const chosen = (on ? _addAs : 'up') === v;
@@ -1073,7 +1117,7 @@ const GeneSignaturePanel = (function() {
             if (gene && _dom && !_dom.focusedBtn.disabled) addGenes([gene], { direction: currentAddAs() });
         }
 
-        /** What Add from and the focused gene add as: up unless Score some genes as down is on and Down is chosen. */
+        /** What Add from and the focused gene add as: up unless Up/Down is on and Down is chosen. */
         function currentAddAs() {
             return _recipe.directions && _addAs === 'down' ? 'down' : 'up';
         }
@@ -1128,11 +1172,10 @@ const GeneSignaturePanel = (function() {
             selectionIsLive: true,
             // for the steps after this one
             getRecipe,
-            getOfferedOptions,
             getGrading,
             /** What the default score depends on, as text: equal recipes give equal text (the tests compare it across a link). */
             getRecipeHash: () => recipeHash(_recipe),
-            revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
+            openDistribution,
             addGenes,
             addDirected,
             setDirection,
@@ -1145,8 +1188,7 @@ const GeneSignaturePanel = (function() {
             getSelectedGenes: () => [..._recipe.genes, ..._recipe.down],
             openFlow,
             closeFlow,
-            _debugState,
-            _inspect: () => (_scoreOptions ? _scoreOptions.inspect : null)
+            _debugState
         };
         return api;
     }

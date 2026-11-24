@@ -162,3 +162,25 @@ test('a typed limit is a number or empty (auto); anything else says so', () => {
     assert.equal(CM.parseColourLimit('abc').ok, false);
     assert.equal(CM.parseColourLimit('abc').message, 'Enter a number, or leave it empty for automatic.');
 });
+
+test('popoverUse adds the density range and the point controls to what colorUse says', () => {
+    const use = (c) => CM.popoverUse(norm(c));
+    const two = { mode: 'density2d', x: obs('a'), y: obs('b') };
+    assert.deepEqual(use(two), { map: true, palette: false, range: true, points: false, fade: false });
+    assert.deepEqual(use({ ...two, layers: { points: true } }), { map: true, palette: false, range: true, points: true, fade: false });
+    assert.deepEqual(use({ ...two, split: obs('s') }), { map: false, palette: true, range: true, points: false, fade: false }, 'a Color by has a range of its density too');
+    assert.deepEqual(use({ ...two, split: obs('s'), layers: { points: true } }), { map: false, palette: true, range: true, points: true, fade: true });
+    assert.deepEqual(use({ mode: 'hist2d', x: obs('a'), y: obs('b') }), { map: true, palette: false, range: false, points: false, fade: false });
+    assert.deepEqual(use({ mode: 'bar', x: obs('a') }), { map: false, palette: false, range: false, points: false, fade: false });
+});
+
+test('the drawing\'s options carry the point opacity (1 unless stored) and the density fade', () => {
+    const o = (extra) => CM.drawOptions(norm({ mode: 'density2d', x: obs('a'), y: obs('b'), ...extra }));
+    assert.equal(o({}).pointOpacity, 1);
+    assert.equal(o({ split: obs('s') }).pointOpacity, 1, 'a Color by does not lower it');
+    assert.equal(o({ pointOpacity: 0.4 }).pointOpacity, 0.4);
+    assert.equal(o({ pointOpacity: 0 }).pointOpacity, 1, 'out of range: the default');
+    assert.equal(o({ pointOpacity: 7 }).pointOpacity, 1);
+    assert.equal(o({}).pointFade, false);
+    assert.equal(o({ pointFade: true }).pointFade, true);
+});

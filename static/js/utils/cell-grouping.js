@@ -300,7 +300,7 @@ function computed(partitioning) {
 
 /**
  * The hash a grouping's result is cached under (PER-3): equal recipes give equal text, and what no number of the
- * groups depends on does not change it: a rename, the separator, the statistics and layers offered, the detection
+ * groups depends on does not change it: a rename, the separator, an old link's `offered` and `layers`, the detection
  * threshold (each feature's key carries its own), and a default written out. So it is made of what the request sends.
  * Each partitioning is walked once, when the hasher is made, and again only when a variant brings a new one, so
  * hashing the variants of one applied recipe costs nothing per call.
@@ -366,10 +366,15 @@ function plainLabel(id, name, info) {
     }
 }
 
-/** One Map per partitioning: level id to its default label (SHR-9), the same label in two partitionings qualified. */
-export function defaultLabelMaps(recipe, reply, titleOf) {
+/**
+ * One Map per partitioning: level id to its default label (SHR-9), the same label in two partitionings qualified. A level that
+ * is a group of another grouping is called what that group is called (`info.names`); with `generated` it is called by its
+ * generated name (`info.generatedNames`), which a rename of that group leaves alone.
+ */
+export function defaultLabelMaps(recipe, reply, titleOf, generated = false) {
     const maps = recipe.partitionings.map((p, i) => {
-        const info = (reply.partitionings && reply.partitionings[i]) || { levels: [] };
+        const read = (reply.partitionings && reply.partitionings[i]) || { levels: [] };
+        const info = generated && read.generatedNames ? { ...read, names: read.generatedNames } : read;
         const name = sourceName(p.source, titleOf);
         const map = new Map();
         if (p.binning) for (const { id, label } of levelLabels(p.binning, info, name)) map.set(id, label);
@@ -403,11 +408,13 @@ const isCollected = (key) => key.length === 1 && key[0] === RESERVED.small;
  * @param {Object} recipe - from normalizeGrouping
  * @param {Object} reply - the server's reply
  * @param {(source: Object) => (string|undefined)} [titleOf] - the title of the panel behind a source
+ * @param {boolean} [generated] - name a level that is a group of another grouping by that group's generated name, not its label
+ *   (what a group reference compares: a rename is display only)
  * @returns {{key: string[], labels: string[]}[]} one per group of the reply, in its order
  */
 // export-unused-ok: G7's group-reference compares default labels (SHR-38)
-export function groupLabels(recipe, reply, titleOf) {
-    const maps = defaultLabelMaps(recipe, reply, titleOf);
+export function groupLabels(recipe, reply, titleOf, generated = false) {
+    const maps = defaultLabelMaps(recipe, reply, titleOf, generated);
     const collected = P.smallGroups(effectiveSmall(recipe).threshold);
     return reply.groups.map((g) => ({
         key: g.key,
@@ -416,23 +423,44 @@ export function groupLabels(recipe, reply, titleOf) {
 }
 
 /**
- * The name of each group (SHR-9): its generated name (`generatedGroupNames`).
+ * The name of each group (SHR-9): its generated name (`generatedGroupNames`), or the label the user gave that group
+ * (`groupOverrides`, decision 38, keyed by the generated name). A label that another group already has is qualified the way
+ * level duplicates are, `name (2)`: the group that is called that keeps it.
  * @returns {string[]} one per group of the reply, in its order
  */
-// export-unused-ok: G8a lists the groups of a grouping as the levels of a source
 export function groupNames(recipe, reply, titleOf) {
-    return generatedGroupNames(recipe, reply, titleOf);
+    const generated = generatedGroupNames(recipe, reply, titleOf);
+    // what an inner grouping's groups are CALLED shows; what overrides are keyed by does not move with it
+    const shown = joinedNames(recipe, reply, titleOf, false);
+    const labels = new Map((Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : [])
+        .filter((o) => typeof o.label === 'string' && o.label !== '').map((o) => [o.name, o.label]));
+    if (!labels.size) return shown;
+    const taken = new Set(shown.filter((_, i) => !labels.has(generated[i])));
+    return shown.map((name, i) => {
+        if (!labels.has(generated[i])) return name;
+        const label = labels.get(generated[i]);
+        let out = label;
+        for (let n = 2; taken.has(out); n++) out = P.suffixed(label, n);
+        taken.add(out);
+        return out;
+    });
 }
 
 /**
  * The generated name of each group, what a group's own settings are keyed by (`groupOverrides`, decision 38): its level
- * labels, renamed where the user renamed a level, joined by the separator. Two groups with one name get (2), (3) in order.
+ * labels, renamed where the user renamed a level, joined by the separator. Two groups with one name get (2), (3) in order. A
+ * level that is a group of another grouping is named by that group's GENERATED name, so a rename of it never moves a key.
  * @returns {string[]} one per group of the reply, in its order
  */
 export function generatedGroupNames(recipe, reply, titleOf) {
+    return joinedNames(recipe, reply, titleOf, true);
+}
+
+/** Each group's level labels joined by the separator, the same name twice qualified; `generated` keys inner groups by generated name. */
+function joinedNames(recipe, reply, titleOf, generated) {
     const separator = recipe.separator === undefined ? DEFAULT_SEPARATOR : recipe.separator;
     const seen = new Map();
-    return groupLabels(recipe, reply, titleOf).map(({ key, labels }) => {
+    return groupLabels(recipe, reply, titleOf, generated).map(({ key, labels }) => {
         const shown = isCollected(key) ? labels : labels.map((label, i) => {
             const renamed = recipe.partitionings[i] && recipe.partitionings[i].labels;
             return (renamed && renamed[key[i]]) || label;
@@ -510,7 +538,7 @@ function wirePartitions(recipe, ctx, depth, sets) {
 
 /**
  * The body of a request for the groups of a recipe (SHR-29, plan 1.2): what the server computes from, with no label,
- * separator or statistic offered, and every default filled in so the body says what the engine does. A table source is
+ * separator or statistic list, and every default filled in so the body says what the engine does. A table source is
  * `{type: 'table', ref}` and its cells are one entry of the top-level `sets`, whichever partitionings use the table.
  * @param {Object} recipe - from normalizeGrouping
  * @param {{subset?: Object, features?: Object[], bitsetFor?: (source: Object) => (ArrayLike<*>|null),

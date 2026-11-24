@@ -81,7 +81,7 @@ test('pickLayer: the layer stays when it can give the statistic; else the first 
     assert.deepEqual(C.pickLayer({ datasetLayers: LAYERS, kinds: KINDS, stat: 'sd', preferred: 'X' }), { layer: 'X', say: '' });
     const moved = C.pickLayer({ datasetLayers: LAYERS, kinds: KINDS, stat: 'pct_expressing', preferred: 'X' });
     assert.equal(moved.layer, 'logged');
-    assert.match(moved.say, /^Layer changed to logged: % expressing is not available on X\.$/);
+    assert.match(moved.say, /^Layer changed to logged: % expressing cannot be computed on 'X'\.$/);
 });
 
 // ------------------------------------------------------------------ one-row sections (item 7)

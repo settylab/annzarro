@@ -15,7 +15,7 @@
  */
 import { setHash, stableStringify } from '../panels/gene-set-utilities/state.js';
 import {
-    METHODS, DEFAULT_METHOD, DOWN_METHODS, DOWN_WEIGHTS, DEFAULT_DOWN_WEIGHT, WEIGHTED_METHODS, cleanDownWeight, canScoreDown, paramsOf, methodInfo, normalizeOptions,
+    METHODS, DEFAULT_METHOD, DOWN_METHODS, DOWN_WEIGHTS, DEFAULT_DOWN_WEIGHT, WEIGHTED_METHODS, cleanDownWeight, canScoreDown, paramsOf, methodInfo, writableOptions,
     DEFAULT_CLIP, DEFAULT_INPUT, DEFAULT_SEED, DEFAULT_BINS, DEFAULT_CONTROLS, BINS_RANGE, CONTROLS_RANGE, MAX_SEED,
     parseClipText, parseSeedText, parseWholeText, parseThresholdText, cleanWhole, cleanThreshold, cleanClip
 } from './signature-options.js';
@@ -79,8 +79,9 @@ export function normalizeRecipe(raw) {
 export function normalizeSettings(src, hasDown) {
     return {
         down_weight: cleanDownWeight(src.down_weight),
-        // how to score and what to offer: one schema, shared with the gene table (utils/signature-options.js)
-        ...normalizeOptions(src),
+        // how to score: one schema, shared with the gene table (utils/signature-options.js). A stored `offered` or
+        // `layers` (links made before decision 31) is read only for the method and layer it meant, and kept nowhere
+        ...writableOptions(src),
         // the panel's own switch (Score some genes as down): on whenever there are down genes, and kept on when
         // it was left on with none. Not a score setting: it is in no cache key and not sent to the server.
         directions: src.directions === true || hasDown,
@@ -102,11 +103,13 @@ export function serverRecipe(recipe) {
 }
 
 /**
- * The recipe as a link, a panel set and a history entry carry it: the score route's fields and the panel's
- * own (which methods and layers are offered to consumers). Configuration only.
+ * The recipe as a link, a panel set and a history entry carry it: the score route's fields, the panel's switch and the
+ * reserved custom methods. Configuration only. Nothing is "offered" since decision 31, so `offered` and `layers` are
+ * not written; `method` and `input` stay, as the pair a consumer saved without a layer resolves to.
  */
 export function storedRecipe(recipe) {
-    const stored = { ...serverRecipe(recipe), offered: [...recipe.offered], layers: [...recipe.layers] };
+    const stored = serverRecipe(recipe);
+    if (Array.isArray(recipe.methods)) stored.methods = JSON.parse(JSON.stringify(recipe.methods));
     // the default is not written: a link without it means each gene weighs equally
     if (stored.down_weight === DEFAULT_DOWN_WEIGHT) delete stored.down_weight;
     if (recipe.directions) stored.directions = true;          // absent when off: a link without down genes is what it was
@@ -238,7 +241,7 @@ export function directionCounts(recipe) {
 }
 
 /**
- * The formula in plain words, for Scores offered, with the weighting in force (the z-score mean and the mean have one;
+ * The formula in plain words, for the Methods pop-over, with the weighting in force (the z-score mean and the mean have one;
  * control-adjusted is always by side). Empty when the signature has no down genes (nothing to say).
  * @param {Object} recipe - from normalizeRecipe
  */

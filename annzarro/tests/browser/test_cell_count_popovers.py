@@ -71,7 +71,9 @@ def test_log_axis_ring_and_the_density_row_are_in_the_control_grid_and_there_is_
     _open(page, served, {CC: _count(mode="bar", x=cc.CELL_TYPE)})
     _drawn(page, "bar")
     assert page.is_visible(f"{S} .ccnt-row--labels .ccnt-log") and not page.is_visible(f"{S} .ccnt-ring")
-    assert page.query_selector(f"{S} .ccnt-options-btn") is None and page.query_selector(f"{S} .ccnt-options") is None
+    # no inline Plot Options box: its button (WP-5a) opens the shared pop-over in the body-level layer
+    assert page.query_selector(f"{S} .ccnt-options") is None
+    assert page.get_attribute(f"{S} .ccnt-toolbar .ccnt-options-btn", "aria-haspopup") == "dialog"
     page.click(f"{S} .ccnt-log")
     _drawn(page, "bar", "c.log === true")
     page.select_option(f"{S} .ccnt-mode", "pie")
@@ -88,7 +90,8 @@ def test_the_toolbar_is_save_as_grouping_color_then_undo_and_save_works_from_it(
     depth, score = obs("depth"), obs("score")
     _open(page, served, {CC: _count(mode="hist2d", x=depth, y=score)})
     _drawn(page, "hist2d")
-    assert page.evaluate(TOOLBAR, S) == ["Save as grouping", "Color ▾", "Download CSV", "Undo"]
+    # design note section 4: [panel actions] [Display ▾] ... [Undo] [Plot Options]; Download CSV is in Plot Options ▸ Export (WP-5a)
+    assert page.evaluate(TOOLBAR, S) == ["Save as grouping", "Display ▾", "Undo", "Plot Options"]
     assert page.query_selector(f"{S} .ccnt-table-btn") is None
     page.click(f"{S} .ccnt-toolbar .ccnt-save-btn")
     page.wait_for_selector(f"{S} .ccnt-save")
@@ -98,11 +101,11 @@ def test_the_toolbar_is_save_as_grouping_color_then_undo_and_save_works_from_it(
 def test_color_shows_when_a_colour_scale_or_a_level_palette_applies_and_the_map_reaches_the_plot(page, served):
     _open(page, served, {CC: _count(mode="bar", x=cc.CELL_TYPE)})
     _drawn(page, "bar")
-    assert "Color ▾" not in page.evaluate(TOOLBAR, S), "a plain bar has nothing to colour"
+    assert "Display ▾" not in page.evaluate(TOOLBAR, S), "a plain bar has nothing to colour"
     page.select_option(f"{S} .ccnt-mode", "hist2d")
     page.evaluate(f"""() => window.PanelManager.getPanel('{CC}').updateConfig({{ x: {{ source: {{ type: 'obs', key: 'depth' }} }}, y: {{ source: {{ type: 'obs', key: 'score' }} }} }})""")
     _drawn(page, "hist2d")
-    assert "Color ▾" in page.evaluate(TOOLBAR, S)
+    assert "Display ▾" in page.evaluate(TOOLBAR, S)
     before = page.evaluate(BOX, S)
     page.click(f"{S} .ccnt-color-btn")
     page.wait_for_selector("[data-popover='color']")

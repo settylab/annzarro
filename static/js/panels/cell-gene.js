@@ -66,7 +66,10 @@ import { buildFigure, colourBars, sceneLabels, DEFAULT_CAMERA } from './cell-gen
 import { roundCamera } from '../utils/view-rounding.js';
 import { recordCameraOnRelease } from '../utils/scene-camera.js';
 import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
+import { createPlotToolbar } from '../ui/plot-toolbar.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
+import { resolveStyle } from './plot-utilities/options-schema.js';
+import { applyPlotStyle, styleTheme, cellGeneLegend } from './plot-utilities/plot-style.js';
 import { drawPlot, fitToContainer } from '../utils/panel-surface.js';
 import { Coverage } from '../utils/coverage.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
@@ -208,6 +211,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let D = null;
         let _dom = null;
         let _controls = null;
+        /** The shared plot toolbar of the grid (ui/plot-toolbar.js). */
+        let _toolbar = null;
         let _sections = null;
         let _addGenes = null;
         let _checklist = null;
@@ -763,7 +768,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             plot.__azChooser = null;
             const area = el('div', { class: 'cgene-area' }, plot, el('div', { class: 'cgene-empty' }, checklist));
             // Cluster ▾, Color ▾ and Plot Options are pop-overs (cell-gene/options.js), out of the panel's flow
-            _controls.element.append(el('div', { class: 'cgene-undo-wrap' }, undoBtn));
+            // the shared plot toolbar (ui/plot-toolbar.js): [3D] [Cluster ▾] [Color ▾] ... [Undo] [Plot Options], as in every plot
+            _toolbar = createPlotToolbar({ className: 'cgene-toolbar', undo: undoBtn });
+            _controls.element.append(_toolbar.element);
             root.append(_controls.element, message, hint, area);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
@@ -868,7 +875,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 title: () => _title,
                 // the matrix drawn, for the 3D cap; the image export of Plot Options
                 shape: () => (_shown ? { rows: _shown.rows, groups: _shown.groups } : null),
-                exportImage: (format) => { if (_dom && _shown) exportPlot(_dom.plot, format, {}, 'full'); },
+                exportImage: (format, settings = {}) => { if (_dom && _shown) exportPlot(_dom.plot, format, settings, 'full'); },
+                // the shared Plot Options (WP-5a): a whole configuration as one undoable step, or (the session default
+                // followed) without one; the plot's size on screen, for an export of the size shown
+                commit: (next, label) => commit(next, label),
+                replace: (next) => { _config = normalizeCellGene(next).config; changed(); },
+                plotSize: () => (_dom ? { width: _dom.plot.clientWidth, height: _dom.plot.clientHeight } : {}),
+                plot: () => (_dom ? _dom.plot : null),
+                toolbar: _toolbar,
                 // a tag of the plot's status strip (the clustering's sentences)
                 tag: (kind, tag) => { if (_dom) setStatusTag(_dom.plot, kind, tag); }
             };
@@ -1328,6 +1342,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const permute = (arr) => (arr ? reorder(arr, order.rows, order.groups, G) : arr);
             const colours = groupSources().sources.coloursOf(axisId(), reply).factors;
             const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf, colors: colours });
+            const look = resolveStyle(_config, TYPE);
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
                 const prev = k > 0 ? matrix.rows[order.rows[k - 1]] : null;
@@ -1350,6 +1365,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
                 legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline, dotOpacity: extras.dotOpacity,
+                // the shared Plot Options' legend column: space, columns, cap (WP-5a)
+                legendLayout: cellGeneLegend(look),
                 pendingText: pending ? pendingText(plan, pending) : ''
             };
             // 3D (UX 6b): within the bar cap; above it the plot is drawn in 2D and the strip says why
@@ -1359,7 +1376,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 model.height = { ...(matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) }), ...extras.height };
                 if (_config.camera) model.camera = _config.camera;
             }
-            const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });
+            // the shared Plot Options (WP-5a): the font and colours the builder measures with, then the rest of the look
+            const figure = applyPlotStyle(buildFigure(model, styleTheme(look, PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'])), look, TYPE);
             if (gate3d && !gate3d.ok) figure.refused3d = gate3d.text;
             if (model.view === '3d' && window.Plotly && window.Plotly.Icons) {
                 figure.config.modeBarButtonsToAdd = [{ name: 'resetCameraCellGene', title: W3.resetCamera, icon: window.Plotly.Icons.home, click: (gd) => resetCamera(gd) }];
