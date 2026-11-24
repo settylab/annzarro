@@ -577,6 +577,7 @@ def test_a_2d_histogram_colored_by_a_level_draws_opacity_layers(page, served):
 
 def _density_traces(page):
     return page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'heatmap' || t.type === 'contour')
+        .filter(t => !(t.type === 'heatmap' && t.opacity === 0))   // the transparent heatmap that carries a lines-only color bar is no layer
         .map(t => ({ type: t.type, coloring: t.contours && t.contours.coloring, lines: t.contours && t.contours.showlines }))""", S)
 
 

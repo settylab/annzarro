@@ -371,6 +371,7 @@ export function parseAdjust(text) {
  * @param {Object} config - from normalizeCountPlot
  * @returns {{map: boolean, palette: boolean}}
  */
+// export-unused-ok: the colour tests state it
 export function colorUse(config) {
     const c = shownConfig(config);
     const kind = (c.value && c.value.kind) || 'count';
