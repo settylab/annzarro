@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 const M = await import('../../../static/js/utils/count-plot-model.js');
 const D = await import('../../../static/js/panels/cell-count/draw-density.js');
 const { PLOT_PALETTES } = await import('../../../static/js/utils/plot-theme.js');
+const { groupColours } = await import('../../../static/js/panels/plot-utilities/colors.js');
 const oracle = JSON.parse(readFileSync(new URL('../data/oracle/kde.json', import.meta.url), 'utf8'));
 
 const obs = (key) => ({ source: { type: 'obs', key } });
@@ -129,7 +130,7 @@ test('a split draws one curve per level, each normalised to 1 by default', () =>
         for (const v of t.y) area += v * c.step[0];
         assert.ok(Math.abs(area - 1) < 0.03, String(area));
     }
-    assert.deepEqual(figure.data.map((t) => t.line.color), ['#111111', '#222222']);
+    assert.deepEqual(figure.data.map((t) => t.line.color), groupColours(2), "the split's levels in the app's group colors (utils/grouping-colours.js)");
 });
 
 test('scaled by size the curves sum to the oracle\'s density of all the cells', () => {
