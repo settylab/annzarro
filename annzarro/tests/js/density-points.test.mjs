@@ -49,7 +49,8 @@ test('the opacity steps: the density over the common peak in equal steps, none f
     // the opacity of a step rises evenly to the top step's
     const a = Array.from({ length: P.ALPHA_STEPS }, (_, k) => P.stepAlpha(k));
     assert.ok(a.every((v, i) => i === 0 || v > a[i - 1]));
-    assert.equal(a[P.ALPHA_STEPS - 1], P.POINT_ALPHA);
+    assert.equal(a[P.ALPHA_STEPS - 1], 1, 'the top step is the full point opacity');
+    assert.equal(P.stepAlpha(P.ALPHA_STEPS - 1, P.ALPHA_STEPS, 0.6), 0.6, 'or the stored one');
 });
 
 test('the sample above the cap is exactly the cap, sorted, the same for one seed and another for another', () => {
@@ -90,7 +91,7 @@ test('with a Color by the points are one trace per level and opacity step, in th
     const level = Int16Array.from([0, 0, 1, 1, 1]);
     // level 0 density: bins (0,0) = 1.0 (the peak), (0,1) = 0.5; level 1: (1,0) = 0.25, (1,1) = 0, (0,0) = 1.0
     const smooth = [Float64Array.from([1.0, 0.5, 0, 0]), Float64Array.from([1.0, 0, 0.25, 0])];
-    const traces = P.pointTraces({ x, y, level }, { gx, gy, smooth, peak: 1, colors, size: 3 });
+    const traces = P.pointTraces({ x, y, level }, { gx, gy, smooth, peak: 1, colors, size: 3, fade: true });
     const total = traces.reduce((n, t) => n + t.x.length, 0);
     assert.equal(total, 4, 'the cell with no density is not drawn');
     for (const t of traces) {
@@ -105,7 +106,7 @@ test('with a Color by the points are one trace per level and opacity step, in th
     assert.equal(byColor('255, 0, 0').reduce((n, t) => n + t.x.length, 0), 2);
     assert.equal(byColor('0, 0, 255').reduce((n, t) => n + t.x.length, 0), 2);
     // the peak is in the last step: the full point opacity
-    const peakTrace = traces.find((t) => t.marker.color === `rgba(255, 0, 0, ${P.POINT_ALPHA})`);
+    const peakTrace = traces.find((t) => t.marker.color === `rgba(255, 0, 0, 1)`);
     assert.deepEqual(Array.from(peakTrace.x), [0.5]);
     assert.deepEqual(Array.from(peakTrace.y), [0.5]);
     // the half-density cell of level 0 is in the step of half the peak
@@ -117,7 +118,7 @@ test('a piece never holds 100,000 points: more cells in one step are cut into se
     const n = 250_000;
     const x = new Float32Array(n).fill(0.5);
     const y = new Float32Array(n).fill(0.5);
-    const traces = P.pointTraces({ x, y, level: new Int16Array(n) }, { gx, gy, smooth: [Float64Array.from([1, 0, 0, 0])], peak: 1, colors, size: 3 });
+    const traces = P.pointTraces({ x, y, level: new Int16Array(n) }, { gx, gy, smooth: [Float64Array.from([1, 0, 0, 0])], peak: 1, colors, size: 3, fade: true });
     assert.equal(traces.length, 3);
     assert.equal(traces.reduce((m, t) => m + t.x.length, 0), n);
     assert.ok(traces.every((t) => t.x.length < 100_000));
@@ -147,4 +148,28 @@ test('one group with a range set: the points read it, as the other layers do', (
     assert.equal(traces[0].marker.cmin, 0.1);
     assert.equal(traces[0].marker.cmax, 0.4);
     assert.equal(traces[0].marker.showscale, false, 'no color bar unless asked');
+});
+
+test('a floor under the opacity scale: a cell whose density is not above it is not drawn, the rest step between floor and peak', () => {
+    assert.equal(P.alphaStep(0.2, 1, P.ALPHA_STEPS, 0.2), -1);
+    assert.equal(P.alphaStep(0.6, 1, P.ALPHA_STEPS, 0.2), 3, 'halfway between the floor and the peak: the end of the fourth step');
+    assert.equal(P.alphaStep(1, 1, P.ALPHA_STEPS, 0.2), 7);
+});
+
+test('flat points (no fade): one run of the point opacity per level, and the floor still leaves out thin cells', () => {
+    const x = Float32Array.from([0.5, 0.5, 1.5]);
+    const y = Float32Array.from([0.5, 1.5, 0.5]);
+    const smooth = [Float64Array.from([1.0, 0.1, 0, 0]), Float64Array.from([0, 0, 0.9, 0])];
+    const traces = P.pointTraces({ x, y, level: Int16Array.from([0, 0, 1]) }, { gx, gy, smooth, peak: 1, floor: 0.2, colors, size: 3, opacity: 0.7 });
+    assert.equal(traces.length, 2, 'one run per level');
+    assert.deepEqual(traces.map((t) => t.marker.color), ['rgba(255, 0, 0, 0.7)', 'rgba(0, 0, 255, 0.7)']);
+    assert.deepEqual(traces.map((t) => t.x.length), [1, 1], 'the cell of density 0.1 is under the floor');
+});
+
+test('one group: the opacity is the point opacity, the numbers are the density from the floor to the peak', () => {
+    const traces = P.pointTraces({ x: Float32Array.from([0.5]), y: Float32Array.from([0.5]), level: null },
+        { gx, gy, smooth: [Float64Array.from([0.5, 0, 0, 0])], peak: 0.5, floor: 0.1, colors: [], size: 3, opacity: 0.4 });
+    assert.equal(traces[0].marker.opacity, 0.4);
+    assert.equal(traces[0].marker.cmin, 0.1);
+    assert.equal(traces[0].marker.cmax, 0.5);
 });

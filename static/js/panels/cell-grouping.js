@@ -449,7 +449,21 @@ function createFactors({ D, id, model, on }) {
             data: { azOwnEscape: '' }, aria: { label: `Cancel renaming ${r.label}` },
             on: { mousedown: (e) => e.preventDefault(), click: () => leave(false), keydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } } } }, '✕');
         li.classList.add('cgrp-level--editing');
-        li.append(input, ok, cancel, count);
+        // the level's own color beside its name (the same picker and the same override as the swatch of its row): naming and coloring in one place
+        const colour = colorsOf(i).get(r.id);
+        const swatch = colour ? levelSwatch({ D, id: r.id, label: r.label, colour, pick: (css) => commitFactor(i, withOverride(p, r.id, css), `color level ${r.label}`) }) : null;
+        if (swatch) {
+            swatch.title = `Color of ${r.label} (Alt+C)`;
+            swatch.setAttribute('aria-keyshortcuts', 'Alt+C');
+            swatch.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } });
+            swatch.dataset.azOwnEscape = '';
+            input.addEventListener('keydown', (e) => {
+                if (!e.altKey || e.key.toLowerCase() !== 'c') return;
+                e.preventDefault();
+                if (typeof swatch.showPicker === 'function') { try { swatch.showPicker(); } catch { swatch.click(); } } else swatch.click();
+            });
+        }
+        li.append(...(swatch ? [swatch] : []), input, ok, cancel, count);
         setTimeout(() => { if (input.isConnected) { input.focus(); input.select(); } }, 0);
         return li;
     }

@@ -21,9 +21,6 @@ export const DENSITY_POINTS_LOAD = 25_000_000;
 /** The opacity steps of a Color by's points, one trace each. */
 // export-unused-ok: the module's tests state it
 export const ALPHA_STEPS = 8;
-/** The opacity of the densest step: below 1, so points of another level beneath still show. */
-// export-unused-ok: the module's tests state it
-export const POINT_ALPHA = 0.9;
 /** A trace's most points: fewer than 100,000, where scattergl starts to build a hover index. */
 const PIECE = 99_999;
 /** The marker size in pixels: the default and the range of the field. */
@@ -51,17 +48,20 @@ export function densityAt(f, gx, gy, x, y) {
     return ix < 0 || iy < 0 ? NaN : f[ix * gy.bins + iy];
 }
 
-/** The opacity step (0 to ALPHA_STEPS - 1) of density `d` under `peak`, -1 for no density. */
+/**
+ * The opacity step (0 to ALPHA_STEPS - 1) of density `d` between `floor` and `peak`: -1 for a density not above the floor
+ * (no density, with the floor at 0).
+ */
 // export-unused-ok: the module's tests state it
-export function alphaStep(d, peak, steps = ALPHA_STEPS) {
-    if (!(d > 0) || !(peak > 0)) return -1;
-    return Math.min(steps - 1, Math.max(0, Math.ceil((d / peak) * steps) - 1));
+export function alphaStep(d, peak, steps = ALPHA_STEPS, floor = 0) {
+    if (!(d > floor) || !(peak > floor)) return -1;
+    return Math.min(steps - 1, Math.max(0, Math.ceil(((d - floor) / (peak - floor)) * steps) - 1));
 }
 
-/** The opacity a step is drawn in: rising evenly to POINT_ALPHA at the last. */
+/** The opacity a step is drawn in: rising evenly to `top` (the point opacity, 1 unless set) at the last. */
 // export-unused-ok: the module's tests state it
-export function stepAlpha(k, steps = ALPHA_STEPS) {
-    return Number((POINT_ALPHA * (k + 1) / steps).toFixed(4));
+export function stepAlpha(k, steps = ALPHA_STEPS, top = 1) {
+    return Number((top * (k + 1) / steps).toFixed(4));
 }
 
 function mulberry32(seed) {
@@ -124,12 +124,13 @@ const marker = (size) => ({ size, line: { width: 0 } });
  * @param {{title: string}} [grid.bar] - one group: put the color bar on the first trace
  * @returns {Object[]} scattergl traces
  */
-export function pointTraces(points, { gx, gy, smooth, peak, colors, size, scale = {}, bar = null }) {
+export function pointTraces(points, { gx, gy, smooth, peak, floor = 0, colors, size, opacity = 1, fade = false, scale = {}, bar = null }) {
     const { x, y, level } = points;
     const n = x.length;
-    if (!level) return groupTraces(x, y, smooth[0], gx, gy, peak, size, scale, bar);
+    if (!level) return groupTraces(x, y, smooth[0], gx, gy, peak, floor, size, opacity, scale, bar);
     const nLevels = smooth.length;
-    const steps = ALPHA_STEPS;
+    // flat points are one run per level at the point opacity; faded ones step with the density up to it
+    const steps = fade ? ALPHA_STEPS : 1;
     // a counting sort of the cells into (level, step) runs, so a run is typed and contiguous
     const key = new Int32Array(n);
     const counts = new Int32Array(nLevels * steps + 1);
@@ -137,7 +138,8 @@ export function pointTraces(points, { gx, gy, smooth, peak, colors, size, scale 
         const s = level[i];
         let k = -1;
         if (s >= 0 && s < nLevels) {
-            const a = alphaStep(densityAt(smooth[s], gx, gy, x[i], y[i]), peak, steps);
+            const d = densityAt(smooth[s], gx, gy, x[i], y[i]);
+            const a = fade ? alphaStep(d, peak, steps, floor) : (d > floor ? 0 : -1);
             if (a >= 0) k = s * steps + a;
         }
         key[i] = k;
@@ -159,7 +161,7 @@ export function pointTraces(points, { gx, gy, smooth, peak, colors, size, scale 
     for (let k = 0; k < nLevels * steps; k++) {
         const from = counts[k];
         const to = counts[k + 1];
-        const color = rgba(colors[Math.floor(k / steps)], stepAlpha(k % steps, steps));
+        const color = rgba(colors[Math.floor(k / steps)], fade ? stepAlpha(k % steps, steps, opacity) : opacity);
         for (let a = from; a < to; a += PIECE) {
             const b = Math.min(to, a + PIECE);
             traces.push({ type: 'scattergl', mode: 'markers', x: px.subarray(a, b), y: py.subarray(a, b), hoverinfo: 'skip', showlegend: false,
@@ -169,7 +171,7 @@ export function pointTraces(points, { gx, gy, smooth, peak, colors, size, scale 
     return traces;
 }
 
-function groupTraces(x, y, f, gx, gy, peak, size, scale, bar) {
+function groupTraces(x, y, f, gx, gy, peak, floor, size, opacity, scale, bar) {
     const n = x.length;
     const px = new Float32Array(n);
     const py = new Float32Array(n);
@@ -177,7 +179,7 @@ function groupTraces(x, y, f, gx, gy, peak, size, scale, bar) {
     let m = 0;
     for (let i = 0; i < n; i++) {
         const d = densityAt(f, gx, gy, x[i], y[i]);
-        if (!(d > 0)) continue;
+        if (!(d > floor)) continue;
         px[m] = x[i];
         py[m] = y[i];
         pd[m] = d;
@@ -187,8 +189,8 @@ function groupTraces(x, y, f, gx, gy, peak, size, scale, bar) {
     for (let a = 0; a < m; a += PIECE) {
         const b = Math.min(m, a + PIECE);
         traces.push({ type: 'scattergl', mode: 'markers', x: px.subarray(a, b), y: py.subarray(a, b), hoverinfo: 'skip', showlegend: false,
-            marker: { ...marker(size), opacity: POINT_ALPHA, color: pd.subarray(a, b), ...scale,
-                cmin: scale.cmin === undefined ? 0 : scale.cmin, cmax: scale.cmax === undefined ? peak : scale.cmax,
+            marker: { ...marker(size), opacity, color: pd.subarray(a, b), ...scale,
+                cmin: scale.cmin === undefined ? floor : scale.cmin, cmax: scale.cmax === undefined ? peak : scale.cmax,
                 showscale: !!bar && a === 0, ...(bar && a === 0 ? { colorbar: { title: { text: bar.title } } } : {}) } });
     }
     return traces;

@@ -4,21 +4,21 @@
  * - THE CHOICES (pure, Node-tested): what the Groups selects list (categorical obs columns; groupings, with the ones
  *   that would close a loop unavailable and why, decision 15), the cell axis as the page's group sources name it, and
  *   what Color and Size each list (WP-4, decision 31): a statistic select (all five statistics, graded on the layer the
- *   measure reads, and Cell count) and a layer select (all the dataset's layers, graded for the statistic). Nothing is
- *   offered, on a grouping axis or an obs one alike; a pair a layer cannot give is disabled with its reason, and a held
+ *   measure reads, and Cell count) and a layer select (all the dataset's layers, graded for the statistic), on a
+ *   grouping axis or an obs one alike; a pair a layer cannot give is disabled with its reason, and a held
  *   one stays, marked "(not available)" (SHR-27). These are utils/group-statistics.js `statisticChoices` and
  *   `statisticLayerChoices` with the Cell-Gene Plot's words.
  * - THE CONTROL GRID (`createControls`): What (Groups, Mode), Values (Color, Scale, Size, each `statistic of layer
- *   above threshold`), Layout (Swap axes). The
+ *   above threshold`); Swap axes, returned as `swap`, is a button of the shared plot toolbar. The
  *   section list of UX 3.2 sits in the What group (`createSectionList`). Toggle Controls hides the grid
  *   (`data-panel-controls`).
  *
- * Cluster ▾ and Plot Options are X5's (panels/cell-gene/options.js): `createControls` leaves `layoutSlot`, the end of
- * the Layout group, for them.
+ * Cluster ▾ and Plot Options are X5's (panels/cell-gene/options.js), on the shared plot toolbar; `createControls`
+ * leaves `layoutSlot`, at the end of the grid, for a panel with no toolbar.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { normalizeGrouping } from '../../utils/cell-grouping.js';
-import { ALWAYS_OFFERED, STATISTIC_INFO, statisticChoices, statisticLayerChoices, statisticPairAfter } from '../../utils/group-statistics.js';
+import { CELL_COUNT, STATISTIC_INFO, statisticChoices, statisticLayerChoices, statisticPairAfter } from '../../utils/group-statistics.js';
 import { SCALINGS } from '../../utils/cell-gene-model.js';
 import { loopReason } from '../../utils/panel-references.js';
 import { createPopover } from '../../ui/popover.js';
@@ -79,7 +79,7 @@ export function axisRecipe(axis) {
 }
 
 const infoOf = (stat) => STATISTIC_INFO.find((m) => m.value === stat) || null;
-const nameOf = (stat) => (stat === ALWAYS_OFFERED ? CG.statistic.count : (infoOf(stat) || { label: stat }).label);
+const nameOf = (stat) => (stat === CELL_COUNT ? CG.statistic.count : (infoOf(stat) || { label: stat }).label);
 const DEFAULT_LAYER = 'X';
 
 /** An entry of SO-1's graded lists as a select's option: the Cell-Gene Plot's own name, the reason as the title. */
@@ -101,7 +101,7 @@ function asOption(e, name) {
  */
 // export-unused-ok: WP-12's Height measure lists the same choices; the panel reads them through measureModel
 export function statisticList({ kinds, held }) {
-    const layer = held.stat === ALWAYS_OFFERED ? null : held.layer || DEFAULT_LAYER;
+    const layer = held.stat === CELL_COUNT ? null : held.layer || DEFAULT_LAYER;
     return statisticChoices({ layer, kinds, held: held.stat }).map((e) => asOption(e, nameOf(e.value)));
 }
 
@@ -118,7 +118,7 @@ export function layerList({ datasetLayers, kinds, stat, held }) {
 
 /**
  * A measure after its statistic changed (decision 31): the layer it read, when that layer can give the statistic; else
- * the first that can, and `say` names the move once ("Layer changed to logged: % expressing is not available on X.").
+ * the first that can, and `say` names the move once ("Layer changed to logged: % expressing cannot be computed on 'X'.").
  * @returns {{layer: string, say: string}}
  */
 export function pickLayer({ datasetLayers, kinds, stat, preferred }) {
@@ -189,7 +189,7 @@ export function measureModel({ spec, datasetLayers, kinds, threshold, grouping =
         stat: spec.stat, layer: spec.layer,
         stats: statisticList({ kinds, held: spec }),
         layers: layerList({ datasetLayers, kinds, stat: spec.stat, held: spec }),
-        threshold: spec.stat !== ALWAYS_OFFERED && needsThreshold(spec.stat) ? threshold : null,
+        threshold: spec.stat !== CELL_COUNT && needsThreshold(spec.stat) ? threshold : null,
         own, grouping
     };
 }
@@ -238,8 +238,9 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
         el('div', { class: 'cgene-genes' }, el('div', { class: 'cgene-genes__head' }, el('span', { class: 'cgene-field__label', text: 'Genes' }), addGenes), sections));
     const values = el('div', { class: 'cgene-group cgene-group--values', role: 'group', aria: { label: 'Values' } },
         color.element, field('Scale', scaleSel), size.element, height.element);
-    const layout = el('div', { class: 'cgene-group cgene-group--layout', role: 'group', aria: { label: 'Layout' } }, swap, layoutSlot);
-    const element = el('div', { class: 'cgene-controls', 'data-panel-controls': '' }, what, values, layout);
+    // Swap axes is a panel action of the shared plot toolbar (panels/cell-gene.js puts it there, after 3D; operator,
+    // 2026-11-23: in a group of its own it was often pushed onto a line by itself); the slot is options.js's fallback
+    const element = el('div', { class: 'cgene-controls', 'data-panel-controls': '' }, what, values, layoutSlot);
 
     function onKey() {
         const v = axisKey.value;
@@ -286,7 +287,7 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
         swap.classList.toggle('active', !!m.swap);
     }
 
-    return { element, layoutSlot, paint };
+    return { element, layoutSlot, swap, paint };
 }
 
 // ================================================================================================ the section list
@@ -369,10 +370,10 @@ const SECTION_OPS = Object.freeze([
 export function createSectionList({ D, id, model, on }) {
     const { el } = D;
     const list = el('ul', { class: 'cgene-sections', role: 'list', aria: { label: 'Gene sections' } });
-    let menuAt = null;
     let drawnKey = null;
     let dragFrom = null;
     const values = new Map();      // section index -> {button, pop}: the row's summary button and its pop-over, kept across repaints
+    const menus = new Map();       // section index -> {button, pop}: the row's ⋯ button and its menu, kept across repaints
 
     /**
      * Color or Size of a one-row section (item 7 of decision 31): `[kind ▾]`, and for a score kind `[method ▾] [layer ▾]`
@@ -384,8 +385,9 @@ export function createSectionList({ D, id, model, on }) {
         const name = which === 'color' ? 'Color' : 'Size';
         const kind = el('select', { class: 'form-select form-select-sm cgene-section__agg', data: { which },
             aria: { label: `${name} of the row` }, on: { change: () => on.aggregation(i, which, 'kind', kind.value) } });
-        for (const group of aggregationEntries()) {
-            kind.appendChild(el('optgroup', { label: group.heading }, group.entries.map((e) => el('option', { value: e.value, text: e.label }))));
+        for (const group of aggregationEntries({ down: part.down })) {
+            kind.appendChild(el('optgroup', { label: group.heading }, group.entries.map((e) => el('option',
+                { value: e.value, text: e.label, disabled: !!e.disabled, title: e.title || '' }))));
         }
         kind.value = held.agg;
         const scored = !!part.methods;
@@ -464,14 +466,32 @@ export function createSectionList({ D, id, model, on }) {
         return el('div', { class: 'cgene-section__rows', role: 'radiogroup', aria: { label: 'Show as' } }, radio('genes', 'Genes'), radio('set', 'One row'));
     }
 
-    function sectionMenu(i, n) {
-        const menu = el('div', { class: 'cgene-section__menu', role: 'menu', hidden: menuAt !== i });
+    /**
+     * The ⋯ button of a section and its menu: a menu pop-over of ui/popover.js, in the page's one top layer, so no part of
+     * the panel (the control grid's scroller, the plot and its modebar) covers or clips it (operator, 2026-11-23: items
+     * under the plot could not be clicked). Filled on every open from the list as it is then.
+     */
+    function menuButton(s, i) {
+        let held = menus.get(i);
+        if (!held) {
+            const button = el('button', { type: 'button', class: 'btn btn-sm btn-link cgene-section__menu-btn' }, '⋯');
+            const pop = createPopover({ anchor: button, name: 'section-menu', title: 'Section', menu: true,
+                render: (body) => { fillMenu(i, body); } });
+            held = { button, pop };
+            menus.set(i, held);
+        }
+        held.button.setAttribute('aria-label', `More for ${s.title}`);
+        return held.button;
+    }
+
+    function fillMenu(i, body) {
+        D.clear(body);
+        const n = model().sections.length;
         for (const { op, label } of SECTION_OPS) {
             const disabled = (op === 'up' && i === 0) || (op === 'down' && i === n - 1);
-            menu.appendChild(el('button', { type: 'button', role: 'menuitem', class: 'cgene-section__menu-item', data: { op }, disabled,
-                on: { click: () => { menuAt = null; on.op(i, op); repaint(); } } }, label));
+            body.appendChild(el('button', { type: 'button', role: 'menuitem', class: 'cgene-section__menu-item', data: { op }, disabled,
+                on: { click: () => on.op(i, op) } }, label));
         }
-        return menu;
     }
 
     function commitTitle(i, input) {
@@ -485,13 +505,11 @@ export function createSectionList({ D, id, model, on }) {
                 else if (e.key === 'Escape') { title.value = title.defaultValue; title.blur(); }
             }, blur: () => commitTitle(i, title) } });
         title.defaultValue = s.title;
-        const menuBtn = el('button', { type: 'button', class: 'btn btn-sm btn-link cgene-section__menu-btn', aria: { haspopup: 'menu', label: `More for ${s.title}` },
-            on: { click: (e) => { e.stopPropagation(); menuAt = menuAt === i ? null : i; repaint(); } } }, '⋯');
         const head = el('div', { class: 'cgene-section__head' },
             el('span', { class: 'cgene-section__grip', aria: { hidden: 'true' }, text: '≡' }), title,
             s.source ? el('span', { class: 'cgene-section__source', text: s.source }) : null,
             el('span', { class: 'cgene-section__count', text: s.line }),
-            rowsGroup(i, s.rows), el('span', { class: 'cgene-section__more' }, menuBtn, sectionMenu(i, n)));
+            rowsGroup(i, s.rows), el('span', { class: 'cgene-section__more' }, menuButton(s, i)));
         const li = el('li', { class: 'cgene-section', tabindex: '0', draggable: 'true', data: { index: i }, aria: { label: s.title } }, head,
             s.note ? el('div', { class: 'cgene-section__note', role: 'note', text: s.note }) : null,
             s.rows === 'set' ? el('div', { class: 'cgene-section__summary' }, valuesButton(s, i)) : null);
@@ -516,6 +534,7 @@ export function createSectionList({ D, id, model, on }) {
         D.clear(list);
         m.sections.forEach((s, i) => list.appendChild(row(s, i, m.sections.length)));
         syncValues(m);
+        for (const [i, held] of [...menus]) if (i >= m.sections.length) { held.pop.destroy(); menus.delete(i); }
         if (!focus) return;
         const li = list.querySelector(`.cgene-section[data-index="${focus.index}"]`);
         if (!li) return;
@@ -527,16 +546,13 @@ export function createSectionList({ D, id, model, on }) {
     function paint() {
         const key = JSON.stringify(model(), (k, v) => (typeof v === 'function' ? undefined : v));
         if (key === drawnKey) return;
-        drawnKey = `${key}${menuAt}`;
         repaint();
         drawnKey = key;
     }
 
-    /** The ⋯ menu closes on a click elsewhere. */
+    /** Close a ⋯ menu that is open (the pop-over closes itself on a click elsewhere and on Escape). */
     function closeMenus() {
-        if (menuAt === null) return;
-        menuAt = null;
-        repaint();
+        for (const held of menus.values()) if (held.pop.isOpen()) held.pop.close('api');
     }
 
     /** Focus a section (after a move, Alt+Up keeps it under the cursor). */

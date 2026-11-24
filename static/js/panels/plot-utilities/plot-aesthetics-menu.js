@@ -15,7 +15,7 @@ import {
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
 import {
-  hasSessionStyle, setSessionStyle, clearSessionStyle, effectiveStyle, onSessionStyleChange, STYLE_TYPES
+  hasSessionStyle, setSessionStyle, clearSessionStyle, effectiveStyle, onSessionStyleChange, STYLE_TYPES, LOOK_TYPES
 } from '../../utils/session-style.js';
 import { exportCheck, guarded, refusalText, bindingLabel } from '../../utils/memory-guard-ui.js';
 /**
@@ -1583,7 +1583,8 @@ export function restyleDefaultPlots(kind = null) {
     let n = 0;
     for (const panel of pm.getActivePanels()) {
         const type = panel.getType && panel.getType();
-        if (!(type in STYLE_TYPES) || (kind && type !== kind)) continue;
+        // the shared Plot Options' kinds follow the default themselves (options-popover.js)
+        if (!(type in STYLE_TYPES) || LOOK_TYPES.includes(type) || (kind && type !== kind)) continue;
         const cfg = panel.getConfig();
         if (cfg.styleDefault !== true) continue;
         followSessionDefault(cfg, type);

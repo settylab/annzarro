@@ -56,7 +56,7 @@ test('each mode shows the rows of UX 4.2 and no other', () => {
     assert.deepEqual(shown('upset'), ['sets', 'color']);
     assert.equal(K.rowsOf('pie').slices, true, 'a pie\'s X is its Slices');
     assert.deepEqual(K.rowsOf('bar').arrangement, ['stack', 'dodge', 'fill']);
-    assert.deepEqual(K.rowsOf('histogram').arrangement, ['stack', 'dodge']);
+    assert.deepEqual(K.rowsOf('histogram').arrangement, ['stack', 'dodge', 'overlay', 'fill'], 'side by side is listed and disabled (count-views)');
     assert.equal(K.rowsOf('bar').horizontal && K.rowsOf('histogram').horizontal, true);
     assert.equal(K.rowsOf('pie').ring, true);
 });
@@ -310,10 +310,10 @@ test('the golden count configs read unchanged, and an UpSet\'s style fields are 
 test('the drawing\'s options are the style fields the mode has', () => {
     const bar = norm({ mode: 'bar', x: obs('cell_type'), labels: 'count', sort: 'height', reverse: true, horizontal: true, log: true, ring: true });
     assert.deepEqual(K.drawOptions(bar), { labels: 'count', sort: 'height', reverse: true, horizontal: true, log: true, ring: false, fade: false,
-        adjust: 1, scale: 'level', layers: null, pointSize: 3, colour: { reverse: false } });
+        adjust: 1, scale: 'level', layers: null, pointSize: 3, pointOpacity: 1, pointFade: false, colour: { reverse: false } });
     const pie = { ...bar, mode: 'pie' };
     assert.deepEqual(K.drawOptions(pie), { labels: 'count', sort: 'height', reverse: true, horizontal: false, log: false, ring: true, fade: false,
-        adjust: 1, scale: 'level', layers: null, pointSize: 3, colour: { reverse: false } });
+        adjust: 1, scale: 'level', layers: null, pointSize: 3, pointOpacity: 1, pointFade: false, colour: { reverse: false } });
     assert.equal(K.drawOptions({ ...bar, labels: 'measure' }).labels, 'none', 'no statistic to print');
     assert.deepEqual(K.labelChoices(bar).map((c) => c.label), ['None', 'Count', 'Share']);
     assert.deepEqual(K.labelChoices({ ...bar, measure: { stat: 'mean', source: { type: 'obs', key: 'depth' } } }).map((c) => c.label),

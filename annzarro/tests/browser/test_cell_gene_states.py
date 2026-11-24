@@ -231,7 +231,7 @@ def test_no_size_draws_one_size_says_why_and_lists_the_layers_that_work_first(pa
                                   size={"stat": "pct_expressing", "layer": "X"}, color={"stat": "mean", "layer": "X"}),
                          S1: _sig(S1, "Markers", GENES[:5]), GA: grouping}, open_ids=(P, S1, GA))
     _drawn(page)
-    sentence = "% expressing is not available on X: X has negative values. Choose a layer."
+    sentence = "% expressing cannot be computed on 'X': it has negative values. Choose a layer."
     until(page, "(s) => { const t = document.querySelector(s + ' .ps-tag[data-tag=\"cgene-nosize\"]'); return t && t.textContent === 'No size'; }", TP)
     until(page, "([s, want]) => (document.querySelector(s + ' .cgene-plot').textContent || '').includes(want)", [TP, sentence])
     # the Size layer select (WP-4): the held X marked, the layers that can give the size enabled

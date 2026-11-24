@@ -177,12 +177,17 @@ export function densityFigure(config, table, opts) {
     const peak = smooth.reduce((m, f) => { for (let k = 0; k < f.length; k++) if (f[k] > m) m = f[k]; return m; }, 0) || 1;
     const data = [];
     const contoured = layers.fill || layers.lines;
+    // the density range of the Display pop-over: Min and Max of the density, the plot's own range when not set. It maps
+    // the opacity, spaces the isoline levels and steps the points' opacity alike
+    const colour = options.colour || {};
+    const lo = Number.isFinite(colour.min) ? colour.min : 0;
+    const hi = Number.isFinite(colour.max) ? colour.max : peak;
     if (sa >= 0) {
         // the density is the opacity of each level's color, on one scale for every level: a level with little density stays
         // faint. The same density levels bound every level's bands, so a band is one opacity wherever it is
-        const step = peak / (CONTOURS + 1);
-        const bands = { start: step, end: step * CONTOURS, size: step };
-        const scaled = { zmin: 0, zmax: peak, showscale: false };
+        const step = (hi - lo) / (CONTOURS + 1);
+        const bands = { start: lo + step, end: lo + step * CONTOURS, size: step };
+        const scaled = { zmin: lo, zmax: hi, showscale: false };
         if (layers.image) {
             levels.forEach((s, i) => data.push({ ...base(i, s), type: 'heatmap', ...scaled,
                 colorscale: [[0, withAlpha(colors[i], 0)], [1, withAlpha(colors[i], IMAGE_ALPHA)]] }));
@@ -195,12 +200,19 @@ export function densityFigure(config, table, opts) {
     } else {
         // one group: the density takes a color map the user chooses (map, direction, range) and a color bar
         const scale = scaleKeys(options, 'z');
-        const last = contoured ? 'contour' : 'heatmap';
+        // isolines alone draw only their few levels in a color bar: a transparent heatmap carries the full scale instead
+        const linesOnly = layers.lines && !layers.fill && !layers.image;
+        const last = linesOnly ? 'heatmap' : contoured ? 'contour' : 'heatmap';
         const bar = (type) => ({ showscale: type === last, ...(type === last ? { colorbar: { title: { text: esc(title) } } } : {}) });
-        if (layers.image) data.push({ ...base(0, -1), type: 'heatmap', ...scale, ...bar('heatmap') });
+        if (layers.image || linesOnly) {
+            data.push({ ...base(0, -1), type: 'heatmap', ...scale, ...bar('heatmap'),
+                ...(linesOnly ? { opacity: 0, hoverinfo: 'skip' } : {}) });
+        }
+        // set Min or Max and the isoline levels span the range, as the colors do
+        const levelsOf = colour.min !== undefined || colour.max !== undefined ? { start: lo, end: hi, size: (hi - lo) / (CONTOURS * 2) } : {};
         if (contoured) {
             data.push({ ...base(0, -1), type: 'contour', ...scale, ...bar('contour'), ncontours: CONTOURS * 2,
-                contours: { coloring: layers.fill ? 'fill' : 'lines', showlines: layers.lines },
+                contours: { coloring: layers.fill ? 'fill' : 'lines', showlines: layers.lines, ...levelsOf },
                 line: layers.fill ? { color: opts.theme.axisColor, width: 1 } : { width: 2 },
                 // over the image, the bands let it show through
                 ...(layers.image ? { opacity: IMAGE_UNDER } : {}) });
@@ -211,11 +223,13 @@ export function densityFigure(config, table, opts) {
         const pts = opts.points;
         const one = sa < 0;
         if (!layers.image && !contoured) {
-            levels.forEach((s, i) => data.push({ ...base(i, s), type: 'heatmap', showscale: false, zmin: 0, zmax: peak,
+            levels.forEach((s, i) => data.push({ ...base(i, s), type: 'heatmap', showscale: false, zmin: lo, zmax: hi,
                 colorscale: [[0, 'rgba(0, 0, 0, 0)'], [1, 'rgba(0, 0, 0, 0)']] }));
         }
         const size = Number.isFinite(options.pointSize) ? Math.min(POINT_SIZE.max, Math.max(POINT_SIZE.min, options.pointSize)) : POINT_SIZE.default;
-        const drawn = pointTraces(pts, { gx, gy, smooth, peak, colors, size, scale: one ? scaleKeys(options, 'marker') : {},
+        const opacity = Number.isFinite(options.pointOpacity) ? options.pointOpacity : 1;
+        const drawn = pointTraces(pts, { gx, gy, smooth, peak: hi, floor: lo, colors, size, opacity, fade: !!options.pointFade && !one,
+            scale: one ? scaleKeys(options, 'marker') : {},
             bar: one && !layers.image && !contoured ? { title: esc(title) } : null });
         data.push(...drawn);
         notes.points = pointsNote(drawn.reduce((n, t) => n + t.x.length, 0), pts.x.length, pts.total);
@@ -226,8 +240,10 @@ export function densityFigure(config, table, opts) {
             marker: { symbol: 'square', size: 10, color: colors[i] } }));
         data.forEach((t) => { if (t.type !== 'scatter') t.showlegend = false; });
     }
+    // what the range boxes of the pop-over show as "auto": the lowest and the highest density drawn
+    const lowest = smooth.reduce((m, f) => { for (let k = 0; k < f.length; k++) if (f[k] < m) m = f[k]; return m; }, peak);
     return {
-        data, notes, floored, bandwidth: hs.map((h) => h.h),
+        data, notes, floored, bandwidth: hs.map((h) => h.h), colourData: Float64Array.of(lowest, peak),
         layout: layout({ ...legend,
             xaxis: axisStyle(opts.theme, { title: { text: esc(opts.inputNames.x) }, range: [gx.lo, gx.hi] }),
             yaxis: axisStyle(opts.theme, { title: { text: esc(opts.inputNames.y) }, range: [gy.lo, gy.hi] }) })

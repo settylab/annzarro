@@ -149,7 +149,10 @@ def _genes(page):
 
 
 def _summary(page):
-    return page.inner_text(f"{S} .gsig-summary")
+    """The banner's count ("6 of 3,000 genes selected"), then the up/down split the Selected view states."""
+    text = page.inner_text(f"{S} .gsig-panel > .plot-status .ps-headline")
+    sel = page.inner_text(f"{S} .gsig-seg:nth-child(2)")
+    return text + (sel[sel.index(':'):] if ':' in sel else '')
 
 
 def _message(page):
@@ -218,7 +221,8 @@ def test_f1_add_a_signature_type_a_gene_and_use_it(page, served):
     # the first view: the full gene list, a default score, nothing to configure
     assert page.inner_text(f"{tile} .gsig-summary").startswith("Tick genes to build a score")
     assert "2,000" not in page.inner_text(f"{tile} .gsig-summary"), "there is no limit to state"
-    assert page.inner_text(f"{tile} .gsig-scoring__summary") == "z-score mean, mean, sum · X"
+    assert page.get_attribute(f"{tile} [data-methods]", "data-nondefault") == "false", "every method at its default settings"
+    assert page.locator(f"{tile} [data-distribution]").count() == 1
     assert page.get_attribute(f"{tile} .gsig-grid", "aria-rowcount") == "3000"
     assert page.inner_text(f"{tile} .gsig-viewswitch .active") == "All genes 3,000"
     assert page.locator(f"{tile} .gsig-usein").count() == 0, "no Use in menu: consumers choose the signature in their own source menus"
@@ -231,7 +235,7 @@ def test_f1_add_a_signature_type_a_gene_and_use_it(page, served):
     assert page.evaluate("(id) => window.PanelManager.getPanel(id).getRecipe().genes", sig_id) == ["KLF1"]
     assert page.input_value(f"{tile} .gsig-search") == ""
     assert page.evaluate("() => document.activeElement.classList.contains('gsig-search')")
-    assert page.inner_text(f"{tile} .gsig-summary") == "1 gene selected"
+    assert page.inner_text(f"{tile} .gsig-panel > .plot-status .ps-headline") == "1 of 3,000 genes selected"
     # and a second one, in a row
     page.type(f"{tile} .gsig-search", "GENE0042")
     page.press(f"{tile} .gsig-search", "Enter")
@@ -300,7 +304,7 @@ def test_there_is_no_gene_limit_every_gene_can_be_ticked(page, served):
     assert page.inner_text(f"{S} .gsig-tickall") == "Tick all 3,000"
     page.click(f"{S} .gsig-tickall")
     until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 3000")
-    assert _summary(page) == "3,000 genes selected"
+    assert _summary(page) == "All 3,000 genes selected"
     assert "Ticked 3,000 genes" in _message(page) and "limit" not in _message(page)
     assert page.locator(f"{S} .gsig-undo").is_enabled()
     page.click(f"{S} .gsig-undo")
@@ -750,3 +754,49 @@ def test_the_focused_gene_is_one_click_away(page, served):
     page.evaluate("async () => { const { DataManager } = await import('/static/js/data-manager.js'); DataManager.setFocusedGene('NOT_A_GENE'); }")
     until(page, "(b) => document.querySelector(b).textContent === '+ NOT_A_GENE (focused)'", btn)
     assert page.locator(btn).is_disabled() and "not in this dataset" in page.get_attribute(btn, "title")
+
+
+# ------------------------------------------------------------------ the status banner: n of N genes selected
+
+BANNER = f"{S} .gsig-panel > .plot-status"
+
+
+def _banner(page):
+    return page.inner_text(f"{BANNER} .ps-headline")
+
+
+def _box(page, sel):
+    return page.evaluate("(s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }", sel)
+
+
+def test_the_count_of_genes_selected_is_the_plots_status_banner_at_the_panel_bottom(page, served):
+    _open_signature(page, served, ["GENE0001", "GENE0002"])
+    page.wait_for_selector(BANNER, timeout=30000)
+    # the same component as a plot's "n of N cells shown": the strip of utils/panel-surface.js, with its classes
+    assert page.get_attribute(BANNER, "role") == "status"
+    assert page.locator(f"{BANNER} .ps-summary").count() == 1
+    assert _banner(page) == "2 of 3,000 genes selected"
+    # at the bottom: the last box of the panel, its bottom the panel's
+    assert page.evaluate("(s) => { const p = document.querySelector(s + ' .gsig-panel'); return p.lastElementChild.classList.contains('plot-status'); }", S)
+    panel, strip = _box(page, f"{S} .gsig-panel"), _box(page, BANNER)
+    assert abs((panel[1] + panel[3]) - (strip[1] + strip[3])) <= 2, (panel, strip)
+    # the top of the panel no longer counts the genes
+    assert "selected" not in page.inner_text(f"{S} .gsig-status")
+    # the details say why the rest are not selected
+    page.click(f"{BANNER} .ps-summary")
+    assert "not selected" in page.inner_text(f"{BANNER} .ps-pop")
+
+
+def test_the_banner_follows_the_selection_and_its_height_never_changes(page, served):
+    _open_signature(page, served, ["GENE0001", "GENE0002"])
+    page.wait_for_selector(BANNER, timeout=30000)
+    page.click(f"{S} .gsig-seg:nth-child(1)")                         # All genes, to tick one more
+    _search(page, "GENE0003")
+    strip = _box(page, BANNER)
+    _row(page, "GENE0003").locator("input").click()
+    until(page, "(s) => document.querySelector(s + ' .ps-headline').textContent === '3 of 3,000 genes selected'", BANNER)
+    assert _box(page, BANNER) == strip, "the banner neither moves nor changes height while it updates"
+    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({genes: []})")
+    until(page, "(s) => document.querySelector(s + ' .ps-headline').textContent === '0 of 3,000 genes selected'", BANNER)
+    assert _box(page, BANNER) == strip
+    assert page.inner_text(f"{S} .gsig-summary").startswith("Tick genes to build a score"), "the hint stays where the list starts"

@@ -259,11 +259,20 @@ export function addSection(config, source) {
     return withSections(config, [...config.sections, { source, rows: 'genes' }]);
 }
 
-/** ⋯ Duplicate: an independent copy after it. */
-export function duplicateSection(config, i) {
+/**
+ * ⋯ Duplicate: an independent copy after it, titled "<name> (copy)" when the section's name is given, so the two are
+ * told apart in the list, on the brackets and on a one-row section's label (operator, 2026-11-23: identical, the copy
+ * looked like it was not drawn).
+ * @param {Object} config
+ * @param {number} i
+ * @param {string} [name] - the section's title as shown
+ */
+export function duplicateSection(config, i, name) {
     if (!config.sections[i]) return config;
     const list = [...config.sections];
-    list.splice(i + 1, 0, JSON.parse(JSON.stringify(list[i])));
+    const copy = JSON.parse(JSON.stringify(list[i]));
+    if (name) copy.title = `${name} (copy)`;
+    list.splice(i + 1, 0, copy);
     return withSections(config, list);
 }
 
@@ -320,19 +329,23 @@ export function setRowAggregation(config, i, which, rowAgg) {
  * dataset lacks are left out and counted (CXG-8).
  * @param {{genes?: string[], down?: string[]}} recipe - a signature's recipe or a gene table's (score-source-panels.js)
  * @param {(name: string) => boolean} hasGene
- * @returns {{genes: string[], missing: number, total: number}}
+ * @returns {{genes: string[], missing: number, total: number, down: number}} `down`: how many of `genes` are down genes
  */
 export function sectionGenes(recipe, hasGene) {
     const seen = new Set();
     const genes = [];
     let missing = 0;
-    for (const name of [...((recipe && recipe.genes) || []), ...((recipe && recipe.down) || [])]) {
+    let down = 0;
+    const up = (recipe && recipe.genes) || [];
+    for (const name of [...up, ...((recipe && recipe.down) || [])]) {
         if (typeof name !== 'string' || seen.has(name)) continue;
         seen.add(name);
-        if (hasGene(name)) genes.push(name);
-        else missing++;
+        if (hasGene(name)) {
+            genes.push(name);
+            if (!up.includes(name)) down++;
+        } else missing++;
     }
-    return { genes, missing, total: seen.size };
+    return { genes, missing, total: seen.size, down };
 }
 
 /** The count on a section's row: "48 genes · 3 not in this dataset" (UX 3.2, CXG-8). */
@@ -363,9 +376,11 @@ const isScoreKind = (rowAgg) => !!rowAgg && !!ROW_AGGREGATIONS[rowAgg.agg] && RO
  * them and nothing in it is "offered".
  * @returns {Array<{heading: string, entries: Array<{value: string, label: string}>}>}
  */
-export function aggregationEntries() {
+export function aggregationEntries({ down = 0 } = {}) {
+    // a source with down genes is never summarised from its genes' rows (effectiveAggregation)
+    const off = down > 0 ? { disabled: true, title: CG.downGenesNoSummary } : {};
     return [
-        { heading: CG.aggregationHeading.summary, entries: SUMMARIES.map((agg) => ({ value: agg, label: CG.aggregation[agg] })) },
+        { heading: CG.aggregationHeading.summary, entries: SUMMARIES.map((agg) => ({ value: agg, label: CG.aggregation[agg], ...off })) },
         { heading: CG.aggregationHeading.score, entries: SCORE_KINDS.map((agg) => ({ value: agg, label: CG.scoreKind[agg] })) }
     ];
 }
@@ -409,6 +424,19 @@ export function aggregationHelp(rowAgg, layer) {
 }
 
 // ================================================================================================ the request
+
+/**
+ * The aggregation a one-row section draws: the stored one, except that a source with down genes is never summarised
+ * from its genes' rows, which would count its down genes as up genes; its row is then its score by the source's
+ * default method on the channel's layer (one-row-ux-080.md, decision 40).
+ * @param {Object} agg - rowAggregationOf
+ * @param {{layer?: string}} spec - the channel (Color or Size)
+ * @param {number} [down] - the section's down genes in the dataset
+ */
+export function effectiveAggregation(agg, spec, down = 0) {
+    if (!(down > 0) || ROW_AGGREGATIONS[agg.agg].kind === 'score') return agg;
+    return { agg: agg.agg === 'mean_of_pct_expressing' ? 'score_pct_above' : 'score_mean', column: DEFAULT_METHOD, layer: (spec && spec.layer) || DEFAULT_LAYER };
+}
 
 /** Whether a statistic reads an expression threshold (`detect_above`, CXG-9). */
 export const needsThreshold = (stat) => THRESHOLD_STATS.includes(stat);
@@ -460,7 +488,9 @@ export function planFeatures({ sections, color, size, height = null, threshold =
         if (agg.agg === 'score_pct_above') return isNumber(agg.above) ? agg.above : 0;
         const layer = agg.layer || DEFAULT_LAYER;
         for (const which of ['color', 'size']) {
-            const other = rowAggregationOf(entry.section, which);
+            const channel = which === 'color' ? color : size;
+            if (!channel) continue;
+            const other = effectiveAggregation(rowAggregationOf(entry.section, which), channel, entry.down);
             if (other.agg === 'score_pct_above' && other.column === agg.column && (other.layer || DEFAULT_LAYER) === layer) {
                 return isNumber(other.above) ? other.above : 0;
             }
@@ -480,7 +510,8 @@ export function planFeatures({ sections, color, size, height = null, threshold =
         noteStatistic(spec.stat, spec.layer);
         return spec.stat === 'count' ? genes.map(() => null) : genes.map((g) => gene(g, spec.stat, spec));
     };
-    const aggregated = (agg, spec, entry) => {
+    const aggregated = (stored, spec, entry) => {
+        const agg = effectiveAggregation(stored, spec, entry.down);
         if (ROW_AGGREGATIONS[agg.agg].kind === 'score') return { agg, key: score(agg, entry) };
         const s = SUMMARY_STAT[agg.agg];
         noteStatistic(s, spec.layer);
