@@ -4936,7 +4936,9 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 /* A source's add row in the Cell Table chooser: [method] on [layer] [Add column] (decision 31) */
 .az-score-add { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin: 0.125rem 0 0.25rem; }
 .az-score-add .form-select { width: auto; flex: 0 1 auto; min-width: 0; font-size: 0.8125rem; }
-.az-score-add-on { font-size: 0.8125rem; color: var(--az-muted); }
+.az-score-sym { margin-right: 0.125rem; }
+/* the add row's aggregation button: as tall as the layer select beside it */
+.az-score-add > .az-score-add-agg { flex: 0 0 auto; align-self: stretch; min-width: 2rem; padding: 0 0.5rem; font-size: 0.8125rem; line-height: 1; color: var(--az-text); border-color: var(--az-control-border); opacity: 1; }
 .az-score-add-note { margin-left: 1rem; font-size: 0.75rem; }
 .az-score-add-note:empty { display: none; }
 
