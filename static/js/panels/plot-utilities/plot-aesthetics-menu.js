@@ -1,3 +1,4 @@
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, refreshScaleBar, flipRelayout } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
@@ -260,7 +261,7 @@ export function initializeAestheticsSettings(settings) {
         
         // Fonts
         FONT_SIZE: 12,
-        FONT_FAMILY: 'Arial, Helvetica, sans-serif',
+        FONT_FAMILY: DEFAULT_FONT,
         
         // Margins
         MARGINS: { l: 80, r: 80, t: 80, b: 60, pad: 4 },
@@ -540,7 +541,7 @@ function updateFontFamily(plotContainer, settings) {
  */
 function applyTextFont(plotContainer, settings) {
     if (!plotContainer) return;
-    const family = settings.fontFamily || 'Arial, Helvetica, sans-serif';
+    const family = settings.fontFamily || DEFAULT_FONT;
     const size = settings.fontSize || 12;
     const colour = plotColour(settings, 'textColor');
     const text = (prefix, extra) => ({

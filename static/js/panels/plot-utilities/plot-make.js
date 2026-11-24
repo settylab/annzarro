@@ -1,3 +1,4 @@
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
@@ -2518,7 +2519,7 @@ export function buildPlotLayout(settings, data) {
   
   // Fonts and sizing
   settings.fontSize = settings.fontSize || defaults.FONT_SIZE || 12;
-  settings.fontFamily = settings.fontFamily || defaults.FONT_FAMILY || 'Arial, Helvetica, sans-serif';
+  settings.fontFamily = settings.fontFamily || defaults.FONT_FAMILY || DEFAULT_FONT;
   
   // Margins with fallbacks
   if (!settings.margins) {
@@ -3006,7 +3007,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           text: colourTitle(settings.color),
           font: { 
             size: legendTitleFontSize(settings),
-            family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+            family: settings.fontFamily || DEFAULT_FONT,
             color: plotColour(settings, 'textColor')
           }
         }

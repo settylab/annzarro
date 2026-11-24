@@ -101,12 +101,12 @@ test('each kind has the common sections in order, with its own sections between 
     assert.equal(S.fieldOf(CG, 'legendPosition'), null);
 });
 
-test('per-kind defaults: no grid on the Cell-Gene Plot, a grid on the count plot; Arial and Open Sans; their own legend caps', () => {
+test('per-kind defaults: no grid on the Cell-Gene Plot, a grid on the count plot; Open Sans on both; their own legend caps', () => {
     const g = S.resolveStyle({}, CG);
     const c = S.resolveStyle({}, CC);
     assert.equal(g.grid, false);
     assert.equal(c.grid, true);
-    assert.equal(g.fontFamily, 'Arial, Helvetica, sans-serif');
+    assert.match(g.fontFamily, /Open Sans/);
     assert.match(c.fontFamily, /Open Sans/);
     assert.equal(g.fontSize, 12);
     assert.equal(g.legendMax, 20);

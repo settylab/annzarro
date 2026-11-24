@@ -12,6 +12,7 @@
  * The plot's colours are the exception: they are stored only when set, and
  * follow the app theme otherwise (utils/plot-theme.js).
  */
+import { ARIAL } from '../../utils/fonts.js';
 import { adoptColourModel, plotColour, pinPalette, COLOUR_MODEL } from '../../utils/plot-theme.js';
 import { DOT_SIZE_MIN, DOT_SIZE_MAX, COLUMNS_MAX, TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX, COLUMN_GAP_MAX, TITLE_ALIGNS } from '../../utils/legend-options.js';
 
@@ -220,7 +221,7 @@ export function defaultLook() {
 }
 
 /** The font family the Publication preset sets, as the Plot Options font menu names Arial. */
-export const PUBLICATION_FONT = 'Arial, Helvetica, sans-serif';
+export const PUBLICATION_FONT = ARIAL;
 
 export const PRESETS = Object.freeze(['default', 'publication', 'bare']);
 

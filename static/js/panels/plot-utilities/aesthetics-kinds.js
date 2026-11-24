@@ -16,6 +16,7 @@ import { legendTitleSize, defaultTitleGap, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_
     COLUMN_GAP_MAX, COLUMN_GAP_DEFAULT } from '../../utils/legend-options.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import { plotColour } from '../../utils/plot-theme.js';
+import { FONT_CHOICES, DEFAULT_FONT } from '../../utils/fonts.js';
 
 /** The kinds, as their panel types. */
 // export-unused-ok: the Node tests walk both kinds
@@ -29,16 +30,6 @@ const f = (id, section, type, label, dflt, extra = {}) => ({ id, section, type, 
 
 /** A colour that follows the app theme: its swatch shows the colour drawn now while it is Auto. */
 const themed = (id, section, label, domId, extra = {}) => f(id, section, 'color', label, null, { domId, live: true, shown: (c) => plotColour(c, id), ...extra });
-
-/** The fonts these plots offer (Open Sans, the count plot's font, is not one of them). */
-const FONTS = Object.freeze([
-    ['Arial, Helvetica, sans-serif', 'Arial'],
-    ["'Times New Roman', Times, serif", 'Times New Roman'],
-    ['Courier, monospace', 'Courier'],
-    ['Georgia, serif', 'Georgia'],
-    ["'Trebuchet MS', sans-serif", 'Trebuchet MS'],
-    ['Verdana, sans-serif', 'Verdana']
-]);
 
 /** Shown in 3D only. */
 const in3D = (c) => !!c.z;
@@ -66,7 +57,7 @@ const FIELDS = Object.freeze([
     // Presets: Bare is a state of its own (no axis at all), set by its button and cleared by Default
     f('bare', 'presets', 'check', 'Bare', false, { hidden: true }),
     // Text
-    f('fontFamily', 'text', 'select', 'Font', 'Arial, Helvetica, sans-serif', { choices: FONTS, domId: 'font-family' }),
+    f('fontFamily', 'text', 'select', 'Font', DEFAULT_FONT, { choices: FONT_CHOICES, domId: 'font-family' }),
     f('fontSize', 'text', 'number', 'Size (px)', 12, { min: 8, max: 24, step: 1, domId: 'font-size' }),
     themed('textColor', 'text', 'Color', 'text-color'),
     // Background

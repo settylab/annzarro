@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 const K = await import('../../../static/js/panels/plot-utilities/aesthetics-kinds.js');
 const S = await import('../../../static/js/panels/plot-utilities/options-schema.js');
 const PO = await import('../../../static/js/panels/plot-utilities/plot-options.js');
+const F = await import('../../../static/js/utils/fonts.js');
 
 test('both kinds have the shared section order, with their own Points and Focused groups', () => {
     for (const kind of K.AESTHETICS_KINDS) {
@@ -33,8 +34,8 @@ test('the defaults are today\'s look (plot-options.js defaultLook); colours foll
     const look = PO.defaultLook();
     for (const f of S.fieldsOf('cell-plot')) {
         if (!(f.path in look)) continue;
-        // the font is unset in the look and filled with Arial when a plot is made (initializeAestheticsSettings)
-        const want = f.path === 'fontFamily' ? 'Arial, Helvetica, sans-serif' : look[f.path] === undefined ? null : look[f.path];
+        // the font is unset in the look and filled with Open Sans when a plot is made (initializeAestheticsSettings)
+        const want = f.path === 'fontFamily' ? F.DEFAULT_FONT : look[f.path] === undefined ? null : look[f.path];
         assert.deepEqual(S.defaultOf(f, 'cell-plot'), want, f.path);
     }
 });

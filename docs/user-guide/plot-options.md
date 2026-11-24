@@ -231,7 +231,7 @@ and **Apply to other plots** copies it.
 
 ## Text
 
-**Font** (Arial, Times New Roman, Courier, Georgia, Trebuchet MS or Verdana), **Size** (8 to
+**Font** (Open Sans, the default, which ships with the app and is in exported images too; Arial, Times New Roman, Courier, Georgia, Trebuchet MS or Verdana; the same list on every plot), **Size** (8 to
 24 px; 12 by default) and **Color**, with **Auto**.
 
 ## Margins

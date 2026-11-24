@@ -157,7 +157,7 @@ export const LEGEND_POSITIONS = Object.freeze({
 });
 
 /** Width of a space, in em, by font family (the families Plot Options offers); Arial's for any other. */
-const SPACE_EM = [[/courier|mono/i, 0.6], [/times/i, 0.25], [/georgia/i, 0.241], [/trebuchet/i, 0.301], [/verdana/i, 0.352]];
+const SPACE_EM = [[/open sans/i, 0.26], [/courier|mono/i, 0.6], [/times/i, 0.25], [/georgia/i, 0.241], [/trebuchet/i, 0.301], [/verdana/i, 0.352]];
 
 /** Px from the legend's left edge to where an entry's label starts: the symbol (`itemwidth`, 30) and its padding. */
 export const LABEL_INDENT = 38;

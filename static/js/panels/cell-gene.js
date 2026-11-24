@@ -37,6 +37,7 @@
  * It touches no DOM until init(): a closed plot restored from a link or a panel set is constructed and never
  * initialised, and computes nothing (PER-5).
  */
+import { legacyFont } from '../utils/fonts.js';
 import { PanelManager } from '../panel-manager.js';
 import { DataManager } from '../data-manager.js';
 import { makeDom } from './gene-set-utilities/dom.js';
@@ -199,7 +200,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _controlsVisible = options.controlsVisible;
         /** a link's one-row sections read from before decision 40 whose values changed: said once (configFrom) */
         let _loadNotices = [];
-        let _config = configFrom(options);
+        // a plot saved when Arial was the default has no font of its own: it keeps drawing in Arial (utils/fonts.js)
+        let _config = configFrom(legacyFont({ ...options }, true));
         const _undo = new UndoStack();
         /** A new plot whose Color and Size the user has not chosen: they follow matrix kind (decision 24) */
         let _fresh = !options || (!('color' in options) && !('size' in options));

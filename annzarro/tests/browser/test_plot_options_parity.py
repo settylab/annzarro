@@ -82,8 +82,8 @@ READ = """([pieces, props, sized]) => {
     const out = {};
     for (const [name, sel] of Object.entries(pieces)) {
         // a control is read in its plain state (enabled; a check box unchecked), so the state does not look like a difference
-        const plain = (e) => !e.disabled && !e.checked;
-        const el = [...pop.querySelectorAll(sel)].find((e) => (e.offsetParent !== null || e === pop) && (name !== 'range' && name !== 'check box' || plain(e)))
+        const plain = (e) => (name === 'reset' ? e.disabled : !e.disabled && !e.checked);
+        const el = [...pop.querySelectorAll(sel)].find((e) => (e.offsetParent !== null || e === pop) && (name !== 'range' && name !== 'check box' && name !== 'reset' || plain(e)))
             || (pop.matches(sel) ? pop : null);
         if (!el) continue;
         const cs = getComputedStyle(el);
@@ -311,3 +311,18 @@ def test_help_text_is_legible_and_never_louder_than_the_labels(page, served):
             assert got["help"] <= got["label"] + 0.01, f"{theme} {kind}: help is louder than the labels: {got}"
             page.keyboard.press("Escape")
             page.wait_for_selector(POP, state="detached")
+
+
+def test_every_plot_offers_the_same_fonts_in_the_same_order(page, served):
+    page.set_viewport_size({"width": 1700, "height": 1100})
+    page.goto(_url(served, [CP, GP, P, CC], _config()))
+    _ready(page)
+    lists = {}
+    for kind, (pid, button) in KINDS.items():
+        page.click(button)
+        page.wait_for_selector(POP)
+        lists[kind] = page.evaluate("() => [...document.querySelectorAll(\"[data-popover='plot-options'] [data-concept='fontFamily'] option\")].map((o) => o.textContent)")
+        page.keyboard.press("Escape")
+        page.wait_for_selector(POP, state="detached")
+    assert lists["cell-plot"][0] == "Open Sans" and len(lists["cell-plot"]) == 7, lists
+    assert all(v == lists["cell-plot"] for v in lists.values()), lists
