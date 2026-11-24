@@ -491,7 +491,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 const A = VOCABULARY.aggregation;
 const groupAggregate = {
     // the item column lists the groupings by their names; the group is the row's next select (`members`)
-    sections: () => [{ heading: A.sections.groupings, entries: groupingList().map((g) => {
+    sections: () => [{ heading: A.sections.groupings, empty: 'No cell groupings yet', entries: groupingList().map((g) => {
         menuReply(g.id);                       // its groups are asked for now, so they are there when it is picked
         return { entry: g.id, text: g.title };
     }) }],

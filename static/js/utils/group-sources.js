@@ -34,7 +34,7 @@ import { createDerivedSources } from './derived-sources.js';
 import { VOCABULARY } from './vocabulary.js';
 import { normalizeGrouping, groupingHasher, groupNames, generatedGroupNames, serverRequest, MAX_NESTING } from './cell-grouping.js';
 import { groupNeed } from './group-store.js';
-import { genesRequest, momentsHash, thresholdOf } from './group-stat-model.js';
+import { genesRequest, memberRequest, momentsHash, thresholdOf, tableOfCells } from './group-stat-model.js';
 import { labelledGroups } from './group-reference.js';
 import { groupLevelId } from './level-id.js';
 import { groupingColours, NO_COLOUR } from './grouping-colours.js';
@@ -346,6 +346,8 @@ export function createGroupSources({ store, host, context, genesStore = null, li
         get(id) {
             const src = readers.get(id);
             if (!src) return null;
+            // a table's cells need no grouping resolved: the bitset is the group
+            if (tableOfCells(id)) return src;
             return { ...src, gate: (dependant) => src.gate(dependant) || (inner.isReady(id, {})
                 ? null : { state: 'computing', progress: null, estimate: null, message: null, reason: null }) };
         },
@@ -358,7 +360,9 @@ export function createGroupSources({ store, host, context, genesStore = null, li
         variantOf(resolved, option) {
             const threshold = thresholdOf(resolved.recipe);
             const grouping = serverRequest(resolved.recipe, ctxOf(resolved), { codes: false, histograms: [] });
-            return { recipe: genesRequest(grouping, option.group, option.layer, threshold, option.transform),
+            // a table's cells go as the route's `sets` and `member`: nothing is resolved there
+            return { recipe: option.member === true && grouping.sets ? memberRequest(grouping, option.layer, threshold, option.transform)
+                : genesRequest(grouping, option.group, option.layer, threshold, option.transform),
                 hash: momentsHash(keyOf(resolved), option.group, option.layer, threshold, option.transform) };
         },
         editHashOf: (resolved) => `${keyOf(resolved)}\u0001${thresholdOf(resolved.recipe)}`,

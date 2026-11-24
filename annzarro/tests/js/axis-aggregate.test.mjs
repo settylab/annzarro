@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 // the page's panel registry: no panels, so no signature is found (the symbols and names do not need one)
 globalThis.PanelManager = { getPanel: () => null, getAllPanels: () => [], getActivePanels: () => [] };
 await import('../../../static/js/utils/group-stat-source.js');
+await import('../../../static/js/utils/table-stat-source.js');
 await import('../../../static/js/utils/score-source.js');
 const A = await import('../../../static/js/utils/axis-aggregate.js');
 const { METHOD_INFO } = await import('../../../static/js/utils/signature-options.js');
@@ -85,4 +86,33 @@ test('a layer after the user moved it: the aggregation moves only when it became
     assert.equal(s.layer, 'X');
     assert.equal(typeof said, 'string');
     assert.equal(A.applyAfter({ type: 'obsm' }, 'layer', 'X'), '', 'another source has nothing to move');
+});
+
+test('a Gene Plot lists cell groupings and cell tables, each section with a line of its own when it has no entry', () => {
+    const sections = A.setSections('gene-plot', ['x']);
+    assert.deepEqual(sections.map((g) => g.heading), ['Cell groupings', 'Cell tables']);
+    assert.deepEqual(sections.map((g) => g.entries.map((e) => [e.text, e.disabled === true])), [[['No cell groupings yet', true]], [['No cell tables yet', true]]]);
+    // the line is no choice: its value stands for no set
+    for (const g of sections) assert.equal(A.decodeSet(g.entries[0].value), null);
+    // a Cell Plot lists signatures and gene tables, never these
+    assert.ok(!A.setSections('cell-plot', ['x']).some((g) => /Cell (groupings|tables)/.test(g.heading)));
+});
+
+test('a table is a set of its own with no members, read on a layer with the group statistics and the table\'s own default', () => {
+    const table = { type: 'table-stat', key: 'cell-table-T', stat: 'sd', layer: 'logged', label: 'Table 1' };
+    assert.ok(A.isAggregate(table));
+    assert.equal(A.displayType(table), 'layer');
+    assert.equal(A.membersOf(table), null, 'the table is the group: no select of members');
+    assert.equal(A.heldSet(table), A.encodeSet('table-stat', 'cell-table-T'));
+    const fresh = A.startSet({ type: 'layer', key: 'logged', column: 'CELL0001' }, A.encodeSet('table-stat', 'cell-table-T'), 'logged');
+    assert.equal(fresh.type, 'table-stat');
+    assert.equal(fresh.stat, 'mean');
+    assert.ok(!('groupWas' in fresh) && !('follow' in fresh));
+    const methods = A.aggregateOf(table).aggregate.methods(table);
+    assert.deepEqual(methods.options.map((o) => o.value), STATISTIC_INFO.map((m) => m.value), 'the group statistics, in their order');
+    assert.equal(methods.chosen, 'sd');
+    // a table kept as the statistic it had when the user picks another table
+    const next = A.startSet(table, A.encodeSet('table-stat', 'cell-table-U'), 'logged');
+    assert.equal(next.stat, 'sd');
+    assert.equal(next.key, 'cell-table-U');
 });

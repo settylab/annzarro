@@ -115,6 +115,7 @@ const cellGene = Object.freeze({
         size: 'Z-score mean is signed; dot size cannot show a sign. Use it for Color.',
         genes: 'Z-score mean of a cell group is not available in the Gene Plot yet: it needs every gene\'s mean and SD over all cells.',
         genesLayout: 'Z-score mean of a cell group needs a whole-layer read on this store\'s layout; coming with the moments cache.',
+        table: 'Z-score mean is for cell groups; a table\'s cells are not yet scaled against the whole layer.',
         genesLayoutUnknown: 'Z-score mean of a cell group is offered once the layer\'s storage layout is known.'
     }),
     /** What a colour bar or a CSV header says of the scaling. */
@@ -716,10 +717,10 @@ const cellExport = Object.freeze({
 /** What an aggregation is called; its symbols are utils/aggregation-symbols.js's, its names the method tables' labels. */
 const aggregation = Object.freeze({
     label: 'Aggregation',
-    sections: Object.freeze({ genes: 'Genes', cells: 'Cells', signatures: 'Gene signatures', tables: 'Gene tables', groupings: 'Cell groupings' })
+    sections: Object.freeze({ genes: 'Genes', cells: 'Cells', signatures: 'Gene signatures', tables: 'Gene tables', groupings: 'Cell groupings', cellTables: 'Cell tables' })
 });
 
-const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping', groupStat: 'Cell group' });
+const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping', groupStat: 'Cell group', tableStat: 'Cell table' });
 
 /** Show as table (UX 7): a plot's CSV rows as an HTML table, in every plot that offers it (count plot, Cell-Gene Plot). */
 const table = Object.freeze({

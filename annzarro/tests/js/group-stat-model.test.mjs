@@ -144,3 +144,15 @@ test('the api states an estimate it cannot decide as auto, and the exact figure\
     assert.equal(ok.values.moments, MOMENTS);
     assert.equal(ok.values.reply.n_shown, 100, 'the cells shown the store checks against the page\'s');
 });
+
+test('a table\'s cells are a group source of their own, asked as the route\'s sets and member', () => {
+    assert.equal(M.tableCellsId('cell-table-T'), 'table-cells:cell-table-T');
+    assert.equal(M.tableOfCells('table-cells:cell-table-T'), 'cell-table-T');
+    assert.equal(M.tableOfCells('cell-grouping-A'), null);
+    assert.equal(M.tableOfCells(undefined), null);
+    assert.deepEqual([...M.IN_GROUP], ['@in']);
+    const request = { shape: 'grouping', partitionings: [{ source: { type: 'table', ref: 's0' } }], sets: { s0: { encoding: 'bitset-base64', length: 8, data: 'AQ==' } } };
+    assert.deepEqual(M.memberRequest(request, 'logged', 0.5), { shape: 'genes', sets: request.sets, member: 's0', layer: 'logged', thresholds: [0.5] });
+    assert.deepEqual(M.memberRequest(request, 'logged', 0.5, 'zscore'), { shape: 'genes', sets: request.sets, member: 's0', layer: 'logged', thresholds: [0.5], transform: 'zscore', clip: 10 });
+    assert.throws(() => M.memberRequest({ ...request, sets: {} }, 'X', 0), /one bitset/);
+});

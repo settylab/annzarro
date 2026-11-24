@@ -55,7 +55,11 @@ export function setSections(consumer, roles) {
     const out = [];
     for (const provider of aggregateProviders(consumer, roles)) {
         for (const section of provider.aggregate.sections()) {
-            if (!section.entries.length) continue;
+            if (!section.entries.length) {
+                // a section that can be empty says so, in a line that is no choice, as the signatures' "New signature…" is one
+                if (section.empty) out.push({ heading: section.heading, entries: [{ value: '\u0001none', text: section.empty, alt: '', disabled: true }] });
+                continue;
+            }
             out.push({ heading: section.heading, entries: section.entries.map((e) => ({ value: encodeSet(provider.type, e.entry), text: e.text, alt: e.alt || '' })) });
         }
     }
