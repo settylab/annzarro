@@ -20,6 +20,7 @@ else:
 from annzarro.tests.browser.test_cell_grouping_popovers import (  # noqa: E402,F401 (the fixtures)
     page, served, _configs, _url, GA, P, CC, TP)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
+from annzarro.tests.browser import waits  # noqa: E402
 
 # every tile's height on every frame, with the Cell-Gene panel's state
 RECORD = """window.__tiles = []; (function rec() {
@@ -38,7 +39,10 @@ def test_three_tiles_keep_their_height_while_the_cell_gene_plot_draws(page, serv
     configs[P] = {**configs[P], "mode": mode}
     page.goto(_url(served, [GA, P, CC], configs))
     until(page, "(s) => { const e = document.querySelector(s + ' .cgene-panel'); return !!e && e.dataset.state === 'ready'; }", TP, timeout=60)
-    page.wait_for_timeout(2000)
+    # two seconds past ready, the tiles still hold the heights they had at ready (a negative assertion: nothing to wait for)
+    at_ready = page.evaluate("() => window.__tiles[window.__tiles.length - 1].h")
+    waits.expect_stays(lambda: all(abs(page.evaluate("() => window.__tiles[window.__tiles.length - 1].h")[k] - v) <= 1 for k, v in at_ready.items()),
+                       "a settled tile has no event to wait for; it must simply not move", page=page, seconds=2.0)
     frames = page.evaluate("() => window.__tiles")
     assert frames and frames[-1]["state"] == "ready", frames[-1:]
     for tile in frames[0]["h"]:
