@@ -16,6 +16,7 @@ from annzarro.server.auth import AuthManager
 from annzarro.server.core import create_app
 from annzarro.tests.server.rich_store import make_rich_store
 
+#: This config, not the default, is why the tests below see 300 s: the shipped interval is 60 s (see the last test)
 LARGE = {"refresh_large_cells": 1, "refresh_min_interval_large_s": 300}
 
 
@@ -77,10 +78,10 @@ def test_a_local_server_keeps_the_plain_interval(tmp_path):
 def test_a_dataset_below_the_served_cell_limit_is_not_large(tmp_path):
     """The limit is the served one: at its default (10 million cells) the 200 cell store is small."""
     path = make_rich_store(tmp_path / "r.zarr")
-    app = _app(tmp_path, {"refresh_min_interval_large_s": 300})
+    app = _app(tmp_path, {})
     bob = _client(app, "bob")
     values = bob.get("/api/v1/policy/effective").get_json()["values"]
-    assert values["limits.refresh_large_cells"] == 10_000_000 and values["limits.refresh_min_interval_large_s"] == 300
+    assert values["limits.refresh_large_cells"] == 10_000_000 and values["limits.refresh_min_interval_large_s"] == 60
     assert [_refresh(bob, path)["status"] for _ in range(2)] == ["full", "full"]
 
 
@@ -88,3 +89,8 @@ def test_the_limits_come_from_the_served_values(tmp_path):
     app = _app(tmp_path, LARGE)
     values = _client(app, "bob").get("/api/v1/policy/effective").get_json()["values"]
     assert values["limits.refresh_large_cells"] == 1 and values["limits.refresh_min_interval_large_s"] == 300
+
+
+def test_a_default_server_serves_sixty_seconds_for_a_large_dataset(tmp_path):
+    values = _client(_app(tmp_path, {}), "bob").get("/api/v1/policy/effective").get_json()["values"]
+    assert values["limits.refresh_min_interval_large_s"] == 60 and values["limits.refresh_large_cells"] == 10_000_000

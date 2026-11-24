@@ -267,15 +267,16 @@ def _declare_cost_keys() -> None:
     from annzarro.server.policy import Float, Int, Key, REGISTRY, declare
     for name, c in cost_limits.COST_LIMITS.items():
         number = Int if c.integer else Float
+        up = c.tighten == "up"
         default = f"{c.default:,}" if c.integer else f"{c.default:g}"
         where = {"server": "The server enforces it.", "browser": "The browser enforces it.",
                  "both": "The server and the browser enforce it."}[c.enforced]
         declare(Key(
-            name=COST_PREFIX + name, type=number(min=c.minimum, max=c.maximum), default=c.default, scope="server",
+            name=COST_PREFIX + name, type=number(min=c.minimum, max=c.maximum, restrictive="high" if up else "low"), default=c.default, scope="server",
             combine="restrict", area="limits", config_path=f"limits.{name}", client=True, guide=cost_guide(name),
             label=c.label, section="", subgroup=cost_limits.GROUPS[c.group],
             description=f"{c.help} {where} Default {default}; a value in the config file (limits.{name}) is a "
-                        f"ceiling the admin can lower."))
+                        + ("floor the admin can raise." if up else "ceiling the admin can lower.")))
 
     def time_order(values):
         """live_update_s <= ask_first_s <= refuse_s, partitionings <= request_partitionings: the stricter wins."""

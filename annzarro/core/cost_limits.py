@@ -22,6 +22,11 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional
 
+#: The limits where a HIGHER value is the stricter one (a minimum interval): ``CostLimit.tighten == "up"``
+def tightens_up() -> tuple:
+    return tuple(n for n, c in COST_LIMITS.items() if c.tighten == "up")
+
+
 #: The time tiers, in the order they must keep: ``live_update_s <= ask_first_s <= refuse_s``.
 TIME_ORDER = ("live_update_s", "ask_first_s", "refuse_s")
 
@@ -38,6 +43,10 @@ class CostLimit:
     group: str             # the Settings page's sub-group: "time" | "grouping" | "browser" (GROUPS)
     label: str
     help: str
+    #: which way tightens the limit: "down" (a lower value is stricter: most limits, and what a value in the config
+    #: file is a ceiling for) or "up" (a higher value is stricter, as for a minimum interval: the file's value is a
+    #: floor the admin may only raise)
+    tighten: str = "down"
 
 
 #: The Settings page's headings of the groups, in order
@@ -46,8 +55,10 @@ GROUPS = {"time": "When to ask and refuse", "grouping": "Groupings, matrices and
 
 
 def _limit(name, default, maximum, *, minimum=1, integer=True, enforced="server", kind="safety", group="grouping",
-           label, help):
-    return CostLimit(name, default, minimum, maximum, integer, enforced, kind, group, label, help)
+           label, help, tighten="down"):
+    if tighten not in ("down", "up"):
+        raise ValueError(f"{name}: tighten is 'down' or 'up'")
+    return CostLimit(name, default, minimum, maximum, integer, enforced, kind, group, label, help, tighten)
 
 
 COST_LIMITS: Dict[str, CostLimit] = {c.name: c for c in (
@@ -67,6 +78,7 @@ COST_LIMITS: Dict[str, CostLimit] = {c.name: c for c in (
            label="Progress bar after (s)",
            help="Seconds (estimated, or waited so far) after which a computation shows a progress bar."),
     _limit("refresh_min_interval_large_s", 60.0, 600.0, minimum=0, integer=False, enforced="server", group="time",
+           tighten="up",
            label="Refresh interval, large datasets (s)",
            help="Seconds between two Refreshes of one dataset with more cells than refresh_large_cells, for a user "
                 "who is not an admin on a shared server (an admin keeps server.refresh_min_interval_s). Every "

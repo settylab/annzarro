@@ -285,7 +285,7 @@ The cost limits of a computation (a gene score, a grouping, a Cell-Gene or Cell 
 draws or exports: when a request asks before it runs and when it is refused, by its estimated seconds, and how large a
 grouping, a matrix or a grid may get. Public: the web client reads them from `GET /api/v1/policy/effective` and keeps
 to the same numbers before it asks. Each is also a policy key `limits.<key>` that an admin can change on the
-**Settings** page without a restart ({doc}`../deployment/admin`). A value set here is a ceiling there: the admin may
+**Settings** page without a restart ({doc}`../deployment/admin`). A value set here is a ceiling there (for `refresh_min_interval_large_s`, where higher is stricter, a floor): the admin may
 lower it, not raise it; leave a key out and the admin may set anything within its bounds, or name it in
 `policy.locked` to keep it to this file.
 
