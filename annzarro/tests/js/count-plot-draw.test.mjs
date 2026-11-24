@@ -371,8 +371,11 @@ test('a pie has one slice per level in its order, none sorted behind the caller\
 test('a ring is a pie with a hole, and its labels show the count or the share', () => {
     const { config, table } = small('pie');
     assert.equal(D.countFigure(config, table, opts({ ring: true })).data[0].hole, 0.5);
-    assert.equal(D.countFigure(config, table, opts({ labels: 'count' })).data[0].textinfo, 'value');
-    assert.equal(D.countFigure(config, table, opts({ labels: 'share' })).data[0].textinfo, 'percent');
+    // the numbers are placed by the plot at one radius (count-pie-labels.test.mjs), not by Plotly's inside text
+    const texts = (labels) => (D.countFigure(config, table, opts({ labels })).layout.annotations || []).map((a) => a.text);
+    assert.deepEqual(texts('count'), ['30', '10', '60']);
+    assert.deepEqual(texts('share'), ['30%', '10%', '60%']);
+    assert.equal(D.countFigure(config, table, opts({ labels: 'count' })).data[0].textinfo, 'none');
 });
 
 test('the collected rest of a pie is grey, last, with its count', () => {

@@ -23,7 +23,8 @@ const P = VOCABULARY.phrase;
 /** What a stored config's mode shows (UX 4.2): its rows, the value it shows and the options that are its own. */
 const MODE_ROWS = Object.freeze({
     bar: { value: 'height', arrangement: ['stack', 'dodge', 'fill'], labels: true, sort: true, horizontal: true, log: true, binned: ['x', 'split'] },
-    histogram: { value: 'height', arrangement: ['stack', 'dodge'], labels: true, horizontal: true, log: true, binned: ['x', 'split'] },
+    // a number's bins at their values: the same arrangements as Bar where they apply, side by side disabled (bins cannot)
+    histogram: { value: 'height', arrangement: ['stack', 'dodge', 'overlay', 'fill'], labels: true, horizontal: true, log: true, binned: ['x', 'split'] },
     pie: { slices: true, labels: true, sort: true, ring: true, binned: ['x'] },
     hist2d: { value: 'color', labels: true, binned: ['x', 'y', 'split'] },
     heatmap: { value: 'color', labels: true, reverse: true, binned: ['x', 'y'] },
@@ -52,6 +53,83 @@ export function rowsOf(mode) {
 }
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// ------------------------------------------------------------------------------------- the views follow the X axis type
+
+/** Whether an input is a number the engine bins (an integer read by its values is categories). */
+function binnedNumber(p, isNumeric) {
+    return !!p && !!isNumeric && isNumeric(p.source) && !(isObject(p.binning) && p.binning.method === 'categories');
+}
+
+// The shared reason builder (options-model.js REASON, SO-2) phrases what a method cannot compute on a layer; a view that
+// needs a kind of axis is not one of its forms, so the Mode select's reason is its own (vocabulary.js viewRefused)
+const reasonText = (key) => C.viewRefused[key];
+
+/**
+ * Why a mode cannot draw the config's X (graded like every choice: the Mode select disables it with this as its
+ * title), or '' when it can. Histogram needs a number the engine bins; with no X yet nothing is graded.
+ * @param {Object} config
+ * @param {string} mode
+ * @param {(source: Object) => boolean} isNumeric
+ */
+export function modeRefusal(config, mode, isNumeric) {
+    if (mode === 'histogram' && config.x && !binnedNumber(config.x, isNumeric)) return reasonText('histogramNumeric');
+    return '';
+}
+
+/**
+ * The view after an edit, by the X axis type: a number chosen as X while the plot is a Bar makes it a Histogram (the
+ * default for a number; Bar stays one click away and is kept when chosen for a number); categories while it is a
+ * Histogram make it a Bar. Only a change of X switches; any other edit, and the other modes, are left as they are.
+ * @param {Object} before - the config before the edit
+ * @param {Object} next - the config the edit makes
+ * @param {(source: Object) => boolean} isNumeric
+ * @returns {{config: Object, note: string}} `note` says a switch once ('' when there is none)
+ */
+export function viewForX(before, next, isNumeric) {
+    const was = before && before.x;
+    const now = next.x;
+    const xChanged = JSON.stringify(was ? was.source : null) !== JSON.stringify(now ? now.source : null)
+        || binnedNumber(was, isNumeric) !== binnedNumber(now, isNumeric);
+    if (next.mode === 'histogram' && now && !binnedNumber(now, isNumeric)) {
+        return { config: { ...next, mode: 'bar' }, note: C.viewSwitched.toBar };
+    }
+    if (xChanged && next.mode === 'bar' && (!before || before.mode === 'bar') && binnedNumber(now, isNumeric) && !binnedNumber(was, isNumeric)) {
+        return { config: { ...next, mode: 'histogram' }, note: C.viewSwitched.toHistogram };
+    }
+    return { config: next, note: '' };
+}
+
+/**
+ * A stored Histogram whose X is not a number the engine bins (a link, a panel set): drawn as Bar instead, never a
+ * misleading histogram, with a note said once. Null when the config needs nothing.
+ * @param {Object} config
+ * @param {(source: Object) => boolean} isNumeric
+ * @returns {{config: Object, note: string}|null}
+ */
+export function histogramFallback(config, isNumeric) {
+    if (config.mode !== 'histogram' || !config.x || binnedNumber(config.x, isNumeric)) return null;
+    return { config: { ...config, mode: 'bar' }, note: C.viewSwitched.fallback };
+}
+
+/** Why an arrangement does not apply to the mode, or '' when it does. */
+function arrangementRefusal(config, id) {
+    if (config.mode === 'histogram' && id === 'dodge') return C.arrangementRefused.dodgeBins;
+    return '';
+}
+
+/**
+ * The arrangement radios of a Color by: each arrangement of the mode, one that does not apply disabled with the reason
+ * as its title (graded like every choice).
+ * @param {Object} config
+ * @returns {Array<{value: string, label: string, disabled: boolean, title: string}>}
+ */
+export function arrangementChoices(config) {
+    return rowsOf(config.mode).arrangement.map((id) => {
+        const title = arrangementRefusal(config, id);
+        return { value: id, label: C.arrangement[id], disabled: !!title, title };
+    });
+}
 
 /**
  * How an input's source is named in a line: the panel's title for a source another panel makes, else its type and its

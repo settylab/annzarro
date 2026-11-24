@@ -86,7 +86,7 @@ def test_every_count_figure_draws_and_exports(server):
             page.goto(root + "/?dataset_path=" + urllib.parse.quote(store, safe="/"))
             page.wait_for_function("typeof Plotly !== 'undefined'")
             got = page.evaluate(BUILD)
-            want = {"bar": ["bar"], "histogram": ["bar"], "hist2d": ["heatmap"], "heatmap": ["heatmap", "scatter"], "pie": ["pie"]}
+            want = {"bar": ["bar"], "histogram": ["bar"], "hist2d": ["heatmap"], "heatmap": ["heatmap", "scatter"], "pie": ["pie", "scatter"]}  # a pie's numbers: annotations on the axes of an empty scatter
             for name, types in want.items():
                 g = got[name]
                 assert g["drawn"] == types, (name, g["drawn"])

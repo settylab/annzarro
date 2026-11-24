@@ -12,7 +12,7 @@
  * plot theme's colors. A level's label is never made here.
  */
 import {
-    axisOrder, binSpacingOf, heightValues, shareValues, measureValues, levelLabelsOf, levelsAt, tableRows, tableCsv
+    arrangementShown, axisOrder, binSpacingOf, heightValues, shareValues, measureValues, levelLabelsOf, levelsAt, tableRows, tableCsv
 } from '../../utils/count-plot-model.js';
 import { defaultLabelMaps } from '../../utils/cell-grouping.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
@@ -214,10 +214,14 @@ function categoryAxis(theme, labels, title, extra = {}) {
 
 // --- bar and histogram -----------------------------------------------------------------------------------------------
 
-function barMode(config, spec, histogram) {
+/** The translucency of overlaid bars: each level over the others, the ones behind still seen. */
+const OVERLAY_OPACITY = 0.6;
+
+function barMode(config, spec) {
     if (spec.kind === 'measure') return { barmode: 'group' };
-    const arrangement = config.arrangement || 'stack';
-    if (arrangement === 'dodge') return { barmode: histogram ? 'overlay' : 'group' };
+    const arrangement = arrangementShown(config);
+    if (arrangement === 'overlay') return { barmode: 'overlay' };
+    if (arrangement === 'dodge') return { barmode: 'group' };
     if (arrangement === 'fill') return { barmode: 'stack', barnorm: 'percent' };
     return { barmode: 'stack' };
 }
@@ -238,7 +242,7 @@ function barFigure(config, table, opts) {
     const order = bins || even ? inOrder : axisOrder(table, xa, spec.values, { sort, reverse });
     const xLabels = order.map((l) => labelAt(table.axes[xa].levels[l], xa));
     const splits = sa >= 0 ? Array.from({ length: table.dims[sa] }, (_, i) => i) : [null];
-    const mode = barMode(config, spec, histogram);
+    const mode = barMode(config, spec);
     const data = splits.map((s) => {
         const at = (l) => l * table.stride[xa] + (s === null ? 0 : s * table.stride[sa]);
         const along = order.map((l, k) => (bins ? bins.centers[l] : k));
@@ -253,7 +257,7 @@ function barFigure(config, table, opts) {
         if (even) trace.width = order.map(() => 1);
         if (s !== null) trace.name = esc(labelAt(table.axes[sa].levels[s], sa));
         if (labelsOn) Object.assign(trace, { text: order.map((l) => textOf(labelsOn, at(l))), textposition: 'auto' });
-        if (histogram && mode.barmode === 'overlay') trace.opacity = 0.6;
+        if (mode.barmode === 'overlay') trace.opacity = OVERLAY_OPACITY;
         return trace;
     });
     const xTitle = opts.inputNames.x;
@@ -447,22 +451,67 @@ function layerFigure(config, table, opts) {
 
 // --- pie -------------------------------------------------------------------------------------------------------------
 
+/**
+ * Where a pie's numbers sit (operator, 0.8.0): every slice's at one radius, the middle of a ring's band, and the same
+ * fraction of the radius in a full pie, so Ring moves no number. Plotly's own inside text picks a place per slice (the
+ * largest slice's moved with Ring), so each number is an annotation, centred on a point of hidden axes of one scale
+ * from -1 to 1 (scaleanchor), squeezed to a square in the middle of the plot area as the pie is, so 1 is the pie's
+ * radius: at its slice's middle angle, clockwise from 12 o'clock as the pie draws. Annotations are drawn over the pie
+ * and follow a resize and an export as the axes do. An empty, hidden scatter trace makes the axes.
+ */
+const PIE_HOLE = 0.5;
+const PIE_LABEL_RADIUS = (1 + PIE_HOLE) / 2;
+/** A slice under this share of the whole shows its number in its hover only: it would not fit inside the slice. */
+const PIE_LABEL_MIN_SHARE = 0.03;
+
+/** Dark text on a light slice, light on a dark one (relative luminance of the slice's colour). */
+function textOn(colour) {
+    const hex = asHex(colour);
+    if (!hex) return '#000000';
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] > 0.4 ? '#000000' : '#ffffff';
+}
+
 function pieFigure(config, table, opts) {
     const a = axisOf(table, 'x');
     const maps = labelMapsOf(config, table, opts);
     const labelAt = labelFn(maps);
     const { sort, reverse, ring } = opts.options;
     const order = axisOrder(table, a, table.count, { sort, reverse });
-    const labelsOn = opts.options.labels && opts.options.labels !== 'none' ? opts.options.labels : null;
+    const colors = order.map((l) => colorOf(config, table, a, l, opts));
+    const values = order.map((l) => table.count[l]);
     const trace = {
-        type: 'pie', sort: false, direction: 'clockwise', hole: ring ? 0.5 : 0,
-        labels: order.map((l) => esc(labelAt(table.axes[a].levels[l], a))), values: order.map((l) => table.count[l]),
-        marker: { colors: order.map((l) => colorOf(config, table, a, l, opts)) },
-        hovertext: order.map((l) => hoverOf(config, table, opts, l, labelAt)), hoverinfo: 'text',
-        textinfo: labelsOn === 'count' ? 'value' : labelsOn === 'share' ? 'percent' : 'none', textposition: 'auto'
+        type: 'pie', sort: false, direction: 'clockwise', rotation: 0, hole: ring ? PIE_HOLE : 0,
+        labels: order.map((l) => esc(labelAt(table.axes[a].levels[l], a))), values,
+        marker: { colors },
+        hovertext: order.map((l) => hoverOf(config, table, opts, l, labelAt)), hoverinfo: 'text', textinfo: 'none'
     };
+    const data = [trace];
+    const spec = labelSpec(config, table, opts);
+    const total = values.reduce((sum, v) => sum + (Number.isFinite(v) ? v : 0), 0);
     const layout = baseLayout(opts, { showlegend: true, legend: { title: { text: esc(opts.inputNames.x) } } });
-    return { data: [trace], layout };
+    if (spec && total > 0) {
+        // each slice's middle angle, clockwise from 12 o'clock as the pie draws it
+        let before = 0;
+        const shown = [];
+        order.forEach((l, k) => {
+            const v = Number.isFinite(values[k]) ? values[k] : 0;
+            const text = v / total >= PIE_LABEL_MIN_SHARE ? textOf(spec, l) : '';
+            if (text) shown.push({ theta: ((before + v / 2) / total) * 360, text, color: textOn(colors[k]) });
+            before += v;
+        });
+        const rad = (deg) => (deg * Math.PI) / 180;
+        data.push({ type: 'scatter', mode: 'markers', x: [], y: [], hoverinfo: 'skip', showlegend: false, meta: { pieAxes: true } });
+        const axis = { visible: false, range: [-1, 1], fixedrange: true, constrain: 'domain' };
+        layout.xaxis = { ...axis };
+        layout.yaxis = { ...axis, scaleanchor: 'x', scaleratio: 1 };
+        layout.annotations = shown.map((p) => ({
+            x: PIE_LABEL_RADIUS * Math.sin(rad(p.theta)), y: PIE_LABEL_RADIUS * Math.cos(rad(p.theta)), xref: 'x', yref: 'y',
+            text: p.text, showarrow: false, xanchor: 'center', yanchor: 'middle', font: { color: p.color }, captureevents: false,
+            name: 'pie-label'
+        }));
+    }
+    return { data, layout };
 }
 
 // --- the figure and the CSV ------------------------------------------------------------------------------------------

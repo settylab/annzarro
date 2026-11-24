@@ -56,7 +56,7 @@ test('each mode shows the rows of UX 4.2 and no other', () => {
     assert.deepEqual(shown('upset'), ['sets', 'color']);
     assert.equal(K.rowsOf('pie').slices, true, 'a pie\'s X is its Slices');
     assert.deepEqual(K.rowsOf('bar').arrangement, ['stack', 'dodge', 'fill']);
-    assert.deepEqual(K.rowsOf('histogram').arrangement, ['stack', 'dodge']);
+    assert.deepEqual(K.rowsOf('histogram').arrangement, ['stack', 'dodge', 'overlay', 'fill'], 'side by side is listed and disabled (count-views)');
     assert.equal(K.rowsOf('bar').horizontal && K.rowsOf('histogram').horizontal, true);
     assert.equal(K.rowsOf('pie').ring, true);
 });

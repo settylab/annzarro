@@ -284,7 +284,8 @@ def test_a_mode_change_keeps_every_input_and_lists_what_the_mode_does_not_read(p
     groups = page.evaluate("""(s) => [...document.querySelectorAll(s + ' .ccnt-mode optgroup')].map(g =>
         [g.label, [...g.children].map(o => [o.textContent, o.disabled, o.title])])""", S)
     assert [g[0] for g in groups] == ["Counts", "Two inputs", "Smoothed", "Sets"]
-    assert groups[0][1] == [["Bar", False, ""], ["Histogram", False, ""], ["Pie", False, ""]]
+    # X is categorical: Histogram is disabled with why (the views follow the X axis type, 0.8.0)
+    assert groups[0][1] == [["Bar", False, ""], ["Histogram", True, "Histogram needs a numeric axis."], ["Pie", False, ""]]
     assert groups[3][1][0] == ["Venn", False, ""]
 
     page.select_option(f"{S} .ccnt-mode", "hist2d")
@@ -306,10 +307,9 @@ def test_a_mode_change_keeps_every_input_and_lists_what_the_mode_does_not_read(p
     assert len(_plot(page)["data"]) == 2, "Color by is back"
     assert _config(page)["split"] == CONDITION and _config(page)["x"] == CELL_TYPE
 
-    # a histogram of a categorical X: the input stays, and the plot says why it cannot be drawn
-    page.select_option(f"{S} .ccnt-mode", "histogram")
-    until(page, "(s) => document.querySelector(s + ' .ccnt-panel').dataset.state === 'unusable'", S)
-    assert _state_text(page) == "Histogram needs a numeric X. cell_type is categorical."
+    # a histogram of a categorical X is not offered: the Mode select disables it with why (the views follow the X)
+    hist = page.evaluate("(s) => { const o = [...document.querySelectorAll(s + ' .ccnt-mode option')].find(o => o.value === 'histogram'); return [o.disabled, o.title]; }", S)
+    assert hist == [True, "Histogram needs a numeric axis."]
     assert _config(page)["x"] == CELL_TYPE
 
 
