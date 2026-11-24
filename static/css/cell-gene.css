@@ -32,7 +32,7 @@
 .cgene-field__label { color: var(--az-muted); font-size: 0.75rem; white-space: nowrap; }
 .cgene-field .form-select { width: auto; max-width: 16rem; }
 .cgene-axis { display: inline-flex; gap: 4px; }
-.cgene-mode, .cgene-section__rows { display: inline-flex; gap: 8px; align-items: center; }
+.cgene-section__rows { display: inline-flex; gap: 8px; align-items: center; }
 .cgene-radio { display: inline-flex; align-items: center; gap: 2px; margin: 0; white-space: nowrap; }
 .cgene-swap.active { background-color: var(--az-accent-bg); }
 .cgene-layout-slot { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }

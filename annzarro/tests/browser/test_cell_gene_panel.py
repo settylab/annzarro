@@ -190,7 +190,7 @@ def test_job1_marker_genes_as_a_dot_plot(page, served):
     assert traces[0] in ("scatter", "scattergl")
     # a heatmap is drawn from what is held: nothing is asked
     n = len(page.calls)
-    page.click(f"{TP} .cgene-mode input[value='heatmap']")
+    page.select_option(f"{TP} select.cgene-mode", "heatmap")
     until(page, "(s) => document.querySelector(s + ' .cgene-plot').data[0].type === 'heatmap'", TP)
     assert len(page.calls) == n
     # so is a change of statistic on the same layer, or of the scale
@@ -355,6 +355,31 @@ def test_the_section_list_edits_are_undoable_steps(page, served):
     assert _state(page)["undo"] == 7, "two adds, one row, a title, two moves, a removal"
     page.click(f"{TP} .cgene-undo")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 2", P)
+
+
+def test_mode_is_a_select_listing_the_registry(page, served):
+    """Mode is a select fed by MODE_INFO: Dots and Heatmap, nothing else; Heatmap hides Size; one undo step per change."""
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}]),
+                         S1: _sig(S1, "Markers", GENES[0:3])}, open_ids=(P, S1))
+    _drawn(page)
+    mode = page.locator(f"{TP} select.cgene-mode")
+    assert mode.count() == 1 and page.locator(f"{TP} .cgene-mode input").count() == 0
+    opts = mode.locator("option")
+    assert [opts.nth(i).inner_text() for i in range(opts.count())] == ["Dots", "Heatmap"]
+    assert [opts.nth(i).get_attribute("value") for i in range(opts.count())] == ["dots", "heatmap"]
+    # the shared styling of the plot rows: the Groups selects' classes and height
+    assert "form-select-sm" in mode.get_attribute("class")
+    box = lambda sel: page.locator(f"{TP} {sel}").bounding_box()["height"]
+    assert box("select.cgene-mode") == box(".cgene-axis-type")
+    assert page.locator(f"{TP} .cgene-field--size").is_visible()
+    before = _state(page)["undo"]
+    page.select_option(f"{TP} select.cgene-mode", "heatmap")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().mode === 'heatmap'", P)
+    assert not page.locator(f"{TP} .cgene-field--size").is_visible()
+    assert _state(page)["undo"] == before + 1, "one undo step"
+    page.click(f"{TP} .cgene-undo")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().mode === 'dots'", P)
+    assert page.input_value(f"{TP} select.cgene-mode") == "dots" and page.locator(f"{TP} .cgene-field--size").is_visible()
 
 
 # ------------------------------------------------------------------ 7. groups

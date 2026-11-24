@@ -59,7 +59,7 @@ def test_the_matrix_is_drawn_from_a_grouping_and_a_signature(user, grouping_serv
     assert dots["ticks"] == GENES and len(dots["x"]) == 6 * 3
 
     # a heatmap of the same numbers: one row per group, one column per gene, each a mean over the group's cells
-    page.click(f"{p} .cgene-mode input[value='heatmap']")
+    page.select_option(f"{p} select.cgene-mode", "heatmap")
     until(page, "(s) => document.querySelector(s + ' .cgene-plot').data[0].type === 'heatmap'", p)
     z = np.array(page.evaluate("(s) => document.querySelector(s + ' .cgene-plot').data[0].z", p), dtype=float)
     levels, codes = obs_levels(store, "cell_type")

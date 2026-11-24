@@ -679,7 +679,7 @@ def _cell_gene(browser, served, **extra):
 
 
 def _cg_mode(mode):
-    return _click(f"{G_TILE} .cgene-mode input[value='{mode}']")
+    return _select(f"{G_TILE} select.cgene-mode", mode)
 
 
 def _cg_remove(index):

@@ -71,12 +71,12 @@ def test_remove_undo_and_heatmap_with_a_one_row_signature_section(page, served, 
     back = _settled(page, f"(f) => f.columns === {n}", "undone")
     assert back["drawnTypes"] == ["scatter"], back
     # Heatmap: tiles, not dots, and Plotly drew them
-    page.click(f"{TP} .cgene-mode input[value='heatmap']")
+    page.select_option(f"{TP} select.cgene-mode", "heatmap")
     heat = _settled(page, "(f) => f.types.includes('heatmap')", "heatmap")
     assert heat["types"] == ["heatmap"] and heat["drawnTypes"] == ["heatmap"], heat
     assert heat["columns"] == n, heat
     # and Dots again
-    page.click(f"{TP} .cgene-mode input[value='dots']")
+    page.select_option(f"{TP} select.cgene-mode", "dots")
     dots = _settled(page, "(f) => f.types.includes('scatter')", "dots again")
     assert dots["types"] == ["scatter"] and dots["drawnTypes"] == ["scatter"], dots
     assert _config(page)["mode"] == "dots"
@@ -111,7 +111,7 @@ def test_a_draw_that_threw_does_not_leave_the_next_one_stale(page, served):
     until(page, "(s) => document.querySelector(s + ' .cgene-panel').dataset.state === 'failed'", TP, timeout=30)
     assert page.locator(f"{TP} .cgene-plot").evaluate("(p) => !p.data || !p.data.length"), "the half-drawn figure is cleared"
     page.evaluate("() => { window.__breakDraws = false; }")
-    page.click(f"{TP} .cgene-mode input[value='heatmap']")
+    page.select_option(f"{TP} select.cgene-mode", "heatmap")
     until(page, f"(s) => {{ const o = ({ON_SCREEN})(s); return o.tiles > 0 && o.dots === 0; }}", TP, timeout=30)
     assert page.evaluate("(s) => document.querySelector(s + ' .cgene-panel').dataset.state", TP) == "ready"
     page.click(f"{TP} .cgene-undo")
