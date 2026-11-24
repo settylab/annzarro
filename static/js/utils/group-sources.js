@@ -361,8 +361,9 @@ export function createGroupSources({ store, host, context, genesStore = null, li
             const threshold = thresholdOf(resolved.recipe);
             const grouping = serverRequest(resolved.recipe, ctxOf(resolved), { codes: false, histograms: [] });
             // a table's cells go as the route's `sets` and `member`: nothing is resolved there
-            return { recipe: option.member === true && grouping.sets ? memberRequest(grouping, option.layer, threshold) : genesRequest(grouping, option.group, option.layer, threshold),
-                hash: momentsHash(keyOf(resolved), option.group, option.layer, threshold) };
+            return { recipe: option.member === true && grouping.sets ? memberRequest(grouping, option.layer, threshold, option.transform)
+                : genesRequest(grouping, option.group, option.layer, threshold, option.transform),
+                hash: momentsHash(keyOf(resolved), option.group, option.layer, threshold, option.transform) };
         },
         editHashOf: (resolved) => `${keyOf(resolved)}\u0001${thresholdOf(resolved.recipe)}`,
         keyOf: ({ hash, dataset, subset }) => `${hash}\u0001${dataset || ''}\u0001${subset || ''}`,

@@ -19,7 +19,7 @@
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { normalizeGrouping } from '../../utils/cell-grouping.js';
 import { CELL_COUNT, STATISTIC_INFO, statisticChoices, statisticLayerChoices, statisticPairAfter } from '../../utils/group-statistics.js';
-import { SCALINGS, MODE_INFO, modeShowsChannel } from '../../utils/cell-gene-model.js';
+import { SCALINGS, MODE_INFO, modeShowsChannel, scalingGrade } from '../../utils/cell-gene-model.js';
 import { loopReason } from '../../utils/panel-references.js';
 import { createPopover } from '../../ui/popover.js';
 import { GROUP_AXIS, needsThreshold } from './sections.js';
@@ -100,9 +100,9 @@ function asOption(e, name) {
  * @returns {Array<{value: string, label: string, title?: string, disabled?: boolean, lapsed?: boolean}>}
  */
 // export-unused-ok: WP-12's Height measure lists the same choices; the panel reads them through measureModel
-export function statisticList({ kinds, held }) {
+export function statisticList({ kinds, held, consumer }) {
     const layer = held.stat === CELL_COUNT ? null : held.layer || DEFAULT_LAYER;
-    return statisticChoices({ layer, kinds, held: held.stat }).map((e) => asOption(e, nameOf(e.value)));
+    return statisticChoices({ layer, kinds, held: held.stat, consumer }).map((e) => asOption(e, nameOf(e.value)));
 }
 
 /**
@@ -183,11 +183,11 @@ function measureRow(D, which, label, on) {
  * `own` the measure's stored threshold or null; `grouping` `{title, value}` of the axis grouping, whose Expressed above a
  * measure with no threshold of its own follows (decision 35), or null on an obs axis.
  */
-export function measureModel({ spec, datasetLayers, kinds, threshold, grouping = null }) {
+export function measureModel({ spec, datasetLayers, kinds, threshold, grouping = null, consumer }) {
     const own = typeof spec.detect_above === 'number' && Number.isFinite(spec.detect_above) ? spec.detect_above : null;
     return {
         stat: spec.stat, layer: spec.layer,
-        stats: statisticList({ kinds, held: spec }),
+        stats: statisticList({ kinds, held: spec, consumer }),
         layers: layerList({ datasetLayers, kinds, stat: spec.stat, held: spec }),
         threshold: spec.stat !== CELL_COUNT && needsThreshold(spec.stat) ? threshold : null,
         own, grouping
@@ -221,7 +221,16 @@ export function createControls({ D, model, on, sections, addGenes }) {
 
     const color = measureRow(D, 'color', 'Color', on);
     const scaleSel = el('select', { class: 'form-select form-select-sm cgene-scale', aria: { label: 'Scale' }, on: { change: () => on.scale(scaleSel.value) } });
-    options(D, scaleSel, SCALINGS.map((s) => ({ value: s, label: CG.scaling[s] })));
+    let scaleFor = null;           // the Color statistic the options were graded for
+    const paintScale = (colorStat) => {
+        if (scaleFor === colorStat) return;
+        scaleFor = colorStat;
+        options(D, scaleSel, SCALINGS.map((s) => {
+            const g = scalingGrade(s, colorStat);
+            return { value: s, label: CG.scaling[s], disabled: !g.ok, title: g.ok ? '' : g.reason };
+        }));
+    };
+    paintScale('mean');
     const size = measureRow(D, 'size', 'Size', on);
     // the 3D bars' height (UX 6b, WP-12): its statistic select starts with Same as Color; shown while 3D is on
     const height = measureRow(D, 'height', CG.view3d.height, on);
@@ -279,6 +288,7 @@ export function createControls({ D, model, on, sections, addGenes }) {
         size.element.hidden = !modeShowsChannel(m.mode, 'size');
         if (m.height) height.paint(m.height);
         height.element.hidden = !m.height || !m.view3d;
+        paintScale(m.color.stat);      // the two z-scores are disabled under a z-score mean Color, with the reason
         scaleSel.value = m.scale;
         swap.setAttribute('aria-pressed', m.swap ? 'true' : 'false');
         swap.classList.toggle('active', !!m.swap);

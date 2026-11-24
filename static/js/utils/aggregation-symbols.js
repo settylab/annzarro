@@ -19,7 +19,7 @@ export const SCORE_SYMBOLS = Object.freeze({
 
 /** The statistics over a group's cells. */
 export const STAT_SYMBOLS = Object.freeze({
-    mean: sym('x', true), pct_expressing: sym('%'), mean_expressing: sym('x⁺', true), sum: sym('Σ'), sd: sym('σ')
+    zscore_mean: sym('z', true), mean: sym('x', true), pct_expressing: sym('%'), mean_expressing: sym('x⁺', true), sum: sym('Σ'), sd: sym('σ')
 });
 
 /** The element of a symbol: a span in the symbol column of the button and of the menu. */

@@ -119,7 +119,7 @@ def test_cell_gene_font_size_survives_a_redraw_and_an_undo(page, served):
     _open_options(page, TP, ".cgene-options-btn")
     _set_number(page, "fontSize", 18)
     _cg_until(page, "(p) => p.layout.font.size === 18")
-    assert _config(page, P)["look"] == {"fontSize": 18}
+    assert _config(page, P)["look"] == {"fontSize": 18, "fontFamily": "Arial, Helvetica, sans-serif"}   # a plot saved with no font is read as Arial (utils/fonts.js legacyFont)
     assert page.locator(POP).count() == 1, "an edit applies live and leaves the pop-over open"
     # a later edit redraws the plot; the font stays, and its Undo leaves the font as it is
     page.check(_option("totals"))
@@ -139,7 +139,7 @@ def test_cell_gene_font_size_survives_a_redraw_and_an_undo(page, served):
     assert page.get_attribute(f"{TP} .cgene-undo", "title") == "Undo: font size"
     page.click(f"{TP} .cgene-undo")
     _cg_until(page, "(p) => p.layout.font.size === 12")
-    assert "look" not in _config(page, P)
+    assert _config(page, P)["look"] == {"fontFamily": "Arial, Helvetica, sans-serif"}   # a plot saved with no font is read as Arial (utils/fonts.js legacyFont)
 
 
 # ------------------------------------------------------------------ 1b. one body standard (U1)
@@ -209,7 +209,7 @@ def test_apply_to_other_cell_gene_plots_copies_the_look_not_the_title(page, serv
     assert page.inner_text(f"{POP} .az-pop-apply-done") == "Applied to 1 plot."
     _cg_until(page, "(p) => p.layout.font.size === 15 && p.layout.xaxis.showgrid === true", pid=P2)
     other = _config(page, P2)
-    assert other["look"] == {"fontSize": 15, "grid": True}
+    assert other["look"] == {"fontSize": 15, "grid": True, "fontFamily": "Arial, Helvetica, sans-serif"}   # a plot saved with no font is read as Arial (utils/fonts.js legacyFont)
     assert other["titles"]["plot"] == "Theirs", "a title is not a look"
 
 

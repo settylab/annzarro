@@ -192,8 +192,8 @@ def test_the_path_through_the_row_sends_one_request_and_a_switch_of_statistic_se
         ("group-stat", GA, B_KEY, "mean", "logged", ["B cell"])
     assert page.get_attribute(axis_sets.button(C, "color"), "aria-label") == "Aggregation: Mean"
     stats = axis_sets.aggregations(page, C, "color")
-    assert [r["v"] for r in stats] == ["mean", "pct_expressing", "mean_expressing", "sum", "sd"], "every statistic but Cell count"
-    assert [r["text"].split(" ", 1)[1] for r in stats] == ["Mean", "% expressing", "Mean of expressing cells", "Sum", "SD"]
+    assert [r["v"] for r in stats] == ["zscore_mean", "mean", "pct_expressing", "mean_expressing", "sum", "sd"], "every statistic but Cell count"
+    assert [r["text"].split(" ", 1)[1] for r in stats] == ["Z-score mean", "Mean", "% expressing", "Mean of expressing cells", "Sum", "SD"]
     # the other statistics are the same moments: no request; % expressing is 0 to 100
     for stat in ("pct_expressing", "sd", "mean_expressing", "sum", "mean"):
         axis_sets.choose_aggregation(page, C, "color", stat)
@@ -494,3 +494,59 @@ def test_screenshots_of_a_grouping_row_above_a_plain_row(page, served):
         page.evaluate("(t) => { document.documentElement.setAttribute('data-theme', t); document.documentElement.setAttribute('data-bs-theme', t); }", theme)
         box = page.locator(f"{C} .plot-controls").bounding_box()
         page.screenshot(path=os.path.join(SHOTS, f"agg-d-gene-grouping-group-above-plain-{theme}.png"), clip={**box, "height": 150})
+
+
+# ------------------------------------------------------------------ G1a: z-score mean of a group
+
+def _zmeans():
+    """The mean of each gene's clipped z-score (over ALL cells) over the B cells, by NumPy; genes with no spread have none."""
+    x = DATA.logged.astype(np.float64)
+    sd = x.std(axis=0)
+    ok = sd > 0
+    z = np.clip((x[:, ok] - x[:, ok].mean(axis=0)) / sd[ok], -10, 10)
+    return np.sort(z[B].mean(axis=0))
+
+
+def test_zscore_mean_on_csc_equals_cell_gene_row(page, served):
+    """On a CSC store the Gene Plot offers z-score mean of a group: one `genes` request with the transform, and every
+    gene's colour is the number the Cell-Gene Plot's gene row shows (the mean of its clipped z-score over all cells)."""
+    _open(page, served, {G: _plot(color=_stat()), GA: _grouping()})
+    _wait_colours(page, 40)
+    axis_sets.until_methods(page, G, "color", "(o) => o.some((e) => e.value === 'zscore_mean' && !e.disabled)")
+    with page.expect_request(_computes_genes):
+        axis_sets.choose_aggregation(page, C, "color", "zscore_mean")
+    want = _zmeans()
+    until(page, """([t, want]) => { const gd = document.querySelector(t + ' .js-plotly-plot');
+        const v = ((gd && gd.data) || []).flatMap(d => Array.from((d.marker && d.marker.color) || [])).filter(x => typeof x === 'number' && x === x).sort((a, b) => a - b);
+        return v.length === want.length && v.every((x, i) => Math.abs(x - want[i]) < 1e-6 * Math.max(1, Math.abs(want[i])) + 1e-7); }""",
+          [C, want.tolist()], timeout=30)
+    request = _genes(page)[-1]
+    assert request["transform"] == "zscore" and request["clip"] == 10 and request["layer"] == "logged", request
+    # back to the mean reads the moments already held: no request, and the colours are the mean's again
+    axis_sets.choose_aggregation(page, C, "color", "mean")
+    _wait_stat(page, "mean")
+    assert len(_genes(page)) == 2 and "transform" not in _genes(page)[0]
+
+
+@pytest.fixture(scope="module")
+def served_csr(tmp_path_factory):
+    from annzarro.tests.browser import test_focus_outside_subset as focus
+    from annzarro.tests.browser.test_names_dataset_scope import _serve
+    from annzarro.tests.core import grouping_store as gstore
+    original = focus._make_store
+    focus._make_store = lambda path: (gstore.make_store(str(path), "csr", "zarr", data=DATA), str(path))[1]
+    try:
+        proc, root, store = _serve(tmp_path_factory)
+    finally:
+        focus._make_store = original
+    yield root, store
+    proc.terminate()
+    proc.wait(10)
+
+
+def test_zscore_mean_on_csr_disabled_with_reason(page, served_csr):
+    _open(page, served_csr, {G: _plot(color=_stat()), GA: _grouping()})
+    axis_sets.until_methods(page, G, "color", "(o) => o.some((e) => e.value === 'zscore_mean' && e.disabled && e.title.includes('whole-layer read'))")
+    rows = {r["v"]: r for r in axis_sets.aggregations(page, C, "color")}
+    assert rows["zscore_mean"]["off"] is True
+    assert rows["zscore_mean"]["title"] == "Z-score mean of a cell group needs a whole-layer read on this store's layout; coming with the moments cache."

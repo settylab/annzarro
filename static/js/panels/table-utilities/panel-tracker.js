@@ -362,6 +362,7 @@ const PLACEHOLDERS = {
  * @param {Array<Object>} [options.selected] - The table's current columns
  * @returns {Array<Object>} Checkbox items
  */
+// export-unused-ok: the full item list, as the wrappers below it give it; kept for pairwise-columns.test.mjs
 export function entityColumnItems({ type, keys, entities, kind, selected = [] }) {
     const items = [];
     const seen = new Set();
@@ -411,6 +412,7 @@ const geneEntities = () => getFixedGenes().map(fg => ({ ...fg, name: fg.gene }))
  * @param {Array<Object>} [selected] - The table's current columns
  * @returns {Array<Object>} - Array of obsp items for column selection
  */
+// export-unused-ok: the full item list (every key x entity); the chooser uses entityChoices, pairwise-columns.test.mjs reads this
 export function getObspColumnsForCellTable(datasetStructure, selected = []) {
     if (!datasetStructure?.obsp?.matrices && !datasetStructure?.obsp?.keys) return [];
     return entityColumnItems({
@@ -425,6 +427,7 @@ export function getObspColumnsForCellTable(datasetStructure, selected = []) {
  * @param {Array<Object>} [selected] - The table's current columns
  * @returns {Array<Object>} - Array of varp items for column selection
  */
+// export-unused-ok: the full item list (every key x entity); the chooser uses entityChoices, pairwise-columns.test.mjs reads this
 export function getVarpColumnsForGeneTable(datasetStructure, selected = []) {
     if (!datasetStructure?.varp?.matrices && !datasetStructure?.varp?.keys) return [];
     return entityColumnItems({
@@ -439,6 +442,7 @@ export function getVarpColumnsForGeneTable(datasetStructure, selected = []) {
  * @param {Array<Object>} [selected] - The table's current columns
  * @returns {Array<Object>} - Array of layer items for column selection
  */
+// export-unused-ok: the full item list (every key x entity); the chooser uses entityChoices, pairwise-columns.test.mjs reads this
 export function getLayerColumnsForCellTable(datasetStructure, selected = []) {
     if (!datasetStructure?.layers && !datasetStructure?.X) return [];
     // X first, then the layers, as in the plot menus
@@ -454,10 +458,66 @@ export function getLayerColumnsForCellTable(datasetStructure, selected = []) {
  * @param {Array<Object>} [selected] - The table's current columns
  * @returns {Array<Object>} - Array of layer items for column selection
  */
+// export-unused-ok: the full item list (every key x entity); the chooser uses entityChoices, pairwise-columns.test.mjs reads this
 export function getLayerColumnsForGeneTable(datasetStructure, selected = []) {
     if (!datasetStructure?.layers && !datasetStructure?.X) return [];
     return entityColumnItems({
         type: 'layer', keys: layerKeys(datasetStructure),
         entities: cellEntities(), kind: 'cell', selected
     });
+}
+
+/**
+ * What the Layers, obsp and varp tabs of a table offer (table-chooser-080.md 4): never the cross product. The entities
+ * once each (the focused one first, then those fixed in plots, then those this table already holds), the matrices or
+ * layers to read them in, and the table's own columns of the type, in the order they were added.
+ *
+ * @param {Object} options - as entityColumnItems
+ * @returns {{keys: string[], entities: Array<{name: string, source: string, note: string, panelId?: string}>,
+ *   held: Array<{key: string, column: string, placeholder: boolean}>}}
+ */
+export function entityChoices({ type, keys, entities, kind, selected = [] }) {
+    const names = new Set();
+    const list = [];
+    for (const entity of entities) {
+        if (names.has(entity.name)) continue;
+        names.add(entity.name);
+        list.push({
+            name: entity.name, source: entity.source,
+            note: entity.source === 'focused' ? 'focused' : `fixed in ${entity.panelTitle}`,
+            ...(entity.panelId ? { panelId: entity.panelId } : {})
+        });
+    }
+    const held = [];
+    for (const col of selected || []) {
+        if (!col || col.type !== type || !keys.includes(col.key) || !col.column) continue;
+        const placeholder = PLACEHOLDERS[kind].has(col.column);
+        held.push({ key: col.key, column: col.column, placeholder });
+        if (!placeholder && !names.has(col.column)) {
+            names.add(col.column);
+            list.push({ name: col.column, source: 'table', note: 'in this table' });
+        }
+    }
+    return { keys, entities: list, held };
+}
+
+/**
+ * The choices of one of a table's pairwise or layer tabs, or null when the dataset has none.
+ * @param {'cells'|'genes'} entityType - the table's rows
+ * @param {'obsp'|'varp'|'layer'} source - the tab
+ * @param {Object} datasetStructure
+ * @param {Array<Object>} [selected] - the table's current columns
+ */
+export function tabChoices(entityType, source, datasetStructure, selected = []) {
+    if (source === 'layer') {
+        if (!datasetStructure?.layers) return null;
+        const cells = entityType === 'genes';
+        return { kind: cells ? 'cell' : 'gene', ...entityChoices({ type: 'layer', keys: layerKeys(datasetStructure),
+            entities: cells ? cellEntities() : geneEntities(), kind: cells ? 'cell' : 'gene', selected }) };
+    }
+    const section = datasetStructure?.[source];
+    if (!section?.matrices && !section?.keys) return null;
+    const cells = source === 'obsp';
+    return { kind: cells ? 'cell' : 'gene', ...entityChoices({ type: source, keys: pairwiseKeys(section),
+        entities: cells ? cellEntities() : geneEntities(), kind: cells ? 'cell' : 'gene', selected }) };
 }

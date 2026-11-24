@@ -59,7 +59,7 @@ def test_a_default_grouping_axis_plot_says_no_longer_offered_nowhere_and_lists_e
         labels = _labels(page, f"{TP} .cgene-{which}-layer option")
         assert labels == ["X", "counts", "logged"], labels  # the dataset's order, X first
         stats = _labels(page, f"{TP} .cgene-{which} option")
-        assert stats == ["Mean", "% expressing", "Mean of expressing cells", "Sum", "SD", "Cell count"], stats
+        assert stats == ["Z-score mean", "Mean", "% expressing", "Mean of expressing cells", "Sum", "SD", "Cell count"], stats
         assert not any("offer" in t.lower() or "(no longer" in t for t in labels + stats)
     assert page.input_value(f"{TP} .cgene-color-layer") == "logged"
 

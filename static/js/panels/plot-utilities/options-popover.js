@@ -28,9 +28,10 @@
 import { createPopover } from '../../ui/popover.js';
 import {
     sectionsOf, readField, writeField, defaultOf, helpOf, isSet, pickLook, adoptLook, resolveStyle, applyPreset, PRESETS, PRESET_LABELS,
-    placeholderOf, shownOf, disabledOf, toPercent, fromPercent, resettable, readMargins, writeMargins, hasOwnPresets
+    placeholderOf, shownOf, disabledOf, toPercent, fromPercent, resettable, readMargins, writeMargins, hasOwnPresets, readAuto, writeAuto
 } from './options-schema.js';
 import { exportSettings } from './plot-style.js';
+import { SLIDER_STEPS, valueAt, trackValue } from '../../utils/slider-scales.js';
 import { exportOptions } from './plot-options.js';
 import { setSessionStyle, clearSessionStyle, hasSessionStyle, onSessionStyleChange, followLook } from '../../utils/session-style.js';
 
@@ -91,13 +92,8 @@ function stepLabel(field, value) {
  *   the plot as on screen (`size` its pixels) are offered beside them
  * @param {(sectionId: string) => string} [ctx.sectionKey] - the `data-section` of a section (the Cell Plot and Gene Plot keep their
  *   own names: 'points', not 'panel:points')
- * @param {Object<string, () => HTMLElement>} [ctx.legacy] - sections the panel still draws itself, by section id; each is a
- *   function returning the section's element, put where the section goes (and made again by `redrawLegacy`). Their fields are
- *   not rendered here. Temporary: the Cell Plot and Gene Plot move them to the schema one package at a time.
  * @param {Set<string>} [ctx.openFirst] - the sections that start open (a panel's own are shut unless named); their open state is kept per
  *   panel, not per kind. Absent: the kind's standard (Presets, Text, Legend, Export and the panel's own sections)
- * @param {Object<string, () => HTMLElement>} [ctx.elements] - for a field with `element: true`: the node the panel made for it, put in
- *   the field's place on each open (the panel takes it back when the pop-over closes: its `onOpen` cleanup)
  * @param {(body: HTMLElement, ctl: Object) => (Function|void)} [ctx.onOpen] - after each open, with the body; may return a cleanup
  * @param {(reason: string) => void} [ctx.onClose] - after each close
  * @param {boolean} [ctx.ids] - the Cell Plot and Gene Plot's element ids on the buttons and boxes (`preset-<name>-<id>`, `download-<format>-<id>`,
@@ -189,21 +185,46 @@ export function mountPlotOptions(ctx) {
         return wrap;
     }
 
+    /**
+     * A scaled field (the point size): a slider on a log scale, a number box that takes any value, and Auto. Each is one step of
+     * the field: the slider writes the snapped value as it moves, the box on change, and either ends Auto; Auto sets the switch and
+     * lets the plot work the value out (the field's apply hook). Ids as the panel's grid had them: `<domId>`, `<domId>-input`,
+     * `<domId>-auto`.
+     */
+    function scaledControl(field, id) {
+        const { scale } = field;
+        const idOf = (suffix) => `${field.domId}-${suffix}-${panelId}`;
+        const write = (value, auto) => {
+            const now = config();
+            let next = value === undefined ? now : writeField(now, field, value, kind);
+            next = writeAuto(next, field, auto);
+            if (JSON.stringify(next) === JSON.stringify(now)) { paint(); return; }
+            ctx.commit(next, stepLabel(field, value));
+        };
+        const slider = el('input', { type: 'range', id, class: 'form-range az-pop-range', min: 0, max: SLIDER_STEPS, step: 1, data: { option: field.id },
+            aria: { label: `${field.label} (log scale)` },
+            on: { input: () => write(field.snap(valueAt(scale, slider.value), config(), true), false) } });
+        const box = el('input', { type: 'number', id: idOf('input'), class: 'form-control form-control-sm az-pop-num', min: 0, step: 'any', data: { option: `${field.id}Number` },
+            on: { change: () => {
+                const v = Number(box.value);
+                if (box.value.trim() === '' || !Number.isFinite(v) || !(v > 0)) { paint(); return; }
+                write(field.snap(v, config(), false), false);
+            } } });
+        const autoBtn = el('button', { type: 'button', id: idOf('auto'), class: 'btn btn-sm btn-outline-secondary az-pop-auto point-auto-btn', data: { auto: field.id },
+            aria: { pressed: 'false' }, on: { click: () => write(undefined, true) } }, 'Auto');
+        const wrap = el('div', { class: 'az-pop-field az-pop-field--scaled', data: { concept: field.concept } },
+            el('label', { class: 'az-pop-field__label', for: box.id, text: field.label }),
+            el('span', { class: 'az-pop-field__control' }, slider, box, autoBtn));
+        controls.set(field.id, { field, input: slider, wrap, auto: null, scaled: { slider, box, autoBtn } });
+        return wrap;
+    }
+
     function fieldControl(field) {
         const id = field.domId ? `${field.domId}-${panelId}` : `po-${panelId}-${field.id}`;
         const help = helpOf(field, kind);
         const helpEl = help || (field.disabled && !field.quiet) ? el('small', { class: 'az-pop-help', id: field.helpId ? `${field.helpId}-${panelId}` : null, text: help }) : null;
-        if (field.element) {
-            const wrapEl = el('div', { class: 'az-pop-field az-pop-field--element' });
-            const make = () => {
-                const node = field.element === true ? (ctx.elements && ctx.elements[field.id] ? ctx.elements[field.id]() : null) : field.element();
-                if (node) wrapEl.replaceChildren(...[node, helpEl].filter(Boolean));
-            };
-            // made on each open, not now: the panel keeps its node while the pop-over is closed
-            controls.set(field.id, { field, input: null, wrap: wrapEl, auto: null, make });
-            return wrapEl;
-        }
         if (field.type === 'margins') return marginsControl(field);
+        if (field.type === 'scaled') return scaledControl(field, id);
         let input;
         let wrap;
         let auto = null;
@@ -358,7 +379,6 @@ export function mountPlotOptions(ctx) {
     const stepFrom = (t) => t && t.matches && t.matches('input[type="number"][data-step-from]') && t.value === '';
     let primed = null;
     let formatsRow = null;               // the Export formats: the guard's note and the as-shown row go under it, only while there is something to say
-    const legacyNodes = new Map();       // section id -> the element the panel drew itself
     root.addEventListener('keydown', (e) => {
         if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || !stepFrom(e.target)) return;
         const t = e.target;
@@ -381,13 +401,6 @@ export function mountPlotOptions(ctx) {
     }, 0), true);
     for (const sec of sectionsOf(kind)) {
         const own = sec.panel ? panelSections[sec.id] : null;
-        if (ctx.legacy && ctx.legacy[sec.id]) {
-            // drawn each time the pop-over opens (redrawLegacy), so it shows the settings as they are then
-            const node = el('div', { data: { legacy: sec.id } });
-            legacyNodes.set(sec.id, node);
-            root.append(node);
-            continue;
-        }
         if (sec.panel && !own) continue;
         const title = sec.panel ? own.title : sec.title;
         const key = ctx.openFirst ? `${kind}:${panelId}:${sec.id}` : `${kind}:${sec.id}`;
@@ -454,12 +467,12 @@ export function mountPlotOptions(ctx) {
     function paint() {
         const c = config();
         const env = { panelId, kind };
-        for (const { field, input, wrap, auto, margins } of controls.values()) {
+        for (const { field, input, wrap, auto, margins, scaled } of controls.values()) {
             const hide = typeof field.when === 'function' ? !field.when(c) : false;
             wrap.hidden = hide;
-            if (field.element) continue;
             const off = disabledOf(field, c, env);
             if (margins) { paintMargins(field, c, margins, off); continue; }
+            if (scaled) { paintScaled(field, c, scaled, off); continue; }
             const v = readField(c, field, kind);
             const shown = shownOf(field, c, env);
             input.disabled = !!off;
@@ -551,6 +564,17 @@ export function mountPlotOptions(ctx) {
         sessionReset.hidden = !hasSession;
     }
 
+    function paintScaled(field, c, s2, off) {
+        const v = readField(c, field, kind);
+        const isAuto = readAuto(c, field);
+        if (document.activeElement !== s2.slider) s2.slider.value = String(v === null ? 0 : trackValue(field.scale, v));
+        if (document.activeElement !== s2.box) s2.box.value = v === null ? '' : String(v);
+        s2.box.classList.toggle('is-auto', isAuto);
+        s2.autoBtn.classList.toggle('active', isAuto);
+        s2.autoBtn.setAttribute('aria-pressed', String(isAuto));
+        for (const e of [s2.slider, s2.box, s2.autoBtn]) e.disabled = !!off;
+    }
+
     function paintMargins(field, c, m, off) {
         const { sides, unlinked } = readMargins(c, field, kind);
         const set = (el2, v) => { if (document.activeElement !== el2) el2.value = String(v); };
@@ -563,22 +587,10 @@ export function mountPlotOptions(ctx) {
         m.sidesRow.hidden = !unlinked;
     }
 
-    /** The panel's own sections drawn again from its settings (a preset or a Reset changed many); the others are painted. */
-    function redrawLegacy() {
-        for (const [id, old] of legacyNodes) {
-            const node = ctx.legacy[id]();
-            if (!node) continue;
-            old.replaceWith(node);
-            legacyNodes.set(id, node);
-        }
-    }
-
     const popover = createPopover({
         anchor, name: 'plot-options', title: 'Plot Options',
         onClose: ctx.onClose,
         render: (host, ctl) => {
-            redrawLegacy();
-            for (const c of controls.values()) if (c.make) c.make();
             host.appendChild(root);
             paint();
             return ctx.onOpen ? ctx.onOpen(host, ctl) : undefined;
@@ -604,7 +616,6 @@ export function mountPlotOptions(ctx) {
 
     return {
         update: paint,
-        redrawLegacy,
         popover,
         body: root,
         destroy() {

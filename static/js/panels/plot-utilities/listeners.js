@@ -19,7 +19,7 @@ import {
 import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate, autorangeValue, keepsOwnMarker, refreshScaleBar } from './plot-make-helper.js';
 import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
-import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig, snapPointSize } from '../../utils/slider-scales.js';
+import { SLIDER_STEPS, opacityScale, valueAt, roundSig } from '../../utils/slider-scales.js';
 import { coalesce } from '../../utils/render-queue.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 
@@ -254,8 +254,6 @@ export function setupPlotControlListeners(
     // takes any value as typed (in px / alpha), also off the track's range.
     // Setting either one ends its automatic value (utils/point-style.js);
     // its auto button brings it back.
-    // Sizes snap to the steps scattergl draws (2D); 3D markers take any size.
-    const sizeSnap = (v, other) => (settings.z ? other(v) : snapPointSize(v));
     const pointStyle = (name, key, autoKey, scale, valid, snap) => {
       const $slider = $controlsContainer.find(`#${name}-${id}`);
       const $input = $controlsContainer.find(`#${name}-input-${id}`);
@@ -281,7 +279,14 @@ export function setupPlotControlListeners(
         redrawStyling();
       });
     };
-    pointStyle('point-size', 'pointSize', 'autoPointSize', pointSizeScale, (v) => v > 0, sizeSnap);
+    // The point size is Plot Options' (Points; options-popover.js, aesthetics-kinds.js): it writes the settings and calls this, which
+    // works the automatic size out when Auto is on, then redraws as the sliders always did.
+    plotContainer.__pointSizeChanged = (s) => {
+      if (s.autoPointSize === true) {
+        applyAutoPointStyle(s, autoPointCount(plotContainer, s, keepsOwnMarker), pointStyleBase(), plotArea(plotContainer, s));
+      }
+      redrawStyling();
+    };
     pointStyle('point-opacity', 'pointOpacity', 'autoPointOpacity', opacityScale, (v) => v > 0 && v <= 1,
       (v, other) => other(v));
     

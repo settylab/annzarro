@@ -33,7 +33,7 @@ const values = (list) => list.map((o) => o.value);
 
 test('statisticList: the 5 statistics and Cell count, and no "Offer other…"', () => {
     const list = C.statisticList({ kinds: KINDS, held: { stat: 'mean', layer: 'logged' } });
-    assert.deepEqual(values(list), ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.deepEqual(values(list), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
     assert.ok(!list.some((o) => /offer/i.test(o.label)), 'no Offer other…');
     assert.ok(!list.some((o) => o.disabled), 'logged gives every statistic');
     // on X (signed) the two threshold statistics are disabled with the reason as their title

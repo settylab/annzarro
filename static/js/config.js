@@ -1,6 +1,7 @@
 /**
  * Configuration module for AnnZarro
  */
+import { DEFAULT_FONT } from './utils/fonts.js';
 import { appUrl } from './utils/app-url.js';
 import { PLOT_PALETTES } from './utils/plot-theme.js';
 // the panel registry: the server declares panel.<type>.enabled for each entry (policy.js)
@@ -245,7 +246,7 @@ const Config = (function() {
             
             // Fonts
             FONT_SIZE: 12,
-            FONT_FAMILY: 'Arial, Helvetica, sans-serif',
+            FONT_FAMILY: DEFAULT_FONT,
             
             // Margins
             MARGINS: { l: 80, r: 80, t: 80, b: 60, pad: 4 },

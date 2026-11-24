@@ -96,7 +96,7 @@ test('a group is ok, changed (its default labels differ) or gone, as the group r
 
 test('the statistic select lists every statistic but Cell count, graded on the layer; the layer select every layer', () => {
     const stat = M.statMenu(setting({ layer: 'X' }), { X: 'signed', logged: 'log' });
-    assert.deepEqual(stat.options.map((o) => o.value), ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']);
+    assert.deepEqual(stat.options.map((o) => o.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']);
     assert.equal(stat.chosen, 'mean');
     const byValue = Object.fromEntries(stat.options.map((o) => [o.value, o]));
     assert.equal(byValue.pct_expressing.disabled, true, '% expressing cannot be computed on a signed layer');
@@ -153,5 +153,6 @@ test('a table\'s cells are a group source of their own, asked as the route\'s se
     assert.deepEqual([...M.IN_GROUP], ['@in']);
     const request = { shape: 'grouping', partitionings: [{ source: { type: 'table', ref: 's0' } }], sets: { s0: { encoding: 'bitset-base64', length: 8, data: 'AQ==' } } };
     assert.deepEqual(M.memberRequest(request, 'logged', 0.5), { shape: 'genes', sets: request.sets, member: 's0', layer: 'logged', thresholds: [0.5] });
+    assert.deepEqual(M.memberRequest(request, 'logged', 0.5, 'zscore'), { shape: 'genes', sets: request.sets, member: 's0', layer: 'logged', thresholds: [0.5], transform: 'zscore', clip: 10 });
     assert.throws(() => M.memberRequest({ ...request, sets: {} }, 'X', 0), /one bitset/);
 });

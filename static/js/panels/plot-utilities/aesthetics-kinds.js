@@ -16,6 +16,8 @@ import { legendTitleSize, defaultTitleGap, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_
     COLUMN_GAP_MAX, COLUMN_GAP_DEFAULT } from '../../utils/legend-options.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import { plotColour } from '../../utils/plot-theme.js';
+import { FONT_CHOICES, DEFAULT_FONT } from '../../utils/fonts.js';
+import { pointSizeScale, roundSig, snapPointSize } from '../../utils/slider-scales.js';
 
 /** The kinds, as their panel types. */
 // export-unused-ok: the Node tests walk both kinds
@@ -29,16 +31,6 @@ const f = (id, section, type, label, dflt, extra = {}) => ({ id, section, type, 
 
 /** A colour that follows the app theme: its swatch shows the colour drawn now while it is Auto. */
 const themed = (id, section, label, domId, extra = {}) => f(id, section, 'color', label, null, { domId, live: true, shown: (c) => plotColour(c, id), ...extra });
-
-/** The fonts these plots offer (Open Sans, the count plot's font, is not one of them). */
-const FONTS = Object.freeze([
-    ['Arial, Helvetica, sans-serif', 'Arial'],
-    ["'Times New Roman', Times, serif", 'Times New Roman'],
-    ['Courier, monospace', 'Courier'],
-    ['Georgia, serif', 'Georgia'],
-    ["'Trebuchet MS', sans-serif", 'Trebuchet MS'],
-    ['Verdana, sans-serif', 'Verdana']
-]);
 
 /** Shown in 3D only. */
 const in3D = (c) => !!c.z;
@@ -66,7 +58,7 @@ const FIELDS = Object.freeze([
     // Presets: Bare is a state of its own (no axis at all), set by its button and cleared by Default
     f('bare', 'presets', 'check', 'Bare', false, { hidden: true }),
     // Text
-    f('fontFamily', 'text', 'select', 'Font', 'Arial, Helvetica, sans-serif', { choices: FONTS, domId: 'font-family' }),
+    f('fontFamily', 'text', 'select', 'Font', DEFAULT_FONT, { choices: FONT_CHOICES, domId: 'font-family' }),
     f('fontSize', 'text', 'number', 'Size (px)', 12, { min: 8, max: 24, step: 1, domId: 'font-size' }),
     themed('textColor', 'text', 'Color', 'text-color'),
     // Background
@@ -98,7 +90,9 @@ const FIELDS = Object.freeze([
     f('scaleBarCorner', 'axes', 'select', 'Scale bar corner', 'bottom-right', { domId: 'scale-bar-corner', disabled: scaleBarOff, quiet: true,
         choices: SCALE_BAR_CORNERS.map((c) => [c, c.replace('-', ' ')]) }),
     // Points: the size of the points (the grid's slider before WP-5b, the panel's own row) and the grey points of a table filter
-    f('pointSize', 'panel:points', 'number', 'Point size', null, { copy: false, look: false, element: true }),
+    f('pointSize', 'panel:points', 'scaled', 'Point size (px)', null, { copy: false, look: false, domId: 'point-size', scale: pointSizeScale, autoPath: 'autoPointSize',
+        // sizes snap to the steps scattergl draws (2D); in 3D any size: one read off the track to two significant digits, one typed as it is
+        snap: (v, c, fromTrack) => (c.z ? (fromTrack ? roundSig(v) : v) : snapPointSize(v)) }),
     f('notInTableScale', 'panel:points', 'number', 'Not in table: size (x auto)', 1, { min: 0.1, max: 20, step: 0.1, domId: 'not-in-table-scale',
         help: 'The grey points a table filter leaves in the plot, relative to the size their count gets automatically.' }),
     f('notInTableOpacity', 'panel:points', 'number', 'Not in table: opacity', null, { min: 0.05, max: 1, step: 0.05, domId: 'not-in-table-opacity',

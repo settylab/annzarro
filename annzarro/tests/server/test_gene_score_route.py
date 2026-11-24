@@ -556,7 +556,7 @@ def test_matrix_kind_names_the_input_and_what_it_looks_like(client, layout):
     assert set(body["checked"]) == {"X"}, "the other matrices are looked at when this one is counts"
     x = kind(client, layout).get_json()                                 # default input X; floats reaching 100
     assert x["input"] == "X" and x["kind"] == "normalised"
-    assert set(x) == {"input", "kind", "stats", "suggest", "checked"}
+    assert set(x) == {"input", "kind", "layout", "stats", "suggest", "checked"}
 
 
 def test_matrix_kind_reads_an_h5ad_store_too(client, layout):

@@ -48,7 +48,7 @@ SHAPE = "genes"
 
 #: Every field the shape takes (the route's body reader refuses any other).
 BODY_FIELDS = ("shape", "partitionings", "small", "group", "sets", "member", "layer", "thresholds", "subset",
-               "estimate_only", "confirm")
+               "estimate_only", "confirm", "transform", "clip")
 
 #: The moments, as a grouping's features have them.
 MOMENTS = gf.MOMENTS
@@ -80,6 +80,8 @@ class Request:
     subset: Any = None
     estimate_only: bool = False
     confirm: bool = False
+    transform: Optional[str] = None             # None, or "zscore": the moments of each gene's z-score (G1a)
+    clip: Optional[float] = None
 
 
 def _group_key(raw: Any) -> Tuple[str, ...]:
@@ -127,6 +129,14 @@ def parse_request(body: Any) -> Request:
     if (group is None) == (member is None):
         raise _bad("A genes request names its cells by either a group (with partitionings) or a member (with sets).")
     thresholds = _thresholds(body.get("thresholds"))
+    transform, clip = None, None
+    if "transform" in body:
+        if body["transform"] != "zscore":
+            raise _bad("transform is 'zscore'.", "bad_feature")
+        transform = "zscore"
+        clip = gs.parse_clip(body["clip"]) if "clip" in body else gs.DEFAULT_CLIP
+    elif "clip" in body:
+        raise _bad("clip belongs to a transform.", "bad_feature")
     if member is not None:
         if body.get("partitionings") is not None or body.get("small") is not None:
             raise _bad("A member names a set; partitionings and small belong with a group.")
@@ -134,12 +144,12 @@ def parse_request(body: Any) -> Request:
             raise _bad(f"The request has no set '{member}'.", "set_missing")
         sets = {str(ref): cg.decode_set(str(ref), raw) for ref, raw in raw_sets.items()}
         return Request(None, None, sets, member, layer, thresholds, body.get("subset"),
-                       cg._flag(body, "estimate_only"), cg._flag(body, "confirm"))
+                       cg._flag(body, "estimate_only"), cg._flag(body, "confirm"), transform, clip)
     key = _group_key(group)
     grouping = cg.parse_request({"shape": "grouping", "partitionings": body.get("partitionings"),
                                  "small": body.get("small"), "sets": raw_sets, "subset": body.get("subset")})
     return Request(grouping, key, grouping.sets, None, layer, thresholds, body.get("subset"),
-                   cg._flag(body, "estimate_only"), cg._flag(body, "confirm"))
+                   cg._flag(body, "estimate_only"), cg._flag(body, "confirm"), transform, clip)
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -172,6 +182,8 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
     with gs.open_source(reader, dataset_path, request.layer) as source:
         n_obs, n_var, layout = source.n_obs, source.n_var, source.layout
         entries = int(source.nnz) if layout == "csr" else int(source.indptr[-1]) if layout == "csc" else n_obs * n_var
+    if request.transform and layout != "csc":
+        raise gs.ZscoreNeedsPass(layout)
     groups = None if request.grouping is None else cg.plan(reader, dataset_path, request.grouping)
     return Plan(reader, dataset_path, request, groups, n_obs, n_var, layout, entries, remote)
 
@@ -268,7 +280,10 @@ def compute(plan_: Plan, mask: np.ndarray, *, should_stop: Optional[Callable[[],
     done = 0
     yield "progress", {"stage": "genes", "done": 0, "total": total}
     with gs.open_source(plan_.reader, plan_.dataset_path, request.layer) as source:
-        steps = source.row_moments(mask, request.thresholds, should_stop, pause, budget=READ_AHEAD_ENTRIES)
+        if request.transform:
+            steps = source.row_zscore_moments(mask, request.clip, should_stop, pause, budget=READ_AHEAD_ENTRIES)
+        else:
+            steps = source.row_moments(mask, request.thresholds, should_stop, pause, budget=READ_AHEAD_ENTRIES)
         while True:
             try:
                 done += next(steps)
@@ -276,6 +291,8 @@ def compute(plan_: Plan, mask: np.ndarray, *, should_stop: Optional[Callable[[],
                 moments = stop.value
                 break
             yield "progress", {"stage": "genes", "done": done, "total": total}
+    if request.transform:                       # [n_var, 5] -> [n_var, thresholds, 5]: a z-score has no threshold here
+        moments = np.repeat(moments[:, None, :], len(request.thresholds), axis=1)
     yield "result", Result(n_cells=plan_.n_cells if n_shown is None else int(n_shown), n_group=int(np.count_nonzero(mask)),
                            thresholds=request.thresholds, moments=moments, group=request.group)
 

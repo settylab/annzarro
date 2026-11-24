@@ -490,7 +490,7 @@ code per cell.
 | `sets` | both | the bitsets of cell tables, by the `ref` a `table` source names: `{"s0": {"encoding": "bitset-base64", "length": 8090, "data": "..."}}`. Cell `i` of the cells shown is bit `i & 7`, least significant first, of byte `i >> 3` (numpy's `packbits(..., bitorder="little")`); bits past `length` are 0. A `length` other than the number of cells shown is `400 set_length_mismatch` |
 | `subset` | both | the cells shown, a subset spec as the score route takes it (the `?subset=` of the other routes, as a string or as its JSON); absent, every cell |
 | `small` | grouping | `{"threshold": 10, "mode": "keep"}`: groups with fewer cells than `threshold` are kept (`keep`), collected into one group with the key `["@small"]` (`collect`), or put in no group (`hide`) |
-| `features` | grouping | rows of a Cell-Gene Plot: `{"id", "kind": "gene", "name", "layer": "X", "detect_above": 0}`, or `{"id", "kind": "score", "recipe", "column", "layer", "above": 0}`, where `recipe` is the score route's ({ref}`http-gene-score`) and `column` (the method) and `layer` (its input) override it |
+| `features` | grouping | rows of a Cell-Gene Plot: `{"id", "kind": "gene", "name", "layer": "X", "detect_above": 0}` (optionally `"transform": "zscore"` with `"clip": 10`, a number above 0 or `null`: the moments are those of the gene's z-score over all cells of the dataset, clipped, as a one-gene z-score mean signature would score it; the threshold is then on the z-score; a gene with no spread has the status `constant`; `clip` needs `transform`), or `{"id", "kind": "score", "recipe", "column", "layer", "above": 0}`, where `recipe` is the score route's ({ref}`http-gene-score`) and `column` (the method) and `layer` (its input) override it |
 | `measures` | both | one numeric per-cell source per measure: `{"id", "source", "above": 0}`, the source an `obs`, `obsm`, `layer`, `obsp` or `gene-score` source as below. A grouping takes up to 16, a grid 1 (`too_many_measures`) |
 | `want` | grouping | `{"codes": false, "histograms": []}`: whether to send one code per cell, and the indices of the binned partitionings whose distribution (a 100-bin count with its share of zeros) to send |
 | `mode` | grid | `1d` (x, then an optional split), `2d` (x, y, an optional split), `categorical` (x, y, and an optional factor whose most frequent level is wanted) or `sets` (2 to 16 binary partitionings) |
@@ -650,6 +650,7 @@ request.
 | `sets`, `member` | instead of a group: the cells of a table's bitset, `member` naming the set. Exactly one of `group` and `member` |
 | `layer` | `X` (the default) or a layer; `404 key_not_found` when the dataset has none |
 | `thresholds` | the "expressed above" values, one to 4 distinct finite numbers (default `[0]`); `n_above` and `sum_above` are taken at each |
+| `transform`, `clip` | `"transform": "zscore"` (with `clip`, default 10, a number above 0 or `null`) returns the moments of each gene's z-score over the group: its mean and SD are taken over **all cells** of the matrix, so the statistic `sum / n` is the same number as a z-scored gene feature of a grouping request and as a one-gene signature's z-score mean. `n_above` and `sum_above` are 0. Only a compressed-sparse-column layer reads every stored entry for any group, which gives the reference in the same pass; a CSR or dense layer is `422 zscore_needs_csc`. `clip` without `transform` is `400 bad_feature` |
 | `subset`, `estimate_only`, `confirm` | as above; the group is of the cells shown |
 
 The result frame has `n_shown`, `n_group`, `n_var`, `moments` (the five names), `thresholds` and `group`, and one
@@ -673,10 +674,10 @@ CSR matrix is cheap).
 ### What an input looks like
 
 `GET /data/matrix_kind?dataset_path=&input=X&suggest=1` says what the numbers of `X`, or of the layer named by `input`,
-look like, so a client can warn before a score is read from raw counts:
+look like, so a client can warn before a score is read from raw counts. `layout` is how the matrix is stored (`csc`, `csr` or `dense`):
 
 ```json
-{"input": "X", "kind": "counts", "stats": {"kind": "counts", "n": 65536, "whole": 1.0, "min": 1.0, "max": 267.0, "negative": 0.0, "density": 0.0412, "quantiles": [1.0, 1.0, "...", 267.0]},
+{"input": "X", "kind": "counts", "layout": "csc", "stats": {"kind": "counts", "n": 65536, "whole": 1.0, "min": 1.0, "max": 267.0, "negative": 0.0, "density": 0.0412, "quantiles": [1.0, 1.0, "...", 267.0]},
  "suggest": "logged_counts", "checked": {"logged_counts": "log", "MAGIC_imputed_data": "log"}}
 ```
 

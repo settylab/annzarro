@@ -1,3 +1,4 @@
+import { legacyFont } from '../utils/fonts.js';
 import { pinLayers } from '../utils/score-source.js';
 import { shownHoverInfo } from './plot-utilities/hover-columns.js';
 import { attachPlotUndo } from './plot-utilities/plot-undo.js';
@@ -74,6 +75,8 @@ const CellPlotPanel = (function() {
         // Override with provided options, if any (colour bounds stored in
         // data units go back to drawn units: array-stats.js restoreColorRange)
         Object.assign(_settings, restoreColorRange(options));
+        // a plot saved when Arial was the default has no font of its own: it keeps drawing in Arial (utils/fonts.js)
+        legacyFont(_settings);
         // a hover entry no picker lists any more (a gene score, decision 32) goes quietly
         _settings.hoverInfo = shownHoverInfo(_settings.hoverInfo, 'cells');
         // On Default (made from the chooser, or saved on Default): the look is the session's default, whichever

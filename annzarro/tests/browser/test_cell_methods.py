@@ -35,7 +35,7 @@ TT = f'.tile[data-tile-id="{T}"]'
 POP = "[data-popover='methods']"
 OBS = {"type": "obs", "key": "cell_type"}
 AXIS = {"type": "cell-group", "key": GA}
-STATS = ["Mean", "% expressing", "Mean of expressing cells", "Sum", "SD"]
+STATS = ["Z-score mean", "Mean", "% expressing", "Mean of expressing cells", "Sum", "SD"]
 
 
 def _grouping(**fields):

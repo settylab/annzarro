@@ -274,7 +274,9 @@ export function createOptionsModel(spec) {
         const list = methodChoices({ recipe, layer, kinds, stats });
         const have = wasMethod ? list.find(e => e.value === wasMethod) : null;
         if (have && !have.disabled) return { method: have.value, layer, moved: null, say: '' };
-        const next = usable(list)[0];
+        // the default method first, when it works: a list whose first entry is another (z-score mean heads the group
+        // statistics) must not change where a layer's pick lands
+        const next = usable(list).find(e => e.value === defaultMethod) || usable(list)[0];
         if (!next) return { method: wasMethod || defaultMethod, layer, moved: null, say: '', impossible: true };
         return { method: next.value, layer, moved: 'method',
             say: REASON.moved('Method', next.label, methodShort(wasMethod || defaultMethod), quoted(layer)) };
