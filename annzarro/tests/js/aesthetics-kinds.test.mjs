@@ -21,7 +21,8 @@ test('both kinds have the shared section order, with their own Points and Focuse
 
 test('the fields are the keys the plots store: every look key Apply to other panels copies is a field', () => {
     for (const kind of K.AESTHETICS_KINDS) {
-        const paths = new Set(S.fieldsOf(kind).map((f) => f.path));
+        // the margins field holds two keys: its sides and the switch that sets them one by one (`unlinkedPath`)
+        const paths = new Set(S.fieldsOf(kind).flatMap((f) => [f.path, f.unlinkedPath].filter(Boolean)));
         for (const key of PO.STYLE_KEYS) assert.ok(paths.has(key), `${kind}: ${key}`);
         assert.ok(![...paths].some((p) => p.startsWith('look.')), 'no field of the new panels\' `look`: links keep their keys');
         assert.ok(paths.has('pointSize'), 'the point size is in Plot Options (Points)');

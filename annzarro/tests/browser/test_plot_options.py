@@ -25,7 +25,7 @@ from annzarro.tests.browser.test_memory_guard import STORE, _serve  # noqa: E402
 A, B = "cell-plot-A", "cell-plot-B"
 # the shared order of Plot Options (WP-5b, options-ux-080 section 4): Text after Presets, the plot's own groups after Axes
 GROUPS = ["Presets", "Text", "Background", "Axes", "Points", "Focused cell", "Legend", "Margins", "Export",
-          "Apply to other panels"]
+          "Apply"]
 
 
 @pytest.fixture(scope="module")

@@ -64,7 +64,7 @@ function drawnGreyOpacity(id) {
 /** The fields of both kinds, at the settings keys the plots store. */
 const FIELDS = Object.freeze([
     // Presets: Bare is a state of its own (no axis at all), set by its button and cleared by Default
-    f('bare', 'presets', 'check', 'Bare', false),
+    f('bare', 'presets', 'check', 'Bare', false, { hidden: true }),
     // Text
     f('fontFamily', 'text', 'select', 'Font', 'Arial, Helvetica, sans-serif', { choices: FONTS, domId: 'font-family' }),
     f('fontSize', 'text', 'number', 'Size (px)', 12, { min: 8, max: 24, step: 1, domId: 'font-size' }),
@@ -136,14 +136,23 @@ const FIELDS = Object.freeze([
         choices: COLORBAR_POSITIONS.map((c) => [c, c === 'legend' ? 'With the legend' : c[0].toUpperCase() + c.slice(1)]) }),
     f('colorbarLength', 'legend', 'range', 'Color bar length (%)', 1, { min: 0.1, max: 1, step: 0.05, percent: true, live: true, domId: 'colorbar-length' }),
     f('colorbarTicks', 'legend', 'number', 'Color bar ticks', null, { min: 2, max: 30, step: 1, domId: 'colorbar-ticks', placeholder: 'auto', stepFrom: 5 }),
-    // Margins
-    f('margins', 'margins', 'text', 'Margins', DEFAULT_MARGINS),
-    f('marginsUnlinked', 'margins', 'check', 'Set each side separately', false),
-    // Export
-    f('exportWidth', 'export', 'number', 'Width', 1200),
-    f('exportHeight', 'export', 'number', 'Height', 800),
-    f('scaleExport', 'export', 'check', 'Export at 2x', true)
+    // Margins: one value for all four sides, or each side (the room the plot leaves around its axes)
+    f('margins', 'margins', 'margins', 'Margins', DEFAULT_MARGINS, { unlinkedPath: 'marginsUnlinked', min: 0, max: 200, live: true }),
+    // Export (the image's size; the memory guard and the formats are the pop-over's)
+    f('exportWidth', 'export', 'number', 'Width (px)', 1200, { min: 100, max: 5000, step: 1, domId: 'plot-width' }),
+    f('exportHeight', 'export', 'number', 'Height (px)', 800, { min: 100, max: 5000, step: 1, domId: 'plot-height' }),
+    f('scaleExport', 'export', 'check', 'Export at 2x', true, { domId: 'scale-export',
+        help: 'Draw the image at twice the width and height, so it stays sharp in print; PNG, JPEG and WEBP files are then twice the pixels set above.' })
 ]);
+
+/**
+ * The kinds' own presets (the Cell Plot's and Gene Plot's, in plot-options.js and utils/session-style.js, not generic values):
+ * `fn(config, name, kind)` returns the configuration a preset gives. Registered by the menu, which has the session default.
+ * @param {(config: Object, name: string, kind: string) => Object} fn
+ */
+export function registerPresets(fn) {
+    for (const kind of AESTHETICS_KINDS) registerKind(kind, { order: ORDER, common: false, preset: (config, name) => fn(config, name, kind) });
+}
 
 for (const kind of AESTHETICS_KINDS) {
     registerKind(kind, { order: ORDER, common: false });
@@ -157,6 +166,7 @@ for (const kind of AESTHETICS_KINDS) {
  * @param {string} section - presets, text, background, axes, points, focused, legend, margins, export
  * @returns {string[]}
  */
+// export-unused-ok: the Node tests hold what a group's Reset puts back
 export function sectionKeys(kind, section) {
     if (section === 'presets') return [];          // the presets are buttons; Default undoes Bare
     const id = section === 'points' || section === 'focused' ? `panel:${section}` : section;
