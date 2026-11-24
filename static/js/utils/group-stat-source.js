@@ -23,11 +23,12 @@ import { describeSource, paintProgress, sentenceOf, coverageKindOf } from './sou
 import { actions } from './source-actions.js';
 import { createHostBinding, isVisible, panelIdOf } from './host-binding.js';
 import { registerSource, SourceUnavailable } from './source-registry.js';
-import { registerPanelSourceType } from './panel-references.js';
+import { registerPanelSourceType, wouldLoop } from './panel-references.js';
 import { groupSources } from './group-host.js';
 import { VOCABULARY } from './vocabulary.js';
 import { referToGroup, resolveGroup, keepGroup, describeGroupReference } from './group-reference.js';
-import { layerFacts, datasetLayersNow } from './score-source.js';
+import { layerFacts, datasetLayersNow, noteDatasetLayers } from './score-source.js';
+import { layerKeys } from './structure-keys.js';
 import * as M from './group-stat-model.js';
 import { STATISTIC_INFO } from './group-statistics.js';
 import { STAT_SYMBOLS } from './aggregation-symbols.js';
@@ -301,12 +302,12 @@ let _binding = null;
  * The handle a record reads: the grouping's and, once the group is one of its groups, the moments'. Its snapshot is the
  * moments' with what the group's reference says (`group`), or the state the group or the grouping is in.
  */
-function openRecord(host, role, setting, onChange) {
+function openRecord(host, role, setting, onChange, opts = {}) {
     const { sources } = groupSources();
     const id = setting.key;
-    const consumer = { kind: 'plot', role, panelId: panelIdOf(host), host };
+    const consumer = opts.consumer || { kind: 'plot', role, panelId: panelIdOf(host), host };
     const rec = { groupId: id, column: setting.column || '', layer: M.layerOf(setting), z: M.statOf(setting) === M.ZSCORE, consumer, seen: new Map(), handle: null, stat: null };
-    const visible = () => isVisible(host);
+    const visible = opts.visible || (() => isVisible(host));
     let note = () => {};
     const grouping = sources.watch(id, { consumer, option: {}, visible, onChange: () => note() });
     let moments = null;
@@ -545,13 +546,148 @@ const groupAggregate = {
 // a Gene Plot's colour of a group's statistic follows its grouping in a remap, as the grouping's own sources do
 registerPanelSourceType(TYPE);
 
+// ---------------------------------------------------------------------------------------------- a Gene Table's column
+
+/** moments -> {stat -> Float32Array}: a column's series is made once per moments and statistic (a table holds floats). */
+const SERIES = new WeakMap();
+
+function seriesOf(moments, stat, genes) {
+    let byStat = SERIES.get(moments);
+    if (!byStat) SERIES.set(moments, byStat = new Map());
+    let values = byStat.get(stat);
+    if (!values) byStat.set(stat, values = Float32Array.from(M.statValues(stat, moments, genes)));
+    return values;
+}
+
+/** What a column of this table calls its values while it has none (utils/table-source.js `words`). */
+const COLUMN_WORDS = Object.freeze({ the: 'the group statistic', none: 'no values', ready: 'the group statistic is ready' });
+
+/** A column's snapshot as a table reads it: the moments' statistic of every gene as one series, or the state it is in. */
+function columnSnapshot(raw, column) {
+    const out = { state: raw.state, title: raw.title || groupingTitle(column), words: COLUMN_WORDS, raw };
+    // what the column's names (the export header) are made of: a renamed grouping is a change the table redraws for
+    out.held = { edits: [raw.held && raw.held.edits, groupingTitle(column), columnLabel(column)].join('|') };
+    if (raw.values && raw.values.moments) {
+        out.values = seriesOf(raw.values.moments, M.statOf(column), Number(raw.values.reply.n_var));
+        if (out.state !== 'updating') out.state = 'ready';
+    }
+    return out;
+}
+
+/** "B cell: mean · logged": the group, the statistic (with the grouping's threshold when it has one) and the layer. */
+function columnLabel(column) {
+    const stat = M.statOf(column);
+    const info = STATISTIC_INFO.find((m) => m.value === stat);
+    const panel = groupingPanel(column.key);
+    const above = panel && typeof panel.getConfig === 'function' ? M.thresholdOf(panel.getConfig()) : 0;
+    const threshold = info.needs.includes('detect_above') && above !== 0 ? ` (> ${Number(above.toPrecision(4))})` : '';
+    return `${groupNameOf(column)}: ${info.menu}${threshold} \u00b7 ${M.layerOf(column)}`;
+}
+
+/** The choice a column of this table is made of, written as the Gene Plot's setting of the same choice. */
+function columnOf(entity, { group, groupWas, stat = M.DEFAULT_STAT, layer = M.DEFAULT_LAYER }) {
+    return { type: TYPE, key: entity.id, column: M.columnOf(group), stat, layer, groupWas: groupWas || group, label: entity.title };
+}
+
+/** What a column is told apart by in the chooser: its grouping, group, statistic and layer. */
+const columnIdentity = (column) => [column.key, column.column || '', M.statOf(column), M.layerOf(column)].join('|');
+
+/** The table's add row for one grouping: its group select (w43's menu), then the layer and the statistic, graded as the plot's are. */
+const groupAdd = {
+    symbols: STAT_SYMBOLS,
+    name: (stat) => (STATISTIC_INFO.find((m) => m.value === stat) || { label: stat }).label,
+    start: () => ({ method: M.DEFAULT_STAT, layer: M.DEFAULT_LAYER }),
+    menus: (entity, pair, facts = layerFacts(datasetLayersNow() || [M.DEFAULT_LAYER])) => {
+        const held = { stat: pair.method, layer: pair.layer };
+        const layers = datasetLayersNow() || [M.DEFAULT_LAYER];
+        return { methods: M.statMenu(held, facts.kinds, facts.layouts || {}).options.map((o) => ({ value: o.value, text: o.text, disabled: o.disabled, title: o.title })),
+            layers: M.layerMenu(held, facts.kinds, layers).options.map((o) => ({ value: o.value, text: o.text, disabled: o.disabled, title: o.title })) };
+    },
+    after: (entity, changed, value, pair) => {
+        const facts = layerFacts(datasetLayersNow() || [M.DEFAULT_LAYER]);
+        const p = M.pairAfter({ stat: pair.method, layer: pair.layer }, changed === 'method' ? 'stat' : 'layer', value, facts.kinds, datasetLayersNow() || [M.DEFAULT_LAYER]);
+        return { method: p.stat, layer: p.layer, say: p.say };
+    },
+    label: (pair) => `${pair.method}`,
+    /** The group select: the grouping's groups by their displayed names; `search` filters it by name and generated name. */
+    group: {
+        menu: (entity) => groupMenu({ key: entity.id, column: '' }),
+        groupWas: (entity, value) => { const key = M.groupKeyOf({ column: value }); const s = groupMenuReply(entity.id); return key && s ? (referToGroup(groupSources().sources.labelsOf(entity.id, s), key) || {}).groupWas || key : key; }
+    }
+};
+
+const groupMenuReply = (id) => menuReply(id);
+
+const groupTable = {
+    tab: VOCABULARY.sourceType.groupStatTab,
+    watch: (column, { host, visible, onChange }) => {
+        const rec = openRecord(null, 'column', column, (raw) => onChange(columnSnapshot(raw, column)), {
+            consumer: { kind: 'table', role: 'column', panelId: host, host: null }, visible });
+        const h = rec.handle;
+        // a grouping or a group renamed, a panel closed or opened: the column's names follow (header, export name)
+        const renamed = () => onChange(columnSnapshot(h.read(), column));
+        if (typeof document !== 'undefined') document.addEventListener('annzarro:panels-changed', renamed);
+        const offSource = groupSources().sources.onSource(column.key, renamed);       // a rename or an edit of the grouping
+        return {
+            read: () => columnSnapshot(h.read(), column),
+            release: () => {
+                if (typeof document !== 'undefined') document.removeEventListener('annzarro:panels-changed', renamed);
+                if (offSource) offSource();
+                h.release();
+            },
+            sharers: () => h.sharers(),
+            compute: () => { h.compute(); return true; },
+            retry: () => { h.retry(); return true; },
+            cancel: () => { h.cancel(); return true; }
+        };
+    },
+    visibilityChanged: () => groupSources().sources.visibilityChanged(),
+    update: (column) => { groupSources().sources.update(column.key); return true; },
+    label: columnLabel,
+    fullLabel: (column) => `${groupingTitle(column)} \u203a ${columnLabel(column)}`,
+    // the notice of a column that is not ready: the plot's own, but a table has no other grouping to choose
+    describe: (snap, { sharers = 1 } = {}) => {
+        const notice = describe({ ...(snap.raw || snap), title: snap.title }, { role: 'column', sharers });
+        if (!notice) return null;
+        const actions = notice.actions.filter(([action]) => action !== 'score-choose');
+        if (['gone', 'deleted', 'off', 'failed', 'refused', 'cancelled', 'unset'].includes(notice.state)) actions.push(['score-remove', 'Remove column']);
+        return { ...notice, actions };
+    },
+    open: (column, hostId) => openGrouping(column.key, hostId),
+    /** Whether a condition on the column may be built in this table: not when the grouping is built from it (decision 15). */
+    filterable: (column, tableId) => !(tableId && column && wouldLoop(tableId, column.key)),
+    /** Keep (UX 2.8): the group as it is now, following its key from now on. */
+    keep: (column) => {
+        const reply = menuReply(column.key);
+        const ref = M.referenceOf(column);
+        if (!ref || !reply) return false;
+        Object.assign(column, keepGroup(ref, groupSources().sources.labelsOf(column.key, reply)));
+        return true;
+    },
+    chooser: {
+        layerOf: (column) => M.layerOf(column),
+        identity: columnIdentity,
+        columnOf,
+        entityLabel: (entity) => entity.title,
+        /** A grouping built from this table can be shown in it but not filtered on: its heading says so. */
+        entityNote: (entity, tableId) => (tableId && wouldLoop(tableId, entity.id) ? `Can't be filtered here: ${entity.title} depends on this table` : ''),
+        /** The grouping's ticked columns only; the add row below them adds another. */
+        options: (entity, ticked) => ticked.filter((c) => c.key === entity.id).map((c) => ({
+            column: c.column, layer: M.layerOf(c), text: columnLabel(c), symbol: STAT_SYMBOLS[M.statOf(c)], extra: { stat: M.statOf(c), groupWas: c.groupWas } })),
+        add: groupAdd,
+        note: (structure) => noteDatasetLayers(layerKeys(structure)),
+        empty: { text: 'No cell groupings yet.', button: `New ${W.grouping}\u2026` }
+    }
+};
+
 registerSource({
     type: TYPE,
     label: VOCABULARY.sourceType.groupStat,
     valueType: 'numerical',
     entity: 'genes',
-    consumers: ['gene-plot'],
-    axes: ['x', 'y', 'z', 'color'],
+    consumers: ['gene-plot', 'gene-table'],
+    axes: ['x', 'y', 'z', 'color', 'column'],
+    table: groupTable,
     defaultSub: '',
     layered: true,
     aggregate: groupAggregate,

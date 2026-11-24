@@ -224,6 +224,11 @@ export function populateColumnsGeneTable(dataSources, datasetStructure, id, sett
         
         let items = [];
         
+        const provider = tableProviders('gene-table').find(p => p.type === source.id);
+        if (provider) {
+            buildSourceTab(provider, id, settings, datasetStructure);
+            continue;
+        }
         if (source.id === 'var' && datasetStructure.var?.columns) {
             items = datasetStructure.var.columns.map(column => ({
                 type: 'var',
@@ -276,13 +281,15 @@ export function cellTableSources() {
     ];
 }
 
-/** The tabs of a Gene Table's column chooser: a gene table has no cells to take a source's series from. */
+/** The tabs of a Gene Table's column chooser: the built-in sources, then one for every provider that gives a gene table columns. */
 export function geneTableSources() {
     return [
         { id: 'var', name: 'var', label: 'var' }, // Gene Annotations
         { id: 'varm', name: 'varm', label: 'varm' }, // Gene Matrices
         { id: 'varp', name: 'varp', label: 'varp' }, // Gene-Gene Relations
-        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
+        { id: 'layer', name: 'layer', label: 'layers' }, // Expression Layers
+        // a provider whose series is one number per gene (a group's statistic)
+        ...tableProviders('gene-table').map(p => ({ id: p.type, name: p.type, label: p.table.tab }))
     ];
 }
 
@@ -492,6 +499,9 @@ function buildEntityTab(source, choices, id, settings) {
 
 /** The id of a column's checkbox in the chooser. */
 function checkboxIdFor(column, panelId) {
+    // a provider that tells its columns apart by more than (column, layer) names the identity itself
+    const own = tableHalfOf(column);
+    if (own && own.chooser.identity) return `checkbox-${column.type}-${own.chooser.identity(column)}-${panelId}`.replace(/[^A-Za-z0-9_-]+/g, '_');
     // a score's layer is always named: there is no default layer, and a column stored without one (an old
     // link) is read on the signature's input at the time (the provider says what a column reads)
     const half = tableHalfOf(column);
@@ -513,11 +523,13 @@ function sourceOptionRow(item, sub, entity, id, settings) {
     const checkbox = document.createElement('input');
     checkbox.className = 'form-check-input column-checkbox';
     checkbox.type = 'checkbox';
-    checkbox.id = checkboxIdFor(item, id);
+    checkbox.id = checkboxIdFor({ ...item, ...item.extra }, id);
     checkbox.setAttribute('data-type', item.type);
     checkbox.setAttribute('data-key', item.key);
     checkbox.setAttribute('data-column', item.column);
     if (item.layer) checkbox.setAttribute('data-layer', item.layer);
+    // the fields of a column that `(column, layer)` do not carry (a group statistic's statistic and group names)
+    if (item.extra) checkbox.setAttribute('data-extra', JSON.stringify(item.extra));
     checkbox.setAttribute('data-label', entity.title);
     checkbox.dataset.scoreBound = '1';
     checkbox.addEventListener('change', () => updateSelectedColumnsList(id, settings));
@@ -546,6 +558,19 @@ function sourceOptionRow(item, sub, entity, id, settings) {
         div.appendChild(why);
     }
     return { div, checkbox };
+}
+
+/** A group select's options from a provider's menu: the choose entry, then the groups, each found by its name and its generated name. */
+function fillGroupSelect(select, menu) {
+    select.innerHTML = '';
+    for (const o of menu.options) {
+        const opt = optionOf(o.value, o.text);
+        if (o.disabled) opt.disabled = true;
+        opt.dataset.search = `${o.text} ${o.alt || ''}`.toLowerCase();
+        select.appendChild(opt);
+    }
+    const first = [...select.options].find(o => o.value && !o.disabled);
+    select.value = first ? first.value : '';
 }
 
 /**
@@ -583,6 +608,14 @@ function sourceAddRow(provider, entity, group, id, settings) {
         onPick: (value) => pair.pick('method', value)
     });
     agg.button.classList.add('az-score-add-agg');
+    // a provider whose columns are of one group of an entity (a cell grouping) has a group select before the layer
+    let groupSel = null;
+    if (add.group) {
+        groupSel = document.createElement('select');
+        groupSel.className = 'form-select form-select-sm az-score-add-group';
+        groupSel.setAttribute('aria-label', `Group of a new ${entity.title} column`);
+        fillGroupSelect(groupSel, add.group.menu(entity));
+    }
     pair = bindPairSelects({
         layer, note, onPaint: () => agg.update(),
         start: () => add.start(entity),
@@ -592,18 +625,25 @@ function sourceAddRow(provider, entity, group, id, settings) {
     agg.update();       // the button's first paint came before the pair existed
     button.addEventListener('click', () => {
         const p = pair.value();
-        const item = { type: provider.type, key: entity.id, column: p.method, layer: p.layer };
-        let box = document.getElementById(checkboxIdFor(item, id));
+        let item = { type: provider.type, key: entity.id, column: p.method, layer: p.layer };
+        let sub = { text: add.label(p), symbol: add.symbols[p.method] };
+        if (groupSel) {
+            if (!groupSel.value) { note.textContent = 'Choose a group first.'; return; }
+            const column = provider.table.chooser.columnOf(entity, { group: JSON.parse(groupSel.value), groupWas: add.group.groupWas(entity, groupSel.value), stat: p.method, layer: p.layer });
+            item = { type: provider.type, key: entity.id, column: column.column, layer: column.layer, extra: { stat: column.stat, groupWas: column.groupWas } };
+            sub = { text: provider.table.label(column), symbol: add.symbols[p.method] };
+        }
+        let box = document.getElementById(checkboxIdFor({ ...item, ...item.extra }, id));
         if (!box) {
-            const made = sourceOptionRow(item, { text: add.label(p), symbol: add.symbols[p.method] }, entity, id, settings);
+            const made = sourceOptionRow(item, sub, entity, id, settings);
             group.insertBefore(made.div, row);
             box = made.checkbox;
         }
         box.checked = true;
-        note.textContent = `Added ${add.label(p)}. Apply Changes to show it in the table.`;
+        note.textContent = `Added ${sub.text}. Apply Changes to show it in the table.`;
         updateSelectedColumnsList(id, settings);
     });
-    row.append(layer, agg.button, button);
+    row.append(...(groupSel ? [groupSel] : []), layer, agg.button, button);
     group.append(row, note);
 }
 
@@ -653,11 +693,20 @@ export function buildSourceTab(provider, id, settings, structure = null) {
         heading.textContent = chooser.entityLabel(entity);
         heading.title = entity.open ? chooser.entityLabel(entity) : `${chooser.entityLabel(entity)} (closed)`;
         group.appendChild(heading);
+        const entityNote = chooser.entityNote ? chooser.entityNote(entity, id) : '';
+        if (entityNote) {
+            const why = document.createElement('div');
+            why.className = 'form-text mt-0 az-option-note az-entity-note';
+            why.textContent = entityNote;
+            group.appendChild(why);
+        }
         // every column stores the layer it was given
         for (const sub of chooser.options(entity, ticked, id)) {
-            const item = { type: provider.type, key: entity.id, column: sub.column, layer: sub.layer };
+            const item = { type: provider.type, key: entity.id, column: sub.column, layer: sub.layer, extra: sub.extra };
             const { div, checkbox } = sourceOptionRow(item, sub, entity, id, settings);
-            checkbox.checked = ticked.some(c => c.key === entity.id && subOf(c) === sub.column && chooser.layerOf(c) === (sub.layer || ''));
+            checkbox.checked = ticked.some(c => (chooser.identity
+                ? chooser.identity(c) === chooser.identity({ ...c, ...item, ...sub.extra })
+                : c.key === entity.id && subOf(c) === sub.column && chooser.layerOf(c) === (sub.layer || '')));
             group.appendChild(div);
         }
         if (chooser.add) sourceAddRow(provider, entity, group, id, settings);
@@ -675,6 +724,17 @@ export function buildSourceTab(provider, id, settings, structure = null) {
                     const match = named || row.dataset.search.includes(text);
                     row.style.display = match ? '' : 'none';
                     any = any || match;
+                }
+                // the group select lists only the groups the text finds (by name or generated name); with one left it shows that one
+                const select = group.querySelector('.az-score-add-group');
+                if (select) {
+                    const shown = [];
+                    for (const o of select.options) {
+                        o.hidden = !!o.value && !!text && !named && !(o.dataset.search || '').includes(text);
+                        if (o.value && !o.hidden) shown.push(o);
+                    }
+                    if (text && shown.length && !shown.some(o => o.value === select.value)) select.value = shown[0].value;
+                    any = any || shown.length > 0;
                 }
                 group.style.display = any ? '' : 'none';
             }
@@ -851,7 +911,7 @@ function createDataTabs(tabsContainer, tabContent, dataSources, panelId) {
         searchInput.type = 'text';
         searchInput.className = 'form-control column-search';
         // the tabs with an add row (a provider's, the layers, obsp and varp) read as a sentence; the other built-in tabs keep their ellipsis
-        searchInput.placeholder = (tableProviders().some(p => p.type === source.id) || ['layer', 'obsp', 'varp'].includes(source.id)) ? `Search ${source.label.toLowerCase()}` : `Search ${source.label.toLowerCase()}...`;
+        searchInput.placeholder = (tableProviders().some(p => p.type === source.id) || tableProviders('gene-table').some(p => p.type === source.id) || ['layer', 'obsp', 'varp'].includes(source.id)) ? `Search ${source.label.toLowerCase()}` : `Search ${source.label.toLowerCase()}...`;
         searchInput.setAttribute('data-tab', source.id);
         
         searchContainer.appendChild(searchIcon);
@@ -1001,6 +1061,10 @@ export function setupColumnSelectionEvents(id, settings, entityType) {
         document.addEventListener('annzarro:panels-changed', () => {
             for (const provider of tableProviders()) buildSourceTab(provider, id, settings);
         }, { signal });
+    } else {
+        document.addEventListener('annzarro:panels-changed', () => {
+            for (const provider of tableProviders('gene-table')) buildSourceTab(provider, id, settings);
+        }, { signal });
     }
     
     // Handle apply button
@@ -1134,8 +1198,14 @@ function updateSelectedColumnsList(id, settings) {
             entry.label = checkbox.getAttribute('data-label') || undefined;
             const layer = checkbox.getAttribute('data-layer');
             if (layer) entry.layer = layer;
-            const had = before.find(c => c.type === type && c.key === key && subOf(c) === column && (half.chooser.layerOf(c) || null) === layer);
-            if (had) { delete entry.layer; if (had.layer) entry.layer = had.layer; }
+            const extra = checkbox.getAttribute('data-extra');
+            if (extra) Object.assign(entry, JSON.parse(extra));
+            const had = before.find(c => (half.chooser.identity
+                ? half.chooser.identity(c) === half.chooser.identity(entry)
+                : c.type === type && c.key === key && subOf(c) === column && (half.chooser.layerOf(c) || null) === layer));
+            // a column already held keeps itself (and so its filter conditions)
+            if (had && half.chooser.identity) { entry.groupWas = had.groupWas; if (had.follow) entry.follow = had.follow; }
+            if (had && !half.chooser.identity) { delete entry.layer; if (had.layer) entry.layer = had.layer; }
         }
         settings.columns.push(entry);
         
@@ -1249,7 +1319,9 @@ function restoreSelectedColumns(id, settings) {
     settings.columns.forEach(col => {
         // a link made before aggregations existed names the signature only: the default one
         if (isScoreColumn(col) && !col.column) col.column = subOf(col);
-        const checkboxId = `checkbox-${col.type}-${col.key}-${col.column}-${id}`.replace(/\s+/g, '_');
+        const own = isScoreColumn(col) ? tableHalfOf(col) : null;
+        const checkboxId = own && own.chooser.identity ? checkboxIdFor(col, id)
+            : `checkbox-${col.type}-${col.key}-${col.column}-${id}`.replace(/\s+/g, '_');
         const checkbox = document.getElementById(checkboxId);
         if (checkbox) {
             checkbox.checked = true;

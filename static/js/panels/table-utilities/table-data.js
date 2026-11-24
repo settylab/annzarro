@@ -14,7 +14,7 @@ import { getColumnKey } from '../../utils/column-key.js';
 import { TableResolver } from '../../utils/table-resolver.js';
 import { lineSelectButton } from './line-select-ui.js';
 import { isScoreColumn } from '../../utils/score-column.js';
-import { tableHalfOf } from '../../utils/table-source.js';
+import { tableHalfOf, rowsOf } from '../../utils/table-source.js';
 import { getSource } from '../../utils/source-registry.js';
 import { TableScores } from './table-scores.js';
 import { bindScoreColumns, FILTER_COLUMNS } from './table-score-ui.js';
@@ -108,7 +108,7 @@ export async function loadTableData(settings, entityType, signal = null) {
                 // built at once and the column fills in place when the series is there
                 // (panels/table-utilities/table-score-ui.js). Its cells are read from the series by row, so no row
                 // object gets a property for it.
-                if (isScoreColumn(column) && entityType === 'cells') {
+                if (isScoreColumn(column) && rowsOf(column) === entityType) {
                     columnCoverages.push(Coverage.complete(entityIndex.length, entityType));
                     columnDefinitions.push(scoreColumnDefinition(column, getColumnKey(column),
                         TableScores.readerOf(settings.id || settings._tableId || '', column)));

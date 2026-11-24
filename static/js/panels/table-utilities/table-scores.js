@@ -15,7 +15,7 @@
  */
 import { DataManager } from '../../data-manager.js';
 import { getColumnKey } from '../../utils/column-key.js';
-import { tableHalfOf } from '../../utils/table-source.js';
+import { tableHalfOf, rowsOf } from '../../utils/table-source.js';
 import { isScoreColumn, sameScoreColumn, subOf, columnView, describeColumn, usedScoreColumns, filterGate, seriesOf } from '../../utils/score-column.js';
 
 /** tableId -> Map(columnKey -> entry) */
@@ -45,10 +45,10 @@ function displayNumber(v) {
     return v.toFixed(4).replace(/\.?0+$/, '');
 }
 
-/** How many cells the rows of a cell table are for now. */
-function rowsShown() {
-    const cells = DataManager.getCells();
-    return cells ? Number(cells.length) || 0 : 0;
+/** How many rows a column is one value of now: the cells of a cell table, or the genes of a gene table. */
+function rowsShown(column) {
+    const rows = rowsOf(column) === 'genes' ? DataManager.getGenes() : DataManager.getCells();
+    return rows ? Number(rows.length) || 0 : 0;
 }
 
 function makeReader() {
@@ -111,7 +111,7 @@ function update(entry, snap, silent = false) {
     // sources.read() already states a score of another length as failed (or asks again): the values
     // here are the rows' own. A last look, in case the cells changed between that read and now.
     const series = seriesOf(snap);
-    const fits = !!series && series.length === rowsShown();
+    const fits = !!series && series.length === rowsShown(entry.column);
     entry.reader.hold(fits ? series : null, snap);
     entry.reader.view = columnView(fits || !series ? snap
         : { ...snap, state: 'failed', values: null, codes: null, message: 'the score is for other cells' }, entry.title);

@@ -67,6 +67,8 @@ export function subOf(column) {
 
 /** Whether two columns are the same score: one signature, one aggregation. */
 export function sameScoreColumn(a, b) {
+    const half = isScoreColumn(a) ? tableHalfOf(a) : null;
+    if (half && half.chooser.identity) return isScoreColumn(b) && b.type === a.type && half.chooser.identity(a) === half.chooser.identity(b);
     return isScoreColumn(a) && isScoreColumn(b) && a.key === b.key && subOf(a) === subOf(b) && (a.layer || '') === (b.layer || '');
 }
 
