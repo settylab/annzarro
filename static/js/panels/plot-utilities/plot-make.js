@@ -1,7 +1,7 @@
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
-import { createLayout, autorangeValue, orientRange, isFlipped, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
+import { createLayout, autorangeValue, orientRange, isFlipped, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport, NOT_IN_TABLE, IN_TABLE, POINTS } from './plot-make-helper.js';
 import { autoPointCount, debounced, plotArea } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
@@ -3164,7 +3164,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         const tableTrace = {
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
-          name: settings.color.key || 'Value',
+          name: IN_TABLE,
           _azTable: true,             // the points in the table (plot-update.js tells the grouping by it)
           text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
@@ -3333,7 +3333,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         const tableTrace = {
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
-          name: 'Data points',
+          name: IN_TABLE,
           _azTable: true,
           text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
