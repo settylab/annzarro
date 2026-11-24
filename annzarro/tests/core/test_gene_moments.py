@@ -13,6 +13,7 @@ import pytest
 import scipy.sparse as sp
 
 from annzarro.core import cell_groups as cg
+from annzarro.core import cost_limits
 from annzarro.core import gene_moments as gm
 from annzarro.core import gene_score as gsc
 from annzarro.core import get_reader
@@ -264,7 +265,7 @@ def test_the_request_names_cells_by_a_group_or_a_member_and_nothing_else():
         (grouping_body(thresholds=[0, 0]), "bad_threshold"),
         (grouping_body(thresholds=[float("inf")]), "bad_threshold"),
         (grouping_body(thresholds=[True]), "bad_threshold"),
-        (grouping_body(thresholds=list(range(gm.MAX_THRESHOLDS + 1))), "too_many_thresholds"),
+        (grouping_body(thresholds=list(range(cost_limits.get("thresholds") + 1))), "too_many_thresholds"),
         (grouping_body(features=[]), "unknown_field"),
         (grouping_body(layer=""), "bad_request"),
     ]:
@@ -303,9 +304,23 @@ def test_a_missing_layer_is_a_404(tmp_path):
     assert (err.value.status, err.value.reason) == (404, "key_not_found")
 
 
-def test_the_tiers_follow_the_one_pair_of_limits(monkeypatch):
-    assert [gm.tier_of(s) for s in (0, gm.ASK_FIRST_S, gm.ASK_FIRST_S + 1, gm.REFUSE_S, gm.REFUSE_S + 1)] == \
+def test_the_tiers_follow_the_limits_in_force(cost_limit):
+    asks, refuses = cost_limits.get("ask_first_s"), cost_limits.get("refuse_s")
+    assert [gsc.tier_of(s) for s in (0, asks, asks + 1, refuses, refuses + 1)] == \
         ["auto", "auto", "confirm", "confirm", "refused"]
-    monkeypatch.setattr(gm, "ASK_FIRST_S", 0.5)
-    monkeypatch.setattr(gm, "REFUSE_S", 1.0)
-    assert [gm.tier_of(s) for s in (0.4, 0.6, 2.0)] == ["auto", "confirm", "refused"]
+    cost_limit(ask_first_s=0.5, refuse_s=1.0)
+    assert [gsc.tier_of(s) for s in (0.4, 0.6, 2.0)] == ["auto", "confirm", "refused"]
+    mask = np.zeros(200, dtype=bool)
+    mask[:10] = True
+    plan = gm.Plan(None, "", None, None, 200, 20, "csc", 40_000_000, False)
+    est = gm.estimate(plan, {"entries": 20_000_000, "layer_entries": 40_000_000, "fraction": 0.5, "known": True, "n_group": 10})
+    assert (est["auto_max_s"], est["max_s"]) == (0.5, 1.0) and est["tier"] == "confirm", "the estimate reports the limits in force"
+    cost_limit(live_update_s=0.0)
+    assert gm.estimate(plan, {"entries": 1, "layer_entries": 40_000_000, "fraction": 0.001, "known": True, "n_group": 1})["lane"] == "heavy"
+
+
+def test_the_thresholds_limit_is_the_registrys(cost_limit):
+    cost_limit(thresholds=2)
+    with pytest.raises(cg.GroupError) as err:
+        gm.parse_request(grouping_body(thresholds=[0, 1, 2]))
+    assert (err.value.reason, err.value.extra["limit"]) == ("too_many_thresholds", 2)

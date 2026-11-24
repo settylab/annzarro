@@ -515,7 +515,7 @@ class ConfigManager:
         # entry point (annzarro start and the WSGI factory) goes through.
 
     #: Top-level sections of the hierarchical configuration.
-    SECTIONS = ("server", "auth", "branding", "ui", "site")
+    SECTIONS = ("server", "auth", "branding", "ui", "site", "limits")
     #: Flat (Flask-style) keys that belong outside the ``server`` section.
     FLAT_KEY_MAP = {
         "auth_enabled": ("auth", "enabled"),
@@ -683,6 +683,8 @@ class ConfigManager:
 
         from ..server.limits import deprecated_settings, validate_limits
         errors.extend(validate_limits(server_section))
+        from ..server.limits import validate_cost_limits
+        errors.extend(validate_cost_limits(self.config.get("limits")))
         warnings.extend(deprecated_settings(server_section))
 
         port = self.config.get("server", {}).get("port") if isinstance(self.config.get("server"), dict) else None

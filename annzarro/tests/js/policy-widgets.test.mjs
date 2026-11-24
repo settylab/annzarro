@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import test, { beforeEach, afterEach } from "node:test";
 import { find, findAll, installFakeDocument, uninstallFakeDocument } from "./fake-dom.mjs";
 import {
-  ISSUE_TEXT, layerState, renderPolicy, renderPolicyRow, renderUserPolicy, sameValue,
+  ISSUE_TEXT, layerState, renderPolicy, renderPolicyRow, renderUserPolicy, sameValue, subgroupsOf, adminSet
 } from "../../../static/js/admin/policy-widgets.js";
 import { mountUserPolicy } from "../../../static/js/admin/settings.js";
 
@@ -150,4 +150,51 @@ test("env and forced sources have their own tone and tooltip, and unreadable fil
   const el = doc.createElement("div");
   renderPolicy(el, { keys: [intKey()], store_problems: [{ store: "access.json", error: "ValueError: bad" }] }, {});
   assert.match(find(el, (n) => n.classes().includes("policy-store-problems")).textContent, /access\.json/);
+});
+
+test("the Limits are listed under their headings, cost limits first and the server's resources last", () => {
+    const key = (name, subgroup) => ({ name, subgroup, area: "limits", scope: "server", source: "default" });
+    const keys = [key("limits.a", "Server resources"), key("limits.b", "When to ask and refuse"), key("limits.c", ""),
+        key("limits.d", "Drawn and exported in the browser"), key("limits.e", "Groupings, matrices and grids"),
+        key("limits.f", "When to ask and refuse"), key("limits.g", "Something new")];
+    assert.deepEqual(subgroupsOf(keys).map((g) => [g.title, g.keys.map((k) => k.name)]), [
+        ["", ["limits.c"]], ["When to ask and refuse", ["limits.b", "limits.f"]], ["Groupings, matrices and grids", ["limits.e"]],
+        ["Drawn and exported in the browser", ["limits.d"]], ["Server resources", ["limits.a"]], ["Something new", ["limits.g"]]]);
+});
+
+test("Reset all clears only what the admin set and may change", () => {
+    const keys = [
+        { name: "limits.a", scope: "server", source: "admin" },
+        { name: "limits.b", scope: "server", source: "config" },
+        { name: "limits.c", scope: "server", source: "admin", locked: true },
+        { name: "limits.d", scope: "config", source: "admin", restart: true },
+        { name: "limits.e", scope: "server", source: "admin" },
+    ];
+    assert.deepEqual(adminSet(keys), ["limits.a", "limits.e"]);
+});
+
+test("a limit says its default beside a value that is not it, and nothing at its default", () => {
+    const base = { name: "limits.groups", area: "limits", scope: "server", type: { kind: "int", min: 2, max: 20000 }, default: 2000,
+        layers: { default: 2000 }, inherited: {} };
+    const at = renderPolicyRow({ ...base, value: 2000, source: "default" }, { onChange: async () => {} });
+    assert.equal(text(at, "policy-default"), null);
+    const off = renderPolicyRow({ ...base, value: 300, source: "admin" }, { onChange: async () => {} });
+    assert.equal(text(off, "policy-default"), "default: 2,000");
+});
+
+test("a limit out of order shows the server's sentence, naming the other limit", async () => {
+    const key = { name: "limits.refuse_s", label: "Refuse above (s)", area: "limits", scope: "server", source: "default",
+        type: { kind: "float", min: 0, max: 6000 }, default: 600, value: 600, layers: { default: 600 }, inherited: {} };
+    const refusal = Object.assign(new Error("limits.refuse_s is 30, below ask_first_s (60)"), {
+        fieldErrors: { "limits.refuse_s": "out_of_order" },
+        body: { messages: { "limits.refuse_s": "is 30, below ask_first_s (60); lower ask_first_s first" } } });
+    const row = renderPolicyRow(key, { onChange: async () => { throw refusal; } });
+    const input = find(row, (n) => n.tagName === "INPUT");
+    input.value = "30";
+    await input.dispatch("change");
+    await new Promise((r) => setTimeout(r, 0));
+    const alert = find(row, (n) => n.getAttribute("role") === "alert");
+    assert.equal(alert.textContent, "Refuse above (s) is 30, below ask_first_s (60); lower ask_first_s first.");
+    assert.equal(alert.hidden, false);
+    assert.equal(input.value, "600", "the box snaps back");
 });

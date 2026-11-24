@@ -10,13 +10,16 @@
  * level's color; one group is one run of traces with the density as a number on the plot's color map.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
+import { limitDefault } from '../../utils/limits.js';
 
-/** The most cells drawn as points; above it a seeded uniform sample is drawn. */
-// export-unused-ok: the panel names it in the notice; the cost-limits work makes it a limits key
-export const DENSITY_POINTS_DRAW = 1_000_000;
-/** The most cells whose x and y are loaded (about 9 bytes a cell); above it the layer is refused. */
-// export-unused-ok: the cost-limits work makes it a limits key
-export const DENSITY_POINTS_LOAD = 25_000_000;
+/** The most cells drawn as points, by default; above it a seeded uniform sample is drawn. The cap in force is the
+ *  server's limits.density_points_draw (density-points-load.js `drawCap`). */
+// export-unused-ok: the default, for the module's tests
+export const DENSITY_POINTS_DRAW = limitDefault('density_points_draw');
+/** The most cells whose x and y are loaded (about 9 bytes a cell), by default; above it the layer is refused. The cap
+ *  in force is limits.density_points_load (`loadCap`). */
+// export-unused-ok: the default, for the module's tests
+export const DENSITY_POINTS_LOAD = limitDefault('density_points_load');
 
 /** The opacity steps of a Color by's points, one trace each. */
 // export-unused-ok: the module's tests state it

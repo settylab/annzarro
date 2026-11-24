@@ -24,12 +24,13 @@
  *   whose blocks stay intact and in order, and acts as `off` for a grouping of one factor. Clustering wins over the
  *   size sort.
  * - The collected small group (`["@small"]`, last in the reply) is never clustered and never moves.
- * - A block over hclust's MAX_ROWS is not clustered (`too_many`) and keeps its order. A block of one row needs no work.
+ * - A block over the dendrogram row limit (limits.dendrogram_rows) is not clustered (`too_many`) and keeps its order. A block of one row needs no work.
  *
  * The answer is recomputed from the settings and never stored (CXG-25). It is remembered for the matrix shown, so a
  * repaint asking again with the same `values` (and the same `sections`, `groups` and `bars` arrays) costs no work.
  */
-import { createHclustClient, MAX_ROWS } from './hclust.js';
+import { createHclustClient } from './hclust.js';
+import { limit } from './limits.js';
 
 const SMALL = '@small';
 
@@ -88,7 +89,7 @@ function bySize(groups) {
  * into `order` at `start`. Returns the block's description, with absolute indices; `merges` index into `clustered`.
  */
 function clusterBlock(cluster, settings, matrix, start, count, cols, order) {
-    if (count > MAX_ROWS) return Promise.resolve(plainBlock(start, count, 'too_many'));
+    if (count > settings.maxRows) return Promise.resolve(plainBlock(start, count, 'too_many'));
     if (count < 2) {
         return Promise.resolve({ ...plainBlock(start, count, 'clustered'), clustered: shift(iota(count), start),
             excluded: new Int32Array(0), merges: new Float64Array(0) });
@@ -102,7 +103,8 @@ function clusterBlock(cluster, settings, matrix, start, count, cols, order) {
 
 function compute(cluster, input, rows) {
     const { sections, groups, partitionings, sortBySize } = input;
-    const settings = { linkage: input.cluster.linkage, distance: input.cluster.distance };
+    // the most rows clustered: the server's limits.dendrogram_rows, read once per ordering
+    const settings = { linkage: input.cluster.linkage, distance: input.cluster.distance, maxRows: limit('dendrogram_rows') };
     const G = groups.length;
     const values = placeOnBars(input.values, rows, G, input.bars);
     const rowOrder = iota(rows);

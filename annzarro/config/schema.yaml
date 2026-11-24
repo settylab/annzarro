@@ -832,6 +832,181 @@ integrations:
           type: string
           description: StringDB API version
           default: "12.5"
+# The cost limits (annzarro/core/cost_limits.py): when a computation is asked about first or refused, and how
+# large a grouping, matrix, grid or browser-side drawing may get. A value here is a ceiling for the admin's settings.
+limits:
+  type: object
+  description: Cost limits of computations and browser-side drawings; the admin may lower them at run time
+  security: public   # the browser reads them (GET /api/v1/policy/effective)
+  properties:
+    ask_first_s:
+      type: number
+      minimum: 0
+      maximum: 600
+      description: >-
+        Estimated seconds above which a gene score, a grouping or a Cell-Gene read asks before it runs (it then runs once the user agrees). Never above refuse_s.
+      default: 60
+    refuse_s:
+      type: number
+      minimum: 0
+      maximum: 6000
+      description: >-
+        Estimated seconds above which a gene score, a grouping or a Cell-Gene read is refused, even when the user agrees. Bounds the time one request may hold a compute slot.
+      default: 600
+    live_update_s:
+      type: number
+      minimum: 0
+      maximum: 50
+      description: >-
+        Estimated seconds below which a computation updates live while it is edited and runs in the light lane; above it, edits wait for Update. Never above ask_first_s.
+      default: 5
+    progress_bar_s:
+      type: number
+      minimum: 0
+      maximum: 100
+      description: >-
+        Seconds (estimated, or waited so far) after which a computation shows a progress bar.
+      default: 10
+    matrix_values:
+      type: integer
+      minimum: 1
+      maximum: 4000000
+      description: >-
+        Most values one Cell-Gene matrix or grouping request may hold: groups x genes and measures on the server, groups x drawn rows in the browser.
+      default: 400000
+    genes_per_section:
+      type: integer
+      minimum: 1
+      maximum: 20000
+      description: >-
+        Most genes one section of a Cell-Gene Plot draws.
+      default: 2000
+    groups:
+      type: integer
+      minimum: 2
+      maximum: 20000
+      description: >-
+        Most levels one partitioning may make and most groups one grouping may have; a larger one is refused with too_many_groups or too_many_levels.
+      default: 2000
+    partitionings:
+      type: integer
+      minimum: 1
+      maximum: 64
+      description: >-
+        Most partitionings one grouping combines. Never above request_partitionings.
+      default: 8
+    request_partitionings:
+      type: integer
+      minimum: 1
+      maximum: 640
+      description: >-
+        Most partitionings one grouping request holds, groupings used as sources included.
+      default: 64
+    measures:
+      type: integer
+      minimum: 1
+      maximum: 160
+      description: >-
+        Most measures (numeric summaries) one grouping request computes.
+      default: 16
+    thresholds:
+      type: integer
+      minimum: 1
+      maximum: 40
+      description: >-
+        Most detection thresholds one gene or source is compared with in one request.
+      default: 4
+    grid_cells:
+      type: integer
+      minimum: 1
+      maximum: 20971520
+      description: >-
+        Most cells of a count plot grid (and values a grid measure accumulates: 40 bytes each).
+      default: 2097152
+    grid_2d_bins:
+      type: integer
+      minimum: 2
+      maximum: 5120
+      description: >-
+        Most bins on the x and on the y axis of a 2D count plot.
+      default: 512
+    grid_2d_split:
+      type: integer
+      minimum: 1
+      maximum: 80
+      description: >-
+        Most levels of the third (split) axis of a 2D count plot.
+      default: 8
+    grid_1d_bins:
+      type: integer
+      minimum: 2
+      maximum: 20000
+      description: >-
+        Most bins on the x axis of a 1D count plot.
+      default: 2000
+    grid_1d_split:
+      type: integer
+      minimum: 1
+      maximum: 2000
+      description: >-
+        Most levels of the split axis of a 1D count plot.
+      default: 200
+    grid_categorical_levels:
+      type: integer
+      minimum: 1
+      maximum: 2000
+      description: >-
+        Most levels on the x and on the y axis of a categorical count plot.
+      default: 200
+    grid_sets:
+      type: integer
+      minimum: 2
+      maximum: 16
+      description: >-
+        Most sets one set count plot compares. 16 is also the most there can be (a cell's sets are a 16-bit mask), so this can only be lowered.
+      default: 16
+    obsp_source_max_cells:
+      type: integer
+      minimum: 1
+      maximum: 10000000
+      description: >-
+        Most cells a dataset may have for one of its obsp rows to be used as a per-cell source.
+      default: 1000000
+    cell_export_max:
+      type: integer
+      minimum: 1
+      maximum: 10000000
+      description: >-
+        Most cells a grouping's cell export (CSV) writes; it is built in the browser tab.
+      default: 1000000
+    bars_3d_max:
+      type: integer
+      minimum: 1
+      maximum: 400000
+      description: >-
+        Most bars a 3D bar view draws (provisional: WebGL memory of the tab).
+      default: 40000
+    density_points_draw:
+      type: integer
+      minimum: 1
+      maximum: 10000000
+      description: >-
+        Most cells the Cell points layer of a Cell Count Plot's 2D density draws; above it a seeded uniform sample of this many is drawn.
+      default: 1000000
+    density_points_load:
+      type: integer
+      minimum: 1
+      maximum: 250000000
+      description: >-
+        Most cells whose positions the Cell points layer of a 2D density loads into the browser tab (about 9 bytes a cell); above it the layer is refused.
+      default: 25000000
+    dendrogram_rows:
+      type: integer
+      minimum: 2
+      maximum: 20000
+      description: >-
+        Most rows (or columns) clustered in the browser for a dendrogram; clustering costs memory and time in proportion to the square of the rows.
+      default: 2000
 # The policy registry (annzarro/server/policy)
 policy:
   type: object

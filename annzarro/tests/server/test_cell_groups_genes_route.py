@@ -13,6 +13,8 @@ import numpy as np
 import pytest
 
 from annzarro.core import cell_groups as cg
+from annzarro.core import cost_limits
+from annzarro.core import gene_score as gsc
 from annzarro.core import gene_moments as gm
 from annzarro.core import zarr_reader
 from annzarro.core import subset as cell_subset
@@ -221,22 +223,36 @@ def test_a_grouping_that_misses_reports_its_resolve_and_then_the_genes(client, l
     assert done == sorted(done) and done[-1] <= frames[0]["entries_total"]
 
 
+def slow(client, layout, monkeypatch, body, seconds, name="csr.zarr"):
+    """Make the estimate of ``body`` about ``seconds`` by slowing the layout's read rate; the estimate it then has."""
+    entries = estimate(client, layout, body, name=name)["entries"]
+    kind = name.split(".")[0].replace("chunked_", "")
+    monkeypatch.setitem(gsc.RATES, kind, entries / seconds)
+    return estimate(client, layout, body, name=name)
+
+
 # --- the cost tiers ---------------------------------------------------------------------------------------------
 
 def test_a_known_estimate_above_refuse_s_is_refused_before_the_stream(client, layout, data, monkeypatch):
-    monkeypatch.setattr(gm, "ASK_FIRST_S", 0.01)
-    monkeypatch.setattr(gm, "REFUSE_S", 0.1)                              # the fixed cost alone is 0.2 s
+    est = slow(client, layout, monkeypatch, table(cells(data)), 5000.0)
+    assert est["tier"] == "refused" and est["max_s"] == 600.0
     resp = post(client, layout, table(cells(data)), name="csr.zarr")
     body = resp.get_json()
     assert resp.status_code == 413 and body["reason"] == "groups_too_expensive"
-    assert body["estimate"]["tier"] == "refused" and "subset" in body["error"]
-    assert estimate(client, layout, table(cells(data)), name="csr.zarr")["tier"] == "refused"
-    assert estimate(client, layout, table(cells(data)), name="csr.zarr")["max_s"] == 0.1
+    assert body["estimate"]["tier"] == "refused" and "subset" in body["error"] and "10 minutes" in body["error"]
+
+
+def test_the_limits_of_the_registry_decide_the_tiers(client, layout, data, monkeypatch):
+    """``limits.refuse_s`` and ``limits.ask_first_s`` are read at the request, not baked in."""
+    slow(client, layout, monkeypatch, table(cells(data)), 100.0)
+    assert estimate(client, layout, table(cells(data)), name="csr.zarr")["tier"] == "confirm"
+    app = create_app({"TESTING": True, "data_dir": str(layout / "data"), "limits": {"ask_first_s": 200, "refuse_s": 300}})
+    est = _post(app.test_client(), layout, {**table(cells(data)), "estimate_only": True}, name="csr.zarr").get_json()["estimate"]
+    assert (est["auto_max_s"], est["max_s"], est["tier"]) == (200, 300, "auto")
 
 
 def test_confirm_is_asked_for_and_then_computes(client, layout, data, monkeypatch):
-    monkeypatch.setattr(gm, "ASK_FIRST_S", 0.01)
-    monkeypatch.setattr(gm, "REFUSE_S", 600.0)
+    slow(client, layout, monkeypatch, table(cells(data)), 100.0)
     resp = post(client, layout, table(cells(data)), name="csr.zarr")
     assert resp.status_code == 409 and resp.get_json()["reason"] == "confirmation_required"
     assert resp.get_json()["estimate"]["tier"] == "confirm"
@@ -247,20 +263,20 @@ def test_confirm_is_asked_for_and_then_computes(client, layout, data, monkeypatc
 def test_a_grouping_not_yet_resolved_is_judged_when_its_group_is_known(client, layout, monkeypatch):
     """The first request cannot know its cells: it resolves the grouping, then refuses in the stream; the grouping is
     kept, so the same request now answers before the stream."""
-    monkeypatch.setattr(gm, "ASK_FIRST_S", 0.01)
-    monkeypatch.setattr(gm, "REFUSE_S", 0.1)
+    slow(client, layout, monkeypatch, genes(), 5000.0)
+    route.CODES.clear()
     frames, blocks = run(client, layout, genes(), name="csr.zarr")
     refused = frames[-1]["refused"]
     assert frames[-1]["type"] == "result" and blocks == {} and refused["reason"] == "groups_too_expensive"
-    assert refused["tier"] == "refused" and refused["limit"] == 0.1 and refused["estimate"]["coverage"]["known"]
+    assert refused["tier"] == "refused" and refused["limit"] == 600.0 and refused["estimate"]["coverage"]["known"]
     assert frames[0]["codes"] == "miss"
     resp = post(client, layout, genes(), name="csr.zarr")
     assert resp.status_code == 413 and resp.get_json()["reason"] == "groups_too_expensive"
 
 
 def test_confirmation_for_a_grouping_not_yet_resolved_is_a_frame_then_computes(client, layout, monkeypatch):
-    monkeypatch.setattr(gm, "ASK_FIRST_S", 0.01)
-    monkeypatch.setattr(gm, "REFUSE_S", 600.0)
+    slow(client, layout, monkeypatch, genes(), 100.0)
+    route.CODES.clear()
     frames, _ = run(client, layout, genes(), name="csr.zarr")
     assert frames[-1]["refused"]["reason"] == "confirmation_required"
     assert post(client, layout, genes(), name="csr.zarr").status_code == 409
@@ -296,7 +312,7 @@ def test_a_group_shown_through_a_subset_counts_only_the_cells_shown(client, layo
     (genes(features=[]), 400, "unknown_field"),
     (genes(want={"codes": True}), 400, "unknown_field"),
     (genes(thresholds=[0, 0]), 400, "bad_threshold"),
-    (genes(thresholds=list(range(gm.MAX_THRESHOLDS + 1))), 422, "too_many_thresholds"),
+    (genes(thresholds=list(range(cost_limits.get("thresholds") + 1))), 422, "too_many_thresholds"),
     (genes(unknown=1), 400, "bad_request"),
 ])
 def test_a_malformed_request_is_refused_before_the_stream(client, layout, body, status, reason):
