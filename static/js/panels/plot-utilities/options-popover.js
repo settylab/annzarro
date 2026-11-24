@@ -268,6 +268,7 @@ export function mountPlotOptions(ctx) {
                 el('label', { class: 'az-pop-field__label', for: id, text: field.label }),
                 el('span', { class: 'az-pop-field__control' }, input, auto), helpEl);
         }
+        if (field.concept) wrap.dataset.concept = field.concept;      // one name per concept on every plot (options-vocabulary.js)
         controls.set(field.id, { field, input, wrap, auto });
         return wrap;
     }

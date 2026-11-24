@@ -37,6 +37,8 @@
  * chooser is on Default (`styleDefault: true`) and follows it; any change of its look gives it its own.
  */
 
+import { withVocabulary } from './options-vocabulary.js';
+
 /**
  * KINDS. A kind is declared with `registerKind(kind, { order, defaults, applies, presets })`: its sections in order,
  * its own defaults by field id (over a field's `dflt`), the common fields it takes beyond those that apply to every
@@ -72,7 +74,7 @@ const FONT_FAMILIES = Object.freeze([
 const LEGEND_COLUMNS_MAX = 8;
 
 /** The common fields. Labels are interface text in US spelling; the panel's own are its vocabulary's. */
-const COMMON_FIELDS = Object.freeze([
+const COMMON_FIELDS = Object.freeze(([
     // ---------------------------------------------------------------- Text
     { id: 'fontFamily', section: 'text', type: 'select', path: 'look.fontFamily', label: 'Font', choices: FONT_FAMILIES,
         dflt: { 'cell-gene': 'Arial, Helvetica, sans-serif', 'cell-count': '"Open Sans", verdana, arial, sans-serif' } },
@@ -117,7 +119,7 @@ const COMMON_FIELDS = Object.freeze([
     { id: 'exportWidth', section: 'export', type: 'number', path: 'look.exportWidth', label: 'Width (px)', dflt: null, min: 100, max: 8000, step: 1 },
     { id: 'exportHeight', section: 'export', type: 'number', path: 'look.exportHeight', label: 'Height (px)', dflt: null, min: 100, max: 8000, step: 1 },
     { id: 'export2x', section: 'export', type: 'check', path: 'look.export2x', label: '2x resolution', dflt: true }
-]);
+]).map(withVocabulary));
 
 /** The words of each common section's heading. */
 const SECTION_TITLES = Object.freeze({
@@ -133,7 +135,7 @@ const _panelFields = new Map();
  * @param {Object[]} fields
  */
 export function registerPanelFields(kind, fields) {
-    _panelFields.set(kind, Object.freeze(fields.map((f) => Object.freeze({ ...f, applies: [kind] }))));
+    _panelFields.set(kind, Object.freeze(fields.map((f) => Object.freeze({ ...withVocabulary(f), applies: [kind] }))));
 }
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

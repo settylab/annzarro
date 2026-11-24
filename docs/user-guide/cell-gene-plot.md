@@ -242,13 +242,13 @@ defaults and sections:
 | Presets | **Default** (the session default, or the built-in look), **Publication** (white, black text and lines, Arial 16), **Bare** (no grid, axis lines or legends) |
 | Text | **Font**, **Font size**, **Text color** (**Auto** follows the app theme), **Plot title**, **Title size** |
 | Background | **Background** (**Auto** follows the app theme) |
-| Axes | **Grid lines** (off by default; on the matrix only), **Grid color**, **Grid width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**; **Gene labels**, **Group labels**; in 3D, **Side**, **Justify**, **Rotation** (with **Angle**) and **Padding** of the gene and group names |
+| Axes | **Grid lines** (off by default; on the matrix only), **Grid color**, **Grid line width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**; **Gene labels**, **Group labels**; in 3D, **Side**, **Justify**, **Rotation** (with **Angle**) and **Padding** of the gene and group names |
 | Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none); **Dot opacity**, a slider and a box from 0.1 to 1 (opaque by default), for the dots and the size legend's dots |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
 | Legend | **Space** (the legend column's share of the width; empty lets the figure decide), **Columns** and **Entries, at most** (20) of the strip legends; **Color bar**, **Size legend**, **Strip legend**; **Color bar title**, **Size legend title** |
 | Totals | **Cells per group** (a bar along the group axis); **Color strips**: **Factors** (the default), **Group** or **None** |
 | Margins | Room added on each side, in px, to the room the labels take |
-| Export | **PNG**, **SVG** (not in 3D), **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV** |
+| Export | **PNG**, **SVG** (not in 3D), **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **Export at 2x**; **Download CSV** |
 | Apply | **Apply to other Cell-Gene plots**; **Make this the session default**, **Back to built-in** |
 
 Presets, Text, Legend, Export and the plot's own sections start open; the others unfold with a click, and each keeps its state
