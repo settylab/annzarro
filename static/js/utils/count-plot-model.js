@@ -19,7 +19,7 @@
 import { normalizePartitioning, serverRequest, defaultLabelMaps } from './cell-grouping.js';
 import { effectiveBinning } from './binning.js';
 import { groupNeed } from './group-store.js';
-import { csvField } from './score-inspect.js';
+import { csvField } from './csv-format.js';
 import { RESERVED } from './level-id.js';
 import { stableStringify } from './url-history.js';
 import { isColourString } from './uns-palette.js';
@@ -32,13 +32,29 @@ export const COUNT_MODES = Object.freeze(['bar', 'histogram', 'hist2d', 'density
 export const MEASURE_STATS = Object.freeze(['mean', 'sum', 'pct_above', 'sd', 'zscore']);
 // export-unused-ok: C2a labels each share base
 export const SHARE_BASES = Object.freeze(['all', 'x', 'split', 'row', 'column', 'total']);
-// export-unused-ok: C2a offers the three arrangements
-export const ARRANGEMENTS = Object.freeze(['stack', 'dodge', 'fill']);
+/** How a Color by's bars sit: stacked, side by side, overlaid (translucent, over each other) or as shares of 100%. */
+// export-unused-ok: the controls offer the arrangements
+export const ARRANGEMENTS = Object.freeze(['stack', 'dodge', 'overlay', 'fill']);
 const VALUE_KINDS = Object.freeze(['count', 'share', 'measure', 'top_level']);
 const SET_OPS = Object.freeze(['>', '>=', '<', '<=']);
 
 const DEFAULT_MODE = 'bar';
 const DEFAULT_ARRANGEMENT = 'stack';
+
+/**
+ * The arrangement a Bar or a Histogram draws, and its controls show: the stored one, or the closest that applies when it
+ * was stored for the other view. Bins of a number cannot sit side by side, so a histogram's `dodge` (what a histogram's
+ * overlay was stored as before 0.8.0, and a Bar's side by side kept through a switch) is overlaid; a Bar's `overlay` is
+ * side by side. What is stored is kept, so switching back restores it.
+ * @param {Object} config
+ * @returns {string}
+ */
+export function arrangementShown(config) {
+    const stored = config.arrangement || DEFAULT_ARRANGEMENT;
+    if (config.mode === 'histogram' && stored === 'dodge') return 'overlay';
+    if (config.mode !== 'histogram' && stored === 'overlay') return 'dodge';
+    return stored;
+}
 const DEFAULT_SHARE_BASE = 'all';
 
 /** Bins a count plot may ask for, by dimension (SHR-39, CNT-9). The grouping's own limit is lower (binning.js). */

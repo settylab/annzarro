@@ -1,0 +1,15 @@
+{
+ "title": "B cell markers",
+ "genes": ["CD19", "CD79A", "MS4A1"],
+ "down": [],
+ "input": "logged",
+ "method": "sum",
+ "offered": ["sum"],
+ "layers": ["logged", "X"],
+ "clip": 3,
+ "seed": null,
+ "bins": 25,
+ "controls": 50,
+ "detect_above": 0,
+ "version": 1
+}

@@ -48,6 +48,11 @@
 .ccnt-arrangement__input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
 .ccnt-arrangement__opt:has(.ccnt-arrangement__input:checked) { background: var(--az-surface-3); border-color: var(--az-link); font-weight: 600; }
 .ccnt-arrangement__opt:has(.ccnt-arrangement__input:focus-visible) { outline: 2px solid var(--az-link); outline-offset: 1px; }
+/* an arrangement that does not apply (side by side of a histogram's bins): greyed, its title says why */
+.ccnt-arrangement__opt:has(.ccnt-arrangement__input:disabled) { opacity: 0.5; cursor: not-allowed; }
+/* a switch of view by the X axis type, said once beside the Mode select */
+.ccnt-view-note { margin-left: 6px; }
+.ccnt-view-note[hidden] { display: none; }
 
 /* an input's binning control and its level list live in pop-overs (ui/popover.js, WP-6a): they never change the panel's size */
 .ccnt-binning, .ccnt-levels { margin: 0; }
