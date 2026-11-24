@@ -1491,6 +1491,14 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-status__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
 .gsig-summary { font-weight: 600; }
 .gsig-definition, .gsig-usedby { color: var(--az-muted); font-size: 0.75rem; }
+/* The score's line and the line that says what an edit did each keep ONE line, empty or not, so nothing in the
+   panel moves while you work (a tick, a clear, a score that starts or ends). A long sentence is cut with an
+   ellipsis; the whole of it is the line's title and what a screen reader hears. */
+.gsig-score, .gsig-message { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gsig-score::before, .gsig-message::before { content: "\200b"; }
+.gsig-score { display: flex; align-items: baseline; gap: 4px; }
+.gsig-score__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.gsig-score .gsig-link { flex: none; padding-top: 0; padding-bottom: 0; }
 
 /* The Methods pop-over (panels/score-options/methods-popover.js): one row per method, its definition, its parameters */
 .gsig-methods .gsig-scoring__body { display: flex; flex-direction: column; gap: 6px; font-size: 0.8125rem; }
@@ -1543,7 +1551,6 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-seg.active, .gsig-segopt.active { background: var(--az-muted); color: var(--az-surface); }
 .gsig-seg:focus-visible, .gsig-segopt:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
 .gsig-message { padding: 0 8px 4px; color: var(--az-muted); font-size: 0.75rem; }
-.gsig-message:empty { display: none; }
 .gsig-empty { padding: 8px; color: var(--az-muted); }
 .gsig-link { padding: 0 2px; font-size: 0.8125rem; }
 .gsig-grid {

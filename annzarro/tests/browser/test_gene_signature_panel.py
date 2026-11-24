@@ -416,7 +416,7 @@ def test_unticking_in_selected_strikes_the_row_through_and_keeps_it(page, served
     assert _genes(page) == ["CD3D", "NOTAGENE"]
     note = page.locator(f"{S} .gsig-row.is-missing")
     assert note.count() == 1 and "not in this dataset" in note.inner_text()
-    assert "1 not in this dataset" in page.inner_text(f"{S} .gsig-definition")
+    assert "1 selected gene: not in this dataset" in page.inner_text(f"{S} .gsig-panel > .plot-status"), "a note of the banner"
 
 
 def test_a_gene_plot_and_a_gene_set_panel_follow_a_signature_open_and_closed(page, served):
@@ -671,14 +671,15 @@ def test_the_menu_offers_the_panel_when_nothing_is_switched_off(page, served):
 
 def test_a_new_dataset_keeps_the_recipe_and_recounts_the_missing_genes(page, served):
     _open_signature(page, served, ["ACTB", "CD3D", "KLF1"])
-    assert "not in this dataset" not in page.inner_text(f"{S} .gsig-definition")
+    page.wait_for_selector(f"{S} .gsig-panel > .plot-status", timeout=30000)
+    assert "not in this dataset" not in page.inner_text(f"{S} .gsig-panel > .plot-status")
     # the dataset's genes change (a switch to another store): the recipe is untouched, the count is new
     page.evaluate("""async () => {
         const { DataManager } = await import('/static/js/data-manager.js');
         DataManager.getGenes = () => ['ACTB', 'GAPDH', 'OTHER1'];
         await window.PanelManager.notifyPanels('datasetChanged', { dataset: 'x' });
     }""")
-    until(page, "() => /2 not in this dataset/.test(document.querySelector('%s .gsig-definition').textContent)" % S)
+    until(page, "() => /2 selected genes: not in this dataset/.test(document.querySelector('%s .gsig-panel > .plot-status').textContent)" % S)
     assert _genes(page) == ["ACTB", "CD3D", "KLF1"]
     # Selected lists the recipe, the two absent genes greyed; All genes lists only the new dataset's
     assert page.locator(f"{S} .gsig-row.is-missing").count() == 2
@@ -800,3 +801,37 @@ def test_the_banner_follows_the_selection_and_its_height_never_changes(page, ser
     until(page, "(s) => document.querySelector(s + ' .ps-headline').textContent === '0 of 3,000 genes selected'", BANNER)
     assert _box(page, BANNER) == strip
     assert page.inner_text(f"{S} .gsig-summary").startswith("Tick genes to build a score"), "the hint stays where the list starts"
+
+
+def test_ticking_and_clearing_never_move_the_gene_list(page, served):
+    # the operator's rule: nothing in a panel moves the layout while you work. The line that says what a tick did
+    # ("GENE0001 selected.") keeps its one line, empty or not
+    _open_signature(page, served)
+    page.wait_for_selector(BANNER, timeout=30000)
+    grid = f"{S} .gsig-grid"
+    before = _box(page, grid)
+
+    def same(what):
+        now = _box(page, grid)
+        assert all(abs(a - b) <= 1 for a, b in zip(now, before)), (what, before, now)
+
+    _row(page, "GENE0001").locator("input").click()                  # the first tick: a message appears
+    until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 1")
+    assert _message(page) == "GENE0001 selected."
+    same("first tick")
+    _row(page, "GENE0002").locator("input").click()                  # a later tick
+    until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 2")
+    same("later tick")
+    page.click(f"{S} .gsig-clear")                                   # a clear
+    until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 0")
+    same("clear")
+    # a long message stays on its one line: the whole sentence is its title and what a screen reader hears
+    page.set_viewport_size({"width": 420, "height": 900})
+    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({genes: []})")
+    before = _box(page, grid)
+    page.evaluate("""() => window.PanelManager.getPanel('gene-signature-S').addGenes(
+        ['GENE0001', 'GENE0002', 'GENE0003', 'NOT_A_GENE_1', 'NOT_A_GENE_2'], { step: 'add genes from a long list of names' })""")
+    until(page, "(s) => document.querySelector(s + ' .gsig-message').textContent.length > 0", S)
+    msg = page.locator(f"{S} .gsig-message")
+    assert msg.get_attribute("title") == msg.inner_text()
+    same("a long message in a narrow panel")

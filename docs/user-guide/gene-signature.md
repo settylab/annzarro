@@ -20,7 +20,8 @@ it can be the source of a Gene Set Analysis panel.
 
 The panel states how many genes it holds in the status banner at its bottom ("5 of 3,000 genes selected"), the same
 strip a plot has for "n of N cells shown": it stays in place as the list changes, and **details** opens how many genes
-are not selected. **There is no limit** on the length of the list: a score takes no
+are not selected. Nothing in the panel moves while you tick, add or clear: the line that says what an edit did and the
+score's line each keep one line, a long sentence cut short with its whole text as a tooltip. **There is no limit** on the length of the list: a score takes no
 more memory than a gene table, which has none. What guards a large list is the cost estimate, which asks
 before a slow score and refuses one that would take too long (see *When a score is slow*). A signature of
 every gene of a dataset is allowed; a link or panel set that holds thousands of genes is long, see
@@ -34,7 +35,7 @@ every gene of a dataset is allowed; a link or panel set that holds thousands of 
 - Untick a gene in **Selected** and its row is struck through but stays where it is, so the list
   does not move under the pointer. It is gone when you change the view.
 - A gene that is in the signature but not in the dataset stays in the recipe, greyed and marked
-  "not in this dataset", and is counted in the line under the title.
+  "not in this dataset", and is counted in the status banner at the bottom ("2 selected genes: not in this dataset").
 
 ### Searching
 
