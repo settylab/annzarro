@@ -22,7 +22,7 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 |---|---|
 | **Mode** | The kind of plot (below) |
 | **X**, **Y** (**Slices** in a pie) | The inputs. A numeric input shows its bins on one line, "Bins: equal width · 50 · auto range", which opens the binning control in a pop-over; a categorical one offers **Choose levels**, also in a pop-over |
-| **Color by** | Divides each bar, curve or slice by a further input: **Stacked**, **Side by side** (**Overlaid** in a histogram) or **100%** |
+| **Color by** | Divides each bar, curve or slice by a further input: **Stacked**, **Side by side** or **100%**; a histogram has **Overlaid** (each level's bars translucent, over the others) instead of **Side by side**, which is greyed out there because bins of a number cannot sit side by side (pointing at it says so) |
 | **Height** (bar, histogram), **Color** (2D histogram, heatmap, UpSet) | What the bars or rectangles show (below) |
 | **Labels** | Printed on bars, cells, slices and regions: **None**, **Count**, **Share** or **Statistic** |
 | **Sort by height**, **Reverse**, **Horizontal**, **Log count axis**, **Ring** | Order and orientation of bars, a logarithmic count axis (bar, histogram), and a pie drawn as a ring. Each is shown only in the modes that have it |
@@ -75,8 +75,8 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 | Mode | Inputs | Counts | Drawn as |
 |---|---|---|---|
 | **Bar** | X (categorical or binned), Color by | Cells per level, and per level of Color by | Bars, vertical or horizontal |
-| **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars without gaps, stacked or overlaid |
-| **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring |
+| **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars at their bins' values (or evenly, for log and other bins), without gaps, in the number's order; stacked, overlaid or 100% |
+| **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring. Printed numbers sit at one distance from the centre, the middle of a ring's band (three quarters of the radius, in a pie too), so **Ring** moves none of them; a slice under 3% of the cells shows its number in its hover only |
 | **2D histogram** | X and Y numeric, Color by up to 8 levels | Cells per pair of bins, 100 × 100 by default, per level of Color by | Rectangles; with Color by, one layer per level |
 | **Heatmap** | X and Y (categorical or binned) | Cells per pair of levels | Rectangles, with values printed if asked |
 | **Density** | X numeric, Color by | 512 bins per level of Color by, smoothed in the browser | Curves |
@@ -84,7 +84,13 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 | **Venn** | 2 or 3 sets | Cells in every region | Circles with counts and shares |
 | **UpSet** | 2 to 16 sets | Cells in every exclusive intersection, and each set's size | Intersection bars over a matrix of dots, with set-size bars |
 
-An input the mode cannot use stays selected and the plot says what is missing, with a way out: "Histogram needs a
+**Bar or Histogram follows X.** Choosing a number as **X** makes a Bar a **Histogram**; **Bar** stays in the list and
+draws the number's bins as categories (chosen for a number, it is kept). With a categorical X, **Histogram** is greyed out
+in the **Mode** list, and pointing at it says "Histogram needs a numeric axis." Categories chosen while a Histogram is shown
+make it a Bar. Each switch is said once beside **Mode**, and **Undo** takes it back with the change of X. A link saved as a
+Histogram of categories opens as a Bar, with "Histogram needs a numeric axis, so this plot is drawn as Bar."
+
+An input the mode cannot use stays selected and the plot says what is missing, with a way out: "Density needs a
 numeric X. cell_type is categorical." with **Show as Bar**; "Venn shows 2 or 3 sets." with **Show as UpSet**.
 
 ## Bins and ranges
