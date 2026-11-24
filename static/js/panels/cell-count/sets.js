@@ -117,8 +117,10 @@ function figure(config, table, opts) {
     const states = inst ? inst.statesOf(sets).rows.map((r) => r.state) : [];
     const plot = setPlotModel(config, table, { names, states, words: { ...(opts.words || C), measureSource: opts.measureSource } });
     if (inst) inst.drew(sets, plot, states);
+    const venn = (opts.options && opts.options.venn) || {};
     const fig = buildFigure(plot, opts.theme, {
-        width: inst ? inst.width() : undefined, colorscale: opts.options && opts.options.colorscale, colour: opts.options && opts.options.colour
+        width: inst ? inst.width() : undefined, colorscale: opts.options && opts.options.colorscale, colour: opts.options && opts.options.colour,
+        ...(config.mode === 'venn' ? { labels: venn.labels, names: venn.names, proportional: venn.proportional } : {})
     });
     return { data: fig.data, layout: fig.layout };
 }

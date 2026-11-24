@@ -32,7 +32,7 @@
 .cgene-field__label { color: var(--az-muted); font-size: 0.75rem; white-space: nowrap; }
 .cgene-field .form-select { width: auto; max-width: 16rem; }
 .cgene-axis { display: inline-flex; gap: 4px; }
-.cgene-mode, .cgene-section__rows { display: inline-flex; gap: 8px; align-items: center; }
+.cgene-section__rows { display: inline-flex; gap: 8px; align-items: center; }
 .cgene-radio { display: inline-flex; align-items: center; gap: 2px; margin: 0; white-space: nowrap; }
 .cgene-swap.active { background-color: var(--az-accent-bg); }
 .cgene-layout-slot { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -123,13 +123,8 @@
 .cgene-opt[hidden] { display: none; }
 .cgene-num { width: 5.5rem; }
 .cgene-title-input { width: 11rem; }
-/* Largest dot (% of its cell) and Smallest dot (px): a label, the slider, the value said after it */
-.cgene-pop .cgene-dot-slider { align-items: center; }
-.cgene-pop .cgene-dot-slider .cgene-field__label { flex: 0 0 6.5rem; }
-.cgene-pop .cgene-dot-slider input[type="range"] { flex: 1 1 0; min-width: 4rem; }
 .cgene-pop .cgene-dot-opacity input[type="range"] { flex: 1 1 0; min-width: 4rem; }
 .cgene-pop .cgene-dot-opacity .cgene-num { flex: 0 0 4.5rem; }
-.cgene-dot-value { flex: 0 0 auto; min-width: 5.5rem; font-variant-numeric: tabular-nums; text-align: right; }
 .cgene-export { flex-direction: row; flex-wrap: wrap; align-items: center; }
 .cgene-export > legend { flex: 1 1 100%; }
 .cgene-pop__foot { display: flex; justify-content: flex-end; }

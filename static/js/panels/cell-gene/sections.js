@@ -28,6 +28,7 @@ import {
     noExpressingCells, pooledReference, scale
 } from '../../utils/cell-gene-model.js';
 import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
+import { MODE_INFO } from '../../utils/cell-gene-model.js';
 import { stableStringify } from '../../utils/url-history.js';
 import { cellGroupType } from '../../utils/cell-group-source.js';
 import { limit } from '../../utils/limits.js';
@@ -43,7 +44,7 @@ export const GROUP_AXIS = cellGroupType();
 export const SAME_AS_COLOR = '__same_as_color__';
 
 
-const MODES = Object.freeze(['dots', 'heatmap']);
+const MODES = Object.freeze(MODE_INFO.map((m) => m.value));
 const ROWS = Object.freeze(['genes', 'set']);
 const DEFAULT_LAYER = 'X';
 const DEFAULT_COLOR = Object.freeze({ stat: 'mean', layer: DEFAULT_LAYER });
@@ -290,6 +291,14 @@ export function normalizeCellGene(raw) {
             if (src.height !== undefined) problems.push('height: not a statistic setting, Same as Color used');
             delete config.height;
         }
+    }
+    // a link from before the dots filled their cells stored its dot sizes as a px range; its smallest dot is Smallest dot
+    // (a Plot Options field), so that field shows what is drawn. Its largest stays in `dotSizes` until Largest dot is moved
+    const legacy = src.dotSizes;
+    if (Array.isArray(legacy) && legacy.length === 2 && legacy.every((v) => typeof v === 'number' && Number.isFinite(v))
+        && !(typeof src.dotSmallest === 'number' && Number.isFinite(src.dotSmallest))) {
+        const smallest = Math.round(Math.max(1, Math.min(40, Math.min(legacy[0], legacy[1]))));
+        if (smallest !== 3) config.dotSmallest = smallest;
     }
     if (!VIEWS.includes(src.view)) {
         if ('view' in src && src.view !== undefined) problems.push(`view ${JSON.stringify(src.view)} is not 3d, 2D used`);

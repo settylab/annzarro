@@ -100,7 +100,7 @@ def _open_legend_section(page, pid):
         page.click(f"#aesthetics-menu-btn-{pid}")
         page.wait_for_selector(f"details[data-panel='{pid}']", state="visible")
     for d in page.query_selector_all(f"details[data-panel='{pid}']"):
-        if "Legend" in d.query_selector("summary").inner_text() and not d.evaluate("e => e.open"):
+        if "legend" in d.query_selector("summary").text_content().lower() and not d.evaluate("e => e.open"):
             d.query_selector("summary").click()
 
 

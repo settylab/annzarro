@@ -12,11 +12,9 @@ import { showCancelled } from '../../utils/panel-surface.js';
 import { afterMotion } from '../../utils/layout-motion.js';
 import { DataManager } from '../../data-manager.js';
 import { 
-  setupAestheticsMenuListeners, 
   createAestheticsMenu,
   applyAllAestheticSettings,
-  initializeAestheticsSettings,
-  createPopoverContent
+  initializeAestheticsSettings
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate, autorangeValue, keepsOwnMarker, refreshScaleBar } from './plot-make-helper.js';

@@ -1,8 +1,7 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, refreshScaleBar, flipRelayout } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
-import { applyLegendOptions, legendOrientation, legendTitleText, legendTitleSize, legendTitleFontSize, defaultTitleGap, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX,
-    TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX, COLUMN_GAP_MAX, COLUMN_GAP_DEFAULT, legendTitleKeys } from '../../utils/legend-options.js';
+import { applyLegendOptions, legendOrientation, legendTitleText, legendTitleFontSize, legendTitleKeys } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS } from '../../utils/focus-style.js';
 import {
@@ -10,8 +9,8 @@ import {
 } from '../../utils/plot-theme.js';
 import { THEME_EVENT } from '../../utils/theme.js';
 import {
-  normalizePlotOptions, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
-  COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions, STYLE_KEYS, defaultLook
+  normalizePlotOptions, tickKeys, axisPaths, colorbarPosition, colorbarExtras,
+  applyPreset, pickStyle, adoptStyle, exportOptions, STYLE_KEYS
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
 import {
@@ -19,7 +18,7 @@ import {
 } from '../../utils/session-style.js';
 import { exportCheck, guarded, refusalText, bindingLabel } from '../../utils/memory-guard-ui.js';
 import { showPointStyle } from './panel-ui-update.js';
-import { sectionKeys } from './aesthetics-kinds.js';
+import { registerPresets } from './aesthetics-kinds.js';
 import { mountPlotOptions } from './options-popover.js';
 import { createSettingsAdapter } from './plot-aesthetics-adapter.js';
 /**
@@ -29,6 +28,20 @@ import { createSettingsAdapter } from './plot-aesthetics-adapter.js';
  * Features include grid visibility, axes customization, margin control, theme settings,
  * export formats (SVG, PNG), plot dimension controls, and more.
  */
+
+/**
+ * The Cell Plot's and Gene Plot's presets for the shared Plot Options: Publication and Bare as plot-options.js defines them,
+ * Default as the session default (or the built-in look) puts the plot back on Default. A copy of the settings comes back; a
+ * look change that is not Default takes the plot off Default, as every change of the look does.
+ */
+registerPresets((config, name, kind) => {
+  const next = JSON.parse(JSON.stringify(config));
+  if (name === 'default') return followSessionDefault(next, kind);
+  const before = JSON.stringify(pickStyle(next));
+  applyPreset(next, name);
+  if (next.styleDefault === true && JSON.stringify(pickStyle(next)) !== before) next.styleDefault = false;
+  return next;
+});
 
 /**
  * The plot's Plot Options on the shared pop-over (ui/popover.js; WP-5b, design note options-ux-080 section 5): Escape
@@ -80,7 +93,14 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
     if (s.focusedNoFill !== false && !((s.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth) >= 1)) s.focusedEdgeWidth = 1;
     return restyleFocus(plotContainer, s).catch(err => console.warn('Focused marker style not updated:', err && err.message));
   };
+  // the legend's own options redraw it in its position's orientation; the colour bar follows the legend's place and its own keys
+  const legend = (s) => applyLegendOptions(plotContainer, s, getPositioningByLocation(s.legendPosition || 'right').legendOrientation);
+  const legendPlace = (s) => updateLegendPosition(plotContainer, s);
   Object.assign(hooks, {
+    margins: (s) => updateMargins(plotContainer, s),
+    showLegend: (s) => updateLegendVisibility(plotContainer, s), legendPosition: legendPlace,
+    showLegendTitle: legend, legendTitleSize: legend, legendTitleAlign: legend, legendTitleGap: legend, legendDotSize: legend, legendColumns: legend, legendColumnGap: legend,
+    colorbarPosition: legendPlace, colorbarLength: legendPlace, colorbarTicks: legendPlace,
     showGrid: (s) => toggleGrid(plotContainer, s), gridColor: (s) => updateGridColor(plotContainer, s),
     axisColor: (s) => updateAxisColor(plotContainer, s), zeroLineColor: (s) => updateZeroLineColor(plotContainer, s),
     showAxisTitles: axisVisibility, showAxisLabels: axisVisibility, showAxisLines: axisVisibility, showZeroLines: axisVisibility,
@@ -100,9 +120,6 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
     notify: (setting, value) => notifySettingsChanged(id, setting, value)
   });
   let options = null;
-  /** The pop-over's body as it was drawn: the sections the panel still draws itself, and the point size's row in its slot. */
-  const legacy = (key) => () => legacySection(id, settings, key);
-  const LEGACY_SECTIONS = ['presets', 'legend', 'margins', 'export', 'apply'];
   options = mountPlotOptions({
     anchor: menuButton, kind, panelId: id, noFollow: true,
     config: () => settings,
@@ -113,7 +130,26 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
     sections: { 'panel:points': { title: 'Points', reset: true }, 'panel:focused': { title: `Focused ${plotKindOf(settings)}`, reset: true } },
     elements: { pointSize: () => pointSizeRow },
     openFirst: new Set(['export']),      // as the menu has always opened: only Export, the rest as it was left
-    legacy: Object.fromEntries(LEGACY_SECTIONS.map((sec) => [sec, legacy(sec.replace(/^panel:/, ''))])),
+    ids: true, guide: 'https://annzarro.readthedocs.io/en/latest/user-guide/plot-options.html#session-default-style',
+    classes: { exportBtn: 'export-btn' },
+    presetTitle: (p) => PRESET_TITLES[p](hasSessionStyle(kind)),
+    // the image is made of the settings as they are (exportOptions), at the size and scale set in Export
+    exportImage: (format, _style, how) => exportPlot(plotContainer, format, settings, how),
+    copyImage: () => copyPlotToClipboard(plotContainer, settings),
+    exportGuard: () => exportGuard(plotContainer, settings),
+    // Apply to the other plots of the kind and the session default are this panel's own (session-style.js keeps what is a look)
+    others: { count: () => otherPlots(id).length, run: () => applyLookToOthers(id, settings) },
+    session: {
+      has: () => hasSessionStyle(kind),
+      onDefault: () => settings.styleDefault === true,
+      state: (onDefault) => (onDefault ? 'On Default' : 'Own style'),
+      clear: () => clearSessionStyle(kind),
+      set: () => {
+        const isSet = setSessionStyle(kind, settings, builtinStyle());
+        settings.styleDefault = true;       // its look is the default now
+        if (!isSet) clearSessionStyle(kind);
+      }
+    },
     // why it closed last (a test hook, and a hint when a menu goes away unasked)
     onClose: (reason) => { menuButton.dataset.closedBy = reason; },
     onOpen: (body, ctl) => {
@@ -134,16 +170,6 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   function placePointSize() {
     if (pointSizeRow) showPointStyle(id, settings);
   }
-  // a preset or a Reset draws the groups again: the ones the panel draws itself are rebuilt in place, the pop-over stays open
-  menuButton.__azRedrawOptions = () => {
-    const body = popover.surface && popover.surface.querySelector('.az-popover-body');
-    if (!body) return;
-    options.redrawLegacy();
-    options.update();
-    placePointSize();
-    syncColourControls(id, settings);
-  };
-
   // Settings-change listener: the pop-over follows a taller or shorter body
   const onSettingsChange = (e) => {
     if (e.detail.id !== id) return;
@@ -153,317 +179,52 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   };
   document.addEventListener('plotSettingsChanged', onSettingsChange);
 
-  // Wire up the controls inside the popover
-  const cleanupListeners = setupAestheticsMenuListeners(container, settings, plotContainer, id);
+  // the settings have the defaults the plot stores, and the modebar camera exports at the size and scale set in Export
+  initializeAestheticsSettings(settings);
+  if (plotContainer) plotContainer.__exportOptions = () => exportOptions(settings);
 
   // Return cleanup function
   return function cleanup() {
     options.destroy();
-    delete menuButton.__azRedrawOptions;
     document.removeEventListener('plotSettingsChanged', onSettingsChange);
-    cleanupListeners();
   };
 }
   
-
-/**
- * Creates the HTML content for the aesthetics popover
- * @param {string} id - Panel ID
- * @param {Object} settings - Plot settings object
- * @returns {string} - HTML string for popover content
- */
-/** Sections the user opened, per panel; a menu opens again as it was left. */
-const sectionOpen = new Map();
-const OPEN_AT_FIRST = ['export'];      // a panel with no remembered state: only Export is open
-
-/** A collapsible group of the menu. */
-function details(id, key, title, body) {
-    const open = (sectionOpen.get(id) || new Set(OPEN_AT_FIRST)).has(key);
-    // every group with options of the look has a Reset that puts them back to the built-in look (WP-5b)
-    const reset = sectionKeys('cell-plot', key).length && key !== 'margins'      // Margins has its own Reset Margins
-        ? `<div class="aesthetics-section-foot"><button type="button" class="btn btn-sm btn-link aesthetics-reset" id="reset-section-${key}-${escapeAttr(id)}"
-            data-reset-section="${key}" title="Put this group's options back to the built-in look">Reset</button></div>` : '';
-    return `<details class="aesthetics-section" data-section="${key}" data-panel="${escapeAttr(id)}"${open ? ' open' : ''}>
-            <summary>${title}</summary>
-            <div class="aesthetics-body">${body}${reset}</div>
-        </details>`;
-}
-
-/**
- * One group of the menu the panel still draws itself (the others are the shared renderer's, options-popover.js), as an
- * element: the group is cut out of the menu's HTML. Goes away as the groups move to the schema.
- */
-function legacySection(id, settings, key) {
-    const t = document.createElement('template');
-    t.innerHTML = createPopoverContent(id, settings);
-    return t.content.querySelector(`details[data-section="${key}"]`);
-}
-
-export function createPopoverContent(id, settings) {
-    // Ensure all required settings have defaults
-    initializeAestheticsSettings(settings);
-    
-    // Store the actual margin values in data attributes to prevent bootstrap.Popover 
-    // from caching the HTML and causing incorrect values
-    const marginTop = settings.margins?.t ?? 80;
-    const marginBottom = settings.margins?.b ?? 60;
-    const marginLeft = settings.margins?.l ?? 80;
-    const marginRight = settings.margins?.r ?? 80;
-    
-    const marginsLinkedValue = marginTop;
-    const plotKind = settings.highlightFocusedGene !== undefined ? 'gene' : 'cell';
-
-    // Create a custom ID to ensure we're getting fresh HTML each time
-    const uniqueId = `aesthetics-${id}-${Date.now()}`;
-    
-    return `
-    <div id="${uniqueId}" class="aesthetics-menu-content" 
-         data-margin-top="${marginTop}" 
-         data-margin-bottom="${marginBottom}" 
-         data-margin-left="${marginLeft}"
-         data-margin-right="${marginRight}">
-        ${details(id, 'presets', 'Presets', `
-
-            <div class="d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-publication-${id}"
-                    title="White background, no grid, five ticks per axis, Arial at a larger size, a short colour bar with three ticks. The scale bar stays as it is">Publication</button>
-                <button type="button" class="btn btn-sm btn-outline-primary flex-fill" id="preset-bare-${id}"
-                    title="Only the points: no margins, legend, axis labels or grid. For figures and overlays.">Bare</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
-                    title="${hasSessionStyle(`${plotKind}-plot`) ? 'Session default style: the look every plot on Default has' : 'Built-in style'}">Default</button>
-            </div>
-        `)}
-        ${details(id, 'legend', 'Legend and colour bar', `
-            <div class="form-check form-switch mb-2">
-                <input class="form-check-input" type="checkbox" id="show-legend-${id}" 
-                    ${settings.showLegend !== false ? 'checked' : ''}>
-                <label class="form-check-label" for="show-legend-${id}">Show Legend</label>
-            </div>
-            
-            <div class="mb-2">
-                <label class="form-label mb-1">Legend Position</label>
-                <select class="form-select form-select-sm" id="legend-position-${id}">
-                    <option value="right" ${(settings.legendPosition === 'right') ? 'selected' : ''}>Right</option>
-                    <option value="left" ${(settings.legendPosition === 'left') ? 'selected' : ''}>Left</option>
-                    <option value="top" ${(settings.legendPosition === 'top') ? 'selected' : ''}>Top</option>
-                    <option value="bottom" ${(settings.legendPosition === 'bottom') ? 'selected' : ''}>Bottom</option>
-                </select>
-            </div>
-            <!-- Legend of a categorical colouring: title, dots, columns -->
-            <div class="mb-2">
-                <div class="form-check form-switch mb-1">
-                    <input class="form-check-input" type="checkbox" id="show-legend-title-${id}"
-                        ${settings.showLegendTitle !== false ? 'checked' : ''}>
-                    <label class="form-check-label" for="show-legend-title-${id}">Legend title</label>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Title size</span>
-                    <input type="number" class="form-control" id="legend-title-size-${id}" value="${settings.legendTitleSize ?? ''}"
-                        placeholder="${legendTitleSize({ fontSize: settings.fontSize })}" data-step-from="${legendTitleSize({ fontSize: settings.fontSize })}"
-                        min="${TITLE_SIZE_MIN}" max="${TITLE_SIZE_MAX}" step="1"
-                        title="Size of the legend title; empty: 2 px above the text size">
-                    <span class="input-group-text">px</span>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-size-${id}" title="Back to the default size"
-                        ${settings.legendTitleSize == null ? 'disabled' : ''}>Reset</button>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Title align</span>
-                    <select class="form-select" id="legend-title-align-${id}"
-                        title="Where the legend title sits: Auto is centred over a legend above or below the plot and at the markers beside it; Markers: its left edge at the markers'; Labels: at the labels'. Centre and Right are across all the columns.">
-                        ${[['', 'Auto'], ['markers', 'Markers'], ['labels', 'Labels'], ['centre', 'Centre'], ['right', 'Right']]
-                            .map(([v, label]) => `<option value="${v}" ${(settings.legendTitleAlign || '') === v ? 'selected' : ''}>${label}</option>`).join('')}
-                    </select>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-align-${id}" title="Back to Auto"
-                        ${settings.legendTitleAlign == null ? 'disabled' : ''}>Reset</button>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Title gap</span>
-                    <input type="number" class="form-control" id="legend-title-gap-${id}" value="${settings.legendTitleGap ?? ''}"
-                        placeholder="${defaultTitleGap({ fontSize: settings.fontSize })}" data-step-from="${defaultTitleGap({ fontSize: settings.fontSize })}"
-                        min="0" max="${TITLE_GAP_MAX}" step="1"
-                        title="Space in px between the legend title and the first entry; empty: one blank line">
-                    <span class="input-group-text">px</span>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-gap-${id}" title="Back to the default gap"
-                        ${settings.legendTitleGap == null ? 'disabled' : ''}>Reset</button>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Dot size</span>
-                    <input type="number" class="form-control" id="legend-dot-size-${id}" value="${settings.legendDotSize ?? ''}"
-                        placeholder="${DOT_SIZE_AUTO}" data-step-from="${DOT_SIZE_AUTO}" min="${DOT_SIZE_MIN}" max="${DOT_SIZE_MAX}" step="1"
-                        title="Size of the dots in the legend of a categorical colouring, independent of the points' size; empty: ${DOT_SIZE_AUTO} px">
-                    <span class="input-group-text">px</span>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-dot-size-${id}" title="Back to the default dots"
-                        ${settings.legendDotSize == null ? 'disabled' : ''}>Reset</button>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Columns</span>
-                    <input type="number" class="form-control" id="legend-columns-${id}" value="${settings.legendColumns ?? ''}"
-                        placeholder="1" data-step-from="1" min="1" max="${COLUMNS_MAX}" step="1"
-                        title="Lay the legend out in this many columns, side by side, the entries in order down each; 1 or empty: one column. Labels too long for the room are cut short.">
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-columns-${id}" title="Back to one column"
-                        ${settings.legendColumns == null ? 'disabled' : ''}>Reset</button>
-                </div>
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text">Column gap</span>
-                    <input type="number" class="form-control" id="legend-column-gap-${id}" value="${settings.legendColumnGap ?? ''}"
-                        placeholder="${COLUMN_GAP_DEFAULT}" data-step-from="${COLUMN_GAP_DEFAULT}" min="0" max="${COLUMN_GAP_MAX}" step="1"
-                        title="Space in px between the columns of the legend; empty: ${COLUMN_GAP_DEFAULT} px">
-                    <span class="input-group-text">px</span>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-column-gap-${id}" title="Back to the default gap"
-                        ${settings.legendColumnGap == null ? 'disabled' : ''}>Reset</button>
-                </div>
-            </div>
-            <!-- Colour bar -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Colour bar</label>
-                <select class="form-select form-select-sm mb-1" id="colorbar-position-${id}" title="Position">
-                    ${COLORBAR_POSITIONS.map(c => `<option value="${c}" ${settings.colorbarPosition === c ? 'selected' : ''}>${c === 'legend' ? 'with the legend' : c}</option>`).join('')}
-                </select>
-                <div class="d-flex align-items-center gap-2 mb-1">
-                    <span class="small text-nowrap">Length</span>
-                    <input type="range" class="form-range flex-grow-1" id="colorbar-length-${id}" min="10" max="100" step="5"
-                        value="${Math.round(settings.colorbarLength * 100)}" title="Length of the colour bar, % of the plot">
-                    <span class="small text-nowrap" id="colorbar-length-value-${id}">${Math.round(settings.colorbarLength * 100)}%</span>
-                </div>
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text">Ticks</span>
-                    <input type="number" class="form-control" id="colorbar-ticks-${id}" value="${settings.colorbarTicks ?? ''}"
-                        placeholder="auto" data-step-from="5" min="2" max="30" step="1">
-                </div>
-            </div>
-
-        `)}
-        ${details(id, 'margins', 'Margins', `
-            <div class="d-flex align-items-center gap-2 mb-1">
-                <input type="range" class="form-range flex-grow-1" id="margin-all-${id}" min="0" max="200" step="1"
-                    value="${marginsLinkedValue}" ${settings.marginsUnlinked ? 'disabled' : ''} title="All four sides">
-                <input type="number" class="form-control form-control-sm" style="width: 4.5rem" id="margin-all-input-${id}"
-                    value="${marginsLinkedValue}" min="0" max="200" ${settings.marginsUnlinked ? 'disabled' : ''}>
-            </div>
-            <div class="form-check form-switch mb-2">
-                <input class="form-check-input" type="checkbox" id="margins-unlink-${id}" ${settings.marginsUnlinked ? 'checked' : ''}>
-                <label class="form-check-label" for="margins-unlink-${id}">Set each side separately</label>
-            </div>
-            <div class="row g-2 ${settings.marginsUnlinked ? '' : 'd-none'}" id="margin-sides-${id}">
-                <div class="col-6">
-                    <label class="form-label mb-1">Top</label>
-                    <input type="number" class="form-control form-control-sm margin-input" id="margin-top-${id}"
-                        value="${marginTop}" min="0" max="200">
-                </div>
-                <div class="col-6">
-                    <label class="form-label mb-1">Bottom</label>
-                    <input type="number" class="form-control form-control-sm margin-input" id="margin-bottom-${id}"
-                        value="${marginBottom}" min="0" max="200">
-                </div>
-                <div class="col-6">
-                    <label class="form-label mb-1">Left</label>
-                    <input type="number" class="form-control form-control-sm margin-input" id="margin-left-${id}"
-                        value="${marginLeft}" min="0" max="200">
-                </div>
-                <div class="col-6">
-                    <label class="form-label mb-1">Right</label>
-                    <input type="number" class="form-control form-control-sm margin-input" id="margin-right-${id}"
-                        value="${marginRight}" min="0" max="200">
-                </div>
-            </div>
-            <button class="btn btn-sm btn-outline-secondary w-100 mt-2" id="reset-margins-${id}">Reset Margins</button>
-        `)}
-        ${details(id, 'export', 'Export', `
-            ${exportButtonsHtml(id, settings)}
-            <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="copy-to-clipboard-${id}" title="Copy the plot as a PNG image, at the size set below">
-                <i class="fas fa-copy"></i> Copy</button>
-            
-            <div class="mb-2">
-                <label class="form-label mb-1">Dimensions</label>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Width</span>
-                    <input type="number" class="form-control" id="plot-width-${id}" 
-                        value="${settings.exportWidth || 1200}" min="100" max="5000">
-                    <span class="input-group-text">px</span>
-                </div>
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text">Height</span>
-                    <input type="number" class="form-control" id="plot-height-${id}" 
-                        value="${settings.exportHeight || 800}" min="100" max="5000">
-                    <span class="input-group-text">px</span>
-                </div>
-            </div>
-            <div class="form-check form-switch mb-2">
-                <input class="form-check-input" type="checkbox" id="scale-export-${id}" ${exportOptions(settings).scale > 1 ? 'checked' : ''}>
-                <label class="form-check-label" for="scale-export-${id}"
-                    title="Draw the image at twice the width and height, so it stays sharp in print; the PNG, JPEG and WEBP files are then twice the pixels set above">Export at 2x</label>
-            </div>
-            
-        `)}
-        ${details(id, 'apply', 'Apply to other panels', `
-
-            <div id="apply-others-ask-${id}" class="d-none">
-                <div class="small mb-1" id="apply-others-text-${id}"></div>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-sm btn-primary flex-fill" id="apply-others-yes-${id}">Apply</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="apply-others-no-${id}">Cancel</button>
-                </div>
-            </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="apply-others-${id}"
-                title="Copy this plot's look (colours, axes, ticks, text, margins, legend, colour bar, scale bar, Not in table) to the other ${plotKind} plots. What they show is not touched.">Apply to other panels</button>
-            <div class="small mt-1" id="apply-others-done-${id}" role="status"></div>
-            <div class="d-flex align-items-center gap-2 small text-muted mt-2 mb-1">
-                <span id="session-style-state-${id}">${settings.styleDefault === true ? 'On Default' : 'Own style'}</span>
-                <a href="https://annzarro.readthedocs.io/en/latest/user-guide/plot-options.html#session-default-style" target="_blank" rel="noopener"
-                    class="ms-auto" title="Guide: the session default style">Guide</a>
-            </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="session-style-set-${id}"
-                title="Make this the session default: every ${plotKind} plot on Default takes this look, now and when you change it. Plots with a look of their own keep it. It lasts for the session and travels with links, the autosave and panel sets.">Make this the session default</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1 ${hasSessionStyle(`${plotKind}-plot`) ? '' : 'd-none'}" id="session-style-reset-${id}"
-                title="End the session default: ${plotKind} plots on Default are in the built-in style again">Reset to built-in default</button>
-        `)}
-    </div>
-    `;
-}
 
 export { exportOptions };
 
 const EXPORT_ADVICE = 'Export it as shown instead, close a plot, or show fewer cells.';
 
 /**
- * The export buttons. A full-resolution export draws the plot again, which
- * needs about as much browser memory as the plot itself; when that does not
- * fit (utils/memory-guard-ui.js) its buttons are disabled with the reason
- * written under them, and the plot as shown on screen, which costs only its
- * pixels, is offered beside them.
+ * The memory guard of the Export buttons (the shared renderer draws them, options-popover.js). A full-resolution export
+ * draws the plot again, which needs about as much browser memory as the plot itself; when that does not fit
+ * (utils/memory-guard-ui.js) its buttons are disabled with the reason written under them, and the plot as shown on
+ * screen, which costs only its pixels, is offered beside them.
+ * @returns {{blocked: boolean, why: string, note: string, shown: string[], size: string}}
  */
-function exportButtonsHtml(id, settings) {
-  const gd = document.getElementById(`plot-container-${id}`);
+function exportGuard(gd, settings) {
   let check;
   try { check = gd && gd._fullLayout ? exportCheck(gd, exportOptions(settings)) : null; } catch { check = null; }
   const blocked = !!check && check.verdict === 'block';
   const short = !!check && !check.fits;
   const why = short ? refusalText(check, EXPORT_ADVICE) : '';
-  const off = blocked ? ` disabled aria-disabled="true" title="${escapeAttr(why)}"` : '';
-  const full = ['jpeg', 'svg', 'webp', 'png'].map(f =>
-    `<button class="btn btn-sm btn-outline-primary export-btn" data-format="${f}" data-how="full" id="download-${f}-${id}" data-id="${id}"${off}>
-                    <i class="fas fa-file-image"></i> ${f.toUpperCase()}
-                </button>`).join('');
-  let shown = '';
+  let shown = [];
+  let size = '';
   if (short && gd && canSnapshot(gd)) {
     const { width, height } = snapshotSize(gd);
-    shown = `<div class="d-flex flex-wrap gap-2 mb-1 export-shown-row">
-                <span class="small align-self-center">As shown (${width} \u00d7 ${height} px):</span>
-                ${['png', 'svg'].map(f => `<button class="btn btn-sm btn-outline-primary export-btn" data-format="${f}" data-how="shown"
-                    id="download-shown-${f}-${id}" data-id="${id}" title="The plot as it is on screen; needs only its pixels">
-                    <i class="fas fa-camera"></i> ${f.toUpperCase()}</button>`).join('')}
-            </div>`;
+    shown = ['png', 'svg'];
+    size = `${width} \u00d7 ${height} px`;
   }
-  const note = short
-    ? `<div class="small mb-2 export-memory-note ${blocked ? 'text-danger' : 'text-warning-emphasis'}" role="note">${escapeAttr(
-        blocked ? `Full resolution: ${why}` : `Full resolution may run out of memory: ${why}`)}</div>`
-    : '';
-  return `<div class="d-flex flex-wrap gap-2 mb-2">${full}</div>${note}${shown}`;
+  const note = short ? (blocked ? `Full resolution: ${why}` : `Full resolution may run out of memory: ${why}`) : '';
+  return { blocked, why: blocked ? why : '', note, shown, size };
 }
 
-function escapeAttr(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+/** The presets' tooltips (the buttons are the shared renderer's); Default says which look it puts back. */
+const PRESET_TITLES = {
+  publication: () => 'White background, no grid, five ticks per axis, Arial at a larger size, a short colour bar with three ticks. The scale bar stays as it is',
+  bare: () => 'Only the points: no margins, legend, axis labels or grid. For figures and overlays.',
+  default: (session) => (session ? 'Session default style: the look every plot on Default has' : 'Built-in style')
+};
 
 /**
  * Initialize the settings object with default aesthetic settings if they don't exist
@@ -602,350 +363,6 @@ function getPanelId(element) {
     return '';
 }
 
-export function setupAestheticsMenuListeners(container, settings, plotContainer, id) {
-    // Ensure settings are initialized
-    initializeAestheticsSettings(settings);
-    if (plotContainer) plotContainer.__exportOptions = () => exportOptions(settings);
-    
-    // Create one-time event handlers using delegation for all menu controls
-    const handleMenuEvent = function(e) {
-        // Find the element that triggered the event
-        const target = e.target;
-        
-        // Margin changes
-        if (target.id === `margin-top-${id}`) {
-            settings.margins.t = parseInt(target.value, 10);
-            updateMargins(plotContainer, settings);
-            notifySettingsChanged(id, 'margins', settings.margins);
-            return;
-        }
-        
-        if (target.id === `margin-bottom-${id}`) {
-            settings.margins.b = parseInt(target.value, 10);
-            updateMargins(plotContainer, settings);
-            notifySettingsChanged(id, 'margins', settings.margins);
-            return;
-        }
-        
-        if (target.id === `margin-left-${id}`) {
-            settings.margins.l = parseInt(target.value, 10);
-            updateMargins(plotContainer, settings);
-            notifySettingsChanged(id, 'margins', settings.margins);
-            return;
-        }
-        
-        if (target.id === `margin-right-${id}`) {
-            settings.margins.r = parseInt(target.value, 10);
-            updateMargins(plotContainer, settings);
-            notifySettingsChanged(id, 'margins', settings.margins);
-            return;
-        }
-        
-        // Reset margins
-        if (target.id === `reset-margins-${id}`) {
-            // Default margins
-            settings.margins = { l: 80, r: 80, t: 80, b: 60, pad: 4 };
-            
-            settings.marginsUnlinked = false;
-            syncMarginInputs(id, settings);
-            
-            // Apply the changes to the plot
-            updateMargins(plotContainer, settings);
-            notifySettingsChanged(id, 'margins', settings.margins);
-            return;
-        }
-        
-        // Legend visibility
-        if (target.id === `show-legend-${id}`) {
-            settings.showLegend = target.checked;
-            updateLegendVisibility(plotContainer, settings);
-            notifySettingsChanged(id, 'showLegend', settings.showLegend);
-            return;
-        }
-        
-        // Legend position - only update when selection changes, not on dropdown open
-        if (target.id === `legend-position-${id}` && e.type === 'change') {
-            settings.legendPosition = target.value;
-            updateLegendPosition(plotContainer, settings);
-            notifySettingsChanged(id, 'legendPosition', settings.legendPosition);
-            return;
-        }
-        
-        // Legend of a categorical colouring: title, dot size, columns
-        if (target.id === `show-legend-title-${id}`) {
-            settings.showLegendTitle = target.checked;
-            applyLegendOptions(plotContainer, settings);
-            notifySettingsChanged(id, 'showLegendTitle', settings.showLegendTitle);
-            return;
-        }
-        if ((target.id === `legend-title-align-${id}` && e.type === 'change') || (target.id === `reset-legend-title-align-${id}` && e.type === 'click')) {
-            const reset = target.id.startsWith('reset-');
-            settings.legendTitleAlign = reset ? null : (target.value || null);
-            if (reset) document.getElementById(`legend-title-align-${id}`).value = '';
-            applyLegendOptions(plotContainer, settings,
-                getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
-            notifySettingsChanged(id, 'legendTitleAlign', settings.legendTitleAlign);
-            syncOptionResets(id, settings);
-            return;
-        }
-        const legendBox = LEGEND_BOXES.find(b => target.id === `${b.box}-${id}`);
-        if (legendBox) {
-            const n = parseInt(target.value, 10);
-            if (target.value !== '' && !(n >= legendBox.min)) return;
-            // empty is unset, and so is one column
-            settings[legendBox.key] = target.value === '' || (legendBox.key === 'legendColumns' && n === 1) ? null : Math.min(n, legendBox.max);
-            applyLegendOptions(plotContainer, settings,
-                getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
-            notifySettingsChanged(id, legendBox.key, settings[legendBox.key]);
-            syncOptionResets(id, settings);
-            return;
-        }
-        const legendReset = LEGEND_BOXES.find(b => target.id === `reset-${b.box}-${id}`);
-        if (legendReset) {
-            settings[legendReset.key] = null;
-            document.getElementById(`${legendReset.box}-${id}`).value = '';
-            applyLegendOptions(plotContainer, settings,
-                getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
-            notifySettingsChanged(id, legendReset.key, null);
-            syncOptionResets(id, settings);
-            return;
-        }
-
-        // Margins: one value for all four sides, or each side
-        if (target.id === `margin-all-${id}` || target.id === `margin-all-input-${id}`) {
-            const v = parseFloat(target.value);
-            if (!Number.isFinite(v)) return;
-            settings.margins = linkedMargins(settings, v);
-            syncMarginInputs(id, settings);
-            updateMargins(plotContainer, settings);
-            return;
-        }
-        if (target.id === `margins-unlink-${id}`) {
-            settings.marginsUnlinked = target.checked;
-            if (!target.checked) settings.margins = linkedMargins(settings, settings.margins.t);   // one value again: the top one
-            syncMarginInputs(id, settings);
-            updateMargins(plotContainer, settings);
-            return;
-        }
-
-        // Colour bar
-        if (target.id === `colorbar-position-${id}`) {
-            settings.colorbarPosition = target.value;
-            updateLegendPosition(plotContainer, settings);
-            return;
-        }
-        if (target.id === `colorbar-length-${id}`) {
-            settings.colorbarLength = Math.max(0.1, Math.min(1, parseInt(target.value, 10) / 100));
-            const out = document.getElementById(`colorbar-length-value-${id}`);
-            if (out) out.textContent = `${Math.round(settings.colorbarLength * 100)}%`;
-            updateLegendPosition(plotContainer, settings);
-            return;
-        }
-        if (target.id === `colorbar-ticks-${id}`) {
-            const n = parseInt(target.value, 10);
-            if (target.value !== '' && !(n >= 2)) return;
-            settings.colorbarTicks = target.value === '' ? null : Math.min(n, 30);
-            updateLegendPosition(plotContainer, settings);
-            return;
-        }
-
-        // Reset of one group (WP-5b): its options back to the built-in look, as Default puts them, the rest as it is
-        const resetSection = target.dataset && target.dataset.resetSection;
-        if (resetSection && e.type === 'click') {
-            const builtin = defaultLook();
-            for (const k of sectionKeys(`${plotKindOf(settings)}-plot`, resetSection)) {
-                if (k in builtin && builtin[k] !== undefined) settings[k] = JSON.parse(JSON.stringify(builtin[k]));
-                else delete settings[k];
-            }
-            initializeAestheticsSettings(settings);
-            relookPlot(plotContainer, settings);
-            if (resetSection === 'focused') restyleFocus(plotContainer, settings).catch(() => {});
-            if (resetSection === 'axes' || resetSection === 'legend') refreshScaleBar(plotContainer, settings);
-            const btn = document.getElementById(`aesthetics-menu-btn-${id}`);
-            if (btn && btn.__azRedrawOptions) btn.__azRedrawOptions();
-            notifySettingsChanged(id, `reset ${resetSection}`, null);
-            return;
-        }
-
-        // Presets
-        const preset = ['publication', 'bare', 'default'].find(name => target.id === `preset-${name}-${id}`);
-        if (preset && e.type === 'click') {
-            if (preset === 'default') followSessionDefault(settings, `${plotKindOf(settings)}-plot`);
-            else applyPreset(settings, preset);
-            relookPlot(plotContainer, settings);
-            // the menu shows the new values: drawn again, the open groups as they are
-            const btn = document.getElementById(`aesthetics-menu-btn-${id}`);
-            if (btn && btn.__azRedrawOptions) btn.__azRedrawOptions();
-            return;
-        }
-
-        // Apply this panel's look to the other plots of its kind, after a confirm in the menu
-        if (target.id === `apply-others-${id}` && e.type === 'click') {
-            const n = otherPlots(id).length;
-            const text = document.getElementById(`apply-others-text-${id}`);
-            const done = document.getElementById(`apply-others-done-${id}`);
-            if (done) done.textContent = '';
-            if (!n) {
-                if (done) done.textContent = 'There are no other plots of this kind.';
-                return;
-            }
-            if (text) text.textContent = `Replace the look of ${n} other plot${n === 1 ? '' : 's'} with this one's?`;
-            document.getElementById(`apply-others-ask-${id}`)?.classList.remove('d-none');
-            target.classList.add('d-none');
-            return;
-        }
-        if ((target.id === `apply-others-no-${id}` || target.id === `apply-others-yes-${id}`) && e.type === 'click') {
-            document.getElementById(`apply-others-ask-${id}`)?.classList.add('d-none');
-            document.getElementById(`apply-others-${id}`)?.classList.remove('d-none');
-            if (target.id === `apply-others-yes-${id}`) {
-                const n = applyLookToOthers(id, settings);
-                const done = document.getElementById(`apply-others-done-${id}`);
-                if (done) done.textContent = `Applied to ${n} plot${n === 1 ? '' : 's'}.`;
-            }
-            return;
-        }
-
-        // The session default look: make this plot's the default, or go back to the built-in one
-        if ((target.id === `session-style-set-${id}` || target.id === `session-style-reset-${id}`) && e.type === 'click') {
-            const kind = plotKindOf(settings);
-            const type = `${kind}-plot`;
-            const reset = target.id === `session-style-reset-${id}`;
-            if (reset) clearSessionStyle(type);
-            else {
-                const isSet = setSessionStyle(type, settings, builtinStyle());
-                settings.styleDefault = true;       // its look is the default now
-                if (!isSet) clearSessionStyle(type);
-            }
-            document.getElementById(`session-style-reset-${id}`)?.classList.toggle('d-none', !hasSessionStyle(type));
-            const state = document.getElementById(`session-style-state-${id}`);
-            if (state) state.textContent = settings.styleDefault === true ? 'On Default' : 'Own style';
-            return;
-        }
-
-        // Export width
-        if (target.id === `plot-width-${id}`) {
-            settings.exportWidth = parseInt(target.value, 10);
-            notifySettingsChanged(id, 'exportWidth', settings.exportWidth);
-            return;
-        }
-        
-        // Export height
-        if (target.id === `plot-height-${id}`) {
-            settings.exportHeight = parseInt(target.value, 10);
-            notifySettingsChanged(id, 'exportHeight', settings.exportHeight);
-            return;
-        }
-        
-        // Scale export
-        if (target.id === `scale-export-${id}`) {
-            settings.scaleExport = target.checked;
-            notifySettingsChanged(id, 'scaleExport', settings.scaleExport);
-            return;
-        }
-        
-        
-        // Show hover info
-        if (target.id === `show-hover-info-${id}`) {
-            settings.showHoverInfo = target.checked;
-            updateHoverMode(plotContainer, settings);
-            notifySettingsChanged(id, 'showHoverInfo', settings.showHoverInfo);
-            return;
-        }
-        
-        // Export button handler
-        const exportBtn = target.closest('.export-btn');
-        if (exportBtn) {
-            // a click, not the change/input events this handler also gets
-            if (e.type !== 'click' || exportBtn.disabled) return;
-            const format = exportBtn.getAttribute('data-format');
-            const targetId = exportBtn.getAttribute('data-id');
-            if (targetId === id && format) {
-                exportPlot(plotContainer, format, settings, exportBtn.getAttribute('data-how') || 'full');
-            }
-            return;
-        }
-        
-        // Copy to clipboard
-        if (target.id === `copy-to-clipboard-${id}` || target.closest(`#copy-to-clipboard-${id}`)) {
-            copyPlotToClipboard(plotContainer, settings);
-            return;
-        }
-    };
-
-    // A change to the look made here is a look of the plot's own: it is no longer on Default
-    // (the buttons that put it on Default or set the default say so themselves)
-    const menuHandler = function(e) {
-        // A press in a box or a list is not a change of it (its input/change events are): handling the click
-        // re-applied the option and moved the menu before the arrow of a number box had been used.
-        if (e.type === 'click' && e.target.matches && e.target.matches('input[type="number"], input[type="text"], input[type="range"], input[type="color"], select')) return;
-        if (settings.styleDefault !== true) return handleMenuEvent(e);
-        const look = JSON.stringify(pickStyle(settings));
-        handleMenuEvent(e);
-        if (settings.styleDefault === true && JSON.stringify(pickStyle(settings)) !== look) settings.styleDefault = false;
-    };
-    
-    // which sections are open: the menu opens again as it was left
-    const onToggle = (e) => {
-        const d = e.target;
-        if (!d || d.tagName !== 'DETAILS' || d.dataset.panel !== String(id)) return;
-        const open = sectionOpen.get(id) || new Set(OPEN_AT_FIRST);
-        if (d.open) open.add(d.dataset.section); else open.delete(d.dataset.section);
-        sectionOpen.set(id, open);
-    };
-    document.addEventListener('toggle', onToggle, true);   // 'toggle' does not bubble
-
-    // An empty number box shows its default as a placeholder; the arrows step from that, not from the minimum
-    const onStepKey = (e) => {
-        const t = e.target;
-        if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || !t.matches || !t.matches('input[type="number"][data-step-from]')) return;
-        if (t.value !== '' || !t.id.endsWith(`-${id}`)) return;
-        e.preventDefault();
-        t.value = t.dataset.stepFrom;
-        if (e.key === 'ArrowUp') t.stepUp(); else t.stepDown();
-        t.dispatchEvent(new Event('input', { bubbles: true }));
-        t.dispatchEvent(new Event('change', { bubbles: true }));
-    };
-
-    // The same with the mouse: a press on the arrows of an empty box puts the default in first (the browser's
-    // step then goes from there), and a press that steps nothing takes it out again.
-    let preset = null;
-    const onSpinnerPress = (e) => {
-        const t = e.target;
-        if (!t.matches || !t.matches('input[type="number"][data-step-from]') || t.value !== '' || !t.id.endsWith(`-${id}`)) return;
-        if (e.clientX < t.getBoundingClientRect().right - 24) return;
-        t.value = t.dataset.stepFrom;
-        preset = t;
-    };
-    const onStepped = (e) => { if (e.target === preset) preset = null; };
-    const onSpinnerDone = () => {
-        const t = preset;
-        preset = null;
-        if (t && t.value === t.dataset.stepFrom) t.value = '';
-    };
-    document.body.addEventListener('pointerdown', onSpinnerPress, true);
-    document.body.addEventListener('input', onStepped, true);
-    const onRelease = () => setTimeout(onSpinnerDone, 0);
-    document.body.addEventListener('pointerup', onRelease, true);
-
-    // Use event delegation on document body for better event handling
-    document.body.addEventListener('keydown', onStepKey);
-    document.body.addEventListener('click', menuHandler);
-    document.body.addEventListener('change', menuHandler);
-    document.body.addEventListener('input', menuHandler);
-    
-    // Return a cleanup function to remove listeners when needed
-    return function cleanup() {
-        document.removeEventListener('toggle', onToggle, true);
-        document.body.removeEventListener('keydown', onStepKey);
-        document.body.removeEventListener('pointerdown', onSpinnerPress, true);
-        document.body.removeEventListener('input', onStepped, true);
-        document.body.removeEventListener('pointerup', onRelease, true);
-        document.body.removeEventListener('click', menuHandler);
-        document.body.removeEventListener('change', menuHandler);
-        document.body.removeEventListener('input', menuHandler);
-    };
-}
-
 /**
  * Draw a plot's colours again, as they are now (the pinned ones and the app
  * theme's for the rest): axes, text, background, legend and colour bar text,
@@ -979,24 +396,6 @@ export function relookAllPlots() {
 // The app theme switching (the header toggle, the system) redraws the plots' unset colours
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener(THEME_EVENT, () => { relookAllPlots(); });
-}
-
-/** Put the margin controls in step with settings.margins. */
-function syncMarginInputs(id, settings) {
-    const set = (suffix, v) => { const el = document.getElementById(`${suffix}-${id}`); if (el) el.value = v; };
-    set('margin-top', settings.margins.t);
-    set('margin-bottom', settings.margins.b);
-    set('margin-left', settings.margins.l);
-    set('margin-right', settings.margins.r);
-    set('margin-all', settings.margins.t);
-    set('margin-all-input', settings.margins.t);
-    for (const suffix of ['margin-all', 'margin-all-input']) {
-        const el = document.getElementById(`${suffix}-${id}`);
-        if (el) el.disabled = !!settings.marginsUnlinked;
-    }
-    const unlink = document.getElementById(`margins-unlink-${id}`);
-    if (unlink) unlink.checked = !!settings.marginsUnlinked;
-    document.getElementById(`margin-sides-${id}`)?.classList.toggle('d-none', !settings.marginsUnlinked);
 }
 
 /** Tick marks, labels and count on every axis. */
@@ -1388,26 +787,6 @@ export function updateColorInputs(container, id, settings) {
     syncColourControls(id, settings);
 }
 
-/** The number boxes of the legend: the box's id, the setting, the least and the most it takes. */
-const LEGEND_BOXES = [
-    { box: 'legend-dot-size', key: 'legendDotSize', min: DOT_SIZE_MIN, max: DOT_SIZE_MAX },
-    { box: 'legend-columns', key: 'legendColumns', min: 1, max: COLUMNS_MAX },
-    { box: 'legend-title-size', key: 'legendTitleSize', min: TITLE_SIZE_MIN, max: TITLE_SIZE_MAX },
-    { box: 'legend-title-gap', key: 'legendTitleGap', min: 0, max: TITLE_GAP_MAX },
-    { box: 'legend-column-gap', key: 'legendColumnGap', min: 0, max: COLUMN_GAP_MAX }
-];
-
-/** The Reset buttons of the number boxes (text size, legend dots and columns): disabled at the default, where there is nothing to reset. */
-function syncOptionResets(id, settings) {
-    const atDefault = { 'legend-dot-size': settings.legendDotSize == null,
-                        'legend-columns': settings.legendColumns == null, 'legend-title-size': settings.legendTitleSize == null,
-                        'legend-title-gap': settings.legendTitleGap == null, 'legend-column-gap': settings.legendColumnGap == null, 'legend-title-align': settings.legendTitleAlign == null };
-    for (const [name, yes] of Object.entries(atDefault)) {
-        const reset = document.getElementById(`reset-${name}-${id}`);
-        if (reset) reset.disabled = yes;
-    }
-}
-
 /** The ids of each colour's Reset button, by settings key. */
 const RESET_IDS = {
     gridColor: 'reset-grid-color', axisColor: 'reset-axis-color', zeroLineColor: 'reset-zero-line-color',
@@ -1747,21 +1126,6 @@ export function getPositioningByLocation(position) {
       }
     });
   }
-
-/**
- * Update hover mode (enable/disable hover info)
- * @param {HTMLElement} plotContainer - Plot container element
- * @param {Object} settings - Plot settings object
- */
-function updateHoverMode(plotContainer, settings) {
-    if (!plotContainer) return;
-    
-    const update = {
-        'hovermode': settings.showHoverInfo ? 'closest' : false
-    };
-    
-    Plotly.relayout(plotContainer, update);
-}
 
 // module‑scope flag
 let _exportInProgress = false;

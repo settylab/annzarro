@@ -15,7 +15,7 @@
  *
  * Pure: no DOM and no Plotly (everything that touches the plot is passed in), so annzarro/tests/js holds it in Node.
  */
-import { fieldsOf, readField } from './options-schema.js';
+import { fieldsOf, readField, readMargins } from './options-schema.js';
 
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const clone = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
@@ -34,18 +34,25 @@ export function createSettingsAdapter({ kind, settings, hooks, initialize, reloo
     return {
         config: () => settings,
         commit(next, label = '') {
-            const changed = fieldsOf(kind).filter((f) => f.path && !f.element
-                && !same(readField(next, f, kind), readField(settings, f, kind)));
+            const differs = (f) => !same(readField(next, f, kind), readField(settings, f, kind))
+                || (f.unlinkedPath && readMargins(next, f, kind).unlinked !== readMargins(settings, f, kind).unlinked);
             const was = settings.styleDefault === true;
+            const changed = fieldsOf(kind).filter((f) => f.path && !f.element && differs(f));
             for (const f of changed) {
                 if (next[f.path] === undefined) delete settings[f.path];
                 else settings[f.path] = clone(next[f.path]);
+                if (f.unlinkedPath) {
+                    if (next[f.unlinkedPath] === undefined) delete settings[f.unlinkedPath];
+                    else settings[f.unlinkedPath] = next[f.unlinkedPath];
+                }
             }
             initialize(settings);
-            // a look of its own, whatever the default is (the renderer drops `styleDefault` from `next` for a look field)
-            if (was && next.styleDefault === undefined) settings.styleDefault = false;
+            // on Default or not: as `next` says (a preset), else a look of its own, whatever the default is (the renderer drops
+            // `styleDefault` from `next` for a look field)
+            if ('styleDefault' in next) settings.styleDefault = next.styleDefault;
+            else if (was) settings.styleDefault = false;
             if (!changed.length) return [];
-            const whole = /^(reset|preset)/.test(label);
+            const whole = /^reset|preset$/.test(label);
             if (whole) relook(settings);
             else {
                 const ran = new Set();

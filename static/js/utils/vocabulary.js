@@ -238,13 +238,11 @@ const cellGene = Object.freeze({
         heading: Object.freeze({
             dots: 'Dots', colors: 'Colors', sections: 'Sections', labels: 'Labels', clustering: 'Clustering', legend: 'Legend', totals: 'Totals'
         }),
-        largestDot: 'Largest dot',
-        smallestDot: 'Smallest dot',
-        /** Largest dot's value: the share of its cell it fills. */
-        ofCell: (pct) => `${fmt(pct)}% of cell`,
+        /** Plot Options ▸ Dots: the largest dot as a share of its cell, the smallest in px. */
+        largestDotOfCell: 'Largest dot (% of cell)',
+        smallestDotPx: 'Smallest dot (px)',
         /** Largest dot of a link saved before the dots filled their cells: its px, until the slider is moved. */
         largestPx: (px) => `${fmt(px)} px (saved)`,
-        px: (n) => `${fmt(n)} px`,
         rangeWhat: Object.freeze({ color: 'Color', size: 'Size', height: 'Height' }),
         sizeMin: 'Size min',
         sizeMax: 'Size max',
@@ -447,6 +445,13 @@ const countPlot = Object.freeze({
         topLevel: `Colors each rectangle by its commonest ${word.level}.`
     }),
     labels: Object.freeze({ none: 'None', count: 'Count', share: 'Share', measure: capital(word.statistic) }),
+    /** A Venn's own controls (next to a pie's Labels and Names): what its regions print, the set names, and area by count. */
+    venn: Object.freeze({
+        labels: Object.freeze({ both: 'Count and share', count: 'Count', share: 'Share', none: 'None' }),
+        names: 'Names', namesTitle: 'Print each set\'s letter and name beside its circle (the whole name is in its hover)',
+        area: 'Area reflects counts',
+        areaTitle: 'Draw each circle\'s area in proportion to its set and each overlap\'s in proportion to the cells in both (exact for two sets, approximate for three; a region with no cells may vanish)'
+    }),
     /** A pie's slices: their names, and their colours (continuous for bins of a number, the level palette for categories). */
     slices: Object.freeze({
         names: 'Names', namesTitle: 'Print each slice\'s name on it (a slice under 3% shows it in its hover only)',

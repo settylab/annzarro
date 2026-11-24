@@ -19,7 +19,7 @@ that puts that group's options back to the built-in look and leaves the others.
 ```{figure} ../_static/screens/user-guide/plot-options-menu.png
 :class: screenshot
 :width: 35%
-:alt: The Plot Options menu with ten groups: Presets, Text, Background, Axes and ticks, Points, Focused cell, Legend and colour bar, Margins, Export (open, with the format buttons and size), Apply to other panels.
+:alt: The Plot Options menu with ten groups: Presets, Text, Background, Axes, Points, Focused cell, Legend, Margins, Export (open, with the format buttons and size), Apply.
 
 Plot Options with its ten groups. Every group starts folded except Export.
 ```
@@ -29,35 +29,35 @@ Plot Options with its ten groups. Every group starts folded except Export.
 **A figure for a paper**
 
 1. Click **Publication** in **Presets**.
-2. In **Axes and ticks**, set **Ticks per axis** if five is not what you want. For spatial or
+2. In **Axes**, set **Ticks per axis** if five is not what you want. For spatial or
    embedding coordinates, switch on **Equal aspect** (the panel's button) and then **Scale bar**.
 3. In **Margins**, adjust the margin if the labels are cut off or there is too much white.
 4. In **Export**, set **Width** and **Height** and click **SVG** or **PNG** ({doc}`export`).
 
 **All panels look the same**
 
-Set one plot up, then open **Apply to other panels** and click it, then **Apply**. Every other
+Set one plot up, then open **Apply**, click **Apply to other Cell plots** (**Gene plots** in a Gene Plot), then **Apply**. Every other
 plot of the same kind takes the look. Do this after the look is final: it replaces theirs.
 
 **Every plot looks the same, and stays so**
 
 (session-default-style)=
-Set one plot up, open **Apply to other panels** and click **Make this the session default** (the
-section shows **On Default** or **Own style**). That look is now what **Default** means for this
+Set one plot up, open **Apply** and click **Make this the session default** (the
+group shows **On Default** or **Own style**). That look is now what **Default** means for this
 session, for plots of the same kind (cell plots and gene plots each have one).
 
 - **A plot is on Default** when it was made from the chooser (a new plot, a split, the bottom of the
   page, a duplicate of a plot on Default) or when you pressed the **Default** preset on it. A plot on
   Default follows the session default: those open now take it when you set it, and take the new look
   whenever you change it. A plot whose look you changed in Plot Options, copied with **Apply to other
-  panels**, or set with another preset has a look of its own and does not move. Pressing **Default**
-  on it puts it back on Default. The section says which one a plot is, in those two words.
+  plots**, or set with another preset has a look of its own and does not move. Pressing **Default**
+  on it puts it back on Default. The group says which one a plot is, in those two words.
 - **Default** is the built-in look when there is no session default, and the session default when
   there is one; the tooltip of the preset says which.
-- **Reset to built-in default**, under the button, ends the session default: plots on Default go back to the
+- **Back to built-in**, under the button, ends the session default: plots on Default go back to the
   built-in look. So does **Close all** with **Also clear everything this site stored in this browser**
   ticked; without the tick the default stays.
-- The default is the same look **Apply to other panels** copies (colours, axes, ticks, text, margins,
+- The default is the same look **Apply to other plots** copies (colours, axes, ticks, text, margins,
   legend, colour bar, scale bar, Not in table, the focused marker and the export size), never what
   the plot shows. A colour you left on the app theme stays on it. The scale bar still needs Equal
   aspect, so it shows only on a plot that has it. A look that is the built-in one is no default. A default set while no panel is open is not kept over a reload in a fresh tab.
@@ -71,7 +71,7 @@ session, for plots of the same kind (cell plots and gene plots each have one).
 
 The plot follows the app's light or dark theme by itself. To keep one look in either theme, press
 **Publication** (a white figure), or choose the colours you want: a colour you choose stays as it
-is in either theme, and its **Reset** hands it back to the theme.
+is in either theme, and its **Auto** button hands it back to the theme.
 
 ## Presets
 
@@ -86,7 +86,7 @@ is in either theme, and its **Reset** hands it back to the theme.
   the plot shows stay. **Default** undoes it.
 - **Default** puts the plot on Default ({ref}`the session default <session-default-style>`): the built-in look, or the
   session default when one is set, with every colour following the app theme again. It resets the whole look
-  that **Apply to other panels** copies: grid, axes, tick count, font and text size, line widths, margins,
+  that **Apply to other plots** copies: grid, axes, tick count, font and text size, line widths, margins,
   legend, colour bar, the scale bar, **Not in table**, **Focused cell** and the export size. What the plot
   shows, and the **Points** size and opacity, stay.
 
@@ -101,8 +101,8 @@ have not set**. This is the rule:
 
 - A colour you choose (a colour box in Plot Options), or the **Publication** preset, is
   **kept** when the app theme changes. The plot's other colours keep following.
-- Each colour's **Reset** releases that one colour (it is greyed out while the colour already
-  follows). The colour box always shows the colour on screen.
+- Each colour's **Auto** button hands that one colour back to the theme (it shows as pressed while the
+  colour already follows). The colour box always shows the colour on screen.
 - The scale bar takes the text colour, so it follows the theme until you set the text colour.
 - Only the colours you set are stored in panel sets and share links, so a link opens in the
   theme of whoever opens it, with your colours where you set them. A link saved by an earlier
@@ -118,8 +118,8 @@ An export uses the colours on screen. For a figure in a paper, switch to Light (
 
 What is drawn behind the data.
 
-- **Colour** of the plot background, with **Reset**.
-- **3D Backdrop** (3D plots only): **Show** and the backdrop colour, with **Reset**.
+- **Color** of the plot background, with **Auto**.
+- **3D backdrop** (3D plots only): the switch and the backdrop colour, with **Auto**.
 
 Both follow the app theme until you set them ({ref}`how plots follow the app theme <plot-colours-theme>`).
 
@@ -138,7 +138,7 @@ In the order of the menu:
 - **Show Grid** and **Grid Color**.
 - **Show Axis Titles**, **Show Tick Labels**, **Show Axis Lines** and **Show Zero Lines**.
 - **Line Widths** of the axis, the grid and the zero lines (0.1 to 10 px).
-- **Axis Color** and **Zero Line Color**, each with **Reset**.
+- **Axis Color** and **Zero Line Color**, each with **Auto**.
 - **Show Tick Marks** is independent of **Show Tick Labels**. Until you set it, the marks follow
   the labels.
 - **Ticks per axis** asks for about that many ticks on each axis (2 to 30). Empty is automatic.
@@ -160,7 +160,7 @@ In the order of the menu:
   stays through zoom, pan, **Reset axes** and a double click, works with Equal aspect and the
   scale bar and in large-plot mode, is part of an export, and is kept in sessions, share links
   and panel sets. A link made before this option opens unflipped. It is a view setting, not a
-  look: **Apply to other panels**, the presets and the session default do not copy or reset it.
+  look: **Apply to other plots**, the presets and the session default do not copy or reset it.
   The switches are greyed out in a 3D plot. A line drawn with the table's Line filter
   ({doc}`tables-and-filters`) filters the side you see, so it works on a flipped plot.
 
@@ -174,7 +174,7 @@ The group's **Reset** puts the grey points back; the point size has its own **au
 - **Size** is a multiple of the size they get automatically from their own count (0.1 to 20,
   `x auto`; 1 by default).
 - **Opacity** (0.01 to 1). Empty is automatic.
-- **Color**, grey by default, with **Reset**.
+- **Color**, grey by default, with **Auto**.
 
 ## Focused cell
 
@@ -189,18 +189,18 @@ and white in the dark one.
 - **Edge width** in pixels (0 to 20; 2 by default). 0 draws no edge. A 3D plot draws only a hairline edge, whatever the
   width, because its renderer has no wider one.
 - **Fill** colour, red by default (shown once **No fill** is off), and **Edge** colour, black (light theme) or white (dark theme)
-  by default, each with **Reset**. A colour you choose stays as chosen in either theme; one you
+  by default, each with **Auto**. A colour you choose stays as chosen in either theme; one you
   leave alone follows the theme.
 - **No fill** is on by default: the marker is an open circle, its edge alone, in the edge colour
   and width, with the plot showing through the middle. Switch it off to fill the marker. Switching it on raises an edge width under 1 px to
   1 px, and the width cannot go below 1 px while it is on, so the circle always shows. In a 3D
   plot the open circle is drawn in the edge colour. The fill colour is kept for when No fill is
-  switched off, and **Reset** still only returns the colour to the theme.
+  switched off, and **Auto** still only returns the colour to the theme.
 
 The hollow ring of a focused cell the subset does not show ({ref}`focus-outside-subset`) takes the
 size, the opacity and the fill colour as its line colour, with the edge width as its line width
 (at least 1 px), with or without **No fill**. The marker is part of an export, PNG and SVG,
-and **Apply to other panels** copies it.
+and **Apply to other plots** copies it.
 
 ## Legend and colour bar
 
@@ -208,7 +208,7 @@ and **Apply to other panels** copies it.
   bottom lies outside the axes, below the x-axis title at the bottom, and the margin grows to make room.
 - For the legend of a categorical colour: **Legend title** (on by default), **Dot size** (2 to 16 px;
   empty draws the 12 px dots of the default legend, whatever the points' size) and **Columns** (2 to
-  8; 1 or empty is one column), each with a **Reset**. The entries read down the columns in order
+  8; 1 or empty is one column). The group's **Reset** puts them back. The entries read down the columns in order
   (the first column takes the first ceil(n / columns) of them), with the title above the first one.
   The columns sit side by side, never wrapping or stacking, each as wide as its longest label, with
   a **Column gap** between them (0 to 80 px; empty is 24 px). They take at most 60 % of the width of the
@@ -218,7 +218,7 @@ and **Apply to other panels** copies it.
   plots, and with the legend at any position. **Title size** (6 to 48 px;
   empty is 2 px above the text size) and **Title gap** (0 to 80 px, added to the 2 px Plotly leaves; empty is
   one blank line) set the title's size and its distance to the first entry in true pixels. **Title align** puts the title's left edge at the legend's markers (**Markers**) or at its labels (**Labels**), or centres it (**Centre**) or ends it at the right (**Right**) across all the columns; **Auto**, the default, is Centre for a legend above or below the plot and Markers beside it, and a choice you make stays whatever the position. In an empty
-  number box the arrows step from the default the box shows. **Text** size has a **Reset** too.
+  number box the arrows step from the default the box shows.
 - A legend longer than the plot scrolls on screen; an exported image (SVG or PNG, as shown or full)
   always holds the whole legend, and is made taller when the legend needs it.
 - **Colour bar**, for a numerical colour, has its own **position** (right, left, top, bottom, or
@@ -232,14 +232,14 @@ and **Apply to other panels** copies it.
 ## Text
 
 **Font** (Arial, Times New Roman, Courier, Georgia, Trebuchet MS or Verdana), **Size** (8 to
-24 px; 12 by default) and **Color**, with **Reset**.
+24 px; 12 by default) and **Color**, with **Auto**.
 
 ## Margins
 
 One slider and number box set all four sides in pixels (0 to 200). A new plot has 80 px left,
 right and top and 60 px at the bottom; the slider shows the top value, and moving it sets all
 four sides to it. **Set each side separately** shows a box for **Top**, **Bottom**, **Left** and
-**Right**; switching it off again sets all four to the top value. **Reset Margins** restores the
+**Right**; switching it off again sets all four to the top value. The group's **Reset** restores the
 defaults.
 
 ## Export
@@ -251,9 +251,9 @@ figure stays sharp in print. Switch it off for files of exactly the pixels set. 
 and keeps the size set either way.
 **Copy** puts the plot on the clipboard as a PNG image of the size set.
 
-## Apply to other panels
+## Apply to other plots
 
-**Apply to other panels** copies this plot's look to every other plot of the same kind: cell
+**Apply to other plots** (in the **Apply** group; the button reads **Apply to other Cell plots** or **Gene plots**) copies this plot's look to every other plot of the same kind: cell
 plots to cell plots, gene plots to gene plots. The look is the colours, axes, ticks, text, line
 widths, margins, legend, colour bar, scale bar, **Points** and **Focused cell** groups and
 export size. The menu asks
@@ -275,7 +275,7 @@ and Gene Plot move onto the same pop-over in a later release.
 ## Large plots
 
 A plot with more than about a million cells is drawn in large-plot mode ({ref}`large-plot-mode`).
-Presets, **Apply to other panels**, tick marks and count, margins, the scale bar, the colour
+Presets, **Apply to other plots**, tick marks and count, margins, the scale bar, the colour
 bar options (position, length, ticks) and the **Focused cell** group work there as usual (the
 focused marker is a circle of the same size, opacity, colours and edge). The **Points** group has nothing to
 style there: a large plot cannot be filtered by a table.

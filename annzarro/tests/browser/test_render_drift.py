@@ -571,6 +571,10 @@ COUNT_VOCABULARY = [
     lambda r: (lambda a: (f"arrangement {a}", _update(CC, {"arrangement": a})))(r.choice(["stack", "dodge", "overlay", "fill"])),
     lambda r: (lambda v: (f"labels {v}", _update(CC, {"labels": v})))(r.choice(["none", "count", "share"])),
     lambda r: (lambda k, v: (f"{k} {v}", _update(CC, {k: v})))(r.choice(["reverse", "horizontal", "log", "ring", "fade", "names"]), r.choice([True, None])),
+    # a Venn's own fields (0.8.0): only a Venn reads them, so in the other modes they must change nothing
+    lambda r: (lambda v: (f"vennLabels {v}", _update(CC, {"vennLabels": v})))(r.choice(["count", "share", "none", None])),
+    lambda r: (lambda v: (f"vennNames {v}", _update(CC, {"vennNames": v})))(r.choice([False, None])),
+    lambda r: (lambda v: (f"vennArea {v}", _update(CC, {"vennArea": v})))(r.choice([True, None])),
     lambda r: (lambda v: (f"sort {v}", _update(CC, {"sort": v})))(r.choice(["height", None])),
     lambda r: ("3D (control)", _click(f"{C_TILE} .ccnt-3d-btn")),
     lambda r: (lambda v: (f"adjust {v}", _update(CC, {"adjust": v})))(r.choice([0.5, 1, 2])),
@@ -628,6 +632,23 @@ def test_count_plot_risky_sequence(browser, served, name):
     _run(_count(browser, served), COUNT_RISKY[name], f"count plot, {name}")
 
 
+# a Venn's labels, names and Area reflects counts (0.8.0), each through its control and undone, against the fresh link of the
+# final config; the sets are the fixture's own columns
+VENN_SETS = [{"source": CT["source"], "member": {"levels": ["c:B cell"]}},
+             {"source": PSEUDO["source"], "member": {"op": ">", "value": 0.5}},
+             {"source": COUNT_SCORE["source"], "member": {"op": ">", "value": 0}}]
+VENN_CONTROLS = [("labels count", _select(f"{C_TILE} .ccnt-labels", "count")), ("area on", _click(f"{C_TILE} .ccnt-venn-area")),
+                 ("labels share", _select(f"{C_TILE} .ccnt-labels", "share")), ("names off", _click(f"{C_TILE} .ccnt-names")),
+                 ("undo (control)", _click(f"{C_TILE} .ccnt-undo")), ("labels none", _select(f"{C_TILE} .ccnt-labels", "none")),
+                 ("area off", _click(f"{C_TILE} .ccnt-venn-area")), ("undo (control)", _click(f"{C_TILE} .ccnt-undo")),
+                 ("mode upset (control)", _count_mode("upset")), ("mode venn (control)", _count_mode("venn")),
+                 ("labels both", _select(f"{C_TILE} .ccnt-labels", "both")), ("area on", _click(f"{C_TILE} .ccnt-venn-area"))]
+
+
+def test_count_plot_venn_controls(browser, served):
+    _run(_count(browser, served, mode="venn", sets=VENN_SETS), VENN_CONTROLS, "count plot, venn controls")
+
+
 # the views follow the X axis type (0.8.0): a link stored as a Histogram of categories opens as a Bar; edited from there,
 # through a number (a Histogram), its arrangements and back, it draws what the fresh link of its final config draws
 COUNT_VIEWS = [("arrangement overlay", _update(CC, {"arrangement": "overlay"})), ("x score", _update(CC, {"x": COUNT_SCORE})),
@@ -658,7 +679,7 @@ def _cell_gene(browser, served, **extra):
 
 
 def _cg_mode(mode):
-    return _click(f"{G_TILE} .cgene-mode input[value='{mode}']")
+    return _select(f"{G_TILE} select.cgene-mode", mode)
 
 
 def _cg_remove(index):
