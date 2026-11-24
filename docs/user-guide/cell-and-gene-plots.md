@@ -12,7 +12,7 @@ Open a panel's controls with the chevron in its tile header.
 
 ```{figure} ../_static/screens/user-guide/plots-cell-controls.png
 :class: screenshot
-:alt: Cell plot controls with twelve numbered parts: X type, key and column drop-downs; the Color row; 3D Plot; Equal aspect; Highlight Focused Cell; Palette; Hide NaN; Size and Opacity sliders; Table filter; Plot Options.
+:alt: Cell plot controls with twelve numbered parts: X type, key and column drop-downs; the Color row; 3D; Equal aspect; Highlight Focused Cell; Palette; Hide NaN; Size and Opacity sliders; Table filter; Plot Options.
 
 Cell plot controls, coloured by a categorical obs column.
 ```
@@ -22,7 +22,7 @@ Cell plot controls, coloured by a categorical obs column.
 3. **Column**: which column of the matrix, or which focused row or column (see the tables below).
    obs and var columns have none, and the drop-down is not shown.
 4. **Color**: the same three drop-downs for the colour, plus **None (constant)**.
-5. **3D Plot** adds a **Z** row and draws the plot in 3D. Click it again for 2D.
+5. **3D** adds a **Z** row and draws the plot in 3D. Click it again for 2D.
 6. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
    ({doc}`spatial-coordinates`). A new Cell Plot starts with it on when both axes are the
    default, taken from one embedding (UMAP, PCA, spatial); it stays as you set it, and changing
@@ -34,7 +34,7 @@ Cell plot controls, coloured by a categorical obs column.
 9. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
    points of the **NA** legend entry). Numerical colours have more buttons next to it
    ({doc}`colour-scales`).
-10. **Size** (in px) and **Opacity** (0 to 1) of the points: a slider and a number box each.
+10. **Size** (in px, in **Plot Options** ▸ **Points**) and **Opacity** (0 to 1, in the controls) of the points: a slider and a number box each.
     The sliders move on a log scale, so their left half is the small sizes and faint opacities a
     plot of millions of cells needs: size 0.39 to 2.8 and opacity 0.002 to 0.045. WebGL draws 2D
     markers in steps of 100/255 = 0.39 px, so sizes snap to those steps (5 is shown as 5.1, the

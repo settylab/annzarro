@@ -82,7 +82,7 @@ def test_a_drag_that_ends_outside_keeps_the_menu_open(page, server):
     popover = ".aesthetics-popover"
     box = page.locator(f"#focused-scale-{A}").bounding_box()
     outside = (5, 5)
-    assert page.evaluate("([x, y]) => !document.elementFromPoint(x, y).closest('.popover')", list(outside))
+    assert page.evaluate("([x, y]) => !document.elementFromPoint(x, y).closest('.az-popover')", list(outside))
     # a press in a number box, a drag out of the menu, a release over the page: still open
     page.mouse.move(box["x"] + 10, box["y"] + box["height"] / 2)
     page.mouse.down()

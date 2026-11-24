@@ -558,7 +558,14 @@ function mount(slot, ctx) {
 
     // the shared plot toolbar (ui/plot-toolbar.js) when the panel gives one: 3D an action, Cluster and Color its menus,
     // Plot Options last
-    if (ctx.toolbar) ctx.toolbar.add({ actions: [view3dBtn], menus: [clusterBtn, colorBtn], options: optionsBtn });
+    if (ctx.toolbar) {
+        // Swap axes joins the view toggles (WP-5b: [3D] [Swap axes] [Cluster ▾] [Color ▾] ... [Undo] [Plot Options]);
+        // the grid's Layout group, then empty, is not shown
+        const group = slot.parentElement;
+        const swapBtn = group ? group.querySelector('.cgene-swap') : null;
+        ctx.toolbar.add({ actions: [view3dBtn, ...(swapBtn ? [swapBtn] : [])], menus: [clusterBtn, colorBtn], options: optionsBtn });
+        if (group && swapBtn && !group.querySelector('button')) group.hidden = true;
+    }
     else slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn);
 
     // ---------------------------------------------------------------- the pop-overs (ui/popover.js)
@@ -577,7 +584,7 @@ function mount(slot, ctx) {
         commit: ctx.commit || ((next, label) => ctx.set(next, label)), replace: ctx.replace || ((next) => ctx.set(next, '')),
         sections: { 'panel:dots': { title: WO.heading.dots, when: dotsMode }, 'panel:sections': { title: WO.heading.sections },
             'panel:annotations': { title: WO.heading.totals } },
-        exportImage: ctx.exportImage, plotSize: ctx.plotSize, plot: ctx.plot, csv: downloadCsv, canExport: () => !!ctx.drawn(),
+        exportImage: ctx.exportImage, copyImage: ctx.copyImage, plotSize: ctx.plotSize, plot: ctx.plot, csv: downloadCsv, canExport: () => !!ctx.drawn(),
         exportOff: (format) => (format === 'svg' && drawn3d() ? W3.svgOff : ''),
         classes: { export: 'cgene-export', exportBtn: 'cgene-export-btn', csv: 'cgene-csv-btn' }
     });

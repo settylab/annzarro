@@ -64,7 +64,7 @@ import { PLOT_PALETTES, modebarOf, MODEBAR_REMOVE } from '../utils/plot-theme.js
 import { resolveStyle } from './plot-utilities/options-schema.js';
 import { applyPlotStyle, styleTheme } from './plot-utilities/plot-style.js';
 import { mountPlotOptions } from './plot-utilities/options-popover.js';
-import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
+import { exportPlot, copyPlotToClipboard } from './plot-utilities/plot-aesthetics-menu.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { groupColours } from './plot-utilities/colors.js';
 import { drawPlot } from '../utils/panel-surface.js';
@@ -626,6 +626,7 @@ actions.register({
                 anchor: _controls.optionsButton, kind: TYPE, panelId: _id, config: () => _config,
                 commit, replace: (next) => { _config = normalizeCountPlot(next).config; changed(); },
                 exportImage: (format, settings) => { if (_dom && _drawing) exportPlot(_dom.plot, format, settings, 'full'); },
+                copyImage: (settings) => { if (_dom && _drawing) copyPlotToClipboard(_dom.plot, settings); },
                 plotSize: () => (_dom ? { width: _dom.plot.clientWidth, height: _dom.plot.clientHeight } : {}),
                 csv: downloadCsv, canExport: () => !!_drawing, plot: () => plot,
                 classes: { csv: 'ccnt-csv' }

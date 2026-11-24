@@ -28,6 +28,7 @@ import urllib.parse
 from annzarro.tests.browser.test_auto_point_size import (  # noqa: F401  (fixtures)
     AUTO, PLOTS, STATE, TABLE, _link, _settled, page, server)
 from annzarro.tests.browser.test_memory_guard import STORE  # noqa: E402
+from annzarro.tests.browser.test_plot_options import _menu as _po_menu  # noqa: E402
 
 A, B = PLOTS
 SEARCH = f'.tile[data-tile-id="{TABLE}"] input[type="search"]'
@@ -62,6 +63,7 @@ def _grey_is_curve(page, pid, scale=1):
 
 
 def _set_size(page, pid, value):
+    _po_menu(page, pid, "points")      # the point size is in Plot Options' Points group since WP-5b
     page.fill(f"#point-size-input-{pid}", str(value))
     page.press(f"#point-size-input-{pid}", "Tab")
     page.wait_for_timeout(500)

@@ -264,7 +264,7 @@ def test_plot_options_is_the_last_toolbar_button_and_undo_sits_just_before_it(pa
     [actions] [menus] ... [Undo] [Plot Options]. WP-5b adds the Cell Plot and the Gene Plot here."""
     if which == "cell-gene":
         _cg(page, served)
-        tile, first = TP, ["3D", "Cluster ▾", "Color ▾"]
+        tile, first = TP, ["3D", "Swap axes", "Cluster ▾", "Color ▾"]
     else:
         _cc(page, served)
         tile, first = SC, ["Save as grouping"]

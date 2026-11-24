@@ -134,7 +134,9 @@ const COLOR = /^#[0-9a-f]{3}([0-9a-f]{3})?([0-9a-f]{2})?$/i;
 export function fieldsOf(kind) {
     const own = _kinds.get(kind);
     const takes = (f) => !f.applies || f.applies.includes(kind) || !!(own && own.applies && own.applies.includes(f.id));
-    return [...COMMON_FIELDS.filter(takes), ...(_panelFields.get(kind) || [])];
+    // a kind that stores its look at keys of its own (the Cell Plot and Gene Plot, WP-5b) takes no common field
+    const common = own && own.common === false ? [] : COMMON_FIELDS.filter(takes);
+    return [...common, ...(_panelFields.get(kind) || [])];
 }
 
 /** A field of `kind` by id, or null. */
@@ -276,11 +278,11 @@ export function sectionsOf(kind) {
 
 /**
  * Declare a kind (WP-5b: the Cell Plot and the Gene Plot): `order` its sections, `defaults` its own default per field
- * id, `applies` the ids of common fields limited to other kinds that it takes too, `presets` its preset values.
+ * id, `applies` the ids of common fields limited to other kinds that it takes too, `presets` its preset values,
+ * `common: false` for a kind whose fields are all its own (registerPanelFields), at the keys it has always stored.
  * @param {string} kind
- * @param {{order?: string[], defaults?: Object, applies?: string[], presets?: Object}} spec
+ * @param {{order?: string[], defaults?: Object, applies?: string[], presets?: Object, common?: boolean}} spec
  */
-// export-unused-ok: WP-5b declares the Cell Plot and Gene Plot with it
 export function registerKind(kind, spec) {
     _kinds.set(kind, Object.freeze({ ...spec }));
 }

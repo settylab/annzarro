@@ -1,17 +1,25 @@
 # Plot Options
 
-**Plot Options** (a button in a plot panel's controls) sets how the plot looks on screen and in an
-export. It never changes what the plot shows. Its settings belong to the panel: they are kept in
-panel sets and share links, and a link that lacks an option draws that option's default.
+**Plot Options** (the last button of a plot panel's toolbar, under its controls) sets how the plot
+looks on screen and in an export. It never changes what the plot shows. Its settings belong to the
+panel: they are kept in panel sets and share links, and a link that lacks an option draws that
+option's default.
 
-The menu has ten groups, described below in the order the menu shows them. A group opens and
-folds with a click, and the menu opens again as you left it. Only **Export** is open the first
-time.
+It opens over the plot and leaves the panel's layout as it is. It closes with its button, its
+**×**, Escape (from anywhere on the page) or a click outside it; Escape and **×** put the focus
+back on the button. Every plot panel has the same pop-over and the same toolbar: the panel's own
+buttons first (**3D**, **Equal aspect**, **Refresh**), then **Undo** and **Plot Options** at the right
+end. **Undo** (also Ctrl+Z, Cmd+Z on a Mac) takes back the plot's last change; the zoom is not a change.
+
+The menu has ten groups, described below in the order the menu shows them, the same order as in
+the Cell-Gene and Cell Count Plots. A group opens and folds with a click, and the menu opens again
+as you left it. Only **Export** is open the first time. Each group with options has a **Reset**
+that puts that group's options back to the built-in look and leaves the others.
 
 ```{figure} ../_static/screens/user-guide/plot-options-menu.png
 :class: screenshot
 :width: 35%
-:alt: The Plot Options menu with ten groups: Presets, Background, Axes and ticks, Points, Focused cell, Legend and colour bar, Text, Margins, Export (open, with the format buttons and size), Apply to other panels.
+:alt: The Plot Options menu with ten groups: Presets, Text, Background, Axes and ticks, Points, Focused cell, Legend and colour bar, Margins, Export (open, with the format buttons and size), Apply to other panels.
 
 Plot Options with its ten groups. Every group starts folded except Export.
 ```
@@ -158,8 +166,10 @@ In the order of the menu:
 
 ## Points
 
-The **Points** group sets how the grey points of a table filter (**Not in table**) look. They get
-no legend entry. See {doc}`tables-and-filters`.
+The **Points** group holds the **point size** (a slider, a number box and **auto**, as described
+in {doc}`cell-and-gene-plots`), which was in the panel's controls before, and how the grey points
+of a table filter (**Not in table**) look. They get no legend entry. See {doc}`tables-and-filters`.
+The group's **Reset** puts the grey points back; the point size has its own **auto**.
 
 - **Size** is a multiple of the size they get automatically from their own count (0.1 to 20,
   `x auto`; 1 by default).
@@ -239,6 +249,7 @@ to 5000; 1200 by 800 by default), as in {doc}`export`. **Export at 2x** is on by
 and WEBP files are drawn at twice the width and height set, 2400 by 1600 pixels by default, so a
 figure stays sharp in print. Switch it off for files of exactly the pixels set. An SVG is vector
 and keeps the size set either way.
+**Copy** puts the plot on the clipboard as a PNG image of the size set.
 
 ## Apply to other panels
 

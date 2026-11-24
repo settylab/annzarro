@@ -1,5 +1,6 @@
 import { initAutoPointStyle } from '../utils/point-style.js';
 import { focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
+import { attachPlotUndo } from './plot-utilities/plot-undo.js';
 import { createPanelStructure, initializeUIState, checkDatasetLoadingStatus } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
 import { highlightFocusedEntity, updatePlotOnTableChange, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
@@ -33,6 +34,8 @@ const GenePlotPanel = (function() {
         const _plotType = 'genes'; 
         const _container = container;
         let _plotContainer = null;
+        /** Undo in the toolbar (plot-utilities/plot-undo.js, WP-5b). */
+        let _undo = null;
         let _controlsContainer = null;
         let _resizeObserver = null;
         let _isFirstLoad = true;
@@ -93,6 +96,9 @@ const GenePlotPanel = (function() {
                 // Store references for later use
                 _plotContainer = plotContainer;
                 _controlsContainer = controlsContainer;
+                // Undo: the same as the new panels', in the toolbar's Undo slot (WP-5b); before the first draw, so the
+                // toolbar's row never changes height after it
+                _undo = attachPlotUndo(_id, _container);
                 
                 console.log('Panel structure created: ', 
                     'plotContainer=', _plotContainer ? 'defined' : 'undefined',
@@ -106,6 +112,7 @@ const GenePlotPanel = (function() {
                 
                 // Set up event listeners (these work even when no dataset is loaded)
                 _setupEventListeners();
+                if (_undo) _undo.settled();
             } catch (error) {
                 console.error('Error initializing panel:', error);
                 console.error(error.stack);
@@ -399,6 +406,7 @@ const GenePlotPanel = (function() {
          * Clean up resources
          */
         function cleanup() {
+            if (_undo) { _undo.destroy(); _undo = null; }
             // Remove document event listeners
             if (handleFocusedCellChanged.eventHandler) {
                 document.removeEventListener('focusedCellChanged', handleFocusedCellChanged.eventHandler);

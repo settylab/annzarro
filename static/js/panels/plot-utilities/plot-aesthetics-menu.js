@@ -11,13 +11,16 @@ import {
 import { THEME_EVENT } from '../../utils/theme.js';
 import {
   normalizePlotOptions, tickMarksOn, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
-  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions, STYLE_KEYS
+  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions, STYLE_KEYS, defaultLook
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
 import {
   hasSessionStyle, setSessionStyle, clearSessionStyle, effectiveStyle, onSessionStyleChange, STYLE_TYPES, LOOK_TYPES
 } from '../../utils/session-style.js';
 import { exportCheck, guarded, refusalText, bindingLabel } from '../../utils/memory-guard-ui.js';
+import { createPopover } from '../../ui/popover.js';
+import { showPointStyle } from './panel-ui-update.js';
+import { sectionKeys } from './aesthetics-kinds.js';
 /**
  * Plot Aesthetics Menu
  * 
@@ -27,7 +30,11 @@ import { exportCheck, guarded, refusalText, bindingLabel } from '../../utils/mem
  */
 
 /**
- * Sets up the aesthetic menu popover on an existing button and returns the cleanup function
+ * The plot's Plot Options on the shared pop-over (ui/popover.js; WP-5b, design note options-ux-080 section 5): Escape
+ * from anywhere and a press outside close it, focus goes into it and back to its button, one pop-over is open
+ * page-wide, and opening it moves nothing in the panel. Its groups are the shared order (aesthetics-kinds.js), each
+ * with a Reset; the point size, which was a slider in the control grid, is in its Points group (the same controls,
+ * moved in while the pop-over is open and kept by the panel while it is closed).
  * @param {string} id - Panel ID
  * @param {HTMLElement} menuButton - Existing menu button element
  * @param {HTMLElement} container - Container element for passing to listeners
@@ -36,89 +43,53 @@ import { exportCheck, guarded, refusalText, bindingLabel } from '../../utils/mem
  * @returns {Function} cleanup function to remove listeners and dispose popover
  */
 export function createAestheticsMenu(id, menuButton, container, plotContainer, settings) {
-  // Remove any existing popover
-  const prev = bootstrap.Popover.getInstance(menuButton);
-  if (prev) prev.dispose();
+  // the point size's controls (WP-5b): in the grid's hidden holder (panel-ui-make.js) while the pop-over is closed
+  const pointSizeRow = container && container.querySelector ? container.querySelector('.point-size-control') : null;
+  const holder = pointSizeRow ? pointSizeRow.parentElement : null;
+  const putBack = () => { if (pointSizeRow && holder && pointSizeRow.parentElement !== holder) holder.appendChild(pointSizeRow); };
 
-  // Initialize popover
-  const popover = new bootstrap.Popover(menuButton, {
-    trigger:    'click',
-    placement:  'bottom',
-    boundary:   'viewport',
-    container:  'body',
-    html:       true,
-    sanitize:   false,
-    customClass:'aesthetics-popover',
-    title:      'Plot Options',
-    content:    () => createPopoverContent(id, settings)
-  });
-
-  // Toggle active styling
-  const onShown = () => {
-    menuButton.classList.add('btn-aesthetics-active');
-    menuButton.classList.remove('btn-outline-secondary');
-    
-    // Find the popover content element
-    const popoverEl = document.querySelector('.aesthetics-popover .aesthetics-menu-content');
-    if (popoverEl) {
-      // Get margin values from data attributes
-      const marginTop = popoverEl.getAttribute('data-margin-top');
-      const marginBottom = popoverEl.getAttribute('data-margin-bottom');
-      const marginLeft = popoverEl.getAttribute('data-margin-left');
-      const marginRight = popoverEl.getAttribute('data-margin-right');
-      
-      // Set the input values
-      const topInput = document.getElementById(`margin-top-${id}`);
-      const bottomInput = document.getElementById(`margin-bottom-${id}`);
-      const leftInput = document.getElementById(`margin-left-${id}`);
-      const rightInput = document.getElementById(`margin-right-${id}`);
-      
-      if (topInput && marginTop) topInput.value = marginTop;
-      if (bottomInput && marginBottom) bottomInput.value = marginBottom;
-      if (leftInput && marginLeft) leftInput.value = marginLeft;
-      if (rightInput && marginRight) rightInput.value = marginRight;
-    }
-    syncColourControls(id, settings);     // a colour that follows the theme has nothing to reset
-    // Popper places the menu once; opening a group makes it taller and the old place goes stale, until
-    // the first change of an option moves it, under the pointer. Follow the menu's size instead.
-    const tip = document.querySelector('.aesthetics-popover');
-    if (tip && typeof ResizeObserver === 'function') {
-      sizeWatch?.disconnect();
-      sizeWatch = new ResizeObserver(() => popover.update());
-      sizeWatch.observe(tip);
-    }
-  };
-  
   let sizeWatch = null;
-  const onHide = () => {
-    sizeWatch?.disconnect();
-    sizeWatch = null;
-    menuButton.classList.remove('btn-aesthetics-active');
-    menuButton.classList.add('btn-outline-secondary');
+  const popover = createPopover({
+    anchor: menuButton, name: 'plot-options', title: 'Plot Options',
+    // why it closed last (a test hook, and a hint when a menu goes away unasked)
+    onClose: (reason) => { menuButton.dataset.closedBy = reason; },
+    render: (body, ctl) => {
+      ctl.surface.classList.add('aesthetics-popover');
+      menuButton.classList.add('btn-aesthetics-active');
+      body.innerHTML = createPopoverContent(id, settings);
+      placePointSize(body);
+      syncColourControls(id, settings);     // a colour that follows the theme has nothing to reset
+      return () => {
+        sizeWatch?.disconnect();
+        sizeWatch = null;
+        putBack();
+        menuButton.classList.remove('btn-aesthetics-active');
+      };
+    }
+  });
+  /** The point size's row in its slot of the Points group, shown as the settings are now. */
+  function placePointSize(body) {
+    const slot = body.querySelector(`#point-size-slot-${id}`);
+    if (slot && pointSizeRow) {
+      slot.replaceWith(pointSizeRow);
+      showPointStyle(id, settings);
+    }
+  }
+  // a preset or a Reset draws the groups again: the body is rebuilt in place, the pop-over stays open
+  menuButton.__azRedrawOptions = () => {
+    const body = popover.surface && popover.surface.querySelector('.az-popover-body');
+    if (!body) return;
+    putBack();
+    body.innerHTML = createPopoverContent(id, settings);
+    placePointSize(body);
+    syncColourControls(id, settings);
   };
-  
-  menuButton.addEventListener('shown.bs.popover', onShown);
-  menuButton.addEventListener('hide.bs.popover',  onHide);
 
-  // Click-away handler: a press that starts outside the menu and button closes it. A drag that
-  // starts inside (selecting text, a slider, a colour picker) and ends outside is a click on the
-  // common ancestor, so the press target decides, not the click's.
-  let pressedInside = null;     // set by pointerdown; null when a click came without one (synthetic)
-  const onPress = (e) => {
-    pressedInside = !!(e.target.closest && (menuButton.contains(e.target) || e.target.closest('.popover')));
-  };
-  const clickAway = (e) => {
-    const inside = pressedInside !== null ? pressedInside : !!(menuButton.contains(e.target) || e.target.closest('.popover'));
-    pressedInside = null;
-    if (!e.target.isConnected) return;   // a control the menu drew again (a preset) is not outside it
-    if (!inside) popover.hide();
-  };
-  document.addEventListener('pointerdown', onPress, true);
-  document.addEventListener('click', clickAway);
-
-  // Settings-change listener
+  // Settings-change listener: the pop-over follows a taller or shorter body
   const onSettingsChange = (e) => {
-    if (e.detail.id === id) popover.update();
+    if (e.detail.id !== id) return;
+    syncColourControls(id, settings);     // a colour set now has a Reset; one reset follows the theme again
+    popover.update();
   };
   document.addEventListener('plotSettingsChanged', onSettingsChange);
 
@@ -127,12 +98,8 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
 
   // Return cleanup function
   return function cleanup() {
-    sizeWatch?.disconnect();
-    popover.dispose();
-    menuButton.removeEventListener('shown.bs.popover', onShown);
-    menuButton.removeEventListener('hide.bs.popover',  onHide);
-    document.removeEventListener('pointerdown', onPress, true);
-    document.removeEventListener('click', clickAway);
+    popover.destroy();
+    delete menuButton.__azRedrawOptions;
     document.removeEventListener('plotSettingsChanged', onSettingsChange);
     cleanupListeners();
   };
@@ -164,9 +131,13 @@ function drawnGreyOpacity(id) {
 /** A collapsible group of the menu. */
 function details(id, key, title, body) {
     const open = (sectionOpen.get(id) || new Set(OPEN_AT_FIRST)).has(key);
+    // every group with options of the look has a Reset that puts them back to the built-in look (WP-5b)
+    const reset = sectionKeys('cell-plot', key).length && key !== 'margins'      // Margins has its own Reset Margins
+        ? `<div class="aesthetics-section-foot"><button type="button" class="btn btn-sm btn-link aesthetics-reset" id="reset-section-${key}-${escapeAttr(id)}"
+            data-reset-section="${key}" title="Put this group's options back to the built-in look">Reset</button></div>` : '';
     return `<details class="aesthetics-section" data-section="${key}" data-panel="${escapeAttr(id)}"${open ? ' open' : ''}>
             <summary>${title}</summary>
-            <div class="aesthetics-body">${body}</div>
+            <div class="aesthetics-body">${body}${reset}</div>
         </details>`;
 }
 
@@ -205,6 +176,36 @@ export function createPopoverContent(id, settings) {
                     title="Only the points: no margins, legend, axis labels or grid. For figures and overlays.">Bare</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
                     title="${hasSessionStyle(`${plotKind}-plot`) ? 'Session default style: the look every plot on Default has' : 'Built-in style'}">Default</button>
+            </div>
+        `)}
+        ${details(id, 'text', 'Text', `
+            <!-- Font Settings -->
+            <div class="mb-2">
+                <label class="form-label mb-1">Font</label>
+                <select class="form-select form-select-sm mb-2" id="font-family-${id}">
+                    <option value="Arial, Helvetica, sans-serif" ${settings.fontFamily === 'Arial, Helvetica, sans-serif' ? 'selected' : ''}>Arial</option>
+                    <option value="'Times New Roman', Times, serif" ${settings.fontFamily === "'Times New Roman', Times, serif" ? 'selected' : ''}>Times New Roman</option>
+                    <option value="Courier, monospace" ${settings.fontFamily === 'Courier, monospace' ? 'selected' : ''}>Courier</option>
+                    <option value="Georgia, serif" ${settings.fontFamily === 'Georgia, serif' ? 'selected' : ''}>Georgia</option>
+                    <option value="'Trebuchet MS', sans-serif" ${settings.fontFamily === "'Trebuchet MS', sans-serif" ? 'selected' : ''}>Trebuchet MS</option>
+                    <option value="Verdana, sans-serif" ${settings.fontFamily === 'Verdana, sans-serif' ? 'selected' : ''}>Verdana</option>
+                </select>
+                
+                <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text">Size</span>
+                    <input type="number" class="form-control" id="font-size-${id}" 
+                        value="${settings.fontSize || 12}" min="8" max="24" step="1">
+                    <span class="input-group-text">px</span>
+                    <button class="btn btn-outline-secondary" type="button" id="reset-font-size-${id}" title="Back to the default size"
+                        ${(settings.fontSize || 12) === 12 ? 'disabled' : ''}>Reset</button>
+                </div>
+                
+                <div class="d-flex align-items-center gap-2">
+                    <label class="form-label mb-0 me-2">Color</label>
+                    <input type="color" class="form-control form-control-sm form-control-color" 
+                        id="text-color-${id}" value="${plotColour(settings, 'textColor')}" title="Choose text color">
+                    <button class="btn btn-sm btn-outline-secondary" id="reset-text-color-${id}">Reset</button>
+                </div>
             </div>
         `)}
         ${details(id, 'background', 'Background', `
@@ -375,6 +376,8 @@ export function createPopoverContent(id, settings) {
 
         `)}
         ${details(id, 'points', 'Points', `
+            <!-- the point size (the control grid's slider before WP-5b): the panel's own controls, moved in here -->
+            <div id="point-size-slot-${id}"></div>
             <div class="form-text mt-0 mb-1">The grey points a table filter leaves in the plot.</div>
             <div class="input-group input-group-sm mb-1">
                 <span class="input-group-text">Size</span>
@@ -535,36 +538,6 @@ export function createPopoverContent(id, settings) {
             </div>
 
         `)}
-        ${details(id, 'text', 'Text', `
-            <!-- Font Settings -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Font</label>
-                <select class="form-select form-select-sm mb-2" id="font-family-${id}">
-                    <option value="Arial, Helvetica, sans-serif" ${settings.fontFamily === 'Arial, Helvetica, sans-serif' ? 'selected' : ''}>Arial</option>
-                    <option value="'Times New Roman', Times, serif" ${settings.fontFamily === "'Times New Roman', Times, serif" ? 'selected' : ''}>Times New Roman</option>
-                    <option value="Courier, monospace" ${settings.fontFamily === 'Courier, monospace' ? 'selected' : ''}>Courier</option>
-                    <option value="Georgia, serif" ${settings.fontFamily === 'Georgia, serif' ? 'selected' : ''}>Georgia</option>
-                    <option value="'Trebuchet MS', sans-serif" ${settings.fontFamily === "'Trebuchet MS', sans-serif" ? 'selected' : ''}>Trebuchet MS</option>
-                    <option value="Verdana, sans-serif" ${settings.fontFamily === 'Verdana, sans-serif' ? 'selected' : ''}>Verdana</option>
-                </select>
-                
-                <div class="input-group input-group-sm mb-2">
-                    <span class="input-group-text">Size</span>
-                    <input type="number" class="form-control" id="font-size-${id}" 
-                        value="${settings.fontSize || 12}" min="8" max="24" step="1">
-                    <span class="input-group-text">px</span>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-font-size-${id}" title="Back to the default size"
-                        ${(settings.fontSize || 12) === 12 ? 'disabled' : ''}>Reset</button>
-                </div>
-                
-                <div class="d-flex align-items-center gap-2">
-                    <label class="form-label mb-0 me-2">Color</label>
-                    <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="text-color-${id}" value="${plotColour(settings, 'textColor')}" title="Choose text color">
-                    <button class="btn btn-sm btn-outline-secondary" id="reset-text-color-${id}">Reset</button>
-                </div>
-            </div>
-        `)}
         ${details(id, 'margins', 'Margins', `
             <div class="d-flex align-items-center gap-2 mb-1">
                 <input type="range" class="form-range flex-grow-1" id="margin-all-${id}" min="0" max="200" step="1"
@@ -602,6 +575,8 @@ export function createPopoverContent(id, settings) {
         `)}
         ${details(id, 'export', 'Export', `
             ${exportButtonsHtml(id, settings)}
+            <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="copy-to-clipboard-${id}" title="Copy the plot as a PNG image, at the size set below">
+                <i class="fas fa-copy"></i> Copy</button>
             
             <div class="mb-2">
                 <label class="form-label mb-1">Dimensions</label>
@@ -1231,6 +1206,24 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
 
+        // Reset of one group (WP-5b): its options back to the built-in look, as Default puts them, the rest as it is
+        const resetSection = target.dataset && target.dataset.resetSection;
+        if (resetSection && e.type === 'click') {
+            const builtin = defaultLook();
+            for (const k of sectionKeys(`${plotKindOf(settings)}-plot`, resetSection)) {
+                if (k in builtin && builtin[k] !== undefined) settings[k] = JSON.parse(JSON.stringify(builtin[k]));
+                else delete settings[k];
+            }
+            initializeAestheticsSettings(settings);
+            relookPlot(plotContainer, settings);
+            if (resetSection === 'focused') restyleFocus(plotContainer, settings).catch(() => {});
+            if (resetSection === 'axes' || resetSection === 'legend') refreshScaleBar(plotContainer, settings);
+            const btn = document.getElementById(`aesthetics-menu-btn-${id}`);
+            if (btn && btn.__azRedrawOptions) btn.__azRedrawOptions();
+            notifySettingsChanged(id, `reset ${resetSection}`, null);
+            return;
+        }
+
         // Presets
         const preset = ['publication', 'bare', 'default'].find(name => target.id === `preset-${name}-${id}`);
         if (preset && e.type === 'click') {
@@ -1238,8 +1231,8 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             else applyPreset(settings, preset);
             relookPlot(plotContainer, settings);
             // the menu shows the new values: drawn again, the open groups as they are
-            const body = document.querySelector('.aesthetics-popover .popover-body');
-            if (body) body.innerHTML = createPopoverContent(id, settings);
+            const btn = document.getElementById(`aesthetics-menu-btn-${id}`);
+            if (btn && btn.__azRedrawOptions) btn.__azRedrawOptions();
             return;
         }
 
@@ -2426,7 +2419,7 @@ registerCameraExport(async (gd, opts) => {
  * @param {HTMLElement} plotContainer – Plotly graph div
  * @param {Object} settings – May include exportWidth, exportHeight
  */
-async function copyPlotToClipboard(plotContainer, settings) {
+export async function copyPlotToClipboard(plotContainer, settings) {
     if (!plotContainer) return;
     const opts = { ...exportOptions(settings), scale: 1 };
     const copyBtn = document.getElementById(`copy-to-clipboard-${getPanelId(plotContainer)}`);
