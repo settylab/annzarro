@@ -227,7 +227,8 @@ export function normalizeCountPlot(raw) {
 /**
  * The colour of the plot (WP-6a): `{map?, reverse?, min?, max?, center?, palette?}`. `map` is a colour scale's name,
  * `reverse` flips it, `min`, `max` and `center` fix the range of a colour scale (absent: automatic), `palette` names the
- * discrete palette of a Color by's levels. A field that is not valid is reported and left out; an empty colour is none.
+ * discrete palette of a Color by's levels, `slices: 'levels'` keeps a pie's bins of a number on that palette (their continuous colours are
+ * the default, so `continuous` is not stored). A field that is not valid is reported and left out; an empty colour is none.
  */
 function normalizeColor(raw, bad) {
     if (!isObject(raw)) {
@@ -238,6 +239,9 @@ function normalizeColor(raw, bad) {
     for (const field of ['map', 'palette']) {
         if (raw[field] === undefined) continue;
         if (typeof raw[field] === 'string' && raw[field]) out[field] = raw[field]; else bad(`color.${field}`, 'bad_color');
+    }
+    if (raw.slices !== undefined) {
+        if (raw.slices === 'levels') out.slices = 'levels'; else if (raw.slices !== 'continuous') bad('color.slices', 'bad_color');
     }
     if (raw.reverse !== undefined) {
         if (raw.reverse === true) out.reverse = true; else if (raw.reverse !== false) bad('color.reverse', 'bad_color');
