@@ -390,7 +390,19 @@ const countPlot = Object.freeze({
         mode: 'Mode', x: 'X', y: 'Y', split: 'Color by', slices: 'Slices', height: 'Height', color: 'Color', labels: 'Labels',
         sets: capital(plural.set), factor: 'Of', source: 'Of', above: 'Above'
     }),
-    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', fill: '100%', overlay: 'Overlaid' }),
+    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', overlay: 'Overlaid', fill: '100%' }),
+    /** Why an arrangement does not apply (its title, where it is disabled). */
+    arrangementRefused: Object.freeze({
+        dodgeBins: 'Bins of a number cannot sit side by side. Overlaid shows each level over the others.'
+    }),
+    /** Why a view cannot draw the X (the Mode select's title of a disabled view). */
+    viewRefused: Object.freeze({ histogramNumeric: 'Histogram needs a numeric axis.' }),
+    /** What a switch of view by the X axis type says, once. */
+    viewSwitched: Object.freeze({
+        toHistogram: 'A number as X: shown as Histogram. Bar shows its bins as categories.',
+        toBar: 'Histogram needs a numeric axis: shown as Bar.',
+        fallback: 'Histogram needs a numeric axis, so this plot is drawn as Bar.'
+    }),
     /** The entries of Height and Color (UX 4.5), and the help line of each. */
     value: Object.freeze({
         count: 'Count',
