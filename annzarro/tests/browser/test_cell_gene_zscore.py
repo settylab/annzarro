@@ -21,6 +21,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401 (the fixtures)
     DATA, GENES, P, S1, S2, TP, _config, _drawn, _features, _open, _plot, _sig, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
@@ -85,7 +86,7 @@ def test_zscore_color_bar_diverges_around_zero(page, served):
     # the map is centred on 0 by a range symmetric about it (Plot Options' Center), and is RdBu, not the default Reds
     assert abs(trace["zmin"] + trace["zmax"]) < 1e-9 and trace["zmax"] > 0, trace
     # a mean colour keeps the one-direction map and the data's own range
-    page.select_option(f"{TP} .cgene-color", "mean")
+    CC.pick_stat(page, TP, "color", "mean")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().color.stat === 'mean'", P)
     until(page, "(s) => document.querySelector(s + ' .cgene-plot').data.find(d => d.type === 'heatmap').colorscale !== 'RdBu'", TP)
     after = page.evaluate("""(s) => { const t = document.querySelector(s + ' .cgene-plot').data.find(d => d.type === 'heatmap');
@@ -99,10 +100,10 @@ def test_zscore_disabled_for_size_with_reason(page, served):
                          S1: _sig(S1, "Markers", GENES[5:8])}, open_ids=(P, S1))
     _drawn(page)
     for which, disabled in (("color", False), ("size", True)):
-        opts = page.eval_on_selector_all(f"{TP} .cgene-{which} option", "os => os.map(o => [o.value, o.disabled, o.title])")
+        opts = [[e["v"], e["off"], e["title"]] for e in CC.stat_entries(page, TP, which)]
         assert opts[0][0] == "zscore_mean", opts
         assert opts[0][1] is disabled, opts
-    size = page.eval_on_selector_all(f"{TP} .cgene-size option", "os => os.map(o => [o.value, o.disabled, o.title])")
+    size = [[e["v"], e["off"], e["title"]] for e in CC.stat_entries(page, TP, "size")]
     assert size[0][2] == "Z-score mean is signed; dot size cannot show a sign. Use it for Color."
     # Scale's two z-scores are disabled under it, with the reason
     scales = dict((v, (d, t)) for v, d, t in page.eval_on_selector_all(

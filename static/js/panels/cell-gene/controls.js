@@ -22,7 +22,9 @@ import { CELL_COUNT, STATISTIC_INFO, statisticChoices, statisticLayerChoices, st
 import { SCALINGS, MODE_INFO, modeShowsChannel, scalingGrade } from '../../utils/cell-gene-model.js';
 import { loopReason } from '../../utils/panel-references.js';
 import { createPopover } from '../../ui/popover.js';
-import { GROUP_AXIS, needsThreshold } from './sections.js';
+import { createAggregationButton } from '../../ui/aggregation-button.js';
+import { MEASURE_SYMBOLS } from '../../utils/aggregation-symbols.js';
+import { GROUP_AXIS, SAME_AS_COLOR, needsThreshold } from './sections.js';
 
 const CG = VOCABULARY.cellGene;
 
@@ -138,42 +140,43 @@ function options(D, select, list) {
 }
 
 /**
- * One measure's row (WP-4): `Color [mean ▾] of [logged ▾] above [0]`. The statistic, then the layer it is read on (hidden
- * for Cell count), then the threshold when the statistic uses one.
+ * One measure's row (aggregation-unify-080.md 5.1.1): `Color [logged ▾] [x̄]`. The layer it is read on (hidden for Cell
+ * count), then the aggregation button: the statistic as its symbol, the menu of every statistic graded on the layer, and
+ * the threshold box (decision 35's "Expressed above") in the menu, shown on the button when the measure has one of its own.
  */
 function measureRow(D, which, label, on) {
     const { el } = D;
-    const Label = label;
-    const stat = el('select', { class: `form-select form-select-sm cgene-${which}`, aria: { label: `${Label}: statistic` },
-        on: { change: () => on.stat(which, stat.value) } });
-    const ofWord = el('span', { class: 'cgene-measure__word', text: CG.sources.of });
-    const layer = el('select', { class: `form-select form-select-sm cgene-${which}-layer`, aria: { label: `${Label}: layer` },
+    let held = null;                // the model last painted: the button's entries and the threshold read it
+    const layer = el('select', { class: `form-select form-select-sm cgene-${which}-layer`, aria: { label: `${label}: layer` },
         on: { change: () => on.layer(which, layer.value) } });
-    const aboveWord = el('span', { class: 'cgene-measure__word', text: CG.sources.above });
-    const above = el('input', { type: 'number', step: 'any', min: '0', class: `form-control form-control-sm cgene-${which}-above`,
-        aria: { label: `${Label}: ${CG.sources.threshold}` }, title: CG.sources.thresholdHelp,
-        on: { change: () => on.above(which, above.value), keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); on.above(which, above.value); } } } });
+    const symbolOf = (value) => (value === SAME_AS_COLOR ? MEASURE_SYMBOLS.same : MEASURE_SYMBOLS[value]) || MEASURE_SYMBOLS.same;
+    const button = createAggregationButton({
+        label: `${label}: aggregation`, axis: which,
+        methods: () => (held ? { options: held.stats.map((e) => ({ value: e.value, name: e.label, symbol: symbolOf(e.value),
+            disabled: !!e.disabled, title: e.title || '' })), chosen: held.stat } : null),
+        onPick: (value) => on.stat(which, value),
+        // a threshold of the measure's own shows on the button: no setting hides behind a closed pop-over
+        suffix: () => (held && held.threshold !== null && held.own !== null ? `>${held.own}` : ''),
+        fields: () => {
+            const m = held;
+            if (!m || m.threshold === null) return [];
+            const g = m.grouping;
+            // on a grouping axis the box overrides the grouping's Expressed above (decision 35): empty while it follows it
+            return [{ key: 'above', label: CG.sources.above, value: g && m.own === null ? '' : String(m.threshold),
+                placeholder: g ? CG.sources.thresholdAuto(g.value) : '',
+                title: !g ? CG.sources.thresholdHelp : m.own === null ? CG.sources.thresholdFollows(g.title, g.value) : CG.sources.thresholdOverrides(g.title, g.value) }];
+        },
+        onField: (key, text) => on.above(which, text)
+    });
+    button.button.classList.add(`cgene-${which}`, 'cgene-agg');
     const element = el('label', { class: `cgene-field cgene-field--${which} cgene-measure` }, el('span', { class: 'cgene-field__label', text: label }),
-        el('span', { class: 'cgene-measure__parts' }, stat, ofWord, layer, aboveWord, above));
+        el('span', { class: 'cgene-measure__parts' }, layer, button.button));
     function paint(m) {
-        options(D, stat, m.stats);
-        stat.value = m.stat;
+        held = m;
         options(D, layer, m.layers);
-        const noLayer = !m.layers.length;
-        layer.hidden = noLayer;
-        ofWord.hidden = noLayer;
-        if (!noLayer) layer.value = m.layer;
-        const t = m.threshold;
-        above.hidden = t === null;
-        aboveWord.hidden = t === null;
-        // on a grouping axis the box overrides the grouping's Expressed above (decision 35): empty while it follows it,
-        // and "auto (grouping: 1)" says the value in force
-        const g = m.grouping;
-        above.classList.toggle('cgene-measure__above--grouping', !!g);
-        above.placeholder = g ? CG.sources.thresholdAuto(g.value) : '';
-        above.title = !g ? CG.sources.thresholdHelp
-            : m.own === null ? CG.sources.thresholdFollows(g.title, g.value) : CG.sources.thresholdOverrides(g.title, g.value);
-        if (t !== null && document.activeElement !== above) above.value = g && m.own === null ? '' : String(t);
+        layer.hidden = !m.layers.length;
+        if (m.layers.length) layer.value = m.layer;
+        button.update();
     }
     return { element, paint };
 }
@@ -239,14 +242,15 @@ export function createControls({ D, model, on, sections, addGenes }) {
         on: { click: () => on.swap(swap.getAttribute('aria-pressed') !== 'true') } }, 'Swap axes');
     const layoutSlot = el('div', { class: 'cgene-layout-slot' });
 
-    const what = el('div', { class: 'cgene-group cgene-group--what', role: 'group', aria: { label: 'What' } },
-        el('div', { class: 'cgene-row' }, field('Groups', el('span', { class: 'cgene-axis' }, axisType, axisKey)), field('Mode', mode)),
-        el('div', { class: 'cgene-genes' }, el('div', { class: 'cgene-genes__head' }, el('span', { class: 'cgene-field__label', text: 'Genes' }), addGenes), sections));
-    const values = el('div', { class: 'cgene-group cgene-group--values', role: 'group', aria: { label: 'Values' } },
-        color.element, field('Scale', scaleSel), size.element, height.element);
+    // one packed block (aggregation-unify-080.md 5.2): Groups, Mode, Color, Size, Scale (Height in 3D) and Add genes wrap
+    // together, then the section list, one line to a section
+    const head = el('div', { class: 'cgene-group cgene-group--head', role: 'group', aria: { label: 'Plot setup' } },
+        el('div', { class: 'cgene-row' }, field('Groups', el('span', { class: 'cgene-axis' }, axisType, axisKey)), field('Mode', mode),
+            color.element, size.element, field('Scale', scaleSel), height.element, addGenes));
+    const genes = el('div', { class: 'cgene-genes' }, sections);
     // Swap axes is a panel action of the shared plot toolbar (panels/cell-gene.js puts it there, after 3D; operator,
     // 2026-11-23: in a group of its own it was often pushed onto a line by itself); the slot is options.js's fallback
-    const element = el('div', { class: 'cgene-controls', 'data-panel-controls': '' }, what, values, layoutSlot);
+    const element = el('div', { class: 'cgene-controls', 'data-panel-controls': '' }, head, genes, layoutSlot);
 
     function onKey() {
         const v = axisKey.value;

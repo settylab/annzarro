@@ -473,6 +473,26 @@ def _select(sel, value):
     return act
 
 
+def _cg_stat(which, value):
+    """Choose a statistic in the Cell-Gene Plot's aggregation button, as _select does in a select: False when it cannot be chosen."""
+    btn = f"{G_TILE} button.cgene-{which}"
+    menu = "[data-popover='aggregation']"
+
+    def act(page):
+        if not _usable(page, btn):
+            return False
+        page.click(btn)
+        page.locator(menu).wait_for(state="visible")
+        ok = page.evaluate("""(v) => { const o = document.querySelector(`[data-popover='aggregation'] [data-agg='${v}']`);
+            return !!o && !o.disabled && o.getAttribute('aria-checked') !== 'true'; }""", value)
+        if not ok:
+            page.keyboard.press("Escape")
+            page.locator(menu).wait_for(state="hidden")
+            return False
+        page.click(f"{menu} [data-agg='{value}']")
+    return act
+
+
 def _click(sel):
     def act(page):
         if not _usable(page, sel):
@@ -700,7 +720,7 @@ CELL_GENE_VOCABULARY = [
     lambda r: (lambda m: (f"mode {m} (control)", _cg_mode(m)))(r.choice(["dots", "heatmap"])),
     lambda r: (lambda m: (f"mode {m} (control)", _cg_mode(m)))(r.choice(["dots", "heatmap"])),
     lambda r: (lambda s: (f"scale {s} (control)", _select(f"{G_TILE} .cgene-scale", s)))(r.choice(["none", "var", "group", "z_groups", "z_pooled"])),
-    lambda r: (lambda s: (f"color {s} (control)", _select(f"{G_TILE} .cgene-color", s)))(r.choice(["mean", "pct_expressing", "sum", "sd"])),
+    lambda r: (lambda s: (f"color {s} (control)", _cg_stat("color", s)))(r.choice(["mean", "pct_expressing", "sum", "sd"])),
     lambda r: ("3D (control)", _click(f"{G_TILE} .cgene-3d-btn")),
     lambda r: ("undo (control)", _click(f"{G_TILE} .cgene-undo")),
     lambda r: ("remove section 2 (control)", _cg_remove(1)),

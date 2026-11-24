@@ -20,6 +20,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401 (the fixtures)
     GENES, P, S1, TP, VALUES, _config, _drawn, _features, _open, _plot, _sig, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
@@ -59,7 +60,7 @@ def test_the_row_has_no_layer_and_no_statistic_of_its_own_and_follows_colors_lay
 
 def test_a_sum_goes_back_to_the_mean_when_size_becomes_sd_said_once_and_undone_in_one_step(page, served):
     _one_row(page, served, section={"size": {"genes": "rows_sum"}}, size={"stat": "mean", "layer": "logged"})
-    page.select_option(f"{TP} .cgene-size", "sd")
+    CC.pick_stat(page, TP, "size", "sd")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.stat === 'sd'", P)
     cfg = _config(page)
     assert "size" not in cfg["sections"][0], cfg["sections"][0]
@@ -70,12 +71,13 @@ def test_a_sum_goes_back_to_the_mean_when_size_becomes_sd_said_once_and_undone_i
     assert _config(page)["sections"][0]["size"] == {"genes": "rows_sum"}
 
 
-def test_change_in_color_closes_the_popover_and_focuses_the_plots_color_statistic(page, served):
+def test_change_in_color_closes_the_popover_and_opens_the_plots_color_button(page, served):
     _one_row(page, served)
     _open_values(page)
     page.click(f"{VALUES} .cgene-section__change[data-which='color']")
     page.wait_for_selector(VALUES, state="detached")
-    assert page.evaluate("(s) => document.activeElement === document.querySelector(s + ' .cgene-color')", TP)
+    page.locator(CC.MENU).wait_for(state="visible")
+    assert page.get_attribute(f"{CC.MENU}", "aria-label") == "Color: aggregation", "the plot's own Color button is open"
 
 
 def test_a_link_from_before_decision_40_loads_says_what_changed_once_and_draws(page, served):

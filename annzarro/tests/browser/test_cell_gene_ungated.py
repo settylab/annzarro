@@ -25,6 +25,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401
     GA, GENES, P, S1, TP, VALUES, _config, _drawn, _features, _open, _plot, _sig, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
@@ -58,7 +59,7 @@ def test_a_default_grouping_axis_plot_says_no_longer_offered_nowhere_and_lists_e
     for which in ("color", "size"):
         labels = _labels(page, f"{TP} .cgene-{which}-layer option")
         assert labels == ["X", "counts", "logged"], labels  # the dataset's order, X first
-        stats = _labels(page, f"{TP} .cgene-{which} option")
+        stats = CC.stat_names(page, TP, which)
         assert stats == ["Z-score mean", "Mean", "% expressing", "Mean of expressing cells", "Sum", "SD", "Cell count"], stats
         assert not any("offer" in t.lower() or "(no longer" in t for t in labels + stats)
     assert page.input_value(f"{TP} .cgene-color-layer") == "logged"
@@ -95,8 +96,9 @@ def test_the_groupings_threshold_is_read_by_the_plot_and_survives_the_groupings_
     hover = page.evaluate("(s) => JSON.stringify(document.querySelector(s + ' .cgene-plot').data[0].hovertext"
                           " || document.querySelector(s + ' .cgene-plot').data[0].text)", TP)
     assert "% expressing (> 1) · logged" in hover, hover[:300]
-    assert page.input_value(f"{TP} .cgene-size-above") == "", "the override box is empty: the measure follows the grouping"
-    assert page.get_attribute(f"{TP} .cgene-size-above", "placeholder") == "auto (grouping: 1)", "it shows the grouping's value"
+    box = CC.above(page, TP, "size")
+    assert box["value"] == "", "the override box is empty: the measure follows the grouping"
+    assert box["placeholder"] == "auto (grouping: 1)", "it shows the grouping's value"
     # the grouping's next edit drops the retired offered and layers and keeps its threshold; the plot still reads above 1
     n = len(page.calls)
     page.evaluate("(id) => window.PanelManager.getPanel(id).addFactor({source: {type: 'obs', key: 'condition'}})", GA)

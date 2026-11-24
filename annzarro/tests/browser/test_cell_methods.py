@@ -24,6 +24,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401
     GA, GENES, P, S1, TP, _config, _drawn, _features, _open, _plot, _sig, _url, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
@@ -96,8 +97,8 @@ def test_methods_opens_from_the_grouping_toolbar_lists_every_statistic_and_escap
 def test_expressed_above_redraws_the_cell_gene_plot_and_undo_restores_it(page, served):
     _plot_on_grouping(page, served)
     assert "% expressing (> 0) · counts" in _hover(page)
-    assert page.input_value(f"{TP} .cgene-size-above") == ""
-    assert page.get_attribute(f"{TP} .cgene-size-above", "placeholder") == "auto (grouping: 0)"
+    assert CC.above(page, TP, "size")["value"] == ""
+    assert CC.above(page, TP, "size")["placeholder"] == "auto (grouping: 0)"
     n = len(page.calls)
     page.click(f"{TG} .cmeth__toggle")
     page.locator(POP).wait_for(state="visible")
@@ -111,28 +112,30 @@ def test_expressed_above_redraws_the_cell_gene_plot_and_undo_restores_it(page, s
     counts = [f for f in _features(new) if f.get("layer") == "counts"]
     assert counts and all(f["detect_above"] == 2 for f in counts), counts
     assert "detect_above" not in _config(page)["size"], "nothing is written into the plot"
-    assert page.input_value(f"{TP} .cgene-size-above") == ""
-    assert page.get_attribute(f"{TP} .cgene-size-above", "placeholder") == "auto (grouping: 2)"
     assert "Now: above 2." in page.inner_text(POP)
     toggle = page.locator(f"{TG} .cmeth__toggle")
     assert toggle.locator(".cmeth__dot").is_visible(), "a non-default parameter marks the button"
     assert "expressed above 2" in toggle.get_attribute("title")
     page.keyboard.press("Escape")
+    # (the plot's box is read after the grouping's pop-over is closed: opening Size's menu closes any other pop-over)
+    assert CC.above(page, TP, "size")["value"] == ""
+    assert CC.above(page, TP, "size")["placeholder"] == "auto (grouping: 2)"
     # one undo step of the grouping
     assert page.get_attribute(f"{TG} .cgrp-undo", "title") == "Undo: expressed above 2"
     page.click(f"{TG} .cgrp-undo")
     until(page, "(id) => !('detect_above' in window.PanelManager.getPanel(id).getConfig())", GA)
     until(page, "(s) => { const p = document.querySelector(s + ' .cgene-plot'); const t = JSON.stringify(p.data[0].hovertext || p.data[0].text);"
           " return t.includes('% expressing (> 0) · counts'); }", TP, timeout=60)
-    assert page.get_attribute(f"{TP} .cgene-size-above", "placeholder") == "auto (grouping: 0)"
+    assert CC.above(page, TP, "size")["placeholder"] == "auto (grouping: 0)"
     assert page.locator(f"{TG} .cmeth__toggle .cmeth__dot").is_hidden()
 
 
 def test_a_measure_with_its_own_threshold_is_unaffected(page, served):
     _plot_on_grouping(page, served, size={"stat": "pct_expressing", "layer": "counts", "detect_above": 0.5})
     assert "% expressing (> 0.5) · counts" in _hover(page)
-    assert page.input_value(f"{TP} .cgene-size-above") == "0.5", "an override shows its value"
-    assert "Overrides Grouping 1" in page.get_attribute(f"{TP} .cgene-size-above", "title")
+    box = CC.above(page, TP, "size")
+    assert box["value"] == "0.5", "an override shows its value"
+    assert "Overrides Grouping 1" in box["title"]
     n = len(page.calls)
     page.click(f"{TG} .cmeth__toggle")
     page.locator(POP).wait_for(state="visible")
@@ -144,8 +147,7 @@ def test_a_measure_with_its_own_threshold_is_unaffected(page, served):
     assert "% expressing (> 0.5) · counts" in _hover(page)
     assert _config(page)["size"]["detect_above"] == 0.5
     # clearing the override follows the grouping again
-    page.fill(f"{TP} .cgene-size-above", "")
-    page.press(f"{TP} .cgene-size-above", "Enter")
+    CC.set_above(page, TP, "size", "")
     until(page, "(id) => !('detect_above' in window.PanelManager.getPanel(id).getConfig().size)", P)
     until(page, "(s) => { const p = document.querySelector(s + ' .cgene-plot'); const t = JSON.stringify(p.data[0].hovertext || p.data[0].text);"
           " return t.includes('% expressing (> 2) · counts'); }", TP, timeout=60)

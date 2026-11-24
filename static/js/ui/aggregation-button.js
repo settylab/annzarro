@@ -8,9 +8,42 @@
  * known) shows at once: {options: [{value, name, symbol: {text, over}, disabled?, title?}], chosen}. The menu marks the
  * chosen entry with a check, lists a disabled one greyed with its reason beneath, and takes the arrow keys of a pop-over
  * menu. Choosing an entry calls `onPick(value)`.
+ *
+ * Optionally a setting that goes with the aggregation (the Cell-Gene Plot's "Expressed above"): `fields()` lists number
+ * boxes drawn under the entries, `onField(key, text)` hears a change, and `suffix()` is text after the symbol on the
+ * button (">1"), so a value in force never hides behind a closed pop-over. A caller that gives none gets what it had.
  */
 import { createPopover } from './popover.js';
 import { symbolSpan } from '../utils/aggregation-symbols.js';
+
+/** A number box under the entries: its label, the box, a change or Enter hands the text on. */
+function fieldRow(f, onField) {
+    const row = document.createElement('div');
+    row.className = 'az-pop-field axis-agg-field';
+    const name = document.createElement('span');
+    name.className = 'az-pop-field__label';
+    name.textContent = f.label;
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.step = 'any';
+    input.min = '0';
+    input.className = 'form-control form-control-sm az-pop-num';
+    input.dataset.field = f.key;
+    input.value = f.value;
+    input.placeholder = f.placeholder || '';
+    input.title = f.title || '';
+    input.setAttribute('aria-label', f.label);
+    // the pop-over is a menu: the arrow keys inside a box belong to the box, and Escape first ends an edit
+    input.dataset.azOwnEscape = '';
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); if (onField) onField(f.key, input.value); }
+        else if (e.key === 'Escape') { input.value = f.value; input.blur(); }       // ends the edit; the next Escape closes the menu
+        else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) e.stopPropagation();
+    });
+    input.addEventListener('change', () => { if (onField) onField(f.key, input.value); });
+    row.append(name, input);
+    return row;
+}
 
 /**
  * @param {Object} options
@@ -18,9 +51,12 @@ import { symbolSpan } from '../utils/aggregation-symbols.js';
  * @param {string} [options.axis] - copied to `data-axis` (a test hook)
  * @param {() => ({options: Array<Object>, chosen: string}|null)} options.methods
  * @param {(value: string) => void} options.onPick
+ * @param {() => Array<{key: string, label: string, value: string, placeholder?: string, title?: string}>} [options.fields]
+ * @param {(key: string, text: string) => void} [options.onField]
+ * @param {() => string} [options.suffix]
  * @returns {{button: HTMLButtonElement, update: () => void, destroy: () => void}}
  */
-export function createAggregationButton({ label, axis = '', methods, onPick }) {
+export function createAggregationButton({ label, axis = '', methods, onPick, fields = null, onField = null, suffix = null }) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn btn-sm btn-outline-secondary axis-agg-btn';
@@ -52,13 +88,21 @@ export function createAggregationButton({ label, axis = '', methods, onPick }) {
                 item.addEventListener('click', () => onPick(o.value));
                 body.append(item);
             }
+            for (const f of fields ? fields() : []) body.append(fieldRow(f, onField));
         }
     });
     function update() {
         const held = methods();
         const chosen = held && held.options.find((o) => o.value === held.chosen);
+        const extra = suffix ? suffix() : '';
         button.replaceChildren(...(chosen ? [symbolSpan(chosen.symbol, 'axis-agg-sym axis-agg-sym--button')] : []));
-        const text = chosen ? `${label}: ${chosen.name}` : label;
+        if (chosen && extra) {
+            const tail = document.createElement('span');
+            tail.className = 'axis-agg-suffix';
+            tail.textContent = extra;
+            button.append(tail);
+        }
+        const text = chosen ? `${label}: ${chosen.name}${extra ? ` ${extra}` : ''}` : label;
         button.title = text;
         button.setAttribute('aria-label', text);
     }

@@ -746,11 +746,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             commit(setRowStep(_config, i, which, next), `threshold of ${sectionName(i)}`);
         }
 
-        /** "Change in Color": the plot's own select of that statistic, where the one-row sections take it from. */
+        /** "Change in Color": the plot's own aggregation button of that channel, where the one-row sections take it from, opened. */
         function focusChannel(which) {
             revealControls();
-            const select = _dom && _dom.controls.querySelector(`.cgene-${which}`);
-            if (select) select.focus();
+            const button = _dom && _dom.controls.querySelector(`.cgene-${which}`);
+            if (button) { button.focus(); button.click(); }
         }
 
         // ---------------------------------------------------------------- DOM

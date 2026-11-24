@@ -24,6 +24,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401
     GENES, P, S1, TP, _config, _drawn, _features, _open, _plot, _sig, _state, _url, page, served)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
@@ -87,12 +88,12 @@ def test_the_3d_toggle_draws_a_scene_and_toggling_back_restores_the_2d_figure(pa
     tag = _tag(page, "cgene-3d")
     assert tag and tag["text"] == "3D" and "dendrograms, strips, section brackets, totals or printed values" in tag["title"], tag
     assert page.locator(f"{TP} .cgene-field--height").is_visible()
-    assert page.input_value(f"{TP} .cgene-height") == "__same_as_color__"
+    assert CC.chosen_stat(page, TP, "height") == "__same_as_color__"
     assert page.locator(f"{TP} .cgene-height-layer").is_hidden(), "Same as Color reads Color's layer"
     hover = page.evaluate("(s) => document.querySelector(s).data[0].hovertext[0]", PLOT)
     assert hover.split("<br>")[-1] == "Height: as Color", hover
     # a Height of its own on a new layer: one request, each gene once on that layer
-    page.select_option(f"{TP} .cgene-height", "mean")
+    CC.pick_stat(page, TP, "height", "mean")
     until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().height || {}).stat === 'mean'", P)
     assert _config(page)["height"] == {"stat": "mean", "layer": "logged"}, "an own height starts on Color's layer"
     assert len(page.calls) == calls, "on Color's layer it reads nothing more"

@@ -30,6 +30,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401 (the fixtures)
     served, page, _open, _plot, _sig, _state, _drawn, _settle, _config, P, TP, S1, S2, GA, GENES)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
@@ -236,8 +237,7 @@ def test_plot_options_reach_the_drawing_and_ask_for_nothing(page, served):
     # Size threshold (scanpy's expression_cutoff for the size), beside Size since WP-4: stored on Size, and the genes are
     # read with it; Plot Options no longer has one
     assert page.locator(_option("sizeThreshold")).count() == 0
-    page.fill(f"{TP} .cgene-size-above", "0.5")
-    page.press(f"{TP} .cgene-size-above", "Enter")
+    CC.set_above(page, TP, "size", "0.5")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.detect_above === 0.5", P)
     _drawn(page)
     assert any(f.get("detect_above") == 0.5 for c in page.calls[n:] for f in (c.get("features") or [])), "the genes are asked with the threshold"

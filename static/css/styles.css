@@ -4964,6 +4964,8 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .agg-over { display: inline-block; border-top: 1px solid currentColor; line-height: 1.05; padding: 0 1px; }
 .az-popover-menu .axis-agg-sym { flex: 0 0 2rem; text-align: center; font-variant-numeric: tabular-nums; }
 .axis-agg-sym--button { flex: none; }
+.axis-agg-suffix { margin-left: 4px; font-size: 0.75rem; white-space: nowrap; }
+.az-popover-menu .axis-agg-field { padding: 6px 8px 4px 22px; border-top: 1px solid var(--az-border); }
 .az-popover-menu .axis-agg-item[role="menuitem"] { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; width: 100%; padding: 4px 8px 4px 22px; position: relative;
     border: 0; background: none; color: var(--az-text); text-align: left; }
 .az-popover-menu .axis-agg-item[aria-checked="true"]::before { content: "\2713"; position: absolute; left: 6px; top: 4px; }
