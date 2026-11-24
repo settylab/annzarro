@@ -175,20 +175,21 @@ def test_a_store_rewritten_on_disk_misses(client, layout, resolves):
     assert run(client, layout, body)[0][0]["codes"] == "hit"       # another store is untouched
 
 
-def test_a_refresh_that_finds_the_store_changed_drops_its_codes(client, layout, resolves):
+def test_a_refresh_drops_its_codes_whether_or_not_it_finds_a_change(client, layout, resolves):
     body = grouping([{"source": CELL_TYPE}])
     path = ds(layout, "out.zarr")
     refresh = lambda: client.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()
     refresh()                                                      # the first walk records the store
     run(client, layout, body, name="out.zarr")
     assert refresh()["changed"] is False
-    assert run(client, layout, body, name="out.zarr")[0][0]["codes"] == "hit"     # an unchanged store keeps them
+    assert run(client, layout, body, name="out.zarr")[0][0]["codes"] == "miss"    # a refresh drops them (decision 44)
+    assert run(client, layout, body, name="out.zarr")[0][0]["codes"] == "hit"
     chunk = next(os.path.join(root, f) for root, _, files in os.walk(os.path.join(path, "obs"))
                  for f in files if not f.startswith("."))
     st = os.stat(chunk)
     os.utime(chunk, ns=(st.st_atime_ns, st.st_mtime_ns + 10 ** 9))   # an in-place chunk write: no stat moves above
     assert run(client, layout, body, name="out.zarr")[0][0]["codes"] == "hit"     # not seen before the refresh
-    assert refresh()["changed"] is True
+    assert refresh()["refreshed"] is True
     assert run(client, layout, body, name="out.zarr")[0][0]["codes"] == "miss"
 
 
