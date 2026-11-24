@@ -230,10 +230,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let _drawToken = 0;
         let _state = 'empty';
         let _resize = null;
+        /** a draw at the plot's new size, once a resize has settled */
+        let _relayout = null;
         /** gateMatrix's decision for the plan it was made for (CXG-17): what the plot asks of the server now */
         let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
         /** the cell axis's applied recipe as last seen: the recipe its groups are of while edits wait or are checked */
         let _applied = null;
+        /** the obs column's recipe the page's group sources were last told of for this plot's own cell axis */
+        let _axisRecipeSaid = null;
         /** pendingRows's answer for the plan last looked at (CXG-18): {now, held, rows} */
         let _pending = { now: null, held: null, rows: null };
 
@@ -285,6 +289,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             if (_dom) binding.releaseHost(_dom.plot);
             if (_resize) _resize.disconnect();
             _resize = null;
+            clearTimeout(_relayout);
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
             if (_dom && window.Plotly) window.Plotly.purge(_dom.plot);
             _initialized = false;
@@ -587,11 +592,27 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         /** The configuration changed: what is asked, what is drawn, the saved state and the history follow. */
         function changed({ quiet = false } = {}) {
             _plan = null;
+            axisRecipeChanged();
             watchSources();
             sync();
             paint();
             redraw();
             if (!quiet && window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+        }
+
+        /**
+         * An obs cell axis is this plot's own source ('axis:<id>', group-host.js), read through `axisSource()`: a new
+         * column is a new recipe under the same id, which the group sources hear of only when told. Untold, the plot
+         * kept drawing the groups of the column it had (an edit, Undo, Back or Forward of Groups), while a link of the
+         * same configuration drew the new ones.
+         */
+        function axisRecipeChanged() {
+            const axis = _config.cellAxis;
+            const recipe = axis && axis.type === 'obs' ? axisRecipe(axis) : null;
+            if (!recipe || recipe === _axisRecipeSaid) return;
+            const had = _axisRecipeSaid;
+            _axisRecipeSaid = recipe;
+            if (had && _initialized) groupSources().sources.sourceChanged(axisId());
         }
 
         function updateConfig(config) {
@@ -716,8 +737,17 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (typeof ResizeObserver !== 'undefined') {
-                _resize = new ResizeObserver(() => { if (_dom && _dom.plot._fullLayout) fitToContainer(_dom.plot); });
+                _resize = new ResizeObserver(() => {
+                    if (!_dom || !_dom.plot._fullLayout) return;
+                    fitToContainer(_dom.plot);
+                    // the figure is laid out in pixels (draw.js fitMatrix: the cells, the gaps, the legends): stretched to
+                    // another size it is not the figure a fresh draw at that size makes, so it is drawn again once the
+                    // size has settled (a first draw while the plot had no size yet was laid out for 900 x 600)
+                    clearTimeout(_relayout);
+                    _relayout = setTimeout(() => { if (_dom && _shown && _shown.inputs[5] !== pixelKey()) redraw(); }, 150);
+                });
                 _resize.observe(area);
+                _resize.observe(plot);
             }
             showControls();
             mountParts();
@@ -1017,6 +1047,12 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         // ---------------------------------------------------------------- drawing
 
+        /** The size the figure is laid out for: the plot's, or 900 x 600 while it has none (hidden). */
+        function plotPixels() {
+            return { width: _dom.plot.clientWidth || 900, height: _dom.plot.clientHeight || 600 };
+        }
+        const pixelKey = () => { const p = plotPixels(); return `${p.width}x${p.height}`; };
+
         /** Draw what the store holds for the cell axis (the figure of panels/cell-gene/draw.js). Never asks for anything. */
         async function redraw() {
             if (!_dom) return;
@@ -1056,7 +1092,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 binding.paint(_dom.plot);
             }
             if (snap.state !== 'ready' && !pending && _shown) { paint(); return; }
-            const inputs = [values, shownPlan, _config, _kinds, currentTheme()];
+            const inputs = [values, shownPlan, _config, _kinds, currentTheme(), pixelKey()];
             if (_shown && _shown.inputs.every((x, i) => x === inputs[i])) { paint(); return; }
             let figure;
             let order;
@@ -1226,7 +1262,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 && !(group.key.length === 1 && group.key[0] === RESERVED.small);
             const model = {
                 mode: _config.mode, swap: !!_config.swap,
-                pixels: { width: _dom.plot.clientWidth || 900, height: _dom.plot.clientHeight || 600 },
+                pixels: plotPixels(),
                 groups: Array.from(order.groups, (g) => ({ label: names[g] || '', n: groups[g].n, small: isSmall(groups[g]) })),
                 rows,
                 color: { ...colorSettings, ...extras.color, values: permute(matrix.color.values), raw: permute(matrix.color.raw),
