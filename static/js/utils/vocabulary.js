@@ -695,6 +695,12 @@ const cellExport = Object.freeze({
  * What a menu of source types and a column chooser's tab call a source a panel makes, beside the dataset's own obs,
  * obsm, obsp and layers (whose AnnData names stay). Never the provider's type id.
  */
+/** What an aggregation is called; its symbols are utils/aggregation-symbols.js's, its names the method tables' labels. */
+const aggregation = Object.freeze({
+    label: 'Aggregation',
+    sections: Object.freeze({ genes: 'Genes', cells: 'Cells', signatures: 'Gene signatures', tables: 'Gene tables', groupings: 'Cell groupings' })
+});
+
 const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping', groupStat: 'Cell group' });
 
 /** Show as table (UX 7): a plot's CSV rows as an HTML table, in every plot that offers it (count plot, Cell-Gene Plot). */
@@ -737,4 +743,4 @@ const plotPanel = Object.freeze({
     view3dOnHelp: 'The plot is in 3D; click to go back to 2D'
 });
 
-export const VOCABULARY = Object.freeze({ plotPanel, range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+export const VOCABULARY = Object.freeze({ aggregation, plotPanel, range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });

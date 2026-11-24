@@ -62,7 +62,7 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
  */
 function axisRow(axis, label, id, { plotType, consumer, roles }, attrs = 'class="axis-selector-container ctl-row"') {
   const rowAttrs = attrs.startsWith('class=') ? attrs : `class="axis-selector-container ctl-row" ${attrs}`;
-  const types = typeChoices(plotType, consumer, roles)
+  const types = typeChoices(plotType, consumer, roles, true)
     .map(c => `<option value="${escapeHtml(c.value)}">${escapeHtml(c.text)}</option>`).join('');
   return `
             <div ${rowAttrs}>
@@ -486,8 +486,8 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   initializeAestheticsSettings(settings);
 
   // Axis selectors
-  setupAxisSelector(controlsContainer, 'x', settings.x, plotType, datasetStructure, { consumer, roles: ['x'] });
-  setupAxisSelector(controlsContainer, 'y', settings.y, plotType, datasetStructure, { consumer, roles: ['y'] });
+  setupAxisSelector(controlsContainer, 'x', settings.x, plotType, datasetStructure, { consumer, roles: ['x'], aggregate: true });
+  setupAxisSelector(controlsContainer, 'y', settings.y, plotType, datasetStructure, { consumer, roles: ['y'], aggregate: true });
 
   if (settings.z) {
     const $toggle = jQuery(`#z-axis-toggle-${id}`);
@@ -496,12 +496,12 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
 
     const $zContainer = jQuery(`#z-axis-container-${id}`);
     $zContainer.show();
-    setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure, { consumer, roles: ['z'] });
+    setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure, { consumer, roles: ['z'], aggregate: true });
   } else if (settings.z === undefined) {
     settings.z = null; // ensure no legacy 3D state
   }
 
-  setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure, { consumer, roles: ['color'] });
+  setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure, { consumer, roles: ['color'], aggregate: true });
 
   // Point controls - ensure sliders reflect the panel's settings
   showPointStyle(id, settings);

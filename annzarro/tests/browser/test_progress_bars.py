@@ -215,10 +215,8 @@ def test_a_plot_that_keeps_its_drawing_shows_a_slim_bar_in_its_strip_and_is_not_
     gs._open(page, served, plots=(("cell-plot-C", obs_colour),))
     until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.length); }", C)
     # colour the drawn plot by the score: the plot keeps its drawing while the score computes (a quiet load)
-    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
-    until(page, "(t) => !!document.querySelector(t + ' select.axis-key-select[data-axis=\"color\"] option[value=\"gene-signature-S\"]')", C)
-    if page.eval_on_selector(f"{C} select.axis-key-select[data-axis='color']", "s => s.value") != gs.SIG:
-        page.select_option(f"{C} select.axis-key-select[data-axis='color']", gs.SIG)
+    from annzarro.tests.browser import axis_sets
+    axis_sets.pick_set(page, C, "color", gs.SIG)
     until(page, "() => window.__ctls.length === 1")
     gs._frame(page, 0, type="progress", done=61, total=200, entries_done=3_000_000_000, entries_total=10_000_000_000, running_s=60,
               queue={"ahead": 0, "sharing": 0})

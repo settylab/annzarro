@@ -50,6 +50,7 @@ else:
     playwright = pytest.importorskip("playwright.sync_api")
 
 from annzarro.tests.browser import test_focus_outside_subset as _focus  # noqa: E402
+from annzarro.tests.browser import axis_sets  # noqa: E402
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 from annzarro.tests.browser.test_names_dataset_scope import _serve  # noqa: E402
 from annzarro.tests.server.test_focus_rows import _array, _dataframe  # noqa: E402
@@ -494,29 +495,27 @@ def test_a_deleted_signature_says_so_and_the_plot_keeps_its_setting(page, served
     assert _tag(page) == "Source deleted"
     assert [a.split("|")[0] for a in _notice(page)["actions"]] == ["score-choose"]
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.key") == SIG
-    # the key list still names it, as deleted
-    assert page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => o.textContent)", C) \
-        == ["T cell score (deleted)", "New signature…"]
+    # the item picker still names it, as deleted
+    until(page, "(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option')].some(o => o.textContent === 'T cell score (deleted)')", C)
 
 
-def test_the_source_menu_offers_gene_score_and_lists_every_signature_open_or_closed(page, served):
+def test_the_item_picker_lists_every_signature_open_or_closed_in_its_own_section(page, served):
     other = {"id": "gene-signature-O", "title": "B cell score", "genes": ["CD3E"]}
     _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "obs", "key": "score", "column": ""})),),
           extra_cfgs={"gene-signature-O": other}, sig_open=True)
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
-    options = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"color\"] option')].map(o => o.value)", C)
-    assert options == ["none", "obs", "obsm", "obsp", "layer", "gene-score"] or "gene-score" in options
-    for axis in ("x", "y"):
-        assert "gene-score" in page.evaluate(
-            "([t, a]) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"' + a + '\"] option')].map(o => o.value)", [C, axis])
-    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
-    until(page, "(t) => document.querySelector(t + ' select.axis-key-select[data-axis=\"color\"]').options.length === 3", C)
-    labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => o.textContent)", C)
-    assert labels[-1] == "New signature…"
-    assert sorted(labels[:-1]) == ["B cell score", "T cell score"], labels
-    assert not any("closed" in l.lower() for l in labels), "no suffix: the chooser alone says Closed"
+    for axis in ("x", "y", "z", "color"):
+        options = page.evaluate("([t, a]) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"' + a + '\"] option')].map(o => o.value)", [C, axis])
+        assert "gene-score" not in options, "a signature is no source: it is picked in the item picker of a layer"
+    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "layer")
+    column = f"{C} select.axis-column-select[data-axis='color']"
+    until(page, "(s) => [...document.querySelector(s).options].some(o => o.textContent === 'B cell score')", column)
+    entries = page.evaluate("(s) => [...document.querySelector(s).options].map(o => [o.textContent, o.parentElement.label || ''])", column)
+    sigs = [t for t, g in entries if g == "Gene signatures"]
+    assert sigs[-1] == "New signature…" and sorted(sigs[:-1]) == ["B cell score", "T cell score"], entries
+    assert not any("closed" in t.lower() for t, _ in entries), "no suffix: the chooser alone says Closed"
     # the second is closed (not in the layout) and still offered; pick it
-    page.select_option(f"{C} select.axis-key-select[data-axis='color']", "gene-signature-O")
+    axis_sets.pick_set(page, C, "color", "gene-signature-O")
     _wait_coloured(page)
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color")["key"] == "gene-signature-O"
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.label") == "B cell score"
@@ -527,7 +526,6 @@ def test_the_source_menu_offers_gene_score_and_lists_every_signature_open_or_clo
         .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title))
         .filter(Boolean)""", C)
     assert bars == ["B cell score<br>z-score mean · X"], bars
-
 
 def test_f4_close_the_signature_and_the_plot_keeps_its_colours_then_reopen_it(page, served):
     _open(page, served, sig_open=True)
@@ -916,10 +914,8 @@ def test_open_signature_works_with_no_chooser_tile_in_the_page(page, served):
 
 
 def _choose_score(page, axis, key=SIG):
-    """Pick a signature as an axis source through the plot's own menus: gene-score, then the signature."""
-    page.select_option(f"{C} select.axis-type-select[data-axis='{axis}']", "gene-score")
-    until(page, "([t, a, k]) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"' + a + '\"] option')].some(o => o.value === k)", [C, axis, key])
-    page.select_option(f"{C} select.axis-key-select[data-axis='{axis}']", key)
+    """Pick a signature as an axis source through the plot's own menus: the layer source, then the signature in its item picker."""
+    axis_sets.pick_set(page, C, axis, key)
 
 
 def test_the_source_menus_colour_a_cell_plot_by_the_signature(page, served):
@@ -989,7 +985,8 @@ def test_renaming_a_signature_retitles_its_plots_without_computing_again(page, s
     until(page, """(t) => { const g = document.querySelector(t + ' .js-plotly-plot');
         return !!g && g.data.some(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title) === 'Exhaustion score<br>z-score mean · X'); }""", C)
     assert len(_calls(page, "compute")) == 1, "a title is not part of the recipe"
-    labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => o.textContent)", C)
+    until(page, "(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option')].some(o => o.textContent === 'Exhaustion score')", C)
+    labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] optgroup[label=\"Gene signatures\"] option')].map(o => o.textContent)", C)
     assert labels == ["Exhaustion score", "New signature…"]
 
 
@@ -1025,8 +1022,9 @@ def test_a_score_is_selectable_on_every_axis_including_z_in_a_3d_plot(page, serv
     zs = page.evaluate("(t) => Array.from(document.querySelector(t + ' .js-plotly-plot').data.find(d => d.type === 'scatter3d').z).map(Number)", C)
     assert len(zs) == 60 and len(set(round(v, 5) for v in zs)) > 1
     assert page.evaluate("(t) => document.querySelector(t + ' .js-plotly-plot').layout.scene.zaxis.title.text", C) == "T cell score · z-score mean · X"
-    # and the z menu offers it
-    assert "gene-score" in page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"z\"] option')].map(o => o.value)", C)
+    # and the z row reads it on a layer: its button says the aggregation
+    assert page.input_value(f"{C} select.axis-type-select[data-axis='z']") == "layer"
+    assert axis_sets.label_of(page, C, "z") == "Aggregation: Z-score mean"
 
 
 def test_two_scores_against_each_other_one_per_signature_and_the_same_signature_on_two_axes_is_one_request(page, served):
@@ -1061,14 +1059,13 @@ def test_two_aggregations_of_one_signature_are_two_scores_and_one_aggregation_is
     assert len(_calls(page, "estimate")) == 2
     titles = page.evaluate("(t) => { const l = document.querySelector(t + ' .js-plotly-plot').layout; return [l.xaxis.title.text, l.yaxis.title.text]; }", C)
     assert titles == ["T cell score · z-score mean · X", "T cell score · mean · X"]
-    # the third level is the method select: every method the server computes, z-score mean first (decision 31), and
-    # the layer beside it in a select of its own
-    opts = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"y\"] option')].map(o => [o.value, o.textContent])", C)
-    assert opts == [["zscore_mean", "z-score mean"], ["mean", "mean"], ["sum", "sum"], ["control_adjusted", "control-adjusted"],
-                    ["detected", "fraction detected"], ["fraction_of_total", "% of total"]]
-    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-layer-select[data-axis=\"y\"]').value", C) == "X"
+    # the button's menu lists every method the server computes, z-score mean first (decision 31); the layer is the row's own
+    opts = [(o["v"], o["text"]) for o in axis_sets.aggregations(page, C, "y")]
+    assert opts == [("zscore_mean", "z Z-score mean"), ("mean", "x Mean"), ("sum", "\u03a3 Sum"), ("control_adjusted", "\u0394 Control-adjusted"),
+                    ("detected", "n/N Fraction detected"), ("fraction_of_total", "% % of total")]
+    assert page.input_value(axis_sets.sel(C, "y", "key")) == "X"
     # choosing the other aggregation in the menu moves the axis to it
-    page.select_option(f"{C} select.axis-column-select[data-axis='x']", "mean")
+    axis_sets.choose_aggregation(page, C, "x", "mean")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().x.column === 'mean'")
     # time for a second compute, were one going to; the mean was already in the store
     page.wait_for_timeout(800)
@@ -1080,8 +1077,8 @@ def test_a_link_made_before_sub_keys_has_no_column_and_means_the_z_score_mean(pa
     _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "gene-score", "key": SIG, "label": "T cell score"})),))
     _wait_coloured(page)
     assert _calls(page, "compute")[0]["method"] == "zscore_mean"
-    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').value", C) == "zscore_mean"
-    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-layer-select[data-axis=\"color\"]').value", C) == "X"
+    assert axis_sets.aggregation_of(page, C, "color") == "zscore_mean"
+    assert page.input_value(axis_sets.sel(C, "color", "key")) == "X"
 
 
 def test_the_registry_lists_a_closed_signature_and_its_aggregations(page, served):
@@ -1214,13 +1211,14 @@ def test_a_gene_plot_with_a_gene_score_link_says_it_is_a_cell_source_and_the_res
     assert "gene-score" not in page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"x\"] option')].map(o => o.value)", G)
 
 
-def test_new_signature_in_the_key_list_opens_a_signature_beside_the_plot_and_wires_the_axis(page, served):
+def test_new_signature_in_the_item_picker_opens_a_signature_beside_the_plot_and_wires_the_axis(page, served):
     _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "obs", "key": "score", "column": ""})),), sig=False)
-    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
-    until(page, "(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].some(o => o.value === '__new_signature__')", C)
-    labels = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-key-select[data-axis=\"color\"] option')].map(o => [o.textContent, o.disabled])", C)
-    assert labels == [["No signatures or tables yet", True], ["New signature…", False]]
-    page.select_option(f"{C} select.axis-key-select[data-axis='color']", "__new_signature__")
+    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "layer")
+    column = axis_sets.sel(C, "color", "column")
+    until(page, "(s) => [...document.querySelector(s).options].some(o => o.textContent === 'New signature…')", column)
+    entries = page.evaluate("(s) => [...document.querySelector(s).options].map(o => [o.textContent, o.parentElement.label || ''])", column)
+    assert [t for t, g in entries if g == "Gene signatures"] == ["New signature…"], entries
+    page.select_option(column, axis_sets.set_value("gene-score", "__new_signature__"))
     until(page, "() => window.PanelManager.getPanelsByType('gene-signature').length === 1")
     new_id = page.evaluate("() => window.PanelManager.getPanelsByType('gene-signature')[0].getId()")
     page.wait_for_selector(f'.tile[data-tile-id="{new_id}"] .gsig-grid .gsig-row', timeout=30000)

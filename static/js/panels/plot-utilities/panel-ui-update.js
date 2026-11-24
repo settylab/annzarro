@@ -7,7 +7,10 @@ import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { noteDatasetLayers } from '../../utils/score-source.js';
 import { refreshHoverGroups } from './hover-columns.js';
 import { fillChoiceSelect } from '../../utils/pair-selects.js';
-import { attachFilter } from '../../utils/group-picker.js';
+import { attachFilter, fillSections } from '../../utils/group-picker.js';
+import { aggregateProviders, setSections, isAggregate, displayType, heldSet, aggregateOf } from '../../utils/axis-aggregate.js';
+import { VOCABULARY } from '../../utils/vocabulary.js';
+import { createAggregationButton } from '../../ui/aggregation-button.js';
 import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -132,6 +135,14 @@ export function populateKeySelector(settings, keySelect, datasetStructure, use =
     let keyOptions = [];
     const $keySelect = jQuery(keySelect);
     $keySelect.prop('disabled', false);
+
+    // a set (a signature, a group) is read on a layer: its row lists the layers, the one it is read on chosen
+    if (use && use.aggregate && isAggregate(settings)) {
+      // every layer, graded for the aggregation the set holds: one it cannot be computed on is disabled, its reason the title
+      const menu = aggregateOf(settings).aggregate.layers(settings);
+      fillChoiceSelect(keySelect, menu.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '' })), menu.chosen);
+      return;
+    }
   
     // Initialize the settings history if it doesn't exist
     if (!settings.history) {
@@ -321,6 +332,15 @@ function refreshSourceMenus() {
     $.setSelectValue(jQuery(keySelect), current, false);
     jQuery(keySelect).find('option[value=""]').prop('disabled', true);
   }
+  // the item picker of every row on a layer lists the sets now (one was made, renamed or deleted), and the layer list is
+  // graded for the aggregation its set holds
+  for (const select of document.querySelectorAll('select.axis-column-select')) {
+    const row = select.__aggregate ? select.__row : null;
+    if (!row || !(row.settings.type === 'layer' || isAggregate(row.settings))) continue;
+    populateLayerItems(row.settings, select, row.plotType, row.use);
+    const key = select.closest('.axis-selector') && select.closest('.axis-selector').querySelector('.axis-key-select');
+    if (key && isAggregate(row.settings)) populateKeySelector(row.settings, key, row.structure, row.use);
+  }
   // the method and layer selects of every provider axis follow its source's grading (an impossible pair held stays, labelled)
   for (const select of document.querySelectorAll('select.axis-column-select')) {
     const axis = axisOf(select);
@@ -343,7 +363,7 @@ function refreshSourceMenus() {
  * @param {string} plotType - Either 'cells' or 'genes'
  * @param {Object} datasetStructure - Structure of the loaded dataset
  */
-export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure) {
+export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure, use = null) {
   noteDatasetLayers(layerKeys(datasetStructure));
   // a layer belongs to a provider that has them (a gene score) only: another source has none
   const provider = getSource(settings.type);
@@ -371,6 +391,15 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   let columnOptions = [];
   const $columnSelect = jQuery(columnSelect);
   $columnSelect.prop('disabled', false);
+
+  // the item picker of a layer lists the focused gene or cell and then the sets, in sections, with the aggregation button
+  // after it when a set is picked; any other source has neither
+  const sets = !!(use && use.aggregate);
+  if (sets && (settings.type === 'layer' || isAggregate(settings))) {
+    populateLayerItems(settings, columnSelect, plotType, use);
+    return;
+  }
+  ensureAggregationButton(columnSelect, null);
 
   // a provider with layers (a gene score) has a fourth select, the layer, after the method; any other source has none
   // a provider whose third select is a choice of cells (a group) has a statistic select too, between the column and the layer
@@ -572,6 +601,75 @@ export function showDropdownLoading(dropdown) {
   $dropdown.prop('disabled', true);
 }
 
+/**
+ * The item picker of a row on a layer: the focused gene (Cell Plot) or cell (Gene Plot), then the sets in separate
+ * sections, each with its heading. The chosen entry is the set the setting holds, else the focused item; a long list has
+ * a filter field beside it that finds a set by every name it has (utils/group-picker.js).
+ */
+function populateLayerItems(settings, columnSelect, plotType, use) {
+  const asSet = isAggregate(settings);
+  const entity = plotType === 'cells' ? 'genes' : 'cells';
+  const focusedNow = () => (plotType === 'cells' ? DataManager.getFocusedGene() : DataManager.getFocusedCell());
+  let focused;
+  if (asSet) {
+    focused = focusedNow();
+  } else if (settings.column && settings.type === 'layer' && settings.locked) {
+    focused = settings.column;
+  } else if (settings.history?.layer?.columns?.[settings.key] && settings.history.layer.locked) {
+    settings.column = settings.history.layer.columns[settings.key];
+    focused = settings.column;
+  } else {
+    focused = focusedNow();
+    settings.column = focused;
+  }
+  const locked = !asSet && !!(settings.locked || settings.history?.layer?.locked);
+  const sections = [];
+  if (focused) sections.push({ heading: plotType === 'cells' ? VOCABULARY.aggregation.sections.genes : VOCABULARY.aggregation.sections.cells,
+    entries: [{ value: focused, text: focusedOptionLabel(entity, focused, locked) }] });
+  sections.push(...setSections(use.consumer, use.roles));
+  const loose = focused ? [] : [{ value: '', text: `Select a focused ${plotType === 'cells' ? 'gene' : 'cell'} first` }];
+  // a set that is gone stays where it was chosen, marked, so the plot keeps its setting and says why (the notice over it)
+  const held = asSet ? heldSet(settings) : '';
+  if (held && !sections.some(g => g.entries.some(e => e.value === held))) {
+    loose.push({ value: held, text: `${settings.label || settings.key} (deleted)` });
+  }
+  fillSections(columnSelect, { loose, sections, chosen: asSet ? heldSet(settings) : (focused || '') });
+  columnSelect.disabled = false;
+  attachFilter(columnSelect, { label: 'Item', placeholder: 'Filter' });
+  ensureAggregationButton(columnSelect, asSet ? settings : null);
+}
+
+/**
+ * The aggregation button after a set's item picker (ui/aggregation-button.js): the aggregation's symbol, and the menu of every
+ * aggregation of the set held, each as a symbol and a name. None for a single item. A choice is handed to the column
+ * select's own listeners, like every change of the row.
+ */
+function ensureAggregationButton(columnSelect, settings) {
+  let made = columnSelect.__agg || null;
+  if (!settings || !isAggregate(settings)) {
+    if (made) { made.destroy(); columnSelect.__agg = null; }
+    return;
+  }
+  if (!made) {
+    made = createAggregationButton({
+      label: VOCABULARY.aggregation.label, axis: columnSelect.dataset.axis || '',
+      methods: () => {
+        const row = columnSelect.__row;
+        const provider = row && aggregateOf(row.settings);
+        return provider ? provider.aggregate.methods(row.settings) : null;
+      },
+      onPick: (value) => {
+        columnSelect.__touched = 'agg';
+        columnSelect.__aggValue = value;
+        columnSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+    columnSelect.__agg = made;
+  }
+  if (made.button.previousElementSibling !== columnSelect) columnSelect.after(made.button);
+  made.update();
+}
+
 /** The built-in sources of a type menu, by the entity a value belongs to. */
 const BUILT_IN_TYPES = Object.freeze({ cells: ['obs', 'obsm', 'obsp', 'layer'], genes: ['var', 'varm', 'varp', 'layer'] });
 
@@ -583,11 +681,12 @@ const BUILT_IN_TYPES = Object.freeze({ cells: ['obs', 'obsm', 'obsp', 'layer'], 
  * @param {string[]} roles - e.g. ['x'], ['color']
  * @returns {Array<{value: string, text: string}>}
  */
-export function typeChoices(plotType, consumer, roles) {
+export function typeChoices(plotType, consumer, roles, aggregate = false) {
   return [
     ...(roles.includes('color') ? [{ value: 'none', text: 'None (constant)' }] : []),
     ...BUILT_IN_TYPES[plotType === 'genes' ? 'genes' : 'cells'].map(type => ({ value: type, text: type })),
-    ...sourcesFor(consumer, roles).map(p => ({ value: p.type, text: p.label }))
+    // a set is no source of its own on an axis row: it is picked in the item picker of a layer
+    ...sourcesFor(consumer, roles).filter(p => !(aggregate && p.aggregate)).map(p => ({ value: p.type, text: p.label }))
   ];
 }
 
@@ -609,7 +708,7 @@ function fillTypeSelect(select, choices) {
  * @param {{consumer: string, roles: string[]}} use - the panel type the selects belong to and the roles the source
  *   fills (['x'], ['color']): the type menu lists what that consumer accepts for them
  */
-export function setupAxisSelector(container, axis, settings, plotType, datasetStructure, { consumer, roles }) {
+export function setupAxisSelector(container, axis, settings, plotType, datasetStructure, { consumer, roles, aggregate = false }) {
     const $container = jQuery(container);
     const $typeSelect = $container.find(`.axis-type-select[data-axis="${axis}"]`);
     const $keySelect = $container.find(`.axis-key-select[data-axis="${axis}"]`);
@@ -619,7 +718,13 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
       console.error(`Missing select elements for ${axis} axis`);
       return;
     }
-    fillTypeSelect($typeSelect[0], typeChoices(plotType, consumer, roles));
+    // an axis row of a plot picks sets in its item picker (utils/axis-aggregate.js): only where the consumer has some
+    const sets = aggregate && aggregateProviders(consumer, roles).length > 0;
+    const use = { consumer, roles, aggregate: sets };
+    $keySelect[0].__aggregate = sets;
+    $columnSelect[0].__aggregate = sets;
+    $columnSelect[0].__row = { settings, axis, plotType, use, structure: datasetStructure };
+    fillTypeSelect($typeSelect[0], typeChoices(plotType, consumer, roles, sets));
     
     // Show loading indicators while initializing
     showDropdownLoading($keySelect);
@@ -636,7 +741,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     settings.column = settings.column || '';
     
     // Set the UI value
-    $.setSelectValue($typeSelect, settings.type, false);
+    $.setSelectValue($typeSelect, sets ? displayType(settings) : settings.type, false);
   
     // Populate dropdowns which will replace loading indicators
     // A Cell Plot above the large-plot threshold draws axes from numbers only: label columns
@@ -645,9 +750,9 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
       && (DataManager.getCells() || []).length > largeThreshold(Config.DEFAULTS);
     $keySelect[0].__blockedKeys = large && settings.type === 'obs' ? textObsColumns(datasetStructure) : null;
     $keySelect[0].dataset.keyType = settings.type;
-    populateKeySelector(settings, $keySelect[0], datasetStructure, { consumer, roles });
+    populateKeySelector(settings, $keySelect[0], datasetStructure, use);
     limitTextAxisOptions($keySelect[0], large, textObsColumns(datasetStructure));
-    populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure);
+    populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure, use);
     setTimeout(() => syncSelectTitles(), 60);
     
     // Add or update the refocus and lock buttons for layer, obsp, and varp types
@@ -1337,7 +1442,7 @@ function layerSelectFor(columnSelect, provider) {
 }
 
 /** Say once, beside the selects, that the other select moved ("Layer changed to logged: ..."); '' clears it. */
-function sayPair(columnSelect, text) {
+export function sayPair(columnSelect, text) {
   const selector = columnSelect.closest('.axis-selector') || columnSelect.parentNode;
   if (!selector) return;
   let note = selector.nextElementSibling && selector.nextElementSibling.classList.contains('axis-pair-note') ? selector.nextElementSibling : null;
