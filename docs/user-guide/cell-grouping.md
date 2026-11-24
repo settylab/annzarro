@@ -197,7 +197,7 @@ change a Cell Plot coloured by the bare column: that plot has its own palette se
 **Group colours.** A grouping of one factor shows that factor's colours. A grouping of several factors has its own
 palette in group order, repeating by the 64 colour groups. Under **Settings** ▸ **Colors**, **Color groups by** chooses
 **Own palette** (the default) or one of the factors, so that every group takes the colour of its level of that factor;
-**Palette** changes the own palette; and **Reset group colors (n)** removes the n colours you set by hand. Click a
+**Palette** changes the own palette; **Reset group colors (n)** removes the n colours you set by hand; and **Reset group names (n)** removes the n names you gave to groups, keeping their colours (one undo step, no recompute). A factor's own **Reset names**, beside its **Reset colors**, does the same for the names of its levels. Click a
 group's swatch in the group list, or press **Enter** or **Space** on a focused row, to give that group a colour of its
 own; it wins over everything else. That colour is kept under the group's generated name (its level labels joined by
 the separator), not its place in the list: when another dataset, another factor or moved bins leave no group of that

@@ -28,6 +28,7 @@
  */
 import { PanelManager } from '../panel-manager.js';
 import { createPopover } from '../ui/popover.js';
+import { inlineRename } from '../ui/inline-rename.js';
 import { DataManager } from '../data-manager.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
@@ -394,75 +395,40 @@ function createFactors({ D, id, model, on }) {
      */
     function editedRow(i, p, info, r, li, count) {
         const mine = renaming;
-        const input = el('input', { type: 'text', class: 'form-control form-control-sm cgrp-level__name', value: mine.draft !== undefined ? mine.draft : r.label,
-            title: RENAME_HINT, data: { azOwnEscape: '' }, aria: { label: `New name for ${r.label}`, description: RENAME_HINT } });
         let finished = false;
         /** Leave the field: `keep` saves it, `move` (a level id) starts the next edit, else the focus goes to the row's button. */
-        const leave = (keep, move = null) => {
+        const leave = (keep, text, move = null) => {
             if (finished) return;
             finished = true;
             pendingLeave = null;
             const started = renaming === mine;          // a click on another level's ✎ may have started its edit already
             if (started) renaming = move ? { index: i, id: move } : null;
             if (!move && started) focusRow = { index: i, id: r.id };
-            const next = renameLevel(p, r.id, input.value, defaultsOf(i).get(r.id));
+            const next = renameLevel(p, r.id, text, defaultsOf(i).get(r.id));
             if (keep && JSON.stringify(next) !== JSON.stringify(p)) commitFactor(i, next, `rename level ${r.was || r.label}`);
             else paint();
         };
-        pendingLeave = () => leave(true);
         const neighbour = (by) => {
             const rows = levelRows(p, info, defaultsOf(i)).filter((x) => canRename(p, x));
             const at = rows.findIndex((x) => x.id === r.id);
             return rows[at + by] ? rows[at + by].id : null;
         };
-        input.addEventListener('input', () => { mine.draft = input.value; });
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); leave(true); }
-            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); }
-            else if (e.key === 'Tab') { e.preventDefault(); leave(true, neighbour(e.shiftKey ? -1 : 1)); }
-        });
-        // Leaving the field by a click saves it, but after the click has landed: a redraw between its press and release
-        // would take the control it pressed from under it. The first of the click, the release or a short timer decides, so a
-        // release the page never sees cannot strand the edit.
-        li.addEventListener('focusout', (e) => {
-            if (finished) return;
-            if (e.relatedTarget && li.contains(e.relatedTarget)) return;      // between the field and its two buttons
-            let done = false;
-            const later = () => {
-                if (done) return;
-                done = true;
-                document.removeEventListener('click', later, true);
-                document.removeEventListener('pointerup', later, true);
-                // a redraw that takes the field away (the server's reply) blurs it too: that is no way out, the edit goes on in
-                // the field the redraw makes from `renaming` and its draft
-                setTimeout(() => { if (input.isConnected) leave(true); }, 0);
-            };
-            document.addEventListener('click', later, true);
-            document.addEventListener('pointerup', later, true);
-            setTimeout(later, 350);
-        });
-        // ✓ and ✕ beside the field: real buttons, in the tab order after it. A press on them leaves the focus in the field.
-        const ok = el('button', { type: 'button', class: 'btn btn-sm btn-outline-success cgrp-level__ok', title: 'Save the name',
-            data: { azOwnEscape: '' }, aria: { label: `Save the new name for ${r.label}` },
-            on: { mousedown: (e) => e.preventDefault(), click: () => leave(true), keydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } } } }, '✓');
-        const cancel = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-level__cancel', title: 'Cancel',
-            data: { azOwnEscape: '' }, aria: { label: `Cancel renaming ${r.label}` },
-            on: { mousedown: (e) => e.preventDefault(), click: () => leave(false), keydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } } } }, '✕');
-        li.classList.add('cgrp-level--editing');
         // the level's own color beside its name (the same picker and the same override as the swatch of its row): naming and coloring in one place
         const colour = colorsOf(i).get(r.id);
         const swatch = colour ? levelSwatch({ D, id: r.id, label: r.label, colour, pick: (css) => commitFactor(i, withOverride(p, r.id, css), `color level ${r.label}`) }) : null;
         if (swatch) {
             swatch.title = `Color of ${r.label} (Alt+C)`;
             swatch.setAttribute('aria-keyshortcuts', 'Alt+C');
-            swatch.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } });
-            swatch.dataset.azOwnEscape = '';
-            input.addEventListener('keydown', (e) => {
-                if (!e.altKey || e.key.toLowerCase() !== 'c') return;
-                e.preventDefault();
-                if (typeof swatch.showPicker === 'function') { try { swatch.showPicker(); } catch { swatch.click(); } } else swatch.click();
-            });
         }
+        // the shared editor (ui/inline-rename.js) owns the field, ✓ and ✕ and every way out; this decides what saving does
+        const rename = inlineRename({ el, swatch, value: mine.draft !== undefined ? mine.draft : r.label, onInput: (text) => { mine.draft = text; },
+            classes: { input: 'form-control form-control-sm cgrp-level__name', ok: 'btn btn-sm btn-outline-success cgrp-level__ok', cancel: 'btn btn-sm btn-outline-secondary cgrp-level__cancel' },
+            labels: { field: `New name for ${r.label}`, ok: `Save the new name for ${r.label}`, cancel: `Cancel renaming ${r.label}`, hint: RENAME_HINT },
+            onSave: (text, move) => leave(true, text, move ? neighbour(move) : null), onCancel: () => leave(false, '') });
+        const { input, ok, cancel } = rename;
+        pendingLeave = () => rename.save();
+        rename.attach(li);
+        li.classList.add('cgrp-level--editing');
         li.append(...(swatch ? [swatch] : []), input, ok, cancel, count);
         setTimeout(() => { if (input.isConnected) { input.focus(); input.select(); } }, 0);
         return li;
