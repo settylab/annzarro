@@ -44,6 +44,7 @@ _SENTENCES = {
     "config_scope": "can only be changed in the configuration file",
     "server_scope": "applies to the whole server and cannot be set per user",
     "config_ceiling": "cannot be widened past what the configuration file allows",
+    "out_of_order": "is out of order with the limit it must stay below or above",
     ADMIN_USER: "cannot be overridden for an administrator",
 }
 
@@ -160,9 +161,10 @@ def wire_sources(app):
 class _Refused(Exception):
     """An update the registry refused; nothing is written."""
 
-    def __init__(self, errors):
+    def __init__(self, errors, messages=None):
         super().__init__(errors)
         self.errors = errors
+        self.messages = messages or {}
 
 
 def _sentence(errors: Mapping[str, str]) -> str:
@@ -312,6 +314,19 @@ def _problems(config):
     return found
 
 
+def _order_refusals(eng, stored, changes) -> Dict[str, str]:
+    """``{key: message}`` for the cost limits a write sets out of order (live_update_s <= ask_first_s <= refuse_s,
+    partitionings <= request_partitionings), as the overlay would resolve them. Only the keys the write sets count:
+    a reset is never refused, nor a write of other keys while a value of the YAML is out of order."""
+    from annzarro.server import limits
+    names = [n for n in eng.registry.names() if n.startswith(limits.COST_PREFIX)]
+    touched = {n for n, v in changes.items() if v is not None}
+    errors = limits.order_errors(eng.values_with(OVERLAY, stored, names), touched)
+    if not errors or not touched & set(limits.ORDERED_KEYS):
+        return {}
+    return errors
+
+
 # -- views --------------------------------------------------------------------
 
 @require_admin
@@ -333,6 +348,9 @@ def policy():
         update = eng.apply_update(OVERLAY, before, changes)
         if update.errors:
             raise _Refused(update.errors)
+        out_of_order = _order_refusals(eng, update.stored, changes)
+        if out_of_order:
+            raise _Refused({name: "out_of_order" for name in out_of_order}, out_of_order)
         if update.stored:
             data["policy"] = update.stored
         else:
@@ -343,7 +361,7 @@ def policy():
         before, update = overlay.update(config, mutate)
     except _Refused as refused:
         _record("overlay", changes, {}, "refused:" + ",".join(sorted(set(refused.errors.values()))))
-        return _refusal(refused.errors, _messages(eng, changes, refused.errors))
+        return _refusal(refused.errors, {**_messages(eng, changes, refused.errors), **refused.messages})
     except ValueError as exc:
         return _unreadable(exc)
     saved = _record("overlay", changes, _diff(before, update.stored, changes, eng))

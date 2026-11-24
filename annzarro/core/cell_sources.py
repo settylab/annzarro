@@ -38,6 +38,7 @@ from typing import Any, Callable, Dict, Iterator, NamedTuple, Optional
 import numpy as np
 
 from . import categories as category_rules
+from . import cost_limits
 from . import gene_score as gs
 from .zarr_reader import MissingKeyError
 
@@ -46,7 +47,7 @@ SLAB_ROWS = 1 << 22
 
 #: The most cells a dataset may have for one of its obsp rows to be a per-cell source: the large-plot threshold
 #: (requirements 8.6). A row is found by its cell's name, and the names of a larger dataset are not listed for that.
-OBSP_MAX_CELLS = 1_000_000
+OBSP_MAX_CELLS = cost_limits.COST_LIMITS["obsp_source_max_cells"].default   # limits.obsp_source_max_cells
 
 #: Read a contiguous run of cells (all cells, every slab of a full read) with a slice. Zarr turns a list of indices
 #: into a fancy selection, about a quarter of the time of a 100M cell grouping; tests switch it off to compare.
@@ -117,10 +118,11 @@ def _key_not_found(what: str) -> CellSourceError:
 
 def _check_obsp(n: int) -> None:
     """Refuse an obsp source on a dataset of more than ``OBSP_MAX_CELLS`` cells, before anything is read."""
-    if n > OBSP_MAX_CELLS:
+    most = cost_limits.get("obsp_source_max_cells")
+    if n > most:
         raise CellSourceError(422, "obsp_too_large", f"A row of an obsp matrix can be a source for up to "
-                              f"{OBSP_MAX_CELLS:,} cells; this dataset has {n:,}. Use an obs or obsm column instead.",
-                              count=int(n), limit=OBSP_MAX_CELLS)
+                              f"{most:,} cells; this dataset has {n:,}. Use an obs or obsm column instead.",
+                              count=int(n), limit=most)
 
 
 def n_cells(store) -> int:
