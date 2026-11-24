@@ -226,7 +226,7 @@ defaults and sections:
 | Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none); **Dot opacity**, a slider and a box from 0.1 to 1 (opaque by default), for the dots and the size legend's dots |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
 | Legend | **Space** (the legend column's share of the width; empty lets the figure decide), **Columns** and **Entries, at most** (20) of the strip legends; **Color bar**, **Size legend**, **Strip legend**; **Color bar title**, **Size legend title** |
-| Totals | **Cells per group** (a bar along the group axis); **Group band** (on by default) |
+| Totals | **Cells per group** (a bar along the group axis); **Color strips**: **Factors** (the default), **Group** or **None** |
 | Margins | Room added on each side, in px, to the room the labels take |
 | Export | **PNG**, **SVG** (not in 3D), **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV** |
 | Apply | **Apply to other Cell-Gene plots**; **Make this the session default**, **Back to built-in** |
@@ -243,9 +243,10 @@ values above and below the mean read as opposite colours. A scale you pick yours
 
 The group axis carries a colour strip in the grouping's colours, one per factor (the colours of its **Colors** settings, {doc}`cell-grouping`; a colour changed there redraws the strips and their legend at once), in the order the strips' legend lists
 them (left to right beside the groups, top to bottom below them when the axes are swapped); small groups get "small"
-after their label. After the factors' strips, a **Group** band shows each group in its own colour, the colour of its
-swatch in the group grid (a colour set there shows here at once). It is drawn when the grouping has more than one factor
-or a group has a colour of its own, with its legend beside the others; **Group band** in Plot Options turns it off.
+after their label. **Color strips** in Plot Options chooses what the strips show: **Factors**, one strip per factor (the
+default); **Group**, one band with each group in its own colour, the colour of its swatch in the group grid (a colour set
+there shows here at once); or **None**, no colour strip (Cells per group and the other annotations stay). The strips'
+legend follows what is drawn.
 Gene and group labels thin out when they would overlap, and the hover always names the group, the gene (or the
 section and its entry), each value with its statistic and layer, and the group's cells.
 
