@@ -541,8 +541,11 @@ const GenePlotPanel = (function() {
                     // Another dataset's coordinates: the zoom and camera chosen
                     // on the previous one do not apply (the plot is drawn into
                     // the same graph, under the new dataset's uirevision)
-                    _settings.viewport2D = null;
-                    _settings.viewport3D = null;
+                    // A Refresh of the same dataset (the header's) re-reads it: the same coordinates, so the view stays
+                    if (!(updateData && updateData.refresh)) {
+                        _settings.viewport2D = null;
+                        _settings.viewport3D = null;
+                    }
                     await refreshPlot(signal);
                     
                     // If we get here, the operation completed successfully
