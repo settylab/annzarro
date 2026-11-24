@@ -21,6 +21,7 @@
 import { csvField } from './csv-format.js';
 import { VOCABULARY } from './vocabulary.js';
 import { STATISTIC_IDS } from './cell-grouping.js';
+import { limit } from './limits.js';
 
 const W = VOCABULARY.cellGene;
 
@@ -64,9 +65,6 @@ export const DEFAULT_ROW_AGGREGATIONS = Object.freeze({ color: 'mean_of_means', 
 /** The statistics read at an expression threshold. */
 const THRESHOLDED = Object.freeze(['pct_expressing', 'mean_expressing']);
 
-/** CXG-17. */
-const MATRIX_CELLS_MAX = 400000;
-const GENES_PER_SECTION_MAX = 2000;
 
 // --- the statistics ---------------------------------------------------------------------------------------------
 
@@ -302,10 +300,11 @@ export function setRow(aggregation, input, groups, { counted } = {}) {
 // --- limits (CXG-17) --------------------------------------------------------------------------------------------
 
 /**
- * Whether the matrix may be requested: at most 2,000 genes in a section, 400,000 cells of the drawn matrix (groups x
- * rows), and 400,000 values the server accumulates (groups x planned features, core/group_features.py
- * MAX_FEATURE_CELLS). A gene read on two layers, or at two thresholds, is two features (finding 9), so the second limit
- * is reached first when Color and Size read differently.
+ * Whether the matrix may be requested (CXG-17): at most `genes_per_section` genes in a section (2,000 by default),
+ * `matrix_values` cells of the drawn matrix (groups x rows) and `matrix_values` values the server accumulates (groups
+ * x planned features; 400,000 by default). The limits are the server's, read when asked (utils/limits.js). A gene read
+ * on two layers, or at two thresholds, is two features (finding 9), so the second limit is reached first when Color
+ * and Size read differently.
  * @param {{groups: number, sections: {rows: number, genes: number}[], features?: number}} shape - `rows` is what the
  *   section draws; `features` the distinct features the request carries (sections.js planFeatures)
  * @returns {{ok: true}|{ok: false, reason: 'too_many_genes', section: number, count: number, limit: number}
@@ -313,14 +312,16 @@ export function setRow(aggregation, input, groups, { counted } = {}) {
  */
 // export-unused-ok: consumed by X3a (nothing is requested above the limit, and the panel says which number to reduce)
 export function matrixLimits({ groups, sections, features = 0 }) {
+    const perSection = limit('genes_per_section');
     for (let s = 0; s < sections.length; s++) {
-        if (sections[s].genes > GENES_PER_SECTION_MAX) {
-            return { ok: false, reason: 'too_many_genes', section: s, count: sections[s].genes, limit: GENES_PER_SECTION_MAX };
+        if (sections[s].genes > perSection) {
+            return { ok: false, reason: 'too_many_genes', section: s, count: sections[s].genes, limit: perSection };
         }
     }
+    const values = limit('matrix_values');
     const rows = sections.reduce((a, s) => a + s.rows, 0);
-    if (rows * groups > MATRIX_CELLS_MAX) return { ok: false, reason: 'matrix_too_large', count: rows * groups, limit: MATRIX_CELLS_MAX };
-    if (features * groups > MATRIX_CELLS_MAX) return { ok: false, reason: 'too_many_values', count: features * groups, limit: MATRIX_CELLS_MAX };
+    if (rows * groups > values) return { ok: false, reason: 'matrix_too_large', count: rows * groups, limit: values };
+    if (features * groups > values) return { ok: false, reason: 'too_many_values', count: features * groups, limit: values };
     return { ok: true };
 }
 

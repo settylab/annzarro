@@ -2,7 +2,9 @@
  * The colour scale of a count figure, from the options of the config (WP-6a): one place for the map, Reverse and the
  * fixed range, so a 2D histogram, a 2D density and an UpSet's bars read them alike. Pure.
  */
-import { plotlyColorscale } from '../../utils/color-scales.js';
+import { plotlyColorscale, EXTRA_SCALES } from '../../utils/color-scales.js';
+import { PLOTLY_SCALE_STOPS } from '../../utils/color-scale-stops.js';
+import { asHex } from '../../utils/grouping-colours.js';
 
 /** The map drawn when the config stores none. */
 export const DEFAULT_COLORSCALE = 'Viridis';
@@ -49,4 +51,52 @@ export function colourValues(data) {
         for (const v of source) if (typeof v === 'number' && Number.isFinite(v)) out.push(v);
     }
     return out.length ? Float64Array.from(out) : null;
+}
+
+const rgbOf = (css) => { const h = asHex(css); return [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+
+/** The colour of a map at `t` in 0..1 (stops interpolated in RGB, as Plotly draws a colour scale), as `#rrggbb`. */
+function mapColourAt(stops, t) {
+    const at = Math.min(1, Math.max(0, t));
+    let k = 1;
+    while (k < stops.length - 1 && stops[k][0] < at) k++;
+    const [t0, c0] = stops[k - 1];
+    const [t1, c1] = stops[k];
+    const f = t1 === t0 ? 0 : Math.min(1, Math.max(0, (at - t0) / (t1 - t0)));
+    const a = rgbOf(c0);
+    const b = rgbOf(c1);
+    return `#${a.map((v, i) => Math.round(v + (b[i] - v) * f).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * The colours a pie's slices take from a continuous colour scale: Plotly maps a number to a colour for a trace, not for a
+ * pie's slices, so the figure maps them with the map's own stops and the same range rules as `scaleKeys` (Min, Max and
+ * Center as set, else the values' own; Reverse). A value that is not a finite number gets `grey`.
+ * @param {Array<number|null>} values
+ * @param {{colorscale?: string, colour?: {reverse?: boolean, min?: number, max?: number, center?: number}}} options
+ * @param {string} grey
+ * @returns {{colours: string[], lo: number, hi: number}} the colours and the range the scale was drawn over
+ */
+export function scaleColours(values, options, grey) {
+    const o = options || {};
+    const colour = o.colour || {};
+    const name = o.colorscale || DEFAULT_COLORSCALE;
+    const stops = EXTRA_SCALES[name] || PLOTLY_SCALE_STOPS[name] || PLOTLY_SCALE_STOPS[DEFAULT_COLORSCALE];
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const v of values) if (Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (Number.isFinite(colour.min)) lo = colour.min;
+    if (Number.isFinite(colour.max)) hi = colour.max;
+    // Center, as Plotly's cmid: with a limit unset, the range is made symmetric about it
+    if (Number.isFinite(colour.center) && !(Number.isFinite(colour.min) && Number.isFinite(colour.max))) {
+        const half = Math.max(Math.abs((Number.isFinite(colour.min) ? colour.min : lo) - colour.center), Math.abs((Number.isFinite(colour.max) ? colour.max : hi) - colour.center));
+        if (!Number.isFinite(colour.min)) lo = colour.center - half;
+        if (!Number.isFinite(colour.max)) hi = colour.center + half;
+    }
+    const colours = values.map((v) => {
+        if (!Number.isFinite(v)) return grey;
+        const t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
+        return mapColourAt(stops, colour.reverse === true ? 1 - Math.min(1, Math.max(0, t)) : t);
+    });
+    return { colours, lo, hi };
 }

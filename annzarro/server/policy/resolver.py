@@ -265,6 +265,13 @@ class PolicyEngine:
             out = {n: r for n, r in out.items() if n in wanted}
         return out
 
+    def values_with(self, layer: str, stored: Mapping[str, Any], names: Iterable[str]) -> Dict[str, Any]:
+        """``{name: value}`` of ``names`` (server view) were ``layer`` to hold ``stored``, before the registry's
+        constraints: what a write would make of keys that must keep an order between them."""
+        layers = {l: self.stored(l, None) for l in STORED_LAYERS}
+        layers[layer] = dict(stored)
+        return {n: self._resolve_key(self.registry.keys[n], layers).value for n in names if n in self.registry.keys}
+
     def resolve(self, name: str, user: Optional[str] = None) -> Resolution:
         return self.resolve_all(user)[name]
 

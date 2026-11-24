@@ -39,6 +39,8 @@ import { getFixedGenes } from './table-utilities/panel-tracker.js';
 import { DEFAULT_METHOD, OPTION_KEYS } from '../utils/signature-options.js';
 import { SCORE_TYPE, pinConsumersOf, sourceChanged, sourceRenamed, sourceStatus, onSourceStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
+import { Coverage, GAP } from '../utils/coverage.js';
+import { renderCoverageNotice } from '../utils/panel-surface.js';
 import { pasteSource } from './gene-signature-paste.js';
 import { createScoreOptions } from './score-options/score-options.js';
 import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
@@ -613,6 +615,8 @@ const GeneSignaturePanel = (function() {
                 onToggle: (name, checked) => toggleGene(name, checked),
                 onDirection: (name, direction) => setDirection([name], direction)
             });
+            // the banner under the list ("5 of 3,000 genes selected") is the strip a plot has under it: it follows the grid
+            if (!_grid.element.id) _grid.element.id = sid('grid');
 
             const root = el('div', { class: 'gsig-panel' });
             root.insertAdjacentHTML('afterbegin', noDatasetScreenHtml(_id));
@@ -635,9 +639,10 @@ const GeneSignaturePanel = (function() {
             const loaded = _nameSet.size > 0;
             const missing = loaded ? [..._recipe.genes, ..._recipe.down].filter(g => !_nameSet.has(g)).length : 0;
             const counts = directionCounts(_recipe);
-            _dom.summary.textContent = n
-                ? `${fmtCount(n)} ${n === 1 ? 'gene' : 'genes'} selected${counts ? `: ${counts}` : ''}`
-                : 'Tick genes to build a score.';
+            // how many are selected is the banner at the bottom (paintBanner); the top keeps only the first hint
+            _dom.summary.textContent = n ? '' : 'Tick genes to build a score.';
+            _dom.summary.hidden = !!n;
+            paintBanner(loaded);
             // no single definition here: each plot or table chooses its method and layer (the Methods pop-over holds their settings)
             const sides = loaded ? emptySideNote() : '';
             _dom.definition.textContent = [missing ? `${fmtCount(missing)} not in this dataset.` : '', sides].filter(Boolean).join(' ');
@@ -700,6 +705,21 @@ const GeneSignaturePanel = (function() {
             paintScore();
             if (_scoreOptions) _scoreOptions.paint();
             _dom.message.textContent = _message;
+        }
+
+        /**
+         * The status banner at the bottom of the panel: "5 of 3,000 genes selected", the same strip (utils/panel-surface.js)
+         * as a plot's "n of N cells shown", always there once the genes are known so the list never moves when it changes.
+         * Its details say how many are not selected.
+         */
+        function paintBanner(loaded) {
+            if (!loaded || !_grid) return;
+            const total = _names.length;
+            const shown = [..._recipe.genes, ..._recipe.down].filter(g => _nameSet.has(g)).length;
+            const coverage = shown >= total ? Coverage.complete(total, 'genes')
+                : new Coverage({ shown, total, unit: 'genes',
+                    gaps: [{ reason: GAP.FILTERED, kind: 'unselected', detail: 'not ticked in this signature', count: total - shown }] });
+            renderCoverageNotice(_grid.element, coverage, 'genes', { persistent: true, verb: 'selected' });
         }
 
         /** "None of the 8 down genes are in this dataset, so only up genes are scored." (and the same for up). */

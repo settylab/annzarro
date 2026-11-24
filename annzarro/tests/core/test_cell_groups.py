@@ -329,13 +329,12 @@ def test_two_categories_with_one_text_are_refused_as_ambiguous(store, tmp_path):
     assert res.refused["reason"] == "ambiguous_categories"
 
 
-def test_one_group_per_cell_up_to_the_limit(store, monkeypatch):
+def test_one_group_per_cell_up_to_the_limit(store, monkeypatch, cost_limit):
     res = run(store, [{"source": {"type": "obs", "key": "_index"}}])
     assert len(res.groups) == gs.N_OBS and res.codes.dtype == np.uint16
     assert res.groups[17] == {"key": ["c:" + gs.cell(17)], "n": 1}
     np.testing.assert_array_equal(res.codes, np.arange(gs.N_OBS))
-    monkeypatch.setitem(cg.GROUPING_LIMITS, "levels", 999)
-    monkeypatch.setitem(cg.GROUPING_LIMITS, "groups", 999)
+    cost_limit(groups=999)                                          # levels and groups
     res = run(store, [{"source": {"type": "obs", "key": "_index"}}], rows=np.arange(999))
     assert len(res.groups) == 999
     res = run(store, [{"source": {"type": "obs", "key": "_index"}}], rows=np.arange(1000))
@@ -343,10 +342,10 @@ def test_one_group_per_cell_up_to_the_limit(store, monkeypatch):
 
 
 @pytest.mark.parametrize("narrow", [cg._NARROW_MAX, 20], ids=["in-place", "wide"])
-def test_too_many_groups_is_refused_with_the_count(store, monkeypatch, narrow):
+def test_too_many_groups_is_refused_with_the_count(store, monkeypatch, narrow, cost_limit):
     """In place, and through the wide fold, which on the last partitioning counts the groups and writes no code."""
     monkeypatch.setattr(cg, "_NARROW_MAX", narrow)
-    monkeypatch.setitem(cg.GROUPING_LIMITS, "groups", 100)
+    cost_limit(groups=100)
     res = run(store, [{"source": {"type": "obs", "key": "sample"}}, {"source": {"type": "obs", "key": "cell_type"}}])
     want = len({(s, c) for s, c in zip(gs.make_data().obs["sample"], gs.make_data().obs["cell_type"])})
     assert res.refused["reason"] == "too_many_groups" and res.refused["count"] == want and res.refused["limit"] == 100

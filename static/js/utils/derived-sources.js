@@ -28,9 +28,8 @@
  * is a private copy that is never edited (`copyOf`), so what follows from it never changes; an edit replaces it.
  */
 import { countsAs, isConsumer, emptyUsage } from './consumer-kinds.js';
+import { limit } from './limits.js';
 
-/** Seconds the estimate may be to apply an edit at once, when the reply does not say. */
-const LIVE_MAX_S = 5;
 
 /** Store states in which a consumer keeps the values it showed for the same cells. */
 const PASSING = Object.freeze(['idle', 'estimating', 'queued', 'computing']);
@@ -339,8 +338,9 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         let reply = null;
         for (const r of replies) if (r && r.estimate && (!reply || r.estimate.seconds > reply.estimate.seconds)) reply = r;
         const estimate = reply && reply.estimate;
-        const limit = estimate && typeof estimate.live_max_s === 'number' ? estimate.live_max_s : LIVE_MAX_S;
-        if (!estimate || estimate.seconds < limit) {
+        // seconds the estimate may be to apply an edit at once: the reply's, else the server's limits.live_update_s
+        const live = estimate && typeof estimate.live_max_s === 'number' ? estimate.live_max_s : limit('live_update_s');
+        if (!estimate || estimate.seconds < live) {
             apply(id);
         } else {
             now.held = true;

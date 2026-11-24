@@ -148,6 +148,38 @@ export function groupByArea(keys) {
         }));
 }
 
+/** The order of the Limits headings the server sends (annzarro/core/cost_limits.py GROUPS, server/limits.py); a
+ *  heading not listed here follows them, in the order it first appears. */
+const SUBGROUP_ORDER = ['When to ask and refuse', 'Groupings, matrices and grids', 'Drawn and exported in the browser',
+    'Server resources'];
+
+/**
+ * An area's keys under their headings (`subgroup`), the keys with none first, under no heading.
+ * @param {Array<Object>} keys - one area's, in their order
+ * @returns {Array<{title: string, keys: Array<Object>}>}
+ */
+export function subgroupsOf(keys) {
+    const by = new Map();
+    for (const key of keys) {
+        const title = typeof key.subgroup === 'string' ? key.subgroup : '';
+        if (!by.has(title)) by.set(title, []);
+        by.get(title).push(key);
+    }
+    const rank = (t) => (t === '' ? -1 : (SUBGROUP_ORDER.indexOf(t) < 0 ? SUBGROUP_ORDER.length : SUBGROUP_ORDER.indexOf(t)));
+    const titles = [...by.keys()].sort((a, b) => rank(a) - rank(b));
+    return titles.map((title) => ({ title, keys: by.get(title) }));
+}
+
+/**
+ * The keys of a block that the admin set and may reset: "Reset all" clears these from the admin's layer, and each
+ * returns to the config file's value or its default.
+ * @param {Array<Object>} keys
+ * @returns {string[]} their names
+ */
+export function adminSet(keys) {
+    return keys.filter((k) => keyState(k).editable && k.source === 'admin').map((k) => k.name);
+}
+
 /** The label shown for a key: its name without the area prefix it is grouped under. */
 export function keyLabel(key) {
     const parts = key.name.split('.');
@@ -205,6 +237,7 @@ export const REFUSAL_TEXT = {
     server_scope: 'This setting is server-wide and cannot be set per user.',
     config_ceiling: 'The config file does not allow a wider value than it sets.',
     admin_user: 'Administrators have no per-user overrides.',
+    out_of_order: 'This limit must stay in order with another: live update ≤ ask first ≤ refuse.',
 };
 
 /**
@@ -336,7 +369,9 @@ export function renderPolicyRow(key, { onChange, layer = 'admin', frozen = '' } 
             await onChange(key.name, value);
         } catch (e) {
             const field = e && e.fieldErrors && e.fieldErrors[key.name];
-            fail((field && (REFUSAL_TEXT[field] || field)) || (e && e.message) || 'The change failed.');
+            // a limit out of order: the server's sentence names the other limit and its value
+            const said = field === 'out_of_order' && e.body && e.body.messages ? e.body.messages[key.name] : '';
+            fail((said && `${key.label || keyLabel(key)} ${said}.`) || (field && (REFUSAL_TEXT[field] || field)) || (e && e.message) || 'The change failed.');
             if (revert) revert();
         }
     };
@@ -352,12 +387,16 @@ export function renderPolicyRow(key, { onChange, layer = 'admin', frozen = '' } 
         ? h('div', { class: 'small text-muted policy-inherited', text: `inherited: ${formatValue(key.type, own.inherited)}` }) : null;
     const capped = own.capped
         ? h('div', { class: 'small text-warning-emphasis policy-capped', text: `capped by a wider setting: ${formatValue(key.type, key.value)} applies` }) : null;
+    // a limit says its default beside a value that is not it, so a change is never lost track of
+    const shipped = key.area === 'limits' && key.default !== undefined && key.default !== null && key.value !== key.default
+        ? h('div', { class: 'small text-muted policy-default',
+            text: `default: ${typeof key.default === 'number' ? key.default.toLocaleString('en-US') : formatValue(key.type, key.default)}` }) : null;
     return h('div', { class: 'policy-row', data: { key: key.name, setting: key.name } },
         h('div', { class: 'policy-name d-flex flex-wrap align-items-center gap-1' },
             h('span', { class: 'fw-semibold policy-label', text: key.label || keyLabel(key) }),
             keyHelp(key, key.label || key.name, { describes: [control] }),
             h('code', { class: 'small text-muted policy-key', text: key.name })),
-        h('div', { class: 'policy-control' }, control, hosts, inherited, capped, message,
+        h('div', { class: 'policy-control' }, control, hosts, inherited, capped, shipped, message,
             state.note ? h('div', { class: 'small text-muted fst-italic', text: state.note }) : null),
         h('div', { class: 'policy-meta' },
             key.locked ? h('i', { class: 'fas fa-lock text-muted me-1', title: 'Locked by the config file', 'aria-label': 'locked' }) : null,
@@ -398,7 +437,7 @@ function renderIssues(policy, onRemove, titles) {
  * @param {{keys: Array<Object>, unknown: Array<Object>}} policy - GET /admin/policy
  * @param {{onChange: function, onRemoveUnknown: function}} handlers
  */
-export function renderPolicy(el, policy, { onChange, onRemoveUnknown } = {}) {
+export function renderPolicy(el, policy, { onChange, onRemoveUnknown, onResetAll } = {}) {
     const keys = (policy.keys || []).filter((k) => !k.section);     // a key with a `section` has its control on that page
     const master = keys.find((k) => k.name === 'outbound.allow_external');
     const groups = groupByArea(keys.filter((k) => k !== master));
@@ -410,10 +449,25 @@ export function renderPolicy(el, policy, { onChange, onRemoveUnknown } = {}) {
     }
     for (const group of groups) {
         const readOnlyArea = group.keys.every((k) => !keyState(k).editable);
+        const limits = group.area === 'limits';
+        const changed = limits ? adminSet(group.keys) : [];
+        const reset = changed.length && onResetAll
+            ? h('button', {
+                type: 'button', class: 'btn btn-sm btn-outline-secondary ms-2 policy-reset-all',
+                text: changed.length === 1 ? 'Reset 1 limit' : `Reset all ${changed.length} limits`,
+                title: 'Remove every limit set on this page; each returns to the config file\'s value or its default',
+                onclick: () => onResetAll(changed),
+            }) : null;
+        const rows = limits
+            ? subgroupsOf(group.keys).map((sub) => h('div', { class: 'policy-subgroup', data: { subgroup: sub.title } },
+                sub.title ? h('h3', { class: 'h6 mt-3', text: sub.title }) : null,
+                sub.keys.map((k) => renderPolicyRow(k, { onChange }))))
+            : group.keys.map((k) => renderPolicyRow(k, { onChange }));
         blocks.push(h('section', { class: 'policy-group', data: { area: group.area } },
             h('h2', { class: 'h5' }, group.title,
-                readOnlyArea && group.area === 'limits' ? h('small', { class: 'text-muted ms-2', text: 'read-only, from the config file' }) : null),
-            group.keys.map((k) => renderPolicyRow(k, { onChange }))));
+                readOnlyArea && limits ? h('small', { class: 'text-muted ms-2', text: 'read-only, from the config file' }) : null,
+                reset),
+            rows));
     }
     const issues = renderIssues(policy, onRemoveUnknown, ['Unknown keys in stored files', 'Stored values that are ignored']);
     if (issues) blocks.push(issues);

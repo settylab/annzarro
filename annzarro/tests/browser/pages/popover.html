@@ -20,7 +20,8 @@
 <div id="tile" data-testid="tile">
   <div><button id="a1" type="button" class="btn btn-sm btn-outline-secondary">Options</button>
        <button id="a2" type="button" class="btn btn-sm btn-outline-secondary">Other</button>
-       <button id="m1" type="button" class="btn btn-sm btn-outline-secondary">Add</button></div>
+       <button id="m1" type="button" class="btn btn-sm btn-outline-secondary">Add</button>
+       <button id="t1" type="button" class="btn btn-sm btn-outline-secondary">Tall</button></div>
   <div class="row" id="plot">plot</div>
 </div>
 <button id="far" type="button">far</button>
@@ -40,7 +41,23 @@ window.pops = {
         render: fill, onClose: (r) => window.closes.push(['a2', r]) }),
     m1: createPopover({ anchor: document.getElementById('m1'), name: 'add', title: 'Add', menu: true,
         render: (body) => { body.innerHTML = '<button role="menuitem" id="mi1">Genes</button><button role="menuitem" id="mi2">Factor</button>'; },
-        onClose: (r) => window.closes.push(['m1', r]) })
+        onClose: (r) => window.closes.push(['m1', r]) }),
+    // taller than any viewport: its body scrolls; a button saves a file the way an export does (a link it clicks itself)
+    t1: createPopover({ anchor: document.getElementById('t1'), name: 'tall', title: 'Tall',
+        render: (body) => {
+            body.innerHTML = Array.from({ length: 80 }, (_, i) => `<div class="tall-line">Line ${i}</div>`).join('')
+                + '<button id="p-download" type="button">Download</button><div id="p-last">last</div>';
+            // an export makes its file after a wait (the image is drawn first) and then clicks the link
+            body.querySelector('#p-download').addEventListener('click', () => setTimeout(() => {
+                const a = document.createElement('a');
+                a.href = 'data:text/plain,hello';
+                a.download = 'hello.txt';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }, 50));
+        },
+        onClose: (r) => window.closes.push(['t1', r]) })
 };
 window.ready = true;
 </script>
