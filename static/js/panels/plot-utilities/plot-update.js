@@ -10,6 +10,7 @@ import {
   panelLoadCoverage,
   withSubsetCoverage,
   stableAxisRanges,
+  notePinned,
   applyHoverInfo,
   sortTracesByColor,
   unsortTraces,
@@ -157,13 +158,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         removeHighlight(plotContainer); // One trace less to take care of
         // back to data order: the updates below write arrays in data order
         await unsortTraces(plotContainer);
-
-        // The axes as shown before this update, so hiding points can keep them
-        const fl = plotContainer._fullLayout;
-        const axesBefore = fl && fl.xaxis && fl.yaxis && Array.isArray(fl.xaxis.range) ? {
-            auto: fl.xaxis.autorange !== false && fl.yaxis.autorange !== false,
-            x: [...fl.xaxis.range], y: [...fl.yaxis.range]
-        } : null;
 
         const is3D = plotContainer.data[0].type === 'scatter3d';
         const shouldBe3D = settings.z !== null;
@@ -775,15 +769,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             }
         }
 
-        // Filtering removed or restored points: keep the axes on all points
+        // Filtering removed or restored points: keep the axes on all points, with the ranges a fresh draw of the same
+        // settings pins (stableAxisRanges). Keeping Plotly's autorange of the moment instead (its padding is in px)
+        // left the plot wider than its own link drew it (render drift, decision 39)
         if (updateOptions.filter) {
             const pinned = stableAxisRanges(data, settings);
-            // Hiding switched on while the axes were auto-fitted to all points:
-            // keep exactly those ranges (no jump from a different padding)
-            if (pinned && pinned['xaxis.range'] && axesBefore && axesBefore.auto) {
-                pinned['xaxis.range'] = axesBefore.x;
-                pinned['yaxis.range'] = axesBefore.y;
-            }
             if (pinned) {
                 // awaited: the highlight below snapshots the layout and puts it
                 // back, which would otherwise undo this
@@ -885,6 +875,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         }
 
         applyAllAestheticSettings(plotContainer, settings);
+
+        // what Hide NaN / outliers pin now, for the relayout handler (plot-make.js notePinned)
+        notePinned(plotContainer, data, settings);
     };
 
     try {
@@ -1243,7 +1236,10 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     // trace, 450 ms at 1M points. Otherwise restyle touches only that trace;
     // the layout is unchanged, so it is not re-sent (re-sending a deep copy
     // of it is what made Plotly redo the axis scaling here).
-    if (!is3D && setGlPoint(plotContainer, existingIdx, xValue, yValue)) return Promise.resolve();
+    const from = glPointOf(plotContainer, existingIdx);
+    if (!is3D && setGlPoint(plotContainer, existingIdx, xValue, yValue)) {
+      return settle('refit', () => refitAfterMove(plotContainer, from, [xValue, yValue]));
+    }
     const update = { x: [highlightTrace.x], y: [highlightTrace.y] };
     if (is3D) update.z = [highlightTrace.z];
     return settle('update', () => Plotly.restyle(plotContainer, update, [existingIdx]));
@@ -1342,7 +1338,11 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
   // a ring already drawn moves to the new cell, in 2D straight in the regl scene (as the dot does)
   const drawn = plotContainer.__focusRing && Array.isArray(plotContainer.data)
     ? plotContainer.data.findIndex(t => isFocusTrace(t) && isRingTrace(t)) : -1;
-  if (!is3D && drawn >= 0 && setGlPoint(plotContainer, drawn, coords[0], coords[1])) return undefined;
+  const from = drawn >= 0 ? glPointOf(plotContainer, drawn) : null;
+  if (!is3D && drawn >= 0 && setGlPoint(plotContainer, drawn, coords[0], coords[1])) {
+    await refitAfterMove(plotContainer, from, [coords[0], coords[1]]);
+    return undefined;
+  }
   const currentLayout = plotContainer.layout ? JSON.parse(JSON.stringify(plotContainer.layout)) : null;
   clear();
   plotContainer.__focusRing = true;
@@ -1672,3 +1672,38 @@ export async function updatePlotOnTableChange(plotContainer, data, settings, ref
     colorRange: true, // Update color range if needed
   });
 }
+
+/** The (x, y) of the one point of trace `i`, or null. */
+function glPointOf(gd, i) {
+  const t = gd && Array.isArray(gd.data) ? gd.data[i] : null;
+  return t && t.x && t.y && t.x.length === 1 ? [t.x[0], t.y[0]] : null;
+}
+
+/**
+ * A focus marker moved in the regl scene (setGlPoint) leaves the axes as they were. Autoranged axes include the
+ * marker's padding (it is larger than a point), so a fresh draw of the same focus fitted them a little differently
+ * (render drift, decision 39). When the marker was or is near an edge, the axes are fitted again; far from the edges
+ * the move cannot change the fit and nothing more is drawn (a relayout draws the scene once more).
+ * @param {HTMLElement} gd
+ * @param {?Array} from - the marker's (x, y) before the move
+ * @param {Array} to - after it
+ * @returns {Promise<*>|undefined}
+ */
+export function refitAfterMove(gd, from, to) {
+  const fl = gd && gd._fullLayout;
+  if (!fl || !fl.xaxis || !fl.yaxis || fl.xaxis.autorange === false || fl.yaxis.autorange === false) return undefined;
+  const near = (ax, v) => {
+    if (!Array.isArray(ax.range) || typeof ax.d2l !== 'function') return true;
+    const l = ax.d2l(v);
+    if (!Number.isFinite(l)) return true;
+    const lo = Math.min(ax.range[0], ax.range[1]);
+    const hi = Math.max(ax.range[0], ax.range[1]);
+    const tol = (hi - lo) * REFIT_EDGE;
+    return l - lo < tol || hi - l < tol;
+  };
+  const atEdge = (p) => !!p && (near(fl.xaxis, p[0]) || near(fl.yaxis, p[1]));
+  if (!atEdge(from) && !atEdge(to)) return undefined;
+  return Plotly.relayout(gd, { 'xaxis.autorange': fl.xaxis.autorange, 'yaxis.autorange': fl.yaxis.autorange });
+}
+/** The share of an axis near each end where a marker's padding can decide its autorange (5% plus the marker). */
+const REFIT_EDGE = 0.15;

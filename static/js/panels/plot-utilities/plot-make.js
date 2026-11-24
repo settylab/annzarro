@@ -1642,6 +1642,22 @@ export function stableAxisRanges(data, settings) {
 }
 
 /**
+ * The ranges Hide NaN / Hide Outliers pin, as given to Plotly, kept on the graph: Plotly widens one of them to keep
+ * Equal aspect, and when the plot area changes later (a margin made for the legend) it widened the widened range
+ * again; the graph's relayout handler gives these again instead (plot-make-helper.js attachViewportTracking).
+ * Null when nothing is pinned by hiding (autorange, a kept zoom, 3D).
+ * @param {HTMLElement} gd
+ * @param {Object} data
+ * @param {Object} settings
+ */
+export function notePinned(gd, data, settings) {
+  if (!gd) return;
+  const hiding = !settings.z && (settings.hideNaN || settings.hideOutliers) && !keptViewRanges(settings);
+  const pinned = hiding && data ? stableAxisRanges(data, settings) : null;
+  gd.__azPinned = pinned && pinned['xaxis.range'] && pinned['yaxis.range'] ? pinned : null;
+}
+
+/**
  * Hover labels: the configured hoverInfo columns, numbers to 4 significant
  * digits.
  *
@@ -2928,6 +2944,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   }
 
   const layout = buildPlotLayout(settings, data);
+  notePinned(plotContainer, data, settings);
 
   // A graph already drawn stays, and the new points are drawn into it
   clearForDraw(plotContainer);

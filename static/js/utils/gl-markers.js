@@ -82,6 +82,7 @@ export function setGlMarkers(gd, styleOf) {
       opts[key] = style[key];
       for (const t of [trace, gd._fullData[i]]) if (t && t.marker) t.marker[key] = style[key];
     }
+    if (style.opacity !== undefined) selectionOpacity(scene, gd.data[i], gd._fullData[i], i, style.opacity);
     return change;
   });
   scene.scatter2d.update(update);
@@ -90,6 +91,24 @@ export function setGlMarkers(gd, styleOf) {
   gd._fullLayout._glcanvas.each((c) => { if (c && c.regl) c.regl.clear({ color: [0, 0, 0, 0], depth: 1 }); });
   scene.draw();
   return true;
+}
+
+/**
+ * Plotly derives a trace's selected and unselected point opacity from its marker opacity (the marker's own, and 0.2 of
+ * it: coerceSelectionMarkerOpacity) unless the trace sets them. A new opacity set here carries them along, in the full
+ * trace and in the scene's selection options, as a restyle would: a selection then dims the points as on a fresh draw.
+ */
+const DESELECTED_SHARE = 0.2;
+function selectionOpacity(scene, trace, full, i, opacity) {
+  if (!full || (trace && (trace.selected || trace.unselected)) || typeof opacity !== 'number') return;
+  const want = { selected: opacity, unselected: DESELECTED_SHARE * opacity };
+  for (const side of ['selected', 'unselected']) {
+    if (full[side] && full[side].marker && full[side].marker.opacity !== undefined) full[side].marker.opacity = want[side];
+  }
+  const sel = scene.markerSelectedOptions && scene.markerSelectedOptions[i];
+  const unsel = scene.markerUnselectedOptions && scene.markerUnselectedOptions[i];
+  if (sel && sel.opacity !== undefined) sel.opacity = want.selected;
+  if (unsel && unsel.opacity !== undefined) unsel.opacity = want.unselected;
 }
 
 /** For tests: warn again on the next fallback. */
