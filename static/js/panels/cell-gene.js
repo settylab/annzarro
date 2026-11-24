@@ -256,7 +256,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             buildDom();
             listen(document, 'click', (e) => {
                 const tile = `.tile[data-tile-id="${CSS.escape(_id)}"]`;
-                if (!_dom || e.target.closest(`${tile} .cgene-section__more, ${tile} .cgene-add-wrap, ${tile} .cgene-checklist__go`)) return;
+                if (!_dom || e.target.closest(`${tile} .cgene-section__more, ${tile} .cgene-add-wrap, ${tile} .cgene-checklist__go, [data-popover="section-menu"]`)) return;
                 _sections.closeMenus();
                 _addGenes.close();
             });
@@ -643,7 +643,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function sectionOp(i, op) {
             const name = sectionName(i);
             const n = _config.sections.length;
-            if (op === 'duplicate') commit(duplicateSection(_config, i), `duplicate ${name}`);
+            if (op === 'duplicate') commit(duplicateSection(_config, i, name), `duplicate ${name}`);
             else if (op === 'remove') commit(removeSection(_config, i), `remove ${name}`, { said: `Removed ${name}.` });
             else if (op === 'open') openSignature(_config.sections[i].source, _id);
             else if (op === 'up' && i > 0) move(i, i - 1);
