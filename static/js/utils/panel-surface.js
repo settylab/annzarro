@@ -125,7 +125,7 @@ const _state = new WeakMap();
 function stateOf(host) {
     let s = _state.get(host);
     if (!s) {
-        s = { coverage: null, unit: 'values', persistent: false, tags: new Map(), open: null, progress: null };
+        s = { coverage: null, unit: 'values', persistent: false, verb: 'shown', tags: new Map(), open: null, progress: null };
         _state.set(host, s);
     }
     return s;
@@ -173,9 +173,10 @@ function namesHtml(names) {
 
 function stripHtml(host, s) {
     const cov = coerce(s.coverage, s.unit);
-    const b = breakdown(cov);
+    const b = breakdown(cov, { verb: s.verb });
     const unitWord = escapeHtml(b.unit);
-    const headline = escapeHtml(b.headline).replace(` ${unitWord} shown`, ` <span class="ps-unit">${unitWord} </span>shown`);
+    const verb = escapeHtml(s.verb);
+    const headline = escapeHtml(b.headline).replace(` ${unitWord} ${verb}`, ` <span class="ps-unit">${unitWord} </span>${verb}`);
     const chips = [
         ...b.rows.map(r => `${compactCount(r.count)} ${r.chip}`),
         ...b.notes.map(n => n.label.split(' -- ')[0])
@@ -188,12 +189,12 @@ function stripHtml(host, s) {
         + `<td class="ps-do">${actionButtons(KIND_ACTIONS[r.kind], host)}</td></tr>`
         + (r.names && r.names.length ? `<tr class="ps-names-row"><td colspan="3">${namesHtml(r.names)}</td></tr>` : '')).join('');
     const total = b.rows.length
-        ? `<tr class="ps-total"><td>Not shown</td><td class="ps-n">${exactCount(b.hidden)}</td><td></td></tr>` : '';
+        ? `<tr class="ps-total"><td>Not ${verb}</td><td class="ps-n">${exactCount(b.hidden)}</td><td></td></tr>` : '';
     const notes = b.notes.length
         ? `<ul class="ps-notes">${b.notes.map(n => `<li data-reason="${escapeHtml(n.reason)}">${escapeHtml(n.label)}`
             + `${n.kind === 'memory' ? ` <span class="ps-do">${actionButtons(KIND_ACTIONS.memory, host)}</span>` : ''}</li>`).join('')}</ul>` : '';
     const title = b.hidden
-        ? `Why ${exactCount(b.hidden)} of ${exactCount(b.total)} ${b.unit} are not shown`
+        ? `Why ${exactCount(b.hidden)} of ${exactCount(b.total)} ${b.unit} are not ${s.verb}`
         : b.headlineExact;
     const hasDetail = b.rows.length || b.notes.length;
     const mainPop = hasDetail
@@ -282,7 +283,7 @@ function paint(host) {
     }
     // the whole statement as text, one reason per line (for tests, logs and
     // copy); not a title: nothing about the strip pops up on hover
-    el.setAttribute('data-summary', [cov.headline(), ...cov.lines()].filter(Boolean).join('\n'));
+    el.setAttribute('data-summary', [cov.headline().replace(/ shown$/, ` ${s.verb}`), ...cov.lines()].filter(Boolean).join('\n'));
     return el;
 }
 
@@ -298,15 +299,17 @@ function paint(host) {
  * @param {HTMLElement} host  The plot or table container.
  * @param {Coverage} coverage
  * @param {string} [unit]  Fallback unit when coverage is absent.
- * @param {{persistent?: boolean}} [opts]
+ * @param {{persistent?: boolean, verb?: string}} [opts] - `verb`: the word after the count, 'shown' unless a panel
+ *   counts something else (a gene signature: "5 of 3,000 genes selected")
  * @returns {HTMLElement|null} The strip, or null when there is none.
  */
-export function renderCoverageNotice(host, coverage, unit, { persistent } = {}) {
+export function renderCoverageNotice(host, coverage, unit, { persistent, verb } = {}) {
     if (!stripAnchor(host)) return null;
     const s = stateOf(host);
     s.coverage = coerce(coverage, unit);
     s.unit = unit || s.coverage.unit;
     if (persistent !== undefined) s.persistent = persistent;
+    if (verb) s.verb = verb;
     return paint(host);
 }
 
