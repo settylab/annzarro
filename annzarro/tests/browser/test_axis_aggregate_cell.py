@@ -155,17 +155,17 @@ def test_the_menu_columns_line_up_and_a_disabled_entry_gives_its_reason(page, se
 
 
 @pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")
-def test_screenshots_of_a_signature_on_x_and_a_gene_on_y(page, served):
-    x = {**SCORE, "column": "sum", "layer": "X"}
+def test_screenshots_of_the_open_menu_of_a_signature_on_x(page, served):
     y = {"type": "layer", "key": "X", "column": "GAPDH"}
-    _open(page, served, plots=(("cell-plot-C", _cell(x=x, y=y, color={"type": "none", "key": "", "column": ""})),))
+    _open(page, served, plots=(("cell-plot-C", _cell(x=SCORE, y=y, color={"type": "none", "key": "", "column": ""})),))
     page.wait_for_selector(f'{C} button.axis-agg-btn[data-axis="x"]')
+    axis_sets.until_methods(page, "cell-plot-C", "x", "(o) => o.find(m => m.value === 'detected').disabled")
     os.makedirs(SHOTS, exist_ok=True)
     for theme in ("light", "dark"):
         page.evaluate("(t) => { document.documentElement.setAttribute('data-theme', t); document.documentElement.setAttribute('data-bs-theme', t); }", theme)
-        page.locator(f"{C} .plot-controls").screenshot(path=os.path.join(SHOTS, f"axis-aggregate-cell-{theme}.png"))
         page.click(f'{C} button.axis-agg-btn[data-axis="x"]')
         page.locator("[data-popover='aggregation']").wait_for(state="visible")
         box = page.locator(f"{C} .plot-controls").bounding_box()
-        page.screenshot(path=os.path.join(SHOTS, f"axis-aggregate-cell-menu-{theme}.png"), clip={**box, "height": 320})
+        page.screenshot(path=os.path.join(SHOTS, f"agg-a-cell-signature-menu-open-{theme}.png"), clip={**box, "height": 330})
         page.keyboard.press("Escape")
+        page.locator("[data-popover='aggregation']").wait_for(state="hidden")

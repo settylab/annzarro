@@ -442,3 +442,25 @@ def test_a_link_round_trip_keeps_the_setting_and_the_colours(page, served):
     page.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
     _wait_colours(page, 40)
     assert _close(_colours(page), want)
+
+
+SHOTS = os.environ.get("ANNZARRO_SHOTS")
+
+
+@pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")
+def test_screenshots_of_the_gene_plot_rows_and_the_open_item_picker(page, served):
+    """(b) X on a group (x with a bar) with the item picker open, its sections listed; (c) a plain row beside an aggregated one."""
+    # the grouping is closed (its tile not in the layout), so the plot has the width a plot has
+    _open(page, served, {G: _plot(x=_stat(), y={"type": "layer", "key": "logged", "column": "CELL0003"}), GA: _grouping()}, open_ids=(G,))
+    page.wait_for_selector(axis_sets.button(C, "x"), timeout=30000)
+    os.makedirs(SHOTS, exist_ok=True)
+    select = axis_sets.sel(C, "x", "column")
+    for theme in ("light", "dark"):
+        page.evaluate("(t) => { document.documentElement.setAttribute('data-theme', t); document.documentElement.setAttribute('data-bs-theme', t); }", theme)
+        box = page.locator(f"{C} .plot-controls").bounding_box()
+        page.screenshot(path=os.path.join(SHOTS, f"agg-c-gene-plain-beside-aggregated-{theme}.png"), clip={**box, "height": 150})
+        # a native dropdown is not in a page screenshot: the list is unfolded in place, as the browser would show it
+        page.evaluate("""(s) => { const e = document.querySelector(s); const r = e.getBoundingClientRect(); e.__was = e.getAttribute('style') || '';
+            e.size = 11; e.style.position = 'fixed'; e.style.zIndex = '9999'; e.style.height = 'auto'; e.style.left = r.left + 'px'; e.style.top = (r.bottom + 3) + 'px'; e.style.width = '340px'; }""", select)
+        page.screenshot(path=os.path.join(SHOTS, f"agg-b-gene-group-item-picker-open-{theme}.png"), clip={**box, "height": 360})
+        page.evaluate("(s) => { const e = document.querySelector(s); e.removeAttribute('size'); e.setAttribute('style', e.__was); }", select)
