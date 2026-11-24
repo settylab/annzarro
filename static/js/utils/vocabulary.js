@@ -447,6 +447,13 @@ const countPlot = Object.freeze({
         topLevel: `Colors each rectangle by its commonest ${word.level}.`
     }),
     labels: Object.freeze({ none: 'None', count: 'Count', share: 'Share', measure: capital(word.statistic) }),
+    /** A Venn's own controls (next to a pie's Labels and Names): what its regions print, the set names, and area by count. */
+    venn: Object.freeze({
+        labels: Object.freeze({ both: 'Count and share', count: 'Count', share: 'Share', none: 'None' }),
+        names: 'Names', namesTitle: 'Print each set\'s letter and name beside its circle (the whole name is in its hover)',
+        area: 'Area reflects counts',
+        areaTitle: 'Draw each circle\'s area in proportion to its set and each overlap\'s in proportion to the cells in both (exact for two sets, approximate for three; a region with no cells may vanish)'
+    }),
     /** A pie's slices: their names, and their colours (continuous for bins of a number, the level palette for categories). */
     slices: Object.freeze({
         names: 'Names', namesTitle: 'Print each slice\'s name on it (a slice under 3% shows it in its hover only)',

@@ -8,8 +8,12 @@
  * 16 sets).
  *
  * Venn (2 or 3 sets; one is drawn too) is circles of equal size with each region's count and share, not area
- * proportional. Each circle has its set's colour and a label with the letter and the name (cut short, the whole name in
- * the hover). UpSet is intersection bars over a dot matrix, with the sets named in full and a bar for each set's size
+ * proportional, unless `proportional` is set: then each circle's area follows its set's size and each overlap's the
+ * intersection's (utils/venn-euler.js; exact for two sets, an approximation for three, with its error stated under the
+ * plot above `NOTE_AT`), and a region's label is dropped when the region is too small to hold it (`labelFits`: one rule,
+ * the region's widest inscribed circle against the label's size at the plot's width; the hover still names the region).
+ * Each circle has its set's colour and a label with the letter and the name (cut short, the whole name in the hover),
+ * which `names: false` leaves off. The text is the theme's text colour over the circles' 0.3 fill, which reads on both. UpSet is intersection bars over a dot matrix, with the sets named in full and a bar for each set's size
  * in its colour; the bars are one neutral colour unless the plot is coloured.
  *
  * Both modes ship one trace that carries `customdata` = the region's index in `setPlot.regions`, so a click can
@@ -19,6 +23,7 @@ import { fmtPercent } from '../../utils/csv-format.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { scaleKeys } from './colour.js';
 import { defaultSetColour } from '../../utils/set-colours.js';
+import { eulerLayout, regionPoint } from '../../utils/venn-euler.js';
 
 const VENN_MAX_SETS = 3;
 const UPSET_MAX_SETS = 16;
@@ -46,6 +51,13 @@ const VENN = Object.freeze({
     }
 });
 
+/** A proportional Venn states its error under the plot from this fraction (5 percentage points of the cells in the sets). */
+const NOTE_AT = 0.05;
+/** Text height and width per character of a region's label, in pixels, for `labelFits`. */
+const LINE_PX = 16;
+/** The plot's room, in pixels, when the caller gives no width or height (the panel's usual size). */
+const DEFAULT_PX = [720, 540];
+
 const plain = (n) => n.toLocaleString('en-US');
 
 const text = Object.freeze({
@@ -53,6 +65,7 @@ const text = Object.freeze({
     setSize: 'Cells in set',
     noSet: (n) => `${plain(n)} cells in no ${VOCABULARY.word.set}`,
     hidden: (h) => `${fmtPercent(h.share)} of cells are in ${h.regions.toLocaleString('en-US')} bars not shown`,
+    approximate: (pct) => `Areas are approximate: largest error ${pct} of the cells in the sets`,
     changed: (name) => `${name} (group changed)`,
     deleted: (name) => `${name} (deleted)`
 });
@@ -86,31 +99,80 @@ function themeLayout(theme) {
     return { paper_bgcolor: theme.bgColor, plot_bgcolor: theme.bgColor, font: { color: theme.textColor, size: 12 }, showlegend: false, hovermode: 'closest' };
 }
 
+const HIDDEN_AXIS = Object.freeze({
+    autorange: false, fixedrange: true, tickmode: 'linear', tick0: 0, dtick: 1, ticks: '', showticklabels: false, showgrid: false,
+    zeroline: false, showline: false
+});
 const CONFIG = Object.freeze({ responsive: true, displaylogo: false });
+
+/** Whether a label of `chars` characters on `lines` lines fits a region with `room` (the radius of its widest inscribed circle, in plot units). */
+function labelFits(room, chars, lines, pxPerUnit) {
+    return room > 0 && 2 * room * pxPerUnit >= Math.max(lines * LINE_PX, 0.5 * chars * GLYPH_PX);
+}
+
+/** The fixed layout: circles of radius 1 and the places of `VENN`, the same whatever the counts. */
+function fixedGeometry(k, geo) {
+    return {
+        circles: geo.centres.map(([x, y]) => ({ x, y, r: 1 })),
+        labelAt: (code) => ({ at: geo.labels[code], room: Infinity }),
+        letterAt: (s) => { const [lx, ly] = geo.letters[s]; return { x: lx, y: ly, side: k > 1 && ly > 0 ? (lx < 0 ? -1 : 1) : 0 }; },
+        xRange: [-2.4, 2.4], yRange: [-2.0, 1.8], error: null
+    };
+}
+
+/** The proportional layout (utils/venn-euler.js) with its label places, set letters and the ranges that hold it; null when no set has a cell. */
+function proportionalGeometry(plot) {
+    const k = plot.sets.length;
+    const byCode = new Map(plot.regions.map((r) => [codeOf(r.key), r.count]));
+    const layout = eulerLayout(k, (code) => byCode.get(code) || 0);
+    if (!layout) return null;
+    const { circles } = layout;
+    const meanX = circles.reduce((a, c) => a + c.x, 0) / k, meanY = circles.reduce((a, c) => a + c.y, 0) / k;
+    const lowest = k === 3 ? circles.reduce((m, c, i) => (c.y < circles[m].y ? i : m), 0) : -1;
+    const below = lowest >= 0 && meanY - circles[lowest].y > 0.25;
+    const lo = [circles.reduce((m, c) => Math.min(m, c.x - c.r), Infinity), circles.reduce((m, c) => Math.min(m, c.y - c.r), Infinity)];
+    const hi = [circles.reduce((m, c) => Math.max(m, c.x + c.r), -Infinity), circles.reduce((m, c) => Math.max(m, c.y + c.r), -Infinity)];
+    return {
+        circles,
+        labelAt: (code) => { const p = regionPoint(circles, code); return { at: [p.x, p.y], room: p.room }; },
+        letterAt: (s) => {
+            const c = circles[s];
+            if (below && s === lowest) return { x: c.x, y: c.y - c.r - 0.17, side: 0 };
+            return { x: c.x, y: c.y + c.r + 0.17, side: k > 1 ? (c.x < meanX ? -1 : 1) : 0 };
+        },
+        xRange: [lo[0] - 1.0, hi[0] + 1.0], yRange: [lo[1] - 0.5, hi[1] + 0.5], error: layout.error
+    };
+}
 
 function vennFigure(plot, theme, opts) {
     const k = plot.sets.length;
     const geo = VENN[k];
     if (!geo) throw new RangeError(`Venn draws 1 to ${VENN_MAX_SETS} sets, not ${k}`);
     const labels = opts.labels || 'both';
+    const names = opts.names !== false;
+    const proportional = opts.proportional === true;
+    const g = (proportional && proportionalGeometry(plot)) || fixedGeometry(k, geo);
+    const width = opts.width || DEFAULT_PX[0], height = opts.height || DEFAULT_PX[1];
+    const pxPerUnit = Math.min((width - 32) / (g.xRange[1] - g.xRange[0]), (height - 32) / (g.yRange[1] - g.yRange[0]));
     const x = [], y = [], texts = [], hover = [], region = [];
     for (const ri of plot.shown) {
         const r = plot.regions[ri];
-        const at = geo.labels[codeOf(r.key)];
+        const { at, room } = g.labelAt(codeOf(r.key));
         x.push(at[0]); y.push(at[1]);
-        texts.push(regionLabel(r, labels));
+        const text = regionLabel(r, labels);
+        const lines = text.split('<br>');
+        texts.push(proportional && !labelFits(room, lines.reduce((m, l) => Math.max(m, l.length), 0), lines.length, pxPerUnit) ? '' : text);
         hover.push(regionHover(r, plot.sets, plot.universe));
         region.push(ri);
     }
     const colours = coloursOf(plot);
-    const shapes = geo.centres.map(([cx, cy], s) => ({
-        type: 'circle', xref: 'x', yref: 'y', x0: cx - 1, x1: cx + 1, y0: cy - 1, y1: cy + 1,
+    const shapes = g.circles.map(({ x: cx, y: cy, r }, s) => ({
+        type: 'circle', xref: 'x', yref: 'y', x0: cx - r, x1: cx + r, y0: cy - r, y1: cy + r,
         fillcolor: colours[s], opacity: 0.3, line: { color: colours[s], width: 2 }, layer: 'below'
     }));
     // the label beside each circle: the letter and the name; the two upper ones lean away from each other
-    const annotations = plot.sets.map((set, s) => {
-        const [lx, ly] = geo.letters[s];
-        const side = k > 1 && ly > 0 ? (lx < 0 ? -1 : 1) : 0;
+    const annotations = names ? plot.sets.map((set, s) => {
+        const { x: lx, y: ly, side } = g.letterAt(s);
         const full = setName(set);
         const cut = full.length > LABEL_CHARS ? `${full.slice(0, LABEL_CHARS - 1)}…` : full;
         return {
@@ -118,18 +180,28 @@ function vennFigure(plot, theme, opts) {
             xanchor: side < 0 ? 'right' : (side > 0 ? 'left' : 'center'), hovertext: `${set.letter} · ${full}`,
             font: { size: 14, color: theme.textColor }
         };
-    });
+    }) : [];
     annotations.push({
         x: 1, y: 0, xref: 'paper', yref: 'paper', xanchor: 'right', yanchor: 'bottom', showarrow: false,
         text: text.noSet(plot.inNone), font: { size: 12, color: theme.textColor }
     });
+    const note = proportional && g.error !== null && g.error > NOTE_AT;
+    if (note) {
+        annotations.push({
+            x: 0, y: 0, xref: 'paper', yref: 'paper', xanchor: 'left', yanchor: 'top', yshift: -6, showarrow: false,
+            text: text.approximate(fmtPercent(g.error)), font: { size: 12, color: theme.textColor }
+        });
+    }
     return {
         data: [{ type: 'scatter', mode: 'text', name: 'regions', x, y, text: texts, hovertext: hover, hoverinfo: 'text',
             customdata: region, textfont: { color: theme.textColor, size: 13 } }],
         layout: {
-            ...themeLayout(theme), shapes, annotations, margin: { l: 16, r: 16, t: 16, b: 16 },
-            xaxis: { visible: false, range: [-2.4, 2.4], fixedrange: true },
-            yaxis: { visible: false, range: [-2.0, 1.8], scaleanchor: 'x', fixedrange: true }
+            ...themeLayout(theme), shapes, annotations, margin: { l: 16, r: 16, t: 16, b: note ? 40 : 16 },
+            // the circles are drawn in these axes' coordinates, so they are pinned: a fixed range, no autorange, and no ticks of any kind
+            // (an axis with `visible: false` still has Plotly compute a tick step on some redraws, which made a plot drawn twice differ
+            // from one drawn once: tests/browser/test_render_drift.py)
+            xaxis: { ...HIDDEN_AXIS, range: g.xRange },
+            yaxis: { ...HIDDEN_AXIS, range: g.yRange, scaleanchor: 'x' }
         },
         config: CONFIG
     };
@@ -225,7 +297,8 @@ function upsetFigure(plot, theme, opts) {
 
 /**
  * The figure of a SetPlot. `theme` is a palette of plot-theme.js (the plot's own colours, light or dark).
- * `options`: `labels` ('both' | 'count' | 'share' | 'none'; Venn defaults to both, UpSet to count), `logCounts`, `colorscale` and `colour`
+ * `options`: `labels` ('both' | 'count' | 'share' | 'none'; Venn defaults to both, UpSet to count), a Venn's `names` (false
+ * leaves the set names off; default on) and `proportional` (true: areas follow the counts; default off), `logCounts`, `colorscale` and `colour`
  * (the colour map, Reverse and range of an UpSet's coloured bars: colour.js), and the
  * panel's `width` in pixels (UpSet thins its bar labels and moves the set sizes under the matrix when it is small).
  */
