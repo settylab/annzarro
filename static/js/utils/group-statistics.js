@@ -12,7 +12,7 @@
  *
  * Cell count needs no feature and no layer: it is listed after the table, never graded.
  */
-import { createOptionsModel, andList, figure } from './options-model.js';
+import { REASON, createOptionsModel, andList, figure, quoted } from './options-model.js';
 import { STATISTIC_IDS } from './cell-grouping.js';
 import { statisticAvailability } from './cell-gene-model.js';
 import { VOCABULARY } from './vocabulary.js';
@@ -48,10 +48,10 @@ const SIZE_STATISTIC = 'pct_expressing';
 /** The statistics that follow how deeply a cell was sequenced, on raw counts. */
 const DEPTH_STATISTICS = Object.freeze(['mean', 'sum', 'sd']);
 
-/** "% expressing is not available on X: X has negative values. Choose a layer." (SHR-27) */
+/** "% expressing cannot be computed on 'X': it has negative values. Choose a layer." (SHR-27) */
 // export-unused-ok: consumed by X3a (the control says it where a size would have been)
 export function negativeValuesSentence(stat, layer) {
-    return `${NAME[stat]} is not available on ${layer}: ${layer} has negative values. Choose a layer.`;
+    return `${REASON.cannotOn(NAME[stat], quoted(layer), 'it has negative values.')} Choose a layer.`;
 }
 
 /**
@@ -65,16 +65,16 @@ export function negativeValuesSentence(stat, layer) {
  */
 // export-unused-ok: consumed by X3a and C2a (menus grade a statistic on a layer)
 export function statisticGrade(stat, layer, kind, ctx = {}) {
-    const name = ctx.label || `'${layer}'`;
+    const name = ctx.label || quoted(layer);
     if (!statisticAvailability(stat, kind).available) {
         return { grade: 'cannot', code: 'negative_values',
-            reason: ctx.label ? `${NAME[stat]} is not available on ${ctx.label}: they have negative values.` : negativeValuesSentence(stat, layer) };
+            reason: ctx.label ? REASON.cannotOn(NAME[stat], name, 'they have negative values.') : negativeValuesSentence(stat, layer) };
     }
     if (kind === 'counts' && DEPTH_STATISTICS.includes(stat)) {
-        return { grade: 'warn', code: 'depth', reason: `On ${name} this follows sequencing depth.` };
+        return { grade: 'warn', code: 'depth', reason: REASON.note(NAME[stat], name, 'follows sequencing depth.') };
     }
     if (kind === 'log' && stat === 'sum') {
-        return { grade: 'warn', code: 'log', reason: `On ${name} a sum of log values is not a total of the counts. It is usually read from counts.` };
+        return { grade: 'warn', code: 'log', reason: REASON.note(NAME[stat], name, 'is a sum of log values, not a total of the counts: it is usually read from counts.') };
     }
     return { grade: 'ok', code: '', reason: '' };
 }
@@ -88,7 +88,7 @@ function layerLines(layer, recipe, kind, stats, offered) {
     const cannot = THRESHOLD_USERS.filter((s) => !statisticAvailability(s, kind).available);
     if (cannot.length && THRESHOLD_USERS.some((s) => offered.includes(s))) {
         lines.push({ grade: 'cannot', code: 'negative_values',
-            text: `${menuNames(cannot)} are not available on ${layer}: ${layer} has negative values.` });
+            text: REASON.cannotOn(menuNames(cannot), quoted(layer), 'it has negative values.') });
     }
     const depth = offered.filter((s) => DEPTH_STATISTICS.includes(s));
     if (kind === 'counts' && depth.length) {

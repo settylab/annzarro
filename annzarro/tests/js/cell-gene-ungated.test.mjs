@@ -80,7 +80,7 @@ test('pickLayer: the layer stays when it can give the statistic; else the first 
     assert.deepEqual(C.pickLayer({ datasetLayers: LAYERS, kinds: KINDS, stat: 'sd', preferred: 'X' }), { layer: 'X', say: '' });
     const moved = C.pickLayer({ datasetLayers: LAYERS, kinds: KINDS, stat: 'pct_expressing', preferred: 'X' });
     assert.equal(moved.layer, 'logged');
-    assert.match(moved.say, /^Layer changed to logged: % expressing is not available on X\.$/);
+    assert.match(moved.say, /^Layer changed to logged: % expressing cannot be computed on 'X'\.$/);
 });
 
 // ------------------------------------------------------------------ one-row sections (item 7)
@@ -103,11 +103,11 @@ test('aggregationAfter: a new score kind starts on z-score mean · X; method and
     assert.deepEqual(S.aggregationAfter(held, 'kind', 'sum_of_means').agg, { agg: 'sum_of_means' });
     // the method touched wins; the layer moves when the pair is impossible, and says so
     const choices = { after: (changed, value, pair) => (changed === 'method' && value === 'fraction_of_total' && pair.layer === 'X'
-        ? { method: value, layer: 'counts', say: 'Layer changed to counts: % of total is not available on X.' }
+        ? { method: value, layer: 'counts', say: "Layer changed to counts: % of total cannot be computed on 'X'." }
         : { method: changed === 'method' ? value : pair.method, layer: changed === 'layer' ? value : pair.layer, say: '' }) };
     const onX = { agg: 'score_mean', column: 'mean', layer: 'X' };
     assert.deepEqual(S.aggregationAfter(onX, 'method', 'fraction_of_total', choices),
-        { agg: { agg: 'score_mean', column: 'fraction_of_total', layer: 'counts' }, say: 'Layer changed to counts: % of total is not available on X.' });
+        { agg: { agg: 'score_mean', column: 'fraction_of_total', layer: 'counts' }, say: "Layer changed to counts: % of total cannot be computed on 'X'." });
     assert.deepEqual(S.aggregationAfter(onX, 'layer', 'logged', choices).agg, { agg: 'score_mean', column: 'mean', layer: 'logged' });
     assert.equal(S.aggregationAfter({ agg: 'mean_of_means' }, 'method', 'sum'), null, 'a summary has no method');
 });

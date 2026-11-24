@@ -14,7 +14,7 @@
  */
 
 import {
-    legacyPair, andList, cleanThreshold, cleanWhole, createOptionsModel, figure, kindWord, parseClipText, parseSeedText, parseThresholdText,
+    REASON, legacyPair, andList, cleanThreshold, cleanWhole, createOptionsModel, figure, kindWord, parseClipText, parseSeedText, parseThresholdText,
     parseWholeText, useText, withoutLegacy
 } from './options-model.js';
 
@@ -132,7 +132,7 @@ export function gradeOption(method, layer, kind, hasDown = false, ctx = {}) {
     const label = sentenceName(method);
     if (hasDown && !canScoreDown(method)) {
         return { grade: 'cannot', code: 'down', down: true,
-            reason: `${label} cannot be computed with down genes: ${DOWN_REASONS[method] || 'it has no signed version.'}` };
+            reason: REASON.cannotWith(label, 'down genes', DOWN_REASONS[method] || 'it has no signed version.') };
     }
     if (method === 'detected') {
         const t = typeof ctx.detectAbove === 'number' ? ctx.detectAbove : 0;
@@ -142,20 +142,20 @@ export function gradeOption(method, layer, kind, hasDown = false, ctx = {}) {
             ? ` (values here range from ${figure(ctx.stats.min)} to ${figure(ctx.stats.max)})` : '';
         if (share > DETECT_TOO_MANY) {
             return { grade: 'cannot', code: 'detect_high',
-                reason: `${label} cannot be computed on ${name}: almost every value is above ${figure(t)}${range}. Raise Detected above.` };
+                reason: REASON.cannotOn(label, name, `almost every value is above ${figure(t)}${range}. Raise Detected above.`) };
         }
         if (share < DETECT_TOO_FEW) {
             return { grade: 'cannot', code: 'detect_low',
-                reason: `${label} cannot be computed on ${name}: almost no value is above ${figure(t)}${range}.${t > 0 ? ' Lower Detected above.' : ''}` };
+                reason: REASON.cannotOn(label, name, `almost no value is above ${figure(t)}${range}.${t > 0 ? ' Lower Detected above.' : ''}`) };
         }
         return ok;
     }
     if (method === 'fraction_of_total') {
-        if (kind === 'signed') return { grade: 'cannot', code: 'negative', reason: `${label} cannot be computed on ${name}: it has negative values.` };
-        if (kind === 'log') return { grade: 'warn', code: 'log', reason: `${label} on ${name} is compressed by the log: it is usually read from counts.` };
+        if (kind === 'signed') return { grade: 'cannot', code: 'negative', reason: REASON.cannotOn(label, name, 'it has negative values.') };
+        if (kind === 'log') return { grade: 'warn', code: 'log', reason: REASON.note(label, name, 'is compressed by the log: it is usually read from counts.') };
     }
     if (kind === 'counts' && DEPTH_METHODS.includes(method)) {
-        return { grade: 'warn', code: 'depth', reason: `${label} on ${name} follows sequencing depth.` };
+        return { grade: 'warn', code: 'depth', reason: REASON.note(label, name, 'follows sequencing depth.') };
     }
     return ok;
 }

@@ -13,7 +13,7 @@ const S = await import('../../../static/js/utils/group-statistics.js');
 const { VOCABULARY } = await import('../../../static/js/utils/vocabulary.js');
 const { STATISTIC_IDS, normalizeGrouping } = await import('../../../static/js/utils/cell-grouping.js');
 
-const SENTENCE = (stat, layer) => `${stat} is not available on ${layer}: ${layer} has negative values. Choose a layer.`;
+const SENTENCE = (stat, layer) => `${stat} cannot be computed on '${layer}': it has negative values. Choose a layer.`;
 const model = S.GROUP_STATISTICS_MODEL;
 
 test('the table is the grouping\'s statistics, named by the vocabulary, with cell count outside it', () => {
@@ -96,7 +96,7 @@ test('the layer row says which statistics are not available on it, once', () => 
     const lines = model.layerLines('X', {}, 'signed', undefined);
     assert.equal(lines.length, 1);
     assert.equal(lines[0].grade, 'cannot');
-    assert.equal(lines[0].text, '% expressing and mean of expressing cells are not available on X: X has negative values.');
+    assert.equal(lines[0].text, "% expressing and mean of expressing cells cannot be computed on 'X': it has negative values.");
     assert.deepEqual(model.layerLines('X', { offered: ['mean', 'sum'] }, 'signed'), [], 'nothing offered is affected');
     assert.deepEqual(model.layerLines('logged', {}, 'log'), []);
 });

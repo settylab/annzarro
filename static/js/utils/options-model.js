@@ -108,6 +108,24 @@ export function figure(x) {
     return String(Number(Number(x).toPrecision(3))).replace('-', '−');
 }
 
+/**
+ * The one phrasing of every grading sentence, for the signature's methods and the grouping's statistics alike (decision
+ * 31): a pair that cannot be computed names the method and says why; a pair that misleads names it and says how.
+ *   cannotOn('% of total', "'X'", 'it has negative values.')   "% of total cannot be computed on 'X': it has negative values."
+ *   cannotWith('Sum', 'down genes', 'a signed sum ...')         "Sum cannot be computed with down genes: a signed sum ..."
+ *   note('Mean', "'counts'", 'follows sequencing depth.')       "Mean on 'counts' follows sequencing depth."
+ *   moved('Layer', 'logged', '% expressing', "'X'")             "Layer changed to logged: % expressing cannot be computed on 'X'."
+ */
+export const REASON = Object.freeze({
+    cannotOn: (name, layer, why) => `${name} cannot be computed on ${layer}: ${why}`,
+    cannotWith: (name, what, why) => `${name} cannot be computed with ${what}: ${why}`,
+    note: (name, layer, how) => `${name} on ${layer} ${how}`,
+    moved: (select, value, name, layer) => `${select} changed to ${value}: ${name} cannot be computed on ${layer}.`
+});
+
+/** A layer's name as a grading sentence quotes it. */
+export const quoted = (layer) => `'${layer}'`;
+
 /** "a", "a and b", "a, b and c". */
 export const andList = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
 
@@ -359,8 +377,8 @@ export function createOptionsModel(spec) {
 
     /**
      * Both selects after the user touched one: the select touched wins and the other moves, to the first usable value,
-     * only when its value is now impossible. `say` names it once ("Layer changed to logged: % expressing is not
-     * available on X."); `impossible` is true when nothing else works, and the pair is then left as the user made it.
+     * only when its value is now impossible. `say` names it once ("Layer changed to logged: % expressing cannot be
+     * computed on 'X'."); `impossible` is true when nothing else works, and the pair is then left as the user made it.
      * @param {'method'|'layer'} changed - the select the user touched
      * @param {string} value - what it now says
      * @param {{method?: string, layer?: string}} pair - the other select's value (the touched one's old value is ignored)
@@ -380,7 +398,7 @@ export function createOptionsModel(spec) {
             if (!next) return { method, layer: (pair && pair.layer) || defaultLayer, moved: null, say: '', impossible: true };
             const wasLayer = (pair && pair.layer) || defaultLayer;
             return { method, layer: next.value, moved: 'layer',
-                say: `Layer changed to ${next.value}: ${methodShort(method)} is not available on ${wasLayer}.` };
+                say: REASON.moved('Layer', next.value, methodShort(method), quoted(wasLayer)) };
         }
         const layer = value;
         const wasMethod = pair && pair.method;
@@ -391,7 +409,7 @@ export function createOptionsModel(spec) {
         const next = usable(list)[0];
         if (!next) return { method: wasMethod || defaultMethod, layer, moved: null, say: '', impossible: true };
         return { method: next.value, layer, moved: 'method',
-            say: `Method changed to ${next.label}: ${methodShort(wasMethod || defaultMethod)} is not available on ${layer}.` };
+            say: REASON.moved('Method', next.label, methodShort(wasMethod || defaultMethod), quoted(layer)) };
     }
 
     /** What a stored `offered`/`layers` meant as the default pair: see `legacyPair` below. */

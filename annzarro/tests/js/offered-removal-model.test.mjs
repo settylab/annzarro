@@ -72,14 +72,14 @@ test('pairAfter: the select touched wins and the other one moves, with one sente
     const G2 = G.GROUP_STATISTICS_MODEL;
     const moved = G2.pairAfter('method', 'pct_expressing', { layer: 'X' }, ctx);
     assert.deepEqual([moved.method, moved.layer, moved.moved], ['pct_expressing', 'logged', 'layer']);
-    assert.equal(moved.say, 'Layer changed to logged: % expressing is not available on X.');
+    assert.equal(moved.say, "Layer changed to logged: % expressing cannot be computed on 'X'.");
     // a method that works on the layer keeps it, and nothing is said
     const kept = G2.pairAfter('method', 'mean', { layer: 'X' }, ctx);
     assert.deepEqual([kept.method, kept.layer, kept.moved, kept.say], ['mean', 'X', null, '']);
     // the layer touched wins: the method moves to the first usable one
     const other = G2.pairAfter('layer', 'X', { method: 'pct_expressing' }, ctx);
     assert.deepEqual([other.method, other.layer, other.moved], ['mean', 'X', 'method']);
-    assert.equal(other.say, 'Method changed to mean: % expressing is not available on X.');
+    assert.equal(other.say, "Method changed to mean: % expressing cannot be computed on 'X'.");
     // the free function is the same thing
     assert.deepEqual(M.pairAfter('method', 'pct_expressing', { layer: 'X' }, { source: G2, ...ctx }), moved);
     // nothing usable: the pair is left as the user made it
