@@ -26,6 +26,15 @@ async function load() {
                 if (ctxRef.toast) ctxRef.toast(e.message, 'danger');
             }
         },
+        // one change for every limit the admin set: each returns to the config file's value or its default
+        onResetAll: async (names) => {
+            try {
+                await apiRef.policy.set(Object.fromEntries(names.map((n) => [n, null])));
+                await load();
+            } catch (e) {
+                if (ctxRef.toast) ctxRef.toast(e.message, 'danger');
+            }
+        },
     });
     if (!(policy.keys || []).length) setChildren(el, h('p', { class: 'text-muted', text: 'The server declares no settings.' }));
 }

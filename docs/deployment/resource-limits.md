@@ -83,6 +83,55 @@ Measured on a 95.6-million-cell dataset stored by gene, with one worker and the 
 grouping and three plots that use it took 9.8 s with an empty cache and 5.0 s with the grouping's codes cached. One plot of genes over that grouping reserved 2.7 GB and used at most 1.4 GB. With 4
 workers the same panel set resolved the grouping once in each worker that served it (4 copies of 96 MB of codes).
 
+(cost-limits)=
+## Cost limits
+
+What one computation may cost is set under `limits:` in the configuration file
+({doc}`../reference/configuration`), and an administrator can change each value on the **Settings** page of the
+admin interface, under **Limits**, without a restart ({doc}`admin`). The server resolves them once per request, and
+the web client reads the same values from `GET /api/v1/policy/effective`, so a limit it checks before it asks (the
+Cell-Gene matrix, the groups of a grouping, the cells of a count grid) is the server's, never a copy of its own. A
+refusal names the limit in force in its `limit` field.
+
+A value set in the configuration file is a ceiling: the admin may lower it on the Settings page, never raise it.
+Leave a key out of the file and the admin may set anything within its bounds. `policy.locked` fixes a key to the
+file's value altogether. The time tiers keep their order, `live_update_s` ≤ `ask_first_s` ≤ `refuse_s` (and
+`partitionings` ≤ `request_partitionings`): a configuration file that breaks it does not start, the Settings page
+refuses such a change, and a value that comes out of order between the two layers is lowered to the next tier.
+
+The seconds are the server's estimates, from read rates measured on each matrix layout; the estimate itself is not a
+setting. The upper bounds are ten times the defaults for now, until each is measured at its maximum; the group,
+level and grid limits also stay below the 16-bit group codes, and `grid_sets` cannot rise above 16 (the sets of a
+cell are a 16-bit mask). A safety limit protects the server or the browser tab; raise one only when the host (or the
+users' computers) has the memory and time it protects.
+
+| Setting | Default | Bounds | Enforced by | Kind | Refusal |
+|---|---|---|---|---|---|
+| `ask_first_s`{#cost-ask-first-s} | 60 | 0 to 600 | server and browser | when to ask | `409 confirmation_required` until the request carries `confirm: true` (the panel asks) |
+| `refuse_s`{#cost-refuse-s} | 600 | 0 to 6000 | server | safety | `413 score_too_expensive`, `413 groups_too_expensive` |
+| `live_update_s`{#cost-live-update-s} | 5 | 0 to 50 | server and browser | safety | edits wait for **Update**; the job runs in the heavy lane |
+| `progress_bar_s`{#cost-progress-bar-s} | 10 | 0 to 100 | browser | when to ask | (a progress bar is shown) |
+| `matrix_values`{#cost-matrix-values} | 400,000 | 1 to 4,000,000 | server and browser | safety | `too_many_values` in the result; the browser does not ask (`matrix_too_large`) |
+| `genes_per_section`{#cost-genes-per-section} | 2,000 | 1 to 20,000 | browser | when to ask | the browser does not ask (`too_many_genes`) |
+| `groups`{#cost-groups} | 2,000 | 2 to 20,000 | server and browser | safety | `too_many_groups`, `too_many_levels` in the result |
+| `partitionings`{#cost-partitionings} | 8 | 1 to 64 | server and browser | safety | `422 too_many_partitionings` |
+| `request_partitionings`{#cost-request-partitionings} | 64 | 1 to 640 | server | safety | `422 too_many_partitionings` |
+| `measures`{#cost-measures} | 16 | 1 to 160 | server | safety | `400 too_many_measures` |
+| `thresholds`{#cost-thresholds} | 4 | 1 to 40 | server | safety | `422 too_many_thresholds` |
+| `grid_cells`{#cost-grid-cells} | 2,097,152 | 1 to 20,971,520 | server and browser | safety | `422 grid_too_large` |
+| `grid_2d_bins`{#cost-grid-2d-bins} | 512 | 2 to 5,120 | server | safety | `422 too_many_bins` |
+| `grid_2d_split`{#cost-grid-2d-split} | 8 | 1 to 80 | server | safety | `422 too_many_levels` |
+| `grid_1d_bins`{#cost-grid-1d-bins} | 2,000 | 2 to 20,000 | server | safety | `422 too_many_bins` |
+| `grid_1d_split`{#cost-grid-1d-split} | 200 | 1 to 2,000 | server | safety | `422 too_many_levels` |
+| `grid_categorical_levels`{#cost-grid-categorical-levels} | 200 | 1 to 2,000 | server | safety | `422 too_many_levels` |
+| `grid_sets`{#cost-grid-sets} | 16 | 2 to 16 | server | safety | `422 too_many_sets` |
+| `obsp_source_max_cells`{#cost-obsp-source-max-cells} | 1,000,000 | 1 to 10,000,000 | server | safety | `422 obsp_too_large` |
+| `cell_export_max`{#cost-cell-export-max} | 1,000,000 | 1 to 10,000,000 | browser | safety | the export is disabled, with the reason |
+| `bars_3d_max`{#cost-bars-3d-max} | 40,000 | 1 to 400,000 | browser | safety | the 3D view is not drawn, with the reason |
+| `density_points_draw`{#cost-density-points-draw} | 1,000,000 | 1 to 10,000,000 | browser | safety | a seeded sample of this many cells is drawn, and the plot says so |
+| `density_points_load`{#cost-density-points-load} | 25,000,000 | 1 to 250,000,000 | browser | safety | the Cell points layer is refused, with the count and the limit |
+| `dendrogram_rows`{#cost-dendrogram-rows} | 2,000 | 2 to 20,000 | browser | safety | no dendrogram, with the reason |
+
 ## Other limits
 
 `max_response_elements`, `name_index_max_mb`,

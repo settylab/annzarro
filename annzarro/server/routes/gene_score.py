@@ -206,8 +206,8 @@ def register_gene_score_routes(app_, api_version):
                 "(CSC) would be far faster." if plan.layout == "csr" else "")
         refusal = compute_stream.tier_refusal(
             plan.tier, body.get("confirm", False), estimate, too_expensive="score_too_expensive",
-            refused_message=f"This score would take about {plan.seconds / 60:.0f} minutes; the limit is "
-                            f"{gene_score.CONFIRM_MAX_S / 60:.0f}. Use fewer genes.{hint}",
+            refused_message=f"This score would take about {gene_score.duration(plan.seconds)}; the limit is "
+                            f"{gene_score.duration(gene_score.confirm_max_s())}. Use fewer genes.{hint}",
             confirm_message=f"This score would take about {plan.seconds:.0f} seconds. "
                             "Send confirm: true to compute it.")
         if refusal is not None:

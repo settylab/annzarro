@@ -79,7 +79,7 @@ def _rows(page):
     """Each set row as the list shows it."""
     return page.evaluate("""(s) => [...document.querySelectorAll(s + ' .ccnt-set:not(.ccnt-set--draft)')].map(r => ({
         letter: r.querySelector('.ccnt-set__letter').textContent, name: r.querySelector('.ccnt-set__name').textContent,
-        cells: r.querySelector('.ccnt-set__count').textContent, noValue: r.querySelector('.ccnt-set__novalue').textContent,
+        cells: r.querySelector('.ccnt-set__count').title, noValue: r.querySelector('.ccnt-set__novalue').textContent,
         tag: r.querySelector('.ccnt-set__tag').textContent, state: r.dataset.state,
         note: r.querySelector('.ccnt-set__note').hidden ? null : r.querySelector('.ccnt-set__note p').textContent }))""", S)
 
@@ -130,7 +130,7 @@ def test_add_set_builds_levels_and_a_condition_in_place_each_one_step(page, serv
     assert kinds == ["Cell table…", "Boolean column…", "Levels of a column…", "Condition on a number…", "Group of a grouping…"]
 
     page.select_option(f"{S} .ccnt-sets__add", "levels")
-    draft = f"{S} .ccnt-set--draft"
+    draft = "[data-popover='set-definition']"     # the draft's definition is in a pop-over, open on the draft's letter
     page.select_option(f"{draft} select[data-field='column']", "cell_type")
     page.wait_for_selector(f"{draft} .ccnt-set__levels input[value='c:T cell']")
     # a commit draws the row again, so the box is clicked, not checked through one element handle
@@ -138,7 +138,7 @@ def test_add_set_builds_levels_and_a_condition_in_place_each_one_step(page, serv
     until(page, f"() => (window.PanelManager.getPanel('{CC}').getConfig().sets || []).length === 1")
     assert _config(page)["sets"] == [{"source": {"type": "obs", "key": "cell_type"}, "member": {"levels": ["c:T cell"]}}]
     steps = _undo_steps(page)
-    page.click(f"{S} .ccnt-set[data-set-index='0'] .ccnt-set__levels input[value='c:NK cell']")
+    page.click("[data-popover='set-definition'] .ccnt-set__levels input[value='c:NK cell']")
     until(page, f"() => window.PanelManager.getPanel('{CC}').getConfig().sets[0].member.levels.length === 2")
     assert _undo_steps(page) == steps + 1
 
@@ -163,7 +163,6 @@ def test_add_set_builds_levels_and_a_condition_in_place_each_one_step(page, serv
     assert len(_config(page)["sets"]) == 2
 
     # Remove is one step, and Undo brings the set back
-    page.click(f"{S} .ccnt-set[data-set-index='1'] .ccnt-set__more")
     page.click(f"{S} .ccnt-set[data-set-index='1'] [data-set-action='remove']")
     until(page, f"() => window.PanelManager.getPanel('{CC}').getConfig().sets.length === 1")
     page.evaluate(f"() => window.PanelManager.getPanel('{CC}').undo()")
@@ -259,8 +258,8 @@ def test_a_group_set_says_group_changed_once_and_keep_makes_it_follow_silently(p
                        "a following set says nothing after a change: no event marks the absence of a notice", page=page)
 
     # Choose another, or picking the group again, ends following
-    page.click(f"{S} .ccnt-set[data-set-index='1'] .ccnt-set__more")
-    page.select_option(f"{S} .ccnt-set[data-set-index='1'] select[data-field='group']", label=_labels(page)['["bin:1"]'][0])
+    page.click(f"{S} .ccnt-set[data-set-index='1'] .ccnt-set__letter")
+    page.select_option("[data-popover='set-definition'] select[data-field='group']", label=_labels(page)['["bin:1"]'][0])
     until(page, f"() => !('follow' in window.PanelManager.getPanel('{CC}').getConfig().sets[1].member)")
 
 
@@ -298,7 +297,7 @@ def test_a_set_whose_table_is_gone_keeps_its_row_marked_deleted_with_choose_anot
     assert row["tag"] == "deleted" and row["name"] == "old table"
     assert len(_config(page)["sets"]) == 2, "nothing is silently reset"
     page.click(f"{S} .ccnt-set[data-set-index='1'] [data-set-action='chooseAnother']")
-    page.wait_for_selector(f"{S} .ccnt-set[data-set-index='1'] .ccnt-set__edit:not([hidden]) select[data-field='table']")
+    page.wait_for_selector("[data-popover='set-definition'] select[data-field='table']")
 
 
 # ------------------------------------------------------------------ 5. sixteen sets

@@ -34,15 +34,15 @@ import { scaleOptionLabel, plotlyColorscale, DIVERGING_SCALES } from '../../util
 import { defaultLabelMaps, sourceName } from '../../utils/cell-grouping.js';
 import { RESERVED } from '../../utils/level-id.js';
 import { GAP_COLOUR } from '../../utils/plot-theme.js';
-import { MAX_ROWS } from '../../utils/hclust.js';
+import { limit } from '../../utils/limits.js';
 import { longCsv } from '../../utils/cell-gene-model.js';
-import { groupingColours } from '../../utils/grouping-colours.js';
+import { groupingColours, groupOverrideState } from '../../utils/grouping-colours.js';
 import { createPopover } from '../../ui/popover.js';
 import { registerPanelFields } from '../plot-utilities/options-schema.js';
 import { mountPlotOptions } from '../plot-utilities/options-popover.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import { dendrogramBlocks } from './draw-annotations.js';
-import { BARS_3D_MAX, checkBarCap } from '../../utils/bars-3d.js';
+import { bars3dMax, checkBarCap } from '../../utils/bars-3d.js';
 
 const W = VOCABULARY.cellGene;
 const WO = VOCABULARY.cellGene.options;
@@ -136,6 +136,7 @@ function styleOf(config) {
         titles: { plot: text(titles.plot), color: text(titles.color), size: text(titles.size) },
         legend: { colorBar: legend.colorBar !== false, sizeLegend: legend.sizeLegend !== false, strips: legend.strips !== false },
         totals: c.totals === true,
+        groupBand: c.groupBand !== false,
         sortGroups: c.sortGroups === true
     };
 }
@@ -193,7 +194,8 @@ const PLOT_OPTION_FIELDS = Object.freeze([
     { id: 'strips', section: 'legend', type: 'check', path: 'legend.strips', label: WO.strips, dflt: true },
     { id: 'colorTitle', section: 'legend', type: 'text', path: 'titles.color', label: WO.colorTitle, dflt: '', copy: false },
     { id: 'sizeTitle', section: 'legend', type: 'text', path: 'titles.size', label: WO.sizeTitle, dflt: '', copy: false, when: dotsMode },
-    { id: 'totals', section: 'panel:annotations', type: 'check', path: 'totals', label: WO.totals, dflt: false }
+    { id: 'totals', section: 'panel:annotations', type: 'check', path: 'totals', label: WO.totals, dflt: false },
+    { id: 'groupBand', section: 'panel:annotations', type: 'check', path: 'groupBand', label: WO.groupBandSwitch, dflt: true }
 ]);
 registerPanelFields('cell-gene', PLOT_OPTION_FIELDS);
 
@@ -209,14 +211,18 @@ registerPanelFields('cell-gene', PLOT_OPTION_FIELDS);
  * @param {(source: Object) => (string|undefined)} titleOf
  * @param {Map<string, string>[]} [colors] - each factor's colors as the recipe has them now (group-sources.js `coloursOf`);
  *   left out, the recipe's own
+ * @param {{colours: string[], generated: string[], names: string[]}|null} [groups] - each group of the reply: its colour
+ *   (coloursOf `groups`), its generated name (what a group's own colour is keyed by) and its name as shown; with it, a
+ *   Group band follows the factors' strips when the grouping has more than one factor or a group has a colour of its own
+ *   (decision 38), so the colour chosen in the group grid shows here too
  * @returns {{title: string, colours: string[], levels: string[], legend: {label: string, colour: string}[]}[]}
  */
-function groupStrips(reply, recipe, groupOrder, titleOf, colors) {
+function groupStrips(reply, recipe, groupOrder, titleOf, colors, groups = null) {
     const parts = recipe && Array.isArray(recipe.partitionings) ? recipe.partitionings : [];
     if (!reply || !Array.isArray(reply.groups) || !Array.isArray(reply.partitionings) || reply.partitionings.length !== parts.length) return [];
     const maps = defaultLabelMaps(recipe, reply, titleOf);
     const factors = colors || groupingColours(recipe, reply).factors;
-    return parts.map((p, i) => {
+    const strips = parts.map((p, i) => {
         const info = reply.partitionings[i] || {};
         const levels = Array.isArray(info.levels) ? info.levels : [];
         const label = (id) => (p.labels && p.labels[id]) || maps[i].get(id) || id;
@@ -235,6 +241,13 @@ function groupStrips(reply, recipe, groupOrder, titleOf, colors) {
         }
         return { title: sourceName(p.source, titleOf), colours, levels: names, legend: levels.map((id) => ({ label: label(id), colour: colour(id) })) };
     });
+    if (groups && Array.isArray(groups.colours) && (parts.length > 1 || groupOverrideState(recipe, groups.generated).active.some((o) => o && o.color))) {
+        const nameOf = (g) => (groups.names && groups.names[g]) || '';
+        const colourOf = (g) => groups.colours[g] || GAP_COLOUR;
+        strips.push({ title: WO.groupBand, colours: Array.from(groupOrder, colourOf), levels: Array.from(groupOrder, nameOf),
+            legend: reply.groups.map((_, g) => ({ label: nameOf(g), colour: colourOf(g) })) });
+    }
+    return strips;
 }
 
 /** The dendrograms of the clustered blocks, each when its Dendrograms switch is on (CXG-24, WP-2). */
@@ -255,7 +268,7 @@ function dendrogramsOf(cluster, order) {
  * @returns {{color: Object, size: Object, legend: Object, plotTitle: (string|undefined), annotations: Object,
  *   gap: number, sortBySize: boolean, cluster: Object}}
  */
-export function figureExtras(config, { reply, recipe, order, titleOf, colors } = {}) {
+export function figureExtras(config, { reply, recipe, order, titleOf, colors, groups } = {}) {
     const s = styleOf(config);
     const cluster = clusterOf(config);
     const color = { colorscale: plotlyColorscale(s.colorScale) };
@@ -282,7 +295,7 @@ export function figureExtras(config, { reply, recipe, order, titleOf, colors } =
             brackets: { titles: s.sectionTitles },
             totals: s.totals,
             labels: s.labels,
-            strips: order ? groupStrips(reply, recipe, order.groups, titleOf, colors) : [],
+            strips: order ? groupStrips(reply, recipe, order.groups, titleOf, colors, s.groupBand ? groups : null) : [],
             dendrograms: dendrogramsOf(cluster, order)
         }
     };
@@ -291,21 +304,12 @@ export function figureExtras(config, { reply, recipe, order, titleOf, colors } =
 // ================================================================================================ 3D
 
 /**
- * The bar cap in force: BARS_3D_MAX, or a lower one the browser tests set before the app loads (`window.__azBars3dMax`,
- * as `window.__azTableLimits` sets the table's limits), so a small grid can stand for one over the cap.
- */
-function barMax() {
-    const set = typeof window !== 'undefined' ? window.__azBars3dMax : undefined;
-    return typeof set === 'number' && set > 0 ? set : BARS_3D_MAX;
-}
-
-/**
  * Whether the matrix may be drawn in 3D (UX 6b): one bar per row and group, at most the cap. Refused with the matrix's
  * words ("Use fewer genes or groups.").
  * @param {{rows: number, groups: number, max?: number}} shape
  * @returns {{ok: boolean, count: number, max: number, text: string}}
  */
-export function view3dGate({ rows, groups, max = barMax() }) {
+export function view3dGate({ rows, groups, max = bars3dMax() }) {
     return checkBarCap(rows * groups, { max, hint: 'matrix' });
 }
 
@@ -364,7 +368,7 @@ function clusterNotes(drawn) {
     for (const block of order.rowBlocks || []) {
         if (block.state !== 'too_many') continue;
         const row = model.rows[block.start];
-        out.push(WO.tooMany(row && row.section ? row.section.title : '', block.count, MAX_ROWS));
+        out.push(WO.tooMany(row && row.section ? row.section.title : '', block.count, limit('dendrogram_rows')));
     }
     if (order.rowsLeftOut) out.push(WO.leftOut(order.rowsLeftOut, 'row'));
     if (order.groupsLeftOut) out.push(WO.leftOut(order.groupsLeftOut, VOCABULARY.word.group));

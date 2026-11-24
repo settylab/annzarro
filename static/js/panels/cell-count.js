@@ -38,6 +38,8 @@ import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-v
 import { UndoStack } from '../utils/gene-signature.js';
 import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLabelsOf } from '../utils/count-plot-model.js';
 import { countFigure, countCsv, DRAWN_MODES } from './cell-count/draw.js';
+import { figure3d, view3dGate, sceneLabels, DEFAULT_CAMERA } from './cell-count/draw-3d.js';
+import { view3dOptions, COUNT_SECTIONS } from './cell-count/options.js';
 import { densityFigure, DENSITY_MODES } from './cell-count/draw-density.js';
 import { pointsRefusal } from './cell-count/density-points.js';
 import { groupLevelId } from '../utils/level-id.js';
@@ -67,7 +69,9 @@ import { mountPlotOptions } from './plot-utilities/options-popover.js';
 import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { groupColours } from './plot-utilities/colors.js';
-import { drawPlot } from '../utils/panel-surface.js';
+import { drawPlot, setStatusTag } from '../utils/panel-surface.js';
+import { watchSceneCamera, sameCamera } from '../utils/scene-camera.js';
+import { roundCamera } from '../utils/view-rounding.js';
 import { colourBar } from './plot-utilities/colour-bar.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { installSets } from './cell-count/sets.js';
@@ -77,6 +81,7 @@ const TYPE = 'cell-count';
 /** Keys of a configuration that are the panel's own, not the plot's. */
 const PANEL_KEYS = ['id', 'title', 'controlsVisible', '_closed', 'active'];
 const C = VOCABULARY.countPlot;
+const V3 = C.view3d;
 /** The consumer whose providers the selects list (CNT-2): the cell plot's. */
 const MENU_CONSUMER = 'cell-plot';
 
@@ -650,6 +655,7 @@ actions.register({
                 exportImage: (format, settings) => { if (_dom && _drawing) exportPlot(_dom.plot, format, settings, 'full'); },
                 plotSize: () => (_dom ? { width: _dom.plot.clientWidth, height: _dom.plot.clientHeight } : {}),
                 csv: downloadCsv, canExport: () => !!_drawing, plot: () => plot,
+                sections: COUNT_SECTIONS, exportOff: (format) => (format === 'svg' && drawn3d() ? V3.svgOff : ''),
                 classes: { csv: 'ccnt-csv' }
             });
             if (PARTS.sets && PARTS.sets.mount) {
@@ -679,8 +685,55 @@ actions.register({
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
                 isNumeric: page.isNumeric, drawable, viewNote: _viewNote, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
-                valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
+                valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null),
+                view3d: view3dState()
             };
+        }
+
+        // ---------------------------------------------------------------- 3D (UX 6b, WP-11)
+
+        /**
+         * What the toolbar's 3D button and the Height row read: whether 3D is stored, the gate (the mode has bars, and the
+         * drawing's rows are within the cap) and whether the Height row is shown (3D stored and the mode offers it).
+         */
+        function view3dState() {
+            const c = shown();
+            const rows = _drawing && _drawing.config.mode === c.mode ? _drawing.table.rows : null;
+            const gate = view3dGate(c, rows);
+            return { on: c.view === '3d', gate, shown: c.view === '3d' && gate.why !== 'mode' };
+        }
+
+        /** The drawing is the 3D one: Plot Options greys SVG then (a scene's SVG is a picture inside SVG). */
+        const drawn3d = () => !!(_drawing && _drawing.is3d);
+
+        /**
+         * Keep the 3D camera in the configuration as the user turns it (UX 6b): stored once it rests, rounded, with no undo
+         * step and no redraw; the default camera is stored as none. Off in 2D (scene-camera.js watchSceneCamera).
+         */
+        function watchCamera(labels) {
+            if (!_dom) return;
+            watchSceneCamera(_dom.plot, { labelsFor: labels ? (camera) => sceneLabels(labels, camera) : null, store: storeCamera, key: '__azCcCamera' });
+        }
+
+        function storeCamera(camera) {
+            if (_config.view !== '3d') return;
+            const rounded = roundCamera(camera);
+            const next = { ..._config };
+            if (sameCamera(rounded, DEFAULT_CAMERA)) delete next.camera; else next.camera = rounded;
+            if (JSON.stringify(next) === JSON.stringify(_config)) return;
+            _config = normalizeCountPlot(next).config;
+            if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+        }
+
+        /** Reset camera (the modebar): the default view, and no stored camera. */
+        function resetCamera(gd) {
+            if ('camera' in _config) {
+                const next = { ..._config };
+                delete next.camera;
+                _config = normalizeCountPlot(next).config;
+                if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+            }
+            if (window.Plotly) window.Plotly.relayout(gd, { 'scene.camera': JSON.parse(JSON.stringify(DEFAULT_CAMERA)) });
         }
 
         // ---------------------------------------------------------------- paint
@@ -689,7 +742,7 @@ actions.register({
             if (!_dom) return;
             draw();
             paintState();
-            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _points, _colourData, _viewNote];
+            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _points, _colourData, _viewNote, _drawing ? _drawing.table.rows : -1];
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
                 _controls.paint();
@@ -743,7 +796,11 @@ actions.register({
                 _points = { key: null, state: 'none' };
             }
             const part = PARTS.draw[config.mode];
-            const fig = part ? part.figure(config, table, opts)
+            // 3D (UX 6b): within the bar cap and for a mode with bars; else the plot is 2D, and over the cap the strip says why
+            const gate3d = config.view === '3d' && !part ? view3dGate(config, table.rows) : null;
+            const in3d = !!(gate3d && gate3d.ok);
+            const fig = in3d ? figure3d(config, table, { ...opts, view3d: view3dOptions(look) })
+                : part ? part.figure(config, table, opts)
                 : DENSITY_MODES.includes(config.mode) ? densityFigure(config, table, opts) : countFigure(config, table, opts);
             withSharedColourBars(fig);
             // the shared Plot Options (WP-5a) after the shared colour bars: it sets no colour bar of its own
@@ -757,19 +814,27 @@ actions.register({
             const plot = _dom.plot;
             // a figure of another kind (a Histogram's number axis, then a Bar's categories) is drawn on a clean plot: Plotly.react
             // keeps an axis's computed tick step through a change to an array of ticks, which a fresh plot would not have
-            const kind = JSON.stringify([config.mode, ['xaxis', 'yaxis'].map((a) => (fig.layout[a] && fig.layout[a].tickmode) || '')]);
+            const kind = JSON.stringify([config.mode, in3d, ['xaxis', 'yaxis'].map((a) => (fig.layout[a] && fig.layout[a].tickmode) || '')]);
             if (_drawnKind !== null && kind !== _drawnKind && plot._fullLayout && window.Plotly) window.Plotly.purge(plot);
             _drawnKind = kind;
+            // what 3D says in the strip: what it leaves out; over the cap, why the plot is in 2D (a mode with no bars is simply 2D)
+            setStatusTag(plot, 'ccnt-3d', in3d ? { text: V3.tag, title: V3.leftOut, pop: { text: V3.leftOut } }
+                : gate3d && gate3d.why === 'cap' ? { text: V3.offTag, title: gate3d.text, severity: 'warning', pop: { text: gate3d.text } } : null);
+            const plotConfig = { displaylogo: false, responsive: true, modeBarButtonsToRemove: [...MODEBAR_REMOVE] };
+            if (in3d) {
+                plotConfig.modeBarButtonsToRemove.push('resetCameraDefault3d', 'resetCameraLastSave3d');
+                if (window.Plotly.Icons) plotConfig.modeBarButtonsToAdd = [{ name: 'resetCameraCellCount', title: V3.resetCamera, icon: window.Plotly.Icons.home, click: (gd) => resetCamera(gd) }];
+            }
             drawPlot(plot, fig.data, { ...fig.layout, autosize: true, modebar: modebarOf(PLOT_PALETTES[theme].textColor) },
-                { displaylogo: false, responsive: true, modeBarButtonsToRemove: [...MODEBAR_REMOVE] },
-                coverageOf(table, names), 'cells').then(() => {
+                plotConfig, coverageOf(table, names), 'cells').then(() => {
+                watchCamera(in3d ? fig.labels3d : null);
                 // a click on a bar, slice or rectangle offers Save as grouping (CNT-21); a purge drops the listener
                 if (typeof plot.removeAllListeners === 'function') plot.removeAllListeners('plotly_click');
                 if (typeof plot.on === 'function') plot.on('plotly_click', saveAsGrouping);
                 // what a test or a style reads: the mode drawn, once the drawing is of the config now
                 if (serial === _drawSerial && config === live) root.dataset.drawn = config.mode;
             }, (error) => console.error(`Cell count plot ${_id}:`, error));
-            _drawing = { config, table, labels, names, grid, inputs };
+            _drawing = { config, table, labels, names, grid, inputs, is3d: in3d };
             // what Choose levels and the binning control read: each input's axis of the reply, with its cells per level
             const defaults = levelLabelsOf(config, table, sourceTitleOf);
             _infos = {};

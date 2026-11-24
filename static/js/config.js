@@ -158,10 +158,8 @@ const Config = (function() {
         // keeps several regular plots open at once. Server key
         // ui.defaults.large_plot_points.
         LARGE_PLOT_POINTS: 1000000,
-        // The Cell Count Plot's "Cell points" layer of a 2D density: the most cells drawn (a seeded sample above it) and the
-        // most whose positions are loaded (the layer is refused above it). To become limits keys with the cost limits.
-        DENSITY_POINTS_DRAW: 1000000,
-        DENSITY_POINTS_LOAD: 25000000,
+        // The Cell Count Plot's "Cell points" caps are the server's limits.density_points_draw and _load
+        // (utils/limits.js); a browser test may set DENSITY_POINTS_DRAW or DENSITY_POINTS_LOAD here to lower one.
         // A dataset with more cells than this does not download the names of
         // the cells it shows, whatever the subset: a part or subset of cells
         // spread over such a dataset touches nearly every chunk of its name

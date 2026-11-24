@@ -19,6 +19,7 @@ import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-
 import { tableMayLoad } from './table-utilities/table-memory.js';
 import { TableResolver } from '../utils/table-resolver.js';
 import './table-utilities/table-background.js';
+import { createTableUndo, changesTableState, giveBack } from './table-utilities/table-undo.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { createScoreOptions } from './score-options/score-options.js';
 import { DEFAULT_INPUT, DEFAULT_METHOD, isDefaultParams, writableOptions } from '../utils/signature-options.js';
@@ -41,6 +42,7 @@ const GeneTablePanel = (function() {
         let _dataTable = null;
         let _tableListenersCleanup = null;
         let _isFirstLoad = true;
+        let _undo = null;                 // Undo of the table's settings (table-utilities/table-undo.js)
         let _scoreOptions = null;         // Score methods ▾ and the layers' kinds (panels/score-options/score-options.js), shared with the gene signature
         
         // Initialize settings with default options
@@ -81,6 +83,7 @@ const GeneTablePanel = (function() {
                 _tableContainer = tableContainer;
                 _controlsContainer = controlsContainer;
                 mountScoreOptions(controlsContainer);
+                mountUndo();
                 
                 // Manually update the UI based on dataset loading status
                 const isDatasetLoaded = DataManager.isDatasetLoaded();
@@ -127,6 +130,7 @@ const GeneTablePanel = (function() {
                 
                 // Always initialize the table, even if no columns are selected
                 await refreshTable();
+                if (_undo) _undo.rebase();             // what a dataset and its first build made of the settings is no step
                 
                 _isFirstLoad = false;
             } catch (error) {
@@ -316,6 +320,7 @@ const GeneTablePanel = (function() {
             cancelLoads(_tableContainer);
             if (_scoreOptions) _scoreOptions.destroy();
             _scoreOptions = null;
+            if (_undo) { _undo.dispose(); _undo = null; }
             if (_dataTable) {
                 // what other panels still read (a plot's table filter, the
                 // panel set) stays, as values; the DataTable's rows go
@@ -486,6 +491,8 @@ const GeneTablePanel = (function() {
                 if (_scoreOptions) _scoreOptions.changed();
                 sourceChanged(_id, ['input', 'method', 'clip', 'seed', 'bins', 'controls', 'detect_above']);
             }
+            // a config from outside (a link, Back and Forward, a panel set's remap) is no step of the user's: the steps are forgotten
+            if (_undo && !_undo.restoring && changesTableState(config)) _undo.rebase();
         }
 
         // -------------------------------------------------------------------
@@ -512,6 +519,8 @@ const GeneTablePanel = (function() {
             // consumers with no layer take the input as it is now, before it changes: they never move with it
             if (next.input !== was.input) pinConsumersOf();
             _settings.scoreOptions = storableOptions(next);
+            // Score methods ▾ is a pop-over outside the tile: its edits are told to Undo here, not found by the tile's events
+            if (_undo) _undo.observe('change the score methods');
         }
 
         /**
@@ -534,6 +543,36 @@ const GeneTablePanel = (function() {
          * The table's gene score, beside the column chooser's buttons: Score methods ▾ (the settings of each method) and
          * Distribution (a Count Plot of the score). The table stays a table first: two buttons, nothing that folds open.
          */
+        /** Undo, in the control row: every change of the table's settings is one step (table-utilities/table-undo.js). */
+        function mountUndo() {
+            const host = _controlsContainer && _controlsContainer.querySelector('.action-buttons');
+            if (!host) return;
+            if (_undo) _undo.dispose();
+            _undo = createTableUndo({
+                root: _container, settings: () => _settings,
+                busy: () => !!(_tableContainer && _tableContainer.querySelector('.table-loading')),
+                restore: restoreSettings
+            });
+            host.insertBefore(_undo.button({ className: 'btn btn-sm btn-outline-secondary table-undo' }), host.firstChild);
+            _undo.rebase();
+        }
+
+        /** Undo: the settings before become the settings (the score methods too, whose readers follow), and the table is built again from them. */
+        async function restoreSettings(config) {
+            if (_dataTable) {
+                releaseTable(_dataTable, _settings);
+                _dataTable = null;
+            }
+            // fields the config lacks are taken out first (updateConfig only copies what is there)
+            giveBack(_settings, config, ['scoreOptions']);
+            updateConfig({ scoreOptions: config.scoreOptions === undefined ? null : config.scoreOptions });
+            if (_scoreOptions) _scoreOptions.paint();
+            const length = document.getElementById(`table-length-${_id}`);
+            if (length) length.value = String(_settings.pageLength || 25);
+            await refreshTable();
+            await settleColumnChooser(_settings, _plotType);
+        }
+
         function mountScoreOptions(controlsContainer) {
             if (_scoreOptions) _scoreOptions.destroy();
             const D = makeDom(document);
@@ -565,6 +604,7 @@ const GeneTablePanel = (function() {
             const added = applyLineToSettings(_settings, line);
             await refreshTable();
             await settleColumnChooser(_settings, _plotType);
+            if (_undo) _undo.rebase();             // another panel's change
             return added;
         }
 

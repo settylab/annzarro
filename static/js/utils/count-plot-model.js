@@ -22,6 +22,8 @@ import { groupNeed } from './group-store.js';
 import { csvField } from './csv-format.js';
 import { RESERVED } from './level-id.js';
 import { stableStringify } from './url-history.js';
+import { isColourString } from './uns-palette.js';
+import { limit } from './limits.js';
 
 const VERSION = 1;
 
@@ -56,12 +58,19 @@ export function arrangementShown(config) {
 }
 const DEFAULT_SHARE_BASE = 'all';
 
-/** Bins a count plot may ask for, by dimension (SHR-39, CNT-9). The grouping's own limit is lower (binning.js). */
-const BINS = Object.freeze({ one: Object.freeze({ min: 2, max: 2000 }), two: Object.freeze({ min: 2, max: 512 }) });
+/**
+ * Bins a count plot may ask for, by dimension (SHR-39, CNT-9): the server's limits.grid_1d_bins and grid_2d_bins
+ * (2,000 and 512 by default), read at each use. The grouping's own limit is lower (binning.js).
+ */
+const BINS = Object.freeze({
+    get one() { return { min: 2, max: limit('grid_1d_bins') }; },
+    get two() { return { min: 2, max: limit('grid_2d_bins') }; }
+});
 const DEFAULT_BINS = Object.freeze({ one: 50, two: 100 });
-/** The grid a density is smoothed on (CNT-10): the engine bins this fine, the browser smooths. */
+/** The grid a density is smoothed on (CNT-10): the engine bins this fine, the browser smooths (never finer than the
+ *  server's bins of the dimension, `densityBins`). */
 const DENSITY_BINS = Object.freeze({ density: 512, density2d: 256 });
-const GRID_CELLS_MAX = 512 * 512 * 8;
+const densityBins = (mode) => Math.min(DENSITY_BINS[mode], mode === 'density2d' ? BINS.two.max : BINS.one.max);
 const PIE_LEVELS = 12;
 /** The modes that colour a rectangle by its most frequent level (CNT-18). */
 const TOP_LEVEL_MODES = Object.freeze(['hist2d', 'heatmap']);
@@ -81,24 +90,31 @@ const MODES = Object.freeze({
 
 /**
  * The limits of each mode's inputs (UX 4.3): the most levels (or, for a numeric input, bins) it may have.
- * `bins` is the limit of a numeric input, `levels` of a categorical one.
+ * `bins` is the limit of a numeric input, `levels` of a categorical one. They are the server's grid limits
+ * (limits.grid_categorical_levels, grid_1d_bins, grid_1d_split, grid_2d_bins, grid_2d_split; by default 200, 2,000,
+ * 200, 512 and 8), read when asked.
  */
-const LIMITS = Object.freeze({
-    bar: { x: { levels: 200, bins: 200 } },
-    pie: { x: { levels: 200, bins: 200 } },
-    heatmap: { x: { levels: 200, bins: 200 }, y: { levels: 200, bins: 200 } },
-    histogram: { x: { bins: 2000 }, split: { levels: 200 } },
-    density: { x: { bins: 2000 }, split: { levels: 200 } },
-    hist2d: { x: { bins: 512 }, y: { bins: 512 }, split: { levels: 8 }, factor: { levels: 8 } },
-    density2d: { x: { bins: 512 }, y: { bins: 512 }, split: { levels: 8 } }
-});
+function modeLimits(mode) {
+    const cat = limit('grid_categorical_levels'), bins1 = limit('grid_1d_bins'), split1 = limit('grid_1d_split');
+    const bins2 = limit('grid_2d_bins'), split2 = limit('grid_2d_split');
+    const all = {
+        bar: { x: { levels: cat, bins: cat } },
+        pie: { x: { levels: cat, bins: cat } },
+        heatmap: { x: { levels: cat, bins: cat }, y: { levels: cat, bins: cat } },
+        histogram: { x: { bins: bins1 }, split: { levels: split1 } },
+        density: { x: { bins: bins1 }, split: { levels: split1 } },
+        hist2d: { x: { bins: bins2 }, y: { bins: bins2 }, split: { levels: split2 }, factor: { levels: split2 } },
+        density2d: { x: { bins: bins2 }, y: { bins: bins2 }, split: { levels: split2 } }
+    };
+    return all[mode];
+}
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // --- the stored config -----------------------------------------------------------------------------------------------
 
-const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure', 'binSpacing', 'color'];
+const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure', 'binSpacing', 'color', 'view', 'height', 'camera'];
 const INPUTS = ['x', 'y', 'split'];
 
 /** An input as a partitioning. Its bin count goes to 2,000 and is kept as typed, since the default differs by mode. */
@@ -135,18 +151,21 @@ function normalizeSets(raw, bad) {
         }
         const set = { ...item, source: source.source };
         if (member) set.member = member;
+        // a colour is stored only when the user picked one; text that is no colour is dropped
+        if (set.color !== undefined && !(typeof set.color === 'string' && isColourString(set.color))) delete set.color;
         out.push(set);
     }
     return out;
 }
 
-function normalizeValue(raw, bad, factorOf) {
+function normalizeValue(raw, bad, factorOf, keepCount = false) {
     if (!isObject(raw) || !VALUE_KINDS.includes(raw.kind)) {
         bad('value', 'bad_value');
         return null;
     }
     const out = { ...raw };
-    if (raw.kind === 'count' && Object.keys(raw).length === 1) return null;
+    // an UpSet keeps its stored Count: it colours the bars, where the default (no value) colours none
+    if (raw.kind === 'count' && Object.keys(raw).length === 1 && !keepCount) return null;
     if (raw.of !== undefined && !SHARE_BASES.includes(raw.of)) {
         bad('value.of', 'bad_value');
         delete out.of;
@@ -205,7 +224,7 @@ export function normalizeCountPlot(raw) {
     }
     if (raw.sets !== undefined) out.sets = normalizeSets(raw.sets, bad);
     if (raw.value !== undefined) {
-        const value = normalizeValue(raw.value, bad, (factor) => normalizeInput(factor, 'value.factor', bad));
+        const value = normalizeValue(raw.value, bad, (factor) => normalizeInput(factor, 'value.factor', bad), out.mode === 'upset');
         if (value) out.value = value;
     }
     if (raw.measure !== undefined) {
@@ -220,14 +239,44 @@ export function normalizeCountPlot(raw) {
         const color = normalizeColor(raw.color, bad);
         if (color) out.color = color;
     }
+    // the 3D view (UX 6b, WP-11): `view: '3d'` (absent is 2D), the bars' `height` source (absent is Same as Color) and the `camera`
+    if (raw.view !== undefined) {
+        if (raw.view === '3d') out.view = '3d'; else bad('view', 'bad_view');
+    }
+    if (raw.height !== undefined) {
+        if (typeof raw.height === 'string' && HEIGHT_CHOICE.test(raw.height)) out.height = raw.height; else bad('height', 'bad_height');
+    }
+    if (raw.camera !== undefined) {
+        const camera = normalizeCamera(raw.camera);
+        if (camera) out.camera = camera; else bad('camera', 'bad_camera');
+    }
     for (const key of Object.keys(raw)) if (!KNOWN.includes(key)) out[key] = raw[key];
     return { config: out, problems };
+}
+
+/** The values of the 3D bars' height source (the entries of valueChoices, but for the most frequent level, which has no number). */
+const HEIGHT_CHOICE = /^(count|share:(all|x|split|row|column|total)|stat:(mean|sum|pct_above|sd|zscore))$/;
+
+/** A camera `{eye, center?, up?}` of finite points (x, y, z), or null: Plotly's own shape, kept as the user turned it. */
+function normalizeCamera(raw) {
+    const point = (p) => (isObject(p) && ['x', 'y', 'z'].every((k) => isNumber(p[k])) ? { x: p.x, y: p.y, z: p.z } : null);
+    const eye = isObject(raw) ? point(raw.eye) : null;
+    if (!eye) return null;
+    const out = { eye };
+    for (const key of ['center', 'up']) {
+        if (raw[key] === undefined) continue;
+        const p = point(raw[key]);
+        if (!p) return null;
+        out[key] = p;
+    }
+    return out;
 }
 
 /**
  * The colour of the plot (WP-6a): `{map?, reverse?, min?, max?, center?, palette?}`. `map` is a colour scale's name,
  * `reverse` flips it, `min`, `max` and `center` fix the range of a colour scale (absent: automatic), `palette` names the
- * discrete palette of a Color by's levels. A field that is not valid is reported and left out; an empty colour is none.
+ * discrete palette of a Color by's levels, `slices: 'levels'` keeps a pie's bins of a number on that palette (their continuous colours are
+ * the default, so `continuous` is not stored). A field that is not valid is reported and left out; an empty colour is none.
  */
 function normalizeColor(raw, bad) {
     if (!isObject(raw)) {
@@ -238,6 +287,9 @@ function normalizeColor(raw, bad) {
     for (const field of ['map', 'palette']) {
         if (raw[field] === undefined) continue;
         if (typeof raw[field] === 'string' && raw[field]) out[field] = raw[field]; else bad(`color.${field}`, 'bad_color');
+    }
+    if (raw.slices !== undefined) {
+        if (raw.slices === 'levels') out.slices = 'levels'; else if (raw.slices !== 'continuous') bad('color.slices', 'bad_color');
     }
     if (raw.reverse !== undefined) {
         if (raw.reverse === true) out.reverse = true; else if (raw.reverse !== false) bad('color.reverse', 'bad_color');
@@ -340,7 +392,8 @@ export function densityLayers(layers, style, split) {
  */
 export function binsRange(mode, input) {
     const range = { ...BINS[MODES[mode].dimension || 'one'] };
-    const cap = input && LIMITS[mode] && LIMITS[mode][input] ? LIMITS[mode][input].bins : undefined;
+    const limits = modeLimits(mode);
+    const cap = input && limits && limits[input] ? limits[input].bins : undefined;
     if (cap !== undefined) range.max = Math.min(range.max, cap);
     return range;
 }
@@ -361,7 +414,7 @@ function prepared(p, mode, input, numeric) {
     const stored = p.binning || { method: 'equal_width' };
     if (stored.method === 'manual') return { ...p, binning: { ...stored } };
     const fixed = m.density && (input === 'x' || input === 'y');
-    const bins = fixed ? DENSITY_BINS[mode] : (stored.bins === undefined ? DEFAULT_BINS[m.dimension] : stored.bins);
+    const bins = fixed ? densityBins(mode) : (stored.bins === undefined ? DEFAULT_BINS[m.dimension] : stored.bins);
     return { ...p, binning: { ...stored, bins, outside: 'exclude' } };
 }
 
@@ -377,7 +430,7 @@ const isBinned = (p, ctx) => !!ctx.isNumeric && ctx.isNumeric(p.source) && !(p.b
 
 /** The first limit a plan breaks, as the refusal that names every limited input of the mode with its count. */
 function checkLimits(config, plan, ctx) {
-    const limits = LIMITS[config.mode] || {};
+    const limits = modeLimits(config.mode) || {};
     const sizes = new Map(plan.map((e) => [e, sizeOf(e.partitioning, e.numeric, ctx)]));
     const capOf = (e) => (limits[e.input] ? limits[e.input][e.numeric ? 'bins' : 'levels'] : undefined);
     const limited = plan.filter((e) => capOf(e) !== undefined);
@@ -391,15 +444,17 @@ function checkLimits(config, plan, ctx) {
     }
     const all = plan.map((e) => sizes.get(e));
     const cells = all.every((n) => n !== null) ? all.reduce((p, n) => p * n, 1) : 0;
-    if (cells > GRID_CELLS_MAX) {
-        return { state: 'refused', reason: 'grid_too_large', mode: config.mode, inputs: plan.map((e) => e.input), counts: [cells], limits: [GRID_CELLS_MAX], over: [] };
+    const most = limit('grid_cells');               // the server's (limits.grid_cells), 512 x 512 x 8 by default
+    if (cells > most) {
+        return { state: 'refused', reason: 'grid_too_large', mode: config.mode, inputs: plan.map((e) => e.input), counts: [cells], limits: [most], over: [] };
     }
     return null;
 }
 
 function setsPlan(config, ctx) {
     const sets = config.sets || [];
-    const max = MODES[config.mode].setsMax;
+    // the server's limits.grid_sets caps an UpSet (16 by default and at most); a Venn draws 3
+    const max = Math.min(MODES[config.mode].setsMax, limit('grid_sets'));
     if (sets.length < 2) return { state: 'empty', reason: 'choose_sets' };
     if (sets.length > max) {
         const common = { reason: 'too_many_sets', mode: config.mode, count: sets.length, limit: max };
@@ -459,7 +514,9 @@ export function planGrid(config, ctx) {
     if (body.sets) request.sets = body.sets;
     if (mode.density) request.density = true;
     if (members) members.forEach((member, i) => { request.partitionings[i].member = member; });
-    if (config.value && config.value.kind === 'measure' && config.measure) {
+    // a 3D height that is a statistic reads the same measure's moments (every statistic is made of them)
+    const heightStat = config.view === '3d' && typeof config.height === 'string' && config.height.startsWith('stat:');
+    if (((config.value && config.value.kind === 'measure') || heightStat) && config.measure) {
         const measure = { id: 'm0', source: wireSource(config.measure.source, ctx) };
         if (config.measure.above !== undefined) measure.above = config.measure.above;
         request.measures = [measure];
@@ -832,6 +889,22 @@ export function heightValues(config, table) {
         case 'top_level': return null;
         default: return table.count;
     }
+}
+
+/**
+ * The numbers of the 3D bars' own height source (`config.height`: a value choice of Height or Color), or null when the
+ * height is Same as Color (nothing stored) or its number is not in the table (a statistic of a grid with no measure).
+ * @returns {{choice: string, values: ArrayLike<number>}|null}
+ */
+// export-unused-ok: the Count Plot's 3D figure (panels/cell-count/draw-3d.js)
+export function heightChoiceValues(config, table) {
+    const choice = config.height;
+    if (typeof choice !== 'string') return null;
+    let values = null;
+    if (choice === 'count') values = table.count;
+    else if (choice.startsWith('share:')) values = shareValues(table, choice.slice('share:'.length));
+    else if (choice.startsWith('stat:')) values = measureValues(table, choice.slice('stat:'.length));
+    return values ? { choice, values } : null;
 }
 
 /**

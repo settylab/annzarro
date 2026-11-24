@@ -27,13 +27,16 @@ import { listAvailableColormaps } from '../plot-utilities/colors.js';
 import { DEFAULT_COLORSCALE } from './colour.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import {
-    popoverUse, parseColourLimit, rowsOf, modeRefusal, arrangementChoices, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
-    setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
+    popoverUse, sliceColourUse, parseColourLimit, rowsOf, modeRefusal, arrangementChoices, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
+    setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust,
+    SAME_HEIGHT, heightChoices, heightChoiceOf, applyHeightChoice
 } from './controls-model.js';
 
 const C = VOCABULARY.countPlot;
+const V3 = C.view3d;
 const P = VOCABULARY.phrase;
 const CL = C.colour;
+const CL_SLICES = C.slices;
 const COLOR_MAPS = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || [DEFAULT_COLORSCALE]);
 
 // ================================================================================================ the view
@@ -476,6 +479,51 @@ export function createControls({ D, id, model, on }) {
     wireSelects(factorRow, () => inputOf('factor'), (source) => commitInput('factor', source));
     rows.set('factor', factorRow);
 
+    // the 3D height (UX 6b): its own source, Same as Color first; shown only in 3D
+    const heightSelect = el('select', { class: 'form-select form-select-sm ccnt-height3d', id: `ccnt-height3d-${id}`,
+        on: { change: () => chooseHeight(heightSelect.value) } });
+    const heightHelp = el('span', { class: 'ccnt-help ccnt-height3d__help' });
+    const heightRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--height3d', hidden: true },
+        el('label', { class: 'ctl-label', for: `ccnt-height3d-${id}`, text: V3.heightRow }), heightSelect, heightHelp);
+
+    function chooseHeight(choice) {
+        const m = model();
+        const next = applyHeightChoice(m.config, choice, m.valueDefaults());
+        const entry = heightChoices(m.config).find((c) => c.value === choice);
+        if (!next) { heightSelect.value = heightChoiceOf(m.config); return; }
+        commit(next, `${V3.heightRow} ${entry ? entry.label.replace('…', '') : choice}`);
+    }
+
+    function paintHeight(m) {
+        const shownNow = !!m.view3d && m.view3d.shown;
+        heightRow.hidden = !shownNow;
+        if (!shownNow) return;
+        D.clear(heightSelect);
+        const groups = new Map();
+        for (const c of heightChoices(m.config)) {
+            const o = option(c.value, c.label);
+            o.title = c.help;
+            if (!c.group) { heightSelect.appendChild(o); continue; }
+            if (!groups.has(c.group)) {
+                groups.set(c.group, el('optgroup', { label: C.value.groups[c.group] }));
+                heightSelect.appendChild(groups.get(c.group));
+            }
+            groups.get(c.group).appendChild(o);
+        }
+        const choice = heightChoiceOf(m.config);
+        heightSelect.value = choice;
+        const entry = heightChoices(m.config).find((c) => c.value === choice);
+        heightHelp.textContent = choice === SAME_HEIGHT ? V3.heightHelp : (entry ? entry.help : '');
+        // a statistic as the height reads the measure beside the Color's: its source and threshold are the row above's
+        if (choice.startsWith('stat:') && measureRow.element.hidden && m.config.measure) {
+            measureRow.element.hidden = false;
+            measureRow.sync();
+            dropCategorical(measureRow);
+            aboveWrap.hidden = choice !== 'stat:pct_above';
+            if (document.activeElement !== above) above.value = m.config.measure.above === undefined ? '' : String(m.config.measure.above);
+        }
+    }
+
     function commitAbove() {
         const c = model().config;
         if (!c.measure) return;
@@ -567,10 +615,14 @@ export function createControls({ D, id, model, on }) {
         on: { change: () => { const next = { ...model().config }; if (logBox.checked) next.log = true; else delete next.log; commit(next, logBox.checked ? 'log count axis' : 'linear count axis'); } } });
     const ringBox = el('input', { type: 'checkbox', class: 'ccnt-ring',
         on: { change: () => { const next = { ...model().config }; if (ringBox.checked) next.ring = true; else delete next.ring; commit(next, ringBox.checked ? 'ring' : 'pie'); } } });
+    // a pie's slice names (with Labels' numbers, or alone when Labels is None)
+    const namesBox = el('input', { type: 'checkbox', class: 'ccnt-names',
+        on: { change: () => { const next = { ...model().config }; if (namesBox.checked) next.names = true; else delete next.names; commit(next, namesBox.checked ? 'slice names' : 'no slice names'); } } });
+    const namesWrap = el('label', { class: 'ccnt-opt', title: C.slices.namesTitle }, namesBox, ` ${C.slices.names}`);
     const logWrap = el('label', { class: 'ccnt-opt' }, logBox, ` ${C.buttons.log}`);
     const ringWrap = el('label', { class: 'ccnt-opt' }, ringBox, ` ${C.buttons.ring}`);
     const labelsRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--labels' },
-        el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, logWrap, ringWrap);
+        el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, logWrap, ringWrap, namesWrap);
 
     // the density row: Smoothing, Scale by level size, Image, and what the bandwidth and the floor were
     const adjust = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-adjust', inputmode: 'decimal', placeholder: '1',
@@ -638,8 +690,10 @@ export function createControls({ D, id, model, on }) {
         logBox.checked = o.log;
         ringWrap.hidden = !shownRows.ring;
         ringBox.checked = o.ring;
+        namesWrap.hidden = !shownRows.names;
+        namesBox.checked = o.names;
         // a row with nothing in it is not drawn (a density's modes have no Labels, a pie has no Log axis)
-        labelsRow.hidden = !(shownRows.labels || shownRows.sort || shownRows.reverse || shownRows.horizontal || shownRows.log || shownRows.ring);
+        labelsRow.hidden = !(shownRows.labels || shownRows.sort || shownRows.reverse || shownRows.horizontal || shownRows.log || shownRows.ring || shownRows.names);
         densityRow.hidden = !shownRows.density;
         if (document.activeElement !== adjust) adjust.value = m.config.adjust === undefined ? '' : String(m.config.adjust);
         bySize.wrap.hidden = !(shownRows.density && m.config.split);
@@ -662,8 +716,16 @@ export function createControls({ D, id, model, on }) {
     // Download CSV is in its Export section
     const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-options-btn' }, C.buttons.options);
     const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-undo', disabled: true, on: { click: () => on.undo() } }, C.buttons.undo);
+    // 3D (UX 6b, WP-11): a view, one undoable step; disabled with its reason where it has no bars or over the bar cap
+    const view3dBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-3d-btn', aria: { pressed: 'false' }, on: { click: () => {
+        const c = model().config;
+        const was = c.view === '3d';
+        const next = { ...c };
+        if (was) delete next.view; else next.view = '3d';
+        commit(next, was ? 'show in 2D' : 'show in 3D');
+    } } }, V3.button);
     // the shared plot toolbar (ui/plot-toolbar.js): the same order, styles and places in every plot panel
-    const toolbar = createPlotToolbar({ className: 'ccnt-toolbar', actions: [saveBtn], menus: [colorBtn], undo: undoBtn, options: optionsBtn }).element;
+    const toolbar = createPlotToolbar({ className: 'ccnt-toolbar', actions: [saveBtn, view3dBtn], menus: [colorBtn], undo: undoBtn, options: optionsBtn }).element;
 
     // Color: the colour map, Reverse, the range, the level palette. Every edit applies live as one undoable step.
     const colorPop = createPopover({
@@ -689,7 +751,7 @@ export function createControls({ D, id, model, on }) {
     function fillColor() {
         if (!colorState.body) return;
         const m = model();
-        const use = popoverUse(m.config);
+        const use = popoverUse(m.config, m.isNumeric);
         const c = m.config.color || {};
         const body = colorState.body;
         const focusables = () => [...body.querySelectorAll('input, button, select')].filter((e) => !e.disabled);
@@ -697,6 +759,23 @@ export function createControls({ D, id, model, on }) {
         D.clear(body);
         const line = (...kids) => el('div', { class: 'ccnt-color__line' }, ...kids);
         const idOf = (k) => `ccnt-color-${k}-${id}`;
+        const slices = sliceColourUse(m.config, m.isNumeric);
+        if (slices.offered) {
+            // a pie's slices: a continuous scale for bins of a number (the default), the level palette for categories
+            const group = `ccnt-slices-${id}`;
+            const radio = (value, text, disabled, title) => {
+                const input = el('input', { type: 'radio', name: group, value, class: `ccnt-slices-${value}`, disabled,
+                    checked: value === (use.map ? 'continuous' : 'levels'),
+                    on: { change: () => withColor((o) => { if (value === 'levels') o.slices = 'levels'; else delete o.slices; }, `slice colors ${text.toLowerCase()}`) } });
+                return el('label', { class: 'ccnt-opt', ...(title ? { title } : {}) }, input, ` ${text}`);
+            };
+            const bins = binSpacingOf(m.config, 'x') === 'even';
+            body.append(el('div', { class: 'ccnt-slices', role: 'radiogroup', aria: { label: CL_SLICES.colours } },
+                el('span', { class: 'ccnt-color__heading', text: CL_SLICES.colours }),
+                radio('continuous', CL_SLICES.continuous, !slices.continuous, slices.refusal),
+                radio('levels', CL_SLICES.levels, false, '')),
+                el('p', { class: 'ccnt-help ccnt-slices__note', text: slices.refusal || (use.map ? (bins ? CL_SLICES.byOrder : CL_SLICES.byCentre) : '') }));
+        }
         if (use.map) {
             const map = el('select', { class: 'form-select form-select-sm ccnt-color-map', id: idOf('map'),
                 on: { change: () => withColor((o) => { if (map.value === DEFAULT_COLORSCALE) delete o.map; else o.map = map.value; }, `color map ${map.value}`) } });
@@ -769,12 +848,19 @@ export function createControls({ D, id, model, on }) {
     }
 
     function paintToolbar(m) {
-        const use = popoverUse(m.config);
+        const use = popoverUse(m.config, m.isNumeric);
         colorBtn.hidden = !(use.map || use.palette || use.range || use.points);
         if (colorBtn.hidden && colorPop.isOpen()) colorPop.close('api');
         else if (colorPop.isOpen()) fillColor();
         saveBtn.hidden = !m.canSave;
         saveBtn.disabled = !m.canExport;
+        // 3D: pressed while it is drawn or stored over the cap; refused with its reason elsewhere (a stored 3D over the cap can always be turned off)
+        const v = m.view3d || { on: false, gate: { ok: true, why: '', text: '' } };
+        const pressed = v.on && (v.gate.ok || v.gate.why === 'cap');
+        view3dBtn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+        view3dBtn.classList.toggle('active', pressed);
+        view3dBtn.disabled = !v.gate.ok && !pressed;
+        view3dBtn.title = !v.gate.ok ? v.gate.text : v.on ? V3.buttonOnHelp : V3.buttonHelp;
     }
 
     // ---------------------------------------------------------------- the bar
@@ -785,7 +871,7 @@ export function createControls({ D, id, model, on }) {
     const setsSlot = el('div', { class: 'ccnt-sets', hidden: true });
     const kept = el('div', { class: 'ccnt-kept', role: 'note' });
     const element = el('div', { class: 'ccnt-controls', 'data-panel-controls': '' },
-        modeRow, xRow.wrap, yRow.wrap, splitRow.wrap, setsSlot, valueRow, measureRow.element, factorRow.element, labelsRow, densityRow, kept, toolbar);
+        modeRow, xRow.wrap, yRow.wrap, splitRow.wrap, setsSlot, valueRow, measureRow.element, factorRow.element, heightRow, labelsRow, densityRow, kept, toolbar);
 
     function commit(next, label) {
         on.commit(next, label);
@@ -815,6 +901,7 @@ export function createControls({ D, id, model, on }) {
         wanted = null;       // a reveal not met by this paint is stale
         paintArrangement(m, shownRows);
         if (m.structure) paintValue(m, shownRows); else valueRow.hidden = true;
+        if (m.structure) paintHeight(m); else heightRow.hidden = true;
         paintLabels(m, shownRows);
         paintToolbar(m);
         kept.textContent = keptLine(m.config, m.titleOf);

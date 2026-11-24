@@ -334,3 +334,47 @@ def test_tokens_give_readable_surfaces_in_both_themes(page, theme):
     assert got["z"] == "1040"
     assert (theme == "dark") == (lum(got["bg"]) < 0.2)
     assert ("0.6" in got["shadow"]) == (theme == "dark")
+
+
+# ------------------------------------------------------------------ a long pop-over, a download
+
+def _body_scroll(page):
+    return page.evaluate("() => { const b = document.querySelector('[data-popover=tall] .az-popover-body'); return [b.scrollTop, b.scrollHeight - b.clientHeight]; }")
+
+
+def test_a_long_pop_over_scrolled_to_the_bottom_stays_there_through_a_repaint(page):
+    """Its body scrolls, and a scroll inside it is kept: it used to place the surface again on every scroll (a scroll
+    inside the surface reached the window's capture listener), which measured it at its natural height and so put the
+    body back at the top; the operator saw it jitter and stick to the top."""
+    page.click("#t1")
+    page.wait_for_selector("[data-popover=tall]")
+    top, room = _body_scroll(page)
+    assert room > 0, "taller than its room"
+    page.evaluate("() => { const b = document.querySelector('[data-popover=tall] .az-popover-body'); b.scrollTop = b.scrollHeight; }")
+    page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+    top, room = _body_scroll(page)
+    assert top == room, "at the bottom after the scroll's own events"
+    assert page.is_visible("#p-last")
+    # a repaint (the surface placed again: a resize, a change of its content) keeps the place
+    page.evaluate("() => { window.pops.t1.update(); window.dispatchEvent(new Event('resize')); }")
+    page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+    assert _body_scroll(page)[0] == room
+    # and the wheel scrolls it back up a little, from there
+    b = page.locator("[data-popover=tall] .az-popover-body").bounding_box()
+    page.mouse.move(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
+    page.mouse.wheel(0, -60)
+    page.wait_for_function("(r) => { const s = document.querySelector('[data-popover=tall] .az-popover-body').scrollTop; return s > 0 && s < r; }", arg=room)
+
+
+def test_a_download_from_the_pop_over_leaves_it_open(page):
+    """An export or Download CSV saves through a link the page clicks for itself: that click is not the user's click
+    outside, and the pop-over stays open."""
+    page.click("#t1")
+    page.wait_for_selector("[data-popover=tall]")
+    page.locator("#p-download").scroll_into_view_if_needed()
+    with page.expect_download() as dl:
+        page.click("#p-download")
+    assert dl.value.suggested_filename == "hello.txt"
+    page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+    assert surface(page, "tall").count() == 1
+    assert ["t1", "outside"] not in closes(page)

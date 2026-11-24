@@ -25,7 +25,7 @@ const MODE_ROWS = Object.freeze({
     bar: { value: 'height', arrangement: ['stack', 'dodge', 'fill'], labels: true, sort: true, horizontal: true, log: true, binned: ['x', 'split'] },
     // a number's bins at their values: the same arrangements as Bar where they apply, side by side disabled (bins cannot)
     histogram: { value: 'height', arrangement: ['stack', 'dodge', 'overlay', 'fill'], labels: true, horizontal: true, log: true, binned: ['x', 'split'] },
-    pie: { slices: true, labels: true, sort: true, ring: true, binned: ['x'] },
+    pie: { slices: true, names: true, labels: true, sort: true, ring: true, binned: ['x'] },
     hist2d: { value: 'color', labels: true, binned: ['x', 'y', 'split'] },
     heatmap: { value: 'color', labels: true, reverse: true, binned: ['x', 'y'] },
     // a density is smoothed on a fixed grid (CNT-10): only its Color by is binned
@@ -40,14 +40,14 @@ const MODE_ROWS = Object.freeze({
  * @param {string} mode
  * @returns {{x: boolean, y: boolean, split: boolean, sets: boolean, slices: boolean, value: ('height'|'color'|null),
  *   arrangement: string[], labels: boolean, sort: boolean, reverse: boolean, horizontal: boolean, log: boolean,
- *   ring: boolean, binned: string[]}}
+ *   ring: boolean, names: boolean, binned: string[]}}
  */
 export function rowsOf(mode) {
     const reads = modeReads(mode);
     const own = MODE_ROWS[mode];
     return {
         ...reads, slices: !!own.slices, value: own.value || null, arrangement: own.arrangement || [], labels: !!own.labels,
-        sort: !!own.sort, reverse: !!(own.sort || own.reverse), horizontal: !!own.horizontal, log: !!own.log, ring: !!own.ring,
+        sort: !!own.sort, reverse: !!(own.sort || own.reverse), horizontal: !!own.horizontal, log: !!own.log, ring: !!own.ring, names: !!own.names,
         binned: own.binned, density: own.density || 0
     };
 }
@@ -233,7 +233,9 @@ export function valueChoices(config) {
     const rows = rowsOf(config.mode);
     if (!rows.value) return [];
     const two = config.mode === 'hist2d' || config.mode === 'heatmap';
-    const out = [{ value: 'count', label: C.value.count, help: rows.value === 'color' ? C.valueHelp.countColor : C.valueHelp.count }];
+    const out = [{ value: 'count', label: C.value.count, help: config.mode === 'upset' ? C.valueHelp.countUpset : (rows.value === 'color' ? C.valueHelp.countColor : C.valueHelp.count) }];
+    // an UpSet's bars are one color until told otherwise: None first, and Count colors them by count
+    if (config.mode === 'upset') out.unshift({ value: 'none', label: C.value.none, help: C.valueHelp.none });
     for (const base of shareBasesFor(config)) {
         out.push({ value: `share:${base}`, label: C.value.share[base], help: two ? C.valueHelp.heatmapShare : C.valueHelp.share, group: 'share' });
     }
@@ -241,6 +243,44 @@ export function valueChoices(config) {
         out.push({ value: `stat:${stat}`, label: C.value.stat[stat], help: stat === 'zscore' ? C.valueHelp.zscore : C.valueHelp.stat, group: 'stat' });
     }
     if (two) out.push({ value: 'top_level', label: C.value.topLevel, help: C.valueHelp.topLevel });
+    return out;
+}
+
+/** The value of the 3D height select that stores no height: Same as Color. */
+export const SAME_HEIGHT = '__same__';
+
+/** The choices of the 3D height (UX 6b): Same as Color first, then those of Height or Color but the most frequent level (no number). */
+export function heightChoices(config) {
+    const what = rowsOf(config.mode).value === 'color' ? C.rows.color : C.rows.height;
+    return [{ value: SAME_HEIGHT, label: C.view3d.sameAs(what), help: C.view3d.heightHelp },
+        ...valueChoices(config).filter((c) => c.value !== 'top_level')];
+}
+
+/** The choice the 3D height shows: the stored one when this mode offers it, else Same as Color. */
+export function heightChoiceOf(config) {
+    return typeof config.height === 'string' && heightChoices(config).some((c) => c.value === config.height) ? config.height : SAME_HEIGHT;
+}
+
+/**
+ * The config with a 3D height chosen. A statistic reads the measure the plot already has, or takes the one its Color's
+ * statistic would (`defaults.measureSource`); null when it needs one and there is none.
+ * @param {Object} config
+ * @param {string} choice - a value of heightChoices
+ * @param {{measureSource?: Object}} [defaults]
+ * @returns {Object|null}
+ */
+export function applyHeightChoice(config, choice, defaults = {}) {
+    const out = { ...config };
+    if (choice === SAME_HEIGHT) {
+        delete out.height;
+        return out;
+    }
+    if (choice.startsWith('stat:')) {
+        const source = config.measure ? config.measure.source : defaults.measureSource;
+        if (!source) return null;
+        if (!config.measure) out.measure = { stat: choice.slice('stat:'.length), source };
+    }
+    out.height = choice;
     return out;
 }
 
@@ -252,13 +292,14 @@ export function valueChoices(config) {
 export function valueChoiceOf(config) {
     const offered = valueChoices(config).map((c) => c.value);
     const v = config.value || { kind: 'count' };
-    let choice = 'count';
+    const upset = config.mode === 'upset';
+    let choice = upset && !(config.value && v.kind === 'count') ? 'none' : 'count';
     if (v.kind === 'share') choice = `share:${v.of || 'all'}`;
     else if (v.kind === 'measure' && config.measure) choice = `stat:${config.measure.stat}`;
     else if (v.kind === 'top_level' && v.factor) choice = 'top_level';
     if (offered.includes(choice)) return choice;
     if (v.kind === 'share') return offered.find((c) => c.startsWith('share:')) || 'count';
-    return 'count';
+    return upset ? 'none' : 'count';
 }
 
 /**
@@ -310,6 +351,14 @@ function choiceValue(config, choice) {
  */
 export function applyValueChoice(config, choice, defaults = {}) {
     const out = { ...config };
+    if (config.mode === 'upset' && choice === 'none') {
+        delete out.value;
+        return out;
+    }
+    if (config.mode === 'upset' && choice === 'count') {
+        out.value = { kind: 'count' };
+        return out;
+    }
     if (choice === 'count') {
         delete out.value;
         return out;
@@ -446,11 +495,14 @@ export function parseAdjust(text) {
  * colour scale, and a level palette where it colours levels. A 2D histogram's rectangles, a 2D density without a Color by,
  * a heatmap's number and an UpSet coloured by a share or a statistic have a scale; a Color by, a pie's slices and a
  * heatmap's most frequent level have levels.
+ * A pie's slices that are bins of a number take the colour map by default (a continuum reads as one) and the level palette
+ * when `color.slices` is 'levels'; the page says which inputs are numbers, without it a pie has its palette (as before).
  * @param {Object} config - from normalizeCountPlot
+ * @param {(source: Object) => boolean} [isNumeric]
  * @returns {{map: boolean, palette: boolean}}
  */
 // export-unused-ok: the colour tests state it
-export function colorUse(config) {
+export function colorUse(config, isNumeric) {
     const c = shownConfig(config);
     const kind = (c.value && c.value.kind) || 'count';
     const split = !!c.split && splitUsed(c);
@@ -459,9 +511,25 @@ export function colorUse(config) {
     if (c.mode === 'hist2d') map = !split && kind !== 'top_level';
     else if (c.mode === 'heatmap') map = kind !== 'top_level';
     else if (c.mode === 'density2d') map = !split;
-    else if (c.mode === 'upset') map = kind === 'share' || (kind === 'measure' && !!c.measure);
+    else if (c.mode === 'upset') map = kind === 'share' || (kind === 'measure' && !!c.measure) || (kind === 'count' && !!c.value);
     const top = c.mode === 'heatmap' && kind === 'top_level';
+    // a bar plot in 3D colours each bar by its plotted value on a scale (the level colours are 2D's)
+    if (c.view === '3d' && c.mode === 'bar' && split) return { map: true, palette: false };
+    if (c.mode === 'pie' && binnedNumber(c.x, isNumeric) && !(c.color && c.color.slices === 'levels')) return { map: true, palette: false };
     return { map, palette: levels || top };
+}
+
+/**
+ * What the Display pop-over offers for a pie's slice colours: the choice between a continuous scale and the level palette, with
+ * the reason the scale is refused for slices that are categories.
+ * @param {Object} config
+ * @param {(source: Object) => boolean} [isNumeric]
+ * @returns {{offered: boolean, continuous: boolean, refusal: string}}
+ */
+export function sliceColourUse(config, isNumeric) {
+    if (config.mode !== 'pie') return { offered: false, continuous: false, refusal: '' };
+    const continuous = binnedNumber(config.x, isNumeric);
+    return { offered: true, continuous, refusal: continuous ? '' : C.slices.refused };
 }
 
 /**
@@ -470,8 +538,8 @@ export function colorUse(config) {
  * the points may take the density as their opacity).
  * @returns {{map: boolean, palette: boolean, range: boolean, points: boolean, fade: boolean}}
  */
-export function popoverUse(config) {
-    const use = colorUse(config);
+export function popoverUse(config, isNumeric) {
+    const use = colorUse(config, isNumeric);
     const c = shownConfig(config);
     const density = c.mode === 'density2d';
     const layers = density ? densityLayers(c.layers, c.style, !!c.split) : null;
@@ -501,6 +569,10 @@ export function drawOptions(config) {
         horizontal: rows.horizontal && config.horizontal === true,
         log: rows.log && config.log === true,
         ring: rows.ring && config.ring === true,
+        // a pie's slice names, and whether its bins of a number take continuous colours (the default) or the level palette
+        // (each only where it is set, so the options of every other plot stay as they were)
+        ...(rows.names && config.names === true ? { names: true } : {}),
+        ...(rows.slices && config.color && config.color.slices === 'levels' ? { pieColour: 'levels' } : {}),
         fade: config.fade === true,
         // a density's own (CNT-10): the bandwidth adjust, curves scaled by level size, a 2D density as an image
         adjust: rows.density && Number.isFinite(config.adjust) && config.adjust >= ADJUST.min && config.adjust <= ADJUST.max ? config.adjust : 1,

@@ -104,3 +104,42 @@ export function recordCameraOnRelease() {
     window.addEventListener('touchend', recordSettled, true);
     window.addEventListener('wheel', recordSettled, { capture: true, passive: true });
 }
+
+/** How long a turned camera must rest before it is stored (ms): a drag is one stored view, not one per frame. */
+const CAMERA_STORE_MS = 250;
+
+/** Whether two cameras are the same view (eye, center and up, to 1e-3). */
+export function sameCamera(a, b) {
+    return ['eye', 'center', 'up'].every((k) => ['x', 'y', 'z'].every((d) => Math.abs(((a[k] || {})[d] || 0) - ((b[k] || {})[d] || 0)) < 1e-3));
+}
+
+/**
+ * Keep the camera of a 3D plot the user turns: `store(camera)` is called once the camera has rested (CAMERA_STORE_MS), and
+ * the category labels follow at once (`labelsFor(camera)` gives the scene's annotations for it; they change edge and anchor
+ * when the camera crosses to the other side). The listener is set again on each draw (a purge drops it); `labelsFor` null
+ * (a 2D draw) takes it away. A turn released outside the plot is recorded too (recordCameraOnRelease).
+ * @param {HTMLElement} gd
+ * @param {{labelsFor: ?((camera: Object) => Object[]), store: (camera: Object) => void, key?: string}} opts - `key` names
+ *   the listener's slot on `gd`, one per owner
+ */
+export function watchSceneCamera(gd, { labelsFor, store, key = '__azCameraWatch' }) {
+    if (!gd || typeof gd.on !== 'function') return;
+    if (gd[key] && typeof gd.removeListener === 'function') gd.removeListener('plotly_relayout', gd[key]);
+    gd[key] = null;
+    if (!labelsFor) return;
+    recordCameraOnRelease();
+    let timer = null;
+    gd[key] = (ev) => {
+        const camera = ev && ev['scene.camera'];
+        if (!camera) return;
+        // the labels are set again only when an edge or an anchor changed (the relayout carries no camera of its own)
+        if (window.Plotly && gd.layout && gd.layout.scene) {
+            const next = labelsFor(camera);
+            const sig = (list) => (list || []).map((a) => `${a.xanchor}|${a.x}|${a.y}`).join(',');
+            if (sig(next) !== sig(gd.layout.scene.annotations)) window.Plotly.relayout(gd, { 'scene.annotations': next });
+        }
+        clearTimeout(timer);
+        timer = setTimeout(() => store(camera), CAMERA_STORE_MS);
+    };
+    gd.on('plotly_relayout', gd[key]);
+}

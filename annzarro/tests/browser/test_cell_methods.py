@@ -190,6 +190,21 @@ def test_the_cell_tables_methods_round_trip_through_its_configuration(page, serv
     until(page, "(id) => !('methods' in window.PanelManager.getPanel(id).getConfig())", T)
 
 
+def test_a_change_of_the_tables_methods_is_one_step_of_its_undo(page, served):
+    _open_table(page, served, {"id": T, "title": "Table 1"})
+    undo = f"{TT} .table-undo"
+    assert page.is_disabled(undo)
+    page.click(f"{TT} .cmeth__toggle")
+    page.locator(POP).wait_for(state="visible")
+    _set_threshold(page, 2)
+    page.keyboard.press("Escape")
+    until(page, "([s]) => { const b = document.querySelector(s); return !!b && !b.disabled && b.title === 'Undo: change the methods'; }", [undo])
+    page.click(undo)
+    until(page, "(id) => !('methods' in window.PanelManager.getPanel(id).getConfig())", T)
+    assert page.evaluate("(id) => window.PanelManager.getPanel(id).getMethods()", T) == {}
+    until(page, "([s]) => document.querySelector(s).disabled", [undo])
+
+
 @pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")
 def test_screenshots_of_both_popovers(page, served):
     _plot_on_grouping(page, served)

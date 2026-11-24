@@ -29,6 +29,7 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 | **Smoothing**, **Scale curves by level size**, and for a 2D density **Density as opacity**, **Isolines**, **Filled isolines** | The density modes' own row, with the bandwidth and range notes under it |
 | **Fade by its share** | Under the most frequent level's factor, in a 2D histogram or heatmap |
 | **Save as grouping** | On the toolbar: turns the plot's bars into a {doc}`cell-grouping` |
+| **3D** | On the toolbar, after **Save as grouping**: draws the plot as bars on a grid (below); greyed out with its reason where there are no bars to draw |
 | **Display ▾** | On the toolbar, where the plot has a colour scale, colours levels, or is a 2D density (below) |
 | **Undo** | Undoes the last change |
 | **Plot Options** | On the toolbar, last: the look of the figure, its export and **Download CSV** (below) |
@@ -56,7 +57,7 @@ the **×** closes them, and **Escape** puts the focus back on the button that op
 
 **Display.** **Display ▾** holds how the data is drawn: the colour scale and palette, the density range, and the Cell points'
 size and opacity. It shows when a colour scale or a palette applies: a 2D histogram, a 2D density, a heatmap's number, an UpSet
-coloured by a share or a statistic, and any plot with a Color by. It holds the **Map** (Viridis by default), **Reverse**,
+coloured by Count, a share or a statistic, and any plot with a Color by. It holds the **Map** (Viridis by default), **Reverse**,
 **Min**, **Max** and **Center** of the scale (Center has no effect while both Min and Max are set), and the **Level palette**
 of a Color by's levels. **Reset** returns them all to the defaults. A box that is not set says "auto" with the value the plot
 draws, such as "auto (412)"; type a number to fix it, or clear the box. The **↺** button beside the boxes returns **Min**,
@@ -76,7 +77,7 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 |---|---|---|---|
 | **Bar** | X (categorical or binned), Color by | Cells per level, and per level of Color by | Bars, vertical or horizontal |
 | **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars at their bins' values (or evenly, for log and other bins), without gaps, in the number's order; stacked, overlaid or 100% |
-| **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring. Printed numbers sit at one distance from the centre, the middle of a ring's band (three quarters of the radius, in a pie too), so **Ring** moves none of them; a slice under 3% of the cells shows its number in its hover only |
+| **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring. Printed numbers sit at one distance from the centre, the middle of a ring's band (three quarters of the radius, in a pie too), so **Ring** moves none of them; a slice under 3% of the cells shows its number in its hover only. **Names** prints each slice's category or bin name on it, above the number when both are shown (with **Labels** set to None, the names alone); a name longer than 18 characters is cut on the slice and whole in the hover. Slices that are categories take their level colours and are listed in the legend, which follows **Plot Options** (**Show legend**, position, columns and the entry cap). Slices that are bins of a number are coloured by the bin's value on the colour map of **Display ▾** (the bin's centre, or its order when the bins are drawn evenly: log, equal-count and manual bins), with a colour bar in place of the legend and **Min**, **Max** and **Center** boxes; **Slice colors** in **Display ▾** changes this to the level palette, which brings the legend back |
 | **2D histogram** | X and Y numeric, Color by up to 8 levels | Cells per pair of bins, 100 × 100 by default, per level of Color by | Rectangles; with Color by, one layer per level |
 | **Heatmap** | X and Y (categorical or binned) | Cells per pair of levels | Rectangles, with values printed if asked |
 | **Density** | X numeric, Color by | 512 bins per level of Color by, smoothed in the browser | Curves |
@@ -126,6 +127,33 @@ level or leaves them out.
 | **Most frequent level of…** (2D histogram, heatmap) | Colours each rectangle by its commonest level of a further input, exactly, from the same count; **Fade by its share** fades rectangles where that level is a small majority |
 
 Axis titles name the source and layer ("Mean of Mrpl15 · logged_counts", "% of cells shown").
+
+## 3D
+
+**3D** draws a 2D histogram, a heatmap, or a bar plot with a **Color by** as bars standing on a grid: X by Y, or X by
+the levels of the Color by. It is a view, not a mode, so the inputs, bins, levels, order and statistics stay as they are,
+and pressing **3D** again returns to the 2D plot. Turning it on or off is one step of **Undo**.
+
+- **Colour.** A bar has the colour its rectangle has in 2D: the same colour map, **Reverse** and range from **Display ▾**,
+  and the same colour bar. A bar plot's bars are coloured by the value they show, on the scale, as a 2D histogram's are.
+  Colouring by the **Most frequent level** draws each bar in that level's colour and lists the levels in the legend.
+- **3D height** appears under **Color** while 3D is on. **Same as Color**, the default, draws the colour's numbers as
+  heights; with the most frequent level, whose colour has no number, the height is the count. Any other choice is a count,
+  a share or a statistic, chosen from the same list as **Color**; a statistic reads the same source as the Color's. The
+  choice is kept when 3D is off. The hover adds the height when it is not the colour.
+- **Bins** are always drawn at the same width in 3D, each at its place in the order, with the grid lines at the bin borders
+  labelled by the edge values, as **Evenly** does in 2D.
+- **Left out.** 3D does not draw printed values, a log count axis, horizontal bars, arrangements or the fade by share, and
+  the status strip says so (**3D**). A rectangle with no cells, a bar of 0 and a missing value have no bar. Above 60
+  categories on an axis their labels are hidden and the hover names each bar.
+- **Offered for** the 2D histogram without a **Color by** (with one it is drawn in layers), the heatmap, and a bar plot with
+  a **Color by**. Elsewhere **3D** is greyed out and says why.
+- **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
+  step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
+- **Plot Options** has a **3D** section while 3D is on: the bar footprint (0.5 to 1 of its cell), lighting, the axis box
+  and the height's title. **Export** greys out SVG in 3D ("3D exports as an image only."); PNG, JPEG and WEBP work.
+- **Limit.** 3D draws at most 40,000 bars, by default (the cost limit `limits.bars_3d_max`, shared with the Cell-Gene Plot). Above that **3D** is greyed out and says why ("Use fewer bins."); a plot saved
+  in 3D that has grown past it is drawn in 2D, and the strip says **2D** with the reason.
 
 ## Densities
 
@@ -192,13 +220,24 @@ In the *Sets* modes, **Sets** replaces X and Y. **Add set ▾** offers:
 | **Condition on a number…** | Its value of a source is `>`, `≥`, `<` or `≤` a number |
 | **Group of a grouping…** | It is in that group of a {doc}`cell-grouping` |
 
-Each set is a row: a letter, its name, its cells, and **⋯** (**Rename**, **Remove**, and the set's own settings). A set
-is strictly in or out: a cell without a value (a NaN under a condition, a missing category) is out, and the row says how
-many ("312 without a value, counted as out"). Under the list: "Universe: the 8,090 cells shown. 3,402 are in no set."
+Each set is one compact line, laid out like a level of a Cell Grouping: a **color swatch**, its **letter**, its name,
+its cells, its share of the cells shown (the splitting ratio, written as in the group list: "7.6%") and one **Remove**
+button. Click the swatch to pick a colour for the set; the Venn, the UpSet's set-size bars and the list all use it, and a
+pick is one undo step that asks nothing of the server. Without a pick the sets take the colours of the Okabe and Ito
+palette in order, which tell apart under the common colour-vision differences, and then the Cell Grouping colours. Click
+the **letter** to open the set's definition (the column, the levels, the number or the group it is made from) in a
+pop-over; it stays open while you tick levels, and **Escape** closes it. **Double-click the name**, or click **✎**, to
+rename the set in place: **Enter** or **✓** saves, **Escape** or **✕** cancels, and a click elsewhere saves; the row
+never changes its height. A long name is cut with an ellipsis and in full in its tooltip. A set is strictly in or out: a
+cell without a value (a NaN under a condition, a missing category) is out, and the row says how many in a muted second
+line ("312 without a value, counted as out"), which also carries a set's state ("Group changed", "deleted"). Under the
+list: "Universe: the 8,090 cells shown. 3,402 are in no set."
 
-**Venn** draws 2 or 3 sets as circles, lettered, with each region's count and share of the cells shown; the circles
-are not drawn to scale. **UpSet** draws 2 to 16 sets: each bar is an exclusive intersection, so every cell is counted
-in exactly one bar. **Sort** (**By size** or **By degree**), **Show top** (40 by default) and **Minimum size** choose
+**Venn** draws 2 or 3 sets as circles in the sets' colours, each labelled with its letter and name (cut short, in full when
+you point at it), with each region's count and share of the cells shown; the circles are not drawn to scale. **UpSet**
+draws 2 to 16 sets: each bar is an exclusive intersection, so every cell is counted in exactly one bar. The bars are one
+neutral colour; **Color** offers **None** (the default, one colour for every bar) and **Count**, which colours each bar by
+its count on the colour scale and shows a colour bar, besides a share or a statistic. **Color ▾** sets the map and range. **Sort** (**By size** or **By degree**), **Show top** (40 by default) and **Minimum size** choose
 the bars, and the plot states the share of cells in the bars not shown. At 16 sets **Add set** is disabled: "UpSet
 shows up to 16 sets."
 
