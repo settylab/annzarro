@@ -185,6 +185,8 @@ const cellGene = Object.freeze({
         wardOnly: 'Ward needs Euclidean distance.',
         undo: 'Undo',
         leftOut: (n, noun) => `${fmt(n)} ${n === 1 ? noun : `${noun}s`} not clustered: too few values in common, or constant. They are at the end.`,
+        /** The status strip's tag when the clustering left rows or groups out; its pop-over gives the sentences. */
+        notClusteredTag: 'Partly clustered',
         tooMany: (title, n, limit) => `Not clustered: ${title} has ${fmt(n)} rows; clustering stops at ${fmt(limit)}.`,
         heading: Object.freeze({
             dots: 'Dots', colors: 'Colors', sections: 'Sections', labels: 'Labels', clustering: 'Clustering', legend: 'Legend', totals: 'Totals'
