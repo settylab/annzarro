@@ -89,9 +89,12 @@ export function sampleIndices(n, cap, seed = SAMPLE_SEED) {
     return out;
 }
 
-/** The notice of the strip: how many cells are drawn, and that it is a sample when it is. */
-export function pointsNote(drawn, total) {
-    return drawn < total ? W.sample(drawn, total) : W.all(total);
+/**
+ * The notice of the strip: the points actually drawn, of the cells loaded (the sample, when there is one), of the cells
+ * shown. Cells outside the density's range are loaded and not drawn, so the numbers can differ and each says what it is.
+ */
+export function pointsNote(drawn, loaded, total) {
+    return loaded < total ? W.sample(drawn, loaded, total) : W.all(drawn, total);
 }
 
 /** Why the layer cannot be drawn: `{kind: 'too_many', total, limit}` or `{kind: 'source', input}`. */
