@@ -22,7 +22,7 @@ import { CELL_COUNT, STATISTIC_INFO, statisticChoices, statisticLayerChoices, st
 import { SCALINGS } from '../../utils/cell-gene-model.js';
 import { loopReason } from '../../utils/panel-references.js';
 import { createPopover } from '../../ui/popover.js';
-import { GROUP_AXIS, aggregationEntries, aggregationHelp, needsThreshold } from './sections.js';
+import { GROUP_AXIS, needsThreshold } from './sections.js';
 
 const CG = VOCABULARY.cellGene;
 
@@ -362,10 +362,11 @@ const SECTION_OPS = Object.freeze([
  * @param {Object} opts.D
  * @param {string} opts.id
  * @param {() => {sections: Object[], dots: boolean}} opts.model - each section: {title, source (shown when it differs),
- *   line, note, rows, color: {held, label, layer, methods, layers}, size: {...}}; `label` names what the part reads,
- *   `methods` and `layers` are the score's options (null for a summary)
- * @param {Object} opts.on - rows(i, rows), title(i, text), op(i, op), move(from, to), aggregation(i, which, part, value)
- *   with part `kind`, `method` or `layer`, above(i, which, text)
+ *   line, note, rows, color: {which, step, above, channel, label, entries, help}, size: {...}}: the gene step and its
+ *   name, the channel it follows in words ("Mean · logged"), the select's grouped entries, the score's own threshold
+ *   (null when it has none) and the help line (decision 40)
+ * @param {Object} opts.on - rows(i, rows), title(i, text), op(i, op), move(from, to), genes(i, which, step),
+ *   above(i, which, text), channel(which) (focus the plot's own statistic select)
  */
 export function createSectionList({ D, id, model, on }) {
     const { el } = D;
@@ -376,41 +377,42 @@ export function createSectionList({ D, id, model, on }) {
     const menus = new Map();       // section index -> {button, pop}: the row's ⋯ button and its menu, kept across repaints
 
     /**
-     * Color or Size of a one-row section (item 7 of decision 31): `[kind ▾]`, and for a score kind `[method ▾] [layer ▾]`
-     * (every method and layer, graded: a pair the source cannot score disabled with its reason), then `above [t]` for
-     * the share above a threshold.
+     * Color or Size of a one-row section (decision 40, one-row-ux-080.md B): the channel it follows, read only, with
+     * "Change in Color"; one select for the gene step ("Combine the gene rows", "Score each cell"), every entry the
+     * channel or the down genes rule out disabled with its reason; "cells above [t]" for a score's share; the help line.
      */
-    function aggregationBlock(i, which, part) {
-        const held = part.held;
+    function stepBlock(i, part) {
+        const which = part.which;
         const name = which === 'color' ? 'Color' : 'Size';
-        const kind = el('select', { class: 'form-select form-select-sm cgene-section__agg', data: { which },
-            aria: { label: `${name} of the row` }, on: { change: () => on.aggregation(i, which, 'kind', kind.value) } });
-        for (const group of aggregationEntries({ down: part.down })) {
-            kind.appendChild(el('optgroup', { label: group.heading }, group.entries.map((e) => el('option',
-                { value: e.value, text: e.label, disabled: !!e.disabled, title: e.title || '' }))));
+        const R = CG.rowStep;
+        const change = el('button', { type: 'button', class: 'btn btn-sm btn-link cgene-section__change', data: { which },
+            title: R.changeHelp(name), on: { click: () => {
+                const held = values.get(i);
+                if (held) held.pop.close('api');
+                on.channel(which);
+            } } }, R.change(name));
+        const inherited = el('div', { class: 'cgene-section__inherited', data: { which }, title: R.changeHelp(name) },
+            el('span', { class: 'cgene-section__channel', data: { which }, text: part.channel }),
+            el('span', { class: 'cgene-section__from', text: R.from(name) }), change);
+        const select = el('select', { class: 'form-select form-select-sm cgene-section__genes', data: { which },
+            aria: { label: `${name} of the row: ${R.genes.toLowerCase()}` }, on: { change: () => on.genes(i, which, select.value) } });
+        for (const group of part.entries) {
+            select.appendChild(el('optgroup', { label: group.heading }, group.entries.map((e) => el('option',
+                { value: e.value, text: e.label, disabled: !!e.disabled, title: e.title || undefined }))));
         }
-        kind.value = held.agg;
-        const scored = !!part.methods;
-        const method = el('select', { class: 'form-select form-select-sm cgene-section__method', data: { which }, hidden: !scored,
-            aria: { label: `${name} of the row: score method` }, on: { change: () => on.aggregation(i, which, 'method', method.value) } });
-        const layer = el('select', { class: 'form-select form-select-sm cgene-section__layer', data: { which }, hidden: !scored,
-            aria: { label: `${name} of the row: layer` }, on: { change: () => on.aggregation(i, which, 'layer', layer.value) } });
-        if (scored) {
-            options(D, method, part.methods);
-            method.value = held.column;
-            options(D, layer, part.layers);
-            layer.value = held.layer || 'X';
-        }
-        const thresholded = held.agg === 'score_pct_above';
+        select.value = part.step;
+        const chosen = select.selectedOptions && select.selectedOptions[0];
+        select.title = chosen ? [chosen.textContent, chosen.title].filter(Boolean).join(': ') : '';
+        const scored = part.above !== null;
         const above = el('input', { type: 'number', step: 'any', class: 'form-control form-control-sm cgene-section__above', data: { which },
-            aria: { label: 'Threshold' }, value: thresholded ? String(held.above || 0) : '0',
+            aria: { label: `${name} of the row: ${R.cellsAbove}` }, value: scored ? String(part.above) : '0',
             on: { change: () => on.above(i, which, above.value), keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); on.above(i, which, above.value); } } } });
-        const help = el('div', { class: 'cgene-section__help', data: { which }, text: aggregationHelp(held, part.layer) });
+        const help = el('div', { class: 'cgene-section__help', data: { which }, text: part.help });
         return el('div', { class: 'cgene-section__value', data: { which } },
-            el('span', { class: 'cgene-field__label', text: name }), kind,
-            el('span', { class: 'cgene-section__score', hidden: !scored }, method,
-                el('span', { class: 'cgene-section__pair' }, el('span', { class: 'cgene-measure__word', text: CG.sources.of }), layer),
-                el('span', { class: 'cgene-section__pair', hidden: !thresholded }, el('span', { class: 'cgene-measure__word', text: CG.sources.above }), above)),
+            el('span', { class: 'cgene-field__label', text: name }), inherited,
+            el('span', { class: 'cgene-field__label cgene-section__genes-label', text: R.genes }),
+            el('span', { class: 'cgene-section__step' }, select,
+                el('span', { class: 'cgene-section__pair', hidden: !scored }, el('span', { class: 'cgene-measure__word', text: R.cellsAbove }), above)),
             help);
     }
 
@@ -419,7 +421,10 @@ export function createSectionList({ D, id, model, on }) {
         const s = model().sections[i];
         D.clear(body);
         if (!s || s.rows !== 'set') return;
-        body.appendChild(el('div', { class: 'cgene-section__values' }, aggregationBlock(i, 'color', s.color), s.size ? aggregationBlock(i, 'size', s.size) : null));
+        // the header follows a renamed section
+        const heading = body.parentElement && body.parentElement.querySelector('.az-popover-title');
+        if (heading) heading.textContent = `Color and Size of ${s.title}`;
+        body.appendChild(el('div', { class: 'cgene-section__values' }, stepBlock(i, s.color), s.size ? stepBlock(i, s.size) : null));
     }
 
     /** The summary button of a one-row section (WP-8): "Color: … · Size: …", opening Color and Size in a pop-over. */
@@ -427,7 +432,7 @@ export function createSectionList({ D, id, model, on }) {
         let held = values.get(i);
         if (!held) {
             const button = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-section__values-btn' });
-            const pop = createPopover({ anchor: button, name: 'values', title: 'Color and Size',
+            const pop = createPopover({ anchor: button, name: 'values', title: `Color and Size of ${s.title}`,
                 render: (body) => { fillValues(i, body); } });
             held = { button, pop };
             values.set(i, held);

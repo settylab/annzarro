@@ -10,7 +10,7 @@ counts, as core/matrix_kind.py reads them from the stored values.
 3.  The grouping's toolbar has no Statistics ▾ button.
 4.  A link whose grouping holds "Expressed above" 1 draws Size above 1, read from the grouping (decision 34); the
     grouping's next edit drops the retired offered and layers, keeps the threshold, and the plot still draws above 1.
-5.  A one-row section's Color reads a score by kind, method and layer: three selects, every method and layer listed.
+5.  A one-row section's Color reads a score method from one select, every method listed; its layer is Color's (decision 40).
 6.  Screenshots of the plot's controls, the values pop-over and the grouping's toolbar (only when ANNZARRO_SHOTS names a
     directory).
 
@@ -107,37 +107,44 @@ def test_the_groupings_threshold_is_read_by_the_plot_and_survives_the_groupings_
     assert all(f["detect_above"] == 1 for f in _features(page.calls[n:])), "the new groups are read above 1 still"
 
 
-def test_a_one_row_score_reads_kind_method_and_layer_from_three_selects(page, served):
-    plot = _plot(cellAxis=OBS, sections=[{"source": S1, "rows": "set", "color": {"agg": "score_mean", "column": "mean", "layer": "logged"}}])
+def test_a_one_row_score_reads_its_method_from_one_select_and_its_layer_from_color(page, served):
+    plot = _plot(cellAxis=OBS, sections=[{"source": S1, "rows": "set", "color": {"genes": "mean"}}])
     _open(page, served, {P: plot, S1: _sig(S1, "Markers", GENES[:3])}, open_ids=(P, S1))
     _drawn(page)
     page.click(f"{TP} .cgene-section__values-btn")
     pop = page.locator(VALUES)
     pop.wait_for(state="visible")
-    kinds = _labels(page, f"{VALUES} .cgene-section__agg[data-which='color'] option")
-    assert kinds == ["Mean of the genes' means", "Sum of the genes' means", "Mean of the genes' z-scores", "Mean of the genes' % expressing",
-                     "Score, averaged", "% of cells with score above"], kinds
-    methods = page.eval_on_selector_all(f"{VALUES} .cgene-section__method[data-which='color'] option", "os => os.map(o => o.value)")
-    assert methods == ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"], methods
-    layers = _labels(page, f"{VALUES} .cgene-section__layer[data-which='color'] option")
-    assert layers == ["X", "counts", "logged"], layers
-    assert not any("offer" in t.lower() for t in kinds + layers)
-    # the method touched wins and the layer stays when it can give it; then the layer, on its own
-    page.select_option(f"{VALUES} .cgene-section__method[data-which='color']", "sum")
-    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].color.column === 'sum'", P)
-    assert _config(page)["sections"][0]["color"] == {"agg": "score_mean", "column": "sum", "layer": "logged"}
-    page.select_option(f"{VALUES} .cgene-section__layer[data-which='color']", "counts")
-    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].color.layer === 'counts'", P)
-    # back to a summary: the method and layer selects go
-    page.select_option(f"{VALUES} .cgene-section__agg[data-which='color']", "mean_of_means")
+    steps = page.eval_on_selector_all(f"{VALUES} .cgene-section__genes[data-which='color'] option", "os => os.map(o => o.value)")
+    assert steps == ["rows_mean", "rows_sum", "rows_z", "zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"], steps
+    assert page.locator(f"{VALUES} .cgene-section__layer").count() == 0, "no layer select: the row reads Color's"
+    assert page.locator(f"{VALUES} .cgene-section__channel[data-which='color']").inner_text() == "Mean · logged"
+    texts = _labels(page, f"{VALUES} option")
+    assert not any("offer" in t.lower() for t in texts)
+    # another method: one edit, no layer stored
+    page.select_option(f"{VALUES} .cgene-section__genes[data-which='color']", "sum")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].color.genes === 'sum'", P)
+    assert _config(page)["sections"][0]["color"] == {"genes": "sum"}
+    _drawn(page)
+    # Color's layer moves: the row's score is read on the new layer (one request, the score on counts)
+    n = len(page.calls)
+    page.keyboard.press("Escape")
+    page.select_option(f"{TP} .cgene-color-layer", "counts")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().color.layer === 'counts'", P)
+    _drawn(page)
+    scores = [f for f in _features(page.calls[n:]) if f["kind"] == "score"]
+    assert [(f["column"], f["layer"]) for f in scores] == [("sum", "counts")], scores
+    # back to the mean of the gene rows: the default, not stored
+    page.click(f"{TP} .cgene-section__values-btn")
+    pop.wait_for(state="visible")
+    page.select_option(f"{VALUES} .cgene-section__genes[data-which='color']", "rows_mean")
     until(page, "(id) => !('color' in window.PanelManager.getPanel(id).getConfig().sections[0])", P)
-    assert page.locator(f"{VALUES} .cgene-section__method[data-which='color']").is_hidden()
+    assert page.locator(f"{VALUES} .cgene-section__above[data-which='color']").is_hidden()
 
 
 @pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")
 def test_screenshots_of_the_ungated_controls(page, served):
     plot = _plot(cellAxis=AXIS, sections=[{"source": S1, "rows": "genes"},
-                                          {"source": S1, "rows": "set", "size": {"agg": "score_pct_above", "column": "mean", "layer": "logged", "above": 1}}])
+                                          {"source": S1, "rows": "set", "size": {"genes": "mean", "above": 1}}])
     _open(page, served, {P: plot, GA: _grouping(), S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, GA))
     _drawn(page)
     _kinds_known(page)

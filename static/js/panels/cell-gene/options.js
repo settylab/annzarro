@@ -358,7 +358,13 @@ export function tableOf(model) {
     if (h && !h.same) columns.push({ section: W3.height, stat: h.stat, layer: h.layer, detectAbove: h.detectAbove, scaling: 'none', values: h.values });
     return {
         groups: model.groups.map((g) => ({ label: g.label, n: g.n })),
-        rows: model.rows.map((row) => ({ section: row.section ? row.section.title : '', label: row.label })),
+        rows: model.rows.map((row) => {
+            const out = { section: row.section ? row.section.title : '', label: row.label };
+            // a one-row section's gene step per channel (decision 40); the column header is the cell step
+            const combined = row.own ? Object.fromEntries(['color', 'size'].filter((w) => row.own[w] && row.own[w].how).map((w) => [w, row.own[w].how])) : {};
+            if (Object.keys(combined).length) out.combined = combined;
+            return out;
+        }),
         columns
     };
 }

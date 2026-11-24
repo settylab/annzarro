@@ -45,22 +45,41 @@ const FLAT = 1e-12;
 export const SCALINGS = Object.freeze(['none', 'var', 'group', 'z_groups', 'z_pooled']);
 
 /**
- * The one list of SHR-21 (OD 15): colour and size of a gene-set row each choose from it. `summary` kinds come from the
- * section's genes' moments and need no request of their own; `score` kinds are one per-cell score feature.
+ * The gene step of a one-row section that combines its gene rows (decision 40, one-row-ux-080.md): each gene's statistic
+ * per group, exactly as the gene rows show it, then the mean, the sum or the mean of their z-scores across groups. Any
+ * other gene step is a score method of the section's source: each cell is scored, then the channel's statistic is taken
+ * over the group's cells.
  */
-// export-unused-ok: consumed by X3a (the section's Color and Size selects list them)
-export const ROW_AGGREGATIONS = Object.freeze({
-    mean_of_means: Object.freeze({ kind: 'summary', needsScore: false }),
-    sum_of_means: Object.freeze({ kind: 'summary', needsScore: false }),
-    mean_of_zscores: Object.freeze({ kind: 'summary', needsScore: false }),
-    mean_of_pct_expressing: Object.freeze({ kind: 'summary', needsScore: false }),
-    score_mean: Object.freeze({ kind: 'score', needsScore: true }),
-    score_pct_above: Object.freeze({ kind: 'score', needsScore: true })
-});
+export const ROW_STEPS = Object.freeze(['rows_mean', 'rows_sum', 'rows_z']);
 
-/** The cheap defaults of CXG-5. */
-// export-unused-ok: consumed by X3a (a new gene-set row starts with them)
-export const DEFAULT_ROW_AGGREGATIONS = Object.freeze({ color: 'mean_of_means', size: 'mean_of_pct_expressing' });
+/** A new one-row section's gene step: the mean of its gene rows (the same as Color and Size, decision 40). */
+export const DEFAULT_ROW_STEP = 'rows_mean';
+
+/** The row kinds stored before decision 40; a link holding one is read into a gene step (sections.js). */
+// export-unused-ok: the legacy reader and the golden-link test name them
+export const LEGACY_ROW_AGGREGATIONS = Object.freeze(['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_pct_expressing',
+    'score_mean', 'score_pct_above']);
+
+/** Whether a gene step combines the gene rows (else it scores each cell). */
+export const combinesRows = (step) => ROW_STEPS.includes(step);
+
+/**
+ * Whether a gene step can follow a channel's statistic (decision 40). Cell count does not depend on genes; a source with
+ * down genes cannot be combined from its rows (they would count as up); a sum of SDs is not the spread of the set, and a
+ * sum of means over each gene's own expressing cells is the mean of no cells.
+ * @param {string} step - one of ROW_STEPS or a score method
+ * @param {string} stat - the channel's statistic
+ * @param {{down?: number}} [opts] - the section's down genes in the dataset
+ * @returns {{ok: true}|{ok: false, reason: 'count'|'down'|'sum_sd'|'sum_mean_expressing'}}
+ */
+export function rowStepGrade(step, stat, { down = 0 } = {}) {
+    if (stat === 'count') return { ok: false, reason: 'count' };
+    if (combinesRows(step)) {
+        if (down > 0) return { ok: false, reason: 'down' };
+        if (step === 'rows_sum' && (stat === 'sd' || stat === 'mean_expressing')) return { ok: false, reason: `sum_${stat}` };
+    }
+    return { ok: true };
+}
 
 /** The statistics read at an expression threshold. */
 const THRESHOLDED = Object.freeze(['pct_expressing', 'mean_expressing']);
@@ -253,47 +272,41 @@ export function scale(matrix, scaling, references) {
     return out;
 }
 
-// --- gene-set rows (SHR-21) -------------------------------------------------------------------------------------
+// --- gene-set rows (SHR-21, decision 40) ------------------------------------------------------------------------
 
 /**
- * The one value per group of an aggregated row.
- * - A summary kind takes the section's genes' moments (an array of Float64Array, one per gene) and skips a gene with no
- *   value in a group; a group where no gene has a value is missing. Nothing is requested for it.
- * - A score kind takes the moments of the score feature (one Float64Array): `score_mean` is its mean, `score_pct_above`
- *   is 100 * the share above `above`, which the request carried.
- * @param {string} aggregation - a key of ROW_AGGREGATIONS
- * @param {Float64Array[]|Float64Array} input
+ * The one value per group of a one-row section that combines its gene rows: each gene's `stat` per group (what its gene
+ * row shows), then over the genes:
+ * - `rows_mean`: the mean of the genes with a value in that group;
+ * - `rows_sum`: their sum; under % expressing the sum of the genes' fractions, the expected number of the set's genes
+ *   detected in a cell (decision 40: "Genes detected per cell", never on the 0 to 100 scale);
+ * - `rows_z`: each gene row as a z-score across the groups (population SD, a flat row 0), then the mean.
+ * A gene with no value in a group is skipped there; a group where no gene has one is missing (NaN, never 0).
+ * @param {string} step - one of ROW_STEPS
+ * @param {string} stat - the channel's statistic (not count: that row is the groups' sizes)
+ * @param {Float64Array[]} input - the genes' moments, one per gene
  * @param {number} groups
- * @param {{counted?: Uint8Array}} [opts] - for `mean_of_zscores`: the groups whose cells count in the pooled reference
  * @returns {Float64Array}
  */
-// export-unused-ok: consumed by X3a (the section's aggregated row) and X4a (drawing)
-export function setRow(aggregation, input, groups, { counted } = {}) {
-    const def = ROW_AGGREGATIONS[aggregation];
-    if (!def) throw new Error(`unknown aggregation ${aggregation}`);
-    if (def.kind === 'score') {
-        if (!(input instanceof Float64Array)) throw new Error(`${aggregation} needs the score's moments`);
-        return statisticColumn(aggregation === 'score_mean' ? 'mean' : 'pct_expressing', input, groups);
-    }
-    if (!Array.isArray(input)) throw new Error(`${aggregation} needs the genes' moments`);
-    const stat = aggregation === 'mean_of_pct_expressing' ? 'pct_expressing' : 'mean';
-    const z = aggregation === 'mean_of_zscores';
+export function combineRows(step, stat, input, groups) {
+    if (!combinesRows(step)) throw new Error(`${step} does not combine gene rows`);
+    if (!Array.isArray(input)) throw new Error(`${step} needs the genes' moments`);
     const total = new Float64Array(groups);
     const seen = new Uint32Array(groups);
+    const column = new Float64Array(groups);
+    const fraction = stat === 'pct_expressing' && step === 'rows_sum' ? 0.01 : 1;
     for (const moments of input) {
-        const reference = z ? pooledReference(moments, groups, counted) : null;
+        for (let g = 0; g < groups; g++) column[g] = valueOf(stat, moments, g * MOMENT_STRIDE);
+        if (step === 'rows_z') zAcrossGroups(column, column, 0, groups);
         for (let g = 0; g < groups; g++) {
-            let v = valueOf(stat, moments, g * MOMENT_STRIDE);
+            const v = column[g];
             if (Number.isNaN(v)) continue;
-            if (z) v = reference.sd === 0 ? 0 : (v - reference.mean) / reference.sd;
-            total[g] += v;
+            total[g] += v * fraction;
             seen[g] += 1;
         }
     }
     const out = new Float64Array(groups);
-    for (let g = 0; g < groups; g++) {
-        out[g] = seen[g] === 0 ? NaN : aggregation === 'sum_of_means' ? total[g] : total[g] / seen[g];
-    }
+    for (let g = 0; g < groups; g++) out[g] = seen[g] === 0 ? NaN : step === 'rows_sum' ? total[g] : total[g] / seen[g];
     return out;
 }
 
@@ -370,21 +383,25 @@ const figure = (v) => (Number.isFinite(v) ? String(v) : '');
 /**
  * The matrix in long form, as text fields: the header, then one row per matrix row and group, one column per
  * statistic, a missing value an empty field. A column whose `noExpressing` flags a cell adds a final note column saying
- * so (P3). The CSV and Show as table are these rows (one column specification).
- * @param {{groups: {label: string, n: number}[], rows: {section: string, label: string}[],
+ * so (P3). The CSV and Show as table are these rows (one column specification). When a row is a one-row section
+ * (decision 40), "Color: genes combined by" (and Size's) say its gene step, after the cells; a statistic column's
+ * header is the cell step.
+ * @param {{groups: {label: string, n: number}[], rows: {section: string, label: string, combined?: {color?: string, size?: string}}[],
  *   columns: {stat?: string, label?: string, layer?: string, detectAbove?: number, scaling: string, section?: string, values: Float64Array,
  *   noExpressing?: Uint8Array}[]}} table - `values[row * groups + group]`
  * @returns {string[][]}
  */
 export function longRows({ groups, rows, columns }) {
     const noted = columns.some((c) => c.noExpressing);
-    const head = [W.csv.section, W.csv.row, W.csv.group, W.csv.cells, ...columns.map(columnHeader)];
+    const channels = ['color', 'size'].filter((which) => rows.some((row) => row.combined && row.combined[which]));
+    const head = [W.csv.section, W.csv.row, W.csv.group, W.csv.cells, ...channels.map((which) => W.csv.genesCombined[which]), ...columns.map(columnHeader)];
     if (noted) head.push(W.csv.note);
     const out = [head];
     for (let r = 0; r < rows.length; r++) {
+        const combined = channels.map((which) => (rows[r].combined && rows[r].combined[which]) || '');
         for (let g = 0; g < groups.length; g++) {
             const i = r * groups.length + g;
-            const fields = [rows[r].section, rows[r].label, groups[g].label, String(groups[g].n), ...columns.map((c) => figure(c.values[i]))];
+            const fields = [rows[r].section, rows[r].label, groups[g].label, String(groups[g].n), ...combined, ...columns.map((c) => figure(c.values[i]))];
             if (noted) fields.push(columns.some((c) => c.noExpressing && c.noExpressing[i]) ? W.noExpressingCells : '');
             out.push(fields);
         }
