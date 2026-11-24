@@ -71,3 +71,20 @@
 @media (prefers-reduced-motion: no-preference) {
     .cgg-row { transition: background-color 0.1s; }
 }
+
+/* naming a group (decision 38): ✎ and Reset on hover and focus, the editor with its color, ✓ and ✕, and the overrides no group has now */
+.cgg-rowbtn { padding: 0 4px; font-size: 0.75rem; line-height: 1.4; text-decoration: none; opacity: 0; flex: 0 0 auto; }
+.cgg-row:hover .cgg-rowbtn, .cgg-row:focus-within .cgg-rowbtn, .cgg-rowbtn:focus-visible { opacity: 1; }
+.cgg-rename::before { content: '\270E'; }
+.cgg-reset::before { content: 'Reset'; }
+.cgg-reset { color: var(--az-muted); }
+.cgg-cell--name.is-editing { background: var(--az-accent-bg); box-shadow: inset 3px 0 0 var(--az-link); }
+.cgg-edit { display: inline-flex; align-items: center; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.cgg-edit__name { flex: 1 1 auto; min-width: 4rem; height: 1.6rem; padding: 0 4px; border-color: var(--az-link); }
+.cgg-edit__color { width: 1.6rem; height: 1.4rem; padding: 0; border: 1px solid var(--az-border-strong); background: none; flex: 0 0 auto; }
+.cgg-edit__ok, .cgg-edit__cancel { padding: 0 6px; line-height: 1.4; flex: 0 0 auto; }
+.cgg__inactive { flex: 0 0 auto; max-height: 8rem; overflow: auto; padding: 4px 0 0; color: var(--az-muted); font-size: 0.75rem; }
+.cgg__inactive-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
+.cgg-inactive-row { display: flex; align-items: center; gap: 6px; }
+.cgg-inactive-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cgg-drop, .cgg-drop-all { padding: 0 4px; font-size: 0.75rem; }
