@@ -77,7 +77,7 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterator, List, NamedTuple, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -1306,6 +1306,60 @@ def _canonical(rows: np.ndarray, vals: np.ndarray) -> Tuple[np.ndarray, np.ndarr
     return rows[keep], np.add.reduceat(vals, np.flatnonzero(keep))
 
 
+class GeneReference(NamedTuple):
+    """What a gene's z-score is taken against: its mean and SD over ALL cells of the dataset, a non-finite cell left
+    out and a sparse gene's implicit zeros in (population SD, ddof 0)."""
+    n_finite: int
+    mean: float
+    sd: float
+    lo: float
+    hi: float
+    nonzero: int
+    constant: bool          # no spread: no z-score
+
+
+def _plain_segment(values: np.ndarray):
+    def segment(i, j):
+        v = values[i:j].astype(np.float64)
+        finite = np.isfinite(v)
+        return (v, None, v) if finite.all() else (v, finite, v[finite])
+    return segment
+
+
+def gene_reference(values: np.ndarray, n_obs: int, segment=None) -> GeneReference:
+    """The mean and SD a gene's z-score uses, from its stored entries (``values``; fewer than ``n_obs`` for a sparse
+    gene, whose other cells hold zero) or its whole column. One definition for the signature (``_Accumulator``)
+    and for a z-scored gene feature of ``group_features``, so the two cannot drift. ``segment(i, j)`` gives
+    ``(float64 values, finite mask or None, the finite values)`` of ``values[i:j]``; a caller that keeps them for
+    a later pass passes its own. Worked ``SEGMENT_ENTRIES`` at a time."""
+    n = int(n_obs)
+    segment = segment or _plain_segment(values)
+    bounds = [(i, min(i + SEGMENT_ENTRIES, values.size)) for i in range(0, values.size, SEGMENT_ENTRIES)]
+    total, n_nan, nonzero = 0.0, 0, 0
+    lo, hi = math.inf, -math.inf
+    for i, j in bounds:                                           # pass 1: sum, range, count
+        v, _, vf = segment(i, j)
+        n_nan += int(v.size - vf.size)
+        if vf.size:
+            total += float(vf.sum())
+            lo, hi = min(lo, float(vf.min())), max(hi, float(vf.max()))
+            nonzero += int(np.count_nonzero(vf))
+    n_finite = n - n_nan
+    if n_finite <= 0:
+        return GeneReference(0, math.nan, math.nan, math.nan, math.nan, 0, True)
+    implicit = n - int(values.size)                              # cells with no stored entry hold zero
+    if implicit:
+        lo, hi = min(lo, 0.0), max(hi, 0.0)
+    mean = total / n_finite
+    squares = implicit * mean * mean
+    for i, j in bounds:                                           # pass 2: spread
+        d = segment(i, j)[2] - mean
+        squares += float((d * d).sum())
+    sd = math.sqrt(squares / n_finite)
+    constant = lo == hi or not (sd > 0 and math.isfinite(sd))
+    return GeneReference(n_finite, mean, sd, lo, hi, nonzero, constant)
+
+
 class _Accumulator:
     """The running sum for the cells shown, and what each gene tells about itself."""
 
@@ -1353,11 +1407,11 @@ class _Accumulator:
         else:
             self._add_sparse(name, col, *_canonical(np.asarray(rows), np.asarray(values)))
 
-    def _gene(self, name, col, mean, sd, lo, hi, nonzero) -> Optional["GeneStat"]:
+    def _gene(self, name, col, ref: GeneReference) -> Optional["GeneStat"]:
         """Record a gene's figures; the stat when it enters the score, None when it does not."""
-        constant = lo == hi or not (sd > 0 and math.isfinite(sd))
-        stat = GeneStat(name, col, "constant" if constant else "used", mean, 0.0 if constant else sd,
-                        nonzero / self.n_obs, None)
+        constant = ref.constant
+        stat = GeneStat(name, col, "constant" if constant else "used", ref.mean, 0.0 if constant else ref.sd,
+                        ref.nonzero / self.n_obs, None)
         self.stats.append(stat)
         if constant and self.zscore:
             return None                                     # no spread, no z-score
@@ -1367,19 +1421,16 @@ class _Accumulator:
     def _add_column(self, name, col, v) -> None:
         """A whole column (dense store), one value per cell."""
         finite = np.isfinite(v)
-        n_finite = int(finite.sum())
-        if n_finite == 0:
+        ref = gene_reference(v, self.n_obs)
+        if ref.n_finite == 0:
             self.stats.append(GeneStat(name, col, "no_values"))
             return
         vf = v[finite]
-        mean = float(vf.sum()) / n_finite
-        centred = vf - mean
-        sd = math.sqrt(float((centred * centred).sum()) / n_finite)
-        stat = self._gene(name, col, mean, sd, float(vf.min()), float(vf.max()), int(np.count_nonzero(vf)))
+        stat = self._gene(name, col, ref)
         if stat is None:
             return
         if self.zscore:
-            z = centred / sd
+            z = (vf - ref.mean) / ref.sd
             if self.clip is not None:
                 stat.clipped = int((np.abs(z) > self.clip).sum()) / self.n_obs
             transformed = self._clip(z)
@@ -1415,29 +1466,13 @@ class _Accumulator:
                 kept[(i, j)] = out
             return out
 
-        total, n_nan, nonzero = 0.0, 0, 0
-        lo, hi = math.inf, -math.inf
-        for i, j in bounds:                                       # pass 1: sum, range, count
-            v, _, vf = segment(i, j)
-            n_nan += int(v.size - vf.size)
-            if vf.size:
-                total += float(vf.sum())
-                lo, hi = min(lo, float(vf.min())), max(hi, float(vf.max()))
-                nonzero += int(np.count_nonzero(vf))
-        n_finite = n - n_nan
-        if n_finite == 0:
+        ref = gene_reference(values, n, segment)
+        if ref.n_finite == 0:
             self.stats.append(GeneStat(name, col, "no_values"))
             return
-        implicit = n - int(values.size)                          # cells with no stored entry hold zero
-        if implicit:
-            lo, hi = min(lo, 0.0), max(hi, 0.0)
-        mean = total / n_finite
-        squares = implicit * mean * mean
-        for i, j in bounds:                                       # pass 2: spread
-            d = segment(i, j)[2] - mean
-            squares += float((d * d).sum())
-        sd = math.sqrt(squares / n_finite)
-        stat = self._gene(name, col, mean, sd, lo, hi, nonzero)
+        mean, sd = ref.mean, ref.sd
+        implicit = n - int(values.size)
+        stat = self._gene(name, col, ref)
         if stat is None:
             return
         # every cell holds z0; a stored entry adds what it differs by, a missing one cancels z0

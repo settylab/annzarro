@@ -101,7 +101,9 @@ def feature_cells() -> int:
     """The most values one grouping request accumulates, in force (limits.matrix_values)."""
     return cost_limits.get("matrix_values")
 
-_GENE_FIELDS = ("id", "kind", "name", "layer", "detect_above")
+_GENE_FIELDS = ("id", "kind", "name", "layer", "detect_above", "transform", "clip")
+#: The transforms a gene feature takes: its z-score over all cells of the dataset (design aggregation-unify 2.1).
+TRANSFORMS = ("zscore",)
 _SCORE_FIELDS = ("id", "kind", "recipe", "column", "layer", "above")
 _MEASURE_FIELDS = ("id", "source", "above")
 _NUMERIC_SOURCES = ("obs", "obsm", "layer", "obsp", "gene-score")
@@ -124,6 +126,13 @@ class Feature:
     name: Optional[str] = None              # a gene
     layer: str = "X"                        # a gene's matrix
     source: Optional[Dict[str, Any]] = None  # a score, as a gene-score source
+    transform: Optional[str] = None         # a gene: None (the raw values) or "zscore"
+    clip: Optional[float] = None            # a z-scored gene: the clip (None: not clipped)
+
+    @property
+    def variant(self) -> Tuple[Optional[str], Optional[float]]:
+        """What a gene is read as: two features of one gene and one variant share their moments."""
+        return (self.transform, self.clip if self.transform else None)
 
 
 @dataclass(frozen=True)
@@ -168,7 +177,16 @@ def parse_features(raw: Any) -> Tuple[Feature, ...]:
                 raise _bad("A gene feature names its gene.", "bad_feature", id=fid)
             if not isinstance(layer, str) or not layer:
                 raise _bad("layer must be 'X' or the name of a layer.", "bad_feature", id=fid)
-            out.append(Feature(fid, "gene", _threshold(f, "detect_above"), name=name, layer=layer))
+            transform, clip = None, None
+            if "transform" in f:
+                if f["transform"] not in TRANSFORMS:
+                    raise _bad(f"transform is {', '.join(repr(t) for t in TRANSFORMS)}.", "bad_feature", id=fid)
+                transform = f["transform"]
+                clip = gs.parse_clip(f["clip"]) if "clip" in f else gs.DEFAULT_CLIP
+            elif "clip" in f:
+                raise _bad("clip belongs to a transform.", "bad_feature", id=fid)
+            out.append(Feature(fid, "gene", _threshold(f, "detect_above"), name=name, layer=layer,
+                               transform=transform, clip=clip))
         elif kind == "score":
             cg._unknown(f, _SCORE_FIELDS, "a score feature")
             fid = _id(f, "feature", seen)
@@ -226,7 +244,7 @@ class _MatrixRead:
     """The genes the features read from one matrix: every gene they want (``thresholds``), of which ``columns`` are
     read here and the rest ride on a score's read of the same matrix (``gene_score.compute``'s ``on_read``)."""
     layer: str
-    thresholds: Dict[int, List[float]]                  # column -> its distinct thresholds
+    thresholds: Dict[int, Dict[Tuple, List[float]]]     # column -> variant (transform, clip) -> distinct thresholds
     columns: List[int] = field(default_factory=list)    # read here, distinct, ascending
     entries: int = 0
     layout: str = ""
@@ -247,7 +265,8 @@ class Work:
     n_cells: int
     reads: List[_MatrixRead]
     vectors: List[_Vector]
-    gene_target: Dict[str, Tuple[int, int, float]]      # gene feature id -> (read, column, threshold); absent: missing
+    gene_target: Dict[str, Tuple[int, int, Tuple, float]]   # gene feature id -> (read, column, variant, threshold);
+    #                                                         absent: missing
     vector_of: Dict[Tuple[str, str], int]               # ("feature" | "measure", id) -> vector
     missing: List[str]                                  # gene names not in the dataset, in request order
     entries: int
@@ -296,7 +315,7 @@ def plan_work(reader, dataset_path: str, features: Sequence[Feature] = (), measu
         n_cells = cs.n_cells(root)
     request = cg.Request(shape="grouping", grouping=cg.Grouping(()), sets={}, set_hashes={})   # no nested grouping
     reads: List[_MatrixRead] = []
-    gene_target: Dict[str, Tuple[int, int, float]] = {}
+    gene_target: Dict[str, Tuple[int, int, Tuple, float]] = {}
     missing: List[str] = []
     genes = [f for f in features if f.kind == "gene"]
     by_layer: Dict[str, List[Feature]] = {}
@@ -306,13 +325,13 @@ def plan_work(reader, dataset_path: str, features: Sequence[Feature] = (), measu
     seconds, entries, whole, layouts = 0.0, 0, False, set()
     for layer, fs in by_layer.items():
         column_of, absent, _ = gs._resolve_names(var_names, [f.name for f in fs])
-        thresholds: Dict[int, List[float]] = {}
+        thresholds: Dict[int, Dict[Tuple, List[float]]] = {}
         for f in fs:
             col = column_of.get(f.name)
             if col is None:
                 continue
-            _add_threshold(thresholds.setdefault(col, []), f.threshold, f.id)
-            gene_target[f.id] = (len(reads), col, f.threshold)
+            _add_threshold(thresholds.setdefault(col, {}).setdefault(f.variant, []), f.threshold, f.id)
+            gene_target[f.id] = (len(reads), col, f.variant, f.threshold)
         missing += [n for n in absent if n not in missing]
         reads.append(_MatrixRead(layer, thresholds))
     vectors: List[_Vector] = []
@@ -430,21 +449,73 @@ def _segments(n: int) -> Iterator[Tuple[int, int]]:
 
 def _gene_moments(bins: _Bins, sizes: np.ndarray, rows: Optional[np.ndarray], values: np.ndarray,
                   thresholds: Sequence[float], outs: Sequence[Sequence[np.ndarray]],
-                  should_stop: Optional[Callable[[], bool]] = None) -> None:
+                  should_stop: Optional[Callable[[], bool]] = None,
+                  transform: Optional[Callable[[np.ndarray], np.ndarray]] = None) -> None:
     """One gene's moments per code at each threshold, into ``outs`` (as ``_Sums.write``): its stored entries
     (``rows`` the dataset rows) or its whole column (``rows`` None), ``SEGMENT_ENTRIES`` at a time (CMP-2).
 
     ``should_stop`` is asked before each segment. A pause is not: this runs while the pipeline holds reads in
     flight (its own, or a score's through ``on_read``), and the pipeline waits only with none, between its reads.
-    With at most ``MAX_THRESHOLDS`` thresholds one gene's arithmetic is a few passes over its entries."""
+    With at most ``MAX_THRESHOLDS`` thresholds one gene's arithmetic is a few passes over its entries.
+    ``transform`` maps each segment's values before they are summed (a z-scored gene, ``_zgene_moments``)."""
     sums = _Sums(bins.n_bins, thresholds)
     if rows is not None:
         rows, values = gs._canonical(np.asarray(rows), np.asarray(values))
     for a, b in _segments(values.size):
         if should_stop is not None and should_stop():
             raise gs.ScoreCancelled()
-        sums.add(bins.index(bins.by_row[a:b] if rows is None else bins.by_row[rows[a:b]]), values[a:b])
+        chunk = values[a:b] if transform is None else transform(values[a:b])
+        sums.add(bins.index(bins.by_row[a:b] if rows is None else bins.by_row[rows[a:b]]), chunk)
     sums.write(sizes, outs)
+
+
+def _zgene_moments(bins: _Bins, sizes: np.ndarray, n_obs: int, rows: Optional[np.ndarray], values: np.ndarray,
+                   clip: Optional[float], thresholds: Sequence[float], outs: Sequence[Sequence[np.ndarray]],
+                   should_stop: Optional[Callable[[], bool]] = None) -> bool:
+    """The moments of one gene's z-score, ``clip(((x - mean) / sd), +-clip)``, per code at each threshold, into
+    ``outs``; False, with ``outs`` untouched, when the gene has no spread. Mean and SD are over every cell of the
+    dataset (``gene_score.gene_reference``), whatever cells are shown.
+
+    A sparse gene's cell with no stored entry holds ``z0 = z(0)``. The stored entries go through the moments as
+    ``d = z - z0`` at the threshold ``t - z0`` (a cell with no entry is a ``d`` of 0), and each group is put right:
+    with ``n`` its cells with a value, ``sum_d`` and ``sum_above_d`` the moments of ``d``::
+
+        sumsq += 2 z0 sum_d + n z0^2      sum += n z0      sum_above += n_above z0
+
+    A dense column has ``z0 = 0`` and nothing to put right. A non-finite value stays non-finite and is left out."""
+    if rows is not None:
+        rows, values = gs._canonical(np.asarray(rows), np.asarray(values))
+    ref = gs.gene_reference(values, n_obs)
+    if ref.constant:
+        return False
+    mean, sd = ref.mean, ref.sd
+
+    def z(x: np.ndarray) -> np.ndarray:
+        out = (x - mean) / sd
+        return out if clip is None else np.clip(out, -clip, clip)
+
+    z0 = 0.0
+    if rows is not None:
+        z0 = float(z(np.float64(0.0)))
+
+    def shifted(chunk: np.ndarray) -> np.ndarray:
+        x = chunk.astype(np.float64)
+        finite = np.isfinite(x)
+        if finite.all():
+            return z(x) - z0
+        out = x                                                     # a non-finite value stays as it is
+        out[finite] = z(x[finite]) - z0
+        return out
+
+    _gene_moments(bins, sizes, rows, values, [t - z0 for t in thresholds], outs, should_stop, transform=shifted)
+    if z0:
+        for per_threshold in outs:
+            for m in per_threshold:
+                n, sum_d = m[:, 0], m[:, 1].copy()
+                m[:, 2] += 2.0 * z0 * sum_d + n * z0 * z0
+                m[:, 1] += n * z0
+                m[:, 4] += m[:, 3] * z0
+    return True
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -491,7 +562,7 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
     features = np.zeros((len(work.features), int(n_codes), 5)) if work.features else None
     measures = np.zeros((len(work.measures), int(n_codes), 5)) if work.measures else None
     # where each sum goes: (read, column, threshold) and (vector, threshold) -> rows of the blocks
-    gene_rows: Dict[Tuple[int, int, float], List[np.ndarray]] = {}
+    gene_rows: Dict[Tuple[int, int, Tuple, float], List[np.ndarray]] = {}
     vector_rows: Dict[Tuple[int, float], List[np.ndarray]] = {}
     for i, f in enumerate(work.features):
         if f.kind == "score":
@@ -510,15 +581,21 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
             on_entries(n)
 
     done: List[set] = [set() for _ in work.reads]             # columns whose moments are written, per read
+    constant: set = set()                                     # (read, column) of a gene with no spread, for a z-score
 
     def take(r: int, rows_values) -> None:
         """The moments of the genes of read ``r`` in one matrix read (its own, or a score's)."""
         read = work.reads[r]
         for col, at, values in rows_values:
             if col in read.thresholds and col not in done[r]:
-                ts = read.thresholds[col]
-                _gene_moments(bins, sizes, at, np.asarray(values), ts, [gene_rows[(r, col, t)] for t in ts],
-                              should_stop)
+                values = np.asarray(values)
+                for variant, ts in read.thresholds[col].items():
+                    outs = [gene_rows[(r, col, variant, t)] for t in ts]
+                    if variant[0] is None:
+                        _gene_moments(bins, sizes, at, values, ts, outs, should_stop)
+                    elif not _zgene_moments(bins, sizes, work.n_cells, at, values, variant[1], ts, outs,
+                                            should_stop):
+                        constant.add((r, col))
                 done[r].add(col)
 
     def settle(items: int, entries0: int, planned: int) -> None:
@@ -588,7 +665,12 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
     for v, vec in enumerate(work.vectors):
         if vec.part.score is None:
             yield from vector(v, vec)
-    feature_status = [{"id": f.id, **({"status": "ok" if f.id in work.gene_target else "missing"} if f.kind == "gene"
+    def gene_status(f: Feature) -> Dict[str, Any]:
+        if f.id not in work.gene_target:
+            return {"status": "missing"}
+        return {"status": "constant" if f.transform and work.gene_target[f.id][:2] in constant else "ok"}
+
+    feature_status = [{"id": f.id, **(gene_status(f) if f.kind == "gene"
                                       else vector_status[work.vector_of[("feature", f.id)]])}
                       for f in work.features]
     measure_status = [{"id": m.id, **vector_status[work.vector_of[("measure", m.id)]]} for m in work.measures]
