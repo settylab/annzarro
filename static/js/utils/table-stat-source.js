@@ -97,7 +97,7 @@ const aggregate = {
     layerOf: (setting) => M.layerOf(setting),
     methods: (setting) => ({
         options: M.statMenu(setting, kindsNow()).options.map((o) => ({ value: o.value, name: STATISTIC_INFO.find((m) => m.value === o.value).label,
-            symbol: STAT_SYMBOLS[o.value], disabled: !!o.disabled, title: o.title || '' })),
+            symbol: STAT_SYMBOLS[o.value], ...(o.value === M.ZSCORE ? { disabled: true, title: VOCABULARY.cellGene.zscoreCannot.table } : { disabled: !!o.disabled, title: o.title || '' }) })),
         chosen: M.statOf(setting)
     }),
     layers: (setting) => M.layerMenu(setting, kindsNow(), layersNow()),

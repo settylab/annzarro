@@ -148,7 +148,8 @@ def test_a_table_is_one_request_of_its_bitset_and_a_switch_of_statistic_sends_no
     assert cfg.get("column", "") == "", "the table has no group: nothing is stored in column"
     assert page.get_attribute(axis_sets.button(C, "color"), "aria-label") == "Aggregation: Mean"
     rows = axis_sets.aggregations(page, C, "color")
-    assert [r["v"] for r in rows] == ["mean", "pct_expressing", "mean_expressing", "sum", "sd"], "the group statistics, in their order"
+    assert [r["v"] for r in rows] == ["zscore_mean", "mean", "pct_expressing", "mean_expressing", "sum", "sd"], "the group statistics, in their order"
+    assert rows[0]["off"] is True and "cell groups" in rows[0]["title"], "z-score mean is not offered for a table, and says why"
     for stat in ("pct_expressing", "sum", "mean"):
         axis_sets.choose_aggregation(page, C, "color", stat)
         until(page, "([s]) => window.PanelManager.getPanel('gene-plot-G').getConfig().color.stat === s", [stat])
