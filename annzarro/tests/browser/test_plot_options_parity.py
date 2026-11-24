@@ -278,3 +278,36 @@ def test_a_setting_has_one_name_on_every_plot(page, served):
     assert len(shared) >= 10, sorted(shared)
     bad = [f"{c}: {v}" for c, v in shared.items() if len(set(v.values())) > 1 and c not in LABEL_EXCEPTIONS]
     assert not bad, "A setting is named differently on different plots:\n" + "\n".join(bad)
+
+
+# ------------------------------------------------------------------ help text reads below the labels, and is legible, in both themes
+
+HELP = """() => {
+    const pop = document.querySelector("[data-popover='plot-options']");
+    const rgb = (s) => s.match(/[\\d.]+/g).slice(0, 3).map(Number);
+    const lum = (c) => { const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const ratio = (a, b) => { const [x, y] = [lum(rgb(a)), lum(rgb(b))].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+    const bg = getComputedStyle(pop).backgroundColor;
+    const help = pop.querySelector('.az-pop-section__body .az-pop-help');
+    const label = pop.querySelector('.az-pop-field__label');
+    return { help: ratio(getComputedStyle(help).color, bg), label: ratio(getComputedStyle(label).color, bg),
+             helpColor: getComputedStyle(help).color, labelColor: getComputedStyle(label).color }; }"""
+
+
+def test_help_text_is_legible_and_never_louder_than_the_labels(page, served):
+    page.set_viewport_size({"width": 1700, "height": 1100})
+    page.goto(_url(served, [CP, GP, P, CC], _config()))
+    _ready(page)
+    for theme in ("light", "dark"):
+        page.click(f'#theme-toggle button[data-theme-mode="{theme}"]')
+        page.wait_for_function("(t) => document.documentElement.getAttribute('data-theme') === t", arg=theme)
+        _frames(page)
+        for kind, (pid, button) in KINDS.items():
+            page.click(button)
+            page.wait_for_selector(POP)
+            page.evaluate("() => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach((d) => { d.open = true; })")
+            got = page.evaluate(HELP)
+            assert got["help"] >= 4.5, f"{theme} {kind}: help contrast {got['help']:.2f} (WCAG AA is 4.5): {got}"
+            assert got["help"] <= got["label"] + 0.01, f"{theme} {kind}: help is louder than the labels: {got}"
+            page.keyboard.press("Escape")
+            page.wait_for_selector(POP, state="detached")

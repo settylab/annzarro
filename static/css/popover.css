@@ -89,7 +89,8 @@
 .az-pop-field--check, .po-field--check { justify-content: flex-start; }
 .az-pop-check, .po-check { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .az-pop-check .form-check-input, .po-check .form-check-input { margin: 0; }
-.az-pop-help, .po-help { flex: 1 1 100%; color: var(--az-muted); font-size: 0.6875rem; line-height: 1.3; }
+/* under .az-popover: the dark theme's `small { color: inherit }` (theme.css) would otherwise win and draw help in the full text colour */
+.az-popover .az-pop-help, .az-popover .po-help { flex: 1 1 100%; color: var(--az-muted); font-size: 0.6875rem; line-height: 1.3; }
 
 .az-pop-buttons, .po-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
 .az-pop-ask, .po-ask { display: flex; flex-direction: column; gap: 4px; }

@@ -251,7 +251,7 @@ defaults and sections:
 | Legend | **Space** (the legend column's share of the width; empty lets the figure decide), **Columns** and **Entries, at most** (20) of the strip legends; **Color bar**, **Size legend**, **Strip legend**; **Color bar title**, **Size legend title** |
 | Totals | **Cells per group** (a bar along the group axis); **Color strips**: **Factors** (the default), **Group** or **None** |
 | Margins | Room added on each side, in px, to the room the labels take |
-| Export | **PNG**, **SVG** (not in 3D), **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **Export at 2x**; **Download CSV** |
+| Export | **PNG**, **SVG** (not in 3D), **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV** |
 | Apply | **Apply to other Cell-Gene plots**; **Make this the session default**, **Back to built-in** |
 
 Presets, Text, Legend, Export and the plot's own sections start open; the others unfold with a click, and each keeps its state

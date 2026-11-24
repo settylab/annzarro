@@ -3,7 +3,7 @@
  * id, or the one its id maps to (`CONCEPTS`: the Cell Plot and Gene Plot keep their stored keys, `showGrid`, `gridLineWidth`, and
  * the Cell-Gene and Count plots theirs, `grid`, `gridWidth`). A concept in `LABELS` has that label whatever the plot declares
  * (options-schema.js applies it when a field is registered), so one plot cannot call a setting something else.
- * Interface text: US spelling. Pure, no DOM.
+ * Interface text: US spelling. Inside a group the shortest unambiguous name (the group's heading says the rest: Legend > Position). Pure, no DOM.
  */
 
 /** concept -> the label every plot shows */
@@ -14,8 +14,8 @@ export const LABELS = Object.freeze({
     axisLines: 'Axis lines', axisColor: 'Axis color', axisWidth: 'Axis line width (px)',
     zeroLines: 'Zero lines', zeroColor: 'Zero line color', zeroWidth: 'Zero line width (px)',
     axisTitles: 'Axis titles', tickLabels: 'Tick labels', tickMarks: 'Tick marks', tickCount: 'Ticks per axis',
-    showLegend: 'Show legend', legendPosition: 'Legend position', legendTitle: 'Legend title', legendColumns: 'Columns', legendColumnGap: 'Column gap (px)',
-    exportWidth: 'Width (px)', exportHeight: 'Height (px)', export2x: 'Export at 2x'
+    showLegend: 'Show legend', legendPosition: 'Position', legendTitle: 'Title', legendColumns: 'Columns', legendColumnGap: 'Column gap (px)',
+    exportWidth: 'Width (px)', exportHeight: 'Height (px)', export2x: '2x resolution'
 });
 
 /** field id -> concept, where the id is not the concept's own name */
