@@ -385,12 +385,15 @@ def test_a_live_server_limit_changes_without_a_restart_and_a_start_one_stays_rea
 def test_a_lowered_name_search_limit_reaches_the_name_search(admin_app):
     from annzarro.core import name_index
     admin = login(admin_app, ADMIN)
-    assert put(admin, {"limits.name_search_max_regex_chars": 7}).status_code == 200
+    assert put(admin, {"limits.name_search_timeout_s": 3}).status_code == 200
     admin.get(POLICY)
-    assert name_index._max_regex_chars == 7
-    assert put(admin, {"limits.name_search_max_regex_chars": None}).status_code == 200
+    assert name_index._timeout_s == 3
+    assert put(admin, {"limits.name_search_timeout_s": None}).status_code == 200
     admin.get(POLICY)
-    assert name_index._max_regex_chars == 200
+    assert name_index._timeout_s == 10
+    # the longest pattern is a parse bound, not a cost: the config file's alone
+    reply = put(admin, {"limits.name_search_max_regex_chars": 7})
+    assert reply.status_code == 409 and reply.get_json()["errors"] == {"limits.name_search_max_regex_chars": "config_scope"}
 
 
 def test_every_cost_limit_is_served_to_the_browser_and_no_other_limit_is(tmp_path):

@@ -101,8 +101,11 @@ def validate_limits(server: Optional[Dict[str, Any]]) -> List[str]:
 #: the config file; every other limit is also the admin's to change on the Settings page, without a restart.
 _RESTART = {"compute_budget_mb", "group_code_cache_mb", "max_requests", "max_requests_jitter", "limit_request_line", "limit_request_fields",
             "limit_request_field_size", "max_request_mb", "read_user_share_percent", "subset_wait_s"}
+#: Limits that are parse and security bounds, not costs (docs design cost-limits-080, "must not be configurable"):
+#: read per request, but the config file's alone, so an admin cannot widen them on the Settings page
+_CONFIG_ONLY = {"name_search_max_regex_chars"}
 #: The limits an admin may change at run time: applied to the app's configuration by ``install`` when the policy changes
-LIVE = tuple(key for key, limit in LIMITS.items() if key not in _RESTART and not limit.nullable)
+LIVE = tuple(key for key, limit in LIMITS.items() if key not in _RESTART | _CONFIG_ONLY and not limit.nullable)
 
 
 #: What each limit does, shown as its help on the Settings page; the default is appended
@@ -190,7 +193,7 @@ def _declare_policy_keys() -> None:
         number = Int if limit.integer else Float
         declare(Key(
             name=f"limits.{key}", type=number(min=limit.minimum), default=limit.default,
-            scope="config" if key in _RESTART else "server",
+            scope="config" if key in _RESTART | _CONFIG_ONLY else "server",
             description=f"{_HELP[key]} Default {limit.default:,}. Set in the config file as server.{key}.",
             area="limits", config_path=f"server.{key}", client=False, restart=key in _RESTART, guide=limit_guide(key), label=_LABEL[key],
             subgroup=SERVER_SUBGROUP))
@@ -337,7 +340,7 @@ def _apply_live(app, before: Dict[str, Any], live: Dict[str, Any]) -> None:
     changed = {k for k, v in live.items() if before.get(k, app.config.get(k)) != v}
     for key in changed:
         app.config[key] = live[key]
-    if changed & {"name_search_max_regex_chars", "name_search_timeout_s"}:
+    if changed & {"name_search_timeout_s"}:
         from annzarro.core import name_index
         name_index.configure(app.config.get("name_index_max_mb"), app.config.get("name_search_scan_names"),
                              app.config.get("name_search_max_regex_chars"), app.config.get("name_search_timeout_s"))

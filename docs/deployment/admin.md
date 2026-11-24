@@ -333,7 +333,9 @@ YAML's value or its default.
 
 The limits read when the server starts (the memory ledger, the read and subset budgets with their
 waits and shares, gunicorn's request bounds) are listed read-only with their effective values;
-change them in the YAML and restart. Names in a stored layer that this version does not declare are kept, listed as
+change them in the YAML and restart. So is the longest name-search pattern
+(`name_search_max_regex_chars`), a bound on what a search parses rather than a cost: only the YAML
+sets it. Names in a stored layer that this version does not declare are kept, listed as
 unknown and can be removed one by one; a stored value the registry cannot use (wrong type, a layer
 its scope does not allow) is ignored, flagged and kept, never deleted by an unrelated write. If a
 stored file does not parse, the page shows a red banner and refuses writes with `503
