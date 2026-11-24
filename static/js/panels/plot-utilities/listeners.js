@@ -745,7 +745,7 @@ export function setupColorControls(
     // or below: those cells are not dropped, they share the lowest colour (the floor). Say how many, in plain words.
     function _scoreLogHint() {
         const provider = settings.color && getSource(settings.color.type);
-        if (!provider || !settings.color.log || !data.colorLog || !Array.isArray(data.colorRaw)) return;
+        if (!provider || !settings.color.log || !data.colorLog || !(Array.isArray(data.colorRaw) || ArrayBuffer.isView(data.colorRaw))) return;
         const floor = data.colorLog.floor;
         let low = 0, finite = 0;
         for (const v of data.colorRaw) {

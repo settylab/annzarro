@@ -106,7 +106,33 @@ export function positionLookup(entities) {
  * @param {boolean} options.filter - Whether to update filtering (hide outliers).
  * @returns {Promise<void>} A promise that resolves when the update is complete.
  */
-export async function updatePlotElements(plotContainer, data, settings, refreshPlot, options = {}) {
+export function updatePlotElements(plotContainer, data, settings, refreshPlot, options = {}) {
+    // One update at a time per graph. Each one unsorts the traces, edits them and sorts them again by colour
+    // (sortTracesByColor), with awaits between: two at once (a colour slider dragged) unsorted each other's order and
+    // left the points drawn in another order than a fresh draw (render drift, decision 39). An update asked for
+    // while one runs waits; several waiting become one, with every part any of them asked for.
+    if (!plotContainer) return updateNow(plotContainer, data, settings, refreshPlot, options);
+    const q = plotContainer.__azUpdates || (plotContainer.__azUpdates = { running: null, waiting: null });
+    if (q.waiting) {
+        for (const [k, v] of Object.entries(options)) if (v) q.waiting.options[k] = true;
+        Object.assign(q.waiting, { data, settings, refreshPlot });
+        return q.waiting.done;
+    }
+    if (!q.running) {
+        q.running = updateNow(plotContainer, data, settings, refreshPlot, options).finally(() => { q.running = null; });
+        return q.running;
+    }
+    const next = { data, settings, refreshPlot, options: { ...options } };
+    next.done = q.running.catch(() => {}).then(() => {
+        q.waiting = null;
+        q.running = updateNow(plotContainer, next.data, next.settings, next.refreshPlot, next.options).finally(() => { q.running = null; });
+        return q.running;
+    });
+    q.waiting = next;
+    return next.done;
+}
+
+async function updateNow(plotContainer, data, settings, refreshPlot, options = {}) {
     const defaultOptions = {
         xAxis: false,
         yAxis: false,
@@ -374,9 +400,16 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         
         // COLOR DATA UPDATES
         if (updateOptions.colors && data.color) {
-            
+            // From a number colour to none or one colour: drawn again. The restyle below kept the number colour's
+            // scale and colour bar on the trace, which a fresh draw of no colour does not have (render drift)
+            if (!isNumerical && !isCategorical && plotContainer.data.some(t => t && t.marker && t.marker.colorscale !== undefined
+                && (Array.isArray(t.marker.color) || ArrayBuffer.isView(t.marker.color)))) refreshPlot();
+
             // When switching from categorical (multiple traces) to numerical (single trace)
             if (!isCategorical && hasMultipleTraces && !hasTableMask) {
+                // To no colour (or one colour): drawn again. The trace below is a number colour's, and it drew the
+                // constant as numbers with a colour bar where a fresh draw has one plain colour (render drift)
+                if (!isNumerical) refreshPlot();
                 // Create a new single trace using the data object
                 const newTrace = {
                     type: settings.z ? 'scatter3d' : 'scattergl',
@@ -884,6 +917,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         }
 
         applyAllAestheticSettings(plotContainer, settings);
+        // the log colour bar's ticks once more, after the aesthetics: they give the colour bar again without them,
+        // which left a score recoloured under Log with linear tick labels (a fresh draw labels it last, too)
+        await applyLogColorbar(plotContainer, data, settings);
 
         // what Hide NaN / outliers pin now, for the relayout handler (plot-make.js notePinned)
         notePinned(plotContainer, data, settings);
@@ -1408,6 +1444,7 @@ export async function restyleMarkers(plotContainer, settings) {
         }
         await restyleNoneColour(plotContainer, settings);
         await restyleFocusColours(plotContainer, settings);
+        refitAfterResize(plotContainer);
         return;
     }
     plotContainer.data.forEach((trace, i) => {
@@ -1716,3 +1753,22 @@ export function refitAfterMove(gd, from, to) {
 }
 /** The share of an axis near each end where a marker's padding can decide its autorange (5% plus the marker). */
 const REFIT_EDGE = 0.15;
+
+/**
+ * After sizes set in the regl scene (setGlMarkers), autoranged axes are fitted again for the new marker padding, as
+ * a fresh draw of the same size fits them: they kept the padding of the old size (render drift, decision 39). Once the
+ * size settles (a slider dragged sets many), and only while nothing pins the axes; the relayout draws the scene once
+ * more and reruns no calc.
+ * @param {HTMLElement} gd
+ */
+export function refitAfterResize(gd) {
+  if (!gd) return;
+  clearTimeout(gd.__azRefitTimer);
+  gd.__azRefitTimer = setTimeout(() => {
+    const fl = gd._fullLayout;
+    if (!fl || !fl.xaxis || !fl.yaxis || fl.xaxis.autorange === false || fl.yaxis.autorange === false || typeof Plotly === 'undefined') return;
+    Promise.resolve(Plotly.relayout(gd, { 'xaxis.autorange': fl.xaxis.autorange, 'yaxis.autorange': fl.yaxis.autorange })).catch(() => {});
+  }, REFIT_SETTLE_MS);
+}
+/** How long sizes must stay before the axes are fitted again (ms). */
+const REFIT_SETTLE_MS = 150;

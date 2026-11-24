@@ -1934,7 +1934,9 @@ export async function unsortTraces(gd) {
  */
 export function applyLogColor(data, settings) {
   data.colorLog = null;
-  if (!settings.color || !settings.color.log || data.colorType !== 'numerical' || !Array.isArray(data.color)) return;
+  // a typed array too: a gene score's values (float32) came back linear under Log when recoloured into a plot
+  if (!settings.color || !settings.color.log || data.colorType !== 'numerical'
+      || !(Array.isArray(data.color) || ArrayBuffer.isView(data.color))) return;
   data.colorRaw = data.color;
   const { values, floor } = logColorValues(data.color, settings.color.logFloor ?? null);
   data.color = values;
@@ -1943,7 +1945,9 @@ export function applyLogColor(data, settings) {
 
 export async function applyLogColorbar(gd, data, settings) {
   if (!gd || !Array.isArray(gd.data) || typeof Plotly === 'undefined') return;
-  const idx = gd.data.findIndex(t => t && t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+  // a typed array too (a gene score's float32 values): the log ticks were left off a score recoloured into the plot
+  const idx = gd.data.findIndex(t => t && t.marker && (Array.isArray(t.marker.color) || ArrayBuffer.isView(t.marker.color))
+    && t.marker.colorscale !== undefined);
   if (idx < 0) return;
   const update = {};
   if (data.colorLog) {
@@ -3176,6 +3180,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
             colorscale: plotlyColorscale(settings.colorScale),
             reversescale: settings.colorReversed,
             cmin: cmin,
+            cauto: false,   // as a restyle of cmin leaves it (plotly-batch.js implied edits): one value for both paths
             cmax: cmax,
             showscale: settings.showLegend !== false,     // Show Legend off hides the colour bar too
             colorbar: colorbarSettings
@@ -3234,6 +3239,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       }
       
       baseTrace.marker.cmin = cmin;
+      baseTrace.marker.cauto = false;   // as a restyle of cmin leaves it: an equal min and max drew otherwise
       baseTrace.marker.cmax = cmax;
       baseTrace.marker.colorbar = colourBar(settings, colourTitle(settings.color));
   

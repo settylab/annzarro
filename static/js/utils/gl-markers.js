@@ -76,6 +76,7 @@ export function setGlMarkers(gd, styleOf) {
     const style = styles[i];
     if (!style) return {};                                   // {}: this group unchanged
     const change = {};
+    if (style.size !== undefined) rescalePads(gd._fullData[i], opts.size, style.size);
     for (const key of ['size', 'opacity']) {
       if (style[key] === undefined) continue;
       change[key] = style[key];
@@ -91,6 +92,31 @@ export function setGlMarkers(gd, styleOf) {
   gd._fullLayout._glcanvas.each((c) => { if (c && c.regl) c.regl.clear({ color: [0, 0, 0, 0], depth: 1 }); });
   scene.draw();
   return true;
+}
+
+/** Plotly's own threshold (scattergl TOO_MANY_POINTS): from it on, a trace's axis padding is its marker size. */
+const TOO_MANY_POINTS = 1e5;
+
+/**
+ * The axis padding Plotly's calc gave a trace (its `_extremes`, in px) follows a new marker size, so that the next
+ * autorange fits the axes as a fresh draw of that size does: a large trace's padding is max(size, 3) (scattergl
+ * calc), a smaller one's scales with the size (calcMarkerSize, for one size for every point). Kept as it was, the
+ * axes stayed fitted for the old size (render drift, decision 39).
+ */
+function rescalePads(full, from, to) {
+  const ext = full && full._extremes;
+  if (!ext || typeof to !== 'number' || !(to > 0)) return;
+  const big = (full._length || 0) >= TOO_MANY_POINTS;
+  const ratio = typeof from === 'number' && from > 0 ? to / from : null;
+  for (const axis of Object.values(ext)) {
+    for (const side of ['min', 'max']) {
+      for (const e of (axis && axis[side]) || []) {
+        if (!e || typeof e.pad !== 'number') continue;
+        if (big) e.pad = Math.max(to, 3);
+        else if (ratio !== null) e.pad *= ratio;
+      }
+    }
+  }
 }
 
 /**

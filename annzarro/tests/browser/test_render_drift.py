@@ -52,6 +52,7 @@ CELLS = [gstore.cell(i) for i in range(0, gstore.N_OBS, 97)]
 
 CP, GP, CG, CC = "cell-plot-D", "gene-plot-D", "cell-gene-D", "cell-count-D"
 S1, S2 = "gene-signature-D1", "gene-signature-D2"
+CT_TABLE, SIG = "cell-table-D", "gene-signature-DS"
 TILE = '.tile[data-tile-id="{}"]'
 
 
@@ -165,6 +166,14 @@ SNAP = """(sel) => {
     const p = plain(gd._fullLayout[k], 1);
     if (p !== undefined) layout[k] = p;
   }
+  // a legend below the axes: legend-below.js derives its y (a fraction) from where the axis text was drawn, and the
+  // fraction and the plot's height have more than one pair that draws it in the same place; the place is compared
+  const lg = layout.legend;
+  if (lg && lg.orientation === 'h' && lg.yanchor === 'top' && typeof lg.y === 'number' && lg.y <= 0.5) {
+    const box = gd.querySelector('.legend');
+    const g = gd.getBoundingClientRect(), b = box && box.getBoundingClientRect();
+    lg.y = b ? { drawnTop: Math.round((b.top - g.top) / 4) * 4, drawnLeft: Math.round((b.left - g.left) / 4) * 4 } : '<not drawn>';
+  }
   const traces = gd._fullData.map((t) => plain(t, 1));
   // the regl scene of a 2D WebGL plot: size and opacity set there (gl-markers.js) are what is seen
   const scene = gd._fullLayout._plots && gd._fullLayout._plots.xy && gd._fullLayout._plots.xy._scene;
@@ -248,14 +257,9 @@ def _view(configs, open_ids, constants=None):
 
 
 SHARE = """async () => {
+  // the view as a share link carries it (SessionManager.captureView): constants (focus), the subset, the layout
   const d = await import('/static/js/utils/deeplink.js');
-  const { DataManager } = await import('/static/js/data-manager.js');
-  const constants = {};
-  const g = DataManager.getFocusedGene && DataManager.getFocusedGene();
-  const c = DataManager.getFocusedCell && DataManager.getFocusedCell();
-  if (g) constants.focusedGene = g;
-  if (c) constants.focusedCell = typeof c === 'string' ? c : c.name;
-  return d.encodeViewPayload({ v: 1, subset: null, constants, layout: window.PanelManager.saveLayout() });
+  return d.encodeViewPayload(window.sessionManager.captureView());
 }"""
 
 
@@ -310,20 +314,12 @@ def _grouped(diffs):
     return [f"{k} (x{n}): {rest}" if n > 1 else f"{k}: {rest}" for k, (n, rest) in seen.items()]
 
 
-# Drift found in the Cell and Gene Plots (plot-utilities), not fixed yet: the field, when it is this drift, and the
-# cause. A case whose only differences are these is xfail with the reason; any other difference fails. A fix makes the
-# difference go and the case pass; its entry is then removed. The Cell-Gene and Count Plots have none.
+# Drift found and not fixed yet: the field, when it is this drift, and the cause. A case whose only differences are
+# these is xfail with the reason; any other difference fails. A fix makes the difference go and the case pass; its
+# entry is then removed.
 KNOWN = {
-    "plot": [
-        (r"^traces\[\d+\]\.(un)?selected\.marker\.opacity$", lambda c, f: True,
-         "gl-markers: a point opacity set in the regl scene (setGlMarkers) leaves Plotly's selected/unselected opacity "
-         "derived from the old one"),
-        (r"^(layout\.[xy]axis\.range\[\d\]|ticks\.[xy]tick.*)$", lambda c, f: bool(c.get("hideNaN") or c.get("hideOutliers")),
-         "Hide NaN/outliers: the incremental path pins its own 5% extent (stableAxisRanges), a fresh draw autoranges"),
-        (r"^traces\[\d+\]\.marker\.colorbar\.title\.side$", lambda c, f: c.get("legendPosition") in ("bottom", "top"),
-         "colour bar title side: Legend position's placement (titleside) outlives a colour change; a fresh draw's "
-         "colourBar() places it at the right"),
-    ],
+    # none: the three found in the first round (gl-markers' selection opacities, the Hide NaN extent, the colour bar
+    # title side) are fixed. An entry is (field regex, when(config, fresh record), cause).
 }
 
 
@@ -490,6 +486,53 @@ def _fill(sel, value):
     return act
 
 
+def _subset(n):
+    """The subset dialog: show `n` cells, or every cell (None)."""
+    def act(page):
+        page.click("#subset-button")
+        page.wait_for_selector("#subset-modal", state="visible")
+        if n is None:
+            if not page.is_checked("#subset-enabled"):
+                page.click("#subset-modal .btn-close, #subset-modal [data-bs-dismiss='modal']")
+                page.wait_for_selector("#subset-modal", state="hidden")
+                return False
+            page.set_checked("#subset-enabled", False)
+        else:
+            page.set_checked("#subset-enabled", True)
+            if page.is_checked("#subset-n-all"):
+                page.set_checked("#subset-n-all", False)
+            page.fill("#subset-n", str(n))
+        page.wait_for_function("() => !document.getElementById('subset-apply').disabled")
+        page.click("#subset-apply")
+        page.wait_for_selector("#subset-modal", state="hidden")
+    return act
+
+
+def _slider(pid, prefix, fraction):
+    """Drag a range slider of the plot's colour bar: input events along the way, then a change, as a pointer does."""
+    sel = f"#{prefix}-{pid}"
+
+    def act(page):
+        if not _usable(page, sel):
+            return False
+        page.evaluate("""async ([s, f]) => { const e = document.querySelector(s); const lo = +e.min, hi = +e.max, from = +e.value;
+            for (let k = 1; k <= 6; k++) { e.value = String(from + (lo + (hi - lo) * f - from) * k / 6);
+              e.dispatchEvent(new Event('input', { bubbles: true })); await new Promise((r) => requestAnimationFrame(r)); }
+            e.dispatchEvent(new Event('change', { bubbles: true })); }""", [sel, fraction])
+    return act
+
+
+def _table_search(text):
+    sel = f'{TILE.format(CT_TABLE)} input[type="search"]'
+
+    def act(page):
+        if not _usable(page, sel) or page.input_value(sel) == text:
+            return False
+        page.fill(sel, text)
+    return act
+
+
+
 # ================================================================== Count Plot
 
 CT = {"source": {"type": "obs", "key": "cell_type"}}
@@ -541,6 +584,7 @@ def test_count_plot_random_walk(browser, served, seed):
 
 
 COUNT_RISKY = {
+    "subset-in-and-out": [("subset 300", _subset(300)), ("mode pie (control)", _count_mode("pie")), ("subset all", _subset(None))],
     "color-by-off-and-on": [("split none", _update(CC, {"split": None})), ("split condition", _update(CC, {"split": COND})),
                             ("split none", _update(CC, {"split": None}))],
     "density-layers": [("x score", _update(CC, {"x": SCORE})), ("y depth", _update(CC, {"y": DEPTH})),
@@ -627,6 +671,7 @@ def test_cell_gene_plot_random_walk(browser, served, seed):
 
 
 CELL_GENE_RISKY = {
+    "subset-in-and-out": [("subset 300", _subset(300)), ("mode heatmap (control)", _cg_mode("heatmap")), ("subset all", _subset(None))],
     "dots-heatmap-dots": [("mode heatmap (control)", _cg_mode("heatmap")), ("mode dots (control)", _cg_mode("dots")),
                           ("mode heatmap (control)", _cg_mode("heatmap")), ("mode dots (control)", _cg_mode("dots"))],
     "remove-section-and-undo": [("add section (set)", _cg_add_section("set")), ("remove section 2 (control)", _cg_remove(1)),
@@ -750,7 +795,17 @@ def _cell_plot_config(**extra):
 
 
 def _cell_plot(browser, served, **extra):
-    return Harness(browser, served, CP, "plot", {CP: _cell_plot_config(**extra)}, [CP], constants={"focusedGene": GENES[3]})
+    """A Cell Plot beside what its sources need: a Cell Table searched for "B cell" (Table filter) and a Gene Signature
+    (Gene score); a focused gene (layer) and cell (obsp)."""
+    configs = {CP: _cell_plot_config(**extra),
+               CT_TABLE: {"id": CT_TABLE, "title": "Cells", "columns": [OBS("cell_type")], "searchText": "B cell"},
+               SIG: {"id": SIG, "title": "Markers", "genes": GENES[0:6]}}
+    return Harness(browser, served, CP, "plot", configs, [CP, CT_TABLE, SIG], constants={"focusedGene": GENES[3], "focusedCell": CELLS[2]})
+
+
+SCORE = lambda method: {"type": "gene-score", "key": SIG, "column": method}  # noqa: E731
+OBSP = {"type": "obsp", "key": "connectivities", "column": ""}
+METHODS = ["zscore_mean", "mean", "sum", "detected"]
 
 
 CELL_PLOT_VOCABULARY = [
@@ -761,6 +816,16 @@ CELL_PLOT_VOCABULARY = [
     lambda r: (lambda f: (f"y {f['type']} {f['key']} {f['column']}", _axis(CP, "y", f)))(r.choice([UMAP(1), UMAP(0), WIDE(3), OBS("depth")])),
     lambda r: (lambda g: (f"focus gene {g}", _focus_gene(g)))(r.choice(GENES[:8])),
     lambda r: (lambda c: (f"focus cell {c}", _focus_cell(c)))(r.choice(CELLS)),
+    # the paths of the second round: table filter, subset, obsp, gene score (method and layer), colour sliders
+    lambda r: (lambda v: (f"table filter {v}", _menu_control(CP, "table-filter", "select", v)))(r.choice([CT_TABLE, "none"])),
+    lambda r: ("remove cells not in the table", _menu_control(CP, "remove-non-table-entries", "toggle")),
+    lambda r: (lambda t: (f"table search {t!r}", _table_search(t)))(r.choice(["B cell", "T cell", "cell", ""])),
+    lambda r: (lambda n: (f"subset {n}", _subset(n)))(r.choice([300, 600, None])),
+    lambda r: ("colour obsp connectivities", _axis(CP, "color", OBSP)),
+    lambda r: (lambda m: (f"colour gene score {m}", _axis(CP, "color", SCORE(m))))(r.choice(METHODS)),
+    lambda r: (lambda v: (f"score layer {v}", _select(f"{TILE.format(CP)} .axis-layer-select[data-axis='color']", v)))(r.choice(["X", "logged", "counts"])),
+    lambda r: (lambda f: (f"drag colour min to {f}", _slider(CP, "color-min-slider", f)))(r.choice([0.1, 0.3])),
+    lambda r: (lambda f: (f"drag colour max to {f}", _slider(CP, "color-max-slider", f)))(r.choice([0.6, 0.9])),
 ] + _plot_options_vocabulary(CP)
 
 
@@ -777,6 +842,23 @@ CELL_PLOT_RISKY = {
     "categorical-to-numeric-and-back": [("colour obs score", _axis(CP, "color", OBS("score"))), ("colour map RdBu", _menu_control(CP, "color-scale", "select", "RdBu")),
                                         ("colour obs cell_type", _axis(CP, "color", OBS("cell_type")))],
     "axis-swap": [("x obsm X_umap 1", _axis(CP, "x", UMAP(1))), ("y obsm X_umap 0", _axis(CP, "y", UMAP(0)))],
+    "table-filter-then-search": [("table filter", _menu_control(CP, "table-filter", "select", CT_TABLE)),
+                                 ("remove cells not in the table", _menu_control(CP, "remove-non-table-entries", "toggle")),
+                                 ("table search 'T cell'", _table_search("T cell")), ("colour obs score", _axis(CP, "color", OBS("score"))),
+                                 ("table filter none", _menu_control(CP, "table-filter", "select", "none"))],
+    "subset-in-and-out": [("subset 300", _subset(300)), ("colour obs score", _axis(CP, "color", OBS("score"))),
+                          ("subset 600", _subset(600)), ("subset all", _subset(None))],
+    "subset-leaves-large-mode": [("subset 8", _subset(8)), ("colour obs score", _axis(CP, "color", OBS("score"))),
+                                 ("point size 7", _menu_control(CP, "point-size-input", "fill", 7)), ("subset all", _subset(None))],
+    "obsp-follows-focus": [("colour obsp connectivities", _axis(CP, "color", OBSP)), ("focus cell", _focus_cell(CELLS[6])),
+                           ("focus cell", _focus_cell(CELLS[9]))],
+    "gene-score-method-and-layer": [("colour gene score z-score mean", _axis(CP, "color", SCORE("zscore_mean"))),
+                                    ("method mean", _select(f"{TILE.format(CP)} .axis-column-select[data-axis='color']", "mean")),
+                                    ("layer logged", _select(f"{TILE.format(CP)} .axis-layer-select[data-axis='color']", "logged")),
+                                    ("method detected", _select(f"{TILE.format(CP)} .axis-column-select[data-axis='color']", "detected"))],
+    "colour-slider-drag": [("colour obs score", _axis(CP, "color", OBS("score"))), ("drag colour min", _slider(CP, "color-min-slider", 0.3)),
+                           ("drag colour max", _slider(CP, "color-max-slider", 0.7)), ("colour obs depth", _axis(CP, "color", OBS("depth"))),
+                           ("drag colour min", _slider(CP, "color-min-slider", 0.1))],
     "point-style-then-colour": [("point size 9", _menu_control(CP, "point-size-input", "fill", 9)),
                                 ("point opacity 0.3", _menu_control(CP, "point-opacity-input", "fill", 0.3)),
                                 ("colour obs score", _axis(CP, "color", OBS("score")))],
@@ -817,6 +899,9 @@ GENE_PLOT_VOCABULARY = [
     lambda r: (lambda f: (f"y {f['type']} {f['key']}", _axis(GP, "y", f)))(r.choice([ROW("X"), ROW("counts"), ROW("logged")])),
     lambda r: (lambda c: (f"focus cell {c}", _focus_cell(c)))(r.choice(CELLS)),
     lambda r: (lambda g: (f"focus gene {g}", _focus_gene(g)))(r.choice(GENES[:8])),
+    lambda r: (lambda n: (f"subset {n}", _subset(n)))(r.choice([300, None])),
+    lambda r: (lambda f: (f"drag colour min to {f}", _slider(GP, "color-min-slider", f)))(r.choice([0.1, 0.3])),
+    lambda r: (lambda f: (f"drag colour max to {f}", _slider(GP, "color-max-slider", f)))(r.choice([0.6, 0.9])),
 ] + _plot_options_vocabulary(GP)
 
 
@@ -831,6 +916,8 @@ GENE_PLOT_RISKY = {
     "3d-on-and-off": [("3D (toolbar)", _menu_control(GP, "z-axis-toggle", "toggle")), ("3D (toolbar)", _menu_control(GP, "z-axis-toggle", "toggle"))],
     "focus-moves-the-axes": [("focus cell", _focus_cell(CELLS[5])), ("colour layer counts", _axis(GP, "color", ROW("counts"))),
                              ("focus cell", _focus_cell(CELLS[7]))],
+    "subset-and-slider": [("colour layer counts", _axis(GP, "color", ROW("counts"))), ("subset 300", _subset(300)),
+                          ("drag colour max", _slider(GP, "color-max-slider", 0.5)), ("subset all", _subset(None))],
 }
 
 
