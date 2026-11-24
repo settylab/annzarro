@@ -98,7 +98,7 @@ test('the ids are the frozen ones', () => {
     assert.deepEqual([...M.COUNT_MODES], ['bar', 'histogram', 'hist2d', 'density', 'density2d', 'pie', 'heatmap', 'venn', 'upset']);
     assert.deepEqual([...M.MEASURE_STATS], ['mean', 'sum', 'pct_above', 'sd', 'zscore']);
     assert.deepEqual([...M.SHARE_BASES], ['all', 'x', 'split', 'row', 'column', 'total']);
-    assert.deepEqual([...M.ARRANGEMENTS], ['stack', 'dodge', 'fill']);
+    assert.deepEqual([...M.ARRANGEMENTS], ['stack', 'dodge', 'overlay', 'fill']);
 });
 
 // --- inputs per mode (CNT-6) ---------------------------------------------------------------------------------------
