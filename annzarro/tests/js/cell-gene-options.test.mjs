@@ -777,7 +777,13 @@ test('Largest dot and Smallest dot are Plot Options ▸ Dots fields, and Apply a
     const scale = S.fieldOf('cell-gene', 'dotScale');
     const smallest = S.fieldOf('cell-gene', 'dotSmallest');
     assert.ok(scale && smallest, 'both are fields of the schema');
-    assert.deepEqual([scale.section, scale.type, scale.path, scale.min, scale.max, S.defaultOf(scale, 'cell-gene')], ['panel:dots', 'range', 'dotScale', 10, 100, 100]);
+    // Largest dot: a number box, empty when the dot fills its cell, saying what is drawn (U2 placeholder)
+    assert.deepEqual([scale.section, scale.type, scale.path, scale.min, scale.max, S.defaultOf(scale, 'cell-gene')], ['panel:dots', 'number', 'dotScale', 10, 100, null]);
+    assert.equal(S.placeholderOf(scale, normalizeCellGene({ version: 1, sections: [] }).config), 100);
+    assert.equal(S.placeholderOf(scale, normalizeCellGene({ version: 1, sections: [], dotSizes: [5, 12] }).config), '12 px (saved)');
+    assert.equal(S.placeholderOf(scale, normalizeCellGene({ version: 1, sections: [], dotSizes: [5, 12], dotScale: 80 }).config), 100);
+    // an old link's smallest dot is Smallest dot
+    assert.equal(normalizeCellGene({ version: 1, sections: [], dotSizes: [5, 12] }).config.dotSmallest, 5);
     assert.deepEqual([smallest.section, smallest.type, smallest.path, smallest.min, smallest.max, S.defaultOf(smallest, 'cell-gene')], ['panel:dots', 'range', 'dotSmallest', 1, 40, 3]);
     // copied by Apply to other plots and the session default (the look by path)
     const from = normalizeCellGene({ version: 1, mode: 'dots', sections: [], dotScale: 60, dotSmallest: 6 }).config;
@@ -789,6 +795,6 @@ test('Largest dot and Smallest dot are Plot Options ▸ Dots fields, and Apply a
     assert.equal(to.dotScale, 60);
     assert.equal(to.dotSmallest, 6);
     // at the default they are written as absent
-    assert.equal('dotScale' in S.writeField({}, scale, 100, 'cell-gene'), false);
+    assert.equal('dotScale' in S.writeField({}, scale, null, 'cell-gene'), false);
     assert.equal('dotSmallest' in S.writeField({}, smallest, 3, 'cell-gene'), false);
 });
