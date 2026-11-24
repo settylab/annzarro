@@ -29,8 +29,7 @@ alone, and a gene shown in two sections, or by colour and size on one layer, is 
 |---|---|
 | What | **Groups** · **Mode** (**Dots** or **Heatmap**) · **Genes**: the section list and **Add genes ▾** |
 | Values | **Color** · **Scale** · **Size** (dots only) · **Height** (3D only) |
-| Layout | **Swap axes** |
-| Toolbar (the last row) | **3D** · **Cluster ▾** · **Color ▾**, then at its right end **Undo** and **Plot Options**, in the same places as in the Cell Count Plot |
+| Toolbar (the last row) | **3D** · **Swap axes** · **Cluster ▾** · **Color ▾**, then at its right end **Undo** and **Plot Options**, in the same places as in the Cell Count Plot |
 
 **Color** and **Size** each read their own statistic from their own layer, in one row:
 `Color [Mean ▾] of [logged ▾]` and `Size [% expressing ▾] of [counts ▾] above [0]`. A common dot plot is exactly this:
@@ -101,8 +100,10 @@ pop-over is open at a time.
 ## Sections
 
 Each section is a row of the list: its title, the source and its gene count, **Genes** or **One row**, and **⋯**
-(**Duplicate**, **Remove**, **Open source**, **Move up**, **Move down**). Drag a section by **≡**, or move it with
-**Alt+Up** and **Alt+Down**. Every change is one step of the panel's undo.
+(**Duplicate**, **Remove**, **Open source**, **Move up**, **Move down**), which opens over the plot like the other
+menus. **Duplicate** adds an independent copy after the section, titled "<name> (copy)": it is drawn as a section of its
+own, and changing it leaves the original as it was. Drag a section by **≡**, or move it with **Alt+Up** and
+**Alt+Down**. Every change is one step of the panel's undo.
 
 - The **title** is edited in place; by default it is the source's title. In the plot it is a bracket over the
   section's rows.

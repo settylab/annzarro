@@ -259,11 +259,20 @@ export function addSection(config, source) {
     return withSections(config, [...config.sections, { source, rows: 'genes' }]);
 }
 
-/** ⋯ Duplicate: an independent copy after it. */
-export function duplicateSection(config, i) {
+/**
+ * ⋯ Duplicate: an independent copy after it, titled "<name> (copy)" when the section's name is given, so the two are
+ * told apart in the list, on the brackets and on a one-row section's label (operator, 2026-11-23: identical, the copy
+ * looked like it was not drawn).
+ * @param {Object} config
+ * @param {number} i
+ * @param {string} [name] - the section's title as shown
+ */
+export function duplicateSection(config, i, name) {
     if (!config.sections[i]) return config;
     const list = [...config.sections];
-    list.splice(i + 1, 0, JSON.parse(JSON.stringify(list[i])));
+    const copy = JSON.parse(JSON.stringify(list[i]));
+    if (name) copy.title = `${name} (copy)`;
+    list.splice(i + 1, 0, copy);
     return withSections(config, list);
 }
 
