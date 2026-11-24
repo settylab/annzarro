@@ -1,22 +1,16 @@
 /**
- * What a Gene Signature offers its consumers: the model behind the panel's score options. Pure (no DOM, no page
- * state), so Node tests cover it and the plot and table menus build on it.
+ * The score methods of a Gene Signature (and of a Gene Table, which scores the same way): their table, their parameters
+ * and how each method is graded on a layer. Pure (no DOM, no page state), so Node tests cover it and the plot and table
+ * menus build on it.
  *
- * The signature's panel defines the options and how each is computed; a plot or a table only picks from what is
- * offered. An option is one aggregation (a METHOD) read from one matrix (a LAYER). The stored recipe holds, as
- * configuration only:
+ * Decision 31: a plot or table chooses any METHOD read from any LAYER; nothing is offered or withheld. The signature's
+ * panel holds only the parameters of each method (clip, bins, controls, seed, detect_above), and the stored recipe
+ * holds those and `method` and `input`: the pair a consumer saved without a layer resolves to (X for every link made
+ * before layers were stored), never shown as a setting. A link made before decision 31 also stored `offered` and
+ * `layers`; they are read only for that pair (`writableOptions`, options-model.js `legacyPair`) and never written back.
  *
- *   offered   the methods consumers may pick, a list of method ids (default: z-score mean, mean, sum)
- *   layers    the matrices consumers may pick, in the order they were offered (default: X)
- *   clip, bins, controls, seed, detect_above   the parameters of the methods that have them
- *
- * There is no default method and no default layer to choose. The first entry of the menu, the first offered method on
- * the first offered layer, is what a new consumer starts on. `method` and `input` stay in the recipe only as that first
- * method and layer: the score route reads them, and a consumer saved before layers could be offered has no layer, which
- * means `input` (X for every link made before this release). They are never shown as settings.
- *
- * Switching an option off never breaks a consumer that uses it: it keeps its setting and shows that the
- * option is no longer offered, with a way to offer it again (`offeredOptions` leaves it out, `isOffered` says).
+ * A pair that cannot be computed is graded `cannot`, with a sentence that names the method and says why ("% of total
+ * cannot be computed on 'X': it has negative values."); a pair that misleads is `warn`, with its note.
  */
 
 import {
@@ -66,12 +60,15 @@ export const DEFAULT_DOWN_WEIGHT = 'gene';
 export const WEIGHTED_METHODS = Object.freeze(['zscore_mean', 'mean']);
 export const cleanDownWeight = (value) => (DOWN_WEIGHTS.includes(value) ? value : DEFAULT_DOWN_WEIGHT);
 
-/** Why a method cannot score down genes, in the words the panel shows under it. */
+/** Why a method cannot score down genes: the clause after "<Method> cannot be computed with down genes: ". */
 const DOWN_REASONS = Object.freeze({
-    sum: 'A signed sum depends on how many genes each side has.',
-    detected: 'The difference of two fractions is not a fraction.',
-    fraction_of_total: 'The difference of two shares is not a share of anything.'
+    sum: 'a signed sum depends on how many genes each side has.',
+    detected: 'the difference of two fractions is not a fraction.',
+    fraction_of_total: 'the difference of two shares is not a share of anything.'
 });
+
+/** A method's name at the start of a sentence ("% of total", "Fraction detected"). */
+const sentenceName = (method) => (METHOD_INFO.find(m => m.value === method) || { label: method }).label;
 
 /** Whether `method` can score a signature that has down genes. */
 export const canScoreDown = (method) => DOWN_METHODS.includes(method);
@@ -132,8 +129,10 @@ export function shareAbove(stats, threshold) {
 export function gradeOption(method, layer, kind, hasDown = false, ctx = {}) {
     const ok = { grade: 'ok', code: '', reason: '' };
     const name = ctx.label || `'${layer}'`;
+    const label = sentenceName(method);
     if (hasDown && !canScoreDown(method)) {
-        return { grade: 'cannot', code: 'down', down: true, reason: `Not offered with down genes. ${DOWN_REASONS[method] || ''}`.trim() };
+        return { grade: 'cannot', code: 'down', down: true,
+            reason: `${label} cannot be computed with down genes: ${DOWN_REASONS[method] || 'it has no signed version.'}` };
     }
     if (method === 'detected') {
         const t = typeof ctx.detectAbove === 'number' ? ctx.detectAbove : 0;
@@ -142,20 +141,21 @@ export function gradeOption(method, layer, kind, hasDown = false, ctx = {}) {
         const range = ctx.stats && Number.isFinite(ctx.stats.min) && Number.isFinite(ctx.stats.max)
             ? ` (values here range from ${figure(ctx.stats.min)} to ${figure(ctx.stats.max)})` : '';
         if (share > DETECT_TOO_MANY) {
-            return { grade: 'cannot', code: 'detect_high', reason: `On ${name} almost every value is above ${figure(t)}. Raise Detected above${range}.` };
+            return { grade: 'cannot', code: 'detect_high',
+                reason: `${label} cannot be computed on ${name}: almost every value is above ${figure(t)}${range}. Raise Detected above.` };
         }
         if (share < DETECT_TOO_FEW) {
             return { grade: 'cannot', code: 'detect_low',
-                reason: `On ${name} almost no value is above ${figure(t)}.${t > 0 ? ' Lower Detected above' : ' Fraction detected'}${range}.` };
+                reason: `${label} cannot be computed on ${name}: almost no value is above ${figure(t)}${range}.${t > 0 ? ' Lower Detected above.' : ''}` };
         }
         return ok;
     }
     if (method === 'fraction_of_total') {
-        if (kind === 'signed') return { grade: 'cannot', code: 'negative', reason: `Not offered on ${name}: it has negative values.` };
-        if (kind === 'log') return { grade: 'warn', code: 'log', reason: `On ${name} % of total is compressed by the log. It is usually read from counts.` };
+        if (kind === 'signed') return { grade: 'cannot', code: 'negative', reason: `${label} cannot be computed on ${name}: it has negative values.` };
+        if (kind === 'log') return { grade: 'warn', code: 'log', reason: `${label} on ${name} is compressed by the log: it is usually read from counts.` };
     }
     if (kind === 'counts' && DEPTH_METHODS.includes(method)) {
-        return { grade: 'warn', code: 'depth', reason: `On ${name} this follows sequencing depth.` };
+        return { grade: 'warn', code: 'depth', reason: `${label} on ${name} follows sequencing depth.` };
     }
     return ok;
 }
@@ -181,7 +181,7 @@ function signatureLayerLines(layer, recipe, kind, stats, offered) {
     }
     if (offered.includes('fraction_of_total')) {
         if (kind === 'log') lines.push({ grade: 'warn', code: 'log', text: 'Log values: % of total is compressed. It is usually read from counts.' });
-        if (kind === 'signed') lines.push({ grade: 'cannot', code: 'negative', text: 'Has negative values: % of total is not offered here.' });
+        if (kind === 'signed') lines.push({ grade: 'cannot', code: 'negative', text: 'Has negative values: % of total cannot be computed here.' });
     }
     if (offered.includes('detected')) {
         const g = gradeOption('detected', layer, kind, false, { stats, detectAbove: recipe.detect_above });

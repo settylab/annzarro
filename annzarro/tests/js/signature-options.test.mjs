@@ -145,9 +145,10 @@ test('each method is graded on each kind of layer: ok, warn once on the layer ro
         assert.equal(g(m, 'counts'), 'warn');
         for (const kind of ['log', 'normalised', 'signed', 'other', 'unknown', undefined]) assert.equal(g(m, kind), 'ok', `${m} ${kind}`);
     }
-    assert.equal(O.gradeOption('sum', 'raw_counts', 'counts').reason, "On 'raw_counts' this follows sequencing depth.");
+    assert.equal(O.gradeOption('sum', 'raw_counts', 'counts').reason, "Sum on 'raw_counts' follows sequencing depth.");
     assert.deepEqual(['log', 'normalised', 'counts', 'signed', 'other', 'unknown'].map(k => g('fraction_of_total', k)), ['warn', 'ok', 'ok', 'cannot', 'ok', 'ok']);
-    assert.equal(O.gradeOption('fraction_of_total', 'X', 'signed').reason, "Not offered on 'X': it has negative values.");
+    assert.equal(O.gradeOption('fraction_of_total', 'X', 'signed').reason, "% of total cannot be computed on 'X': it has negative values.");
+    assert.equal(O.gradeOption('fraction_of_total', 'X', 'log').reason, "% of total on 'X' is compressed by the log: it is usually read from counts.");
     // fraction detected is not a property of the kind: with nothing sampled it is ok on every kind
     for (const kind of ['log', 'normalised', 'counts', 'signed', 'other', 'unknown']) assert.equal(g('detected', kind), 'ok', kind);
 });
@@ -157,14 +158,14 @@ test('fraction detected is graded against the threshold: cannot when it makes th
     assert.equal(at(SCALED, 0).grade, 'ok', 'a scaled layer has about half its values above 0');
     assert.equal(at(SMOOTH, 0).grade, 'cannot');
     assert.equal(at(SMOOTH, 0).code, 'detect_high');
-    assert.equal(at(SMOOTH, 0).reason, "On 'kompot_smoothed' almost every value is above 0. Raise Detected above (values here range from 0.01 to 3.4).");
+    assert.equal(at(SMOOTH, 0).reason, "Fraction detected cannot be computed on 'kompot_smoothed': almost every value is above 0 (values here range from 0.01 to 3.4). Raise Detected above.");
     assert.equal(at(SMOOTH, 1).grade, 'ok', 'raised: it becomes meaningful');
     assert.equal(at(SMOOTH, 3.39).code, 'detect_low', 'raised too far: almost nothing is above it');
-    assert.equal(at(SMOOTH, 3.39).reason, "On 'kompot_smoothed' almost no value is above 3.39. Lower Detected above (values here range from 0.01 to 3.4).");
+    assert.equal(at(SMOOTH, 3.39).reason, "Fraction detected cannot be computed on 'kompot_smoothed': almost no value is above 3.39 (values here range from 0.01 to 3.4). Lower Detected above.");
     assert.equal(at(SPARSE, 0).grade, 'ok', 'sparse counts: 5% of all values, fine');
     assert.equal(at({ ...SPARSE, density: 0.004 }, 0).code, 'detect_low');
     assert.equal(at({ ...SCALED, min: -2.1, max: 3.4, density: 1, quantiles: quant(-2.1, -0.01) }, 0).reason,
-        "On 'kompot_smoothed' almost no value is above 0. Fraction detected (values here range from \u22122.1 to 3.4).", 'at 0 there is nothing to lower');
+        "Fraction detected cannot be computed on 'kompot_smoothed': almost no value is above 0 (values here range from \u22122.1 to 3.4).", 'at 0 there is nothing to lower');
     assert.equal(at(null, 0).grade, 'ok', 'nothing sampled yet: nothing said');
 });
 
@@ -175,14 +176,14 @@ test('combinations that cannot be computed are left out of the menu but listed, 
     assert.deepEqual(O.offeredOptions(r, null, kinds, stats).map(o => o.id), ['zscore_mean@X', 'zscore_mean@counts', 'detected@counts', 'fraction_of_total@counts']);
     const all = O.gradedOptions(r, null, kinds, stats);
     assert.deepEqual(all.filter(o => o.grade === 'cannot').map(o => o.id), ['detected@X', 'fraction_of_total@X']);
-    assert.ok(all.filter(o => o.grade === 'cannot').every(o => o.reason.startsWith('On \'X\'') || o.reason.startsWith("Not offered on 'X'")));
+    assert.ok(all.filter(o => o.grade === 'cannot').every(o => / cannot be computed on 'X': /.test(o.reason)));
     assert.equal(O.offeredOptions(r).length, 6, 'with nothing known about the layers nothing is left out');
     // raise the threshold: the combination is back in the menu
     const raised = { ...r, detect_above: 1 };
     assert.ok(O.offeredOptions(raised, null, kinds, stats).some(o => o.id === 'detected@X'));
     // a warning rides on the option as a note, never as a notice
     const depth = O.gradedOptions(offer({ offered: ['mean'], layers: ['counts'] }), null, kinds, stats);
-    assert.deepEqual(depth.map(o => [o.id, o.grade, o.note]), [['mean@X', 'ok', ''], ['mean@counts', 'warn', "On 'counts' this follows sequencing depth."]]);
+    assert.deepEqual(depth.map(o => [o.id, o.grade, o.note]), [['mean@X', 'ok', ''], ['mean@counts', 'warn', "Mean on 'counts' follows sequencing depth."]]);
 });
 
 test('a layer row says its properties once and only for what is offered', () => {
@@ -194,10 +195,10 @@ test('a layer row says its properties once and only for what is offered', () => 
     assert.deepEqual(lines('n', 'normalised'), ['Normalized but not log-transformed: one highly expressed gene can dominate.']);
     assert.deepEqual(lines('l', 'log'), [], 'nothing offered cares');
     assert.deepEqual(lines('l', 'log', { offered: ['fraction_of_total'] }), ['Log values: % of total is compressed. It is usually read from counts.']);
-    assert.deepEqual(lines('X', 'signed', { offered: ['zscore_mean', 'fraction_of_total'] }), ['Has negative values: % of total is not offered here.']);
+    assert.deepEqual(lines('X', 'signed', { offered: ['zscore_mean', 'fraction_of_total'] }), ['Has negative values: % of total cannot be computed here.']);
     assert.deepEqual(lines('X', 'signed'), []);
     assert.deepEqual(lines('X', 'signed', { offered: ['detected'] }, SMOOTH),
-        ["On 'X' almost every value is above 0. Raise Detected above (values here range from 0.01 to 3.4)."]);
+        ["Fraction detected cannot be computed on 'X': almost every value is above 0 (values here range from 0.01 to 3.4). Raise Detected above."]);
     assert.deepEqual(lines('X', 'signed', { offered: ['detected'], detect_above: 1 }, SMOOTH), [], 'the threshold fixed it');
 });
 
@@ -205,11 +206,11 @@ test('under a method only what every offered layer shares is said, once; the res
     const r = (patch) => offer(patch);
     const text = (m, layers, patch, kinds, stats) => O.methodLines(m, layers, r(patch), kinds, stats).map(l => l.text);
     // raw_counts is the only offered layer: it applies to all of them
-    assert.deepEqual(text('sum', ['raw_counts'], { offered: ['sum'] }, { raw_counts: 'counts' }), ["On 'raw_counts' this follows sequencing depth."]);
+    assert.deepEqual(text('sum', ['raw_counts'], { offered: ['sum'] }, { raw_counts: 'counts' }), ["Sum on 'raw_counts' follows sequencing depth."]);
     // two offered layers, one affected: nothing under the method
     assert.deepEqual(text('sum', ['X', 'raw_counts'], { offered: ['sum'] }, { X: 'log', raw_counts: 'counts' }), []);
     // every offered layer has the issue
-    assert.deepEqual(text('sum', ['a', 'b'], { offered: ['sum'] }, { a: 'counts', b: 'counts' }), ['On every offered layer this follows sequencing depth.']);
+    assert.deepEqual(text('sum', ['a', 'b'], { offered: ['sum'] }, { a: 'counts', b: 'counts' }), ['Sum on every offered layer follows sequencing depth.']);
     // a layer that is fine says nothing
     assert.deepEqual(text('mean', ['X'], { offered: ['mean'] }, { X: 'log' }), []);
     assert.deepEqual(text('mean', ['X'], { offered: ['mean'] }), []);
@@ -227,6 +228,29 @@ test('what a layer looks like has one word, and use is said in words', () => {
     assert.equal(O.useText({ plots: 1 }), '1 plot');
     assert.equal(O.useText({ plots: 2, tables: 1 }), '2 plots, 1 table');
     assert.equal(O.useText({ tables: 3 }), '3 tables');
+});
+
+test('no reason the grader gives says "offered": each names the method and says why', () => {
+    const stats = { X: { min: 0.01, max: 3.4, density: 1, quantiles: Array.from({ length: 51 }, (_, i) => 0.01 + 3.39 * i / 50) } };
+    const reasons = [];
+    for (const m of O.METHODS) {
+        for (const kind of ['counts', 'log', 'normalised', 'signed', 'other', undefined]) {
+            for (const hasDown of [false, true]) {
+                for (const detectAbove of [0, 3.39]) {
+                    const g = O.gradeOption(m, 'X', kind, hasDown, { stats: stats.X, detectAbove });
+                    if (g.reason) reasons.push([m, g]);
+                }
+            }
+        }
+    }
+    assert.ok(reasons.length > 10);
+    for (const [m, g] of reasons) {
+        assert.ok(!/offer/i.test(g.reason), g.reason);
+        const label = O.METHOD_INFO.find(i => i.value === m).label;
+        assert.ok(g.reason.startsWith(`${label} `), `names the method first: ${g.reason}`);
+        if (g.grade === 'cannot') assert.match(g.reason, / cannot be computed (on 'X'|with down genes): /);
+    }
+    assert.equal(O.gradeOption('sum', 'X', 'log', true).reason, 'Sum cannot be computed with down genes: a signed sum depends on how many genes each side has.');
 });
 
 test('the summary names a parameter that is not at its default, after its method', () => {

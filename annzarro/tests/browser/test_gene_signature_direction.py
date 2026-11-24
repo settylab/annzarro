@@ -400,7 +400,7 @@ def test_methods_without_a_signed_version_are_graded_cannot_with_the_reason(page
     for method, words in (("sum", "depends on how many genes each side has"), ("detected", "not a fraction"),
                           ("fraction_of_total", "not a share")):
         assert by[method]["disabled"], method
-        assert "Not offered with down genes." in by[method]["title"] and words in by[method]["title"], method
+        assert " cannot be computed with down genes: " in by[method]["title"] and words in by[method]["title"], method
     for method in ("zscore_mean", "mean", "control_adjusted"):
         assert not by[method]["disabled"], method
     # drop the down gene: they are back

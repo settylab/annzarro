@@ -55,7 +55,7 @@ test('% of total is disabled on X, with the reason as its title; the layer selec
 test('fraction detected is disabled at threshold 0 on a dense layer, enabled once the threshold is raised', () => {
     const at0 = M.methodChoices({ source: S.SIGNATURE_MODEL, recipe: { detect_above: 0 }, layer: 'logged', kinds: KINDS, stats: STATS });
     assert.equal(find(at0, 'detected').disabled, true);
-    assert.match(find(at0, 'detected').title, /almost every value is above 0/);
+    assert.match(find(at0, 'detected').title, /^Fraction detected cannot be computed on 'logged': almost every value is above 0/);
     const at1 = M.methodChoices({ source: S.SIGNATURE_MODEL, recipe: { detect_above: 1 }, layer: 'logged', kinds: KINDS, stats: STATS });
     assert.equal(find(at1, 'detected').disabled, false);
 });
