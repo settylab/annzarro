@@ -610,7 +610,7 @@ const countSets = Object.freeze({
     }),
     setTitle: (letter) => `${capital(word.set)} ${letter}`,
     shareTitle: `Share of the ${word.cellsShown}`,
-    renameHint: 'Double-click to rename. Enter saves, Escape cancels.',
+    renameHint: 'Double-click to rename. Enter saves, Escape cancels, Tab saves and moves to the next set.',
     renameLabel: `Name of the ${word.set}`,
     /** An UpSet's own options (UX 4.2): Sort, Show top, Minimum size. */
     sort: 'Sort',

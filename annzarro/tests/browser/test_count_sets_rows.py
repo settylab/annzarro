@@ -186,3 +186,31 @@ def test_a_stored_link_keeps_its_names_and_stores_nothing_new(page, served):
     cfg = page.evaluate("() => window.sessionManager.captureView()")["layout"]["panelConfigs"][CC]
     assert "value" not in cfg and all("color" not in s for s in cfg["sets"])
     assert cfg["sets"][0]["name"] == "T and NK"
+
+
+def test_tab_in_a_set_name_saves_and_opens_the_next_sets_editor_which_stays_open(page, served):
+    """Tab saves the name and edits the next set's; that editor stays open while the user types (0.8.0)."""
+    from annzarro.tests.browser import waits  # noqa: E402
+    _open_venn(page, served)
+    field = lambda i: f"{ROW.format(i)} input.ccnt-set__name"  # noqa: E731
+    _start_rename(page, 0)
+    page.fill(field(0), "first")
+    page.keyboard.press("Tab")
+    page.wait_for_selector(field(1))
+    until(page, "() => document.activeElement.matches('input.ccnt-set__name')")
+    for ch in "second":
+        waits.expect_stays(lambda: page.locator(field(1)).count() == 1 and page.evaluate("(s) => document.activeElement === document.querySelector(s)", field(1)),
+                           "the next set's editor must stay open and focused while the user types", page=page, seconds=0.12, interval=0.04)
+        page.keyboard.type(ch)
+    page.keyboard.press("Enter")
+    until(page, f"() => window.PanelManager.getPanel('{CC}').getConfig().sets[1].name !== undefined")
+    assert [s.get("name") for s in _config(page)["sets"][:2]] == ["first", page.evaluate(f"() => window.PanelManager.getPanel('{CC}').getConfig().sets[1].name")]
+    assert _config(page)["sets"][1]["name"].endswith("second")
+    # Shift+Tab goes back; the last set's Tab ends the edit
+    _start_rename(page, 1)
+    until(page, "() => document.activeElement.matches('input.ccnt-set__name')")      # the field takes the focus a moment after it is drawn
+    page.keyboard.press("Shift+Tab")
+    page.wait_for_selector(field(0))
+    until(page, "() => document.activeElement.matches('input.ccnt-set__name')")
+    page.keyboard.press("Escape")
+    page.wait_for_selector(f"{ROW.format(0)} .ccnt-set__rename")
