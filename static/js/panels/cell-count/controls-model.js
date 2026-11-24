@@ -31,7 +31,7 @@ const MODE_ROWS = Object.freeze({
     // a density is smoothed on a fixed grid (CNT-10): only its Color by is binned
     density: { binned: ['split'], density: 1 },
     density2d: { binned: ['split'], density: 2 },
-    venn: { binned: [] },
+    venn: { venn: true, binned: [] },
     upset: { value: 'color', binned: [] }
 });
 
@@ -40,14 +40,14 @@ const MODE_ROWS = Object.freeze({
  * @param {string} mode
  * @returns {{x: boolean, y: boolean, split: boolean, sets: boolean, slices: boolean, value: ('height'|'color'|null),
  *   arrangement: string[], labels: boolean, sort: boolean, reverse: boolean, horizontal: boolean, log: boolean,
- *   ring: boolean, names: boolean, binned: string[]}}
+ *   ring: boolean, names: boolean, venn: boolean, binned: string[]}}
  */
 export function rowsOf(mode) {
     const reads = modeReads(mode);
     const own = MODE_ROWS[mode];
     return {
         ...reads, slices: !!own.slices, value: own.value || null, arrangement: own.arrangement || [], labels: !!own.labels,
-        sort: !!own.sort, reverse: !!(own.sort || own.reverse), horizontal: !!own.horizontal, log: !!own.log, ring: !!own.ring, names: !!own.names,
+        sort: !!own.sort, reverse: !!(own.sort || own.reverse), horizontal: !!own.horizontal, log: !!own.log, ring: !!own.ring, names: !!own.names, venn: !!own.venn,
         binned: own.binned, density: own.density || 0
     };
 }
@@ -479,6 +479,21 @@ export function countReferences(config) {
 }
 
 const LABEL_KINDS = Object.freeze(['none', 'count', 'share', 'measure']);
+/** What a Venn prints in each region: the count and the share (the default, and what a link without the field drew), either, or nothing. */
+export const VENN_LABEL_KINDS = Object.freeze(['both', 'count', 'share', 'none']);
+
+/**
+ * A Venn's own options, from the config: what its regions print (`vennLabels`, stored only when not both), whether its
+ * circles carry the set names (`vennNames`, stored only as false) and whether areas follow the counts (`vennArea`, stored only as
+ * true). The defaults are what a link without these fields drew, so an old link draws as before.
+ */
+function vennOptions(config) {
+    return {
+        labels: VENN_LABEL_KINDS.includes(config.vennLabels) ? config.vennLabels : 'both',
+        names: config.vennNames !== false,
+        proportional: config.vennArea === true
+    };
+}
 /** The bandwidth adjust a density takes (CNT-10). */
 const ADJUST = Object.freeze({ min: 0.1, max: 10 });
 
@@ -572,6 +587,7 @@ export function drawOptions(config) {
         // a pie's slice names, and whether its bins of a number take continuous colours (the default) or the level palette
         // (each only where it is set, so the options of every other plot stay as they were)
         ...(rows.names && config.names === true ? { names: true } : {}),
+        ...(rows.venn ? { venn: vennOptions(config) } : {}),
         ...(rows.slices && config.color && config.color.slices === 'levels' ? { pieColour: 'levels' } : {}),
         fade: config.fade === true,
         // a density's own (CNT-10): the bandwidth adjust, curves scaled by level size, a 2D density as an image

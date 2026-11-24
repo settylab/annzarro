@@ -28,7 +28,7 @@ import { DEFAULT_COLORSCALE } from './colour.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import {
     popoverUse, sliceColourUse, parseColourLimit, rowsOf, modeRefusal, arrangementChoices, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
-    setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust,
+    setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, VENN_LABEL_KINDS, parseAdjust,
     SAME_HEIGHT, heightChoices, heightChoiceOf, applyHeightChoice
 } from './controls-model.js';
 
@@ -595,6 +595,12 @@ export function createControls({ D, id, model, on }) {
     const labelsSelect = el('select', { class: 'form-select form-select-sm ccnt-labels', id: `ccnt-labels-${id}`,
         on: { change: () => {
             const next = { ...model().config };
+            if (next.mode === 'venn') {
+                // a Venn's own field, stored only when it is not the default (count and share)
+                if (labelsSelect.value === 'both') delete next.vennLabels; else next.vennLabels = labelsSelect.value;
+                commit(next, `labels ${C.venn.labels[labelsSelect.value].toLowerCase()}`);
+                return;
+            }
             if (labelsSelect.value === 'none') delete next.labels; else next.labels = labelsSelect.value;
             commit(next, `labels ${C.labels[labelsSelect.value].toLowerCase()}`);
         } } });
@@ -617,12 +623,25 @@ export function createControls({ D, id, model, on }) {
         on: { change: () => { const next = { ...model().config }; if (ringBox.checked) next.ring = true; else delete next.ring; commit(next, ringBox.checked ? 'ring' : 'pie'); } } });
     // a pie's slice names (with Labels' numbers, or alone when Labels is None)
     const namesBox = el('input', { type: 'checkbox', class: 'ccnt-names',
-        on: { change: () => { const next = { ...model().config }; if (namesBox.checked) next.names = true; else delete next.names; commit(next, namesBox.checked ? 'slice names' : 'no slice names'); } } });
+        on: { change: () => {
+            const next = { ...model().config };
+            if (next.mode === 'venn') {
+                // the set names are on unless the field says false
+                if (namesBox.checked) delete next.vennNames; else next.vennNames = false;
+                commit(next, namesBox.checked ? 'set names' : 'no set names');
+                return;
+            }
+            if (namesBox.checked) next.names = true; else delete next.names;
+            commit(next, namesBox.checked ? 'slice names' : 'no slice names');
+        } } });
+    const areaBox = el('input', { type: 'checkbox', class: 'ccnt-venn-area',
+        on: { change: () => { const next = { ...model().config }; if (areaBox.checked) next.vennArea = true; else delete next.vennArea; commit(next, areaBox.checked ? 'area reflects counts' : 'equal circles'); } } });
+    const areaWrap = el('label', { class: 'ccnt-opt', title: C.venn.areaTitle }, areaBox, ` ${C.venn.area}`);
     const namesWrap = el('label', { class: 'ccnt-opt', title: C.slices.namesTitle }, namesBox, ` ${C.slices.names}`);
     const logWrap = el('label', { class: 'ccnt-opt' }, logBox, ` ${C.buttons.log}`);
     const ringWrap = el('label', { class: 'ccnt-opt' }, ringBox, ` ${C.buttons.ring}`);
     const labelsRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--labels' },
-        el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, logWrap, ringWrap, namesWrap);
+        el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, logWrap, ringWrap, namesWrap, areaWrap);
 
     // the density row: Smoothing, Scale by level size, Image, and what the bandwidth and the floor were
     const adjust = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-adjust', inputmode: 'decimal', placeholder: '1',
@@ -678,10 +697,12 @@ export function createControls({ D, id, model, on }) {
     function paintLabels(m, shownRows) {
         const o = drawOptions(m.config);
         D.clear(labelsSelect);
-        for (const c of labelChoices(m.config)) labelsSelect.appendChild(option(c.value, c.label));
-        labelsSelect.value = o.labels;
-        labelsSelect.hidden = !shownRows.labels;
-        labelsRow.querySelector('label.ctl-label').hidden = !shownRows.labels;
+        const venn = shownRows.venn;
+        const choices = venn ? VENN_LABEL_KINDS.map((k) => ({ value: k, label: C.venn.labels[k] })) : labelChoices(m.config);
+        for (const c of choices) labelsSelect.appendChild(option(c.value, c.label));
+        labelsSelect.value = venn ? o.venn.labels : o.labels;
+        labelsSelect.hidden = !(shownRows.labels || venn);
+        labelsRow.querySelector('label.ctl-label').hidden = !(shownRows.labels || venn);
         const show = (btn, visible, isOn) => { btn.hidden = !visible; btn.setAttribute('aria-pressed', String(!!isOn)); btn.classList.toggle('active', !!isOn); };
         show(sortBtn, shownRows.sort, o.sort === 'height');
         show(reverseBtn, shownRows.reverse, o.reverse);
@@ -690,10 +711,13 @@ export function createControls({ D, id, model, on }) {
         logBox.checked = o.log;
         ringWrap.hidden = !shownRows.ring;
         ringBox.checked = o.ring;
-        namesWrap.hidden = !shownRows.names;
-        namesBox.checked = o.names;
+        namesWrap.hidden = !(shownRows.names || venn);
+        namesWrap.title = venn ? C.venn.namesTitle : C.slices.namesTitle;
+        namesBox.checked = venn ? o.venn.names : o.names;
+        areaWrap.hidden = !venn;
+        areaBox.checked = !!venn && o.venn.proportional;
         // a row with nothing in it is not drawn (a density's modes have no Labels, a pie has no Log axis)
-        labelsRow.hidden = !(shownRows.labels || shownRows.sort || shownRows.reverse || shownRows.horizontal || shownRows.log || shownRows.ring || shownRows.names);
+        labelsRow.hidden = !(shownRows.labels || shownRows.sort || shownRows.reverse || shownRows.horizontal || shownRows.log || shownRows.ring || shownRows.names || shownRows.venn);
         densityRow.hidden = !shownRows.density;
         if (document.activeElement !== adjust) adjust.value = m.config.adjust === undefined ? '' : String(m.config.adjust);
         bySize.wrap.hidden = !(shownRows.density && m.config.split);

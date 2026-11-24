@@ -82,7 +82,7 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 | **Heatmap** | X and Y (categorical or binned) | Cells per pair of levels | Rectangles, with values printed if asked |
 | **Density** | X numeric, Color by | 512 bins per level of Color by, smoothed in the browser | Curves |
 | **2D density** | X and Y numeric, Color by up to 8 levels | 256 × 256 bins per level, smoothed | Filled isolines (the default), isolines, a density as opacity, or any mix |
-| **Venn** | 2 or 3 sets | Cells in every region | Circles with counts and shares |
+| **Venn** | 2 or 3 sets | Cells in every region | Circles with counts and shares, optionally with areas to scale |
 | **UpSet** | 2 to 16 sets | Cells in every exclusive intersection, and each set's size | Intersection bars over a matrix of dots, with set-size bars |
 
 **Bar or Histogram follows X.** Choosing a number as **X** makes a Bar a **Histogram**; **Bar** stays in the list and
@@ -234,7 +234,23 @@ line ("312 without a value, counted as out"), which also carries a set's state (
 list: "Universe: the 8,090 cells shown. 3,402 are in no set."
 
 **Venn** draws 2 or 3 sets as circles in the sets' colours, each labelled with its letter and name (cut short, in full when
-you point at it), with each region's count and share of the cells shown; the circles are not drawn to scale. **UpSet**
+you point at it), with each region's count and share of the cells shown. Three controls sit in the row under the set list, where a
+pie's **Labels** and **Names** are:
+
+- **Labels** chooses what each region prints: **Count and share** (the default), **Count**, **Share** or **None**.
+- **Names** (on by default) prints each set's letter and name beside its circle; with it off, and **Labels** on None, the plot
+  shows the circles alone, and every region still names its sets, count and share when you point at it.
+- **Area reflects counts** (off by default) draws the plot to scale, an Euler diagram: each circle's area is in proportion to
+  its set's cells, and each overlap's area follows the cells in both. Two sets are exact. Three sets cannot always be drawn
+  exactly with circles, so the layout is an approximation, found by moving the circles until the drawn overlaps are as close
+  to the counted ones as they can be. When the largest difference between a region's share of the drawing and its share of
+  the cells in the sets is more than 5 percentage points, a note under the plot says so ("Areas are approximate: largest
+  error 12.4% of the cells in the sets"). A region with no cells may vanish, which is correct. A region too small to hold
+  its label has none (the rule: the widest circle that fits inside the region is smaller than the label's height, or half its
+  width, at the size the plot is drawn); the hover still gives its count and share, and a larger panel shows more labels.
+
+Each change is one **Undo** step, a setting is kept in the link only when it is not the default, and SVG and PNG export draw
+the labels as shown. A link made before these controls draws as it did, with equal circles. **UpSet**
 draws 2 to 16 sets: each bar is an exclusive intersection, so every cell is counted in exactly one bar. The bars are one
 neutral colour; **Color** offers **None** (the default, one colour for every bar) and **Count**, which colours each bar by
 its count on the colour scale and shows a colour bar, besides a share or a statistic. **Color ▾** sets the map and range. **Sort** (**By size** or **By degree**), **Show top** (40 by default) and **Minimum size** choose
