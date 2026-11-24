@@ -18,6 +18,10 @@ import { assignKnownSettings, configOf } from '../utils/panel-settings.js';
 import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-guard-ui.js';
 import { tableMayLoad } from './table-utilities/table-memory.js';
 import { TableResolver } from '../utils/table-resolver.js';
+import { TableScores } from './table-utilities/table-scores.js';
+import { bindScoreColumns } from './table-utilities/table-score-ui.js';
+import { sameScoreColumn } from '../utils/score-column.js';
+import { removeColumnFromChooser } from './table-utilities/table-ui-make.js';
 import './table-utilities/table-background.js';
 import { createTableUndo, changesTableState, giveBack } from './table-utilities/table-undo.js';
 import { makeDom } from './gene-set-utilities/dom.js';
@@ -210,8 +214,11 @@ const GeneTablePanel = (function() {
                     if (signal.aborted) {
                         throw new DOMException('Table refresh aborted after loading data', 'AbortError');
                     }
+                    TableScores.prune(_id, _settings.columns);
                     if (replaceRowsInPlace(_dataTable, tableData)) {
                         renderCoverageNotice(_tableContainer, tableData.coverage, 'genes');
+                        // the columns of a provider (a group's statistic) say what they are for these genes
+                        bindScoreColumns(_dataTable, _settings, _tableContainer);
                         return;
                     }
                 }
@@ -240,6 +247,9 @@ const GeneTablePanel = (function() {
                     throw new DOMException('Table refresh aborted after loading data', 'AbortError');
                 }
                 
+                // a provider's column taken out of the table stops wanting its series
+                TableScores.prune(_id, _settings.columns);
+
                 // Destroy existing DataTable if it exists
                 if (_dataTable) {
                     // the filter, the search and the rows passing them as
@@ -328,6 +338,8 @@ const GeneTablePanel = (function() {
                 _dataTable = null;
             }
             forgetMemory(_id);
+            // a closed table wants no series
+            TableScores.release(_id);
             // its filter is now its closed selection (set above); nothing is rebuilt
             TableResolver.panelClosed(_id);
             
@@ -622,9 +634,20 @@ const GeneTablePanel = (function() {
             return true;
         }
 
+        /**
+         * Take a column out of the table (a group statistic whose grouping is gone, or that could not be computed): the
+         * chooser is unticked and the table is built again without it.
+         * @param {Object} column
+         */
+        async function removeColumn(column) {
+            removeColumnFromChooser(_id, _settings, column, sameScoreColumn);
+            await refreshTable();
+        }
+
         // Public API
         return {
             init,
+            removeColumn,
             setClosedSelection,
             // whether its rows are read (its DataTable built, or its first
             // load over): "not loaded yet" is not "no gene passes", and a

@@ -15,7 +15,7 @@ const { typeChoices } = await import('../../../static/js/panels/plot-utilities/p
 
 const TYPE = 'group-stat';
 
-test('a Cell group is offered for x, y, z and the colour of a Gene Plot, and for nothing else', () => {
+test('a Cell group is offered for x, y, z and the colour of a Gene Plot, and as a column of a Gene Table, and for nothing else', () => {
     for (const axis of ['x', 'y', 'z', 'color']) {
         assert.ok(R.sourcesFor('gene-plot', [axis]).some((p) => p.type === TYPE), `${axis} of a Gene Plot lists it`);
         assert.ok(typeChoices('genes', 'gene-plot', [axis]).some((c) => c.value === TYPE && c.text === 'Cell group'), `${axis}'s type menu`);
@@ -24,8 +24,8 @@ test('a Cell group is offered for x, y, z and the colour of a Gene Plot, and for
     const provider = R.getSource(TYPE);
     assert.equal(provider.entity, 'genes');
     assert.equal(provider.valueType, 'numerical');
-    assert.deepEqual(provider.consumers, ['gene-plot']);
-    assert.deepEqual(provider.axes, ['x', 'y', 'z', 'color']);
+    assert.deepEqual(provider.consumers, ['gene-plot', 'gene-table']);
+    assert.deepEqual(provider.axes, ['x', 'y', 'z', 'color', 'column']);
     assert.equal(provider.hover, undefined, 'no hover entry (decision 35)');
     assert.equal(provider.readsCellSubset, true);
     assert.equal(R.largeAccepts(TYPE, 'x'), false, 'a large Cell Plot never draws it');

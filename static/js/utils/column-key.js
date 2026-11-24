@@ -19,8 +19,9 @@ const DATATABLES_SPECIAL = /[.[\]()\\]/g;
  * @returns {string}
  */
 export function getColumnKey(column) {
-    const { type, key, column: columnName, layer } = column;
-    // a column that names a layer (a gene score over a layer) is another column from the same source over its default layer
-    return `${type}_${key}_${columnName || 'main'}${layer ? `__of_${layer}` : ''}`.replace(/\s+/g, '_')
+    const { type, key, column: columnName, layer, stat } = column;
+    // a column that names a layer (a gene score over a layer) is another column from the same source over its default layer;
+    // one that names a statistic (a group's) is another column of the same group
+    return `${type}_${key}_${columnName || 'main'}${layer ? `__of_${layer}` : ''}${stat ? `__as_${stat}` : ''}`.replace(/\s+/g, '_')
         .replace(DATATABLES_SPECIAL, c => `␞${c.charCodeAt(0).toString(16)}␞`);
 }

@@ -26,6 +26,11 @@
  *       note(structure)           optional: the dataset's structure, noted when the tab is built
  *       empty                     {text, button}: what the tab says with no entity, and the label of the way to make one
  *                                 (the provider's `newEntity`)
+ *       identity(column)          optional: what tells two columns of one entity apart, when `(column, layer)` does not (a
+ *                                 group statistic: grouping, group, statistic, layer)
+ *       columnOf(entity, choice)  optional, with identity: the stored column of a choice made in the add row
+ *       add.group                 optional: a select before the layer, `menu(entity) -> {options: [{value, text, alt?, disabled?}], chosen}`;
+ *                                 the column's `column` is the value chosen, and `groupWas(entity, value)` what it was called
  *       add                       optional, the add row under each group, `[method] on [layer] [Add column]`
  *                                 (decision 31: the chooser never lists method x layer pairs):
  *                                   start(entity) -> {method, layer}       where the selects start
@@ -58,7 +63,18 @@ export function tableHalfOf(column) {
     return provider && provider.table ? provider.table : null;
 }
 
-/** The providers a Cell Table's column chooser lists as tabs, in registration order. */
-export function tableProviders() {
-    return sourcesFor('cell-table', ['column']).filter(p => p.table);
+/**
+ * The rows a provider's column is one value of: 'cells' (a score of a Cell Table) or 'genes' (a group's statistic in a Gene
+ * Table). A provider says it in `entity`; a column of none is 'cells'.
+ * @param {Object} column
+ * @returns {'cells'|'genes'}
+ */
+export function rowsOf(column) {
+    const provider = column && column.type ? getSource(column.type) : null;
+    return provider && provider.entity === 'genes' ? 'genes' : 'cells';
+}
+
+/** The providers a table's column chooser lists as tabs, in registration order: `consumer` is 'cell-table' or 'gene-table'. */
+export function tableProviders(consumer = 'cell-table') {
+    return sourcesFor(consumer, ['column']).filter(p => p.table);
 }

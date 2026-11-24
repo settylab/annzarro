@@ -13,7 +13,7 @@ import { actions } from '../../utils/source-actions.js';
 import { painter } from '../../utils/host-binding.js';
 import { describeHeldRows, dropConditions } from '../../utils/score-column.js';
 import { referencedKeys } from '../../utils/line-select.js';
-import { tableHalfOf } from '../../utils/table-source.js';
+import { tableHalfOf, rowsOf } from '../../utils/table-source.js';
 import { TableScores } from './table-scores.js';
 
 /** The class of a header whose column a new condition cannot name in this table (a loop: operator decision 15). */
@@ -53,7 +53,10 @@ function panelOf(id) {
 
 function tellPanels(id) {
     const pm = window.PanelManager;
-    if (pm && pm.notifyPanels) pm.notifyPanels('tableFiltered', { id, type: 'cells' }).catch(() => {});
+    // the table's rows: cells, or genes in a Gene Table (its columns are the provider's series of genes)
+    const first = TableScores.entries(id)[0];
+    const type = first ? rowsOf(first.column) : 'cells';
+    if (pm && pm.notifyPanels) pm.notifyPanels('tableFiltered', { id, type }).catch(() => {});
 }
 
 /**
@@ -317,6 +320,9 @@ export function createTableActions({ tableIdOf: idOf, hasColumns, worstOf, compu
             'score-open': { target: worst((w) => !!panel(w.column.key)), run: (w, host) => { openSource(w.column.key, idOf(host), w.column); } },
             // the conditions on the column go, and the column stays (a loop through the filter ends: decision 18)
             'score-unfilter': { target: worst((w, host) => filtersOn(host, w)), run: (w, host) => { unfilter(host, w); } },
+            // the group a column reads has changed: keep it as it is now (a provider that can says so)
+            'group-keep': { target: worst((w) => { const half = tableHalfOf(w.column); return !!half && !!half.keep && !!w.snap && !!w.snap.raw && !!w.snap.raw.group && w.snap.raw.group.state === 'changed'; }),
+                run: (w, host) => { const half = tableHalfOf(w.column); if (half.keep(w.column)) { const p = panel(idOf(host)); if (p && typeof p.refreshTable === 'function') p.refreshTable(); } } },
             'score-remove': { target: worst((w, host) => { const p = panel(idOf(host)); return !!p && typeof p.removeColumn === 'function'; }),
                 run: (w, host) => { panel(idOf(host)).removeColumn(w.column); } }
         }
