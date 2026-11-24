@@ -96,7 +96,7 @@ test('a group is ok, changed (its default labels differ) or gone, as the group r
 
 test('the statistic select lists every statistic but Cell count, graded on the layer; the layer select every layer', () => {
     const stat = M.statMenu(setting({ layer: 'X' }), { X: 'signed', logged: 'log' });
-    assert.deepEqual(stat.options.map((o) => o.value), ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']);
+    assert.deepEqual(stat.options.map((o) => o.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']);
     assert.equal(stat.chosen, 'mean');
     const byValue = Object.fromEntries(stat.options.map((o) => [o.value, o]));
     assert.equal(byValue.pct_expressing.disabled, true, '% expressing cannot be computed on a signed layer');

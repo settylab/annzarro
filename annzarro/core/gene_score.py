@@ -77,7 +77,7 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterator, List, NamedTuple, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -460,8 +460,38 @@ class _Source:
         asked and ``pause`` honoured between reads; at most ``budget`` entries are read ahead."""
         raise NotImplementedError
 
+    def row_zscore_moments(self, mask: np.ndarray, clip: Optional[float],
+                           should_stop: Optional[Callable[[], bool]] = None, pause=None,
+                           budget: int = MOMENT_READ_AHEAD_ENTRIES) -> Iterator[int]:
+        """The moments of every gene's z-score over the cells of ``mask``, the mean and SD of each gene taken over ALL
+        cells of the matrix (``gene_reference``'s definition), the z-score clipped at ``clip`` (None: not clipped). Yields
+        the entries read and returns float64 ``[n_var, 5]``: ``n`` (cells of the group with a finite value; 0 for a
+        gene with no spread), ``sum`` and ``sumsq`` of the z-scores; ``n_above`` and ``sum_above`` are 0. Only a
+        compressed-sparse-column matrix has the reference in the pass it reads anyway; other layouts refuse."""
+        raise ZscoreNeedsPass(self.layout)
+
     def close(self) -> None:
         pass
+
+
+class ZscoreNeedsPass(ScoreError):
+    """A z-score of a group needs each gene's mean and SD over all cells: a whole-layer read this layout has no cheap
+    way to share with the group's read (coming with the moments cache)."""
+
+    def __init__(self, layout: str):
+        super().__init__(422, "zscore_needs_csc", "Z-score mean of a group needs a whole-layer read on this store's "
+                         "layout; coming with the moments cache.", layout=layout)
+
+
+def _chan(n_a, mean_a, m2_a, n_b, mean_b, m2_b):
+    """Chan's pairwise merge of ``(n, mean, M2)`` partials, elementwise (n_b may be 0 where a part is empty)."""
+    n = n_a + n_b
+    with np.errstate(invalid="ignore", divide="ignore"):
+        delta = mean_b - mean_a
+        share = np.where(n > 0, n_b / np.maximum(n, 1), 0.0)
+        mean = mean_a + delta * share
+        m2 = m2_a + m2_b + delta * delta * n_a * share
+    return n, np.where(n > 0, mean, 0.0), m2
 
 
 def _moments_out(sums: "MomentSums", n_var: int, thresholds: Sequence[float], size: int) -> np.ndarray:
@@ -630,6 +660,96 @@ class _CscSource(_Source):
                     sums.add(genes, values)
             yield task.entries
         return _moments_out(sums, self.n_var, thresholds, int(np.count_nonzero(mask)))
+
+    def row_zscore_moments(self, mask, clip, should_stop=None, pause=None, budget=MOMENT_READ_AHEAD_ENTRIES):
+        """See ``_Source``. One pass over every stored entry gives each gene's all-cell reference (Chan's merge of
+        per-chunk ``(n, mean, M2)``, centred, so a shifted gene keeps its precision) and the group's partials; a gene
+        whose z-scores reach the clip then has its range read again and is summed directly. A gene that cannot clip
+        is ``n (mean_G - mu) / sd`` from the partials."""
+        mask = _check_mask(mask, self.n_obs)
+        n_var, n_obs = self.n_var, self.n_obs
+        out = np.zeros((n_var, 5), dtype=np.float64)
+        total = int(self.indptr[-1])
+        n_group = int(np.count_nonzero(mask))
+        if n_group == 0:
+            return out
+        z = lambda: np.zeros(n_var, dtype=np.float64)                    # noqa: E731
+        a_n, a_mean, a_m2 = z(), z(), z()                                  # all cells, stored finite entries
+        g_n, g_mean, g_m2, g_stored = z(), z(), z(), z()                   # the group's
+        lo, hi = np.full(n_var, np.inf), np.full(n_var, -np.inf)
+
+        def read(a, b):
+            genes = np.searchsorted(self.indptr, np.arange(a, b, dtype=np.int64), side="right") - 1
+            return [(0, genes, np.asarray(self.indices[a:b], dtype=np.int64), np.asarray(self.data[a:b]))]
+
+        def merge(n, mean, m2, genes, weight, values):
+            """Chan-merge the entries (``weight`` 1 for an entry that counts) into the per-gene partials."""
+            g0, g1 = int(genes[0]), int(genes[-1]) + 1
+            local = genes - g0
+            cnt = np.bincount(local, weights=weight, minlength=g1 - g0)
+            s = np.bincount(local, weights=weight * values, minlength=g1 - g0)
+            mean_b = np.where(cnt > 0, s / np.maximum(cnt, 1), 0.0)
+            dev = (values - mean_b[local]) * weight
+            m2_b = np.bincount(local, weights=dev * dev, minlength=g1 - g0)
+            sl = slice(g0, g1)
+            n[sl], mean[sl], m2[sl] = _chan(n[sl], mean[sl], m2[sl], cnt, mean_b, m2_b)
+
+        tasks = [_Task([], min(STAT_CHUNK, total - a), lambda a=a: read(a, min(a + STAT_CHUNK, total)))
+                 for a in range(0, total, STAT_CHUNK)]
+        for task, result, _ in pipeline(tasks, self.threads, budget, pause):
+            _checkpoint(should_stop, None)
+            for _, genes, rows, values in result:
+                if genes.size:
+                    v = values.astype(np.float64)
+                    finite = np.isfinite(v)
+                    v = np.where(finite, v, 0.0)
+                    weight = finite.astype(np.float64)
+                    merge(a_n, a_mean, a_m2, genes, weight, v)
+                    at = np.flatnonzero(np.r_[True, genes[1:] != genes[:-1]])           # one segment per gene
+                    first = genes[at]
+                    lo[first] = np.minimum(lo[first], np.minimum.reduceat(np.where(finite, v, np.inf), at))
+                    hi[first] = np.maximum(hi[first], np.maximum.reduceat(np.where(finite, v, -np.inf), at))
+                    kept = mask[rows]
+                    if kept.any():
+                        merge(g_n, g_mean, g_m2, genes[kept], weight[kept], v[kept])
+                        g_stored += np.bincount(genes[kept], minlength=n_var)
+            yield task.entries
+        stored = np.diff(self.indptr).astype(np.float64)
+        # the cells with no stored entry hold zero: one more partial (n0, mean 0, M2 0) per side
+        n0 = n_obs - stored
+        a_n, a_mean, a_m2 = _chan(a_n, a_mean, a_m2, n0, z(), z())
+        has0 = n0 > 0
+        lo, hi = np.where(has0, np.minimum(lo, 0.0), lo), np.where(has0, np.maximum(hi, 0.0), hi)
+        n0g = n_group - g_stored
+        g_n, g_mean, g_m2 = _chan(g_n, g_mean, g_m2, n0g, z(), z())
+        with np.errstate(invalid="ignore", divide="ignore"):
+            sd = np.sqrt(a_m2 / np.maximum(a_n, 1))
+            usable = (a_n > 0) & (sd > 0) & np.isfinite(sd) & (lo < hi) & (g_n > 0)
+            mu = a_mean
+            out[:, 0] = np.where(usable, g_n, 0.0)
+            out[:, 1] = np.where(usable, g_n * (g_mean - mu) / sd, 0.0)
+            out[:, 2] = np.where(usable, (g_m2 + g_n * (g_mean - mu) ** 2) / (sd * sd), 0.0)
+            reaches = usable if clip is None else usable & (((hi - mu) / sd > clip) | ((lo - mu) / sd < -clip))
+        if clip is None:
+            return out
+        # genes that clip: z-scores summed directly over the group's stored entries and its unstored cells
+        cols = np.flatnonzero(reaches)
+        if cols.size:
+            out[cols, 1:3] = 0.0
+            sums, squares = np.zeros(n_var), np.zeros(n_var)
+            for task, result, _ in pipeline(self.tasks(cols), self.threads, budget, pause):
+                _checkpoint(should_stop, None)
+                for col, rows, values in result:
+                    v = np.asarray(values, dtype=np.float64)
+                    keep = mask[np.asarray(rows, dtype=np.int64)] & np.isfinite(v)
+                    zv = np.clip((v[keep] - mu[col]) / sd[col], -clip, clip)
+                    sums[col] += float(zv.sum())
+                    squares[col] += float((zv * zv).sum())
+                yield 0
+            z0 = np.clip(-mu[cols] / sd[cols], -clip, clip)
+            out[cols, 1] = sums[cols] + n0g[cols] * z0
+            out[cols, 2] = squares[cols] + n0g[cols] * z0 * z0
+        return out
 
     def tasks(self, cols):
         cols = np.sort(np.asarray(cols, dtype=np.int64))
@@ -1056,7 +1176,9 @@ def matrix_kinds(reader, dataset_path: str, name: str, suggest: bool = True) -> 
     """What the input ``name`` looks like and, when that is something scores are not meant for, which other
     matrix of the dataset looks log-normalised: ``{"input", "kind", "stats", "suggest", "checked"}``."""
     stats = kind_of(reader, dataset_path, name)
-    out = {"input": name, "kind": stats["kind"], "stats": stats, "suggest": None, "checked": {}}
+    with open_source(reader, dataset_path, name) as source:
+        layout = source.layout                       # csc, csr or dense: what a Gene Plot's z-score of a group needs
+    out = {"input": name, "kind": stats["kind"], "layout": layout, "stats": stats, "suggest": None, "checked": {}}
     if suggest and stats["kind"] in (*matrix_kind.WARN_KINDS, "signed"):
         others = [n for n in input_names(reader, dataset_path) if n != name][:MAX_ALTERNATIVES]
         for other in others:
@@ -1306,6 +1428,74 @@ def _canonical(rows: np.ndarray, vals: np.ndarray) -> Tuple[np.ndarray, np.ndarr
     return rows[keep], np.add.reduceat(vals, np.flatnonzero(keep))
 
 
+class GeneReference(NamedTuple):
+    """What a gene's z-score is taken against: its mean and SD over ALL cells of the dataset, a non-finite cell left
+    out and a sparse gene's implicit zeros in (population SD, ddof 0)."""
+    n_finite: int
+    mean: float
+    sd: float
+    lo: float
+    hi: float
+    nonzero: int
+    constant: bool          # no spread: no z-score
+
+
+def _plain_segment(values: np.ndarray):
+    def segment(i, j):
+        v = values[i:j].astype(np.float64)
+        finite = np.isfinite(v)
+        return (v, None, v) if finite.all() else (v, finite, v[finite])
+    return segment
+
+
+def gene_reference(values: Optional[np.ndarray], n_obs: int, segment=None,
+                   totals: Optional[Tuple[int, float, float]] = None) -> GeneReference:
+    """The mean and SD a gene's z-score uses, from its stored entries (``values``; fewer than ``n_obs`` for a sparse
+    gene, whose other cells hold zero) or its whole column. One definition for the signature (``_Accumulator``)
+    and for a z-scored gene feature of ``group_features``, so the two cannot drift. ``segment(i, j)`` gives
+    ``(float64 values, finite mask or None, the finite values)`` of ``values[i:j]``; a caller that keeps them for
+    a later pass passes its own. Worked ``SEGMENT_ENTRIES`` at a time.
+
+    ``totals`` is ``(n, sum x, sum x^2)`` over the cells with a finite value, unstored zeros included, when a caller
+    has them already (a pass over the layer, a moments cache): ``values`` is then not read (None is fine) and the
+    result has ``lo``/``hi`` NaN and ``nonzero`` 0. A variance within rounding of zero (1e-12 of the mean square)
+    is no spread, as ``FLAT`` is for the group statistics."""
+    if totals is not None:
+        n_finite, total, squares = int(totals[0]), float(totals[1]), float(totals[2])
+        if n_finite <= 0:
+            return GeneReference(0, math.nan, math.nan, math.nan, math.nan, 0, True)
+        mean = total / n_finite
+        var = squares / n_finite - mean * mean
+        constant = not (var > 1e-12 * (squares / n_finite) and math.isfinite(var))
+        return GeneReference(n_finite, mean, 0.0 if constant else math.sqrt(var), math.nan, math.nan, 0, constant)
+    n = int(n_obs)
+    segment = segment or _plain_segment(values)
+    bounds = [(i, min(i + SEGMENT_ENTRIES, values.size)) for i in range(0, values.size, SEGMENT_ENTRIES)]
+    total, n_nan, nonzero = 0.0, 0, 0
+    lo, hi = math.inf, -math.inf
+    for i, j in bounds:                                           # pass 1: sum, range, count
+        v, _, vf = segment(i, j)
+        n_nan += int(v.size - vf.size)
+        if vf.size:
+            total += float(vf.sum())
+            lo, hi = min(lo, float(vf.min())), max(hi, float(vf.max()))
+            nonzero += int(np.count_nonzero(vf))
+    n_finite = n - n_nan
+    if n_finite <= 0:
+        return GeneReference(0, math.nan, math.nan, math.nan, math.nan, 0, True)
+    implicit = n - int(values.size)                              # cells with no stored entry hold zero
+    if implicit:
+        lo, hi = min(lo, 0.0), max(hi, 0.0)
+    mean = total / n_finite
+    squares = implicit * mean * mean
+    for i, j in bounds:                                           # pass 2: spread
+        d = segment(i, j)[2] - mean
+        squares += float((d * d).sum())
+    sd = math.sqrt(squares / n_finite)
+    constant = lo == hi or not (sd > 0 and math.isfinite(sd))
+    return GeneReference(n_finite, mean, sd, lo, hi, nonzero, constant)
+
+
 class _Accumulator:
     """The running sum for the cells shown, and what each gene tells about itself."""
 
@@ -1353,11 +1543,11 @@ class _Accumulator:
         else:
             self._add_sparse(name, col, *_canonical(np.asarray(rows), np.asarray(values)))
 
-    def _gene(self, name, col, mean, sd, lo, hi, nonzero) -> Optional["GeneStat"]:
+    def _gene(self, name, col, ref: GeneReference) -> Optional["GeneStat"]:
         """Record a gene's figures; the stat when it enters the score, None when it does not."""
-        constant = lo == hi or not (sd > 0 and math.isfinite(sd))
-        stat = GeneStat(name, col, "constant" if constant else "used", mean, 0.0 if constant else sd,
-                        nonzero / self.n_obs, None)
+        constant = ref.constant
+        stat = GeneStat(name, col, "constant" if constant else "used", ref.mean, 0.0 if constant else ref.sd,
+                        ref.nonzero / self.n_obs, None)
         self.stats.append(stat)
         if constant and self.zscore:
             return None                                     # no spread, no z-score
@@ -1367,19 +1557,16 @@ class _Accumulator:
     def _add_column(self, name, col, v) -> None:
         """A whole column (dense store), one value per cell."""
         finite = np.isfinite(v)
-        n_finite = int(finite.sum())
-        if n_finite == 0:
+        ref = gene_reference(v, self.n_obs)
+        if ref.n_finite == 0:
             self.stats.append(GeneStat(name, col, "no_values"))
             return
         vf = v[finite]
-        mean = float(vf.sum()) / n_finite
-        centred = vf - mean
-        sd = math.sqrt(float((centred * centred).sum()) / n_finite)
-        stat = self._gene(name, col, mean, sd, float(vf.min()), float(vf.max()), int(np.count_nonzero(vf)))
+        stat = self._gene(name, col, ref)
         if stat is None:
             return
         if self.zscore:
-            z = centred / sd
+            z = (vf - ref.mean) / ref.sd
             if self.clip is not None:
                 stat.clipped = int((np.abs(z) > self.clip).sum()) / self.n_obs
             transformed = self._clip(z)
@@ -1415,29 +1602,13 @@ class _Accumulator:
                 kept[(i, j)] = out
             return out
 
-        total, n_nan, nonzero = 0.0, 0, 0
-        lo, hi = math.inf, -math.inf
-        for i, j in bounds:                                       # pass 1: sum, range, count
-            v, _, vf = segment(i, j)
-            n_nan += int(v.size - vf.size)
-            if vf.size:
-                total += float(vf.sum())
-                lo, hi = min(lo, float(vf.min())), max(hi, float(vf.max()))
-                nonzero += int(np.count_nonzero(vf))
-        n_finite = n - n_nan
-        if n_finite == 0:
+        ref = gene_reference(values, n, segment)
+        if ref.n_finite == 0:
             self.stats.append(GeneStat(name, col, "no_values"))
             return
-        implicit = n - int(values.size)                          # cells with no stored entry hold zero
-        if implicit:
-            lo, hi = min(lo, 0.0), max(hi, 0.0)
-        mean = total / n_finite
-        squares = implicit * mean * mean
-        for i, j in bounds:                                       # pass 2: spread
-            d = segment(i, j)[2] - mean
-            squares += float((d * d).sum())
-        sd = math.sqrt(squares / n_finite)
-        stat = self._gene(name, col, mean, sd, lo, hi, nonzero)
+        mean, sd = ref.mean, ref.sd
+        implicit = n - int(values.size)
+        stat = self._gene(name, col, ref)
         if stat is None:
             return
         # every cell holds z0; a stored entry adds what it differs by, a missing one cancels z0

@@ -358,8 +358,8 @@ export function createGroupSources({ store, host, context, genesStore = null, li
         variantOf(resolved, option) {
             const threshold = thresholdOf(resolved.recipe);
             const grouping = serverRequest(resolved.recipe, ctxOf(resolved), { codes: false, histograms: [] });
-            return { recipe: genesRequest(grouping, option.group, option.layer, threshold),
-                hash: momentsHash(keyOf(resolved), option.group, option.layer, threshold) };
+            return { recipe: genesRequest(grouping, option.group, option.layer, threshold, option.transform),
+                hash: momentsHash(keyOf(resolved), option.group, option.layer, threshold, option.transform) };
         },
         editHashOf: (resolved) => `${keyOf(resolved)}\u0001${thresholdOf(resolved.recipe)}`,
         keyOf: ({ hash, dataset, subset }) => `${hash}\u0001${dataset || ''}\u0001${subset || ''}`,

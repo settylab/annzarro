@@ -248,7 +248,7 @@ test('over 2,000 genes: the section says so and names what to do (CXG-17)', () =
 test('Color and Size: one gene step, under "Combine the gene rows" and "Score each cell" (decision 40)', () => {
     const list = rowStepEntries({ stat: 'mean' });
     assert.deepEqual(list.map((g) => g.heading), [W.rowStep.heading.rows, W.rowStep.heading.score]);
-    assert.deepEqual(list[0].entries.map((e) => e.label), ['Mean of the gene rows', 'Sum of the gene rows', 'Mean of the gene rows, as z-scores']);
+    assert.deepEqual(list[0].entries.map((e) => e.label), ['Mean of the gene rows', 'Sum of the gene rows', 'Mean of the gene rows, z-scored across groups']);
     assert.ok(list[1].entries.some((e) => e.label === 'z-score mean'));
 });
 
@@ -442,7 +442,7 @@ test('Color and Size list every statistic and every layer, graded, then Cell cou
     const kinds = { X: 'signed', logged: 'log' };
     const datasetLayers = ['X', 'logged', 'counts'];
     const stats = statisticList({ kinds, held: { stat: 'mean', layer: 'X' } });
-    assert.deepEqual(stats.map((e) => e.value), ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.deepEqual(stats.map((e) => e.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
     assert.equal(stats.find((e) => e.value === 'pct_expressing').disabled, true, '% expressing cannot be read on a signed X (OD 8)');
     assert.equal(stats.find((e) => e.value === 'mean').label, 'Mean');
     assert.equal(stats.find((e) => e.value === 'count').label, 'Cell count');

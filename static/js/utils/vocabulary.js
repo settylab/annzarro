@@ -86,6 +86,7 @@ const phrase = Object.freeze({
  */
 const cellGene = Object.freeze({
     statistic: Object.freeze({
+        zscore_mean: 'Z-score mean',
         mean: 'Mean',
         pct_expressing: '% expressing',
         mean_expressing: 'Mean of expressing cells',
@@ -100,6 +101,21 @@ const cellGene = Object.freeze({
         group: '0 to 1 per group',
         z_groups: 'z-score per gene, across groups',
         z_pooled: 'z-score per gene, against all grouped cells'
+    }),
+    /** Why a Scale option is disabled under a Color that is already a z-score (aggregation-unify-080, 2.2). */
+    scaleWhy: Object.freeze({ zscore: 'Color is already a z-score.' }),
+    /** What a statistic's values are in (a colour bar's second line, a hover). Only a z-score has one of its own. */
+    unit: Object.freeze({ zscore_mean: 'SD' }),
+    /** Said once when a link, or a change of Color, takes the Scale away (the colour is a z-score already). */
+    scaleMoved: (was) => `Scale changed to None: Color is already a z-score, so ${was} would draw the same picture again.`,
+    /** A gene with no spread over the dataset has no z-score. */
+    constantGene: 'constant over all cells: no z-score',
+    /** What the Size and Gene Plot lists say of z-score mean (consumers that cannot show it). */
+    zscoreCannot: Object.freeze({
+        size: 'Z-score mean is signed; dot size cannot show a sign. Use it for Color.',
+        genes: 'Z-score mean of a cell group is not available in the Gene Plot yet: it needs every gene\'s mean and SD over all cells.',
+        genesLayout: 'Z-score mean of a cell group needs a whole-layer read on this store\'s layout; coming with the moments cache.',
+        genesLayoutUnknown: 'Z-score mean of a cell group is offered once the layer\'s storage layout is known.'
     }),
     /** What a colour bar or a CSV header says of the scaling. */
     scaled: Object.freeze({
@@ -116,7 +132,7 @@ const cellGene = Object.freeze({
      */
     rowStep: Object.freeze({
         heading: Object.freeze({ rows: 'Combine the gene rows', score: 'Score each cell' }),
-        name: Object.freeze({ rows_mean: 'Mean of the gene rows', rows_sum: 'Sum of the gene rows', rows_z: 'Mean of the gene rows, as z-scores' }),
+        name: Object.freeze({ rows_mean: 'Mean of the gene rows', rows_sum: 'Sum of the gene rows', rows_z: 'Mean of the gene rows, z-scored across groups' }),
         /** Sum of the gene rows under % expressing (decision 40): the sum of the genes' fractions, on its own scale. */
         detectedPerCell: 'Genes detected per cell',
         /** A score method where the step is named on its own (the summary button, the CSV): "z-score mean score". */
@@ -132,6 +148,8 @@ const cellGene = Object.freeze({
             sum_sd: ['SD', 'a sum of spreads is not the spread of the set.'],
             sum_mean_expressing: ['mean of expressing cells', "each gene's expressing cells differ, so the sum is the mean of no cells."]
         }),
+        /** Under a z-score mean Color every other gene step is disabled: a set's row is its z-score mean score (2.3). */
+        zscoreWhy: "Under z-score mean a set's row is its z-score mean score.",
         /** The help line under the select: what one value of the row is. */
         help: Object.freeze({
             rows_mean: (stat, title, n) => `Each gene's ${stat} in the group, averaged over the ${n} genes of ${title}. Same scale as the gene rows.`,
@@ -143,7 +161,7 @@ const cellGene = Object.freeze({
         }),
         /** The cell step of a score, in the help line and the legend. */
         cells: Object.freeze({
-            mean: () => 'mean', sum: () => 'sum', sd: () => 'SD',
+            zscore_mean: () => 'mean', mean: () => 'mean', sum: () => 'sum', sd: () => 'SD',
             pct_expressing: (t) => `% of cells above ${t}`,
             mean_expressing: (t) => `mean over its cells above ${t}`
         }),
@@ -152,7 +170,7 @@ const cellGene = Object.freeze({
             rows: (stat, how) => `cells: ${stat}; genes: ${how}`,
             score: (method, cells) => `genes: ${method}; cells: ${cells}`
         }),
-        how: Object.freeze({ rows_mean: 'mean', rows_sum: 'sum', rows_z: 'mean of z-scores' }),
+        how: Object.freeze({ rows_mean: 'mean', rows_sum: 'sum', rows_z: 'mean, z-scored across groups' }),
         /** A link stored before decision 40 that now draws other values: said once when it loads. */
         legacy: Object.freeze({
             mean_of_means: "the mean of the genes' means",

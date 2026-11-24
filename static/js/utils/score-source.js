@@ -800,6 +800,7 @@ const _layerFacts = new Map();
 export function layerFacts(layers) {
     const kinds = {};
     const stats = {};
+    const layouts = {};
     const page = typeof window !== 'undefined' && typeof document !== 'undefined';
     const dataset = page ? (DataManager.getCurrentDataset() || '') : '';
     for (const layer of layers) {
@@ -809,7 +810,7 @@ export function layerFacts(layers) {
             if (!_kindClient) _kindClient = createKindClient({ url: Config.API.MATRIX_KIND });
             Promise.resolve(_kindClient.kind(dataset, layer, { suggest: false })).then((reply) => {
                 if (!reply || !reply.kind) return;
-                _layerFacts.set(key, { kind: reply.kind, stats: reply.stats || null });
+                _layerFacts.set(key, { kind: reply.kind, stats: reply.stats || null, layout: reply.layout || null });
                 // the menus grade by it now
                 if (DataManager.getCurrentDataset() === dataset) document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
             }, () => {});
@@ -818,9 +819,10 @@ export function layerFacts(layers) {
         if (known) {
             kinds[layer] = known.kind;
             if (known.stats) stats[layer] = known.stats;
+            if (known.layout) layouts[layer] = known.layout;
         }
     }
-    return { kinds, stats };
+    return { kinds, stats, layouts };
 }
 
 /** The dataset's layers (X first), noted from its structure when a menu is built. */

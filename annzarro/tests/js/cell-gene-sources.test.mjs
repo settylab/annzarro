@@ -45,7 +45,7 @@ test('with no kinds known every layer is listed and none is disabled: nothing is
 
 test('the statistic select grades each statistic on the held layer: a warn pair carries its note, Cell count is last', () => {
     const list = C.statisticList({ kinds: KINDS, held: { stat: 'pct_expressing', layer: 'counts' } });
-    assert.deepEqual(list.map((o) => o.value), ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.deepEqual(list.map((o) => o.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
     assert.match(list.find((o) => o.value === 'mean').title, /sequencing depth/);
     const onX = C.statisticList({ kinds: KINDS, held: { stat: 'mean', layer: 'X' } });
     const pct = onX.find((o) => o.value === 'pct_expressing');

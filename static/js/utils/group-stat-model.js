@@ -24,8 +24,11 @@ export const DEFAULT_LAYER = 'X';
 /** The statistics of the source's menu: the Cell-Gene Plot's, without Cell count. */
 export const STAT_IDS = Object.freeze(STATISTIC_INFO.map((m) => m.value));
 
+/** The statistic the server z-scores each gene for (over all cells): a request of its own (G1a). */
+export const ZSCORE = 'zscore_mean';
+
 /** A statistic's entry of the table (`value`, `label`, `menu`...); the default's for one this page does not know. */
-export const statInfo = (stat) => STATISTIC_INFO.find((m) => m.value === stat) || STATISTIC_INFO[0];
+export const statInfo = (stat) => STATISTIC_INFO.find((m) => m.value === stat) || STATISTIC_INFO.find((m) => m.value === DEFAULT_STAT);
 
 /** The statistic a setting holds, or the default for one that holds none (or one this page does not know). */
 export const statOf = (setting) => (setting && STAT_IDS.includes(setting.stat) ? setting.stat : DEFAULT_STAT);
@@ -68,16 +71,17 @@ export function thresholdOf(recipe) {
  * @param {string} layer
  * @param {number} threshold
  */
-export function genesRequest(groupingRequest, group, layer, threshold) {
+export function genesRequest(groupingRequest, group, layer, threshold, transform = null) {
     const body = { shape: 'genes', partitionings: groupingRequest.partitionings, small: groupingRequest.small,
         group: [...group], layer, thresholds: [threshold] };
     if (groupingRequest.sets) body.sets = groupingRequest.sets;
+    if (transform) Object.assign(body, { transform, clip: 10 });      // the signature's default clip (Q2: fixed)
     return body;
 }
 
 /** What makes two requests of the moments the same: the grouping's key, the group, the layer and the threshold. */
-export function momentsHash(groupingKey, group, layer, threshold) {
-    return stableStringify({ g: groupingKey, k: group, l: layer, t: threshold });
+export function momentsHash(groupingKey, group, layer, threshold, transform = null) {
+    return stableStringify({ g: groupingKey, k: group, l: layer, t: threshold, ...(transform ? { z: transform } : {}) });
 }
 
 /**
@@ -104,9 +108,10 @@ const asOption = (e, text) => ({ value: e.value, text, disabled: !!e.disabled, t
  * @param {{stat?: string, layer?: string}} held
  * @param {Object<string, string>} kinds - layer -> what it looks like
  */
-export function statMenu(held, kinds) {
+export function statMenu(held, kinds, layouts = {}) {
     const stat = statOf(held);
-    const list = statisticChoices({ layer: layerOf(held), kinds, held: stat }).filter((e) => e.value !== CELL_COUNT);
+    // z-score mean needs every gene's mean and SD over all cells: offered on a CSC layer, listed disabled otherwise (G1a)
+    const list = statisticChoices({ layer: layerOf(held), kinds, held: stat, consumer: 'genes', layout: layouts[layerOf(held)] }).filter((e) => e.value !== CELL_COUNT);
     return { options: list.map((e) => asOption(e, e.label)), chosen: stat };
 }
 

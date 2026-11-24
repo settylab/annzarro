@@ -192,7 +192,8 @@ export function colourBars(matrix, sections, settings) {
         const isOwn = g.key !== MAIN;
         const lines = isOwn ? [g.section.title, g.section.own.label]
             : settings.title ? [settings.title]
-                : [statisticTitle(settings), ...(settings.scaling === 'none' ? [] : [W.scaled[settings.scaling]])];
+                : [statisticTitle(settings), ...(settings.stat === 'zscore_mean' && W.unit[settings.stat] ? [W.unit[settings.stat]] : []),
+                    ...(settings.scaling === 'none' ? [] : [W.scaled[settings.scaling]])];
         const rows = Int32Array.from(g.rows.sort((a, b) => a - b));
         const [lo, hi] = colourRange(matrix.values, matrix.groups, rows, isOwn ? {} : settings);
         return { key: g.key, rows, lo, hi, title: lines.join('<br>'), lines };
@@ -294,16 +295,17 @@ function describer(model, P, dots) {
     const scaled = color.scaling !== 'none';
     const scaledWord = W.scaled[color.scaling];
     const none = VOCABULARY.word.noValue;
+    const unit = W.unit[color.stat] ? ` ${W.unit[color.stat]}` : '';        // a z-score is in SD
 
     return (r, g, i) => {
         const v = color.values[i];
         let colourText;
         if (!Number.isFinite(v)) {
-            colourText = `${colourName[r]}: ${none}`;
+            colourText = `${colourName[r]}: ${color.constant && color.constant[i] ? W.constantGene : none}`;
         } else {
             colourText = scaled
                 ? color.raw ? `${colourName[r]}: ${fmt(color.raw[i])} (${scaledWord}: ${fmt(v)})` : `${colourName[r]} (${scaledWord}): ${fmt(v)}`
-                : `${colourName[r]}: ${fmt(v)}`;
+                : `${colourName[r]}: ${fmt(v)}${unit}`;
             if (color.noExpressing && color.noExpressing[i]) colourText += ` (${W.noExpressingCells})`;
         }
         const sizeText = sizeName && Number.isFinite(size.values[i]) ? `<br>${sizeName[r]}: ${fmt(size.values[i])}` : '';

@@ -371,7 +371,7 @@ test('this module writes no interface word as a literal', () => {
 
 test('the statistic, scaling and aggregation words of UX 3.2 and 3.3', () => {
     const W = V.cellGene;
-    assert.deepEqual(Object.keys(W.statistic), ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.deepEqual(Object.keys(W.statistic), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
     assert.equal(W.statistic.pct_expressing, V.word.percentExpressing);
     assert.deepEqual(Object.keys(W.scaling), M.SCALINGS);
     assert.deepEqual(Object.keys(W.scaled), M.SCALINGS);
