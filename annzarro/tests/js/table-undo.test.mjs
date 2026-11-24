@@ -30,6 +30,7 @@ test('the labels say what changed', () => {
     assert.equal(l({ searchText: '' }, { searchText: 'x' }), 'search');
     assert.equal(l({ searchRegex: false }, { searchRegex: true }), 'search');
     assert.equal(l({ pageLength: 25 }, { pageLength: 50 }), 'change the rows per page');
+    assert.equal(l({ scoreOptions: null }, { scoreOptions: { clip: 3 } }), 'change the score methods');
     assert.equal(l({ searchBuilderConfig: {} }, { searchBuilderConfig: { criteria: [1] } }), 'change the filter');
 });
 

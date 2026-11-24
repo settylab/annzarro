@@ -258,10 +258,9 @@ function renameFilterKeys(searchBuilderConfig, renames) {
 
 /**
  * Write the layer explicitly into every gene score entry that has none: an axis, the colour or a hover
- * entry of a plot, and a score column of a table. There is no default layer: the signature's `input` is
- * only its first offered layer and it changes when the user unticks it, so an entry that carried no layer
- * (a link made before layers were stored) is resolved ONCE, to the input as it is at that moment, and
- * keeps it. A column's data key names its layer, so the column is renamed and every condition of the filter
+ * entry of a plot, and a score column of a table. The signature's `input` is only the layer an entry
+ * without one resolves to (a link made before layers were stored), so such an entry is resolved ONCE, to
+ * the input as it is at that moment, and keeps it. A column's data key names its layer, so the column is renamed and every condition of the filter
  * that names the old key follows, in the same step.
  * @param {Object} config - a panel's settings or config: rewritten in place
  * @param {(signatureId: string) => (string|null|undefined)} inputOf - a signature's input now, or nothing if unknown

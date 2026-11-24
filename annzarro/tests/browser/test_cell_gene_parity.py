@@ -362,4 +362,4 @@ def test_difference_7_no_pct_expressing_on_a_layer_with_negative_values(page, se
     assert "Mean · X · not scaled" in head
     assert DOT[_key("X", "cell_type", 0.0, 0, "none") + "__size"].max() > 0, "scanpy has a size for it"
     hint = page.locator(f"{TP} .cgene-panel").inner_text()
-    assert "is not available on X: X has negative values. Choose a layer." in hint, hint
+    assert "cannot be computed on 'X': it has negative values. Choose a layer." in hint, hint

@@ -1,37 +1,24 @@
 /**
- * The model of what a source of per-cell or per-group numbers offers its consumers, for ANY method table. Pure (no DOM,
- * no page state). A provider (the gene signature's six scores, the grouping's statistics) supplies:
+ * The model of a source's METHODS for ANY method table (decision 31): every method on every layer, each pair graded,
+ * an impossible one disabled with its reason. Pure (no DOM, no page state). A provider (the gene signature's six
+ * scores, the grouping's statistics) supplies:
  *
  *   methods         the method table: { value, label, menu, needs, unit, definition }; `needs` names the parameters
  *                   the method uses (keys of the recipe), and two methods may need the same one (a shared threshold)
- *   defaultMethod, defaultOffered, defaultLayer
+ *   defaultMethod, defaultOffered, defaultLayer   (defaultOffered only reads a link made before decision 31)
  *   paramDefaults   { method: { key: default } }, for "Reset" under a method
  *   paramValue      (recipe, key) -> the value a method's parameter has, a missing one filled (default: the field)
  *   sameParam       (key, have, want) -> boolean; default strict equality, with a missing value read as null
- *   paramNotes      (recipe, method) -> string[]: a parameter that is not at its default, named after its method in
- *                   the collapsed row ("not clipped", "above 0.5")
- *   paramLines      { key: (recipe) -> sentence }: what a parameter does, naming the value in force
  *   grade           (method, layer, kind, ctx) -> { grade: 'ok'|'warn'|'cannot', code, reason, down? }: the
- *                   provider's grading of a method on a layer of this kind. ctx = { stats, label, ...context(recipe) }
+ *                   provider's grading of a method on a layer of this kind. ctx = { stats, ...context(recipe) }
  *   context         (recipe) -> the recipe-dependent facts grade needs (the signature's `hasDown`, its threshold)
- *   layerLines      (layer, recipe, kind, stats, offered) -> lines for a LAYER's row (default: none)
  *   extraMethods    entries listed after the table that read no layer: { value, label, menu, definition } (a grouping's
  *                   cell count). They are always usable and have no layer
- *   resetFields     the option fields a reset writes and `isDefaultOffer` compares (default: input, method, offered,
- *                   layers). A grouping's recipe has no input and no method: it names offered and layers only
  *
- * and gets, as ONE implementation: the offered list and layers, `isOffered`, the graded menu, the summaries, the
- * lines under a method, the parameters of a method and the parsing of what is typed. The fields it reads from a recipe
- * are `input`, `method`, `offered` and `layers`; a recipe without `input` reads as the default layer, one without
- * `method` as the default method.
- *
- * Decision 31 (SO-1): nothing is "offered". `methodChoices`, `layerChoices` and `pairAfter` list ALL methods and ALL of
- * the dataset's layers, grade each pair, and say which impossible pair is disabled and why; `legacyPair` and
- * `withoutLegacy` only READ a stored `offered`/`layers` to find the old default pair and never write it back. The
- * offered-based functions below stay for the panels that still call them (// SO-2/3/4 removes).
- *
- * Switching an option off never breaks a consumer that uses it: it keeps its setting and shows that the option is no
- * longer offered, with a way to offer it again (`offeredOptions` leaves it out, `isOffered` says).
+ * and gets, as ONE implementation: `methodChoices`, `layerChoices` and `pairAfter` (ALL methods and ALL of the
+ * dataset's layers, graded), the parameters of a method, and the parsing of what is typed. A link made before decision
+ * 31 stored `offered` and `layers`: `cleanOffered`, `cleanLayers`, `legacyPair` and `withoutLegacy` only READ them to
+ * find the pair it drew, and nothing writes them back. Every grading sentence is phrased by `REASON`.
  */
 
 // ---------------------------------------------------------------------------
@@ -108,6 +95,24 @@ export function figure(x) {
     return String(Number(Number(x).toPrecision(3))).replace('-', '−');
 }
 
+/**
+ * The one phrasing of every grading sentence, for the signature's methods and the grouping's statistics alike (decision
+ * 31): a pair that cannot be computed names the method and says why; a pair that misleads names it and says how.
+ *   cannotOn('% of total', "'X'", 'it has negative values.')   "% of total cannot be computed on 'X': it has negative values."
+ *   cannotWith('Sum', 'down genes', 'a signed sum ...')         "Sum cannot be computed with down genes: a signed sum ..."
+ *   note('Mean', "'counts'", 'follows sequencing depth.')       "Mean on 'counts' follows sequencing depth."
+ *   moved('Layer', 'logged', '% expressing', "'X'")             "Layer changed to logged: % expressing cannot be computed on 'X'."
+ */
+export const REASON = Object.freeze({
+    cannotOn: (name, layer, why) => `${name} cannot be computed on ${layer}: ${why}`,
+    cannotWith: (name, what, why) => `${name} cannot be computed with ${what}: ${why}`,
+    note: (name, layer, how) => `${name} on ${layer} ${how}`,
+    moved: (select, value, name, layer) => `${select} changed to ${value}: ${name} cannot be computed on ${layer}.`
+});
+
+/** A layer's name as a grading sentence quotes it. */
+export const quoted = (layer) => `'${layer}'`;
+
 /** "a", "a and b", "a, b and c". */
 export const andList = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
 
@@ -131,8 +136,7 @@ const strictSame = (key, have, want) => (have === undefined ? null : have) === w
 export function createOptionsModel(spec) {
     const {
         methods, defaultMethod, defaultOffered, defaultLayer = 'X', paramDefaults = {}, sameParam = strictSame,
-        paramNotes = () => [], paramLines = {}, grade, context = () => ({}), layerLines: customLayerLines = () => [],
-        resetFields = ['input', 'method', 'offered', 'layers'], extraMethods = []
+        grade, context = () => ({}), extraMethods = []
     } = spec;
     if (!Array.isArray(methods) || !methods.length) throw new Error('options-model: a method table is required');
     if (typeof grade !== 'function') throw new Error('options-model: a grading function is required');
@@ -156,8 +160,8 @@ export function createOptionsModel(spec) {
     }
 
     /**
-     * The methods a stored list stands for: known ids only, each once, in menu order; the default list when there is
-     * none; never empty (the default method stays offered, so a source always offers something).
+     * The methods an old link's `offered` list stands for: known ids only, each once, in menu order; the default list
+     * when there is none; never empty. Read by `legacyPair` only.
      */
     function cleanOffered(value, fallback = defaultMethod) {
         const wanted = new Set(Array.isArray(value) ? value.filter(m => ids.includes(m)) : defaultOffered);
@@ -165,111 +169,14 @@ export function createOptionsModel(spec) {
         return ids.filter(m => wanted.has(m));
     }
 
-    /** The layers a stored list stands for: text only, each once, the default layer first (it is always offered). */
+    /** The layers an old link's `layers` list stands for: text only, each once, `input` first. Read for links only. */
     function cleanLayers(value, input) {
         const seen = new Set([input]);
         if (Array.isArray(value)) for (const name of value) if (typeof name === 'string' && name !== '') seen.add(name);
         return [...seen];
     }
 
-    /** The layer a recipe reads by default: its own input, or the default layer when it has none (a grouping). */
-    const inputOf = (recipe) => (typeof recipe.input === 'string' && recipe.input ? recipe.input : defaultLayer);
-    /** The methods a recipe (or a source's option fields) offers, in menu order. */
-    const offeredMethods = (recipe) => cleanOffered(recipe.offered, recipe.method);
-    /** The layers it offers, in the order they were offered: the first is where a new consumer starts. */
-    const offeredLayers = (recipe) => cleanLayers(recipe.layers, inputOf(recipe));
-
-    /** Whether a consumer may pick `method` (and `layer`, when given) of this source now. */
-    function isOffered(recipe, method, layer) {
-        if (!offeredMethods(recipe).includes(method)) return false;
-        return layer === undefined || layer === null || layer === '' || offeredLayers(recipe).includes(layer);
-    }
-
     const gradeOf = (method, layer, kind, recipe, extra = {}) => grade(method, layer, kind, { ...context(recipe), ...extra });
-
-    /**
-     * Every offered method of every offered layer with its grade, `cannot` ones included: for the panel, which says why
-     * an option is not in the menus. Order: by method (the panel's order), and within a method the layers in the order
-     * they were offered, so the first entry is the first method on the first layer.
-     * @param {Object} recipe
-     * @param {string[]} [datasetLayers] - the matrices the dataset has; an offered layer it lacks is left out
-     * @param {Object<string, string>} [kinds] - layer -> what it looks like; a layer not listed is not graded
-     * @param {Object<string, Object>} [stats] - layer -> what the server sampled of it
-     * @returns {Array<{id: string, method: string, layer: string, label: string, fullLabel: string, definition: string,
-     *   grade: string, reason: string, code: string, note: string}>}
-     *   `id` is always `method@layer`, but a consumer stores `{column: method, layer}`, never the id. `label` names the
-     *   layer only when several are offered; `fullLabel` always does.
-     */
-    function gradedOptions(recipe, datasetLayers, kinds = {}, stats = {}) {
-        const offered = offeredMethods(recipe);
-        let layers = offeredLayers(recipe);
-        if (Array.isArray(datasetLayers) && datasetLayers.length) {
-            const have = new Set(datasetLayers);
-            layers = layers.filter(name => have.has(name));
-        }
-        const several = layers.length > 1;
-        const out = [];
-        for (const method of offered) {
-            for (const layer of layers) {
-                const info = methodInfo(method);
-                const g = gradeOf(method, layer, kinds[layer], recipe, { stats: stats[layer] });
-                out.push({
-                    id: `${method}@${layer}`, method, layer, label: several ? `${info.menu} · ${layer}` : info.menu,
-                    fullLabel: `${info.menu} · ${layer}`, definition: info.definition, grade: g.grade, reason: g.reason, code: g.code,
-                    // a combination that can be computed but misleads says so in a title, not in a notice
-                    note: g.grade === 'warn' ? g.reason : ''
-                });
-            }
-        }
-        return out;
-    }
-
-    /** The menu a consumer shows: `gradedOptions` without the combinations that cannot be computed. */
-    const offeredOptions = (recipe, datasetLayers, kinds, stats) => gradedOptions(recipe, datasetLayers, kinds, stats)
-        .filter(o => o.grade !== 'cannot');
-
-    /**
-     * What to say under a METHOD: only what holds whatever the layer. A property of some layers is said on their rows,
-     * not here; one that every offered layer has is said here too, once; a reason that holds whatever the layer
-     * (`down`) always, once.
-     * @returns {Array<{grade: string, code: string, text: string, down?: boolean}>}
-     */
-    function methodLines(method, layers, recipe, kinds = {}, stats = {}) {
-        if (!layers.length) return [];
-        const of = (layer, label) => gradeOf(method, layer, kinds[layer], recipe, { stats: stats[layer], label });
-        const first = of(layers[0]);
-        if (first.down) return [{ grade: first.grade, code: first.code, text: first.reason, down: true }];
-        if (first.grade === 'ok') return [];
-        const all = layers.every(l => of(l).code === first.code);
-        if (!all) return [];
-        if (layers.length === 1) return [{ grade: first.grade, code: first.code, text: first.reason }];
-        // a threshold's message names figures of one layer: with several it stays on the rows
-        if (first.code.startsWith('detect_')) return [];
-        const every = of(layers[0], 'every offered layer');
-        return [{ grade: every.grade, code: every.code, text: every.reason }];
-    }
-
-    /** What to say on a LAYER's row: its properties, each once and short, only when they matter for an offered method. */
-    const layerLines = (layer, recipe, kind, stats) => customLayerLines(layer, recipe, kind, stats, offeredMethods(recipe));
-
-    /**
-     * The collapsed row: offered methods, then the layers. A parameter that is not at its default follows its method.
-     * "z-score mean, mean, sum · X"; "z-score mean (not clipped), control-adjusted (seed 3) · X, logged_counts".
-     */
-    function offeredSummary(recipe) {
-        const names = offeredMethods(recipe).map((m) => {
-            const notes = paramNotes(recipe, m);
-            return notes.length ? `${methodShort(m)} (${notes.join(', ')})` : methodShort(m);
-        }).join(', ');
-        return `${names} · ${offeredLayers(recipe).join(', ')}`;
-    }
-
-    /** The narrow form of the collapsed row: "3 methods · X". */
-    function offeredSummaryShort(recipe) {
-        const n = offeredMethods(recipe).length;
-        const layers = offeredLayers(recipe);
-        return `${n} method${n === 1 ? '' : 's'} · ${layers.length > 1 ? `${layers.length} layers` : layers[0]}`;
-    }
 
     /**
      * The parameters of a method, as the recipe holds them (for the cache key and the panel): only those the method
@@ -280,27 +187,6 @@ export function createOptionsModel(spec) {
         const out = {};
         for (const key of need) out[key] = spec.paramValue ? spec.paramValue(recipe, key) : recipe[key];
         return out;
-    }
-
-    /** The methods that use the parameter `key`: two or more means it is shared. */
-    const usersOfParam = (key) => methods.filter(m => (m.needs || []).includes(key)).map(m => m.value);
-
-    /** What the parameter `key` does, naming the value in force in `recipe`. */
-    const paramLine = (key, recipe) => (paramLines[key] ? paramLines[key](recipe) : '');
-
-    /** The option fields a reset restores, of those the spec names: the first of the default list, the default layer. */
-    const defaultFields = () => {
-        const all = { input: defaultLayer, method: cleanOffered(defaultOffered, defaultMethod)[0],
-            offered: cleanOffered(defaultOffered, defaultMethod), layers: [defaultLayer] };
-        return Object.fromEntries(resetFields.map((field) => [field, all[field]]));
-    };
-
-    /** Whether `recipe` offers exactly the defaults (methods, layers, and the first method and layer it has fields for). */
-    function isDefaultOffer(recipe) {
-        const d = defaultFields();
-        return (!('input' in d) || recipe.input === d.input) && (!('method' in d) || recipe.method === d.method)
-            && offeredMethods(recipe).join() === cleanOffered(defaultOffered, defaultMethod).join()
-            && offeredLayers(recipe).join() === [defaultLayer].join();
     }
 
 
@@ -359,8 +245,8 @@ export function createOptionsModel(spec) {
 
     /**
      * Both selects after the user touched one: the select touched wins and the other moves, to the first usable value,
-     * only when its value is now impossible. `say` names it once ("Layer changed to logged: % expressing is not
-     * available on X."); `impossible` is true when nothing else works, and the pair is then left as the user made it.
+     * only when its value is now impossible. `say` names it once ("Layer changed to logged: % expressing cannot be
+     * computed on 'X'."); `impossible` is true when nothing else works, and the pair is then left as the user made it.
      * @param {'method'|'layer'} changed - the select the user touched
      * @param {string} value - what it now says
      * @param {{method?: string, layer?: string}} pair - the other select's value (the touched one's old value is ignored)
@@ -380,7 +266,7 @@ export function createOptionsModel(spec) {
             if (!next) return { method, layer: (pair && pair.layer) || defaultLayer, moved: null, say: '', impossible: true };
             const wasLayer = (pair && pair.layer) || defaultLayer;
             return { method, layer: next.value, moved: 'layer',
-                say: `Layer changed to ${next.value}: ${methodShort(method)} is not available on ${wasLayer}.` };
+                say: REASON.moved('Layer', next.value, methodShort(method), quoted(wasLayer)) };
         }
         const layer = value;
         const wasMethod = pair && pair.method;
@@ -391,7 +277,7 @@ export function createOptionsModel(spec) {
         const next = usable(list)[0];
         if (!next) return { method: wasMethod || defaultMethod, layer, moved: null, say: '', impossible: true };
         return { method: next.value, layer, moved: 'method',
-            say: `Method changed to ${next.label}: ${methodShort(wasMethod || defaultMethod)} is not available on ${layer}.` };
+            say: REASON.moved('Method', next.label, methodShort(wasMethod || defaultMethod), quoted(layer)) };
     }
 
     /** What a stored `offered`/`layers` meant as the default pair: see `legacyPair` below. */
@@ -399,9 +285,7 @@ export function createOptionsModel(spec) {
 
     const api = {
         methods: Object.freeze([...methods]), defaultMethod, defaultOffered: Object.freeze([...defaultOffered]), defaultLayer,
-        paramDefaults, methodInfo, methodLabel, methodShort, isMethodDefault, cleanOffered, cleanLayers, offeredMethods,
-        offeredLayers, inputOf, isOffered, gradedOptions, offeredOptions, methodLines, layerLines, offeredSummary, offeredSummaryShort,
-        paramsOf, usersOfParam, paramLine, defaultFields, isDefaultOffer,
+        paramDefaults, methodInfo, methodLabel, methodShort, isMethodDefault, cleanOffered, cleanLayers, paramsOf,
         /** One method × layer, graded (the provider's grading with the recipe's facts filled in). */
         gradeOption: (method, layer, kind, recipe, extra) => gradeOf(method, layer, kind, recipe, extra),
         methodChoices, layerChoices, pairAfter, readsNoLayer, legacyPair: legacy
@@ -413,13 +297,13 @@ export function createOptionsModel(spec) {
 // The free forms, for a caller that holds a model as `source`, and the readers of the retired `offered`/`layers`
 
 /** `model.methodChoices` with the model as `source`. */
-// export-unused-ok: the free form SO-2/3/4 callers use when they hold a model as `source`
+// export-unused-ok: the free form for a caller that holds a model as `source` (Node tests pin it)
 export const methodChoices = ({ source, ...rest }) => source.methodChoices(rest);
 /** `model.layerChoices` with the model as `source`. */
-// export-unused-ok: the free form SO-2/3/4 callers use when they hold a model as `source`
+// export-unused-ok: the free form for a caller that holds a model as `source` (Node tests pin it)
 export const layerChoices = ({ source, ...rest }) => source.layerChoices(rest);
 /** `model.pairAfter`; the model is `ctx.source`. */
-// export-unused-ok: the free form SO-2/3/4 callers use when they hold a model as `source`
+// export-unused-ok: the free form for a caller that holds a model as `source` (Node tests pin it)
 export const pairAfter = (changed, value, pair, { source, ...rest }) => source.pairAfter(changed, value, pair, rest);
 
 /**

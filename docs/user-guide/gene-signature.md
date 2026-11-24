@@ -4,8 +4,8 @@ A **Gene Signature** is a named list of genes, kept as a recipe: the genes, and 
 worked out from them. The **Gene Signature** panel builds the list. It opens on every gene of the
 dataset, ready to tick, and it needs no setup. The default way of scoring is stated in the panel
 ("Z-score mean of X, clipped at ±10": each gene is turned into a z-score over all cells, then the genes
-are averaged). Other ways to score are offered under **Score options** ({ref}`gene-signature-scoring`) and
-chosen where a score is used.
+are averaged). A plot or table that uses the score chooses the method and the layer; the settings of each method
+are under **Methods ▾** in the panel ({ref}`gene-signature-scoring`).
 
 A signature outlives its panel. Close the panel and the signature is still there, listed in the
 panel chooser as **Closed**, and still usable wherever a gene table is: it can filter a Gene Plot and
@@ -173,16 +173,15 @@ score and says "3 changes are not applied. About 40 seconds." The signature's pa
 **Update score** to apply them.
 
 (gene-signature-scoring)=
-### Scores offered: what the signature offers
+### Methods: the settings of each method
 
-Under **Scores offered** in the signature's panel you decide what plots and tables are offered and how each
-option is computed. A plot or table only picks from what is offered: choose **Gene score** as the source,
-then the signature, then the option. Plots and tables pick from these, and nothing is computed until a plot or
-table shows one. The collapsed row always states what is offered ("z-score mean, mean, sum · X"), so a link
-opened with other settings is never hidden.
+A plot or table chooses how a score is worked out where it uses it: a **method**, read from a **layer**. Every method
+and every layer of the dataset can be chosen there; nothing has to be switched on in the signature first. The
+signature's panel holds only what defines each method, behind **Methods ▾** in its toolbar. The button opens a
+pop-over over the panel, so nothing in the panel moves; **Esc** or a click elsewhere closes it.
 
-An option is a **method** read from a **layer**. Each method has an **Offer** box and a one-line definition, and
-its parameters appear under it while it is offered, with **Reset** for that method when one is changed:
+The pop-over lists every method with a one-line definition and its parameters, always, with **Reset** for that method
+when one is changed:
 
 | Method | What it gives | Parameters |
 |---|---|---|
@@ -193,10 +192,11 @@ its parameters appear under it while it is offered, with **Reset** for that meth
 | **Fraction detected** | the share of the signature's genes detected in the cell, from 0 to 1 | **Detected above** (0): a gene is detected when its value is above this |
 | **% of total** | the genes' share of the cell's total over all genes, in percent, as for % mitochondrial | none |
 
-Z-score mean, mean and sum are offered at first; switch the others on with one click. At least one option stays
-offered. The clip stops one rare gene dominating the average (its z-score can reach the hundreds when a gene is
-detected in a handful of cells). A number that is not valid is refused ("Enter a number above 0.") and the last good
-value stays; Esc puts the last good value back.
+A parameter holds for its method on every layer. The clip stops one rare gene dominating the average (its z-score can
+reach the hundreds when a gene is detected in a handful of cells). A number that is not valid is refused ("Enter a
+number above 0.") and the last good value stays. While a parameter is not at its default, the **Methods** button
+carries a dot and its tooltip names each one ("z-score mean: not clipped; control-adjusted: seed 3"), so a link opened
+with other settings hides nothing.
 
 **Fraction detected** is a share, not a count, so it means the same when a gene is missing from the dataset and
 compares between signatures of different sizes. **% of total** divides by the cell's total over every gene of the
@@ -204,49 +204,34 @@ matrix, the signature's own included, which needs one pass over the whole matrix
 asks first on a large dataset. **Control-adjusted** removes differences in depth and quality between cells that move
 every gene together; the same seed always gives the same controls, so a link keeps its meaning.
 
-**Layers** lists X and the dataset's layers, each with an **Offer** box and a word for what it looks like (counts,
-normalised, log-normalised, scaled). At least one layer stays offered. There is no default method or layer to
-choose: a new plot or table starts on the first entry of the menu, the first offered method on the first offered
-layer, and keeps whatever it is given. Scores are meant for normalised, log-transformed
-values. If a layer looks like raw counts, a warning says so under it ("X looks like raw counts (whole numbers up to
-557). Scores should be computed on normalised, log-transformed data, or they follow sequencing depth.") and, when
-another layer looks log-normalised and is named that way, offers **Offer logged_counts instead**: it offers that layer
-and stops offering the raw one, unless a plot or table reads the raw layer, which then stays. The same goes
-for values that are normalised but not log-transformed. It is a warning, not a block.
+Whether a method suits a layer is said where the pair is chosen, not in the pop-over: a pair that cannot be computed
+(% of total on a scaled layer, whose values are negative; fraction detected where the threshold makes it constant) is
+greyed out in the plot's or table's menu with the reason, and one that misleads (a sum on raw counts follows
+sequencing depth) carries the reason as a note. A new plot or table starts on the z-score mean of X.
 
-A layer says what matters about it once, on its own row, in one short line and only for what is offered ("Raw counts:
-sum and mean follow sequencing depth."; "Has negative values: % of total is not offered here."). A method says
-something only when every offered layer shares the issue, for instance when raw counts is the only layer offered. In
-a plot's menu a combination that misleads carries the sentence as a note, not a notice.
+The pop-over says which methods and layers plots and tables read ("Used by 2 plots, 1 table: z-score mean, mean ·
+X, counts"), so you can see what an edit recomputes. **Reset to defaults** puts every parameter back; it never
+changes a method or a layer a plot uses, and it asks first only when a score a plot or table shows would change.
 
-Some combinations are left out of every menu, with the reason on the layer's row. % of total on a scaled layer is
-one: the values are negative. **Fraction detected** is judged by the numbers: the panel reads a sample of the layer,
-and when the threshold makes the score constant (almost every value is above **Detected above**, or almost none)
-it says so ("On 'X' almost every value is above 0. Raise Detected above (values here range from 0.01 to 3.4).") and
-leaves it out. Change the threshold and the panel judges again at once; the combination returns to the menus when it
-means something. On a scaled layer, where about half the values are below 0, it is offered at 0.
+A change to a parameter is an edit of the signature, like a tick: a quick score updates after a short pause, and one
+that would take 5 seconds or more waits behind **Update score**. A clip edit asks the server for nothing when no
+plot shows a z-score mean, and a seed edit recomputes only control-adjusted scores. Links and panel sets keep every
+parameter. A link made before this release, which listed the methods and layers a signature offered, opens with
+every plot and table on the method and layer it showed.
 
-Each option and layer says who uses it ("1 plot", "2 plots, 1 table"). Switching an option off never breaks a
-plot or table that uses it: it keeps its setting, is marked "(no longer offered)" in its menu and keeps drawing, and the panel says who
-keeps it, with **Undo**. Links and panel sets keep the options, the layers and every parameter.
-
-A change to a setting that changes a score is an edit of the signature, like a tick: a quick score updates
-after a short pause, and one that would take 5 seconds or more waits behind **Update score**. A clip edit asks
-the server for nothing when no plot shows a z-score mean, a seed edit recomputes only control-adjusted scores, and
-choosing what is offered changes no score.
-
-### Score some genes as down
+### Up and down genes
 
 Some signatures have genes that should count against the score, such as an exhaustion marker in an activation
-signature. Tick **Score some genes as down** in **Scores offered** and every selected gene gets a direction button,
-**↑ Up** or **↓ Down**; one press flips it. Until you tick it nothing about direction appears.
+signature. Press **Up/Down** in the gene list's toolbar, beside **Add from**, and every selected gene gets a direction
+button, **↑ Up** or **↓ Down**; one press flips it. Until you press it nothing about direction appears. Direction is a
+property of the gene list; how down genes weigh is a setting of the methods, under **Methods ▾**.
 
 - **The score** is the up genes minus the down genes. By default every gene weighs equally: the signs of the down
   genes are flipped and all genes are averaged. For **control-adjusted**, each side subtracts the mean of its own
   control genes, as two calls of scanpy's `score_genes` would, and the two are subtracted.
   The panel states the formula with your numbers ("Score = the 42 up genes minus the 8 down genes, averaged over all
   50 genes: each gene weighs equally"), and the summary line says "50 genes selected: 42 up, 8 down".
-- **How down genes weigh.** For the z-score mean and the mean, **Down genes** under the method chooses between **each
+- **How down genes weigh.** For the z-score mean and the mean, **Down genes** under the method in **Methods ▾** chooses between **each
   gene weighs equally** (the default) and **each side weighs equally**. By gene, the signs of the down genes are
   flipped and every usable gene is averaged: (sum of up - sum of down) / (number of up + number of down), so 40 up
   genes and 4 down genes count 40 to 4. By side, it is the mean of the up genes minus the mean of the down genes, as two
@@ -258,16 +243,16 @@ signature. Tick **Score some genes as down** in **Scores offered** and every sel
 - **Only down genes** give the negative of their average, and the panel says so. A side with no usable gene (not in
   this dataset, constant, or no values) is left out, and the panel names it ("None of the 8 down genes are in this
   dataset, so only up genes are scored"). With no usable gene on either side there is no score.
-- **Sum, fraction detected and % of total** are not offered while a signature has down genes, and the panel says why under
-  each: a signed sum depends on how many genes each side has, the difference of two fractions is not a fraction, and
-  the difference of two shares is not a share of anything. A plot or table that already uses one says so and asks the
+- **Sum, fraction detected and % of total** cannot be chosen while a signature has down genes, and the menus say why:
+  a signed sum depends on how many genes each side has, the difference of two fractions is not a fraction, and the
+  difference of two shares is not a share of anything. A plot or table that already uses one says so and asks the
   server for nothing; remove the down genes, or choose another option, and it comes back.
 - **Changing many at once.** In the Selected list, **Show** All, Up or Down, and **Set N shown to Up** or **Down** change
   the rows the search and the filter show, in one step.
-- **Add as.** With the switch on, an **Add as: Up | Down** control sits in the add row, set to Up. Whatever you add next
+- **Add as.** With **Up/Down** pressed, an **Add as: Up | Down** control sits in the add row, set to Up. Whatever you add next
   follows it: **Add from** (fixed genes and gene tables), the focused gene (**+ GAPDH as down (focused)**) and
-  **Paste or upload**, whose Add button then reads "Add 12 as down". It goes back to Up when the switch is turned
-  off. Ticks and **Tick all** add as up. A gene already in the signature keeps its side when it is added again;
+  **Paste or upload**, whose Add button then reads "Add 12 as down". It goes back to Up when **Up/Down** is
+  turned off. Ticks and **Tick all** add as up. A gene already in the signature keeps its side when it is added again;
   the paste preview says how many would change and offers **Change them too**, which makes the change part of the same
   single step.
 - **A sign column.** When a pasted or uploaded table has a column such as a log fold change, choose it as **Sign
@@ -275,7 +260,7 @@ signature. Tick **Score some genes as down** in **Scores offered** and every sel
   genes (1 up, 2 down)"). Genes with a zero, blank or non-numeric sign are left out, and the preview counts them. The
   choice is made for that file only; nothing is guessed.
 - **Undo** takes back every direction change, one step each; flipping several genes quickly is one step.
-- **Turning it off.** With down genes present the switch asks first: "8 down genes will count as up. **Count as up**
+- **Turning it off.** With down genes present **Up/Down** asks first: "8 down genes will count as up. **Count as up**
   **Keep**". Count as up is one step that Undo takes back.
 - **Links.** The down genes are part of the recipe and of the score's key, so flipping a gene asks the server again and
   Undo does not (the earlier score is still held). A link made before this has no down genes.
@@ -289,42 +274,18 @@ A link can name many scores. At most two are computed at a time, those on screen
 off screen starts when it comes into view. Plots that show the same score share one request, and a score
 is kept in the browser (up to 1 GiB, least recently used first) so it is not asked for twice.
 
-## Inspect a score
+## See a score's distribution
 
-**Inspect**, under the gene list, shows what a score is made of. It is closed when the panel opens,
-and nothing is computed until you open it. It then reads the score through the same store the plots
-use, so a score that a plot already shows is not asked for again; a score nothing shows is computed
-under the same limits and states as any other (progress with **Cancel**, a question first when it
-is slow, a refusal with the reason, a failure with **Retry**, and edits held behind **Update
-score**).
+**Distribution**, beside **Methods ▾** in the panel's toolbar, opens a Count Plot beside the panel with a histogram of
+the score (the z-score mean of X) over the cells shown. Everything a Count Plot does applies: change the method or the
+layer on its x axis, split it by a grouping, and read the cells with no score (every gene missing there) in its count
+of cells left out. Genes left out of the score (absent from the dataset, constant, or without a value) are named in
+the panel's status line.
 
-- **Aggregation.** Choose the z-score mean or the mean expression. Each is a separate score, kept
-  once however many places use it.
-- **Distribution.** A histogram of the score over the cells shown. Point at a bar, or focus the
-  chart and use the arrow keys, to read its range, its cell count and its share. Cells with no score
-  (every gene is missing there) are counted and stated under the chart and are not in it.
-- **Genes.** For each gene: the share of all cells where it is detected, its mean and SD, and the
-  share of cells where its z-score is clipped. These use every cell of the dataset, not only the
-  cells shown. Genes that dominate the score (clipped in at least 1% of cells in a z-score mean), are
-  barely detected (non-zero in under 1% of cells) or were left out (constant, or without a value) are
-  flagged in words. Click a heading to sort and a gene to focus it.
-- **Export.** **Export gene figures** opens a small chooser of the method · layer combinations the source offers (the
-  list plots choose from), as checkboxes. The one being inspected is ticked, and any already computed. Nothing is
-  computed until you press **Export**: a combination that is not computed is worked out then, under the usual cost
-  tiers. The chooser states each estimate beside it; one that asks first (over a minute) is asked about before it starts
-  ("will take about 2 minutes. Compute / Cancel"); one that would be refused is left out and named. Progress is shown
-  with **Cancel**, and cancelling leaves no file. The figures are in the long form, one row per combination and gene with
-  the combination in the first column, because each combination's figures come from its own layer (a gene can be
-  constant in one layer and not in another) and a fixed header filters and pivots in any spreadsheet. A file with one
-  combination is named for it; with several, for the source alone. A gene name that begins with `=`, `+`, `-` or `@` is
-  saved with a leading apostrophe, so a spreadsheet shows it as text rather than running it as a formula.
-  There is no per-cell export here: a signature or a gene table does not own a set of cells. Inspect says so ("To
-  export scores per cell, add them as columns to a Cell Table"). A Cell Table with the score as columns, one for each
-  method · layer option you want, exports them in its own CSV, each headed with its full label ("T cell score ·
-  z-score mean · X").
-
-In a narrow panel (under 360 px) the table keeps only the gene and its detection rate; under 280 px
-the chart is replaced by its figures.
+For each gene's figures by group, add the signature as a section of a Cell-Gene Plot, which shows the mean and the
+share of cells expressing each gene and downloads them as CSV. To export scores per cell, add them as columns to a
+Cell Table, one for each method and layer you want; its CSV heads each with its full label ("T cell score · z-score
+mean · X").
 
 (gene-table-score)=
 ## Score the genes of a gene table
@@ -332,7 +293,7 @@ the chart is replaced by its figures.
 A **Gene Table** is a source of a gene score exactly as a signature is. The one difference is how the genes
 are chosen: a signature's are ticked by hand, a table's are the rows that pass its filter. Everything else is
 the same: the score, the cost estimate and its three tiers, the methods and layers, the notices over a plot,
-**Update score**, and **Inspect**.
+**Update score**, and **Distribution**.
 
 Choose **Gene score** as a plot's source (or on a Cell Table's **Gene score** tab) and the list of sources shows
 **Gene signatures** and **Gene tables** under their own headings when both exist. Pick a table, then a method
@@ -352,12 +313,12 @@ genes, then scoring them", a **Build filter** button for a table of 200,000 rows
 for a few seconds), or why a table is too large or cannot be built. A table whose filter depends on a table that
 reads its score, through a hand-edited link, is named as a circle and nothing is computed.
 
-**Scores offered, in the table.** Under the column chooser, in the table's controls, a Gene Table has the same
-**Scores offered** section as a signature (collapsed to one row such as "z-score mean, mean, sum · X") and an
-**Inspect** section (collapsed). The table is still a table first: both stay closed until opened, and they go
-with the controls when these are hidden. The table stores these settings, and nothing else about the score, in its
-configuration, so links, panel sets and Back and Forward keep them; a table that offers the defaults stores
-nothing. Gene Set Analysis and Gene Plot filters read the table as before.
+**Score methods, in the table.** Beside the column chooser's buttons, in the table's controls, a Gene Table has
+**Score methods ▾**, the same pop-over as a signature's **Methods ▾** (without down genes, which a table does not have),
+and **Distribution**. The table is still a table first: nothing folds open in the panel, and both buttons go with the
+controls when these are hidden. The table stores the parameters, and nothing else about the score, in its
+configuration, so links, panel sets and Back and Forward keep them; a table at the defaults stores nothing. Gene Set
+Analysis and Gene Plot filters read the table as before.
 
 ## Rank cells in a Cell Table
 

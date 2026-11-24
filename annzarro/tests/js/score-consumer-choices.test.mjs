@@ -76,7 +76,7 @@ test('the select the user touches wins; the other moves only when impossible, an
     const moved = provider().pairAfter(held, 'method', 'fraction_of_total');
     assert.equal(moved.column, 'fraction_of_total');
     assert.notEqual(moved.layer, 'X');
-    assert.match(moved.say, /^Layer changed to \w+: % of total is not available on X\.$/);
+    assert.match(moved.say, /^Layer changed to \w+: % of total cannot be computed on 'X'\.$/);
     // a layer change that leaves the method possible moves nothing
     const kept = provider().pairAfter({ ...held, column: 'sum' }, 'layer', 'counts');
     assert.deepEqual(kept, { column: 'sum', layer: 'counts', say: '' });

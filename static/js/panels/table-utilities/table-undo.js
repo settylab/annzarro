@@ -31,7 +31,7 @@ export const TABLE_STEP_NAMES = Object.freeze({
     searchCaseInsensitive: 'search',
     pageLength: 'change the rows per page',
     methods: 'change the methods',
-    scoreOptions: 'change the scores offered'
+    scoreOptions: 'change the score methods'
 });
 
 /**

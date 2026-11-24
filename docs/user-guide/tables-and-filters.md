@@ -53,12 +53,13 @@ column follows the focus.
 ## Undo a change to the table
 
 **Undo** in the table's controls (beside **Methods ▾** and **Export CSV**) takes back the last change to the table's
-settings: the columns, the filter, the search and its options, the rows per page, **Methods ▾** (a Cell Table), and **Scores
-offered** (a Gene Table). Its title says what it undoes ("Undo: change the filter"), and it is disabled when there is
+settings: the columns, the filter, the search and its options, the rows per page, **Methods ▾** (a Cell Table), and **Score
+methods ▾** (a Gene Table). Its title says what it undoes ("Undo: change the filter"), and it is disabled when there is
 nothing to undo. Changes of one kind made close together, such as typing in the search box, are one step, and a table keeps
 its last 50 steps. The table is built again from the settings it had, as a link would build it.
 
-Sort order, the page shown and the scroll position are not steps. A change that comes from outside the table (a line drawn
+The sort order is not a step: it is not part of what a table saves (a link does not carry it either), so Undo leaves it as
+it is. Nor are the page shown and the scroll position. A change that comes from outside the table (a line drawn
 on a plot, a panel set, a link) starts the steps afresh, so Undo never goes back to a state unrelated to what is on screen.
 **Back** and **Forward** of the browser are separate and keep working: they rebuild the table from the view they step to,
 which also starts its steps afresh, and an undo is recorded in the address like any other change.
@@ -239,5 +240,6 @@ matrix, read once when it is added.
 
 A gene table can also be the **source of a score** for every cell: the rows that pass its filter are the genes, and
 each cell gets one number from them, to colour a plot by or to rank cells in a Cell Table. The table's controls
-have **Scores offered** and **Inspect** for it, closed until you open them. It works exactly as a Gene Signature
+have **Score methods ▾**, the settings of each score method in a pop-over, and **Distribution**, which opens a Count
+Plot of the score. It works exactly as a Gene Signature
 does, with the filter in place of ticked genes: see {ref}`gene-table-score`.
