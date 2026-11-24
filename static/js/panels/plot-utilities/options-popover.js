@@ -89,6 +89,16 @@ function stepLabel(field, value) {
  * @param {() => ({blocked: boolean, why: string, note: string, shown: string[], size: string}|null)} [ctx.exportGuard] - the memory
  *   guard: a full export that does not fit is greyed out with `why`, `note` says so under the buttons, and `shown` formats of
  *   the plot as on screen (`size` its pixels) are offered beside them
+ * @param {(sectionId: string) => string} [ctx.sectionKey] - the `data-section` of a section (the Cell Plot and Gene Plot keep their
+ *   own names: 'points', not 'panel:points')
+ * @param {Object<string, () => HTMLElement>} [ctx.legacy] - sections the panel still draws itself, by section id; each is a
+ *   function returning the section's element, put where the section goes (and made again by `redrawLegacy`). Their fields are
+ *   not rendered here. Temporary: the Cell Plot and Gene Plot move them to the schema one package at a time.
+ * @param {Set<string>} [ctx.openFirst] - the sections that start open (a panel's own are shut unless named); their open state is kept per
+ *   panel, not per kind. Absent: the kind's standard (Presets, Text, Legend, Export and the panel's own sections)
+ * @param {(body: HTMLElement, ctl: Object) => (Function|void)} [ctx.onOpen] - after each open, with the body; may return a cleanup
+ * @param {(reason: string) => void} [ctx.onClose] - after each close
+ * @param {boolean} [ctx.noFollow] - the panel follows the session default itself (the Cell Plot and Gene Plot)
  * @param {{count: () => number, run: () => number}} [ctx.others] - the panel's own Apply to other plots (the kind's look is not the generic one)
  * @param {{set: () => void, clear: () => void, has: () => boolean, onDefault: () => boolean}} [ctx.session] - the same for the session default
  * @param {(settings: Object) => void} [ctx.copyImage] - the plot as a PNG on the clipboard (Export's Copy)
@@ -195,8 +205,9 @@ export function mountPlotOptions(ctx) {
                     on: { change: () => set(field, input.value === '' && field.choices.some(([v]) => v === null) ? null : input.value) } },
                     field.choices.map(([v, t]) => el('option', { value: v === null ? '' : v, text: t })));
             } else if (field.type === 'color') {
+                // `live`: the plot follows the picker while it is dragged (the Cell Plot and Gene Plot always did)
                 input = el('input', { type: 'color', id, class: 'form-control form-control-sm form-control-color', data: { option: field.id },
-                    on: { change: () => set(field, input.value) } });
+                    on: { change: () => set(field, input.value), ...(field.live ? { input: () => set(field, input.value) } : {}) } });
                 if (defaultOf(field, kind) === null) {
                     auto = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-auto', data: { auto: field.id },
                         title: 'Follow the app theme', aria: { pressed: 'false' }, on: { click: () => set(field, null) } }, 'Auto');
@@ -327,6 +338,7 @@ export function mountPlotOptions(ctx) {
     // An empty number box shows its default (a placeholder); its arrows step from that, not from the minimum (`stepFrom`)
     const stepFrom = (t) => t && t.matches && t.matches('input[type="number"][data-step-from]') && t.value === '';
     let primed = null;
+    const legacyNodes = new Map();       // section id -> the element the panel drew itself
     root.addEventListener('keydown', (e) => {
         if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || !stepFrom(e.target)) return;
         const t = e.target;
@@ -349,11 +361,18 @@ export function mountPlotOptions(ctx) {
     }, 0), true);
     for (const sec of sectionsOf(kind)) {
         const own = sec.panel ? panelSections[sec.id] : null;
+        if (ctx.legacy && ctx.legacy[sec.id]) {
+            // drawn each time the pop-over opens (redrawLegacy), so it shows the settings as they are then
+            const node = el('div', { data: { legacy: sec.id } });
+            legacyNodes.set(sec.id, node);
+            root.append(node);
+            continue;
+        }
         if (sec.panel && !own) continue;
         const title = sec.panel ? own.title : sec.title;
-        const key = `${kind}:${sec.id}`;
-        const open = _open.has(key) ? _open.get(key) : (sec.panel || OPEN_FIRST.has(sec.id));
-        const details = el('details', { class: `az-pop-section${sec.id === 'export' && classes.export ? ` ${classes.export}` : ''}`, data: { section: sec.id }, open },
+        const key = ctx.openFirst ? `${kind}:${panelId}:${sec.id}` : `${kind}:${sec.id}`;
+        const open = _open.has(key) ? _open.get(key) : ctx.openFirst ? ctx.openFirst.has(sec.id) : (sec.panel || OPEN_FIRST.has(sec.id));
+        const details = el('details', { class: `az-pop-section${sec.id === 'export' && classes.export ? ` ${classes.export}` : ''}`, data: { section: ctx.sectionKey ? ctx.sectionKey(sec.id) : sec.id, panel: panelId }, open },
             el('summary', { class: 'az-pop-section__title', text: title }));
         details.addEventListener('toggle', () => _open.set(key, details.open));
         const body = el('div', { class: 'az-pop-section__body' });
@@ -373,6 +392,7 @@ export function mountPlotOptions(ctx) {
         }
         if (!sec.panel && sec.fields.length) {
             const reset = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset', data: { reset: sec.id },
+                id: ctx.sectionKey ? `reset-section-${ctx.sectionKey(sec.id)}-${panelId}` : null,
                 on: { click: () => resetSection(sec) } }, 'Reset');
             body.append(el('div', { class: 'az-pop-section__foot' }, reset));
         }
@@ -497,9 +517,25 @@ export function mountPlotOptions(ctx) {
         m.sidesRow.hidden = !unlinked;
     }
 
+    /** The panel's own sections drawn again from its settings (a preset or a Reset changed many); the others are painted. */
+    function redrawLegacy() {
+        for (const [id, old] of legacyNodes) {
+            const node = ctx.legacy[id]();
+            if (!node) continue;
+            old.replaceWith(node);
+            legacyNodes.set(id, node);
+        }
+    }
+
     const popover = createPopover({
         anchor, name: 'plot-options', title: 'Plot Options',
-        render: (host) => { host.appendChild(root); paint(); }
+        onClose: ctx.onClose,
+        render: (host, ctl) => {
+            redrawLegacy();
+            host.appendChild(root);
+            paint();
+            return ctx.onOpen ? ctx.onOpen(host, ctl) : undefined;
+        }
     });
 
     const me = {
@@ -512,7 +548,7 @@ export function mountPlotOptions(ctx) {
             if (JSON.stringify(next) !== JSON.stringify(c)) ctx.replace(next);
         }
     };
-    _mounted.add(me);
+    if (!ctx.noFollow) _mounted.add(me);
     // the modebar camera (plot-aesthetics-menu.js registerCameraExport) exports at Export's size and scale too
     const gd = ctx.plot ? ctx.plot() : null;
     if (gd) gd.__exportOptions = () => exportOptions(exportSettings(resolveStyle(config(), kind), ctx.plotSize ? ctx.plotSize() : {}));
@@ -521,6 +557,7 @@ export function mountPlotOptions(ctx) {
 
     return {
         update: paint,
+        redrawLegacy,
         popover,
         body: root,
         destroy() {

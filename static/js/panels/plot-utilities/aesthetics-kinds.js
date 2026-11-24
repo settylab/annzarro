@@ -12,6 +12,7 @@
  */
 import { registerKind, registerPanelFields, fieldsOf } from './options-schema.js';
 import { DEFAULT_MARGINS } from './plot-options.js';
+import { plotColour } from '../../utils/plot-theme.js';
 
 /** The kinds, as their panel types. */
 // export-unused-ok: the Node tests walk both kinds
@@ -22,18 +23,34 @@ const ORDER = Object.freeze(['presets', 'text', 'background', 'axes', 'panel:poi
 
 const f = (id, section, type, label, dflt, extra = {}) => ({ id, section, type, path: id, label, dflt, ...extra });
 
+/** A colour that follows the app theme: its swatch shows the colour drawn now while it is Auto. */
+const themed = (id, section, label, domId, extra = {}) => f(id, section, 'color', label, null, { domId, live: true, shown: (c) => plotColour(c, id), ...extra });
+
+/** The fonts these plots offer (Open Sans, the count plot's font, is not one of them). */
+const FONTS = Object.freeze([
+    ['Arial, Helvetica, sans-serif', 'Arial'],
+    ["'Times New Roman', Times, serif", 'Times New Roman'],
+    ['Courier, monospace', 'Courier'],
+    ['Georgia, serif', 'Georgia'],
+    ["'Trebuchet MS', sans-serif", 'Trebuchet MS'],
+    ['Verdana, sans-serif', 'Verdana']
+]);
+
+/** Shown in 3D only. */
+const in3D = (c) => !!c.z;
+
 /** The fields of both kinds, at the settings keys the plots store. */
 const FIELDS = Object.freeze([
     // Presets: Bare is a state of its own (no axis at all), set by its button and cleared by Default
     f('bare', 'presets', 'check', 'Bare', false),
     // Text
-    f('fontFamily', 'text', 'select', 'Font', 'Arial, Helvetica, sans-serif'),
-    f('fontSize', 'text', 'number', 'Size (px)', 12, { min: 8, max: 24, step: 1 }),
-    f('textColor', 'text', 'color', 'Color', null),
+    f('fontFamily', 'text', 'select', 'Font', 'Arial, Helvetica, sans-serif', { choices: FONTS, domId: 'font-family' }),
+    f('fontSize', 'text', 'number', 'Size (px)', 12, { min: 8, max: 24, step: 1, domId: 'font-size' }),
+    themed('textColor', 'text', 'Color', 'text-color'),
     // Background
-    f('bgColor', 'background', 'color', 'Colour', null),
-    f('showBackdrop', 'background', 'check', '3D Backdrop', false),
-    f('backdropColor', 'background', 'color', '3D backdrop colour', null),
+    themed('bgColor', 'background', 'Color', 'plot-bg-color'),
+    f('showBackdrop', 'background', 'check', '3D backdrop', false, { domId: 'show-backdrop', when: in3D }),
+    themed('backdropColor', 'background', '3D backdrop color', 'backdrop-color', { when: in3D }),
     // Axes and ticks (Flip x and Flip y are a view of the plot, not its look: not here)
     f('showGrid', 'axes', 'check', 'Show Grid', true),
     f('gridColor', 'axes', 'color', 'Grid Color', null),

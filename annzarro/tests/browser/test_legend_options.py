@@ -166,15 +166,17 @@ def test_the_options_in_a_link_draw_the_first_legend(page, server):
 
 
 def test_text_size_has_a_reset(page, server):
+    """The Text group has one Reset (pop-over unification: no Reset of its own per field); it is off while the group is at its defaults."""
     _open(page, server)
     _menu(page, A, "text")
-    assert page.is_disabled(f"#reset-font-size-{A}")                       # 12 is the default
+    reset = f"details[data-panel='{A}'][data-section='text'] [data-reset='text']"
+    assert page.is_disabled(reset)                                          # 12 is the default
     _change(page, f"#font-size-{A}", 18)
-    assert not page.is_disabled(f"#reset-font-size-{A}")
+    assert not page.is_disabled(reset)
     page.wait_for_function("(id) => (%s)(id)._fullLayout.font.size === 18" % GD, arg=A)
-    page.click(f"#reset-font-size-{A}")
+    page.click(reset)
     page.wait_for_function("(id) => (%s)(id)._fullLayout.font.size === 12" % GD, arg=A)
-    assert page.input_value(f"#font-size-{A}") == "12" and page.is_disabled(f"#reset-font-size-{A}")
+    assert page.input_value(f"#font-size-{A}") == "12" and page.is_disabled(reset)
     assert _settings(page, A)["fontSize"] == 12
 
 

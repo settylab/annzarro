@@ -18,9 +18,10 @@ import {
   hasSessionStyle, setSessionStyle, clearSessionStyle, effectiveStyle, onSessionStyleChange, STYLE_TYPES, LOOK_TYPES
 } from '../../utils/session-style.js';
 import { exportCheck, guarded, refusalText, bindingLabel } from '../../utils/memory-guard-ui.js';
-import { createPopover } from '../../ui/popover.js';
 import { showPointStyle } from './panel-ui-update.js';
 import { sectionKeys } from './aesthetics-kinds.js';
+import { mountPlotOptions } from './options-popover.js';
+import { createSettingsAdapter } from './plot-aesthetics-adapter.js';
 /**
  * Plot Aesthetics Menu
  * 
@@ -49,14 +50,42 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   const putBack = () => { if (pointSizeRow && holder && pointSizeRow.parentElement !== holder) holder.appendChild(pointSizeRow); };
 
   let sizeWatch = null;
-  const popover = createPopover({
-    anchor: menuButton, name: 'plot-options', title: 'Plot Options',
+  const kind = `${plotKindOf(settings)}-plot`;
+  // what each migrated field does to the plot once the adapter has written it (plot-aesthetics-adapter.js): the plot's
+  // own update functions, as the menu's handlers ran them before the pop-over used the shared renderer
+  const hooks = {
+    fontFamily: (s) => updateFontFamily(plotContainer, s),
+    fontSize: (s) => updateFontSize(plotContainer, s),
+    textColor: (s) => updateTextColor(plotContainer, s),
+    bgColor: (s) => updatePlotBackground(plotContainer, s),
+    showBackdrop: (s) => update3DBackdrop(plotContainer, s),
+    backdropColor: (s) => update3DBackdrop(plotContainer, s)
+  };
+  const adapter = createSettingsAdapter({
+    kind, settings, hooks, initialize: initializeAestheticsSettings,
+    relook: (s) => {
+      relookPlot(plotContainer, s);
+      refreshScaleBar(plotContainer, s);
+    },
+    notify: (setting, value) => notifySettingsChanged(id, setting, value)
+  });
+  let options = null;
+  /** The pop-over's body as it was drawn: the sections the panel still draws itself, and the point size's row in its slot. */
+  const legacy = (key) => () => legacySection(id, settings, key);
+  const LEGACY_SECTIONS = ['presets', 'axes', 'panel:points', 'panel:focused', 'legend', 'margins', 'export', 'apply'];
+  options = mountPlotOptions({
+    anchor: menuButton, kind, panelId: id, noFollow: true,
+    config: () => settings,
+    commit: (next, label) => { adapter.commit(next, label); options.update(); },
+    replace: (next) => { Object.assign(settings, next); },
+    sectionKey: (sec) => sec.replace(/^panel:/, ''),
+    openFirst: new Set(['export']),      // as the menu has always opened: only Export, the rest as it was left
+    legacy: Object.fromEntries(LEGACY_SECTIONS.map((sec) => [sec, legacy(sec.replace(/^panel:/, ''))])),
     // why it closed last (a test hook, and a hint when a menu goes away unasked)
     onClose: (reason) => { menuButton.dataset.closedBy = reason; },
-    render: (body, ctl) => {
+    onOpen: (body, ctl) => {
       ctl.surface.classList.add('aesthetics-popover');
       menuButton.classList.add('btn-aesthetics-active');
-      body.innerHTML = createPopoverContent(id, settings);
       placePointSize(body);
       syncColourControls(id, settings);     // a colour that follows the theme has nothing to reset
       return () => {
@@ -67,6 +96,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
       };
     }
   });
+  const popover = options.popover;
   /** The point size's row in its slot of the Points group, shown as the settings are now. */
   function placePointSize(body) {
     const slot = body.querySelector(`#point-size-slot-${id}`);
@@ -75,12 +105,13 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
       showPointStyle(id, settings);
     }
   }
-  // a preset or a Reset draws the groups again: the body is rebuilt in place, the pop-over stays open
+  // a preset or a Reset draws the groups again: the ones the panel draws itself are rebuilt in place, the pop-over stays open
   menuButton.__azRedrawOptions = () => {
     const body = popover.surface && popover.surface.querySelector('.az-popover-body');
     if (!body) return;
     putBack();
-    body.innerHTML = createPopoverContent(id, settings);
+    options.redrawLegacy();
+    options.update();
     placePointSize(body);
     syncColourControls(id, settings);
   };
@@ -89,6 +120,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   const onSettingsChange = (e) => {
     if (e.detail.id !== id) return;
     syncColourControls(id, settings);     // a colour set now has a Reset; one reset follows the theme again
+    options.update();
     popover.update();
   };
   document.addEventListener('plotSettingsChanged', onSettingsChange);
@@ -98,7 +130,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
 
   // Return cleanup function
   return function cleanup() {
-    popover.destroy();
+    options.destroy();
     delete menuButton.__azRedrawOptions;
     document.removeEventListener('plotSettingsChanged', onSettingsChange);
     cleanupListeners();
@@ -141,6 +173,16 @@ function details(id, key, title, body) {
         </details>`;
 }
 
+/**
+ * One group of the menu the panel still draws itself (the others are the shared renderer's, options-popover.js), as an
+ * element: the group is cut out of the menu's HTML. Goes away as the groups move to the schema.
+ */
+function legacySection(id, settings, key) {
+    const t = document.createElement('template');
+    t.innerHTML = createPopoverContent(id, settings);
+    return t.content.querySelector(`details[data-section="${key}"]`);
+}
+
 export function createPopoverContent(id, settings) {
     // Ensure all required settings have defaults
     initializeAestheticsSettings(settings);
@@ -176,67 +218,6 @@ export function createPopoverContent(id, settings) {
                     title="Only the points: no margins, legend, axis labels or grid. For figures and overlays.">Bare</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
                     title="${hasSessionStyle(`${plotKind}-plot`) ? 'Session default style: the look every plot on Default has' : 'Built-in style'}">Default</button>
-            </div>
-        `)}
-        ${details(id, 'text', 'Text', `
-            <!-- Font Settings -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Font</label>
-                <select class="form-select form-select-sm mb-2" id="font-family-${id}">
-                    <option value="Arial, Helvetica, sans-serif" ${settings.fontFamily === 'Arial, Helvetica, sans-serif' ? 'selected' : ''}>Arial</option>
-                    <option value="'Times New Roman', Times, serif" ${settings.fontFamily === "'Times New Roman', Times, serif" ? 'selected' : ''}>Times New Roman</option>
-                    <option value="Courier, monospace" ${settings.fontFamily === 'Courier, monospace' ? 'selected' : ''}>Courier</option>
-                    <option value="Georgia, serif" ${settings.fontFamily === 'Georgia, serif' ? 'selected' : ''}>Georgia</option>
-                    <option value="'Trebuchet MS', sans-serif" ${settings.fontFamily === "'Trebuchet MS', sans-serif" ? 'selected' : ''}>Trebuchet MS</option>
-                    <option value="Verdana, sans-serif" ${settings.fontFamily === 'Verdana, sans-serif' ? 'selected' : ''}>Verdana</option>
-                </select>
-                
-                <div class="input-group input-group-sm mb-2">
-                    <span class="input-group-text">Size</span>
-                    <input type="number" class="form-control" id="font-size-${id}" 
-                        value="${settings.fontSize || 12}" min="8" max="24" step="1">
-                    <span class="input-group-text">px</span>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-font-size-${id}" title="Back to the default size"
-                        ${(settings.fontSize || 12) === 12 ? 'disabled' : ''}>Reset</button>
-                </div>
-                
-                <div class="d-flex align-items-center gap-2">
-                    <label class="form-label mb-0 me-2">Color</label>
-                    <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="text-color-${id}" value="${plotColour(settings, 'textColor')}" title="Choose text color">
-                    <button class="btn btn-sm btn-outline-secondary" id="reset-text-color-${id}">Reset</button>
-                </div>
-            </div>
-        `)}
-        ${details(id, 'background', 'Background', `
-            <!-- What is drawn behind the data. Each block is one option; a new one (cell outlines,
-                 a stain image) is another block here, with its own Reset when it has a colour. -->
-
-            <!-- Background Color -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Colour</label>
-                <div class="d-flex align-items-center gap-2">
-                    <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="plot-bg-color-${id}" value="${plotColour(settings, 'bgColor')}" title="Choose background color">
-                    <button class="btn btn-sm btn-outline-secondary" id="reset-bg-color-${id}">Reset</button>
-                </div>
-            </div>
-            
-            <!-- 3D Backdrop Settings (only shown for 3D plots) -->
-            <div class="mb-2 ${settings.z ? '' : 'd-none'}" id="backdrop-container-${id}">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                    <label class="form-label mb-0">3D Backdrop</label>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" id="show-backdrop-${id}" 
-                            ${settings.showBackdrop ? 'checked' : ''}>
-                        <label class="form-check-label" for="show-backdrop-${id}">Show</label>
-                    </div>
-                </div>
-                <div class="d-flex align-items-center gap-2">
-                    <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="backdrop-color-${id}" value="${plotColour(settings, 'backdropColor')}" title="Choose 3D backdrop color">
-                    <button class="btn btn-sm btn-outline-secondary" id="reset-backdrop-color-${id}">Reset</button>
-                </div>
             </div>
         `)}
         ${details(id, 'axes', 'Axes and ticks', `
@@ -825,65 +806,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
-        // Background color
-        if (target.id === `plot-bg-color-${id}`) {
-            settings.bgColor = target.value;
-            updatePlotBackground(plotContainer, settings);
-            notifySettingsChanged(id, 'bgColor', plotColour(settings, 'bgColor'));
-            return;
-        }
-        
-        // Reset bgColor: follow the app theme again
-        if (target.id === `reset-bg-color-${id}`) {
-            followTheme(settings, ['bgColor']);
-            updateColorInputs(container, id, settings);
-            updatePlotBackground(plotContainer, settings);
-            notifySettingsChanged(id, 'bgColor', settings.bgColor);
-            return;
-        }
-        
-        // Toggle 3D backdrop visibility
-        if (target.id === `show-backdrop-${id}`) {
-            settings.showBackdrop = target.checked;
-            update3DBackdrop(plotContainer, settings);
-            notifySettingsChanged(id, 'showBackdrop', settings.showBackdrop);
-            return;
-        }
-        
-        // 3D Backdrop color
-        if (target.id === `backdrop-color-${id}`) {
-            settings.backdropColor = target.value;
-            update3DBackdrop(plotContainer, settings);
-            notifySettingsChanged(id, 'backdropColor', plotColour(settings, 'backdropColor'));
-            return;
-        }
-        
-        // Reset backdropColor: follow the app theme again
-        if (target.id === `reset-backdrop-color-${id}`) {
-            followTheme(settings, ['backdropColor']);
-            updateColorInputs(container, id, settings);
-            update3DBackdrop(plotContainer, settings);
-            notifySettingsChanged(id, 'backdropColor', settings.backdropColor);
-            return;
-        }
-        
-        // Text color
-        if (target.id === `text-color-${id}`) {
-            settings.textColor = target.value;
-            updateTextColor(plotContainer, settings);
-            notifySettingsChanged(id, 'textColor', plotColour(settings, 'textColor'));
-            return;
-        }
-        
-        // Reset textColor: follow the app theme again
-        if (target.id === `reset-text-color-${id}`) {
-            followTheme(settings, ['textColor']);
-            updateColorInputs(container, id, settings);
-            updateTextColor(plotContainer, settings);
-            notifySettingsChanged(id, 'textColor', settings.textColor);
-            return;
-        }
-        
         // Grid color
         if (target.id === `grid-color-${id}`) {
             settings.gridColor = target.value;
@@ -1005,31 +927,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
-        
-        // Font family change
-        if (target.id === `font-family-${id}`) {
-            settings.fontFamily = target.value;
-            updateFontFamily(plotContainer, settings);
-            notifySettingsChanged(id, 'fontFamily', settings.fontFamily);
-            return;
-        }
-        
-        // Font size change
-        if (target.id === `font-size-${id}`) {
-            settings.fontSize = parseInt(target.value, 10);
-            updateFontSize(plotContainer, settings);
-            notifySettingsChanged(id, 'fontSize', settings.fontSize);
-            syncOptionResets(id, settings);
-            return;
-        }
-        if (target.id === `reset-font-size-${id}`) {
-            settings.fontSize = 12;
-            document.getElementById(`font-size-${id}`).value = 12;
-            updateFontSize(plotContainer, settings);
-            notifySettingsChanged(id, 'fontSize', settings.fontSize);
-            syncOptionResets(id, settings);
-            return;
-        }
         
         // Margin changes
         if (target.id === `margin-top-${id}`) {
@@ -1937,7 +1834,7 @@ function resetState(settings, key) {
 
 /** The Reset buttons of the number boxes (text size, legend dots and columns): disabled at the default, where there is nothing to reset. */
 function syncOptionResets(id, settings) {
-    const atDefault = { 'font-size': (settings.fontSize || 12) === 12, 'legend-dot-size': settings.legendDotSize == null,
+    const atDefault = { 'legend-dot-size': settings.legendDotSize == null,
                         'legend-columns': settings.legendColumns == null, 'legend-title-size': settings.legendTitleSize == null,
                         'legend-title-gap': settings.legendTitleGap == null, 'legend-column-gap': settings.legendColumnGap == null, 'legend-title-align': settings.legendTitleAlign == null };
     for (const [name, yes] of Object.entries(atDefault)) {
@@ -1948,7 +1845,6 @@ function syncOptionResets(id, settings) {
 
 /** The ids of each colour's Reset button, by settings key. */
 const RESET_IDS = {
-    bgColor: 'reset-bg-color', backdropColor: 'reset-backdrop-color', textColor: 'reset-text-color',
     gridColor: 'reset-grid-color', axisColor: 'reset-axis-color', zeroLineColor: 'reset-zero-line-color',
     notInTableColor: 'reset-not-in-table-color',
     focusedColor: 'reset-focused-color', focusedEdgeColor: 'reset-focused-edge-color'
@@ -1957,7 +1853,7 @@ const RESET_IDS = {
 /** Show which colours follow the app theme: a following colour's Reset has nothing to do (disabled, with the reason as its tooltip). */
 export function syncColourControls(id, settings) {
     for (const key of THEMED_COLOURS) {
-        const reset = document.getElementById(`${RESET_IDS[key]}-${id}`);
+        const reset = RESET_IDS[key] && document.getElementById(`${RESET_IDS[key]}-${id}`);
         if (!reset) continue;
         const following = isFollowing(settings, key);
         reset.disabled = following;

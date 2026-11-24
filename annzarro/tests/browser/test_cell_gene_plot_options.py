@@ -178,6 +178,25 @@ def test_reset_of_a_group_puts_back_only_that_group(page, served):
     assert page.input_value(f"#font-size-{pid}") == "12"
 
 
+@pytest.mark.parametrize("which", WHICH)
+def test_text_and_background_use_the_one_pop_over_body_standard(page, served, which):
+    """U3: the Cell Plot's and Gene Plot's Text and Background are the shared renderer's, as the Cell-Gene Plot's are: az-pop-*
+    sections and rows (label left, control right), one Reset at the foot of each, a colour with Auto, no input-group boxes."""
+    pid = _open(page, served, which)
+    _open_options(page, pid)
+    for name in ("text", "background"):
+        _section(page, pid, name)
+        sec = f"{POP} details[data-panel='{pid}'][data-section='{name}']"
+        assert "az-pop-section" in page.get_attribute(sec, "class")
+        assert page.locator(f"{sec} .az-pop-section__body .az-pop-field").count() >= 1
+        assert page.locator(f"{sec} .az-pop-reset").count() == 1, "one Reset per group"
+        assert page.locator(f"{sec} .input-group, {sec} .form-switch").count() == 0
+    assert page.locator(f"{POP} #font-size-{pid}.az-pop-num").count() == 1
+    assert page.locator(f"{POP} #reset-font-size-{pid}").count() == 0, "no Reset of its own per field"
+    assert page.locator(f"{POP} #text-color-{pid}").count() == 1 and page.locator(f"{POP} [data-auto='textColor']").count() == 1
+    assert page.evaluate("(s) => getComputedStyle(document.querySelector(s)).textTransform", f"{POP} details[data-section='text'] > summary") == "uppercase"
+
+
 # ------------------------------------------------------------------ 5. a link keeps it all
 
 @pytest.mark.parametrize("which", WHICH)
