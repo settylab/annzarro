@@ -25,7 +25,7 @@ const MODE_ROWS = Object.freeze({
     bar: { value: 'height', arrangement: ['stack', 'dodge', 'fill'], labels: true, sort: true, horizontal: true, log: true, binned: ['x', 'split'] },
     // a number's bins at their values: the same arrangements as Bar where they apply, side by side disabled (bins cannot)
     histogram: { value: 'height', arrangement: ['stack', 'dodge', 'overlay', 'fill'], labels: true, horizontal: true, log: true, binned: ['x', 'split'] },
-    pie: { slices: true, labels: true, sort: true, ring: true, binned: ['x'] },
+    pie: { slices: true, names: true, labels: true, sort: true, ring: true, binned: ['x'] },
     hist2d: { value: 'color', labels: true, binned: ['x', 'y', 'split'] },
     heatmap: { value: 'color', labels: true, reverse: true, binned: ['x', 'y'] },
     // a density is smoothed on a fixed grid (CNT-10): only its Color by is binned
@@ -40,14 +40,14 @@ const MODE_ROWS = Object.freeze({
  * @param {string} mode
  * @returns {{x: boolean, y: boolean, split: boolean, sets: boolean, slices: boolean, value: ('height'|'color'|null),
  *   arrangement: string[], labels: boolean, sort: boolean, reverse: boolean, horizontal: boolean, log: boolean,
- *   ring: boolean, binned: string[]}}
+ *   ring: boolean, names: boolean, binned: string[]}}
  */
 export function rowsOf(mode) {
     const reads = modeReads(mode);
     const own = MODE_ROWS[mode];
     return {
         ...reads, slices: !!own.slices, value: own.value || null, arrangement: own.arrangement || [], labels: !!own.labels,
-        sort: !!own.sort, reverse: !!(own.sort || own.reverse), horizontal: !!own.horizontal, log: !!own.log, ring: !!own.ring,
+        sort: !!own.sort, reverse: !!(own.sort || own.reverse), horizontal: !!own.horizontal, log: !!own.log, ring: !!own.ring, names: !!own.names,
         binned: own.binned, density: own.density || 0
     };
 }
@@ -446,11 +446,14 @@ export function parseAdjust(text) {
  * colour scale, and a level palette where it colours levels. A 2D histogram's rectangles, a 2D density without a Color by,
  * a heatmap's number and an UpSet coloured by a share or a statistic have a scale; a Color by, a pie's slices and a
  * heatmap's most frequent level have levels.
+ * A pie's slices that are bins of a number take the colour map by default (a continuum reads as one) and the level palette
+ * when `color.slices` is 'levels'; the page says which inputs are numbers, without it a pie has its palette (as before).
  * @param {Object} config - from normalizeCountPlot
+ * @param {(source: Object) => boolean} [isNumeric]
  * @returns {{map: boolean, palette: boolean}}
  */
 // export-unused-ok: the colour tests state it
-export function colorUse(config) {
+export function colorUse(config, isNumeric) {
     const c = shownConfig(config);
     const kind = (c.value && c.value.kind) || 'count';
     const split = !!c.split && splitUsed(c);
@@ -461,7 +464,21 @@ export function colorUse(config) {
     else if (c.mode === 'density2d') map = !split;
     else if (c.mode === 'upset') map = kind === 'share' || (kind === 'measure' && !!c.measure);
     const top = c.mode === 'heatmap' && kind === 'top_level';
+    if (c.mode === 'pie' && binnedNumber(c.x, isNumeric) && !(c.color && c.color.slices === 'levels')) return { map: true, palette: false };
     return { map, palette: levels || top };
+}
+
+/**
+ * What the Display pop-over offers for a pie's slice colours: the choice between a continuous scale and the level palette, with
+ * the reason the scale is refused for slices that are categories.
+ * @param {Object} config
+ * @param {(source: Object) => boolean} [isNumeric]
+ * @returns {{offered: boolean, continuous: boolean, refusal: string}}
+ */
+export function sliceColourUse(config, isNumeric) {
+    if (config.mode !== 'pie') return { offered: false, continuous: false, refusal: '' };
+    const continuous = binnedNumber(config.x, isNumeric);
+    return { offered: true, continuous, refusal: continuous ? '' : C.slices.refused };
 }
 
 /**
@@ -470,8 +487,8 @@ export function colorUse(config) {
  * the points may take the density as their opacity).
  * @returns {{map: boolean, palette: boolean, range: boolean, points: boolean, fade: boolean}}
  */
-export function popoverUse(config) {
-    const use = colorUse(config);
+export function popoverUse(config, isNumeric) {
+    const use = colorUse(config, isNumeric);
     const c = shownConfig(config);
     const density = c.mode === 'density2d';
     const layers = density ? densityLayers(c.layers, c.style, !!c.split) : null;
@@ -501,6 +518,10 @@ export function drawOptions(config) {
         horizontal: rows.horizontal && config.horizontal === true,
         log: rows.log && config.log === true,
         ring: rows.ring && config.ring === true,
+        // a pie's slice names, and whether its bins of a number take continuous colours (the default) or the level palette
+        // (each only where it is set, so the options of every other plot stay as they were)
+        ...(rows.names && config.names === true ? { names: true } : {}),
+        ...(rows.slices && config.color && config.color.slices === 'levels' ? { pieColour: 'levels' } : {}),
         fade: config.fade === true,
         // a density's own (CNT-10): the bandwidth adjust, curves scaled by level size, a 2D density as an image
         adjust: rows.density && Number.isFinite(config.adjust) && config.adjust >= ADJUST.min && config.adjust <= ADJUST.max ? config.adjust : 1,

@@ -395,6 +395,15 @@ const countPlot = Object.freeze({
         topLevel: `Colors each rectangle by its commonest ${word.level}.`
     }),
     labels: Object.freeze({ none: 'None', count: 'Count', share: 'Share', measure: capital(word.statistic) }),
+    /** A pie's slices: their names, and their colours (continuous for bins of a number, the level palette for categories). */
+    slices: Object.freeze({
+        names: 'Names', namesTitle: 'Print each slice\'s name on it (a slice under 3% shows it in its hover only)',
+        colours: 'Slice colors', continuous: 'Continuous', levels: 'Level palette',
+        refused: 'Slices that are categories have no order to color by; bins of a number do.',
+        byCentre: 'Slices take the color of their bin\'s center. The bar shows the numbers.',
+        byOrder: 'These bins are drawn evenly (log, equal-count or manual), so slices take the color of their bin\'s order: each bin is one step.',
+        barCentre: (name) => `${name} (bin center)`, barOrder: (name) => `${name} (bin order)`
+    }),
     buttons: Object.freeze({
         sort: 'Sort by height', reverse: 'Reverse', horizontal: 'Horizontal', options: 'Plot Options', ring: 'Ring', log: 'Log count axis',
         fade: 'Fade by its share', csv: 'Download CSV', chooseLevels: `Choose ${plural.level}`, undo: 'Undo',
