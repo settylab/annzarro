@@ -156,7 +156,11 @@ SNAP = """(sel) => {
     if (v.tickmode === 'auto') { delete out.dtick; delete out.tick0; }
     // a 3D scene's autoranged axis: gl3d writes the range it computed back only on some paths (a relayout); the
     // scene drawn is the same (checked on screenshots), and an explicit range is still compared
-    if (v.spikesides !== undefined && v.autorange === true) delete out.range;   // spikesides: only 3D axes have it
+    // (a 3D axis is told by spikesides, or by showbackground when its spikes are off and spikesides is not resolved: the
+    // Count Plot's and the Cell-Gene Plot's z axis). Its explicit ticks are compared; the step gl3d computed for them is not.
+    const axis3d = v.spikesides !== undefined || v.showbackground !== undefined;
+    if (axis3d && v.autorange === true) delete out.range;
+    if (axis3d && v.tickmode === 'array') { delete out.dtick; delete out.tick0; }
     return out;
   };
   const layout = {};
@@ -524,6 +528,7 @@ COUNT_VOCABULARY = [
     lambda r: (lambda v: (f"labels {v}", _update(CC, {"labels": v})))(r.choice(["none", "count", "share"])),
     lambda r: (lambda k, v: (f"{k} {v}", _update(CC, {k: v})))(r.choice(["reverse", "horizontal", "log", "ring", "fade"]), r.choice([True, None])),
     lambda r: (lambda v: (f"sort {v}", _update(CC, {"sort": v})))(r.choice(["height", None])),
+    lambda r: ("3D (control)", _click(f"{C_TILE} .ccnt-3d-btn")),
     lambda r: (lambda v: (f"adjust {v}", _update(CC, {"adjust": v})))(r.choice([0.5, 1, 2])),
     lambda r: (lambda v: (f"scale {v}", _update(CC, {"scale": v})))(r.choice(["level", "size"])),
     lambda r: (lambda v: (f"layers {v}", _update(CC, {"layers": v})))(
@@ -550,6 +555,15 @@ COUNT_RISKY = {
                        ("layers fill", _update(CC, {"layers": {"fill": True}})),
                        ("split none", _update(CC, {"split": None})),
                        ("layers image+lines", _update(CC, {"layers": {"image": True, "lines": True}}))],
+    # 3D (WP-11): on, a colour change redrawn in the scene, off; and a 3D height of its own, back through a mode that has no bars
+    "3d-toggle-colour-back": [("x score", _update(CC, {"x": SCORE})), ("y depth", _update(CC, {"y": DEPTH})),
+                              ("mode hist2d (control)", _count_mode("hist2d")), ("split none", _update(CC, {"split": None})),
+                              ("3D (control)", _click(f"{C_TILE} .ccnt-3d-btn")), ("color Reds", _update(CC, {"color": {"map": "Reds"}})),
+                              ("height share", _update(CC, {"height": "share:total"})), ("color RdBu", _update(CC, {"color": {"map": "RdBu", "reverse": True}})),
+                              ("3D (control)", _click(f"{C_TILE} .ccnt-3d-btn")), ("color none", _update(CC, {"color": None}))],
+    "3d-through-a-mode-without-bars": [("3D (control)", _click(f"{C_TILE} .ccnt-3d-btn")), ("mode pie (control)", _count_mode("pie")),
+                                       ("mode bar (control)", _count_mode("bar")), ("mode heatmap (control)", _count_mode("heatmap")),
+                                       ("undo (control)", _click(f"{C_TILE} .ccnt-undo"))],
     "modes-round-trip": [("mode pie (control)", _count_mode("pie")), ("mode heatmap (control)", _count_mode("heatmap")),
                          ("mode histogram (control)", _count_mode("histogram")), ("mode bar (control)", _count_mode("bar"))],
     "mode-and-undo": [("x score", _update(CC, {"x": SCORE})), ("y depth", _update(CC, {"y": DEPTH})),

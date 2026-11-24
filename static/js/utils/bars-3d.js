@@ -20,9 +20,18 @@
 import { VOCABULARY } from './vocabulary.js';
 
 /** At most this many bars in 3D. Provisional: WP-13 measures the real one. */
+// export-unused-ok: the cap itself, which the tests read; the panels' gates read barCap()
 export const BARS_3D_MAX = 40000;
+/**
+ * The bar cap in force: BARS_3D_MAX, or a lower one the browser tests set before the app loads (`window.__azBars3dMax`,
+ * so a test need not build 40,000 bars). Both panels' gates read it.
+ */
+export function barCap() {
+    const set = typeof window !== 'undefined' ? window.__azBars3dMax : undefined;
+    return typeof set === 'number' && set > 0 ? set : BARS_3D_MAX;
+}
+
 /** Fraction of its cell a bar fills, so neighbours stay apart (UX 6b). */
-// export-unused-ok: the 3D builder API for WP-11 (Cell Count) and WP-12 (Cell-Gene)
 export const BAR_FILL = 0.85;
 /** Vertices and triangles of one bar. */
 // export-unused-ok: the 3D builder API for WP-11 (Cell Count) and WP-12 (Cell-Gene)

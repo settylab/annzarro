@@ -400,6 +400,32 @@ const countPlot = Object.freeze({
         fade: 'Fade by its share', csv: 'Download CSV', chooseLevels: `Choose ${plural.level}`, undo: 'Undo',
         adjust: 'Smoothing', bySize: 'Scale curves by level size'
     }),
+    /**
+     * The 3D view (UX 6b, WP-11): the toolbar's `3D` toggle, the Height row, why 3D is not offered, what the strip says and
+     * Plot Options' 3D section.
+     */
+    view3d: Object.freeze({
+        button: '3D',
+        buttonHelp: 'Show the plot as 3D bars: the colors as they are, the height of each bar from its own source.',
+        buttonOnHelp: 'Back to the 2D plot.',
+        heightRow: '3D height',
+        sameAs: (what) => `Same as ${what}`,
+        heightHelp: 'Same as the color draws the color\'s numbers as heights. A count, a share or a statistic can be the height instead.',
+        hoverHeight: 'Height',
+        tag: '3D',
+        offTag: '2D',
+        leftOut: '3D does not draw printed values, a log count axis, horizontal bars, arrangements or the fade by share.',
+        resetCamera: 'Reset camera',
+        svgOff: '3D exports as an image only.',
+        refused: Object.freeze({
+            mode: '3D is for the 2D histogram, the heatmap and the bar plot with a Color by.',
+            needSplit: '3D needs a Color by: the bars stand over X and Color by.',
+            layers: 'A 2D histogram with a Color by is drawn in layers. 3D draws it without the Color by.'
+        }),
+        options: Object.freeze({
+            section: '3D', footprint: 'Bar footprint (share of the cell)', lighting: 'Lighting', box: 'Axis box', zTitle: 'Height title'
+        })
+    }),
     /** The layers of a 2D density, each a box of Plot Options. */
     layers: Object.freeze({
         image: 'Density as opacity', imageOne: 'Density as color scale', lines: 'Isolines', fill: 'Filled isolines', points: 'Cell points',

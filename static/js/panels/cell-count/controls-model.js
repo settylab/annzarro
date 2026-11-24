@@ -244,6 +244,44 @@ export function valueChoices(config) {
     return out;
 }
 
+/** The value of the 3D height select that stores no height: Same as Color. */
+export const SAME_HEIGHT = '__same__';
+
+/** The choices of the 3D height (UX 6b): Same as Color first, then those of Height or Color but the most frequent level (no number). */
+export function heightChoices(config) {
+    const what = rowsOf(config.mode).value === 'color' ? C.rows.color : C.rows.height;
+    return [{ value: SAME_HEIGHT, label: C.view3d.sameAs(what), help: C.view3d.heightHelp },
+        ...valueChoices(config).filter((c) => c.value !== 'top_level')];
+}
+
+/** The choice the 3D height shows: the stored one when this mode offers it, else Same as Color. */
+export function heightChoiceOf(config) {
+    return typeof config.height === 'string' && heightChoices(config).some((c) => c.value === config.height) ? config.height : SAME_HEIGHT;
+}
+
+/**
+ * The config with a 3D height chosen. A statistic reads the measure the plot already has, or takes the one its Color's
+ * statistic would (`defaults.measureSource`); null when it needs one and there is none.
+ * @param {Object} config
+ * @param {string} choice - a value of heightChoices
+ * @param {{measureSource?: Object}} [defaults]
+ * @returns {Object|null}
+ */
+export function applyHeightChoice(config, choice, defaults = {}) {
+    const out = { ...config };
+    if (choice === SAME_HEIGHT) {
+        delete out.height;
+        return out;
+    }
+    if (choice.startsWith('stat:')) {
+        const source = config.measure ? config.measure.source : defaults.measureSource;
+        if (!source) return null;
+        if (!config.measure) out.measure = { stat: choice.slice('stat:'.length), source };
+    }
+    out.height = choice;
+    return out;
+}
+
 /**
  * What the config shows as height or color, as the mode can show it: a choice it does not offer (a most frequent level
  * in a bar, a share of the split with no split) reads as the count or the share of all, and is kept stored (CNT-6).
@@ -461,6 +499,8 @@ export function colorUse(config) {
     else if (c.mode === 'density2d') map = !split;
     else if (c.mode === 'upset') map = kind === 'share' || (kind === 'measure' && !!c.measure);
     const top = c.mode === 'heatmap' && kind === 'top_level';
+    // a bar plot in 3D colours each bar by its plotted value on a scale (the level colours are 2D's)
+    if (c.view === '3d' && c.mode === 'bar' && split) return { map: true, palette: false };
     return { map, palette: levels || top };
 }
 

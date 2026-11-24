@@ -98,7 +98,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // --- the stored config -----------------------------------------------------------------------------------------------
 
-const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure', 'binSpacing', 'color'];
+const KNOWN = ['version', 'mode', 'x', 'y', 'split', 'arrangement', 'sets', 'value', 'measure', 'binSpacing', 'color', 'view', 'height', 'camera'];
 const INPUTS = ['x', 'y', 'split'];
 
 /** An input as a partitioning. Its bin count goes to 2,000 and is kept as typed, since the default differs by mode. */
@@ -220,8 +220,37 @@ export function normalizeCountPlot(raw) {
         const color = normalizeColor(raw.color, bad);
         if (color) out.color = color;
     }
+    // the 3D view (UX 6b, WP-11): `view: '3d'` (absent is 2D), the bars' `height` source (absent is Same as Color) and the `camera`
+    if (raw.view !== undefined) {
+        if (raw.view === '3d') out.view = '3d'; else bad('view', 'bad_view');
+    }
+    if (raw.height !== undefined) {
+        if (typeof raw.height === 'string' && HEIGHT_CHOICE.test(raw.height)) out.height = raw.height; else bad('height', 'bad_height');
+    }
+    if (raw.camera !== undefined) {
+        const camera = normalizeCamera(raw.camera);
+        if (camera) out.camera = camera; else bad('camera', 'bad_camera');
+    }
     for (const key of Object.keys(raw)) if (!KNOWN.includes(key)) out[key] = raw[key];
     return { config: out, problems };
+}
+
+/** The values of the 3D bars' height source (the entries of valueChoices, but for the most frequent level, which has no number). */
+const HEIGHT_CHOICE = /^(count|share:(all|x|split|row|column|total)|stat:(mean|sum|pct_above|sd|zscore))$/;
+
+/** A camera `{eye, center?, up?}` of finite points (x, y, z), or null: Plotly's own shape, kept as the user turned it. */
+function normalizeCamera(raw) {
+    const point = (p) => (isObject(p) && ['x', 'y', 'z'].every((k) => isNumber(p[k])) ? { x: p.x, y: p.y, z: p.z } : null);
+    const eye = isObject(raw) ? point(raw.eye) : null;
+    if (!eye) return null;
+    const out = { eye };
+    for (const key of ['center', 'up']) {
+        if (raw[key] === undefined) continue;
+        const p = point(raw[key]);
+        if (!p) return null;
+        out[key] = p;
+    }
+    return out;
 }
 
 /**
@@ -459,7 +488,9 @@ export function planGrid(config, ctx) {
     if (body.sets) request.sets = body.sets;
     if (mode.density) request.density = true;
     if (members) members.forEach((member, i) => { request.partitionings[i].member = member; });
-    if (config.value && config.value.kind === 'measure' && config.measure) {
+    // a 3D height that is a statistic reads the same measure's moments (every statistic is made of them)
+    const heightStat = config.view === '3d' && typeof config.height === 'string' && config.height.startsWith('stat:');
+    if (((config.value && config.value.kind === 'measure') || heightStat) && config.measure) {
         const measure = { id: 'm0', source: wireSource(config.measure.source, ctx) };
         if (config.measure.above !== undefined) measure.above = config.measure.above;
         request.measures = [measure];
@@ -832,6 +863,22 @@ export function heightValues(config, table) {
         case 'top_level': return null;
         default: return table.count;
     }
+}
+
+/**
+ * The numbers of the 3D bars' own height source (`config.height`: a value choice of Height or Color), or null when the
+ * height is Same as Color (nothing stored) or its number is not in the table (a statistic of a grid with no measure).
+ * @returns {{choice: string, values: ArrayLike<number>}|null}
+ */
+// export-unused-ok: the Count Plot's 3D figure (panels/cell-count/draw-3d.js)
+export function heightChoiceValues(config, table) {
+    const choice = config.height;
+    if (typeof choice !== 'string') return null;
+    let values = null;
+    if (choice === 'count') values = table.count;
+    else if (choice.startsWith('share:')) values = shareValues(table, choice.slice('share:'.length));
+    else if (choice.startsWith('stat:')) values = measureValues(table, choice.slice('stat:'.length));
+    return values ? { choice, values } : null;
 }
 
 /**

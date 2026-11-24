@@ -42,7 +42,7 @@ import { registerPanelFields } from '../plot-utilities/options-schema.js';
 import { mountPlotOptions } from '../plot-utilities/options-popover.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import { dendrogramBlocks } from './draw-annotations.js';
-import { BARS_3D_MAX, checkBarCap } from '../../utils/bars-3d.js';
+import { barCap, checkBarCap } from '../../utils/bars-3d.js';
 
 const W = VOCABULARY.cellGene;
 const WO = VOCABULARY.cellGene.options;
@@ -291,21 +291,12 @@ export function figureExtras(config, { reply, recipe, order, titleOf, colors } =
 // ================================================================================================ 3D
 
 /**
- * The bar cap in force: BARS_3D_MAX, or a lower one the browser tests set before the app loads (`window.__azBars3dMax`,
- * as `window.__azTableLimits` sets the table's limits), so a small grid can stand for one over the cap.
- */
-function barMax() {
-    const set = typeof window !== 'undefined' ? window.__azBars3dMax : undefined;
-    return typeof set === 'number' && set > 0 ? set : BARS_3D_MAX;
-}
-
-/**
  * Whether the matrix may be drawn in 3D (UX 6b): one bar per row and group, at most the cap. Refused with the matrix's
  * words ("Use fewer genes or groups.").
  * @param {{rows: number, groups: number, max?: number}} shape
  * @returns {{ok: boolean, count: number, max: number, text: string}}
  */
-export function view3dGate({ rows, groups, max = barMax() }) {
+export function view3dGate({ rows, groups, max = barCap() }) {
     return checkBarCap(rows * groups, { max, hint: 'matrix' });
 }
 
