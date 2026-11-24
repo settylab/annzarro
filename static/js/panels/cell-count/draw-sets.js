@@ -99,6 +99,10 @@ function themeLayout(theme) {
     return { paper_bgcolor: theme.bgColor, plot_bgcolor: theme.bgColor, font: { color: theme.textColor, size: 12 }, showlegend: false, hovermode: 'closest' };
 }
 
+const HIDDEN_AXIS = Object.freeze({
+    autorange: false, fixedrange: true, tickmode: 'linear', tick0: 0, dtick: 1, ticks: '', showticklabels: false, showgrid: false,
+    zeroline: false, showline: false
+});
 const CONFIG = Object.freeze({ responsive: true, displaylogo: false });
 
 /** Whether a label of `chars` characters on `lines` lines fits a region with `room` (the radius of its widest inscribed circle, in plot units). */
@@ -193,8 +197,11 @@ function vennFigure(plot, theme, opts) {
             customdata: region, textfont: { color: theme.textColor, size: 13 } }],
         layout: {
             ...themeLayout(theme), shapes, annotations, margin: { l: 16, r: 16, t: 16, b: note ? 40 : 16 },
-            xaxis: { visible: false, range: g.xRange, fixedrange: true },
-            yaxis: { visible: false, range: g.yRange, scaleanchor: 'x', fixedrange: true }
+            // the circles are drawn in these axes' coordinates, so they are pinned: a fixed range, no autorange, and no ticks of any kind
+            // (an axis with `visible: false` still has Plotly compute a tick step on some redraws, which made a plot drawn twice differ
+            // from one drawn once: tests/browser/test_render_drift.py)
+            xaxis: { ...HIDDEN_AXIS, range: g.xRange },
+            yaxis: { ...HIDDEN_AXIS, range: g.yRange, scaleanchor: 'x' }
         },
         config: CONFIG
     };

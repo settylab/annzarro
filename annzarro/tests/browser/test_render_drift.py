@@ -154,8 +154,7 @@ SNAP = """(sel) => {
     }
     // automatic ticks: dtick and tick0 are what the last tick pass computed, kept or not by the path that drew;
     // the ticks drawn are compared from the page (ticks, below)
-    // (a hidden axis, as the Venn's, draws no ticks at all: Plotly computes its step on some redraws and not on others)
-    if (v.tickmode === 'auto' || (v.visible === false && v.type !== undefined)) { delete out.dtick; delete out.tick0; }
+    if (v.tickmode === 'auto') { delete out.dtick; delete out.tick0; }
     // a 3D scene's autoranged axis: gl3d writes the range it computed back only on some paths (a relayout); the
     // scene drawn is the same (checked on screenshots), and an explicit range is still compared
     // (a 3D axis is told by spikesides, or by showbackground when its spikes are off and spikesides is not resolved: the

@@ -235,3 +235,28 @@ def test_export_carries_the_labels_the_plot_shows(page, served):
     _wait_text(page, "!f.centres.every(([x, y], i) => Math.abs(x - [-0.55, 0.55, 0][i]) < 1e-9 && Math.abs(y - [0.32, 0.32, -0.62][i]) < 1e-9)")
     svg = _svg(page)
     assert svg.count("<circle") + svg.count("<path") >= 3 and "%" in svg and "A · " not in svg
+
+
+PIXELS = """(s) => [...document.querySelectorAll(s + ' .ccnt-plot .shapelayer path')].map(p => { const r = p.getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2, r.width, r.height]; })"""
+
+
+def test_circles_of_an_edited_plot_are_where_a_fresh_plot_puts_them(page, served):
+    """The circles are drawn in the hidden axes' coordinates: after edits, in pixels, they are those of the plot opened from the final config."""
+    _venn(page, served)
+    for step in (lambda: page.check(f"{S} .ccnt-venn-area"), lambda: page.select_option(f"{S} .ccnt-labels", "share"),
+                 lambda: page.uncheck(f"{S} .ccnt-names"), lambda: page.uncheck(f"{S} .ccnt-venn-area"), lambda: page.check(f"{S} .ccnt-venn-area")):
+        step()
+        _drawn(page, "venn")
+    _drawn(page, "venn", "c.vennArea === true && c.vennNames === false && c.vennLabels === 'share'")
+    _wait_text(page, "f.names.length === 0 && f.text.every(t => t === '' || t.endsWith('%'))")
+    config = _config(page)
+    edited = page.evaluate(PIXELS, S)
+    # the same page, loaded again from a link of the final config: a fresh drawing
+    _open(page, served, {CC: {"id": CC, **config}})
+    until(page, f"""(s) => {{ const r = document.querySelector(s + ' .ccnt-panel');
+        return r && r.dataset.drawn === 'venn' && r.dataset.state === 'ready' && document.querySelectorAll(s + ' .ccnt-plot .shapelayer path').length > 0; }}""", S, timeout=60)
+    fresh = page.evaluate(PIXELS, S)
+    assert len(edited) == len(fresh) >= 3, (edited, fresh)
+    for a, b in zip(edited, fresh):
+        assert all(abs(x - y) <= 1.5 for x, y in zip(a, b)), (edited, fresh)
