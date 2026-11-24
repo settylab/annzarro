@@ -691,8 +691,11 @@ class NameIndex:
 
 
 def _signature(dataset_path: str) -> Tuple:
-    """Cheap fingerprint of a local store; remote paths are trusted as-is."""
-    sig = []
+    """Cheap fingerprint of a local store, with its freshness generation: a refresh
+    starts a new one, so an index of names rewritten in place is built again
+    (stat() alone sees no chunk write, and a remote store has no stat())."""
+    from . import freshness
+    sig = [("generation", freshness.generation(dataset_path))]
     for member in ("", "obs", "var", ".zattrs", "zarr.json"):
         p = os.path.join(dataset_path, member) if member else dataset_path
         try:

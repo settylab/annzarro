@@ -4,6 +4,8 @@
   "limits.refuse_s": 600.0,
   "limits.live_update_s": 5.0,
   "limits.progress_bar_s": 10.0,
+  "limits.refresh_min_interval_large_s": 60.0,
+  "limits.refresh_large_cells": 10000000,
   "limits.matrix_values": 400000,
   "limits.genes_per_section": 2000,
   "limits.groups": 2000,

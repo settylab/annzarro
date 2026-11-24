@@ -325,7 +325,7 @@ matrices and grids**, **Drawn and exported in the browser**, and **Server resour
 limits of {doc}`resource-limits`). Every cost limit and every server limit read per request can be
 changed here without a restart; the server applies it at the next request, every worker
 alike, and an open page at its next request to the server. A limit that is not at its default says its default under the value.
-A limit set in the YAML (`limits:`, {ref}`config-limits`) is a ceiling: the page refuses a higher
+A limit set in the YAML (`limits:`, {ref}`config-limits`) is a ceiling (for `refresh_min_interval_large_s`, where a higher value is stricter, a floor: the page refuses a lower one): the page refuses a higher
 value with `409 config_ceiling`. The time tiers keep their order (live update ≤ ask first ≤ refuse):
 a change that breaks it is refused on its row, naming the other limit, with `400 out_of_order`, and
 nothing is stored. **Reset all** clears every limit set here in one change; each returns to the

@@ -2416,22 +2416,23 @@ const App = (function() {
 
                 // Every user: the server checks the store against the disk
                 // and, if it changed, serves the change from every worker.
-                const refreshed = await DataManager.revalidateDataset(datasetPath);
-                let cleared = false;
+                const refreshed = await DataManager.revalidateDataset(datasetPath, {
+                    // a large dataset's Refresh waits for its interval: say when it runs
+                    onScheduled: (answer) => _showNotification('Refresh scheduled', answer.message, 'info')
+                });
                 // Clearing the server's whole cache for the dataset as well is
                 // for an admin of a hosted server (and the desktop); a refusal
                 // (403 admin_only) is expected, not an error.
                 if (_refreshPlan.resetServerCache) {
                     try {
-                        const reset = await DataManager.resetBackendCache(datasetPath);
-                        cleared = !!reset && reset.status !== 'forbidden' && reset.status !== 'error';
+                        await DataManager.resetBackendCache(datasetPath);
                     } catch (e) {
                         console.warn('Server cache not cleared:', e && e.message);
                     }
                 }
-                // A store too large to check within the budget: say what a
-                // chunk-only write needs (once per press, not per poll)
-                const partial = partialRefreshNotice(refreshed, { cleared });
+                // A store too large to check within the budget: the server cannot say
+                // what changed but read it all again; say that (once per press, not per poll)
+                const partial = partialRefreshNotice(refreshed);
                 if (partial) _showNotification(partial.title, partial.message, 'info');
                 
                 // Reload available datasets
