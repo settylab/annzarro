@@ -1,8 +1,8 @@
 /**
  * X3a: the Cell-Gene Plot panel's models, without a page.
  *
- *   - the configuration (plan 1.6, `cell-gene` version 1): the golden configs read unchanged, defaults, unknown fields
- *     kept, a hand-edited link cleaned;
+ *   - the configuration (plan 1.6, `cell-gene` version 1): cell_gene_1 reads unchanged and cell_gene_6 into exactly
+ *     its decision-40 gene steps, drawing the same values; defaults, unknown fields kept, a hand-edited link cleaned;
  *   - its references (CAT-9): the cell axis (a grouping) and each section's source follow a remap, round trip;
  *   - the section list (UX 3.2, CXG-3 to CXG-8): add, duplicate, remove, move, Genes / One row, the title, the counts
  *     "48 genes · 3 not in this dataset", the over-2,000 sentence;
@@ -45,16 +45,61 @@ registerReferences('cell-gene', cellGeneReferences);
 // ------------------------------------------------------------------ the configuration
 
 test('the golden configs read unchanged (plan 1.6: every later normaliser reads them unchanged)', () => {
-    // cell_gene_6's one-row sections hold the row kinds of before decision 40: they read into gene steps that draw the
-    // same values, with no problem and no notice (cell-gene-one-row.test.mjs); everything else of it reads unchanged
-    for (const name of ['cell_gene_1', 'cell_gene_6']) {
-        const raw = golden(name);
-        const { config, problems, notices } = normalizeCellGene(raw);
-        const strip = (c) => ({ ...c, sections: c.sections.map((sec) => { const rest = { ...sec }; delete rest.color; delete rest.size; return rest; }) });
-        assert.deepEqual(strip(config), strip(raw), name);
-        if (name === 'cell_gene_1') assert.deepEqual(config, raw, name);
-        assert.deepEqual(problems, [], name);
-        assert.deepEqual(notices, [], name);
+    const raw = golden('cell_gene_1');
+    const { config, problems, notices } = normalizeCellGene(raw);
+    assert.deepEqual(config, raw);
+    assert.deepEqual(problems, []);
+    assert.deepEqual(notices, []);
+});
+
+/** cell_gene_6 as decision 40 reads it: every field as stored, except each one-row section's legacy kinds as gene steps. */
+function cellGene6Migrated() {
+    const out = golden('cell_gene_6');
+    out.sections = out.sections.map((s) => {
+        if (s.rows !== 'set') return s;
+        // Color mean_of_means under Color mean · logged: the mean of the gene rows, the default, not written;
+        // Size score_pct_above of zscore_mean · logged above 1 under Size % expressing · logged: that score, above 1
+        return { source: s.source, rows: 'set', size: { genes: 'zscore_mean', above: 1 } };
+    });
+    return out;
+}
+
+test('golden cell_gene_6 (row kinds of before decision 40) reads into exactly its gene steps, with no problem and no notice', () => {
+    const raw = golden('cell_gene_6');
+    const { config, problems, notices } = normalizeCellGene(raw);
+    assert.deepEqual(config, cellGene6Migrated());
+    assert.deepEqual(problems, []);
+    assert.deepEqual(notices, []);
+    // and it is stable: the migrated form reads unchanged
+    assert.deepEqual(normalizeCellGene(cellGene6Migrated()).config, cellGene6Migrated());
+});
+
+test('golden cell_gene_6 draws what its row kinds drew: the mean of the genes\' means, and % of cells with its score above 1', () => {
+    const { config } = normalizeCellGene(golden('cell_gene_6'));
+    const cfg = { ...config, mode: 'dots' };   // its Size is stored for dots; draw it to compare it too
+    const genes = ['G1', 'G2', 'G3'];
+    const sections = cfg.sections.map((section) => ({ section, genes, title: section.source, scoreRecipe }));
+    const p = planFeatures({ sections, color: cfg.color, size: cfg.size, threshold: 0 });
+    // the request: what the old kinds asked for, the score of zscore_mean on logged with its share above 1
+    const scores = [...new Set(p.features.filter((f) => f.wire.kind === 'score').map((f) => JSON.stringify([f.wire.column, f.wire.layer, f.wire.above])))];
+    assert.deepEqual(scores, [JSON.stringify(['zscore_mean', 'logged', 1])]);
+    const G = 2;
+    const cells = { G1: [[0, 2, 4], [1, 1]], G2: [[3, 3, 0], [0, 6]], G3: [[1, 0, 0], [2, 2]] };
+    const scoreCells = [[0.2, 1.5, -1], [3, 0.5]];
+    const by = new Map(p.features.map((f) => [f.key, f.wire.kind === 'gene'
+        ? momentsOf(cells[f.wire.name], f.wire.detect_above) : momentsOf(scoreCells, f.wire.above)]));
+    const out = buildMatrix(p, (key) => by.get(key) || null, [{ n: 3 }, { n: 2 }], { ...cfg, scale: 'none' });
+    const setRows = out.rows.map((r, i) => [r, i]).filter(([r]) => r.kind === 'set').map(([, i]) => i);
+    assert.equal(setRows.length, 3);
+    // what mean_of_means drew: each gene's mean in the group, averaged over the genes
+    const meanOfMeans = [0, 1].map((g) => genes.reduce((a, n) => a + statisticColumn('mean', momentsOf(cells[n], 0), G)[g], 0) / genes.length);
+    // what score_pct_above drew: 100 x the share of the group's cells whose score is above 1
+    const pctAbove = Array.from(statisticColumn('pct_expressing', momentsOf(scoreCells, 1), G));
+    assert.deepEqual(pctAbove, [100 / 3, 50]);
+    for (const r of setRows) {
+        Array.from(out.color.raw.subarray(r * G, (r + 1) * G)).forEach((v, g) => assert.ok(Math.abs(v - meanOfMeans[g]) < 1e-12, `color ${r}`));
+        assert.deepEqual(Array.from(out.size.values.subarray(r * G, (r + 1) * G)), pctAbove, `size ${r}`);
+        assert.equal(out.rows[r].own.color.id, out.color.id, 'still on the gene rows\' colour bar');
     }
 });
 
