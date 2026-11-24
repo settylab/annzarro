@@ -18,7 +18,7 @@
  * **Matrices** are `{values, rows, groups}` with `values[row * groups + group]`, Float64Array, NaN for missing.
  * A row is a gene, or one aggregated row of a section.
  */
-import { csvField } from './score-inspect.js';
+import { csvField } from './csv-format.js';
 import { VOCABULARY } from './vocabulary.js';
 import { STATISTIC_IDS } from './cell-grouping.js';
 
@@ -395,7 +395,7 @@ export function longRows({ groups, rows, columns }) {
 const NAME_FIELDS = 3;
 
 /**
- * longRows as CSV text: a name that looks like a formula is kept as written (score-inspect.js csvField).
+ * longRows as CSV text: a name that looks like a formula is kept as written (csv-format.js csvField).
  * @param {Parameters<typeof longRows>[0]} table
  * @returns {string}
  */

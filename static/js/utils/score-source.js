@@ -143,7 +143,7 @@ function sourcePanel(id) {
 }
 
 /**
- * The layer a source reads when a consumer names none: its first offered layer now. Null when there is no such source.
+ * The layer a source reads when a consumer names none: its stored `input` now. Null when there is no such source.
  * @param {string} id - a source's panel id
  * @returns {string|null}
  */
