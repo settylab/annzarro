@@ -85,6 +85,10 @@ READ = """([pieces, props, sized]) => {
 }"""
 
 
+def _frames(page):
+    page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))))")
+
+
 def _config():
     configs, _ = _configs("cell-plot")
     configs.update(_configs("gene-plot")[0])
@@ -107,7 +111,7 @@ def _snapshot(page, theme, shot_dir):
         page.click(button)
         page.wait_for_selector(POP)
         page.evaluate("() => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach((d) => { d.open = true; })")
-        page.wait_for_timeout(300)
+        _frames(page)
         got[kind] = page.evaluate(READ, [PIECES, PROPS, SIZED])
         # the room it may take is the anchor's (placePopover): never more than 80 % of the window, whatever the kind
         assert page.evaluate("() => parseFloat(getComputedStyle(document.querySelector(\"[data-popover='plot-options']\")).maxHeight) <= 0.8 * innerHeight") , kind
@@ -128,7 +132,7 @@ def test_plot_options_look_the_same_in_all_four_plot_kinds(page, served):
     for theme in ("light", "dark"):
         page.click(f'#theme-toggle button[data-theme-mode="{theme}"]')
         page.wait_for_function("(t) => document.documentElement.getAttribute('data-theme') === t", arg=theme)
-        page.wait_for_timeout(500)
+        _frames(page)
         got = _snapshot(page, theme, SHOTS)
         for piece in PIECES:
             have = {k: v[piece] for k, v in got.items() if piece in v}
