@@ -22,8 +22,11 @@ The token is computed WITHOUT reading any data, from two parts:
   files (``g['obs/x'][:] = v``) moves none of these.
 * the dataset's generation: a small file per dataset in the state
   directory (``~/.annzarro/freshness``), replaced on every bump. A cache
-  reset bumps it, and so does a refresh that finds the store changed
-  (``revalidate``: POST /api/v1/data/refresh, open to every user). Every server process on the machine, each
+  reset bumps it, and so does every refresh (``revalidate``: POST
+  /api/v1/data/refresh, open to every user), whatever its walk found: a
+  chunk file rewritten in place under its old name moves nothing a walk can
+  see on a store too large to walk, or on a network file system whose
+  mtimes lie (operator decision 44). Every server process on the machine, each
   gunicorn worker included, stats the same file, so one bump reaches all of
   them; a reset used to clear only the worker that answered it.
 
@@ -265,13 +268,18 @@ def _from_record(record) -> dict:
     """The answer a recorded walk gives, without walking again."""
     status = record.get("status", "full")
     return {"changed": bool(record.get("changed", False)), "checked": status == "full",
-            "status": status, **(record.get("inspected") or {}), "waited_s": 0.0, "shared": True}
+            "status": status, "refreshed": True, **(record.get("inspected") or {}), "waited_s": 0.0, "shared": True}
 
 
 def revalidate(dataset_path, min_interval_s: float = REFRESH_MIN_INTERVAL_S,
                budget_s: float = DEEP_BUDGET_S, inspect=None, after=None) -> dict:
-    """A refresh: walk the store and start a new generation if it changed
-    since the last walk.
+    """A refresh: walk the store and start a new generation, always.
+
+    Every cache of derived values (the result cache, the ETags, the grouping
+    cache, the name index, the rankings) is keyed on the generation, so a
+    refresh drops what the server remembered of the dataset in every worker,
+    whether or not the walk saw a change. The walk still reports what it
+    found (``changed``, ``status``, the consolidated metadata finding).
 
     Any user may ask for this, so it is bounded, but never answered with a
     walk older than the call: a user who writes from Jupyter and presses
@@ -279,9 +287,10 @@ def revalidate(dataset_path, min_interval_s: float = REFRESH_MIN_INTERVAL_S,
     that slept here for the rate limit stalled every other user of a sync
     gunicorn worker (issue #83).
 
-    * An unchanged store keeps its generation, and so its ETags and every
-      user's cached reads: no user can make the server re-read a store that
-      did not change.
+    * Every walk starts a new generation: a store whose chunk files were
+      overwritten in place looks unchanged to a stat() walk, and a user asking
+      for a refresh means "read it again". The rate limit below is what keeps
+      one user from making every other user re-read at will.
     * A dataset is walked at most once per ``min_interval_s``, across
       processes (the last walk is recorded beside the generation file).
       Outside the window the walk runs now (bounded by ``budget_s``).
@@ -292,8 +301,8 @@ def revalidate(dataset_path, min_interval_s: float = REFRESH_MIN_INTERVAL_S,
       started at or after ``t`` once there is one (and ``scheduled`` again
       until then).
     * A walk stops at ``budget_s``: a store too large to fingerprint fully
-      answers ``status: "partial"`` and is not bumped (an admin's
-      cache/reset still is).
+      answers ``status: "partial"`` (``changed`` is then unknown, False
+      unless the consolidated metadata moved) and is bumped all the same.
 
     ``inspect()`` returns further state recorded with the walk (whether the
     consolidated metadata is stale); a change in it is a change of the store.
@@ -355,15 +364,14 @@ def _walk(dataset_path, budget_s, inspect, started):
     changed = any(before.get(k) != v for k, v in inspected.items())
     if status == "full" and previous.get("deep") != deep:
         changed = True
-    if changed:
-        bump(dataset_path, reason="refresh", **inspected)
+    bump(dataset_path, reason="refresh", **inspected)        # always: see revalidate
     _record_check(dataset_path, {"started": started, "time": time.time(),
                                  "deep": deep if status == "full" else previous.get("deep"),
                                  "status": status, "inspected": inspected, "changed": changed})
-    result = {"changed": changed, "checked": status == "full", "status": status, **inspected}
+    result = {"changed": changed, "checked": status == "full", "status": status, "refreshed": True, **inspected}
     if status == "partial":
-        result["message"] = (f"Store too large to fingerprint fully in {budget_s:g} s: changes that only "
-                             "overwrite chunk files are not detected. An admin's cache reset serves them.")
+        result["message"] = (f"Store too large to fingerprint fully in {budget_s:g} s: the walk cannot say what "
+                             "changed, so everything remembered of it was dropped and is read again.")
     return result
 
 

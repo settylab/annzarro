@@ -476,3 +476,27 @@ test('⋯ Duplicate: the copy follows the section, titled "<name> (copy)", with 
     assert.equal(duplicateSection(cfg, 1, 'Pathway (copy)').sections[2].title, 'Pathway (copy) (copy)');
     assert.equal('title' in duplicateSection(cfg, 2).sections[3], false, 'no name given: the source title, as before');
 });
+
+// ---- S3: Mode is a select fed by the MODE_INFO registry (aggregation-unify-080.md 5.1.3)
+
+test('MODE_INFO drives the modes the configuration accepts, in order, with the stored values unchanged', async () => {
+    const { MODE_INFO } = await import('../../../static/js/utils/cell-gene-model.js');
+    const { normalizeCellGene } = await import('../../../static/js/panels/cell-gene/sections.js');
+    assert.deepEqual(MODE_INFO.map((m) => [m.value, m.label]), [['dots', 'Dots'], ['heatmap', 'Heatmap']]);
+    for (const m of MODE_INFO) assert.equal(normalizeCellGene({ mode: m.value }).config.mode, m.value);
+    const bad = normalizeCellGene({ mode: 'violin' });
+    assert.equal(bad.config.mode, 'dots');
+    assert.equal(bad.problems.length, 1);
+});
+
+test('the control grid shows the channels a mode lists: Heatmap hides Size, a fake color-only mode does too', async () => {
+    const { MODE_INFO, modeShowsChannel } = await import('../../../static/js/utils/cell-gene-model.js');
+    assert.equal(modeShowsChannel('dots', 'size'), true);
+    assert.equal(modeShowsChannel('dots', 'color'), true);
+    assert.equal(modeShowsChannel('heatmap', 'size'), false);
+    assert.equal(modeShowsChannel('heatmap', 'color'), true);
+    const fake = [...MODE_INFO, { value: 'fake', label: 'Fake', channels: ['color'] }];
+    assert.equal(modeShowsChannel('fake', 'size', fake), false);
+    assert.equal(modeShowsChannel('fake', 'color', fake), true);
+    assert.equal(modeShowsChannel('nothing', 'color', fake), false);
+});

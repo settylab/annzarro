@@ -141,7 +141,8 @@ def _hosted(tmp_path):
 def test_any_user_can_refresh_a_changed_store(tmp_path):
     """On a hosted server only an admin may reset the shared cache, so a user
     never saw a change until a restart. data/refresh is open to every user:
-    it starts a new generation only when the store on disk changed."""
+    it starts a new generation on every call (decision 44: a chunk file
+    overwritten in place is seen by no walk), and reports what its walk found."""
     import annzarro.core as core
     core.zarr_reader.clear_cache()
     bob = _hosted(tmp_path)
@@ -151,10 +152,11 @@ def test_any_user_can_refresh_a_changed_store(tmp_path):
     first = bob.post("/api/v1/data/refresh", query_string={"dataset_path": path})
     assert first.status_code == 200, first.get_data(as_text=True)
     tag = _read(bob, path).headers["ETag"]
-    # nothing changed: the generation, the tags and everyone's caches stay
+    # the walk finds nothing, and the refresh still starts a new generation: the tags move, the body is read again
     unchanged = bob.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()
-    assert unchanged["changed"] is False and unchanged["status"] == "full"
-    assert _read(bob, path, tag).status_code == 304
+    assert unchanged["changed"] is False and unchanged["status"] == "full" and unchanged["refreshed"] is True
+    tag = _read(bob, path, tag).headers["ETag"]
+    assert _read(bob, path, tag).status_code == 304, "and a read after it is cached as before"
     _slice_write(path, old + 1000)
     changed = bob.post("/api/v1/data/refresh", query_string={"dataset_path": path}).get_json()
     assert changed["changed"] is True
@@ -348,10 +350,10 @@ def test_after_must_be_a_number(tmp_path):
     assert resp.status_code == 400 and resp.get_json()["reason"] == "bad_after"
 
 
-def test_a_store_too_large_to_walk_is_partial_not_bumped(tmp_path):
+def test_a_store_too_large_to_walk_is_partial_and_bumped(tmp_path):
     """The walk stops at its budget (the 95.6M-cell store has far more chunk
-    files than 3 s of stat() calls): the answer says so, and the generation,
-    with every user's cached reads, stays; an admin's reset still bumps it."""
+    files than 3 s of stat() calls): the answer says so, and the generation
+    moves all the same (decision 44), so every cached read is made again."""
     from annzarro.core import freshness
     path = make_rich_store(tmp_path / "r.zarr")
     many = os.path.join(path, "uns", "many")
@@ -362,12 +364,12 @@ def test_a_store_too_large_to_walk_is_partial_not_bumped(tmp_path):
     r = freshness.revalidate(path, min_interval_s=0, budget_s=0.0)
     assert r["status"] == "partial" and r["checked"] is False and r["changed"] is False
     assert "too large to fingerprint fully" in r["message"]
-    assert freshness.generation(path) == gen
+    assert freshness.generation(path) != gen
 
 
 def test_the_route_answers_partial_with_its_message_for_a_store_over_the_budget(server, tmp_path, monkeypatch):
     """Issue #91: the answer the browser shows the user. A walk that hits its
-    budget (simulated) answers status partial, with the message, no bump."""
+    budget (simulated) answers status partial, with the message, and bumps."""
     from annzarro.core import freshness
     path = make_rich_store(tmp_path / "r.zarr")
     gen = freshness.generation(path)
@@ -377,7 +379,7 @@ def test_the_route_answers_partial_with_its_message_for_a_store_over_the_budget(
     body = r.get_json()
     assert body["status"] == "partial" and body["checked"] is False and body["changed"] is False
     assert "too large to fingerprint fully in 3 s" in body["message"]
-    assert freshness.generation(path) == gen
+    assert freshness.generation(path) != gen
 
 
 def test_a_restart_revalidates_every_dataset(server, tmp_path):

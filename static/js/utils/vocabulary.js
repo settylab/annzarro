@@ -256,13 +256,11 @@ const cellGene = Object.freeze({
         heading: Object.freeze({
             dots: 'Dots', colors: 'Colors', sections: 'Sections', labels: 'Labels', clustering: 'Clustering', legend: 'Legend', totals: 'Totals'
         }),
-        largestDot: 'Largest dot',
-        smallestDot: 'Smallest dot',
-        /** Largest dot's value: the share of its cell it fills. */
-        ofCell: (pct) => `${fmt(pct)}% of cell`,
+        /** Plot Options ▸ Dots: the largest dot as a share of its cell, the smallest in px. */
+        largestDotOfCell: 'Largest dot (% of cell)',
+        smallestDotPx: 'Smallest dot (px)',
         /** Largest dot of a link saved before the dots filled their cells: its px, until the slider is moved. */
         largestPx: (px) => `${fmt(px)} px (saved)`,
-        px: (n) => `${fmt(n)} px`,
         rangeWhat: Object.freeze({ color: 'Color', size: 'Size', height: 'Height' }),
         sizeMin: 'Size min',
         sizeMax: 'Size max',
@@ -715,6 +713,12 @@ const cellExport = Object.freeze({
  * What a menu of source types and a column chooser's tab call a source a panel makes, beside the dataset's own obs,
  * obsm, obsp and layers (whose AnnData names stay). Never the provider's type id.
  */
+/** What an aggregation is called; its symbols are utils/aggregation-symbols.js's, its names the method tables' labels. */
+const aggregation = Object.freeze({
+    label: 'Aggregation',
+    sections: Object.freeze({ genes: 'Genes', cells: 'Cells', signatures: 'Gene signatures', tables: 'Gene tables', groupings: 'Cell groupings' })
+});
+
 const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping', groupStat: 'Cell group' });
 
 /** Show as table (UX 7): a plot's CSV rows as an HTML table, in every plot that offers it (count plot, Cell-Gene Plot). */
@@ -757,4 +761,4 @@ const plotPanel = Object.freeze({
     view3dOnHelp: 'The plot is in 3D; click to go back to 2D'
 });
 
-export const VOCABULARY = Object.freeze({ plotPanel, range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+export const VOCABULARY = Object.freeze({ aggregation, plotPanel, range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });

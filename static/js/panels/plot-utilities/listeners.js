@@ -1,5 +1,6 @@
 import { getSource, parseAlsoListed } from '../../utils/source-registry.js';
-import { updateColorSliderUI, setupAxisSelector, takeSubKey, showDropdownLoading, defaultAxisType, focusedOptionLabel,
+import { isAggregate, clearSetting, applyAfter, decodeSet, encodeSet, startSet, startItem } from '../../utils/axis-aggregate.js';
+import { updateColorSliderUI, setupAxisSelector, sayPair, takeSubKey, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { autoPointCount, plotArea } from '../../utils/view-point-style.js';
@@ -11,11 +12,9 @@ import { showCancelled } from '../../utils/panel-surface.js';
 import { afterMotion } from '../../utils/layout-motion.js';
 import { DataManager } from '../../data-manager.js';
 import { 
-  setupAestheticsMenuListeners, 
   createAestheticsMenu,
   applyAllAestheticSettings,
-  initializeAestheticsSettings,
-  createPopoverContent
+  initializeAestheticsSettings
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate, autorangeValue, keepsOwnMarker, refreshScaleBar } from './plot-make-helper.js';
@@ -231,7 +230,7 @@ export function setupPlotControlListeners(
             // No matrix source: let the selector pick an annotation column.
             : { type: zType, key: '', column: '' };
           // Call the axis selector setup helper from the controls object.
-          setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure, { consumer, roles: ['z'] });
+          setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure, { consumer, roles: ['z'], aggregate: true });
         }
         loadDataAndCreatePlot();
       }
@@ -1090,6 +1089,10 @@ function setupAxisSelectorListeners(
     const oldKey = settings[axis].key;
     const oldColumn = settings[axis].column;
     
+    // a set (a signature, a group) is a way to read a layer: leaving the layer source clears it entirely, so no method or
+    // layer of it outlives it (axis-aggregate-picker-080)
+    if (isAggregate(settings[axis])) clearSetting(settings[axis]);
+
     // Now change the type
     delete settings[axis].auto;   // a colour the user changed is theirs
     settings[axis].type = newType;
@@ -1110,7 +1113,7 @@ function setupAxisSelectorListeners(
       return;
     }
     
-    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure, { consumer, roles: [axis] });
+    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure, { consumer, roles: [axis], aggregate: true });
 
     // Initialize history storage if needed
     if (!settings[axis].history) {
@@ -1147,6 +1150,10 @@ function setupAxisSelectorListeners(
       handleAxisUpdate(axis, plotType);
       return;
     }
+
+    // a layer with no item to read yet (no gene or cell is focused): nothing is drawn from it, and the plot stays as it was
+    // until a gene, a cell or a set is picked
+    if (newType === 'layer' && $columnSelect[0].__aggregate && !settings[axis].column) return;
 
     const cols = $.findAll('option', $columnSelect).map(o => o.value);
     const current = settings[axis].column;
@@ -1191,6 +1198,16 @@ function setupAxisSelectorListeners(
       return;
     }
 
+    // a set is read on the layer this select lists: another layer is another reading of the same set
+    if ($columnSelect[0] && $columnSelect[0].__aggregate && isAggregate(settings[axis])) {
+      delete settings[axis].auto;
+      const said = applyAfter(settings[axis], 'layer', newKey);
+      await refillRow(axis);
+      sayPair($columnSelect[0], said);
+      handleAxisUpdate(axis, plotType);
+      return;
+    }
+
     // a provider's way to make an entity ("New signature…"): it opens beside this plot and this axis takes it
     const provider = getSource(settings[axis].type);
     if (provider && provider.newEntity && newKey === provider.newEntity.value) {
@@ -1224,7 +1241,7 @@ function setupAxisSelectorListeners(
       return;
     }
 
-    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure, { consumer, roles: [axis] });
+    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure, { consumer, roles: [axis], aggregate: true });
 
     // Initialize history storage if needed
     if (!settings[axis].history) {
@@ -1249,6 +1266,32 @@ function setupAxisSelectorListeners(
   $container.find('.axis-column-select').on('change', function() {
     const axis = jQuery(this).data('axis');
     delete settings[axis].auto;
+    if (this.__aggregate) {
+      // the item picker of a layer: a set, a single item, or (the button's menu) another aggregation of the set held
+      const s = settings[axis];
+      const touched = this.__touched;
+      this.__touched = null;
+      const picked = jQuery(this).val();
+      if (touched === 'agg' || isAggregate(s) || decodeSet(picked)) {
+        let said = '';
+        const layer = $container.find(`.axis-key-select[data-axis="${axis}"]`).val();
+        if (touched === 'agg') said = applyAfter(s, 'method', this.__aggValue);
+        else if (decodeSet(picked)) {
+          // the provider's way to make a set ("New signature…"): it opens beside this plot and this axis takes it
+          const d = decodeSet(picked);
+          const maker = getSource(d.type).newEntity;
+          let value = picked;
+          if (maker && d.entry === maker.value) {
+            const made = maker.run(id);
+            value = made ? encodeSet(d.type, made.getId()) : '';
+          }
+          if (value) startSet(s, value, layer);
+        }
+        else startItem(s, layer, picked);
+        refillRow(axis).then(() => { sayPair(this, said); handleAxisUpdate(axis, plotType); });
+        return;
+      }
+    }
     if (getSource(settings[axis].type)) {
       // the provider's method select (a score's method in `column`), or its layer select, which hands its change here
       if (takeSubKey(settings[axis], this, id)) handleAxisUpdate(axis, plotType);
@@ -1265,6 +1308,12 @@ function setupAxisSelectorListeners(
   
   // Set up lock and refocus button handlers using event delegation
   setupSpecialButtonListeners(controlsContainer, settings, plotType, onFocusedCellChanged, onFocusedGeneChanged);
+
+  /** The row of an axis built again from its setting (the item picker, the layer list, the aggregation button). */
+  async function refillRow(axis) {
+    const structure = await DataManager.getDatasetStructure();
+    if (structure) setupAxisSelector(controlsContainer, axis, settings[axis], plotType, structure, { consumer, roles: [axis], aggregate: true });
+  }
 
   /**
    * 

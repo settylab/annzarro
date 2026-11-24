@@ -29,6 +29,8 @@ import { VOCABULARY } from './vocabulary.js';
 import { referToGroup, resolveGroup, keepGroup, describeGroupReference } from './group-reference.js';
 import { layerFacts, datasetLayersNow } from './score-source.js';
 import * as M from './group-stat-model.js';
+import { STATISTIC_INFO } from './group-statistics.js';
+import { STAT_SYMBOLS } from './aggregation-symbols.js';
 
 const W = VOCABULARY.word;
 const PL = VOCABULARY.plural;
@@ -479,6 +481,47 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 
 // ---------------------------------------------------------------------------------------------- the provider
 
+/**
+ * The groups of every grouping in an axis's item picker (utils/axis-aggregate.js): each as "Grouping › group", found by
+ * its displayed name, its generated name and its grouping's title; the statistic is the aggregation.
+ */
+const A = VOCABULARY.aggregation;
+const groupAggregate = {
+    sections: () => {
+        const { sources } = groupSources();
+        const entries = [];
+        for (const g of groupingList()) {
+            const reply = menuReply(g.id);
+            if (!reply) continue;
+            const names = sources.namesOf(g.id, reply);
+            const generated = sources.coloursOf(g.id, reply).generated;
+            reply.groups.forEach((group, i) => entries.push({ entry: JSON.stringify([g.id, M.columnOf(group.key)]), text: `${g.title} \u203a ${names[i]}`,
+                alt: `${generated[i]} ${names[i]}` }));
+        }
+        return [{ heading: A.sections.groupings, entries }];
+    },
+    start: (entry, layer) => {
+        const [id, column] = JSON.parse(entry);
+        const reply = menuReply(id);
+        const key = M.groupKeyOf({ column });
+        const labelled = reply && key ? groupSources().sources.labelsOf(id, reply) : null;
+        const ref = labelled ? referToGroup(labelled, key) : null;
+        const held = { type: TYPE, key: id, column, stat: M.DEFAULT_STAT, layer, groupWas: ref ? ref.groupWas : key };
+        const p = M.pairAfter(held, 'layer', layer, kindsNow(), layersNow());
+        return { ...held, stat: p.stat, layer: p.layer, label: groupingTitle({ key: id }) };
+    },
+    entryOf: (setting) => JSON.stringify([setting.key, setting.column || '']),
+    layerOf: (setting) => M.layerOf(setting),
+    methods: (setting) => ({
+        options: M.statMenu(setting, kindsNow(), layoutsNow()).options.map(o => ({ value: o.value, name: STATISTIC_INFO.find(m => m.value === o.value).label, symbol: STAT_SYMBOLS[o.value],
+            disabled: !!o.disabled, title: o.title || '' })),
+        chosen: M.statOf(setting)
+    }),
+    layers: (setting) => layerMenu(setting),
+    after: (setting, kind, value) => settingAfter(setting, kind === 'method' ? 'stat' : kind, value),
+    symbolOf: (setting) => STAT_SYMBOLS[M.statOf(setting)]
+};
+
 // a Gene Plot's colour of a group's statistic follows its grouping in a remap, as the grouping's own sources do
 registerPanelSourceType(TYPE);
 
@@ -491,6 +534,7 @@ registerSource({
     axes: ['x', 'y', 'z', 'color'],
     defaultSub: '',
     layered: true,
+    aggregate: groupAggregate,
     // made over the cells shown: a change of the cell subset changes it (utils/subset-reads.js)
     readsCellSubset: true,
     entities: groupingList,

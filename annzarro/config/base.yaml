@@ -492,6 +492,8 @@ limits:
   refuse_s: 600
   live_update_s: 5
   progress_bar_s: 10
+  refresh_min_interval_large_s: 60
+  refresh_large_cells: 10000000
   matrix_values: 400000
   genes_per_section: 2000
   groups: 2000

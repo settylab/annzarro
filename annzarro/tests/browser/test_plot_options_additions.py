@@ -43,7 +43,7 @@ HARNESS = """async () => {
   window.__unify = state;
   let po = null;
   po = R.mountPlotOptions({
-    anchor: btn, kind: 'unify-test', panelId: 'u1', config: () => state.config,
+    anchor: btn, kind: 'unify-test', panelId: 'u1', ids: true, config: () => state.config,
     commit: (next, label) => { state.config = next; state.commits.push(label); po.update(); },
     replace: (next) => { state.config = next; },
     exportImage: (format, settings, how) => { state.exported = [format, how]; },
@@ -171,7 +171,7 @@ def test_the_margins_composite_links_and_unlinks(opened):
 
 def test_the_memory_guard_greys_the_full_export_and_offers_the_plot_as_shown(opened):
     page = opened
-    assert page.is_hidden(f"{POP} .export-shown-row")
+    assert page.locator(f"{POP} .export-shown-row").count() == 0
     page.evaluate("""() => { window.__unify.guard = { blocked: true, why: 'Needs 3 GB; 1 GB is free.', note: 'Full resolution: Needs 3 GB; 1 GB is free.',
         shown: ['png', 'svg'], size: '900 \\u00d7 600 px' }; }""")
     _reopen(page)

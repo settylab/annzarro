@@ -357,7 +357,7 @@ const DataManager = (function() {
      * and reported, not thrown: the refresh in this browser still goes ahead.
      * @returns {Promise<Object|null>} `{changed, checked}` or null
      */
-    async function revalidateDataset(datasetPath = _currentDataset, { wait = ms => new Promise(r => setTimeout(r, ms)), maxPolls = 6 } = {}) {
+    async function revalidateDataset(datasetPath = _currentDataset, { wait = ms => new Promise(r => setTimeout(r, ms)), maxPolls = 6, onScheduled = null } = {}) {
         if (!datasetPath) return null;
         try {
             // Inside the server's refresh interval the server schedules one
@@ -371,6 +371,7 @@ const DataManager = (function() {
                 if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
                 const result = await response.json();
                 if (result.status !== 'scheduled' || poll >= maxPolls) return result;
+                if (poll === 0 && result.message && onScheduled) onScheduled(result);
                 params.after = String(result.after);
                 await wait(Math.max(200, (Number(result.retry_after_s) || 1) * 1000));
             }

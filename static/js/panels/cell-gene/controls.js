@@ -19,7 +19,7 @@
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { normalizeGrouping } from '../../utils/cell-grouping.js';
 import { CELL_COUNT, STATISTIC_INFO, statisticChoices, statisticLayerChoices, statisticPairAfter } from '../../utils/group-statistics.js';
-import { SCALINGS, scalingGrade } from '../../utils/cell-gene-model.js';
+import { SCALINGS, MODE_INFO, modeShowsChannel, scalingGrade } from '../../utils/cell-gene-model.js';
 import { loopReason } from '../../utils/panel-references.js';
 import { createPopover } from '../../ui/popover.js';
 import { GROUP_AXIS, needsThreshold } from './sections.js';
@@ -198,7 +198,6 @@ export function measureModel({ spec, datasetLayers, kinds, threshold, grouping =
  * The control grid of UX 3.1.
  * @param {Object} opts
  * @param {Object} opts.D - the DOM builder (gene-set-utilities/dom.js)
- * @param {string} opts.id - the panel id (unique names)
  * @param {() => Object} opts.model - {axis, choices: {obs, groupings}, mode, color, size, height (measureModel each;
  *   height's statistics start with Same as Color), view3d, scale, swap}
  * @param {Object} opts.on - axis(axis), newGrouping(), mode(mode), stat(which, value), layer(which, value),
@@ -206,7 +205,7 @@ export function measureModel({ spec, datasetLayers, kinds, threshold, grouping =
  * @param {HTMLElement} opts.sections - the section list's element, in the What group
  * @param {HTMLElement} opts.addGenes - Add genes, in the What group
  */
-export function createControls({ D, id, model, on, sections, addGenes }) {
+export function createControls({ D, model, on, sections, addGenes }) {
     const { el } = D;
     const field = (label, control, cls) => el('label', { class: `cgene-field ${cls || ''}` }, el('span', { class: 'cgene-field__label', text: label }), control);
     let typeShown = null;          // the type select's value while no key of it is chosen yet
@@ -217,10 +216,8 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
     const axisKey = el('select', { class: 'form-select form-select-sm cgene-axis-key', aria: { label: `Groups: column or ${VOCABULARY.word.grouping}` },
         on: { change: onKey } });
 
-    const modeName = `cgene-mode-${id}`;
-    const radio = (value, label) => el('label', { class: 'cgene-radio' },
-        el('input', { type: 'radio', name: modeName, value, on: { change: (e) => { if (e.target.checked) on.mode(value); } } }), ` ${label}`);
-    const mode = el('div', { class: 'cgene-mode', role: 'radiogroup', aria: { label: 'Mode' } }, radio('dots', 'Dots'), radio('heatmap', 'Heatmap'));
+    const mode = el('select', { class: 'form-select form-select-sm cgene-mode', aria: { label: 'Mode' }, on: { change: () => on.mode(mode.value) } });
+    options(D, mode, MODE_INFO.map((m) => ({ value: m.value, label: m.label })));
 
     const color = measureRow(D, 'color', 'Color', on);
     const scaleSel = el('select', { class: 'form-select form-select-sm cgene-scale', aria: { label: 'Scale' }, on: { change: () => on.scale(scaleSel.value) } });
@@ -285,10 +282,10 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
     function paint() {
         const m = model();
         paintKeys();
-        for (const input of mode.querySelectorAll('input')) input.checked = input.value === m.mode;
+        mode.value = m.mode;
         color.paint(m.color);
         size.paint(m.size);
-        size.element.hidden = m.mode !== 'dots';
+        size.element.hidden = !modeShowsChannel(m.mode, 'size');
         if (m.height) height.paint(m.height);
         height.element.hidden = !m.height || !m.view3d;
         paintScale(m.color.stat);      // the two z-scores are disabled under a z-score mean Color, with the reason

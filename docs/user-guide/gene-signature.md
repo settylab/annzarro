@@ -120,19 +120,23 @@ line under the title says what uses it ("Used by 1 plot, 1 Gene Set Analysis").
 ## Colour or position a Cell Plot by a score
 
 A signature gives every cell one number. A Cell Plot can take it as its **x**, **y**, **z** or **colour**: choose
-**Gene score** among the sources (beside obs, obsm, obsp and layer), then pick the signature by name. Every signature
-is listed, open or closed. A score is not a hover column: colour the plot by it and the hover shows its value as `c`.
+**layer** as the source, then the layer (X or any layer), and pick the signature in the item list that follows. That list
+has the focused gene first and then **Gene signatures** and **Gene tables** under their own headings; every signature is
+listed, open or closed. A score is not a hover column: colour the plot by it and the hover shows its value as `c`.
 A link or panel set that lists a score among the hover columns opens without that column and says nothing about it.
 The score works in large-plot mode too (colour and axes; the tooltip shows the
 colour's score).
 
-A score is chosen in four selects: the source (**Gene score**), the signature, the **method** and the **layer**.
-The method select lists all six methods and the layer select lists X and every layer of the dataset, so a menu never
-grows with the number of combinations. A new plot starts on z-score mean over X. A combination that cannot be computed
-is greyed out in the other select, with the reason when you point at it: under **% of total**, a scaled layer such as
-X is greyed out ("Has negative values"). Choose the layer first to reach a method that needs it. When one select
+A signature picked there shows a small button after the list, with the symbol of its aggregation (z̄ for the
+z-score mean, x̄ for the mean, Σ for the sum). It opens the aggregations, each as a symbol and a name, and its
+tooltip names the one in force ("Aggregation: Z-score mean"). A single gene has no button. A row is always one line:
+source, layer, item, aggregation. The menu lists all six methods and the layer list X and every layer of the dataset, so a
+menu never grows with the number of combinations. A new plot starts on z-score mean over X. A combination that cannot be
+computed is greyed out in the other control, with the reason when you point at it: under **% of total**, a scaled layer such as
+X is greyed out ("Has negative values"). Choose the layer first to reach a method that needs it. When one control
 leaves the other on a combination that cannot be computed, the other moves to the first one that can, and a line under
-the selects says so once ("Layer changed to logged: % of total is not available on X."). A link that holds such a
+the row says so once ("Layer changed to logged: % of total is not available on X."). Leaving the layer source, or picking
+a single gene, clears the signature from the row completely. A link that holds such a
 combination keeps it, marked "(not available)", and the plot says why.
 
 **Control-adjusted** and **% of total** read the whole matrix once besides the signature's genes; their entries say
@@ -298,9 +302,8 @@ are chosen: a signature's are ticked by hand, a table's are the rows that pass i
 the same: the score, the cost estimate and its three tiers, the methods and layers, the notices over a plot,
 **Update score**, and **Distribution**.
 
-Choose **Gene score** as a plot's source (or on a Cell Table's **Gene score** tab) and the list of sources shows
-**Gene signatures** and **Gene tables** under their own headings when both exist. Pick a table, then a method
-and a layer, as for a signature. The label names the table ("Gene Table 1 · mean").
+Pick a gene table (in a plot's item list under a layer, or on a Cell Table's **Gene score** tab) from the **Gene tables**
+section, then an aggregation and a layer, as for a signature. The label names the table ("Gene Table 1 · mean").
 
 **What the genes are.** The rows that pass the table's filter now: its conditions and its search box, the same
 rows that a Gene Plot filtered by the table or a Gene Set Analysis panel reads. Change the filter and the

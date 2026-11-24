@@ -130,7 +130,7 @@ def test_cell_gene_font_size_survives_a_redraw_and_an_undo(page, served):
     _cg_until(page, "(p) => !p.data.some((t) => t.name === 'cells per group')")
     assert _cg_layout(page, "font.size") == 18
     # a redraw of its own (the mode) keeps it
-    page.click(f"{TP} .cgene-mode input[value='heatmap']")
+    page.select_option(f"{TP} select.cgene-mode", "heatmap")
     _cg_until(page, "(p) => p.data.some((t) => t.type === 'heatmap')")
     assert _cg_layout(page, "font.size") == 18
     page.click(f"{TP} .cgene-undo")

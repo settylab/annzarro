@@ -192,6 +192,14 @@ const PLOT_OPTION_FIELDS = Object.freeze([
         min: 0, max: OUTLINE_MAX, step: 0.25, when: dotsMode },
     { id: 'dotOpacity', section: 'panel:dots', type: 'range', path: 'dotOpacity', label: WO.dotOpacity, dflt: DOT_OPACITY.max,
         min: DOT_OPACITY.min, max: DOT_OPACITY.max, step: DOT_OPACITY.step, when: dotsMode },
+    // the largest dot as a share of its cell, the smallest in px. Largest dot unset: the dot fills its cell, the slider
+    // stands at 100 and the empty box says what is drawn (placeholder): 100, or a link from before's largest dot in px,
+    // which it keeps (`dotSizes`) until Largest dot is moved (panels/cell-gene.js commit)
+    { id: 'dotScale', section: 'panel:dots', type: 'range', path: 'dotScale', label: WO.largestDotOfCell, dflt: null,
+        min: DOT_SCALE.min, max: DOT_SCALE.max, step: DOT_SCALE.step, when: dotsMode, stepFrom: DOT_SCALE.max,
+        placeholder: (c) => { const s = styleOf(c); return s.dotSizes && s.dotScale === null ? WO.largestPx(s.dotSizes[1]) : DOT_SCALE.max; } },
+    { id: 'dotSmallest', section: 'panel:dots', type: 'range', path: 'dotSmallest', label: WO.smallestDotPx, dflt: DOT_PX.smallest,
+        min: DOT_PX.min, max: DOT_PX.max, step: 1, when: dotsMode },
     { id: 'gap', section: 'panel:sections', type: 'number', path: 'gap', label: `${WO.gap} (${WO.gapUnit})`, dflt: DEFAULT_GAP, min: 0, max: GAP_MAX, step: 1 },
     { id: 'sectionTitles', section: 'panel:sections', type: 'check', path: 'sectionTitles', label: WO.sectionTitles, dflt: true },
     { id: 'geneLabels', section: 'axes', type: 'check', path: 'labels.genes', label: WO.geneLabels, dflt: true },
@@ -408,7 +416,7 @@ function clusterNotes(drawn) {
 const fileName = (title) => `${String(title || 'cell-gene').replace(/[^\w.-]+/g, '_') || 'cell-gene'}.csv`;
 
 /** The fields Color ▾'s Reset clears: the map, its direction and range, and the dots' sizes. */
-const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center', 'printValues', 'dotScale', 'dotSmallest', 'dotSizes', 'dotMin', 'dotMax', 'heightLimits']);
+const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center', 'printValues', 'dotMin', 'dotMax', 'heightLimits']);
 
 /**
  * Mount the menus: three buttons in `slot`, each opening a pop-over (ui/popover.js) that is filled with the same
@@ -536,32 +544,6 @@ function mount(slot, ctx) {
         },
         onReset: () => ctx.set({ heightLimits: undefined }, 'height range to auto') });
     const heightSection = section(W3.height, heightRange.element);
-    /** A slider with its value said beside it; `onCommit` on release (one undoable step), the words follow the drag. */
-    const slider = (name, label, range, say, onCommit) => {
-        const out = el('output', { class: 'cgene-dot-value', data: { option: `${name}Value` } });
-        const input = el('input', { type: 'range', class: 'form-range', min: range.min, max: range.max, step: range.step || 1, data: { option: name }, aria: { label },
-            on: { input: (e) => { out.textContent = say(Number(e.target.value)); }, change: (e) => onCommit(Number(e.target.value)) } });
-        controls[name] = input;
-        controls[`${name}Value`] = out;
-        return el('label', { class: 'cgene-field cgene-dot-slider' }, el('span', { class: 'cgene-field__label', text: label }), input, out);
-    };
-    // Largest dot fills its cell by default (operator, 2026-11-23); moving it leaves an older link's px range behind,
-    // keeping its smallest dot
-    const largestRow = slider('dotScale', WO.largestDot, DOT_SCALE, WO.ofCell, (v) => {
-        const s = styleOf(config());
-        const smallest = s.dotSmallest !== null ? s.dotSmallest : s.dotSizes ? s.dotSizes[0] : null;
-        ctx.set({ dotScale: v === DOT_SCALE.max ? undefined : v, dotSizes: undefined,
-            dotSmallest: smallest === null || smallest === DOT_PX.smallest ? undefined : smallest }, 'largest dot');
-    });
-    const smallestRow = slider('dotSmallest', WO.smallestDot, { min: DOT_PX.min, max: DOT_PX.max }, WO.px, (v) => {
-        const s = styleOf(config());
-        // an older link's px range keeps its largest dot: the smallest end of it moves
-        if (s.dotSizes && s.dotScale === null && s.dotSmallest === null) {
-            const range = rangeOf([v, s.dotSizes[1]], DOT_PX.min, DOT_PX.max);
-            if (range) { ctx.set({ dotSizes: range }, 'smallest dot'); return; }
-        }
-        ctx.set({ dotSmallest: v === DOT_PX.smallest ? undefined : v }, 'smallest dot');
-    });
     // the size statistic's own range: the values at the smallest and the largest dot (stored as `dotMin`, `dotMax`);
     // named by the statistic, which need not be a percentage
     const sizeRange = createRangeBoxes({ el, what: WO.rangeWhat.size, group: 'sizeRange',
@@ -570,7 +552,8 @@ function mount(slot, ctx) {
         onReset: () => ctx.set({ dotMin: undefined, dotMax: undefined }, 'size range to auto') });
     controls.dotMin = sizeRange.fields[0];
     controls.dotMax = sizeRange.fields[1];
-    const dotSizes = section(WO.heading.dots, largestRow, smallestRow, sizeRange.element);
+    // Largest dot and Smallest dot are Plot Options ▸ Dots fields (PLOT_OPTION_FIELDS); Color ▾ keeps the size's range
+    const dotSizes = section(WO.heading.dots, sizeRange.element);
     const resetColor = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-color-reset', title: WO.resetColorHelp,
         on: { click: () => ctx.set(Object.fromEntries(COLOR_FIELDS.map((k) => [k, undefined])), 'reset colors') } }, WO.resetColor);
     const colorBody = el('div', { class: 'cgene-pop cgene-color-menu' },
@@ -626,10 +609,6 @@ function mount(slot, ctx) {
     }
 
     // ---------------------------------------------------------------- paint
-    function setValue(input, v) {
-        if (document.activeElement !== input) input.value = v === null || v === undefined ? '' : String(v);
-    }
-
     function paint() {
         const c = config();
         const s = styleOf(c);
@@ -677,14 +656,6 @@ function mount(slot, ctx) {
         scalingNote.textContent = scalingNotes(c).join(' ');
         scalingNote.hidden = !scalingNote.textContent;
         dotSizes.hidden = !dotsMode;
-        // an older link's largest dot in px is said as such; the slider stands at a full cell until it is moved
-        const legacy = s.dotSizes && s.dotScale === null;
-        const scale = s.dotScale !== null ? s.dotScale : DOT_SCALE.max;
-        const smallest = s.dotSmallest !== null ? s.dotSmallest : s.dotSizes ? s.dotSizes[0] : DOT_PX.smallest;
-        setValue(controls.dotScale, scale);
-        controls.dotScaleValue.textContent = legacy ? WO.largestPx(s.dotSizes[1]) : WO.ofCell(scale);
-        setValue(controls.dotSmallest, smallest);
-        controls.dotSmallestValue.textContent = WO.px(smallest);
         resetColor.disabled = !COLOR_FIELDS.some((k) => c[k] !== undefined);
 
         const drawn = ctx.drawn();

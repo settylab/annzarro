@@ -12,6 +12,7 @@ from annzarro.tests.browser.test_gene_score_plots import (  # noqa: F401
     C, S, SIG, SCORE, _calls, _cell, _numbers, _open, _tag, _notice, _wait_coloured, _ready_plot, _slow, _finish,
     _box, _action, _drawn, _frame, INIT, page, served, large_page, large_served, _wait_large_coloured, _url)
 from annzarro.tests.browser.test_memory_guard import until
+from annzarro.tests.browser import axis_sets  # noqa: E402
 
 
 TWO = {"id": SIG, "title": "T cell score", "genes": ["GENE0001", "GENE0002"], "layers": ["X", "counts"]}
@@ -40,23 +41,24 @@ def test_an_old_link_without_a_layer_reads_the_signatures_own_input(page, served
     _open(page, served, plots=(("cell-plot-C", _cell()),), sig={"id": SIG, "title": "T cell score", "genes": ["GENE0001"], "input": "counts"})
     _wait_coloured(page)
     assert _inputs(page) == ["counts"]
-    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').selectedOptions[0].textContent", C) == "z-score mean"
+    assert axis_sets.label_of(page, C, "color") == "Aggregation: Z-score mean"
+    assert page.input_value(axis_sets.sel(C, "color", "key")) == "counts"
 
 
-def test_a_score_is_chosen_by_a_method_select_and_a_layer_select_each_listing_everything(page, served):
-    """Decision 31: the method select lists every method and the layer select every layer, so a menu's length is
+def test_a_score_is_chosen_by_a_layer_and_an_aggregation_each_listing_everything(page, served):
+    """Decision 31: the aggregation menu lists every method and the row's layer list every layer, so a menu's length is
     methods + layers, never methods x layers; nothing is "offered"."""
     _open(page, served, plots=(("cell-plot-C", _cell()),), sig=TWO)
     _wait_coloured(page)
-    method = f"{C} select.axis-column-select[data-axis='color']"
-    layer = f"{C} select.axis-layer-select[data-axis='color']"
-    opts = page.evaluate("(s) => [...document.querySelector(s).options].map(o => [o.value, o.textContent])", method)
-    assert [o[0] for o in opts] == ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"], opts
-    assert not any("offer" in o[1].lower() or "·" in o[1] for o in opts), opts
+    method = axis_sets.button(C, "color")
+    layer = axis_sets.sel(C, "color", "key")
+    opts = axis_sets.aggregations(page, C, "color")
+    assert [o["v"] for o in opts] == ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"], opts
+    assert not any("offer" in o["text"].lower() or "·" in o["text"] for o in opts), opts
     assert page.evaluate("(s) => [...document.querySelector(s).options].map(o => o.value)", layer) == ["X", "counts"]
     assert page.evaluate("(s) => document.querySelector(s).value", layer) == "X"
     # choosing a layer stores it beside the method, and recomputes over it
-    page.select_option(method, "mean")
+    axis_sets.choose_aggregation(page, C, "color", "mean")
     page.select_option(layer, "counts")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'counts'")
     cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color")
@@ -70,10 +72,10 @@ def test_a_score_is_chosen_by_a_method_select_and_a_layer_select_each_listing_ev
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'X'")
     page.select_option(layer, "counts")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'counts'")
-    # a source that is not a score has no layer, and no layer select
+    # a source that is not a score has no layer of its own and no aggregation button
     page.select_option(f"{C} select.axis-type-select[data-axis='color']", "obs")
     until(page, "() => !('layer' in window.PanelManager.getPanel('cell-plot-C').getConfig().color)")
-    assert page.locator(layer).count() == 0
+    assert page.locator(method).count() == 0
 
 
 def test_a_layer_missing_from_the_dataset_is_a_state_with_a_way_out_not_an_error(page, served):
@@ -85,9 +87,9 @@ def test_a_layer_missing_from_the_dataset_is_a_state_with_a_way_out_not_an_error
     assert _tag(page) == "Layer not found"
     assert [a.split("|")[0] for a in note["actions"]] == ["score-open", "score-choose"]
     # the layer select lists the dataset's layers; the layer held stays visible, marked as not in this dataset
-    texts = page.evaluate("(t) => [...document.querySelector(t + ' select.axis-layer-select[data-axis=\"color\"]').options].map(o => o.textContent)", C)
+    texts = page.evaluate("(t) => [...document.querySelector(t + ' select.axis-key-select[data-axis=\"color\"]').options].map(o => o.textContent)", C)
     assert texts == ["X", "counts", "log1p (not in this dataset)"], texts
-    page.select_option(f"{C} select.axis-layer-select[data-axis='color']", "X")
+    page.select_option(axis_sets.sel(C, "color", "key"), "X")
     _wait_coloured(page)
     assert _notice(page) is None
 
@@ -105,8 +107,8 @@ def test_the_layer_round_trips_through_a_link_and_is_not_a_value(page, served):
     other.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
     _ready_plot(other)
     assert sorted(c["input"] for c in _calls(other, "compute")) == ["X", "counts"]
-    assert other.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"x\"]').value", C) == "zscore_mean"
-    assert other.evaluate("(t) => document.querySelector(t + ' select.axis-layer-select[data-axis=\"x\"]').value", C) == "counts"
+    assert axis_sets.label_of(other, C, "x") == "Aggregation: Z-score mean"
+    assert other.input_value(axis_sets.sel(C, "x", "key")) == "counts"
     other.close()
 
 
@@ -255,21 +257,22 @@ def test_plot_and_table_menus_disable_a_combination_that_cannot_be_computed_and_
     T._open(page, served, table=T._table(columns=[T.OBS]), plots=(("cell-plot-C", cfg),), sig=TWO)
     _ready_plot(page)
     # plot: every pair is listed; one that cannot be computed is disabled in the other select, with why (SHR-27)
-    method = f"{C} select.axis-column-select[data-axis='color']"
-    layer = f"{C} select.axis-layer-select[data-axis='color']"
-    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
+    layer = axis_sets.sel(C, "color", "key")
     OPTS = "(s) => [...document.querySelector(s).options].map(o => ({ v: o.value, off: o.disabled, title: o.title }))"
-    until(page, "(s) => { const o = [...(document.querySelector(s) || { options: [] }).options].find(o => o.value === 'fraction_of_total'); return !!o && o.disabled; }", method)
-    on_x = {o["v"]: o for o in page.evaluate(OPTS, method)}
+    axis_sets.pick_set(page, C, "color", SIG)
+    def methods():
+        return {o["v"]: o for o in axis_sets.aggregations(page, C, "color")}
+    axis_sets.until_methods(page, 'cell-plot-C', 'color', "(o) => o.find(m => m.value === 'fraction_of_total').disabled")
+    on_x = methods()
     assert on_x["detected"]["off"] and on_x["fraction_of_total"]["off"], on_x
     assert "negative values" in on_x["fraction_of_total"]["title"], on_x["fraction_of_total"]
     assert on_x["detected"]["title"], "the reason is the option's title"
     assert not on_x["zscore_mean"]["off"] and not on_x["mean"]["off"]
     page.select_option(layer, "counts")
-    until(page, "(s) => { const o = [...document.querySelector(s).options].find(o => o.value === 'detected'); return !!o && !o.disabled; }", method)
-    page.select_option(method, "fraction_of_total")
+    axis_sets.until_methods(page, 'cell-plot-C', 'color', "(o) => !o.find(m => m.value === 'detected').disabled")
+    axis_sets.choose_aggregation(page, C, "color", "fraction_of_total")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.column === 'fraction_of_total'")
-    under_share = {o["v"]: o for o in page.evaluate(OPTS, layer)}
+    under_share = {o["v"]: o for o in axis_sets.layer_options(page, C, "color")}
     assert under_share["X"]["off"] and not under_share["counts"]["off"], under_share
     # hover: no score at all (decision 32)
     hov = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.hover-columns-select option')].map(o => o.value)", C)
@@ -325,8 +328,12 @@ def test_switching_a_colour_from_an_obs_column_to_a_pending_score_keeps_the_old_
     from annzarro.tests.browser.test_gene_score_plots import _choose_score
     _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "obs", "key": "score", "column": ""})),), sig=TWO)
     _wait_coloured(page)
+    obs = _colour_snapshot(page)
+    assert obs
+    # the layer source colours by the focused gene at once: that drawing is the one the pending score must keep
+    page.select_option(axis_sets.sel(C, "color", "type"), "layer")
+    until(page, "([t, b]) => { const g = document.querySelector(t + ' .js-plotly-plot'); const d = g && g.data.find(d => d.marker && Array.isArray(d.marker.color) && d.marker.colorscale); return !!d && Array.from(d.marker.color).map(Number).join() !== b; }", [C, obs])
     before = _colour_snapshot(page)
-    assert before
     _slow(page, "auto", 3)
     _choose_score(page, "color")
     until(page, "() => window.__ctls.length === 1")
@@ -340,7 +347,7 @@ def test_switching_between_two_score_options_keeps_the_old_plot_with_the_loading
     _wait_coloured(page)
     before = _colour_snapshot(page)
     _slow(page, "auto", 3)
-    page.select_option(f"{C} select.axis-column-select[data-axis='color']", "mean")
+    axis_sets.choose_aggregation(page, C, "color", "mean")
     until(page, "() => window.__ctls.length === 1")
     _watch_and_finish(page, before, [float(i) * 2 + 1 for i in range(60)])
     until(page, "([t, b]) => { const g = document.querySelector(t + ' .js-plotly-plot'); const d = g.data.find(d => d.marker && Array.isArray(d.marker.color) && d.marker.colorscale); return !!d && Array.from(d.marker.color).map(Number).join() !== b; }", [C, before])
@@ -402,9 +409,8 @@ def test_an_old_link_is_migrated_on_load_and_unticking_x_moves_nothing(page, ser
     assert after["cols"] == [["zscore_mean", "X"]] and after["color"] == ["zscore_mean", "X"], after
     assert "__of_X" in after["crit"]
     # X is a layer like any other: the colour keeps it and says nothing about being offered
-    shown = page.evaluate("""(t) => [document.querySelector(t + ' select.axis-column-select[data-axis="color"]').selectedOptions[0].textContent,
-        document.querySelector(t + ' select.axis-layer-select[data-axis="color"]').value]""", C)
-    assert shown == ["z-score mean", "X"], shown
+    shown = [axis_sets.label_of(page, C, "color"), page.input_value(axis_sets.sel(C, "color", "key"))]
+    assert shown == ["Aggregation: Z-score mean", "X"], shown
     assert set(_inputs(page)) == {"X"}, "nothing was computed over counts: it all stays on X"
 
 
