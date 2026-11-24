@@ -727,7 +727,7 @@ actions.register({
             applyPlotStyle(fig, look, TYPE);
             // a density's sentences (UX 4.4): the bandwidth and the floor in Plot Options, the range in the strip
             _notes = fig.notes || null;
-            _colourData = colourValues(fig.data);
+            _colourData = fig.colourData || colourValues(fig.data);
             const serial = ++_drawSerial;
             delete _dom.root.dataset.drawn;
             const root = _dom.root;

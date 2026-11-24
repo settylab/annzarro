@@ -371,6 +371,7 @@ export function parseAdjust(text) {
  * @param {Object} config - from normalizeCountPlot
  * @returns {{map: boolean, palette: boolean}}
  */
+// export-unused-ok: the colour tests state it
 export function colorUse(config) {
     const c = shownConfig(config);
     const kind = (c.value && c.value.kind) || 'count';
@@ -383,6 +384,20 @@ export function colorUse(config) {
     else if (c.mode === 'upset') map = kind === 'share' || (kind === 'measure' && !!c.measure);
     const top = c.mode === 'heatmap' && kind === 'top_level';
     return { map, palette: levels || top };
+}
+
+/**
+ * What the Display pop-over holds for a config: what `colorUse` says (a colour map, a level palette), and for a 2D density
+ * the range of its density, with the point size and opacity once Cell points is a layer (and, with a Color by, whether
+ * the points may take the density as their opacity).
+ * @returns {{map: boolean, palette: boolean, range: boolean, points: boolean, fade: boolean}}
+ */
+export function popoverUse(config) {
+    const use = colorUse(config);
+    const c = shownConfig(config);
+    const density = c.mode === 'density2d';
+    const layers = density ? densityLayers(c.layers, c.style, !!c.split) : null;
+    return { ...use, range: density, points: !!(layers && layers.points), fade: !!(layers && layers.points && c.split) };
 }
 
 /** A typed colour limit: a number, or empty for automatic; else the sentence that says so. */
@@ -415,6 +430,9 @@ export function drawOptions(config) {
         // a 2D density's layers (opacity image, isolines, filled isolines); an old link's style maps onto them
         layers: rows.density === 2 ? densityLayers(config.layers, config.style, !!config.split) : null,
         pointSize: Number.isFinite(config.pointSize) ? Math.min(12, Math.max(1, config.pointSize)) : 3,
+        // the points' opacity is 1 unless stored (a Color by does not lower it); the density as their opacity is an option
+        pointOpacity: Number.isFinite(config.pointOpacity) && config.pointOpacity >= 0.05 && config.pointOpacity <= 1 ? config.pointOpacity : 1,
+        pointFade: config.pointFade === true,
         // the colour scale of a number's color (WP-6a): the map (absent is Viridis), Reverse and the fixed range
         ...(config.color && config.color.map ? { colorscale: config.color.map } : {}),
         colour: colourOf(config.color)
