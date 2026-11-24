@@ -145,7 +145,7 @@ def test_a_link_without_the_keys_draws_the_default_highlight(page, server):
     assert page.input_value(f"#focused-scale-{A}") == "5" and page.input_value(f"#focused-opacity-{A}") == "1"
     assert page.input_value(f"#focused-edge-width-{A}") == "2"
     assert page.input_value(f"#focused-color-{A}") == "#ff0000" and page.input_value(f"#focused-edge-color-{A}") == "#000000"
-    assert page.is_disabled(f"#reset-focused-color-{A}")                  # following the theme: nothing to reset
+    assert page.get_attribute("[data-popover='plot-options'] [data-auto='focusedColor']", "aria-pressed") == "true"   # Auto: following the theme
     _shot(page, "menu-focused-light")
     _menu(page, G, "focused")
     title = page.eval_on_selector(f"details[data-panel='{G}'][data-section='focused'] > summary", "e => e.textContent.trim()")
@@ -197,7 +197,7 @@ def test_theme_switch_keeps_a_set_colour_and_follows_for_the_rest(page, server):
     _menu(page, A, "focused")
     _set(page, f"#focused-edge-color-{A}", "#0000ff")
     _wait(page, A, "lineColor", "#0000ff")
-    assert not page.is_disabled(f"#reset-focused-edge-color-{A}")
+    assert page.get_attribute("[data-popover='plot-options'] [data-auto='focusedEdgeColor']", "aria-pressed") == "false"
     palettes = page.evaluate("async () => (await import('/static/js/utils/plot-theme.js')).PLOT_PALETTES")
     page.click('#theme-toggle button[data-theme-mode="dark"]')
     page.wait_for_function("() => document.documentElement.getAttribute('data-theme') === 'dark'")
@@ -214,7 +214,7 @@ def test_theme_switch_keeps_a_set_colour_and_follows_for_the_rest(page, server):
     cfg = page.evaluate("(id) => window.PanelManager.saveLayout().panelConfigs[id]", A)
     assert (cfg["focusedEdgeColor"], cfg["focusedColor"]) == ("#0000ff", "#00ff00")
     # Reset: the edge follows the theme again, the input shows it
-    page.click(f"#reset-focused-edge-color-{A}")
+    page.click("[data-popover='plot-options'] [data-auto='focusedEdgeColor']")
     _wait(page, A, "lineColor", palettes["dark"]["focusedEdgeColor"])
     assert page.input_value(f"#focused-edge-color-{A}") == palettes["dark"]["focusedEdgeColor"]
     assert "focusedEdgeColor" not in page.evaluate("(id) => window.PanelManager.saveLayout().panelConfigs[id]", A)
@@ -470,7 +470,7 @@ def test_a_fill_travels_with_the_panel_and_apply_to_others_copies_it(page, serve
     _menu(page, A, "focused")
     assert not page.is_checked(f"#focused-no-fill-{A}")
     _set(page, f"#focused-color-{A}", "#00ff00")
-    page.click(f"#reset-focused-color-{A}")            # Reset is the colour's: it follows the theme, the fill stays on
+    page.click("[data-popover='plot-options'] [data-auto='focusedColor']")            # Auto is the colour's: it follows the theme, the fill stays on
     page.wait_for_timeout(300)
     assert _focus(page, A)["color"] != NO_FILL
     # Apply to other panels: the other cell plot (B, in 3D) gets the fill, a gene plot is not of this kind

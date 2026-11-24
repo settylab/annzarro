@@ -84,7 +84,7 @@ function stepLabel(field, value) {
  * @param {() => Object} ctx.config - the configuration now
  * @param {(next: Object, label: string) => void} ctx.commit - one undoable step
  * @param {(next: Object) => void} ctx.replace - the session default followed: no undo step
- * @param {Object<string, {title: string, element?: HTMLElement, paint?: Function}>} [ctx.sections] - the panel's sections
+ * @param {Object<string, {title: string, element?: HTMLElement, paint?: Function, reset?: boolean}>} [ctx.sections] - the panel's sections
  * @param {(format: string, settings: Object, how?: 'full'|'shown') => void} [ctx.exportImage]
  * @param {() => ({blocked: boolean, why: string, note: string, shown: string[], size: string}|null)} [ctx.exportGuard] - the memory
  *   guard: a full export that does not fit is greyed out with `why`, `note` says so under the buttons, and `shown` formats of
@@ -96,6 +96,8 @@ function stepLabel(field, value) {
  *   not rendered here. Temporary: the Cell Plot and Gene Plot move them to the schema one package at a time.
  * @param {Set<string>} [ctx.openFirst] - the sections that start open (a panel's own are shut unless named); their open state is kept per
  *   panel, not per kind. Absent: the kind's standard (Presets, Text, Legend, Export and the panel's own sections)
+ * @param {Object<string, () => HTMLElement>} [ctx.elements] - for a field with `element: true`: the node the panel made for it, put in
+ *   the field's place on each open (the panel takes it back when the pop-over closes: its `onOpen` cleanup)
  * @param {(body: HTMLElement, ctl: Object) => (Function|void)} [ctx.onOpen] - after each open, with the body; may return a cleanup
  * @param {(reason: string) => void} [ctx.onClose] - after each close
  * @param {boolean} [ctx.noFollow] - the panel follows the session default itself (the Cell Plot and Gene Plot)
@@ -184,11 +186,15 @@ export function mountPlotOptions(ctx) {
     function fieldControl(field) {
         const id = field.domId ? `${field.domId}-${panelId}` : `po-${panelId}-${field.id}`;
         const help = helpOf(field, kind);
-        const helpEl = help || field.disabled ? el('small', { class: 'az-pop-help', text: help }) : null;
+        const helpEl = help || (field.disabled && !field.quiet) ? el('small', { class: 'az-pop-help', id: field.helpId ? `${field.helpId}-${panelId}` : null, text: help }) : null;
         if (field.element) {
-            const node = field.element();
-            const wrapEl = el('div', { class: 'az-pop-field az-pop-field--element' }, node);
-            controls.set(field.id, { field, input: null, wrap: wrapEl, auto: null });
+            const wrapEl = el('div', { class: 'az-pop-field az-pop-field--element' });
+            const make = () => {
+                const node = field.element === true ? (ctx.elements && ctx.elements[field.id] ? ctx.elements[field.id]() : null) : field.element();
+                if (node) wrapEl.replaceChildren(...[node, helpEl].filter(Boolean));
+            };
+            // made on each open, not now: the panel keeps its node while the pop-over is closed
+            controls.set(field.id, { field, input: null, wrap: wrapEl, auto: null, make });
             return wrapEl;
         }
         if (field.type === 'margins') return marginsControl(field);
@@ -218,11 +224,12 @@ export function mountPlotOptions(ctx) {
                 const pc = field.percent === true;
                 const scale = (v) => (v === undefined || v === null ? v : pc ? v * 100 : v);
                 const unscale = (v) => (v === null ? v : pc ? fromPercent(v) : v);
-                const box = el('input', { type: 'number', id, class: 'form-control form-control-sm az-pop-num', data: { option: `${field.id}Number` },
-                    min: scale(field.min), max: scale(field.max), step: scale(field.step) ?? 'any', aria: { label: field.label } });
-                input = el('input', { type: 'range', class: 'form-range az-pop-range', data: { option: field.id }, min: scale(field.min), max: scale(field.max),
+                // with a domId the slider has it and the box `<domId>-input` (the margins' way); `live`: the plot follows the slider as it moves
+                const box = el('input', { type: 'number', id: field.domId ? `${field.domId}-input-${panelId}` : id, class: 'form-control form-control-sm az-pop-num',
+                    data: { option: `${field.id}Number` }, min: scale(field.min), max: scale(field.max), step: scale(field.step) ?? 'any', aria: { label: field.label } });
+                input = el('input', { type: 'range', id: field.domId ? id : null, class: 'form-range az-pop-range', data: { option: field.id }, min: scale(field.min), max: scale(field.max),
                     step: scale(field.step) ?? 'any', aria: { label: field.label },
-                    on: { input: () => { box.value = input.value; }, change: () => set(field, unscale(Number(input.value))) } });
+                    on: { input: () => { box.value = input.value; if (field.live) set(field, unscale(Number(input.value))); }, change: () => set(field, unscale(Number(input.value))) } });
                 const commitBox = () => {
                     const raw = box.value.trim();
                     const v = raw === '' ? null : Number(raw);
@@ -236,16 +243,19 @@ export function mountPlotOptions(ctx) {
                 const number = field.type === 'number';
                 input = el('input', { type: number ? 'number' : 'text', id, class: `form-control form-control-sm ${number ? 'az-pop-num' : 'az-pop-text'}`,
                     data: { option: field.id }, autocomplete: 'off',
-                    ...(number ? { min: field.min, max: field.max, step: field.step ?? 'any' } : {}) });
+                    ...(number ? { min: field.min, max: field.max, step: field.step ?? 'any' } : { maxlength: field.maxlength }) });
                 const commitIt = () => {
                     const raw = input.value.trim();
                     if (!number) { set(field, raw); return; }
                     if (raw === '') { set(field, null); return; }
                     const v = Number(raw);
-                    if (!Number.isFinite(v)) { paint(); return; }
+                    // `ignoreBelow`: a value under the least is not taken (the box goes back), rather than made the least
+                    if (!Number.isFinite(v) || (field.ignoreBelow && v < field.min)) { paint(); return; }
                     set(field, v);
                 };
                 input.addEventListener('change', commitIt);
+                // `live`: the plot follows each keystroke (the Cell Plot and Gene Plot's boxes always did); with ignoreBelow a half-typed value under the least is not taken
+                if (field.live) input.addEventListener('input', commitIt);
                 input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitIt(); } });
             }
             wrap = el('div', { class: `az-pop-field az-pop-field--${field.type}` },
@@ -390,7 +400,8 @@ export function mountPlotOptions(ctx) {
             body.append(el('div', { class: 'az-pop-buttons' }, applyBtn), ask, applyDone,
                 sessionState, el('div', { class: 'az-pop-buttons' }, sessionSet, sessionReset));
         }
-        if (!sec.panel && sec.fields.length) {
+        // a panel's own section has a Reset when the panel says so (`sections[id].reset`)
+        if ((!sec.panel || (own && own.reset)) && resettable(sec.fields).length) {
             const reset = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset', data: { reset: sec.id },
                 id: ctx.sectionKey ? `reset-section-${ctx.sectionKey(sec.id)}-${panelId}` : null,
                 on: { click: () => resetSection(sec) } }, 'Reset');
@@ -441,10 +452,9 @@ export function mountPlotOptions(ctx) {
             input.disabled = !!off;
             if (auto && auto !== input && auto.tagName === 'BUTTON') auto.disabled = !!off;
             const helpEl = wrap.querySelector('.az-pop-help');
-            if (helpEl && field.disabled) {
-                helpEl.textContent = off || helpOf(field, kind);
-                if (off) input.title = off; else input.removeAttribute('title');
-            }
+            // a disabled control says why in its help line (`quiet`: only in its tooltip, another field of the group has the line)
+            if (helpEl && field.disabled && !field.quiet) helpEl.textContent = off || helpOf(field, kind);
+            if (field.disabled) { if (off) input.title = off; else input.removeAttribute('title'); }
             if (field.type === 'check') input.checked = v === null && shown !== undefined ? !!shown : !!v;
             else if (field.type === 'range') {
                 const shownV = v === null || v === undefined ? v : field.percent ? toPercent(v) : v;
@@ -461,11 +471,16 @@ export function mountPlotOptions(ctx) {
                 }
                 input.classList.toggle('az-pop-color--auto', isAuto);
             } else if (field.type === 'select') input.value = v === null || v === undefined ? '' : String(v);
-            else if (document.activeElement !== input) input.value = v === null || v === undefined ? '' : String(v);
+            else if (document.activeElement !== input) {
+                // an unset number shows what it stands for when the field says so (`shown`), else an empty box with a placeholder
+                const showing = (v === null || v === undefined) && shown !== undefined && shown !== '' && shown !== null ? shown : v;
+                input.value = showing === null || showing === undefined ? '' : String(showing);
+            }
+            if (field.type === 'text' && field.placeholder) input.placeholder = String(placeholderOf(field, c, env) ?? '');
             if (field.type === 'number') {
                 const ph = placeholderOf(field, c, env) ?? (defaultOf(field, kind) !== null ? defaultOf(field, kind) : null);
                 if (ph !== null) input.placeholder = String(ph); else input.removeAttribute('placeholder');
-                const from = typeof field.stepFrom === 'number' ? field.stepFrom : field.stepFrom ? ph : null;
+                const from = typeof field.stepFrom === 'function' ? field.stepFrom(c, env) : typeof field.stepFrom === 'number' ? field.stepFrom : field.stepFrom ? ph : null;
                 if (from !== null) input.dataset.stepFrom = String(from); else delete input.dataset.stepFrom;
             }
         }
@@ -532,6 +547,7 @@ export function mountPlotOptions(ctx) {
         onClose: ctx.onClose,
         render: (host, ctl) => {
             redrawLegacy();
+            for (const c of controls.values()) if (c.make) c.make();
             host.appendChild(root);
             paint();
             return ctx.onOpen ? ctx.onOpen(host, ctl) : undefined;

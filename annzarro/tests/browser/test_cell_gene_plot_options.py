@@ -197,6 +197,34 @@ def test_text_and_background_use_the_one_pop_over_body_standard(page, served, wh
     assert page.evaluate("(s) => getComputedStyle(document.querySelector(s)).textTransform", f"{POP} details[data-section='text'] > summary") == "uppercase"
 
 
+@pytest.mark.parametrize("which", WHICH)
+def test_axes_points_and_focused_use_the_body_standard_and_a_flip_is_a_view(page, served, which):
+    """U4: Axes, Points and Focused are the shared renderer's: az-pop-* rows, one Reset each, a colour with Auto, a gated control
+    says why under itself; the flips are views, so their group's Reset leaves them as they are."""
+    pid = _open(page, served, which)
+    _open_options(page, pid)
+    for name in ("axes", "points", "focused"):
+        _section(page, pid, name)
+        sec = f"{POP} details[data-panel='{pid}'][data-section='{name}']"
+        assert "az-pop-section" in page.get_attribute(sec, "class")
+        assert page.locator(f"{sec} .az-pop-reset").count() == 1, f"one Reset in {name}"
+        assert page.locator(f"{sec} .input-group, {sec} .form-switch").count() == 0
+        assert page.locator(f"{sec} [id^='reset-'][id$='-{pid}']:not(.az-pop-reset)").count() == 0, "no Reset of its own per field"
+    assert page.locator(f"{POP} [data-auto='gridColor']").count() == 1 and page.locator(f"{POP} [data-auto='focusedEdgeColor']").count() == 1
+    # the scale bar is gated (no Equal aspect): off, and the reason is its help line
+    assert page.is_disabled(f"{POP} #show-scale-bar-{pid}")
+    assert "Needs Equal aspect" in page.inner_text(f"{POP} #scale-bar-note-{pid}")
+    # a flip is a view: Axes' Reset does not touch it, and the grid it does
+    page.check(f"{POP} #flip-y-{pid}")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().flipY === true", pid)
+    page.uncheck(f"{POP} #grid-toggle-{pid}")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().showGrid === false", pid)
+    page.click(f"{POP} #reset-section-axes-{pid}")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().showGrid === true", pid)
+    s = _settings(page, pid)
+    assert s["flipY"] is True and page.is_checked(f"{POP} #flip-y-{pid}")
+
+
 # ------------------------------------------------------------------ 5. a link keeps it all
 
 @pytest.mark.parametrize("which", WHICH)

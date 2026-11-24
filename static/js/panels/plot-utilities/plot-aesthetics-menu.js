@@ -4,14 +4,14 @@ import { hasLegendEntries } from '../../utils/legend-entries.js';
 import { applyLegendOptions, legendOrientation, legendTitleText, legendTitleSize, legendTitleFontSize, defaultTitleGap, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX,
     TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX, COLUMN_GAP_MAX, COLUMN_GAP_DEFAULT, legendTitleKeys } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
-import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
+import { FOCUS_DEFAULTS } from '../../utils/focus-style.js';
 import {
-  plotColour, isFollowing, followTheme, modebarColours, THEMED_COLOURS
+  plotColour, isFollowing, modebarColours, THEMED_COLOURS
 } from '../../utils/plot-theme.js';
 import { THEME_EVENT } from '../../utils/theme.js';
 import {
-  normalizePlotOptions, tickMarksOn, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
-  SCALE_BAR_CORNERS, COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions, STYLE_KEYS, defaultLook
+  normalizePlotOptions, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
+  COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions, STYLE_KEYS, defaultLook
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
 import {
@@ -61,10 +61,40 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
     showBackdrop: (s) => update3DBackdrop(plotContainer, s),
     backdropColor: (s) => update3DBackdrop(plotContainer, s)
   };
+  // several fields share one update: the same function, so a change of two of them runs it once
+  const axisVisibility = (s) => updateAxisVisibility(plotContainer, s);
+  const lineWidths = (s) => updateLineWidths(plotContainer, s);
+  const ticks = (s) => relayoutTicks(plotContainer, s);
+  const scaleBar = (s) => refreshScaleBar(plotContainer, s);
+  // an axis direction is a view: the plot is laid out again (2D only), then the scale bar follows
+  const flip = (s) => {
+    const fl = plotContainer._fullLayout;
+    if (!fl || s.z) return;
+    Promise.resolve(Plotly.relayout(plotContainer, flipRelayout(s, fl)))
+      .then(() => refreshScaleBar(plotContainer, s))
+      .catch(err => console.warn('Axis direction not changed:', err && err.message));
+  };
+  const greyPoints = (s) => restyleMarkers(plotContainer, s).catch(err => console.warn('Not-in-table style not updated:', err && err.message));
+  // an open circle is its edge: without one it would vanish, so No fill keeps the edge at least 1 px
+  const focused = (s) => {
+    if (s.focusedNoFill !== false && !((s.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth) >= 1)) s.focusedEdgeWidth = 1;
+    return restyleFocus(plotContainer, s).catch(err => console.warn('Focused marker style not updated:', err && err.message));
+  };
+  Object.assign(hooks, {
+    showGrid: (s) => toggleGrid(plotContainer, s), gridColor: (s) => updateGridColor(plotContainer, s),
+    axisColor: (s) => updateAxisColor(plotContainer, s), zeroLineColor: (s) => updateZeroLineColor(plotContainer, s),
+    showAxisTitles: axisVisibility, showAxisLabels: axisVisibility, showAxisLines: axisVisibility, showZeroLines: axisVisibility,
+    gridLineWidth: lineWidths, axisLineWidth: lineWidths, zeroLineWidth: lineWidths,
+    showTickMarks: ticks, tickCount: ticks, flipX: flip, flipY: flip,
+    showScaleBar: scaleBar, scaleBarSize: scaleBar, scaleBarUnit: scaleBar, scaleBarCorner: scaleBar,
+    notInTableScale: greyPoints, notInTableOpacity: greyPoints, notInTableColor: greyPoints,
+    focusedScale: focused, focusedOpacity: focused, focusedEdgeWidth: focused, focusedColor: focused, focusedNoFill: focused, focusedEdgeColor: focused
+  });
   const adapter = createSettingsAdapter({
     kind, settings, hooks, initialize: initializeAestheticsSettings,
     relook: (s) => {
       relookPlot(plotContainer, s);
+      restyleFocus(plotContainer, s).catch(() => {});
       refreshScaleBar(plotContainer, s);
     },
     notify: (setting, value) => notifySettingsChanged(id, setting, value)
@@ -72,13 +102,16 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   let options = null;
   /** The pop-over's body as it was drawn: the sections the panel still draws itself, and the point size's row in its slot. */
   const legacy = (key) => () => legacySection(id, settings, key);
-  const LEGACY_SECTIONS = ['presets', 'axes', 'panel:points', 'panel:focused', 'legend', 'margins', 'export', 'apply'];
+  const LEGACY_SECTIONS = ['presets', 'legend', 'margins', 'export', 'apply'];
   options = mountPlotOptions({
     anchor: menuButton, kind, panelId: id, noFollow: true,
     config: () => settings,
     commit: (next, label) => { adapter.commit(next, label); options.update(); },
     replace: (next) => { Object.assign(settings, next); },
     sectionKey: (sec) => sec.replace(/^panel:/, ''),
+    // the kinds' own groups; the point size is the panel's row (listeners.js), moved in while the pop-over is open
+    sections: { 'panel:points': { title: 'Points', reset: true }, 'panel:focused': { title: `Focused ${plotKindOf(settings)}`, reset: true } },
+    elements: { pointSize: () => pointSizeRow },
     openFirst: new Set(['export']),      // as the menu has always opened: only Export, the rest as it was left
     legacy: Object.fromEntries(LEGACY_SECTIONS.map((sec) => [sec, legacy(sec.replace(/^panel:/, ''))])),
     // why it closed last (a test hook, and a hint when a menu goes away unasked)
@@ -86,7 +119,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
     onOpen: (body, ctl) => {
       ctl.surface.classList.add('aesthetics-popover');
       menuButton.classList.add('btn-aesthetics-active');
-      placePointSize(body);
+      placePointSize();
       syncColourControls(id, settings);     // a colour that follows the theme has nothing to reset
       return () => {
         sizeWatch?.disconnect();
@@ -98,21 +131,16 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   });
   const popover = options.popover;
   /** The point size's row in its slot of the Points group, shown as the settings are now. */
-  function placePointSize(body) {
-    const slot = body.querySelector(`#point-size-slot-${id}`);
-    if (slot && pointSizeRow) {
-      slot.replaceWith(pointSizeRow);
-      showPointStyle(id, settings);
-    }
+  function placePointSize() {
+    if (pointSizeRow) showPointStyle(id, settings);
   }
   // a preset or a Reset draws the groups again: the ones the panel draws itself are rebuilt in place, the pop-over stays open
   menuButton.__azRedrawOptions = () => {
     const body = popover.surface && popover.surface.querySelector('.az-popover-body');
     if (!body) return;
-    putBack();
     options.redrawLegacy();
     options.update();
-    placePointSize(body);
+    placePointSize();
     syncColourControls(id, settings);
   };
 
@@ -147,18 +175,6 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
 /** Sections the user opened, per panel; a menu opens again as it was left. */
 const sectionOpen = new Map();
 const OPEN_AT_FIRST = ['export'];      // a panel with no remembered state: only Export is open
-
-/**
- * The opacity the grey points of a table filter are drawn at now, rounded, as text; '' while
- * there are none. The box shows it (it is automatic until the user types) so the arrows and
- * the spinner step from what is on screen.
- */
-function drawnGreyOpacity(id) {
-    const gd = typeof document !== 'undefined' && document.getElementById(`plot-container-${id}`);
-    const t = gd && gd.data && gd.data.find(tr => tr && tr.name === 'Not in table' && tr.x);
-    const o = t && t.marker && t.marker.opacity;
-    return typeof o === 'number' && o > 0 && o <= 1 ? String(Math.round(o * 100) / 100) : '';
-}
 
 /** A collapsible group of the menu. */
 function details(id, key, title, body) {
@@ -195,9 +211,6 @@ export function createPopoverContent(id, settings) {
     const marginRight = settings.margins?.r ?? 80;
     
     const marginsLinkedValue = marginTop;
-    const scaleBarOk = !settings.z && !!settings.equalAspect;
-    const scaleBarWhy = settings.z ? 'The scale bar is for 2D plots.'
-        : 'Needs Equal aspect (the panel controls): without it a unit is not as long on y as on x.';
     const plotKind = settings.highlightFocusedGene !== undefined ? 'gene' : 'cell';
 
     // Create a custom ID to ensure we're getting fresh HTML each time
@@ -218,205 +231,6 @@ export function createPopoverContent(id, settings) {
                     title="Only the points: no margins, legend, axis labels or grid. For figures and overlays.">Bare</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
                     title="${hasSessionStyle(`${plotKind}-plot`) ? 'Session default style: the look every plot on Default has' : 'Built-in style'}">Default</button>
-            </div>
-        `)}
-        ${details(id, 'axes', 'Axes and ticks', `
-            
-            <!-- Grid Controls -->
-            <div class="form-check form-switch mb-2">
-                <input class="form-check-input" type="checkbox" id="grid-toggle-${id}" 
-                    ${settings.showGrid ? 'checked' : ''}>
-                <label class="form-check-label" for="grid-toggle-${id}">Show Grid</label>
-            </div>
-            
-            <!-- Grid Color -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Grid Color</label>
-                <div class="d-flex align-items-center gap-2">
-                    <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="grid-color-${id}" value="${plotColour(settings, 'gridColor')}" title="Choose grid color">
-                    <button class="btn btn-sm btn-outline-secondary" id="reset-grid-color-${id}">Reset</button>
-                </div>
-            </div>
-            
-            <!-- Axis Controls -->
-            <div class="mb-2">
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="show-axis-titles-${id}" 
-                        ${settings.showAxisTitles !== false ? 'checked' : ''}>
-                    <label class="form-check-label" for="show-axis-titles-${id}">Show Axis Titles</label>
-                </div>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="show-axis-labels-${id}" 
-                        ${settings.showAxisLabels !== false ? 'checked' : ''}>
-                    <label class="form-check-label" for="show-axis-labels-${id}">Show Tick Labels</label>
-                </div>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="show-axis-lines-${id}" 
-                        ${settings.showAxisLines !== false ? 'checked' : ''}>
-                    <label class="form-check-label" for="show-axis-lines-${id}">Show Axis Lines</label>
-                </div>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="zero-lines-${id}" 
-                        ${settings.showZeroLines ? 'checked' : ''}>
-                    <label class="form-check-label" for="zero-lines-${id}">Show Zero Lines</label>
-                </div>
-                <!-- Direction: a view setting of this plot, never copied as a style -->
-                <div class="form-check form-switch" title="${settings.z ? 'Axis directions can be flipped in 2D plots only.' : 'Run the y axis the other way, so y grows downwards (spatial coordinates are often read like that).'}">
-                    <input class="form-check-input" type="checkbox" id="flip-y-${id}"
-                        ${settings.flipY ? 'checked' : ''} ${settings.z ? 'disabled' : ''}>
-                    <label class="form-check-label" for="flip-y-${id}">Flip y (grows downwards)</label>
-                </div>
-                <div class="form-check form-switch" title="${settings.z ? 'Axis directions can be flipped in 2D plots only.' : 'Run the x axis the other way, so x grows to the left.'}">
-                    <input class="form-check-input" type="checkbox" id="flip-x-${id}"
-                        ${settings.flipX ? 'checked' : ''} ${settings.z ? 'disabled' : ''}>
-                    <label class="form-check-label" for="flip-x-${id}">Flip x (grows to the left)</label>
-                </div>
-                
-                <!-- Line Width Settings -->
-                <div class="mt-2">
-                    <label class="form-label mb-1">Line Widths</label>
-                    <div class="input-group input-group-sm mb-1">
-                        <span class="input-group-text">Axis</span>
-                        <input type="number" class="form-control" id="axis-line-width-${id}" 
-                            value="${settings.axisLineWidth}" min="0.1" max="10" step="0.1">
-                        <span class="input-group-text">px</span>
-                    </div>
-                    <div class="input-group input-group-sm mb-1">
-                        <span class="input-group-text">Grid</span>
-                        <input type="number" class="form-control" id="grid-line-width-${id}" 
-                            value="${settings.gridLineWidth}" min="0.1" max="10" step="0.1">
-                        <span class="input-group-text">px</span>
-                    </div>
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text">Zero</span>
-                        <input type="number" class="form-control" id="zero-line-width-${id}" 
-                            value="${settings.zeroLineWidth}" min="0.1" max="10" step="0.1">
-                        <span class="input-group-text">px</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Axis Color -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Axis Color</label>
-                <div class="d-flex align-items-center gap-2">
-                    <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="axis-color-${id}" value="${plotColour(settings, 'axisColor')}" title="Choose axis color">
-                    <button class="btn btn-sm btn-outline-secondary" id="reset-axis-color-${id}">Reset</button>
-                </div>
-            </div>
-            
-            <!-- Zero Line Color -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Zero Line Color</label>
-                <div class="d-flex align-items-center gap-2">
-                    <input type="color" class="form-control form-control-sm form-control-color" 
-                        id="zero-line-color-${id}" value="${plotColour(settings, 'zeroLineColor')}" title="Choose zero line color">
-                    <button class="btn btn-sm btn-outline-secondary" id="reset-zero-line-color-${id}">Reset</button>
-                </div>
-            </div>
-            
-            <!-- Ticks -->
-            <div class="mb-2">
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="show-tick-marks-${id}"
-                        ${tickMarksOn(settings) ? 'checked' : ''}>
-                    <label class="form-check-label" for="show-tick-marks-${id}">Show Tick Marks</label>
-                </div>
-                <div class="input-group input-group-sm mt-1">
-                    <span class="input-group-text">Ticks per axis</span>
-                    <input type="number" class="form-control" id="tick-count-${id}" value="${settings.tickCount ?? ''}"
-                        placeholder="auto" data-step-from="6" min="2" max="30" step="1" title="About this many ticks on each axis; empty: automatic">
-                </div>
-            </div>
-
-            <!-- Spatial scale bar -->
-            <div class="mb-2 scale-bar-options ${scaleBarOk ? '' : 'scale-bar-off'}" id="scale-bar-options-${id}">
-                <div class="form-check form-switch" ${scaleBarOk ? '' : 'title="Needs Equal aspect"'}>
-                    <input class="form-check-input" type="checkbox" id="show-scale-bar-${id}"
-                        ${settings.showScaleBar ? 'checked' : ''} ${scaleBarOk ? '' : 'disabled'}>
-                    <label class="form-check-label" for="show-scale-bar-${id}">Scale bar</label>
-                </div>
-                <div class="form-text mt-0 mb-1" id="scale-bar-note-${id}">${scaleBarOk ? 'A round length in coordinate units, about a fifth of the width in view; it follows the zoom.' : escapeAttr(scaleBarWhy)}</div>
-                <div class="d-flex align-items-center gap-2 mb-1">
-                    <span class="small text-nowrap">Size</span>
-                    <input type="range" class="form-range flex-grow-1" id="scale-bar-size-${id}" min="25" max="400" step="5"
-                        value="${Math.round(settings.scaleBarSize * 100)}" title="Length, line and label together" ${scaleBarOk ? '' : 'disabled'}>
-                    <span class="small text-nowrap" id="scale-bar-size-value-${id}">${Math.round(settings.scaleBarSize * 100)}%</span>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Unit</span>
-                    <input type="text" class="form-control" id="scale-bar-unit-${id}" value="${escapeAttr(settings.scaleBarUnit)}"
-                        maxlength="20" placeholder="optional, e.g. µm" ${scaleBarOk ? '' : 'disabled'}>
-                </div>
-                <select class="form-select form-select-sm" id="scale-bar-corner-${id}" title="Corner" ${scaleBarOk ? '' : 'disabled'}>
-                    ${SCALE_BAR_CORNERS.map(c => `<option value="${c}" ${settings.scaleBarCorner === c ? 'selected' : ''}>${c.replace('-', ' ')}</option>`).join('')}
-                </select>
-            </div>
-
-        `)}
-        ${details(id, 'points', 'Points', `
-            <!-- the point size (the control grid's slider before WP-5b): the panel's own controls, moved in here -->
-            <div id="point-size-slot-${id}"></div>
-            <div class="form-text mt-0 mb-1">The grey points a table filter leaves in the plot.</div>
-            <div class="input-group input-group-sm mb-1">
-                <span class="input-group-text">Size</span>
-                <input type="number" class="form-control" id="not-in-table-scale-${id}"
-                    value="${settings.notInTableScale ?? 1}" min="0.1" max="20" step="0.1"
-                    title="Relative to the size their count gets automatically">
-                <span class="input-group-text">x auto</span>
-            </div>
-            <div class="input-group input-group-sm mb-1">
-                <span class="input-group-text">Opacity</span>
-                <input type="number" class="form-control" id="not-in-table-opacity-${id}"
-                    value="${settings.notInTableOpacity ?? drawnGreyOpacity(id)}" placeholder="auto" min="0.05" max="1" step="0.05" data-step-from="1">
-            </div>
-            <div class="d-flex align-items-center gap-2">
-                <label class="form-label mb-0 me-2">Color</label>
-                <input type="color" class="form-control form-control-sm form-control-color"
-                    id="not-in-table-color-${id}" value="${plotColour(settings, 'notInTableColor')}" title="Choose the colour of the points not in the table">
-                <button class="btn btn-sm btn-outline-secondary" id="reset-not-in-table-color-${id}">Reset</button>
-            </div>
-        `)}
-        ${details(id, 'focused', `Focused ${plotKind}`, `
-            <div class="form-text mt-0 mb-1">The marker on the focused ${plotKind}, while Highlight Focused ${plotKind === 'gene' ? 'Gene' : 'Cell'} is on.</div>
-            <div class="input-group input-group-sm mb-1">
-                <span class="input-group-text">Size</span>
-                <input type="number" class="form-control" id="focused-scale-${id}"
-                    value="${settings.focusedScale ?? FOCUS_DEFAULTS.scale}" min="0.1" max="${FOCUS_SCALE_MAX}" step="0.1"
-                    title="Relative to the point size; ${FOCUS_DEFAULTS.scale} is five times as large">
-                <span class="input-group-text">x points</span>
-            </div>
-            <div class="input-group input-group-sm mb-1">
-                <span class="input-group-text">Opacity</span>
-                <input type="number" class="form-control" id="focused-opacity-${id}"
-                    value="${settings.focusedOpacity ?? FOCUS_DEFAULTS.opacity}" placeholder="${FOCUS_DEFAULTS.opacity}" min="0.05" max="1" step="0.05"
-                    data-step-from="${FOCUS_DEFAULTS.opacity}" title="0 to 1; 1 is opaque">
-            </div>
-            <div class="input-group input-group-sm mb-1">
-                <span class="input-group-text">Edge width</span>
-                <input type="number" class="form-control" id="focused-edge-width-${id}"
-                    value="${settings.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth}" min="0" max="${FOCUS_EDGE_MAX}" step="0.5"
-                    title="0: no edge">
-                <span class="input-group-text">px</span>
-            </div>
-            <div class="d-flex align-items-center gap-2 mb-1">
-                <label class="form-label mb-0 me-2">Fill</label>
-                <input type="color" class="form-control form-control-sm form-control-color"
-                    id="focused-color-${id}" value="${plotColour(settings, 'focusedColor')}" title="Choose the fill colour of the focused marker (also the ring of a cell outside the subset)">
-                <button class="btn btn-sm btn-outline-secondary" id="reset-focused-color-${id}" ${resetState(settings, 'focusedColor')}>Reset</button>
-                <div class="form-check mb-0 ms-1">
-                    <input class="form-check-input" type="checkbox" id="focused-no-fill-${id}" ${settings.focusedNoFill !== false ? 'checked' : ''}
-                        title="Draw the marker as an open circle: its edge only (at least 1 px wide)">
-                    <label class="form-check-label" for="focused-no-fill-${id}">No fill</label>
-                </div>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-                <label class="form-label mb-0 me-2">Edge</label>
-                <input type="color" class="form-control form-control-sm form-control-color"
-                    id="focused-edge-color-${id}" value="${plotColour(settings, 'focusedEdgeColor')}" title="Choose the edge colour of the focused marker">
-                <button class="btn btn-sm btn-outline-secondary" id="reset-focused-edge-color-${id}" ${resetState(settings, 'focusedEdgeColor')}>Reset</button>
             </div>
         `)}
         ${details(id, 'legend', 'Legend and colour bar', `
@@ -798,136 +612,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
         // Find the element that triggered the event
         const target = e.target;
         
-        // Grid toggle
-        if (target.id === `grid-toggle-${id}`) {
-            settings.showGrid = target.checked;
-            toggleGrid(plotContainer, settings);
-            notifySettingsChanged(id, 'showGrid', settings.showGrid);
-            return;
-        }
-        
-        // Grid color
-        if (target.id === `grid-color-${id}`) {
-            settings.gridColor = target.value;
-            updateGridColor(plotContainer, settings);
-            notifySettingsChanged(id, 'gridColor', plotColour(settings, 'gridColor'));
-            return;
-        }
-        
-        // Reset gridColor: follow the app theme again
-        if (target.id === `reset-grid-color-${id}`) {
-            followTheme(settings, ['gridColor']);
-            updateColorInputs(container, id, settings);
-            updateGridColor(plotContainer, settings);
-            notifySettingsChanged(id, 'gridColor', settings.gridColor);
-            return;
-        }
-        
-        // Axis color
-        if (target.id === `axis-color-${id}`) {
-            settings.axisColor = target.value;
-            updateAxisColor(plotContainer, settings);
-            notifySettingsChanged(id, 'axisColor', plotColour(settings, 'axisColor'));
-            return;
-        }
-        
-        // Reset axisColor: follow the app theme again
-        if (target.id === `reset-axis-color-${id}`) {
-            followTheme(settings, ['axisColor']);
-            updateColorInputs(container, id, settings);
-            updateAxisColor(plotContainer, settings);
-            notifySettingsChanged(id, 'axisColor', settings.axisColor);
-            return;
-        }
-        
-        // Zero line color
-        if (target.id === `zero-line-color-${id}`) {
-            settings.zeroLineColor = target.value;
-            updateZeroLineColor(plotContainer, settings);
-            notifySettingsChanged(id, 'zeroLineColor', plotColour(settings, 'zeroLineColor'));
-            return;
-        }
-        
-        // Reset zeroLineColor: follow the app theme again
-        if (target.id === `reset-zero-line-color-${id}`) {
-            followTheme(settings, ['zeroLineColor']);
-            updateColorInputs(container, id, settings);
-            updateZeroLineColor(plotContainer, settings);
-            notifySettingsChanged(id, 'zeroLineColor', settings.zeroLineColor);
-            return;
-        }
-        
-        // Axis title visibility
-        if (target.id === `show-axis-titles-${id}`) {
-            settings.showAxisTitles = target.checked;
-            updateAxisVisibility(plotContainer, settings);
-            notifySettingsChanged(id, 'showAxisTitles', settings.showAxisTitles);
-            return;
-        }
-        
-        // Axis label visibility
-        if (target.id === `show-axis-labels-${id}`) {
-            settings.showAxisLabels = target.checked;
-            updateAxisVisibility(plotContainer, settings);
-            notifySettingsChanged(id, 'showAxisLabels', settings.showAxisLabels);
-            return;
-        }
-        
-        // Axis line visibility
-        if (target.id === `show-axis-lines-${id}`) {
-            settings.showAxisLines = target.checked;
-            updateAxisVisibility(plotContainer, settings);
-            notifySettingsChanged(id, 'showAxisLines', settings.showAxisLines);
-            return;
-        }
-        
-        // Zero line visibility
-        if (target.id === `zero-lines-${id}`) {
-            settings.showZeroLines = target.checked;
-            updateAxisVisibility(plotContainer, settings);
-            notifySettingsChanged(id, 'showZeroLines', settings.showZeroLines);
-            return;
-        }
-        
-        // Axis direction (a view setting: not in STYLE_KEYS, so no copy and no preset touches it)
-        if (target.id === `flip-x-${id}` || target.id === `flip-y-${id}`) {
-            const key = target.id === `flip-x-${id}` ? 'flipX' : 'flipY';
-            settings[key] = target.checked;
-            const fl = plotContainer._fullLayout;
-            if (fl && !settings.z) {
-                Promise.resolve(Plotly.relayout(plotContainer, flipRelayout(settings, fl)))
-                    .then(() => refreshScaleBar(plotContainer, settings))
-                    .catch(err => console.warn('Axis direction not changed:', err && err.message));
-            }
-            notifySettingsChanged(id, key, settings[key]);
-            return;
-        }
-
-        // Axis line width
-        if (target.id === `axis-line-width-${id}`) {
-            settings.axisLineWidth = parseFloat(target.value);
-            updateLineWidths(plotContainer, settings);
-            notifySettingsChanged(id, 'axisLineWidth', settings.axisLineWidth);
-            return;
-        }
-        
-        // Grid line width
-        if (target.id === `grid-line-width-${id}`) {
-            settings.gridLineWidth = parseFloat(target.value);
-            updateLineWidths(plotContainer, settings);
-            notifySettingsChanged(id, 'gridLineWidth', settings.gridLineWidth);
-            return;
-        }
-        
-        // Zero line width
-        if (target.id === `zero-line-width-${id}`) {
-            settings.zeroLineWidth = parseFloat(target.value);
-            updateLineWidths(plotContainer, settings);
-            notifySettingsChanged(id, 'zeroLineWidth', settings.zeroLineWidth);
-            return;
-        }
-        
-        
         // Margin changes
         if (target.id === `margin-top-${id}`) {
             settings.margins.t = parseInt(target.value, 10);
@@ -1044,20 +728,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
 
-        // Ticks
-        if (target.id === `show-tick-marks-${id}`) {
-            settings.showTickMarks = target.checked;
-            relayoutTicks(plotContainer, settings);
-            return;
-        }
-        if (target.id === `tick-count-${id}`) {
-            const n = parseInt(target.value, 10);
-            if (target.value !== '' && !(n >= 2)) return;
-            settings.tickCount = target.value === '' ? null : Math.min(n, 30);
-            relayoutTicks(plotContainer, settings);
-            return;
-        }
-
         // Colour bar
         if (target.id === `colorbar-position-${id}`) {
             settings.colorbarPosition = target.value;
@@ -1076,30 +746,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             if (target.value !== '' && !(n >= 2)) return;
             settings.colorbarTicks = target.value === '' ? null : Math.min(n, 30);
             updateLegendPosition(plotContainer, settings);
-            return;
-        }
-
-        // Spatial scale bar
-        if (target.id === `show-scale-bar-${id}`) {
-            settings.showScaleBar = target.checked;
-            refreshScaleBar(plotContainer, settings);
-            return;
-        }
-        if (target.id === `scale-bar-size-${id}`) {
-            settings.scaleBarSize = Math.max(0.25, Math.min(4, parseInt(target.value, 10) / 100));
-            const out = document.getElementById(`scale-bar-size-value-${id}`);
-            if (out) out.textContent = `${Math.round(settings.scaleBarSize * 100)}%`;
-            refreshScaleBar(plotContainer, settings);
-            return;
-        }
-        if (target.id === `scale-bar-unit-${id}`) {
-            settings.scaleBarUnit = target.value.trim().slice(0, 20);
-            refreshScaleBar(plotContainer, settings);
-            return;
-        }
-        if (target.id === `scale-bar-corner-${id}`) {
-            settings.scaleBarCorner = target.value;
-            refreshScaleBar(plotContainer, settings);
             return;
         }
 
@@ -1173,74 +819,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             document.getElementById(`session-style-reset-${id}`)?.classList.toggle('d-none', !hasSessionStyle(type));
             const state = document.getElementById(`session-style-state-${id}`);
             if (state) state.textContent = settings.styleDefault === true ? 'On Default' : 'Own style';
-            return;
-        }
-
-        // Not in table points: size scale, opacity, colour (greyMarker)
-        if (target.id === `not-in-table-scale-${id}` || target.id === `not-in-table-opacity-${id}`
-            || target.id === `not-in-table-color-${id}` || target.id === `reset-not-in-table-color-${id}`) {
-            const v = parseFloat(target.value);
-            if (target.id === `not-in-table-scale-${id}`) {
-                if (!(v > 0)) return;
-                settings.notInTableScale = v;
-            } else if (target.id === `not-in-table-opacity-${id}`) {
-                if (target.value === '') delete settings.notInTableOpacity;      // auto
-                else if (v > 0 && v <= 1) settings.notInTableOpacity = v;
-                else return;
-            } else if (target.id === `not-in-table-color-${id}`) {
-                settings.notInTableColor = target.value;
-            } else {
-                if (e.type !== 'click') return;
-                followTheme(settings, ['notInTableColor']);
-                const input = container.querySelector(`#not-in-table-color-${id}`);
-                if (input) input.value = plotColour(settings, 'notInTableColor');
-            }
-            syncColourControls(id, settings);
-            restyleMarkers(plotContainer, settings).catch(err => console.warn('Not-in-table style not updated:', err && err.message));
-            return;
-        }
-
-        // The focused marker: size factor, opacity, edge width, fill and edge colour (utils/focus-style.js)
-        const focusKey = {
-            [`focused-scale-${id}`]: 'focusedScale', [`focused-opacity-${id}`]: 'focusedOpacity',
-            [`focused-edge-width-${id}`]: 'focusedEdgeWidth', [`focused-color-${id}`]: 'focusedColor',
-            [`focused-edge-color-${id}`]: 'focusedEdgeColor',
-            [`reset-focused-color-${id}`]: 'focusedColor', [`reset-focused-edge-color-${id}`]: 'focusedEdgeColor'
-        }[target.id];
-        if (target.id === `focused-no-fill-${id}`) {
-            if (e.type !== 'change') return;
-            if (target.checked) {
-                delete settings.focusedNoFill;      // the default
-                // an open circle is its edge: without one it would vanish
-                if (!((settings.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth) >= 1)) settings.focusedEdgeWidth = 1;
-            } else settings.focusedNoFill = false;      // stored: unset means no fill
-            syncFocusedFill(id, settings);
-            syncColourControls(id, settings);
-            restyleFocus(plotContainer, settings).catch(err => console.warn('Focused marker style not updated:', err && err.message));
-            return;
-        }
-        if (focusKey) {
-            const v = parseFloat(target.value);
-            if (target.id.startsWith('reset-')) {
-                if (e.type !== 'click') return;
-                followTheme(settings, [focusKey]);
-                const input = document.getElementById(target.id.slice('reset-'.length));   // the menu is in <body>, not the panel
-                if (input) input.value = plotColour(settings, focusKey);
-            } else if (focusKey === 'focusedColor' || focusKey === 'focusedEdgeColor') {
-                settings[focusKey] = target.value;
-            } else if (target.value === '' || (focusKey === 'focusedOpacity' && v === FOCUS_DEFAULTS.opacity)) {
-                delete settings[focusKey];          // the default
-            } else if (focusKey === 'focusedScale' ? v > 0 && v <= FOCUS_SCALE_MAX
-                : focusKey === 'focusedOpacity' ? v > 0 && v <= 1 : v >= 0 && v <= FOCUS_EDGE_MAX) {
-                // no fill: the edge is all there is of the marker, so it stays at least 1 px (judged once the entry is done)
-                if (focusKey === 'focusedEdgeWidth' && settings.focusedNoFill !== false && v < 1) {
-                    if (e.type !== 'change') return;
-                    target.value = 1;
-                    settings[focusKey] = 1;
-                } else settings[focusKey] = v;
-            } else return;
-            syncColourControls(id, settings);
-            restyleFocus(plotContainer, settings).catch(err => console.warn('Focused marker style not updated:', err && err.message));
             return;
         }
 
@@ -1810,14 +1388,6 @@ export function updateColorInputs(container, id, settings) {
     syncColourControls(id, settings);
 }
 
-/** Show the Focused fill controls as the settings have them: the checkbox, and the edge width that is drawn. */
-function syncFocusedFill(id, settings) {
-    const noFill = document.getElementById(`focused-no-fill-${id}`);
-    const width = document.getElementById(`focused-edge-width-${id}`);
-    if (noFill) noFill.checked = settings.focusedNoFill !== false;
-    if (width && settings.focusedEdgeWidth !== undefined) width.value = settings.focusedEdgeWidth;
-}
-
 /** The number boxes of the legend: the box's id, the setting, the least and the most it takes. */
 const LEGEND_BOXES = [
     { box: 'legend-dot-size', key: 'legendDotSize', min: DOT_SIZE_MIN, max: DOT_SIZE_MAX },
@@ -1826,11 +1396,6 @@ const LEGEND_BOXES = [
     { box: 'legend-title-gap', key: 'legendTitleGap', min: 0, max: TITLE_GAP_MAX },
     { box: 'legend-column-gap', key: 'legendColumnGap', min: 0, max: COLUMN_GAP_MAX }
 ];
-
-/** A Reset button's state as drawn: disabled while its colour follows the theme (syncColourControls keeps it so). */
-function resetState(settings, key) {
-    return isFollowing(settings, key) ? 'disabled title="Following the app theme"' : 'title="Follow the app theme again"';
-}
 
 /** The Reset buttons of the number boxes (text size, legend dots and columns): disabled at the default, where there is nothing to reset. */
 function syncOptionResets(id, settings) {
