@@ -4,7 +4,7 @@
  * state), so Node tests hold it and the Cell-Gene Plot's menus build on it.
  *
  * It is the METHOD TABLE of group statistics for the shared options model (utils/options-model.js, SHR-25); the
- * signature's (utils/signature-options.js) is the other. Decision 31: nothing is offered. Every consumer lists all five
+ * signature's (utils/signature-options.js) is the other. Decision 31: every consumer lists all five
  * statistics and Cell count on all layers (`statisticChoices`, `statisticLayerChoices`), and a pair a layer cannot give
  * is disabled with its reason (SHR-27, `core/matrix_kind.py` through `statisticAvailability`). The threshold is the
  * grouping's method parameter (`detect_above`, decision 34); a measure may hold its own (CXG-9). A grouping recipe's
@@ -12,7 +12,7 @@
  *
  * Cell count needs no feature and no layer: it is listed after the table, never graded.
  */
-import { createOptionsModel, andList, figure } from './options-model.js';
+import { REASON, createOptionsModel, andList, figure, quoted } from './options-model.js';
 import { STATISTIC_IDS } from './cell-grouping.js';
 import { statisticAvailability } from './cell-gene-model.js';
 import { VOCABULARY } from './vocabulary.js';
@@ -35,12 +35,12 @@ export const STATISTIC_INFO = Object.freeze([
         definition: 'Spread over the group\'s cells.' }
 ]);
 
-/** Offered until the grouping says otherwise (SHR-26). */
+/** The statistics a new plot starts on, and what an old link's empty `offered` meant (SHR-26). */
 // export-unused-ok: consumed by X3a (a new plot's first statistics)
 export const DEFAULT_STATISTICS = Object.freeze(['mean', 'pct_expressing']);
-/** The statistic that is offered whatever the recipe says: it reads no feature. */
+/** The statistic every menu lists after the table: it reads no feature and no layer. */
 // export-unused-ok: consumed by X3a and C2a (cell count is in every menu)
-export const ALWAYS_OFFERED = 'count';
+export const CELL_COUNT = 'count';
 const DEFAULT_LAYER = 'X';
 const THRESHOLD_USERS = STATISTIC_INFO.filter((m) => m.needs.includes('detect_above')).map((m) => m.value);
 /** The statistic a dot plot's size starts on (SHR-27). */
@@ -48,10 +48,10 @@ const SIZE_STATISTIC = 'pct_expressing';
 /** The statistics that follow how deeply a cell was sequenced, on raw counts. */
 const DEPTH_STATISTICS = Object.freeze(['mean', 'sum', 'sd']);
 
-/** "% expressing is not available on X: X has negative values. Choose a layer." (SHR-27) */
+/** "% expressing cannot be computed on 'X': it has negative values. Choose a layer." (SHR-27) */
 // export-unused-ok: consumed by X3a (the control says it where a size would have been)
 export function negativeValuesSentence(stat, layer) {
-    return `${NAME[stat]} is not available on ${layer}: ${layer} has negative values. Choose a layer.`;
+    return `${REASON.cannotOn(NAME[stat], quoted(layer), 'it has negative values.')} Choose a layer.`;
 }
 
 /**
@@ -60,45 +60,25 @@ export function negativeValuesSentence(stat, layer) {
  * @param {string} stat
  * @param {string} layer
  * @param {string} [kind] - counts, normalised, log, signed or other; undefined while unknown, and then nothing is assumed
- * @param {{label?: string}} [ctx] - what to call the layer in the sentence (the panel says "every offered layer" when all share the issue)
  * @returns {{grade: 'ok'|'warn'|'cannot', code: string, reason: string}}
  */
 // export-unused-ok: consumed by X3a and C2a (menus grade a statistic on a layer)
-export function statisticGrade(stat, layer, kind, ctx = {}) {
-    const name = ctx.label || `'${layer}'`;
+export function statisticGrade(stat, layer, kind) {
+    const name = quoted(layer);
     if (!statisticAvailability(stat, kind).available) {
-        return { grade: 'cannot', code: 'negative_values',
-            reason: ctx.label ? `${NAME[stat]} is not available on ${ctx.label}: they have negative values.` : negativeValuesSentence(stat, layer) };
+        return { grade: 'cannot', code: 'negative_values', reason: negativeValuesSentence(stat, layer) };
     }
     if (kind === 'counts' && DEPTH_STATISTICS.includes(stat)) {
-        return { grade: 'warn', code: 'depth', reason: `On ${name} this follows sequencing depth.` };
+        return { grade: 'warn', code: 'depth', reason: REASON.note(NAME[stat], name, 'follows sequencing depth.') };
     }
     if (kind === 'log' && stat === 'sum') {
-        return { grade: 'warn', code: 'log', reason: `On ${name} a sum of log values is not a total of the counts. It is usually read from counts.` };
+        return { grade: 'warn', code: 'log', reason: REASON.note(NAME[stat], name, 'is a sum of log values, not a total of the counts: it is usually read from counts.') };
     }
     return { grade: 'ok', code: '', reason: '' };
 }
 
 const info = (stat) => STATISTIC_INFO.find((m) => m.value === stat);
 const menuNames = (ids) => andList(ids.map((id) => info(id).menu));
-
-/** What to say on a LAYER's row: its properties, each once and short, only when they matter for an offered statistic. */
-function layerLines(layer, recipe, kind, stats, offered) {
-    const lines = [];
-    const cannot = THRESHOLD_USERS.filter((s) => !statisticAvailability(s, kind).available);
-    if (cannot.length && THRESHOLD_USERS.some((s) => offered.includes(s))) {
-        lines.push({ grade: 'cannot', code: 'negative_values',
-            text: `${menuNames(cannot)} are not available on ${layer}: ${layer} has negative values.` });
-    }
-    const depth = offered.filter((s) => DEPTH_STATISTICS.includes(s));
-    if (kind === 'counts' && depth.length) {
-        lines.push({ grade: 'warn', code: 'depth', text: `Raw counts: ${menuNames(depth)} follow${depth.length === 1 ? 's' : ''} sequencing depth.` });
-    }
-    if (kind === 'log' && offered.includes('sum')) {
-        lines.push({ grade: 'warn', code: 'log', text: 'Log values: a sum of them is not a total of the counts. It is usually read from counts.' });
-    }
-    return lines;
-}
 
 const thresholdOf = (recipe) => (typeof recipe.detect_above === 'number' && Number.isFinite(recipe.detect_above) ? recipe.detect_above : 0);
 
@@ -188,14 +168,9 @@ export const GROUP_STATISTICS_MODEL = createOptionsModel({
     methods: STATISTIC_INFO, defaultMethod: 'mean', defaultOffered: DEFAULT_STATISTICS, defaultLayer: DEFAULT_LAYER,
     paramDefaults: { pct_expressing: { detect_above: 0 }, mean_expressing: { detect_above: 0 } },
     sameParam: (key, have, want) => (have === undefined ? 0 : have) === want,
-    paramNotes: (recipe, method) => (info(method).needs.includes('detect_above') && thresholdOf(recipe) !== 0 ? [`above ${thresholdOf(recipe)}`] : []),
-    paramLines: { detect_above: thresholdLine },
     paramValue: (recipe, key) => (key === 'detect_above' ? thresholdOf(recipe) : recipe[key]),
-    grade: (method, layer, kind, ctx) => statisticGrade(method, layer, kind, ctx),
-    layerLines,
-    extraMethods: [{ value: ALWAYS_OFFERED, label: NAME.count, menu: 'cell count', definition: 'Number of cells in the group. Reads no layer.' }],
-    // a grouping's recipe has no `input` and no `method`: it names what it offers and nothing else
-    resetFields: ['offered', 'layers']
+    grade: (method, layer, kind) => statisticGrade(method, layer, kind),
+    extraMethods: [{ value: CELL_COUNT, label: NAME.count, menu: 'cell count', definition: 'Number of cells in the group. Reads no layer.' }]
 });
 
 /** Decision 31: all five statistics and Cell count on `layer`, impossible ones disabled with their reason. See options-model.js. */
@@ -244,7 +219,7 @@ export function statisticUsage(handles) {
         if (field === null) continue;
         const read = (handle.option && handle.option.statistics) || [];
         for (const stat of new Set(read.map((r) => r.stat))) bump(stats, stat, field);
-        for (const layer of new Set(read.filter((r) => r.stat !== ALWAYS_OFFERED).map((r) => r.layer || DEFAULT_LAYER))) bump(layers, layer, field);
+        for (const layer of new Set(read.filter((r) => r.stat !== CELL_COUNT).map((r) => r.layer || DEFAULT_LAYER))) bump(layers, layer, field);
     }
     const order = [...STATISTIC_IDS];
     return { statistics: [...stats.values()].sort((a, b) => order.indexOf(a.value) - order.indexOf(b.value)), layers: [...layers.values()] };

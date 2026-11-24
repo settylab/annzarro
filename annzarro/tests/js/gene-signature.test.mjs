@@ -27,7 +27,7 @@ test('an empty or missing config is the default recipe: z-score mean of X, clipp
     for (const raw of [undefined, null, {}, 'x', 5, []]) {
         assert.deepEqual(G.normalizeRecipe(raw).recipe,
             { genes: [], down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, bins: 25, controls: 50, detect_above: 0, version: 1,
-                offered: ['zscore_mean', 'mean', 'sum'], layers: ['X'], directions: false, down_weight: 'gene' });
+                directions: false, down_weight: 'gene' });
     }
     assert.equal(G.definitionText(recipe({})), 'Z-score mean of X, clipped at ±10');
 });
@@ -43,8 +43,8 @@ test('the recipe has exactly the fields the score route reads, and no title', ()
     const body = G.serverRecipe(recipe({ genes: ['B', 'A'], title: 'x' }));
     assert.deepEqual(Object.keys(body).sort(), ['bins', 'clip', 'controls', 'detect_above', 'down', 'down_weight', 'genes', 'input', 'method', 'seed', 'version']);
     assert.deepEqual(body, { genes: ['A', 'B'], down: [], input: 'X', method: 'zscore_mean', clip: 10, seed: null, bins: 25, controls: 50, detect_above: 0, version: 1, down_weight: 'gene' });
-    // what a link carries is those fields and the panel's own: which options and layers are offered
-    assert.deepEqual(Object.keys(G.storedRecipe(recipe({ genes: ['B', 'A'] }))).sort(), [...Object.keys(body).filter(k => k !== 'down_weight'), 'layers', 'offered'].sort());
+    // what a link carries is those fields (the default weighting left out); nothing is "offered" since decision 31
+    assert.deepEqual(Object.keys(G.storedRecipe(recipe({ genes: ['B', 'A'] }))).sort(), Object.keys(body).filter(k => k !== 'down_weight').sort());
     // the server's own field list: every field but the title is here
     const py = readFileSync(path.join(here, '..', '..', 'core', 'gene_score.py'), 'utf8');
     const fields = /_FIELDS = \(([^)]*)\)/.exec(py)[1].split(',').map(s => s.trim().replace(/"/g, '')).filter(Boolean);
@@ -64,14 +64,15 @@ test('clip: a number above 0, null for none, anything else the default', () => {
 });
 
 test('method, input, seed and version are taken from the config or defaulted', () => {
-    // there is no default method to set: it is the first offered one
-    assert.equal(recipe({ method: 'mean' }).method, 'zscore_mean');
+    // a stored method is the method (decision 31: a recipe stores no `offered`); an old link's first offered method is it
+    assert.equal(recipe({ method: 'mean' }).method, 'mean');
     assert.equal(recipe({ offered: ['mean', 'sum'] }).method, 'mean');
+    assert.equal(recipe({ offered: ['mean', 'sum'], method: 'sum' }).method, 'mean', 'an old link: its first offered method, as it drew');
     assert.equal(G.definitionText({ ...recipe({ input: 'counts' }), method: 'mean' }), 'Mean of counts');
     assert.equal(recipe({ offered: ['control_adjusted'] }).method, 'control_adjusted');
-    // nor a default layer: the first offered one, and an old link's `input` is that layer
+    // an old link's `input` is its first offered layer; the layers themselves are read for nothing else and kept nowhere
     assert.equal(recipe({ layers: ['counts', 'X'], input: 'counts' }).input, 'counts');
-    assert.deepEqual(recipe({ input: 'logged' }).layers, ['logged']);
+    assert.equal('layers' in recipe({ input: 'logged' }), false);
     assert.equal(recipe({ method: 'nonsense' }).method, 'zscore_mean');
     assert.equal(recipe({ input: 'counts' }).input, 'counts');
     assert.equal(recipe({ input: '' }).input, 'X');

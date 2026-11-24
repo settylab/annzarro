@@ -214,7 +214,7 @@ test('a heatmap has a color bar and no size legend', () => {
 // --- No size (SHR-27) -------------------------------------------------------------------------------------------
 
 test('No size: every dot at one size, the size legend replaced by the sentence it is given', () => {
-    const says = '% expressing is not available on X: X has negative values. Choose a layer.';
+    const says = "% expressing cannot be computed on 'X': it has negative values. Choose a layer.";
     const m = model({ size: { none: says } });
     const fig = D.buildFigure(m, LIGHT);
     const [t] = traces(fig, 'scatter');

@@ -54,7 +54,6 @@
   "browser/test_gene_score_tables.py": 5,
   "browser/test_gene_set_panel.py": 16,
   "browser/test_gene_signature_direction.py": 2,
-  "browser/test_gene_signature_inspect.py": 7,
   "browser/test_gene_signature_panel.py": 4,
   "browser/test_gene_signature_paste_ids.py": 1,
   "browser/test_gene_table_source.py": 5,

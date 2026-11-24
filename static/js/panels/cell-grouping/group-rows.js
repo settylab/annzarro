@@ -8,7 +8,7 @@
  *
  * A group is identified by its key (the typed ids of its levels), never by its position.
  */
-import { csvField } from '../../utils/score-inspect.js';
+import { csvField } from '../../utils/csv-format.js';
 
 const keyText = (key) => key.join('\u0001');
 

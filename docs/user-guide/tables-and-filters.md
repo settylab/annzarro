@@ -226,5 +226,6 @@ matrix, read once when it is added.
 
 A gene table can also be the **source of a score** for every cell: the rows that pass its filter are the genes, and
 each cell gets one number from them, to colour a plot by or to rank cells in a Cell Table. The table's controls
-have **Scores offered** and **Inspect** for it, closed until you open them. It works exactly as a Gene Signature
+have **Score methods ▾**, the settings of each score method in a pop-over, and **Distribution**, which opens a Count
+Plot of the score. It works exactly as a Gene Signature
 does, with the filter in place of ticked genes: see {ref}`gene-table-score`.

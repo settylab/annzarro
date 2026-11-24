@@ -520,7 +520,7 @@ COUNT_VOCABULARY = [
     lambda r: (lambda x: (f"x {x['source']['key']}", _update(CC, {"x": x})))(r.choice([CT, COND, SCORE, DEPTH])),
     lambda r: (lambda y: (f"y {y['source']['key']}", _update(CC, {"y": y})))(r.choice([SCORE, DEPTH, PSEUDO, CT])),
     lambda r: (lambda s: (f"split {s and s['source']['key']}", _update(CC, {"split": s})))(r.choice([None, COND, CT])),
-    lambda r: (lambda a: (f"arrangement {a}", _update(CC, {"arrangement": a})))(r.choice(["stack", "dodge", "fill"])),
+    lambda r: (lambda a: (f"arrangement {a}", _update(CC, {"arrangement": a})))(r.choice(["stack", "dodge", "overlay", "fill"])),
     lambda r: (lambda v: (f"labels {v}", _update(CC, {"labels": v})))(r.choice(["none", "count", "share"])),
     lambda r: (lambda k, v: (f"{k} {v}", _update(CC, {k: v})))(r.choice(["reverse", "horizontal", "log", "ring", "fade"]), r.choice([True, None])),
     lambda r: (lambda v: (f"sort {v}", _update(CC, {"sort": v})))(r.choice(["height", None])),
@@ -561,6 +561,18 @@ COUNT_RISKY = {
 @pytest.mark.parametrize("name", sorted(COUNT_RISKY))
 def test_count_plot_risky_sequence(browser, served, name):
     _run(_count(browser, served), COUNT_RISKY[name], f"count plot, {name}")
+
+
+# the views follow the X axis type (0.8.0): a link stored as a Histogram of categories opens as a Bar; edited from there,
+# through a number (a Histogram), its arrangements and back, it draws what the fresh link of its final config draws
+COUNT_VIEWS = [("arrangement overlay", _update(CC, {"arrangement": "overlay"})), ("x score", _update(CC, {"x": SCORE})),
+               ("mode histogram (control)", _count_mode("histogram")), ("arrangement dodge", _update(CC, {"arrangement": "dodge"})),
+               ("arrangement fill", _update(CC, {"arrangement": "fill"})), ("undo (control)", _click(f"{C_TILE} .ccnt-undo")),
+               ("x cell_type", _update(CC, {"x": CT}))]
+
+
+def test_count_plot_histogram_link_of_categories_and_the_views(browser, served):
+    _run(_count(browser, served, mode="histogram", arrangement="dodge"), COUNT_VIEWS, "count plot, views by X")
 
 
 # ================================================================== Cell-Gene Plot
