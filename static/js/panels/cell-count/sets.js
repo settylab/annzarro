@@ -30,7 +30,7 @@ import {
     canAddSet, panelChoices, categoryChoices, groupingOfSet, isBooleanColumn, universeLine, setCounts, setColours
 } from '../../utils/set-plot-model.js';
 import { keepGroup, referToGroup } from '../../utils/group-reference.js';
-import { attachSearch } from '../../utils/group-picker.js';
+import { attachFilter } from '../../utils/group-picker.js';
 import { canonKey } from '../../utils/level-id.js';
 import { GROUPING_LIMITS } from '../../utils/cell-grouping.js';
 import { buildFigure } from './draw-sets.js';
@@ -41,6 +41,7 @@ import { TABLE_SOURCE, GROUP_SOURCE } from '../cell-grouping/factors.js';
 import { shareText } from '../cell-grouping/group-rows.js';
 import { toHex } from '../cell-grouping/colours.js';
 import { createPopover } from '../../ui/popover.js';
+import { inlineRename } from '../../ui/inline-rename.js';
 
 const W = VOCABULARY.countSets;
 const C = VOCABULARY.countPlot;
@@ -200,7 +201,8 @@ function mount(host, ctx) {
         if (!snap || snap.state !== 'ready' || !snap.values || !snap.values.reply) return null;
         const reply = snap.values.reply;
         const names = groupSources().sources.namesOf(gid, reply);
-        return reply.groups.map((g, i) => ({ key: g.key, name: names[i] }));
+        const generated = groupSources().sources.coloursOf(gid, reply).generated;
+        return reply.groups.map((g, i) => ({ key: g.key, name: names[i], alt: generated[i] }));
     }
 
     function seenOf(gid) {
@@ -391,6 +393,7 @@ function mount(host, ctx) {
         const o = el('option', { value, text });
         if (extra.disabled) { o.disabled = true; o.title = extra.title || ''; }
         if (extra.selected) o.selected = true;
+        if (extra.alt && extra.alt !== text) o.dataset.alt = extra.alt;     // the generated name of a group a user renamed
         return o;
     }
 
@@ -408,7 +411,7 @@ function mount(host, ctx) {
     function editor(at, kind, holder) {
         const structure = structureRead();
         const row = el('div', { class: 'ctl-row ccnt-set__editor', data: { kind } });
-        const problemEl = el('div', { class: 'ccnt-set__problem', role: 'alert', hidden: !holder.problem }, holder.problem || '');
+        const problemEl = el('div', { class: 'ccnt-set__problem az-pop-error', role: 'alert', hidden: !holder.problem }, holder.problem || '');
         switch (kind) {
             case 'table':
                 row.append(panelSelect('table', PANEL_TYPES[TABLE_SOURCE], holder.source && holder.source.key,
@@ -453,7 +456,7 @@ function mount(host, ctx) {
                             if (!next.length) return;
                             apply(at, { source: { type: 'obs', key: column }, member: { levels: next } });
                         } } });
-                    box.append(el('label', { class: 'form-check form-check-inline' }, input, ` ${cats.labels[i]}`));
+                    box.append(el('label', { class: 'form-check form-check-inline az-pop-check' }, input, ` ${cats.labels[i]}`));
                 });
             }
         }
@@ -508,9 +511,9 @@ function mount(host, ctx) {
                 if (ref) apply(at, { source: { type: GROUP_SOURCE, key: gid }, member: ref });
             } } },
         option('', groups ? (groups.length ? W.choose : W.noGroups) : W.computingGroups, { selected: !chosen }),
-        ...(groups || []).map((g) => option(canonKey(g.key), g.name, { selected: canonKey(g.key) === chosen })));
-        // a grouping can have thousands of groups: a long list is searched, a short one stays this select
-        queueMicrotask(() => { if (select.isConnected) attachSearch(select, { label: W.kinds.group }); });
+        ...(groups || []).map((g) => option(canonKey(g.key), g.name, { selected: canonKey(g.key) === chosen, alt: g.alt })));
+        // a grouping can have thousands of groups: a long list also has a filter field, a short one is this select alone
+        queueMicrotask(() => { if (select.isConnected) attachFilter(select, { label: W.kinds.group }); });
         return [pick, select];
     }
 
@@ -534,13 +537,15 @@ function mount(host, ctx) {
         const pop = createPopover({
             anchor: chip, name: 'set-definition', title: W.setTitle(letter), wide: true,
             render: (body) => {
-                const wrap = el('div', { class: 'ccnt-set__pop', data: { kind } });
+                const wrap = el('div', { class: 'ccnt-set__pop az-pop-options', data: { kind } });
+                const section = el('div', { class: 'az-pop-section__body' });
+                wrap.append(el('details', { class: 'az-pop-section', open: true }, el('summary', { class: 'az-pop-section__title', text: 'Definition' }), section));
                 const current = at === 'draft' ? draft : ctx.config().sets[at];
                 if (!current) return;
-                wrap.append(...editor(at, kind, at === 'draft' ? draft : holderOf(at, current)));
+                section.append(...editor(at, kind, at === 'draft' ? draft : holderOf(at, current)));
                 if (row && row.state === 'changed' && row.note) {
                     const keepAction = row.note.actions.find((a) => a.id === 'keep');
-                    if (keepAction) wrap.append(el('div', { class: 'ctl-row ccnt-set__actions' }, actionButton(keepAction, at)));
+                    if (keepAction) section.append(el('div', { class: 'ctl-row ccnt-set__actions az-pop-buttons' }, actionButton(keepAction, at)));
                 }
                 body.append(wrap);
             },
@@ -575,45 +580,32 @@ function mount(host, ctx) {
      */
     function renameCell(set, i, li, cell, name, shown) {
         const mine = i;
-        const input = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-set__name', value: renameDraft !== undefined ? renameDraft : (set.name || shown),
-            title: W.renameHint, data: { azOwnEscape: '' }, aria: { label: W.renameLabel, description: W.renameHint } });
         let finished = false;
-        const leave = (save) => {
+        /** Leave the field: `save` keeps the text; `move` (1 or -1) goes on to the next or the previous set's name. */
+        const leave = (save, text, move = 0) => {
             if (finished) return;
             finished = true;
             pendingLeave = null;
-            if (renaming === mine) renaming = -1;
+            const target = i + move;
+            const goes = move && target >= 0 && target < (ctx.config().sets || []).length;
+            if (renaming === mine) renaming = goes ? target : -1;
             renameDraft = undefined;
-            const text = input.value.trim();
+            const trimmed = text.trim();
             const next = { ...set };
-            if (text && text !== shown) next.name = text; else delete next.name;
+            if (trimmed && trimmed !== shown) next.name = trimmed; else delete next.name;
             if (!save || (next.name || '') === (set.name || '')) { paint(true); return; }
             replaceSet(i, next, `rename ${VOCABULARY.word.set} ${next.name || shown}`);
         };
-        pendingLeave = () => leave(true);
-        input.addEventListener('input', () => { renameDraft = input.value; });
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); leave(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); }
-        });
-        li.addEventListener('focusout', (e) => {
-            if (finished) return;
-            if (e.relatedTarget && li.contains(e.relatedTarget)) return;
-            let done = false;
-            const later = () => {
-                if (done) return;
-                done = true;
-                document.removeEventListener('click', later, true);
-                document.removeEventListener('pointerup', later, true);
-                setTimeout(() => { if (input.isConnected) leave(true); }, 0);
-            };
-            document.addEventListener('click', later, true);
-            document.addEventListener('pointerup', later, true);
-            setTimeout(later, 350);
-        });
-        const ok = el('button', { type: 'button', class: 'ccnt-set__btn ccnt-set__ok', title: W.buttons.saveName, aria: { label: `${W.buttons.saveName}: ${name}` },
-            on: { mousedown: (e) => e.preventDefault(), click: () => leave(true) } }, '✓');
-        const cancel = el('button', { type: 'button', class: 'ccnt-set__btn ccnt-set__cancel', title: W.buttons.cancel, aria: { label: `${W.buttons.cancel}: ${name}` },
-            on: { mousedown: (e) => e.preventDefault(), click: () => leave(false) } }, '✕');
+        // the shared editor (ui/inline-rename.js) owns the field, ✓ and ✕ and every way out
+        const rename = inlineRename({ el, value: renameDraft !== undefined ? renameDraft : (set.name || shown), onInput: (text) => { renameDraft = text; },
+            classes: { input: 'form-control form-control-sm ccnt-set__name', ok: 'ccnt-set__btn ccnt-set__ok', cancel: 'ccnt-set__btn ccnt-set__cancel' },
+            labels: { field: W.renameLabel, ok: `${W.buttons.saveName}: ${name}`, cancel: `${W.buttons.cancel}: ${name}`, hint: W.renameHint },
+            onSave: (text, move) => leave(true, text, move), onCancel: () => leave(false, '') });
+        const { input, ok, cancel } = rename;
+        ok.title = W.buttons.saveName;
+        cancel.title = W.buttons.cancel;
+        pendingLeave = () => rename.save();
+        rename.attach(li);
         cell.append(input, ok, cancel);
         setTimeout(() => { if (input.isConnected) { input.focus(); input.select(); } }, 0);
     }

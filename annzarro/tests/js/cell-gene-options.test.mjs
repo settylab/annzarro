@@ -327,11 +327,11 @@ test('5.3 values printed in the cells: a heatmap option, ignored for dots', () =
 test('a one-row section with a quantity of its own is a column named by its section and aggregation, never "undefined"', () => {
     const { model } = compose();
     model.rows[5] = { ...model.rows[5], label: 'Pathway', section: { index: 1, title: 'Pathway' },
-        own: { color: { id: 'mean_of_means|logged|own', label: W.aggregation.mean_of_means } } };
+        own: { color: { id: 'rows_sum|mean|logged|', label: 'cells: Mean · logged; genes: sum' } } };
     const rows = longRows(O.tableOf(model));
     const head = rows[0];
-    const own = columnHeader({ label: W.aggregation.mean_of_means, scaling: 'none', section: 'Pathway' });
-    assert.equal(own, "Pathway · Mean of the genes' means · not scaled");
+    const own = columnHeader({ label: 'cells: Mean · logged; genes: sum', scaling: 'none', section: 'Pathway' });
+    assert.equal(own, 'Pathway · cells: Mean · logged; genes: sum · not scaled');
     assert.ok(head.includes(own), head.join(' | '));
     assert.ok(!head.some((h) => h.includes('undefined')), head.join(' | '));
     // its values are on its row only; the genes' column leaves that row empty
@@ -745,33 +745,27 @@ test('Dot opacity: the dots and the size legend\'s dots follow it, opaque by def
     assert.equal(c.dotOpacity, 0.4, 'the configuration keeps it');
 });
 
-// --- the Group band (decision 38) --------------------------------------------------------------------------------
+// --- Color strips: Factors, Group or None (operator, 2026-11-24) ------------------------------------------------
 
-test('the Group band: each group in its own colour, after the factors\' strips, for two factors or a group with its own colour', () => {
+test('Color strips: one per factor by default, the Group band alone in each group\'s own colour, or none', () => {
     const reply = reply2();
     const order = unclustered(6, reply.groups.length);
-    const groups = { colours: ['#111111', '#222222', '#333333', '#fedcba'], generated: ['B | Old', 'B | Young', 'T | Old', 'T | Young'],
-        names: ['B, Old', 'B, Young', 'T, Old', 'T, Young'] };
-    const strips = (config, recipe, g = groups) => O.figureExtras(normalizeCellGene({ version: 1, mode: 'dots', ...config }).config,
-        { reply, recipe, order, titleOf: () => undefined, groups: g }).annotations.strips;
-    const two = strips({}, TWO_FACTORS);
-    assert.equal(two.length, 3);
-    const band = two[2];
-    assert.equal(band.title, W.options.groupBand);
-    assert.deepEqual(band.colours, groups.colours);
-    assert.deepEqual(band.levels, groups.names);
-    assert.deepEqual(band.legend.map((e) => e.colour), groups.colours);
-    // switched off in Plot Options
-    assert.equal(strips({ groupBand: false }, TWO_FACTORS).length, 2);
-    // one factor: no band, unless a group has a colour of its own
-    const oneReply = { ...reply, partitionings: [reply.partitionings[0]] };
-    const one = (recipe) => O.figureExtras(normalizeCellGene({ version: 1, mode: 'dots' }).config,
-        { reply: oneReply, recipe, order, titleOf: () => undefined, groups }).annotations.strips;
-    assert.equal(one(ONE_FACTOR).length, 1);
-    const own = { ...ONE_FACTOR, groupOverrides: [{ name: 'T | Young', color: '#fedcba' }] };
-    assert.equal(one(own).length, 2);
-    // a group's own colour that names no group now: no band
-    assert.equal(one({ ...ONE_FACTOR, groupOverrides: [{ name: 'Gone', color: '#fedcba' }] }).length, 1);
-    // no group colours given (an old caller): the factors' strips only
-    assert.equal(strips({}, TWO_FACTORS, null).length, 2);
+    const groups = { colours: ['#111111', '#222222', '#333333', '#fedcba'], names: ['B, Old', 'B, Young', 'T, Old', 'T, Young'] };
+    const strips = (config, g = groups) => O.figureExtras(normalizeCellGene({ version: 1, mode: 'dots', ...config }).config,
+        { reply, recipe: TWO_FACTORS, order, titleOf: () => undefined, groups: g }).annotations.strips;
+    const factors = strips({});
+    assert.equal(factors.length, 2, 'the default: one strip per factor, no Group band, whatever the groups\' colours');
+    assert.ok(factors.every((s) => s.title !== W.options.groupBand));
+    const band = strips({ colorStrips: 'group' });
+    assert.equal(band.length, 1);
+    assert.equal(band[0].title, W.options.groupBand);
+    assert.deepEqual(band[0].colours, groups.colours);
+    assert.deepEqual(band[0].levels, groups.names);
+    assert.deepEqual(band[0].legend.map((e) => e.colour), groups.colours);
+    assert.deepEqual(strips({ colorStrips: 'none' }), []);
+    // an older link's band switch, and a value this build does not know: the default
+    assert.equal(strips({ groupBand: false }).length, 2);
+    assert.equal(strips({ colorStrips: 'both' }).length, 2);
+    // Group with no group colours given (an old caller): nothing to draw
+    assert.deepEqual(strips({ colorStrips: 'group' }, null), []);
 });

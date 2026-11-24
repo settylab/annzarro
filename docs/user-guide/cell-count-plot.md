@@ -29,7 +29,7 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 | **Smoothing**, **Scale curves by level size**, and for a 2D density **Density as opacity**, **Isolines**, **Filled isolines** | The density modes' own row, with the bandwidth and range notes under it |
 | **Fade by its share** | Under the most frequent level's factor, in a 2D histogram or heatmap |
 | **Save as grouping** | On the toolbar: turns the plot's bars into a {doc}`cell-grouping` |
-| **3D** | On the toolbar, after **Save as grouping**: draws the plot as bars on a grid (below); greyed out with its reason where there are no bars to draw |
+| **3D** | On the toolbar, after **Save as grouping**: draws the plot as bars on a grid (below); shown only where the mode has bars to draw (hidden elsewhere), and greyed out with its reason above the bar limit |
 | **Display ▾** | On the toolbar, where the plot has a colour scale, colours levels, or is a 2D density (below) |
 | **Undo** | Undoes the last change |
 | **Plot Options** | On the toolbar, last: the look of the figure, its export and **Download CSV** (below) |
@@ -147,7 +147,7 @@ and pressing **3D** again returns to the 2D plot. Turning it on or off is one st
   the status strip says so (**3D**). A rectangle with no cells, a bar of 0 and a missing value have no bar. Above 60
   categories on an axis their labels are hidden and the hover names each bar.
 - **Offered for** the 2D histogram without a **Color by** (with one it is drawn in layers), the heatmap, and a bar plot with
-  a **Color by**. Elsewhere **3D** is greyed out and says why.
+  a **Color by**. In other modes **3D** is not shown, as the other mode-specific controls are not.
 - **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
   step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
 - **Plot Options** has a **3D** section while 3D is on: the bar footprint (0.5 to 1 of its cell), lighting, the axis box

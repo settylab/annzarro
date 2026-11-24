@@ -90,11 +90,14 @@
 .cgene-section__menu-btn { padding: 0 6px; line-height: 1.2; text-decoration: none; }
 .cgene-section__note { color: var(--az-danger-text); font-size: 0.75rem; padding: 2px 0 0 18px; }
 /* WP-8: a one-row section's Color and Size live in a pop-over; its row shows one summary button, a single line */
-.cgene-section__score[hidden] { display: none; }
-.cgene-section__value .az-pop-field .form-select { max-width: 17rem; }
 .cgene-section__summary { padding: 2px 0 0 18px; min-width: 0; }
 .cgene-section__values-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-/* decision 31: a score kind reads `[method ▾] of [layer ▾] above [t]`, every method and layer listed */
+/* decision 40: `Color  Mean · logged  from Color  Change in Color`, then `Genes [step ▾] cells above [t]` */
+.cgene-section__inherited { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; min-width: 0; }
+.cgene-section__channel { font-weight: 600; }
+.cgene-section__from { color: var(--az-muted); font-size: 0.75rem; }
+.cgene-section__change { padding: 0; font-size: 0.75rem; }
+.cgene-section__value .az-pop-field .cgene-section__genes { width: 100%; max-width: 100%; min-width: 0; }
 .cgene-lapsed { font-style: italic; }
 
 /* Cluster ▾, Color ▾ and Plot Options (X5; pop-overs since 0.8.0 WP-2, static/js/ui/popover.js): the buttons in the
@@ -158,6 +161,7 @@
 .cgene-checklist li[data-done="true"] { color: var(--az-muted); }
 .cgene-checklist li[data-done="true"]::after { content: " \2713"; color: var(--az-ok-text); }
 
+/* narrow: the groups stack */
 
 /* WP-4: each measure in one row, `Color [Mean ▾] of [logged ▾] above [0]` */
 .cgene-measure__parts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }

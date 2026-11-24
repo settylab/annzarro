@@ -109,38 +109,67 @@ const cellGene = Object.freeze({
         z_groups: 'z-score per gene, across groups',
         z_pooled: 'z-score per gene, against all grouped cells'
     }),
-    aggregationHeading: Object.freeze({ summary: 'From the genes', score: 'From the score' }),
-    /** Why a source with down genes has no summary (decision 40). */
-    downGenesNoSummary: 'A summary of the genes cannot be computed with down genes: it would count them as up genes. The row is the score.',
-    /** The summaries' menu labels; a score kind's label is built from the score option by `aggregationOf`. */
-    aggregation: Object.freeze({
-        mean_of_means: "Mean of the genes' means",
-        sum_of_means: "Sum of the genes' means",
-        mean_of_zscores: "Mean of the genes' z-scores",
-        mean_of_pct_expressing: "Mean of the genes' % expressing"
-    }),
-    aggregationHelp: Object.freeze({
-        mean_of_means: "Each gene's mean in the group, averaged over the genes. Reads the genes once.",
-        sum_of_means: "Each gene's mean in the group, added up.",
-        mean_of_zscores: "Each gene's group mean as a z-score against all grouped cells, averaged.",
-        mean_of_pct_expressing: "Each gene's % expressing in the group, averaged; 0 to 100.",
-        score_mean: 'The signature\'s score for each cell, averaged over the group, as a cell plot colored by it would average. Computes the score.',
-        score_pct_above: 'Share of the group\'s cells whose score is above the threshold; 0 to 100.'
-    }),
-    /** A score kind in a one-row section's kind select; its method and layer are selects of their own (decision 31). */
-    scoreKind: Object.freeze({
-        score_mean: 'Score, averaged',
-        score_pct_above: '% of cells with score above'
-    }),
-    /** The label of a score kind for one method and layer, e.g. `z-score mean · X`. */
-    scoreAggregation: Object.freeze({
-        score_mean: (option) => `${option}, averaged`,
-        score_pct_above: (option) => `% of cells with ${option} above`
+    /**
+     * A one-row section's Color or Size (decision 40, one-row-ux-080.md): the channel's statistic and layer are the cell
+     * step; the row chooses only the gene step, combining the gene rows or scoring each cell by a method of the source.
+     * Reasons are phrased by options-model.js REASON.cannotWith from `why`: [what, why].
+     */
+    rowStep: Object.freeze({
+        heading: Object.freeze({ rows: 'Combine the gene rows', score: 'Score each cell' }),
+        name: Object.freeze({ rows_mean: 'Mean of the gene rows', rows_sum: 'Sum of the gene rows', rows_z: 'Mean of the gene rows, as z-scores' }),
+        /** Sum of the gene rows under % expressing (decision 40): the sum of the genes' fractions, on its own scale. */
+        detectedPerCell: 'Genes detected per cell',
+        /** A score method where the step is named on its own (the summary button, the CSV): "z-score mean score". */
+        score: (method) => `${method} score`,
+        genes: 'Genes',
+        cellsAbove: 'cells above',
+        from: (channel) => `from ${channel}`,
+        change: (channel) => `Change in ${channel}`,
+        changeHelp: (channel) => `One-row sections use the plot's ${channel} statistic and layer, so a set's row compares with its genes' rows. Change them in ${channel}.`,
+        why: Object.freeze({
+            count: ['cell count', 'cell count does not depend on genes.'],
+            down: ['down genes', 'it would count them as up genes. Score each cell instead.'],
+            sum_sd: ['SD', 'a sum of spreads is not the spread of the set.'],
+            sum_mean_expressing: ['mean of expressing cells', "each gene's expressing cells differ, so the sum is the mean of no cells."]
+        }),
+        /** The help line under the select: what one value of the row is. */
+        help: Object.freeze({
+            rows_mean: (stat, title, n) => `Each gene's ${stat} in the group, averaged over the ${n} genes of ${title}. Same scale as the gene rows.`,
+            rows_sum: (stat, title, n) => `Each gene's ${stat} in the group, added up over the ${n} genes of ${title}. Its own scale.`,
+            detected: (stat, title, n) => `The expected number of the ${n} genes of ${title} detected in a cell of the group: their ${stat} as fractions, added up. Its own scale.`,
+            rows_z: (stat, title, n) => `Each gene's ${stat} as a z-score across the groups, averaged over the ${n} genes of ${title}. Its own scale.`,
+            count: 'Each group\'s cell count: it does not depend on genes.',
+            score: (method, title, layer, cells) => `Each cell's ${method} score of ${title} on ${layer}, then the group's ${cells}. Its settings: ${title} ▸ Methods ▾.`
+        }),
+        /** The cell step of a score, in the help line and the legend. */
+        cells: Object.freeze({
+            mean: () => 'mean', sum: () => 'sum', sd: () => 'SD',
+            pct_expressing: (t) => `% of cells above ${t}`,
+            mean_expressing: (t) => `mean over its cells above ${t}`
+        }),
+        /** The legend's and hover's name of a row's quantity: the two steps, in the order they are taken. */
+        quantity: Object.freeze({
+            rows: (stat, how) => `cells: ${stat}; genes: ${how}`,
+            score: (method, cells) => `genes: ${method}; cells: ${cells}`
+        }),
+        how: Object.freeze({ rows_mean: 'mean', rows_sum: 'sum', rows_z: 'mean of z-scores' }),
+        /** A link stored before decision 40 that now draws other values: said once when it loads. */
+        legacy: Object.freeze({
+            mean_of_means: "the mean of the genes' means",
+            sum_of_means: "the sum of the genes' means",
+            mean_of_zscores: "the mean of the genes' z-scores against all grouped cells",
+            mean_of_pct_expressing: "the mean of the genes' % expressing",
+            score_mean: (option) => `${option}, averaged`,
+            score_pct_above: (option, t) => `% of cells with ${option} above ${t}`
+        }),
+        followed: (title, channel, now, was) => `${title}'s ${channel} row now follows ${channel} (${now}); it showed ${was}.`,
+        moved: (title, channel, now, reason) => `${title}'s ${channel} row changed to ${now}. ${reason}`
     }),
     noExpressingCells: 'no expressing cells',
     /** A size legend whose dots are drawn smaller than the plot's, to fit their slot: 1 to `n` (draw.js sizeLegendParts). */
     legendScaled: (n) => `(legend scaled 1:${n})`,
-    csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' }),
+    csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note',
+        genesCombined: Object.freeze({ color: 'Color: genes combined by', size: 'Size: genes combined by' }) }),
     /** The 3D view (UX 6b, WP-12): the toggle, the Height measure, the scene's axes, the strip and the export. */
     view3d: Object.freeze({
         button: '3D',
@@ -156,7 +185,23 @@ const cellGene = Object.freeze({
         leftOut: '3D does not draw dendrograms, strips, section brackets, totals or printed values.',
         offTag: '2D',
         resetCamera: 'Reset camera',
-        svgOff: '3D exports as an image only.'
+        svgOff: '3D exports as an image only.',
+        /** Plot Options ▸ 3D labels: where the gene and group names stand, and which way they run. */
+        labels: Object.freeze({
+            heading: '3D labels',
+            side: 'Side',
+            sides: Object.freeze({ auto: 'Auto', fixed: 'Fixed' }),
+            justify: 'Justify',
+            justifies: Object.freeze({ auto: 'Auto', left: 'Left', right: 'Right', center: 'Center' }),
+            rotation: 'Rotation',
+            rotations: Object.freeze({ horizontal: 'Horizontal', along: 'Along the axis', across: 'Across the axis', angle: 'Angle' }),
+            angle: 'Angle (°, clockwise)',
+            padding: 'Padding (px)',
+            sideHelp: 'Auto puts the gene and group names on the edges nearer you as the plot turns; Fixed keeps the edges they are on now.',
+            help: 'Side Auto puts the names on the edges nearer you as the plot turns; Fixed keeps the edges they are on now. '
+                + 'Justify Auto runs each name outward from the bars. Rotation Along the axis tilts the names with their edge as '
+                + 'the plot turns. Padding is the gap between a name and its tick.'
+        })
     }),
     /** What a narrow plot gave up so the matrix keeps its columns readable (panels/cell-gene/draw.js fitMatrix): the strip. */
     narrow: Object.freeze({
@@ -229,7 +274,8 @@ const cellGene = Object.freeze({
         totals: 'Cells per group',
         /** The band of each group in its own colour, beside the factors' strips, and its switch in Plot Options. */
         groupBand: 'Group',
-        groupBandSwitch: 'Group band',
+        colorStrips: 'Color strips',
+        colorStripsChoice: Object.freeze({ factors: 'Factors', group: 'Group', none: 'None' }),
         sortGroups: 'Sort groups by size',
         scalingNote: 'Groups with no value are skipped; a constant gene gives 0.',
         pooledNote: 'A one-row section has no pooled cells of its own, so it is z-scored across its own groups.',
@@ -564,7 +610,7 @@ const countSets = Object.freeze({
     }),
     setTitle: (letter) => `${capital(word.set)} ${letter}`,
     shareTitle: `Share of the ${word.cellsShown}`,
-    renameHint: 'Double-click to rename. Enter saves, Escape cancels.',
+    renameHint: 'Double-click to rename. Enter saves, Escape cancels, Tab saves and moves to the next set.',
     renameLabel: `Name of the ${word.set}`,
     /** An UpSet's own options (UX 4.2): Sort, Show top, Minimum size. */
     sort: 'Sort',

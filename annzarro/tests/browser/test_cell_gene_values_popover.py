@@ -52,7 +52,7 @@ def test_escape_closes_the_values_popover_and_focus_returns_to_its_button(page, 
     _one_section(page, served, rows="set")
     page.click(VALUES_BUTTON)
     page.wait_for_selector(VALUES_POP, state="visible")
-    assert page.locator(f"{VALUES_POP} .cgene-section__agg[data-which='color']").input_value() == "mean_of_means"
+    assert page.locator(f"{VALUES_POP} .cgene-section__genes[data-which='color']").input_value() == "rows_mean"
     page.keyboard.press("Escape")
     page.wait_for_selector(VALUES_POP, state="detached")
     assert page.evaluate("(s) => document.activeElement === document.querySelector(s)", VALUES_BUTTON)

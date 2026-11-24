@@ -251,22 +251,126 @@ def test_a_group_removed_live_from_the_grouping_says_it_is_no_longer_a_group(pag
     waits.expect_stays(lambda: len(_genes(page)) == asked, "a group that is gone asks for nothing", page=page, seconds=1.0)
 
 
-def test_a_grouping_of_many_groups_is_searched_not_scrolled(page, served):
+COLUMN = 'select.axis-column-select[data-axis="color"]'
+FILTER = 'input.group-filter[data-axis="color"]'
+
+
+def _visible_options(page):
+    return page.evaluate("""(sel) => [...document.querySelector(sel).options].filter(o => !o.hidden).map(o => [o.value, o.textContent])""", f"{C} {COLUMN}")
+
+
+def _many(page, served, **grouping):
     many = {"source": {"type": "obs", "key": "many"}}
-    _open(page, served, {G: _plot(), GA: _grouping(partitionings=[many])})
+    _open(page, served, {G: _plot(), GA: _grouping(partitionings=[many], **grouping)})
     until(page, "(t) => !!document.querySelector(t + ' select.axis-type-select[data-axis=\"color\"] option[value=\"group-stat\"]')", C)
     _pick(page, "type", "group-stat")
-    search = f'{C} input.group-search[data-axis="color"]'
-    page.wait_for_selector(search, timeout=60000)
-    assert page.is_hidden(f'{C} select.axis-column-select[data-axis="color"]'), "the 1,200 groups are not a select"
-    assert page.evaluate("(s) => document.getElementById(document.querySelector(s).getAttribute('list')).children.length", search) == 1200
+    page.wait_for_selector(f"{C} {FILTER}", timeout=60000)
+
+
+def test_a_grouping_of_many_groups_is_a_normal_dropdown_with_every_group_and_a_filter_beside_it(page, served):
+    _many(page, served)
+    select = f"{C} {COLUMN}"
+    assert page.is_visible(select) and page.is_enabled(select), "the dropdown is there, as for every other source"
+    assert len(_visible_options(page)) == 1201, "no typing: the choose entry and all 1,200 groups are listed"
+    # the filter narrows the dropdown; the choose entry stays, and Enter chooses the first match
+    page.fill(f"{C} {FILTER}", "m0007")
+    shown = _visible_options(page)
+    assert [v for v, _ in shown if v] == [json.dumps(["c:m0007"], separators=(",", ":"))], shown
     with page.expect_request(_computes_genes) as asked:
-        page.fill(search, "m0007")
-        page.press(search, "Tab")
+        page.press(f"{C} {FILTER}", "Enter")
     assert json.loads(asked.value.post_data)["group"] == ["c:m0007"]
     _wait_colours(page, 40)
     assert _config(page)["column"] == json.dumps(["c:m0007"], separators=(",", ":"))
-    assert page.input_value(search) == "m0007"
+    assert len(_visible_options(page)) == 1201, "the list is whole again once a group is chosen"
+    assert page.input_value(f"{C} {FILTER}") == ""
+    assert page.evaluate("(s) => document.querySelector(s).selectedOptions[0].textContent", select) == "m0007"
+
+
+def test_the_dropdown_keeps_its_keyboard_after_the_filter(page, served):
+    _many(page, served)
+    page.fill(f"{C} {FILTER}", "m001")
+    page.press(f"{C} {FILTER}", "ArrowDown")
+    assert page.evaluate("(s) => document.activeElement === document.querySelector(s)", f"{C} {COLUMN}"), "Down goes to the select"
+    # the select answers type-ahead as any select does (its options are the groups' names)
+    page.focus(f"{C} {COLUMN}")
+    page.keyboard.type("m0500")
+    assert page.evaluate("(s) => document.querySelector(s).selectedOptions[0].textContent", f"{C} {COLUMN}") == "m0500"
+
+
+def test_the_filter_finds_a_group_by_the_label_it_was_given_and_by_its_generated_name(page, served):
+    _many(page, served, groupOverrides=[{"name": "m0100", "label": "Zeta cluster"}])
+    names = [t for _, t in _visible_options(page)]
+    assert "Zeta cluster" in names and "m0100" not in names, "the dropdown lists the displayed name"
+    page.fill(f"{C} {FILTER}", "zeta")
+    assert [t for v, t in _visible_options(page) if v] == ["Zeta cluster"], "the label the user gave"
+    page.fill(f"{C} {FILTER}", "m0100")
+    assert [t for v, t in _visible_options(page) if v] == ["Zeta cluster"], "and the generated name it is keyed by"
+    page.fill(f"{C} {FILTER}", "nothing like it")
+    assert [v for v, _ in _visible_options(page) if v] == []
+    page.fill(f"{C} {FILTER}", "")
+    assert len(_visible_options(page)) == 1201
+
+
+# ------------------------------------------------------------------ every axis
+
+def _same_set(got, want):
+    """The distinct values drawn equal the statistic of the genes (a point may be drawn twice, as the focused one)."""
+    return np.allclose(np.unique(np.round(got, 6)), np.unique(np.round(want, 6)), rtol=1e-6, atol=1e-6)
+
+
+def _axis_values(page, axis):
+    return page.evaluate("""([t, axis]) => { const gd = document.querySelector(t + ' .js-plotly-plot');
+        const v = (gd.data || []).flatMap(d => Array.from(d[axis] || [])).filter(x => typeof x === 'number');
+        return v; }""", [C, axis])
+
+
+def test_x_and_y_take_a_group_statistic_and_two_axes_on_one_group_share_one_request(page, served):
+    stat_x = _stat(stat="mean")
+    stat_y = _stat(stat="sd")                     # another statistic of the same moments
+    _open(page, served, {G: _plot(x=stat_x, y=stat_y), GA: _grouping()})
+    until(page, "([t]) => { const gd = document.querySelector(t + ' .js-plotly-plot'); return !!gd && (gd.data || []).some(d => (d.x || []).filter(v => typeof v === 'number').length === 40); }", [C], timeout=60)
+    xs, ys = _axis_values(page, "x"), _axis_values(page, "y")
+    want_x, want_y = DATA.logged[B].astype(np.float64).mean(axis=0), DATA.logged[B].astype(np.float64).std(axis=0)
+    assert _same_set(xs, want_x) and _same_set(ys, want_y)
+    assert len(_genes(page)) == 1, f"the moments are shared by the two axes: {_genes(page)}"
+    cfg = page.evaluate("(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return [c.x, c.y]; }", G)
+    assert [c["stat"] for c in cfg] == ["mean", "sd"] and all(c["type"] == "group-stat" for c in cfg), "each axis has its own setting"
+
+
+def test_an_axis_is_chosen_in_its_own_selects_and_survives_a_link(page, served):
+    _open(page, served, {G: _plot(), GA: _grouping()})
+    until(page, "(t) => !!document.querySelector(t + ' select.axis-type-select[data-axis=\"x\"] option[value=\"group-stat\"]')", C)
+    page.select_option(f'{C} select.axis-type-select[data-axis="x"]', "group-stat")
+    until(page, "(t) => document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"x\"] option').length > 2", C)
+    page.select_option(f'{C} select.axis-layer-select[data-axis="x"]', "logged")
+    with page.expect_request(_computes_genes):
+        page.select_option(f'{C} select.axis-column-select[data-axis="x"]', B_KEY)
+    until(page, "([t]) => { const gd = document.querySelector(t + ' .js-plotly-plot'); return !!gd && (gd.data || []).some(d => (d.x || []).filter(v => typeof v === 'number').length === 40); }", [C], timeout=60)
+    assert _same_set(_axis_values(page, "x"), DATA.logged[B].astype(np.float64).mean(axis=0))
+    root, store = served
+    payload = page.evaluate("""async () => { const { encodeViewPayload } = await import('/static/js/utils/deeplink.js');
+        return await encodeViewPayload(window.sessionManager.captureView()); }""")
+    cfg = page.evaluate("() => window.sessionManager.captureView()")["layout"]["panelConfigs"][G]["x"]
+    assert (cfg["type"], cfg["key"], cfg["column"], cfg["stat"], cfg["layer"]) == ("group-stat", GA, B_KEY, "mean", "logged")
+    page.goto("about:blank")
+    page.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={payload}")
+    page.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
+    until(page, "([t]) => { const gd = document.querySelector(t + ' .js-plotly-plot'); return !!gd && (gd.data || []).some(d => (d.x || []).filter(v => typeof v === 'number').length === 40); }", [C], timeout=60)
+    assert _same_set(_axis_values(page, "x"), DATA.logged[B].astype(np.float64).mean(axis=0))
+
+
+def test_the_statistic_and_layer_selects_share_one_line_under_the_type_grouping_and_group(page, served):
+    _open(page, served, {G: _plot(color=_stat()), GA: _grouping()})
+    until(page, "(t) => !!document.querySelector(t + ' select.axis-stat-select[data-axis=\"color\"]')", C)
+    boxes = page.evaluate("""(t) => { const row = document.querySelector(t + ' select.axis-type-select[data-axis="color"]').closest('.axis-selector');
+        const top = (s) => Math.round(row.querySelector(s).getBoundingClientRect().top);
+        const r = row.getBoundingClientRect();
+        return { type: top('.axis-type-select'), key: top('.axis-key-select'), group: top('.axis-column-select'),
+                 stat: top('.axis-stat-select'), layer: top('.axis-layer-select'), height: Math.round(r.height),
+                 select: Math.round(row.querySelector('.axis-type-select').getBoundingClientRect().height) }; }""", C)
+    assert boxes["stat"] == boxes["layer"], "the statistic and the layer are on one line"
+    assert boxes["type"] == boxes["key"] == boxes["group"] and boxes["stat"] > boxes["type"], boxes
+    assert boxes["height"] <= 2 * boxes["select"] + 12, f"two lines, as a gene score's row is: {boxes}"
 
 
 # ------------------------------------------------------------------ 6: a link

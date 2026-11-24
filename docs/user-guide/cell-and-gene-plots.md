@@ -114,12 +114,12 @@ distance matrix plots every cell's distance to the focused cell in both spaces, 
 listed alphabetically. A sparse obsm matrix (for example a copy-number matrix `X_cnv` stored as
 CSR) can be an axis or a colour too; its columns are offered by position (0, 1, 2, …).
 
-### Colour a gene plot by a group of cells
+### Colour or place a gene plot by a group of cells
 
-Choose **Cell group** as the colour's type to colour each gene by one statistic of that gene over the cells of one
+Choose **Cell group** as the type of the colour, x, y or z axis (each has its own) to take each gene's value from one statistic of that gene over the cells of one
 group of a Cell Grouping ({doc}`cell-grouping`). The selects after the type are the **grouping** (open or closed), the
-**group** (in group order, by its name; a grouping of more than 50 groups is searched by typing instead of scrolled), the **statistic** (mean, % expressing, mean of expressing cells, sum
-or SD) and the **layer**, each listing everything, with a pair that cannot be computed disabled and its reason as
+**group** (a dropdown of every group in group order, by the name shown; a grouping of more than 50 groups also has a filter field beside it that narrows the dropdown by that name or the group's generated name), the **statistic** (mean, % expressing, mean of expressing cells, sum
+or SD) and the **layer**, side by side on one line, each listing everything, with a pair that cannot be computed disabled and its reason as
 the hint ("% expressing cannot be computed on 'X': it has negative values"). Nothing is asked of the server until a group
 is chosen; then one request returns the five moments of every gene over the group, and the plot is coloured from
 them. A group chosen first starts on mean of `X`, and choosing another layer after it asks again; choose the statistic and
@@ -133,7 +133,7 @@ grouping's levels change what the group is made of, the plot keeps colouring by 
 with **Keep** (follow the new labels) and **Choose another**; when the key is no longer a group the plot says "No longer
 a group", asks for nothing, and offers **Choose another**. A group of a large dataset that is stored in scattered
 places can cost a read of the whole matrix: the plot then asks first, or says it was refused with the reason (the server's
-limits, {ref}`http-cell-groups-genes`). Cell groups are a source for colour only; a Cell Plot does not offer them.
+limits, {ref}`http-cell-groups-genes`). Two axes on the same group, layer and threshold share one request. A Cell Plot does not offer Cell groups.
 
 If a panel names a source the open dataset does not have (a view made for another dataset, or a
 column that was removed), the drop-down keeps the name and marks it "(not in this dataset)", and

@@ -12,19 +12,21 @@
  * Fill a select with graded entries, keeping it when they are the same, and choose `value`. The select's own title
  * is the chosen entry's text, then its reason when it has one.
  * @param {HTMLSelectElement} select
- * @param {Array<{value: string, text: string, disabled?: boolean, title?: string}>} entries
+ * @param {Array<{value: string, text: string, disabled?: boolean, title?: string, alt?: string}>} entries
  * @param {string|null} value
  */
 export function fillChoiceSelect(select, entries, value) {
     const same = select.options.length === entries.length && entries.every((e, i) => {
         const o = select.options[i];
-        return o.value === e.value && o.textContent === e.text && o.disabled === !!e.disabled && o.title === (e.title || '');
+        return o.value === e.value && o.textContent === e.text && o.disabled === !!e.disabled && o.title === (e.title || '')
+            && (o.dataset.alt || '') === (e.alt || '');
     });
     if (!same) {
         select.replaceChildren(...entries.map((e) => {
             const o = new Option(e.text, e.value);
             o.disabled = !!e.disabled;
             o.title = e.title || '';
+            if (e.alt) o.dataset.alt = e.alt;       // another name the entry is found by (a filter field matches it too)
             return o;
         }));
     }

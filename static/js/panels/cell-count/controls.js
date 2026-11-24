@@ -883,6 +883,9 @@ export function createControls({ D, id, model, on }) {
         const pressed = v.on && (v.gate.ok || v.gate.why === 'cap');
         view3dBtn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
         view3dBtn.classList.toggle('active', pressed);
+        // shown only where 3D is an option for the mode, as the mode's other controls are (hidden, not disabled); over the cap it is
+        // an option and stays, disabled, with its reason
+        view3dBtn.hidden = !v.gate.ok && v.gate.why === 'mode';
         view3dBtn.disabled = !v.gate.ok && !pressed;
         view3dBtn.title = !v.gate.ok ? v.gate.text : v.on ? V3.buttonOnHelp : V3.buttonHelp;
     }

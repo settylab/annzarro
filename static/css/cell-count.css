@@ -112,10 +112,8 @@
 .ccnt-set__note { margin: 0 0 2px 3.1rem; font-size: 0.75rem; }
 .ccnt-set__note[hidden] { display: none; }
 .ccnt-set__note p { margin: 0 0 2px; }
-.ccnt-set__problem { color: var(--az-danger-text); font-size: 0.75rem; }
 .ccnt-set__problem[hidden] { display: none; }
-.ccnt-set__pop { display: flex; flex-direction: column; gap: 6px; }
-.ccnt-set__pop .ccnt-set__editor { flex-wrap: wrap; }
+.ccnt-set__pop .ccnt-set__editor { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin: 0; }
 .ccnt-set__pop .ccnt-set__levels { max-height: 14rem; overflow-y: auto; }
 
 /* the plot, and what it says when there is nothing to draw (never resizes the plot) */

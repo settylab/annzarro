@@ -1,78 +1,74 @@
 /**
  * The picker of one group of a grouping, shared by the Count Plot's "Group of a grouping" set and the Gene Plot's
- * Cell group colour (UX 2.8). A grouping can have 2,000 groups, which no `<select>` is pleasant with, so a select
- * holding more than `SEARCH_ABOVE` entries is hidden behind a search field: typing narrows the list (a native
- * `<datalist>`, so 2,000 entries cost nothing to draw) and choosing a name chooses it in the select, which keeps its
- * own `change` event and everything that listens to it. A short list stays the plain `<select>` it always was, with
- * nothing added.
+ * Cell group source (UX 2.8). A grouping can have thousands of groups. The picker is always the normal dropdown with
+ * every group listed, as every other select is; a long one also has a FILTER FIELD beside it that narrows the options
+ * the dropdown shows as the user types. The select keeps its own `change` event and keyboard (arrow keys, type-ahead), so
+ * everything that listens to it is unchanged, and a short list gets no field at all.
  *
- * `attachSearch` is called after the select is (re)filled; it is safe to call again, and takes the field away when the
- * list is short again.
+ * The filter matches an entry's text (a group's displayed name, with the label the user gave it) and its `data-alt`
+ * (its generated name, what the key is made of), case-insensitively, anywhere in the name. The empty "choose" entry and
+ * the chosen entry always stay. Enter chooses the first match; the Down arrow goes to the select; Escape clears.
+ *
+ * `attachFilter` is called after the select is (re)filled; it is safe to call again, re-applies what is typed, and takes
+ * the field away when the list is short again.
  */
 
-/** A select with more entries than this (the empty "choose" entry not counted) is searched rather than scrolled. */
-const SEARCH_ABOVE = 50;
+/** A select with more entries than this (the empty "choose" entry not counted) gets the filter field. */
+const FILTER_ABOVE = 50;
 
-/**
- * The entry a typed name stands for: an enabled option with that text, or null.
- * @param {HTMLSelectElement} select
- * @param {string} text
- */
-function optionNamed(select, text) {
-    return [...select.options].find((o) => o.value !== '' && !o.disabled && o.textContent === text) || null;
+const norm = (text) => String(text || '').toLowerCase();
+
+/** Whether an option stays for `query`: the choose entry, the chosen one, or one whose name or alternative name has it. */
+function matches(option, query) {
+    if (!query || option.value === '' || option.selected) return true;
+    return norm(option.textContent).includes(query) || norm(option.dataset.alt).includes(query);
 }
 
-/** The text of the chosen entry, or '' when none is chosen. */
-function chosenText(select) {
-    const o = select.selectedOptions && select.selectedOptions[0];
-    return o && o.value !== '' ? o.textContent : '';
+/** Show the options that match what is typed; the rest are hidden from the dropdown. */
+function narrow(select, query) {
+    const q = norm(query.trim());
+    for (const option of select.options) option.hidden = !matches(option, q);
 }
 
-let _serial = 0;
-
 /**
- * Make `select` searchable when it is long. The select is hidden while the search field is shown.
- * @param {HTMLSelectElement} select
+ * Give a long group select its filter field.
+ * @param {HTMLSelectElement} select - filled; its options may carry `data-alt`
  * @param {{above?: number, label?: string, placeholder?: string}} [opts]
- * @returns {HTMLInputElement|null} the search field, or null when the select is short
+ * @returns {HTMLInputElement|null} the field, or null when the select is short
  */
-export function attachSearch(select, { above = SEARCH_ABOVE, label = 'Group', placeholder = 'Search groups' } = {}) {
-    let field = select.__groupSearch || null;
+export function attachFilter(select, { above = FILTER_ABOVE, label = 'Group', placeholder = 'Filter' } = {}) {
+    let field = select.__groupFilter || null;
     if (select.options.length - 1 <= above) {
-        if (field) { field.__datalist.remove(); field.remove(); select.__groupSearch = null; }
-        select.hidden = false;
+        if (field) { field.remove(); select.__groupFilter = null; }
+        for (const option of select.options) option.hidden = false;
         return null;
     }
     if (!field) {
         field = document.createElement('input');
         field.type = 'search';
-        field.className = `${select.className} group-search`;
+        field.className = `${select.className} group-filter`;
         field.autocomplete = 'off';
         field.placeholder = placeholder;
-        field.setAttribute('aria-label', `${select.getAttribute('aria-label') || label}: search`);
+        field.setAttribute('aria-label', `${select.getAttribute('aria-label') || label}: filter`);
         field.dataset.axis = select.dataset.axis || '';
-        const list = document.createElement('datalist');
-        list.id = `group-search-${++_serial}`;
-        field.setAttribute('list', list.id);
-        field.__datalist = list;
-        // a name chosen or typed in full chooses it in the select; anything else goes back to what is chosen
-        field.addEventListener('change', () => {
-            const o = optionNamed(select, field.value);
-            if (!o) { field.value = chosenText(select); return; }
-            if (select.value !== o.value) {
-                select.value = o.value;
+        field.addEventListener('input', () => narrow(select, field.value));
+        field.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); select.focus(); return; }
+            if (e.key === 'Escape') { field.value = ''; narrow(select, ''); return; }
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            const first = [...select.options].find((o) => o.value !== '' && !o.disabled && !o.hidden);
+            if (first && select.value !== first.value) {
+                select.value = first.value;
                 select.dispatchEvent(new Event('change', { bubbles: true }));
             }
+            field.value = '';
+            narrow(select, '');
         });
-        select.after(field, list);
-        select.__groupSearch = field;
+        select.addEventListener('change', () => { field.value = ''; narrow(select, ''); });
+        select.before(field);
+        select.__groupFilter = field;
     }
-    const names = [...select.options].filter((o) => o.value !== '' && !o.disabled).map((o) => o.textContent);
-    const have = [...field.__datalist.children].map((o) => o.value);
-    if (names.length !== have.length || names.some((n, i) => n !== have[i])) {
-        field.__datalist.replaceChildren(...names.map((n) => { const o = document.createElement('option'); o.value = n; return o; }));
-    }
-    if (document.activeElement !== field) field.value = chosenText(select);
-    select.hidden = true;
+    narrow(select, field.value);
     return field;
 }

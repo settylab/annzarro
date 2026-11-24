@@ -113,27 +113,37 @@ own, and changing it leaves the original as it was. Drag a section by **≡**, o
   with no gene the dataset has says so in the plot.
 - A section shows up to 2,000 genes: "DE genes has 5,120 genes; a section shows up to 2,000. Filter the table."
 
-**One row** stands for the whole list. Its **Color** and **Size** open from the row's summary button, and each first
-chooses a kind, in two parts:
+**One row** stands for the whole list. Its value is two steps: the plot's **Color** (or **Size**) statistic over a
+group's cells, and a way to combine the list's genes. The first step is the plot's: a one-row section always uses the
+statistic, the layer and the threshold of **Color** and **Size**, so its row compares with its genes' rows. Its
+**Color** and **Size** open from the row's summary button. Each shows the statistic it follows ("Mean · logged, from
+Color", with **Change in Color**, which takes you to the plot's own select) and chooses only how the genes are
+combined:
 
-| Kind | Is |
+| Genes | Each value is |
 |---|---|
-| *From the genes* | |
-| Mean of the genes' means | Each gene's mean in the group, averaged over the genes. Reads the genes once. |
-| Sum of the genes' means | Each gene's mean in the group, added up. |
-| Mean of the genes' z-scores | Each gene's group mean as a z-score against all grouped cells, averaged. |
-| Mean of the genes' % expressing | Each gene's % expressing in the group, averaged; 0 to 100. |
-| *From the score* | |
-| Score, averaged | The signature's score for each cell, averaged over the group, as a cell plot colored by it would average. Computes the score. |
-| % of cells with score above | Share of the group's cells whose score is above the threshold; 0 to 100. |
+| *Combine the gene rows* | |
+| Mean of the gene rows | Each gene's statistic in the group, as its own row shows it, averaged over the genes. On the same scale as the gene rows, and drawn under their colour bar or size legend. The default. |
+| Sum of the gene rows | The same, added up. Under % expressing it is named **Genes detected per cell**: the genes' fractions added up, the expected number of the list's genes detected in a cell, on its own scale rather than 0 to 100. |
+| Mean of the gene rows, as z-scores | Each gene's row as a z-score across the groups, then averaged, so every gene weighs the same. |
+| *Score each cell* | |
+| z-score mean, mean, sum, … | The source's score of each cell by that method, on the plot's layer, then the plot's statistic over the group's cells: its mean, its sum, its SD, or, under % expressing, the % of cells whose score is above **cells above** (a threshold in the score's units, 0 when empty). The method's settings are the source's ({ref}`gene-signature-scoring`). |
 
-A score kind then reads `[method ▾] of [layer ▾]`, and the share above a threshold adds `above [0]`. Both selects list
-every score method and every layer; a pair the source cannot score is greyed out with the reason, and choosing a
-method the layer cannot give moves the layer and says so. A new score starts on z-score mean of X. The method's
-parameters are the source's ({ref}`gene-signature-scoring`).
-The defaults are "Mean of the genes' means" and "Mean of the genes' % expressing", which need no score: choosing only
-"From the genes" entries asks for no score at all. A one-row section whose values are not on the gene rows' scale (a
-score, or a size that is not 0 to 100) gets its own colour bar or size legend, titled with the section.
+Some pairs have no honest meaning and are greyed out with the reason: under **Cell count** the row is the groups'
+sizes and does not depend on genes; a sum of SDs is not the spread of the list, and a sum of means of expressing cells
+is the mean of no cells. A gene signature with down genes cannot combine its gene rows (its down genes would count as
+up genes): its row is its score, by z-score mean unless you choose another method. When **Color** or **Size** changes to
+a statistic a one-row section's choice cannot follow, that section goes back to the mean of its gene rows in the same
+step, and the status line says so once.
+
+Combining the gene rows asks for nothing beyond the genes' own values; a score asks for one score per method and layer.
+The mean of the gene rows and the mean score of each cell give the same value for mean and sum when no gene is missing
+in the group's cells. A one-row section whose values are not on the gene rows' scale (a score, a sum, z-scores) gets its
+own colour bar or size legend, titled with the section and both steps ("genes: z-score mean; cells: Mean · logged").
+
+A link saved before this behavior opens with each one-row section on the nearest choice. Where that changes the values
+drawn (a score that was read on another layer, a summary that was not the plot's statistic), the status line says so
+once.
 
 ## Clustering and order
 
@@ -177,8 +187,18 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
   strip says so (**3D**). A missing value or a value of 0 has no bar. Above 60 genes or groups their labels are hidden
   and the hover names each bar.
 - **Labels.** Gene and group names run outward from their tick: on the right of the scene a name starts at its tick,
-  on the left it ends there, never centred over the bars. When the scene is turned to another side, the names move to
-  the edge nearer you once the mouse is released, with each axis's title beyond them.
+  on the left it ends there, never centred over the bars. As the scene is turned they move to the edges nearer you,
+  while it turns, with each axis's title beyond them. The height's values stand on the left-most vertical edge; the
+  floor's value is left out there, since the gene and group names start at that corner. **Plot Options ▸ Labels**
+  applies in 3D too: unticking **Gene labels** or **Group labels** hides that axis's names and its title.
+  **Plot Options ▸ Axes** has the rest in 3D, each change one step of **Undo**:
+  - **Side**: **Auto** follows the camera; **Fixed** keeps the names on the edges they are on now.
+  - **Justify**: **Auto** runs each name outward; **Left**, **Right** or **Center** sets every name's alignment.
+  - **Rotation**: **Horizontal** (level on screen); **Along the axis** tilts the names with their edge as the scene
+    turns (names lie end to end, so it suits a few short ones); **Across the axis** stands each name square to its
+    edge, running out of the box, which keeps many names apart; **Angle** tilts them by a fixed angle, from -90 to 90
+    degrees, clockwise.
+  - **Padding**: the gap in px between a name and its tick (4 by default).
 - **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
   step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
 - **Limit.** 3D draws at most 40,000 bars (genes × groups). Above that **3D** is greyed out and says why ("Use fewer
@@ -222,11 +242,11 @@ defaults and sections:
 | Presets | **Default** (the session default, or the built-in look), **Publication** (white, black text and lines, Arial 16), **Bare** (no grid, axis lines or legends) |
 | Text | **Font**, **Font size**, **Text color** (**Auto** follows the app theme), **Plot title**, **Title size** |
 | Background | **Background** (**Auto** follows the app theme) |
-| Axes | **Grid lines** (off by default; on the matrix only), **Grid color**, **Grid width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**; **Gene labels**, **Group labels** |
+| Axes | **Grid lines** (off by default; on the matrix only), **Grid color**, **Grid width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**; **Gene labels**, **Group labels**; in 3D, **Side**, **Justify**, **Rotation** (with **Angle**) and **Padding** of the gene and group names |
 | Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none); **Dot opacity**, a slider and a box from 0.1 to 1 (opaque by default), for the dots and the size legend's dots |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
 | Legend | **Space** (the legend column's share of the width; empty lets the figure decide), **Columns** and **Entries, at most** (20) of the strip legends; **Color bar**, **Size legend**, **Strip legend**; **Color bar title**, **Size legend title** |
-| Totals | **Cells per group** (a bar along the group axis); **Group band** (on by default) |
+| Totals | **Cells per group** (a bar along the group axis); **Color strips**: **Factors** (the default), **Group** or **None** |
 | Margins | Room added on each side, in px, to the room the labels take |
 | Export | **PNG**, **SVG** (not in 3D), **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV** |
 | Apply | **Apply to other Cell-Gene plots**; **Make this the session default**, **Back to built-in** |
@@ -243,15 +263,18 @@ values above and below the mean read as opposite colours. A scale you pick yours
 
 The group axis carries a colour strip in the grouping's colours, one per factor (the colours of its **Colors** settings, {doc}`cell-grouping`; a colour changed there redraws the strips and their legend at once), in the order the strips' legend lists
 them (left to right beside the groups, top to bottom below them when the axes are swapped); small groups get "small"
-after their label. After the factors' strips, a **Group** band shows each group in its own colour, the colour of its
-swatch in the group grid (a colour set there shows here at once). It is drawn when the grouping has more than one factor
-or a group has a colour of its own, with its legend beside the others; **Group band** in Plot Options turns it off.
+after their label. **Color strips** in Plot Options chooses what the strips show: **Factors**, one strip per factor (the
+default); **Group**, one band with each group in its own colour, the colour of its swatch in the group grid (a colour set
+there shows here at once); or **None**, no colour strip (Cells per group and the other annotations stay). The strips'
+legend follows what is drawn.
 Gene and group labels thin out when they would overlap, and the hover always names the group, the gene (or the
 section and its entry), each value with its statistic and layer, and the group's cells.
 
 **Download CSV** (Plot Options ▸ Export) gives the plotted values in long form, one row per group and row, with
 one column per statistic and headers that name the statistic, its threshold where it has one, the layer and the
-scaling ("% expressing (> 1) · counts · not scaled"), so two thresholds stay two columns apart. The image buttons
+scaling ("% expressing (> 1) · counts · not scaled"), so two thresholds stay two columns apart. With a one-row section,
+**Color: genes combined by** and **Size: genes combined by** say how its genes were combined; the column header is the
+statistic over the cells. The image buttons
 beside it, and the camera button in the plot's toolbar, save the figure as an image, with its brackets, strips, legends
 and dendrograms.
 

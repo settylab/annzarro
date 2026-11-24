@@ -7,9 +7,9 @@
  *   a click elsewhere           saves, once the click has landed
  *   Alt+C                       opens the color picker of the optional swatch
  *
- * A way out happens once. Moving the editor to another row, or redrawing it, blurs the field too, and is NO way out: a
- * click-away is decided a moment after the blur and only if the focus is then outside the editor, so the next item's
- * editor, opened by Tab and focused a tick later, is never closed by the blur of the one before it (0.8.0 bug).
+ * A way out happens once, and only the first counts: Tab leaves (`finished`), and the blur of the old field, which a move of
+ * a reused editor to the next row causes, finds it finished and schedules nothing. The caller `rearm()`s the editor when it puts it in place (before or after the move, in the same tick), so that blur can never close the next item's editor (the 0.8.0 bug). Where the focus lands after a click is
+ * not asked: a click away saves, whatever takes the focus.
  *
  * The caller owns what saving means (`onSave`) and where the editor sits; this owns the controls and the rules.
  */
@@ -30,6 +30,7 @@
  */
 export function inlineRename({ el, value = '', classes, labels, onSave, onCancel, onInput, swatch }) {
     let finished = false;
+    let quiet = false;                  // the tick in which a reused editor is put in its new place: its blur is no click-away
     const input = el('input', { type: 'text', class: classes.input, value, autocomplete: 'off', spellcheck: 'false',
         title: labels.hint, data: { azOwnEscape: '' }, aria: { label: labels.field, description: labels.hint } });
     const ok = el('button', { type: 'button', class: classes.ok, title: 'Save the name', data: { azOwnEscape: '' }, aria: { label: labels.ok } }, '✓');
@@ -65,19 +66,19 @@ export function inlineRename({ el, value = '', classes, labels, onSave, onCancel
 
     /**
      * Leaving the field by a click saves it, after the click has landed (a redraw between press and release would take the
-     * control pressed from under it): the first of the click, the release or a short timer decides. The decision is made on
-     * where the focus is THEN, so a blur caused by moving or redrawing the editor, which takes the focus back at once, is not one.
+     * control pressed from under it): the first of the click, the release or a short timer decides. A blur of an editor that has
+     * already been left is no click-away.
      */
     function attach(container) {
         container.addEventListener('focusout', (e) => {
-            if (finished || (e.relatedTarget && container.contains(e.relatedTarget))) return;
+            if (finished || quiet || (e.relatedTarget && container.contains(e.relatedTarget))) return;
             let done = false;
             const later = () => {
                 if (done) return;
                 done = true;
                 document.removeEventListener('click', later, true);
                 document.removeEventListener('pointerup', later, true);
-                setTimeout(() => { if (!finished && input.isConnected && !container.contains(document.activeElement)) leave(true); }, 0);
+                setTimeout(() => { if (!finished && input.isConnected) leave(true); }, 0);
             };
             document.addEventListener('click', later, true);
             document.addEventListener('pointerup', later, true);
@@ -85,5 +86,5 @@ export function inlineRename({ el, value = '', classes, labels, onSave, onCancel
         });
     }
 
-    return { input, ok, cancel, attach, save: () => leave(true), rearm: () => { finished = false; }, isDone: () => finished };
+    return { input, ok, cancel, attach, save: () => leave(true), rearm: () => { finished = false; quiet = true; setTimeout(() => { quiet = false; }, 0); }, isDone: () => finished };
 }
