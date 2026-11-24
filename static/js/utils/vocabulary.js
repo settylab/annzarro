@@ -376,6 +376,7 @@ const countPlot = Object.freeze({
     }),
     /** The entries of Height and Color (UX 4.5), and the help line of each. */
     value: Object.freeze({
+        none: 'None',
         count: 'Count',
         share: Object.freeze({
             all: `Share of all ${word.cellsShown}`, x: 'Share within each X', split: 'Share within each color',
@@ -386,6 +387,8 @@ const countPlot = Object.freeze({
         groups: Object.freeze({ share: 'Share', stat: capital(word.statistic) })
     }),
     valueHelp: Object.freeze({
+        none: 'One color for every bar.',
+        countUpset: 'Each bar colored by its cells, on the color scale.',
         count: 'Cells in the bar.',
         countColor: 'Cells in the rectangle.',
         share: 'As percent.',
@@ -526,7 +529,13 @@ const countSets = Object.freeze({
     tooManyCategories: (n, max) => `${n.toLocaleString('en-US')} categories; a ${word.set} picks from up to ${max.toLocaleString('en-US')}. Use a condition or a ${word.grouping}.`,
     needsNumber: 'Choose a numeric source.',
     needsValue: 'Enter a number.',
-    buttons: Object.freeze({ more: `More for this ${word.set}`, remove: 'Remove', rename: 'Rename', chooseAnother: 'Choose another' }),
+    buttons: Object.freeze({
+        more: `More for this ${word.set}`, remove: 'Remove', rename: 'Rename', chooseAnother: 'Choose another',
+        definition: `Change what the ${word.set} is`, colour: (name) => `Color of ${name}`, saveName: 'Save the name', cancel: 'Cancel'
+    }),
+    setTitle: (letter) => `${capital(word.set)} ${letter}`,
+    shareTitle: `Share of the ${word.cellsShown}`,
+    renameHint: 'Double-click to rename. Enter saves, Escape cancels.',
     renameLabel: `Name of the ${word.set}`,
     /** An UpSet's own options (UX 4.2): Sort, Show top, Minimum size. */
     sort: 'Sort',

@@ -233,7 +233,9 @@ export function valueChoices(config) {
     const rows = rowsOf(config.mode);
     if (!rows.value) return [];
     const two = config.mode === 'hist2d' || config.mode === 'heatmap';
-    const out = [{ value: 'count', label: C.value.count, help: rows.value === 'color' ? C.valueHelp.countColor : C.valueHelp.count }];
+    const out = [{ value: 'count', label: C.value.count, help: config.mode === 'upset' ? C.valueHelp.countUpset : (rows.value === 'color' ? C.valueHelp.countColor : C.valueHelp.count) }];
+    // an UpSet's bars are one color until told otherwise: None first, and Count colors them by count
+    if (config.mode === 'upset') out.unshift({ value: 'none', label: C.value.none, help: C.valueHelp.none });
     for (const base of shareBasesFor(config)) {
         out.push({ value: `share:${base}`, label: C.value.share[base], help: two ? C.valueHelp.heatmapShare : C.valueHelp.share, group: 'share' });
     }
@@ -252,13 +254,14 @@ export function valueChoices(config) {
 export function valueChoiceOf(config) {
     const offered = valueChoices(config).map((c) => c.value);
     const v = config.value || { kind: 'count' };
-    let choice = 'count';
+    const upset = config.mode === 'upset';
+    let choice = upset && !(config.value && v.kind === 'count') ? 'none' : 'count';
     if (v.kind === 'share') choice = `share:${v.of || 'all'}`;
     else if (v.kind === 'measure' && config.measure) choice = `stat:${config.measure.stat}`;
     else if (v.kind === 'top_level' && v.factor) choice = 'top_level';
     if (offered.includes(choice)) return choice;
     if (v.kind === 'share') return offered.find((c) => c.startsWith('share:')) || 'count';
-    return 'count';
+    return upset ? 'none' : 'count';
 }
 
 /**
@@ -310,6 +313,14 @@ function choiceValue(config, choice) {
  */
 export function applyValueChoice(config, choice, defaults = {}) {
     const out = { ...config };
+    if (config.mode === 'upset' && choice === 'none') {
+        delete out.value;
+        return out;
+    }
+    if (config.mode === 'upset' && choice === 'count') {
+        out.value = { kind: 'count' };
+        return out;
+    }
     if (choice === 'count') {
         delete out.value;
         return out;
@@ -462,7 +473,7 @@ export function colorUse(config, isNumeric) {
     if (c.mode === 'hist2d') map = !split && kind !== 'top_level';
     else if (c.mode === 'heatmap') map = kind !== 'top_level';
     else if (c.mode === 'density2d') map = !split;
-    else if (c.mode === 'upset') map = kind === 'share' || (kind === 'measure' && !!c.measure);
+    else if (c.mode === 'upset') map = kind === 'share' || (kind === 'measure' && !!c.measure) || (kind === 'count' && !!c.value);
     const top = c.mode === 'heatmap' && kind === 'top_level';
     if (c.mode === 'pie' && binnedNumber(c.x, isNumeric) && !(c.color && c.color.slices === 'levels')) return { map: true, palette: false };
     return { map, palette: levels || top };
