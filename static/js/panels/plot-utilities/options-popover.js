@@ -38,7 +38,7 @@ import { setSessionStyle, clearSessionStyle, hasSessionStyle, onSessionStyleChan
 const IMAGE_FORMATS = Object.freeze(['png', 'svg', 'jpeg', 'webp']);
 
 /** The plot kinds' names, as their panels are called. */
-const KIND_NAMES = Object.freeze({ 'cell-gene': 'Cell-Gene', 'cell-count': 'Cell Count' });
+const KIND_NAMES = Object.freeze({ 'cell-gene': 'Cell-Gene', 'cell-count': 'Cell Count', 'cell-plot': 'Cell', 'gene-plot': 'Gene' });
 
 /** Sections that start open; the rest fold until opened. */
 const OPEN_FIRST = new Set(['presets', 'text', 'legend', 'export']);
@@ -100,9 +100,13 @@ function stepLabel(field, value) {
  *   the field's place on each open (the panel takes it back when the pop-over closes: its `onOpen` cleanup)
  * @param {(body: HTMLElement, ctl: Object) => (Function|void)} [ctx.onOpen] - after each open, with the body; may return a cleanup
  * @param {(reason: string) => void} [ctx.onClose] - after each close
+ * @param {boolean} [ctx.ids] - the Cell Plot and Gene Plot's element ids on the buttons and boxes (`preset-<name>-<id>`, `download-<format>-<id>`,
+ *   `copy-to-clipboard-<id>`, `apply-others-*-<id>`, `session-style-*-<id>`): their tests, the drift harness and the docs read them
+ * @param {string} [ctx.guide] - a link to the guide beside the session default
+ * @param {(preset: string) => string} [ctx.presetTitle] - a preset button's tooltip
  * @param {boolean} [ctx.noFollow] - the panel follows the session default itself (the Cell Plot and Gene Plot)
  * @param {{count: () => number, run: () => number}} [ctx.others] - the panel's own Apply to other plots (the kind's look is not the generic one)
- * @param {{set: () => void, clear: () => void, has: () => boolean, onDefault: () => boolean}} [ctx.session] - the same for the session default
+ * @param {{set: () => void, clear: () => void, has: () => boolean, onDefault: () => boolean, state?: (onDefault: boolean, has: boolean) => string}} [ctx.session] - the same for the session default
  * @param {(settings: Object) => void} [ctx.copyImage] - the plot as a PNG on the clipboard (Export's Copy)
  * @param {() => {width?: number, height?: number}} [ctx.plotSize]
  * @param {() => void} [ctx.csv] - Download CSV
@@ -157,8 +161,9 @@ export function mountPlotOptions(ctx) {
             write({ ...readMargins(config(), field, kind).sides, t: n, r: n, b: n, l: n }, false);
         };
         all.addEventListener('change', () => linked(Number(all.value)));
-        all.addEventListener('input', () => { allBox.value = all.value; });
+        all.addEventListener('input', () => { allBox.value = all.value; if (field.live) linked(Number(all.value)); });
         allBox.addEventListener('change', () => linked(Number(allBox.value)));
+        if (field.live) allBox.addEventListener('input', () => { if (allBox.value.trim() !== '') linked(Number(allBox.value)); });
         allBox.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); linked(Number(allBox.value)); } });
         for (const [k, box] of Object.entries(side)) {
             const commitSide = () => {
@@ -167,6 +172,7 @@ export function mountPlotOptions(ctx) {
                 write({ ...readMargins(config(), field, kind).sides, [k]: v }, true);
             };
             box.addEventListener('change', commitSide);
+            if (field.live) box.addEventListener('input', commitSide);
             box.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitSide(); } });
         }
         link.addEventListener('change', () => {
@@ -269,15 +275,15 @@ export function mountPlotOptions(ctx) {
     // ---------------------------------------------------------------- Export and Apply
     // with a memory guard (the Cell Plot and Gene Plot) the buttons keep the ids their tests and the drift harness read
     const imageBtns = IMAGE_FORMATS.map((format) => el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary az-pop-export-btn ${classes.exportBtn || ''}`,
-        id: ctx.exportGuard ? `download-${format}-${panelId}` : null, data: { format, how: 'full' }, on: { click: () => exportAs(format) } }, format.toUpperCase()));
-    const guardNote = el('div', { class: 'az-pop-help export-memory-note', role: 'note', hidden: true });
+        id: ctx.ids ? `download-${format}-${panelId}` : null, data: { format, how: 'full' }, on: { click: () => exportAs(format) } }, format.toUpperCase()));
+    const guardNote = el('div', { class: 'az-pop-help export-memory-note', role: 'note' });
     const shownBtns = IMAGE_FORMATS.filter((f) => f === 'png' || f === 'svg').map((format) => el('button', { type: 'button',
-        class: 'btn btn-sm btn-outline-secondary az-pop-export-btn', id: `download-shown-${format}-${panelId}`, data: { format, how: 'shown' },
+        class: `btn btn-sm btn-outline-secondary az-pop-export-btn ${classes.exportBtn || ''}`, id: ctx.ids ? `download-shown-${format}-${panelId}` : null, data: { format, how: 'shown' },
         title: 'The plot as it is on screen; needs only its pixels', on: { click: () => exportAs(format, 'shown') } }, format.toUpperCase()));
     const shownLabel = el('span', { class: 'az-pop-help' });
-    const shownRow = el('div', { class: 'az-pop-buttons export-shown-row', hidden: true }, shownLabel, shownBtns);
+    const shownRow = el('div', { class: 'az-pop-buttons export-shown-row' }, shownLabel, shownBtns);
     // Copy: the plot as a PNG on the clipboard, at Export's size (plot-aesthetics-menu.js copyPlotToClipboard, passed in)
-    const copyBtn = ctx.copyImage ? el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-copy-btn',
+    const copyBtn = ctx.copyImage ? el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-copy-btn', id: ctx.ids ? `copy-to-clipboard-${panelId}` : null,
         on: { click: () => ctx.copyImage(exportSettings(resolveStyle(config(), kind), ctx.plotSize ? ctx.plotSize() : {})) } }, 'Copy') : null;
     const csvBtn = ctx.csv ? el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary az-pop-csv-btn ${classes.csv || ''}`, on: { click: () => ctx.csv() } }, 'Download CSV') : null;
 
@@ -294,15 +300,17 @@ export function mountPlotOptions(ctx) {
         return pm.getActivePanels().filter((p) => p && p.getType && p.getType() === kind && p.getId() !== panelId);
     };
     const name = KIND_NAMES[kind] || kind;
-    const applyBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-apply-others' }, `Apply to other ${name} plots`);
-    const askText = el('span', { class: 'az-pop-help' });
-    const askYes = el('button', { type: 'button', class: 'btn btn-sm btn-primary az-pop-apply-yes' }, 'Apply');
-    const askNo = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-apply-no' }, 'Cancel');
-    const ask = el('div', { class: 'az-pop-ask', hidden: true }, askText, el('span', { class: 'az-pop-ask__buttons' }, askYes, askNo));
-    const applyDone = el('div', { class: 'az-pop-help az-pop-apply-done', role: 'status', aria: { live: 'polite' } });
-    const sessionState = el('div', { class: 'az-pop-help az-pop-session-state' });
-    const sessionSet = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-session-set' }, 'Make this the session default');
-    const sessionReset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-session-reset' }, 'Back to built-in');
+    const eid = (base) => (ctx.ids ? `${base}-${panelId}` : null);
+    const applyBtn = el('button', { type: 'button', id: eid('apply-others'), class: 'btn btn-sm btn-outline-secondary az-pop-apply-others' }, `Apply to other ${name} plots`);
+    const askText = el('span', { class: 'az-pop-help', id: eid('apply-others-text') });
+    const askYes = el('button', { type: 'button', id: eid('apply-others-yes'), class: 'btn btn-sm btn-primary az-pop-apply-yes' }, 'Apply');
+    const askNo = el('button', { type: 'button', id: eid('apply-others-no'), class: 'btn btn-sm btn-outline-secondary az-pop-apply-no' }, 'Cancel');
+    const ask = el('div', { class: 'az-pop-ask', id: eid('apply-others-ask'), hidden: true }, askText, el('span', { class: 'az-pop-ask__buttons' }, askYes, askNo));
+    const applyDone = el('div', { class: 'az-pop-help az-pop-apply-done', id: eid('apply-others-done'), role: 'status', aria: { live: 'polite' } });
+    const sessionState = el('div', { class: 'az-pop-help az-pop-session-state', id: eid('session-style-state') });
+    const sessionSet = el('button', { type: 'button', id: eid('session-style-set'), class: 'btn btn-sm btn-outline-secondary az-pop-session-set',
+        title: 'Every plot on Default takes this look, now and when you change it. Plots with a look of their own keep it. It lasts for the session and travels with links, the autosave and panel sets.' }, 'Make this the session default');
+    const sessionReset = el('button', { type: 'button', id: eid('session-style-reset'), class: 'btn btn-sm btn-outline-secondary az-pop-session-reset' }, 'Back to built-in');
     applyBtn.addEventListener('click', () => {
         const n = others().length;
         applyDone.textContent = '';
@@ -348,6 +356,7 @@ export function mountPlotOptions(ctx) {
     // An empty number box shows its default (a placeholder); its arrows step from that, not from the minimum (`stepFrom`)
     const stepFrom = (t) => t && t.matches && t.matches('input[type="number"][data-step-from]') && t.value === '';
     let primed = null;
+    let formatsRow = null;               // the Export formats: the guard's note and the as-shown row go under it, only while there is something to say
     const legacyNodes = new Map();       // section id -> the element the panel drew itself
     root.addEventListener('keydown', (e) => {
         if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || !stepFrom(e.target)) return;
@@ -387,21 +396,24 @@ export function mountPlotOptions(ctx) {
         details.addEventListener('toggle', () => _open.set(key, details.open));
         const body = el('div', { class: 'az-pop-section__body' });
         if (own && own.element) body.append(own.element);
-        for (const f of sec.fields) body.append(fieldControl(f));
+        for (const f of sec.fields) if (!f.hidden) body.append(fieldControl(f));      // `hidden`: a stored value no control edits (Bare)
         if (sec.id === 'export') {
-            body.prepend(el('div', { class: 'az-pop-buttons az-pop-export-formats' }, imageBtns, copyBtn), guardNote, shownRow);
+            formatsRow = el('div', { class: 'az-pop-buttons az-pop-export-formats' }, imageBtns, copyBtn);
+            body.prepend(formatsRow);
             if (csvBtn) body.append(el('div', { class: 'az-pop-buttons' }, csvBtn));
         }
         if (sec.id === 'presets') {
             body.append(el('div', { class: 'az-pop-buttons az-pop-presets' }, PRESETS.map((p) => el('button', { type: 'button',
-                class: 'btn btn-sm btn-outline-secondary az-pop-preset', data: { preset: p }, on: { click: () => preset(p) } }, PRESET_LABELS[p]))));
+                class: 'btn btn-sm btn-outline-secondary az-pop-preset', id: ctx.ids ? `preset-${p}-${panelId}` : null, title: ctx.presetTitle ? ctx.presetTitle(p) : null,
+                data: { preset: p }, on: { click: () => preset(p) } }, PRESET_LABELS[p]))));
         }
         if (sec.id === 'apply') {
             body.append(el('div', { class: 'az-pop-buttons' }, applyBtn), ask, applyDone,
-                sessionState, el('div', { class: 'az-pop-buttons' }, sessionSet, sessionReset));
+                sessionState, el('div', { class: 'az-pop-buttons' }, sessionSet, sessionReset),
+                ctx.guide ? el('a', { class: 'az-pop-help', href: ctx.guide, target: '_blank', rel: 'noopener', title: 'Guide: the session default style' }, 'Guide') : null);
         }
         // a panel's own section has a Reset when the panel says so (`sections[id].reset`)
-        if ((!sec.panel || (own && own.reset)) && resettable(sec.fields).length) {
+        if (sec.id !== 'presets' && (!sec.panel || (own && own.reset)) && resettable(sec.fields).length) {
             const reset = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset', data: { reset: sec.id },
                 id: ctx.sectionKey ? `reset-section-${ctx.sectionKey(sec.id)}-${panelId}` : null,
                 on: { click: () => resetSection(sec) } }, 'Reset');
@@ -489,7 +501,7 @@ export function mountPlotOptions(ctx) {
             if (!sec) continue;
             const own = sec.panel ? panelSections[id] : null;
             const fields = sec.fields;
-            const anyShown = (own && own.element) || fields.some((f) => !controls.get(f.id).wrap.hidden) || id === 'export' || id === 'apply' || id === 'presets';
+            const anyShown = (own && own.element) || fields.some((f) => controls.has(f.id) && !controls.get(f.id).wrap.hidden) || id === 'export' || id === 'apply' || id === 'presets';
             details.hidden = !anyShown || (own && typeof own.when === 'function' && !own.when(c));
             if (own && typeof own.paint === 'function') own.paint();
             const reset = details.querySelector('.az-pop-reset');
@@ -503,20 +515,27 @@ export function mountPlotOptions(ctx) {
             b.setAttribute('aria-disabled', String(b.disabled));
             if (off) b.title = off; else b.removeAttribute('title');
         }
-        guardNote.hidden = !(guard && guard.note);
         guardNote.textContent = guard && guard.note ? guard.note : '';
         guardNote.classList.toggle('text-danger', !!(guard && guard.blocked));
+        guardNote.classList.toggle('text-warning-emphasis', !!(guard && guard.note && !guard.blocked));
         const showShown = !!(guard && guard.shown && guard.shown.length);
-        shownRow.hidden = !showShown;
+        if (formatsRow) {
+            guardNote.hidden = false;
+            shownRow.hidden = false;
+            if (guard && guard.note) { if (!guardNote.isConnected) formatsRow.after(guardNote); } else guardNote.remove();
+            if (showShown) { if (!shownRow.isConnected) (guardNote.isConnected ? guardNote : formatsRow).after(shownRow); } else shownRow.remove();
+        }
         if (showShown) {
             shownLabel.textContent = `As shown (${guard.size}):`;
             for (const b of shownBtns) b.hidden = !guard.shown.includes(b.dataset.format);
         }
         if (csvBtn) csvBtn.disabled = !can;
         if (copyBtn) copyBtn.disabled = !can;
+        if (ctx.presetTitle) for (const b of root.querySelectorAll('.az-pop-preset')) b.title = ctx.presetTitle(b.dataset.preset);
         const onDefault = ctx.session ? ctx.session.onDefault() : c.styleDefault === true;
         const hasSession = ctx.session ? ctx.session.has() : hasSessionStyle(kind);
-        sessionState.textContent = onDefault ? (hasSession ? 'On Default: this plot follows the session default.' : 'On Default (built-in).') : 'Own style.';
+        sessionState.textContent = ctx.session && ctx.session.state ? ctx.session.state(onDefault, hasSession)
+            : onDefault ? (hasSession ? 'On Default: this plot follows the session default.' : 'On Default (built-in).') : 'Own style.';
         sessionReset.hidden = !hasSession;
     }
 

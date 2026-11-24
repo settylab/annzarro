@@ -251,6 +251,37 @@ def test_legend_and_colour_bar_use_the_body_standard(page, served, which):
     assert page.input_value(f"{sec} #legend-columns-{pid}") == ""
 
 
+@pytest.mark.parametrize("which", WHICH)
+def test_the_whole_body_is_the_one_standard_with_one_reset_per_group(page, served, which):
+    """U6: Margins, Export, Presets and Apply are the shared renderer's too, so nothing of the old menu is left: every group is an
+    az-pop-section, no card, switch or input-group box, one Reset per group that has a look to reset, a presets row of three."""
+    pid = _open(page, served, which)
+    _open_options(page, pid)
+    page.evaluate("() => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach((d) => { d.open = true; })")
+    names = page.evaluate("(id) => [...document.querySelectorAll(`[data-popover='plot-options'] details[data-panel='${id}']`)].map((d) => d.dataset.section)", pid)
+    assert names == ["presets", "text", "background", "axes", "points", "focused", "legend", "margins", "export", "apply"]
+    old = page.evaluate("""(pid) => { const body = document.querySelector("[data-popover='plot-options'] .az-popover-body");
+        const bad = [...body.querySelectorAll('.aesthetics-section, .aesthetics-body, .form-switch, .form-label, .form-check')]
+            .filter((e) => !e.closest('.az-pop-field--element'));
+        const groups = [...body.querySelectorAll('details')].filter((d) => !d.classList.contains('az-pop-section'));
+        return { bad: bad.map((e) => e.className), groups: groups.map((d) => d.dataset.section),
+                 resets: [...body.querySelectorAll('details')].map((d) => [d.dataset.section, d.querySelectorAll('.az-pop-reset').length]) }; }""", pid)
+    assert old["bad"] == [] and old["groups"] == [], old
+    resets = dict(old["resets"])
+    assert resets["presets"] == 0 and resets["apply"] == 0, "presets and apply have nothing to reset"
+    assert all(resets[n] == 1 for n in ("text", "background", "axes", "points", "focused", "legend", "margins", "export")), resets
+    assert page.locator(f"{POP} .az-pop-preset").count() == 3
+    assert page.locator(f"{POP} #reset-margins-{pid}").count() == 0, "no Reset Margins of its own"
+    assert page.locator(f"{POP} #margin-all-input-{pid}.az-pop-num").count() == 1
+    assert page.locator(f"{POP} details[data-section='export'] #plot-width-{pid}.az-pop-num").count() == 1
+    # the margins link, and the group's Reset puts them back
+    page.fill(f"{POP} #margin-all-input-{pid}", "30")
+    page.press(f"{POP} #margin-all-input-{pid}", "Tab")
+    until(page, "(id) => { const m = window.PanelManager.getPanel(id).getConfig().margins; return m.t === 30 && m.l === 30; }", pid)
+    page.click(f"{POP} #reset-section-margins-{pid}")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().margins.t === 80", pid)
+
+
 # ------------------------------------------------------------------ 5. a link keeps it all
 
 @pytest.mark.parametrize("which", WHICH)
