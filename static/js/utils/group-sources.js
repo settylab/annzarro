@@ -442,8 +442,11 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
             && was.upColours.every((c, i) => c === upColours[i])) return was;
         const field = Array.isArray(reply.partitionings) ? 'partitionings' : 'axes';
         // a part that is a grouping carries that grouping's names and colours for its groups, as a column carries its own
+        // `names` are what its groups are CALLED (a label the user gave shows); `generatedNames` what they are keyed by, which a
+        // rename never moves: an outer grouping's overrides and references are keyed by the second
         const reading = { ...reply, [field]: (reply[field] || []).map((p, i) => (upNames[i]
-            ? { ...p, names: asLevels(upNames[i], by.up[i].reply), colors: asLevelColours(upColours[i], by.up[i].reply) } : p)) };
+            ? { ...p, names: asLevels(upNames[i], by.up[i].reply), generatedNames: asLevels(upColours[i].generated, by.up[i].reply),
+                colors: asLevelColours(upColours[i], by.up[i].reply) } : p)) };
         const out = { live, upNames, upColours, recipe: namedRecipe(by.resolved.recipe, live), reading };
         readings.set(reply, out);
         return out;

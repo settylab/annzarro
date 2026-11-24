@@ -252,6 +252,15 @@ the kind it says so instead.
 Axes, their direction (Flip x, Flip y), colour columns, table filters, subsets, point size and
 opacity, Equal aspect and the title are not copied. A plot without Equal aspect does not take the scale bar: it stays off there.
 
+## Cell-Gene and Cell Count plots
+
+The {doc}`cell-gene-plot` and the {doc}`cell-count-plot` have their own **Plot Options**, a pop-over with the groups
+Text, Background, Axes, Legend, Margins, Export and Apply, each with that plot's defaults (the Cell-Gene Plot draws
+no grid, the Cell Count Plot does), and the plot's own groups between them. Its legend groups also set the legend's
+**Space**, its **Columns** and **Entries, at most**, past which the legend ends in "+ 3 more". **Apply to other
+Cell-Gene plots** (or Cell Count plots) and the session default work as described above, within each kind. Cell Plot
+and Gene Plot move onto the same pop-over in a later release.
+
 ## Large plots
 
 A plot with more than about a million cells is drawn in large-plot mode ({ref}`large-plot-mode`).
