@@ -125,7 +125,8 @@ def _config(page, pid=CC):
 
 def _plot(page):
     return page.evaluate("""(s) => { const p = document.querySelector(s + ' .ccnt-plot');
-        return { data: p.data.map(t => ({ type: t.type, name: t.name, x: t.x && Array.from(t.x), y: t.y && Array.from(t.y),
+        // the legend's proxies (WP-5a: a legend over its cap, in columns or with a space) are entries, not data
+        return { data: p.data.filter(t => t.meta !== 'az-legend').map(t => ({ type: t.type, name: t.name, x: t.x && Array.from(t.x), y: t.y && Array.from(t.y),
                      z: t.z && t.z.map(r => Array.from(r)), labels: t.labels, values: t.values })),
                  layout: { barmode: p.layout.barmode, barnorm: p.layout.barnorm, xaxis: p.layout.xaxis, yaxis: p.layout.yaxis } }; }""", S)
 
