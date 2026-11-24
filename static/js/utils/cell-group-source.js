@@ -12,7 +12,7 @@
  * pinned while one on screen does: CAT-4), the name of each group in group order (SHR-9) and its colour (SHR-11). A
  * cell in no group is the codes' missing value, drawn as a missing category (SHR-5). Past 64 groups the colour-group
  * rule applies (utils/categories.js), each group ranked by its place in group order, so its colour is the grouping's
- * own (cell-grouping.js `groupColours`). Anything else throws `SourceUnavailable`: a colour falls back to neutral points
+ * own (utils/grouping-colours.js). Anything else throws `SourceUnavailable`: a colour falls back to neutral points
  * and an axis to a placeholder, both with the notice over the plot in a grouping's words (SHR-35). When the state
  * changes, the plot is drawn again.
  *
@@ -39,9 +39,7 @@ import { groupSources } from './group-host.js';
 import { codeBytes } from './group-store.js';
 import { codesCheck, shortRefusalText } from './memory-guard-ui.js';
 import { DataManager } from '../data-manager.js';
-import { groupColours } from './cell-grouping.js';
 import { GROUP_COLOURS, grouped, groupOf, groupLegendLabel } from './categories.js';
-import { generateDiscreteColors, groupColours as colourGroupPalette } from '../panels/plot-utilities/colors.js';
 import { VOCABULARY } from './vocabulary.js';
 import { createGroupTable } from '../panels/cell-grouping/table-column.js';
 
@@ -137,31 +135,16 @@ function groupKeyEntries(list, setting) {
 /** The missing value of codes of this width: 255 in 1 byte, 65535 in 2 (the route's, CAT-4). */
 const missingOf = (codes) => (codes.BYTES_PER_ELEMENT === 1 ? 0xff : 0xffff);
 
-/**
- * The colour of each group (SHR-11), in group order: a grouping of one categorical factor takes that column's colours,
- * where the reply has them; any other takes the app's palette in group order, as a plot coloured by a column of as many
- * categories takes it; past 64 groups the 64 colours of the colour groups, group i in colour i mod 64. One grouping
- * has the same colours in every panel.
- * @param {Object} reply - a snapshot's `values.reply`
- * @returns {string[]}
- */
-function groupingColours(reply) {
-    const n = Array.isArray(reply.groups) ? reply.groups.length : 0;
-    const palette = grouped(n) ? colourGroupPalette(GROUP_COLOURS) : generateDiscreteColors(Math.max(1, n));
-    // the reply's partitionings say what the recipe that made it said: a column's colours come only with an unbinned
-    // categorical factor
-    const made = { partitionings: (reply.partitionings || []).map(() => ({})) };
-    return groupColours(made, reply, palette);
-}
-
 /** reply -> {names, colours, rankOf, groupNames}: what a series of a reply is made of, once per reply and names. */
 const PARTS = new WeakMap();
 
-function partsOf(reply, names) {
+function partsOf(id, reply, names) {
     let parts = PARTS.get(reply);
     if (parts && parts.names === names) return parts;
     const many = grouped(names.length);
-    parts = { names, many, colours: many ? null : groupingColours(reply), rankOf: null, groupNames: null };
+    // the colours of each group (SHR-11, utils/grouping-colours.js): one grouping has the same colours in every panel; past
+    // 64 groups a plot colours its colour groups
+    parts = { names, many, colours: many ? null : groupSources().sources.coloursOf(id, reply).groups, rankOf: null, groupNames: null };
     if (many) {
         // a group's rank is its place in group order: its colour group is the grouping's own (groupOf)
         parts.rankOf = new Map(names.map((name, i) => [name, i]));
@@ -193,10 +176,10 @@ function hoverValues(codes, MISSING, names) {
  * @param {string[]} names - the group names (group-sources.js `namesOf`), one per group of the reply
  * @param {{hover?: boolean}} [opts]
  */
-function groupSeries(values, names, { hover = false } = {}) {
+function groupSeries(id, values, names, { hover = false } = {}) {
     const { codes } = values;
     const MISSING = missingOf(codes);
-    const parts = partsOf(values.reply, names);
+    const parts = partsOf(id, values.reply, names);
     const series = { type: 'categorical', codes, MISSING, categories: names, colours: parts.colours, rankOf: parts.rankOf, ranked: false,
         groupNames: null, missingLabel: NOT_IN_ANY_GROUP, coverage: Coverage.complete(codes.length, 'cells') };
     if (hover) series.values = hoverValues(codes, MISSING, names);
@@ -210,10 +193,10 @@ function groupSeries(values, names, { hover = false } = {}) {
  * @param {{codes: ArrayBufferView, reply: Object}} values
  * @param {string[]} names
  */
-function groupLargeSeries(values, names) {
+function groupLargeSeries(id, values, names) {
     const { codes } = values;
     const MISSING = missingOf(codes);
-    const parts = partsOf(values.reply, names);
+    const parts = partsOf(id, values.reply, names);
     const missingLabel = NOT_IN_ANY_GROUP;
     if (parts.many) return { type: 'categorical', codes, MISSING, categories: [], ranked: true, groupNames: parts.groupNames, missingLabel };
     return { type: 'categorical', codes, MISSING, categories: names, colours: parts.colours, missingLabel };
@@ -413,6 +396,8 @@ function binding() {
             // drawn again when the grouping was renamed (its legend and axis titles name it), or when what the strip
             // said of a grouping with no value changed (a factor added to an empty grouping: computing now)
             stale: (rec, snap) => (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)
+                // drawn again when a color was changed in the grouping (no request: the colors are read from its recipe)
+                || (!!rec.drawnColours && !!snap.values && !!snap.values.reply && groupSources().sources.coloursOf(rec.setting.key, snap.values.reply) !== rec.drawnColours)
                 || (rec.drawnKey === null && rec.drawnKind !== undefined && coverageKindOf(snap) !== rec.drawnKind),
             refresh: refreshPanel,
             visibilityChanged: () => groupSources().sources.visibilityChanged(),
@@ -451,7 +436,8 @@ function loadGroupSeries(setting, { host, role, expected, unit = 'cells', large 
         rec.drawnKind = undefined;
         binding().paint(host);
         const names = groupSources().sources.namesOf(setting.key, snap.values.reply);
-        return large ? groupLargeSeries(snap.values, names) : groupSeries(snap.values, names, { hover: isHover(role) });
+        rec.drawnColours = groupSources().sources.coloursOf(setting.key, snap.values.reply);
+        return large ? groupLargeSeries(setting.key, snap.values, names) : groupSeries(setting.key, snap.values, names, { hover: isHover(role) });
     }
     rec.drawnKey = null;
     rec.drawnKind = coverageKindOf(snap);

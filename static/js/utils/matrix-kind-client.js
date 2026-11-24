@@ -1,9 +1,8 @@
 /**
  * What the numbers of an input look like (`GET /api/v1/data/matrix_kind`, core/matrix_kind.py).
  *
- * Scores are meant for normalised, log-transformed values. When a layer a source offers looks like raw counts, or
- * like normalised values that are not log-transformed, Scores offered says so on the layer's row and names a layer
- * that looks log-normalised when there is one (the sentences are utils/signature-options.js layerLines). The answer
+ * Scores are meant for normalised, log-transformed values. What each layer looks like grades every method on it where
+ * a consumer chooses the pair (decision 31; the sentences are utils/signature-options.js gradeOption). The answer
  * comes from a sample of a few thousand stored values on the server, so it is cheap and is kept for the session, per
  * dataset and input.
  *

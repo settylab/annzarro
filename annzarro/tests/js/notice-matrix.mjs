@@ -1,6 +1,7 @@
 /**
  * The inputs of the notice-sentence snapshot (score-notice-sentences.json): every state of a score, with the
- * variations that change a word, through every role of a consumer. The snapshot was taken from the base's
+ * variations that change a word, through every role of a consumer. The `lapsed` rows are kept as inputs: since
+ * decision 31 a lapsed snapshot says nothing of its own (no "Not offered"), and they pin that. The snapshot was taken from the base's
  * `describeScore` before the wording moved to utils/source-notices.js, so the test fails if one byte of any sentence,
  * tag, action or flag changes.
  */

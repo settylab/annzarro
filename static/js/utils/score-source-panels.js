@@ -12,7 +12,7 @@
  *   title      the panel's title
  *   kind       'signature' | 'table'
  *   recipe()   the recipe now: the genes, and the option fields (utils/signature-options.js: one schema)
- *   options()  the option fields alone (what is offered, and how it is scored), without reading the genes
+ *   options()  the option fields alone (how it is scored), without reading the genes
  *   gate()     null when the genes can be read; else why not yet: the table is opening, being built in the
  *              background (utils/table-resolver.js), waits for a click, is refused or failed, or is part of a cycle
  *   actions    what the notices' buttons do to a gate (build now, cancel, retry)
@@ -58,7 +58,7 @@ export function optionsOf(panel) {
 }
 
 /**
- * The option fields (input, method, offered, layers, clip...) of any source panel: a signature's recipe has them, a
+ * The option fields (input, method, clip, seed...) of any source panel: a signature's recipe has them, a
  * gene table keeps them apart from its genes. What a menu, a label or a notice reads of a source is only these.
  * @param {Object} panel - a source panel
  * @returns {Object}
@@ -106,11 +106,10 @@ export function gateState(status) {
  * @param {(panel: Object) => boolean} host.active - the panel is open
  * @param {() => ArrayLike<string>} host.geneNames - the dataset's genes, in row order
  * @param {() => boolean} [host.off] - gene scores are turned off here
- * @param {(recipe: Object, sub: string, layer: string) => boolean} [host.offers] - the source still offers this option
  * @param {Object} [host.resolver] - the table resolver: `need(id, dependant)`, `accept(id)`, `cancel(id)`, `retry(id)`,
  *   `cycleOf(id)` (the ids on a cycle through the table, or null)
  */
-export function createSourceAdapter({ panel, active, geneNames, off = () => false, offers = null, resolver = null }) {
+export function createSourceAdapter({ panel, active, geneNames, off = () => false, resolver = null }) {
     const titleOf = (id) => {
         const p = panel(id);
         return p && typeof p.getTitle === 'function' ? p.getTitle() : id;
@@ -162,7 +161,6 @@ export function createSourceAdapter({ panel, active, geneNames, off = () => fals
             };
         },
         off,
-        offers: offers || undefined,
         titleOf
     };
 }

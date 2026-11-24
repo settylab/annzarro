@@ -403,7 +403,10 @@ test('Padding sets the gap between a label and its tick; the default is 4', () =
     assert.ok(xy(D.sceneLabels(withOpts({ padding: 12 }), D.DEFAULT_CAMERA)).every((a) => Math.abs(a.xshift) === 12));
     assert.equal(D.labelOptions3d({ labels3d: { padding: 99 } }).padding, 40);
     assert.deepEqual(S.normalizeCellGene({ labels3d: { rotation: 'along', padding: 10 } }).config.labels3d, { rotation: 'along', padding: 10 });
-    assert.deepEqual(S.normalizeCellGene({ labels3d: { rotation: 120 } }).config.labels3d, { rotation: 90 });
+    // Rotation Angle keeps its angle beside it (the shared Plot Options writes one value per field), clamped to -90..90
+    assert.deepEqual(S.normalizeCellGene({ labels3d: { rotation: 'angle', angle: 120 } }).config.labels3d, { rotation: 'angle', angle: 90 });
+    assert.deepEqual(S.normalizeCellGene({ labels3d: { rotation: 120 } }).config.labels3d, { rotation: 'angle', angle: 90 }, 'a bare number reads as an Angle');
+    assert.deepEqual(D.labelOptions3d({ labels3d: { rotation: 'angle', angle: -30 } }).rotation, -30);
     assert.equal('labels3d' in S.normalizeCellGene({ labels3d: { rotation: 'horizontal', padding: 4 } }).config, false);
     assert.equal(S.normalizeCellGene({ labels3d: { rotation: 'diagonal', padding: 'x' } }).problems.length, 2);
 });

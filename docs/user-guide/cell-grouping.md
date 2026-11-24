@@ -34,7 +34,7 @@ cell.
    | **Column…** | an obs column or an obsm column, as in a Cell Plot | A categorical column gives one level per category at once; a numeric column gives 4 equal-count bins |
    | **Cell names** | nothing more: the obs index | One group per cell, while at most 2,000 cells are shown (see {ref}`per-cell-views`) |
    | **Gene…** | a layer and a gene name; **Use focused gene** fills the box | 4 equal-count bins of the gene's values |
-   | **Score…** | a signature or gene table, and one of its offered scores | 4 equal-count bins of the score |
+   | **Score…** | a signature or gene table, a method and a layer (every method and every layer, as in a Cell Plot; a combination that cannot be computed is greyed out) | 4 equal-count bins of the score |
    | **Cell table…** | an open or closed Cell Table | `in Table 1` and `not in Table 1` |
    | **Neighbors of a cell…** | an obsp matrix and a cell name; **Use focused cell** fills the box | 4 equal-count bins of that cell's row |
 
@@ -140,6 +140,17 @@ small-group threshold carries **small** ("Under 10 cells: statistics are unrelia
 list. With exactly two factors, **Cross-table** shows the first factor's levels down and the second's across, with
 the cells of each combination; an empty combination is a muted 0, because it is not a group.
 
+**Naming a group.** In the list view (not the cross-table), double-click a group's name, press the **✎** that appears when you point at it, or press **F2** on a
+focused row. The field has the group's colour beside it (**Alt+C** opens the picker from the keyboard), **✓** and
+**✕**. **Enter**, **✓** or a click elsewhere saves; **Escape** or **✕** cancels; **Tab** saves and edits the next group.
+A name is only a label, so nothing is computed again, and renaming a group never changes what another grouping built on this one has set (those are kept under the group's generated name, not its label), and every panel that shows the grouping (the list, a Cell Plot's
+legend, a Cell-Gene Plot's axis, a Count Plot, a Cell Table column, the exports) uses it. If the name is another group's,
+it is qualified as `name (2)`. **Reset** (shown on a group you have named or coloured) puts back the generated name and
+the default colour. The name and colour of a group are kept under the group's generated name; when no group has that
+name any more (another factor, another dataset, moved bins), they are listed under **Not in these groups** below the
+list, muted, with **Drop** (and **Drop all inactive**), and they apply again if a group of that name returns. A level's
+colour is set beside its name in the same way, in the factor's **Edit ▾** pop-over.
+
 **Export CSV** downloads the list (key, name, cells and share), or the cross-table.
 **Export cells** downloads every cell shown with its group, up to 1,000,000 cells.
 
@@ -167,9 +178,35 @@ back. While a parameter is not at its default the button carries a dot and its t
 panel.
 
 Names are made in the browser from the levels and their renames; two groups that end up with the same name get
-`(2)`, `(3)`. Colours: a grouping of one categorical column takes that column's colours, so it matches a plot coloured
-by the column; any other grouping takes the palette in group order. One grouping has the same colours in every panel,
-but its colours can change when a new subset changes which groups exist.
+`(2)`, `(3)`.
+
+### Colours
+
+One grouping has the same colours in every panel: the group list, a Cell Plot coloured by it (large plots too), the
+Cell-Gene Plot's strips and their legend, and a Cell Count Plot split by it. Nothing is asked of the server when you
+change a colour, and the change is one undo step.
+
+**Factor colours.** A categorical column takes the colours the dataset stores for it (`uns["<column>_colors"]`, used
+when it holds at least as many colours as the column has categories, as scanpy does; each category keeps its colour
+whichever cells are shown). Otherwise it takes the app's group colours in level order. A binned factor takes a
+sequential map (viridis) over its bins, in order. In a factor's **Edit ▾** pop-over, **Colors** has a **Palette**
+(**Dataset colors** when the column has them, **Default**, or a named palette; a binned factor offers sequential maps), a
+colour swatch on each level that opens the browser's colour picker, and **Reset colors**. A factor's palette does not
+change a Cell Plot coloured by the bare column: that plot has its own palette select.
+
+**Group colours.** A grouping of one factor shows that factor's colours. A grouping of several factors has its own
+palette in group order, repeating by the 64 colour groups. Under **Settings** ▸ **Colors**, **Color groups by** chooses
+**Own palette** (the default) or one of the factors, so that every group takes the colour of its level of that factor;
+**Palette** changes the own palette; and **Reset group colors (n)** removes the n colours you set by hand. Click a
+group's swatch in the group list, or press **Enter** or **Space** on a focused row, to give that group a colour of its
+own; it wins over everything else. That colour is kept under the group's generated name (its level labels joined by
+the separator), not its place in the list: when another dataset, another factor or moved bins leave no group of that
+name, the colour applies to no group and is kept, and it applies again as soon as a group of that name is back. A Count
+Plot's level palette (under its **Color** button) and a Cell Plot's own palette select still recolour that plot alone.
+
+The settings are stored in the recipe (`colors` for palettes, `groupOverrides` for single groups, only what is not at
+its default), so a link or a panel set carries them and a link made before colours existed opens unchanged. They are no
+part of what is computed.
 
 ### Cells in no group
 

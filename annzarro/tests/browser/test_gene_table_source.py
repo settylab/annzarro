@@ -3,7 +3,7 @@
 A gene table is a gene-score source like a signature: it differs only in how the genes are chosen. A signature's are
 handpicked; a table's are the rows that pass its filter, read through the selection every reader of a table uses
 (an open table's rows, a closed table's frozen or background-built selection). Everything else is the signature's code:
-the source menus, the score store and its cost tiers, the notices, "Scores offered" and Inspect.
+the source menus, the score store and its cost tiers, the notices and the Methods pop-over.
 
 The store is the one of test_gene_score_plots.py: 60 cells and 3,000 genes (ACTB, CD3D, CD3E, CD3G, Cd3d, GAPDH, KLF1
 and GENE0000 to GENE2992), whose `var.mean` is the gene's position, so "mean < 5" passes the first five genes.
@@ -13,8 +13,8 @@ and GENE0000 to GENE2992), whose `var.mean` is the gene's position, so "mean < 5
     it is slow; an unchanged filter asks for nothing.
 3.  A closed table restored from a link builds in the background, then scores; the table stays closed.
 4.  A cycle (a table filtered by a table that reads its score) shows the cycle state and asks for nothing.
-5.  Scores offered on the table: collapsed with its summary, stored as configuration only, and carried by a link and
-    a panel set.
+5.  Score methods ▾ and Distribution on the table: the parameters stored as configuration only (never `offered` or
+    `layers`), carried by a link and a panel set; Distribution opens a Count Plot of the table's score.
 6.  Menus: tables are told apart from signatures; labels name the table.
 7.  A signature of 5,000 genes opens from a link, and the route takes more than 2,000 genes.
 
@@ -244,69 +244,78 @@ def test_a_table_filtered_by_a_table_that_reads_its_score_is_a_cycle_and_asks_fo
     assert not _calls(page), "a cycle computes nothing"
 
 
-# ------------------------------------------------------------------ 5. Scores offered on the table
+# ------------------------------------------------------------------ 5. Score methods ▾ on the table
 
-OFFER = {"offered": ["zscore_mean", "mean", "detected"], "layers": ["X", "counts"], "input": "X", "method": "zscore_mean",
-         "clip": 3, "bins": 25, "controls": 50, "seed": None, "detect_above": 1}
+OPTIONS = {"input": "X", "method": "zscore_mean", "clip": 3, "bins": 25, "controls": 50, "seed": None, "detect_above": 1}
+# what a link made before decision 31 stored: the offer is read for its pair only, never written back
+OLD_OFFER = {**OPTIONS, "offered": ["zscore_mean", "mean", "detected"], "layers": ["X", "counts"]}
+POP = "[data-popover='methods']"
+METHODS = f"{G} [data-methods]"
 
 
-def _summary(page):
-    return page.inner_text(f"{G} .gsig-scoring__summary")
-
-
-def test_scores_offered_on_a_table_is_collapsed_with_its_summary_and_the_table_stays_a_table(page, served):
+def test_a_tables_gene_score_is_two_buttons_beside_the_column_chooser_and_the_table_stays_a_table(page, served):
     _open_table_link(page, served)
     _wait_coloured(page)
-    assert page.get_attribute(f"{G} .gsig-scoring__toggle", "aria-expanded") == "false"
-    assert page.is_hidden(f"{G} .gsig-scoring__body")
-    assert _summary(page) == "z-score mean, mean, sum · X"
-    assert page.get_attribute(f"{G} .gsig-inspect__toggle", "aria-expanded") == "false"
+    assert page.inner_text(METHODS).replace("\n", " ").strip() == "Score methods ▾"
+    assert page.inner_text(f"{G} [data-distribution]") == "Distribution"
+    assert page.evaluate("(g) => !!document.querySelector(g + ' .column-actions [data-score-options]')", G), "beside the column chooser"
+    assert page.query_selector(f"{G} .gsig-scoring, {G} .gsig-inspect, {G} .gsig-inspect__toggle") is None, "no Scores offered, no Inspect"
     assert page.query_selector(f"{G} .dataTables_scrollBody table"), "the table is there"
-    # nothing is stored for a table that offers the defaults
+    # nothing is stored for a table at the defaults
     assert page.evaluate("(id) => PanelManager.getPanel(id).getConfig().scoreOptions", TAB) is None
+    page.click(METHODS)
+    page.wait_for_selector(POP, state="visible")
+    assert page.eval_on_selector_all(f"{POP} [data-method]", "els => els.map(e => e.dataset.method)") == \
+        ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"]
+    assert page.locator(f"{POP} [data-weighting]").count() == 0, "a table has no down genes"
+    page.keyboard.press("Escape")
+    page.wait_for_selector(POP, state="detached")
 
 
-def test_a_table_offers_what_its_section_says_and_stores_recipe_fields_only(page, served):
+def test_a_tables_parameters_are_stored_as_recipe_fields_without_offered_or_layers(page, served):
     _open_table_link(page, served)
     _wait_coloured(page)
-    page.click(f"{G} .gsig-scoring__toggle")
-    page.click(f"{G} [data-offer-method='detected']")
-    page.fill(f"#gsig-scoring-detect-{TAB}", "1")            # every value of the store is above 0: only a higher threshold means something
-    page.press(f"#gsig-scoring-detect-{TAB}", "Enter")
-    page.click(f"{G} [data-offer-method='sum']")
-    page.fill(f"#gsig-scoring-clip-{TAB}", "3")
-    page.press(f"#gsig-scoring-clip-{TAB}", "Enter")
-    page.click(f"{G} [data-layer-offer='counts']")
+    page.click(METHODS)
+    page.wait_for_selector(POP, state="visible")
+    page.fill(f"#gsig-methods-detect-{TAB}", "1")
+    page.press(f"#gsig-methods-detect-{TAB}", "Enter")
+    page.fill(f"#gsig-methods-clip-{TAB}", "3")
+    page.press(f"#gsig-methods-clip-{TAB}", "Enter")
     cfg = page.evaluate("(id) => PanelManager.getPanel(id).getConfig().scoreOptions", TAB)
-    assert cfg == OFFER, cfg
-    assert set(cfg) == {"input", "method", "offered", "layers", "clip", "seed", "bins", "controls", "detect_above"}
-    assert _summary(page) == "z-score mean (clip ±3), mean, fraction detected (above 1) · X, counts"
-    # the plot's menu follows: the colour's option list is the table's offer
-    labels = page.eval_on_selector_all(f"{C} select.axis-column-select[data-axis='color'] option", "els => els.map(e => e.textContent)")
-    assert any(x.startswith("fraction detected") for x in labels) and not any(x.startswith("sum") for x in labels), labels
-    assert "fraction detected · counts" in labels, "one combined list of method and layer"
+    assert cfg == OPTIONS, cfg
+    assert page.get_attribute(METHODS, "title") == "z-score mean: clip ±3; fraction detected: above 1"
+    page.click(f"{POP} [data-reset-all]")
+    page.click(f"{POP} [data-reset-anyway]")                                # the plot reads z-score mean: it asked first
+    assert page.evaluate("(id) => PanelManager.getPanel(id).getConfig().scoreOptions", TAB) is None, "the defaults store nothing"
 
 
-def test_the_table_offer_round_trips_through_a_link_and_a_panel_set(page, served):
-    _open_table_link(page, served, table=_table(scoreOptions=OFFER))
+def test_the_table_options_round_trip_through_a_link_and_a_panel_set_and_an_old_offer_is_read_once(page, served):
+    _open_table_link(page, served, table=_table(scoreOptions=OLD_OFFER))
     _wait_coloured(page)
-    assert _summary(page) == "z-score mean (clip ±3), mean, fraction detected (above 1) · X, counts"
+    assert page.evaluate("(id) => PanelManager.getPanel(id).getScoreOptions()", TAB) == OPTIONS
     root, store = served
     view = page.evaluate("() => (window.SessionManager || window.sessionManager).captureView()")
     cfg = view["layout"]["panelConfigs"][TAB]
-    assert cfg["scoreOptions"] == OFFER and "currentEntries" not in cfg and "closedSelection" not in cfg
+    assert "currentEntries" not in cfg and "closedSelection" not in cfg
     assert "Float32" not in json.dumps(view) and '"values"' not in json.dumps(view)
     enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
     other = page.context.browser.new_page(viewport={"width": 1500, "height": 1000})
     other.add_init_script(INIT)
     try:
         other.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}")
-        other.wait_for_selector(f"{G} .gsig-scoring", timeout=30000)
-        assert other.inner_text(f"{G} .gsig-scoring__summary") == _summary(page)
-        assert other.evaluate("(id) => PanelManager.getPanel(id).getScoreOptions()", TAB) == OFFER
+        other.wait_for_selector(METHODS, timeout=30000)
+        assert other.get_attribute(METHODS, "title") == page.get_attribute(METHODS, "title")
+        assert other.evaluate("(id) => PanelManager.getPanel(id).getScoreOptions()", TAB) == OPTIONS
     finally:
         other.close()
-    _save_set(page, "table-offer")
+    # an edit writes the options back without the retired fields
+    page.click(METHODS)
+    page.fill(f"#gsig-methods-clip-{TAB}", "4")
+    page.press(f"#gsig-methods-clip-{TAB}", "Enter")
+    stored = page.evaluate("(id) => PanelManager.getPanel(id).getConfig().scoreOptions", TAB)
+    assert stored == {**OPTIONS, "clip": 4} and "offered" not in stored and "layers" not in stored
+    page.keyboard.press("Escape")
+    _save_set(page, "table-options")
     fresh = page.context.browser.new_page(viewport={"width": 1500, "height": 1000})
     fresh.add_init_script(INIT)
     try:
@@ -314,50 +323,27 @@ def test_the_table_offer_round_trips_through_a_link_and_a_panel_set(page, served
         fresh.wait_for_selector("#btn-load-session", state="visible", timeout=30000)
         fresh.wait_for_selector(".tile-selector", state="visible", timeout=30000)
         fresh.click("#btn-load-session")
-        fresh.locator(".session-card[data-session-name='table-offer'] .session-load").first.click()
-        fresh.wait_for_selector(f"{G} .gsig-scoring", timeout=30000)
-        assert fresh.evaluate("(id) => PanelManager.getPanel(id).getScoreOptions()", TAB) == OFFER
+        fresh.locator(".session-card[data-session-name='table-options'] .session-load").first.click()
+        fresh.wait_for_selector(METHODS, timeout=30000)
+        assert fresh.evaluate("(id) => PanelManager.getPanel(id).getScoreOptions()", TAB) == {**OPTIONS, "clip": 4}
     finally:
         fresh.close()
 
 
-def test_inspect_on_a_table_reads_the_score_the_plot_holds_and_follows_the_filter(page, served):
+def test_distribution_on_a_table_opens_a_count_plot_of_its_score(page, served):
     _open_table_link(page, served)
     _wait_coloured(page)
-    page.click(f"{G} .gsig-inspect__toggle")
-    page.wait_for_selector(f"{G} .gsig-inspect__content", state="visible", timeout=20000)
-    page.wait_for_function("(g) => document.querySelector(g + ' .gsig-inspect__heading').textContent.includes('60 cells shown')", arg=G)
-    assert _asked(page) == [FIRST_FIVE], "the plot's score is the one inspected: nothing is asked twice"
-    genes = page.eval_on_selector_all(f"{G} .gsig-inspect__table [data-gene]", "els => els.map(e => e.dataset.gene).sort()")
-    assert genes == sorted(FIRST_FIVE), genes
-    _filter(page, 8)
-    page.wait_for_function("(g) => document.querySelectorAll(g + ' .gsig-inspect__table [data-gene]').length === 8", arg=G, timeout=20000)
+    page.click(f"{G} [data-distribution]")
+    until(page, "() => window.PanelManager.getAllPanels().some(p => p.getType() === 'cell-count')")
+    source = page.evaluate("() => window.PanelManager.getAllPanels().find(p => p.getType() === 'cell-count').getConfig().x.source")
+    assert (source["type"], source["key"], source["column"], source["layer"]) == ("gene-score", TAB, "zscore_mean", "X")
 
 
-def test_offer_other_scores_opens_the_table_and_expands_what_it_offers(page, served):
-    _open_table_link(page, served, table_open=False)
-    _wait_coloured(page)
-    assert page.locator(G).count() == 0
-    page.select_option(f"{C} select.axis-column-select[data-axis='color']", "__offer_more__")
-    page.wait_for_selector(f"{G} .gsig-scoring__toggle[aria-expanded='true']", timeout=30000)
-    assert page.evaluate("(id) => PanelManager.getActivePanels().includes(PanelManager.getPanel(id))", TAB)
-    # offering another score from the table's section reaches the plot's menu at once
-    page.click(f"{G} [data-offer-method='detected']")
-    page.fill(f"#gsig-scoring-detect-{TAB}", "1")
-    page.press(f"#gsig-scoring-detect-{TAB}", "Enter")
-    page.wait_for_function("(t) => [...document.querySelectorAll(t + \" select.axis-column-select[data-axis='color'] option\")].some(o => o.textContent === 'fraction detected')", arg=C)
-    labels = page.eval_on_selector_all(f"{C} select.axis-column-select[data-axis='color'] option", "els => els.map(e => e.textContent)")
-    assert "fraction detected" in labels, labels
-    # the notice's one-click "offer again" goes through the table's own API
-    page.evaluate("(id) => PanelManager.getPanel(id).setScoreOptions({offered: ['zscore_mean', 'mean']})", TAB)
-    assert page.evaluate("(id) => PanelManager.getPanel(id).getScoreOptions().offered", TAB) == ["zscore_mean", "mean"]
-
-
-def test_a_link_from_before_the_table_offered_scores_opens_with_the_defaults(page, served):
+def test_a_link_from_before_the_table_had_score_options_opens_with_the_defaults(page, served):
     _open_table_link(page, served)
     _wait_coloured(page)
     o = page.evaluate("(id) => PanelManager.getPanel(id).getScoreOptions()", TAB)
-    assert o["offered"] == ["zscore_mean", "mean", "sum"] and o["layers"] == ["X"] and o["input"] == "X"
+    assert (o["input"], o["method"], o["clip"]) == ("X", "zscore_mean", 10) and "offered" not in o and "layers" not in o
 
 
 # ------------------------------------------------------------------ 6. menus and labels
@@ -460,26 +446,7 @@ def test_a_gene_table_source_with_no_layer_is_pinned_like_a_signature(page, serv
     cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color")
     assert cfg["layer"] == "X", "resolved once, to the table's input, when the plot read it"
     # the table's input changes: consumers that carried no layer were pinned before it
-    page.evaluate("() => window.PanelManager.getPanel('gene-table-G').setScoreOptions({ input: 'counts', layers: ['counts'] })")
+    page.evaluate("() => window.PanelManager.getPanel('gene-table-G').setScoreOptions({ input: 'counts' })")
     # time for the plot to move to counts, were it going to; it was pinned to X before the change
     page.wait_for_timeout(800)
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer") == "X"
-
-
-def test_a_gene_tables_export_chooser_lists_its_combinations_and_exports_gene_figures(page, served):
-    _open_table_link(page, served, table=_table(scoreOptions=OFFER))
-    _wait_coloured(page)
-    page.click(f"{G} .gsig-inspect__toggle")
-    page.wait_for_function("(g) => document.querySelectorAll(g + ' .gsig-inspect__table [data-gene]').length === 5", arg=G, timeout=20000)
-    assert page.locator(f"{G} [data-inspect-export=scores]").count() == 0
-    page.click(f"{G} [data-inspect-export=genes]")
-    options = page.eval_on_selector_all(f"{G} .gsig-export input[type=checkbox]", "els => els.map(e => e.dataset.option)")
-    assert options == ["zscore_mean@X", "zscore_mean@counts", "mean@X", "mean@counts", "detected@X", "detected@counts"]
-    page.click(f"{G} .gsig-export input[data-option='mean@X']")
-    with page.expect_download() as info:
-        page.click(f"{G} [data-export-go]")
-    assert info.value.suggested_filename == "Gene_Table_1_genes.csv"
-    rows = open(info.value.path(), encoding="utf-8").read().splitlines()
-    assert rows[0] == "combination,gene,status,detected_fraction,mean,sd,clipped_fraction"
-    assert {r.split(",")[0] for r in rows[1:]} == {"Gene Table 1 · z-score mean · X", "Gene Table 1 · mean · X"}
-    assert len(rows) == 1 + 2 * 5

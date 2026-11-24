@@ -43,40 +43,37 @@ def test_an_old_link_without_a_layer_reads_the_signatures_own_input(page, served
     assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').selectedOptions[0].textContent", C) == "z-score mean"
 
 
-def test_the_third_menu_is_one_list_of_what_the_signature_offers_method_and_layer_together(page, served):
-    # one offered layer: the methods only, no layer in the text
-    _open(page, served, plots=(("cell-plot-C", _cell()),))
-    _wait_coloured(page)
-    sel = f"{C} select.axis-column-select[data-axis='color']"
-    opts = page.evaluate("(s) => [...document.querySelector(s).options].map(o => [o.value, o.textContent])", sel)
-    assert opts == [["zscore_mean@X", "z-score mean"], ["mean@X", "mean"], ["sum@X", "sum"], ["__offer_more__", "Offer other scores…"]]
-    assert page.locator(f"{C} .axis-layer-select").count() == 0, "there is no separate layer menu"
-    # several offered layers: each method over each, in the order the signature's options come
-    page.goto("about:blank")
+def test_a_score_is_chosen_by_a_method_select_and_a_layer_select_each_listing_everything(page, served):
+    """Decision 31: the method select lists every method and the layer select every layer, so a menu's length is
+    methods + layers, never methods x layers; nothing is "offered"."""
     _open(page, served, plots=(("cell-plot-C", _cell()),), sig=TWO)
     _wait_coloured(page)
-    opts = page.evaluate("(s) => [...document.querySelector(s).options].map(o => [o.value, o.textContent])", sel)
-    assert opts[0] == ["zscore_mean@X", "z-score mean · X"] and ["mean@counts", "mean · counts"] in opts, opts
-    # choosing one stores the method in `column` and the layer beside it, and recomputes over it
-    page.select_option(sel, "mean@counts")
+    method = f"{C} select.axis-column-select[data-axis='color']"
+    layer = f"{C} select.axis-layer-select[data-axis='color']"
+    opts = page.evaluate("(s) => [...document.querySelector(s).options].map(o => [o.value, o.textContent])", method)
+    assert [o[0] for o in opts] == ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"], opts
+    assert not any("offer" in o[1].lower() or "·" in o[1] for o in opts), opts
+    assert page.evaluate("(s) => [...document.querySelector(s).options].map(o => o.value)", layer) == ["X", "counts"]
+    assert page.evaluate("(s) => document.querySelector(s).value", layer) == "X"
+    # choosing a layer stores it beside the method, and recomputes over it
+    page.select_option(method, "mean")
+    page.select_option(layer, "counts")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'counts'")
     cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color")
     assert cfg["column"] == "mean" and cfg["layer"] == "counts"
-    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
-    assert _inputs(page) == ["X", "counts"]
+    until(page, "() => window.__scoreCalls.some(c => c.kind === 'compute' && c.method === 'mean' && c.input === 'counts')")
     BARS = """(t) => document.querySelector(t + ' .js-plotly-plot').data
         .map(d => d.marker && d.marker.colorbar && d.marker.colorbar.title && (d.marker.colorbar.title.text || d.marker.colorbar.title)).filter(Boolean)"""
     until(page, "(t) => JSON.stringify((" + BARS + ")(t)) === JSON.stringify(['T cell score<br>mean · counts'])", C)
-    bars = page.evaluate(BARS, C)
-    assert bars == ["T cell score<br>mean · counts"]
-    # the default layer is stored too: a choice is kept as made, whatever the signature offers later
-    page.select_option(sel, "mean@X")
+    # the default layer is stored too: a choice is kept as made
+    page.select_option(layer, "X")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'X'")
-    page.select_option(sel, "mean@counts")
+    page.select_option(layer, "counts")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer === 'counts'")
-    # a source that is not a score has no such list
+    # a source that is not a score has no layer, and no layer select
     page.select_option(f"{C} select.axis-type-select[data-axis='color']", "obs")
     until(page, "() => !('layer' in window.PanelManager.getPanel('cell-plot-C').getConfig().color)")
+    assert page.locator(layer).count() == 0
 
 
 def test_a_layer_missing_from_the_dataset_is_a_state_with_a_way_out_not_an_error(page, served):
@@ -87,10 +84,10 @@ def test_a_layer_missing_from_the_dataset_is_a_state_with_a_way_out_not_an_error
     assert "Layer 'log1p' is not in this dataset, so 'T cell score' has no score." in note["text"]
     assert _tag(page) == "Layer not found"
     assert [a.split("|")[0] for a in note["actions"]] == ["score-open", "score-choose"]
-    # the menu does not offer what the dataset lacks; the layer held stays visible as a lapsed entry
-    texts = page.evaluate("(t) => [...document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').options].map(o => o.textContent)", C)
-    assert not any(t.endswith("log1p") and "no longer" not in t for t in texts), texts
-    page.select_option(f"{C} select.axis-column-select[data-axis='color']", "zscore_mean@X")
+    # the layer select lists the dataset's layers; the layer held stays visible, marked as not in this dataset
+    texts = page.evaluate("(t) => [...document.querySelector(t + ' select.axis-layer-select[data-axis=\"color\"]').options].map(o => o.textContent)", C)
+    assert texts == ["X", "counts", "log1p (not in this dataset)"], texts
+    page.select_option(f"{C} select.axis-layer-select[data-axis='color']", "X")
     _wait_coloured(page)
     assert _notice(page) is None
 
@@ -108,7 +105,8 @@ def test_the_layer_round_trips_through_a_link_and_is_not_a_value(page, served):
     other.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
     _ready_plot(other)
     assert sorted(c["input"] for c in _calls(other, "compute")) == ["X", "counts"]
-    assert other.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"x\"]').value", C) == "zscore_mean@counts"
+    assert other.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"x\"]').value", C) == "zscore_mean"
+    assert other.evaluate("(t) => document.querySelector(t + ' select.axis-layer-select[data-axis=\"x\"]').value", C) == "counts"
     other.close()
 
 
@@ -122,7 +120,7 @@ def test_large_plot_mode_takes_the_same_layer_choice(large_page, large_served):
     assert bars == ["T cell score<br>z-score mean · counts"]
 
 
-def test_a_table_column_has_its_own_layer_and_the_tab_lists_the_same_combined_options(page, served):
+def test_a_table_column_has_its_own_layer_and_the_tab_lists_the_ticked_columns_then_an_add_row(page, served):
     from annzarro.tests.browser import test_gene_score_tables as T
     col = {"type": "gene-score", "key": SIG, "column": "zscore_mean", "label": "T cell score", "layer": "counts"}
     plain = {"type": "gene-score", "key": SIG, "column": "zscore_mean", "label": "T cell score"}
@@ -137,93 +135,13 @@ def test_a_table_column_has_its_own_layer_and_the_tab_lists_the_same_combined_op
     assert not any("computing" in h for h in heads), heads
     page.click(f"#gene-score-tab-{T.TID}")
     labels = page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' label')].map(l => l.textContent)", T.TID)
-    assert labels[0] == "z-score mean · X" and "mean · counts" in labels, labels
-    assert page.locator(f"#gene-score-content-{T.TID} select").count() == 0, "no separate layer menu"
-    page.check(f"#checkbox-gene-score-{SIG}-mean-of-counts-{T.TID}")
+    assert labels == ["z-score mean · X", "z-score mean · counts"], "the ticked columns only, each naming its layer"
+    assert page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' .az-score-add-layer option')].map(o => o.value)", T.TID) == ["X", "counts"]
+    T._add_score(page, SIG, "mean", "counts")
     page.click(f"#apply-columns-{T.TID}")
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns", T.TID)
     got = [(c["column"], c.get("layer")) for c in cfg if c["type"] == "gene-score"]
     assert ("mean", "counts") in got and ("zscore_mean", "counts") in got
-
-
-def test_an_option_the_signature_stops_offering_is_a_state_and_a_lapsed_entry_with_a_one_click_way_back(page, served):
-    _open(page, served, plots=(("cell-plot-C", _cell(color={**SCORE, "column": "mean", "layer": "counts"})),), sig=TWO)
-    _wait_coloured(page)
-    n = len(_calls(page, "compute"))
-    # the panel now offers the z-score mean only
-    page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ offered: ['zscore_mean'] })")
-    page.wait_for_selector(f"{C} .score-notice[data-state='notoffered']", timeout=30000)
-    note = _notice(page)
-    assert "'T cell score' no longer offers mean · counts." in note["text"], note["text"]
-    assert _tag(page) == "Not offered"
-    assert note["actions"][0] == "score-offer|Offer it again"
-    texts = page.evaluate("(t) => [...document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').selectedOptions].map(o => o.textContent)", C)
-    assert texts == ["mean · counts (no longer offered)"], texts
-    _action(page, "score-offer")
-    until(page, "(t) => !document.querySelector(t + ' .score-notice')", C)
-    assert "mean" in page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getRecipe().offered")
-    assert len(_calls(page, "compute")) == n, "served from the store: nothing was recomputed"
-
-
-
-
-def _switch_off(page, *methods):
-    page.evaluate("(m) => window.PanelManager.getPanel('gene-signature-S').updateConfig({ offered: m })", list(methods))
-
-
-def test_turning_an_option_off_never_moves_a_hover_pick_and_the_stored_entry_is_kept(page, served):
-    cfg = _cell(hoverInfo=[{"type": "obs", "key": "_index"}, {"type": "gene-score", "key": SIG, "column": "mean", "layer": "X"}],
-                color={"type": "none", "key": "", "column": ""})
-    _open(page, served, plots=(("cell-plot-C", cfg),), sig=TWO)
-    _switch_off(page, "zscore_mean")
-    until(page, """(t) => [...document.querySelectorAll(t + ' select.hover-columns-select optgroup[label="Gene scores"] option')]
-        .some(o => /no longer offered/.test(o.textContent) && o.selected)""", C)
-    got = page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().hoverInfo.filter(h => h.type === 'gene-score').map(h => [h.key, h.column, h.layer])")
-    assert got == [[SIG, "mean", "X"]], "stored as it was, not moved to another option"
-
-
-def test_turning_an_option_off_never_moves_an_axis_and_a_colour_and_they_keep_drawing_with_a_tag(page, served):
-    cfg = _cell(x={**SCORE, "column": "mean", "layer": "X"}, y={"type": "obsm", "key": "X_umap", "column": "1"}, color={**SCORE, "column": "mean", "layer": "counts"})
-    _open(page, served, plots=(("cell-plot-C", cfg),), sig=TWO)
-    _ready_plot(page)
-    n = len(_calls(page, "compute"))
-    _switch_off(page, "zscore_mean")
-    page.wait_for_selector(f"{C} .score-notice[data-state='notoffered']", timeout=30000)
-    assert _tag(page) == "Not offered"
-    got = page.evaluate("() => { const c = window.PanelManager.getPanel('cell-plot-C').getConfig(); return [c.x, c.color].map(s => [s.column, s.layer]); }")
-    assert got == [["mean", "X"], ["mean", "counts"]], "never rewritten"
-    assert _drawn(page), "it keeps drawing what it had"
-    assert len(_calls(page, "compute")) == n
-    for axis in ("x", "color"):
-        text = page.evaluate("(a) => document.querySelector('%s select.axis-column-select[data-axis=\"' + a + '\"]').selectedOptions[0].textContent" % C, axis)
-        assert "no longer offered" in text, text
-
-
-def test_turning_an_option_off_keeps_a_table_column_as_it_was(page, served):
-    from annzarro.tests.browser import test_gene_score_tables as T
-    col = {"type": "gene-score", "key": SIG, "column": "mean", "label": "T cell score"}
-    T._open(page, served, table=T._table(columns=[col]), sig=TWO)
-    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 1")
-    _switch_off(page, "zscore_mean")
-    page.click(f"#gene-score-tab-{T.TID}")
-    until(page, "(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' label')].some(l => /no longer offered/.test(l.textContent))", T.TID)
-    cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score')", T.TID)
-    assert [(c["column"], c.get("layer")) for c in cfg] == [("mean", "X")], "kept on X (pinned when it was read)"
-
-
-def test_a_table_column_that_is_no_longer_offered_is_offered_again_in_one_click(page, served):
-    from annzarro.tests.browser import test_gene_score_tables as T
-    col = {"type": "gene-score", "key": SIG, "column": "mean", "layer": "X", "label": "T cell score"}
-    T._open(page, served, table=T._table(columns=[col]), sig=TWO)
-    until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 1")
-    _switch_off(page, "zscore_mean")
-    note = T._wait_notice(page, "notoffered")
-    assert "'T cell score' no longer offers mean" in note["text"], note["text"]
-    assert "score-offer|Offer it again" in note["actions"], note["actions"]
-    page.click(f"{T.BOX} [data-ps-action='score-offer']")
-    T._wait_no_notice(page)
-    assert "mean" in page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').getRecipe().offered")
-    assert len(_calls(page, "compute")) == 1, "served from the store: nothing was recomputed"
 
 
 def test_a_table_built_before_its_signature_existed_pins_its_column_when_the_signature_appears(page, served):
@@ -244,31 +162,23 @@ def test_a_table_built_before_its_signature_existed_pins_its_column_when_the_sig
     assert [c.get("layer") for c in cfg["cols"] if c["type"] == "gene-score"] == ["X"]
     assert [c["origData"] for c in cfg["sb"]["criteria"]] == [old_key + "__of_X"], "the condition follows the column's key"
     T._wait_no_notice(page)
-    # the signature's first layer changes: the column stays on X, says so, and asks for nothing on counts
+    # the signature's first layer changes (an old recipe's input): the column stays on X and asks for nothing on counts;
+    # X is simply a layer it reads, so there is nothing to say (decision 31)
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ layers: ['counts'], input: 'counts' })")
-    T._wait_notice(page, "notoffered")
-    assert _inputs(page) == ["X"], "never moved to the new first layer"
+    from annzarro.tests.browser import waits
+    waits.expect_stays(lambda: _inputs(page) == ["X"], "the column must never move to the new first layer; no event marks a move that does not happen",
+                       page=page, seconds=0.8)
+    T._wait_no_notice(page)
     cols = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score')", T.TID)
     assert [(c["column"], c.get("layer")) for c in cols] == [("zscore_mean", "X")]
 
 
-def test_offer_other_scores_opens_the_signature_and_expands_what_it_offers(page, served):
-    _open(page, served, plots=(("cell-plot-C", _cell()),))
-    _wait_coloured(page)
-    assert page.locator(S).count() == 0
-    page.select_option(f"{C} select.axis-column-select[data-axis='color']", "__offer_more__")
-    page.wait_for_selector(f"{S} .gsig-scoring__toggle[aria-expanded='true']", timeout=30000)
-    assert page.evaluate("() => document.activeElement.classList.contains('gsig-scoring__toggle')")
-    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').selectedOptions[0].value", C) == "zscore_mean@X", \
-        "the plot keeps what it had"
-
-
-def test_the_table_chooser_offers_other_scores_and_a_new_signature_when_there_is_none(page, served):
+def test_the_table_chooser_offers_a_new_signature_when_there_is_none_and_no_offer_link(page, served):
     from annzarro.tests.browser import test_gene_score_tables as T
     T._open(page, served, table=T._table(columns=[T.OBS]), sig=TWO)
     page.click(f"#gene-score-tab-{T.TID}")
-    page.click(f"#gene-score-content-{T.TID} .az-score-offer-more")
-    page.wait_for_selector(f"{S} .gsig-scoring__toggle[aria-expanded='true']", timeout=30000)
+    page.wait_for_selector(f"#gene-score-content-{T.TID} .az-score-add", timeout=10000)
+    assert page.locator(f"#gene-score-content-{T.TID} .az-score-offer-more").count() == 0, "no Offer other scores… (decision 31)"
     page.goto("about:blank")
     T._open(page, served, table=T._table(columns=[T.OBS]), sig=False)
     page.click(f"#gene-score-tab-{T.TID}")
@@ -318,12 +228,12 @@ def test_table_columns_store_their_layer_and_an_old_column_without_one_reads_the
     assert _inputs(page) == ["X"], "no layer: the signature's input"
     page.click(f"#gene-score-tab-{T.TID}")
     assert page.is_checked(f"#checkbox-gene-score-{SIG}-zscore_mean-of-X-{T.TID}"), "the old column is shown ticked on X"
-    page.check(f"#checkbox-gene-score-{SIG}-mean-of-X-{T.TID}")
-    page.check(f"#checkbox-gene-score-{SIG}-mean-of-counts-{T.TID}")
+    T._add_score(page, SIG, "mean", "X")
+    T._add_score(page, SIG, "mean", "counts")
     page.click(f"#apply-columns-{T.TID}")
     cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer])", T.TID)
     assert sorted(cfg) == [["mean", "X"], ["mean", "counts"], ["zscore_mean", "X"]], "every column stores its layer; the old one was resolved on load"
-    # the signature stops offering X: the columns do not move to counts
+    # an old recipe's first layer moves to counts: the columns do not move with it
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
     # time for the columns to move, were they going to; they must stay on their layers
     page.wait_for_timeout(800)
@@ -331,7 +241,7 @@ def test_table_columns_store_their_layer_and_an_old_column_without_one_reads_the
     assert sorted(cfg) == [["mean", "X"], ["mean", "counts"], ["zscore_mean", "X"]]
 
 
-def test_plot_hover_and_table_menus_leave_out_a_combination_that_cannot_be_computed(page, served):
+def test_plot_and_table_menus_disable_a_combination_that_cannot_be_computed_and_say_why(page, served):
     from annzarro.tests.browser import test_gene_score_tables as T
     def handler(route):
         want = urllib.parse.parse_qs(urllib.parse.urlparse(route.request.url).query).get("input", ["X"])[0]
@@ -341,25 +251,39 @@ def test_plot_hover_and_table_menus_leave_out_a_combination_that_cannot_be_compu
         body = {"input": want, "kind": "signed" if want == "X" else "counts", "stats": stats, "suggest": None, "checked": {}}
         route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
     page.route("**/api/v1/data/matrix_kind*", handler)
-    sig = {**TWO, "offered": ["zscore_mean", "detected", "fraction_of_total"], "layers": ["X", "counts"]}
-    cfg = _cell(hoverInfo=[{"type": "obs", "key": "_index"}])
-    T._open(page, served, table=T._table(columns=[T.OBS]), plots=(("cell-plot-C", cfg),), sig=sig, sig_open=True)
-    until(page, "(id) => window.PanelManager.getPanel(id).getOfferedOptions().length === 4", SIG)
-    # plot menu
-    opts = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option')].map(o => o.value)", C)
+    cfg = _cell(hoverInfo=[{"type": "obs", "key": "_index"}], color={"type": "none", "key": "", "column": ""})
+    T._open(page, served, table=T._table(columns=[T.OBS]), plots=(("cell-plot-C", cfg),), sig=TWO)
+    _ready_plot(page)
+    # plot: every pair is listed; one that cannot be computed is disabled in the other select, with why (SHR-27)
+    method = f"{C} select.axis-column-select[data-axis='color']"
+    layer = f"{C} select.axis-layer-select[data-axis='color']"
     page.select_option(f"{C} select.axis-type-select[data-axis='color']", "gene-score")
-    until(page, "(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option')].some(o => o.value === 'detected@counts')", C)
-    opts = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option')].map(o => o.value)", C)
-    assert "detected@X" not in opts and "fraction_of_total@X" not in opts and "detected@counts" in opts, opts
-    # hover
+    OPTS = "(s) => [...document.querySelector(s).options].map(o => ({ v: o.value, off: o.disabled, title: o.title }))"
+    until(page, "(s) => { const o = [...(document.querySelector(s) || { options: [] }).options].find(o => o.value === 'fraction_of_total'); return !!o && o.disabled; }", method)
+    on_x = {o["v"]: o for o in page.evaluate(OPTS, method)}
+    assert on_x["detected"]["off"] and on_x["fraction_of_total"]["off"], on_x
+    assert "negative values" in on_x["fraction_of_total"]["title"], on_x["fraction_of_total"]
+    assert on_x["detected"]["title"], "the reason is the option's title"
+    assert not on_x["zscore_mean"]["off"] and not on_x["mean"]["off"]
+    page.select_option(layer, "counts")
+    until(page, "(s) => { const o = [...document.querySelector(s).options].find(o => o.value === 'detected'); return !!o && !o.disabled; }", method)
+    page.select_option(method, "fraction_of_total")
+    until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.column === 'fraction_of_total'")
+    under_share = {o["v"]: o for o in page.evaluate(OPTS, layer)}
+    assert under_share["X"]["off"] and not under_share["counts"]["off"], under_share
+    # hover: no score at all (decision 32)
     hov = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.hover-columns-select option')].map(o => o.value)", C)
-    assert not any(v.endswith(":detected:X") or v.endswith(":fraction_of_total:X") for v in hov), hov
-    assert any(v.endswith(":detected:counts") for v in hov), hov
-    # table tab
+    assert not any(v.startswith("gene-score:") for v in hov), hov
+    # table: the add row grades the same way
     page.click(f"#gene-score-tab-{T.TID}")
-    boxes = page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' input.column-checkbox')].map(c => c.id)", T.TID)
-    assert not any("detected-of-X" in b or "fraction_of_total-of-X" in b for b in boxes), boxes
-    assert any("detected-of-counts" in b for b in boxes), boxes
+    row = f"#gene-score-content-{T.TID} .az-score-group[data-entity='{SIG}']"
+    page.wait_for_selector(f"{row} .az-score-add-method", timeout=10000)
+    page.select_option(f"{row} .az-score-add-layer", "X")
+    table_x = {o["v"]: o for o in page.evaluate(OPTS, f"{row} .az-score-add-method")}
+    assert table_x["detected"]["off"] and table_x["fraction_of_total"]["off"], table_x
+    page.select_option(f"{row} .az-score-add-layer", "counts")
+    table_counts = {o["v"]: o for o in page.evaluate(OPTS, f"{row} .az-score-add-method")}
+    assert not table_counts["detected"]["off"] and not table_counts["fraction_of_total"]["off"], table_counts
 
 
 def _colour_snapshot(page):
@@ -416,7 +340,7 @@ def test_switching_between_two_score_options_keeps_the_old_plot_with_the_loading
     _wait_coloured(page)
     before = _colour_snapshot(page)
     _slow(page, "auto", 3)
-    page.select_option(f"{C} select.axis-column-select[data-axis='color']", "mean@X")
+    page.select_option(f"{C} select.axis-column-select[data-axis='color']", "mean")
     until(page, "() => window.__ctls.length === 1")
     _watch_and_finish(page, before, [float(i) * 2 + 1 for i in range(60)])
     until(page, "([t, b]) => { const g = document.querySelector(t + ' .js-plotly-plot'); const d = g.data.find(d => d.marker && Array.isArray(d.marker.color) && d.marker.colorscale); return !!d && Array.from(d.marker.color).map(Number).join() !== b; }", [C, before])
@@ -466,7 +390,8 @@ def test_an_old_link_is_migrated_on_load_and_unticking_x_moves_nothing(page, ser
     cfg = page.evaluate("""() => { const t = window.PanelManager.getPanel('cell-table-T').getConfig(), p = window.PanelManager.getPanel('cell-plot-C').getConfig();
         return { cols: t.columns.filter(c => c.type === 'gene-score').map(c => c.layer), crit: JSON.stringify(t.searchBuilderConfig),
                  color: p.color.layer, hover: p.hoverInfo.filter(h => h.type === 'gene-score').map(h => h.layer) }; }""")
-    assert cfg["cols"] == ["X"] and cfg["color"] == "X" and cfg["hover"] == ["X"], cfg
+    assert cfg["cols"] == ["X"] and cfg["color"] == "X", cfg
+    assert cfg["hover"] == [], "a score hover line is dropped on load (decision 32)"
     assert "gene-score_" + SIG + "_zscore_mean__of_X" in cfg["crit"], "the filter follows the renamed column"
     # the user unticks X in the panel: counts becomes the signature's first layer
     page.evaluate("() => window.PanelManager.getPanel('gene-signature-S').updateConfig({ input: 'counts', layers: ['counts'] })")
@@ -476,8 +401,10 @@ def test_an_old_link_is_migrated_on_load_and_unticking_x_moves_nothing(page, ser
         return { cols: t.columns.filter(c => c.type === 'gene-score').map(c => [c.column, c.layer]), crit: JSON.stringify(t.searchBuilderConfig), color: [p.color.column, p.color.layer] }; }""")
     assert after["cols"] == [["zscore_mean", "X"]] and after["color"] == ["zscore_mean", "X"], after
     assert "__of_X" in after["crit"]
-    text = page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').selectedOptions[0].textContent", C)
-    assert "no longer offered" in text, text
+    # X is a layer like any other: the colour keeps it and says nothing about being offered
+    shown = page.evaluate("""(t) => [document.querySelector(t + ' select.axis-column-select[data-axis="color"]').selectedOptions[0].textContent,
+        document.querySelector(t + ' select.axis-layer-select[data-axis="color"]').value]""", C)
+    assert shown == ["z-score mean", "X"], shown
     assert set(_inputs(page)) == {"X"}, "nothing was computed over counts: it all stays on X"
 
 

@@ -32,10 +32,11 @@
  */
 import { createDerivedSources } from './derived-sources.js';
 import { VOCABULARY } from './vocabulary.js';
-import { normalizeGrouping, groupingHasher, groupNames, serverRequest, MAX_NESTING } from './cell-grouping.js';
+import { normalizeGrouping, groupingHasher, groupNames, generatedGroupNames, serverRequest, MAX_NESTING } from './cell-grouping.js';
 import { groupNeed } from './group-store.js';
 import { labelledGroups } from './group-reference.js';
 import { groupLevelId } from './level-id.js';
+import { groupingColours, NO_COLOUR } from './grouping-colours.js';
 import { TABLE_LIMITS } from './table-resolver.js';
 import { compactCount } from './coverage.js';
 import { stableStringify } from './url-history.js';
@@ -214,6 +215,7 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
             }));
             hold.lastApplied = null;
             hold.lastReply = null;
+            hold.lastColours = null;
             mine.set(upId, hold);
             watched.add(upId);
         }
@@ -226,9 +228,13 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
         if (!hold) return;
         const applied = inner.appliedOf(upId);
         const reply = snap.state === 'ready' && snap.values ? snap.values.reply : null;
-        if (applied === hold.lastApplied && reply === hold.lastReply) return;
+        // the colors the upstream has now: a color changed there is no new recipe and no new reply, and the sources that use it
+        // draw again (a count plot split by the grouping)
+        const colours = reply ? coloursOf(upId, reply) : null;
+        if (applied === hold.lastApplied && reply === hold.lastReply && colours === hold.lastColours) return;
         hold.lastApplied = applied;
         hold.lastReply = reply;
+        hold.lastColours = colours;
         inner.sourceChanged(id);
     }
 
@@ -384,20 +390,38 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
 
     const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels || null, rest: p.rest || 'other', binning: p.binning || null });
 
-    /** The recipe that made a reply, with the renames and the separator of the recipe as it is now. */
+    /** The fields of a factor that name and colour a reply and never compute it: a change of one is no request. */
+    const SHOWN = ['labels', 'colors'];
+
+    /** The recipe that made a reply, with the renames, the colours and the separator of the recipe as it is now. */
     function namedRecipe(structure, live) {
         // a grid's config (a count plot's) has no factors of its own to rename: its reply is named by its inputs' sources
         if (!live || structure === live || !Array.isArray(live.partitionings) || !Array.isArray(structure.partitionings)) return structure;
         const twins = new Map(live.partitionings.map((p) => [factorBody(p), p]));
         const partitionings = structure.partitionings.map((p) => {
             const twin = twins.get(factorBody(p));
-            if (!twin || twin.labels === p.labels) return p;
-            const out = { ...p, labels: twin.labels };
-            if (!twin.labels) delete out.labels;
+            if (!twin || SHOWN.every((f) => twin[f] === p[f])) return p;
+            const out = { ...p };
+            for (const f of SHOWN) { if (twin[f]) out[f] = twin[f]; else delete out[f]; }
             return out;
         });
         const out = { ...structure, partitionings };
         if (live.separator === undefined) delete out.separator; else out.separator = live.separator;
+        if (live.colors === undefined) delete out.colors; else out.colors = live.colors;
+        // a group's own colour and name (decision 38) are the recipe's now too: an edit of one asks for nothing
+        if (live.groupOverrides === undefined) delete out.groupOverrides; else out.groupOverrides = live.groupOverrides;
+        return out;
+    }
+
+    /** @type {WeakMap<Object, Object>} an upstream grouping's colours -> its groups' colours as the levels of a factor */
+    const levelColours = new WeakMap();
+    function asLevelColours(colours, reply) {
+        let out = levelColours.get(colours);
+        if (!out) {
+            out = {};
+            reply.groups.forEach((g, i) => { out[groupLevelId(g.key)] = colours.groups[i]; });
+            levelColours.set(colours, out);
+        }
         return out;
     }
 
@@ -412,11 +436,18 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
         })();
         const live = src && src.shape === by.resolved.shape ? recipeOf(src) : null;
         const upNames = by.up.map((u) => (u ? namesOf(u.id, u.reply) : null));
+        const upColours = by.up.map((u) => (u ? coloursOf(u.id, u.reply) : null));
         const was = readings.get(reply);
-        if (was && was.live === live && was.upNames.length === upNames.length && was.upNames.every((n, i) => n === upNames[i])) return was;
+        if (was && was.live === live && was.upNames.length === upNames.length && was.upNames.every((n, i) => n === upNames[i])
+            && was.upColours.every((c, i) => c === upColours[i])) return was;
         const field = Array.isArray(reply.partitionings) ? 'partitionings' : 'axes';
-        const reading = { ...reply, [field]: (reply[field] || []).map((p, i) => (upNames[i] ? { ...p, names: asLevels(upNames[i], by.up[i].reply) } : p)) };
-        const out = { live, upNames, recipe: namedRecipe(by.resolved.recipe, live), reading };
+        // a part that is a grouping carries that grouping's names and colours for its groups, as a column carries its own
+        // `names` are what its groups are CALLED (a label the user gave shows); `generatedNames` what they are keyed by, which a
+        // rename never moves: an outer grouping's overrides and references are keyed by the second
+        const reading = { ...reply, [field]: (reply[field] || []).map((p, i) => (upNames[i]
+            ? { ...p, names: asLevels(upNames[i], by.up[i].reply), generatedNames: asLevels(upColours[i].generated, by.up[i].reply),
+                colors: asLevelColours(upColours[i], by.up[i].reply) } : p)) };
+        const out = { live, upNames, upColours, recipe: namedRecipe(by.resolved.recipe, live), reading };
         readings.set(reply, out);
         return out;
     }
@@ -425,6 +456,21 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
         const r = readingOf(id, reply);
         if (!r.names) r.names = groupNames(r.recipe, r.reading, host.sourceTitle);
         return r.names;
+    }
+
+    /**
+     * The colours of a reply (utils/grouping-colours.js), as the recipe has them now: `groups` one per group of the reply
+     * (the grey of a group with no colour filled in), `factors` a Map per factor, and `generated` each group's generated
+     * name, which a group's own colour is keyed by (decision 38). Made once per reply and recipe.
+     */
+    function coloursOf(id, reply) {
+        const r = readingOf(id, reply);
+        if (!r.colours) {
+            const generated = generatedGroupNames(r.recipe, r.reading, host.sourceTitle);
+            const got = groupingColours(r.recipe, r.reading, generated);
+            r.colours = { factors: got.factors, groups: got.groups.map((c) => c || NO_COLOUR), generated };
+        }
+        return r.colours;
     }
 
     function labelsOf(id, reply) {
@@ -487,6 +533,16 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
          * @returns {string[]}
          */
         namesOf,
+
+        /**
+         * The colour of each group of a reply and of each factor's levels, as the recipe has them now: a colour change
+         * is no request, and reaches every consumer as a rename does (utils/grouping-colours.js). Made once per reply
+         * and recipe.
+         * @param {string} id
+         * @param {Object} reply - a snapshot's `values.reply`
+         * @returns {{groups: string[], factors: Map<string, string>[], generated: string[]}}
+         */
+        coloursOf,
 
         /**
          * The groups of a reply by key with their default labels, for a consumer that names one group

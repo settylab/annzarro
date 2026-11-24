@@ -36,8 +36,10 @@ import { RESERVED } from '../../utils/level-id.js';
 import { GAP_COLOUR } from '../../utils/plot-theme.js';
 import { MAX_ROWS } from '../../utils/hclust.js';
 import { longCsv } from '../../utils/cell-gene-model.js';
-import { generateDiscreteColors } from '../plot-utilities/colors.js';
+import { groupingColours } from '../../utils/grouping-colours.js';
 import { createPopover } from '../../ui/popover.js';
+import { registerPanelFields } from '../plot-utilities/options-schema.js';
+import { mountPlotOptions } from '../plot-utilities/options-popover.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import { dendrogramBlocks } from './draw-annotations.js';
 import { BARS_3D_MAX, checkBarCap } from '../../utils/bars-3d.js';
@@ -167,30 +169,71 @@ function scalingNotes(config) {
     return scale === 'z_pooled' ? [WO.scalingNote, WO.pooledNote] : [WO.scalingNote];
 }
 
+// ================================================================================================ Plot Options' fields
+
+const dotsMode = (config) => !config || config.mode !== 'heatmap';
+const in3d = (config) => !!config && config.view === '3d';
+
+/**
+ * The Cell-Gene Plot's own fields of the shared Plot Options (WP-5a, plot-utilities/options-schema.js), at the keys
+ * they always had: the dots' outline, the sections' gap and titles, the gene and group labels (in Axes), the legends'
+ * switches and titles (in Legend), the totals (Annotations). The plot title is the common Text section's (`titles.plot`).
+ */
+const PLOT_OPTION_FIELDS = Object.freeze([
+    { id: 'outlineColor', section: 'panel:dots', type: 'color', path: 'outline.color', label: WO.outlineColor, dflt: DEFAULT_OUTLINE.color, when: dotsMode },
+    { id: 'outlineWidth', section: 'panel:dots', type: 'number', path: 'outline.width', label: WO.outlineWidth, dflt: DEFAULT_OUTLINE.width,
+        min: 0, max: OUTLINE_MAX, step: 0.25, when: dotsMode },
+    { id: 'dotOpacity', section: 'panel:dots', type: 'range', path: 'dotOpacity', label: WO.dotOpacity, dflt: DOT_OPACITY.max,
+        min: DOT_OPACITY.min, max: DOT_OPACITY.max, step: DOT_OPACITY.step, when: dotsMode },
+    { id: 'gap', section: 'panel:sections', type: 'number', path: 'gap', label: `${WO.gap} (${WO.gapUnit})`, dflt: DEFAULT_GAP, min: 0, max: GAP_MAX, step: 1 },
+    { id: 'sectionTitles', section: 'panel:sections', type: 'check', path: 'sectionTitles', label: WO.sectionTitles, dflt: true },
+    { id: 'geneLabels', section: 'axes', type: 'check', path: 'labels.genes', label: WO.geneLabels, dflt: true },
+    { id: 'groupLabels', section: 'axes', type: 'check', path: 'labels.groups', label: WO.groupLabels, dflt: true },
+    // the 3D labels (operator: side, justification, rotation, padding), beside the label switches, shown in 3D only;
+    // draw.js labelOptions3d reads them, sections.js cleans them, the panel stores Side Fixed's edges from the camera
+    { id: 'labels3dSide', section: 'axes', type: 'select', path: 'labels3d.side', label: W3.labels.side, dflt: 'auto', when: in3d,
+        choices: [['auto', W3.labels.sides.auto], ['fixed', W3.labels.sides.fixed]], help: W3.labels.sideHelp },
+    { id: 'labels3dJustify', section: 'axes', type: 'select', path: 'labels3d.justify', label: W3.labels.justify, dflt: 'auto', when: in3d,
+        choices: ['auto', 'left', 'right', 'center'].map((v) => [v, W3.labels.justifies[v]]) },
+    { id: 'labels3dRotation', section: 'axes', type: 'select', path: 'labels3d.rotation', label: W3.labels.rotation, dflt: 'horizontal', when: in3d,
+        choices: ['horizontal', 'along', 'across', 'angle'].map((v) => [v, W3.labels.rotations[v]]) },
+    { id: 'labels3dAngle', section: 'axes', type: 'number', path: 'labels3d.angle', label: W3.labels.angle, dflt: 0, min: -90, max: 90, step: 5,
+        when: (c) => in3d(c) && !!c.labels3d && c.labels3d.rotation === 'angle' },
+    { id: 'labels3dPadding', section: 'axes', type: 'number', path: 'labels3d.padding', label: W3.labels.padding, dflt: 4, min: 0, max: 40, step: 1,
+        when: in3d },
+    { id: 'colorBar', section: 'legend', type: 'check', path: 'legend.colorBar', label: WO.colorBar, dflt: true },
+    { id: 'sizeLegend', section: 'legend', type: 'check', path: 'legend.sizeLegend', label: WO.sizeLegend, dflt: true, when: dotsMode },
+    { id: 'strips', section: 'legend', type: 'check', path: 'legend.strips', label: WO.strips, dflt: true },
+    { id: 'colorTitle', section: 'legend', type: 'text', path: 'titles.color', label: WO.colorTitle, dflt: '', copy: false },
+    { id: 'sizeTitle', section: 'legend', type: 'text', path: 'titles.size', label: WO.sizeTitle, dflt: '', copy: false, when: dotsMode },
+    { id: 'totals', section: 'panel:annotations', type: 'check', path: 'totals', label: WO.totals, dflt: false }
+]);
+registerPanelFields('cell-gene', PLOT_OPTION_FIELDS);
+
 // ================================================================================================ strips and trees
 
 /**
- * One strip per factor of the cell axis (CXG-14): each drawn group's level, colored by its factor's levels (a
- * categorical column's own colors where the reply has them, the app's palette by level otherwise), and the legend of
- * the strip, the factor's levels in level order. The collected small group takes the gap color and no level.
+ * One strip per factor of the cell axis (CXG-14): each drawn group's level, colored as the factor colors its levels
+ * (utils/grouping-colours.js: the column's own colors, a palette, an override), and the legend of the strip, the factor's
+ * levels in level order. The collected small group takes the gap color and no level.
  * @param {Object} reply - the cell axis's reply
  * @param {Object} recipe - the grouping recipe the reply is of
  * @param {Int32Array} groupOrder - the reply's group at each drawn position
  * @param {(source: Object) => (string|undefined)} titleOf
+ * @param {Map<string, string>[]} [colors] - each factor's colors as the recipe has them now (group-sources.js `coloursOf`);
+ *   left out, the recipe's own
  * @returns {{title: string, colours: string[], levels: string[], legend: {label: string, colour: string}[]}[]}
  */
-function groupStrips(reply, recipe, groupOrder, titleOf) {
+function groupStrips(reply, recipe, groupOrder, titleOf, colors) {
     const parts = recipe && Array.isArray(recipe.partitionings) ? recipe.partitionings : [];
     if (!reply || !Array.isArray(reply.groups) || !Array.isArray(reply.partitionings) || reply.partitionings.length !== parts.length) return [];
     const maps = defaultLabelMaps(recipe, reply, titleOf);
+    const factors = colors || groupingColours(recipe, reply).factors;
     return parts.map((p, i) => {
         const info = reply.partitionings[i] || {};
         const levels = Array.isArray(info.levels) ? info.levels : [];
-        const own = !p.binning && isObject(info.colors) ? info.colors : null;
-        const palette = generateDiscreteColors(Math.max(1, levels.length));
-        const at = new Map(levels.map((id, k) => [id, k]));
         const label = (id) => (p.labels && p.labels[id]) || maps[i].get(id) || id;
-        const colour = (id) => (own && own[id]) || (at.has(id) ? palette[at.get(id) % palette.length] : GAP_COLOUR);
+        const colour = (id) => (factors[i] && factors[i].get(id)) || GAP_COLOUR;
         const colours = [];
         const names = [];
         for (const g of groupOrder) {
@@ -219,13 +262,13 @@ function dendrogramsOf(cluster, order) {
 /**
  * What the options add to the drawing model of draw.js and draw-annotations.js, and what the panel orders by.
  * @param {Object} config - the plot's configuration
- * @param {{reply?: Object, recipe?: Object, order?: Object, titleOf?: Function}} [ctx] - the cell axis's reply and its
- *   recipe, cell-gene-order.js's answer for the matrix, and the title of a panel behind a source; without them no
+ * @param {{reply?: Object, recipe?: Object, order?: Object, titleOf?: Function, colors?: Map[]}} [ctx] - the cell axis's reply
+ *   and its recipe, each factor's colors, cell-gene-order.js's answer for the matrix, and the title of a panel behind a source; without them no
  *   strip and no tree
  * @returns {{color: Object, size: Object, legend: Object, plotTitle: (string|undefined), annotations: Object,
  *   gap: number, sortBySize: boolean, cluster: Object}}
  */
-export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
+export function figureExtras(config, { reply, recipe, order, titleOf, colors } = {}) {
     const s = styleOf(config);
     const cluster = clusterOf(config);
     const color = { colorscale: plotlyColorscale(s.colorScale) };
@@ -254,7 +297,7 @@ export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
             brackets: { titles: s.sectionTitles },
             totals: s.totals,
             labels: s.labels,
-            strips: order ? groupStrips(reply, recipe, order.groups, titleOf) : [],
+            strips: order ? groupStrips(reply, recipe, order.groups, titleOf, colors) : [],
             dendrograms: dendrogramsOf(cluster, order)
         }
     };
@@ -347,9 +390,6 @@ function clusterNotes(drawn) {
 /** A file name from the plot's title. */
 const fileName = (title) => `${String(title || 'cell-gene').replace(/[^\w.-]+/g, '_') || 'cell-gene'}.csv`;
 
-/** The image formats of Plot Options' Export. */
-const IMAGE_FORMATS = Object.freeze(['png', 'jpeg', 'webp', 'svg']);
-
 /** The fields Color ▾'s Reset clears: the map, its direction and range, and the dots' sizes. */
 const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center', 'printValues', 'dotScale', 'dotSmallest', 'dotSizes', 'dotMin', 'dotMax', 'heightLimits']);
 
@@ -370,7 +410,6 @@ function mount(slot, ctx) {
     let wardAfter = null;          // the configuration Ward's switch made, while its sentence and Undo show
 
     const config = () => ctx.config();
-    const stored = (key) => (isObject(config()[key]) ? config()[key] : {});
     const setCluster = (patch, label) => ctx.set({ cluster: { ...clusterOf(config()), ...patch } }, label);
 
     const controls = {};
@@ -379,28 +418,6 @@ function mount(slot, ctx) {
         controls[name] = el('input', { type: 'checkbox', data: { option: name }, on: { change: (e) => onChange(e.target.checked) } });
         return el('label', { class: 'cgene-opt' }, controls[name], ` ${label}`);
     };
-    /** A number box that commits on change or Enter; an empty box is the default. */
-    const number = (name, label, onCommit, attrs = {}) => {
-        const input = el('input', { type: 'number', class: 'form-control form-control-sm cgene-num', data: { option: name }, aria: { label }, ...attrs });
-        const commitIt = () => {
-            const raw = input.value.trim();
-            const v = raw === '' ? null : Number(raw);
-            if (v !== null && !Number.isFinite(v)) { paint(); return; }
-            onCommit(v);
-        };
-        input.addEventListener('change', commitIt);
-        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitIt(); } });
-        controls[name] = input;
-        return field(label, input);
-    };
-    const words = (name, label, onCommit) => {
-        const input = el('input', { type: 'text', class: 'form-control form-control-sm cgene-title-input', data: { option: name }, aria: { label }, autocomplete: 'off' });
-        const commitIt = () => onCommit(input.value.trim());
-        input.addEventListener('change', commitIt);
-        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitIt(); } });
-        controls[name] = input;
-        return field(label, input);
-    };
     const select = (name, label, entries, onChange) => {
         const s = el('select', { class: 'form-select form-select-sm', data: { option: name }, aria: { label }, on: { change: () => onChange(s.value) } },
             entries.map(([v, t]) => el('option', { value: v, text: t })));
@@ -408,11 +425,6 @@ function mount(slot, ctx) {
         return field(label, s);
     };
     const section = (heading, ...children) => el('fieldset', { class: 'cgene-options__section' }, el('legend', { text: heading }), ...children);
-    const nested = (key, sub, value, dflt, label) => {
-        const next = { ...stored(key) };
-        if (value === dflt) delete next[sub]; else next[sub] = value;
-        ctx.set({ [key]: Object.keys(next).length ? next : undefined }, label);
-    };
     const flat = (key, value, dflt, label) => ctx.set({ [key]: value === dflt ? undefined : value }, label);
     const onOff = (on, label) => `${on ? '' : 'no '}${label.toLowerCase()}`;
     const button = (cls, label) => el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary ${cls}` }, label);
@@ -556,84 +568,13 @@ function mount(slot, ctx) {
         heightSection,
         el('div', { class: 'cgene-pop__foot' }, resetColor));
 
-    // ---------------------------------------------------------------- 3D labels (operator: side and justification)
-    /** One field of `labels3d`, its default absent; Side Fixed keeps the edges the labels are on now (ctx.labelEdges). */
-    const setLabels3d = (patch, label) => {
-        const next = { ...stored('labels3d'), ...patch };
-        if (next.side !== 'fixed') { delete next.side; delete next.edges; }
-        if (!next.justify || next.justify === 'auto') delete next.justify;
-        if (next.rotation === undefined || next.rotation === 'horizontal') delete next.rotation;
-        if (next.padding === undefined || next.padding === null || next.padding === 4) delete next.padding;
-        ctx.set({ labels3d: Object.keys(next).length ? next : undefined }, label);
-    };
-    const labels3dSection = section(W3.labels.heading,
-        select('labels3dSide', W3.labels.side, [['auto', W3.labels.sides.auto], ['fixed', W3.labels.sides.fixed]],
-            (v) => setLabels3d(v === 'fixed' ? { side: 'fixed', edges: ctx.labelEdges ? ctx.labelEdges() : undefined } : { side: 'auto' },
-                `3D labels ${W3.labels.sides[v].toLowerCase()}`)),
-        select('labels3dJustify', W3.labels.justify, ['auto', 'left', 'right', 'center'].map((v) => [v, W3.labels.justifies[v]]),
-            (v) => setLabels3d({ justify: v }, `3D labels justified ${W3.labels.justifies[v].toLowerCase()}`)),
-        select('labels3dRotation', W3.labels.rotation, ['horizontal', 'along', 'across', 'angle'].map((v) => [v, W3.labels.rotations[v]]),
-            (v) => setLabels3d({ rotation: v === 'angle' ? (isNumber(stored('labels3d').rotation) ? stored('labels3d').rotation : 0) : v },
-                `3D labels ${W3.labels.rotations[v].toLowerCase()}`)),
-        // only while Rotation is Angle: the box's change on leaving it must not undo a Rotation chosen since
-        number('labels3dAngle', W3.labels.angle, (v) => {
-            if (controls.labels3dRotation.value !== 'angle') return;
-            setLabels3d({ rotation: v === null ? 0 : Math.max(-90, Math.min(90, v)) }, '3D label angle');
-        },
-            { min: -90, max: 90, step: 5 }),
-        number('labels3dPadding', W3.labels.padding, (v) => setLabels3d({ padding: v === null ? 4 : Math.max(0, Math.min(40, v)) }, '3D label padding'),
-            { min: 0, max: 40, step: 1 }));
-    labels3dSection.classList.add('cgene-labels3d');
-    labels3dSection.title = W3.labels.help;
-
-    // ---------------------------------------------------------------- Plot Options (UX 3.1; no clustering field since WP-2)
+    // ---------------------------------------------------------------- Plot Options: the shared pop-over (WP-5a)
     const optionsBtn = button('cgene-options-btn', WO.plotOptions);
-    const outlineInput = el('input', { type: 'color', class: 'form-control form-control-sm form-control-color', data: { option: 'outlineColor' }, aria: { label: WO.outlineColor },
-        on: { change: (e) => nested('outline', 'color', e.target.value, DEFAULT_OUTLINE.color, 'dot outline color') } });
-    controls.outlineColor = outlineInput;
-    // Dot opacity: a slider and a number box that say the same value; either commits one undoable step
-    const setOpacity = (v) => {
-        if (v === null || !Number.isFinite(v)) { paint(); return; }
-        const o = Math.round(Math.max(DOT_OPACITY.min, Math.min(DOT_OPACITY.max, v)) * 100) / 100;
-        flat('dotOpacity', o, DOT_OPACITY.max, 'dot opacity');
-    };
-    controls.dotOpacity = el('input', { type: 'range', class: 'form-range', min: DOT_OPACITY.min, max: DOT_OPACITY.max, step: DOT_OPACITY.step,
-        data: { option: 'dotOpacity' }, aria: { label: WO.dotOpacity },
-        on: { input: (e) => { controls.dotOpacityNumber.value = e.target.value; }, change: (e) => setOpacity(Number(e.target.value)) } });
-    const opacityNumber = number('dotOpacityNumber', WO.dotOpacity, setOpacity, { min: DOT_OPACITY.min, max: DOT_OPACITY.max, step: DOT_OPACITY.step });
-    opacityNumber.classList.add('cgene-dot-opacity');
-    opacityNumber.insertBefore(controls.dotOpacity, controls.dotOpacityNumber);
-    const dots = section(WO.heading.dots,
-        field(WO.outlineColor, outlineInput),
-        number('outlineWidth', WO.outlineWidth, (v) => nested('outline', 'width', v === null ? DEFAULT_OUTLINE.width : Math.max(0, Math.min(OUTLINE_MAX, v)), DEFAULT_OUTLINE.width, 'dot outline width'),
-            { min: 0, max: OUTLINE_MAX, step: 0.25 }),
-        opacityNumber);
-    const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-csv-btn', on: { click: downloadCsv } }, WO.csv);
-    // the plot as an image; SVG of a 3D scene would be a raster picture inside SVG, so it is greyed in 3D (UX 6b)
-    const imageBtns = IMAGE_FORMATS.map((format) => el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-export-btn',
-        data: { format }, on: { click: () => { if (ctx.exportImage) ctx.exportImage(format); } } }, format.toUpperCase()));
-    const optionsBody = el('div', { class: 'cgene-pop cgene-options' },
-        dots,
-        section(WO.heading.sections,
-            number('gap', `${WO.gap} (${WO.gapUnit})`, (v) => flat('gap', v === null ? DEFAULT_GAP : Math.round(Math.max(0, Math.min(GAP_MAX, v))), DEFAULT_GAP, 'gap between sections'),
-                { min: 0, max: GAP_MAX, step: 1 }),
-            check('sectionTitles', WO.sectionTitles, (on) => flat('sectionTitles', on, true, onOff(on, WO.sectionTitles)))),
-        section(WO.heading.labels,
-            check('geneLabels', WO.geneLabels, (on) => nested('labels', 'genes', on, true, onOff(on, WO.geneLabels))),
-            check('groupLabels', WO.groupLabels, (on) => nested('labels', 'groups', on, true, onOff(on, WO.groupLabels))),
-            words('plotTitle', WO.plotTitle, (v) => nested('titles', 'plot', v, '', 'plot title')),
-            words('colorTitle', WO.colorTitle, (v) => nested('titles', 'color', v, '', 'color bar title')),
-            words('sizeTitle', WO.sizeTitle, (v) => nested('titles', 'size', v, '', 'size legend title'))),
-        section(WO.heading.legend,
-            check('colorBar', WO.colorBar, (on) => nested('legend', 'colorBar', on, true, onOff(on, WO.colorBar))),
-            check('sizeLegend', WO.sizeLegend, (on) => nested('legend', 'sizeLegend', on, true, onOff(on, WO.sizeLegend))),
-            check('strips', WO.strips, (on) => nested('legend', 'strips', on, true, onOff(on, WO.strips)))),
-        section(WO.heading.totals,
-            check('totals', WO.totals, (on) => flat('totals', on, false, onOff(on, WO.totals)))),
-        labels3dSection,
-        el('fieldset', { class: 'cgene-options__section cgene-export' }, el('legend', { text: WO.exportHeading }), ...imageBtns, csvBtn));
 
-    slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn);
+    // the shared plot toolbar (ui/plot-toolbar.js) when the panel gives one: 3D an action, Cluster and Color its menus,
+    // Plot Options last
+    if (ctx.toolbar) ctx.toolbar.add({ actions: [view3dBtn], menus: [clusterBtn, colorBtn], options: optionsBtn });
+    else slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn);
 
     // ---------------------------------------------------------------- the pop-overs (ui/popover.js)
     const popover = (anchor, name, title, body) => createPopover({
@@ -642,9 +583,19 @@ function mount(slot, ctx) {
     });
     const pops = [
         popover(clusterBtn, 'cluster', WO.popoverTitle.cluster, clusterBody),
-        popover(colorBtn, 'color', WO.popoverTitle.color, colorBody),
-        popover(optionsBtn, 'plot-options', WO.popoverTitle.plotOptions, optionsBody)
+        popover(colorBtn, 'color', WO.popoverTitle.color, colorBody)
     ];
+    // the 3D drawing has no vector image: SVG would be a raster picture inside SVG (UX 6b)
+    const drawn3d = () => { const d = ctx.drawn(); return !!(d && d.model && d.model.view === '3d'); };
+    const options = mountPlotOptions({
+        anchor: optionsBtn, kind: 'cell-gene', panelId: id, config,
+        commit: ctx.commit || ((next, label) => ctx.set(next, label)), replace: ctx.replace || ((next) => ctx.set(next, '')),
+        sections: { 'panel:dots': { title: WO.heading.dots, when: dotsMode }, 'panel:sections': { title: WO.heading.sections },
+            'panel:annotations': { title: WO.heading.totals } },
+        exportImage: ctx.exportImage, plotSize: ctx.plotSize, plot: ctx.plot, csv: downloadCsv, canExport: () => !!ctx.drawn(),
+        exportOff: (format) => (format === 'svg' && drawn3d() ? W3.svgOff : ''),
+        classes: { export: 'cgene-export', exportBtn: 'cgene-export-btn', csv: 'cgene-csv-btn' }
+    });
 
     function downloadCsv() {
         const drawn = ctx.drawn();
@@ -719,38 +670,7 @@ function mount(slot, ctx) {
         controls.dotSmallestValue.textContent = WO.px(smallest);
         resetColor.disabled = !COLOR_FIELDS.some((k) => c[k] !== undefined);
 
-        // Plot Options
-        dots.hidden = !dotsMode;
-        controls.outlineColor.value = s.outline.color.length === 4 ? `#${[...s.outline.color.slice(1)].map((h) => h + h).join('')}` : s.outline.color.slice(0, 7);
-        setValue(controls.outlineWidth, s.outline.width);
-        setValue(controls.dotOpacity, s.dotOpacity);
-        setValue(controls.dotOpacityNumber, s.dotOpacity);
-        setValue(controls.gap, s.gap);
-        controls.sectionTitles.checked = s.sectionTitles;
-        controls.geneLabels.checked = s.labels.genes;
-        controls.groupLabels.checked = s.labels.groups;
-        setValue(controls.plotTitle, s.titles.plot);
-        setValue(controls.colorTitle, s.titles.color);
-        setValue(controls.sizeTitle, s.titles.size);
-        controls.sizeTitle.closest('label').hidden = !dotsMode;
-        controls.colorBar.checked = s.legend.colorBar;
-        controls.sizeLegend.checked = s.legend.sizeLegend;
-        controls.sizeLegend.closest('label').hidden = !dotsMode;
-        controls.strips.checked = s.legend.strips;
-        controls.totals.checked = s.totals;
-        // 3D labels: shown in 3D only
-        const l3 = isObject(c.labels3d) ? c.labels3d : {};
-        labels3dSection.hidden = c.view !== '3d';
-        controls.labels3dSide.value = l3.side === 'fixed' ? 'fixed' : 'auto';
-        controls.labels3dJustify.value = l3.justify || 'auto';
-        const angled = isNumber(l3.rotation);
-        controls.labels3dRotation.value = angled ? 'angle' : l3.rotation === 'along' || l3.rotation === 'across' ? l3.rotation : 'horizontal';
-        controls.labels3dAngle.closest('label').hidden = !angled;
-        setValue(controls.labels3dAngle, angled ? l3.rotation : 0);
-        setValue(controls.labels3dPadding, isNumber(l3.padding) ? l3.padding : 4);
-
         const drawn = ctx.drawn();
-        csvBtn.disabled = !drawn;
         // rows or groups the clustering left out: a tag of the plot's status strip, not a line that wraps in the control
         // grid (it grew the panel, and with it the row, as the plot drew)
         const notes = clusterNotes(drawn);
@@ -764,12 +684,7 @@ function mount(slot, ctx) {
         view3dBtn.classList.toggle('active', in3d);
         view3dBtn.disabled = !gate.ok && !in3d;
         view3dBtn.title = !gate.ok ? gate.text : in3d ? W3.buttonOnHelp : W3.buttonHelp;
-        const drawn3d = !!(drawn && drawn.model && drawn.model.view === '3d');
-        for (const b of imageBtns) {
-            const svgOff = b.dataset.format === 'svg' && drawn3d;
-            b.disabled = !drawn || svgOff;
-            if (svgOff) b.title = W3.svgOff; else b.removeAttribute('title');
-        }
+        options.update();
     }
 
     paint();
@@ -777,6 +692,7 @@ function mount(slot, ctx) {
         update: paint,
         destroy() {
             for (const pop of pops.splice(0)) pop.destroy();
+            options.destroy();
             slot.textContent = '';
         }
     };

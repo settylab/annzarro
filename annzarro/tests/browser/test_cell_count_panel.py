@@ -125,7 +125,8 @@ def _config(page, pid=CC):
 
 def _plot(page):
     return page.evaluate("""(s) => { const p = document.querySelector(s + ' .ccnt-plot');
-        return { data: p.data.map(t => ({ type: t.type, name: t.name, x: t.x && Array.from(t.x), y: t.y && Array.from(t.y),
+        // the legend's proxies (WP-5a: a legend over its cap, in columns or with a space) are entries, not data
+        return { data: p.data.filter(t => t.meta !== 'az-legend').map(t => ({ type: t.type, name: t.name, x: t.x && Array.from(t.x), y: t.y && Array.from(t.y),
                      z: t.z && t.z.map(r => Array.from(r)), labels: t.labels, values: t.values })),
                  layout: { barmode: p.layout.barmode, barnorm: p.layout.barnorm, xaxis: p.layout.xaxis, yaxis: p.layout.yaxis } }; }""", S)
 
@@ -283,7 +284,8 @@ def test_a_mode_change_keeps_every_input_and_lists_what_the_mode_does_not_read(p
     groups = page.evaluate("""(s) => [...document.querySelectorAll(s + ' .ccnt-mode optgroup')].map(g =>
         [g.label, [...g.children].map(o => [o.textContent, o.disabled, o.title])])""", S)
     assert [g[0] for g in groups] == ["Counts", "Two inputs", "Smoothed", "Sets"]
-    assert groups[0][1] == [["Bar", False, ""], ["Histogram", False, ""], ["Pie", False, ""]]
+    # X is categorical: Histogram is disabled with why (the views follow the X axis type, 0.8.0)
+    assert groups[0][1] == [["Bar", False, ""], ["Histogram", True, "Histogram needs a numeric axis."], ["Pie", False, ""]]
     assert groups[3][1][0] == ["Venn", False, ""]
 
     page.select_option(f"{S} .ccnt-mode", "hist2d")
@@ -305,10 +307,9 @@ def test_a_mode_change_keeps_every_input_and_lists_what_the_mode_does_not_read(p
     assert len(_plot(page)["data"]) == 2, "Color by is back"
     assert _config(page)["split"] == CONDITION and _config(page)["x"] == CELL_TYPE
 
-    # a histogram of a categorical X: the input stays, and the plot says why it cannot be drawn
-    page.select_option(f"{S} .ccnt-mode", "histogram")
-    until(page, "(s) => document.querySelector(s + ' .ccnt-panel').dataset.state === 'unusable'", S)
-    assert _state_text(page) == "Histogram needs a numeric X. cell_type is categorical."
+    # a histogram of a categorical X is not offered: the Mode select disables it with why (the views follow the X)
+    hist = page.evaluate("(s) => { const o = [...document.querySelectorAll(s + ' .ccnt-mode option')].find(o => o.value === 'histogram'); return [o.disabled, o.title]; }", S)
+    assert hist == [True, "Histogram needs a numeric axis."]
     assert _config(page)["x"] == CELL_TYPE
 
 
@@ -577,6 +578,7 @@ def test_a_2d_histogram_colored_by_a_level_draws_opacity_layers(page, served):
 
 def _density_traces(page):
     return page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'heatmap' || t.type === 'contour')
+        .filter(t => !(t.type === 'heatmap' && t.opacity === 0))   // the transparent heatmap that carries a lines-only color bar is no layer
         .map(t => ({ type: t.type, coloring: t.contours && t.contours.coloring, lines: t.contours && t.contours.showlines }))""", S)
 
 
@@ -674,7 +676,8 @@ def _strip(page):
 def _points_config(split, **extra):
     depth = {"source": {"type": "obs", "key": "depth"}}
     score = {"source": {"type": "obs", "key": "score"}}
-    return _count(mode="density2d", x=depth, y=score, **({"split": CONDITION} if split else {}), **extra)
+    by = split if isinstance(split, dict) else (CONDITION if split else None)
+    return _count(mode="density2d", x=depth, y=score, **({"split": by} if by else {}), **extra)
 
 
 @pytest.mark.parametrize("split", [True, False])
@@ -686,7 +689,7 @@ def test_the_cell_points_layer_alone_draws_the_cells_with_the_grid_hover_under_i
     got = _points(page)
     assert 0 < got["n"] <= N, got
     assert got["types"].count("heatmap") == (2 if split else 1), "a transparent heatmap carries the hover"
-    assert re.search(r"Cells drawn as points: [\d,]+\.", _strip(page)), _strip(page)
+    assert re.search(r"Cells drawn as points: [\d,]+ of [\d,]+\.", _strip(page)), _strip(page)
     shot = os.environ.get("ANNZARRO_FB1E_SHOTS")
     if shot:
         page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, f"points-{'split' if split else 'one'}.png"))
@@ -699,8 +702,10 @@ def test_the_cell_points_layer_combines_with_filled_isolines_and_takes_a_point_s
     got = _points(page)
     assert got["n"] > 0 and got["types"].index("contour") < got["types"].index("scattergl") and "heatmap" not in got["types"], got
     assert got["size"] == 3
-    page.fill(f"{S} .ccnt-point-size", "6")
-    page.press(f"{S} .ccnt-point-size", "Enter")
+    assert not page.locator(f"{S} .ccnt-row--density .ccnt-point-size").count(), "the size is not a control outside a pop-over"
+    page.click(f"{S} .ccnt-color-btn")
+    page.fill("[data-popover='color'] .ccnt-point-size", "6")
+    page.press("[data-popover='color'] .ccnt-point-size", "Enter")
     _drawn(page, "density2d", "c.pointSize === 6")
     assert _points(page)["size"] == 6
     shot = os.environ.get("ANNZARRO_FB1E_SHOTS")
@@ -713,15 +718,17 @@ def test_the_cell_points_layer_draws_a_seeded_sample_above_the_cap_and_says_so(p
     _drawn(page, "density2d")
     _caps(page, draw=300)
     page.check(f"{S} .ccnt-layer--points")
-    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
-    assert re.search(r"Cells drawn as points: 300 of 1,200 \(a sample\)\.", _strip(page)), _strip(page)
+    until(page, "(s) => /a random sample/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
+    assert re.search(r"Cells drawn as points: [\d,]+ of a random sample of 300 of the 1,200 cells\.", _strip(page)), _strip(page)
+    drawn = int(re.search(r"Cells drawn as points: ([\d,]+) of", _strip(page)).group(1).replace(",", ""))
+    assert drawn == _points(page)["n"], "the notice counts the points on the plot"
     first = _points(page)
     assert 0 < first["n"] <= 300
     # the same cells again after a redraw: toggle the layer off and on
     page.uncheck(f"{S} .ccnt-layer--points")
     _drawn(page, "density2d", "!c.layers.points")
     page.check(f"{S} .ccnt-layer--points")
-    until(page, "(s) => /\\(a sample\\)/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
+    until(page, "(s) => /a random sample/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     assert _points(page)["n"] == first["n"]
 
 
@@ -734,3 +741,196 @@ def test_the_cell_points_layer_is_refused_above_the_load_cap_and_for_a_source_it
     assert _points(page)["n"] == 0
     assert "Turn on a subset" in _strip(page)
     _caps(page, load=25_000_000)
+
+
+def _point_colours(page):
+    """The rgb of each point trace (a level's color): the colors the points are drawn in."""
+    return page.evaluate("""(s) => [...new Set([...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'scattergl')
+        .map(t => String(t.marker.color).replace(/, [\\d.]+\\)$/, ')')))]""", S)
+
+
+def test_cell_points_take_a_grouping_as_color_by_and_match_its_groups(page, served):
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [CONDITION]}
+    count = _points_config({"source": {"type": "cell-group", "key": GA}}, layers={"points": True})
+    _open(page, served, {CC: count, GA: grouping}, open_ids=(CC, GA))
+    _drawn(page, "density2d")
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S, timeout=60)
+    colours = _point_colours(page)
+    assert len(colours) == 2, colours
+    # the groups of the grouping are the grid's levels: each is drawn in the color of its legend entry
+    legend = page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'scatter' && t.name)
+        .map(t => t.marker.color)""", S)
+    assert len(legend) == 2
+
+
+def test_cell_points_take_a_number_as_color_by_binned_by_the_reply_s_edges(page, served):
+    score = {"source": {"type": "obs", "key": "score"}, "binning": {"method": "equal_width", "bins": 3}}
+    _open(page, served, {CC: _points_config(score, layers={"points": True})})
+    _drawn(page, "density2d")
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S, timeout=60)
+    assert len(_point_colours(page)) == 3, _point_colours(page)
+    shot = os.environ.get("ANNZARRO_FB1F_SHOTS")
+    if shot:
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, "points-binned.png"))
+
+
+
+def test_cell_points_reload_when_the_grouping_is_edited_and_match_its_new_groups(page, served):
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [CONDITION]}
+    count = _points_config({"source": {"type": "cell-group", "key": GA}}, layers={"points": True})
+    _open(page, served, {CC: count, GA: grouping}, open_ids=(CC, GA))
+    _drawn(page, "density2d")
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S, timeout=60)
+    before = _points(page)
+    assert len(_point_colours(page)) == 2
+    # tick off a level of the grouping and leave the unticked cells out: one group is left
+    edited = {"id": GA, "title": "Grouping 1", "version": 1,
+              "partitionings": [{**CONDITION, "levels": ["c:ctrl"], "rest": "exclude"}]}
+    page.evaluate("(cfg) => window.PanelManager.getPanel('%s').setConfig(cfg)" % GA, edited)
+    # the points reload against the new groups: the cells of the group that is left, the others in no group and not drawn
+    until(page, """([s, n]) => { const m = /Cells drawn as points: ([\\d,]+) of/.exec(document.querySelector(s + ' .ccnt-density-notes').textContent);
+        return !!m && Number(m[1].replace(/,/g, '')) !== n; }""", [S, before["n"]], timeout=60)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S, timeout=60)
+    after = _points(page)
+    assert len(_point_colours(page)) == 1, "the one group left is the one color drawn"
+    drawn = int(re.search(r"Cells drawn as points: ([\d,]+) of", _strip(page)).group(1).replace(",", ""))
+    assert drawn == after["n"], "the notice counts the points on the plot"
+    assert 0 < after["n"] < before["n"], (before, after)
+    ctrl = int((DATA.obs["condition"] == "ctrl").sum())
+    assert after["n"] <= ctrl, "only the cells of the one group are drawn"
+
+
+def test_cell_points_reload_when_an_edit_makes_new_groups_the_old_codes_do_not_hold(page, served):
+    """A third bin has no level in the codes the points were loaded with: only a reload can draw it."""
+    def depth(bins):
+        return {"source": {"type": "obs", "key": "score"}, "binning": {"method": "equal_width", "bins": bins}}
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [depth(2)]}
+    count = _points_config({"source": {"type": "cell-group", "key": GA}}, layers={"points": True})
+    _open(page, served, {CC: count, GA: grouping}, open_ids=(CC, GA))
+    _drawn(page, "density2d")
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S, timeout=60)
+    assert len(_point_colours(page)) == 2
+    page.evaluate("(cfg) => window.PanelManager.getPanel('%s').setConfig(cfg)" % GA,
+                  {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [depth(3)]})
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot').length > 0", S)
+    until(page, """(s) => new Set([...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'scattergl')
+        .map(t => String(t.marker.color).replace(/, [\\d.]+\\)$/, ')'))).size === 3""", S, timeout=60)
+
+
+# ------------------------------------------------------------------ the Display pop-over of a 2D density
+
+def _layer_state(page):
+    return page.evaluate("(id) => (window.PanelManager.getPanel(id).getConfig().layers || null)", CC)
+
+
+def _pop(page):
+    page.click(f"{S} .ccnt-color-btn")
+    page.wait_for_selector("[data-popover='color']")
+
+
+@pytest.mark.parametrize("split", [True, False])
+def test_with_cell_points_on_every_density_layer_can_go_and_the_last_layer_stays(page, served, split):
+    _open(page, served, {CC: _points_config(split, layers={"fill": True, "lines": True, "points": True})})
+    _drawn(page, "density2d")
+    for key in ("fill", "lines"):
+        page.uncheck(f"{S} .ccnt-layer--{key}")
+        _drawn(page, "density2d", f"!c.layers.{key}")
+    assert _layer_state(page) == {"points": True}
+    # nothing but points: nothing else drawn of the density
+    assert _points(page)["types"].count("contour") == 0
+    # the last layer cannot go: the status line says why, and the config is unchanged
+    page.click(f"{S} .ccnt-layer--points")
+    until(page, "(s) => /At least one layer stays on/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
+    assert page.is_checked(f"{S} .ccnt-layer--points") and _layer_state(page) == {"points": True}
+    # each layer change is one undo step
+    page.click(f"{S} .ccnt-layer--fill")
+    _drawn(page, "density2d", "c.layers.fill")
+    page.click(f"{S} .ccnt-undo")
+    _drawn(page, "density2d", "!c.layers.fill")
+    assert _layer_state(page) == {"points": True}
+
+
+def test_the_density_image_is_a_color_scale_for_one_group_and_opacity_where_groups_have_colors(page, served):
+    _open(page, served, {CC: _points_config(False)})
+    _drawn(page, "density2d")
+    assert "Density as color scale" in page.inner_text(f"{S} .ccnt-row--density")
+    assert "Density as opacity" not in page.inner_text(f"{S} .ccnt-row--density")
+    _open(page, served, {CC: _points_config(True)})
+    _drawn(page, "density2d")
+    assert "Density as opacity" in page.inner_text(f"{S} .ccnt-row--density")
+    assert "color scale" not in page.inner_text(f"{S} .ccnt-row--density")
+
+
+def test_isolines_alone_have_the_full_color_bar(page, served):
+    _open(page, served, {CC: _points_config(False, layers={"lines": True})})
+    _drawn(page, "density2d")
+    carrier = page.evaluate("""(s) => { const d = [...document.querySelector(s + ' .ccnt-plot').data];
+        return d.filter(t => t.type === 'heatmap' && t.opacity === 0 && t.showscale === true).length; }""", S)
+    assert carrier == 1
+    # a continuous bar, not the few levels of the lines: many fills
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot .colorbar .cbfill').length > 0", S)
+    assert page.evaluate("(s) => document.querySelectorAll(s + ' .ccnt-plot .colorbar .cbfill').length", S) >= 1
+    shot = os.environ.get("ANNZARRO_CDP_SHOTS")
+    if shot:
+        page.locator(f"{S} .ccnt-plot").screenshot(path=os.path.join(shot, "isolines-only-colorbar.png"))
+
+
+def test_point_size_and_opacity_are_in_the_display_pop_over_and_store_only_when_not_the_default(page, served):
+    _open(page, served, {CC: _points_config(True, layers={"points": True})})
+    _drawn(page, "density2d")
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
+    assert not page.locator(f"{S} .ccnt-row--density input[type=number]").count(), "no point control outside the pop-over"
+    before = page.evaluate("(s) => document.querySelector(s).getBoundingClientRect().height", S)
+    _pop(page)
+    assert page.evaluate("(s) => document.querySelector(s).getBoundingClientRect().height", S) == before, "the panel does not move"
+    assert page.get_attribute("[data-popover='color'] .ccnt-point-opacity", "placeholder") == "1"
+    alphas = page.evaluate("""(s) => [...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'scattergl')
+        .map(t => Number(/, ([\\d.]+)\\)$/.exec(t.marker.color)[1]))""", S)
+    assert alphas and set(alphas) == {1}, "opaque by default under a Color by"
+    page.fill("[data-popover='color'] .ccnt-point-opacity", "0.4")
+    page.press("[data-popover='color'] .ccnt-point-opacity", "Enter")
+    _drawn(page, "density2d", "c.pointOpacity === 0.4")
+    assert _undo_label(page) == "Undo: point opacity 0.4", "one undo step"
+    page.fill("[data-popover='color'] .ccnt-point-opacity", "1")
+    page.press("[data-popover='color'] .ccnt-point-opacity", "Enter")
+    _drawn(page, "density2d", "c.pointOpacity === undefined")
+    page.fill("[data-popover='color'] .ccnt-point-size", "5")
+    page.press("[data-popover='color'] .ccnt-point-size", "Enter")
+    _drawn(page, "density2d", "c.pointSize === 5")
+    page.fill("[data-popover='color'] .ccnt-point-size", "3")
+    page.press("[data-popover='color'] .ccnt-point-size", "Enter")
+    _drawn(page, "density2d", "c.pointSize === undefined")
+    # the density as the points' opacity is an option under a Color by
+    page.check("[data-popover='color'] .ccnt-point-fade")
+    _drawn(page, "density2d", "c.pointFade === true")
+    shot = os.environ.get("ANNZARRO_CDP_SHOTS")
+    if shot:
+        page.locator("[data-popover='color']").screenshot(path=os.path.join(shot, "display-popover-points.png"))
+
+
+def test_an_old_link_keeps_its_point_size(page, served):
+    _open(page, served, {CC: _points_config(False, layers={"points": True}, pointSize=7)})
+    _drawn(page, "density2d")
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
+    assert _points(page)["size"] == 7
+    _pop(page)
+    assert page.input_value("[data-popover='color'] .ccnt-point-size") == "7"
+
+
+@pytest.mark.parametrize("split", [True, False])
+def test_the_density_range_is_in_the_display_pop_over_with_auto_hints_and_a_reset(page, served, split):
+    _open(page, served, {CC: _points_config(split, layers={"fill": True, "image": True})})
+    _drawn(page, "density2d")
+    _pop(page)
+    hint = page.get_attribute("[data-popover='color'] .ccnt-color-max", "placeholder")
+    assert hint.startswith("auto"), hint
+    page.fill("[data-popover='color'] .ccnt-color-max", "0.02")
+    page.press("[data-popover='color'] .ccnt-color-max", "Enter")
+    _drawn(page, "density2d", "c.color && c.color.max === 0.02")
+    zmax = page.evaluate("""(s) => [...new Set([...document.querySelector(s + ' .ccnt-plot').data].filter(t => t.type === 'heatmap' || t.type === 'contour').map(t => t.zmax))]""", S)
+    assert zmax == [0.02], zmax
+    page.click("[data-popover='color'] .az-range__reset")
+    _drawn(page, "density2d", "!c.color || c.color.max === undefined")
+    shot = os.environ.get("ANNZARRO_CDP_SHOTS")
+    if shot:
+        page.locator("[data-popover='color']").screenshot(path=os.path.join(shot, f"display-popover-{'groups' if split else 'one'}.png"))

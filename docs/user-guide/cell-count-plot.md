@@ -22,28 +22,50 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 |---|---|
 | **Mode** | The kind of plot (below) |
 | **X**, **Y** (**Slices** in a pie) | The inputs. A numeric input shows its bins on one line, "Bins: equal width · 50 · auto range", which opens the binning control in a pop-over; a categorical one offers **Choose levels**, also in a pop-over |
-| **Color by** | Divides each bar, curve or slice by a further input: **Stacked**, **Side by side** (**Overlaid** in a histogram) or **100%** |
+| **Color by** | Divides each bar, curve or slice by a further input: **Stacked**, **Side by side** or **100%**; a histogram has **Overlaid** (each level's bars translucent, over the others) instead of **Side by side**, which is greyed out there because bins of a number cannot sit side by side (pointing at it says so) |
 | **Height** (bar, histogram), **Color** (2D histogram, heatmap, UpSet) | What the bars or rectangles show (below) |
 | **Labels** | Printed on bars, cells, slices and regions: **None**, **Count**, **Share** or **Statistic** |
 | **Sort by height**, **Reverse**, **Horizontal**, **Log count axis**, **Ring** | Order and orientation of bars, a logarithmic count axis (bar, histogram), and a pie drawn as a ring. Each is shown only in the modes that have it |
 | **Smoothing**, **Scale curves by level size**, and for a 2D density **Density as opacity**, **Isolines**, **Filled isolines** | The density modes' own row, with the bandwidth and range notes under it |
 | **Fade by its share** | Under the most frequent level's factor, in a 2D histogram or heatmap |
 | **Save as grouping** | On the toolbar: turns the plot's bars into a {doc}`cell-grouping` |
-| **Color ▾** | On the toolbar, where the plot has a colour scale or colours levels (below) |
-| **Download CSV** | On the toolbar: the plotted table as a CSV |
+| **Display ▾** | On the toolbar, where the plot has a colour scale, colours levels, or is a 2D density (below) |
 | **Undo** | Undoes the last change |
+| **Plot Options** | On the toolbar, last: the look of the figure, its export and **Download CSV** (below) |
 
-**Pop-overs.** **Choose levels**, the binning line and **Color ▾** open small windows over the plot. They never change the
+**Plot Options** opens a pop-over over the plot, the same as the Cell-Gene Plot's, with this plot's own defaults. It
+leaves the panel's layout as it is and closes with its button, its **×**, Escape or a click outside it.
+
+| Section | Controls |
+|---|---|
+| Presets | **Default** (the session default, or the built-in look), **Publication** (white, black text and lines, Arial 16, no grid), **Bare** (no grid, axis lines or legend) |
+| Text | **Font**, **Font size**, **Text color**, **Plot title**, **Title size** |
+| Background | **Background** |
+| Axes | **Grid lines** (on by default), **Grid color**, **Grid width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**, **Axis titles**, **Tick labels**, **Zero lines**, **Ticks, about** (the count axis; a category axis keeps one tick per level) |
+| Legend | **Show legend**, **Legend title**, **Position** (right, bottom, top or left), **Space** (at most this share of the width for a legend beside the plot; longer labels are cut short, with the full name in hover), **Column gap**, **Columns**, **Entries, at most** (25) |
+| Margins | Room added on each side, in px |
+| Export | **PNG**, **SVG**, **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV**, the plotted table |
+| Apply | **Apply to other Cell Count plots**; **Make this the session default**, **Back to built-in** |
+
+A legend with more levels than **Entries, at most** lists the first ones and a last line "+ 3 more"; every level is still
+drawn, and a click on an entry still hides its bars. A pie's slices listed this way are not hidden by a click.
+
+**Pop-overs.** **Choose levels**, the binning line and **Display ▾** open small windows over the plot. They never change the
 size of the panel or move the plot, and a change in one applies at once, as one undo step. **Escape**, a click outside or
 the **×** closes them, and **Escape** puts the focus back on the button that opened it. Only one is open at a time.
 
-**Colour.** **Color ▾** shows when a colour scale or a palette applies: a 2D histogram, a 2D density without a Color by,
-a heatmap's number, an UpSet coloured by a share or a statistic, and any plot with a Color by. It holds the **Map**
-(Viridis by default), **Reverse**, **Min**, **Max** and **Center** of the scale (Center has no effect while both Min and Max
-are set), and the **Level palette** of a Color by's levels. **Reset** returns them all to
-the defaults. A box that is not set says "auto" with the value the plot draws, such as "auto (412)"; type a number to fix it, or clear
-the box. The **↺** button beside the boxes returns **Min**, **Max** and **Center** to auto in one undo step. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
-gets the full colour of every level.
+**Display.** **Display ▾** holds how the data is drawn: the colour scale and palette, the density range, and the Cell points'
+size and opacity. It shows when a colour scale or a palette applies: a 2D histogram, a 2D density, a heatmap's number, an UpSet
+coloured by a share or a statistic, and any plot with a Color by. It holds the **Map** (Viridis by default), **Reverse**,
+**Min**, **Max** and **Center** of the scale (Center has no effect while both Min and Max are set), and the **Level palette**
+of a Color by's levels. **Reset** returns them all to the defaults. A box that is not set says "auto" with the value the plot
+draws, such as "auto (412)"; type a number to fix it, or clear the box. The **↺** button beside the boxes returns **Min**,
+**Max** and **Center** to auto in one undo step. A 2D histogram with a Color by has no scale, only the palette, and **Max**
+is then the cell count that gets the full colour of every level. For a 2D density the boxes are the **Density range** (below).
+
+**Colours.** The bars, slices and curves of a **Color by** input are in the colours of its levels: a column's stored
+colours when it has them, else the app's group colours; for a {doc}`cell-grouping`, the grouping's own colours of its
+groups, so a bar is the colour of the group's swatch (see Colours in {doc}`cell-grouping`).
 
 Switching mode keeps every input: those the new mode uses stay in place, and the others are kept for when you switch
 back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: in Table 1, in Table 2".
@@ -53,8 +75,8 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 | Mode | Inputs | Counts | Drawn as |
 |---|---|---|---|
 | **Bar** | X (categorical or binned), Color by | Cells per level, and per level of Color by | Bars, vertical or horizontal |
-| **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars without gaps, stacked or overlaid |
-| **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring |
+| **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars at their bins' values (or evenly, for log and other bins), without gaps, in the number's order; stacked, overlaid or 100% |
+| **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring. Printed numbers sit at one distance from the centre, the middle of a ring's band (three quarters of the radius, in a pie too), so **Ring** moves none of them; a slice under 3% of the cells shows its number in its hover only |
 | **2D histogram** | X and Y numeric, Color by up to 8 levels | Cells per pair of bins, 100 × 100 by default, per level of Color by | Rectangles; with Color by, one layer per level |
 | **Heatmap** | X and Y (categorical or binned) | Cells per pair of levels | Rectangles, with values printed if asked |
 | **Density** | X numeric, Color by | 512 bins per level of Color by, smoothed in the browser | Curves |
@@ -62,7 +84,13 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 | **Venn** | 2 or 3 sets | Cells in every region | Circles with counts and shares |
 | **UpSet** | 2 to 16 sets | Cells in every exclusive intersection, and each set's size | Intersection bars over a matrix of dots, with set-size bars |
 
-An input the mode cannot use stays selected and the plot says what is missing, with a way out: "Histogram needs a
+**Bar or Histogram follows X.** Choosing a number as **X** makes a Bar a **Histogram**; **Bar** stays in the list and
+draws the number's bins as categories (chosen for a number, it is kept). With a categorical X, **Histogram** is greyed out
+in the **Mode** list, and pointing at it says "Histogram needs a numeric axis." Categories chosen while a Histogram is shown
+make it a Bar. Each switch is said once beside **Mode**, and **Undo** takes it back with the change of X. A link saved as a
+Histogram of categories opens as a Bar, with "Histogram needs a numeric axis, so this plot is drawn as Bar."
+
+An input the mode cannot use stays selected and the plot says what is missing, with a way out: "Density needs a
 numeric X. cell_type is categorical." with **Show as Bar**; "Venn shows 2 or 3 sets." with **Show as UpSet**.
 
 ## Bins and ranges
@@ -111,29 +139,35 @@ narrower than the grid can show, it is raised: "Bandwidth raised to the grid's r
 Curves are each scaled to an area of 1 by default; **Scale curves by level size** scales them by their cells instead.
 In 2D the bandwidth is per axis and ignores the correlation between X and Y, unlike `scipy.stats.gaussian_kde`.
 
-A 2D density has three layers in **Plot Options**, which you can combine freely (at least one stays on):
+A 2D density has four layers in its row of controls, which you can combine freely. At least one stays on: with **Cell points**
+on, the three density layers can all be switched off, leaving the points alone; unticking the last layer is refused and the
+status line says why.
 
 - **Filled isolines**: bands of the density, each band one opacity of the color, stepping up with the density.
 - **Isolines**: lines at the same density levels.
-- **Density as opacity**: a smooth image in which the density is the opacity of the color.
+- **Density as opacity** (with a Color by) or **Density as color scale** (one group): a smooth image of the density, as the
+  opacity of each group's color, or on the color map.
 - **Cell points**: each cell as a point at its place, drawn over the other layers.
 
 With a **Color by** the default is *Filled isolines* with *Isolines*: each group in its own color, its bands stepping up
 from transparent, on **one set of density levels shared by all groups**, so a band means the same density in every
 group, and a group with little density stays faint beside a dense one. The layers blend where groups overlap. With one
-group the default is *Filled isolines* in a color map: **Color ▾** sets the map, **Reverse** and the **Min** and **Max**
-of the scale, and a color bar names the densities. Over *Density as opacity*, one group's filled isolines are drawn at
+group the default is *Filled isolines* in a color map: **Display ▾** sets the map, **Reverse** and the **Min** and **Max**
+of the scale, and a color bar always shows the full scale, even when only isolines are drawn. Over *Density as opacity*, one group's filled isolines are drawn at
 reduced opacity so the image shows through. With **Scale curves by level size** off, each group's density has an area
 of 1; with it on, a group is weighted by its share of the cells. A link made with the earlier *As an image* or *contours*
 setting opens with the matching layers.
 
-**Cell points** colors each cell by the density of its group where it lies: with a Color by, in the group's color with
-the density as the opacity, in eight steps on the same scale as the other layers; with one group, on the color map. The
+**Cell points** colors each cell by the density of its group where it lies: with a Color by, in the group's color; with one group, on the color map. The
 density at a cell is read from the same smoothed grid the isolines come from, so the points and the contours agree. The
-positions of the cells are loaded as a Cell Plot loads them, so **X** and **Y** must be an obs column, an embedding or a
-gene, and a Color by an obs column of categories; for anything else the strip says what to change. **Point size** (1 to
-12 pixels, 3 by default) sits beside the layer. The plot draws at most 1,000,000 points: above that it draws a seeded
-random sample (the same cells each time) and the strip says "Cells drawn as points: 1,000,000 of 12,345,678 (a sample)."
+positions of the cells are loaded as a Cell Plot loads them, so **X** and **Y** must be an obs column, an embedding, a
+gene or a gene score. The Color by can be an obs column of categories, a {doc}`cell-grouping` (each cell in its
+group's color), or a number, which each cell is binned into by the plot's own bin edges; for anything else the strip says
+what to change. The **Display ▾** pop-over holds the points' **Size** (1 to
+12 pixels, 3 by default) and **Opacity** (0.05 to 1, 1 by default, with or without a Color by); with a Color by, **Density as
+opacity** lets the points take the density as their opacity, up to that opacity. The **Density range** (**Min** and **Max**
+of the density) maps the opacity, spaces the isoline levels and steps the points alike, in every layer and every group. The plot draws at most 1,000,000 points: above that it draws a seeded
+random sample (the same cells each time) and the strip says "Cells drawn as points: 998,812 of a random sample of 1,000,000 of the 12,345,678 cells." The first number is the points on the plot: cells outside the density's range are not drawn
 The density itself always counts every cell. With more than 25,000,000 cells shown the layer is not drawn, because every
 cell's position would have to be loaded: turn on a subset. Hovering shows the density grid's x, y, group and density at
 that place, not a single cell, and the CSV stays the table of counts.
@@ -216,5 +250,5 @@ cell)." A plot that would make more than 2,000 groups keeps the dialog with **Sa
 make 6,840 groups; a grouping holds up to 2,000. Use fewer bins first."). Densities and the sets modes have no Save as
 grouping.
 
-**Download CSV**, also on the toolbar, saves the plotted numbers (levels, cells, share and the statistic). There is no
+**Download CSV**, in Plot Options ▸ Export, saves the plotted numbers (levels, cells, share and the statistic). There is no
 table of them in the panel; the CSV is the table.

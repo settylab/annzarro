@@ -14,9 +14,9 @@ import { groupSources, sourceTitleOf } from '../../utils/group-host.js';
 import { codesRefusal } from '../../utils/cell-group-source.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { cellExportEntry } from './cell-export.js';
-import { groupColours as colorsOf, sourceName } from '../../utils/cell-grouping.js';
-import { groupColours as hueColours } from '../plot-utilities/colors.js';
-import { GROUP_COLOURS } from '../../utils/categories.js';
+import { sourceName } from '../../utils/cell-grouping.js';
+import { toHex, withGroupColor, withGroupLabel, withoutGroupOverride, withoutInactiveOverrides } from './colours.js';
+import { groupOverrideState } from '../../utils/grouping-colours.js';
 import { noGroupReasons } from './status.js';
 import { smallOf } from './settings.js';
 import { groupRows, shareText, filterRows, reasonRows, crossTable, listColumns, listCsv, crossCsv } from './group-rows.js';
@@ -29,7 +29,6 @@ const COLUMN_WIDTH = 84;
 /** The list's columns: name, cells, share. */
 const LIST_COLUMNS = 'minmax(9rem, 1fr) 4.5rem 4rem';
 const SMALL_TITLE = 'Under 10 cells: statistics are unreliable';
-const PALETTE = hueColours(GROUP_COLOURS);
 
 /**
  * Hand a text to the user as a file.
@@ -118,8 +117,12 @@ function mount(host, ctx) {
         if (!s) return null;
         const reply = s.reply;
         const names = groupSources().sources.namesOf(ctx.panelId, reply);
-        const colors = colorsOf(s.made, reply, PALETTE);
+        // the colours the recipe has now (a colour change asks for nothing), the same in every panel that draws the groups
+        const got = groupSources().sources.coloursOf(ctx.panelId, reply);
+        const colors = got.groups;
         const rows = groupRows({ reply, names, colors, small: smallOf(s.made) });
+        // a group's own settings are keyed by its generated name (decision 38): every row knows it
+        for (const r of rows) r.generated = got.generated[r.index];
         const levelName = (j, id) => {
             const k = s.index.indexOf(j);
             const live = k >= 0 ? recipe.partitionings[k] : null;
@@ -128,7 +131,8 @@ function mount(host, ctx) {
         const cross = crossTable({ reply, levelName });
         const factor = (i) => (s.made.partitionings[i] ? sourceName(s.made.partitionings[i].source, sourceTitleOf) : '');
         const reasons = () => reasonRows(noGroupReasons(s.made, reply, factor));
-        return { recipe, reply, rows, cross, factor, reasons, total: rows.length, reasonList: null };
+        const overrides = new Map((Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : []).map((o) => [o.name, o]));
+        return { recipe, reply, rows, cross, factor, reasons, total: rows.length, reasonList: null, generated: got.generated, overrides, namesRef: names, coloursRef: got };
     }
 
     // ---------------------------------------------------------------------------------- the list
@@ -147,16 +151,60 @@ function mount(host, ctx) {
     }
 
     function listParts(row) {
-        const swatch = el('span', { class: 'cgg-swatch', aria: { hidden: 'true' } });
+        // a click on the swatch opens the browser's color picker: the group's own color, one undo step. It is not a tab stop
+        // (the grid keeps its one, the row): Enter or Space on a focused row opens it (openPicker)
+        const input = el('input', { type: 'color', class: 'cgg-swatch-input', tabindex: '-1' });
+        const swatch = el('span', { class: 'cgg-swatch' }, input);
         const name = el('span', { class: 'cgg-name' });
-        const first = el('div', { class: 'cgg-cell cgg-cell--name', role: 'gridcell' }, swatch, name);
+        // ✎ and Reset: shown on hover and focus, never tab stops (the row is the grid's one): F2 on a row renames it. Their glyphs are
+        // CSS content, so a cell's text stays the group's name
+        const renameBtn = el('button', { type: 'button', class: 'btn btn-sm btn-link cgg-rowbtn cgg-rename', tabindex: '-1' });
+        const resetBtn = el('button', { type: 'button', class: 'btn btn-sm btn-link cgg-rowbtn cgg-reset', tabindex: '-1', hidden: true });
+        const first = el('div', { class: 'cgg-cell cgg-cell--name', role: 'gridcell' }, swatch, name, renameBtn, resetBtn);
         const cells = el('div', { class: 'cgg-cell cgg-num cgg-cells cgg-narrow-hide', role: 'gridcell' });
         const share = el('div', { class: 'cgg-cell cgg-num cgg-share cgg-narrow-hide', role: 'gridcell' });
         row.append(first, cells, share);
-        return { first, swatch, name, cells, share, pill: null };
+        input.addEventListener('change', () => pickColor(row, input.value));
+        row.addEventListener('keydown', (e) => {
+            if (e.target === row && e.key === 'F2' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                const r = shownRows[Number(row.dataset.shownIndex)];
+                if (r && r.generated) { e.preventDefault(); startRename(r); }
+                return;
+            }
+            if (e.target !== row || (e.key !== 'Enter' && e.key !== ' ') || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (openPicker(row)) e.preventDefault();
+        });
+        const rowOf = () => shownRows[Number(row.dataset.shownIndex)];
+        name.addEventListener('dblclick', () => { const r = rowOf(); if (r && r.generated) startRename(r); });
+        renameBtn.addEventListener('click', () => { const r = rowOf(); if (r && r.generated) startRename(r); });
+        resetBtn.addEventListener('click', () => { const r = rowOf(); if (r && r.generated) resetGroup(r); });
+        return { first, swatch, input, name, cells, share, pill: null, renameBtn, resetBtn };
     }
 
     const parts = new WeakMap();
+
+    /** The user chose a color for the group of a row: it is the group's override. */
+    function pickColor(row, css) {
+        const r = shownRows[Number(row.dataset.shownIndex)];
+        if (r) setGroupColor(r, css);
+    }
+
+    /** One group's own color, one undo step; keyed by the group's generated name (decision 38), so it holds while a group of that name exists. */
+    function setGroupColor(r, css) {
+        if (!r || !r.key || typeof r.generated !== 'string' || typeof ctx.set !== 'function') return;
+        ctx.set({ groupOverrides: withGroupColor(ctx.recipe(), r.generated, css) }, `color group ${r.name}`);
+    }
+
+    /** Open the color picker of a row's group from the keyboard; false when the row's group takes no color (a reason). */
+    function openPicker(row) {
+        const p = parts.get(row);
+        if (!p || p.swatch.hidden || p.input.disabled) return false;
+        if (typeof p.input.showPicker === 'function') {
+            try { p.input.showPicker(); return true; } catch { /* not allowed here: a click opens it */ }
+        }
+        p.input.click();
+        return true;
+    }
 
     function buildListRow(row) {
         row.classList.add('cgg-row');
@@ -173,8 +221,26 @@ function mount(host, ctx) {
         row.classList.toggle('cgg-row--reason', reasons);
         p.name.textContent = r.name;
         p.name.title = r.name;
+        row.dataset.shownIndex = String(i);
+        const editing = !reasons && !!renaming && r.generated === renaming.name;
+        placeEditor(p, r, editing);
+        const custom = !reasons && !!model.overrides.get(r.generated);
+        p.renameBtn.hidden = reasons || !r.generated || editing;
+        p.renameBtn.setAttribute('aria-label', `Rename ${r.name}`);
+        p.renameBtn.title = `Rename ${r.name} (F2)`;
+        p.resetBtn.hidden = !custom || editing;
+        p.resetBtn.setAttribute('aria-label', `Reset the name and color of ${r.name}`);
+        p.resetBtn.title = 'Back to the generated name and the default color';
         p.swatch.style.backgroundColor = r.color || 'transparent';
-        p.swatch.hidden = !r.color;
+        p.swatch.hidden = !r.color || editing;
+        const input = p.input;
+        input.setAttribute('aria-label', `Color of ${r.name}`);
+        input.title = `Set the color of ${r.name}`;
+        input.value = toHex(r.color);
+        input.disabled = reasons || !r.key;
+        // the row says its keys: Enter or Space opens its group's color picker
+        if (input.disabled || !r.color) row.removeAttribute('aria-keyshortcuts'); else row.setAttribute('aria-keyshortcuts', 'Enter Space');
+        if (p.pill) p.pill.hidden = editing;
         if (r.small && !p.pill) {
             p.pill = el('span', { class: 'cgg-small', title: SMALL_TITLE }, 'small');
             p.first.append(' ', p.pill);
@@ -186,6 +252,158 @@ function mount(host, ctx) {
         p.cells.textContent = r.n === null ? '' : fmt(r.n);
         p.share.textContent = r.share === null ? '' : shareText(r.share);
         if (!reasons) row.title = `${r.name}: ${fmt(r.n)} cells, ${shareText(r.share)}`;
+    }
+
+    // ---------------------------------------------------------------------------------- naming a group
+
+    /**
+     * The name editor of a group (decision 38): the group's own color beside the field, ✓ and ✕. It is one element moved into
+     * the row that shows the group being edited, so a redraw of the rows never takes the field a user types in. The rules
+     * are the level rename's: Enter or ✓ or a click elsewhere saves, Escape or ✕ cancels, Tab saves and edits the next group.
+     * Nothing asks the server: a group's name is a label, keyed by its generated name.
+     */
+    let renaming = null;                // {name: generated name, draft?: string, fresh: boolean}
+    let editor = null;
+    let focusRowAfter = null;           // generated name of the row that takes the focus after the next redraw
+
+    function ensureEditor() {
+        if (editor) return editor;
+        const input = el('input', { type: 'text', class: 'form-control form-control-sm cgg-edit__name', autocomplete: 'off', spellcheck: 'false',
+            data: { azOwnEscape: '' }, title: 'Enter saves, Escape cancels, Tab saves and moves to the next group.',
+            aria: { label: 'New name of the group', description: 'Enter saves, Escape cancels, Tab saves and moves to the next group.' } });
+        const color = el('input', { type: 'color', class: 'cgg-edit__color', title: 'Color of this group (Alt+C)',
+            aria: { label: 'Color of this group', keyshortcuts: 'Alt+C' } });
+        const ok = el('button', { type: 'button', class: 'btn btn-sm btn-outline-success cgg-edit__ok', title: 'Save the name',
+            aria: { label: 'Save the new name of the group' } }, '✓');
+        const cancel = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgg-edit__cancel', title: 'Cancel',
+            aria: { label: 'Cancel renaming the group' } }, '✕');
+        const box = el('span', { class: 'cgg-edit', role: 'group', aria: { label: 'Rename the group' } }, color, input, ok, cancel);
+        editor = { box, input, color, ok, cancel };
+        input.addEventListener('input', () => { if (renaming) renaming.draft = input.value; });
+        const escape = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leaveRename(false); } };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); leaveRename(true); }
+            else if (e.key === 'Tab') { e.preventDefault(); leaveRename(true, e.shiftKey ? -1 : 1); }
+            else if (e.altKey && e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                if (typeof color.showPicker === 'function') { try { color.showPicker(); } catch { color.click(); } } else color.click();
+            } else escape(e);
+        });
+        for (const b of [ok, cancel, color]) b.addEventListener('keydown', escape);
+        for (const b of [ok, cancel]) b.addEventListener('mousedown', (e) => e.preventDefault());       // a press keeps the focus in the field
+        ok.addEventListener('click', () => leaveRename(true));
+        cancel.addEventListener('click', () => leaveRename(false));
+        color.addEventListener('change', () => {
+            const r = renaming && model && model.rows.find((x) => x.generated === renaming.name);
+            if (r) setGroupColor(r, color.value);
+        });
+        // Leaving the field by a click saves it, once the click has landed (a redraw between press and release would take the
+        // control pressed from under it); the first of the click, the release or a short timer decides. A redraw that takes the
+        // field away blurs it too, and is no way out.
+        box.addEventListener('focusout', (e) => {
+            if (!renaming || (e.relatedTarget && box.contains(e.relatedTarget))) return;
+            let done = false;
+            const later = () => {
+                if (done) return;
+                done = true;
+                document.removeEventListener('click', later, true);
+                document.removeEventListener('pointerup', later, true);
+                setTimeout(() => { if (renaming && box.isConnected) leaveRename(true); }, 0);
+            };
+            document.addEventListener('click', later, true);
+            document.addEventListener('pointerup', later, true);
+            setTimeout(later, 350);
+        });
+        return editor;
+    }
+
+    /** Show the editor in the row of the group being renamed, and the group's name in every other row. */
+    function placeEditor(p, r, editing) {
+        p.first.classList.toggle('is-editing', editing);
+        p.name.hidden = editing;
+        if (!editing) {
+            if (editor && editor.box.parentNode === p.first) editor.box.remove();
+            return;
+        }
+        const e = ensureEditor();
+        if (e.box.parentNode !== p.first) {
+            e.input.value = renaming.draft !== undefined ? renaming.draft : r.name;
+            p.first.append(e.box);
+        }
+        e.color.value = toHex(r.color);
+        if (renaming.fresh) {
+            renaming.fresh = false;
+            setTimeout(() => { if (e.input.isConnected) { e.input.focus(); e.input.select(); } }, 0);
+        }
+    }
+
+    function startRename(r) {
+        if (!r || !r.generated || gridView !== 'list') return;
+        renaming = { name: r.generated, draft: undefined, fresh: true };
+        grid.refresh();
+    }
+
+    /** Leave the field: `keep` saves it; `move` (1 or -1) goes on to the next or the previous group in the list. */
+    function leaveRename(keep, move = 0) {
+        if (!renaming) return;
+        const cur = renaming;
+        renaming = null;
+        const at = shownRows.findIndex((x) => x.generated === cur.name);
+        const r = shownRows[at];
+        const text = editor ? editor.input.value.trim() : '';
+        const target = move && shownRows[at + move] && shownRows[at + move].generated ? shownRows[at + move] : null;
+        if (target) renaming = { name: target.generated, draft: undefined, fresh: true };
+        else focusRowAfter = cur.name;
+        if (keep && r && typeof ctx.set === 'function' && text !== r.name) {
+            // the generated name is what a group is called without a label: typing it back is Reset for the name
+            ctx.set({ groupOverrides: withGroupLabel(ctx.recipe(), cur.name, text === cur.name ? '' : text) }, `rename group ${r.name}`);
+        }
+        if (model) grid.refresh();
+        if (!target) {
+            setTimeout(() => {
+                const idx = shownRows.findIndex((x) => x.generated === cur.name);
+                const row = grid && idx >= 0 ? grid.element.querySelector(`.cgg-row[data-shown-index="${idx}"]`) : null;
+                if (row && focusRowAfter === cur.name) row.focus({ preventScroll: true });
+                focusRowAfter = null;
+            }, 0);
+        }
+    }
+
+    /** Back to the generated name and the default color: the group's override goes. */
+    function resetGroup(r) {
+        if (typeof ctx.set === 'function') ctx.set({ groupOverrides: withoutGroupOverride(ctx.recipe(), r.generated) }, `reset group ${r.name}`);
+    }
+
+    // ---------------------------------------------------------------------------------- overrides no group has now
+
+    const inactiveBox = el('div', { class: 'cgg__inactive', hidden: true, role: 'region', aria: { label: 'Names and colors no group has now' } });
+    root.appendChild(inactiveBox);
+
+    /**
+     * The overrides no current group's generated name matches (a factor changed, a dataset switched, edges moved): kept, listed
+     * here muted with what they set, and removed only by Drop. They apply again when a group of that name is back.
+     */
+    let inactiveKey = null;
+
+    function paintInactive() {
+        const state = groupOverrideState(model.recipe, model.generated);
+        const key = JSON.stringify(state.inactive);
+        if (key === inactiveKey) return;           // drawn again only when it changed, so a Drop button keeps its focus
+        inactiveKey = key;
+        D.clear(inactiveBox);
+        inactiveBox.hidden = !state.inactive.length;
+        if (!state.inactive.length) return;
+        inactiveBox.append(el('div', { class: 'cgg__inactive-head' },
+            el('span', { class: 'cgg__inactive-title', text: 'Not in these groups', title: 'Names and colors set for groups that no group has now. They apply again if a group of that name returns.' }),
+            state.inactive.length > 1 ? el('button', { type: 'button', class: 'btn btn-sm btn-link cgg-drop-all',
+                on: { click: () => ctx.set({ groupOverrides: withoutInactiveOverrides(ctx.recipe(), model.generated) }, 'drop inactive group settings') } }, 'Drop all inactive') : null));
+        for (const o of state.inactive) {
+            inactiveBox.append(el('div', { class: 'cgg-inactive-row', data: { name: o.name } },
+                el('span', { class: 'cgg-swatch', style: o.color ? `background-color:${o.color}` : '', hidden: !o.color, aria: { hidden: 'true' } }),
+                el('span', { class: 'cgg-inactive-name', text: o.label ? `${o.name} → ${o.label}` : o.name }),
+                el('button', { type: 'button', class: 'btn btn-sm btn-link cgg-drop', aria: { label: `Drop the settings of ${o.name}` },
+                    on: { click: () => ctx.set({ groupOverrides: withoutGroupOverride(ctx.recipe(), o.name) }, `drop settings of ${o.name}`) } }, 'Drop')));
+        }
     }
 
     // ---------------------------------------------------------------------------------- the cross-table
@@ -312,7 +530,11 @@ function mount(host, ctx) {
             return;
         }
         root.hidden = false;
-        if (!model || model.reply !== reply || model.recipe !== recipe) {
+        // the names and colours are made once per reading of the reply: another grouping this one is built on may have been renamed
+        // or recoloured with nothing in this recipe or reply changing
+        const named = groupSources().sources.namesOf(ctx.panelId, reply);
+        if (!model || model.reply !== reply || model.recipe !== recipe || model.namesRef !== named
+            || model.coloursRef !== groupSources().sources.coloursOf(ctx.panelId, reply)) {
             model = makeModel(recipe);
             if (!model) { root.hidden = true; return; }
         }
@@ -335,6 +557,8 @@ function mount(host, ctx) {
             paintRows({ top });
         }
         paintTitle();
+        paintInactive();
+        paintInactive();
     }
     let gridModel = null;
     let rowsFor = { model: null, key: null };

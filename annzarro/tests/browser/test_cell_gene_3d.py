@@ -356,17 +356,16 @@ def test_labels_switch_sides_while_the_scene_is_dragged(page, served, mode):
 
 def test_3d_label_options_side_and_justify_are_undoable_and_hidden_in_2d(page, served):
     st = _open3d(page, served, mode="heatmap")
-    page.click(f"{TP} .cgene-options-btn")
-    section = "[data-popover='plot-options'] .cgene-labels3d"
-    page.wait_for_selector("[data-popover='plot-options']", state="visible")
-    assert page.locator(section).is_hidden(), "only in 3D"
-    page.keyboard.press("Escape")
+    _plot_options(page)
+    section = "[data-popover='plot-options'] [data-section='axes']"
+    assert page.locator(f"{section} [data-option='labels3dSide']").count() == 0 or page.locator(f"{section} [data-option='labels3dSide']").is_hidden(), "only in 3D"
+    page.click("[data-popover='plot-options'] .az-popover-close")
     page.click(f"{TP} .cgene-3d-btn")
     _mesh_drawn(page)
     _labels(page)
     undo = _state(page)["undo"]
-    page.click(f"{TP} .cgene-options-btn")
-    page.wait_for_selector(section, state="visible")
+    _plot_options(page)
+    page.wait_for_selector(f"{section} [data-option='labels3dSide']", state="visible")
     assert page.input_value(f"{section} [data-option='labels3dSide']") == "auto"
     assert page.input_value(f"{section} [data-option='labels3dJustify']") == "auto"
     page.select_option(f"{section} [data-option='labels3dJustify']", "center")
@@ -421,10 +420,17 @@ def test_labels_switch_live_and_the_camera_keeps_turning_through_the_switch(page
     assert sum(steps) > 10, ("the camera moved on", steps)
 
 
-def _set_option(page, name, value, kind="select"):
-    sel = f"[data-popover='plot-options'] [data-option='{name}']"
+def _plot_options(page):
+    """Plot Options open, every section unfolded (the shared pop-over folds Axes and others, WP-5a)."""
     if page.locator("[data-popover='plot-options']").count() == 0 or page.locator("[data-popover='plot-options']").is_hidden():
         page.click(f"{TP} .cgene-options-btn")
+    page.wait_for_selector("[data-popover='plot-options']", state="visible")
+    page.evaluate("() => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach(d => { d.open = true; })")
+
+
+def _set_option(page, name, value, kind="select"):
+    sel = f"[data-popover='plot-options'] [data-option='{name}']"
+    _plot_options(page)
     page.wait_for_selector(sel, state="visible")
     if kind == "select":
         page.select_option(sel, value)
@@ -457,7 +463,7 @@ def test_rotation_horizontal_angle_and_along_the_axis_as_rendered(page, served):
     assert set(page.evaluate(ROTATIONS, PLOT)) == {0}, "Horizontal by default"
     _set_option(page, "labels3dRotation", "angle")
     _set_option(page, "labels3dAngle", 30, kind="fill")
-    until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().labels3d || {}).rotation === 30", P)
+    until(page, "(id) => { const l = window.PanelManager.getPanel(id).getConfig().labels3d || {}; return l.rotation === 'angle' && l.angle === 30; }", P)
     until(page, "([s, f]) => { const r = (" + ROTATIONS + ")(s); return r.length > 0 && r.every(v => v === 30); }", [PLOT, ""])
     _set_option(page, "labels3dRotation", "along")
     until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().labels3d || {}).rotation === 'along'", P)

@@ -471,32 +471,19 @@ test('a layer the dataset does not have is its own state, from the server\'s not
     assert.deepEqual(note.actions.map(a => a[0]), ['score-open', 'score-choose']);
 });
 
-test('a consumer on an option the signature no longer offers keeps drawing it, says so and asks nothing of the server', async () => {
+test('decision 31: a consumer on any method and layer is simply valid: no "Not offered" state, the adapter asks nothing', async () => {
     const w = world();
     w.add('S1', 'T', ['A']);
-    // the same world, with the signature's offers consulted
-    const store = w.store;
-    let offered = true;
-    const sources = D.createScoreSources({ store, signatures: { get: (id) => w.sigs.get(id) || null, off: () => false, offers: () => offered },
-        context: () => ({ ...w.ctx }) });
+    // a signature adapter that still says what it would offer is not asked: there is no such question any more
+    const sources = D.createScoreSources({ store: w.store, signatures: { get: (id) => w.sigs.get(id) || null, off: () => false,
+        offers: () => { throw new Error('offers is not asked'); } }, context: () => ({ ...w.ctx }) });
     const handle = sources.watch('S1', { onChange() {}, kind: 'plot', sub: 'mean', layer: 'counts' });
     handle.read();
     await settle();
     w.finish(0);
     await settle();
-    assert.equal(handle.read().state, 'ready');
-    offered = false;
     const snap = handle.read();
-    assert.equal(snap.state, 'ready', 'it keeps what it has');
-    assert.equal(snap.lapsed, true);
-    assert.ok(snap.values, 'and keeps drawing');
-    assert.equal(snap.layer, 'counts');
-    const note = N.describeScore({ ...snap, title: 'T' }, { role: 'x' });
-    assert.equal(note.headline, "'T' no longer offers mean · counts.");
-    assert.equal(note.blocksAxis, false);
-    assert.deepEqual(note.actions[0], ['score-offer', 'Offer it again']);
-    offered = true;
-    assert.equal(handle.read().lapsed, undefined);
-    assert.equal(handle.read().state, 'ready', 'offered again: the score is still in the store');
-    assert.equal(w.calls.compute.length, 1);
+    assert.equal(snap.state, 'ready');
+    assert.equal(snap.lapsed, undefined);
+    assert.equal(N.describeScore({ ...snap, title: 'T' }, { role: 'x' }), null, 'a ready score says nothing');
 });

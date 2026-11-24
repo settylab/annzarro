@@ -218,7 +218,8 @@ def test_f1_add_a_signature_type_a_gene_and_use_it(page, served):
     # the first view: the full gene list, a default score, nothing to configure
     assert page.inner_text(f"{tile} .gsig-summary").startswith("Tick genes to build a score")
     assert "2,000" not in page.inner_text(f"{tile} .gsig-summary"), "there is no limit to state"
-    assert page.inner_text(f"{tile} .gsig-scoring__summary") == "z-score mean, mean, sum · X"
+    assert page.get_attribute(f"{tile} [data-methods]", "data-nondefault") == "false", "every method at its default settings"
+    assert page.locator(f"{tile} [data-distribution]").count() == 1
     assert page.get_attribute(f"{tile} .gsig-grid", "aria-rowcount") == "3000"
     assert page.inner_text(f"{tile} .gsig-viewswitch .active") == "All genes 3,000"
     assert page.locator(f"{tile} .gsig-usein").count() == 0, "no Use in menu: consumers choose the signature in their own source menus"

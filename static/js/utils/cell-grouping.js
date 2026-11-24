@@ -1,12 +1,19 @@
 /**
  * The recipe of a cell grouping and what is made of it: the versioned normaliser, the hash a result is cached under,
- * the names and colours of the groups, and the request body (plan 1.6, PER-3, SHR-8 to SHR-12).
+ * the names of the groups, and the request body (plan 1.6, PER-3, SHR-8 to SHR-12).
  *
- * A grouping's recipe is `{version, partitionings, separator?, small?, detect_above?}` (with the retired `offered?,
- * layers?` of decision 31 read as stored, never flagged) and a
- * partitioning (a factor; the count plot's inputs are the same shape) is `{source, levels?, rest?, labels?, binning?}`.
- * It is stored without its defaults, with every unknown field kept, so an older build opening a newer link loses
- * nothing. After release 0.8.0 a change to this schema needs a new version and a migration.
+ * A grouping's recipe is `{version, partitionings, separator?, small?, detect_above?, colors?, groupOverrides?}` (with
+ * the retired `offered?, layers?` of decision 31 read as stored, never flagged) and a
+ * partitioning (a factor; the count plot's inputs are the same shape) is `{source, levels?, rest?, labels?, binning?,
+ * colors?}`. `colors` is how it is coloured (utils/grouping-colours.js): a factor's is `{palette?: string,
+ * overrides?: {levelId: css}}`, a grouping's `{by?: factor index, palette?: string}` (`by` absent: the grouping's own
+ * palette). `groupOverrides` is what the user set for single groups (operator decision 38): `[{name, label?, color?}]`,
+ * each keyed by the group's generated name (`generatedGroupNames`: its level labels joined by the separator), so it
+ * applies only while a group of that name exists and stays stored, inactive, while none does (another dataset, another
+ * factor, moved bins). Colours are drawn from the reply and the recipe now, never computed, so
+ * they are no part of the hash. It is stored without its defaults, with every unknown field kept, so an older build
+ * opening a newer link loses nothing, and a recipe from before colours loads unchanged. After release 0.8.0 a change to
+ * this schema needs a new version and a migration.
  *
  * The server's reply is read as `{partitionings: [{levels, edges?, bins_made?, degenerate?, value?, boolean?, names?,
  * colors?}], groups: [{key, n}]}`: for each partitioning the ids of its levels in order (with the bin edges the engine
@@ -18,7 +25,7 @@
 import { VOCABULARY } from './vocabulary.js';
 import { normalizeBinning, effectiveBinning, levelLabels } from './binning.js';
 import { RESERVED, parseLevelId } from './level-id.js';
-import { groupOf } from './categories.js';
+import { isColourString } from './uns-palette.js';
 import { stableStringify } from './url-history.js';
 
 const P = VOCABULARY.phrase;
@@ -35,8 +42,9 @@ const SMALL_MODES = Object.freeze(['keep', 'collect', 'hide']);
 const DEFAULT_SMALL = Object.freeze({ threshold: 10, mode: 'keep' });
 const DEFAULT_SEPARATOR = ' | ';
 const SOURCE_FIELDS = ['type', 'key', 'column', 'layer'];
-const PARTITIONING_FIELDS = ['source', 'levels', 'rest', 'labels', 'binning'];
-const GROUPING_FIELDS = ['version', 'partitionings', 'separator', 'small', 'offered', 'layers', 'detect_above'];
+const PARTITIONING_FIELDS = ['source', 'levels', 'rest', 'labels', 'binning', 'colors'];
+const GROUPING_FIELDS = ['version', 'partitionings', 'separator', 'small', 'offered', 'layers', 'detect_above', 'colors', 'groupOverrides'];
+const GROUP_OVERRIDE_FIELDS = ['name', 'label', 'color'];
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const unknownFields = (raw, known, into) => {
@@ -44,6 +52,77 @@ const unknownFields = (raw, known, into) => {
     return into;
 };
 const unique = (list) => [...new Set(list)];
+
+/** A map of id to colour, the valid ones; `bad` is called once when one is dropped. */
+function colourMap(raw, bad, field) {
+    if (!isObject(raw)) {
+        bad(field, 'bad_colors');
+        return null;
+    }
+    const kept = Object.fromEntries(Object.entries(raw).filter(([, css]) => isColourString(css)));
+    if (Object.keys(kept).length !== Object.keys(raw).length) bad(field, 'bad_colors');
+    return Object.keys(kept).length ? kept : null;
+}
+
+/**
+ * `groupOverrides` in its stored form (decision 38): entries `{name, label?, color?}` with a non-empty name, a string
+ * label and a valid colour, one per name (the last one given wins), unknown fields kept; an entry with nothing set beyond
+ * its name is dropped. Null when none is left.
+ */
+function normalizeGroupOverrides(raw, bad) {
+    if (!Array.isArray(raw)) {
+        bad('groupOverrides', 'bad_group_overrides');
+        return null;
+    }
+    const byName = new Map();
+    for (const entry of raw) {
+        if (!isObject(entry) || typeof entry.name !== 'string' || !entry.name) {
+            bad('groupOverrides', 'bad_group_overrides');
+            continue;
+        }
+        const out = { name: entry.name };
+        if (entry.label !== undefined) {
+            if (typeof entry.label === 'string') out.label = entry.label;
+            else bad('groupOverrides.label', 'bad_group_overrides');
+        }
+        if (entry.color !== undefined) {
+            if (isColourString(entry.color)) out.color = entry.color;
+            else bad('groupOverrides.color', 'bad_group_overrides');
+        }
+        unknownFields(entry, GROUP_OVERRIDE_FIELDS, out);
+        byName.delete(out.name);
+        if (Object.keys(out).length > 1) byName.set(out.name, out);
+    }
+    return byName.size ? [...byName.values()] : null;
+}
+
+/**
+ * A `colors` field in its stored form: `{palette?, overrides?}` of a factor, `{by?, palette?}` of a grouping. Invalid parts are
+ * dropped and reported, a default (`by: 'own'`, an empty palette or map) is not stored, unknown fields are kept; null
+ * when nothing is left.
+ */
+function normalizeColors(raw, bad, field, grouping) {
+    if (!isObject(raw)) {
+        bad(field, 'bad_colors');
+        return null;
+    }
+    const out = {};
+    if (grouping && raw.by !== undefined && raw.by !== 'own') {
+        if (Number.isInteger(raw.by) && raw.by >= 0) out.by = raw.by;
+        else bad(`${field}.by`, 'bad_colors');
+    }
+    if (raw.palette !== undefined && raw.palette !== '') {
+        if (typeof raw.palette === 'string') out.palette = raw.palette;
+        else bad(`${field}.palette`, 'bad_colors');
+    }
+    if (!grouping && raw.overrides !== undefined) {
+        const overrides = colourMap(raw.overrides, bad, `${field}.overrides`);
+        if (overrides) out.overrides = overrides;
+    }
+    // a group's own colour is a `groupOverrides` entry (decision 38), never stored here
+    unknownFields(raw, grouping ? ['by', 'palette'] : ['palette', 'overrides'], out);
+    return Object.keys(out).length ? out : null;
+}
 
 /** A source setting `{type, key, column?, layer?}`, or null when it has no type or key. */
 function normalizeSource(raw, problems) {
@@ -103,6 +182,10 @@ export function normalizePartitioning(raw, binning) {
         const bin = normalizeBinning(raw.binning, binning);
         out.binning = bin.binning;
         for (const p of bin.problems) bad(`binning.${p.field}`, p.reason);
+    }
+    if (raw.colors !== undefined) {
+        const colors = normalizeColors(raw.colors, bad, 'colors', false);
+        if (colors) out.colors = colors;
     }
     return { partitioning: unknownFields(raw, PARTITIONING_FIELDS, out), problems };
 }
@@ -191,6 +274,14 @@ export function normalizeGrouping(raw) {
         if (typeof raw.detect_above !== 'number' || !Number.isFinite(raw.detect_above)) bad('detect_above', 'bad_detect_above');
         else if (raw.detect_above !== 0) out.detect_above = raw.detect_above;
     }
+    if (raw.colors !== undefined) {
+        const colors = normalizeColors(raw.colors, bad, 'colors', true);
+        if (colors) out.colors = colors;
+    }
+    if (raw.groupOverrides !== undefined) {
+        const overrides = normalizeGroupOverrides(raw.groupOverrides, bad);
+        if (overrides) out.groupOverrides = overrides;
+    }
     return { recipe: unknownFields(raw, GROUPING_FIELDS, out), problems };
 }
 
@@ -209,7 +300,7 @@ function computed(partitioning) {
 
 /**
  * The hash a grouping's result is cached under (PER-3): equal recipes give equal text, and what no number of the
- * groups depends on does not change it: a rename, the separator, the statistics and layers offered, the detection
+ * groups depends on does not change it: a rename, the separator, an old link's `offered` and `layers`, the detection
  * threshold (each feature's key carries its own), and a default written out. So it is made of what the request sends.
  * Each partitioning is walked once, when the hasher is made, and again only when a variant brings a new one, so
  * hashing the variants of one applied recipe costs nothing per call.
@@ -275,10 +366,15 @@ function plainLabel(id, name, info) {
     }
 }
 
-/** One Map per partitioning: level id to its default label (SHR-9), the same label in two partitionings qualified. */
-export function defaultLabelMaps(recipe, reply, titleOf) {
+/**
+ * One Map per partitioning: level id to its default label (SHR-9), the same label in two partitionings qualified. A level that
+ * is a group of another grouping is called what that group is called (`info.names`); with `generated` it is called by its
+ * generated name (`info.generatedNames`), which a rename of that group leaves alone.
+ */
+export function defaultLabelMaps(recipe, reply, titleOf, generated = false) {
     const maps = recipe.partitionings.map((p, i) => {
-        const info = (reply.partitionings && reply.partitionings[i]) || { levels: [] };
+        const read = (reply.partitionings && reply.partitionings[i]) || { levels: [] };
+        const info = generated && read.generatedNames ? { ...read, names: read.generatedNames } : read;
         const name = sourceName(p.source, titleOf);
         const map = new Map();
         if (p.binning) for (const { id, label } of levelLabels(p.binning, info, name)) map.set(id, label);
@@ -312,11 +408,13 @@ const isCollected = (key) => key.length === 1 && key[0] === RESERVED.small;
  * @param {Object} recipe - from normalizeGrouping
  * @param {Object} reply - the server's reply
  * @param {(source: Object) => (string|undefined)} [titleOf] - the title of the panel behind a source
+ * @param {boolean} [generated] - name a level that is a group of another grouping by that group's generated name, not its label
+ *   (what a group reference compares: a rename is display only)
  * @returns {{key: string[], labels: string[]}[]} one per group of the reply, in its order
  */
 // export-unused-ok: G7's group-reference compares default labels (SHR-38)
-export function groupLabels(recipe, reply, titleOf) {
-    const maps = defaultLabelMaps(recipe, reply, titleOf);
+export function groupLabels(recipe, reply, titleOf, generated = false) {
+    const maps = defaultLabelMaps(recipe, reply, titleOf, generated);
     const collected = P.smallGroups(effectiveSmall(recipe).threshold);
     return reply.groups.map((g) => ({
         key: g.key,
@@ -325,15 +423,44 @@ export function groupLabels(recipe, reply, titleOf) {
 }
 
 /**
- * The name of each group (SHR-9): its level labels, renamed where the user renamed one, joined by the separator.
- * Two groups with one name get (2), (3) in order.
+ * The name of each group (SHR-9): its generated name (`generatedGroupNames`), or the label the user gave that group
+ * (`groupOverrides`, decision 38, keyed by the generated name). A label that another group already has is qualified the way
+ * level duplicates are, `name (2)`: the group that is called that keeps it.
  * @returns {string[]} one per group of the reply, in its order
  */
-// export-unused-ok: G8a lists the groups of a grouping as the levels of a source
 export function groupNames(recipe, reply, titleOf) {
+    const generated = generatedGroupNames(recipe, reply, titleOf);
+    // what an inner grouping's groups are CALLED shows; what overrides are keyed by does not move with it
+    const shown = joinedNames(recipe, reply, titleOf, false);
+    const labels = new Map((Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : [])
+        .filter((o) => typeof o.label === 'string' && o.label !== '').map((o) => [o.name, o.label]));
+    if (!labels.size) return shown;
+    const taken = new Set(shown.filter((_, i) => !labels.has(generated[i])));
+    return shown.map((name, i) => {
+        if (!labels.has(generated[i])) return name;
+        const label = labels.get(generated[i]);
+        let out = label;
+        for (let n = 2; taken.has(out); n++) out = P.suffixed(label, n);
+        taken.add(out);
+        return out;
+    });
+}
+
+/**
+ * The generated name of each group, what a group's own settings are keyed by (`groupOverrides`, decision 38): its level
+ * labels, renamed where the user renamed a level, joined by the separator. Two groups with one name get (2), (3) in order. A
+ * level that is a group of another grouping is named by that group's GENERATED name, so a rename of it never moves a key.
+ * @returns {string[]} one per group of the reply, in its order
+ */
+export function generatedGroupNames(recipe, reply, titleOf) {
+    return joinedNames(recipe, reply, titleOf, true);
+}
+
+/** Each group's level labels joined by the separator, the same name twice qualified; `generated` keys inner groups by generated name. */
+function joinedNames(recipe, reply, titleOf, generated) {
     const separator = recipe.separator === undefined ? DEFAULT_SEPARATOR : recipe.separator;
     const seen = new Map();
-    return groupLabels(recipe, reply, titleOf).map(({ key, labels }) => {
+    return groupLabels(recipe, reply, titleOf, generated).map(({ key, labels }) => {
         const shown = isCollected(key) ? labels : labels.map((label, i) => {
             const renamed = recipe.partitionings[i] && recipe.partitionings[i].labels;
             return (renamed && renamed[key[i]]) || label;
@@ -343,21 +470,6 @@ export function groupNames(recipe, reply, titleOf) {
         seen.set(name, n);
         return n === 1 ? name : P.suffixed(name, n);
     });
-}
-
-/**
- * The colour of each group (SHR-11): a grouping of one categorical factor takes that column's colours, where the reply
- * has them; any other takes the palette in group order, repeating by the 64 colour groups of a large category list.
- * @param {Object} recipe - from normalizeGrouping
- * @param {Object} reply - the server's reply
- * @param {string[]} palette
- * @returns {string[]} one per group of the reply, in its order
- */
-// export-unused-ok: G8a colours a plot by a grouping
-export function groupColours(recipe, reply, palette) {
-    const one = recipe.partitionings.length === 1 && !recipe.partitionings[0].binning;
-    const own = one && reply.partitionings && reply.partitionings[0] && reply.partitionings[0].colors;
-    return reply.groups.map((g, i) => (own && own[g.key[0]]) || palette[groupOf(i) % palette.length]);
 }
 
 /** @type {WeakMap<Object, Object>} flags -> packed: a table's cells are packed once while the host holds one array for them */
@@ -426,7 +538,7 @@ function wirePartitions(recipe, ctx, depth, sets) {
 
 /**
  * The body of a request for the groups of a recipe (SHR-29, plan 1.2): what the server computes from, with no label,
- * separator or statistic offered, and every default filled in so the body says what the engine does. A table source is
+ * separator or statistic list, and every default filled in so the body says what the engine does. A table source is
  * `{type: 'table', ref}` and its cells are one entry of the top-level `sets`, whichever partitionings use the table.
  * @param {Object} recipe - from normalizeGrouping
  * @param {{subset?: Object, features?: Object[], bitsetFor?: (source: Object) => (ArrayLike<*>|null),

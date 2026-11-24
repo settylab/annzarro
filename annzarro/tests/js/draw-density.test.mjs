@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 const M = await import('../../../static/js/utils/count-plot-model.js');
 const D = await import('../../../static/js/panels/cell-count/draw-density.js');
 const { PLOT_PALETTES } = await import('../../../static/js/utils/plot-theme.js');
+const { groupColours } = await import('../../../static/js/panels/plot-utilities/colors.js');
 const oracle = JSON.parse(readFileSync(new URL('../data/oracle/kde.json', import.meta.url), 'utf8'));
 
 const obs = (key) => ({ source: { type: 'obs', key } });
@@ -129,7 +130,7 @@ test('a split draws one curve per level, each normalised to 1 by default', () =>
         for (const v of t.y) area += v * c.step[0];
         assert.ok(Math.abs(area - 1) < 0.03, String(area));
     }
-    assert.deepEqual(figure.data.map((t) => t.line.color), ['#111111', '#222222']);
+    assert.deepEqual(figure.data.map((t) => t.line.color), groupColours(2), "the split's levels in the app's group colors (utils/grouping-colours.js)");
 });
 
 test('scaled by size the curves sum to the oracle\'s density of all the cells', () => {
@@ -267,7 +268,8 @@ test('each combination of layers draws the traces it names, per level of a Color
             const images = figure.data.filter((t) => t.type === 'heatmap');
             const contours = figure.data.filter((t) => t.type === 'contour');
             const tag = `${JSON.stringify(layers)} split=${split}`;
-            assert.equal(images.length, layers.image ? n : 0, tag);
+            const carrier = layers.lines && !layers.fill && !layers.image && !split ? 1 : 0;   // isolines alone: a transparent heatmap carries the color bar
+            assert.equal(images.length, (layers.image ? n : 0) + carrier, tag);
             assert.equal(contours.length, layers.fill || layers.lines ? n : 0, tag);
             for (const t of contours) {
                 assert.equal(t.contours.coloring, layers.fill ? 'fill' : 'lines', tag);
@@ -304,7 +306,7 @@ test('one group takes the color map, its direction and its range from the option
     const color = { colorscale: 'Cividis', colour: { reverse: true, min: 0.001, max: 0.02 } };
     for (const layers of [{ image: true }, { fill: true }, { lines: true }]) {
         const { figure } = twoD('umap__a1', { adjust: 1, layers, ...color }, false);
-        const t = kinds(figure).at(-1);
+        const t = kinds(figure).filter((x) => x.showscale === true).at(-1);
         assert.equal(t.colorscale, 'Cividis', JSON.stringify(layers));
         assert.equal(t.reversescale, true);
         assert.equal(t.zmin, 0.001);
@@ -353,7 +355,8 @@ test('the points layer draws the loaded cells over the other layers, with the gr
         assert.equal(carriers.length, split ? 2 : 1, 'a transparent heatmap per level carries the hover');
         assert.ok(carriers.every((t) => t.colorscale.flat().filter((v) => typeof v === 'string').every((c) => c === 'rgba(0, 0, 0, 0)')));
         assert.ok(carriers.every((t) => /Density/.test(t.hovertemplate)));
-        assert.equal(fig.notes.points, 'Cells drawn as points: 500.');
+        const drawn = fig.data.filter((t) => t.type === 'scattergl').reduce((n, t) => n + t.x.length, 0);
+        assert.equal(fig.notes.points, `Cells drawn as points: ${drawn.toLocaleString('en-US')} of 500.`, 'the notice counts the points drawn');
         // with filled isolines the points sit above them and no carrier is needed
         const both = D.densityFigure(alone.config, alone.table, opts({ adjust: 1, layers: { points: true, fill: true } }, { points: pts }));
         assert.equal(both.data.filter((t) => t.type === 'heatmap').length, 0);
@@ -367,7 +370,8 @@ test('the points layer says it is a sample, takes the point size from the option
     const { config, table } = twoD('umap__a1', { adjust: 1 }, true);
     const pts = { ...cells(300, 2), total: 12_345_678 };
     const fig = D.densityFigure(config, table, opts({ adjust: 1, layers: { points: true }, pointSize: 5 }, { points: pts }));
-    assert.equal(fig.notes.points, 'Cells drawn as points: 300 of 12,345,678 (a sample).');
+    const drawnSample = fig.data.filter((t) => t.type === 'scattergl').reduce((n, t) => n + t.x.length, 0);
+    assert.equal(fig.notes.points, `Cells drawn as points: ${drawnSample} of a random sample of 300 of the 12,345,678 cells.`);
     assert.ok(fig.data.filter((t) => t.type === 'scattergl').every((t) => t.marker.size === 5));
     const bare = D.densityFigure(config, table, opts({ adjust: 1, layers: { points: true } }));
     assert.equal(bare.data.filter((t) => t.type === 'scattergl').length, 0);
@@ -387,4 +391,96 @@ test('one group: the points are on the color map of the plot, with the color bar
     assert.equal(m.showscale, true);
     const over = D.densityFigure(config, table, opts({ adjust: 1, layers: { points: true, fill: true }, ...color }, { points: pts }));
     assert.equal(over.data.find((t) => t.type === 'scattergl').marker.showscale, false, 'the isolines hold the color bar');
+});
+
+test('the points, the isolines and the legend take each level\'s color from the one resolver', () => {
+    const { config, table } = twoD('umap__a1', { adjust: 1 }, true);
+    const withPalette = { ...config, color: { palette: 'Set2' } };
+    const fig = D.densityFigure(withPalette, table, opts({ adjust: 1, layers: { fill: true, lines: true, points: true } }, { points: cells(400, 2) }));
+    const legend = fig.data.filter((t) => t.type === 'scatter' && t.name).map((t) => t.marker.color);
+    const rgb = (hex) => `${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}`;
+    assert.equal(legend.length, 2);
+    for (const [k, hex] of legend.entries()) {
+        assert.match(hex, /^#[0-9a-f]{6}$/i);
+        const contour = fig.data.filter((t) => t.type === 'contour')[k];
+        assert.equal(contour.line.color, hex, 'the isolines');
+    }
+    const bases = new Set(fig.data.filter((t) => t.type === 'scattergl').map((t) => t.marker.color.replace(/, [\d.]+\)$/, ')')));
+    assert.ok(bases.size > 0);
+    for (const base of bases) assert.ok(legend.some((hex) => base === `rgba(${rgb(hex)})`), `a point color ${base} is a legend color`);
+    const plain = D.densityFigure(config, table, opts({ adjust: 1, layers: { fill: true } }));
+    assert.notDeepEqual(plain.data.filter((t) => t.type === 'scatter' && t.name).map((t) => t.marker.color), legend, 'the plot\'s palette is honored');
+});
+
+// --- the density controls of the Display pop-over: color bar, range, point opacity --------------------------------------
+
+test('one group with isolines only: the color bar is the full color scale, from a transparent heatmap that carries it', () => {
+    const { figure } = twoD('umap__a1', { adjust: 1, layers: { lines: true }, colorscale: 'Cividis', colour: { reverse: true, min: 0.001, max: 0.05 } }, false);
+    const contour = figure.data.find((t) => t.type === 'contour');
+    const carrier = figure.data.find((t) => t.type === 'heatmap');
+    assert.equal(contour.contours.coloring, 'lines');
+    assert.equal(contour.showscale, false, 'a lines-only color bar is only its few line levels');
+    assert.ok(carrier, 'a heatmap carries the full scale');
+    assert.equal(carrier.opacity, 0);
+    assert.equal(carrier.showscale, true);
+    assert.equal(carrier.colorscale, 'Cividis');
+    assert.equal(carrier.reversescale, true);
+    assert.deepEqual([carrier.zmin, carrier.zmax], [contour.zmin, contour.zmax], 'the bar matches the line colors');
+    assert.equal(carrier.hoverinfo, 'skip');
+    for (const layers of [{ fill: true }, { image: true }, { fill: true, lines: true }, { image: true, lines: true }]) {
+        const f = twoD('umap__a1', { adjust: 1, layers }, false).figure;
+        assert.equal(f.data.filter((t) => t.opacity === 0 && t.type === 'heatmap').length, 0, `no carrier needed for ${JSON.stringify(layers)}`);
+        assert.equal(f.data.filter((t) => t.showscale === true || (t.marker && t.marker.showscale)).length, 1, 'one color bar');
+    }
+});
+
+test('the density range sets the opacity mapping, the isoline levels and the points\' steps of every group alike', () => {
+    const wide = twoD('umap__a1', { adjust: 1, layers: { fill: true, image: true } }, true).figure;
+    const peak = wide.data.find((t) => t.type === 'heatmap').zmax;
+    const lo = peak * 0.2;
+    const hi = peak * 0.8;
+    const f = twoD('umap__a1', { adjust: 1, layers: { fill: true, image: true }, colour: { reverse: false, min: lo, max: hi } }, true).figure;
+    for (const t of f.data.filter((x) => x.type === 'heatmap' || x.type === 'contour')) {
+        assert.equal(t.zmin, lo, t.type);
+        assert.equal(t.zmax, hi, t.type);
+    }
+    const bands = f.data.find((t) => t.type === 'contour').contours;
+    assert.ok(bands.start > lo && bands.end <= hi + 1e-12, 'the isoline levels lie between Min and Max');
+    assert.ok(Math.abs(bands.start - lo - bands.size) < 1e-12, 'the first level is one step above Min');
+    // one group: the isoline levels span the range too, and the colorscale's limits are the range
+    const one = twoD('umap__a1', { adjust: 1, layers: { fill: true }, colour: { reverse: false, min: lo, max: hi } }, false).figure.data[0];
+    assert.deepEqual([one.zmin, one.zmax], [lo, hi]);
+    assert.ok(one.contours.start >= lo && one.contours.end <= hi + 1e-12);
+});
+
+test('the figure offers its density as the data of the range boxes: from the lowest to the highest', () => {
+    for (const split of [true, false]) {
+        const { figure } = twoD('umap__a1', { adjust: 1, layers: { fill: true } }, split);
+        assert.ok(figure.colourData instanceof Float64Array, `split=${split}`);
+        assert.equal(figure.colourData.length, 2);
+        assert.ok(figure.colourData[0] <= figure.colourData[1] && figure.colourData[1] > 0);
+    }
+});
+
+test('points are fully opaque by default, with or without a Color by; the stored opacity applies flat to every point', () => {
+    for (const split of [true, false]) {
+        const { config, table } = twoD('umap__a1', { adjust: 1 }, split);
+        const pts = cells(400, split ? 2 : 0);
+        const flat = (extra) => D.densityFigure(config, table, opts({ adjust: 1, layers: { points: true }, ...extra }, { points: pts })).data.filter((t) => t.type === 'scattergl');
+        const alphaOf = (t) => (split ? Number(/, ([\d.]+)\)$/.exec(t.marker.color)[1]) : t.marker.opacity);
+        const dflt = flat({});
+        assert.ok(dflt.length > 0 && dflt.every((t) => alphaOf(t) === 1), `default opacity 1, split=${split}`);
+        const half = flat({ pointOpacity: 0.5 });
+        assert.ok(half.every((t) => alphaOf(t) === 0.5), `stored 0.5, split=${split}`);
+        if (split) assert.ok(dflt.length <= 2 * Math.ceil(400 / 99999) + 2, 'flat: a run per level, not per density step');
+    }
+});
+
+test('with a Color by the points can still take the density as their opacity, up to the point opacity', () => {
+    const { config, table } = twoD('umap__a1', { adjust: 1 }, true);
+    const pts = cells(400, 2);
+    const fig = D.densityFigure(config, table, opts({ adjust: 1, layers: { points: true }, pointFade: true, pointOpacity: 0.6 }, { points: pts }));
+    const alphas = fig.data.filter((t) => t.type === 'scattergl').map((t) => Number(/, ([\d.]+)\)$/.exec(t.marker.color)[1]));
+    assert.ok(alphas.every((a) => a <= 0.6 + 1e-9));
+    assert.ok(new Set(alphas).size > 1, 'several opacity steps');
 });

@@ -95,8 +95,9 @@ const EDGES = Object.freeze(['min', 'max']);
 const DEFAULT_LABEL_EDGES = Object.freeze({ x: 'min', y: 'max' });
 
 /**
- * The 3D labels' options (Plot Options ▸ 3D labels): `{side?: 'fixed', edges?: {x, y}, justify?: 'left'|'right'|'center',
- * rotation?: 'along'|number, padding?: number}`, defaults left out; null when nothing but defaults is left.
+ * The 3D labels' options (Plot Options ▸ Axes, in 3D): `{side?: 'fixed', edges?: {x, y}, justify?: 'left'|'right'|'center',
+ * rotation?: 'along'|'across'|'angle', angle?: number, padding?: number}`, defaults left out; null when nothing but
+ * defaults is left.
  */
 function cleanLabels3d(raw, problems) {
     if (!isObject(raw)) {
@@ -112,11 +113,18 @@ function cleanLabels3d(raw, problems) {
         out.edges = isObject(e) && EDGES.includes(e.x) && EDGES.includes(e.y) ? { x: e.x, y: e.y } : { ...DEFAULT_LABEL_EDGES };
     }
     if (LABEL_JUSTIFY.includes(raw.justify) && raw.justify !== 'auto') out.justify = raw.justify;
-    // Rotation: Horizontal (the default, absent), Along or Across the axis, or an angle from -90 to 90 (Plotly's, clockwise)
+    // Rotation: Horizontal (the default, absent), Along or Across the axis, or Angle with `angle` from -90 to 90 (Plotly's,
+    // clockwise; 0 absent). A number as the rotation is read as an Angle of it
     if ('rotation' in raw) {
-        if (raw.rotation === 'along' || raw.rotation === 'across') out.rotation = raw.rotation;
-        else if (isNumber(raw.rotation)) out.rotation = Math.max(-90, Math.min(90, raw.rotation));
+        if (raw.rotation === 'along' || raw.rotation === 'across' || raw.rotation === 'angle') out.rotation = raw.rotation;
+        else if (isNumber(raw.rotation)) { out.rotation = 'angle'; out.angle = raw.rotation; }
         else if (raw.rotation !== 'horizontal') problems.push(`labels3d: rotation ${JSON.stringify(raw.rotation)} is not known, horizontal used`);
+    }
+    if (out.rotation === 'angle') {
+        const a = isNumber(out.angle) ? out.angle : isNumber(raw.angle) ? raw.angle : 0;
+        if ('angle' in raw && !isNumber(raw.angle)) problems.push('labels3d: angle is not a number, 0 used');
+        const clamped = Math.max(-90, Math.min(90, a));
+        if (clamped !== 0) out.angle = clamped; else delete out.angle;
     }
     // Padding: px between a label and its tick, 0 to 40; 4 is the default (absent)
     if ('padding' in raw) {
@@ -174,7 +182,7 @@ function cleanSection(raw, i, problems) {
  * and dropped, with no problem said. The 3D view
  * (UX 6b, WP-12): `view: '3d'` (absent is 2D), `height` (the bars' own measure; absent is "Same as Color", and a stored
  * one is kept while 3D is off), `camera` (the 3D camera, stored without an undo step), `labels3d` (its labels' Side and
- * Justify, Plot Options ▸ 3D labels, defaults absent).
+ * Justify, Rotation and Padding, Plot Options ▸ Axes in 3D, defaults absent).
  * @param {Object} raw
  * @returns {{config: Object, problems: string[]}}
  */
@@ -367,19 +375,23 @@ export function setRowAggregation(config, i, which, rowAgg) {
  * dataset lacks are left out and counted (CXG-8).
  * @param {{genes?: string[], down?: string[]}} recipe - a signature's recipe or a gene table's (score-source-panels.js)
  * @param {(name: string) => boolean} hasGene
- * @returns {{genes: string[], missing: number, total: number}}
+ * @returns {{genes: string[], missing: number, total: number, down: number}} `down`: how many of `genes` are down genes
  */
 export function sectionGenes(recipe, hasGene) {
     const seen = new Set();
     const genes = [];
     let missing = 0;
-    for (const name of [...((recipe && recipe.genes) || []), ...((recipe && recipe.down) || [])]) {
+    let down = 0;
+    const up = (recipe && recipe.genes) || [];
+    for (const name of [...up, ...((recipe && recipe.down) || [])]) {
         if (typeof name !== 'string' || seen.has(name)) continue;
         seen.add(name);
-        if (hasGene(name)) genes.push(name);
-        else missing++;
+        if (hasGene(name)) {
+            genes.push(name);
+            if (!up.includes(name)) down++;
+        } else missing++;
     }
-    return { genes, missing, total: seen.size };
+    return { genes, missing, total: seen.size, down };
 }
 
 /** The count on a section's row: "48 genes · 3 not in this dataset" (UX 3.2, CXG-8). */
@@ -410,9 +422,11 @@ const isScoreKind = (rowAgg) => !!rowAgg && !!ROW_AGGREGATIONS[rowAgg.agg] && RO
  * them and nothing in it is "offered".
  * @returns {Array<{heading: string, entries: Array<{value: string, label: string}>}>}
  */
-export function aggregationEntries() {
+export function aggregationEntries({ down = 0 } = {}) {
+    // a source with down genes is never summarised from its genes' rows (effectiveAggregation)
+    const off = down > 0 ? { disabled: true, title: CG.downGenesNoSummary } : {};
     return [
-        { heading: CG.aggregationHeading.summary, entries: SUMMARIES.map((agg) => ({ value: agg, label: CG.aggregation[agg] })) },
+        { heading: CG.aggregationHeading.summary, entries: SUMMARIES.map((agg) => ({ value: agg, label: CG.aggregation[agg], ...off })) },
         { heading: CG.aggregationHeading.score, entries: SCORE_KINDS.map((agg) => ({ value: agg, label: CG.scoreKind[agg] })) }
     ];
 }
@@ -456,6 +470,19 @@ export function aggregationHelp(rowAgg, layer) {
 }
 
 // ================================================================================================ the request
+
+/**
+ * The aggregation a one-row section draws: the stored one, except that a source with down genes is never summarised
+ * from its genes' rows, which would count its down genes as up genes; its row is then its score by the source's
+ * default method on the channel's layer (one-row-ux-080.md, decision 40).
+ * @param {Object} agg - rowAggregationOf
+ * @param {{layer?: string}} spec - the channel (Color or Size)
+ * @param {number} [down] - the section's down genes in the dataset
+ */
+export function effectiveAggregation(agg, spec, down = 0) {
+    if (!(down > 0) || ROW_AGGREGATIONS[agg.agg].kind === 'score') return agg;
+    return { agg: agg.agg === 'mean_of_pct_expressing' ? 'score_pct_above' : 'score_mean', column: DEFAULT_METHOD, layer: (spec && spec.layer) || DEFAULT_LAYER };
+}
 
 /** Whether a statistic reads an expression threshold (`detect_above`, CXG-9). */
 export const needsThreshold = (stat) => THRESHOLD_STATS.includes(stat);
@@ -507,7 +534,9 @@ export function planFeatures({ sections, color, size, height = null, threshold =
         if (agg.agg === 'score_pct_above') return isNumber(agg.above) ? agg.above : 0;
         const layer = agg.layer || DEFAULT_LAYER;
         for (const which of ['color', 'size']) {
-            const other = rowAggregationOf(entry.section, which);
+            const channel = which === 'color' ? color : size;
+            if (!channel) continue;
+            const other = effectiveAggregation(rowAggregationOf(entry.section, which), channel, entry.down);
             if (other.agg === 'score_pct_above' && other.column === agg.column && (other.layer || DEFAULT_LAYER) === layer) {
                 return isNumber(other.above) ? other.above : 0;
             }
@@ -527,7 +556,8 @@ export function planFeatures({ sections, color, size, height = null, threshold =
         noteStatistic(spec.stat, spec.layer);
         return spec.stat === 'count' ? genes.map(() => null) : genes.map((g) => gene(g, spec.stat, spec));
     };
-    const aggregated = (agg, spec, entry) => {
+    const aggregated = (stored, spec, entry) => {
+        const agg = effectiveAggregation(stored, spec, entry.down);
         if (ROW_AGGREGATIONS[agg.agg].kind === 'score') return { agg, key: score(agg, entry) };
         const s = SUMMARY_STAT[agg.agg];
         noteStatistic(s, spec.layer);

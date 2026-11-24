@@ -24,7 +24,7 @@
  *   pendingText?: string,                         what a row still being read says (rows[].pending, CXG-18)
  *   view?: '3d', height?: { same: true, values, min?, max? } | { same: false, stat, layer?, detectAbove?, values, min?, max? },
  *   camera?: { eye, center?, up? }, zTitle?: string,    the 3D view (UX 6b, WP-12), see figure3d
- *   labels3d?: { side?, edges?, justify? } }           its labels' Side and Justify (Plot Options ▸ 3D labels)
+ *   labels3d?: { side?, edges?, justify? } }           its labels' options (Plot Options ▸ Axes, in 3D)
  * ```
  * A row with `pending: true` is a placeholder of a section still being read (CXG-18): its cells are drawn faint, with
  * `pendingText` in the hover, never as missing values. A strip of draw-annotations.js with a `legend` ({label, colour}
@@ -315,6 +315,9 @@ function describer(model, P, dots) {
 
 /** Where the legend column starts, in paper units: LEGEND_X, or further left in a narrow figure (LEGEND_MIN_PX). */
 function legendX(model, keepMin = true) {
+    // the space Plot Options sets for the legend column (WP-5a, model.legendLayout: plot-style.js cellGeneLegend)
+    const space = model.legendLayout && model.legendLayout.space;
+    if (space > 0) return Math.max(0.4, Math.min(0.95, 1 - space));
     if (!keepMin || !model.pixels || !(model.pixels.width > 0)) return LEGEND_X;
     return Math.min(LEGEND_X, 1 - LEGEND_MIN_PX / Math.max(model.pixels.width - 20, 1));
 }
@@ -539,23 +542,32 @@ function stripLegendParts(model, strip, entry, n, th) {
     const fitted = fitTitle([strip.title], entry.chars);
     const titleRoom = titleRoomOf(model, entry, fitted);
     const fit = Math.max(1, Math.floor(((entry.height - titleRoom) * plotPx) / LEGEND_LINE_PX));
+    // Plot Options' columns and cap (WP-5a, model.legendLayout): the levels fill the columns top to bottom, at most
+    // `max` of them, and the last line says how many more there are
+    const { columns = 1, max = Infinity } = model.legendLayout || {};
     const all = strip.legend;
-    const shown = all.length <= fit ? all : all.slice(0, fit - 1);
+    const room = fit * columns;
+    const keep = Math.min(all.length, max);
+    const shown = keep === all.length && keep <= room ? all : all.slice(0, Math.min(keep, room - 1));
     const more = all.length - shown.length;
     const lines = shown.length + (more ? 1 : 0);
+    const perColumn = Math.max(1, Math.ceil(lines / columns));
+    const step = 6.6 / columns;
+    const chars = Number.isFinite(entry.chars) && columns > 1 ? Math.max(3, Math.floor(entry.chars / columns) - 3) : Infinity;
+    const cut = (label) => (label.length > chars ? `${label.slice(0, chars - 1)}…` : label);
     const axisId = n + 2;
     const trace = {
         type: 'scatter', mode: 'markers+text', name: 'strip legend', hoverinfo: 'skip', showlegend: false,
         xaxis: `x${axisId}`, yaxis: `y${axisId}`,
-        x: Array.from({ length: lines }, () => 0), y: Array.from({ length: lines }, (_, j) => j),
-        text: [...shown.map((e) => esc(e.label)), ...(more ? [esc(W.options.more(more))] : [])], textposition: 'middle right', cliponaxis: false,
+        x: Array.from({ length: lines }, (_, j) => Math.floor(j / perColumn) * step), y: Array.from({ length: lines }, (_, j) => j % perColumn),
+        text: [...shown.map((e) => esc(cut(String(e.label)))), ...(more ? [esc(W.options.more(more))] : [])], textposition: 'middle right', cliponaxis: false,
         marker: { symbol: 'square', size: 10, color: [...shown.map((e) => e.colour), ...(more ? ['rgba(0,0,0,0)'] : [])], line: { width: 0 } },
         textfont: { color: th.textColor }
     };
     const top = entry.top - titleRoom;
     const axes = {
         [`xaxis${axisId}`]: { domain: [entry.x + 0.01, 1], range: [-0.6, 6], visible: false, fixedrange: true },
-        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, top], range: [Math.max(lines, fit) - 0.5, -0.5], visible: false, fixedrange: true }
+        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, top], range: [Math.max(perColumn, fit) - 0.5, -0.5], visible: false, fixedrange: true }
     };
     const title = {
         name: 'strip legend title', xref: 'paper', yref: 'paper', x: entry.x, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,
@@ -763,7 +775,7 @@ const ASPECT_Z = 0.6;
 const UIREVISION_3D = 'cgene-3d';
 
 /**
- * The gap, px, between a label and its tick on the box edge, on the label's side (Plot Options ▸ 3D labels ▸ Padding).
+ * The gap, px, between a label and its tick on the box edge, on the label's side (Plot Options ▸ Axes ▸ Padding, in 3D).
  * Plotly drops a scene annotation outside the axis ranges, so the anchor is ON the edge and the gap is a screen shift.
  */
 const LABEL_GAP_PX = 4;
@@ -824,7 +836,7 @@ function screenRight(camera) {
     return cross(minus(camera.center || DEFAULT_CAMERA.center, camera.eye), camera.up || DEFAULT_CAMERA.up);
 }
 
-/** The anchors Justify may set (Plot Options ▸ 3D labels); Auto is none of them. */
+/** The anchors Justify may set (Plot Options ▸ Axes, in 3D); Auto is none of them. */
 const JUSTIFY = Object.freeze(['left', 'right', 'center']);
 
 /**
@@ -924,19 +936,21 @@ function anchored(xanchor, angle, pad) {
 }
 
 /**
- * The 3D labels' options as the drawing reads them, in one place (so the shared Plot Options of WP-5a can move them):
- * Plot Options ▸ 3D labels (`labels3d`: side, edges, justify, rotation, padding) and ▸ Labels (`annotations.labels`:
- * gene labels and group labels shown).
+ * The 3D labels' options as the drawing reads them, in one place: the shared Plot Options' Axes fields (WP-5a;
+ * cell-gene/options.js PLOT_OPTION_FIELDS): `labels3d` (side, edges, justify, rotation and angle, padding), and the gene and
+ * group label switches (`annotations.labels`). `rotation` comes back as 'horizontal', 'along', 'across' or the angle.
  * @param {Object} model - the drawing model
  * @returns {{side?: string, edges?: Object, justify?: string, rotation: ('horizontal'|'along'|number), padding: number,
  *   show: {genes: boolean, groups: boolean}}}
  */
-// export-unused-ok: WP-5a's shared Plot Options (schema fields) reads the 3D labels' options through this seam
+// export-unused-ok: the 3D labels' options in one place, for the Node tests and any later reader of the schema's fields
 export function labelOptions3d(model) {
     const l3 = (model && model.labels3d) || {};
     const shown = (model && model.annotations && model.annotations.labels) || {};
-    const rotation = l3.rotation === 'along' || l3.rotation === 'across' || (typeof l3.rotation === 'number' && Number.isFinite(l3.rotation))
-        ? l3.rotation : 'horizontal';
+    // Rotation ▸ Angle is its angle (a number); the others by name
+    const angle = typeof l3.angle === 'number' && Number.isFinite(l3.angle) ? Math.max(-90, Math.min(90, l3.angle)) : 0;
+    const rotation = l3.rotation === 'along' || l3.rotation === 'across' ? l3.rotation
+        : l3.rotation === 'angle' ? angle : typeof l3.rotation === 'number' && Number.isFinite(l3.rotation) ? l3.rotation : 'horizontal';
     const padding = typeof l3.padding === 'number' && Number.isFinite(l3.padding) ? Math.max(0, Math.min(PADDING_MAX, l3.padding)) : LABEL_GAP_PX;
     return { ...l3, rotation, padding, show: { genes: shown.genes !== false, groups: shown.groups !== false } };
 }
