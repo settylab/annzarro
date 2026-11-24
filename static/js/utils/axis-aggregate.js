@@ -115,6 +115,7 @@ export function applyAfter(setting, kind, value) {
 }
 
 /** The symbol and name of the aggregation a set setting holds. */
+// export-unused-ok: Node tests hold it; the button reads the provider's `methods` through its own factory
 export function aggregationOf(setting) {
     const provider = aggregateOf(setting);
     if (!provider) return null;
