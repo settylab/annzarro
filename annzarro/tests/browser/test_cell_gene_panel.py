@@ -380,7 +380,8 @@ def test_mode_is_a_select_listing_the_registry(page, served):
     # the header Refresh keeps the mode and what it hides (decision 42)
     with page.expect_response(lambda r: r.request.method == "POST" and "/api/v1/data/refresh" in r.url, timeout=30000):
         page.click("#refresh-dataset")
-    page.wait_for_timeout(1500)
+    # the reset and the reload follow the response; the mode must hold through them
+    waits.expect_stays(lambda: _config(page)["mode"] == "heatmap", "the refresh reloads and redraws; Mode stays Heatmap", page=page, seconds=2.0)
     _drawn(page)
     assert _config(page)["mode"] == "heatmap"
     assert page.input_value(f"{TP} select.cgene-mode") == "heatmap"
