@@ -22,10 +22,13 @@ export const DEFAULT_STAT = 'mean';
 export const DEFAULT_LAYER = 'X';
 
 /** The statistics of the source's menu: the Cell-Gene Plot's, without Cell count. */
-export const STAT_IDS = Object.freeze(STATISTIC_INFO.map((m) => m.value));
+/** The statistic the menu lists but a cell group cannot give yet (Q1, package G1): listed disabled, never held, never computed. */
+const NOT_YET = 'zscore_mean';
+
+export const STAT_IDS = Object.freeze(STATISTIC_INFO.map((m) => m.value).filter((id) => id !== NOT_YET));
 
 /** A statistic's entry of the table (`value`, `label`, `menu`...); the default's for one this page does not know. */
-export const statInfo = (stat) => STATISTIC_INFO.find((m) => m.value === stat) || STATISTIC_INFO[0];
+export const statInfo = (stat) => STATISTIC_INFO.find((m) => m.value === stat) || STATISTIC_INFO.find((m) => m.value === DEFAULT_STAT);
 
 /** The statistic a setting holds, or the default for one that holds none (or one this page does not know). */
 export const statOf = (setting) => (setting && STAT_IDS.includes(setting.stat) ? setting.stat : DEFAULT_STAT);
@@ -106,7 +109,8 @@ const asOption = (e, text) => ({ value: e.value, text, disabled: !!e.disabled, t
  */
 export function statMenu(held, kinds) {
     const stat = statOf(held);
-    const list = statisticChoices({ layer: layerOf(held), kinds, held: stat }).filter((e) => e.value !== CELL_COUNT);
+    // a Gene Plot lists z-score mean, disabled with its reason: it needs every gene's mean and SD over all cells (Q1)
+    const list = statisticChoices({ layer: layerOf(held), kinds, held: stat, consumer: 'genes' }).filter((e) => e.value !== CELL_COUNT);
     return { options: list.map((e) => asOption(e, e.label)), chosen: stat };
 }
 

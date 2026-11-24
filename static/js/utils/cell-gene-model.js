@@ -44,6 +44,20 @@ const FLAT = 1e-12;
 // export-unused-ok: consumed by X3a (the Scale select lists them)
 export const SCALINGS = Object.freeze(['none', 'var', 'group', 'z_groups', 'z_pooled']);
 
+/** The scalings that z-score the statistic (against the groups, or against all grouped cells). */
+export const Z_SCALINGS = Object.freeze(['z_groups', 'z_pooled']);
+
+/**
+ * Whether a Scale option applies under a Color statistic (aggregation-unify-080 2.2): under z-score mean the colour is a
+ * z-score already, so the two z Scale options would redraw the same picture under a second name. A statement of the model, not
+ * of the select: the select disables the option with `reason`, and normalizeCellGene moves a stored one to None.
+ * @returns {{ok: true}|{ok: false, reason: string}}
+ */
+export function scalingGrade(scaling, colorStat) {
+    if (colorStat === 'zscore_mean' && Z_SCALINGS.includes(scaling)) return { ok: false, reason: W.scaleWhy.zscore };
+    return { ok: true };
+}
+
 /**
  * The gene step of a one-row section that combines its gene rows (decision 40, one-row-ux-080.md): each gene's statistic
  * per group, exactly as the gene rows show it, then the mean, the sum or the mean of their z-scores across groups. Any
@@ -70,10 +84,12 @@ export const combinesRows = (step) => ROW_STEPS.includes(step);
  * @param {string} step - one of ROW_STEPS or a score method
  * @param {string} stat - the channel's statistic
  * @param {{down?: number}} [opts] - the section's down genes in the dataset
- * @returns {{ok: true}|{ok: false, reason: 'count'|'down'|'sum_sd'|'sum_mean_expressing'}}
+ * @returns {{ok: true}|{ok: false, reason: 'count'|'down'|'zscore'|'sum_sd'|'sum_mean_expressing'}}
  */
 export function rowStepGrade(step, stat, { down = 0 } = {}) {
     if (stat === 'count') return { ok: false, reason: 'count' };
+    // under z-score mean a set's row is its z-score mean score and nothing else (aggregation-unify-080 2.3)
+    if (stat === 'zscore_mean') return step === 'zscore_mean' ? { ok: true } : { ok: false, reason: 'zscore' };
     if (combinesRows(step)) {
         if (down > 0) return { ok: false, reason: 'down' };
         if (step === 'rows_sum' && (stat === 'sd' || stat === 'mean_expressing')) return { ok: false, reason: `sum_${stat}` };
@@ -105,6 +121,7 @@ function valueOf(stat, m, o) {
     const n = m[o + N];
     if (!(n > 0)) return NaN;
     switch (stat) {
+        case 'zscore_mean':        // the moments are those of the z-scored gene (server transform zscore): a mean
         case 'mean': return m[o + SUM] / n;
         case 'pct_expressing': return 100 * m[o + N_ABOVE] / n;
         case 'mean_expressing': return meanOfExpressing(m[o + N_ABOVE], m[o + SUM_ABOVE]);
@@ -116,7 +133,7 @@ function valueOf(stat, m, o) {
 
 /**
  * One statistic of one feature in every group.
- * @param {string} stat - mean, pct_expressing, mean_expressing, sum, sd or count
+ * @param {string} stat - zscore_mean, mean, pct_expressing, mean_expressing, sum, sd or count
  * @param {Float64Array|null} moments - groups x 5; null for `count`, which needs no feature
  * @param {number} groups
  * @param {Float64Array} [sizes] - the groups' cell counts, for `count`

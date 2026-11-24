@@ -128,7 +128,7 @@ def test_the_path_through_the_selects_sends_one_request_and_a_switch_of_statisti
     layers = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.axis-layer-select[data-axis="color"] option')].map(o => o.value)""", C)
     assert "logged" in layers and "X" in layers, layers
     stats = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.axis-stat-select[data-axis="color"] option')].map(o => o.value)""", C)
-    assert stats == ["mean", "pct_expressing", "mean_expressing", "sum", "sd"], "every statistic but Cell count"
+    assert stats == ["zscore_mean", "mean", "pct_expressing", "mean_expressing", "sum", "sd"], "every statistic but Cell count"
     # the selects before the group ask nothing
     _pick(page, "layer", "logged")
     _pick(page, "stat", "mean")

@@ -17,7 +17,7 @@ const SENTENCE = (stat, layer) => `${stat} cannot be computed on '${layer}': it 
 const model = S.GROUP_STATISTICS_MODEL;
 
 test('the table is the grouping\'s statistics, named by the vocabulary, with cell count outside it', () => {
-    assert.deepEqual(S.STATISTIC_INFO.map(m => m.value), ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']);
+    assert.deepEqual(S.STATISTIC_INFO.map(m => m.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']);
     for (const info of S.STATISTIC_INFO) {
         assert.equal(info.label, VOCABULARY.cellGene.statistic[info.value], `${info.value} has the vocabulary's name`);
         assert.ok(STATISTIC_IDS.includes(info.value), `${info.value} is a statistic id of the recipe`);

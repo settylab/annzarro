@@ -25,7 +25,7 @@
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import {
     ROW_STEPS, DEFAULT_ROW_STEP, LEGACY_ROW_AGGREGATIONS, combinesRows, rowStepGrade, combineRows, SCALINGS, statisticColumn,
-    noExpressingCells, pooledReference, scale
+    noExpressingCells, pooledReference, scale, scalingGrade
 } from '../../utils/cell-gene-model.js';
 import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
 import { stableStringify } from '../../utils/url-history.js';
@@ -51,6 +51,15 @@ const DEFAULT_SIZE = Object.freeze({ stat: 'pct_expressing', layer: DEFAULT_LAYE
 /** The statistics that compare each cell with an expression threshold. */
 const THRESHOLD_STATS = Object.freeze(['pct_expressing', 'mean_expressing']);
 
+/** The statistic whose gene rows are z-scored by the server, and its clip: the signature's default (gene_score.DEFAULT_CLIP). */
+const ZSCORE = 'zscore_mean';
+const ZSCORE_CLIP = 10;
+/**
+ * Which channels cannot hold z-score mean (aggregation-unify-080 2.4, Q3): Size cannot show a sign. One list, so the answer
+ * is flipped in one place (utils/group-statistics.js says the same in the Size menu).
+ */
+const CANNOT_HOLD_ZSCORE = Object.freeze(['size']);
+
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const isText = (v) => typeof v === 'string' && v !== '';
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -64,6 +73,9 @@ function cleanStatistic(raw, fallback, what, problems) {
     const out = { ...raw };
     if (!STATISTIC_IDS.includes(raw.stat)) {
         problems.push(`${what}: unknown statistic ${JSON.stringify(raw.stat)}, ${fallback.stat} used`);
+        out.stat = fallback.stat;
+    } else if (raw.stat === ZSCORE && CANNOT_HOLD_ZSCORE.includes(what)) {
+        problems.push(`${what}: ${CG.statistic[ZSCORE]} cannot be shown by ${what}, ${fallback.stat} used`);
         out.stat = fallback.stat;
     }
     if (out.stat === 'count') {
@@ -315,6 +327,11 @@ export function normalizeCellGene(raw) {
         if ('swap' in src && src.swap !== false) problems.push('swap: not true or false, left out');
         delete config.swap;
     }
+    // under z-score mean the colour is a z-score already: a z Scale would redraw it under a second name (2.2)
+    if (config.scale && !scalingGrade(config.scale, config.color.stat).ok) {
+        notices.push({ scale: true, was: config.scale });
+        delete config.scale;
+    }
     return { config, problems, notices };
 }
 
@@ -357,10 +374,15 @@ export function withGroupingThreshold(config, threshold) {
  * @param {'color'|'size'} which
  * @param {{stat: string}} channel - the plot's Color or Size
  * @param {number} [down] - the section's down genes in the dataset
- * @returns {{genes: string, above?: number, moved: ?string}}
+ * @returns {{genes: string, above?: number, moved: ?string}} under z-score mean always `zscore_mean` (2.3)
  */
 export function effectiveRowStep(section, which, channel, down = 0) {
     const stored = section ? cleanRowStep(section[which]) : null;
+    // under z-score mean a set's row is always its z-score mean score; a stored other step follows the channel, said once
+    if (channel && channel.stat === ZSCORE) {
+        const contradicts = stored && stored.genes !== DEFAULT_ROW_STEP && stored.genes !== ZSCORE;
+        return { genes: ZSCORE, moved: contradicts ? 'zscore' : null };
+    }
     const fallback = down > 0 ? DEFAULT_METHOD : DEFAULT_ROW_STEP;
     const genes = stored ? stored.genes : fallback;
     const grade = rowStepGrade(genes, channel ? channel.stat : 'mean', { down });
@@ -551,6 +573,7 @@ export function rowStepName(step, stat, { alone = false } = {}) {
 
 /** Why a gene step is greyed out: "Sum of the gene rows cannot be computed with SD: ..." (options-model.js REASON). */
 export function rowStepReason(step, stat, reason) {
+    if (reason === 'zscore') return CG.rowStep.zscoreWhy;
     const [what, why] = CG.rowStep.why[reason];
     return REASON.cannotWith(rowStepName(step, stat), what, why);
 }
@@ -662,6 +685,9 @@ export function planFeatures({ sections, color, size, height = null, threshold =
 
     const gene = (name, stat, spec) => {
         const wire = { kind: 'gene', name, layer: spec.layer || DEFAULT_LAYER, detect_above: thresholdFor(stat, spec) };
+        // z-score mean: the server z-scores the gene over all cells, a feature of its own beside the raw one (2.5); a
+        // threshold is on the z-score, which the statistic does not read
+        if (stat === ZSCORE) Object.assign(wire, { detect_above: 0, transform: 'zscore', clip: ZSCORE_CLIP });
         const key = stableStringify(wire);
         if (!features.has(key)) features.set(key, wire);
         return key;
@@ -747,6 +773,12 @@ export function rowQuantity(step, channel) {
     const layer = channel.layer || DEFAULT_LAYER;
     const shared = quantityId(channel.stat, channel.layer, t);
     if (channel.stat === 'count') return { id: shared, label: statisticName(channel) };
+    // the z-score mean score of a set under a mean or a z-score mean channel is one quantity, named one way, on one
+    // bar: it is the gene rows' bar under z-score mean (2.3). Other cell steps keep the two-step wording
+    if (step.genes === ZSCORE && (channel.stat === ZSCORE || channel.stat === 'mean')) {
+        const own = { stat: ZSCORE, layer: channel.layer };
+        return { id: quantityId(ZSCORE, channel.layer, 0), label: statisticName(own) };
+    }
     if (combinesRows(step.genes)) {
         if (step.genes === 'rows_mean') return { id: shared, label: q.rows(statisticName(channel), CG.rowStep.how.rows_mean) };
         const id = `${step.genes}|${shared}`;
@@ -769,7 +801,8 @@ const NO_GENE_MOMENTS = null;
  * @param {(key: string) => (Float64Array|null)} momentsOf
  * @param {Array<{n: number}>} groups - the reply's groups, in order
  * @param {Object} config - the plot's configuration (color, size, scale, mode, view, height)
- * @param {{titleOf?: (index: number) => string}} [names]
+ * @param {{titleOf?: (index: number) => string, constantOf?: (key: string) => boolean}} [names] - `constantOf`: the
+ *   feature has no spread (server status constant)
  * @returns {{rows: Object[], color: Object, size: (Object|null), height: (Object|null)}} `height` in 3D only: `{same:
  *   true, values}` (the colour's values as displayed) or the own measure, unscaled (UX 6b)
  */
@@ -786,6 +819,8 @@ export function buildMatrix(plan, momentsOf, groups, config, names = {}) {
     const raw = new Float64Array(R * G).fill(NaN);
     const sizeValues = size ? new Float64Array(R * G).fill(NaN) : null;
     const noExpressing = new Uint8Array(R * G);
+    // the cells of a z-scored gene with no spread over the dataset: no value, and the hover says why
+    const constant = new Uint8Array(R * G);
     const references = [];
     const rows = [];
     const moments = (key) => (key ? momentsOf(key) || NO_GENE_MOMENTS : NO_GENE_MOMENTS);
@@ -826,6 +861,7 @@ export function buildMatrix(plan, momentsOf, groups, config, names = {}) {
             const c = one(color, row.color);
             if (c) raw.set(c, at);
             if (c && color.stat !== 'count') noExpressing.set(noExpressingCells(color.stat, moments(row.color), G), at);
+            if (color.stat === ZSCORE && names.constantOf && names.constantOf(row.color)) constant.fill(1, at, at + G);
             if (size) { const z = one(size, row.size); if (z) sizeValues.set(z, at); }
             if (height) { const h = one(height, row.height); if (h) heightValues.set(h, at); }
             const m = color.stat === 'count' ? null : moments(row.color);
@@ -862,7 +898,7 @@ export function buildMatrix(plan, momentsOf, groups, config, names = {}) {
     return {
         rows,
         color: { id: colorId, stat: color.stat, layer: color.layer, detectAbove: needsThreshold(color.stat) ? color.detect_above || 0 : undefined,
-            scaling, values, raw, noExpressing },
+            scaling, values, raw, noExpressing, constant },
         size: size ? { id: sizeId, stat: size.stat, layer: size.layer, detectAbove: needsThreshold(size.stat) ? size.detect_above || 0 : undefined,
             values: sizeValues } : null,
         height: config.view !== '3d' ? null : height

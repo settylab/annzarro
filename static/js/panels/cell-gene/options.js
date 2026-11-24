@@ -52,6 +52,8 @@ const SCALES = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.COLOR
 const DEFAULT_SCALE = 'Reds';
 const Z_DEFAULT_SCALE = 'RdBu';
 const Z_SCALINGS = Object.freeze(['z_groups', 'z_pooled']);
+/** A colour that is a z-score: a z Scale, or the z-score mean statistic (RdBu around 0 unless a map is picked). */
+const isZColour = (c) => Z_SCALINGS.includes(c.scale) || (!!c.color && c.color.stat === 'zscore_mean');
 const DEFAULT_OUTLINE = Object.freeze({ color: '#000', width: 0.5 });
 const OUTLINE_MAX = 3;
 /** Color strips in Plot Options: one per factor (the default), the Group band of each group's own colour, or none. */
@@ -115,7 +117,7 @@ function styleOf(config) {
     const gap = isNumber(c.gap) ? Math.round(Math.max(0, Math.min(GAP_MAX, c.gap))) : DEFAULT_GAP;
     // A stored map is the user's pick and is kept; with none stored the default follows the scaling (Reds, RdBu under a z-score)
     const picked = SCALES.includes(c.colorScale);
-    const zScored = Z_SCALINGS.includes(c.scale);
+    const zScored = isZColour(c);
     const colorScale = picked ? c.colorScale : zScored ? Z_DEFAULT_SCALE : DEFAULT_SCALE;
     const center = isNumber(c.center) && DIVERGING_SCALES.has(colorScale) ? c.center : !picked && !isNumber(c.center) && zScored ? 0 : null;
     const o = isObject(c.outline) ? c.outline : {};
@@ -574,7 +576,7 @@ function mount(slot, ctx) {
     const colorBody = el('div', { class: 'cgene-pop cgene-color-menu' },
         section(WO.heading.colors,
             select('colorScale', WO.colorScale, SCALES.map((s) => [s, scaleOptionLabel(s)]),
-                (v) => flat('colorScale', v, Z_SCALINGS.includes(config().scale) ? null : DEFAULT_SCALE, `color scale ${v}`)),
+                (v) => flat('colorScale', v, isZColour(config()) ? null : DEFAULT_SCALE, `color scale ${v}`)),
             check('reverse', WO.reverse, (on) => flat('reverse', on, false, onOff(on, `${WO.reverse} colors`))),
             colorRange.element,
             check('printValues', WO.printValues, (on) => flat('printValues', on, false, onOff(on, WO.printValues))),

@@ -45,7 +45,7 @@ export const GROUPING_LIMITS = Object.freeze({
 });
 
 /** The statistic ids a grouping can offer to its consumers (plan 1.6). */
-export const STATISTIC_IDS = Object.freeze(['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+export const STATISTIC_IDS = Object.freeze(['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
 const SMALL_MODES = Object.freeze(['keep', 'collect', 'hide']);
 const DEFAULT_SMALL = Object.freeze({ threshold: 10, mode: 'keep' });
 const DEFAULT_SEPARATOR = ' | ';

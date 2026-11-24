@@ -252,7 +252,7 @@ def test_job3_one_row_per_pathway(page, served):
         groups = _step_options(page, which)
         assert [g[0] for g in groups] == ["Combine the gene rows", "Score each cell"]
         assert groups[1][1][0] == "z-score mean"
-    assert _step_options(page, "size")[0][1] == ["Mean of the gene rows", "Genes detected per cell", "Mean of the gene rows, as z-scores"]
+    assert _step_options(page, "size")[0][1] == ["Mean of the gene rows", "Genes detected per cell", "Mean of the gene rows, z-scored across groups"]
     assert page.locator(f"{VALUES} select").count() == 2, "no layer and no statistic select: those are the plot's"
     sec = page.locator(VALUES)
     assert sec.locator(".cgene-section__genes[data-which='color']").input_value() == "rows_mean"

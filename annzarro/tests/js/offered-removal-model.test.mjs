@@ -89,7 +89,7 @@ test('pairAfter: the select touched wins and the other one moves, with one sente
 
 test('group statistics list all five and Cell count, which reads no layer', () => {
     const list = G.statisticChoices({ recipe: {}, layer: 'X', kinds: KINDS });
-    assert.deepEqual(list.map((e) => e.value), ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.deepEqual(list.map((e) => e.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
     assert.equal(find(list, 'pct_expressing').disabled, true);
     assert.equal(find(list, 'count').disabled, false);
     assert.deepEqual(G.GROUP_STATISTICS_MODEL.layerChoices({ method: 'count', ...ctx }), []);

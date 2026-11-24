@@ -60,7 +60,7 @@ import {
 import { SIGNATURE_MODEL } from '../utils/signature-options.js';
 import { withoutLegacy } from '../utils/options-model.js';
 import { parseThresholdText } from '../utils/options-model.js';
-import { geneReads, combinesRows } from '../utils/cell-gene-model.js';
+import { geneReads, combinesRows, scalingGrade } from '../utils/cell-gene-model.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
 import { buildFigure, colourBars, sceneLabels, labelEdges, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
@@ -264,6 +264,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          */
         function takeLoadNotices() {
             const said = _loadNotices.map((n) => {
+                if (n.scale) return CGV.scaleMoved(CGV.scaling[n.was] || n.was);
                 const section = _config.sections[n.section];
                 const channel = n.which === 'color' ? 'Color' : 'Size';
                 return section ? CGV.rowStep.followed(sectionTitle(section, titleOfPanel), channel, channelName(_config[n.which]), n.was) : '';
@@ -819,11 +820,22 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             }
             const { layer, say } = pickLayer({ datasetLayers: datasetLayers(), kinds: _kinds, stat, preferred: spec.layer });
             // a one-row section whose gene step the new statistic rules out goes back to the default, in this step, said once
-            const { config, moved } = regradeRows({ ..._config, [which]: { ...withThreshold(spec), stat, layer } }, which);
+            const regraded = regradeRows({ ..._config, [which]: { ...withThreshold(spec), stat, layer } }, which);
+            const { moved } = regraded;
+            let config = regraded.config;
             const channel = which === 'color' ? 'Color' : 'Size';
-            const said = [say, ...moved.map((m) => CGV.rowStep.moved(sectionName(m.section), channel, CGV.rowStep.name.rows_mean,
+            // a row that must follow the channel reads as the z-score mean score under z-score mean (design 2.3)
+            const now = stat === 'zscore_mean' ? CGV.rowStep.score(SIGNATURE_MODEL.methodShort('zscore_mean')) : CGV.rowStep.name.rows_mean;
+            const said = [say, ...moved.map((m) => CGV.rowStep.moved(sectionName(m.section), channel, now,
                 rowStepReason(m.from, stat, m.reason)))].filter(Boolean).join(' ');
-            commit(config, `${measureName(which)} statistic`, { said });
+            // under z-score mean the colour is a z-score already: a z Scale moves to None in this same step, said once (2.2)
+            let scaleSaid = '';
+            if (config.scale && !scalingGrade(config.scale, config.color.stat).ok) {
+                scaleSaid = CGV.scaleMoved(CGV.scaling[config.scale]);
+                config = { ...config };
+                delete config.scale;
+            }
+            commit(config, `${measureName(which)} statistic`, { said: [said, scaleSaid].filter(Boolean).join(' ') });
         }
 
         /**
@@ -935,16 +947,16 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             return ['signature', 'table'].map((kind) => ({ heading: KIND_HEADING[kind], items: list.filter((s) => s.kind === kind) }));
         }
 
-        function measure(spec) {
+        function measure(spec, consumer) {
             const g = axisGrouping();
             return measureModel({ spec, datasetLayers: datasetLayers(), kinds: _kinds, threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold(),
-                grouping: g ? { title: g.getTitle(), value: baseThreshold() } : null });
+                grouping: g ? { title: g.getTitle(), value: baseThreshold() } : null, consumer });
         }
 
         /** Height's row: its own measure, or Same as Color (Color's statistics listed after it, no layer, no threshold). */
         function heightModel() {
             const own = _config.height;
-            const m = measure(own || _config.color);
+            const m = measure(own || _config.color, 'height');
             const stats = [{ value: SAME_AS_COLOR, label: W3.sameAsColor }, ...m.stats];
             return own ? { ...m, stats } : { ...m, stat: SAME_AS_COLOR, layer: undefined, stats, layers: [], threshold: null };
         }
@@ -956,8 +968,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 choices: axisChoices({ structure: structureRead(), self: _id, groupings: all, loops: wouldLoop }),
                 mode: _config.mode,
                 // each measure: statistic, layer (all of them, graded: SHR-27, decision 31) and its threshold (WP-4)
-                color: measure(_config.color),
-                size: measure(_config.size),
+                color: measure(_config.color, 'color'),
+                size: measure(_config.size, 'size'),
                 // 3D's Height (UX 6b): Same as Color first; shown while 3D is on, kept while it is off
                 height: heightModel(),
                 view3d: _config.view === '3d',
@@ -1306,11 +1318,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const byKey = new Map(asked.features.map((f, i) => [f.key, values.features[i]]));
             const momentsOf = (key) => {
                 const f = byKey.get(key);
-                return f && f.moments && !(f.status && f.status.status === 'missing') ? f.moments : null;
+                return f && f.moments && !(f.status && ['missing', 'constant'].includes(f.status.status)) ? f.moments : null;
             };
+            // a z-scored gene with no spread over the dataset has no value; the hover says why (design 2.5)
+            const constantOf = (key) => { const f = byKey.get(key); return !!(f && f.status && f.status.status === 'constant'); };
             const titles = plan.entries.map((e) => e.title);
             const matrix = buildMatrix(plan, momentsOf, groups, withGroupingThreshold(_config, baseThreshold()), {
-                titleOf: (i) => titles[i]
+                titleOf: (i) => titles[i], constantOf
             });
             const G = groups.length;
             const R = matrix.rows.length;
@@ -1351,7 +1365,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 groups: Array.from(order.groups, (g) => ({ label: names[g] || '', n: groups[g].n, small: isSmall(groups[g]) })),
                 rows,
                 color: { ...colorSettings, ...extras.color, values: permute(matrix.color.values), raw: permute(matrix.color.raw),
-                    noExpressing: permute(matrix.color.noExpressing) },
+                    noExpressing: permute(matrix.color.noExpressing), constant: permute(matrix.color.constant) },
                 size: _config.mode !== 'dots' ? { none: '' } : sizeNone ? { none: sizeNone }
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },

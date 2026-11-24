@@ -19,10 +19,13 @@ import { VOCABULARY } from './vocabulary.js';
 import { countsAs, emptyUsage } from './consumer-kinds.js';
 
 const NAME = VOCABULARY.cellGene.statistic;
+const Z_CANNOT = VOCABULARY.cellGene.zscoreCannot;
 
 /** The statistics a consumer picks from, in the order menus list them. `menu` is the name in running text. */
 // export-unused-ok: consumed by X3a and C2a (statistic menus read the same table)
 export const STATISTIC_INFO = Object.freeze([
+    { value: 'zscore_mean', label: NAME.zscore_mean, menu: 'z-score mean', needs: [], unit: 'SD',
+        definition: 'Each gene scaled to mean 0 and SD 1 over all cells of the dataset (clipped at ±10), then averaged over the group\'s cells. The same number as a one-gene signature\'s z-score mean.' },
     { value: 'mean', label: NAME.mean, menu: 'mean', needs: [], unit: 'layer units',
         definition: 'Average over the group\'s cells, zeros included.' },
     { value: 'pct_expressing', label: NAME.pct_expressing, menu: '% expressing', needs: ['detect_above'], unit: '0 to 100',
@@ -46,7 +49,7 @@ const THRESHOLD_USERS = STATISTIC_INFO.filter((m) => m.needs.includes('detect_ab
 /** The statistic a dot plot's size starts on (SHR-27). */
 const SIZE_STATISTIC = 'pct_expressing';
 /** The statistics that follow how deeply a cell was sequenced, on raw counts. */
-const DEPTH_STATISTICS = Object.freeze(['mean', 'sum', 'sd']);
+const DEPTH_STATISTICS = Object.freeze(['zscore_mean', 'mean', 'sum', 'sd']);
 
 /** "% expressing cannot be computed on 'X': it has negative values. Choose a layer." (SHR-27) */
 // export-unused-ok: consumed by X3a (the control says it where a size would have been)
@@ -174,7 +177,34 @@ export const GROUP_STATISTICS_MODEL = createOptionsModel({
 });
 
 /** Decision 31: all five statistics and Cell count on `layer`, impossible ones disabled with their reason. See options-model.js. */
-export const { methodChoices: statisticChoices, layerChoices: statisticLayerChoices, pairAfter: statisticPairAfter } = GROUP_STATISTICS_MODEL;
+export const { layerChoices: statisticLayerChoices, pairAfter: statisticPairAfter } = GROUP_STATISTICS_MODEL;
+
+/**
+ * The consumers that cannot show a statistic, and why (aggregation-unify-080 2.4): Size cannot show a sign, and a Gene
+ * Plot's cell group has no z-score mean until every gene's mean and SD over all cells is read (Q1). Each is one entry here, so
+ * the answer is flipped in one place. Color and Height can, so can a caller that names no consumer.
+ */
+const CANNOT_FOR = Object.freeze({
+    size: Object.freeze({ zscore_mean: Z_CANNOT.size }),
+    genes: Object.freeze({ zscore_mean: Z_CANNOT.genes })
+});
+
+/**
+ * The statistic list of a consumer: `GROUP_STATISTICS_MODEL.methodChoices`, and where the consumer cannot show a
+ * statistic that entry is disabled with its reason (a held one stays, marked "(not available)", as a layer's does).
+ * @param {{recipe?: Object, layer?: (string|null), kinds?: Object<string, string>, held?: string, consumer?: ('color'|'size'|'height'|'genes')}} [opts]
+ */
+export function statisticChoices({ consumer, ...rest } = {}) {
+    const list = GROUP_STATISTICS_MODEL.methodChoices(rest);
+    const cannot = CANNOT_FOR[consumer];
+    if (!cannot) return list;
+    return list.map((e) => {
+        if (!cannot[e.value]) return e;
+        const out = { ...e, grade: 'cannot', code: 'consumer', reason: cannot[e.value], title: cannot[e.value], note: '' };
+        if (e.value === rest.held) return { ...out, disabled: false, lapsed: true, label: `${e.label} (not available)` };
+        return { ...out, disabled: true };
+    });
+}
 
 /**
  * Where a dot plot's size starts (SHR-27): % expressing on X (or the layer picked), or nothing and the sentence that says
