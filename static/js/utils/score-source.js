@@ -673,9 +673,14 @@ const scoreTable = {
         entityLabel,
         /** The source's ticked columns only ("mean · counts"); the add row below them adds another. */
         options: (sig, ticked) => ticked.filter(t => t.key === sig.id)
-            .map(t => ({ column: heldMethod(t), layer: heldLayer(t), text: columnPairLabel(t) })),
-        /** The add row, `[method] on [layer] [Add column]`: the two selects of a plot's axis. */
+            .map(t => ({ column: heldMethod(t), layer: heldLayer(t), text: columnPairLabel(t), symbol: SCORE_SYMBOLS[heldMethod(t)] })),
+        /**
+         * The add row, `[layer] [aggregation button] [Add column]`: the layer select and the aggregation button of a
+         * plot's axis row. `symbols` and `name` are the button's table: a method's symbol and its name, as the axis lists them.
+         */
         add: {
+            symbols: SCORE_SYMBOLS,
+            name: (method) => (METHOD_INFO.find(m => m.value === method) || { label: method }).label,
             start: (sig) => scoreStartPair(sig.id),
             menus: (sig, pair) => scorePairMenus(sig.id, pair),
             after: (sig, changed, value, pair) => scorePairAfter(sig.id, changed, value, pair),

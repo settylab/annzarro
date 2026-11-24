@@ -38,32 +38,36 @@ export function fillChoiceSelect(select, entries, value) {
 /**
  * Wire a method select and a layer select that hold a pair until the caller reads it.
  * @param {Object} opts
- * @param {HTMLSelectElement} opts.method
+ * @param {HTMLSelectElement|null} [opts.method] - the method select; null when the caller chooses the method another
+ *   way (the aggregation button) and calls `pick('method', value)` itself
  * @param {HTMLSelectElement} opts.layer
  * @param {() => {method: string, layer: string}} opts.start - where the pair starts (and starts again on `reset`)
  * @param {(pair) => {methods: Array, layers: Array}} opts.menus - the graded entries for a pair
  * @param {(changed: 'method'|'layer', value: string, pair) => {method: string, layer: string, say?: string}} opts.after
  * @param {HTMLElement} [opts.note] - where a move of the other select is said
- * @returns {{value: () => {method: string, layer: string}, reset: () => void}}
+ * @param {() => void} [opts.onPaint] - after every paint (a method button redraws its symbol and its grading here)
+ * @returns {{value: () => {method: string, layer: string}, reset: () => void, pick: (changed: 'method'|'layer', value: string) => void}}
  */
-export function bindPairSelects({ method, layer, start, menus, after, note = null }) {
+export function bindPairSelects({ method = null, layer, start, menus, after, note = null, onPaint = null }) {
     let pair = start();
     const paint = () => {
         const m = menus(pair);
-        fillChoiceSelect(method, m.methods, pair.method);
+        if (method) fillChoiceSelect(method, m.methods, pair.method);
         fillChoiceSelect(layer, m.layers, pair.layer);
         layer.hidden = !m.layers.length;
+        if (onPaint) onPaint();
     };
-    const touch = (changed) => {
-        const p = after(changed, changed === 'method' ? method.value : layer.value, pair);
+    const pick = (changed, value) => {
+        const p = after(changed, value, pair);
         pair = { method: p.method, layer: p.layer };
         paint();
         if (note) note.textContent = p.say || '';
     };
-    method.addEventListener('change', () => touch('method'));
-    layer.addEventListener('change', () => touch('layer'));
+    if (method) method.addEventListener('change', () => pick('method', method.value));
+    layer.addEventListener('change', () => pick('layer', layer.value));
     paint();
     return {
+        pick,
         value: () => ({ ...pair }),
         reset() { pair = start(); paint(); if (note) note.textContent = ''; }
     };
