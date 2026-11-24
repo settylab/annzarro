@@ -203,7 +203,7 @@ def test_job1_cells_per_cluster_split_by_condition_as_shares(page, served):
 def test_job2_a_histogram_per_sample_with_the_inline_binning(page, served):
     depth = {"source": {"type": "obs", "key": "depth"}}
     _open(page, served, {CC: _count(mode="histogram", x=depth, split={"source": {"type": "obs", "key": "sample"}})})
-    _drawn(page, "histogram")
+    _drawn(page, "bar")
     fig = _plot(page)
     assert len(fig["data"]) == DATA.obs["sample"].nunique()
     assert sum(sum(t["y"]) for t in fig["data"]) == N
@@ -217,21 +217,21 @@ def test_job2_a_histogram_per_sample_with_the_inline_binning(page, served):
     assert page.input_value(f"[data-popover='binning'] .ccnt-binning .pbc-bins") == "50"
     page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "20")
     page.press(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "Enter")
-    _drawn(page, "histogram", "c.x.binning && c.x.binning.bins === 20")
+    _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 20")
     assert {len(t["x"]) for t in _plot(page)["data"]} == {20}
     assert page.inner_text(line).startswith("Bins: equal width · 20 · auto range")
 
     # a range: the cells below it are left out (CNT-9, SHR-45)
     page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-range-lo", "1")
     page.press(f"[data-popover='binning'] .ccnt-binning .pbc-range-lo", "Enter")
-    _drawn(page, "histogram", "c.x.binning && Array.isArray(c.x.binning.range) && c.x.binning.range[0] === 1")
+    _drawn(page, "bar", "c.x.binning && Array.isArray(c.x.binning.range) && c.x.binning.range[0] === 1")
     assert sum(sum(t["y"]) for t in _plot(page)["data"]) == int((DATA.obs["depth"] >= 1).sum())
     assert _config(page)["x"] == {"source": {"type": "obs", "key": "depth"}, "binning": {"method": "equal_width", "bins": 20, "range": [1, None]}}
 
     # a count the grouping's control would have dropped (its default, 10) is kept
     page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "10")
     page.press(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "Enter")
-    _drawn(page, "histogram", "c.x.binning && c.x.binning.bins === 10")
+    _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 10")
     assert {len(t["x"]) for t in _plot(page)["data"]} == {10}
 
 
@@ -305,10 +305,10 @@ def test_a_mode_change_keeps_every_input_and_lists_what_the_mode_does_not_read(p
     assert len(_plot(page)["data"]) == 2, "Color by is back"
     assert _config(page)["split"] == CONDITION and _config(page)["x"] == CELL_TYPE
 
-    # a histogram of a categorical X: the input stays, and the plot says why it cannot be drawn
-    page.select_option(f"{S} .ccnt-mode", "histogram")
+    # a density of a categorical X: the input stays, and the plot says why it cannot be drawn
+    page.select_option(f"{S} .ccnt-mode", "density")
     until(page, "(s) => document.querySelector(s + ' .ccnt-panel').dataset.state === 'unusable'", S)
-    assert _state_text(page) == "Histogram needs a numeric X. cell_type is categorical."
+    assert _state_text(page) == "Density needs a numeric X. cell_type is categorical."
     assert _config(page)["x"] == CELL_TYPE
 
 
@@ -465,7 +465,7 @@ def test_the_binning_control_shows_no_empty_preview_when_the_reply_has_no_histog
     """A count plot's reply carries no histogram: the control must not leave a blank grey field under the range help."""
     depth = {"source": {"type": "obs", "key": "depth"}}
     _open(page, served, {CC: _count(mode="histogram", x=depth)})
-    _drawn(page, "histogram")
+    _drawn(page, "bar")
     page.click(f"{S} [data-row='x'] .ccnt-bins")
     page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc")
     shot = os.environ.get("FB1B_SHOT")

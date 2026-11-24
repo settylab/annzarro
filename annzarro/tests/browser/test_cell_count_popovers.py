@@ -58,7 +58,7 @@ def test_opening_levels_or_binning_leaves_the_panel_alone_and_escape_returns_foc
     else:
         page.fill("[data-popover='binning'] .pbc-bins", "20")
         page.press("[data-popover='binning'] .pbc-bins", "Enter")
-        _drawn(page, "histogram", "c.x.binning && c.x.binning.bins === 20")
+        _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 20")
     assert page.is_visible(f"[data-popover='{popover}']")
     assert page.evaluate(BOX, S) == before
     page.keyboard.press("Escape")

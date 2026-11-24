@@ -46,7 +46,6 @@ test('each mode shows the rows of UX 4.2 and no other', () => {
         return ['x', 'y', 'split', 'sets'].filter((k) => r[k]).concat(r.value ? [r.value] : []);
     };
     assert.deepEqual(shown('bar'), ['x', 'split', 'height']);
-    assert.deepEqual(shown('histogram'), ['x', 'split', 'height']);
     assert.deepEqual(shown('pie'), ['x']);
     assert.deepEqual(shown('hist2d'), ['x', 'y', 'split', 'color']);
     assert.deepEqual(shown('heatmap'), ['x', 'y', 'color']);
@@ -55,18 +54,17 @@ test('each mode shows the rows of UX 4.2 and no other', () => {
     assert.deepEqual(shown('venn'), ['sets']);
     assert.deepEqual(shown('upset'), ['sets', 'color']);
     assert.equal(K.rowsOf('pie').slices, true, 'a pie\'s X is its Slices');
-    assert.deepEqual(K.rowsOf('bar').arrangement, ['stack', 'dodge', 'fill']);
-    assert.deepEqual(K.rowsOf('histogram').arrangement, ['stack', 'dodge']);
-    assert.equal(K.rowsOf('bar').horizontal && K.rowsOf('histogram').horizontal, true);
+    assert.deepEqual(K.rowsOf('bar').arrangement, ['stack', 'dodge', 'overlay', 'fill']);
+    assert.equal(K.rowsOf('bar').horizontal, true);
     assert.equal(K.rowsOf('pie').ring, true);
 });
 
 test('the Mode select groups the modes as UX 4.1 does, with their names', () => {
     assert.deepEqual(C.modeGroups.map((g) => [g.label, [...g.modes]]), [
-        ['Counts', ['bar', 'histogram', 'pie']], ['Two inputs', ['hist2d', 'heatmap']], ['Smoothed', ['density', 'density2d']], ['Sets', ['venn', 'upset']]
+        ['Counts', ['bar', 'pie']], ['Two inputs', ['hist2d', 'heatmap']], ['Smoothed', ['density', 'density2d']], ['Sets', ['venn', 'upset']]
     ]);
     assert.deepEqual(C.modeGroups.flatMap((g) => g.modes).map((m) => C.modes[m]),
-        ['Bar', 'Histogram', 'Pie', '2D histogram', 'Heatmap', 'Density', '2D density', 'Venn', 'UpSet']);
+        ['Bar', 'Pie', '2D histogram', 'Heatmap', 'Density', '2D density', 'Venn', 'UpSet']);
     assert.deepEqual([...M.COUNT_MODES].sort(), C.modeGroups.flatMap((g) => g.modes).sort());
     assert.deepEqual([C.rows.mode, C.rows.x, C.rows.split, C.rows.height, C.rows.labels], ['Mode', 'X', 'Color by', 'Height', 'Labels']);
     assert.deepEqual([C.arrangement.stack, C.arrangement.dodge, C.arrangement.fill], ['Stacked', 'Side by side', '100%']);
@@ -98,9 +96,9 @@ test('"Kept for other modes" names what the mode does not read, sets by their na
 // --- the inline binning line (UX 4.4, CNT-9) ---------------------------------------------------------------------
 
 test('the compact binning line says the method, the bins and the range', () => {
-    assert.equal(K.binningLine(obs('depth'), 'histogram'), 'Bins: equal width · 50 · auto range');
+    assert.equal(K.binningLine(obs('depth'), 'bar'), 'Bins: equal width · 50 · auto range');
     assert.equal(K.binningLine(obs('depth'), 'hist2d'), 'Bins: equal width · 100 · auto range');
-    assert.equal(K.binningLine(obs('depth', { binning: { method: 'equal_width', bins: 120, range: [0, null] } }), 'histogram'),
+    assert.equal(K.binningLine(obs('depth', { binning: { method: 'equal_width', bins: 120, range: [0, null] } }), 'bar'),
         'Bins: equal width · 120 · range 0 to auto');
     assert.equal(K.binningLine(obs('depth', { binning: { method: 'equal_count', bins: 4, zero_bin: true } }), 'bar'),
         'Bins: equal count · 4 · zero bin');
@@ -109,16 +107,16 @@ test('the compact binning line says the method, the bins and the range', () => {
 });
 
 test('the binning control is given the count plot\'s bins, and what it gives back is stored without the mode\'s default', () => {
-    assert.deepEqual(K.forControl(obs('depth'), 'histogram').binning, { method: 'equal_width', bins: 50 });
+    assert.deepEqual(K.forControl(obs('depth'), 'bar').binning, { method: 'equal_width', bins: 50 });
     assert.deepEqual(K.forControl(obs('depth'), 'hist2d').binning, { method: 'equal_width', bins: 100 });
     // the count plot's default left out; equal width with nothing else is not written at all
-    assert.deepEqual(K.fromControl({ ...obs('depth'), binning: { method: 'equal_width', bins: 50 } }, 'histogram'), obs('depth'));
+    assert.deepEqual(K.fromControl({ ...obs('depth'), binning: { method: 'equal_width', bins: 50 } }, 'bar'), obs('depth'));
     // the grouping's default count (10) is a count like any other here, and so is one past the grouping's limit
-    assert.deepEqual(K.fromControl({ ...obs('depth'), binning: { method: 'equal_width', bins: 10 } }, 'histogram').binning, { method: 'equal_width', bins: 10 });
-    assert.deepEqual(K.fromControl({ ...obs('depth'), binning: { method: 'equal_width', bins: 1500 } }, 'histogram').binning, { method: 'equal_width', bins: 1500 });
+    assert.deepEqual(K.fromControl({ ...obs('depth'), binning: { method: 'equal_width', bins: 10 } }, 'bar').binning, { method: 'equal_width', bins: 10 });
+    assert.deepEqual(K.fromControl({ ...obs('depth'), binning: { method: 'equal_width', bins: 1500 } }, 'bar').binning, { method: 'equal_width', bins: 1500 });
     assert.deepEqual(K.fromControl({ ...obs('depth'), binning: { method: 'equal_count', bins: 50 } }, 'bar').binning, { method: 'equal_count' });
     // a stored count survives the config's normaliser and reaches the request
-    const config = norm({ mode: 'histogram', x: K.fromControl({ ...obs('depth'), binning: { method: 'equal_width', bins: 1500 } }, 'histogram') });
+    const config = norm({ mode: 'histogram', x: K.fromControl({ ...obs('depth'), binning: { method: 'equal_width', bins: 1500 } }, 'bar') });
     const plan = M.planGrid(config, { isNumeric: (s) => s.key === 'depth', levelCount: () => null });
     assert.equal(plan.request.partitionings[0].binning.bins, 1500);
 });

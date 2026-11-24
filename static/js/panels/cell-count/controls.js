@@ -27,7 +27,8 @@ import { DEFAULT_COLORSCALE } from './colour.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import {
     colorUse, parseColourLimit, rowsOf, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
-    setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
+    setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust, arrangementChoices,
+    arrangementShown, sortRefusal
 } from './controls-model.js';
 
 const C = VOCABULARY.countPlot;
@@ -37,7 +38,6 @@ const COLOR_MAPS = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.C
 
 // ================================================================================================ the view
 
-const ARRANGEMENT_WORD = (mode, id) => (mode === 'histogram' && id === 'dodge' ? C.arrangement.overlay : C.arrangement[id]);
 
 /** The input rows of the bar: `field` in the config, the select's axis name and the roles its type menu lists. */
 const INPUT_ROWS = Object.freeze([
@@ -328,8 +328,9 @@ export function createControls({ D, id, model, on }) {
                         const c = model().config;
                         commit({ ...c, [row.field]: fromControl(next, c.mode) }, label);
                     },
-                    // how the bins are drawn: a 2D histogram and a histogram only; a density is smoothed on a linear grid
-                    ...(['hist2d', 'histogram'].includes(m.config.mode) && ['x', 'y'].includes(row.field) ? { spacing: {
+                    // how the bins are drawn: a 2D histogram's, and a Bar's X (a Bar of a number is a histogram); a density is
+                    // smoothed on a linear grid
+                    ...((m.config.mode === 'hist2d' && ['x', 'y'].includes(row.field)) || (m.config.mode === 'bar' && row.field === 'x') ? { spacing: {
                         value: binSpacingOf(m.config, row.field),
                         set: (value) => {
                             const c = model().config;
@@ -423,16 +424,21 @@ export function createControls({ D, id, model, on }) {
         const ids = shownRows.arrangement;
         // means are never added or shared out of 100%, so a statistic is always drawn side by side: no choice to offer
         arrangement.hidden = !ids.length || !m.config.split || (m.config.value && m.config.value.kind === 'measure');
-        const now = m.config.arrangement || 'stack';
+        if (!ids.length) return;
+        // graded like every choice: one that does not apply now is disabled with why; the one shown is the one drawn
+        const now = arrangementShown(m.config, m.isNumeric);
         const group = `ccnt-arr-${id}`;
-        for (const a of ids) {
-            const input = el('input', { type: 'radio', name: group, value: a, checked: a === now, class: 'ccnt-arrangement__input',
-                on: { change: () => {
+        for (const choice of arrangementChoices(m.config, m.isNumeric)) {
+            const a = choice.value;
+            const input = el('input', { type: 'radio', name: group, value: a, checked: a === now, disabled: choice.disabled,
+                class: 'ccnt-arrangement__input', on: { change: () => {
                     const next = { ...model().config };
                     if (a === 'stack') delete next.arrangement; else next.arrangement = a;
-                    commit(next, `${ARRANGEMENT_WORD(m.config.mode, a).toLowerCase()} bars`);
+                    commit(next, `${choice.label.toLowerCase()} bars`);
                 } } });
-            arrangement.appendChild(el('label', { class: 'ccnt-arrangement__opt' }, input, ` ${ARRANGEMENT_WORD(m.config.mode, a)}`));
+            const opt = el('label', { class: 'ccnt-arrangement__opt' }, input, ` ${choice.label}`);
+            if (choice.title) opt.title = choice.title;
+            arrangement.appendChild(opt);
         }
     }
 
@@ -613,7 +619,11 @@ export function createControls({ D, id, model, on }) {
         labelsSelect.hidden = !shownRows.labels;
         labelsRow.querySelector('label.ctl-label').hidden = !shownRows.labels;
         const show = (btn, visible, isOn) => { btn.hidden = !visible; btn.setAttribute('aria-pressed', String(!!isOn)); btn.classList.toggle('active', !!isOn); };
-        show(sortBtn, shownRows.sort, o.sort === 'height');
+        // bins of a number keep its order: Sort by height does not apply, and says why (shown as not applied)
+        const noSort = shownRows.sort ? sortRefusal(m.config, m.isNumeric) : '';
+        show(sortBtn, shownRows.sort, o.sort === 'height' && !noSort);
+        sortBtn.disabled = !!noSort;
+        sortBtn.title = noSort;
         show(reverseBtn, shownRows.reverse, o.reverse);
         show(horizontalBtn, shownRows.horizontal, o.horizontal);
         logWrap.hidden = !shownRows.log;

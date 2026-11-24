@@ -22,8 +22,8 @@ const P = VOCABULARY.phrase;
 
 /** What a stored config's mode shows (UX 4.2): its rows, the value it shows and the options that are its own. */
 const MODE_ROWS = Object.freeze({
-    bar: { value: 'height', arrangement: ['stack', 'dodge', 'fill'], labels: true, sort: true, horizontal: true, log: true, binned: ['x', 'split'] },
-    histogram: { value: 'height', arrangement: ['stack', 'dodge'], labels: true, horizontal: true, log: true, binned: ['x', 'split'] },
+    // a Bar of a number is a histogram: each bar at its bin, its bin's width (the Histogram view folded into it, 0.8.0)
+    bar: { value: 'height', arrangement: ['stack', 'dodge', 'overlay', 'fill'], labels: true, sort: true, horizontal: true, log: true, binned: ['x', 'split'] },
     pie: { slices: true, labels: true, sort: true, ring: true, binned: ['x'] },
     hist2d: { value: 'color', labels: true, binned: ['x', 'y', 'split'] },
     heatmap: { value: 'color', labels: true, reverse: true, binned: ['x', 'y'] },
@@ -52,6 +52,51 @@ export function rowsOf(mode) {
 }
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Whether a Bar's X is a number the engine bins: its bars are then drawn as a histogram's, each at its bin with its
+ * bin's width. An integer read by its values is categories.
+ * @param {Object} config
+ * @param {(source: Object) => boolean} isNumeric
+ */
+export function binnedX(config, isNumeric) {
+    const p = config && config.x;
+    return config.mode === 'bar' && !!p && !!isNumeric && isNumeric(p.source) && !(isObject(p.binning) && p.binning.method === 'categories');
+}
+
+/** Why an arrangement does not apply to a Bar now, or '' when it does. */
+function arrangementRefusal(config, id, isNumeric) {
+    if (id === 'dodge' && binnedX(config, isNumeric)) return C.arrangementRefused.dodgeBins;
+    return '';
+}
+
+/**
+ * The arrangement select of a Color by (graded like every choice): each arrangement of the mode, the ones that do not
+ * apply disabled with the reason as their title.
+ * @param {Object} config
+ * @param {(source: Object) => boolean} isNumeric
+ * @returns {Array<{value: string, label: string, disabled: boolean, title: string}>}
+ */
+export function arrangementChoices(config, isNumeric) {
+    return rowsOf(config.mode).arrangement.map((id) => {
+        const title = arrangementRefusal(config, id, isNumeric);
+        return { value: id, label: C.arrangement[id], disabled: !!title, title };
+    });
+}
+
+/**
+ * The arrangement the plot draws and the select shows: the stored one, or, when that does not apply now (side by side
+ * kept from categories, then X became a number), the closest that does: bins overlaid. The stored one is kept.
+ */
+export function arrangementShown(config, isNumeric) {
+    const stored = config.arrangement || 'stack';
+    return arrangementRefusal(config, stored, isNumeric) ? 'overlay' : stored;
+}
+
+/** Why Sort by height does not apply (bins of a number keep the number's order), or '' when it does. */
+export function sortRefusal(config, isNumeric) {
+    return binnedX(config, isNumeric) ? C.sortRefused : '';
+}
 
 /**
  * How an input's source is named in a line: the panel's title for a source another panel makes, else its type and its
@@ -204,7 +249,7 @@ export function shownConfig(config) {
     return out;
 }
 
-/** The inputs of a density whose stored binning has a zero bin (kept from a histogram, CNT-6). */
+/** The inputs of a density whose stored binning has a zero bin (kept from a Bar of a number, CNT-6). */
 function densityZeroBins(config) {
     if (!rowsOf(config.mode).density) return [];
     return ['x', 'y'].filter((f) => config[f] && isObject(config[f].binning) && config[f].binning.zero_bin);

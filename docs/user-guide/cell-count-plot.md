@@ -11,7 +11,7 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 ## Make a plot
 
 1. Add a **Cell Count Plot** panel. It says "Choose X to count cells."
-2. **Mode**: what to draw. The list groups the modes: *Counts* (**Bar**, **Histogram**, **Pie**), *Two inputs* (**2D
+2. **Mode**: what to draw. The list groups the modes: *Counts* (**Bar**, **Pie**), *Two inputs* (**2D
    histogram**, **Heatmap**), *Smoothed* (**Density**, **2D density**) and *Sets* (**Venn**, **UpSet**).
 3. **X** (and **Y** in the two-input modes): any per-cell source a Cell Plot takes, with the same selects: an obs or
    obsm column, a gene of a layer (following the focus, with the lock), a score, a row of an obsp matrix, or a
@@ -22,10 +22,10 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 |---|---|
 | **Mode** | The kind of plot (below) |
 | **X**, **Y** (**Slices** in a pie) | The inputs. A numeric input shows its bins on one line, "Bins: equal width · 50 · auto range", which opens the binning control in a pop-over; a categorical one offers **Choose levels**, also in a pop-over |
-| **Color by** | Divides each bar, curve or slice by a further input: **Stacked**, **Side by side** (**Overlaid** in a histogram) or **100%** |
+| **Color by** | Divides each bar, curve or slice by a further input: **Stacked**, **Side by side**, **Overlaid** (each level's bars translucent, over the others) or **100%**. One that does not apply is greyed out, and pointing at it says why: bins of a number have no **Side by side** |
 | **Height** (bar, histogram), **Color** (2D histogram, heatmap, UpSet) | What the bars or rectangles show (below) |
 | **Labels** | Printed on bars, cells, slices and regions: **None**, **Count**, **Share** or **Statistic** |
-| **Sort by height**, **Reverse**, **Horizontal**, **Log count axis**, **Ring** | Order and orientation of bars, a logarithmic count axis (bar, histogram), and a pie drawn as a ring. Each is shown only in the modes that have it |
+| **Sort by height**, **Reverse**, **Horizontal**, **Log count axis**, **Ring** | Order and orientation of bars, a logarithmic count axis (bar), and a pie drawn as a ring. Each is shown only in the modes that have it |
 | **Smoothing**, **Scale curves by level size**, and for a 2D density **Density as opacity**, **Isolines**, **Filled isolines** | The density modes' own row, with the bandwidth and range notes under it |
 | **Fade by its share** | Under the most frequent level's factor, in a 2D histogram or heatmap |
 | **Save as grouping** | On the toolbar: turns the plot's bars into a {doc}`cell-grouping` |
@@ -56,8 +56,7 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 
 | Mode | Inputs | Counts | Drawn as |
 |---|---|---|---|
-| **Bar** | X (categorical or binned), Color by | Cells per level, and per level of Color by | Bars, vertical or horizontal |
-| **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars without gaps, stacked or overlaid |
+| **Bar** | X (categorical or a number), Color by | Cells per level, and per level of Color by; a number in 50 equal-width bins by default | Bars, vertical or horizontal; a number's bars are a histogram: each at its bin, as wide as the bin, almost without gaps |
 | **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring |
 | **2D histogram** | X and Y numeric, Color by up to 8 levels | Cells per pair of bins, 100 × 100 by default, per level of Color by | Rectangles; with Color by, one layer per level |
 | **Heatmap** | X and Y (categorical or binned) | Cells per pair of levels | Rectangles, with values printed if asked |
@@ -66,7 +65,11 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 | **Venn** | 2 or 3 sets | Cells in every region | Circles with counts and shares |
 | **UpSet** | 2 to 16 sets | Cells in every exclusive intersection, and each set's size | Intersection bars over a matrix of dots, with set-size bars |
 
-An input the mode cannot use stays selected and the plot says what is missing, with a way out: "Histogram needs a
+A Bar of a number is the histogram: there is no separate Histogram mode, and a link saved with one opens as a Bar that
+draws the same figure (its overlaid bars as **Overlaid**). **Sort by height** does not apply to bins of a number, which
+keep the number's order.
+
+An input the mode cannot use stays selected and the plot says what is missing, with a way out: "Density needs a
 numeric X. cell_type is categorical." with **Show as Bar**; "Venn shows 2 or 3 sets." with **Show as UpSet**.
 
 ## Bins and ranges
@@ -77,7 +80,7 @@ and the limits are 2,000 bins in one dimension and 512 per axis in two, checked 
 from 2 to 2,000.").
 
 **Values outside a range are left out and counted.** Set a **Range** on an equal-width input and the cells outside it
-are not counted, so the tails of a histogram are true; the strip below the plot says how many. (A grouping puts such
+are not counted, so the tails of a Bar of a number are true; the strip below the plot says how many. (A grouping puts such
 cells into its end bins instead, because every cell must be in a group.)
 
 **Bins drawn.** In a histogram and a 2D histogram the binning control has a **Bins drawn** switch for each axis:
@@ -200,8 +203,9 @@ count and the limit, and offers the fix:
 | Mode | Limit | Way out |
 |---|---|---|
 | Bar, Pie | 200 levels on X: "sample has 380 levels; Bar shows up to 200." | **Bin it**, **Choose levels** |
+| Bar of a number | 2,000 bins; Color by up to 200 levels | **Remove Color by** |
 | Heatmap | 200 × 200 levels | **Bin it**, **Choose levels** |
-| Histogram, Density | 2,000 bins; Color by up to 200 levels | **Remove Color by** |
+| Density | 2,000 bins; Color by up to 200 levels | **Remove Color by** |
 | 2D histogram, 2D density | 512 × 512 bins; Color by up to 8 levels | **Remove Color by** |
 | UpSet | 16 sets | |
 

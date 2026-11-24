@@ -45,7 +45,7 @@ def _modebar(page, tile):
     ("hist2d", dict(mode="hist2d", x=DEPTH, y=SCORE)),
     ("density2d", dict(mode="density2d", x=DEPTH, y=SCORE)),
     ("bar", dict(mode="bar", x=CTYPE)),
-    ("histogram", dict(mode="histogram", x=DEPTH)),
+    ("bar", dict(mode="histogram", x=DEPTH)),          # a link stored as a histogram: a Bar of a number
     ("density", dict(mode="density", x=DEPTH)),
     ("venn", dict(mode="venn", sets=SETS)),
     ("upset", dict(mode="upset", sets=SETS)),

@@ -26,18 +26,24 @@ import { stableStringify } from './url-history.js';
 const VERSION = 1;
 
 // export-unused-ok: C2a lists the modes in the Mode select
-export const COUNT_MODES = Object.freeze(['bar', 'histogram', 'hist2d', 'density', 'density2d', 'pie', 'heatmap', 'venn', 'upset']);
+export const COUNT_MODES = Object.freeze(['bar', 'hist2d', 'density', 'density2d', 'pie', 'heatmap', 'venn', 'upset']);
 // export-unused-ok: C2a lists the statistics of the Height menu
 export const MEASURE_STATS = Object.freeze(['mean', 'sum', 'pct_above', 'sd', 'zscore']);
 // export-unused-ok: C2a labels each share base
 export const SHARE_BASES = Object.freeze(['all', 'x', 'split', 'row', 'column', 'total']);
-// export-unused-ok: C2a offers the three arrangements
-export const ARRANGEMENTS = Object.freeze(['stack', 'dodge', 'fill']);
+/** How a Color by's bars sit: stacked, side by side, overlaid (translucent, over each other) or as shares of 100%. */
+// export-unused-ok: the controls offer the arrangements
+export const ARRANGEMENTS = Object.freeze(['stack', 'dodge', 'overlay', 'fill']);
 const VALUE_KINDS = Object.freeze(['count', 'share', 'measure', 'top_level']);
 const SET_OPS = Object.freeze(['>', '>=', '<', '<=']);
 
 const DEFAULT_MODE = 'bar';
 const DEFAULT_ARRANGEMENT = 'stack';
+/**
+ * The Histogram view folded into Bar (0.8.0): a Bar of a number is drawn as the histogram was. A link stored with
+ * `mode: 'histogram'` opens as a Bar; its `dodge` was drawn overlaid, so it is read as `overlay`.
+ */
+const RETIRED_MODES = Object.freeze({ histogram: { mode: 'bar', arrangement: { dodge: 'overlay' } } });
 const DEFAULT_SHARE_BASE = 'all';
 
 /** Bins a count plot may ask for, by dimension (SHR-39, CNT-9). The grouping's own limit is lower (binning.js). */
@@ -50,11 +56,13 @@ const PIE_LEVELS = 12;
 /** The modes that colour a rectangle by its most frequent level (CNT-18). */
 const TOP_LEVEL_MODES = Object.freeze(['hist2d', 'heatmap']);
 
-/** What each mode reads (UX 4.2); `dimension` picks the bin limits and defaults, `wire` the grid request's mode. */
+/**
+ * What each mode reads (UX 4.2); `dimension` picks the bin limits and defaults, `wire` the grid request's mode, and
+ * `binnedWire` the one it takes when its X is a number the engine bins (a Bar of a number is a histogram: 2,000 bins).
+ */
 const MODES = Object.freeze({
-    bar: { x: true, split: true, wire: 'categorical', dimension: 'one' },
+    bar: { x: true, split: true, wire: 'categorical', binnedWire: '1d', dimension: 'one' },
     pie: { x: true, wire: 'categorical', dimension: 'one' },
-    histogram: { x: true, split: true, wire: '1d', dimension: 'one', numeric: ['x'] },
     density: { x: true, split: true, wire: '1d', dimension: 'one', numeric: ['x'], density: true },
     hist2d: { x: true, y: true, split: true, wire: '2d', dimension: 'two', numeric: ['x', 'y'] },
     density2d: { x: true, y: true, split: true, wire: '2d', dimension: 'two', numeric: ['x', 'y'], density: true },
@@ -68,10 +76,9 @@ const MODES = Object.freeze({
  * `bins` is the limit of a numeric input, `levels` of a categorical one.
  */
 const LIMITS = Object.freeze({
-    bar: { x: { levels: 200, bins: 200 } },
+    bar: { x: { levels: 200, bins: 2000 }, split: { levels: 200 } },
     pie: { x: { levels: 200, bins: 200 } },
     heatmap: { x: { levels: 200, bins: 200 }, y: { levels: 200, bins: 200 } },
-    histogram: { x: { bins: 2000 }, split: { levels: 200 } },
     density: { x: { bins: 2000 }, split: { levels: 200 } },
     hist2d: { x: { bins: 512 }, y: { bins: 512 }, split: { levels: 8 }, factor: { levels: 8 } },
     density2d: { x: { bins: 512 }, y: { bins: 512 }, split: { levels: 8 } }
@@ -172,7 +179,10 @@ export function normalizeCountPlot(raw) {
         return { config: { ...raw }, problems };
     }
     const out = { version: VERSION };
-    if (COUNT_MODES.includes(raw.mode)) {
+    const retired = RETIRED_MODES[raw.mode];
+    if (retired) {
+        out.mode = retired.mode;
+    } else if (COUNT_MODES.includes(raw.mode)) {
         out.mode = raw.mode;
     } else {
         if (raw.mode !== undefined) bad('mode', 'bad_mode');
@@ -184,8 +194,9 @@ export function normalizeCountPlot(raw) {
         if (input) out[field] = input;
     }
     if (raw.arrangement !== undefined) {
-        if (!ARRANGEMENTS.includes(raw.arrangement)) bad('arrangement', 'bad_arrangement');
-        else if (raw.arrangement !== DEFAULT_ARRANGEMENT) out.arrangement = raw.arrangement;
+        const arrangement = (retired && retired.arrangement[raw.arrangement]) || raw.arrangement;
+        if (!ARRANGEMENTS.includes(arrangement)) bad('arrangement', 'bad_arrangement');
+        else if (arrangement !== DEFAULT_ARRANGEMENT) out.arrangement = arrangement;
     }
     if (raw.sets !== undefined) out.sets = normalizeSets(raw.sets, bad);
     if (raw.value !== undefined) {
@@ -287,7 +298,7 @@ export function keptForOtherModes(config) {
 }
 
 /**
- * Whether the mode reads the config's Color by now: a bar, a histogram or a density always does; a 2D histogram while its
+ * Whether the mode reads the config's Color by now: a bar or a density always does; a 2D histogram while its
  * rectangles show counts (a share, a statistic or the most frequent level says something else with their color).
  */
 export function splitUsed(config) {
@@ -439,7 +450,8 @@ export function planGrid(config, ctx) {
         partitionings = plan.map((e) => e.partitioning);
     }
     const body = serverRequest({ partitionings }, ctx, {});
-    const request = { shape: 'grid', mode: mode.wire, partitionings: body.partitionings, subset: body.subset };
+    const binnedX = !mode.sets && inputs.some((e, i) => e.input === 'x' && isBinned(partitionings[i], ctx));
+    const request = { shape: 'grid', mode: binnedX && mode.binnedWire ? mode.binnedWire : mode.wire, partitionings: body.partitionings, subset: body.subset };
     if (body.sets) request.sets = body.sets;
     if (mode.density) request.density = true;
     if (members) members.forEach((member, i) => { request.partitionings[i].member = member; });
@@ -747,7 +759,7 @@ const BASE_AXIS = Object.freeze({ x: 'x', column: 'x', split: 'split', row: 'y' 
 // export-unused-ok: C2a offers the share bases of the mode
 export function shareBasesFor(config) {
     if (config.mode === 'heatmap' || config.mode === 'hist2d') return ['row', 'column', 'total'];
-    if (config.mode === 'bar' || config.mode === 'histogram') return config.split ? ['all', 'x', 'split'] : ['all'];
+    if (config.mode === 'bar') return config.split ? ['all', 'x', 'split'] : ['all'];
     return ['all'];
 }
 

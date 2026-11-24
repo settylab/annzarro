@@ -37,7 +37,7 @@ GEOMETRY = """([tile, host]) => {
 def _count_and_cell_plot(page, served):
     configs = {CC: cc._count(**RANGED), P: gp._plot()}
     cc._open(page, served, configs, open_ids=(CC, P))
-    cc._drawn(page, "histogram")
+    cc._drawn(page, "bar")
     page.wait_for_selector(f"{PT} .js-plotly-plot")
     page.wait_for_selector(f"{PT} .plot-status")
     page.wait_for_selector(f"{S} .plot-status")

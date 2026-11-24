@@ -390,7 +390,7 @@ test('the collected rest of a pie is grey, last, with its count', () => {
 // --- modes, the table, and cost --------------------------------------------------------------------------------------
 
 test('the modes with a drawing of their own are refused here, by name', () => {
-    assert.deepEqual([...D.DRAWN_MODES], ['bar', 'histogram', 'hist2d', 'heatmap', 'pie']);
+    assert.deepEqual([...D.DRAWN_MODES], ['bar', 'hist2d', 'heatmap', 'pie']);
     const { table } = small('bar');
     for (const mode of ['density', 'density2d', 'venn', 'upset']) {
         assert.throws(() => D.countFigure({ ...norm({ mode }), mode }, table, opts()), new RegExp(mode));

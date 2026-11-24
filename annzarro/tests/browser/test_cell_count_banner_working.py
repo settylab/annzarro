@@ -58,7 +58,7 @@ def test_the_banner_renders_as_the_cell_plots_and_sits_flush_with_the_panel_bott
     assert page.query_selector(f"{S} .ccnt-strip") is None
     # and with something to say the banner is still flush at the bottom
     cc._open(page, served, {CC: cc._count(**RANGED)})
-    cc._drawn(page, "histogram")
+    cc._drawn(page, "bar")
     assert page.evaluate(BANNER, S)["gap"] == 0
 
 
@@ -84,7 +84,7 @@ def test_what_the_plot_is_doing_sits_in_its_top_left_clear_of_the_modebar_spinne
             r.continue_()
     page.route("**/data/cell_groups*", route)
     cc._open(page, served, {CC: cc._count(mode="histogram", x=DEPTH)})
-    cc._drawn(page, "histogram")
+    cc._drawn(page, "bar")
     assert page.evaluate(GEOM, S)["work"] is None, "nothing is shown while the plot is ready"
     slow["on"] = True
     page.evaluate(f"""() => window.PanelManager.getPanel('{CC}').updateConfig({{ x: {{ source: {{ type: 'obs', key: 'depth' }}, binning: {{ method: 'equal_width', bins: 20 }} }} }})""")
@@ -103,7 +103,7 @@ def test_what_the_plot_is_doing_sits_in_its_top_left_clear_of_the_modebar_spinne
     slow["on"] = False
     for r in held:
         r.continue_()
-    cc._drawn(page, "histogram", "c.x.binning && c.x.binning.bins === 20")
+    cc._drawn(page, "bar", "c.x.binning && c.x.binning.bins === 20")
     until(page, "(s) => { const w = document.querySelector(s + ' .ccnt-working'); return !w || w.hidden; }", S)
 
 

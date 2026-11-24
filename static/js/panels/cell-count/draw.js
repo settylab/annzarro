@@ -1,6 +1,6 @@
 /**
- * What a count plot draws (CNT-15, CNT-18 to CNT-20, CNT-23): the Plotly figure of a count table for a bar, a
- * histogram, a 2D histogram, a heatmap and a pie, and the CSV of the plotted table.
+ * What a count plot draws (CNT-15, CNT-18 to CNT-20, CNT-23): the Plotly figure of a count table for a bar (of a
+ * number: a histogram), a 2D histogram, a heatmap and a pie, and the CSV of the plotted table.
  *
  * The figure is a pure function of the stored config, the table of one reply (`countTable`) and the panel's options,
  * so Node tests cover every mode. It is made once per reply or option change and costs the table's rows; nothing here
@@ -21,7 +21,7 @@ import { scaleKeys } from './colour.js';
 
 /** The modes this module draws; the others (density, Venn, UpSet) have their own drawing. */
 // export-unused-ok: C2a offers the count modes that draw here
-export const DRAWN_MODES = Object.freeze(['bar', 'histogram', 'hist2d', 'heatmap', 'pie']);
+export const DRAWN_MODES = Object.freeze(['bar', 'hist2d', 'heatmap', 'pie']);
 
 /** How many steps of fade a rectangle's share of its most frequent level is drawn in (CNT-18). */
 const FADE_STEPS = 4;
@@ -212,18 +212,26 @@ function categoryAxis(theme, labels, title, extra = {}) {
     });
 }
 
-// --- bar and histogram -----------------------------------------------------------------------------------------------
+// --- bar (of categories, or of a number: a histogram) --------------------------------------------------------------
 
-function barMode(config, spec, histogram) {
+/** The translucency of overlaid bars: each level over the others, the ones behind still seen. */
+const OVERLAY_OPACITY = 0.6;
+
+/**
+ * Plotly's bar mode for the arrangement drawn. A statistic is never added or shared out of 100%: side by side. Bins of
+ * a number cannot sit side by side (each bar has its bin's width at its bin's place): a side by side kept from categories
+ * is drawn overlaid, as the arrangement select shows it (controls-model.js arrangementShown).
+ */
+function barMode(config, spec, binned) {
     if (spec.kind === 'measure') return { barmode: 'group' };
     const arrangement = config.arrangement || 'stack';
-    if (arrangement === 'dodge') return { barmode: histogram ? 'overlay' : 'group' };
+    if (arrangement === 'overlay' || (arrangement === 'dodge' && binned)) return { barmode: 'overlay' };
+    if (arrangement === 'dodge') return { barmode: 'group' };
     if (arrangement === 'fill') return { barmode: 'stack', barnorm: 'percent' };
     return { barmode: 'stack' };
 }
 
 function barFigure(config, table, opts) {
-    const histogram = config.mode === 'histogram';
     const xa = axisOf(table, 'x');
     const sa = axisOf(table, 'split');
     const spec = valueSpec(config, table, opts);
@@ -231,14 +239,16 @@ function barFigure(config, table, opts) {
     const maps = labelMapsOf(config, table, opts);
     const labelAt = labelFn(maps);
     const { horizontal, log, sort, reverse } = opts.options;
-    const inOrder = histogram ? axisOrder(table, xa, null, {}) : null;
-    const drawn = histogram ? drawnBins(config, table, 'x', inOrder) : { even: null, values: null };
+    // a number's X: bins drawn at their values (or evenly), as a histogram, and the bars nearly touching
+    const numeric = xa >= 0 && Array.isArray(table.axes[xa].info && table.axes[xa].info.edges);
+    const inOrder = axisOrder(table, xa, null, {});
+    const drawn = numeric ? drawnBins(config, table, 'x', inOrder) : { even: null, values: null };
     const bins = drawn.values;
     const even = drawn.even;
     const order = bins || even ? inOrder : axisOrder(table, xa, spec.values, { sort, reverse });
     const xLabels = order.map((l) => labelAt(table.axes[xa].levels[l], xa));
     const splits = sa >= 0 ? Array.from({ length: table.dims[sa] }, (_, i) => i) : [null];
-    const mode = barMode(config, spec, histogram);
+    const mode = barMode(config, spec, !!(bins || even));
     const data = splits.map((s) => {
         const at = (l) => l * table.stride[xa] + (s === null ? 0 : s * table.stride[sa]);
         const along = order.map((l, k) => (bins ? bins.centers[l] : k));
@@ -253,7 +263,7 @@ function barFigure(config, table, opts) {
         if (even) trace.width = order.map(() => 1);
         if (s !== null) trace.name = esc(labelAt(table.axes[sa].levels[s], sa));
         if (labelsOn) Object.assign(trace, { text: order.map((l) => textOf(labelsOn, at(l))), textposition: 'auto' });
-        if (histogram && mode.barmode === 'overlay') trace.opacity = 0.6;
+        if (mode.barmode === 'overlay') trace.opacity = OVERLAY_OPACITY;
         return trace;
     });
     const xTitle = opts.inputNames.x;
@@ -266,7 +276,7 @@ function barFigure(config, table, opts) {
         : bins ? { title: { text: esc(xTitle) }, ...(reverse ? { autorange: 'reversed' } : {}) }
         : categoryAxis(opts.theme, xLabels, xTitle, horizontal ? { autorange: 'reversed' } : {});
     const layout = baseLayout(opts, {
-        ...mode, bargap: histogram ? 0.02 : 0.15, showlegend: sa >= 0,
+        ...mode, bargap: numeric ? 0.02 : 0.15, showlegend: sa >= 0,
         ...(sa >= 0 ? { legend: { title: { text: esc(opts.inputNames.split) } } } : {}),
         [horizontal ? 'yaxis' : 'xaxis']: axisStyle(opts.theme, level),
         [horizontal ? 'xaxis' : 'yaxis']: axisStyle(opts.theme, value)
@@ -490,8 +500,7 @@ function pieFigure(config, table, opts) {
 // export-unused-ok: C2a draws the plot with it
 export function countFigure(config, table, opts) {
     switch (config.mode) {
-        case 'bar':
-        case 'histogram': return barFigure(config, table, opts);
+        case 'bar': return barFigure(config, table, opts);
         case 'hist2d': return axisOf(table, 'split') >= 0 ? layerFigure(config, table, opts) : rectFigure(config, table, opts);
         case 'heatmap': return rectFigure(config, table, opts);
         case 'pie': return pieFigure(config, table, opts);

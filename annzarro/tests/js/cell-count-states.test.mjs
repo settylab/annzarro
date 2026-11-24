@@ -52,15 +52,13 @@ test('Bar and Pie: more than 200 levels on X is refused with the count, the limi
     }
 });
 
-test('a number with too many bins for Bar is refused with Bin it, which takes the most bins Bar shows and opens the control', () => {
-    const config = { mode: 'bar', x: obs('depth', { binning: { method: 'equal_width', bins: 300 } }) };
-    assert.deepEqual(said(config), {
-        state: 'refused', reason: 'too_many_bins', text: 'depth has 300 bins; Bar shows up to 200.', actions: [['bin:x', 'Bin it']]
-    });
-    const way = S.wayOut('bin:x', norm(config));
-    assert.deepEqual(way, { config: { ...norm(config), x: obs('depth', { binning: { method: 'equal_width', bins: 200 } }) },
-        label: 'bin X', reveal: { field: 'x', what: 'binning' } });
-    assert.equal(M.planGrid(way.config, page).state, 'ready');
+test('a Bar of a number takes up to 2,000 bins, as the histogram did; a count past it is refused where it is typed', () => {
+    // a Bar of a number is a histogram (the Histogram view folded into Bar, 0.8.0): no plan refusal is left for its bins
+    const config = { mode: 'bar', x: obs('depth', { binning: { method: 'equal_width', bins: 2000 } }) };
+    assert.equal(said(config), null);
+    assert.equal(M.planGrid(norm(config), page).state, 'ready');
+    const typed = M.normalizeCountPlot({ version: 1, mode: 'bar', x: obs('depth', { binning: { method: 'equal_width', bins: 2001 } }) });
+    assert.ok(typed.problems.some((p) => p.reason === 'bad_bins'));
 });
 
 test('a whole-number column read by its values offers both Bin it and Choose levels', () => {
@@ -89,8 +87,8 @@ test('Heatmap: X × Y over 200 × 200 says both counts and both limits', () => {
     assert.deepEqual(onY.actions, [['levels:y', 'Choose levels']]);
 });
 
-test('Histogram and Density: Color by over 200 levels is refused with Remove Color by', () => {
-    for (const [mode, phrase] of [['histogram', 'a histogram'], ['density', 'a density']]) {
+test('Bar of a number and Density: Color by over 200 levels is refused with Remove Color by', () => {
+    for (const [mode, phrase] of [['bar', 'Bar'], ['density', 'a density']]) {
         const config = { mode, x: obs('depth'), split: obs('sample') };
         assert.deepEqual(said(config), {
             state: 'refused', reason: 'too_many_levels',
@@ -138,16 +136,22 @@ test('UpSet with more than 16 sets says its limit', () => {
 
 // --- an input the mode cannot use, and nothing chosen (SHR-37, UX 4.2, UX 4.7) --------------------------------------
 
-test('a categorical X in a histogram stays selected and the plot says why, with Show as Bar', () => {
-    const config = { mode: 'histogram', x: obs('cell_type') };
+test('a categorical X in a density stays selected and the plot says why, with Show as Bar', () => {
+    const config = { mode: 'density', x: obs('cell_type') };
     assert.deepEqual(said(config), {
-        state: 'unusable', reason: 'needs_numeric', text: 'Histogram needs a numeric X. cell_type is categorical.',
+        state: 'unusable', reason: 'needs_numeric', text: 'Density needs a numeric X. cell_type is categorical.',
         actions: [['mode:bar', 'Show as Bar']]
     });
     const way = S.wayOut('mode:bar', norm(config));
     assert.equal(way.config.mode, 'bar');
     assert.deepEqual(way.config.x, obs('cell_type'));
     assert.equal(way.label, 'mode Bar');
+});
+
+test('a link stored as a histogram of a categorical X opens as a Bar of its categories, with nothing to say', () => {
+    const config = norm({ mode: 'histogram', x: obs('cell_type') });
+    assert.equal(config.mode, 'bar');
+    assert.equal(M.planGrid(config, page).state, 'ready');
 });
 
 test('a categorical Y in a 2D histogram offers Show as Heatmap, which reads the same two inputs', () => {
@@ -185,9 +189,9 @@ test('Choose levels opens the chooser of that input and writes nothing', () => {
 test('every way out the plan offers does something: it writes a config or opens a control', () => {
     const configs = [
         { mode: 'bar', x: obs('sample') }, { mode: 'heatmap', x: obs('sample'), y: obs('many') },
-        { mode: 'histogram', x: obs('depth'), split: obs('sample') }, { mode: 'density2d', x: obs('depth'), y: obs('score'), split: obs('age') },
+        { mode: 'bar', x: obs('depth'), split: obs('sample') }, { mode: 'density2d', x: obs('depth'), y: obs('score'), split: obs('age') },
         { mode: 'hist2d', x: obs('depth'), y: obs('score'), value: { kind: 'top_level', factor: obs('age') } },
-        { mode: 'histogram', x: obs('cell_type') }, { mode: 'bar', x: obs('depth', { binning: { method: 'equal_width', bins: 300 } }) }
+        { mode: 'density', x: obs('cell_type') }
     ];
     for (const config of configs) {
         for (const [action] of said(config).actions) {
@@ -247,16 +251,17 @@ test('the density sentences live in the vocabulary with the other count words (U
 // --- a typed bin count never validates and then meets a refusal (UX 4.3) ----------------------------------------------
 
 test('each input of each mode takes the bins its limit allows, so a valid typed count is never refused', () => {
-    assert.deepEqual(M.binsRange('bar', 'x'), { min: 2, max: 200 });
+    assert.deepEqual(M.binsRange('bar', 'x'), { min: 2, max: 2000 }, 'a Bar of a number is a histogram');
     assert.deepEqual(M.binsRange('pie', 'x'), { min: 2, max: 200 });
     assert.deepEqual(M.binsRange('heatmap', 'y'), { min: 2, max: 200 });
-    assert.deepEqual(M.binsRange('histogram', 'x'), { min: 2, max: 2000 });
     assert.deepEqual(M.binsRange('hist2d', 'y'), { min: 2, max: 512 });
     assert.deepEqual(M.binsRange('bar'), { min: 2, max: 2000 }, 'without an input: the dimension\'s range, as before');
-    assert.equal(M.binsProblem('bar', 201, 'x'), 'bad_bins');
-    assert.equal(M.binsProblem('bar', 200, 'x'), null);
+    assert.equal(M.binsProblem('pie', 201, 'x'), 'bad_bins');
+    assert.equal(M.binsProblem('pie', 200, 'x'), null);
+    assert.equal(M.binsProblem('bar', 2001, 'x'), 'bad_bins');
+    assert.equal(M.binsProblem('bar', 2000, 'x'), null);
     // the sweep: in every mode that bins X or Y, the largest count the field takes plans, and one more would be refused
-    for (const mode of ['bar', 'pie', 'histogram', 'heatmap', 'hist2d']) {
+    for (const mode of ['bar', 'pie', 'heatmap', 'hist2d']) {
         for (const field of ['x', 'y']) {
             if (field === 'y' && !['heatmap', 'hist2d'].includes(mode)) continue;
             const { max } = M.binsRange(mode, field);

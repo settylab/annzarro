@@ -130,9 +130,9 @@ def test_choose_levels_says_why_when_the_levels_are_refused_for_their_number(pag
 
 def test_color_by_over_the_limit_is_removed_by_its_way_out_in_one_undoable_step(page, served):
     _open(page, served, {CC: _count(mode="histogram", x=obs("depth"), split=obs("many"))})
-    _refused(page, "Color by many has 2,001 levels; a histogram colors up to 200.", ["Remove Color by"])
+    _refused(page, "Color by many has 2,001 levels; Bar colors up to 200.", ["Remove Color by"])
     page.click(f"{S} .ccnt-state-box button:has-text('Remove Color by')")
-    _drawn(page, "histogram", "!c.split")
+    _drawn(page, "bar", "!c.split")
     assert _config(page)["x"] == obs("depth")
     assert _undo_label(page) == "Undo: no Color by"
     page.click(f"{S} .ccnt-undo")
@@ -170,23 +170,16 @@ def test_a_typed_bin_count_is_checked_against_the_modes_limit_where_it_is_typed(
                        "a refused entry changes nothing: no request and no refusal follow", page=page)
 
 
-def test_too_many_bins_for_bar_opens_the_binning_control_and_a_histogram_of_a_category_shows_as_bar(page, served):
+def test_a_bar_of_300_bins_draws_as_a_histogram_and_a_density_of_a_category_shows_as_bar(page, served):
+    # a Bar of a number is a histogram (the Histogram view folded into Bar, 0.8.0): 300 bins draw, nothing is refused
     _open(page, served, {CC: _count(mode="bar", x=obs("depth", binning={"method": "equal_width", "bins": 300}))})
-    _refused(page, "depth has 300 bins; Bar shows up to 200.", ["Bin it"])
-    page.click(f"{S} .ccnt-state-box button:has-text('Bin it')")
-    # the most bins Bar shows, one undoable step, and the control open on it
-    _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 200")
-    assert _undo_label(page) == "Undo: bin X"
-    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc")
-    assert page.input_value(f"[data-popover='binning'] .ccnt-binning .pbc-bins") == "200"
-    page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "40")
-    page.press(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "Enter")
-    _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 40")
+    _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 300")
+    assert page.locator(f"{S} .ccnt-state-box button:has-text('Bin it')").count() == 0
 
-    page.select_option(f"{S} .ccnt-mode", "histogram")
+    page.select_option(f"{S} .ccnt-mode", "density")
     page.evaluate(f"""() => window.PanelManager.getPanel('{CC}').updateConfig({{ x: {{ source: {{ type: 'obs', key: 'cell_type' }} }} }})""")
     until(page, "(s) => { const b = document.querySelector(s + ' .ccnt-state'); return b && !b.hidden && b.dataset.state === 'unusable'; }", S)
-    assert _state(page) == {"text": "Histogram needs a numeric X. cell_type is categorical.", "state": "unusable", "actions": ["Show as Bar"]}
+    assert _state(page) == {"text": "Density needs a numeric X. cell_type is categorical.", "state": "unusable", "actions": ["Show as Bar"]}
     page.click(f"{S} .ccnt-state-box button:has-text('Show as Bar')")
     _drawn(page, "bar", "c.x.source.key === 'cell_type'")
     assert _undo_label(page) == "Undo: mode Bar"
@@ -249,7 +242,7 @@ def test_the_route_states_are_the_painters_with_its_progress_bar_cancel_and_retr
 def test_the_banner_says_the_cells_counted_without_a_value_and_outside_the_range(page, served):
     pt = DATA.obs["pseudotime"]
     _open(page, served, {CC: _count(mode="histogram", x=obs("pseudotime", binning={"method": "equal_width", "range": [0.5, None]}))})
-    _drawn(page, "histogram")
+    _drawn(page, "bar")
     missing = int(pt.isna().sum())
     outside = int((pt < 0.5).sum())
     counted = N - missing - outside
@@ -294,7 +287,7 @@ def test_save_as_grouping_makes_a_grouping_of_the_plots_inputs_with_the_same_gro
 
 def test_save_as_grouping_is_refused_over_the_grouping_limits_and_opens_from_a_click_on_a_bar(page, served):
     _open(page, served, {CC: _count(mode="histogram", x=obs("depth", binning={"method": "equal_width", "bins": 1500}))})
-    _drawn(page, "histogram")
+    _drawn(page, "bar")
     page.click(f"{S} .ccnt-save-btn")
     d = _dialog(page)
     reason = "depth has 1,500 bins; a factor of a grouping holds up to 1,000. Use fewer bins first."

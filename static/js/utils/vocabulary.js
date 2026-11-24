@@ -347,13 +347,13 @@ const countPlot = Object.freeze({
     csv: Object.freeze({ count: 'Cells', share: 'Share', measure: capital(word.statistic) }),
     /** The Mode select: its groups in order, each with its modes (UX 4.1). */
     modeGroups: Object.freeze([
-        Object.freeze({ label: 'Counts', modes: Object.freeze(['bar', 'histogram', 'pie']) }),
+        Object.freeze({ label: 'Counts', modes: Object.freeze(['bar', 'pie']) }),
         Object.freeze({ label: 'Two inputs', modes: Object.freeze(['hist2d', 'heatmap']) }),
         Object.freeze({ label: 'Smoothed', modes: Object.freeze(['density', 'density2d']) }),
         Object.freeze({ label: 'Sets', modes: Object.freeze(['venn', 'upset']) })
     ]),
     modes: Object.freeze({
-        bar: 'Bar', histogram: 'Histogram', pie: 'Pie', hist2d: '2D histogram', heatmap: 'Heatmap',
+        bar: 'Bar', pie: 'Pie', hist2d: '2D histogram', heatmap: 'Heatmap',
         density: 'Density', density2d: '2D density', venn: 'Venn', upset: 'UpSet'
     }),
     /** The labels of the rows (UX 4.1); a pie's X is its slices. */
@@ -361,7 +361,12 @@ const countPlot = Object.freeze({
         mode: 'Mode', x: 'X', y: 'Y', split: 'Color by', slices: 'Slices', height: 'Height', color: 'Color', labels: 'Labels',
         sets: capital(plural.set), factor: 'Of', source: 'Of', above: 'Above'
     }),
-    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', fill: '100%', overlay: 'Overlaid' }),
+    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', overlay: 'Overlaid', fill: '100%' }),
+    /** Why an arrangement or the sort does not apply (their title, where they are disabled). */
+    arrangementRefused: Object.freeze({
+        dodgeBins: 'Side by side needs categories: bins of a number sit at their values. Overlaid shows each level over the others.'
+    }),
+    sortRefused: 'Bins of a number keep the order of the number.',
     /** The entries of Height and Color (UX 4.5), and the help line of each. */
     value: Object.freeze({
         count: 'Count',

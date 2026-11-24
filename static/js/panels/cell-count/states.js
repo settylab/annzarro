@@ -4,7 +4,7 @@
  *
  * TWO KINDS OF STATE.
  *
- * - THE PLAN'S: the config asks nothing yet (no X), asks for an input its mode cannot use (a histogram of a category,
+ * - THE PLAN'S: the config asks nothing yet (no X), asks for an input its mode cannot use (a density of a category,
  *   SHR-37), or breaks a limit of its mode (UX 4.3). utils/count-plot-model.js `planGrid` decides each before any
  *   request (SHR-39), and its plan is the handle's state. The panel says it in its own plot area box (`describePlan`),
  *   with the WAY OUT that ends it: Bin it, Choose levels, Remove Color by, Show as Bar. A way out acts on this panel's
@@ -30,7 +30,7 @@ const AXES = Object.freeze(['x', 'y']);
 const COLOR_BY = Object.freeze(['split', 'factor']);
 
 /** The mode a categorical input can be drawn in, for a mode that needs numbers (UX 4.2): one input or two. */
-const CATEGORICAL_TWIN = Object.freeze({ histogram: 'bar', density: 'bar', hist2d: 'heatmap', density2d: 'heatmap' });
+const CATEGORICAL_TWIN = Object.freeze({ density: 'bar', hist2d: 'heatmap', density2d: 'heatmap' });
 
 /** Whether a snapshot is the plan's own (it asked nothing), not the route's. */
 export const isPlanState = (snap) => !!snap && (snap.state === 'empty' || snap.state === 'unusable'

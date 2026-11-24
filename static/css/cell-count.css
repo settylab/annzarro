@@ -48,6 +48,8 @@
 .ccnt-arrangement__input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
 .ccnt-arrangement__opt:has(.ccnt-arrangement__input:checked) { background: var(--az-surface-3); border-color: var(--az-link); font-weight: 600; }
 .ccnt-arrangement__opt:has(.ccnt-arrangement__input:focus-visible) { outline: 2px solid var(--az-link); outline-offset: 1px; }
+/* an arrangement that does not apply now (side by side on bins of a number): greyed, its title says why */
+.ccnt-arrangement__opt:has(.ccnt-arrangement__input:disabled) { opacity: 0.5; cursor: not-allowed; }
 
 /* an input's binning control and its level list live in pop-overs (ui/popover.js, WP-6a): they never change the panel's size */
 .ccnt-binning, .ccnt-levels { margin: 0; }

@@ -95,10 +95,10 @@ test('a newer version is returned as it is and reported', () => {
 });
 
 test('the ids are the frozen ones', () => {
-    assert.deepEqual([...M.COUNT_MODES], ['bar', 'histogram', 'hist2d', 'density', 'density2d', 'pie', 'heatmap', 'venn', 'upset']);
+    assert.deepEqual([...M.COUNT_MODES], ['bar', 'hist2d', 'density', 'density2d', 'pie', 'heatmap', 'venn', 'upset']);
     assert.deepEqual([...M.MEASURE_STATS], ['mean', 'sum', 'pct_above', 'sd', 'zscore']);
     assert.deepEqual([...M.SHARE_BASES], ['all', 'x', 'split', 'row', 'column', 'total']);
-    assert.deepEqual([...M.ARRANGEMENTS], ['stack', 'dodge', 'fill']);
+    assert.deepEqual([...M.ARRANGEMENTS], ['stack', 'dodge', 'overlay', 'fill']);
 });
 
 // --- inputs per mode (CNT-6) ---------------------------------------------------------------------------------------
@@ -107,7 +107,6 @@ test('each mode reads the inputs of UX 4.2', () => {
     const reads = (mode) => M.modeReads(mode);
     assert.deepEqual(reads('bar'), { x: true, y: false, split: true, sets: false });
     assert.deepEqual(reads('pie'), { x: true, y: false, split: false, sets: false });
-    assert.deepEqual(reads('histogram'), { x: true, y: false, split: true, sets: false });
     assert.deepEqual(reads('hist2d'), { x: true, y: true, split: true, sets: false });
     assert.deepEqual(reads('heatmap'), { x: true, y: true, split: false, sets: false });
     assert.deepEqual(reads('density2d'), { x: true, y: true, split: true, sets: false });
@@ -135,9 +134,9 @@ test('no X, no Y or too few sets is an empty plot with the reason', () => {
 });
 
 test('a numeric mode with a categorical X is unusable, and nothing is sent', () => {
-    const plan = planOf({ mode: 'histogram', x: obs('cell_type') });
-    assert.deepEqual(plan, { state: 'unusable', reason: 'needs_numeric', mode: 'histogram', input: 'x' });
-    assert.equal(planOf({ mode: 'density', x: obs('cell_type') }).reason, 'needs_numeric');
+    const plan = planOf({ mode: 'density', x: obs('cell_type') });
+    assert.deepEqual(plan, { state: 'unusable', reason: 'needs_numeric', mode: 'density', input: 'x' });
+    assert.equal(planOf({ mode: 'density2d', x: obs('cell_type'), y: obs('depth') }).reason, 'needs_numeric');
     assert.equal(planOf({ mode: 'hist2d', x: obs('depth'), y: obs('cell_type') }).input, 'y');
 });
 
@@ -168,10 +167,10 @@ test('each mode refuses over its limit before any request, with the counts and l
 test('bins over the mode limit are refused with the count, and the typed range is known', () => {
     const plan = planOf({ mode: 'hist2d', x: obs('depth', { binning: { method: 'equal_width', bins: 600 } }), y: obs('pseudotime') });
     assert.deepEqual([plan.state, plan.reason, plan.counts, plan.limits, plan.over], ['refused', 'too_many_bins', [600, 100], [512, 512], ['x']]);
-    assert.deepEqual(M.binsRange('histogram'), { min: 2, max: 2000 });
+    assert.deepEqual(M.binsRange('bar', 'x'), { min: 2, max: 2000 });
     assert.deepEqual(M.binsRange('hist2d'), { min: 2, max: 512 });
-    assert.equal(M.binsProblem('histogram', 2001), 'bad_bins');
-    assert.equal(M.binsProblem('histogram', 2000), null);
+    assert.equal(M.binsProblem('bar', 2001, 'x'), 'bad_bins');
+    assert.equal(M.binsProblem('bar', 2000, 'x'), null);
     assert.equal(M.binsProblem('hist2d', 513), 'bad_bins');
     assert.equal(M.binsProblem('hist2d', 1.5), 'bad_bins');
 });
@@ -346,7 +345,6 @@ test('a heatmap has shares of the row, the column and the total', () => {
 test('the bases offered follow the mode and the split', () => {
     assert.deepEqual(M.shareBasesFor({ mode: 'bar', x: obs('a') }), ['all']);
     assert.deepEqual(M.shareBasesFor({ mode: 'bar', x: obs('a'), split: obs('b') }), ['all', 'x', 'split']);
-    assert.deepEqual(M.shareBasesFor({ mode: 'histogram', x: obs('a'), split: obs('b') }), ['all', 'x', 'split']);
     assert.deepEqual(M.shareBasesFor({ mode: 'pie', x: obs('a') }), ['all']);
     assert.deepEqual(M.shareBasesFor({ mode: 'upset', sets: [] }), ['all']);
 });

@@ -512,7 +512,7 @@ def _count_mode(mode):
     return _select(f"{C_TILE} .ccnt-mode", mode)
 
 
-COUNT_MODES = ["bar", "histogram", "hist2d", "density", "density2d", "pie", "heatmap"]
+COUNT_MODES = ["bar", "hist2d", "density", "density2d", "pie", "heatmap"]
 COUNT_VOCABULARY = [
     lambda r: (lambda m: (f"mode {m} (control)", _count_mode(m)))(r.choice(COUNT_MODES)),
     lambda r: (lambda m: (f"mode {m} (control)", _count_mode(m)))(r.choice(COUNT_MODES)),
@@ -520,7 +520,7 @@ COUNT_VOCABULARY = [
     lambda r: (lambda x: (f"x {x['source']['key']}", _update(CC, {"x": x})))(r.choice([CT, COND, SCORE, DEPTH])),
     lambda r: (lambda y: (f"y {y['source']['key']}", _update(CC, {"y": y})))(r.choice([SCORE, DEPTH, PSEUDO, CT])),
     lambda r: (lambda s: (f"split {s and s['source']['key']}", _update(CC, {"split": s})))(r.choice([None, COND, CT])),
-    lambda r: (lambda a: (f"arrangement {a}", _update(CC, {"arrangement": a})))(r.choice(["stack", "dodge", "fill"])),
+    lambda r: (lambda a: (f"arrangement {a}", _update(CC, {"arrangement": a})))(r.choice(["stack", "dodge", "overlay", "fill"])),
     lambda r: (lambda v: (f"labels {v}", _update(CC, {"labels": v})))(r.choice(["none", "count", "share"])),
     lambda r: (lambda k, v: (f"{k} {v}", _update(CC, {k: v})))(r.choice(["reverse", "horizontal", "log", "ring", "fade"]), r.choice([True, None])),
     lambda r: (lambda v: (f"sort {v}", _update(CC, {"sort": v})))(r.choice(["height", None])),
@@ -551,7 +551,7 @@ COUNT_RISKY = {
                        ("split none", _update(CC, {"split": None})),
                        ("layers image+lines", _update(CC, {"layers": {"image": True, "lines": True}}))],
     "modes-round-trip": [("mode pie (control)", _count_mode("pie")), ("mode heatmap (control)", _count_mode("heatmap")),
-                         ("mode histogram (control)", _count_mode("histogram")), ("mode bar (control)", _count_mode("bar"))],
+                         ("x score", _update(CC, {"x": SCORE})), ("mode bar (control)", _count_mode("bar"))],
     "mode-and-undo": [("x score", _update(CC, {"x": SCORE})), ("y depth", _update(CC, {"y": DEPTH})),
                       ("mode hist2d (control)", _count_mode("hist2d")), ("mode density (control)", _count_mode("density")),
                       ("undo (control)", _click(f"{C_TILE} .ccnt-undo")), ("undo (control)", _click(f"{C_TILE} .ccnt-undo"))],
@@ -561,6 +561,17 @@ COUNT_RISKY = {
 @pytest.mark.parametrize("name", sorted(COUNT_RISKY))
 def test_count_plot_risky_sequence(browser, served, name):
     _run(_count(browser, served), COUNT_RISKY[name], f"count plot, {name}")
+
+
+# a link stored as a histogram (before the Histogram view folded into Bar) opens as a Bar of a number: edited from there,
+# and with X back to categories under a kept side by side, it draws what the fresh link of its final config draws
+COUNT_MIGRATED = [("arrangement stack", _update(CC, {"arrangement": "stack"})), ("labels count", _update(CC, {"labels": "count"})),
+                  ("arrangement overlay", _update(CC, {"arrangement": "overlay"})), ("arrangement dodge", _update(CC, {"arrangement": "dodge"})),
+                  ("x cell_type", _update(CC, {"x": CT})), ("x score", _update(CC, {"x": SCORE})), ("undo (control)", _click(f"{C_TILE} .ccnt-undo"))]
+
+
+def test_count_plot_histogram_link_draws_as_a_bar(browser, served):
+    _run(_count(browser, served, mode="histogram", x=SCORE, arrangement="dodge"), COUNT_MIGRATED, "count plot, histogram link")
 
 
 # ================================================================== Cell-Gene Plot
