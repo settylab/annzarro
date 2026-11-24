@@ -1,6 +1,7 @@
 /**
  * Main Application Module for AnnZarro
  */
+import { fontsReady } from './utils/fonts.js';
 import { copyText } from './utils/clipboard.js';
 import { PanelManager } from './panel-manager.js';
 import { Config } from './config.js';
@@ -4954,8 +4955,10 @@ const App = (function() {
 })();
 
 // Initialize the application when DOM is ready and all scripts are loaded
-document.addEventListener('DOMContentLoaded', () => {
-    // Start initialization immediately since we're using modules
+document.addEventListener('DOMContentLoaded', async () => {
+    // The plots measure their text when they are drawn: the bundled font (static/css/fonts.css) is loaded first, so a plot drawn at
+    // once and one drawn from a link a moment later have the same layout (a local file of 45 KB; one that fails to load is the fallback's)
+    await fontsReady();
     App.init();
     // A panel's scroller hands the wheel to the page at its end (utils/wheel-handover.js)
     installWheelHandover(document.getElementById('tile-container'));
