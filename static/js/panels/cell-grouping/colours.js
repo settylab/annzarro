@@ -99,9 +99,7 @@ function withoutGroupColors(recipe) {
     return list.length ? list : undefined;
 }
 
-/** How many colors the user has set by hand: on a factor, its level overrides; on a recipe, its groups' colors. */
-const overrideCount = (holder) => (holder.colors && isObject(holder.colors.overrides)
-    ? Object.values(holder.colors.overrides).filter(isColourString).length : 0);
+/** How many groups' colors the user has set by hand, active or not. */
 const groupColorCount = (recipe) => (Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides.filter((o) => isColourString(o.color)).length : 0);
 
 function selectOf(el, className, label, options, value) {
