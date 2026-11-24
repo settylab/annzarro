@@ -133,11 +133,13 @@ test('strips: one stacked bar per factor, a color per group, hover naming group 
     const fig = draw(model({ annotations: { strips: STRIPS } }));
     const bars = named(fig, 'group strip');
     assert.equal(bars.length, 2);
-    assert.deepEqual(bars.map((b) => b.marker.color), STRIPS.map((s) => s.colours));
+    // one bar per factor, in its colors (their stacking order is the legend's reading order: options tests)
+    const of = (title) => bars.filter((b) => b.hovertext.every((h) => h.includes(`<br>${title}: `)));
+    STRIPS.forEach((s) => { assert.equal(of(s.title).length, 1, s.title); assert.deepEqual(of(s.title)[0].marker.color, s.colours); });
     assert.equal(bars[0].orientation, 'h', 'groups are on y, so the strip bars lie along it');
     assert.deepEqual(bars[0].y, [0, 1, 2, 3]);
     assert.deepEqual(bars[1].x, [1, 1, 1, 1]);
-    assert.equal(bars[1].hovertext[1], 'group 1<br>age: Young');
+    assert.equal(of('age')[0].hovertext[1], 'group 1<br>age: Young');
     assert.equal(axisOf(fig, bars[0], 'y').matches, 'y');
     assert.equal(fig.layout.barmode, 'stack');
     assert.ok(bars.every((b) => b.textposition === 'none'), 'the bars print no text over themselves');

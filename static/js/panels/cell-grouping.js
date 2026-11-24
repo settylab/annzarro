@@ -5,12 +5,13 @@
  * closed, and a link, a panel set and a history entry carry it as configuration only (PER-1). The recipe is
  * utils/cell-grouping.js `normalizeGrouping`'s; the panel's configuration is its title and the recipe's fields.
  *
- * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the toolbar (Add factor, Settings, Undo), the
- * factors (factors.js), the groups (G9c). Nothing in the panel expands: a factor's levels or binning and Settings open in
- * pop-overs (ui/popover.js), so editing moves no box (FB-2 decision h). A grouping offers no statistics (decision 31): a
- * plot lists every statistic and layer itself, and a recipe's retired `offered` and `layers` are kept as stored until the
- * next edit drops them. Its method parameter `detect_above` stays on the recipe (decision 34; SO-7 edits it in a
- * Methods ▾ pop-over in the toolbar). Every edit is one
+ * Zones, top to bottom (UX 2.1): the status (panels/cell-grouping/status.js), the toolbar (Add factor, Methods, Settings,
+ * Undo), the factors (factors.js), the groups (G9c). Nothing in the panel expands: a factor's levels or binning, Methods
+ * and Settings open in pop-overs (ui/popover.js), so editing moves no box (FB-2 decision h). A grouping offers no
+ * statistics (decision 31): a plot lists every statistic and layer itself, and a recipe's retired `offered` and `layers`
+ * are kept as stored until the next edit drops them. Methods ▾ (cell-grouping/methods.js, decision 34) sets the
+ * parameters of the statistics over a group's cells, today Expressed above (`detect_above`, outside the grouping's hash):
+ * the plots that read the grouping follow it unless a measure holds its own. Every edit is one
  * undoable step. The panel watches its own
  * groups as a viewer (consumer kind `inspect`, so it is never counted as a user), through the page's group sources.
  *
@@ -52,6 +53,8 @@ import { describeStatus, smallLine, noGroupReasons } from './cell-grouping/statu
 import { GROUP_GRID } from './cell-grouping/group-grid.js';
 import { mountBinningControl } from './partition-options/binning-control.js';
 import { usedByText } from '../utils/panel-users.js';
+import { createCellMethods } from './cell-grouping/methods.js';
+import { methodsUsedBy } from '../utils/group-statistics.js';
 import {
     settingsSummary, thresholdProblem, separatorProblem, smallOf, separatorOf, storedSeparator, storedSmall, smallModeWord
 } from './cell-grouping/settings.js';
@@ -60,9 +63,6 @@ const TYPE = 'cell-grouping';
 const DEFAULT_TITLE = 'Grouping 1';
 /** Keys of a configuration that are the panel's own, not the recipe's. */
 const PANEL_KEYS = ['id', 'title', 'controlsVisible', '_closed', 'active'];
-const NO_FEATURES = Object.freeze([]);
-/** The longest the first request waits for the parts' decisions, in ms. */
-const PREPARE_MS = 1500;
 /** Recipe fields decision 31 retired: read as stored, dropped by the next edit. */
 const RETIRED_FIELDS = Object.freeze(['offered', 'layers']);
 
@@ -107,7 +107,10 @@ function createFactors({ D, id, model, on }) {
     const openNew = new Set();          // indexes of binned factors just added: their editor opens once they are drawn (SHR-15)
     const showAll = new Set();          // cards whose long level list is shown whole
     let adding = null;                  // the entry whose inline row is open
-    let renaming = null;                // {index, id} of the level being renamed
+    let renaming = null;                // {index, id, draft?} of the level being renamed (draft: the text typed so far)
+    let pendingLeave = null;            // leaves the field being edited, saving it: run when its pop-over closes
+    let staleNow = new Set();           // the factors whose editor shows counts of an earlier reply (set when an editor is drawn)
+    let focusRow = null;                // {index, id}: the level row whose rename button takes the focus after the next redraw
     let menuOpen = false;
 
     const addBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary cgrp-add',
@@ -370,27 +373,87 @@ function createFactors({ D, id, model, on }) {
         return out;
     }
 
+    /** Whether a level row has a rename button. */
+    function canRename(p, r) {
+        return r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table' || factorKind(p) === 'binned';
+    }
+
+    const RENAME_HINT = 'Enter saves, Escape cancels, Tab saves and moves to the next level.';
+
+    /**
+     * The row whose name is being edited. Every way out is a rule: Enter saves and leaves the field; Escape cancels and leaves
+     * it (the pop-over's own Escape stands aside for a field marked `data-az-own-escape`, so a second Escape closes the pop-over);
+     * Tab saves and edits the next level's name (Shift+Tab the previous); leaving the field by a click or by closing saves.
+     * After a way out the focus is on the row's rename button, never in a new edit.
+     */
+    function editedRow(i, p, info, r, li, count) {
+        const mine = renaming;
+        const input = el('input', { type: 'text', class: 'form-control form-control-sm cgrp-level__name', value: mine.draft !== undefined ? mine.draft : r.label,
+            title: RENAME_HINT, data: { azOwnEscape: '' }, aria: { label: `New name for ${r.label}`, description: RENAME_HINT } });
+        let finished = false;
+        /** Leave the field: `keep` saves it, `move` (a level id) starts the next edit, else the focus goes to the row's button. */
+        const leave = (keep, move = null) => {
+            if (finished) return;
+            finished = true;
+            pendingLeave = null;
+            const started = renaming === mine;          // a click on another level's ✎ may have started its edit already
+            if (started) renaming = move ? { index: i, id: move } : null;
+            if (!move && started) focusRow = { index: i, id: r.id };
+            const next = renameLevel(p, r.id, input.value, defaultsOf(i).get(r.id));
+            if (keep && JSON.stringify(next) !== JSON.stringify(p)) commitFactor(i, next, `rename level ${r.was || r.label}`);
+            else paint();
+        };
+        pendingLeave = () => leave(true);
+        const neighbour = (by) => {
+            const rows = levelRows(p, info, defaultsOf(i)).filter((x) => canRename(p, x));
+            const at = rows.findIndex((x) => x.id === r.id);
+            return rows[at + by] ? rows[at + by].id : null;
+        };
+        input.addEventListener('input', () => { mine.draft = input.value; });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); leave(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); }
+            else if (e.key === 'Tab') { e.preventDefault(); leave(true, neighbour(e.shiftKey ? -1 : 1)); }
+        });
+        // Leaving the field by a click saves it, but after the click has landed: a redraw between its press and release
+        // would take the control it pressed from under it. The first of the click, the release or a short timer decides, so a
+        // release the page never sees cannot strand the edit.
+        li.addEventListener('focusout', (e) => {
+            if (finished) return;
+            if (e.relatedTarget && li.contains(e.relatedTarget)) return;      // between the field and its two buttons
+            let done = false;
+            const later = () => {
+                if (done) return;
+                done = true;
+                document.removeEventListener('click', later, true);
+                document.removeEventListener('pointerup', later, true);
+                // a redraw that takes the field away (the server's reply) blurs it too: that is no way out, the edit goes on in
+                // the field the redraw makes from `renaming` and its draft
+                setTimeout(() => { if (input.isConnected) leave(true); }, 0);
+            };
+            document.addEventListener('click', later, true);
+            document.addEventListener('pointerup', later, true);
+            setTimeout(later, 350);
+        });
+        // ✓ and ✕ beside the field: real buttons, in the tab order after it. A press on them leaves the focus in the field.
+        const ok = el('button', { type: 'button', class: 'btn btn-sm btn-outline-success cgrp-level__ok', title: 'Save the name',
+            data: { azOwnEscape: '' }, aria: { label: `Save the new name for ${r.label}` },
+            on: { mousedown: (e) => e.preventDefault(), click: () => leave(true), keydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } } } }, '✓');
+        const cancel = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-level__cancel', title: 'Cancel',
+            data: { azOwnEscape: '' }, aria: { label: `Cancel renaming ${r.label}` },
+            on: { mousedown: (e) => e.preventDefault(), click: () => leave(false), keydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); } } } }, '✕');
+        li.classList.add('cgrp-level--editing');
+        li.append(input, ok, cancel, count);
+        setTimeout(() => { if (input.isConnected) { input.focus(); input.select(); } }, 0);
+        return li;
+    }
+
     function levelRow(i, p, info, r) {
-        const count = el('span', { class: 'cgrp-level__n', text: r.n === null ? '' : fmt(r.n) });
+        const count = el('span', { class: `cgrp-level__n${staleNow.has(i) ? ' is-stale' : ''}`, text: r.n === null ? '' : fmt(r.n),
+            title: staleNow.has(i) ? 'Counts as last computed; they update when the groups are ready.' : undefined });
         const label = el('span', { class: 'cgrp-level__label', text: r.label, title: r.was ? `Was: ${r.was}` : undefined });
         const li = el('li', { class: 'cgrp-level', data: { id: r.id } });
-        if (renaming && renaming.index === i && renaming.id === r.id) {
-            const input = el('input', { type: 'text', class: 'form-control form-control-sm cgrp-level__name', value: r.label,
-                aria: { label: `New name for ${r.label}` } });
-            const done = (keep) => {
-                const text = input.value;
-                renaming = null;
-                if (keep) commitFactor(i, renameLevel(p, r.id, text, defaultsOf(i).get(r.id)), `rename level ${r.was || r.label}`);
-                else paint();
-            };
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); done(true); }
-                else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
-            });
-            li.append(input, count);
-            setTimeout(() => { input.focus(); input.select(); }, 0);
-            return li;
-        }
+        if (renaming && renaming.index === i && renaming.id === r.id) return editedRow(i, p, info, r, li, count);
         if (r.tickable) {
             const box = el('input', { type: 'checkbox', checked: r.ticked, aria: { label: r.label } });
             box.addEventListener('change', () => commitFactor(i, tickLevel(p, info, r.id, box.checked), `${box.checked ? 'tick' : 'untick'} ${r.label}`));
@@ -405,7 +468,7 @@ function createFactors({ D, id, model, on }) {
             li.append(label);
         }
         li.append(count);
-        if (r.tickable || r.id === RESERVED.other || r.id === RESERVED.na || factorKind(p) === 'table' || factorKind(p) === 'binned') {
+        if (canRename(p, r)) {
             li.append(el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-level__rename', title: `Rename ${r.label}`,
                 aria: { label: `Rename ${r.label}` }, on: { click: () => { renaming = { index: i, id: r.id }; paint(); } } }, '✎'));
         }
@@ -455,7 +518,7 @@ function createFactors({ D, id, model, on }) {
         const host = el('div', { class: 'cgrp-binning' });
         const defaults = defaultsOf(i);
         const rows = info ? levelRows(p, info, defaults) : [];
-        const levels = el('ul', { class: 'cgrp-levels cgrp-bins', role: 'list' }, rows.map((r) => levelRow(i, p, info, r)));
+        const levels = el('ul', { class: `cgrp-levels cgrp-bins${staleNow.has(i) ? ' is-stale' : ''}`, role: 'list' }, rows.map((r) => levelRow(i, p, info, r)));
         const mark = stableStringify(p.source);
         entry.mounts.push(mountBinningControl(host, { partitioning: p, info, levels, fresh: fresh.has(mark), settled: () => fresh.delete(mark),
             titleOf: model().titleOf, cells: model().cells, commit: (next, label) => commitFactor(i, next, label) }));
@@ -467,6 +530,7 @@ function createFactors({ D, id, model, on }) {
     /** The pop-over's content for factor i, now: its levels, its bins, or a table's two levels. */
     function editorBody(i, entry) {
         const m = model();
+        staleNow = m.stale;
         const p = m.recipe.partitionings[i];
         if (!p) return [];
         const info = m.infos[i] || null;
@@ -487,7 +551,11 @@ function createFactors({ D, id, model, on }) {
         const nodes = editorBody(i, entry);
         if (!nodes.length) { entry.ctl.close(); return; }
         body.append(...nodes);
-        if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
+        if (focusRow && focusRow.index === i) {
+            const button = body.querySelector(`.cgrp-level[data-id="${CSS.escape(focusRow.id)}"] .cgrp-level__rename`);
+            focusRow = null;
+            if (button) button.focus({ preventScroll: true });
+        } else if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
         entry.ctl.update();
     }
 
@@ -509,6 +577,9 @@ function createFactors({ D, id, model, on }) {
                 fillEditor(i);
                 if (on.wants) on.wants();
                 return () => {
+                    if (pendingLeave) pendingLeave();          // a name being edited is saved by closing
+                    renaming = null;
+                    focusRow = null;
                     for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
                     entry.body = entry.ctl = null;
                     expanded.delete(i);
@@ -796,11 +867,11 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         let _usedBy = '';
         let _usedTimer = null;
         let _factors = null;
+        const _lastFactor = new Map();      // a factor's source -> the last partitioning of a reply it had, for its editor while the next reply is on its way
         let _asked = [];                    // the histograms the handle asks for: the expanded binned cards
-        let _features = NO_FEATURES;        // the focused gene's feature, set by the group grid (G9c): it rides this panel's own request
-        let _applied = NO_FEATURES;         // the features the handle's option carries now
         let _status = null;
         let _settings = null;
+        let _methods = null;
         const _parts = [];
         const _listeners = [];
 
@@ -839,21 +910,10 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             try { await loadStructure(); } catch (error) { console.error(`Cell grouping ${_id}:`, error); }
             if (!_initialized) return;
             checkMissing();
-            await prepareParts();
             if (!_initialized) return;
             watch();
             groupSources().sources.recheck();
             refresh();
-        }
-
-        /**
-         * The parts that need to decide something before the first request (the group grid: whether the focused gene is
-         * cheap enough to ride it) say so; the first request waits for them for a moment at most.
-         */
-        async function prepareParts() {
-            const decisions = _parts.map((part) => (part && part.prepare ? part.prepare() : null));
-            if (!decisions.some(Boolean)) return;
-            await Promise.race([Promise.all(decisions), new Promise((resolve) => setTimeout(resolve, PREPARE_MS))]);
         }
 
         /** Read the handle again (a gate that changed without a store event: the structure came) and paint. */
@@ -877,7 +937,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
             if (_factors) _factors.destroy();
             if (_settings) _settings.destroy();
-            _factors = _status = _settings = null;
+            if (_methods) _methods.destroy();
+            _factors = _status = _settings = _methods = null;
             _initialized = false;
             _dom = null;
             container.innerHTML = '';
@@ -891,9 +952,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             if (!_recipe.partitionings.length) { release(); return; }
             if (_handle) return;
             _asked = _factors ? _factors.wanted() : [];
-            _applied = _features;
             _handle = groupSources().sources.watch(_id, {
-                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: { histograms: _asked, features: _applied },
+                consumer: { kind: 'inspect', panelId: _id, role: 'panel' }, option: { histograms: _asked },
                 visible: () => _visible && !!_dom && _dom.root.isConnected,
                 onChange: (snap) => { _snap = snap; noteKey(snap); paint(); syncHistograms(); }
             });
@@ -911,16 +971,9 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             // positions of the recipe now; a request for an older recipe leaves out the ones it lacks (serverRequest)
             const ps = _recipe.partitionings;
             const now = [...new Set([..._asked.filter((k) => ps[k] && ps[k].binning), ..._factors.wanted()])].sort((a, b) => a - b);
-            if (now.join() === _asked.join() && _features === _applied) return;
+            if (now.join() === _asked.join()) return;
             _asked = now;
-            _applied = _features;
-            _handle.setOption({ histograms: now, features: _applied });
-        }
-
-        /** The group grid asks for a feature (the focused gene's moments) with this panel's own request; null stops asking. */
-        function setFeatures(wires) {
-            _features = wires && wires.length ? Object.freeze([...wires]) : NO_FEATURES;
-            syncHistograms();
+            _handle.setOption({ histograms: now });
         }
 
         function release() {
@@ -1078,6 +1131,9 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
                 open: openPanel
             } });
             _settings = createSettings({ D, id: _id, recipe: () => _recipe, set: setFields });
+            // Methods ▾ (decision 34): each parameter edit is one step through setFields; the readers follow as for any edit
+            _methods = createCellMethods({ D, id: _id, getFields: () => _recipe, apply: setFields,
+                usedBy: () => methodsUsedBy(groupSources().sources.consumersOf(_id), titleOfPanel) });
             const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-undo', disabled: true, on: { click: () => undo() } }, 'Undo');
             const empty = el('div', { class: 'cgrp-empty', hidden: true },
                 el('p', { class: 'cgrp-empty__lead', text: `Add a ${VOCABULARY.word.factor} to divide the cells into ${VOCABULARY.plural.group}.` }),
@@ -1086,8 +1142,8 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const messageText = el('span', { class: 'cgrp-message__text' });
             const messageUndo = el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-message__undo', hidden: true, on: { click: () => undo() } }, 'Undo');
             const message = el('div', { class: 'cgrp-message', role: 'status', aria: { live: 'polite' } }, messageText, messageUndo);
-            // what Toggle Controls hides (UX 2.1): the toolbar, Add factor, Settings and Undo; its forms are pop-overs
-            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, _settings.element, undoBtn);
+            // what Toggle Controls hides (UX 2.1): the toolbar, Add factor, Methods, Settings and Undo; its forms are pop-overs
+            const controls = el('div', { class: 'cgrp-controls', 'data-panel-controls': '' }, _factors.addElement, _methods.element, _settings.element, undoBtn);
             const groups = el('div', { class: 'cgrp-groups' });
             root.append(_status.element, empty, controls, message, _factors.listElement, groups);
             root.addEventListener('keydown', onKey);
@@ -1108,8 +1164,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
         }
 
         function mountParts() {
-            const ctx = { panelId: _id, read: () => _snap, recipe: () => _recipe, set: setFields, shown, noGroup: () => !!_status && _status.isOpen(),
-                setFeatures, applied: () => _applied };
+            const ctx = { panelId: _id, read: () => _snap, recipe: () => _recipe, set: setFields, shown, noGroup: () => !!_status && _status.isOpen() };
             if (PARTS.groups) _parts.push(PARTS.groups.mount(_dom.groups, ctx));
         }
 
@@ -1122,14 +1177,33 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
 
         function factorsModel() {
             const s = shown();
-            const infos = _recipe.partitionings.map((_, i) => (s && s.index[i] >= 0 ? s.reading.partitionings[s.index[i]] : null));
-            const labels = _recipe.partitionings.map((_, i) => (s && s.index[i] >= 0 ? s.defaults[s.index[i]] : new Map()));
+            // A factor edited has no partitioning in the reply on screen until the next reply lands (the reply was made for the
+            // recipe before): its editor keeps the last one it had, its counts marked stale, and never goes blank.
+            const infos = [];
+            const labels = [];
+            const stale = new Set();
+            _recipe.partitionings.forEach((p, i) => {
+                const mark = stableStringify(p.source);
+                if (s && s.index[i] >= 0) {
+                    const info = s.reading.partitionings[s.index[i]];
+                    infos.push(info);
+                    labels.push(s.defaults[s.index[i]]);
+                    _lastFactor.delete(mark);
+                    _lastFactor.set(mark, { info, labels: s.defaults[s.index[i]] });
+                    if (_lastFactor.size > 40) _lastFactor.delete(_lastFactor.keys().next().value);
+                    return;
+                }
+                const kept = _lastFactor.get(mark);
+                infos.push(kept ? kept.info : null);
+                labels.push(kept ? kept.labels : new Map());
+                if (kept) stale.add(i);
+            });
             const notes = cardNotes(currentStatus());
             const all = PanelManager.getAllPanels();
             const ofType = (type) => all.filter((p) => typeOf(p) === type).map((p) => ({ id: p.getId(), title: p.getTitle() }));
             const cells = DataManager.getCells();
             return {
-                self: _id, recipe: _recipe, infos, labels, missing: new Set(_missing), notes,
+                self: _id, recipe: _recipe, infos, labels, stale, missing: new Set(_missing), notes,
                 structure: structureRead(), cells: cells ? cells.length : 0, titleOf: sourceTitle, hasGene,
                 focusedGene: DataManager.getFocusedGene(), focusedCell: focusedCellName(),
                 choices: { groupings: ofType(TYPE), tables: ofType('cell-table'), scores: scoreChoices() }
@@ -1196,6 +1270,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             const drawn = [_recipe, reply, _missing.join(','), JSON.stringify([...cardNotes(desc)]), structureRead()];
             if (!_drawn || drawn.some((x, i) => x !== _drawn[i])) { _drawn = drawn; _factors.paint(); }
             _settings.paint();
+            _methods.paint();
             const step = _undo.peek();
             _dom.undoBtn.disabled = !step;
             _dom.undoBtn.title = step ? `Undo: ${step.label}` : 'Nothing to undo';
@@ -1305,6 +1380,12 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
             getRecipe,
             addFactor,
             undo,
+            /** Open Methods ▾ (where a plot's "Grouping's setting" leads); false while the panel or its toolbar is not shown. */
+            revealMethods() {
+                if (!_methods || _controlsVisible === false) return false;
+                _methods.reveal();
+                return true;
+            },
             _debugState
         };
     }

@@ -77,6 +77,8 @@ def _open_three(page, served):
     page.wait_for_selector(f"{A} .cgrp-card[data-index='0']", timeout=30000)
     page.wait_for_selector(f"{TP} .cgene-panel[data-state]", timeout=30000)      # the neighbours are there and have started
     page.wait_for_selector(f"{SC} .js-plotly-plot", timeout=60000)
+    # no wait for the neighbours to finish drawing: a tile keeps its height while its plot works (test_cell_gene_tile_height),
+    # so what is measured next is the edit's, whatever the neighbours are doing
 
 
 def _layout(page):

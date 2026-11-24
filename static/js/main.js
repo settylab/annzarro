@@ -69,6 +69,7 @@ import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
 import { pasteSettings, matchRules, resolveDataset, resolveDatasetPath, isTextTarget, storeBase } from './utils/paste-focus.js';
 import { mountThemeToggle } from './utils/theme-toggle.js';
+import { MODEBAR_REMOVE } from './utils/plot-theme.js';
 import { startDesktopFrame } from './utils/desktop-frame.js';
 import { keepLast } from './utils/site-footer.js';
 import { createLoadActions, createDatasetBadge, createStyleBadge, helpContent, clearTips } from './panelset-load-ui.js';
@@ -2321,7 +2322,7 @@ const App = (function() {
                 responsive: true,
                 displayModeBar: true,
                 displaylogo: false,
-                modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+                modeBarButtonsToRemove: [...MODEBAR_REMOVE],
                 toImageButtonOptions: {
                     format: 'png',
                     filename: 'annzarro_plot',

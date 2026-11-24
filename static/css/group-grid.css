@@ -37,7 +37,6 @@
     height: 28px; background: var(--az-surface-2); border-bottom: 1px solid var(--az-border); font-weight: 600; font-size: 0.75rem;
 }
 .cgg-headcell, .cgg-cell { padding: 0 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cgg-headnote { padding: 0 8px; min-width: 0; font-weight: 400; color: var(--az-muted); white-space: nowrap; }
 .cgg-num { text-align: right; font-variant-numeric: tabular-nums; }
 .cgg-cell--name { display: flex; align-items: center; gap: 6px; }
 .cgg-swatch { flex: 0 0 auto; width: 0.75rem; height: 0.75rem; border-radius: 2px; border: 1px solid var(--az-border-strong); }
@@ -46,7 +45,6 @@
     flex: 0 0 auto; padding: 0 6px; border-radius: 8px; font-size: 0.6875rem; line-height: 1.5;
     background: var(--az-warn-bg); color: var(--az-warn-text); border: 1px solid var(--az-warn-border);
 }
-.cgg-show { padding: 0 8px; font-size: 0.75rem; line-height: 1.5; }
 .cgg-row--reason .cgg-cell--name { color: var(--az-text-2); }
 
 /* the cross-table: the first column stays, the others scroll sideways and only those in view are made */
