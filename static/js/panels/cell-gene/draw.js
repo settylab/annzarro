@@ -19,6 +19,8 @@
  *        | { none: sentence },                    No size: one dot size, the legend replaced by the sentence
  *   legend?: { colorBar?: boolean, sizeLegend?: boolean, strips?: boolean }, plotTitle?: string,
  *   outline?: { color, width }   the dots' outline, and the size legend's; absent means none; heatmap cells never have one
+ *   dotOpacity?: number          the dots' opacity, 0.1 to 1 (1, opaque, when absent); the size legend's dots take the same
+ *                                share of their own; a heatmap has none
  *   pendingText?: string,                         what a row still being read says (rows[].pending, CXG-18)
  *   view?: '3d', height?: { same: true, values, min?, max? } | { same: false, stat, layer?, detectAbove?, values, min?, max? },
  *   camera?: { eye, center?, up? }, zTitle?: string,    the 3D view (UX 6b, WP-12), see figure3d
@@ -52,6 +54,9 @@ const DOT_SVG_MAX = 5000;
 
 const SMALLEST_DOT = 3;
 const LARGEST_DOT = 20;
+/** The largest dot fills its cell less DOT_GAP_PX, so neighbouring dots never touch, and is never under MIN_LARGEST_DOT. */
+const DOT_GAP_PX = 2;
+const MIN_LARGEST_DOT = 4;
 const ONE_SIZE = 9;
 const REFERENCE_DOTS = 5;
 /** A reference dot of the size legend takes at least this many px, so its label never meets the next dot's. */
@@ -74,6 +79,10 @@ const MAIN = 'main';
 /** A character's width in em, on average (as draw-annotations.js measures labels), and the most lines a title wraps to. */
 const CHAR_EM = 0.58;
 const TITLE_LINES = 3;
+/** A color bar: the px a line of its title takes, the least length left to the bar itself, and its padding (Plotly's ypad). */
+const TITLE_LINE_PX = 17;
+const BAR_MIN_PX = 20;
+const BAR_PAD_PX = 4;
 /** A line of a strip's legend, in px: its levels are listed while they fit, then "+ N more". */
 const LEGEND_LINE_PX = 15;
 const PENDING_DOT = 5;
@@ -215,6 +224,47 @@ function prepare(model) {
 }
 
 /**
+ * The matrix's cell in px, as the figure lays it out: the pitch along the genes or along the groups, whichever is
+ * smaller. The axes' domains are annotateFigure's (labels, brackets, strips, trees and totals take their room around the
+ * matrix), so the layout is made once here without the traces, which do not move it.
+ */
+function cellPixels(model, P, th, right) {
+    const base = { font: { size: th.fontSize || 12 }, margin: { ...MARGIN }, annotations: [], ...layoutAxes(model, P, th, right) };
+    if (model.plotTitle) base.title = { text: esc(model.plotTitle) };
+    const { layout } = annotateFigure({ data: [], layout: base, config: {} }, model, th);
+    const pixels = model.pixels || { width: 900, height: DEFAULT_HEIGHT };
+    const inner = { w: pixels.width - layout.margin.l - layout.margin.r, h: pixels.height - layout.margin.t - layout.margin.b };
+    const pitch = (ax, px) => ((ax.domain[1] - ax.domain[0]) * px) / Math.max(Math.abs(ax.range[1] - ax.range[0]), 1);
+    return Math.min(pitch(layout.xaxis, inner.w), pitch(layout.yaxis, inner.h));
+}
+
+/**
+ * The smallest and largest dot in px. By default the largest fills a cell of the matrix (cellPixels) less DOT_GAP_PX,
+ * so the dots follow the plot's size and the number of rows and groups (operator, 2026-11-23); the size legend draws
+ * them smaller when its slot cannot hold them, and says so. `size.scale` (0.1 to 1) takes that share of the cell; a
+ * `size.largest` in px (the px range of a link from before) is kept as it is. The smallest dot is never larger than the
+ * largest.
+ */
+function dotRange(model, P, th, right) {
+    const size = model.size;
+    let largest = size.largest;
+    if (!(largest > 0)) {
+        const scale = size.scale > 0 ? Math.min(1, size.scale) : 1;
+        largest = Math.max(MIN_LARGEST_DOT, scale * (cellPixels(model, P, th, right) - DOT_GAP_PX));
+    }
+    return { smallest: Math.min(size.smallest > 0 ? size.smallest : SMALLEST_DOT, largest), largest };
+}
+
+/** The size legend's grey reference dots, at Dot opacity 1. */
+const LEGEND_DOT_OPACITY = 0.55;
+
+/** Dot opacity, 0.1 to 1; 1 when absent. */
+function dotOpacityOf(model) {
+    const v = model.dotOpacity;
+    return typeof v === 'number' && Number.isFinite(v) ? Math.max(0.1, Math.min(1, v)) : 1;
+}
+
+/**
  * A bar's height under the height range (Color ▾ in 3D, `height.min`, `height.max`): the statistic limited to the range,
  * as a color is limited to its Min and Max. A bar of 0 is not drawn, so a Min above 0 does not raise it.
  */
@@ -282,16 +332,18 @@ function legendChars(model, th, x) {
  * the whole title for the hover (`full`, else null).
  * @param {string[]} lines
  * @param {number} chars
+ * @param {number} [most] - the most lines it takes (TITLE_LINES, or fewer in a short slot; 0: no title, all in the hover)
  * @returns {{text: string, full: (string|null)}}
  */
-function fitTitle(lines, chars) {
+function fitTitle(lines, chars, most = TITLE_LINES) {
+    if (most < 1) return { text: '', full: lines.join(' · ') };
     const out = [];
     let cut = false;
     const push = (line) => {
-        if (out.length < TITLE_LINES) { out.push(line); return; }
+        if (out.length < most) { out.push(line); return; }
         cut = true;
-        const last = out[TITLE_LINES - 1];
-        out[TITLE_LINES - 1] = `${last.slice(0, Math.max(chars - 1, 1))}…`;
+        const last = out[most - 1];
+        out[most - 1] = `${last.slice(0, Math.max(chars - 1, 1))}…`;
     };
     for (const line of lines) {
         let now = '';
@@ -304,7 +356,7 @@ function fitTitle(lines, chars) {
         }
         push(now);
     }
-    if (cut && out.length === TITLE_LINES && !out[TITLE_LINES - 1].endsWith('…')) out[TITLE_LINES - 1] = `${out[TITLE_LINES - 1].slice(0, Math.max(chars - 1, 1))}…`;
+    if (cut && out.length === most && !out[most - 1].endsWith('…')) out[most - 1] = `${out[most - 1].slice(0, Math.max(chars - 1, 1))}…`;
     return { text: out.map(esc).join('<br>'), full: cut ? lines.join(' · ') : null };
 }
 
@@ -392,58 +444,90 @@ function legendStack(model, P, dots, th, keepMin = true) {
     }
     const strips = (model.annotations && model.annotations.strips) || [];
     if (wanted('strips')) strips.forEach((strip, i) => { if (strip.legend && strip.legend.length) items.push({ kind: 'strip', index: i }); });
-    const reserve = MODEBAR_PX / Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
+    const plotPx = Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
+    const reserve = MODEBAR_PX / plotPx;
     const slot = Math.min(LEGEND_SLOT_MAX, (0.96 - reserve) / Math.max(items.length, 1));
     items.forEach((it, i) => {
         it.top = 1 - reserve - i * slot;
         it.height = slot * 0.82;
         it.chars = chars;
         it.x = x;
+        it.px = it.height * plotPx;
     });
     return items;
 }
 
 const barOf = (stack, key) => stack.find((it) => it.kind === 'bar' && it.key === key);
 
+/**
+ * A color bar's title, as many lines as its slot holds above a bar of BAR_MIN_PX. Plotly takes a top title's height
+ * from the bar's length; a title taller than the slot left it a negative length, and Plotly threw ("Something went
+ * wrong with axis scaling") and drew nothing: the dots of a crowded legend column at a short plot (operator, 2026-11-23).
+ */
+function barTitle(entry, lines) {
+    const fits = Math.floor((entry.px - 2 * BAR_PAD_PX - BAR_MIN_PX) / TITLE_LINE_PX);
+    return fitTitle(lines, entry.chars, Math.max(0, Math.min(TITLE_LINES, fits)));
+}
+
 /** A Plotly color bar for one key, placed in its slot of the legend column. */
 function colourBar(entry, lines, th) {
+    const title = barTitle(entry, lines).text;
     return {
-        title: { text: fitTitle(lines, entry.chars).text, side: 'top', font: { color: th.textColor } },
+        ...(title ? { title: { text: title, side: 'top', font: { color: th.textColor } } } : {}),
         tickfont: { color: th.textColor },
         x: entry.x, xanchor: 'left', y: entry.top, yanchor: 'top', len: entry.height, lenmode: 'fraction', thickness: 12,
-        outlinewidth: 0
+        ypad: BAR_PAD_PX, outlinewidth: 0
     };
 }
 
 /**
  * The size legend of one key: up to five reference dots from dot_min to dot_max, on a small subplot of its own; fewer
- * (at least two, the ends) when the slot is too short for each to have its line.
+ * (at least two, the ends) when the slot is too short for each to have its line. The dots keep two lines of the slot;
+ * the title takes the whole lines left above them (TITLE_LINE_PX each), so it never stands over the first dot's label.
+ * Dots larger than two lines of the slot hold (the largest dot fills its cell) are drawn at 1:`scale`, said under the
+ * title.
  */
 function sizeLegendParts(model, k, entry, n, th) {
     const { smallest = SMALLEST_DOT, largest = LARGEST_DOT } = model.size;
     const axisId = n + 2;
-    const fitted = fitTitle(k.lines, entry.chars);
-    const titleRoom = titleRoomOf(model, entry, fitted);
     const plotPx = Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
-    const linePx = Math.max(REFERENCE_LINE_PX, largest);
-    const count = model.pixels ? Math.max(2, Math.min(REFERENCE_DOTS, Math.floor(((entry.height - titleRoom) * plotPx) / linePx))) : REFERENCE_DOTS;
+    const slotPx = entry.height * plotPx;
+    const sized = !!model.pixels;
+    const most = sized ? Math.max(0, Math.min(TITLE_LINES, Math.floor((slotPx - 4 - 2 * REFERENCE_LINE_PX) / TITLE_LINE_PX))) : TITLE_LINES;
+    const roomOf = (lines) => slotPx - (lines ? lines * TITLE_LINE_PX + 4 : 0);
+    // the scale the dots are drawn at: 1 while two of the largest fit under the title, else the least whole 1:N that does
+    const fitLargest = Math.max(roomOf(most) / 2, 1);
+    const scale = sized && largest > fitLargest ? Math.ceil(largest / fitLargest) : 1;
+    const noted = scale > 1 && most > 0;
+    const fitted = fitTitle(k.lines, entry.chars, noted ? most - 1 : most);
+    const titleLines = fitted.text ? fitted.text.split('<br>').length : 0;
+    const lines = titleLines + (noted ? 1 : 0);
+    const titleRoom = sized ? (slotPx - roomOf(lines)) / plotPx : titleRoomOf(model, entry, fitted);
+    const drawn = { smallest: smallest / scale, largest: largest / scale };
+    const linePx = Math.max(REFERENCE_LINE_PX, drawn.largest);
+    const count = sized ? Math.max(2, Math.min(REFERENCE_DOTS, Math.floor(roomOf(lines) / linePx))) : REFERENCE_DOTS;
     const refs = Array.from({ length: count }, (_, j) => k.lo + ((k.hi - k.lo) * j) / (count - 1));
     const trace = {
         type: 'scatter', mode: 'markers+text', name: 'size legend', hoverinfo: 'skip', showlegend: false,
         xaxis: `x${axisId}`, yaxis: `y${axisId}`,
         x: refs.map(() => 0), y: refs.map((_, j) => j),
         text: refs.map((v) => (k.hi > k.lo ? fmt(v) : fmt(k.lo))), textposition: 'middle right', cliponaxis: false,
-        marker: { size: refs.map((v) => diameterOf(v, k.lo, k.hi, smallest, largest)), color: th.axisColor, opacity: 0.55, line: model.outline ? { color: model.outline.color, width: model.outline.width } : { width: 0 } }
+        marker: { size: refs.map((v) => diameterOf(v, k.lo, k.hi, drawn.smallest, drawn.largest)), color: th.axisColor, opacity: LEGEND_DOT_OPACITY * dotOpacityOf(model), line: model.outline ? { color: model.outline.color, width: model.outline.width } : { width: 0 } }
     };
     const axes = {
         [`xaxis${axisId}`]: { domain: [entry.x + 0.01, 1], range: [-0.6, 3], visible: false, fixedrange: true },
-        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, entry.top - titleRoom], range: [count - 0.4, -0.6], visible: false, fixedrange: true }
+        [`yaxis${axisId}`]: { domain: [entry.top - entry.height, entry.top - titleRoom], range: [count - 0.5, -0.5], visible: false, fixedrange: true }
     };
     const title = {
         xref: 'paper', yref: 'paper', x: entry.x, y: entry.top, xanchor: 'left', yanchor: 'top', showarrow: false,
         align: 'left', text: fitted.text, font: { color: th.textColor }, ...(fitted.full ? { hovertext: esc(fitted.full), captureevents: true } : {})
     };
-    return { trace, axes, title };
+    // the scale the dots are drawn at, on the title's last line
+    const note = noted ? {
+        name: 'size legend scale', xref: 'paper', yref: 'paper', x: entry.x, y: entry.top - (titleLines * TITLE_LINE_PX) / plotPx,
+        xanchor: 'left', yanchor: 'top', showarrow: false, align: 'left', text: esc(W.legendScaled(scale)), font: { color: th.textColor }
+    } : null;
+    return { trace, axes, title, note };
 }
 
 /**
@@ -499,12 +583,13 @@ function axisOf(ticks, labels, extent, th, extra) {
     };
 }
 
-function layoutAxes(model, P, th, dots, right) {
+function layoutAxes(model, P, th, right) {
     const groupTicks = model.groups.map((_, g) => g);
     const groupLabels = model.groups.map((g) => esc(g.label));
     const rowLabels = model.rows.map((r) => (r.own ? `<i>${esc(r.label)}</i>` : esc(r.label)));
-    const group = axisOf(groupTicks, groupLabels, P.G, th, { showgrid: dots });
-    const gene = axisOf(P.pos, rowLabels, P.span, th, { showgrid: dots });
+    // no grid lines, in dots and in a heatmap (operator, 2026-11-23)
+    const group = axisOf(groupTicks, groupLabels, P.G, th, { showgrid: false });
+    const gene = axisOf(P.pos, rowLabels, P.span, th, { showgrid: false });
     const flip = (axis) => ({ ...axis, range: [axis.range[1], axis.range[0]] });
     // the first group, or the first gene when swapped, is at the top; genes on x are read from above, at an angle
     return model.swap
@@ -551,7 +636,8 @@ function dotTraces(model, P, stack, th) {
         }
         total += x.length;
         const entry = barOf(stack, k.key);
-        const marker = { size: sizes, color: colours, colorscale: color.colorscale, cmin: k.lo, cmax: k.hi, showscale: Boolean(entry) };
+        // Dot opacity, opaque by default: Plotly draws a marker with sizes per point at 0.7 unless told
+        const marker = { size: sizes, color: colours, colorscale: color.colorscale, cmin: k.lo, cmax: k.hi, showscale: Boolean(entry), opacity: dotOpacityOf(model) };
         if (color.reversescale) marker.reversescale = true;
         if (model.outline) marker.line = { color: model.outline.color, width: model.outline.width };
         if (entry) marker.colorbar = colourBar(entry, k.lines, th);
@@ -1079,16 +1165,19 @@ export function buildFigure(given, theme) {
     const th = { ...PLOT_PALETTES.light, ...theme };
     if (given.view === '3d') return figure3d(given, th);
     const P = prepare(dots ? given : { ...given, size: { none: true } });
-    const { model, hidden, keepMin } = fitMatrix(given, P, dots, th);
-    const stack = legendStack(model, P, dots, th, keepMin);
+    const fitted = fitMatrix(given, P, dots, th);
+    const { hidden, keepMin } = fitted;
+    const stack = legendStack(fitted.model, P, dots, th, keepMin);
     const right = stack.length ? stack[0].x - (LEGEND_X - PLOT_RIGHT) : 1;
+    const model = dots && !fitted.model.size.none
+        ? { ...fitted.model, size: { ...fitted.model.size, ...dotRange(fitted.model, P, th, right) } } : fitted.model;
 
     const data = dots ? dotTraces(model, P, stack, th) : heatmapTraces(model, P, stack, th);
     const layout = {
         paper_bgcolor: th.bgColor, plot_bgcolor: th.bgColor, showlegend: false, hovermode: 'closest',
         font: { family: th.fontFamily || 'Arial, Helvetica, sans-serif', size: th.fontSize || 12, color: th.textColor },
         margin: { ...MARGIN }, annotations: [],
-        ...layoutAxes(model, P, th, dots, right)
+        ...layoutAxes(model, P, th, right)
     };
     if (model.plotTitle) layout.title = { text: esc(model.plotTitle), font: { color: th.textColor } };
 
@@ -1104,8 +1193,9 @@ export function buildFigure(given, theme) {
             data.push(parts.trace);
             Object.assign(layout, parts.axes);
             layout.annotations.push(parts.title);
+            if (parts.note) layout.annotations.push(parts.note);
         } else if (entry.kind === 'bar') {
-            const fitted = fitTitle(P.colour.find((k) => k.key === entry.key).lines, entry.chars);
+            const fitted = barTitle(entry, P.colour.find((k) => k.key === entry.key).lines);
             if (fitted.full) layout.annotations.push(titleHover(fitted, entry.x, entry.top, th));
         } else if (entry.kind === 'none') {
             layout.annotations.push({
