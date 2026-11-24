@@ -67,3 +67,61 @@ def test_the_store_is_never_written(server, tmp_path):
     _genes(server, path)
     assert snap == {os.path.join(d, f): os.stat(os.path.join(d, f)).st_mtime_ns
                     for d, _, fs in os.walk(path) for f in fs}
+
+
+def test_a_normal_open_keeps_the_consolidated_listing(server, tmp_path, monkeypatch):
+    """The per-group fallback is for a listing found stale only: a store whose .zmetadata matches its
+    files is opened through it (a few reads, not one per array), also after a Refresh that changed nothing."""
+    if not ZARR3:
+        pytest.skip("zarr 3 only")
+    from annzarro.core import unconsolidated
+    used = []
+    real = unconsolidated.open_group
+    monkeypatch.setattr(unconsolidated, "open_group", lambda p: used.append(p) or real(p))
+    path = _store(tmp_path, 2)
+    _genes(server, path)
+    server.post("/api/v1/data/refresh", query_string={"dataset_path": path})
+    _genes(server, path)
+    assert used == [], "a store with a matching listing was read without it"
+    # stale: now it is
+    root = zarr.open_group(path, mode="r+", use_consolidated=False)
+    root["obs"].create_array("late", data=np.arange(200, dtype="float64"))
+    server.post("/api/v1/data/refresh", query_string={"dataset_path": path})
+    _genes(server, path)
+    assert used, "a stale listing was not read around"
+
+
+def test_the_listing_is_a_few_reads_and_the_fallback_one_per_node(tmp_path):
+    """Read counts to open and list a store with 200 obs and 200 var columns (a counting LocalStore)."""
+    if not ZARR3:
+        pytest.skip("zarr 3 only")
+    from zarr.storage import LocalStore
+    from annzarro.core import unconsolidated
+    from annzarro.tests.zarr_compat import consolidate, open_group
+    path = tmp_path / "wide.zarr"
+    g = open_group(path, mode="w")
+    for name in ("obs", "var"):
+        grp = g.create_group(name)
+        grp.attrs.update({"_index": "_index", "encoding-type": "dataframe", "encoding-version": "0.2.0"})
+        for i in range(200):
+            grp.create_array(f"c{i}", data=np.arange(10, dtype="float64"))
+    consolidate(path)
+
+    class Counting(LocalStore):
+        gets = 0
+
+        async def get(self, *a, **k):
+            Counting.gets += 1
+            return await super().get(*a, **k)
+
+    def reads(wrap):
+        Counting.gets = 0
+        store = Counting(str(path), read_only=True)
+        root = (zarr.open_group(unconsolidated._WithoutListing(store), mode="r", use_consolidated=False) if wrap
+                else zarr.open_group(store, mode="r"))
+        for name in ("obs", "var"):
+            for key in root[name].keys():
+                root[name][key].shape
+        return Counting.gets
+
+    assert reads(False) < 20 and reads(True) > 400
