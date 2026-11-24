@@ -61,7 +61,8 @@ function binnedNumber(p, isNumeric) {
     return !!p && !!isNumeric && isNumeric(p.source) && !(isObject(p.binning) && p.binning.method === 'categories');
 }
 
-// REASON: one local reason until the shared reason builder (SO-2) is in the bundle; switch to it then
+// The shared reason builder (options-model.js REASON, SO-2) phrases what a method cannot compute on a layer; a view that
+// needs a kind of axis is not one of its forms, so the Mode select's reason is its own (vocabulary.js viewRefused)
 const reasonText = (key) => C.viewRefused[key];
 
 /**
