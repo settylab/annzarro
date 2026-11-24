@@ -113,7 +113,9 @@ const cellGene = Object.freeze({
     /** What the Size and Gene Plot lists say of z-score mean (consumers that cannot show it). */
     zscoreCannot: Object.freeze({
         size: 'Z-score mean is signed; dot size cannot show a sign. Use it for Color.',
-        genes: 'Z-score mean of a cell group is not available in the Gene Plot yet: it needs every gene\'s mean and SD over all cells.'
+        genes: 'Z-score mean of a cell group is not available in the Gene Plot yet: it needs every gene\'s mean and SD over all cells.',
+        genesLayout: 'Z-score mean of a cell group needs a whole-layer read on this store\'s layout; coming with the moments cache.',
+        genesLayoutUnknown: 'Z-score mean of a cell group is offered once the layer\'s storage layout is known.'
     }),
     /** What a colour bar or a CSV header says of the scaling. */
     scaled: Object.freeze({

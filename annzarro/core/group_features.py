@@ -507,6 +507,7 @@ def _zgene_moments(bins: _Bins, sizes: np.ndarray, n_obs: int, rows: Optional[np
         out[finite] = z(x[finite]) - z0
         return out
 
+    # detect_above of a z feature is a threshold on the z-score; d = z - z0, so d > t - z0 is z > t
     _gene_moments(bins, sizes, rows, values, [t - z0 for t in thresholds], outs, should_stop, transform=shifted)
     if z0:
         for per_threshold in outs:

@@ -6,7 +6,8 @@ against the real cell_groups route.
 2.  `test_zscore_color_bar_diverges_around_zero`: with no colour map stored the bar is RdBu, centred on 0, symmetric.
 3.  `test_zscore_disabled_for_size_with_reason`: Size lists z-score mean disabled, with its reason.
 4.  `test_constant_gene_has_no_value_and_says_why`: a gene nobody expresses has no z-score; the hover says so.
-5.  `test_gene_plot_lists_zscore_disabled_with_reason`: a Gene Plot's cell group lists it, disabled, in the same place.
+
+The Gene Plot's cell group (G1a) is in test_gene_plot_group_stat.py.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -22,8 +23,6 @@ else:
 
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401 (the fixtures)
     DATA, GENES, P, S1, S2, TP, _config, _drawn, _features, _open, _plot, _sig, page, served)
-from annzarro.tests.browser.test_gene_plot_group_stat import (  # noqa: E402
-    C as TG_PLOT, G as GENE_PLOT, GA as GROUPING, _grouping, _open as _open_gene_plot, _plot as _gene_plot, _stat)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
 OBS = {"type": "obs", "key": "cell_type"}
@@ -120,12 +119,3 @@ def test_constant_gene_has_no_value_and_says_why(page, served):
     assert all(v is None for v in heat["z"][CONSTANT_GENE]), heat["z"][CONSTANT_GENE]
     assert all("constant over all cells: no z-score" in t for t in heat["text"][CONSTANT_GENE]), heat["text"][CONSTANT_GENE]
     assert all(v is not None for v in heat["z"][GENE])
-
-
-def test_gene_plot_lists_zscore_disabled_with_reason(page, served):
-    _open_gene_plot(page, served, {GENE_PLOT: _gene_plot(color=_stat()), GROUPING: _grouping()})
-    until(page, "(t) => !!document.querySelector(t + ' select.axis-stat-select[data-axis=\"color\"]')", TG_PLOT)
-    opts = page.eval_on_selector_all(f"{TG_PLOT} select.axis-stat-select[data-axis='color'] option",
-                                     "os => os.map(o => [o.value, o.disabled, o.title])")
-    assert opts[0][0] == "zscore_mean" and opts[0][1] is True, opts
-    assert opts[0][2].startswith("Z-score mean of a cell group is not available in the Gene Plot yet"), opts

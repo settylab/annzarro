@@ -21,7 +21,7 @@ import {
 import { statisticColumn, scalingGrade, rowStepGrade, MOMENT_STRIDE } from '../../../static/js/utils/cell-gene-model.js';
 import { STATISTIC_INFO, statisticChoices, statisticGrade } from '../../../static/js/utils/group-statistics.js';
 import { STATISTIC_IDS } from '../../../static/js/utils/cell-grouping.js';
-import { statMenu, statInfo } from '../../../static/js/utils/group-stat-model.js';
+import { statMenu, statInfo, genesRequest, momentsHash } from '../../../static/js/utils/group-stat-model.js';
 
 const RECIPE = { genes: ['UP1', 'UP2'], method: 'zscore_mean', input: 'X' };
 const scoreRecipe = (column, layer) => ({ ...RECIPE, method: column, input: layer });
@@ -106,14 +106,21 @@ test('(4) Size cannot be z-score mean, and a Gene Plot cell group cannot yet; Co
     const z = (consumer) => statisticChoices({ layer: 'logged', kinds, consumer }).find((e) => e.value === 'zscore_mean');
     assert.equal(z('size').disabled, true);
     assert.match(z('size').title, /signed; dot size cannot show a sign/);
-    assert.equal(z('genes').disabled, true);
-    assert.match(z('genes').title, /not available in the Gene Plot yet/);
     for (const consumer of ['color', 'height', undefined]) assert.equal(z(consumer).disabled, false);
-    // the Gene Plot lists it, in the same place, disabled
-    const menu = statMenu({ stat: 'mean', layer: 'logged' }, kinds);
+    // a Gene Plot's cell group: offered on a CSC layer, listed disabled with the reason on any other, and until known
+    const g = (layout) => statisticChoices({ layer: 'logged', kinds, consumer: 'genes', layout }).find((e) => e.value === 'zscore_mean');
+    assert.equal(g('csc').disabled, false);
+    for (const layout of ['csr', 'dense']) {
+        assert.equal(g(layout).disabled, true);
+        assert.match(g(layout).title, /needs a whole-layer read on this store's layout; coming with the moments cache/);
+    }
+    assert.equal(g(undefined).disabled, true);
+    // the Gene Plot lists it first, in the same place
+    const menu = statMenu({ stat: 'mean', layer: 'logged' }, kinds, { logged: 'csr' });
     assert.equal(menu.options[0].value, 'zscore_mean');
     assert.equal(menu.options[0].disabled, true);
-    assert.match(menu.options[0].title, /Gene Plot/);
+    assert.match(menu.options[0].title, /moments cache/);
+    assert.equal(statMenu({ stat: 'mean', layer: 'logged' }, kinds, { logged: 'csc' }).options[0].disabled, false);
     // a stored Size of z-score mean reads as the default Size
     const read = normalizeCellGene({ color: { stat: 'mean', layer: 'X' }, size: { stat: 'zscore_mean', layer: 'X' } });
     assert.equal(read.config.size.stat, 'pct_expressing');
@@ -173,4 +180,14 @@ test('the one-row help line under z-score mean names the score and the cell step
     const channel = { stat: 'zscore_mean', layer: 'logged' };
     const help = rowStepHelp({ genes: 'zscore_mean' }, channel, 'Pathway', 8);
     assert.match(help, /z-score mean score of Pathway on logged, then the group's mean/);
+});
+
+test('the Gene Plot asks for the z-score of each gene as a request of its own', () => {
+    const grouping = { shape: 'grouping', partitionings: [], small: { threshold: 10, mode: 'keep' } };
+    const raw = genesRequest(grouping, ['c:B'], 'logged', 0);
+    const z = genesRequest(grouping, ['c:B'], 'logged', 0, 'zscore');
+    assert.equal(raw.transform, undefined);
+    assert.deepEqual([z.transform, z.clip], ['zscore', 10]);
+    assert.notEqual(momentsHash('g', ['c:B'], 'logged', 0), momentsHash('g', ['c:B'], 'logged', 0, 'zscore'));
+    assert.equal(momentsHash('g', ['c:B'], 'logged', 0), momentsHash('g', ['c:B'], 'logged', 0, null), 'no transform: the key is as before');
 });

@@ -142,6 +142,7 @@ function groupNameOf(setting) {
 }
 
 const kindsNow = () => layerFacts(datasetLayersNow() || [M.DEFAULT_LAYER]).kinds;
+const layoutsNow = () => layerFacts(datasetLayersNow() || [M.DEFAULT_LAYER]).layouts;
 const layersNow = () => datasetLayersNow() || [M.DEFAULT_LAYER];
 
 /**
@@ -168,7 +169,7 @@ function groupMenu(setting) {
 
 /** The statistic select (the registry's statMenu): every statistic graded on the layer the setting holds. */
 function statMenu(setting) {
-    return M.statMenu(setting, kindsNow());
+    return M.statMenu(setting, kindsNow(), layoutsNow());
 }
 
 /** The layer select (the registry's layerMenu): every layer, graded for the setting's statistic. */
@@ -260,7 +261,8 @@ function stillUsed(rec) {
     const panel = rec.panelId ? PanelManager.getPanel(rec.panelId) : null;
     if (!panel || typeof panel.getConfig !== 'function') return true;
     const s = panel.getConfig()[rec.role];
-    return !!(s && s.type === TYPE && s.key === rec.groupId && (s.column || '') === rec.column && M.layerOf(s) === rec.layer);
+    return !!(s && s.type === TYPE && s.key === rec.groupId && (s.column || '') === rec.column && M.layerOf(s) === rec.layer
+        && (M.statOf(s) === M.ZSCORE) === rec.z);
 }
 
 function refreshPanel(host) {
@@ -298,7 +300,7 @@ function openRecord(host, role, setting, onChange) {
     const { sources } = groupSources();
     const id = setting.key;
     const consumer = { kind: 'plot', role, panelId: panelIdOf(host), host };
-    const rec = { groupId: id, column: setting.column || '', layer: M.layerOf(setting), consumer, seen: new Map(), handle: null, stat: null };
+    const rec = { groupId: id, column: setting.column || '', layer: M.layerOf(setting), z: M.statOf(setting) === M.ZSCORE, consumer, seen: new Map(), handle: null, stat: null };
     const visible = () => isVisible(host);
     let note = () => {};
     const grouping = sources.watch(id, { consumer, option: {}, visible, onChange: () => note() });
@@ -317,7 +319,7 @@ function openRecord(host, role, setting, onChange) {
         if (found.state === 'gone') { stop(); return { state: 'gone', title, was: found.was, key: null, group: found }; }
         if (found.update) Object.assign(s, { groupWas: found.update.groupWas });     // follows its key, silently
         if (!moments) {
-            moments = sources.watchGenes(id, { consumer, option: { group: ref.group, layer: M.layerOf(s) }, visible, onChange: () => note() });
+            moments = sources.watchGenes(id, { consumer, option: { group: ref.group, layer: M.layerOf(s), ...(rec.z ? { transform: 'zscore' } : {}) }, visible, onChange: () => note() });
         }
         const out = moments.read();
         return { ...out, title, group: found, held: g.held, groupName: groupNameOf(s) };
@@ -340,7 +342,8 @@ function binding() {
         _binding = createHostBinding({
             id: PROVIDER,
             open: openRecord,
-            matches: (rec, setting) => rec.groupId === setting.key && rec.column === (setting.column || '') && rec.layer === M.layerOf(setting),
+            matches: (rec, setting) => rec.groupId === setting.key && rec.column === (setting.column || '') && rec.layer === M.layerOf(setting)
+                && rec.z === (M.statOf(setting) === M.ZSCORE),
             describe,
             stillUsed,
             stale: (rec, snap) => (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)

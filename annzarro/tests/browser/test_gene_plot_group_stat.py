@@ -391,3 +391,66 @@ def test_a_link_round_trip_keeps_the_setting_and_the_colours(page, served):
     page.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
     _wait_colours(page, 40)
     assert _close(_colours(page), want)
+
+
+# ------------------------------------------------------------------ G1a: z-score mean of a group
+
+def _zmeans():
+    """The mean of each gene's clipped z-score (over ALL cells) over the B cells, by NumPy; genes with no spread have none."""
+    x = DATA.logged.astype(np.float64)
+    sd = x.std(axis=0)
+    ok = sd > 0
+    z = np.clip((x[:, ok] - x[:, ok].mean(axis=0)) / sd[ok], -10, 10)
+    return np.sort(z[B].mean(axis=0))
+
+
+def test_zscore_mean_on_csc_equals_cell_gene_row(page, served):
+    """On a CSC store the Gene Plot offers z-score mean of a group: one `genes` request with the transform, and every
+    gene's colour is the number the Cell-Gene Plot's gene row shows (the mean of its clipped z-score over all cells)."""
+    _open(page, served, {G: _plot(), GA: _grouping()})
+    _pick(page, "type", "group-stat")
+    until(page, "(t) => document.querySelector(t + ' select.axis-key-select[data-axis=\"color\"]').value === 'cell-grouping-A'", C)
+    until(page, "(t) => document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option').length > 2", C)
+    _pick(page, "layer", "logged")
+    until(page, """(t) => { const o = document.querySelector(t + ' select.axis-stat-select[data-axis="color"] option[value="zscore_mean"]');
+        return !!o && !o.disabled; }""", C, timeout=60)
+    _pick(page, "stat", "zscore_mean")
+    _pick(page, "column", B_KEY)
+    want = _zmeans()
+    _wait_colours(page, 40)                       # the gene with no spread is drawn with no colour (NaN)
+    request = _genes(page)[-1]
+    assert request["transform"] == "zscore" and request["clip"] == 10 and request["layer"] == "logged", request
+    got = [c for c in _colours(page) if c == c]
+    assert _close(got, want), (got[:5], want[:5])
+    # a switch to the plain mean is another request, and back again reads the z-score once more
+    n = len(_genes(page))
+    with page.expect_request(lambda r: "/data/cell_groups" in r.url and r.method == "POST"
+                             and json.loads(r.post_data or "{}").get("shape") == "genes"
+                             and "transform" not in json.loads(r.post_data or "{}")
+                             and not json.loads(r.post_data or "{}").get("estimate_only"), timeout=30000):
+        _pick(page, "stat", "mean")
+    assert len(_genes(page)) == n + 1 and "transform" not in _genes(page)[-1]
+
+
+@pytest.fixture(scope="module")
+def served_csr(tmp_path_factory):
+    from annzarro.tests.browser import test_focus_outside_subset as focus
+    from annzarro.tests.browser.test_names_dataset_scope import _serve
+    from annzarro.tests.core import grouping_store as gstore
+    original = focus._make_store
+    focus._make_store = lambda path: (gstore.make_store(str(path), "csr", "zarr", data=DATA), str(path))[1]
+    try:
+        proc, root, store = _serve(tmp_path_factory)
+    finally:
+        focus._make_store = original
+    yield root, store
+    proc.terminate()
+    proc.wait(10)
+
+
+def test_zscore_mean_on_csr_disabled_with_reason(page, served_csr):
+    _open(page, served_csr, {G: _plot(color=_stat()), GA: _grouping()})
+    until(page, """(t) => { const o = document.querySelector(t + ' select.axis-stat-select[data-axis="color"] option[value="zscore_mean"]');
+        return !!o && o.disabled && o.title.includes('whole-layer read'); }""", C, timeout=60)
+    title = page.eval_on_selector(f"{C} select.axis-stat-select[data-axis='color'] option[value='zscore_mean']", "o => o.title")
+    assert title == "Z-score mean of a cell group needs a whole-layer read on this store's layout; coming with the moments cache."

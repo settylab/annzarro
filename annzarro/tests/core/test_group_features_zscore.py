@@ -231,3 +231,14 @@ def test_the_reference_helper_is_the_score_engines():
     assert sparse.n_finite == 10 and sparse.mean == pytest.approx(0.6) and not sparse.constant
     assert gsc.gene_reference(np.array([2.0, 2.0, 2.0]), 3).constant
     assert gsc.gene_reference(np.zeros(0), 4).constant
+
+
+def test_the_reference_helper_takes_totals_when_given():
+    values = np.array([0.0, 1.0, 2.0, np.nan, 5.0, 0.0, 0.0])
+    finite = values[np.isfinite(values)]
+    full = gsc.gene_reference(values, 7)
+    given = gsc.gene_reference(None, 7, totals=(finite.size, float(finite.sum()), float((finite ** 2).sum())))
+    assert given.n_finite == full.n_finite and given.mean == pytest.approx(full.mean, rel=1e-12)
+    assert given.sd == pytest.approx(full.sd, rel=1e-9) and not given.constant
+    assert gsc.gene_reference(None, 5, totals=(5, 10.0, 20.0)).constant               # five 2.0s
+    assert gsc.gene_reference(None, 5, totals=(0, 0.0, 0.0)).constant

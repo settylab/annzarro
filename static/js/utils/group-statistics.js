@@ -185,18 +185,32 @@ export const { layerChoices: statisticLayerChoices, pairAfter: statisticPairAfte
  * the answer is flipped in one place. Color and Height can, so can a caller that names no consumer.
  */
 const CANNOT_FOR = Object.freeze({
-    size: Object.freeze({ zscore_mean: Z_CANNOT.size }),
-    genes: Object.freeze({ zscore_mean: Z_CANNOT.genes })
+    size: Object.freeze({ zscore_mean: Z_CANNOT.size })
 });
+
+/**
+ * The matrix layouts a Gene Plot's z-score mean of a cell group is offered on (G1a, decision 44): a compressed-sparse-column
+ * matrix reads every stored entry for any group, so each gene's mean and SD over all cells come from the pass already paid
+ * for. CSR and dense stay listed, disabled, until the moments cache (0.8.1). Empty: not offered at all (Q1's first answer).
+ */
+const GENE_PLOT_ZSCORE_LAYOUTS = Object.freeze(['csc']);
+
+/** Why z-score mean is disabled in a Gene Plot's cell group on `layout` (undefined: not yet known); '' when it is offered. */
+function genesZscoreReason(layout) {
+    if (!GENE_PLOT_ZSCORE_LAYOUTS.length) return Z_CANNOT.genes;
+    if (!layout) return Z_CANNOT.genesLayoutUnknown;
+    return GENE_PLOT_ZSCORE_LAYOUTS.includes(layout) ? '' : Z_CANNOT.genesLayout;
+}
 
 /**
  * The statistic list of a consumer: `GROUP_STATISTICS_MODEL.methodChoices`, and where the consumer cannot show a
  * statistic that entry is disabled with its reason (a held one stays, marked "(not available)", as a layer's does).
- * @param {{recipe?: Object, layer?: (string|null), kinds?: Object<string, string>, held?: string, consumer?: ('color'|'size'|'height'|'genes')}} [opts]
+ * @param {{recipe?: Object, layer?: (string|null), kinds?: Object<string, string>, held?: string, consumer?: ('color'|'size'|'height'|'genes'),
+ *   layout?: string}} [opts] - `layout`: the layer's storage layout (csc, csr, dense), for the Gene Plot's z-score mean
  */
-export function statisticChoices({ consumer, ...rest } = {}) {
+export function statisticChoices({ consumer, layout, ...rest } = {}) {
     const list = GROUP_STATISTICS_MODEL.methodChoices(rest);
-    const cannot = CANNOT_FOR[consumer];
+    const cannot = consumer === 'genes' ? (genesZscoreReason(layout) ? { zscore_mean: genesZscoreReason(layout) } : null) : CANNOT_FOR[consumer];
     if (!cannot) return list;
     return list.map((e) => {
         if (!cannot[e.value]) return e;
