@@ -40,6 +40,7 @@ import { TABLE_SOURCE, GROUP_SOURCE } from '../cell-grouping/factors.js';
 import { shareText } from '../cell-grouping/group-rows.js';
 import { toHex } from '../cell-grouping/colours.js';
 import { createPopover } from '../../ui/popover.js';
+import { inlineRename } from '../../ui/inline-rename.js';
 
 const W = VOCABULARY.countSets;
 const C = VOCABULARY.countPlot;
@@ -572,45 +573,32 @@ function mount(host, ctx) {
      */
     function renameCell(set, i, li, cell, name, shown) {
         const mine = i;
-        const input = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-set__name', value: renameDraft !== undefined ? renameDraft : (set.name || shown),
-            title: W.renameHint, data: { azOwnEscape: '' }, aria: { label: W.renameLabel, description: W.renameHint } });
         let finished = false;
-        const leave = (save) => {
+        /** Leave the field: `save` keeps the text; `move` (1 or -1) goes on to the next or the previous set's name. */
+        const leave = (save, text, move = 0) => {
             if (finished) return;
             finished = true;
             pendingLeave = null;
-            if (renaming === mine) renaming = -1;
+            const target = i + move;
+            const goes = move && target >= 0 && target < (ctx.config().sets || []).length;
+            if (renaming === mine) renaming = goes ? target : -1;
             renameDraft = undefined;
-            const text = input.value.trim();
+            const trimmed = text.trim();
             const next = { ...set };
-            if (text && text !== shown) next.name = text; else delete next.name;
+            if (trimmed && trimmed !== shown) next.name = trimmed; else delete next.name;
             if (!save || (next.name || '') === (set.name || '')) { paint(true); return; }
             replaceSet(i, next, `rename ${VOCABULARY.word.set} ${next.name || shown}`);
         };
-        pendingLeave = () => leave(true);
-        input.addEventListener('input', () => { renameDraft = input.value; });
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); leave(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); }
-        });
-        li.addEventListener('focusout', (e) => {
-            if (finished) return;
-            if (e.relatedTarget && li.contains(e.relatedTarget)) return;
-            let done = false;
-            const later = () => {
-                if (done) return;
-                done = true;
-                document.removeEventListener('click', later, true);
-                document.removeEventListener('pointerup', later, true);
-                setTimeout(() => { if (input.isConnected) leave(true); }, 0);
-            };
-            document.addEventListener('click', later, true);
-            document.addEventListener('pointerup', later, true);
-            setTimeout(later, 350);
-        });
-        const ok = el('button', { type: 'button', class: 'ccnt-set__btn ccnt-set__ok', title: W.buttons.saveName, aria: { label: `${W.buttons.saveName}: ${name}` },
-            on: { mousedown: (e) => e.preventDefault(), click: () => leave(true) } }, '✓');
-        const cancel = el('button', { type: 'button', class: 'ccnt-set__btn ccnt-set__cancel', title: W.buttons.cancel, aria: { label: `${W.buttons.cancel}: ${name}` },
-            on: { mousedown: (e) => e.preventDefault(), click: () => leave(false) } }, '✕');
+        // the shared editor (ui/inline-rename.js) owns the field, ✓ and ✕ and every way out
+        const rename = inlineRename({ el, value: renameDraft !== undefined ? renameDraft : (set.name || shown), onInput: (text) => { renameDraft = text; },
+            classes: { input: 'form-control form-control-sm ccnt-set__name', ok: 'ccnt-set__btn ccnt-set__ok', cancel: 'ccnt-set__btn ccnt-set__cancel' },
+            labels: { field: W.renameLabel, ok: `${W.buttons.saveName}: ${name}`, cancel: `${W.buttons.cancel}: ${name}`, hint: W.renameHint },
+            onSave: (text, move) => leave(true, text, move), onCancel: () => leave(false, '') });
+        const { input, ok, cancel } = rename;
+        ok.title = W.buttons.saveName;
+        cancel.title = W.buttons.cancel;
+        pendingLeave = () => rename.save();
+        rename.attach(li);
         cell.append(input, ok, cancel);
         setTimeout(() => { if (input.isConnected) { input.focus(); input.select(); } }, 0);
     }
