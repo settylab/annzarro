@@ -438,10 +438,12 @@ function mount(slot, ctx) {
     const setCluster = (patch, label) => ctx.set({ cluster: { ...clusterOf(config()), ...patch } }, label);
 
     const controls = {};
-    const field = (label, control) => el('label', { class: 'cgene-field' }, el('span', { class: 'cgene-field__label', text: label }), control);
+    // the pop-over body standard (popover.css): a field is its label left and its control right, a check is a plain checkbox
+    const field = (label, control) => el('label', { class: 'az-pop-field az-pop-field--select' },
+        el('span', { class: 'az-pop-field__label', text: label }), el('span', { class: 'az-pop-field__control' }, control));
     const check = (name, label, onChange) => {
-        controls[name] = el('input', { type: 'checkbox', data: { option: name }, on: { change: (e) => onChange(e.target.checked) } });
-        return el('label', { class: 'cgene-opt' }, controls[name], ` ${label}`);
+        controls[name] = el('input', { type: 'checkbox', class: 'form-check-input', data: { option: name }, on: { change: (e) => onChange(e.target.checked) } });
+        return el('div', { class: 'az-pop-field az-pop-field--check' }, el('label', { class: 'cgene-opt az-pop-check' }, controls[name], ` ${label}`));
     };
     const select = (name, label, entries, onChange) => {
         const s = el('select', { class: 'form-select form-select-sm', data: { option: name }, aria: { label }, on: { change: () => onChange(s.value) } },
@@ -449,7 +451,8 @@ function mount(slot, ctx) {
         controls[name] = s;
         return field(label, s);
     };
-    const section = (heading, ...children) => el('fieldset', { class: 'cgene-options__section' }, el('legend', { text: heading }), ...children);
+    const section = (heading, ...children) => el('details', { class: 'az-pop-section', open: true },
+        el('summary', { class: 'az-pop-section__title', text: heading }), el('div', { class: 'az-pop-section__body' }, ...children));
     const flat = (key, value, dflt, label) => ctx.set({ [key]: value === dflt ? undefined : value }, label);
     const onOff = (on, label) => `${on ? '' : 'no '}${label.toLowerCase()}`;
     const button = (cls, label) => el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary ${cls}` }, label);
@@ -463,28 +466,30 @@ function mount(slot, ctx) {
 
     // ---------------------------------------------------------------- Cluster ▾ (UX 3.4; WP-2: the clustering's every field)
     const clusterBtn = button('cgene-cluster-btn', WO.cluster);
-    const scopeRow = (scope, label) => el('div', { class: 'cgene-cluster-scope', role: 'radiogroup', aria: { label }, data: { scope } },
-        el('span', { class: 'cgene-field__label', text: label }));
+    const scopeRow = (scope, label) => el('div', { class: 'cgene-cluster-scope az-pop-field az-pop-field--block', role: 'radiogroup', aria: { label }, data: { scope } },
+        el('span', { class: 'az-pop-field__label', text: label }), el('span', { class: 'az-pop-field__control az-pop-field__control--stack' }));
     const genesRow = scopeRow('genes', WO.clusterGenes);
     const groupsRow = scopeRow('groups', WO.clusterGroups);
     const sortGroups = check('sortGroups', WO.sortGroups, (on) => flat('sortGroups', on, false, onOff(on, WO.sortGroups)));
     sortGroups.classList.add('cgene-sort-groups');
-    const summary = el('p', { class: 'cgene-cluster-summary cgene-help' });
+    const summary = el('p', { class: 'cgene-cluster-summary az-pop-help' });
     const wardText = el('span', { class: 'cgene-ward-note__text', text: WO.wardSwitched });
     const wardUndo = el('button', { type: 'button', class: 'btn btn-sm btn-link cgene-ward-undo', on: { click: () => { wardAfter = null; ctx.undo(); } } }, WO.undo);
-    const wardNote = el('div', { class: 'cgene-ward-note cgene-help', role: 'status', hidden: true }, wardText, ' ', wardUndo);
-    const dendroRow = el('div', { class: 'cgene-dendrograms', role: 'group', aria: { label: WO.dendrograms } },
-        el('span', { class: 'cgene-field__label', text: WO.dendrograms }),
+    const wardNote = el('div', { class: 'cgene-ward-note az-pop-help', role: 'status', hidden: true }, wardText, ' ', wardUndo);
+    const dendroRow = section(WO.dendrograms,
         check('dendroGenes', WO.dendrogramGenes, (on) => setCluster({ dendrograms: { ...clusterOf(config()).dendrograms, genes: on } },
             onOff(on, `${WO.dendrogramGenes} ${WO.dendrograms}`))),
         check('dendroGroups', WO.dendrogramGroups, (on) => setCluster({ dendrograms: { ...clusterOf(config()).dendrograms, groups: on } },
             onOff(on, `${WO.dendrogramGroups} ${WO.dendrograms}`))));
-    const clusterBody = el('div', { class: 'cgene-pop cgene-cluster-menu', role: 'group', aria: { label: WO.heading.clustering } },
-        genesRow, groupsRow, sortGroups,
-        select('linkage', WO.linkageLabel, LINKAGES.map((l) => [l, WO.linkage[l]]), setLinkage),
-        select('distance', WO.distanceLabel, DISTANCES.map((d) => [d, WO.distance[d]]),
-            (v) => setCluster({ distance: v }, `distance ${WO.distance[v]}`)),
-        wardNote, summary, dendroRow);
+    dendroRow.classList.add('cgene-dendrograms');
+    const clusterBody = el('div', { class: 'az-pop-options cgene-cluster-menu', role: 'group', aria: { label: WO.heading.clustering } },
+        section(WO.heading.clustering,
+            genesRow, groupsRow, sortGroups,
+            select('linkage', WO.linkageLabel, LINKAGES.map((l) => [l, WO.linkage[l]]), setLinkage),
+            select('distance', WO.distanceLabel, DISTANCES.map((d) => [d, WO.distance[d]]),
+                (v) => setCluster({ distance: v }, `distance ${WO.distance[v]}`)),
+            wardNote, summary),
+        dendroRow);
 
     /** A scope's radios, made again only when its entries change (a factor more or less), so focus stays put. */
     function radios(row, scope, entries, value) {
@@ -492,9 +497,10 @@ function mount(slot, ctx) {
         if (row.dataset.entries !== sig) {
             row.dataset.entries = sig;
             const name = `cgene-cluster-${scope}-${id}`;
-            while (row.childNodes.length > 1) row.removeChild(row.lastChild);
+            const holder = row.querySelector('.az-pop-field__control');
+            holder.textContent = '';
             for (const [v, label] of entries) {
-                row.appendChild(el('label', { class: 'cgene-radio' },
+                holder.appendChild(el('label', { class: 'cgene-radio az-pop-check' },
                     el('input', { type: 'radio', name, value: v,
                         on: { change: (e) => { if (e.target.checked) setCluster({ [scope]: v }, `cluster ${scope} ${label.toLowerCase()}`); } } }),
                     ` ${label}`));
@@ -517,7 +523,7 @@ function mount(slot, ctx) {
 
     // ---------------------------------------------------------------- Color ▾ (WP-2, decision g: how the values are shown)
     const colorBtn = button('cgene-color-btn', WO.colorMenu);
-    const scalingNote = el('p', { class: 'cgene-scaling-note cgene-help' });
+    const scalingNote = el('p', { class: 'cgene-scaling-note az-pop-help' });
     const limit = (k) => (v) => {
         const now = Array.isArray(config().limits) ? [...config().limits] : [null, null];
         now[k] = v;
@@ -554,9 +560,9 @@ function mount(slot, ctx) {
     controls.dotMax = sizeRange.fields[1];
     // Largest dot and Smallest dot are Plot Options ▸ Dots fields (PLOT_OPTION_FIELDS); Color ▾ keeps the size's range
     const dotSizes = section(WO.heading.dots, sizeRange.element);
-    const resetColor = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-color-reset', title: WO.resetColorHelp,
+    const resetColor = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset cgene-color-reset', title: WO.resetColorHelp,
         on: { click: () => ctx.set(Object.fromEntries(COLOR_FIELDS.map((k) => [k, undefined])), 'reset colors') } }, WO.resetColor);
-    const colorBody = el('div', { class: 'cgene-pop cgene-color-menu' },
+    const colorBody = el('div', { class: 'az-pop-options cgene-color-menu' },
         section(WO.heading.colors,
             select('colorScale', WO.colorScale, SCALES.map((s) => [s, scaleOptionLabel(s)]),
                 (v) => flat('colorScale', v, isZColour(config()) ? null : DEFAULT_SCALE, `color scale ${v}`)),
@@ -566,7 +572,7 @@ function mount(slot, ctx) {
             scalingNote),
         dotSizes,
         heightSection,
-        el('div', { class: 'cgene-pop__foot' }, resetColor));
+        el('div', { class: 'az-pop-section__foot' }, resetColor));
 
     // ---------------------------------------------------------------- Plot Options: the shared pop-over (WP-5a)
     const optionsBtn = button('cgene-options-btn', WO.plotOptions);
@@ -652,7 +658,7 @@ function mount(slot, ctx) {
         heightSection.hidden = !(c.view === '3d');
         controls.center.disabled = !DIVERGING_SCALES.has(s.colorScale);
         controls.printValues.checked = s.printValues;
-        controls.printValues.closest('label').hidden = dotsMode;
+        controls.printValues.closest('.az-pop-field').hidden = dotsMode;
         scalingNote.textContent = scalingNotes(c).join(' ');
         scalingNote.hidden = !scalingNote.textContent;
         dotSizes.hidden = !dotsMode;
