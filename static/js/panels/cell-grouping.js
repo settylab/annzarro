@@ -34,7 +34,8 @@ import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { UndoStack } from '../utils/gene-signature.js';
 import { normalizeGrouping, defaultLabelMaps, sourceName } from '../utils/cell-grouping.js';
-import { sourceList as scoreSources } from '../utils/score-source.js';
+import { sourceList as scoreSources, noteDatasetLayers, scorePairMenus, scorePairAfter, scoreStartPair } from '../utils/score-source.js';
+import { bindPairSelects } from '../utils/pair-selects.js';
 import {
     groupSources, panelOf, typeOf, isOpen, titleOfPanel, cycleIds, hasGene, loadStructure, structureNow, structureRead, resetStructure,
     sourceTitleOf
@@ -249,23 +250,26 @@ function createFactors({ D, id, model, on }) {
         } else if (adding === 'score') {
             const scores = referenceChoices(m.self, m.choices.scores);
             const src = select('cgrp-addrow__key', 'Score', scores.map((c) => option(c.id, c.title, { disabled: c.disabled, title: c.reason })));
-            const opt = select('cgrp-addrow__column', 'Score option', []);
-            const fillOpt = () => {
-                D.clear(opt);
-                const found = m.choices.scores.find((c) => c.id === src.value);
-                for (const o of (found && found.options) || []) opt.appendChild(option(`${o.method}\u0001${o.layer}`, o.label));
-            };
-            src.addEventListener('change', fillOpt);
+            // decision 31: the method, then the layer, each listing every entry; an impossible pair is disabled with its reason
+            const method = select('cgrp-addrow__column cgrp-addrow__method', 'Method', []);
+            const layer = select('cgrp-addrow__layer', 'Layer', []);
             const first = scores.find((c) => !c.disabled);
             if (first) src.value = first.id;
-            fillOpt();
-            parts.push(src, opt);
+            noteDatasetLayers(['X', ...layerList(s)]);
+            const pair = bindPairSelects({
+                method, layer, note,
+                start: () => scoreStartPair(src.value),
+                menus: (p) => scorePairMenus(src.value, p),
+                after: (changed, value, p) => scorePairAfter(src.value, changed, value, p)
+            });
+            src.addEventListener('change', () => pair.reset());
+            parts.push(src, method, layer);
             make = () => {
-                const [method, layer] = opt.value.split('\u0001');
-                return { p: scoreFactor(src.value, method, layer), label: `add factor ${m.titleOf({ type: SCORE_SOURCE, key: src.value }) || src.value}` };
+                const p = pair.value();
+                return { p: scoreFactor(src.value, p.method, p.layer), label: `add factor ${m.titleOf({ type: SCORE_SOURCE, key: src.value }) || src.value}` };
             };
             validate = () => (!scores.length ? 'There is no gene signature or gene table to score.'
-                : !src.value || (src.selectedOptions[0] && src.selectedOptions[0].disabled) ? 'Choose a score.' : !opt.value ? 'This source offers no score option.' : null);
+                : !src.value || (src.selectedOptions[0] && src.selectedOptions[0].disabled) ? 'Choose a score.' : null);
         } else if (adding === 'table') {
             const tables = referenceChoices(m.self, m.choices.tables);
             const src = select('cgrp-addrow__key', 'Cell table', tables.map((c) => option(c.id, c.title, { disabled: c.disabled, title: c.reason })));
@@ -1236,7 +1240,7 @@ const factorBody = (p) => stableStringify({ source: p.source, levels: p.levels |
 
         function scoreChoices() {
             try {
-                return scoreSources().map((s) => ({ id: s.id, title: s.title, options: (s.options || []).map((o) => ({ method: o.method, layer: o.layer, label: o.label })) }));
+                return scoreSources().map((s) => ({ id: s.id, title: s.title }));
             } catch (error) {
                 console.error(`Cell grouping ${_id}:`, error);
                 return [];

@@ -1,4 +1,4 @@
-import { DEFAULT_METHOD, methodShort as methodLabel } from './signature-options.js';
+import { methodShort as methodLabel } from './signature-options.js';
 import { describeSource } from './source-notices.js';
 import { VOCABULARY as WORDS } from './vocabulary.js';
 
@@ -43,11 +43,6 @@ const OWN_STATES = {
     nogenes(snap, f) {
         return f.out('nogenes', 'notice', 'No genes',
             snap.kind === 'table' ? `No row of ${f.T} passes its filter, so there are no genes to score.` : `${f.t} has no genes yet.`, '', [f.open]);
-    },
-    ready(snap, f) {
-        // the source stopped offering it: named by its own title (a table column's name already holds the method)
-        if (!snap.lapsed) return undefined;
-        return noLongerOffered(snap, snap.source ? `'${snap.source}'` : f.t, f.out);
     }
 };
 
@@ -62,14 +57,4 @@ export function describeScore(snap, ctx = {}) {
     if (!snap) return null;
     const base = VOCABULARY[snap.kind === 'table' ? 'table' : 'signature'];
     return describeSource(snap, ctx, { ...base, states: OWN_STATES });
-}
-
-/** An option the signature stopped offering: kept, still drawing, said so, with the way back. */
-function noLongerOffered(snap, t, out) {
-    const m = methodLabel(snap.sub || DEFAULT_METHOD);
-    const what = snap.layer && snap.layer !== snap.ownInput ? `${m} · ${snap.layer}` : m;
-    const note = out('notoffered', 'warning', 'Not offered', `${t} no longer offers ${what}.`, '',
-        [['score-offer', 'Offer it again'], ['score-choose', 'Choose another']]);
-    note.blocksAxis = false;
-    return note;
 }

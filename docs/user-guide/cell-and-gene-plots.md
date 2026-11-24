@@ -288,8 +288,9 @@ only those columns and relabels the points without redrawing the plot. The choic
 `hoverInfo` setting, kept in panel sets and share links ({doc}`../reference/deep-links`). In a
 view's JSON it can also name other sources, such as a layer column:
 `[{"type": "obs", "key": "highres_celltype"}, {"type": "layer", "key": "kompot_de_Young_to_Old_fold_change", "column": "S100a9"}]`;
-the **Hover** list keeps such entries when you change its selection. {doc}`focus-and-lock` shows a
-hover label with two obs columns.
+the **Hover** list keeps such entries when you change its selection. A gene score is not a hover column, to keep the
+list short: colour the plot by the score instead, and the hover shows its value as `c`. A link that lists a score among
+the hover columns opens without it. {doc}`focus-and-lock` shows a hover label with two obs columns.
 
 (hover-copy)=
 

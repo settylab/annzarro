@@ -3,7 +3,8 @@
  *
  *   level 1, the source type   obsm          gene-score          (later) cell-group
  *   level 2, the entity        X_umap        a signature         a grouping
- *   level 3, the sub-key       dimension 0   an aggregation      (none)
+ *   level 3, the sub-key       dimension 0   a method            (none)
+ *   (level 4, the layer)                     a layer
  *
  * A consumer (an axis, the colour or a hover column of a plot, later a table column)
  * stores `{type, key, column}`: the type, the entity's id and the sub-key. This is the
@@ -29,11 +30,16 @@
  *   subKeys(id)       [{value, label}], default first
  *   defaultSub        the sub-key an empty column means ('' when there are none)
  *   subKeyMenu        optional (setting) => {options, chosen, adopt}: the third menu. Each option is
- *                     {value, text, column, layer?} for a choice the setting stores, or {value, text, run(setting,
- *                     nextTo)} for a way somewhere that is not a choice. `adopt` ({column, layer}) is set when the
- *                     setting holds none, so the first option becomes its choice. A provider without one has no
- *                     third menu
+ *                     {value, text, column, layer?, disabled?, title?} for a choice the setting stores; a disabled one
+ *                     cannot be chosen, its reason the title. `adopt` ({column, layer}) is set when the setting holds
+ *                     none, so it starts there. A provider without one has no third menu
  *   layered           optional: a setting keeps a `layer` of its own (another source drops it)
+ *   layerMenu         optional, with `layered` (setting) => {options, chosen}|null: a fourth select, the layer, after
+ *                     the third (decision 31: a gene score's method, then its layer, each listing everything). Options
+ *                     as subKeyMenu's, graded for the method the setting holds
+ *   pairAfter         optional, with layerMenu (setting, changed: 'method'|'layer', value) => {column, layer, say}: the
+ *                     setting after the user touched one of the two selects. The touched one wins; the other moves only
+ *                     when its value became impossible, and `say` names that move once
  *   load(setting, opts)
  *                     the series, opts {host, role, axis, expected, unit, signal}:
  *                       numerical    {values, type: 'numerical', coverage, vector}
@@ -50,7 +56,8 @@
  *                     the series in a large plot's form, typed arrays only, never a plain array per point (opts as load's):
  *                       numerical    {type: 'numerical', vector}
  *                       categorical  {type: 'categorical', codes, MISSING, categories, colours?, rankOf?, ranked?, groupNames?}
- *   hover             optional, for a provider with the 'hover' role: the Hover picker's group and a hover line
+ *   hover             optional, for a provider with the 'hover' role (a gene score has none: decision 32): the Hover
+ *                     picker's group and a hover line
  *                       group           the picker's heading for its entries ('Gene scores')
  *                       options(kept)   [{value, label}]: its entries, then any value in `kept` (picker values chosen
  *                                       now) it no longer offers, kept and marked

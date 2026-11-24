@@ -44,7 +44,7 @@
   "queued": "fbf7a657d7d163e0855b151970e511d275c496433fd3599ffe56c9b93cb1c42f",
   "computing": "c72b9a52f477dc0f14714dba3d7da84224c855ba43d4fccca1b7536dcc0a55bf",
   "updating": "abc926e636e2d26c2bb215ba56b76ceb2854963080c5dd65c152a18bef4618c4",
-  "ready": "7806db5d633fa726424b3681b47c39a083027c40968bc4007df21cc4c5d4adc7",
+  "ready": "97a8cb517a332da1a50e9380d41a53ee60cc4c2c732b4196753604cf1c74ca0e",
   "idle": "9d8cc07e388deaa3c5964f903df83d2a52ed25ece129b7b5f0d7027945a1e481",
   "someday": "9d8cc07e388deaa3c5964f903df83d2a52ed25ece129b7b5f0d7027945a1e481",
   "none": "491c90f2dc4f14c9f839a7d05ace645f1c7dca1bcebe78e31589f61a893e1645"
@@ -69,7 +69,7 @@
   "queued": "e7f40196cdbf5a6e493f20accb11ca5b97432ade0da494307723c88e1ff60d8e",
   "computing": "eb54bd2b9393233ee77e5a612f57b685f589294e04cdc166b5548bf51bd67d7c",
   "updating": "abc926e636e2d26c2bb215ba56b76ceb2854963080c5dd65c152a18bef4618c4",
-  "ready": "41d3811508806930e445647a1a37b2a32adac3610f23a6915c531cfe71862a80",
+  "ready": "97a8cb517a332da1a50e9380d41a53ee60cc4c2c732b4196753604cf1c74ca0e",
   "idle": "9d8cc07e388deaa3c5964f903df83d2a52ed25ece129b7b5f0d7027945a1e481",
   "someday": "9d8cc07e388deaa3c5964f903df83d2a52ed25ece129b7b5f0d7027945a1e481"
  },
@@ -150,10 +150,6 @@
   "No score | warning | Use fewer genes. |  | score-open=Open signature | score-choose=Choose another",
   "No signature | notice | No signature is chosen. |  | score-choose=Choose another",
   "Not a cell source | notice | Gene scores are a cell source; not available in a Gene Plot. | ",
-  "Not offered | warning | 'Sig' no longer offers mean · counts. |  | score-offer=Offer it again | score-choose=Choose another",
-  "Not offered | warning | 'T cell score' no longer offers z-score mean. |  | score-offer=Offer it again | score-choose=Choose another",
-  "Not offered | warning | 'Tab' no longer offers z-score mean. |  | score-offer=Offer it again | score-choose=Choose another",
-  "Not offered | warning | The signature no longer offers z-score mean. |  | score-offer=Offer it again | score-choose=Choose another",
   "Opening table | notice | Waiting for 'T cell score' to open, to score its genes. This plot has no color. |  | score-cancel=Cancel for 3 plots | score-open=Open table",
   "Opening table | notice | Waiting for 'T cell score' to open, to score its genes. This plot has no color. |  | score-cancel=Cancel | score-open=Open table",
   "Opening table | notice | Waiting for 'T cell score' to open, to score its genes. |  | score-cancel=Cancel for 3 plots | score-open=Open table",

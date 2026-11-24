@@ -34,7 +34,7 @@ cell.
    | **Column…** | an obs column or an obsm column, as in a Cell Plot | A categorical column gives one level per category at once; a numeric column gives 4 equal-count bins |
    | **Cell names** | nothing more: the obs index | One group per cell, while at most 2,000 cells are shown (see {ref}`per-cell-views`) |
    | **Gene…** | a layer and a gene name; **Use focused gene** fills the box | 4 equal-count bins of the gene's values |
-   | **Score…** | a signature or gene table, and one of its offered scores | 4 equal-count bins of the score |
+   | **Score…** | a signature or gene table, a method and a layer (every method and every layer, as in a Cell Plot; a combination that cannot be computed is greyed out) | 4 equal-count bins of the score |
    | **Cell table…** | an open or closed Cell Table | `in Table 1` and `not in Table 1` |
    | **Neighbors of a cell…** | an obsp matrix and a cell name; **Use focused cell** fills the box | 4 equal-count bins of that cell's row |
 

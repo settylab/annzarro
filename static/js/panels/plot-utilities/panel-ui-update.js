@@ -6,6 +6,7 @@ import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScal
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { noteDatasetLayers } from '../../utils/score-source.js';
 import { refreshHoverGroups } from './hover-columns.js';
+import { fillChoiceSelect } from '../../utils/pair-selects.js';
 import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -319,10 +320,11 @@ function refreshSourceMenus() {
     $.setSelectValue(jQuery(keySelect), current, false);
     jQuery(keySelect).find('option[value=""]').prop('disabled', true);
   }
-  // the third menu of every provider axis follows what its source offers (a lapsed choice stays, labelled)
+  // the method and layer selects of every provider axis follow its source's grading (an impossible pair held stays, labelled)
   for (const select of document.querySelectorAll('select.axis-column-select')) {
     const axis = axisOf(select);
     if (axis && axis.setting && axis.provider.subKeyMenu) fillSubKeySelect(select, axis.provider.subKeyMenu(axis.setting));
+    if (axis && axis.setting && select.__layerSelect) fillLayerSelect(select.__layerSelect, axis.provider, axis.setting);
   }
   // the Hover pickers list what each provider offers, after the columns
   for (const select of document.querySelectorAll('select.hover-columns-select')) {
@@ -366,9 +368,10 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   const $columnSelect = jQuery(columnSelect);
   $columnSelect.prop('disabled', false);
 
+  // a provider with layers (a gene score) has a fourth select, the layer, after the method; any other source has none
+  const layerSelect = layerSelectFor(columnSelect, provider && provider.layerMenu ? provider : null);
   if (provider) {
-    // level 3 is the provider's own menu (a score's offered options: the method in `column`, the layer beside it),
-    // or none
+    // level 3 is the provider's own menu (a score's methods: the method in `column`), or none
     const built = provider.subKeyMenu ? provider.subKeyMenu(settings) : null;
     if (!built) {
       $.createSelect([{ value: '', text: 'N/A' }], $columnSelect);
@@ -381,6 +384,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
       if (built.adopt.layer) settings.layer = built.adopt.layer; else delete settings.layer;
     }
     fillSubKeySelect($columnSelect[0], built);
+    if (layerSelect) fillLayerSelect(layerSelect, provider, settings);
     return;
   }
 
@@ -1241,35 +1245,92 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
 }
 
 
-/** Fill a select with a provider's third menu (subKeyMenu), keeping it when its entries are the same. */
+/** Fill a select with a provider's third menu (subKeyMenu): graded entries, an impossible one disabled with its reason. */
 function fillSubKeySelect(select, built) {
-  const same = select.options.length === built.options.length
-    && built.options.every((o, i) => select.options[i].value === o.value && select.options[i].textContent === o.text);
-  if (!same) {
-    select.innerHTML = '';
-    for (const o of built.options) select.appendChild(new Option(o.text, o.value));
-  }
-  if (built.chosen !== null) select.value = built.chosen;
+  fillChoiceSelect(select, built.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '' })), built.chosen);
+}
+
+/** Fill a provider's layer select (layerMenu) for what the setting holds. */
+function fillLayerSelect(select, provider, settings) {
+  const built = provider.layerMenu(settings);
+  select.hidden = !built;
+  select.disabled = !built;
+  if (built) fillChoiceSelect(select, built.options, built.chosen);
 }
 
 /**
- * A choice in a provider's third menu, as the setting stores it: the option's column and layer. An option that is a
- * way somewhere (Offer other scores…) runs and leaves the setting as it was.
+ * The layer select after a column select, made when a provider has layers (`layerMenu`) and removed when not. A
+ * change of it is a change of the pair: it is handed to the column select's own listeners (the plot's, the count
+ * plot's), which call takeSubKey, so every consumer of the axis selects takes it without a listener of its own.
+ * @param {HTMLSelectElement} columnSelect
+ * @param {Object|null} provider
+ * @returns {HTMLSelectElement|null}
+ */
+function layerSelectFor(columnSelect, provider) {
+  let select = columnSelect.__layerSelect || null;
+  if (!provider) {
+    if (select) { select.remove(); columnSelect.__layerSelect = null; }
+    return null;
+  }
+  if (!select) {
+    select = document.createElement('select');
+    select.className = 'form-select form-select-sm axis-layer-select';
+    select.dataset.axis = columnSelect.dataset.axis || '';
+    const named = columnSelect.getAttribute('aria-label');
+    select.setAttribute('aria-label', named ? named.replace(/column$/, 'layer') : 'Layer');
+    select.addEventListener('change', () => {
+      columnSelect.__touched = 'layer';
+      columnSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    columnSelect.__layerSelect = select;
+  }
+  if (select.previousElementSibling !== columnSelect) columnSelect.after(select);
+  return select;
+}
+
+/** Say once, beside the selects, that the other select moved ("Layer changed to logged: ..."); '' clears it. */
+function sayPair(columnSelect, text) {
+  const selector = columnSelect.closest('.axis-selector') || columnSelect.parentNode;
+  if (!selector) return;
+  let note = selector.nextElementSibling && selector.nextElementSibling.classList.contains('axis-pair-note') ? selector.nextElementSibling : null;
+  if (!text) { if (note) note.remove(); return; }
+  if (!note) {
+    note = document.createElement('div');
+    note.className = 'axis-pair-note form-text';
+    note.setAttribute('role', 'status');
+    selector.after(note);
+  }
+  note.textContent = text;
+}
+
+/**
+ * A choice in a provider's method or layer select, as the setting stores it: the method in `column`, the layer beside
+ * it. The select the user touched wins (the layer select marks itself, layerSelectFor); the other moves only when its
+ * value became impossible, and the move is said once beside the selects.
  * @param {Object} settings - the axis setting, rewritten in place
- * @param {HTMLSelectElement} select - its column select
- * @param {string} nextTo - the panel the choice was made in
+ * @param {HTMLSelectElement} select - its column (method) select
  * @returns {boolean} whether the setting changed
  */
-export function takeSubKey(settings, select, nextTo) {
+export function takeSubKey(settings, select) {
   const provider = getSource(settings.type);
-  const built = provider && provider.subKeyMenu ? provider.subKeyMenu(settings) : null;
+  const touched = select.__touched === 'layer' ? 'layer' : 'method';
+  select.__touched = null;
+  if (!provider || !provider.subKeyMenu) return false;
+  const layerSelect = select.__layerSelect || null;
+  if (provider.pairAfter && layerSelect) {
+    const value = touched === 'layer' ? layerSelect.value : select.value;
+    const next = provider.pairAfter(settings, touched, value);
+    const changed = settings.column !== next.column || (settings.layer || '') !== (next.layer || '');
+    settings.column = next.column;
+    if (next.layer) settings.layer = next.layer; else delete settings.layer;
+    fillSubKeySelect(select, provider.subKeyMenu(settings));
+    fillLayerSelect(layerSelect, provider, settings);
+    sayPair(select, next.say);
+    return changed;
+  }
+  const built = provider.subKeyMenu(settings);
   const picked = built && built.options.find(o => o.value === select.value);
   if (!picked) return false;
-  if (picked.run) {
-    picked.run(settings, nextTo);
-    if (built.chosen !== null) select.value = built.chosen;
-    return false;
-  }
   settings.column = picked.column;
   if (picked.layer) settings.layer = picked.layer; else delete settings.layer;
   return true;
@@ -1287,6 +1348,9 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
   document.addEventListener('annzarro:panels-changed', () => refreshSourceMenus());
   document.addEventListener('change', (e) => {
     const select = e.target && e.target.closest ? e.target.closest('.axis-selector select') : null;
-    if (select) setTimeout(() => syncSelectTitles(select.closest('.axis-selector').parentNode), 60);
+    // the row is found now: the select may be gone in 60 ms (a score's layer select, when the type changes)
+    const row = select ? select.closest('.axis-selector') : null;
+    const root = row ? row.parentNode : null;
+    if (root) setTimeout(() => syncSelectTitles(root), 60);
   });
 }

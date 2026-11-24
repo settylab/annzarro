@@ -1,7 +1,7 @@
 """The `gene-score` source as a column of a Cell Table, in a real browser (step 6 of the plan).
 
-A Cell Table takes a signature's score as a column through its column chooser (signature, then
-aggregation), appears at once, and fills the column in place when the score arrives. The values live
+A Cell Table takes a signature's score as a column through its column chooser (each signature's add row: a
+method on a layer, decision 31), appears at once, and fills the column in place when the score arrives. The values live
 in the score store as a Float32Array and are read by row; a link or a panel set keeps the column's
 reference only. A filter on a score that is not ready holds the table's rows, and the plots and
 panels that read the table wait with it.
@@ -69,6 +69,16 @@ def _open(page, served, table=None, plots=(), sig=True, sig_open=False, wait=Tru
     page.goto(_url(served, open_ids, cfgs, **view))
     if wait and table_open:
         page.wait_for_selector(f"{BOX} .dataTables_scrollBody", state="attached", timeout=30000)
+
+
+def _add_score(page, sig=SIG, method="zscore_mean", layer="X", tid=TID):
+    """Tick a score column through the chooser's add row, `[method] on [layer] [Add column]` (decision 31): the tab
+    lists a source's ticked columns only, never every method x layer pair."""
+    group = f"#gene-score-content-{tid} .az-score-group[data-entity='{sig}']"
+    page.select_option(f"{group} .az-score-add-layer", layer)
+    page.select_option(f"{group} .az-score-add-method", method)
+    page.click(f"{group} .az-score-add-btn")
+    assert page.is_checked(f"#checkbox-gene-score-{sig}-{method}-of-{layer}-{tid}")
 
 
 def _headers(page):
@@ -154,7 +164,7 @@ def _col(page, name):
     return _headers(page).index(name)
 
 
-def test_the_chooser_offers_signature_then_aggregation_and_several_at_once(page, served):
+def test_the_chooser_lists_each_signature_with_an_add_row_and_takes_several_at_once(page, served):
     _slow(page, "auto", 3)
     second = {"id": "gene-signature-U", "title": "Other score", "genes": ["GENE0010", "GENE0011"]}
     _open(page, served, table=_table(columns=[OBS]), extra={"gene-signature-U": second})
@@ -162,9 +172,11 @@ def test_the_chooser_offers_signature_then_aggregation_and_several_at_once(page,
     page.click(f"#gene-score-tab-{TID}")
     groups = page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' .az-score-group')].map(g => ({ title: g.querySelector('.az-score-group-title').textContent, subs: [...g.querySelectorAll('label')].map(l => l.textContent) }))", TID)
     assert sorted(g["title"] for g in groups) == ["Other score", "T cell score"]
-    assert all(g["subs"] == ["z-score mean", "mean", "sum"] for g in groups), groups
+    assert all(g["subs"] == [] for g in groups), "nothing ticked: no method x layer pair is listed"
+    methods = page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' .az-score-add-method')].map(s => s.options.length)", TID)
+    assert methods == [6, 6], "every method, in each source's add row"
     for sig, sub in ((SIG, "zscore_mean"), (SIG, "mean"), ("gene-signature-U", "zscore_mean")):
-        page.check(f"#checkbox-gene-score-{sig}-{sub}-of-X-{TID}")
+        _add_score(page, sig, sub, "X")
     page.click(f"#apply-columns-{TID}")
     until(page, "(box) => document.querySelectorAll(box + ' .dataTables_scrollHead th').length === 5", BOX)
     heads = _headers(page)
@@ -623,7 +635,7 @@ def test_the_column_chooser_adds_the_score_to_a_cell_table_and_a_table_that_has_
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     assert page.locator(f"{S} .gsig-usein").count() == 0, "the signature panel has no Use in menu"
     page.click(f"#gene-score-tab-{TID}")
-    page.check(f"#checkbox-gene-score-{SIG}-zscore_mean-of-X-{TID}")
+    _add_score(page)
     page.click(f"#apply-columns-{TID}")
     until(page, "(box) => document.querySelectorAll(box + ' .dataTables_scrollHead th').length === 3", BOX)
     assert _headers(page)[2] == "T cell score (computing)"
@@ -746,7 +758,7 @@ def test_a_score_column_on_a_table_the_memory_guard_refuses_asks_for_nothing_unt
     page.evaluate(SET_TABLE_ROWS_LIMIT, 45)
     # the column is added, in the chooser, to a table that no longer fits: the refusal is the table's answer
     page.click(f"#gene-score-tab-{TID}")
-    page.check(f"#checkbox-gene-score-{SIG}-zscore_mean-of-X-{TID}")
+    _add_score(page)
     page.click(f"#apply-columns-{TID}")
     page.wait_for_selector(f"{BOX} .coverage-placeholder", timeout=30000)
     text = page.inner_text(f"{BOX} .coverage-placeholder")

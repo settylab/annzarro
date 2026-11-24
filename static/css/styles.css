@@ -3423,7 +3423,8 @@ button.dtsb-button.dtsb-clear:hover {
 /* Key and column start from their own widest option and give way in
    proportion, so a short column (0, 1) leaves the room to a long key. */
 .axis-selector .axis-key-select,
-.axis-selector .axis-column-select {
+.axis-selector .axis-column-select,
+.axis-selector .axis-layer-select {
     flex: 1 1 auto;
     width: auto;
     min-width: 0;
@@ -3439,6 +3440,14 @@ button.dtsb-button.dtsb-clear:hover {
     .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"]):checked) > .axis-key-select { flex: 1 1 8rem; }
     .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"]):checked) > .axis-column-select { flex: 1 1 100%; }
 }
+/* A score has four selects: the type and the source on the first line, the method and the layer on the second, so
+   each is read in full (decision 31) */
+.axis-selector:has(> .axis-layer-select) { flex-wrap: wrap; }
+.axis-selector:has(> .axis-layer-select) > .axis-key-select { flex: 1 1 calc(100% - 7.5rem); }
+.axis-selector:has(> .axis-layer-select) > .axis-column-select,
+.axis-selector > .axis-layer-select { flex: 1 1 calc(50% - var(--ctl-u)); }
+/* A score's layer select moved the method select to a usable value (or the other way round): said once */
+.axis-pair-note { margin: 0 0 0.25rem; font-size: 0.75rem; }
 
 /* A constant colour has no key or column: the type select says so in full. */
 .axis-selector:has(> .axis-type-select option[value="none"]:checked) > .axis-type-select {
@@ -5085,6 +5094,12 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .az-score-held .dataTables_wrapper > .row:not(.az-sb-row):not(.az-search-row) { display: none; }
 .az-score-held-note { margin: 0.5rem 0; padding: 0.5rem 0.75rem; font-size: 0.875rem; }
 .az-score-group-title { font-size: 0.8125rem; margin-top: 0.25rem; }
+/* A source's add row in the Cell Table chooser: [method] on [layer] [Add column] (decision 31) */
+.az-score-add { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin: 0.125rem 0 0.25rem; }
+.az-score-add .form-select { width: auto; flex: 0 1 auto; min-width: 0; font-size: 0.8125rem; }
+.az-score-add-on { font-size: 0.8125rem; color: var(--az-muted); }
+.az-score-add-note { margin-left: 1rem; font-size: 0.75rem; }
+.az-score-add-note:empty { display: none; }
 
 /* A Gene Table's Scores offered and Inspect (panels/score-options): in the settings area under the column chooser,
    collapsed until opened, so the table stays a table first */

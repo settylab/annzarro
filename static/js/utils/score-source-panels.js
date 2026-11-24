@@ -106,11 +106,10 @@ export function gateState(status) {
  * @param {(panel: Object) => boolean} host.active - the panel is open
  * @param {() => ArrayLike<string>} host.geneNames - the dataset's genes, in row order
  * @param {() => boolean} [host.off] - gene scores are turned off here
- * @param {(recipe: Object, sub: string, layer: string) => boolean} [host.offers] - the source still offers this option
  * @param {Object} [host.resolver] - the table resolver: `need(id, dependant)`, `accept(id)`, `cancel(id)`, `retry(id)`,
  *   `cycleOf(id)` (the ids on a cycle through the table, or null)
  */
-export function createSourceAdapter({ panel, active, geneNames, off = () => false, offers = null, resolver = null }) {
+export function createSourceAdapter({ panel, active, geneNames, off = () => false, resolver = null }) {
     const titleOf = (id) => {
         const p = panel(id);
         return p && typeof p.getTitle === 'function' ? p.getTitle() : id;
@@ -162,7 +161,6 @@ export function createSourceAdapter({ panel, active, geneNames, off = () => fals
             };
         },
         off,
-        offers: offers || undefined,
         titleOf
     };
 }
