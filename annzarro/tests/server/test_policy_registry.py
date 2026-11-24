@@ -100,13 +100,16 @@ def test_default_callable_gets_the_config_and_is_validated():
         key.default_value({"n": 0})
 
 
-def test_limits_are_declared_read_only_and_remote_stores_is_the_admins_to_narrow():
+def test_limits_read_at_start_are_read_only_the_others_the_admins_and_remote_stores_is_the_admins_to_narrow():
     from annzarro.server.policy import load_declarations
-    from annzarro.server.limits import LIMITS
+    from annzarro.server.limits import LIMITS, LIVE, _RESTART
     load_declarations()
     for name in LIMITS:
         key = REGISTRY.get(f"limits.{name}")
-        assert key is not None and key.scope == "config" and key.config_path == f"server.{name}"
+        assert key is not None and key.config_path == f"server.{name}"
+        # read when the server starts: the YAML's alone; read per request: the admin may change it (server/limits.py)
+        assert key.scope == ("config" if name in _RESTART or LIMITS[name].nullable else "server"), name
+        assert (name in LIVE) == (key.scope == "server"), name
     for name in ("max_read_mb", "read_budget_mb", "read_wait_s"):
         assert REGISTRY.get(f"limits.{name}").scope == "config"
     assert REGISTRY.get("limits.max_requests").restart and not REGISTRY.get("limits.max_sessions").restart
