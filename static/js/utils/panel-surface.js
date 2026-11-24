@@ -721,6 +721,9 @@ export function fitToContainer(gd) {
     const style = window.getComputedStyle(gd);
     const w = parseFloat(style.width), h = parseFloat(style.height);
     if (Math.abs(w - fl.width) > 1 || Math.abs(h - fl.height) > 1) {
+        // a plot's automatic point style for the new size first, so this resize is the one fit
+        // (plot-make.js __azPreFit)
+        if (typeof gd.__azPreFit === 'function') { gd.__azPreFit(w, h); gd.__azPadMoved = 0; }
         Plotly.Plots.resize(gd).catch(() => {});
     }
 }

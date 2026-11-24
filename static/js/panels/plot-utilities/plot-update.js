@@ -1417,8 +1417,10 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
  */
 export async function restyleMarkers(plotContainer, settings) {
     // a large plot's highlight is a shape: its size follows the points, its colours the theme
-    if (plotContainer && plotContainer.__isLarge) await restyleLargeFocus(plotContainer, settings);
-    if (!plotContainer || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) return;
+    // the large plot's focus shape alongside, awaited at the end: the sizes go to the scene at once, before anything
+    // waits, so a resize fit that follows this call (plot-make.js __azPreFit) reads their padding
+    const largeFocus = plotContainer && plotContainer.__isLarge ? restyleLargeFocus(plotContainer, settings) : null;
+    if (!plotContainer || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) { await largeFocus; return; }
     const isHighlight = isFocusTrace;
     const dataIdx = [];
     const highlightIdx = [];
@@ -1445,6 +1447,7 @@ export async function restyleMarkers(plotContainer, settings) {
         await restyleNoneColour(plotContainer, settings);
         await restyleFocusColours(plotContainer, settings);
         refitAfterResize(plotContainer);
+        await largeFocus;
         return;
     }
     plotContainer.data.forEach((trace, i) => {
@@ -1464,6 +1467,7 @@ export async function restyleMarkers(plotContainer, settings) {
         await Plotly.restyle(plotContainer, { 'marker.size': m.size, 'marker.opacity': m.opacity, 'marker.color': m.color }, [i]);
     }
     await restyleNoneColour(plotContainer, settings);
+    await largeFocus;
 }
 
 /**
@@ -1765,6 +1769,10 @@ export function refitAfterResize(gd) {
   if (!gd) return;
   clearTimeout(gd.__azRefitTimer);
   gd.__azRefitTimer = setTimeout(() => {
+    // under a pixel of padding the fit is the same to the pixel: no relayout (and no second draw of the scene)
+    const moved = gd.__azPadMoved || 0;
+    gd.__azPadMoved = 0;
+    if (moved < REFIT_MIN_PX) return;
     const fl = gd._fullLayout;
     if (!fl || !fl.xaxis || !fl.yaxis || fl.xaxis.autorange === false || fl.yaxis.autorange === false || typeof Plotly === 'undefined') return;
     Promise.resolve(Plotly.relayout(gd, { 'xaxis.autorange': fl.xaxis.autorange, 'yaxis.autorange': fl.yaxis.autorange })).catch(() => {});
@@ -1772,3 +1780,5 @@ export function refitAfterResize(gd) {
 }
 /** How long sizes must stay before the axes are fitted again (ms). */
 const REFIT_SETTLE_MS = 150;
+/** The padding change (px) from which the axes are fitted again. */
+const REFIT_MIN_PX = 1;

@@ -945,6 +945,22 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           .finally(() => { plotContainer.__azRestyling -= 1; });
       }
     });
+    // Before a resize fits the axes (listeners.js setupResizeObserver, panel-surface.js fitToContainer): the
+    // automatic values for the plot area the graph is about to have, from its new size and its margins. Set
+    // afterwards, they changed the markers' axis padding once more and the axes were fitted a second time for one
+    // resize (plot-update.js refitAfterResize); set before, the resize's own fit is the fit for them.
+    plotContainer.__azPreFit = (width, height) => {
+      const s = plotContainer._fullLayout && plotContainer._fullLayout._size;
+      if (!s || settings.z || (!settings.autoPointSize && !settings.autoPointOpacity)) return;
+      const area = (width - s.l - s.r) * (height - s.t - s.b);
+      if (!(area > 0)) return;
+      if (!applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase(), area)) return;
+      showPointStyle(id, settings);
+      plotContainer.__azRestyling = (plotContainer.__azRestyling || 0) + 1;
+      // the regl scene takes the sizes at once (gl-markers.js); the fit that follows reads their padding
+      restyleMarkers(plotContainer, settings).catch(err => console.warn('Point size/opacity not updated:', err && err.message))
+        .finally(() => { plotContainer.__azRestyling -= 1; });
+    };
     // An image export at its own size: the automatic values for its plot
     // area, on the copy drawn for it (utils/plot-export.js fullImage)
     plotContainer.__azExportMarkers = async (copy) => {

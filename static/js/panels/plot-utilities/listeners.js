@@ -100,6 +100,22 @@ export function sizeChanged(gd) {
 
 
 /**
+ * The graph's automatic point style for the size it is about to be fitted to, before the fit
+ * (plot-make.js __azPreFit): one fit per resize. The padding the new sizes gave needs no fit of its own then.
+ * @param {HTMLElement} gd
+ */
+export function preFit(gd) {
+    if (!gd || typeof gd.__azPreFit !== 'function') return;
+    const style = window.getComputedStyle ? window.getComputedStyle(gd) : null;
+    const width = (style && parseFloat(style.width)) || gd.clientWidth || 0;
+    const height = (style && parseFloat(style.height)) || gd.clientHeight || 0;
+    if (!(width > 0 && height > 0)) return;
+    gd.__azPreFit(width, height);
+    gd.__azPadMoved = 0;
+}
+
+
+/**
  * Sets up a ResizeObserver to autosize a Plotly plot when its container resizes.
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
  * @returns {ResizeObserver|null} - The created ResizeObserver instance or null if not supported.
@@ -122,6 +138,7 @@ export function setupResizeObserver(plotContainer) {
         // Check if a Plotly plot exists by verifying the presence of plot data
         if (plotContainer.data && plotContainer.data.length > 0
             && sizeChanged(plotContainer)) {
+          preFit(plotContainer);
           Plotly.relayout(plotContainer, { autosize: true });
         }
       } catch (error) {
