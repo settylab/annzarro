@@ -792,6 +792,11 @@ CELL_PLOT_RISKY = {
     "point-style-then-colour": [("point size 9", _menu_control(CP, "point-size-input", "fill", 9)),
                                 ("point opacity 0.3", _menu_control(CP, "point-opacity-input", "fill", 0.3)),
                                 ("colour obs score", _axis(CP, "color", OBS("score")))],
+    # Undo (WP-5b, plot-undo.js): each step re-applies the config before it the way Back and Forward do
+    "edits-then-undo": [("colour obs score", _axis(CP, "color", OBS("score"))), ("point size 9", _menu_control(CP, "point-size-input", "fill", 9)),
+                        ("grid", _menu_control(CP, "grid-toggle", "toggle")), ("undo (toolbar)", _click(f"#plot-undo-{CP}")),
+                        ("undo (toolbar)", _click(f"#plot-undo-{CP}")), ("equal aspect", _menu_control(CP, "equal-aspect", "toggle")),
+                        ("undo (toolbar)", _click(f"#plot-undo-{CP}"))],
 }
 
 
@@ -843,6 +848,10 @@ GENE_PLOT_RISKY = {
     "3d-on-and-off": [("3D (toolbar)", _menu_control(GP, "z-axis-toggle", "toggle")), ("3D (toolbar)", _menu_control(GP, "z-axis-toggle", "toggle"))],
     "focus-moves-the-axes": [("focus cell", _focus_cell(CELLS[5])), ("colour layer counts", _axis(GP, "color", ROW("counts"))),
                              ("focus cell", _focus_cell(CELLS[7]))],
+    # Undo (WP-5b, plot-undo.js)
+    "edits-then-undo": [("colour layer counts", _axis(GP, "color", ROW("counts"))), ("legend position bottom", _menu_control(GP, "legend-position", "select", "bottom")),
+                        ("undo (toolbar)", _click(f"#plot-undo-{GP}")), ("3D (toolbar)", _menu_control(GP, "z-axis-toggle", "toggle")),
+                        ("undo (toolbar)", _click(f"#plot-undo-{GP}")), ("undo (toolbar)", _click(f"#plot-undo-{GP}"))],
 }
 
 

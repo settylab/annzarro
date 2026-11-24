@@ -35,12 +35,14 @@ GEOMETRY = """(id) => { const gd = (%s)(id); const L = gd._fullLayout, lg = L.le
              pitch: items.length > 1 ? Math.round((items[1].y - items[0].y) * 10) / 10 : null,
              firstX: Math.round(items[0].x - g.x), firstY: Math.round(items[0].y - g.y) }; }""" % GD
 
-# v0.6.0, the fixture's 200 cells coloured by cell type (3 categories), a 1500 x 1000 window
+# v0.6.0, the fixture's 200 cells coloured by cell type (3 categories), a 1500 x 1000 window. Measured again for WP-5b
+# (0.8.0), whose toolbar row ends the controls and whose point size moved into Plot Options: the plot area is taller,
+# so a legend centred beside it starts lower (firstY) and one below sits at its new fraction; nothing else moved
 EXPECTED = {
-    "right": {"layout": {"orientation": "v", "x": 1.05, "y": 0.5, "xanchor": "left", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 80, "r": 144, "t": 80, "b": 60}, "box": {"w": 106, "h": 124}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 628, "firstY": 232},
-    "left": {"layout": {"orientation": "v", "x": -0.05, "y": 0.5, "xanchor": "right", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 144, "r": 80, "t": 80, "b": 60}, "box": {"w": 106, "h": 124}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 12, "firstY": 232},
+    "right": {"layout": {"orientation": "v", "x": 1.05, "y": 0.5, "xanchor": "left", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 80, "r": 144, "t": 80, "b": 60}, "box": {"w": 106, "h": 124}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 628, "firstY": 246},
+    "left": {"layout": {"orientation": "v", "x": -0.05, "y": 0.5, "xanchor": "right", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 144, "r": 80, "t": 80, "b": 60}, "box": {"w": 106, "h": 124}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 12, "firstY": 246},
     "top": {"layout": {"orientation": "h", "x": 0.5, "y": 1, "xanchor": "center", "yanchor": "bottom", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top center", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 80, "b": 60}, "box": {"w": 294, "h": 66}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 226, "firstY": 55},
-    "bottom": {"layout": {"orientation": "h", "x": 0.5, "y": -0.236, "xanchor": "center", "yanchor": "top", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top center", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 80, "b": 141}, "box": {"w": 294, "h": 66}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 226, "firstY": 449},
+    "bottom": {"layout": {"orientation": "h", "x": 0.5, "y": -0.214, "xanchor": "center", "yanchor": "top", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top center", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 80, "b": 141}, "box": {"w": 294, "h": 66}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 226, "firstY": 477},
 }
 
 
