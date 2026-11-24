@@ -104,21 +104,6 @@
    Layout group with the clustering's sentences beside them; the controls live in a body-level pop-over surface, so
    opening one never changes the panel's size */
 .cgene-swap, .cgene-cluster-btn, .cgene-color-btn, .cgene-options-btn { white-space: nowrap; }
-.cgene-pop { display: flex; flex-direction: column; gap: 10px; }
-.cgene-cluster-menu { gap: 6px; }
-.cgene-cluster-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.cgene-cluster-scope .cgene-field__label { min-width: 6.5rem; }
-.cgene-help { margin: 0; color: var(--az-muted); font-size: 0.75rem; }
-.cgene-help[hidden] { display: none; }
-.cgene-dendrograms { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.cgene-dendrograms .cgene-field__label { min-width: 6.5rem; }
-.cgene-pop .cgene-field { display: flex; justify-content: space-between; gap: 8px; }
-.cgene-pop .cgene-field[hidden] { display: none; }
-.cgene-pop .cgene-field .form-select { max-width: 13rem; }
-.cgene-options__section { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; border: 0; }
-.cgene-options__section[hidden] { display: none; }
-.cgene-options__section > legend { float: none; width: auto; margin: 0 0 2px; padding: 0; font-size: 0.6875rem; font-weight: 600;
-    color: var(--az-muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .cgene-opt { display: inline-flex; align-items: center; gap: 4px; margin: 0; white-space: nowrap; }
 .cgene-opt[hidden] { display: none; }
 .cgene-num { width: 5.5rem; }
@@ -127,7 +112,6 @@
 .cgene-pop .cgene-dot-opacity .cgene-num { flex: 0 0 4.5rem; }
 .cgene-export { flex-direction: row; flex-wrap: wrap; align-items: center; }
 .cgene-export > legend { flex: 1 1 100%; }
-.cgene-pop__foot { display: flex; justify-content: flex-end; }
 .cgene-ward-note { display: flex; align-items: center; gap: 4px; }
 .cgene-ward-note[hidden] { display: none; }
 .cgene-ward-undo { padding: 0; font-size: 0.75rem; }
