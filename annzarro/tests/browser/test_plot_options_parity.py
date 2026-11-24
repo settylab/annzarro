@@ -156,20 +156,25 @@ def test_plot_options_look_the_same_in_all_four_plot_kinds(page, served):
     assert not problems, "Plot Options differ between plot kinds:\n" + "\n".join(problems)
 
 
-# ------------------------------------------------------------------ the point size row (the panel's own markup) in the same look
+# ------------------------------------------------------------------ the point size row is the renderer's, like every other row
 
 ROW = """() => {
     const pop = document.querySelector("[data-popover='plot-options']");
     const pick = (sel) => { const e = pop.querySelector(sel); const c = getComputedStyle(e);
-        return ['fontFamily', 'fontSize', 'fontWeight', 'color', 'backgroundColor', 'borderTopWidth', 'borderTopColor', 'borderTopLeftRadius',
+        return ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'color', 'backgroundColor', 'borderTopWidth', 'borderTopColor', 'borderTopLeftRadius',
                 'paddingTop', 'paddingLeft', 'marginTop', 'marginBottom', 'height', 'width'].map((p) => [p, c[p]]); };
-    return { label: [pick('.point-size-control .ctl-label'), pick('.az-pop-field--number .az-pop-field__label')],
-             number: [pick('.point-size-control input[type=number]'), pick('.az-pop-field--number input[type=number]')],
-             auto: [pick('.point-size-control .point-auto-btn'), pick('.az-pop-auto')] }; }"""
+    return { label: [pick('.az-pop-field--scaled .az-pop-field__label'), pick('.az-pop-field--number .az-pop-field__label')],
+             number: [pick('.az-pop-field--scaled input[type=number]'), pick('.az-pop-field--number input[type=number]')],
+             range: [pick('.az-pop-field--scaled input[type=range]'), pick('.az-pop-field--range input[type=range]:not(:disabled)')],
+             auto: [pick('.az-pop-field--scaled .az-pop-auto'), pick('.az-pop-field--color .az-pop-auto')],
+             row: [pick('.az-pop-field--scaled'), pick('.az-pop-field--number')],
+             old: pop.querySelectorAll('.point-size-control, .ctl-row, .ctl-label').length }; }"""
 
 
 @pytest.mark.parametrize("kind", ["cell-plot", "gene-plot"])
-def test_the_point_size_row_looks_like_the_other_rows(page, served, kind):
+def test_the_point_size_row_is_drawn_by_the_renderer_like_the_other_rows(page, served, kind):
+    """No panel-made row is left in Plot Options, and the size row's label, number box, slider and Auto are styled as the rows beside
+    it, with no named exception."""
     page.set_viewport_size({"width": 1700, "height": 1100})
     page.goto(_url(served, [CP, GP, P, CC], _config()))
     _ready(page)
@@ -177,12 +182,10 @@ def test_the_point_size_row_looks_like_the_other_rows(page, served, kind):
     page.wait_for_selector(POP)
     page.evaluate("() => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach((d) => { d.open = true; })")
     got = page.evaluate(ROW)
-    # the number box is the same control; a label is text and Auto is a button, so those keep their own box sizes
-    skip = {"label": {"height", "width", "marginTop", "marginBottom"}, "number": {"color"},   # named exception: an automatic size is drawn muted and italic (.is-auto), by design
-            
-            "auto": {"height", "width", "fontSize", "fontWeight", "borderTopColor", "color", "backgroundColor", "paddingLeft", "paddingTop"}}
+    assert got.pop("old") == 0, "a row the panel made is still in Plot Options"
     bad = [f"{what} {a[i][0]}: {a[i][1]} vs {b[i][1]}" for what, (a, b) in got.items() for i in range(len(a))
-           if a[i][1] != b[i][1] and a[i][0] not in skip[what]]
+           if a[i][1] != b[i][1] and not (what in ("row", "label") and a[i][0] == "width")   # a row or a label is as wide as its room and its text
+            and not (what == "range" and a[i][0] in ("width", "height"))]
     assert not bad, "\n".join(bad)
 
 

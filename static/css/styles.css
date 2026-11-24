@@ -3606,7 +3606,6 @@ button.dtsb-button.dtsb-clear:hover {
 }
 
 /* an automatic value (utils/point-style.js): shown, but not set by the user */
-.point-size-control input.is-auto,
 .point-opacity-control input.is-auto {
     color: var(--az-muted);
     font-style: italic;

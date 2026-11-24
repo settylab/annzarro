@@ -17,6 +17,7 @@ import { legendTitleSize, defaultTitleGap, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import { plotColour } from '../../utils/plot-theme.js';
 import { FONT_CHOICES, DEFAULT_FONT } from '../../utils/fonts.js';
+import { pointSizeScale, roundSig, snapPointSize } from '../../utils/slider-scales.js';
 
 /** The kinds, as their panel types. */
 // export-unused-ok: the Node tests walk both kinds
@@ -89,7 +90,9 @@ const FIELDS = Object.freeze([
     f('scaleBarCorner', 'axes', 'select', 'Scale bar corner', 'bottom-right', { domId: 'scale-bar-corner', disabled: scaleBarOff, quiet: true,
         choices: SCALE_BAR_CORNERS.map((c) => [c, c.replace('-', ' ')]) }),
     // Points: the size of the points (the grid's slider before WP-5b, the panel's own row) and the grey points of a table filter
-    f('pointSize', 'panel:points', 'number', 'Point size', null, { copy: false, look: false, element: true }),
+    f('pointSize', 'panel:points', 'scaled', 'Point size (px)', null, { copy: false, look: false, domId: 'point-size', scale: pointSizeScale, autoPath: 'autoPointSize',
+        // sizes snap to the steps scattergl draws (2D); in 3D any size: one read off the track to two significant digits, one typed as it is
+        snap: (v, c, fromTrack) => (c.z ? (fromTrack ? roundSig(v) : v) : snapPointSize(v)) }),
     f('notInTableScale', 'panel:points', 'number', 'Not in table: size (x auto)', 1, { min: 0.1, max: 20, step: 0.1, domId: 'not-in-table-scale',
         help: 'The grey points a table filter leaves in the plot, relative to the size their count gets automatically.' }),
     f('notInTableOpacity', 'panel:points', 'number', 'Not in table: opacity', null, { min: 0.05, max: 1, step: 0.05, domId: 'not-in-table-opacity',

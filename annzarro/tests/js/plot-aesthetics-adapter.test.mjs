@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const { createSettingsAdapter } = await import("../../../static/js/panels/plot-utilities/plot-aesthetics-adapter.js");
-const { writeField, fieldOf } = await import("../../../static/js/panels/plot-utilities/options-schema.js");
+const { writeField, fieldOf, writeAuto } = await import("../../../static/js/panels/plot-utilities/options-schema.js");
 await import("../../../static/js/panels/plot-utilities/aesthetics-kinds.js");
 
 const KIND = "cell-plot";
@@ -72,4 +72,29 @@ test("a reset draws the plot from its settings once and says which group", () =>
   assert.equal(log.relooks, 1);
   assert.deepEqual(log.hooks, []);
   assert.deepEqual(log.notes, [["reset text", null]]);
+});
+
+test("the point size writes its value and its Auto switch together, and Auto alone leaves the value to the plot", () => {
+  const { settings, adapter, log } = setup({ pointSize: 5.1, autoPointSize: true });
+  log.hooks = [];
+  const f = fieldOf(KIND, "pointSize");
+  // a value set ends Auto
+  let next = writeAuto(set(settings, "pointSize", 2.35), f, false);
+  adapter.commit(next, "point size");
+  assert.equal(settings.pointSize, 2.35);
+  assert.equal(settings.autoPointSize, false, "stored as false, as the plot always did");
+  // Auto alone: the value stays until the plot's hook works it out
+  next = writeAuto(settings, f, true);
+  assert.deepEqual(adapter.commit(next, "point size"), ["pointSize"]);
+  assert.equal(settings.autoPointSize, true);
+  assert.equal(settings.pointSize, 2.35);
+});
+
+test("the point size is a scaled field that is neither copied nor reset", () => {
+  const f = fieldOf(KIND, "pointSize");
+  assert.equal(f.type, "scaled");
+  assert.equal(f.look, false);
+  assert.equal(f.snap(0.41, { z: null }, true) > 0, true);
+  assert.equal(f.snap(1.234567, { z: [1] }, true), 1.2, "3D: two significant digits off the track");
+  assert.equal(f.snap(1.234567, { z: [1] }, false), 1.234567, "3D: typed as it is");
 });
