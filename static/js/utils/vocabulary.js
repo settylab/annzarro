@@ -110,6 +110,8 @@ const cellGene = Object.freeze({
         z_pooled: 'z-score per gene, against all grouped cells'
     }),
     aggregationHeading: Object.freeze({ summary: 'From the genes', score: 'From the score' }),
+    /** Why a source with down genes has no summary (decision 40). */
+    downGenesNoSummary: 'A summary of the genes cannot be computed with down genes: it would count them as up genes. The row is the score.',
     /** The summaries' menu labels; a score kind's label is built from the score option by `aggregationOf`. */
     aggregation: Object.freeze({
         mean_of_means: "Mean of the genes' means",

@@ -74,7 +74,7 @@ import { VOCABULARY } from '../utils/vocabulary.js';
 import {
     normalizeCellGene, cellGeneReferences, addSection, duplicateSection, removeSection, moveSection, setSectionRows,
     setSectionTitle, setRowAggregation, rowAggregationOf, sectionTitle, sectionGenes, sectionLine, tooManyGenesText,
-    aggregationAfter, planFeatures, buildMatrix, heightOf, withGroupingThreshold, SAME_AS_COLOR, GROUP_AXIS
+    aggregationAfter, effectiveAggregation, planFeatures, buildMatrix, heightOf, withGroupingThreshold, SAME_AS_COLOR, GROUP_AXIS
 } from './cell-gene/sections.js';
 import {
     measureModel, pickLayer, axisChoices, axisSourceId, axisRecipe, createControls, createAddGenes,
@@ -433,7 +433,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     const counted = sectionGenes(recipe, hasGene);
                     const over = tooManyGenesText(src.title, counted.total);
                     out = { key: JSON.stringify([recipe.genes, recipe.down, recipe.input, recipe.method]), kind: src.kind, title: src.title, recipe,
-                        total: counted.total, missing: counted.missing, genes: over ? [] : counted.genes, note: over,
+                        total: counted.total, missing: counted.missing, down: counted.down, genes: over ? [] : counted.genes, note: over,
                         empty: over || (counted.genes.length ? null : `No gene of ${src.title} is in this dataset.`) };
                 }
             }
@@ -460,7 +460,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const dots = _config.mode === 'dots';
             const entries = _config.sections.map((section) => {
                 const r = resolveSource(section.source);
-                return { section, genes: r.genes, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
+                return { section, genes: r.genes, down: r.down || 0, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
             });
             const threshold = baseThreshold();
             const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null,
@@ -660,7 +660,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function setAggregation(i, which, part, value) {
             const section = _config.sections[i];
             if (!section) return;
-            const held = rowAggregationOf(section, which);
+            const held = effectiveAggregation(rowAggregationOf(section, which), _config[which], resolveSource(section.source).down);
             const next = aggregationAfter(held, part, value, scoreChoices(section.source, { method: held.column, layer: held.layer }, { datasetLayers: datasetLayers() }));
             if (!next) { paint(); return; }
             commit(setRowAggregation(_config, i, which, next.agg), `${which === 'color' ? 'color' : 'size'} of ${sectionName(i)}`, { said: next.say });
@@ -668,7 +668,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         function setAbove(i, which, text) {
             const section = _config.sections[i];
-            const held = section && rowAggregationOf(section, which);
+            const held = section && effectiveAggregation(rowAggregationOf(section, which), _config[which], resolveSource(section.source).down);
             const v = Number(text);
             if (!held || held.agg !== 'score_pct_above' || text === '' || !Number.isFinite(v)) { paint(); return; }
             const next = { ...held };
@@ -895,8 +895,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          * and layer selects (score-source.js scoreChoices: every method and layer, graded for the section's source).
          */
         function sectionPart(section, which, layer) {
-            const held = rowAggregationOf(section, which);
-            if (!held.column) return { held, layer, label: CGV.aggregation[held.agg], methods: null, layers: null };
+            const down = resolveSource(section.source).down || 0;
+            const held = effectiveAggregation(rowAggregationOf(section, which), _config[which], down);
+            if (!held.column) return { held, layer, down, label: CGV.aggregation[held.agg], methods: null, layers: null };
             const label = CGV.scoreAggregation[held.agg](scoreOptionName(held));
             const c = scoreChoices(section.source, { method: held.column, layer: held.layer }, { datasetLayers: datasetLayers() });
             const entry = (e, name) => ({ value: e.value, label: e.lapsed ? `${name} (not available)` : name, title: e.title, disabled: e.disabled, lapsed: e.lapsed });
@@ -904,7 +905,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 : [{ value: held.column, label: SIGNATURE_MODEL.methodShort(held.column) }];
             const layers = c ? c.layers.map((e) => ({ value: e.value, label: e.label, title: e.title, disabled: e.disabled, lapsed: e.lapsed }))
                 : [{ value: held.layer || 'X', label: held.layer || 'X' }];
-            return { held, layer, label, methods, layers };
+            return { held, layer, down, label, methods, layers };
         }
 
         function sectionsModel() {
