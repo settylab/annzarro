@@ -90,7 +90,7 @@
 .az-pop-check, .po-check { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .az-pop-check .form-check-input, .po-check .form-check-input { margin: 0; }
 /* under .az-popover: the dark theme's `small { color: inherit }` (theme.css) would otherwise win and draw help in the full text colour */
-.az-popover .az-pop-help, .az-popover .po-help { flex: 1 1 100%; color: var(--az-muted); font-size: 0.6875rem; line-height: 1.3; }
+.az-popover .az-pop-help, .az-popover .po-help { flex: 1 1 100%; margin: 0; color: var(--az-muted); font-size: 0.6875rem; line-height: 1.3; }
 
 .az-pop-buttons, .po-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
 .az-pop-ask, .po-ask { display: flex; flex-direction: column; gap: 4px; }
@@ -104,7 +104,6 @@
 .az-pop-field__control--stack { flex-direction: column; align-items: flex-start; gap: 2px; }
 .az-pop-field--block { flex-direction: column; align-items: stretch; }
 .az-pop-field--block > .az-pop-field__control { width: 100%; }
-.az-pop-field--block .az-pop-check { align-items: flex-start; }
 .az-pop-field .az-pop-select { width: auto; max-width: 11rem; }
 .az-pop-note { font-size: 0.75rem; padding: 3px 6px; border-left: 3px solid var(--az-border-strong); background: var(--az-surface-3); }
 .az-pop-note[hidden] { display: none; }

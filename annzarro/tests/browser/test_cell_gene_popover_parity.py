@@ -78,7 +78,7 @@ def _frames(page):
 
 
 def _read(page, name, side):
-    page.evaluate("(n) => document.querySelectorAll(`[data-popover='${n}'] details`).forEach((d) => { d.open = true; })", name)
+    page.evaluate("(n) => { document.querySelectorAll(`[data-popover='${n}'] details`).forEach((d) => { d.open = true; }); document.activeElement.blur(); }", name)
     _frames(page)
     return page.evaluate(READ, [name, PIECES, side, PROPS, SIZED])
 
@@ -95,18 +95,21 @@ def _shown(page, name):
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_cluster_and_color_look_like_plot_options(page, served, theme):
-    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}]),
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}], limits=[0, 5]),   # a colour range set, so Reset is enabled
                          S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, S1))
     _drawn(page)
     page.evaluate("(t) => document.documentElement.setAttribute('data-theme', t)", theme)
+    # no colour is read half way through a transition, and no focus ring (a focused heading rounds its corners) is part of the look
+    page.add_style_tag(content="* { transition: none !important; }")
     _frames(page)
+    _shown(page, "plot-options")          # once to settle the theme's colour transitions, then the reading
     reference = _shown(page, "plot-options")
     problems = []
     for name in ("cluster", "color"):
         page.click(f"{TP} {BUTTONS[name]}")
         page.wait_for_selector(f"[data-popover='{name}']")
         assert_body_standard(page, f"[data-popover='{name}']", sections=2 if name == "cluster" else 1,
-                             shot=f"cgene-{name}-{theme}" if os.environ.get("ANNZARRO_U7_SHOTS") else None)
+                             shot=f"cgene-{name}" if theme == "light" else None)
         got = _read(page, name, 1)
         page.keyboard.press("Escape")
         page.wait_for_selector(f"[data-popover='{name}']", state="detached")
