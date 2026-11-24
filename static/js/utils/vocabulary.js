@@ -222,13 +222,11 @@ const cellGene = Object.freeze({
         heading: Object.freeze({
             dots: 'Dots', colors: 'Colors', sections: 'Sections', labels: 'Labels', clustering: 'Clustering', legend: 'Legend', totals: 'Totals'
         }),
-        largestDot: 'Largest dot',
-        smallestDot: 'Smallest dot',
-        /** Largest dot's value: the share of its cell it fills. */
-        ofCell: (pct) => `${fmt(pct)}% of cell`,
+        /** Plot Options ▸ Dots: the largest dot as a share of its cell, the smallest in px. */
+        largestDotOfCell: 'Largest dot (% of cell)',
+        smallestDotPx: 'Smallest dot (px)',
         /** Largest dot of a link saved before the dots filled their cells: its px, until the slider is moved. */
         largestPx: (px) => `${fmt(px)} px (saved)`,
-        px: (n) => `${fmt(n)} px`,
         rangeWhat: Object.freeze({ color: 'Color', size: 'Size', height: 'Height' }),
         sizeMin: 'Size min',
         sizeMax: 'Size max',

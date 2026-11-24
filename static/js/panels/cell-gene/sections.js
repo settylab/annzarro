@@ -240,6 +240,14 @@ export function normalizeCellGene(raw) {
             delete config.height;
         }
     }
+    // a link from before the dots filled their cells stored its dot sizes as a px range; its smallest dot is Smallest dot
+    // (a Plot Options field), so that field shows what is drawn. Its largest stays in `dotSizes` until Largest dot is moved
+    const legacy = src.dotSizes;
+    if (Array.isArray(legacy) && legacy.length === 2 && legacy.every((v) => typeof v === 'number' && Number.isFinite(v))
+        && !(typeof src.dotSmallest === 'number' && Number.isFinite(src.dotSmallest))) {
+        const smallest = Math.round(Math.max(1, Math.min(40, Math.min(legacy[0], legacy[1]))));
+        if (smallest !== 3) config.dotSmallest = smallest;
+    }
     if (!VIEWS.includes(src.view)) {
         if ('view' in src && src.view !== undefined) problems.push(`view ${JSON.stringify(src.view)} is not 3d, 2D used`);
         delete config.view;

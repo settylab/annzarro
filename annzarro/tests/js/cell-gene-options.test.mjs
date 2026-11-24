@@ -769,3 +769,26 @@ test('Color strips: one per factor by default, the Group band alone in each grou
     // Group with no group colours given (an old caller): nothing to draw
     assert.deepEqual(strips({ colorStrips: 'group' }, null), []);
 });
+
+// --- Largest dot and Smallest dot are Plot Options fields (WP-5a schema; lead, 2026-11-24) -------------------------
+
+test('Largest dot and Smallest dot are Plot Options ▸ Dots fields, and Apply and the session default carry them', async () => {
+    const S = await import('../../../static/js/panels/plot-utilities/options-schema.js');
+    const scale = S.fieldOf('cell-gene', 'dotScale');
+    const smallest = S.fieldOf('cell-gene', 'dotSmallest');
+    assert.ok(scale && smallest, 'both are fields of the schema');
+    assert.deepEqual([scale.section, scale.type, scale.path, scale.min, scale.max, S.defaultOf(scale, 'cell-gene')], ['panel:dots', 'range', 'dotScale', 10, 100, 100]);
+    assert.deepEqual([smallest.section, smallest.type, smallest.path, smallest.min, smallest.max, S.defaultOf(smallest, 'cell-gene')], ['panel:dots', 'range', 'dotSmallest', 1, 40, 3]);
+    // copied by Apply to other plots and the session default (the look by path)
+    const from = normalizeCellGene({ version: 1, mode: 'dots', sections: [], dotScale: 60, dotSmallest: 6 }).config;
+    const look = S.pickLook(from, 'cell-gene');
+    assert.equal(look.dotScale, 60);
+    assert.equal(look.dotSmallest, 6);
+    assert.ok(S.lookPaths('cell-gene').includes('dotScale') && S.lookPaths('cell-gene').includes('dotSmallest'));
+    const to = S.adoptLook({ version: 1, mode: 'dots', sections: [] }, look, 'cell-gene');
+    assert.equal(to.dotScale, 60);
+    assert.equal(to.dotSmallest, 6);
+    // at the default they are written as absent
+    assert.equal('dotScale' in S.writeField({}, scale, 100, 'cell-gene'), false);
+    assert.equal('dotSmallest' in S.writeField({}, smallest, 3, 'cell-gene'), false);
+});
