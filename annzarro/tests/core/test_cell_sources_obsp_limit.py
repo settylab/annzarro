@@ -20,21 +20,21 @@ def test_the_limit_is_the_large_plot_threshold():
     assert cs.OBSP_MAX_CELLS == 1_000_000
 
 
-def test_a_row_of_a_dataset_over_the_limit_is_refused_with_the_count_and_the_limit(store, monkeypatch):
+def test_a_row_of_a_dataset_over_the_limit_is_refused_with_the_count_and_the_limit(store, monkeypatch, cost_limit):
     reader = get_reader(store)
     assert cs.cost(reader, store, SOURCE).n_cells == N_OBS                      # inside the limit
-    monkeypatch.setattr(cs, "OBSP_MAX_CELLS", N_OBS - 1)
+    cost_limit(obsp_source_max_cells=N_OBS - 1)
     with pytest.raises(cs.CellSourceError) as info:
         cs.cost(reader, store, SOURCE)
     assert (info.value.status, info.value.reason) == (422, "obsp_too_large")
     assert info.value.extra == {"count": N_OBS, "limit": N_OBS - 1} and "obs or obsm" in info.value.message
-    monkeypatch.setattr(cs, "OBSP_MAX_CELLS", N_OBS)
+    cost_limit(obsp_source_max_cells=N_OBS)
     cs.cost(reader, store, SOURCE)                                                # exactly the limit is allowed
 
 
-def test_the_cell_names_of_a_large_dataset_are_never_listed(store, monkeypatch):
+def test_the_cell_names_of_a_large_dataset_are_never_listed(store, monkeypatch, cost_limit):
     reader = get_reader(store)
-    monkeypatch.setattr(cs, "OBSP_MAX_CELLS", N_OBS - 1)
+    cost_limit(obsp_source_max_cells=N_OBS - 1)
 
     def listed(*a, **k):
         raise AssertionError("the list of every cell name was built")

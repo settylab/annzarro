@@ -43,7 +43,7 @@ from typing import Callable, Dict, Iterable, Iterator, Optional
 import numpy as np
 from flask import Response, jsonify, request
 
-from ...core import read_guard
+from ...core import cost_limits, read_guard
 
 #: Bytes of a binary block written at once, so a closed connection is noticed between writes.
 WRITE_CHUNK = 1 << 20
@@ -664,7 +664,13 @@ def respond(lane: str, *, nbytes: int, keep_bytes: int, what: str, wait_s: float
         finally:
             release()
 
-    response = Response(body(), mimetype=mimetype)
+    costs = cost_limits.snapshot()                  # the request's limits, wherever the server iterates the body
+
+    def limited():
+        cost_limits.use(costs)
+        yield from body()
+
+    response = Response(limited(), mimetype=mimetype)
     response.call_on_close(release)
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Accel-Buffering"] = "no"

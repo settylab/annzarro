@@ -87,7 +87,10 @@ def _selected_view(page):
 
 
 def _summary(page):
-    return page.inner_text(f"{S} .gsig-summary")
+    """The banner's count ("6 of 3,000 genes selected"), then the up/down split the Selected view states."""
+    text = page.inner_text(f"{S} .gsig-panel > .plot-status .ps-headline")
+    sel = page.inner_text(f"{S} .gsig-seg:nth-child(2)")
+    return text + (sel[sel.index(':'):] if ':' in sel else '')
 
 
 def _message(page):
@@ -111,7 +114,7 @@ def _until_sides(page, up, down):
 
 def test_the_first_view_has_nothing_about_direction(page, served):
     _panel(page, served)
-    assert _summary(page) == "6 genes selected"
+    assert _summary(page) == "6 of 3,000 genes selected"
     _selected_view(page)
     assert page.locator(f"{DIR}:visible").count() == 0
     assert page.locator(f"{S} .gsig-dirbar").is_hidden() and page.locator(f"{S} .gsig-addas-wrap").is_hidden()
@@ -135,13 +138,13 @@ def test_flip_a_gene_counts_it_changes_the_key_and_undo_restores_both_sides(page
     before = _hash(page)
     _switch_on(page)
     assert _hash(page) == before, "the switch is not a score setting"
-    assert _summary(page) == "6 genes selected", "no down gene yet, so nothing is said"
+    assert _summary(page) == "6 of 3,000 genes selected", "no down gene yet, so nothing is said"
     _selected_view(page)
     assert _dir_labels(page) == ["up"] * 6
     assert page.inner_text(f"{S} .gsig-row:nth-child(1) .gsig-dir") == "↑ Up"
     page.click(f"{S} .gsig-row[aria-rowindex='2'] .gsig-dir")
     _until_sides(page, [g for g in FIRST if g != "GENE0002"], ["GENE0002"])
-    assert _summary(page) == "6 genes selected: 5 up, 1 down"
+    assert _summary(page) == "6 of 3,000 genes selected: 5 up, 1 down"
     assert page.inner_text(SELECTED) == "Selected 6: 5 up, 1 down"
     row = page.locator(f"{S} .gsig-row[aria-rowindex='2']")
     assert row.locator(".gsig-dir").inner_text() == "↓ Down"
@@ -154,7 +157,7 @@ def test_flip_a_gene_counts_it_changes_the_key_and_undo_restores_both_sides(page
     assert _row_names(page) == FIRST
     page.click(f"{S} .gsig-undo")
     _until_sides(page, FIRST, [])
-    assert _hash(page) == before and _summary(page) == "6 genes selected"
+    assert _hash(page) == before and _summary(page) == "6 of 3,000 genes selected"
     # Ctrl+Z outside a text field does the same
     page.click(f"{S} .gsig-row[aria-rowindex='3'] .gsig-dir")
     _until_sides(page, [g for g in FIRST if g != "GENE0003"], ["GENE0003"])
@@ -181,7 +184,7 @@ def test_the_direction_button_is_in_the_keyboard_order_of_the_row(page, served):
 def test_bulk_change_acts_on_the_rows_shown_in_one_undo_step(page, served):
     _panel(page, served, genes=FIRST + ["KLF1"], down=["GAPDH"])
     _selected_view(page)
-    assert _summary(page) == "8 genes selected: 7 up, 1 down"
+    assert _summary(page) == "8 of 3,000 genes selected: 7 up, 1 down"
     assert page.locator(f"{S} .gsig-dirbar").is_visible()
     # search narrows what is shown
     page.fill(f"{S} .gsig-search", "GENE000")
@@ -249,7 +252,7 @@ def test_paste_adds_as_down_in_one_step_and_follows_the_add_as_choice(page, serv
     page.locator(f"{S} [data-testid=gp-add]").click()
     _until_sides(page, ["GENE0001"], ["CD3D", "CD3E"])
     assert _message(page) == "Added 2 genes as down from pasted list. 1 is not in this dataset."
-    assert _summary(page) == "3 genes selected: 1 up, 2 down"
+    assert _summary(page) == "3 of 3,000 genes selected: 1 up, 2 down"
     assert page.get_attribute(f"{S} .gsig-undo", "title") == "Undo: add 2 genes as down from pasted list"
     page.click(f"{S} .gsig-undo")
     _until_sides(page, ["GENE0001"], [])
@@ -322,7 +325,7 @@ def test_switching_off_with_down_genes_asks_first(page, served):
     page.click(f"{S} [data-count-as-up]")
     _until_sides(page, FIRST, [])
     assert not _pressed(page) and page.locator(f"{DIR}:visible").count() == 0
-    assert _summary(page) == "6 genes selected"
+    assert _summary(page) == "6 of 3,000 genes selected"
     assert page.get_attribute(f"{S} .gsig-undo", "title") == "Undo: count 2 down genes as up"
     page.click(f"{S} .gsig-undo")
     _until_sides(page, FIRST[:4], FIRST[4:])
@@ -345,7 +348,7 @@ def test_link_and_panel_set_round_trip_carry_the_down_genes(page, served):
     page.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={payload}")
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
     assert _sides(page) == (FIRST[:4], FIRST[4:]) and _hash(page) == key
-    assert _summary(page) == "6 genes selected: 4 up, 2 down"
+    assert _summary(page) == "6 of 3,000 genes selected: 4 up, 2 down"
     _selected_view(page)
     assert _dir_labels(page) == ["up"] * 4 + ["down"] * 2
     # the saved layout of a panel set holds it too

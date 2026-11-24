@@ -74,8 +74,8 @@ N_CELL_TYPES = len(gs.CELL_TYPES)
 # --------------------------------------------------------------------------------------------- H1
 
 
-def test_h1_measures_count_in_the_value_limit(store, monkeypatch):
-    monkeypatch.setattr(gf, "MAX_FEATURE_CELLS", 4 * N_CELL_TYPES)
+def test_h1_measures_count_in_the_value_limit(store, monkeypatch, cost_limit):
+    cost_limit(matrix_values=4 * N_CELL_TYPES)
     feats = [gene("a", gs.gene(1)), gene("b", gs.gene(2))]
     measures = [{"id": "m0", "source": {"type": "obs", "key": "depth"}},
                 {"id": "m1", "source": {"type": "obs", "key": "score"}}]
@@ -99,8 +99,8 @@ def test_h1_more_measures_than_the_cap_are_refused_when_parsed():
     assert e.value.extra == {"count": gf.MAX_MEASURES + 1, "limit": gf.MAX_MEASURES}
 
 
-def test_h1_accumulate_holds_at_most_one_grids_moments(store, monkeypatch):
-    monkeypatch.setattr(gf, "MAX_GRID_MEASURE_CELLS", 100)
+def test_h1_accumulate_holds_at_most_one_grids_moments(store, monkeypatch, cost_limit):
+    cost_limit(grid_cells=100)
     reader = get_reader(store)
     depth, score = ({"id": f"m{i}", "source": {"type": "obs", "key": k}} for i, k in enumerate(("depth", "score")))
     work = gf.plan_work(reader, store, measures=gf.parse_measures([depth, score]))
@@ -282,8 +282,8 @@ def test_m2_the_exact_select_holds_one_copy_of_a_batch(monkeypatch):
 # --------------------------------------------------------------------------------------------- M8
 
 
-def test_m8_a_grouping_over_the_limit_with_no_way_out_reads_no_further(store, monkeypatch):
-    monkeypatch.setitem(cg.GROUPING_LIMITS, "groups", 100)
+def test_m8_a_grouping_over_the_limit_with_no_way_out_reads_no_further(store, monkeypatch, cost_limit):
+    cost_limit(groups=100)
     scored = []
     real = cg.gs.compute
     monkeypatch.setattr(cg.gs, "compute", lambda *a, **k: (scored.append(1), real(*a, **k))[1])

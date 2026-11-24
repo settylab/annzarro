@@ -7,17 +7,19 @@
  */
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
-import { DENSITY_POINTS_DRAW, DENSITY_POINTS_LOAD, sampleIndices } from './density-points.js';
+import { sampleIndices } from './density-points.js';
+import { limit } from '../../utils/limits.js';
 import { isProviderType, largeAccepts } from '../../utils/source-registry.js';
 import { GROUP_SOURCE } from '../cell-grouping/factors.js';
 import { RESERVED } from '../../utils/level-id.js';
 
-/** The caps now in force: Config's (a test or the cost limits set them), else the named constants. */
-const capOf = (key, fallback) => { const v = Config.DEFAULTS && Config.DEFAULTS[key]; return Number.isFinite(v) && v > 0 ? v : fallback; };
+/** The caps now in force: the server's limits.density_points_draw and _load (utils/limits.js), unless a browser test
+ *  lowered one in Config.DEFAULTS (DENSITY_POINTS_DRAW, DENSITY_POINTS_LOAD) to stand for a large dataset. */
+const capOf = (key, name) => { const v = Config.DEFAULTS && Config.DEFAULTS[key]; return Number.isFinite(v) && v > 0 ? v : limit(name); };
 // export-unused-ok: the module's tests state it
-export const drawCap = () => capOf('DENSITY_POINTS_DRAW', DENSITY_POINTS_DRAW);
+export const drawCap = () => capOf('DENSITY_POINTS_DRAW', 'density_points_draw');
 // export-unused-ok: the module's tests state it
-export const loadCap = () => capOf('DENSITY_POINTS_LOAD', DENSITY_POINTS_LOAD);
+export const loadCap = () => capOf('DENSITY_POINTS_LOAD', 'density_points_load');
 
 const COORDINATE_TYPES = ['obs', 'obsm', 'layer'];
 
