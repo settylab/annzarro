@@ -110,6 +110,8 @@ const cellGene = Object.freeze({
         z_pooled: 'z-score per gene, against all grouped cells'
     }),
     aggregationHeading: Object.freeze({ summary: 'From the genes', score: 'From the score' }),
+    /** Why a source with down genes has no summary (decision 40). */
+    downGenesNoSummary: 'A summary of the genes cannot be computed with down genes: it would count them as up genes. The row is the score.',
     /** The summaries' menu labels; a score kind's label is built from the score option by `aggregationOf`. */
     aggregation: Object.freeze({
         mean_of_means: "Mean of the genes' means",
@@ -359,7 +361,19 @@ const countPlot = Object.freeze({
         mode: 'Mode', x: 'X', y: 'Y', split: 'Color by', slices: 'Slices', height: 'Height', color: 'Color', labels: 'Labels',
         sets: capital(plural.set), factor: 'Of', source: 'Of', above: 'Above'
     }),
-    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', fill: '100%', overlay: 'Overlaid' }),
+    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', overlay: 'Overlaid', fill: '100%' }),
+    /** Why an arrangement does not apply (its title, where it is disabled). */
+    arrangementRefused: Object.freeze({
+        dodgeBins: 'Bins of a number cannot sit side by side. Overlaid shows each level over the others.'
+    }),
+    /** Why a view cannot draw the X (the Mode select's title of a disabled view). */
+    viewRefused: Object.freeze({ histogramNumeric: 'Histogram needs a numeric axis.' }),
+    /** What a switch of view by the X axis type says, once. */
+    viewSwitched: Object.freeze({
+        toHistogram: 'A number as X: shown as Histogram. Bar shows its bins as categories.',
+        toBar: 'Histogram needs a numeric axis: shown as Bar.',
+        fallback: 'Histogram needs a numeric axis, so this plot is drawn as Bar.'
+    }),
     /** The entries of Height and Color (UX 4.5), and the help line of each. */
     value: Object.freeze({
         count: 'Count',
@@ -387,11 +401,18 @@ const countPlot = Object.freeze({
         adjust: 'Smoothing', bySize: 'Scale curves by level size'
     }),
     /** The layers of a 2D density, each a box of Plot Options. */
-    layers: Object.freeze({ image: 'Density as opacity', lines: 'Isolines', fill: 'Filled isolines', points: 'Cell points' }),
+    layers: Object.freeze({
+        image: 'Density as opacity', imageOne: 'Density as color scale', lines: 'Isolines', fill: 'Filled isolines', points: 'Cell points',
+        last: 'At least one layer stays on: with none, nothing would be drawn.'
+    }),
     adjustProblem: 'Enter a number from 0.1 to 10.',
-    /** The Color pop-over (WP-6a): the colour map, Reverse, the range and the palette of a Color by's levels. */
+    /**
+     * The Display pop-over (WP-6a, renamed: it holds how the data is drawn, not only its color): the colour map, Reverse, the
+     * range (of the colour scale, or of a density), the palette of a Color by's levels, and the Cell points' size and opacity.
+     */
     colour: Object.freeze({
-        button: 'Color', title: 'Color', map: 'Map', reverse: 'Reverse', min: 'Min', max: 'Max', center: 'Center', auto: 'auto',
+        button: 'Display', title: 'Display', map: 'Map', reverse: 'Reverse', min: 'Min', max: 'Max', center: 'Center', auto: 'auto',
+        densityRange: 'Density range', points: 'Cell points', pointSize: 'Size', pointOpacity: 'Opacity', pointFade: 'Density as opacity',
         palette: 'Level palette', paletteDefault: 'Default', reset: 'Reset',
         problem: 'Enter a number, or leave it empty for automatic.',
         centerNote: 'Center has no effect while both Min and Max are set.'
@@ -451,7 +472,6 @@ const countPlot = Object.freeze({
     /** A 2D density drawn on the cell locations: the strip's notice and why it is refused. */
     points: Object.freeze({
         label: 'Cell points',
-        size: 'Point size',
         all: (drawn, total) => `Cells drawn as points: ${drawn.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}.`,
         sample: (drawn, loaded, total) => `Cells drawn as points: ${drawn.toLocaleString('en-US')} of a random sample of ${loaded.toLocaleString('en-US')} of the ${total.toLocaleString('en-US')} cells.`,
         tooMany: (total, limit) => `Cell points load the position of every cell, and ${total.toLocaleString('en-US')} cells are more than the ${limit.toLocaleString('en-US')} it takes. Turn on a subset to use them.`,

@@ -39,7 +39,8 @@ const ACTION = Object.freeze({
  */
 export function labelledGroups(recipe, reply, titleOf) {
     const byKey = new Map();
-    for (const { key, labels } of groupLabels(recipe, reply, titleOf)) byKey.set(canonKey(key), labels);
+    // a group of another grouping is named by its generated name: a rename of it is display only
+    for (const { key, labels } of groupLabels(recipe, reply, titleOf, true)) byKey.set(canonKey(key), labels);
     return { byKey, separator: recipe.separator === undefined ? DEFAULT_SEPARATOR : recipe.separator };
 }
 

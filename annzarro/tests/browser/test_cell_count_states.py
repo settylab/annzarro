@@ -183,13 +183,14 @@ def test_too_many_bins_for_bar_opens_the_binning_control_and_a_histogram_of_a_ca
     page.press(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "Enter")
     _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 40")
 
+    # a Histogram given categories from outside (Back and Forward, a remap) is drawn as Bar and says so once
+    # (the views follow the X axis type, 0.8.0): never the old unusable state
     page.select_option(f"{S} .ccnt-mode", "histogram")
+    _drawn(page, "histogram")
     page.evaluate(f"""() => window.PanelManager.getPanel('{CC}').updateConfig({{ x: {{ source: {{ type: 'obs', key: 'cell_type' }} }} }})""")
-    until(page, "(s) => { const b = document.querySelector(s + ' .ccnt-state'); return b && !b.hidden && b.dataset.state === 'unusable'; }", S)
-    assert _state(page) == {"text": "Histogram needs a numeric X. cell_type is categorical.", "state": "unusable", "actions": ["Show as Bar"]}
-    page.click(f"{S} .ccnt-state-box button:has-text('Show as Bar')")
     _drawn(page, "bar", "c.x.source.key === 'cell_type'")
-    assert _undo_label(page) == "Undo: mode Bar"
+    assert page.inner_text(f"{S} .ccnt-view-note") == "Histogram needs a numeric axis, so this plot is drawn as Bar."
+    assert _state(page) is None
 
 
 # ------------------------------------------------------------------ 2. the route's states through the painter

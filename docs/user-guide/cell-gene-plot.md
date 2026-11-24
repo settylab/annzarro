@@ -40,7 +40,7 @@ the colour from the mean of the log-normalised layer, the size from the share of
 - **The layer select** lists every layer of the dataset. A statistic a layer cannot give is greyed out there, with the
   reason as its tooltip; one that can be computed but misleads (a mean of raw counts follows sequencing depth) carries
   the warning as its tooltip. Choosing a statistic the current layer cannot give moves the layer to the first one that
-  can, and the status line says so once ("Layer changed to logged: % expressing is not available on X.").
+  can, and the status line says so once ("Layer changed to logged: % expressing cannot be computed on 'X'.").
 - **The threshold** appears beside a statistic that counts expressing cells (% expressing, mean of expressing cells).
   A cell counts as expressing above it. When the groups are a grouping, the box is empty and reads
   `auto (grouping: 0)`: the measure follows the grouping's **Expressed above**, set in the grouping's **Methods ▾**
@@ -49,7 +49,7 @@ the colour from the mean of the log-normalised layer, the size from the share of
   it."); empty the box and press **Enter** to follow the grouping again. When the groups are an obs column, the box
   holds the measure's own threshold, 0 by default. The legends and the hover name the threshold in force either way.
 
-The lists are the same whether the groups are a grouping or an obs column: nothing has to be offered first. A choice
+The lists are the same whether the groups are a grouping or an obs column: nothing has to be set up first. A choice
 stored in a link that the layer cannot give (% expressing on a scaled X) stays selected, marked "(not available)", and
 draws nothing until you choose another layer.
 
@@ -71,7 +71,7 @@ A gene with no value in a group (all of its values missing) has no statistic the
 heatmap, never a 0. The strip below the plot counts them ("12 cells of the matrix have no value").
 
 **Size on a signed layer.** On a layer with negative values, such as a scaled X, % expressing cannot be computed. The
-dots are then drawn at one size, the size legend says "% expressing is not available on X: X has negative values.
+dots are then drawn at one size, the size legend says "% expressing cannot be computed on 'X': it has negative values.
 Choose a layer.", the strip says **No size**, and the Size layer select marks X "(not available)" and lists the
 layers that work.
 
@@ -331,8 +331,8 @@ How scanpy's options map onto the plot:
 | `show_gene_labels` (heatmap) | **Gene labels**; labels also thin out when they would overlap |
 | Values printed in the cells (`matrixplot`) | **Print values in cells** |
 | A heatmap with one row per cell | No mode: see {ref}`per-cell-views` |
-| `dot_color_df`, `dot_size_df` as your own matrices | Not offered: Color and Size each pick a statistic and a layer |
-| `var_group_rotation`, `log`, `norm`, `size_exponent`, `color_on`, `dot_edge_color`, `grid`, `gene_symbols` | Not offered |
+| `dot_color_df`, `dot_size_df` as your own matrices | Not available: Color and Size each pick a statistic and a layer |
+| `var_group_rotation`, `log`, `norm`, `size_exponent`, `color_on`, `dot_edge_color`, `grid`, `gene_symbols` | Not available |
 
 Two differences of notation, not of value: **Color** and **Size** each have their own threshold where scanpy has one
 `expression_cutoff` for both, and the CSV gives the colour statistic as computed and, when a scaling is on, also as

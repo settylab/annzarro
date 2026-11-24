@@ -1,26 +1,20 @@
 /**
- * What a Gene Signature offers its consumers: the model behind the panel's score options. Pure (no DOM, no page
- * state), so Node tests cover it and the plot and table menus build on it.
+ * The score methods of a Gene Signature (and of a Gene Table, which scores the same way): their table, their parameters
+ * and how each method is graded on a layer. Pure (no DOM, no page state), so Node tests cover it and the plot and table
+ * menus build on it.
  *
- * The signature's panel defines the options and how each is computed; a plot or a table only picks from what is
- * offered. An option is one aggregation (a METHOD) read from one matrix (a LAYER). The stored recipe holds, as
- * configuration only:
+ * Decision 31: a plot or table chooses any METHOD read from any LAYER; nothing is offered or withheld. The signature's
+ * panel holds only the parameters of each method (clip, bins, controls, seed, detect_above), and the stored recipe
+ * holds those and `method` and `input`: the pair a consumer saved without a layer resolves to (X for every link made
+ * before layers were stored), never shown as a setting. A link made before decision 31 also stored `offered` and
+ * `layers`; they are read only for that pair (`writableOptions`, options-model.js `legacyPair`) and never written back.
  *
- *   offered   the methods consumers may pick, a list of method ids (default: z-score mean, mean, sum)
- *   layers    the matrices consumers may pick, in the order they were offered (default: X)
- *   clip, bins, controls, seed, detect_above   the parameters of the methods that have them
- *
- * There is no default method and no default layer to choose. The first entry of the menu, the first offered method on
- * the first offered layer, is what a new consumer starts on. `method` and `input` stay in the recipe only as that first
- * method and layer: the score route reads them, and a consumer saved before layers could be offered has no layer, which
- * means `input` (X for every link made before this release). They are never shown as settings.
- *
- * Switching an option off never breaks a consumer that uses it: it keeps its setting and shows that the
- * option is no longer offered, with a way to offer it again (`offeredOptions` leaves it out, `isOffered` says).
+ * A pair that cannot be computed is graded `cannot`, with a sentence that names the method and says why ("% of total
+ * cannot be computed on 'X': it has negative values."); a pair that misleads is `warn`, with its note.
  */
 
 import {
-    legacyPair, andList, cleanThreshold, cleanWhole, createOptionsModel, figure, kindWord, parseClipText, parseSeedText, parseThresholdText,
+    REASON, legacyPair, quoted, cleanThreshold, cleanWhole, createOptionsModel, figure, kindWord, parseClipText, parseSeedText, parseThresholdText,
     parseWholeText, useText, withoutLegacy
 } from './options-model.js';
 
@@ -50,7 +44,7 @@ export const METHOD_INFO = Object.freeze([
 
 export const METHODS = Object.freeze(METHOD_INFO.map(m => m.value));
 export const DEFAULT_METHOD = 'zscore_mean';
-/** Offered until the panel says otherwise. */
+/** What an old link's missing `offered` list meant (before decision 31): read for links only. */
 export const DEFAULT_OFFERED = Object.freeze(['zscore_mean', 'mean', 'sum']);
 
 /**
@@ -66,12 +60,15 @@ export const DEFAULT_DOWN_WEIGHT = 'gene';
 export const WEIGHTED_METHODS = Object.freeze(['zscore_mean', 'mean']);
 export const cleanDownWeight = (value) => (DOWN_WEIGHTS.includes(value) ? value : DEFAULT_DOWN_WEIGHT);
 
-/** Why a method cannot score down genes, in the words the panel shows under it. */
+/** Why a method cannot score down genes: the clause after "<Method> cannot be computed with down genes: ". */
 const DOWN_REASONS = Object.freeze({
-    sum: 'A signed sum depends on how many genes each side has.',
-    detected: 'The difference of two fractions is not a fraction.',
-    fraction_of_total: 'The difference of two shares is not a share of anything.'
+    sum: 'a signed sum depends on how many genes each side has.',
+    detected: 'the difference of two fractions is not a fraction.',
+    fraction_of_total: 'the difference of two shares is not a share of anything.'
 });
+
+/** A method's name at the start of a sentence ("% of total", "Fraction detected"). */
+const sentenceName = (method) => (METHOD_INFO.find(m => m.value === method) || { label: method }).label;
 
 /** Whether `method` can score a signature that has down genes. */
 export const canScoreDown = (method) => DOWN_METHODS.includes(method);
@@ -117,23 +114,24 @@ export function shareAbove(stats, threshold) {
 }
 
 /**
- * How one method reads one layer: `ok`, `warn` (a property of the layer, said once on its row) or `cannot` (left out
- * of every menu, and the panel says why). From what the layer looks like and, for fraction detected, from how many of
+ * How one method reads one layer: `ok`, `warn` (it can be computed but misleads: the note rides on the option) or
+ * `cannot` (disabled where the pair is chosen, the reason as its title). From what the layer looks like and, for fraction detected, from how many of
  * its values are above the threshold: that is a measure, not a kind, so it follows the parameter.
  * @param {string} method
  * @param {string} layer
  * @param {string} [kind] - counts, normalised, log, signed, other or unknown (unknown: nothing is known, so ok)
  * @param {boolean} [hasDown] - the signature has down genes; the methods without a signed version then cannot
- * @param {{stats?: Object, detectAbove?: number, label?: string}} [ctx] - the layer's sample, the threshold, and what to
- *   call the layer in the sentence (default `'name'`; the panel says "every offered layer" when all share the issue)
+ * @param {{stats?: Object, detectAbove?: number}} [ctx] - the layer's sample and the threshold
  * @returns {{grade: 'ok'|'warn'|'cannot', code: string, reason: string, down?: boolean}} `code` names the cause:
  *   depth, log, negative, detect_high, detect_low or down; `down`: the reason is the down genes, whatever the layer
  */
 export function gradeOption(method, layer, kind, hasDown = false, ctx = {}) {
     const ok = { grade: 'ok', code: '', reason: '' };
-    const name = ctx.label || `'${layer}'`;
+    const name = quoted(layer);
+    const label = sentenceName(method);
     if (hasDown && !canScoreDown(method)) {
-        return { grade: 'cannot', code: 'down', down: true, reason: `Not offered with down genes. ${DOWN_REASONS[method] || ''}`.trim() };
+        return { grade: 'cannot', code: 'down', down: true,
+            reason: REASON.cannotWith(label, 'down genes', DOWN_REASONS[method] || 'it has no signed version.') };
     }
     if (method === 'detected') {
         const t = typeof ctx.detectAbove === 'number' ? ctx.detectAbove : 0;
@@ -142,52 +140,23 @@ export function gradeOption(method, layer, kind, hasDown = false, ctx = {}) {
         const range = ctx.stats && Number.isFinite(ctx.stats.min) && Number.isFinite(ctx.stats.max)
             ? ` (values here range from ${figure(ctx.stats.min)} to ${figure(ctx.stats.max)})` : '';
         if (share > DETECT_TOO_MANY) {
-            return { grade: 'cannot', code: 'detect_high', reason: `On ${name} almost every value is above ${figure(t)}. Raise Detected above${range}.` };
+            return { grade: 'cannot', code: 'detect_high',
+                reason: REASON.cannotOn(label, name, `almost every value is above ${figure(t)}${range}. Raise Detected above.`) };
         }
         if (share < DETECT_TOO_FEW) {
             return { grade: 'cannot', code: 'detect_low',
-                reason: `On ${name} almost no value is above ${figure(t)}.${t > 0 ? ' Lower Detected above' : ' Fraction detected'}${range}.` };
+                reason: REASON.cannotOn(label, name, `almost no value is above ${figure(t)}${range}.${t > 0 ? ' Lower Detected above.' : ''}`) };
         }
         return ok;
     }
     if (method === 'fraction_of_total') {
-        if (kind === 'signed') return { grade: 'cannot', code: 'negative', reason: `Not offered on ${name}: it has negative values.` };
-        if (kind === 'log') return { grade: 'warn', code: 'log', reason: `On ${name} % of total is compressed by the log. It is usually read from counts.` };
+        if (kind === 'signed') return { grade: 'cannot', code: 'negative', reason: REASON.cannotOn(label, name, 'it has negative values.') };
+        if (kind === 'log') return { grade: 'warn', code: 'log', reason: REASON.note(label, name, 'is compressed by the log: it is usually read from counts.') };
     }
     if (kind === 'counts' && DEPTH_METHODS.includes(method)) {
-        return { grade: 'warn', code: 'depth', reason: `On ${name} this follows sequencing depth.` };
+        return { grade: 'warn', code: 'depth', reason: REASON.note(label, name, 'follows sequencing depth.') };
     }
     return ok;
-}
-
-/**
- * What to say on a LAYER's row: its properties, each once and short, only when they matter for a method that is offered.
- * "Raw counts: sum and mean follow sequencing depth." Several lines at most one per property.
- * @param {string} layer
- * @param {Object} recipe - from normalizeRecipe
- * @param {string} [kind]
- * @param {Object} [stats] - what the server sampled of the layer
- * @param {string[]} offered - the methods the recipe offers
- * @returns {Array<{grade: string, code: string, text: string}>}
- */
-function signatureLayerLines(layer, recipe, kind, stats, offered) {
-    const lines = [];
-    const depth = offered.filter(m => DEPTH_METHODS.includes(m));
-    if (kind === 'counts' && depth.length) {
-        lines.push({ grade: 'warn', code: 'depth', text: `Raw counts: ${andList(depth.map(methodShort))} follow${depth.length === 1 ? 's' : ''} sequencing depth.` });
-    }
-    if (kind === 'normalised' && depth.length) {
-        lines.push({ grade: 'warn', code: 'normalised', text: 'Normalized but not log-transformed: one highly expressed gene can dominate.' });
-    }
-    if (offered.includes('fraction_of_total')) {
-        if (kind === 'log') lines.push({ grade: 'warn', code: 'log', text: 'Log values: % of total is compressed. It is usually read from counts.' });
-        if (kind === 'signed') lines.push({ grade: 'cannot', code: 'negative', text: 'Has negative values: % of total is not offered here.' });
-    }
-    if (offered.includes('detected')) {
-        const g = gradeOption('detected', layer, kind, false, { stats, detectAbove: recipe.detect_above });
-        if (g.grade === 'cannot') lines.push({ grade: 'cannot', code: g.code, text: g.reason });
-    }
-    return lines;
 }
 
 const nonDefault = (recipe, key, fallback) => (recipe[key] === undefined || recipe[key] === null ? fallback : recipe[key]);
@@ -208,6 +177,16 @@ function paramNotes(recipe, method) {
     return notes;
 }
 
+/**
+ * Every parameter not at its default, by method, in menu order: what the Methods pop-over's button says in its title
+ * ("z-score mean: not clipped; control-adjusted: seed 3"), so no setting hides behind a closed pop-over.
+ * @param {Object} recipe - option fields
+ * @returns {Array<{method: string, notes: string[]}>}
+ */
+export function methodNotes(recipe) {
+    return METHODS.map(method => ({ method, notes: paramNotes(recipe || {}, method) })).filter(m => m.notes.length);
+}
+
 // ---------------------------------------------------------------------------
 // The sentences that state a setting: each is a function of the value in force, so none can describe another value
 
@@ -225,11 +204,6 @@ export function thresholdLine(threshold) {
 
 /** The words for a down-gene weighting. */
 export const DOWN_WEIGHT_WORDS = Object.freeze({ gene: 'each gene weighs equally', side: 'each side weighs equally' });
-
-/** The hint under "Score some genes as down": names the weighting in force. */
-export function downWeightLine(weight) {
-    return `Down genes count against the score. How they weigh is chosen under each method. Now: ${DOWN_WEIGHT_WORDS[cleanDownWeight(weight)]}.`;
-}
 
 // ---------------------------------------------------------------------------
 // The shared schema of the option fields
@@ -259,25 +233,42 @@ export function cleanClip(value) {
 
 
 /** The keys of the option fields, in the order they are stored. */
-export const OPTION_KEYS = Object.freeze(['input', 'method', 'offered', 'layers', 'clip', 'seed', 'bins', 'controls', 'detect_above']);
+export const OPTION_KEYS = Object.freeze(['input', 'method', 'offered', 'layers', 'clip', 'seed', 'bins', 'controls', 'detect_above', 'methods']);
+
+/**
+ * Custom methods (offered-removal-080.md section 4) come after 0.8.0; the field is reserved now, so a link made by a later
+ * version still opens here: a `methods` list is kept as it was stored, read by nothing and sent to no server. A plain
+ * JSON copy, so an edit of the copy never reaches the link it came from.
+ * @param {*} value
+ * @returns {Array|undefined}
+ */
+export function reservedMethods(value) {
+    if (!Array.isArray(value)) return undefined;
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch {
+        return undefined;
+    }
+}
 
 /**
  * The option fields a saved config describes, every one valid. Anything missing or invalid takes its default, so a
- * hand-edited link still opens. The method is the first one offered and the input the first layer offered.
+ * hand-edited link still opens. An old link's `offered`/`layers` give its method and input (the first of each).
  * @param {Object} [raw]
  * @returns {{input: string, method: string, offered: string[], layers: string[], clip: (number|null), seed: (number|null),
  *   bins: number, controls: number, detect_above: number}}
  */
 export function normalizeOptions(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
-    // There is no default method or layer to choose: the first offered method on the first offered layer is where a new
-    // consumer starts. `method` and `input` stay in the options only as that first method and layer (the score route
-    // reads them, and an old consumer without a layer means `input`).
+    // `method` and `input` are the pair an old consumer without a layer resolves to (the score route reads them too);
+    // an old link names them through its first `offered` method and its first `layers` entry.
     const offered = cleanOffered(src.offered, METHODS.includes(src.method) ? src.method : DEFAULT_METHOD);
     const asked = typeof src.input === 'string' && src.input ? src.input : DEFAULT_INPUT;
     const layers = cleanLayers(src.layers, asked);
+    // since decision 31 a stored recipe has no `offered`: its `method` is the method itself
+    const method = !Array.isArray(src.offered) && METHODS.includes(src.method) ? src.method : offered[0];
     return {
-        input: layers[0], method: offered[0], offered, layers,
+        input: layers[0], method, offered, layers,
         clip: 'clip' in src ? cleanClip(src.clip) : DEFAULT_CLIP,
         seed: Number.isInteger(src.seed) && src.seed >= 0 ? src.seed : null,
         bins: cleanWhole(src.bins, DEFAULT_BINS, BINS_RANGE),
@@ -295,8 +286,9 @@ export function normalizeOptions(raw) {
 export function writableOptions(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
     const pair = legacyPair(MODEL, src);
+    const methods = reservedMethods(src.methods);
     return { ...withoutLegacy(normalizeOptions({ ...src, input: pair.layer, offered: [pair.method], layers: undefined })),
-        input: pair.layer, method: pair.method };
+        input: pair.layer, method: pair.method, ...(methods ? { methods } : {}) };
 }
 
 /** Whether the PARAMETERS are the defaults (a gene table then stores nothing); the retired offered/layers are not compared. */
@@ -336,22 +328,18 @@ const MODEL = createOptionsModel({
         const v = have === undefined ? null : have;
         return key === 'seed' ? (v === null || v === 0) : v === want;
     },
-    paramNotes,
-    paramLines: { clip: (recipe) => clipLine(recipe.clip), detect_above: (recipe) => thresholdLine(recipe.detect_above) },
     paramValue: (recipe, key) => {
         if (key === 'seed') return recipe.seed === null || recipe.seed === undefined ? 0 : recipe.seed;
         if (key === 'detect_above') return recipe.detect_above === undefined ? 0 : recipe.detect_above;
         return recipe[key];
     },
     context: (recipe) => ({ hasDown: Array.isArray(recipe.down) && recipe.down.length > 0, detectAbove: recipe.detect_above }),
-    grade: (method, layer, kind, ctx) => gradeOption(method, layer, kind, !!ctx.hasDown, ctx),
-    layerLines: signatureLayerLines
+    grade: (method, layer, kind, ctx) => gradeOption(method, layer, kind, !!ctx.hasDown, ctx)
 });
 
 export const SIGNATURE_MODEL = MODEL;
 /** Decision 31: every method on `layer` (all six), every impossible one disabled with its reason. See options-model.js. */
 export const { methodChoices: scoreMethodChoices, layerChoices: scoreLayerChoices, pairAfter: scorePairAfter } = MODEL;
 export const {
-    methodInfo, methodLabel, methodShort, isMethodDefault, cleanOffered, cleanLayers, offeredMethods, offeredLayers, isOffered,
-    gradedOptions, offeredOptions, methodLines, layerLines, offeredSummary, offeredSummaryShort, paramsOf
+    methodInfo, methodLabel, methodShort, isMethodDefault, cleanOffered, cleanLayers, paramsOf
 } = MODEL;

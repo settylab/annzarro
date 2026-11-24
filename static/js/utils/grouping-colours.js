@@ -98,7 +98,6 @@ export function factorColours(partitioning, info, levels) {
  * @param {string[]} generated - the generated name of each group of the reply (cell-grouping.js `generatedGroupNames`)
  * @returns {{active: Object[], inactive: Object[]}} the entries, in stored order
  */
-// export-unused-ok: w20 lists the inactive overrides at the bottom of the grid, with Drop (decision 38)
 export function groupOverrideState(recipe, generated) {
     const list = recipe && Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : [];
     const names = new Set(Array.isArray(generated) ? generated : []);
