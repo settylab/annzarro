@@ -258,7 +258,6 @@ def test_plot_and_table_menus_disable_a_combination_that_cannot_be_computed_and_
     _ready_plot(page)
     # plot: every pair is listed; one that cannot be computed is disabled in the other select, with why (SHR-27)
     layer = axis_sets.sel(C, "color", "key")
-    OPTS = "(s) => [...document.querySelector(s).options].map(o => ({ v: o.value, off: o.disabled, title: o.title }))"
     axis_sets.pick_set(page, C, "color", SIG)
     def methods():
         return {o["v"]: o for o in axis_sets.aggregations(page, C, "color")}
@@ -280,12 +279,12 @@ def test_plot_and_table_menus_disable_a_combination_that_cannot_be_computed_and_
     # table: the add row grades the same way
     page.click(f"#gene-score-tab-{T.TID}")
     row = f"#gene-score-content-{T.TID} .az-score-group[data-entity='{SIG}']"
-    page.wait_for_selector(f"{row} .az-score-add-method", timeout=10000)
+    page.wait_for_selector(f"{row} .az-score-add-agg", timeout=10000)
     page.select_option(f"{row} .az-score-add-layer", "X")
-    table_x = {o["v"]: o for o in page.evaluate(OPTS, f"{row} .az-score-add-method")}
+    table_x = {o["v"]: o for o in T.add_row_entries(page, row)}
     assert table_x["detected"]["off"] and table_x["fraction_of_total"]["off"], table_x
     page.select_option(f"{row} .az-score-add-layer", "counts")
-    table_counts = {o["v"]: o for o in page.evaluate(OPTS, f"{row} .az-score-add-method")}
+    table_counts = {o["v"]: o for o in T.add_row_entries(page, row)}
     assert not table_counts["detected"]["off"] and not table_counts["fraction_of_total"]["off"], table_counts
 
 
