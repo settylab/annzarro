@@ -212,13 +212,20 @@ def test_a_long_plot_options_scrolls_in_steady_steps(page, served, kind):
         tops.append(page.evaluate("(b) => document.querySelector(b).scrollTop", body))
     assert tops == sorted(tops) and len(set(tops)) == len(tops), f"{kind}: scrolling stuck or jumped {tops}"
     assert all(b - a <= 130 for a, b in zip(tops, tops[1:])), f"{kind}: a step jumped {tops}"
-    # a change made while scrolled keeps the place: a check box in view is toggled (the body is painted again, not rebuilt from the top)
-    before = tops[-1]
-    clicked = page.evaluate("""(b) => { const body = document.querySelector(b); const r = body.getBoundingClientRect();
-        const c = [...body.querySelectorAll('input[type=checkbox]:not(:disabled)')].find((e) => { const q = e.getBoundingClientRect(); return q.top > r.top + 20 && q.bottom < r.bottom - 20; });
-        if (!c) return false; c.click(); return true; }""", body)
-    assert clicked, f"{kind}: no check box in view"
+    # a change made while scrolled keeps the place: the same check box in every kind (Grid lines, by its concept) is scrolled to the
+    # middle of the window and toggled; the body is painted again, not rebuilt from the top
+    box = f"{POP} [data-concept='grid'] input[type=checkbox]"
+    page.evaluate("(sel) => document.querySelector(sel).scrollIntoView({ block: 'center' })", box)
     _frames(page)
+    before = page.evaluate("(b) => document.querySelector(b).scrollTop", body)
+    assert before > 0, f"{kind}: the check box is at the top, nothing was scrolled"
+    inside = page.evaluate("""([b, sel]) => { const r = document.querySelector(b).getBoundingClientRect(); const q = document.querySelector(sel).getBoundingClientRect();
+        return q.top >= r.top && q.bottom <= r.bottom; }""", [body, box])
+    assert inside, f"{kind}: the check box is not in the window"
+    was = page.is_checked(box)
+    page.click(box)
+    _frames(page)
+    assert page.is_checked(box) != was, f"{kind}: the click did not toggle it"
     assert abs(page.evaluate("(b) => document.querySelector(b).scrollTop", body) - before) <= 2, f"{kind}: a change moved the scroll"
 
 
