@@ -44,7 +44,7 @@ def _focus_is(page, selector):
 ])
 def test_opening_levels_or_binning_leaves_the_panel_alone_and_escape_returns_focus(page, served, kind, config, button, popover):
     _open(page, served, {CC: _count(**config)})
-    _drawn(page, config["mode"])
+    _drawn(page, "bar" if config["mode"] == "histogram" else config["mode"])     # a histogram link opens as a Bar
     before = page.evaluate(BOX, S)
     page.click(f"{S} {button}")
     page.wait_for_selector(f"[data-popover='{popover}']")

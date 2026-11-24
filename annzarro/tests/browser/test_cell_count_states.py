@@ -156,15 +156,16 @@ def test_a_2d_histograms_most_frequent_level_over_8_levels_and_a_heatmap_over_20
 
 
 def test_a_typed_bin_count_is_checked_against_the_modes_limit_where_it_is_typed(page, served):
+    # a Bar of a number is a histogram: its X takes 2,000 bins (the Histogram view folded into Bar, 0.8.0)
     _open(page, served, {CC: _count(mode="bar", x=obs("depth"))})
     _drawn(page, "bar")
     page.click(f"{S} [data-row='x'] .ccnt-bins")
     page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc")
-    assert page.get_attribute(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "title") == "A whole number from 2 to 200."
+    assert page.get_attribute(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "title") == "A whole number from 2 to 2,000."
     asked = len(_grid_requests(page))
-    page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "300")
+    page.fill(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "3000")
     page.press(f"[data-popover='binning'] .ccnt-binning .pbc-bins", "Enter")
-    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc-message:has-text('Enter a whole number from 2 to 200.')")
+    page.wait_for_selector(f"[data-popover='binning'] .ccnt-binning .pbc-message:has-text('Enter a whole number from 2 to 2,000.')")
     assert "binning" not in _config(page)["x"]
     waits.expect_stays(lambda: len(_grid_requests(page)) == asked and _state(page) is None,
                        "a refused entry changes nothing: no request and no refusal follow", page=page)
