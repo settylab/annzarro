@@ -136,6 +136,8 @@ const cellGene = Object.freeze({
         score_pct_above: (option) => `% of cells with ${option} above`
     }),
     noExpressingCells: 'no expressing cells',
+    /** A size legend whose dots are drawn smaller than the plot's, to fit their slot: 1 to `n` (draw.js sizeLegendParts). */
+    legendScaled: (n) => `(legend scaled 1:${n})`,
     csv: Object.freeze({ section: 'Section', row: 'Row', group: 'Group', cells: 'Cells', note: 'Note' }),
     /** The 3D view (UX 6b, WP-12): the toggle, the Height measure, the scene's axes, the strip and the export. */
     view3d: Object.freeze({
@@ -183,15 +185,25 @@ const cellGene = Object.freeze({
         wardOnly: 'Ward needs Euclidean distance.',
         undo: 'Undo',
         leftOut: (n, noun) => `${fmt(n)} ${n === 1 ? noun : `${noun}s`} not clustered: too few values in common, or constant. They are at the end.`,
+        /** The status strip's tag when the clustering left rows or groups out; its pop-over gives the sentences. */
+        notClusteredTag: 'Partly clustered',
         tooMany: (title, n, limit) => `Not clustered: ${title} has ${fmt(n)} rows; clustering stops at ${fmt(limit)}.`,
         heading: Object.freeze({
             dots: 'Dots', colors: 'Colors', sections: 'Sections', labels: 'Labels', clustering: 'Clustering', legend: 'Legend', totals: 'Totals'
         }),
-        dotSizes: 'Smallest and largest dot',
-        dotMin: '% at the smallest dot',
-        dotMax: '% at the largest dot',
+        largestDot: 'Largest dot',
+        smallestDot: 'Smallest dot',
+        /** Largest dot's value: the share of its cell it fills. */
+        ofCell: (pct) => `${fmt(pct)}% of cell`,
+        /** Largest dot of a link saved before the dots filled their cells: its px, until the slider is moved. */
+        largestPx: (px) => `${fmt(px)} px (saved)`,
+        px: (n) => `${fmt(n)} px`,
+        rangeWhat: Object.freeze({ color: 'Color', size: 'Size', height: 'Height' }),
+        sizeMin: 'Size min',
+        sizeMax: 'Size max',
         outlineColor: 'Dot outline color',
         outlineWidth: 'Dot outline width (px)',
+        dotOpacity: 'Dot opacity',
         colorScale: 'Color scale',
         min: 'Min',
         max: 'Max',
@@ -266,8 +278,10 @@ const cellGene = Object.freeze({
         }),
         tags: Object.freeze({
             computing: 'Computing…', queued: 'Plot queued', awaiting: 'Not computed', refused: 'Plot refused', tooLarge: 'Too large',
-            failed: 'Plot failed', held: 'Out of date', noSize: 'No size'
-        })
+            failed: 'Plot failed', held: 'Out of date', noSize: 'No size', notDrawn: 'Not drawn'
+        }),
+        /** Plotly threw while drawing: the figure is cleared and the next change draws it afresh. */
+        notDrawn: (why) => `The plot could not be drawn (${why}). Change a setting to draw it again.`
     }),
     /**
      * Color and Size sources (WP-4, FB-2a, decision 31): each measure's `statistic of layer above threshold`, every
@@ -582,4 +596,17 @@ const view3d = Object.freeze({
     tooMany: (max, count, hint = 'bins') => `${view3d.tooManyBase(max, count)} ${view3d.hint[hint] || view3d.hint.bins}`
 });
 
-export const VOCABULARY = Object.freeze({ view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+/** The range boxes' words (ui/range-boxes.js): Min and Max boxes of one scale, auto with the value drawn, a reset. */
+const range = Object.freeze({
+    auto: 'auto',
+    smallest: 'smallest',
+    largest: 'largest',
+    reset: '\u21BA',
+    resetHelp: (what) => `Back to auto: ${what ? `${what.toLowerCase()} ` : ''}limits follow the drawn values`,
+    problem: 'Enter a number, or leave it empty for automatic.',
+    follows: (end, value) => `Follows the drawn values (${end} ${value}). Type a value to override it for this plot.`,
+    followsNone: 'Follows the drawn values. Type a value to override it for this plot.',
+    fixed: (value) => `Overrides the drawn values (set to ${value}). Clear to follow them.`
+});
+
+export const VOCABULARY = Object.freeze({ range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });

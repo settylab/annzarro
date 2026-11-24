@@ -67,6 +67,8 @@ the rest of the panel and is the only part that grows with it.
   other'**, or are left out: **Leave out of all groups** puts their cells in no group.
 - Drag ticked levels to change their order. **Tick all**, **Tick none** and **Sort by cells** help with long lists.
 - **✎** renames a level. The new name is used everywhere the grouping is shown; hovering the level shows what it was.
+  While you type, **Enter** saves, **Escape** cancels (a second Escape closes the pop-over), **Tab** saves and moves to the
+  next level's name, and a click anywhere else saves. The focus then stays on the level, not in a new edit.
   A rename never changes which cells are in the group, and never makes the server compute anything.
 - A boolean column's levels are the column's name and `not` the name, for example `is_doublet` and `not is_doublet`.
 - A column with more than 2,000 levels that hold a cell is refused: "cell_id has 8,090 levels; a factor holds up to
@@ -138,11 +140,7 @@ small-group threshold carries **small** ("Under 10 cells: statistics are unrelia
 list. With exactly two factors, **Cross-table** shows the first factor's levels down and the second's across, with
 the cells of each combination; an empty combination is a muted 0, because it is not a group.
 
-**The focused gene.** The list also gives the focused gene's mean and % expressing per group, on X. They are
-computed only while the panel is visible and the computation would take under 5 seconds; otherwise the column header is a button, **Show Mrpl15**, and a new focus asks nothing until you press it.
-A group with no value for the gene shows "—", never 0.
-
-**Export CSV** downloads the list (key, name, cells, share and the focused gene's columns), or the cross-table.
+**Export CSV** downloads the list (key, name, cells and share), or the cross-table.
 **Export cells** downloads every cell shown with its group, up to 1,000,000 cells.
 
 **Settings** (a button in the toolbar; its pop-over holds):

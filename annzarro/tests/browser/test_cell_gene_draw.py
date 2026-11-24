@@ -149,3 +149,51 @@ def test_the_figure_draws_and_exports_as_png_and_svg(page, case):
     if args[0] == "dots":
         assert out["sizeLegends"] == (2 if args[1] else 1), out
     assert not page.problems, page.problems
+
+
+# A crowded legend column at a short plot (the operator's link, 2026-11-23: Heatmap -> Dots left the heatmap on
+# screen). Dots add a size legend per quantity, so each slot of the column gets shorter; a color bar whose title took
+# more height than its slot made Plotly throw "Something went wrong with axis scaling" and the dots were never drawn.
+CROWDED = """async ([mode, width, height]) => {
+  const D = await import('/static/js/panels/cell-gene/draw.js');
+  const rows = 15, groups = 6;
+  const color = new Float64Array(rows * groups), size = new Float64Array(rows * groups);
+  for (let i = 0; i < color.length; i++) { color[i] = (i * 7) % 11; size[i] = (i * 13) % 101; }
+  const level = (label, colour) => ({label, colour});
+  const model = {
+    mode, pixels: {width, height},
+    groups: Array.from({length: groups}, (_, g) => ({label: 'Young | Rnase6 < 0.391 ' + g, n: 1000 + g})),
+    rows: Array.from({length: rows}, (_, r) => ({label: 'Gene' + r, section: {index: 0, title: 'Gene Signature 1'}})),
+    color: {id: 'mean|X', stat: 'mean', layer: 'X', scaling: 'none', values: color, colorscale: 'Reds'},
+    size: {id: 'count', stat: 'count', values: size},
+    annotations: {strips: [
+      {title: 'Age', colours: ['#1', '#1', '#2', '#2', '#3', '#3'].map(c => c.replace('#', '#00000')), levels: ['Mid', 'Mid', 'Old', 'Old', 'Young', 'Young'],
+       legend: [level('Mid', '#4c72b0'), level('Old', '#dd8452'), level('Young', '#55a868')]},
+      {title: 'Rnase6', colours: Array(6).fill('#c44e52'), levels: Array(6).fill('low'), legend: [level('Rnase6 < 0.391', '#c44e52'), level('Rnase6 >= 0.391', '#64b5cd')]}
+    ]}
+  };
+  model.rows[rows - 1] = {label: 'Gene Signature 1', section: {index: 1, title: 'Gene Signature 1'},
+    own: {color: {id: 'score|zm', label: 'Gene Signature 1 % of cells with z-score mean · logged_counts above 0'},
+          size: {id: 'score|m', label: 'Gene Signature 1 % of cells with mean · logged_counts above 0'}}};
+  const fig = D.buildFigure(model, {bgColor: '#ffffff', gridColor: '#e6e6e6', axisColor: '#000000', textColor: '#000000'});
+  const div = document.createElement('div');
+  div.style.cssText = `width:${width}px;height:${height}px;position:fixed;left:0;top:0`;
+  document.body.appendChild(div);
+  let error = null;
+  try { await Plotly.newPlot(div, fig.data, fig.layout, fig.config); } catch (e) { error = String(e && e.message || e); }
+  const out = {error, colorbars: div.querySelectorAll('.colorbar').length,
+    drawn: div._fullData ? [...new Set(div._fullData.map(t => t.type))].sort() : []};
+  Plotly.purge(div); div.remove();
+  return out;
+}"""
+
+
+@pytest.mark.parametrize("mode", ["dots", "heatmap"])
+def test_a_crowded_legend_column_draws_at_every_plot_height(page, mode):
+    # the operator's plot was 796 x 529 px; the sweep covers short and tall plots alike
+    for height in [529, *range(150, 801, 25)]:
+        out = page.evaluate(CROWDED, [mode, 796, height])
+        assert out["error"] is None, (mode, height, out)
+        assert out["colorbars"] == 2, (mode, height, out)
+        assert ("scatter" if mode == "dots" else "heatmap") in out["drawn"], (mode, height, out)
+    assert not page.problems, page.problems
