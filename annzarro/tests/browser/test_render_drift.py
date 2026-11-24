@@ -522,7 +522,7 @@ COUNT_VOCABULARY = [
     lambda r: (lambda s: (f"split {s and s['source']['key']}", _update(CC, {"split": s})))(r.choice([None, COND, CT])),
     lambda r: (lambda a: (f"arrangement {a}", _update(CC, {"arrangement": a})))(r.choice(["stack", "dodge", "overlay", "fill"])),
     lambda r: (lambda v: (f"labels {v}", _update(CC, {"labels": v})))(r.choice(["none", "count", "share"])),
-    lambda r: (lambda k, v: (f"{k} {v}", _update(CC, {k: v})))(r.choice(["reverse", "horizontal", "log", "ring", "fade"]), r.choice([True, None])),
+    lambda r: (lambda k, v: (f"{k} {v}", _update(CC, {k: v})))(r.choice(["reverse", "horizontal", "log", "ring", "fade", "names"]), r.choice([True, None])),
     lambda r: (lambda v: (f"sort {v}", _update(CC, {"sort": v})))(r.choice(["height", None])),
     lambda r: (lambda v: (f"adjust {v}", _update(CC, {"adjust": v})))(r.choice([0.5, 1, 2])),
     lambda r: (lambda v: (f"scale {v}", _update(CC, {"scale": v})))(r.choice(["level", "size"])),
@@ -531,7 +531,7 @@ COUNT_VOCABULARY = [
                   {"lines": True, "points": True}])),
     lambda r: (lambda v: (f"pointSize {v}", _update(CC, {"pointSize": v})))(r.choice([2, 6])),
     lambda r: (lambda v: (f"color {v}", _update(CC, {"color": v})))(
-        r.choice([None, {"map": "Reds"}, {"map": "RdBu", "reverse": True}, {"min": 0, "max": 50}, {"palette": "tab10"}])),
+        r.choice([None, {"map": "Reds"}, {"map": "RdBu", "reverse": True}, {"min": 0, "max": 50}, {"palette": "tab10"}, {"slices": "levels"}])),
 ]
 
 
@@ -552,6 +552,12 @@ COUNT_RISKY = {
                        ("layers image+lines", _update(CC, {"layers": {"image": True, "lines": True}}))],
     "modes-round-trip": [("mode pie (control)", _count_mode("pie")), ("mode heatmap (control)", _count_mode("heatmap")),
                          ("mode histogram (control)", _count_mode("histogram")), ("mode bar (control)", _count_mode("bar"))],
+    # a pie's labels mode and colour mode (0.8.0): names, then the level palette for bins of a number, each undone
+    "pie-names-and-colour-modes": [("mode pie (control)", _count_mode("pie")), ("x depth", _update(CC, {"x": DEPTH, "split": None})),
+                                   ("labels count", _update(CC, {"labels": "count"})), ("names", _update(CC, {"names": True})),
+                                   ("colour levels", _update(CC, {"color": {"slices": "levels"}})), ("labels none", _update(CC, {"labels": None})),
+                                   ("undo (control)", _click(f"{C_TILE} .ccnt-undo")), ("undo (control)", _click(f"{C_TILE} .ccnt-undo")),
+                                   ("colour continuous", _update(CC, {"color": None})), ("x cell_type", _update(CC, {"x": CT}))],
     "mode-and-undo": [("x score", _update(CC, {"x": SCORE})), ("y depth", _update(CC, {"y": DEPTH})),
                       ("mode hist2d (control)", _count_mode("hist2d")), ("mode density (control)", _count_mode("density")),
                       ("undo (control)", _click(f"{C_TILE} .ccnt-undo")), ("undo (control)", _click(f"{C_TILE} .ccnt-undo"))],
@@ -602,7 +608,7 @@ def _cg_remove(index):
         if sec.count() <= index:
             return False
         sec.nth(index).locator(".cgene-section__menu-btn").click()
-        page.locator(f"{G_TILE} .cgene-section__menu:not([hidden]) .cgene-section__menu-item[data-op='remove']").click()
+        page.locator("[data-popover='section-menu'] .cgene-section__menu-item[data-op='remove']").click()
     return act
 
 

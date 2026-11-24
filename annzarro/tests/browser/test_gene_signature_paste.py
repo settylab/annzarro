@@ -70,7 +70,7 @@ def test_f2_paste_mixed_separators_preview_add_and_undo(page, served):
     _add_btn(page).click()
 
     assert _genes(page) == sorted(["GENE0001", "CD3D", "CD3E", "KLF1", "GAPDH", "ACTB"])
-    assert _summary(page) == "6 genes selected"
+    assert _summary(page) == "6 of 3,000 genes selected"
     assert _message(page) == "Added 5 genes from pasted list. 1 is not in this dataset."
     assert page.locator(f"{S} .gsig-grid").is_visible() and page.locator(f"{S} [data-testid=gp-text]").count() == 0
     assert _focus_is_button(page)
@@ -173,7 +173,7 @@ def test_there_is_no_limit_a_long_list_is_added_in_one_step(page, served):
     assert _add_btn(page).inner_text() == "Add 2,001 genes"
     _add_btn(page).click()
     until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 2001")
-    assert _summary(page) == "2,001 genes selected"
+    assert _summary(page) == "2,001 of 3,000 genes selected"
     # one undo takes the whole add back
     page.click(f"{S} .gsig-undo")
     until(page, "() => window.PanelManager.getPanel('gene-signature-S').getRecipe().genes.length === 0")

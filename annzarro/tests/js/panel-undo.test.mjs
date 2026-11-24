@@ -134,3 +134,18 @@ test('the button is disabled when empty, titled with the step, and undoes on cli
     assert.equal(cfg.search, '');
     assert.equal(b.disabled, true);
 });
+
+test('a button whose panel was replaced is dropped, so the list does not grow', () => {
+    const doc = { createElement: () => ({ attrs: {}, isConnected: true, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {} }) };
+    const { cfg, undo } = panel();
+    const first = undo.button({ document: doc });
+    const second = undo.button({ document: doc });
+    cfg.search = 'x'; undo.observe('search');
+    assert.equal(first.disabled, false);
+    first.isConnected = false;                       // its panel was replaced: the button left the page
+    cfg.search = 'y'; undo.observe('other');
+    assert.equal(first.title, 'Undo: search', 'a dropped button is no longer painted');
+    assert.equal(second.title, 'Undo: other', 'the one still in the page is');
+    cfg.search = 'z'; undo.observe('third');
+    assert.equal(first.title, 'Undo: search');
+});

@@ -263,7 +263,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             buildDom();
             listen(document, 'click', (e) => {
                 const tile = `.tile[data-tile-id="${CSS.escape(_id)}"]`;
-                if (!_dom || e.target.closest(`${tile} .cgene-section__more, ${tile} .cgene-add-wrap, ${tile} .cgene-checklist__go`)) return;
+                if (!_dom || e.target.closest(`${tile} .cgene-section__more, ${tile} .cgene-add-wrap, ${tile} .cgene-checklist__go, [data-popover="section-menu"]`)) return;
                 _sections.closeMenus();
                 _addGenes.close();
             });
@@ -666,7 +666,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function sectionOp(i, op) {
             const name = sectionName(i);
             const n = _config.sections.length;
-            if (op === 'duplicate') commit(duplicateSection(_config, i), `duplicate ${name}`);
+            if (op === 'duplicate') commit(duplicateSection(_config, i, name), `duplicate ${name}`);
             else if (op === 'remove') commit(removeSection(_config, i), `remove ${name}`, { said: `Removed ${name}.` });
             else if (op === 'open') openSignature(_config.sections[i].source, _id);
             else if (op === 'up' && i > 0) move(i, i - 1);
@@ -736,7 +736,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             plot.__azChooser = null;
             const area = el('div', { class: 'cgene-area' }, plot, el('div', { class: 'cgene-empty' }, checklist));
             // Cluster ▾, Color ▾ and Plot Options are pop-overs (cell-gene/options.js), out of the panel's flow
-            // the shared plot toolbar (ui/plot-toolbar.js): [3D] [Cluster ▾] [Color ▾] ... [Undo] [Plot Options], as in every plot
+            // the shared plot toolbar (ui/plot-toolbar.js): [3D] [Swap axes] [Cluster ▾] [Color ▾] ... [Undo] [Plot Options], as in every plot
             _toolbar = createPlotToolbar({ className: 'cgene-toolbar', undo: undoBtn });
             _controls.element.append(_toolbar.element);
             root.append(_controls.element, message, hint, area);
@@ -851,6 +851,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 tag: (kind, tag) => { if (_dom) setStatusTag(_dom.plot, kind, tag); }
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
+            // [3D] [Swap axes] [Cluster ▾] [Color ▾] … [Undo] [⚙ Plot Options] (decision 39): Swap axes after 3D, both views
+            if (_toolbar) _toolbar.add({ actions: [_controls.swap] });
             // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
             _parts.push(PARTS.clicks.mount(_dom.area, {
                 D, plot: _dom.plot, drawn: () => (_shown ? _shown.model : null),
@@ -1311,8 +1313,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 cluster: style.cluster, sortBySize: style.sortBySize });
             const names = groupSources().sources.namesOf(axisId(), reply);
             const permute = (arr) => (arr ? reorder(arr, order.rows, order.groups, G) : arr);
-            const colours = groupSources().sources.coloursOf(axisId(), reply).factors;
-            const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf, colors: colours });
+            const coloured = groupSources().sources.coloursOf(axisId(), reply);
+            const colours = coloured.factors;
+            // each group's own colour and names, for the Group band (decision 38)
+            const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf, colors: colours,
+                groups: { colours: coloured.groups, generated: coloured.generated, names } });
             const look = resolveStyle(_config, TYPE);
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
