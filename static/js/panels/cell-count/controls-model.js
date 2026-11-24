@@ -155,7 +155,7 @@ export function valueChoices(config) {
     const rows = rowsOf(config.mode);
     if (!rows.value) return [];
     const two = config.mode === 'hist2d' || config.mode === 'heatmap';
-    const out = [{ value: 'count', label: C.value.count, help: rows.value === 'color' && config.mode !== 'upset' ? C.valueHelp.countColor : C.valueHelp.count }];
+    const out = [{ value: 'count', label: C.value.count, help: config.mode === 'upset' ? C.valueHelp.countUpset : (rows.value === 'color' ? C.valueHelp.countColor : C.valueHelp.count) }];
     // an UpSet's bars are one color until told otherwise: None first, and Count colors them by count
     if (config.mode === 'upset') out.unshift({ value: 'none', label: C.value.none, help: C.valueHelp.none });
     for (const base of shareBasesFor(config)) {

@@ -375,7 +375,8 @@ const countPlot = Object.freeze({
         groups: Object.freeze({ share: 'Share', stat: capital(word.statistic) })
     }),
     valueHelp: Object.freeze({
-        none: 'One color for every bar',
+        none: 'One color for every bar.',
+        countUpset: 'Each bar colored by its cells, on the color scale.',
         count: 'Cells in the bar.',
         countColor: 'Cells in the rectangle.',
         share: 'As percent.',

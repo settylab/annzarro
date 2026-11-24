@@ -133,7 +133,8 @@ test('an UpSet offers None first (the default), then Count; an old config reads 
     const choices = K.valueChoices(upset);
     assert.deepEqual(choices.slice(0, 2).map((c) => c.value), ['none', 'count']);
     assert.equal(choices[0].label, 'None');
-    assert.equal(choices[0].help, 'One color for every bar');
+    assert.equal(choices[0].help, 'One color for every bar.');
+    assert.equal(choices[1].help, 'Each bar colored by its cells, on the color scale.');
     assert.equal(choices[1].help, 'Cells in the bar.', 'an UpSet draws bars, not rectangles');
     assert.equal(K.valueChoiceOf(upset), 'none');
     assert.equal(K.valueChoiceOf({ ...upset, value: { kind: 'count' } }), 'count');
