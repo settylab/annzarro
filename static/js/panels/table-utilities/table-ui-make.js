@@ -15,6 +15,8 @@ import { isDerived } from '../../utils/line-select.js';
 import { isScoreColumn, subOf } from '../../utils/score-column.js';
 import { tableHalfOf, tableProviders } from '../../utils/table-source.js';
 import { bindPairSelects } from '../../utils/pair-selects.js';
+import { createAggregationButton } from '../../ui/aggregation-button.js';
+import { symbolSpan } from '../../utils/aggregation-symbols.js';
 import { middleEllipsis } from '../../utils/plot-titles.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 
@@ -374,7 +376,16 @@ function sourceOptionRow(item, sub, entity, id, settings) {
     label.htmlFor = checkbox.id;
     label.textContent = sub.text;
     div.dataset.search = `${entity.title} ${sub.text}`.toLowerCase();
-    div.append(checkbox, label);
+    div.append(checkbox);
+    // the aggregation's symbol before the text, as the axis rows' button shows it (a provider without symbols has none);
+    // beside the label, not in it, so the label stays the column's words; a click on it ticks as the label does
+    if (sub.symbol) {
+        const sym = symbolSpan(sub.symbol, 'axis-agg-sym az-score-sym');
+        sym.setAttribute('aria-hidden', 'true');
+        sym.addEventListener('click', () => checkbox.click());
+        div.append(sym);
+    }
+    div.append(label);
     // what the provider says of the option here (it cannot be filtered on in this table: operator decision 15)
     if (sub.note) {
         const why = document.createElement('div');
@@ -388,7 +399,7 @@ function sourceOptionRow(item, sub, entity, id, settings) {
 }
 
 /**
- * The add row under an entity's ticked columns, `[method] on [layer] [Add column]` (decision 31): the chooser lists
+ * The add row under an entity's ticked columns, `[layer] [aggregation button] [Add column]` (decision 31): the chooser lists
  * no method x layer pairs. Add ticks the column (made here when it is not listed yet); Apply takes it into the table.
  * @param {Object} provider
  * @param {Object} entity
@@ -400,12 +411,6 @@ function sourceAddRow(provider, entity, group, id, settings) {
     const add = provider.table.chooser.add;
     const row = document.createElement('div');
     row.className = 'az-score-add ms-3';
-    const method = document.createElement('select');
-    method.className = 'form-select form-select-sm az-score-add-method';
-    method.setAttribute('aria-label', `Method of a new ${entity.title} column`);
-    const on = document.createElement('span');
-    on.className = 'az-score-add-on';
-    on.textContent = 'on';
     const layer = document.createElement('select');
     layer.className = 'form-select form-select-sm az-score-add-layer';
     layer.setAttribute('aria-label', `Layer of a new ${entity.title} column`);
@@ -416,18 +421,31 @@ function sourceAddRow(provider, entity, group, id, settings) {
     const note = document.createElement('div');
     note.className = 'form-text mt-0 az-score-add-note';
     note.setAttribute('role', 'status');
-    const pair = bindPairSelects({
-        method, layer, note,
+    // the method is the shared aggregation button (ui/aggregation-button.js), its entries the provider's menu for the pair held
+    let pair = null;
+    const agg = createAggregationButton({
+        label: `Aggregation of a new ${entity.title} column`, axis: 'add',
+        methods: () => (pair ? {
+            options: add.menus(entity, pair.value()).methods.map(o => ({ value: o.value, name: add.name(o.value), symbol: add.symbols[o.value],
+                disabled: !!o.disabled, title: o.title || '' })),
+            chosen: pair.value().method
+        } : null),
+        onPick: (value) => pair.pick('method', value)
+    });
+    agg.button.classList.add('az-score-add-agg');
+    pair = bindPairSelects({
+        layer, note, onPaint: () => agg.update(),
         start: () => add.start(entity),
         menus: (p) => add.menus(entity, p),
         after: (changed, value, p) => add.after(entity, changed, value, p)
     });
+    agg.update();       // the button's first paint came before the pair existed
     button.addEventListener('click', () => {
         const p = pair.value();
         const item = { type: provider.type, key: entity.id, column: p.method, layer: p.layer };
         let box = document.getElementById(checkboxIdFor(item, id));
         if (!box) {
-            const made = sourceOptionRow(item, { text: add.label(p) }, entity, id, settings);
+            const made = sourceOptionRow(item, { text: add.label(p), symbol: add.symbols[p.method] }, entity, id, settings);
             group.insertBefore(made.div, row);
             box = made.checkbox;
         }
@@ -435,13 +453,13 @@ function sourceAddRow(provider, entity, group, id, settings) {
         note.textContent = `Added ${add.label(p)}. Apply Changes to show it in the table.`;
         updateSelectedColumnsList(id, settings);
     });
-    row.append(method, on, layer, button);
+    row.append(layer, agg.button, button);
     group.append(row, note);
 }
 
 /**
  * The tab of a source in a Cell Table's chooser: every entity (open or closed), and under each its ticked columns,
- * then (for a provider with an add row) `[method] on [layer] [Add column]`. Several entities and several columns of
+ * then (for a provider with an add row) `[layer] [aggregation button] [Add column]`. Several entities and several columns of
  * one can be ticked at once: each is a column. Rebuilt whenever panels come, go or are renamed, since an entity can be
  * made at any time. The words and the options are the provider's (utils/table-source.js `chooser`).
  * @param {Object} provider - a registered source with a table half
@@ -682,7 +700,8 @@ function createDataTabs(tabsContainer, tabContent, dataSources, panelId) {
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
         searchInput.className = 'form-control column-search';
-        searchInput.placeholder = `Search ${source.label.toLowerCase()}...`;
+        // a source tab (the chooser of a provider) reads as a sentence; the built-in tabs keep their ellipsis
+        searchInput.placeholder = tableProviders().some(p => p.type === source.id) ? `Search ${source.label.toLowerCase()}` : `Search ${source.label.toLowerCase()}...`;
         searchInput.setAttribute('data-tab', source.id);
         
         searchContainer.appendChild(searchIcon);

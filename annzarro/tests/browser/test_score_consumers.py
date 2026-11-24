@@ -31,6 +31,7 @@ from annzarro.tests.browser.test_cell_gene_panel import served, GENES  # noqa: E
 from annzarro.tests.browser import waits  # noqa: E402
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 from annzarro.tests.browser import axis_sets  # noqa: E402
+from annzarro.tests.browser import test_gene_score_tables as T  # noqa: E402
 
 SIG = "gene-signature-S1"
 PLOT = "cell-plot-C"
@@ -175,11 +176,11 @@ def test_a_cell_table_adds_mean_logged_without_the_chooser_listing_pairs(page, s
     group = f"#gene-score-content-{TABLE} .az-score-group[data-entity='{SIG}']"
     page.wait_for_selector(f"{group} .az-score-add", timeout=10000)
     assert page.locator(f"{group} input.column-checkbox").count() == 0, "nothing ticked: no method x layer pair is listed"
-    methods = page.evaluate("(s) => [...document.querySelector(s).options].map(o => o.value)", f"{group} .az-score-add-method")
+    methods = [o["v"] for o in T.add_row_entries(page, group)]
     layers = page.evaluate("(s) => [...document.querySelector(s).options].map(o => o.value)", f"{group} .az-score-add-layer")
     assert len(methods) == 6 and layers == ["X", "counts", "logged"]
     assert page.locator(f"#gene-score-content-{TABLE} .az-score-offer-more").count() == 0
-    page.select_option(f"{group} .az-score-add-method", "mean")
+    T.pick_add_method(page, group, "mean")
     page.select_option(f"{group} .az-score-add-layer", "logged")
     page.click(f"{group} .az-score-add-btn")
     box = f"#checkbox-gene-score-{SIG}-mean-of-logged-{TABLE}"
