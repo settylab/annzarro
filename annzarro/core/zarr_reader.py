@@ -30,7 +30,7 @@ _ZARR3 = int(zarr.__version__.split('.')[0]) >= 3
 
 from .metadata_extraction import extract_metadata
 from .caching import CacheSettings, DatasetCache, cached_method
-from . import freshness
+from . import freshness, unconsolidated
 from . import read_guard
 from . import string_chunks
 from . import categories as category_rules
@@ -856,7 +856,7 @@ class ZarrReader(CacheSettings):
                     # date (consolidated_staleness) recorded it: read the
                     # nodes' own metadata until the store is consolidated again.
                     if _ZARR3 and freshness.recorded(dataset_path).get("consolidated_stale"):
-                        return zarr.open_group(dataset_path, mode='r', use_consolidated=False)
+                        return unconsolidated.open_group(dataset_path)
                     return zarr.open_group(dataset_path, mode='r')
                 except Exception as e:
                     raise_if_timeout(e)

@@ -28,7 +28,7 @@ from urllib.parse import quote
 
 import numpy as np
 
-from . import dataset_schema, store_details
+from . import dataset_schema, store_details, unconsolidated
 from .dataset_schema import FIELDS, MAX_FIELD_BYTES, contact_url as _contact_url, http_url as _http_url
 
 __all__ = ["PARTS", "MAX_README_BYTES", "read_info", "InfoError"]
@@ -88,7 +88,7 @@ def _open_on_disk(path: str):
     if not any(os.path.exists(os.path.join(path, f)) for f in (".zgroup", ".zarray", "zarr.json")):
         raise InfoError(f"{os.path.basename(path)} does not look like a zarr store (no .zgroup or zarr.json)")
     try:
-        return zarr.open_group(path, mode="r", **({"use_consolidated": False} if _ZARR3 else {}))
+        return unconsolidated.open_group(path) if _ZARR3 else zarr.open_group(path, mode="r")
     except Exception as exc:
         raise InfoError(f"Cannot open {os.path.basename(path)}: {exc}") from exc
 

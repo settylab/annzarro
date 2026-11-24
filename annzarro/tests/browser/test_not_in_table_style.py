@@ -144,8 +144,12 @@ def test_controls_style_the_grey_points_and_travel_with_the_panel(page, server):
     assert (cfg["notInTableScale"], cfg["notInTableOpacity"], cfg["notInTableColor"]) == (2, 0.25, "#ff0000")
     assert "notInTableScale" not in layout["panelConfigs"][B]            # B keeps the defaults
     enc = base64.urlsafe_b64encode(json.dumps({"v": 1, "subset": None, "layout": layout}).encode()).decode().rstrip("=")
-    page.goto(f"{server}/?dataset_path={urllib.parse.quote(STORE, safe='/')}#view={enc}")
-    page.reload()
+    # Only the fragment changes, so the page reloads itself (main.js hashchange); a second reload of ours
+    # raced it and, while the first was still drawing this view, hit the guard that never redraws a view
+    # that did not finish loading ("The view in the address did not finish loading last time"). Wait for
+    # the page's own reload instead.
+    with page.expect_event("load", timeout=30000):
+        page.goto(f"{server}/?dataset_path={urllib.parse.quote(STORE, safe='/')}#view={enc}")
     page.wait_for_selector(f'.tile[data-tile-id="{TABLE}"] .dataTables_scrollBody tbody tr', timeout=30000)
     page.fill(SEARCH, "cell_01")
     page.wait_for_function("""(id) => { const g = document.querySelector(`.tile[data-tile-id="${id}"] .js-plotly-plot`)
