@@ -931,6 +931,7 @@ function anchored(xanchor, angle, pad) {
  * @returns {{side?: string, edges?: Object, justify?: string, rotation: ('horizontal'|'along'|number), padding: number,
  *   show: {genes: boolean, groups: boolean}}}
  */
+// export-unused-ok: WP-5a's shared Plot Options (schema fields) reads the 3D labels' options through this seam
 export function labelOptions3d(model) {
     const l3 = (model && model.labels3d) || {};
     const shown = (model && model.annotations && model.annotations.labels) || {};
@@ -962,7 +963,6 @@ export function sceneLabels(spec, camera) {
     const edgeAt = (edge, extent) => (edge === 'min' ? -0.5 : Math.max(extent, 1) - 0.5);
     const fontPx = (spec.font && spec.font.size) || 12;
     const lineH = fontPx * 1.3;
-    const { right, up: screenUp } = screenAxes(camera);
     for (const dim of ['x', 'y']) {
         const axis = spec[dim];
         if (axis.show === false) continue;
