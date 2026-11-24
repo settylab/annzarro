@@ -20,23 +20,10 @@ import { Config } from '../../config.js';
 import { createKindClient } from '../../utils/matrix-kind-client.js';
 import { layerKeys } from '../../utils/structure-keys.js';
 import { aggregationsInUse, layersInUse, onSourceStatus, sourceChanged, sourceRenamed } from '../../utils/score-source.js';
-import { METHODS, offeredOptions } from '../../utils/signature-options.js';
 import { createMethodsPopover } from './methods-popover.js';
 
 /** What the layers look like, asked once per dataset and layer for the whole page. */
 export const KIND_CLIENT = createKindClient({ url: Config.API.MATRIX_KIND });
-
-/**
- * Every method on every layer that can be computed, as the menus that still list combinations read them
- * (utils/score-source.js scoreOptions). Nothing is offered or withheld (decision 31); SO-3 removes this with those menus.
- * @param {Object} fields - the source's option fields
- * @param {string[]} [layers] - the dataset's layers; the source's own layer when not known
- * @param {{kinds?: Object, stats?: Object}} [grading]
- */
-export function everyOption(fields, layers, { kinds = {}, stats = {} } = {}) {
-    const list = Array.isArray(layers) && layers.length ? layers : [fields.input || 'X'];
-    return offeredOptions({ ...fields, offered: [...METHODS], layers: list }, null, kinds, stats);
-}
 
 /**
  * @param {Object} o
@@ -103,11 +90,6 @@ export function createScoreOptions({ id, D, getOptions, setOptions, label = 'Met
     return {
         methods,
         getGrading,
-        /**
-         * Every method on every layer of the dataset that can be computed, as the menus that still list combinations
-         * read them (utils/score-source.js scoreOptions). SO-3 removes it with those menus.
-         */
-        getOfferedOptions: () => everyOption(getOptions(), layers, getGrading()),
         /** The dataset is there: read its layers and what they look like. */
         load: () => refreshKinds(),
         /** Another dataset: what the layers looked like is forgotten, and asked again. */
@@ -120,8 +102,6 @@ export function createScoreOptions({ id, D, getOptions, setOptions, label = 'Met
         /** The option fields changed from outside (a saved config, Back and Forward). */
         changed: () => methods.paint(),
         paint: () => methods.paint(),
-        /** Open the Methods pop-over and put the cursor there (a consumer's "Offer other scores…" until SO-3 removes it). */
-        reveal: () => methods.open(),
         destroy() {
             destroyed = true;
             unwatch();

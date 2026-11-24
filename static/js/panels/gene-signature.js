@@ -40,7 +40,7 @@ import { DEFAULT_METHOD, OPTION_KEYS } from '../utils/signature-options.js';
 import { SCORE_TYPE, pinConsumersOf, sourceChanged, sourceRenamed, sourceStatus, onSourceStatus, scoreCommand } from '../utils/score-source.js';
 import { durationText } from '../utils/score-notices.js';
 import { pasteSource } from './gene-signature-paste.js';
-import { createScoreOptions, everyOption } from './score-options/score-options.js';
+import { createScoreOptions } from './score-options/score-options.js';
 import { pickIdColumnFor, buildIdMap } from '../utils/gene-paste.js';
 import { readTableSelection as readSelection } from './gene-set-utilities/state.js';
 import {
@@ -232,11 +232,6 @@ const GeneSignaturePanel = (function() {
                 if (_initialized) { rebuildRows(); paint(); if (_scoreOptions) _scoreOptions.changed(Object.keys(config)); }
                 notifyChange(Object.keys(config));
             }
-        }
-
-        /** Every method on every layer that can be computed, for the menus that still list combinations (SO-3 removes them). */
-        function getOfferedOptions() {
-            return _scoreOptions ? _scoreOptions.getOfferedOptions() : everyOption(_recipe);
         }
 
         /** What the layers look like and what was sampled of them: scoreChoices grades each method on each layer by it. */
@@ -1177,11 +1172,9 @@ const GeneSignaturePanel = (function() {
             selectionIsLive: true,
             // for the steps after this one
             getRecipe,
-            getOfferedOptions,
             getGrading,
             /** What the default score depends on, as text: equal recipes give equal text (the tests compare it across a link). */
             getRecipeHash: () => recipeHash(_recipe),
-            revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
             openDistribution,
             addGenes,
             addDirected,

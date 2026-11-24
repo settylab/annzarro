@@ -5018,5 +5018,6 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 
 /* A Gene Table's gene score (panels/score-options): Score methods ▾ and Distribution beside the column chooser's
    buttons; the pop-over folds nothing open in the panel, so the table stays a table first */
+.table-controls { flex-wrap: wrap; }                                  /* the tables' controls wrap, as before SO-2 */
 .az-score-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 0.5rem; }
 .az-score-options__label { font-size: 0.8125rem; font-weight: 600; margin-right: 4px; }

@@ -20,7 +20,7 @@ import { tableMayLoad } from './table-utilities/table-memory.js';
 import { TableResolver } from '../utils/table-resolver.js';
 import './table-utilities/table-background.js';
 import { makeDom } from './gene-set-utilities/dom.js';
-import { createScoreOptions, everyOption } from './score-options/score-options.js';
+import { createScoreOptions } from './score-options/score-options.js';
 import { DEFAULT_INPUT, DEFAULT_METHOD, isDefaultParams, writableOptions } from '../utils/signature-options.js';
 import { SCORE_TYPE, sourceChanged, sourceRenamed, pinConsumersOf } from '../utils/score-source.js';
 
@@ -525,11 +525,6 @@ const GeneTablePanel = (function() {
             if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
         }
 
-        /** Every method on every layer that can be computed, for the menus that still list combinations (SO-3 removes them). */
-        function getOfferedOptions() {
-            return _scoreOptions ? _scoreOptions.getOfferedOptions() : everyOption(getScoreOptions());
-        }
-
         /** What the layers look like and what was sampled of them: scoreChoices grades each method on each layer by it. */
         function getGrading() {
             return _scoreOptions ? _scoreOptions.getGrading() : {};
@@ -610,9 +605,7 @@ const GeneTablePanel = (function() {
             // that pass the filter, read through the selection every reader of a table uses
             getScoreOptions,
             setScoreOptions,
-            getOfferedOptions,
             getGrading,
-            revealScoresOffered: () => { if (_scoreOptions) _scoreOptions.reveal(); },
             openDistribution
         };
     }
