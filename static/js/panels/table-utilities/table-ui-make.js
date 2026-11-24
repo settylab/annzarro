@@ -3,12 +3,7 @@
  */
 import { DataManager } from '../../data-manager.js';
 import { Config } from '../../config.js';
-import { 
-    getObspColumnsForCellTable,
-    getLayerColumnsForCellTable,
-    getVarpColumnsForGeneTable,
-    getLayerColumnsForGeneTable
-} from './panel-tracker.js';
+import { tabChoices } from './panel-tracker.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { getColumnDisplayName } from './table-data.js';
 import { isDerived } from '../../utils/line-select.js';
@@ -212,12 +207,10 @@ export function populateColumnsCellTable(dataSources, datasetStructure, id, sett
                 createCheckboxList(accordionContainer, obsm_items, id, settings);
             }
             continue;
-        } else if (source.id === 'obsp' && datasetStructure.obsp?.keys) {
-            // Get fixed cell items from panel tracker
-            items = getObspColumnsForCellTable(datasetStructure, settings.columns);
-        } else if (source.id === 'layer' && datasetStructure.layers) {
-            // Get fixed gene items from panel tracker
-            items = getLayerColumnsForCellTable(datasetStructure, settings.columns);
+        } else if (source.id === 'obsp' || source.id === 'layer') {
+            // the ticked columns and one add row, [cell or gene] [matrix or layer] (table-chooser-080.md 4)
+            buildEntityTab(source, tabChoices('cells', source.id, datasetStructure, settings.columns), id, settings);
+            continue;
         }
         
         createCheckboxList(contentContainer, items, id, settings);
@@ -259,12 +252,9 @@ export function populateColumnsGeneTable(dataSources, datasetStructure, id, sett
                 createCheckboxList(accordionContainer, varm_items, id, settings);
             }
             continue;
-        } else if (source.id === 'varp' && datasetStructure.varp?.keys) {
-            // Get fixed gene items from panel tracker
-            items = getVarpColumnsForGeneTable(datasetStructure, settings.columns);
-        } else if (source.id === 'layer' && datasetStructure.layers) {
-            // Get fixed cell items from panel tracker
-            items = getLayerColumnsForGeneTable(datasetStructure, settings.columns);
+        } else if (source.id === 'varp' || source.id === 'layer') {
+            buildEntityTab(source, tabChoices('genes', source.id, datasetStructure, settings.columns), id, settings);
+            continue;
         }
         
         createCheckboxList(contentContainer, items, id, settings);
@@ -338,6 +328,166 @@ async function setupGeneTableTabs(tabsContainer, tabContent, datasetStructure, i
     // Activate the first tab
     const firstTab = tabsContainer.querySelector('button');
     if (firstTab) firstTab.click();
+}
+
+/** The id of a plain column's checkbox in the chooser. */
+const plainCheckboxId = (column, panelId) => `checkbox-${column.type}-${column.key}-${column.column}-${panelId}`.replace(/\s+/g, '_');
+
+/** An option of a select: its value and its text. */
+function optionOf(value, text) {
+    const o = document.createElement('option');
+    o.value = value;
+    o.textContent = text;
+    return o;
+}
+
+/**
+ * The Layers, obsp and varp tabs (table-chooser-080.md 4): the ticked columns grouped under their layer or matrix, then
+ * one add row, `[cell or gene] [layer or matrix] [Add column]`. The cross product is never listed. A column is stored as
+ * before, `{type, key: <layer or matrix>, column: <name>}`; the search field filters the ticked rows and the item list.
+ * @param {{id: string, label: string}} source - the tab
+ * @param {Object|null} choices - panel-tracker.js tabChoices
+ * @param {string} id - the table panel's id
+ * @param {Object} settings
+ */
+function buildEntityTab(source, choices, id, settings) {
+    const pane = document.getElementById(`${source.id}-content-${id}`);
+    const list = pane && pane.querySelector('.checkbox-list');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!choices) {
+        list.innerHTML = '<div class="alert alert-secondary">No columns available</div>';
+        return;
+    }
+    const type = source.id;
+    const word = choices.kind;                      // 'cell' | 'gene'
+    const rowsBy = new Map();                       // key -> its group's element
+    const notes = new Map(choices.entities.map((e) => [e.name, e.note]));
+    const keyOrder = choices.keys;
+    const groupOf = (key) => {
+        let group = rowsBy.get(key);
+        if (group) return group;
+        group = document.createElement('div');
+        group.className = 'az-entity-group';
+        group.dataset.key = key;
+        const title = document.createElement('div');
+        title.className = 'az-score-group-title fw-semibold';
+        title.textContent = key;
+        group.appendChild(title);
+        rowsBy.set(key, group);
+        // the layer's own place: X, then the dataset's order
+        const after = [...list.querySelectorAll('.az-entity-group')].find((g) => keyOrder.indexOf(g.dataset.key) > keyOrder.indexOf(key));
+        if (after) list.insertBefore(group, after);
+        else if (addBox.parentNode) list.insertBefore(group, addBox);
+        else list.appendChild(group);
+        return group;
+    };
+    const rowFor = (column, placeholder) => {
+        const entry = { type, key: column.key, column: column.column };
+        const div = document.createElement('div');
+        div.className = 'form-check py-0 ms-3';
+        const checkbox = document.createElement('input');
+        checkbox.className = 'form-check-input column-checkbox';
+        checkbox.type = 'checkbox';
+        checkbox.id = plainCheckboxId(entry, id);
+        checkbox.setAttribute('data-type', type);
+        checkbox.setAttribute('data-key', entry.key);
+        checkbox.setAttribute('data-column', entry.column);
+        checkbox.dataset.scoreBound = '1';
+        checkbox.addEventListener('change', () => updateSelectedColumnsList(id, settings));
+        const label = document.createElement('label');
+        label.className = 'form-check-label';
+        label.htmlFor = checkbox.id;
+        label.textContent = placeholder ? `no ${word} (unresolved placeholder)` : entry.column;
+        div.dataset.search = `${entry.key} ${label.textContent}`.toLowerCase();
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        const note = !placeholder && notes.get(entry.column);
+        if (note) {
+            const span = document.createElement('span');
+            span.className = 'form-text ms-2 az-entity-note';
+            span.textContent = note;
+            div.appendChild(span);
+        }
+        return { div, checkbox };
+    };
+    const addBox = document.createElement('div');
+    addBox.className = 'az-entity-add';
+    // the ticked columns, layer by layer in the dataset's order (X first), in the order they were added within one
+    for (const key of keyOrder) {
+        for (const column of choices.held.filter((h) => h.key === key)) {
+            const { div, checkbox } = rowFor(column, column.placeholder);
+            checkbox.checked = true;
+            groupOf(key).appendChild(div);
+        }
+    }
+
+    list.appendChild(addBox);
+
+    // the add row
+    const row = document.createElement('div');
+    row.className = 'az-score-add ms-3';
+    const item = document.createElement('select');
+    item.className = 'form-select form-select-sm az-entity-item';
+    item.setAttribute('aria-label', `${word === 'cell' ? 'Cell' : 'Gene'} of a new ${source.label} column`);
+    const layer = document.createElement('select');
+    layer.className = 'form-select form-select-sm az-entity-key';
+    layer.setAttribute('aria-label', `${type === 'layer' ? 'Layer' : 'Matrix'} of a new column`);
+    for (const key of choices.keys) layer.appendChild(optionOf(key, key));
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-sm btn-outline-primary az-entity-add-btn';
+    button.textContent = 'Add column';
+    const note = document.createElement('div');
+    note.className = 'form-text mt-0 az-score-add-note';
+    note.setAttribute('role', 'status');
+    const fillItems = (text = '') => {
+        const held = item.value;
+        const shown = choices.entities.filter((e) => `${e.name} ${e.note}`.toLowerCase().includes(text));
+        item.innerHTML = '';
+        for (const e of shown) item.appendChild(optionOf(e.name, `${e.name} (${e.note})`));
+        if (shown.some((e) => e.name === held)) item.value = held;
+        button.disabled = !shown.length;
+    };
+    fillItems();
+    item.__refilter = fillItems;
+    if (!choices.entities.length) note.textContent = `No ${word} is focused or fixed in a plot yet.`;
+    button.addEventListener('click', () => {
+        if (!item.value) return;
+        const column = { key: layer.value, column: item.value };
+        let box = document.getElementById(plainCheckboxId({ type, ...column }, id));
+        if (!box) {
+            const made = rowFor(column, false);
+            groupOf(column.key).appendChild(made.div);
+            box = made.checkbox;
+        }
+        box.checked = true;
+        note.textContent = `Added ${column.key}: ${column.column}. Apply Changes to show it in the table.`;
+        updateSelectedColumnsList(id, settings);
+    });
+    for (const part of [item, layer, button]) row.appendChild(part);
+    addBox.appendChild(row);
+    addBox.appendChild(note);
+
+    // the one search field (the pane's, full width): the ticked rows and the item list
+    const search = pane.querySelector('.column-search');
+    if (search && !search.dataset.scoreBound) {
+        search.dataset.scoreBound = '1';
+        search.addEventListener('input', (e) => {
+            const text = e.target.value.toLowerCase();
+            for (const group of pane.querySelectorAll('.az-entity-group')) {
+                let any = false;
+                for (const r of group.querySelectorAll('.form-check')) {
+                    const match = r.dataset.search.includes(text);
+                    r.style.display = match ? '' : 'none';
+                    any = any || match;
+                }
+                group.style.display = any ? '' : 'none';
+            }
+            const select = pane.querySelector('.az-entity-item');
+            if (select && select.__refilter) select.__refilter(text);
+        });
+    }
 }
 
 /** The id of a column's checkbox in the chooser. */
@@ -700,8 +850,8 @@ function createDataTabs(tabsContainer, tabContent, dataSources, panelId) {
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
         searchInput.className = 'form-control column-search';
-        // a source tab (the chooser of a provider) reads as a sentence; the built-in tabs keep their ellipsis
-        searchInput.placeholder = tableProviders().some(p => p.type === source.id) ? `Search ${source.label.toLowerCase()}` : `Search ${source.label.toLowerCase()}...`;
+        // the tabs with an add row (a provider's, the layers, obsp and varp) read as a sentence; the other built-in tabs keep their ellipsis
+        searchInput.placeholder = (tableProviders().some(p => p.type === source.id) || ['layer', 'obsp', 'varp'].includes(source.id)) ? `Search ${source.label.toLowerCase()}` : `Search ${source.label.toLowerCase()}...`;
         searchInput.setAttribute('data-tab', source.id);
         
         searchContainer.appendChild(searchIcon);
