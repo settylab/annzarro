@@ -76,7 +76,7 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 |---|---|---|---|
 | **Bar** | X (categorical or binned), Color by | Cells per level, and per level of Color by | Bars, vertical or horizontal |
 | **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars at their bins' values (or evenly, for log and other bins), without gaps, in the number's order; stacked, overlaid or 100% |
-| **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring |
+| **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring. Printed numbers sit at one distance from the centre, the middle of a ring's band (three quarters of the radius, in a pie too), so **Ring** moves none of them; a slice under 3% of the cells shows its number in its hover only |
 | **2D histogram** | X and Y numeric, Color by up to 8 levels | Cells per pair of bins, 100 × 100 by default, per level of Color by | Rectangles; with Color by, one layer per level |
 | **Heatmap** | X and Y (categorical or binned) | Cells per pair of levels | Rectangles, with values printed if asked |
 | **Density** | X numeric, Color by | 512 bins per level of Color by, smoothed in the browser | Curves |
