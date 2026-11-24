@@ -84,6 +84,48 @@
 .ccnt-color__problem:empty { display: none; }
 .ccnt-sets[hidden] { display: none; }
 
+/* The set list of a Venn and an UpSet: one compact line per set, as the Cell Grouping panel lists its groups. Every row is
+   the same height (a rename changes none), and the name takes what the fixed columns leave, cut with an ellipsis. */
+.ccnt-sets__list { list-style: none; margin: 0; padding: 0; }
+.ccnt-set { padding: 1px 0; border-radius: 3px; }
+.ccnt-set__line { display: grid; grid-template-columns: 1.4rem 1.5rem minmax(0, 1fr) 4.4rem 2.9rem 1.35rem; align-items: center; gap: 4px; height: 28px; }
+.ccnt-set--draft .ccnt-set__line { grid-template-columns: 1.4rem 1.5rem minmax(0, 1fr) 1.35rem; }
+.ccnt-set--editing { background: var(--az-accent-bg); box-shadow: inset 3px 0 0 var(--az-link); }
+.ccnt-set--editing .ccnt-set__line { grid-template-columns: 1.4rem 1.5rem minmax(0, 1fr) 1.35rem; padding-left: 4px; }
+.ccnt-set--editing .ccnt-set__count, .ccnt-set--editing .ccnt-set__share { display: none; }
+.ccnt-set--editing .ccnt-set__remove { grid-column: 4; }
+.ccnt-set__swatch { width: 1.25rem; height: 1rem; padding: 0; border: 1px solid var(--az-border-strong); border-radius: 2px; background: none; cursor: pointer; }
+.ccnt-set__swatch-gap { display: block; }
+.ccnt-set__letter {
+    width: 1.5rem; height: 1.3rem; padding: 0; font-weight: 600; font-size: 0.75rem; line-height: 1; color: var(--az-text);
+    background: var(--az-surface-3); border: 1px solid var(--az-border-strong); border-radius: 4px; cursor: pointer;
+}
+.ccnt-set__letter:hover, .ccnt-set__letter.az-popover-anchor-open { border-color: var(--az-link); }
+.ccnt-set__namecell { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.ccnt-set__namecell > .ccnt-set__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ccnt-set__namecell > input.ccnt-set__name { height: 22px; padding: 0 0.3rem; font-size: 0.8rem; border-color: var(--az-link); }
+.ccnt-set__count, .ccnt-set__share { text-align: right; font-variant-numeric: tabular-nums; font-size: 0.8rem; white-space: nowrap; }
+.ccnt-set__share { color: var(--az-muted); }
+.ccnt-set__kind { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--az-muted); }
+.ccnt-set__btn {
+    flex: 0 0 auto; width: 1.3rem; height: 1.3rem; padding: 0; line-height: 1; font-size: 0.8rem; color: var(--az-muted);
+    background: none; border: 1px solid transparent; border-radius: 3px; cursor: pointer;
+}
+.ccnt-set__btn:hover, .ccnt-set__btn:focus-visible { color: var(--az-text); border-color: var(--az-border-strong); }
+.ccnt-set__remove:hover { color: var(--az-danger-text); }
+.ccnt-set__sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 0 0 1px 3.1rem; font-size: 0.75rem; color: var(--az-muted); }
+.ccnt-set__sub[hidden] { display: none; }
+.ccnt-set__tag:empty, .ccnt-set__novalue:empty { display: none; }
+.ccnt-set__action { padding: 0 6px; line-height: 1.4; font-size: 0.75rem; }
+.ccnt-set__note { margin: 0 0 2px 3.1rem; font-size: 0.75rem; }
+.ccnt-set__note[hidden] { display: none; }
+.ccnt-set__note p { margin: 0 0 2px; }
+.ccnt-set__problem { color: var(--az-danger-text); font-size: 0.75rem; }
+.ccnt-set__problem[hidden] { display: none; }
+.ccnt-set__pop { display: flex; flex-direction: column; gap: 6px; }
+.ccnt-set__pop .ccnt-set__editor { flex-wrap: wrap; }
+.ccnt-set__pop .ccnt-set__levels { max-height: 14rem; overflow-y: auto; }
+
 /* the plot, and what it says when there is nothing to draw (never resizes the plot) */
 /* The plot, then the coverage banner under it (the status strip panel-surface.js inserts after the plot, as in the Cell and
    Gene Plots); the state box covers both while there is nothing to draw. */

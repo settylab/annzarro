@@ -17,7 +17,7 @@ import {
 import { defaultLabelMaps } from '../../utils/cell-grouping.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
 import { asHex, factorColours, tableLevelColour, plotPaletteOf } from '../../utils/grouping-colours.js';
-import { scaleKeys } from './colour.js';
+import { scaleKeys, scaleColours } from './colour.js';
 
 /** The modes this module draws; the others (density, Venn, UpSet) have their own drawing. */
 // export-unused-ok: C2a offers the count modes that draw here
@@ -114,7 +114,7 @@ function colorOf(config, table, a, i, opts) {
  * The numeric centers and widths of a binned axis's levels from the reply's edges, or null when the axis is not a
  * run of bins (the levels are then drawn as a category axis). A zero bin sits just below the first edge.
  */
-function binPositions(table, a) {
+function binPositions(table, a, { lenient = false } = {}) {
     const { levels, info } = table.axes[a];
     const edges = info.edges;
     if (!Array.isArray(edges) || edges.length < 2) return null;
@@ -128,6 +128,8 @@ function binPositions(table, a) {
             continue;
         }
         const level = parseLevelId(id);
+        // a pie's colours skip a level that is no bin (the bins merged into "other") instead of giving up on the rest
+        if (lenient && level && level.kind === 'reserved') { centers.push(null); widths.push(null); continue; }
         if (!level || level.kind !== 'bin' || level.index + 1 >= edges.length) return null;
         centers.push((edges[level.index] + edges[level.index + 1]) / 2);
         widths.push(edges[level.index + 1] - edges[level.index]);
@@ -472,39 +474,93 @@ function textOn(colour) {
     return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] > 0.4 ? '#000000' : '#ffffff';
 }
 
+/** A name longer than this is cut on its slice (the hover has all of it). */
+const PIE_NAME_MAX = 18;
+const sliceName = (name) => (name.length > PIE_NAME_MAX ? `${name.slice(0, PIE_NAME_MAX - 1)}…` : name);
+
+/**
+ * What colours a pie's slices when they are bins of a number: each bin's value (its centre, or its order when the config
+ * draws the bins evenly or an open end bin has no centre), one per level of the axis. Null when the slices are not bins
+ * (categories, a grouping): they keep their level palette.
+ * @returns {{values: Array<number|null>, byOrder: boolean, ranks: number[]}|null} `ranks` are the bin levels' indexes in order
+ */
+function sliceBins(config, table, a) {
+    const { levels } = table.axes[a];
+    const kinds = levels.map((id) => (id === RESERVED.zero ? 'zero' : (parseLevelId(id) || {}).kind));
+    if (!kinds.includes('bin') || kinds.some((k) => k !== 'bin' && k !== 'zero' && k !== 'reserved')) return null;
+    const places = binPositions(table, a, { lenient: true });
+    const byOrder = binSpacingOf(config, 'x') === 'even' || !places;
+    let rank = 0;
+    const ranks = [];
+    const values = levels.map((id, i) => {
+        if (kinds[i] === 'reserved') return null;
+        ranks.push(i);
+        return byOrder ? rank++ : places.centers[i];
+    });
+    return { values, byOrder, ranks };
+}
+
 function pieFigure(config, table, opts) {
     const a = axisOf(table, 'x');
     const maps = labelMapsOf(config, table, opts);
     const labelAt = labelFn(maps);
-    const { sort, reverse, ring } = opts.options;
+    const { sort, reverse, ring, names } = opts.options;
     const order = axisOrder(table, a, table.count, { sort, reverse });
-    const colors = order.map((l) => colorOf(config, table, a, l, opts));
+    // bins of a number take a continuous colour by their value unless the level palette is kept (a continuum reads as one)
+    const bins = opts.options.pieColour === 'levels' ? null : sliceBins(config, table, a);
+    const scaled = bins ? scaleColours(bins.values, opts.options, opts.theme.notInTableColor) : null;
+    const colors = order.map((l) => (scaled ? scaled.colours[l] : colorOf(config, table, a, l, opts)));
     const values = order.map((l) => table.count[l]);
+    const labels = order.map((l) => esc(labelAt(table.axes[a].levels[l], a)));
     const trace = {
-        type: 'pie', sort: false, direction: 'clockwise', rotation: 0, hole: ring ? PIE_HOLE : 0,
-        labels: order.map((l) => esc(labelAt(table.axes[a].levels[l], a))), values,
+        // the trace is named (the input's title): a trace with no name is hidden from the legend (utils/legend-entries.js), and with it a pie's
+        type: 'pie', name: esc(opts.inputNames.x || 'Slices'), sort: false, direction: 'clockwise', rotation: 0, hole: ring ? PIE_HOLE : 0,
+        labels, values,
         marker: { colors },
         hovertext: order.map((l) => hoverOf(config, table, opts, l, labelAt)), hoverinfo: 'text', textinfo: 'none'
     };
     const data = [trace];
     const spec = labelSpec(config, table, opts);
     const total = values.reduce((sum, v) => sum + (Number.isFinite(v) ? v : 0), 0);
-    const layout = baseLayout(opts, { showlegend: true, legend: { title: { text: esc(opts.inputNames.x) } } });
-    if (spec && total > 0) {
-        // each slice's middle angle, clockwise from 12 o'clock as the pie draws it
-        let before = 0;
-        const shown = [];
-        order.forEach((l, k) => {
-            const v = Number.isFinite(values[k]) ? values[k] : 0;
-            const text = v / total >= PIE_LABEL_MIN_SHARE ? textOf(spec, l) : '';
-            if (text) shown.push({ theta: ((before + v / 2) / total) * 360, text, color: textOn(colors[k]) });
-            before += v;
-        });
+    // the colour bar says a continuous colour; the legend lists a level palette's
+    const layout = baseLayout(opts, { showlegend: !bins, legend: { title: { text: esc(opts.inputNames.x) } } });
+    const printed = (spec || names) && total > 0;
+    if (printed || bins) {
         const rad = (deg) => (deg * Math.PI) / 180;
-        data.push({ type: 'scatter', mode: 'markers', x: [], y: [], hoverinfo: 'skip', showlegend: false, meta: { pieAxes: true } });
+        // the layer's axes (an empty, hidden scatter makes them); with a continuous colour it also carries the colour bar
+        const layer = { type: 'scatter', mode: 'markers', x: [], y: [], hoverinfo: 'skip', showlegend: false, meta: { pieAxes: true } };
+        if (bins) {
+            const finite = bins.values.filter((v) => v !== null);
+            const title = bins.byOrder ? opts.words.slices.barOrder(opts.inputNames.x) : opts.words.slices.barCentre(opts.inputNames.x);
+            const bar = { title: { text: esc(title) } };
+            if (bins.byOrder) {
+                // an order's numbers mean nothing: the bar's ticks name the bins, a few of them
+                const step = Math.max(1, Math.ceil(finite.length / 6));
+                const ticks = bins.ranks.map((l, k) => ({ at: k, text: labelAt(table.axes[a].levels[l], a) })).filter((t) => t.at % step === 0);
+                bar.tickvals = ticks.map((t) => t.at);
+                bar.ticktext = ticks.map((t) => esc(t.text));
+            }
+            Object.assign(layer, {
+                x: bins.values.map(() => null), y: bins.values.map(() => null),
+                marker: { color: bins.values, colorscale: scaleKeys(opts.options, 'marker').colorscale, ...(opts.options.colour.reverse ? { reversescale: true } : {}),
+                    cmin: scaled.lo, cmax: scaled.hi, showscale: true, colorbar: bar }
+            });
+        }
+        data.push(layer);
         const axis = { visible: false, range: [-1, 1], fixedrange: true, constrain: 'domain' };
         layout.xaxis = { ...axis };
         layout.yaxis = { ...axis, scaleanchor: 'x', scaleratio: 1 };
+        const shown = [];
+        if (printed) {
+            // each slice's middle angle, clockwise from 12 o'clock as the pie draws it; the name above the number, one text
+            let before = 0;
+            order.forEach((l, k) => {
+                const v = Number.isFinite(values[k]) ? values[k] : 0;
+                const text = v / total >= PIE_LABEL_MIN_SHARE ? [names ? esc(sliceName(labelAt(table.axes[a].levels[l], a))) : '', textOf(spec, l)].filter(Boolean).join('<br>') : '';
+                if (text) shown.push({ theta: ((before + v / 2) / total) * 360, text, color: textOn(colors[k]) });
+                before += v;
+            });
+        }
         layout.annotations = shown.map((p) => ({
             x: PIE_LABEL_RADIUS * Math.sin(rad(p.theta)), y: PIE_LABEL_RADIUS * Math.cos(rad(p.theta)), xref: 'x', yref: 'y',
             text: p.text, showarrow: false, xanchor: 'center', yanchor: 'middle', font: { color: p.color }, captureevents: false,

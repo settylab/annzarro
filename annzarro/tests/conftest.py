@@ -201,6 +201,26 @@ def _restore_remote_policy():
     remote._policy = saved
 
 
+@pytest.fixture(autouse=True)
+def _default_cost_limits():
+    """A request sets the cost limits of its app in the thread that serves it, the test's own with the test client;
+    start and end every test with the defaults, so no test runs under the limits of an app another test built."""
+    from annzarro.core import cost_limits
+    cost_limits.use(None)
+    yield
+    cost_limits.use(None)
+
+
+@pytest.fixture
+def cost_limit():
+    """``cost_limit(name=value, ...)``: run the rest of the test, outside a request, with these cost limits."""
+    from annzarro.core import cost_limits
+
+    def set_limits(**values):
+        cost_limits.use({**cost_limits.snapshot(), **values})
+    return set_limits
+
+
 def _allow_create_array_data():
     """zarr 3.0 has no ``data=`` on Group.create_array (3.1 added it); many fixtures here use it."""
     try:

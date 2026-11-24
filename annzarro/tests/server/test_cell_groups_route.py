@@ -722,10 +722,11 @@ def test_the_nesting_bound_counts_the_leaves_of_a_grid_too(client, layout, monke
     assert resp.status_code == 422 and resp.get_json()["reason"] == "too_many_partitionings"
 
 
-def test_an_obsp_row_is_refused_above_the_large_plot_limit(client, layout, monkeypatch):
+def test_an_obsp_row_is_refused_above_the_large_plot_limit(client, layout, tmp_path):
     body = grouping([{"source": {"type": "obsp", "key": "connectivities", "column": "5"}}])
     assert post(client, layout, {**body, "estimate_only": True}).status_code == 200
-    monkeypatch.setattr(cell_sources, "OBSP_MAX_CELLS", N - 1)
+    client = create_app({"TESTING": True, "data_dir": str(layout / "data"), "log_file": str(tmp_path / "low.log"),
+                         "limits": {"obsp_source_max_cells": N - 1}}).test_client()
     for extra in ({"estimate_only": True}, {}):
         resp = post(client, layout, {**body, **extra})
         out = resp.get_json()

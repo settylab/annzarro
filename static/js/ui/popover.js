@@ -202,6 +202,8 @@ export function createPopover(cfg) {
             close('anchor-gone');
             return;
         }
+        // measured at its natural height: the body's scroll is kept across (a surface without a cap has no scroll)
+        const scrolled = body && body !== surface ? body.scrollTop : surface.scrollTop;
         surface.style.maxHeight = 'none';
         surface.style.width = `${wide ? POPOVER_WIDE : POPOVER_WIDTH}px`;
         const natural = { width: wide ? POPOVER_WIDE : POPOVER_WIDTH, height: surface.offsetHeight };
@@ -212,6 +214,7 @@ export function createPopover(cfg) {
         surface.style.width = `${p.width}px`;
         surface.style.maxHeight = `${p.maxHeight}px`;
         surface.dataset.side = p.side;
+        if (body && body !== surface) body.scrollTop = scrolled; else surface.scrollTop = scrolled;
         surface.classList.toggle('az-popover-sheet', p.sheet);
     }
 
@@ -265,10 +268,14 @@ export function createPopover(cfg) {
     }
 
     const onPress = (e) => { pressedInside = inside(e.target); };
+    // the page scrolled (the anchor may have moved); a scroll inside the surface itself moves nothing to follow
+    const onScroll = (e) => { if (!(surface && e.target && e.target.nodeType === 1 && surface.contains(e.target))) position(); };
     const onClickAway = (e) => {
         const was = pressInside(pressedInside, inside(e.target));
         pressedInside = null;
         if (!e.target.isConnected) return;       // a control the surface drew again is not outside it
+        // a download (an export, Download CSV) saves through a link the page clicks for itself: not a click of the user's
+        if (e.target.closest && e.target.closest('a[download]')) return;
         if (!was) close('outside');
     };
 
@@ -319,7 +326,7 @@ export function createPopover(cfg) {
         document.addEventListener('pointerdown', onPress, true);
         document.addEventListener('click', onClickAway);
         window.addEventListener('resize', position);
-        window.addEventListener('scroll', position, true);
+        window.addEventListener('scroll', onScroll, true);
         if (typeof ResizeObserver === 'function') {
             resizeWatch = new ResizeObserver(position);
             resizeWatch.observe(surface);
@@ -337,7 +344,7 @@ export function createPopover(cfg) {
         document.removeEventListener('pointerdown', onPress, true);
         document.removeEventListener('click', onClickAway);
         window.removeEventListener('resize', position);
-        window.removeEventListener('scroll', position, true);
+        window.removeEventListener('scroll', onScroll, true);
         resizeWatch?.disconnect();
         anchorWatch?.disconnect();
         resizeWatch = anchorWatch = null;

@@ -9,7 +9,7 @@ and score (numbers).
 3.  The camera the user turns to is stored without an undo step, survives a redraw and a reload of the link, and Reset
     camera clears it.
 4.  Plot Options: a 3D section only in 3D, its footprint reaches the mesh; Export greys SVG with the reason, PNG stays.
-5.  Over the bar cap (lowered for the test, `window.__azBars3dMax`) the 3D button is disabled with the reason, and a link
+5.  Over the bar cap (the served limit lowered for the test) the 3D button is disabled with the reason, and a link
     stored in 3D is drawn in 2D with the strip saying why. A mode 3D has no bars for is disabled with its reason.
 6.  A bar plot with a Color by and a heatmap are drawn in 3D too.
 
@@ -53,6 +53,17 @@ def _shot(page, name):
         os.makedirs(folder, exist_ok=True)
         page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))))")
         page.locator(S).screenshot(path=os.path.join(folder, name))
+
+
+def _serve_bar_cap(page, cap=10):
+    """Lower the served bar cap: the policy reply the page loads says limits.bars_3d_max is `cap` (as a server started with
+    that limit would; test_cost_limits_browser does it with a server of its own)."""
+    def patch(route):
+        reply = route.fetch()
+        body = reply.json()
+        body["values"]["limits.bars_3d_max"] = cap
+        route.fulfill(response=reply, json=body)
+    page.route("**/api/v1/policy/effective", patch)
 
 
 def _undo_steps(page):
@@ -189,7 +200,7 @@ def test_plot_options_has_a_3d_section_and_svg_is_greyed_in_3d(page, served):
 
 
 def test_over_the_cap_the_3d_button_is_disabled_and_a_stored_3d_is_drawn_in_2d(page, served):
-    page.add_init_script("window.__azBars3dMax = 10;")
+    _serve_bar_cap(page)
     _open(page, served, {CC: _count(**HIST2D)})
     _drawn(page, "hist2d")
     until(page, "(s) => document.querySelector(s).disabled", BTN)

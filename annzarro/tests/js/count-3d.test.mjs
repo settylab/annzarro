@@ -249,8 +249,8 @@ test('3D is offered for a 2D histogram, a heatmap and a bar plot with a Color by
     }
 });
 
-test('over the cap the gate refuses with the count, and the cap is the shared constant', () => {
-    assert.equal(B.BARS_3D_MAX, 40000);
+test('over the cap the gate refuses with the count, and the cap is the served limit', () => {
+    assert.equal(B.bars3dMax(), B.BARS_3D_MAX);
     const config = norm({ mode: 'hist2d', x: obs('a'), y: obs('b') });
     assert.equal(D3.view3dGate(config, 40000).ok, true);
     const over = D3.view3dGate(config, 262144);

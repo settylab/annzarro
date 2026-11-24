@@ -21,18 +21,39 @@ import { parseLevelId, RESERVED, canonLabel } from './level-id.js';
 import { sourceName } from './cell-grouping.js';
 import { wouldLoop, loopReason } from './panel-references.js';
 import { GROUP_SOURCE, PANEL_SOURCES } from '../panels/cell-grouping/factors.js';
+import { groupColours } from '../panels/plot-utilities/colors.js';
+import { isColourString } from './uns-palette.js';
+import { limit } from './limits.js';
 
 const W = VOCABULARY.countSets;
 const P = VOCABULARY.phrase;
 
-/** The most sets an UpSet takes (CNT-12; count-plot-model.js refuses more, and Add set stops here). */
-const SETS_MAX = 16;
+/** The most sets an UpSet takes (CNT-12; count-plot-model.js refuses more, and Add set stops here): the server's
+ *  limits.grid_sets, 16 by default and at most. */
+const setsMax = () => limit('grid_sets');
 /** The kinds Add set offers (UX 4.6), in its order. */
 export const SET_KINDS = Object.freeze(['table', 'boolean', 'levels', 'condition', 'group']);
 /** An UpSet's own options when the config stores none (CNT-12). */
 const UPSET = Object.freeze({ sort: 'size', top: 40, minSize: 0 });
 const TOP_MAX = 65535;
 const LETTERS = 'ABCDEFGHIJKLMNOP';
+/** Okabe and Ito: the first colours of the sets, which tell apart under the common colour-vision differences. */
+const SET_COLOURS = Object.freeze(['#0072B2', '#E69F00', '#009E73', '#CC79A7', '#56B4E9', '#D55E00', '#F0E442', '#000000']);
+
+/** The default colour of the set at `index`: Okabe and Ito, then the group colours (plot-utilities/colors.js). */
+export function defaultSetColour(index) {
+    return index < SET_COLOURS.length ? SET_COLOURS[index] : groupColours(index + 1)[index];
+}
+
+/**
+ * The colour of each set: the one the user picked (`set.color`, stored only then), else the default of its position.
+ * The one place that decides; the set list's swatches, the Venn and the UpSet all read it.
+ * @param {{color?: string}[]} sets
+ * @returns {string[]}
+ */
+export function setColours(sets) {
+    return sets.map((set, i) => (set && typeof set.color === 'string' && isColourString(set.color) ? set.color.trim() : defaultSetColour(i)));
+}
 
 
 const BOOLEAN_DTYPE = /^bool/;
@@ -228,13 +249,16 @@ export function panelChoices(panels, plotId) {
 /** Whether another set may be added, and why not (UX 4.3: Add set disabled at 16, with the reason). */
 export function canAddSet(config) {
     const n = Array.isArray(config.sets) ? config.sets.length : 0;
-    return n < SETS_MAX ? { ok: true } : { ok: false, reason: W.tooMany(SETS_MAX) };
+    const most = setsMax();
+    return n < most ? { ok: true } : { ok: false, reason: W.tooMany(most) };
 }
 
-/** What the bars of an UpSet are colored by (UX 4.5), or null: nothing for Count, and nothing in a Venn. */
+/** What the bars of an UpSet are colored by (UX 4.5), or null: nothing for None (no value stored), and nothing in a Venn. */
 function colorOf(config, table, words) {
     if (config.mode !== 'upset') return null;
-    const value = config.value || { kind: 'count' };
+    const value = config.value;
+    if (!value) return null;
+    if (value.kind === 'count') return { kind: 'count', label: (words.value && words.value.count) || 'Count', values: heightValues(config, table) };
     if (value.kind === 'share') return { kind: 'share', label: words.share(value.of || 'all'), values: heightValues(config, table) };
     if (value.kind === 'measure' && config.measure && table.moments) {
         return { kind: 'statistic', label: words.measure(config.measure.stat, words.measureSource || '', config.measure.above), values: heightValues(config, table) };
@@ -264,6 +288,7 @@ export function setPlotModel(config, table, ctx) {
     if (inLevel.some((i) => i < 0)) throw new Error('A sets grid has the level @in on every axis.');
     const universe = table.shown;
     const color = colorOf(config, table, ctx.words || VOCABULARY.countPlot);
+    const colours = setColours(config.sets || []);
     const size = new Float64Array(k);
     const byCode = new Map();
     let inNone = 0;
@@ -284,7 +309,7 @@ export function setPlotModel(config, table, ctx) {
         return { key, degree, count, share: universe > 0 ? count / universe : 0, color: color ? (Number.isFinite(value) ? value : null) : null, code };
     });
     const sets = table.axes.map((axis, s) => ({
-        index: s, letter: LETTERS[s], name: ctx.names[s], size: size[s],
+        index: s, letter: LETTERS[s], name: ctx.names[s], size: size[s], colour: colours[s],
         noValue: Number.isInteger(axis.info && axis.info.n_no_value) ? axis.info.n_no_value : 0,
         state: drawnState((ctx.states && ctx.states[s]) || 'ok')
     }));

@@ -23,7 +23,7 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { axisOrder, heightChoiceValues, splitUsed } from '../../utils/count-plot-model.js';
-import { bars3d, checkBarCap, barCap, BAR_FILL, VERTICES_PER_BAR } from '../../utils/bars-3d.js';
+import { bars3d, checkBarCap, bars3dMax, BAR_FILL, VERTICES_PER_BAR } from '../../utils/bars-3d.js';
 import { countFigure, axisOf, valueSpec, hoverOf, labelMapsOf, labelFn, evenBins } from './draw.js';
 import { scaleKeys } from './colour.js';
 import { sceneAxis, sceneLabels, sceneAspect, DEFAULT_CAMERA } from '../cell-gene/draw.js';
@@ -42,7 +42,7 @@ const UIREVISION_3D = 'ccnt-3d';
  * @param {number} [max] - the cap; the shared one by default (bars-3d.js)
  * @returns {{ok: boolean, why: 'mode'|'cap'|'', text: string}}
  */
-export function view3dGate(config, rows = null, max = barCap()) {
+export function view3dGate(config, rows = null, max = bars3dMax()) {
     const refuse = (text) => ({ ok: false, why: 'mode', text });
     if (config.mode === 'hist2d') {
         if (config.split && splitUsed(config)) return refuse(W.refused.layers);
