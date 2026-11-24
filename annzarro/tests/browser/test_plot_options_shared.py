@@ -142,11 +142,31 @@ def test_cell_gene_font_size_survives_a_redraw_and_an_undo(page, served):
     assert "look" not in _config(page, P)
 
 
+# ------------------------------------------------------------------ 1b. one body standard (U1)
+
+@pytest.mark.parametrize("which", ["cell-gene", "count"])
+def test_the_plot_options_body_uses_only_the_az_pop_classes(page, served, which):
+    """The pop-over body standard (popover.css): sections, fields, help and Reset carry az-pop-* classes, none of the old
+    po-* names, so every pop-over body can share them."""
+    if which == "cell-gene":
+        _cg(page, served)
+        _open_options(page, TP, ".cgene-options-btn")
+    else:
+        _cc(page, served)
+        _open_options(page, SC, ".ccnt-options-btn")
+    classes = page.evaluate("""() => { const out = new Set();
+        document.querySelectorAll("[data-popover='plot-options'] *").forEach((e) => e.classList.forEach((c) => out.add(c))); return [...out]; }""")
+    assert not [c for c in classes if c.startswith("po-")], classes
+    for needed in ("az-pop-options", "az-pop-section", "az-pop-section__title", "az-pop-field", "az-pop-field__label", "az-pop-reset"):
+        assert needed in classes, (needed, classes)
+    assert page.evaluate("() => getComputedStyle(document.querySelector(\"[data-popover='plot-options'] .az-pop-section__title\")).textTransform") == "uppercase"
+
+
 # ------------------------------------------------------------------ 2. SVG export
 
 def _export_svg(page, tile, button):
     _open_options(page, tile, button)
-    btn = f"{POP} .po-export-btn[data-format='svg']"
+    btn = f"{POP} .az-pop-export-btn[data-format='svg']"
     assert page.is_enabled(btn)
     with page.expect_download(timeout=30000) as dl:
         page.click(btn)
@@ -183,10 +203,10 @@ def test_apply_to_other_cell_gene_plots_copies_the_look_not_the_title(page, serv
     page.check(_option("grid"))
     _cg_until(page, "(p) => p.layout.font.size === 15 && p.layout.xaxis.showgrid === true")
     _section(page, "apply")
-    page.click(f"{POP} .po-apply-others")
-    assert page.inner_text(f"{POP} .po-ask") .startswith("Replace the look of 1 other plot with this one's?")
-    page.click(f"{POP} .po-apply-yes")
-    assert page.inner_text(f"{POP} .po-apply-done") == "Applied to 1 plot."
+    page.click(f"{POP} .az-pop-apply-others")
+    assert page.inner_text(f"{POP} .az-pop-ask") .startswith("Replace the look of 1 other plot with this one's?")
+    page.click(f"{POP} .az-pop-apply-yes")
+    assert page.inner_text(f"{POP} .az-pop-apply-done") == "Applied to 1 plot."
     _cg_until(page, "(p) => p.layout.font.size === 15 && p.layout.xaxis.showgrid === true", pid=P2)
     other = _config(page, P2)
     assert other["look"] == {"fontSize": 15, "grid": True}

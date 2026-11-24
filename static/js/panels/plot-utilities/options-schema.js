@@ -22,6 +22,17 @@
  *    its pop-over at all, never greyed. `copy`: whether Apply to other panels and the session default
  *    carry it (true when absent; a plot's own title is not a look and is not copied). `when(config)`: shown only then.
  *
+ * Optional keys of a field (U2, pop-over unification; each used by the Cell Plot and Gene Plot kinds, aesthetics-kinds.js):
+ *  - `placeholder` (value, or `(config, env) => value`) and `stepFrom`: an empty number box shows the default it stands
+ *    for, and its arrows step from it. `shown(config, env)`: the value a control shows when nothing is stored (the
+ *    theme's colour in a swatch, tick marks following the tick labels). `disabled(config, env)`: a reason (text) when the
+ *    control is off now, '' when it is on. `look: false`: a view, not a look (not reset, never takes a plot off Default).
+ *  - select: a choice whose value is `null` writes absent (Auto). range: `percent: true` shows 100 times the stored
+ *    fraction. `type: 'margins'`: the four sides in one field (`unlinkedPath` keeps the link switch).
+ *  - `element`: a function returning a node the panel made, shown in the field's place. `domId`: the control's element id
+ *    is `<domId>-<panel id>` (tests, drift harness and links read those ids), beside `data-option`.
+ *  - `apply(value, config)`: what the adapter runs after the value is written (plot-aesthetics-adapter.js; not read here).
+ *
  * Both kinds also have the session default (`STYLE_TYPES` of utils/session-style.js gains them): a plot made from the
  * chooser is on Default (`styleDefault: true`) and follows it; any change of its look gives it its own.
  */
@@ -196,6 +207,15 @@ function clean(field, v) {
     case 'select': return field.choices.some(([value]) => value === v) ? v : undefined;
     case 'color': return typeof v === 'string' && COLOR.test(v) ? v : undefined;
     case 'text': return typeof v === 'string' ? v : undefined;
+    case 'margins': {
+        if (!isObject(v)) return undefined;
+        const out = { ...v };
+        for (const k of ['t', 'r', 'b', 'l']) {
+            if (!isNumber(v[k])) return undefined;
+            out[k] = Math.max(field.min ?? 0, Math.min(field.max ?? Infinity, Math.round(v[k])));
+        }
+        return out;
+    }
     default: return undefined;
     }
 }
@@ -208,6 +228,7 @@ export function readField(config, field, kind) {
 
 /** Whether `config` stores a value of its own for `field` (not the default). */
 export function isSet(config, field, kind) {
+    if (field.unlinkedPath && getPath(isObject(config) ? config : {}, field.unlinkedPath) === true) return true;
     const v = clean(field, getPath(isObject(config) ? config : {}, field.path));
     return v !== undefined && !same(v, defaultOf(field, kind));
 }
@@ -234,6 +255,53 @@ export function resolveStyle(config, kind) {
 /** The fields Apply to other panels and the session default carry. */
 function copiedFields(kind) {
     return fieldsOf(kind).filter((f) => f.copy !== false);
+}
+
+const hint = (field, name, config, env) => (typeof field[name] === 'function' ? field[name](isObject(config) ? config : {}, env || {}) : field[name]);
+
+/** What an empty number box of `field` shows (the default it stands for), or null. */
+export function placeholderOf(field, config, env) {
+    const v = hint(field, 'placeholder', config, env);
+    return v === undefined || v === null ? null : v;
+}
+
+/** The value a control of `field` shows while nothing is stored, or undefined when the field has no such rule. */
+export function shownOf(field, config, env) {
+    return hint(field, 'shown', config, env);
+}
+
+/** Why `field` is off now ('' when it is on). */
+export function disabledOf(field, config, env) {
+    const v = hint(field, 'disabled', config, env);
+    return typeof v === 'string' ? v : (v ? 'Not available now.' : '');
+}
+
+/** A field's stored fraction as the percent a `percent` range shows, and back. */
+export const toPercent = (v) => Math.round(v * 100);
+export const fromPercent = (n) => n / 100;
+
+/** The fields of `kind` that Reset puts back: every one but a view (`look: false`). */
+export function resettable(fields) {
+    return fields.filter((f) => f.look !== false);
+}
+
+/**
+ * A margins field's value: the four sides and whether they are set one by one. Stored under `path` (an object, the
+ * padding kept) and `unlinkedPath`; each is absent while at its default.
+ * @returns {{sides: Object, unlinked: boolean}}
+ */
+export function readMargins(config, field, kind) {
+    const dflt = defaultOf(field, kind);
+    const sides = readField(config, field, kind);
+    const un = getPath(isObject(config) ? config : {}, field.unlinkedPath);
+    return { sides: { ...dflt, ...sides }, unlinked: un === true };
+}
+
+/** `config` with a margins field set (a copy); values at the default are written as absent. */
+export function writeMargins(config, field, { sides, unlinked }, kind) {
+    let out = writeField(config, field, sides, kind);
+    out = setPath(out, field.unlinkedPath, unlinked === true ? true : undefined);
+    return out;
 }
 
 /** The paths a look of `kind` may hold (what utils/session-style.js keeps of a stored default). */
@@ -283,7 +351,7 @@ export function sectionsOf(kind) {
  * @param {string} kind
  * @param {{order?: string[], defaults?: Object, applies?: string[], presets?: Object, common?: boolean}} spec
  */
-export function registerKind(kind, spec) {
+export function registerKind(kind, spec) {   // spec.preset(config, name): the kind's own presets, replacing the generic values
     _kinds.set(kind, Object.freeze({ ...spec }));
 }
 
@@ -317,8 +385,16 @@ function presetValues(name, kind) {
     return Object.fromEntries(Object.entries(out).filter(([id]) => ids.has(id)));
 }
 
+/** Whether `kind` decides its presets itself (`registerKind` `preset`), Default included. */
+export function hasOwnPresets(kind) {
+    const own = _kinds.get(kind);
+    return !!(own && typeof own.preset === 'function');
+}
+
 /** `config` with a preset on it (a copy). */
 export function applyPreset(config, name, kind) {
+    const own = _kinds.get(kind);
+    if (own && typeof own.preset === 'function') return own.preset(config, name);
     let out = config;
     for (const [id, v] of Object.entries(presetValues(name, kind))) out = writeField(out, fieldOf(kind, id), v, kind);
     return out;
