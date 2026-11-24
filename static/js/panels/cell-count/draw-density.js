@@ -215,9 +215,10 @@ export function densityFigure(config, table, opts) {
                 colorscale: [[0, 'rgba(0, 0, 0, 0)'], [1, 'rgba(0, 0, 0, 0)']] }));
         }
         const size = Number.isFinite(options.pointSize) ? Math.min(POINT_SIZE.max, Math.max(POINT_SIZE.min, options.pointSize)) : POINT_SIZE.default;
-        data.push(...pointTraces(pts, { gx, gy, smooth, peak, colors, size, scale: one ? scaleKeys(options, 'marker') : {},
-            bar: one && !layers.image && !contoured ? { title: esc(title) } : null }));
-        notes.points = pointsNote(pts.x.length, pts.total);
+        const drawn = pointTraces(pts, { gx, gy, smooth, peak, colors, size, scale: one ? scaleKeys(options, 'marker') : {},
+            bar: one && !layers.image && !contoured ? { title: esc(title) } : null });
+        data.push(...drawn);
+        notes.points = pointsNote(drawn.reduce((n, t) => n + t.x.length, 0), pts.x.length, pts.total);
     }
     // heatmaps and contours carry no legend of their own in every bundle: a marker names each level
     if (sa >= 0) {
