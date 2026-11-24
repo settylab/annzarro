@@ -1312,8 +1312,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 cluster: style.cluster, sortBySize: style.sortBySize });
             const names = groupSources().sources.namesOf(axisId(), reply);
             const permute = (arr) => (arr ? reorder(arr, order.rows, order.groups, G) : arr);
-            const colours = groupSources().sources.coloursOf(axisId(), reply).factors;
-            const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf, colors: colours });
+            const coloured = groupSources().sources.coloursOf(axisId(), reply);
+            const colours = coloured.factors;
+            // each group's own colour and names, for the Group band (decision 38)
+            const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf, colors: colours,
+                groups: { colours: coloured.groups, generated: coloured.generated, names } });
             const look = resolveStyle(_config, TYPE);
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
