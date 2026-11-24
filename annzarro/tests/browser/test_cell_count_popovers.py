@@ -90,8 +90,9 @@ def test_the_toolbar_is_save_as_grouping_color_then_undo_and_save_works_from_it(
     depth, score = obs("depth"), obs("score")
     _open(page, served, {CC: _count(mode="hist2d", x=depth, y=score)})
     _drawn(page, "hist2d")
-    # design note section 4: [panel actions] [Display ▾] ... [Undo] [Plot Options]; Download CSV is in Plot Options ▸ Export (WP-5a)
-    assert page.evaluate(TOOLBAR, S) == ["Save as grouping", "Display ▾", "Undo", "Plot Options"]
+    # design note section 4: [panel actions] [Display ▾] ... [Undo] [Plot Options]; Download CSV is in Plot Options ▸ Export (WP-5a);
+    # 3D (WP-11) is a panel action beside Save as grouping
+    assert page.evaluate(TOOLBAR, S) == ["Save as grouping", "3D", "Display ▾", "Undo", "Plot Options"]
     assert page.query_selector(f"{S} .ccnt-table-btn") is None
     page.click(f"{S} .ccnt-toolbar .ccnt-save-btn")
     page.wait_for_selector(f"{S} .ccnt-save")
