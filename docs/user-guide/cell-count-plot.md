@@ -30,8 +30,25 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 | **Fade by its share** | Under the most frequent level's factor, in a 2D histogram or heatmap |
 | **Save as grouping** | On the toolbar: turns the plot's bars into a {doc}`cell-grouping` |
 | **Color ▾** | On the toolbar, where the plot has a colour scale or colours levels (below) |
-| **Download CSV** | On the toolbar: the plotted table as a CSV |
 | **Undo** | Undoes the last change |
+| **Plot Options** | On the toolbar, last: the look of the figure, its export and **Download CSV** (below) |
+
+**Plot Options** opens a pop-over over the plot, the same as the Cell-Gene Plot's, with this plot's own defaults. It
+leaves the panel's layout as it is and closes with its button, its **×**, Escape or a click outside it.
+
+| Section | Controls |
+|---|---|
+| Presets | **Default** (the session default, or the built-in look), **Publication** (white, black text and lines, Arial 16, no grid), **Bare** (no grid, axis lines or legend) |
+| Text | **Font**, **Font size**, **Text color**, **Plot title**, **Title size** |
+| Background | **Background** |
+| Axes | **Grid lines** (on by default), **Grid color**, **Grid width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**, **Axis titles**, **Tick labels**, **Zero lines**, **Ticks, about** (the count axis; a category axis keeps one tick per level) |
+| Legend | **Show legend**, **Legend title**, **Position** (right, bottom, top or left), **Space** (at most this share of the width for a legend beside the plot; longer labels are cut short, with the full name in hover), **Column gap**, **Columns**, **Entries, at most** (25) |
+| Margins | Room added on each side, in px |
+| Export | **PNG**, **SVG**, **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV**, the plotted table |
+| Apply | **Apply to other Cell Count plots**; **Make this the session default**, **Back to built-in** |
+
+A legend with more levels than **Entries, at most** lists the first ones and a last line "+ 3 more"; every level is still
+drawn, and a click on an entry still hides its bars. A pie's slices listed this way are not hidden by a click.
 
 **Pop-overs.** **Choose levels**, the binning line and **Color ▾** open small windows over the plot. They never change the
 size of the panel or move the plot, and a change in one applies at once, as one undo step. **Escape**, a click outside or
@@ -222,5 +239,5 @@ cell)." A plot that would make more than 2,000 groups keeps the dialog with **Sa
 make 6,840 groups; a grouping holds up to 2,000. Use fewer bins first."). Densities and the sets modes have no Save as
 grouping.
 
-**Download CSV**, also on the toolbar, saves the plotted numbers (levels, cells, share and the statistic). There is no
+**Download CSV**, in Plot Options ▸ Export, saves the plotted numbers (levels, cells, share and the statistic). There is no
 table of them in the panel; the CSV is the table.

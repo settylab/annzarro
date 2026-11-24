@@ -79,8 +79,11 @@ test('cell plots and gene plots have a default each', () => {
 
 test('only plots have one, and only plots made from the chooser are put on Default', () => {
     assert.equal(setSessionStyle('cell-table', look(), BASE), false);
-    assert.deepEqual(Object.keys(STYLE_TYPES), ['cell-plot', 'gene-plot']);
+    // WP-5a: the plots on the shared Plot Options have a session default too (design note options-ux-080 3.1)
+    assert.deepEqual(Object.keys(STYLE_TYPES), ['cell-plot', 'gene-plot', 'cell-gene', 'cell-count']);
     assert.deepEqual(onDefault('cell-plot', { id: 'a' }), { id: 'a', styleDefault: true });
+    assert.deepEqual(onDefault('cell-gene', { id: 'g' }), { id: 'g', styleDefault: true });
+    assert.deepEqual(onDefault('cell-count', { id: 'c' }), { id: 'c', styleDefault: true });
     const table = { id: 't' };
     assert.equal(onDefault('cell-table', table), table);
 });

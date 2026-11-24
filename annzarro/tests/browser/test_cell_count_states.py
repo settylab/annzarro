@@ -316,13 +316,14 @@ def test_save_as_grouping_is_refused_over_the_grouping_limits_and_opens_from_a_c
 # ------------------------------------------------------------------ 5. no Show as table; Download CSV on the toolbar
 
 def test_there_is_no_show_as_table_and_the_csv_downloads_from_the_toolbar(page, served):
-    """Show as table was dropped (operator ruling, 2026-11-23); the CSV it mirrored stays, on the toolbar until the shared Plot Options."""
+    """Show as table was dropped (operator ruling, 2026-11-23); the CSV it mirrored stays, in Plot Options ▸ Export (WP-5a)."""
     _open(page, served, {CC: _count(mode="bar", x=cc.CELL_TYPE, split=cc.CONDITION)})
     _drawn(page, "bar")
     assert page.query_selector(f"{S} .ccnt-table-btn") is None and page.query_selector(f"{S} .ccnt-table") is None
     assert "Show as table" not in page.inner_text(f"{S} .ccnt-panel")
     with page.expect_download() as info:
-        page.click(f"{S} .ccnt-toolbar .ccnt-csv")
+        page.click(f"{S} .ccnt-toolbar .ccnt-options-btn")
+        page.click("[data-popover='plot-options'] [data-section='export'] .ccnt-csv")
     lines = open(info.value.path(), encoding="utf-8").read().strip().splitlines()
     assert lines[0].split(",")[:4] == ["cell_type", "condition", "Cells", "Share"]
     want = DATA.obs.groupby(["cell_type", "condition"], observed=True).size()
