@@ -340,9 +340,20 @@ export function createGroupSources({ store, host, context, genesStore = null, li
     // THE MOMENTS OF EVERY GENE over one group (SO-8b): the same sources, read in an option `{group, layer}`. The request
     // is the grouping's own with the group, the layer and the grouping's Expressed above, so an edit that moves the
     // groups or the threshold is an edit here, and an edit of a name or a colour is none
+    // The moments wait for the groups: an edit of the grouping is asked for its groups first, so a group the edit took away
+    // is found gone before anything is asked of it (the consumer keeps what it shows meanwhile, as behind any gate).
+    const genesReaders = {
+        get(id) {
+            const src = readers.get(id);
+            if (!src) return null;
+            return { ...src, gate: (dependant) => src.gate(dependant) || (inner.isReady(id, {})
+                ? null : { state: 'computing', progress: null, estimate: null, message: null, reason: null }) };
+        },
+        off: readers.off
+    };
     const genesInner = !genesStore ? null : createDerivedSources({
         store: genesStore,
-        sources: readers,
+        sources: genesReaders,
         context, liveDelayMs, setTimer, clearTimer,
         variantOf(resolved, option) {
             const threshold = thresholdOf(resolved.recipe);
@@ -355,6 +366,17 @@ export function createGroupSources({ store, host, context, genesStore = null, li
         countOf: (values) => values.reply.n_shown,
         kind: 'genes', thing: 'statistic'
     });
+
+    // a grouping whose groups arrive lifts the gate of the moments that wait for them
+    if (genesInner) {
+        const ready = new Set();
+        store.on((key, snap) => {
+            if (snap.state !== 'ready') { ready.delete(key); return; }
+            if (ready.has(key)) return;
+            ready.add(key);
+            genesInner.contextChanged();
+        });
+    }
 
     /** A source or an upstream grouping was edited: both derived sources hear it. */
     function changed(id) {

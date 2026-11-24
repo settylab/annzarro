@@ -93,7 +93,7 @@ const MENUS = new Map();
 function menuReply(id) {
     let held = MENUS.get(id);
     if (!held) {
-        held = { reply: null, handle: null };
+        held = { reply: null, handle: null, names: null, off: null };
         MENUS.set(id, held);
         held.handle = groupSources().sources.watch(id, {
             consumer: { kind: 'plot', role: 'menu', panelId: null, host: null }, option: {}, visible: () => true,
@@ -106,6 +106,15 @@ function menuReply(id) {
         });
         const snap = held.handle.read();
         held.reply = snap.values && snap.values.reply ? snap.values.reply : null;
+        // a rename of a group (or of a level) is an edit of the grouping that asks for nothing: the menus and the plots'
+        // titles name it again (the names are made once per reply and recipe, so this is false until they change)
+        held.off = groupSources().sources.onSource(id, () => {
+            const names = held.reply ? groupSources().sources.namesOf(id, held.reply) : null;
+            if (names === held.names) return;
+            held.names = names;
+            if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
+        });
+        held.names = held.reply ? groupSources().sources.namesOf(id, held.reply) : null;
     }
     return held.reply;
 }
@@ -115,8 +124,20 @@ function forgetMenus() {
     for (const [id, held] of [...MENUS]) {
         if (groupingPanel(id)) continue;
         held.handle.release();
+        if (held.off) held.off();
         MENUS.delete(id);
     }
+}
+
+/** The name the grouping gives the group a setting names now (a rename shows), else the labels it was chosen by. */
+function groupNameOf(setting) {
+    const held = MENUS.get(setting.key);
+    const key = M.groupKeyOf(setting);
+    if (held && held.reply && key) {
+        const i = held.reply.groups.findIndex((g) => M.columnOf(g.key) === setting.column);
+        if (i >= 0) return groupSources().sources.namesOf(setting.key, held.reply)[i];
+    }
+    return Array.isArray(setting.groupWas) ? setting.groupWas.join(' | ') : '';
 }
 
 const kindsNow = () => layerFacts(datasetLayersNow() || [M.DEFAULT_LAYER]).kinds;
@@ -130,7 +151,7 @@ function groupMenu(setting) {
     const id = setting && setting.key;
     const reply = id && groupingPanel(id) ? menuReply(id) : null;
     const choose = { value: '', text: id ? (reply ? 'Choose a group' : 'Groups…') : 'Choose a grouping first', column: '', disabled: true };
-    if (!reply) return { options: [choose], chosen: '', adopt: null };
+    if (!reply) return { options: [choose], chosen: '', adopt: null, search: true };
     const names = groupSources().sources.namesOf(id, reply);
     const options = [choose, ...reply.groups.map((g, i) => ({ value: M.columnOf(g.key), text: names[i], column: M.columnOf(g.key) }))];
     const held = setting.column || '';
@@ -138,7 +159,7 @@ function groupMenu(setting) {
         const was = Array.isArray(setting.groupWas) ? setting.groupWas.join(' | ') : held;
         options.push({ value: held, text: `${was} (no longer a group)`, column: held });
     }
-    return { options, chosen: held, adopt: null };
+    return { options, chosen: held, adopt: null, search: true };
 }
 
 /** The statistic select (the registry's statMenu): every statistic graded on the layer the setting holds. */
@@ -179,9 +200,11 @@ function settingAfter(setting, touched, value) {
  */
 function nameSetting(setting) {
     const title = groupingTitle(setting);
-    const group = Array.isArray(setting.groupWas) ? setting.groupWas.join(' | ') : '';
-    const info = M.statInfo(M.statOf(setting));
-    const lines = [[title, group].filter(Boolean).join(' · '), `${info.menu}${M.unitOf(info.value) === 'fraction' ? ' (fraction)' : ''} · ${M.layerOf(setting)}`].join('\n');
+    const panel = groupingPanel(setting.key);
+    const above = panel && typeof panel.getConfig === 'function' ? M.thresholdOf(panel.getConfig()) : 0;
+    const threshold = ['pct_expressing', 'mean_expressing'].includes(M.statOf(setting)) ? ` (> ${Number(above.toPrecision(4))})` : '';
+    // the Cell-Gene Plot's words for a statistic: "Mean · logged", "% expressing (> 0) · counts"
+    const lines = [[title, groupNameOf(setting)].filter(Boolean).join(' · '), `${VOCABULARY.cellGene.statistic[M.statOf(setting)]}${threshold} · ${M.layerOf(setting)}`].join('\n');
     const changed = (!!title && setting.label !== title) || setting.labelFull !== lines;
     if (title) setting.label = title;
     setting.labelFull = lines;
@@ -293,7 +316,7 @@ function openRecord(host, role, setting, onChange) {
             moments = sources.watchGenes(id, { consumer, option: { group: ref.group, layer: M.layerOf(s) }, visible, onChange: () => note() });
         }
         const out = moments.read();
-        return { ...out, title, group: found, held: g.held };
+        return { ...out, title, group: found, held: g.held, groupName: groupNameOf(s) };
     }
     note = () => onChange(read());
     rec.handle = {
@@ -317,6 +340,7 @@ function binding() {
             describe,
             stillUsed,
             stale: (rec, snap) => (!!rec.drawnKey && !!snap.title && snap.title !== rec.setting.label)
+                || (!!rec.drawnKey && rec.drawnName !== undefined && snap.groupName !== undefined && snap.groupName !== rec.drawnName)
                 || (rec.drawnKey === null && rec.drawnKind !== undefined && coverageKindOf(snap) !== rec.drawnKind),
             refresh: refreshPanel,
             visibilityChanged: () => groupSources().sources.visibilityChanged(),
@@ -357,6 +381,7 @@ function loadSeries(setting, { host, role, expected, unit = 'genes', quiet = fal
     if (snap.values && snap.values.moments) {
         const genes = Number(snap.values.reply.n_var);
         rec.drawnKey = snap.shownKey || snap.key;
+        rec.drawnName = snap.groupName;
         rec.drawnKind = undefined;
         binding().paint(host);
         const values = valuesOf(snap.values.moments, M.statOf(setting), genes);
@@ -434,7 +459,8 @@ function panelsChanged() {
     sources.contextChanged();
     for (const host of _binding.hosts()) {
         for (const rec of _binding.recordsOf(host).values()) {
-            if (rec.drawnKey && groupingTitle(rec.setting) !== rec.setting.label) _binding.refreshSoon(host);
+            if (rec.drawnKey && (groupingTitle(rec.setting) !== rec.setting.label
+                || (rec.drawnName !== undefined && groupNameOf(rec.setting) !== rec.drawnName))) _binding.refreshSoon(host);
         }
         _binding.schedulePaint(host);
     }

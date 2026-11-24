@@ -118,14 +118,15 @@ CSR) can be an axis or a colour too; its columns are offered by position (0, 1, 
 
 Choose **Cell group** as the colour's type to colour each gene by one statistic of that gene over the cells of one
 group of a Cell Grouping ({doc}`cell-grouping`). The selects after the type are the **grouping** (open or closed), the
-**group** (in group order, by its name), the **statistic** (mean, % expressing, mean of expressing cells, sum
+**group** (in group order, by its name; a grouping of more than 50 groups is searched by typing instead of scrolled), the **statistic** (mean, % expressing, mean of expressing cells, sum
 or SD) and the **layer**, each listing everything, with a pair that cannot be computed disabled and its reason as
 the hint ("% expressing cannot be computed on 'X': it has negative values"). Nothing is asked of the server until a group
 is chosen; then one request returns the five moments of every gene over the group, and the plot is coloured from
-them. Switching to another statistic of the same layer, or back, asks for nothing. Another group or layer asks once, and
+them. A group chosen first starts on mean of `X`, and choosing another layer after it asks again; choose the statistic and
+the layer first, then the group, for one request. Switching to another statistic of the same layer, or back, asks for nothing. Another group or layer asks once, and
 so does an edit of the grouping's **Expressed above** in its **Methods ▾**, which % expressing and mean of expressing
-cells read. A fraction is in units 0 to 1 here (the Cell-Gene Plot shows 0 to 100). The colour bar is titled by the
-grouping and the group, then the statistic and the layer.
+cells read. The statistics have the Cell-Gene Plot's names and units (% expressing is 0 to 100). The colour bar is titled by the
+grouping and the group, then the statistic and the layer ("% expressing (> 0) · logged").
 
 The group is kept by its key, so renaming a level or changing the separator changes only what is displayed. When the
 grouping's levels change what the group is made of, the plot keeps colouring by the same key and says "Group changed"

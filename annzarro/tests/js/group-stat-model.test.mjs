@@ -46,21 +46,19 @@ test('a setting survives a link: the group key, the statistic, the layer and the
     assert.equal(M.columnOf(['g:["c:T cell"]', 'c:ctrl']), '["g:[\\"c:T cell\\"]","c:ctrl"]', 'the canonical JSON of the key');
 });
 
-test('every statistic from the moments equals the Cell-Gene Plot\'s, a fraction in units 0 to 1', () => {
+test('every statistic from the moments equals the Cell-Gene Plot\'s, in its units (% expressing is 0 to 100)', () => {
     for (const stat of M.STAT_IDS) {
         const want = statisticColumn(stat, MOMENTS, 4);
         const got = M.statValues(stat, MOMENTS, 4);
         for (let i = 0; i < 4; i++) {
-            const expected = stat === 'pct_expressing' ? want[i] / 100 : want[i];
+            const expected = want[i];
             if (Number.isNaN(expected)) assert.ok(Number.isNaN(got[i]), `${stat} gene ${i} is missing`);
             else assert.equal(got[i], expected, `${stat} gene ${i}`);
         }
     }
-    assert.deepEqual([...M.statValues('pct_expressing', MOMENTS, 4)].map((v) => (Number.isNaN(v) ? null : v)), [0.8, 0, null, 0.5]);
+    assert.deepEqual([...M.statValues('pct_expressing', MOMENTS, 4)].map((v) => (Number.isNaN(v) ? null : v)), [80, 0, null, 50]);
     assert.equal(M.statValues('mean', MOMENTS, 4)[0], 2);
     assert.equal(M.statValues('mean_expressing', MOMENTS, 4)[1], 0, 'cells but none expressing: 0, as the Cell-Gene Plot writes it');
-    assert.equal(M.unitOf('pct_expressing'), 'fraction');
-    assert.equal(M.unitOf('mean'), 'layer units');
     assert.throws(() => M.statValues('count', MOMENTS, 4), /unknown statistic/);
     assert.throws(() => M.statValues('mean', MOMENTS, 5), /five numbers/);
 });

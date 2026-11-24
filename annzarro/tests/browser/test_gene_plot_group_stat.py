@@ -3,8 +3,8 @@ cell_groups route (`shape: "genes"`, SO-8a).
 
 1.  Color > Cell group > Grouping 1 > mean > logged > B cell sends ONE `genes` POST (the selects before the group ask
     nothing), and the colours are the mean of each gene over the B cells.
-2.  Switching between statistics of the same moments (% expressing, SD, mean of expressing cells) sends none; a fraction is
-    in units 0 to 1.
+2.  Switching between statistics of the same moments (% expressing, SD, mean of expressing cells) sends none; % expressing
+    is in the Cell-Gene Plot's units, 0 to 100.
 3.  Expressed above edited in the grouping's Methods sends one, at the new threshold.
 4.  A grouping whose level was renamed keeps the colour: the group is keyed by its key, the label is display.
 5.  A group that is no longer one says "No longer a group" and asks for nothing.
@@ -100,7 +100,7 @@ def _numbers(stat, layer="logged", threshold=0.0):
     elif stat == "sd":
         out = x.std(axis=0)
     elif stat == "pct_expressing":
-        out = above.mean(axis=0)                                    # a fraction: 0 to 1
+        out = 100 * above.mean(axis=0)                              # % expressing, as the Cell-Gene Plot has it: 0 to 100
     else:
         out = np.where(above.sum(axis=0) > 0, (x * above).sum(axis=0) / np.maximum(above.sum(axis=0), 1), 0.0)
     return np.sort(out)
@@ -142,7 +142,7 @@ def test_the_path_through_the_selects_sends_one_request_and_a_switch_of_statisti
     cfg = _config(page)
     assert (cfg["type"], cfg["key"], cfg["column"], cfg["stat"], cfg["layer"], cfg["groupWas"]) == \
         ("group-stat", GA, B_KEY, "mean", "logged", ["B cell"])
-    # the other statistics are the same moments: no request; a fraction is 0 to 1
+    # the other statistics are the same moments: no request; % expressing is 0 to 100
     for stat in ("pct_expressing", "sd", "mean_expressing", "sum", "mean"):
         _pick(page, "stat", stat)
         until(page, "([id, s]) => window.PanelManager.getPanel(id).getConfig().color.stat === s", [G, stat])
@@ -151,7 +151,7 @@ def test_the_path_through_the_selects_sends_one_request_and_a_switch_of_statisti
             return v.length === want.length && v.every((x, i) => Math.abs(x - want[i]) < 1e-6 * Math.max(1, Math.abs(want[i])) + 1e-7); }""",
               [C, _numbers(stat).tolist()], timeout=30)
     assert len(_genes(page)) == 1, "switching between statistics of the same moments sent nothing"
-    assert max(_numbers("pct_expressing")) <= 1.0
+    assert max(_numbers("pct_expressing")) <= 100.0
 
 
 def _computes_genes(request):
@@ -211,6 +211,62 @@ def test_a_group_that_is_no_longer_one_says_so_and_asks_for_nothing(page, served
     until(page, "(t) => { const n = document.querySelector(t + ' .score-notice'); return !!n && n.dataset.state === 'gone'; }", C, timeout=60)
     assert "no longer a group" in _notice(page)["text"].lower()
     waits.expect_stays(lambda: not _genes(page), "a group that is gone asks for nothing", page=page, seconds=1.0)
+
+
+ROW = f"{TG} .cgg-row:has(.cgg-name:text-is('B cell'))"
+FIELD = f"{TG} .cgg-edit input.cgg-edit__name"
+LEVELS = "[data-popover='levels']"
+
+
+def test_a_group_renamed_live_in_the_grouping_grid_keeps_colouring_with_the_new_name(page, served):
+    _open(page, served, {G: _plot(color=_stat()), GA: _grouping()})
+    _wait_colours(page, 40)
+    want = _colours(page)
+    asked = len(_genes(page))
+    page.dblclick(f"{ROW} .cgg-name")
+    page.wait_for_selector(FIELD)
+    page.fill(FIELD, "B lymphocytes")
+    page.keyboard.press("Enter")
+    until(page, """(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis="color"] option')].some(o => o.textContent === 'B lymphocytes')""", C)
+    names = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis="color"] option')].map(o => o.textContent)""", C)
+    assert "B cell" not in names, names
+    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').selectedOptions[0].textContent", C) == "B lymphocytes"
+    until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().color.labelFull || '').includes('B lymphocytes')", G)
+    assert _config(page)["column"] == B_KEY, "the key is the group's; the name is display"
+    assert _notice(page) is None
+    assert _close(_colours(page), want)
+    waits.expect_stays(lambda: len(_genes(page)) == asked, "a name is a label: nothing is asked", page=page, seconds=1.0)
+
+
+def test_a_group_removed_live_from_the_grouping_says_it_is_no_longer_a_group(page, served):
+    _open(page, served, {G: _plot(color=_stat()), GA: _grouping()})
+    _wait_colours(page, 40)
+    asked = len(_genes(page))
+    page.click(f"{TG} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.wait_for_selector(LEVELS, state="visible")
+    page.uncheck(f"{LEVELS} .cgrp-level[data-id='c:B cell'] input[type=checkbox]")      # B cell joins the others: no such group now
+    until(page, "(t) => { const n = document.querySelector(t + ' .score-notice'); return !!n && n.dataset.state === 'gone'; }", C, timeout=60)
+    assert "no longer a group" in _notice(page)["text"].lower()
+    assert _config(page)["column"] == B_KEY, "the setting is kept, so Choose another is a choice"
+    waits.expect_stays(lambda: len(_genes(page)) == asked, "a group that is gone asks for nothing", page=page, seconds=1.0)
+
+
+def test_a_grouping_of_many_groups_is_searched_not_scrolled(page, served):
+    many = {"source": {"type": "obs", "key": "many"}}
+    _open(page, served, {G: _plot(), GA: _grouping(partitionings=[many])})
+    until(page, "(t) => !!document.querySelector(t + ' select.axis-type-select[data-axis=\"color\"] option[value=\"group-stat\"]')", C)
+    _pick(page, "type", "group-stat")
+    search = f'{C} input.group-search[data-axis="color"]'
+    page.wait_for_selector(search, timeout=60000)
+    assert page.is_hidden(f'{C} select.axis-column-select[data-axis="color"]'), "the 1,200 groups are not a select"
+    assert page.evaluate("(s) => document.getElementById(document.querySelector(s).getAttribute('list')).children.length", search) == 1200
+    with page.expect_request(_computes_genes) as asked:
+        page.fill(search, "m0007")
+        page.press(search, "Tab")
+    assert json.loads(asked.value.post_data)["group"] == ["c:m0007"]
+    _wait_colours(page, 40)
+    assert _config(page)["column"] == json.dumps(["c:m0007"], separators=(",", ":"))
+    assert page.input_value(search) == "m0007"
 
 
 # ------------------------------------------------------------------ 6: a link

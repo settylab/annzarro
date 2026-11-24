@@ -10,8 +10,8 @@
  * The server sends the five moments `[n, sum, sumsq, n_above, sum_above]` of every gene over the group
  * (`shape: "genes"`, core/gene_moments.py), one float64 block `[n_var, 5 * thresholds]`. The statistic is derived here
  * (`statValues`), so a change of statistic or a switch between statistics of the same moments sends no request; the
- * request names the group, the layer and the grouping's Expressed above only. Fractions are in units 0 to 1
- * (decision 35), not the Cell-Gene Plot's 0 to 100.
+ * request names the group, the layer and the grouping's Expressed above only. A statistic has the Cell-Gene Plot's
+ * name and units (% expressing is 0 to 100), from the same table (utils/group-statistics.js).
  */
 import { statisticColumn, MOMENT_STRIDE } from './cell-gene-model.js';
 import { STATISTIC_INFO, CELL_COUNT, statisticChoices, statisticLayerChoices, statisticPairAfter } from './group-statistics.js';
@@ -24,14 +24,8 @@ export const DEFAULT_LAYER = 'X';
 /** The statistics of the source's menu: the Cell-Gene Plot's, without Cell count. */
 export const STAT_IDS = Object.freeze(STATISTIC_INFO.map((m) => m.value));
 
-/** The statistics that are fractions of the group's cells: 0 to 1 here (decision 35). */
-const FRACTIONS = Object.freeze(['pct_expressing']);
-
 /** A statistic's entry of the table (`value`, `label`, `menu`...); the default's for one this page does not know. */
 export const statInfo = (stat) => STATISTIC_INFO.find((m) => m.value === stat) || STATISTIC_INFO[0];
-
-/** The unit a statistic is in, for a colour bar title. */
-export const unitOf = (stat) => (FRACTIONS.includes(stat) ? 'fraction' : 'layer units');
 
 /** The statistic a setting holds, or the default for one that holds none (or one this page does not know). */
 export const statOf = (setting) => (setting && STAT_IDS.includes(setting.stat) ? setting.stat : DEFAULT_STAT);
@@ -87,8 +81,8 @@ export function momentsHash(groupingKey, group, layer, threshold) {
 }
 
 /**
- * One statistic of every gene from the moments the route sent. Equal to `statisticColumn` of the Cell-Gene model over
- * the same moments, with the fraction in 0 to 1. NaN where the group has no cell with a finite value of that gene.
+ * One statistic of every gene from the moments the route sent: `statisticColumn` of the Cell-Gene model over the same
+ * moments, genes in the place of groups. NaN where the group has no cell with a finite value of that gene.
  * @param {string} stat - mean, pct_expressing, mean_expressing, sum or sd
  * @param {Float64Array} moments - `[genes, 5]` (one threshold), as the route's block
  * @param {number} genes
@@ -97,9 +91,7 @@ export function momentsHash(groupingKey, group, layer, threshold) {
 export function statValues(stat, moments, genes) {
     if (stat === CELL_COUNT || !STAT_IDS.includes(stat)) throw new Error(`unknown statistic ${stat}`);
     if (moments.length !== genes * MOMENT_STRIDE) throw new Error('the moments do not hold five numbers for every gene');
-    const out = statisticColumn(stat, moments, genes);
-    if (FRACTIONS.includes(stat)) for (let i = 0; i < out.length; i++) out[i] /= 100;
-    return out;
+    return statisticColumn(stat, moments, genes);
 }
 
 // ------------------------------------------------------------------------------------------------ the selects
@@ -133,9 +125,4 @@ export function layerMenu(held, kinds, datasetLayers) {
 export function pairAfter(held, changed, value, kinds, datasetLayers) {
     const p = statisticPairAfter(changed === 'stat' ? 'method' : 'layer', value, { method: statOf(held), layer: layerOf(held) }, { datasetLayers, kinds });
     return { stat: p.method || statOf(held), layer: p.layer || layerOf(held), say: p.say || '' };
-}
-
-/** What a setting is called where it leaves the app: "B cell · mean · logged", the title of the grouping apart. */
-export function statLabel(setting, groupName) {
-    return [groupName, `${statInfo(statOf(setting)).menu}`, layerOf(setting)].filter(Boolean).join(' · ');
 }
