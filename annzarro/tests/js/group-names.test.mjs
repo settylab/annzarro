@@ -71,3 +71,41 @@ test('Drop removes one override, drop all removes the inactive ones only', () =>
     assert.deepEqual(colours.withoutInactiveOverrides(recipe, ['B', 'T']), [{ name: 'B', label: 'Bs' }]);
     assert.equal(colours.withoutGroupOverride({ groupOverrides: [{ name: 'B', label: 'Bs' }] }, 'B'), undefined);
 });
+
+// ------------------------------------------------------------------------------------------------- nested groupings
+
+const { groupLevelId } = await import('../../../static/js/utils/level-id.js');
+
+/**
+ * An outer grouping whose one factor is the inner grouping above: its levels are the inner groups. As the group store reads
+ * the reply, the factor's `names` are what the inner groups are CALLED (a label the user gave shows) and `generatedNames` what
+ * they are keyed by.
+ */
+function outer(innerLabelled) {
+    const ids = [groupLevelId(['c:B']), groupLevelId(['c:T'])];
+    const reply = {
+        n_shown: 100,
+        partitionings: [{ levels: ids, counts: [60, 40],
+            names: { [ids[0]]: innerLabelled ? 'B lymphocytes' : 'B', [ids[1]]: 'T' }, generatedNames: { [ids[0]]: 'B', [ids[1]]: 'T' } }],
+        groups: [{ key: [ids[0]], n: 60 }, { key: [ids[1]], n: 40 }]
+    };
+    const make = (groupOverrides) => normalizeGrouping({ partitionings: [{ source: { type: 'cell-group', key: 'inner' } }], groupOverrides }).recipe;
+    return { reply, make };
+}
+
+test('renaming an inner group is display only: the outer grouping keeps its override active and shows the inner label', () => {
+    const { reply, make } = outer(true);
+    const recipe = make([{ name: 'B', color: '#112233' }]);
+    assert.deepEqual(generatedGroupNames(recipe, reply, () => undefined), ['B', 'T'], 'keyed by the inner GENERATED names');
+    assert.deepEqual(groupNames(recipe, reply, () => undefined), ['B lymphocytes', 'T'], 'displayed with the inner label');
+    const state = groupOverrideState(recipe, generatedGroupNames(recipe, reply, () => undefined));
+    assert.deepEqual(state.active, [{ name: 'B', color: '#112233' }], 'the override stays active');
+    assert.deepEqual(state.inactive, []);
+});
+
+test('an outer label wins over the inner label, and a reply with no generated names reads as before', () => {
+    const { reply, make } = outer(true);
+    assert.deepEqual(groupNames(make([{ name: 'B', label: 'Bs' }]), reply, () => undefined), ['Bs', 'T']);
+    const plain = { ...reply, partitionings: [{ ...reply.partitionings[0], generatedNames: undefined }] };
+    assert.deepEqual(generatedGroupNames(make(undefined), plain, () => undefined), ['B lymphocytes', 'T'], 'no generated names: the names stand');
+});

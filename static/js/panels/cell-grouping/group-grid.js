@@ -132,7 +132,7 @@ function mount(host, ctx) {
         const factor = (i) => (s.made.partitionings[i] ? sourceName(s.made.partitionings[i].source, sourceTitleOf) : '');
         const reasons = () => reasonRows(noGroupReasons(s.made, reply, factor));
         const overrides = new Map((Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : []).map((o) => [o.name, o]));
-        return { recipe, reply, rows, cross, factor, reasons, total: rows.length, reasonList: null, generated: got.generated, overrides };
+        return { recipe, reply, rows, cross, factor, reasons, total: rows.length, reasonList: null, generated: got.generated, overrides, namesRef: names, coloursRef: got };
     }
 
     // ---------------------------------------------------------------------------------- the list
@@ -530,7 +530,11 @@ function mount(host, ctx) {
             return;
         }
         root.hidden = false;
-        if (!model || model.reply !== reply || model.recipe !== recipe) {
+        // the names and colours are made once per reading of the reply: another grouping this one is built on may have been renamed
+        // or recoloured with nothing in this recipe or reply changing
+        const named = groupSources().sources.namesOf(ctx.panelId, reply);
+        if (!model || model.reply !== reply || model.recipe !== recipe || model.namesRef !== named
+            || model.coloursRef !== groupSources().sources.coloursOf(ctx.panelId, reply)) {
             model = makeModel(recipe);
             if (!model) { root.hidden = true; return; }
         }

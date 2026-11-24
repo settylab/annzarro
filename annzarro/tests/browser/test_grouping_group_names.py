@@ -12,9 +12,15 @@ separator). The label is what every panel that shows the grouping calls the grou
     back, and Drop removes it.
 5.  A level's colour beside its name editor in a factor's levels pop-over; the Cell-Gene strip shows it.
 6.  A label another group already has is qualified.
+7.  Renaming an inner group is display only: an outer grouping built on it keeps its override active and shows the label.
+8.  A renamed group's label is in a Cell Table's group column and in both CSV exports (Export CSV, Export cells).
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
+import csv
+import io
+import pathlib
+
 from annzarro.tests.browser.test_cell_group_plots import by
 from annzarro.tests.browser.test_cell_gene_panel import GENES, P as GP, S1, TP as GT, _plot as _gene_plot, _sig  # noqa: E402
 from annzarro.tests.browser.test_grouping_palettes import (  # noqa: E402,F401
@@ -50,6 +56,13 @@ def _axis_labels(page):
 
 def _legend_names(page):
     return [name for name in _plot_colours(page)]
+
+
+def _grid_in(page, tile):
+    """The group grid of a tile as {name: swatch colour}."""
+    until(page, "(s) => document.querySelectorAll(s + ' .cgg-row .cgg-swatch').length > 0", tile)
+    return dict(page.evaluate("""(s) => [...document.querySelectorAll(s + ' .cgg-row')].map((r) => [r.querySelector('.cgg-name').textContent,
+        r.querySelector('.cgg-swatch').style.backgroundColor])""", tile))
 
 
 def _names(page):
@@ -214,3 +227,46 @@ def test_a_label_another_group_has_is_qualified(page, served):
     _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE], groupOverrides=[{"name": B, "label": "T cell"}])}, (GA,))
     names = _names(page)
     assert "T cell" in names and "T cell (2)" in names, names
+
+
+GB = "cell-grouping-B"
+TA = "cell-table-T"
+TBOX = f"#table-container-{TA}"
+OUTER = f'.tile[data-tile-id="{GB}"]'
+
+
+def test_renaming_an_inner_group_is_display_only_and_the_outer_override_stays_active(page, served):
+    outer = {"id": GB, "title": "Grouping 2", "version": 1, "partitionings": [{"source": {"type": "cell-group", "key": GA}}],
+             "groupOverrides": [{"name": B, "color": "#fedcba"}]}
+    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE]), GB: outer}, (GA, GB))
+    until(page, "(s) => document.querySelectorAll(s + ' .cgg-row').length > 0", OUTER)
+    assert B in list(_grid_in(page, OUTER)) and not page.locator(f"{OUTER} .cgg__inactive:not([hidden])").count()
+    # rename the inner group: the outer grouping shows the label and keeps its override
+    page.dblclick(f"{ROW} .cgg-name")
+    page.fill(FIELD, "B lymphocytes")
+    page.keyboard.press("Enter")
+    until(page, "(s) => [...document.querySelectorAll(s + ' .cgg-name')].some(e => e.textContent === 'B lymphocytes')", OUTER)
+    assert page.locator(f"{OUTER} .cgg__inactive:not([hidden])").count() == 0, "the override is still active"
+    assert _rgb(page, [_grid_in(page, OUTER)["B lymphocytes"]]) == _rgb(page, ["#fedcba"]), "and still colours the group"
+    assert _config(page, GB)["groupOverrides"] == [{"name": B, "color": "#fedcba"}], "keyed by the inner generated name"
+
+
+def _download_rows(page, selector):
+    with page.expect_download() as info:
+        page.click(selector)
+    return list(csv.reader(io.StringIO(pathlib.Path(info.value.path()).read_text())))
+
+
+def test_a_renamed_group_is_in_the_table_column_and_both_exports(page, served):
+    table = {"id": TA, "title": "Table 1", "columns": [{"type": "obs", "key": "cell_type", "column": ""}, by(GA)]}
+    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE], groupOverrides=[{"name": B, "label": "B lymphocytes"}]), TA: table}, (GA, TA))
+    until(page, "(box) => [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].some(th => th.textContent.trim() === 'Grouping 1')", TBOX)
+    column = page.evaluate("""(box) => { const dt = $(box + ' .dataTables_scrollBody table').DataTable();
+        const i = [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].findIndex(th => th.textContent.trim() === 'Grouping 1');
+        return [...new Set(dt.rows().indexes().toArray().map(r => String(dt.cell(r, i).render('display')).replace(/<[^>]+>/g, '').trim()))]; }""", TBOX)
+    assert "B lymphocytes" in column and B not in column, column
+    groups = _download_rows(page, f"{A} .cgg__export")
+    names = [row[1] for row in groups[1:]]
+    assert "B lymphocytes" in names and B not in names, "Export CSV"
+    cells = _download_rows(page, f"{A} .cgg__export-cells")
+    assert {row[1] for row in cells[1:]} >= {"B lymphocytes"} and B not in {row[1] for row in cells[1:]}, "Export cells"
