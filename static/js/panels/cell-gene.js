@@ -597,6 +597,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             return cfg;
         }
 
+        /** `obj` without `key` (a copy). */
+        function withoutKey(obj, key) {
+            const out = { ...obj };
+            delete out[key];
+            return out;
+        }
+
         /** The edges the 3D labels stand on now, from the camera on screen (Side Fixed keeps them). */
         function currentLabelEdges() {
             const fl = _dom && _dom.plot && _dom.plot._fullLayout;
@@ -611,6 +618,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const l3 = next && next.labels3d;
             if (l3 && l3.side === 'fixed' && !l3.edges) next = { ...next, labels3d: { ...l3, edges: currentLabelEdges() } };
             if (JSON.stringify(next) === JSON.stringify(_config)) return;
+            // a link from before keeps its px dot range (`dotSizes`) until Largest dot (Plot Options) is moved: then the
+            // largest dot is a share of its cell, as the slider says (its smallest is already Smallest dot, sections.js)
+            if (_config.dotSizes !== undefined && next.dotScale !== _config.dotScale) next = withoutKey(next, 'dotSizes');
             _undo.push(label, [JSON.stringify(_config)]);
             _config = normalizeCellGene(next).config;
             _message = said;
