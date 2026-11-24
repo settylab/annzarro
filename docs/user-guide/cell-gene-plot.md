@@ -149,8 +149,9 @@ score, or a size that is not 0 to 100) gets its own colour bar or size legend, t
 
 Clustering runs in the browser, off the page's main thread, **on the colour values as displayed**, after scaling.
 Two rows are compared over the columns where both have a value. A row with too few values in common with the others,
-or a constant row under correlation, is not clustered and goes last ("3 rows not clustered: too few values in common,
-or constant. They are at the end."). A block of more than 2,000 rows is not clustered, with the reason. The order is
+or a constant row under correlation, is not clustered and goes last. A **Partly clustered** tag on the status line says
+so ("3 rows not clustered: too few values in common, or constant. They are at the end."). A block of more than 2,000
+rows is not clustered, and the same tag gives the reason. The order is
 worked out again from the settings each time and is never stored. A dendrogram is drawn for each clustered block,
 unless its **Dendrograms** box is cleared.
 

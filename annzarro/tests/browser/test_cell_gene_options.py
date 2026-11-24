@@ -97,9 +97,11 @@ def test_the_cluster_menu_offers_its_scopes_states_the_method_and_counts_rows_le
     n = len(page.calls)
     menu.locator("[data-scope='genes'] input[value='sections']").check()
     until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().cluster || {}).genes === 'sections'", P)
-    note = page.locator(f"{TP} .cgene-cluster-note")
-    until(page, "(s) => { const n = document.querySelector(s + ' .cgene-cluster-note'); return !!n && n.textContent.length > 0; }", TP)
-    assert note.inner_text() == "1 row not clustered: too few values in common, or constant. They are at the end."
+    # the sentence is a tag of the plot's status strip (it no longer wraps in the control grid and grows the tile)
+    note = f"{TP} .ps-tag[data-tag='cgene-cluster']"
+    page.wait_for_selector(note, timeout=30000)
+    assert page.locator(note).inner_text() == "Partly clustered"
+    assert page.locator(note).get_attribute("title") == "1 row not clustered: too few values in common, or constant. They are at the end."
     _redrawn(page, "(p) => p.layout.xaxis.ticktext[p.layout.xaxis.ticktext.length - 1] === 'GENE003'")
     assert sorted(_ticks(page)) == sorted(genes)
     _settle(page, "clustering reorders what is held; there is no request to wait for")
@@ -107,7 +109,7 @@ def test_the_cluster_menu_offers_its_scopes_states_the_method_and_counts_rows_le
     # off again: the source order, and the sentence goes
     menu.locator("[data-scope='genes'] input[value='off']").check()
     _redrawn(page, "(p, a) => JSON.stringify(p.layout.xaxis.ticktext) === JSON.stringify(a)", genes)
-    assert note.inner_text() == ""
+    page.wait_for_selector(note, state="detached", timeout=30000)
 
 
 def test_within_the_first_factor_is_offered_for_a_grouping_of_two_factors(page, served):

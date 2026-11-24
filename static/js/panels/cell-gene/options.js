@@ -448,7 +448,6 @@ function mount(slot, ctx) {
         select('distance', WO.distanceLabel, DISTANCES.map((d) => [d, WO.distance[d]]),
             (v) => setCluster({ distance: v }, `distance ${WO.distance[v]}`)),
         wardNote, summary, dendroRow);
-    const note = el('div', { class: 'cgene-cluster-note cgene-help', role: 'status', aria: { live: 'polite' } });
 
     /** A scope's radios, made again only when its entries change (a factor more or less), so focus stays put. */
     function radios(row, scope, entries, value) {
@@ -634,7 +633,7 @@ function mount(slot, ctx) {
         labels3dSection,
         el('fieldset', { class: 'cgene-options__section cgene-export' }, el('legend', { text: WO.exportHeading }), ...imageBtns, csvBtn));
 
-    slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn, note);
+    slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn);
 
     // ---------------------------------------------------------------- the pop-overs (ui/popover.js)
     const popover = (anchor, name, title, body) => createPopover({
@@ -752,7 +751,10 @@ function mount(slot, ctx) {
 
         const drawn = ctx.drawn();
         csvBtn.disabled = !drawn;
-        note.textContent = clusterNotes(drawn).join(' ');
+        // rows or groups the clustering left out: a tag of the plot's status strip, not a line that wraps in the control
+        // grid (it grew the panel, and with it the row, as the plot drew)
+        const notes = clusterNotes(drawn);
+        if (ctx.tag) ctx.tag('cgene-cluster', notes.length ? { text: WO.notClusteredTag, title: notes.join(' '), severity: 'notice', pop: { text: notes.join(' ') } } : null);
 
         // 3D: pressed while stored; over the cap it cannot be turned on, and says why (a stored 3D can always be turned off)
         const in3d = c.view === '3d';

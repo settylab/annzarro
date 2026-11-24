@@ -814,6 +814,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 // the matrix drawn, for the 3D cap; the image export of Plot Options
                 shape: () => (_shown ? { rows: _shown.rows, groups: _shown.groups } : null),
                 exportImage: (format) => { if (_dom && _shown) exportPlot(_dom.plot, format, {}, 'full'); },
+                // a tag of the plot's status strip (the clustering's sentences)
+                tag: (kind, tag) => { if (_dom) setStatusTag(_dom.plot, kind, tag); },
                 // Side Fixed (Plot Options ▸ 3D labels) keeps the edges the labels are on now
                 labelEdges: () => {
                     const fl = _dom && _dom.plot && _dom.plot._fullLayout;

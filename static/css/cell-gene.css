@@ -128,8 +128,6 @@
 .cgene-cluster-scope .cgene-field__label { min-width: 6.5rem; }
 .cgene-help { margin: 0; color: var(--az-muted); font-size: 0.75rem; }
 .cgene-help[hidden] { display: none; }
-.cgene-cluster-note { flex: 1 1 100%; }
-.cgene-cluster-note:empty { display: none; }
 .cgene-dendrograms { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .cgene-dendrograms .cgene-field__label { min-width: 6.5rem; }
 .cgene-pop .cgene-field { display: flex; justify-content: space-between; gap: 8px; }
@@ -162,8 +160,11 @@
 /* One cell per group (X3b, CXG-27): the suggestion of a heatmap, with its button */
 .cgene-hint { display: flex; align-items: center; gap: 6px; padding: 2px 8px; font-size: 0.75rem; }
 .cgene-hint[hidden] { display: none; }
-/* the plot fills the area; the status strip of utils/panel-surface.js follows it, below */
-.cgene-area { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 240px; }
+/* the plot fills the area; the status strip of utils/panel-surface.js follows it, below. The area takes what the tile
+   leaves and never sizes the tile: Plotly's figure is drawn in px to the plot, and with the strip it made the row grow
+   when the plot drew (operator: a panel must not resize or move the layout while working). `contain: size` leaves the
+   area's own content out of its size; its 240 px minimum stays. */
+.cgene-area { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 240px; contain: size; }
 .cgene-plot { position: relative; flex: 1 1 auto; min-height: 0; }
 .cgene-empty { display: none; }
 .cgene-area--empty .cgene-empty {
