@@ -391,3 +391,22 @@ test('one group: the points are on the color map of the plot, with the color bar
     const over = D.densityFigure(config, table, opts({ adjust: 1, layers: { points: true, fill: true }, ...color }, { points: pts }));
     assert.equal(over.data.find((t) => t.type === 'scattergl').marker.showscale, false, 'the isolines hold the color bar');
 });
+
+test('the points, the isolines and the legend take each level\'s color from the one resolver', () => {
+    const { config, table } = twoD('umap__a1', { adjust: 1 }, true);
+    const withPalette = { ...config, color: { palette: 'Set2' } };
+    const fig = D.densityFigure(withPalette, table, opts({ adjust: 1, layers: { fill: true, lines: true, points: true } }, { points: cells(400, 2) }));
+    const legend = fig.data.filter((t) => t.type === 'scatter' && t.name).map((t) => t.marker.color);
+    const rgb = (hex) => `${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}`;
+    assert.equal(legend.length, 2);
+    for (const [k, hex] of legend.entries()) {
+        assert.match(hex, /^#[0-9a-f]{6}$/i);
+        const contour = fig.data.filter((t) => t.type === 'contour')[k];
+        assert.equal(contour.line.color, hex, 'the isolines');
+    }
+    const bases = new Set(fig.data.filter((t) => t.type === 'scattergl').map((t) => t.marker.color.replace(/, [\d.]+\)$/, ')')));
+    assert.ok(bases.size > 0);
+    for (const base of bases) assert.ok(legend.some((hex) => base === `rgba(${rgb(hex)})`), `a point color ${base} is a legend color`);
+    const plain = D.densityFigure(config, table, opts({ adjust: 1, layers: { fill: true } }));
+    assert.notDeepEqual(plain.data.filter((t) => t.type === 'scatter' && t.name).map((t) => t.marker.color), legend, 'the plot\'s palette is honored');
+});
