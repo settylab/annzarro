@@ -71,12 +71,34 @@ def _open(page, served, table=None, plots=(), sig=True, sig_open=False, wait=Tru
         page.wait_for_selector(f"{BOX} .dataTables_scrollBody", state="attached", timeout=30000)
 
 
+AGG_MENU = "[data-popover='aggregation']"
+
+
+def add_row_entries(page, group):
+    """What the add row's aggregation button lists: [{v, off, title, sym, name}]; the menu is closed again."""
+    page.click(f"{group} .az-score-add-agg")
+    page.locator(AGG_MENU).wait_for(state="visible")
+    rows = page.evaluate("""() => [...document.querySelectorAll("[data-popover='aggregation'] [data-agg]")].map(r => ({ v: r.dataset.agg,
+        off: r.disabled, title: r.title, on: r.getAttribute('aria-checked') === 'true', sym: r.querySelector('.axis-agg-sym').textContent,
+        name: r.querySelector('.axis-agg-name').textContent }))""")
+    page.keyboard.press("Escape")
+    page.locator(AGG_MENU).wait_for(state="hidden")
+    return rows
+
+
+def pick_add_method(page, group, method):
+    """Choose a method in the add row's aggregation button."""
+    page.click(f"{group} .az-score-add-agg")
+    page.locator(AGG_MENU).wait_for(state="visible")
+    page.click(f"{AGG_MENU} [data-agg='{method}']")
+
+
 def _add_score(page, sig=SIG, method="zscore_mean", layer="X", tid=TID):
-    """Tick a score column through the chooser's add row, `[method] on [layer] [Add column]` (decision 31): the tab
-    lists a source's ticked columns only, never every method x layer pair."""
+    """Tick a score column through the chooser's add row, `[layer] [aggregation button] [Add column]` (decision 31):
+    the tab lists a source's ticked columns only, never every method x layer pair."""
     group = f"#gene-score-content-{tid} .az-score-group[data-entity='{sig}']"
     page.select_option(f"{group} .az-score-add-layer", layer)
-    page.select_option(f"{group} .az-score-add-method", method)
+    pick_add_method(page, group, method)
     page.click(f"{group} .az-score-add-btn")
     assert page.is_checked(f"#checkbox-gene-score-{sig}-{method}-of-{layer}-{tid}")
 
@@ -173,7 +195,7 @@ def test_the_chooser_lists_each_signature_with_an_add_row_and_takes_several_at_o
     groups = page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' .az-score-group')].map(g => ({ title: g.querySelector('.az-score-group-title').textContent, subs: [...g.querySelectorAll('label')].map(l => l.textContent) }))", TID)
     assert sorted(g["title"] for g in groups) == ["Other score", "T cell score"]
     assert all(g["subs"] == [] for g in groups), "nothing ticked: no method x layer pair is listed"
-    methods = page.evaluate("(id) => [...document.querySelectorAll('#gene-score-content-' + id + ' .az-score-add-method')].map(s => s.options.length)", TID)
+    methods = [len(add_row_entries(page, f"#gene-score-content-{TID} .az-score-group[data-entity='{sig}']")) for sig in (SIG, "gene-signature-U")]
     assert methods == [6, 6], "every method, in each source's add row"
     for sig, sub in ((SIG, "zscore_mean"), (SIG, "mean"), ("gene-signature-U", "zscore_mean")):
         _add_score(page, sig, sub, "X")
@@ -783,3 +805,69 @@ def test_a_score_column_on_a_table_the_memory_guard_refuses_asks_for_nothing_unt
     assert _api(page, "dt.rows().count()") == 30
     assert max(float(v) for v in _column(page, 2)) <= 29.0
     _wait_no_notice(page)
+
+
+# ------------------------------------------------------------------ T1: the shared add row (table-chooser-080.md 3)
+
+ADD_ROW = f"#gene-score-content-{TID} .az-score-group[data-entity='{SIG}']"
+# METHOD_INFO's order, each with its symbol (utils/aggregation-symbols.js SCORE_SYMBOLS)
+METHOD_SYMBOLS = [("zscore_mean", "z"), ("mean", "x"), ("sum", "Σ"), ("control_adjusted", "Δ"), ("detected", "n/N"), ("fraction_of_total", "%")]
+
+
+def test_add_row_is_layer_then_aggregation_button(page, served):
+    """No method select: the layer select, then the shared aggregation button, then Add column; the button lists every
+    method as symbol and name in METHOD_INFO's order, and a pair that cannot be computed is greyed with its reason."""
+    _open(page, served, table=_table(columns=[OBS]))
+    page.click(f"#gene-score-tab-{TID}")
+    page.wait_for_selector(f"{ADD_ROW} .az-score-add-agg", timeout=10000)
+    assert page.locator(f"{ADD_ROW} .az-score-add-method").count() == 0, "the method select is gone"
+    assert page.locator(f"{ADD_ROW} .az-score-add-on").count() == 0, "so is the word 'on'"
+    order = page.evaluate("(g) => [...document.querySelector(g + ' .az-score-add').children].map(e => e.className.split(' ').filter(c => c.startsWith('az-score-add-'))[0])", ADD_ROW)
+    assert order == ["az-score-add-layer", "az-score-add-agg", "az-score-add-btn"], order
+    entries = add_row_entries(page, ADD_ROW)
+    assert [(e["v"], e["sym"]) for e in entries] == METHOD_SYMBOLS
+    assert [e["name"] for e in entries] == ["Z-score mean", "Mean", "Sum", "Control-adjusted", "Fraction detected", "% of total"]
+    # on X the shares need counts: greyed with the reason, in the menu
+    page.select_option(f"{ADD_ROW} .az-score-add-layer", "X")
+    on_x = {e["v"]: e for e in add_row_entries(page, ADD_ROW)}
+    assert on_x["detected"]["off"] and on_x["detected"]["title"], on_x["detected"]
+    assert not on_x["mean"]["off"]
+    # the button holds the chosen method's symbol and says it
+    pick_add_method(page, ADD_ROW, "mean")
+    assert page.inner_text(f"{ADD_ROW} .az-score-add-agg") == "x"
+    assert "Mean" in page.get_attribute(f"{ADD_ROW} .az-score-add-agg", "aria-label")
+
+
+def test_added_column_is_stored_as_before(page, served):
+    """A link made before the shared add row loads (its column is ticked), and adding the same pair through the new
+    row stores a column deep-equal to the old form."""
+    old = {"type": "gene-score", "key": SIG, "column": "mean", "layer": "X", "label": "T cell score"}
+    _open(page, served, table=_table(columns=[OBS, old]))
+    page.click(f"#gene-score-tab-{TID}")
+    assert page.is_checked(f"#checkbox-gene-score-{SIG}-mean-of-X-{TID}"), "the old column is listed as ticked"
+    # remove it from the table, then add the same pair through the new row
+    page.uncheck(f"#checkbox-gene-score-{SIG}-mean-of-X-{TID}")
+    page.click(f"#apply-columns-{TID}")
+    until(page, "(id) => !(window.PanelManager.getPanel(id).getConfig().columns || []).some(c => c.type === 'gene-score')", TID)
+    page.click(f"#gene-score-tab-{TID}")
+    _add_score(page, SIG, "mean", "X")
+    page.click(f"#apply-columns-{TID}")
+    until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().columns || []).some(c => c.type === 'gene-score')", TID)
+    cols = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns", TID)
+    assert [c for c in cols if c["type"] == "gene-score"] == [old]
+
+
+def test_ticked_row_shows_symbol(page, served):
+    """A ticked row starts with the method's symbol, and a column just added gets its row with the symbol too."""
+    mean = {"type": "gene-score", "key": SIG, "column": "mean", "layer": "X", "label": "T cell score"}
+    _open(page, served, table=_table(columns=[OBS, mean]))
+    page.click(f"#gene-score-tab-{TID}")
+    label = f"{ADD_ROW} .form-check label"
+    page.wait_for_selector(label)
+    assert page.locator(label).count() == 1
+    assert page.inner_text(f"{ADD_ROW} .form-check .az-score-sym") == "x"
+    assert page.inner_text(label).strip() == "mean · X", "the label stays the column's words"
+    _add_score(page, SIG, "zscore_mean", "X")
+    rows = page.evaluate("(g) => [...document.querySelectorAll(g + ' .form-check')].map(d => [d.querySelector('.az-score-sym').textContent, d.querySelector('label').textContent.trim()])", ADD_ROW)
+    assert [r[0] for r in rows] == ["x", "z"], rows
+    assert page.locator(f"{ADD_ROW} .form-check .az-score-sym.agg-sym--over").count() == 2, "x and z carry their bar"
