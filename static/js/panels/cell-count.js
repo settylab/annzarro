@@ -61,6 +61,10 @@ import { saveOffered, savePlan, openSaveDialog } from './cell-count/save-groupin
 import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
 import { parseAlsoListed } from '../utils/source-registry.js';
 import { PLOT_PALETTES, modebarOf, MODEBAR_REMOVE } from '../utils/plot-theme.js';
+import { resolveStyle } from './plot-utilities/options-schema.js';
+import { applyPlotStyle, styleTheme } from './plot-utilities/plot-style.js';
+import { mountPlotOptions } from './plot-utilities/options-popover.js';
+import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { groupColours } from './plot-utilities/colors.js';
 import { drawPlot } from '../utils/panel-surface.js';
@@ -210,6 +214,8 @@ actions.register({
         let D = null;
         let _controls = null;
         let _sets = null;
+        /** The shared Plot Options pop-over (WP-5a). */
+        let _options = null;
         let _handle = null;
         let _snap = null;
         let _visible = true;
@@ -417,6 +423,8 @@ actions.register({
             if (_controls) _controls.destroy();
             if (_sets) _sets.destroy();
             _sets = null;
+            if (_options) _options.destroy();
+            _options = null;
             if (_dom && window.Plotly && _dom.plot) window.Plotly.purge(_dom.plot);
             _controls = null;
             _initialized = false;
@@ -613,6 +621,15 @@ actions.register({
             container.appendChild(root);
             _dom = { root, controls: _controls.element, plot, plotArea, state, stateBox, working,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
+            // Plot Options: the shared pop-over (WP-5a) on the toolbar's last button, with Download CSV in its Export
+            _options = mountPlotOptions({
+                anchor: _controls.optionsButton, kind: TYPE, panelId: _id, config: () => _config,
+                commit, replace: (next) => { _config = normalizeCountPlot(next).config; changed(); },
+                exportImage: (format, settings) => { if (_dom && _drawing) exportPlot(_dom.plot, format, settings, 'full'); },
+                plotSize: () => (_dom ? { width: _dom.plot.clientWidth, height: _dom.plot.clientHeight } : {}),
+                csv: downloadCsv, canExport: () => !!_drawing, plot: () => plot,
+                classes: { csv: 'ccnt-csv' }
+            });
             if (PARTS.sets && PARTS.sets.mount) {
                 _sets = PARTS.sets.mount(_controls.setsElement, { panelId: _id, config: () => _config, commit, silent,
                     visible: () => _visible && !!_dom && _dom.root.isConnected, redraw: () => { _drawnFrom = null; paint(); } });
@@ -656,6 +673,7 @@ actions.register({
                 _controls.paint();
                 if (_sets) _sets.paint();
             }
+            if (_options) _options.update();
         }
 
         /** The plot, made again only when the table, the config or the theme changed: never per progress frame. */
@@ -684,9 +702,11 @@ actions.register({
             const table = countTable(config, grid, inputs);
             const names = inputNames(config, sourceTitleOf);
             const labels = shownLabels(config, table, live, sourceTitleOf);
+            // the shared Plot Options (WP-5a): the font and colours the builders colour their parts with, then the rest
+            const look = resolveStyle(live, TYPE);
             const opts = {
                 options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(1, config.color && config.color.palette),
-                theme: PLOT_PALETTES[theme],
+                theme: styleTheme(look, PLOT_PALETTES[theme]),
                 measureSource: config.measure ? measureSourceName(config.measure.source, sourceTitleOf) : undefined, titleOf: sourceTitleOf, panelId: _id
             };
             const wantsPoints = config.mode === 'density2d' && opts.options.layers && opts.options.layers.points;
@@ -703,6 +723,8 @@ actions.register({
             const fig = part ? part.figure(config, table, opts)
                 : DENSITY_MODES.includes(config.mode) ? densityFigure(config, table, opts) : countFigure(config, table, opts);
             withSharedColourBars(fig);
+            // the shared Plot Options (WP-5a) after the shared colour bars: it sets no colour bar of its own
+            applyPlotStyle(fig, look, TYPE);
             // a density's sentences (UX 4.4): the bandwidth and the floor in Plot Options, the range in the strip
             _notes = fig.notes || null;
             _colourData = colourValues(fig.data);

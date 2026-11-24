@@ -66,7 +66,10 @@ import { buildFigure, colourBars, sceneLabels, DEFAULT_CAMERA } from './cell-gen
 import { roundCamera } from '../utils/view-rounding.js';
 import { recordCameraOnRelease } from '../utils/scene-camera.js';
 import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
+import { createPlotToolbar } from '../ui/plot-toolbar.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
+import { resolveStyle } from './plot-utilities/options-schema.js';
+import { applyPlotStyle, styleTheme, cellGeneLegend } from './plot-utilities/plot-style.js';
 import { drawPlot, fitToContainer } from '../utils/panel-surface.js';
 import { Coverage } from '../utils/coverage.js';
 import { currentTheme, THEME_EVENT } from '../utils/theme.js';
@@ -74,7 +77,7 @@ import { VOCABULARY } from '../utils/vocabulary.js';
 import {
     normalizeCellGene, cellGeneReferences, addSection, duplicateSection, removeSection, moveSection, setSectionRows,
     setSectionTitle, setRowAggregation, rowAggregationOf, sectionTitle, sectionGenes, sectionLine, tooManyGenesText,
-    aggregationAfter, planFeatures, buildMatrix, heightOf, withGroupingThreshold, SAME_AS_COLOR, GROUP_AXIS
+    aggregationAfter, effectiveAggregation, planFeatures, buildMatrix, heightOf, withGroupingThreshold, SAME_AS_COLOR, GROUP_AXIS
 } from './cell-gene/sections.js';
 import {
     measureModel, pickLayer, axisChoices, axisSourceId, axisRecipe, createControls, createAddGenes,
@@ -205,6 +208,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         let D = null;
         let _dom = null;
         let _controls = null;
+        /** The shared plot toolbar of the grid (ui/plot-toolbar.js). */
+        let _toolbar = null;
         let _sections = null;
         let _addGenes = null;
         let _checklist = null;
@@ -435,7 +440,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     const counted = sectionGenes(recipe, hasGene);
                     const over = tooManyGenesText(src.title, counted.total);
                     out = { key: JSON.stringify([recipe.genes, recipe.down, recipe.input, recipe.method]), kind: src.kind, title: src.title, recipe,
-                        total: counted.total, missing: counted.missing, genes: over ? [] : counted.genes, note: over,
+                        total: counted.total, missing: counted.missing, down: counted.down, genes: over ? [] : counted.genes, note: over,
                         empty: over || (counted.genes.length ? null : `No gene of ${src.title} is in this dataset.`) };
                 }
             }
@@ -462,7 +467,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const dots = _config.mode === 'dots';
             const entries = _config.sections.map((section) => {
                 const r = resolveSource(section.source);
-                return { section, genes: r.genes, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
+                return { section, genes: r.genes, down: r.down || 0, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
             });
             const threshold = baseThreshold();
             const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null,
@@ -678,7 +683,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function setAggregation(i, which, part, value) {
             const section = _config.sections[i];
             if (!section) return;
-            const held = rowAggregationOf(section, which);
+            const held = effectiveAggregation(rowAggregationOf(section, which), _config[which], resolveSource(section.source).down);
             const next = aggregationAfter(held, part, value, scoreChoices(section.source, { method: held.column, layer: held.layer }, { datasetLayers: datasetLayers() }));
             if (!next) { paint(); return; }
             commit(setRowAggregation(_config, i, which, next.agg), `${which === 'color' ? 'color' : 'size'} of ${sectionName(i)}`, { said: next.say });
@@ -686,7 +691,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         function setAbove(i, which, text) {
             const section = _config.sections[i];
-            const held = section && rowAggregationOf(section, which);
+            const held = section && effectiveAggregation(rowAggregationOf(section, which), _config[which], resolveSource(section.source).down);
             const v = Number(text);
             if (!held || held.agg !== 'score_pct_above' || text === '' || !Number.isFinite(v)) { paint(); return; }
             const next = { ...held };
@@ -731,7 +736,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             plot.__azChooser = null;
             const area = el('div', { class: 'cgene-area' }, plot, el('div', { class: 'cgene-empty' }, checklist));
             // Cluster ▾, Color ▾ and Plot Options are pop-overs (cell-gene/options.js), out of the panel's flow
-            _controls.element.append(el('div', { class: 'cgene-undo-wrap' }, undoBtn));
+            // the shared plot toolbar (ui/plot-toolbar.js): [3D] [Cluster ▾] [Color ▾] ... [Undo] [Plot Options], as in every plot
+            _toolbar = createPlotToolbar({ className: 'cgene-toolbar', undo: undoBtn });
+            _controls.element.append(_toolbar.element);
             root.append(_controls.element, message, hint, area);
             root.addEventListener('keydown', onKey);
             container.innerHTML = '';
@@ -831,7 +838,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 title: () => _title,
                 // the matrix drawn, for the 3D cap; the image export of Plot Options
                 shape: () => (_shown ? { rows: _shown.rows, groups: _shown.groups } : null),
-                exportImage: (format) => { if (_dom && _shown) exportPlot(_dom.plot, format, {}, 'full'); },
+                exportImage: (format, settings = {}) => { if (_dom && _shown) exportPlot(_dom.plot, format, settings, 'full'); },
+                // the shared Plot Options (WP-5a): a whole configuration as one undoable step, or (the session default
+                // followed) without one; the plot's size on screen, for an export of the size shown
+                commit: (next, label) => commit(next, label),
+                replace: (next) => { _config = normalizeCellGene(next).config; changed(); },
+                plotSize: () => (_dom ? { width: _dom.plot.clientWidth, height: _dom.plot.clientHeight } : {}),
+                plot: () => (_dom ? _dom.plot : null),
+                toolbar: _toolbar,
                 // a tag of the plot's status strip (the clustering's sentences)
                 tag: (kind, tag) => { if (_dom) setStatusTag(_dom.plot, kind, tag); }
             };
@@ -913,8 +927,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          * and layer selects (score-source.js scoreChoices: every method and layer, graded for the section's source).
          */
         function sectionPart(section, which, layer) {
-            const held = rowAggregationOf(section, which);
-            if (!held.column) return { held, layer, label: CGV.aggregation[held.agg], methods: null, layers: null };
+            const down = resolveSource(section.source).down || 0;
+            const held = effectiveAggregation(rowAggregationOf(section, which), _config[which], down);
+            if (!held.column) return { held, layer, down, label: CGV.aggregation[held.agg], methods: null, layers: null };
             const label = CGV.scoreAggregation[held.agg](scoreOptionName(held));
             const c = scoreChoices(section.source, { method: held.column, layer: held.layer }, { datasetLayers: datasetLayers() });
             const entry = (e, name) => ({ value: e.value, label: e.lapsed ? `${name} (not available)` : name, title: e.title, disabled: e.disabled, lapsed: e.lapsed });
@@ -922,7 +937,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 : [{ value: held.column, label: SIGNATURE_MODEL.methodShort(held.column) }];
             const layers = c ? c.layers.map((e) => ({ value: e.value, label: e.label, title: e.title, disabled: e.disabled, lapsed: e.lapsed }))
                 : [{ value: held.layer || 'X', label: held.layer || 'X' }];
-            return { held, layer, label, methods, layers };
+            return { held, layer, down, label, methods, layers };
         }
 
         function sectionsModel() {
@@ -1297,6 +1312,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const permute = (arr) => (arr ? reorder(arr, order.rows, order.groups, G) : arr);
             const colours = groupSources().sources.coloursOf(axisId(), reply).factors;
             const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf, colors: colours });
+            const look = resolveStyle(_config, TYPE);
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
                 const prev = k > 0 ? matrix.rows[order.rows[k - 1]] : null;
@@ -1319,6 +1335,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
                 legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline, dotOpacity: extras.dotOpacity,
+                // the shared Plot Options' legend column: space, columns, cap (WP-5a)
+                legendLayout: cellGeneLegend(look),
                 pendingText: pending ? pendingText(plan, pending) : ''
             };
             // 3D (UX 6b): within the bar cap; above it the plot is drawn in 2D and the strip says why
@@ -1328,7 +1346,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 model.height = { ...(matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) }), ...extras.height };
                 if (_config.camera) model.camera = _config.camera;
             }
-            const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });
+            // the shared Plot Options (WP-5a): the font and colours the builder measures with, then the rest of the look
+            const figure = applyPlotStyle(buildFigure(model, styleTheme(look, PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'])), look, TYPE);
             if (gate3d && !gate3d.ok) figure.refused3d = gate3d.text;
             if (model.view === '3d' && window.Plotly && window.Plotly.Icons) {
                 figure.config.modeBarButtonsToAdd = [{ name: 'resetCameraCellGene', title: W3.resetCamera, icon: window.Plotly.Icons.home, click: (gd) => resetCamera(gd) }];

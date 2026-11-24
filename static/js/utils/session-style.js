@@ -25,9 +25,23 @@
  * No DOM here, so annzarro/tests/js/session-style.test.mjs runs it in Node.
  */
 import { STYLE_KEYS, pickStyle } from '../panels/plot-utilities/plot-options.js';
+import { PLOT_KINDS, lookPaths, pickLook, adoptLook, lookDiff } from '../panels/plot-utilities/options-schema.js';
 
 /** The panel types that have a session default, and how the menu names them. */
-export const STYLE_TYPES = Object.freeze({ 'cell-plot': 'cell', 'gene-plot': 'gene' });
+export const STYLE_TYPES = Object.freeze({ 'cell-plot': 'cell', 'gene-plot': 'gene', 'cell-gene': 'Cell-Gene', 'cell-count': 'cell count' });
+
+/**
+ * The types on the shared Plot Options (WP-5a, panels/plot-utilities/options-schema.js): their look is the schema's
+ * copied fields, kept by path (`look.fontSize`, `outline.width`), not Cell Plot's STYLE_KEYS, and a plot of them on
+ * Default follows the session default through `followLook` (panels/plot-utilities/options-popover.js), not the
+ * aesthetics menu's restyleDefaultPlots.
+ */
+export const LOOK_TYPES = PLOT_KINDS;
+
+/** The keys a stored default of `type` may hold. */
+function keysOf(type) {
+    return LOOK_TYPES.includes(type) ? lookPaths(type) : STYLE_KEYS;
+}
 
 const copy = (v) => JSON.parse(JSON.stringify(v));
 const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
@@ -58,7 +72,7 @@ export function cleanSessionStyles(raw) {
         const style = raw[type];
         if (!style || typeof style !== 'object' || Array.isArray(style)) continue;
         const kept = {};
-        for (const k of STYLE_KEYS) if (k in style) kept[k] = copy(style[k]);
+        for (const k of keysOf(type)) if (k in style) kept[k] = copy(style[k]);
         if (Object.keys(kept).length) out[type] = kept;
     }
     return out;
@@ -89,7 +103,7 @@ export function diffStyle(picked, base) {
  */
 export function setSessionStyle(type, settings, base = {}) {
     if (!(type in STYLE_TYPES)) return false;
-    const diff = diffStyle(pickStyle(settings), base);
+    const diff = LOOK_TYPES.includes(type) ? lookDiff(pickLook(settings, type)) : diffStyle(pickStyle(settings), base);
     const rest = Object.fromEntries(Object.entries(_styles).filter(([t]) => t !== type));
     _styles = Object.keys(diff).length ? { ...rest, [type]: diff } : rest;
     changed();
@@ -126,6 +140,14 @@ export function effectiveStyle(type, base) {
     const style = _styles[type];
     if (style) for (const k of Object.keys(style)) out[k] = copy(style[k]);
     return out;
+}
+
+/**
+ * A configuration of a shared Plot Options type (LOOK_TYPES) on Default: its look is the session default's, every
+ * copied field it does not set at its built-in value. A copy, with `styleDefault: true`.
+ */
+export function followLook(config, type) {
+    return { ...adoptLook(config, _styles[type] || {}, type), styleDefault: true };
 }
 
 /** The config of a plot of `type` made from the chooser: on Default, so it follows the session default. */

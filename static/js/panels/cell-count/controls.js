@@ -3,8 +3,8 @@
  *
  * Top to bottom: Mode; X (Slices for a pie); Y; Color by with its arrangement; Height or Color, with the source of a
  * statistic or the factor of the most frequent level under it; Labels, Sort by height, Reverse, Horizontal, Log axis and
- * Ring; the density row (Smoothing, Scale by level size, Image); and the toolbar: Save as grouping, Color, Download CSV
- * and Undo. A row the mode does not read is hidden, and what it holds stays stored: one muted line lists it ("Kept for
+ * Ring; the density row (Smoothing, Scale by level size, Image); and the toolbar: Save as grouping, Color, Undo and
+ * Plot Options (the shared pop-over, WP-5a, with Download CSV in its Export). A row the mode does not read is hidden, and what it holds stays stored: one muted line lists it ("Kept for
  * other modes"). A numeric input carries the compact binning line, which opens the shared binning control in a pop-over;
  * a categorical one offers Choose levels in a pop-over; Color opens the colour map, its range and the level palette in
  * one. A pop-over never changes the size or flow of the panel (ui/popover.js, WP-6a). What each choice writes is controls-model.js's; panels/cell-count.js commits
@@ -20,6 +20,7 @@ import { binsRange, binSpacingOf, splitUsed } from '../../utils/count-plot-model
 import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
 import { createPopover } from '../../ui/popover.js';
+import { createPlotToolbar } from '../../ui/plot-toolbar.js';
 import { Config } from '../../config.js';
 import { scaleOptionLabel } from '../../utils/color-scales.js';
 import { listAvailableColormaps } from '../plot-utilities/colors.js';
@@ -636,14 +637,16 @@ export function createControls({ D, id, model, on }) {
         densityNotes.hidden = !densityNotes.textContent;
     }
 
-    // ---------------------------------------------------------------- the toolbar: Save as grouping, Color, Download CSV, Undo
+    // ---------------------------------------------------------------- the toolbar: Save as grouping, Color, Undo, Plot Options
     const saveBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-save-btn', on: { click: () => on.saveAsGrouping() } },
         C.saveGrouping.button);
     const colorBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-color-btn' }, `${CL.button} ▾`);
-    // temporary: Download CSV goes to Plot Options ▸ Export when the shared Plot Options land (WP-5a)
-    const csvBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-csv', on: { click: () => on.csv() } }, C.buttons.csv);
+    // Plot Options: the shared pop-over (WP-5a, plot-utilities/options-popover.js), mounted by the panel on this button;
+    // Download CSV is in its Export section
+    const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-options-btn' }, C.buttons.options);
     const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-undo', disabled: true, on: { click: () => on.undo() } }, C.buttons.undo);
-    const toolbar = el('div', { class: 'ccnt-toolbar' }, saveBtn, colorBtn, el('span', { class: 'ccnt-toolbar__gap' }), csvBtn, undoBtn);
+    // the shared plot toolbar (ui/plot-toolbar.js): the same order, styles and places in every plot panel
+    const toolbar = createPlotToolbar({ className: 'ccnt-toolbar', actions: [saveBtn], menus: [colorBtn], undo: undoBtn, options: optionsBtn }).element;
 
     // Color: the colour map, Reverse, the range, the level palette. Every edit applies live as one undoable step.
     const colorPop = createPopover({
@@ -724,7 +727,6 @@ export function createControls({ D, id, model, on }) {
         else if (colorPop.isOpen()) fillColor();
         saveBtn.hidden = !m.canSave;
         saveBtn.disabled = !m.canExport;
-        csvBtn.disabled = !m.canExport;
     }
 
     // ---------------------------------------------------------------- the bar
@@ -775,6 +777,8 @@ export function createControls({ D, id, model, on }) {
         element,
         /** Where the sets of Venn and UpSet are drawn (V1). */
         setsElement: setsSlot,
+        /** The Plot Options button: the panel mounts the shared pop-over on it (WP-5a). */
+        optionsButton: optionsBtn,
         paint,
         /**
          * Open an input's Choose levels or binning pop-over and focus it: the way out of a refusal (UX 4.3).
