@@ -59,7 +59,7 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
  * @param {Object} config
  * @param {(source: Object) => boolean} isNumeric
  */
-export function binnedX(config, isNumeric) {
+function binnedX(config, isNumeric) {
     const p = config && config.x;
     return config.mode === 'bar' && !!p && !!isNumeric && isNumeric(p.source) && !(isObject(p.binning) && p.binning.method === 'categories');
 }
