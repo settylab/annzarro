@@ -21,7 +21,7 @@ import {
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
-import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
+import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE, IN_TABLE, POINTS } from './plot-make-helper.js';
 import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { colourBar } from './colour-bar.js';
@@ -619,8 +619,8 @@ async function updateNow(plotContainer, data, settings, refreshPlot, options = {
                     const tableTrace = {
                       type: settings.z ? 'scatter3d' : 'scattergl',
                       mode: 'markers',
-                      // named as a fresh draw names it (plot-make.js); told by _azTable, not by its name
-                      name: settings.color.key || 'Value',
+                      // named as a fresh draw names it (plot-make.js IN_TABLE); told by _azTable
+                      name: IN_TABLE,
                       _azTable: true,
                       text: DataManager.cellLabels(tableFilteredIndices.map(i => entities[i])),
                       customdata: tableFilteredIndices.map(i => entities[i]),
@@ -758,7 +758,7 @@ async function updateNow(plotContainer, data, settings, refreshPlot, options = {
                             const tableTrace = {
                                 type: settings.z ? 'scatter3d' : 'scattergl',
                                 mode: 'markers',
-                                name: 'Data points',          // as a fresh draw names it (plot-make.js)
+                                name: IN_TABLE,               // as a fresh draw names it (plot-make.js)
                                 _azTable: true,
                                 text: DataManager.cellLabels(tableIndices.map(i => entities[i])),
                                 customdata: tableIndices.map(i => entities[i]),

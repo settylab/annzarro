@@ -1161,6 +1161,8 @@ export function keptViewRanges(settings) {
 
   /** The trace of the points a table link greys out: behind the rest, in a style of its own (greyMarker). */
   export const NOT_IN_TABLE = 'Not in table';
+  /** The points in the table, beside the greyed-out rest: one name for the first draw and an update. */
+  export const IN_TABLE = 'In table';
 
   /** The one trace of a plot coloured by a scale or by nothing: named, and never a legend entry. */
   export const POINTS = 'Points';
