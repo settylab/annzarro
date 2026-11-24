@@ -49,7 +49,7 @@ the colour from the mean of the log-normalised layer, the size from the share of
   it."); empty the box and press **Enter** to follow the grouping again. When the groups are an obs column, the box
   holds the measure's own threshold, 0 by default. The legends and the hover name the threshold in force either way.
 
-The lists are the same whether the groups are a grouping or an obs column: nothing has to be offered first. A choice
+The lists are the same whether the groups are a grouping or an obs column: nothing has to be set up first. A choice
 stored in a link that the layer cannot give (% expressing on a scaled X) stays selected, marked "(not available)", and
 draws nothing until you choose another layer.
 
@@ -318,8 +318,8 @@ How scanpy's options map onto the plot:
 | `show_gene_labels` (heatmap) | **Gene labels**; labels also thin out when they would overlap |
 | Values printed in the cells (`matrixplot`) | **Print values in cells** |
 | A heatmap with one row per cell | No mode: see {ref}`per-cell-views` |
-| `dot_color_df`, `dot_size_df` as your own matrices | Not offered: Color and Size each pick a statistic and a layer |
-| `var_group_rotation`, `log`, `norm`, `size_exponent`, `color_on`, `dot_edge_color`, `grid`, `gene_symbols` | Not offered |
+| `dot_color_df`, `dot_size_df` as your own matrices | Not available: Color and Size each pick a statistic and a layer |
+| `var_group_rotation`, `log`, `norm`, `size_exponent`, `color_on`, `dot_edge_color`, `grid`, `gene_symbols` | Not available |
 
 Two differences of notation, not of value: **Color** and **Size** each have their own threshold where scanpy has one
 `expression_cutoff` for both, and the CSV gives the colour statistic as computed and, when a scaling is on, also as

@@ -300,7 +300,7 @@ function computed(partitioning) {
 
 /**
  * The hash a grouping's result is cached under (PER-3): equal recipes give equal text, and what no number of the
- * groups depends on does not change it: a rename, the separator, the statistics and layers offered, the detection
+ * groups depends on does not change it: a rename, the separator, an old link's `offered` and `layers`, the detection
  * threshold (each feature's key carries its own), and a default written out. So it is made of what the request sends.
  * Each partitioning is walked once, when the hasher is made, and again only when a variant brings a new one, so
  * hashing the variants of one applied recipe costs nothing per call.
@@ -510,7 +510,7 @@ function wirePartitions(recipe, ctx, depth, sets) {
 
 /**
  * The body of a request for the groups of a recipe (SHR-29, plan 1.2): what the server computes from, with no label,
- * separator or statistic offered, and every default filled in so the body says what the engine does. A table source is
+ * separator or statistic list, and every default filled in so the body says what the engine does. A table source is
  * `{type: 'table', ref}` and its cells are one entry of the top-level `sets`, whichever partitionings use the table.
  * @param {Object} recipe - from normalizeGrouping
  * @param {{subset?: Object, features?: Object[], bitsetFor?: (source: Object) => (ArrayLike<*>|null),

@@ -144,21 +144,18 @@ test('undo restores both sides', () => {
 
 // ------------------------------------------------------------------ what can be offered
 
-test('with down genes sum, fraction detected and % of total cannot, with the reason, and leave the menus', () => {
-    // the graded list of every method (the offered model reads option fields: SO-3 removes it with its callers)
-    const r = { ...recipe({ genes: ['A'], down: ['B'] }), offered: ['zscore_mean', 'mean', 'sum', 'control_adjusted', 'detected', 'fraction_of_total'] };
-    const graded = O.gradedOptions(r, null, { X: 'normalised' });
-    const by = Object.fromEntries(graded.map(o => [o.method, o]));
-    for (const m of ['zscore_mean', 'mean', 'control_adjusted']) assert.equal(by[m].grade, 'ok', m);
+test('with down genes sum, fraction detected and % of total cannot, with the reason, and are disabled where chosen', () => {
+    const choices = (r, kind) => Object.fromEntries(O.scoreMethodChoices({ recipe: r, layer: 'X', kinds: { X: kind } }).map(o => [o.value, o]));
+    const by = choices(recipe({ genes: ['A'], down: ['B'] }), 'normalised');
+    for (const m of ['zscore_mean', 'mean', 'control_adjusted']) assert.equal(by[m].disabled, false, m);
     for (const m of ['sum', 'detected', 'fraction_of_total']) {
-        assert.equal(by[m].grade, 'cannot', m);
-        assert.match(by[m].reason, /down genes/);
+        assert.equal(by[m].disabled, true, m);
+        assert.match(by[m].title, / cannot be computed with down genes: /);
     }
     assert.notEqual(by.sum.reason, by.detected.reason);
-    assert.deepEqual(O.offeredOptions(r, null, { X: 'normalised' }).map(o => o.method), ['zscore_mean', 'mean', 'control_adjusted']);
     // without down genes nothing changes
-    const plain = { ...recipe({ genes: ['A'] }), offered: ['sum', 'detected'] };
-    assert.deepEqual(O.offeredOptions(plain, null, { X: 'counts' }).map(o => o.method), ['sum', 'detected']);
+    const plain = choices(recipe({ genes: ['A'] }), 'counts');
+    assert.equal(plain.sum.disabled || plain.detected.disabled, false);
     assert.equal(O.gradeOption('sum', 'X', 'normalised').grade, 'ok');
     assert.equal(O.gradeOption('sum', 'X', 'normalised', true).down, true);
 });

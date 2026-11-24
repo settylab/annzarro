@@ -4,8 +4,8 @@
  * - THE CHOICES (pure, Node-tested): what the Groups selects list (categorical obs columns; groupings, with the ones
  *   that would close a loop unavailable and why, decision 15), the cell axis as the page's group sources name it, and
  *   what Color and Size each list (WP-4, decision 31): a statistic select (all five statistics, graded on the layer the
- *   measure reads, and Cell count) and a layer select (all the dataset's layers, graded for the statistic). Nothing is
- *   offered, on a grouping axis or an obs one alike; a pair a layer cannot give is disabled with its reason, and a held
+ *   measure reads, and Cell count) and a layer select (all the dataset's layers, graded for the statistic), on a
+ *   grouping axis or an obs one alike; a pair a layer cannot give is disabled with its reason, and a held
  *   one stays, marked "(not available)" (SHR-27). These are utils/group-statistics.js `statisticChoices` and
  *   `statisticLayerChoices` with the Cell-Gene Plot's words.
  * - THE CONTROL GRID (`createControls`): What (Groups, Mode), Values (Color, Scale, Size, each `statistic of layer
@@ -18,7 +18,7 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { normalizeGrouping } from '../../utils/cell-grouping.js';
-import { ALWAYS_OFFERED, STATISTIC_INFO, statisticChoices, statisticLayerChoices, statisticPairAfter } from '../../utils/group-statistics.js';
+import { CELL_COUNT, STATISTIC_INFO, statisticChoices, statisticLayerChoices, statisticPairAfter } from '../../utils/group-statistics.js';
 import { SCALINGS } from '../../utils/cell-gene-model.js';
 import { loopReason } from '../../utils/panel-references.js';
 import { createPopover } from '../../ui/popover.js';
@@ -79,7 +79,7 @@ export function axisRecipe(axis) {
 }
 
 const infoOf = (stat) => STATISTIC_INFO.find((m) => m.value === stat) || null;
-const nameOf = (stat) => (stat === ALWAYS_OFFERED ? CG.statistic.count : (infoOf(stat) || { label: stat }).label);
+const nameOf = (stat) => (stat === CELL_COUNT ? CG.statistic.count : (infoOf(stat) || { label: stat }).label);
 const DEFAULT_LAYER = 'X';
 
 /** An entry of SO-1's graded lists as a select's option: the Cell-Gene Plot's own name, the reason as the title. */
@@ -101,7 +101,7 @@ function asOption(e, name) {
  */
 // export-unused-ok: WP-12's Height measure lists the same choices; the panel reads them through measureModel
 export function statisticList({ kinds, held }) {
-    const layer = held.stat === ALWAYS_OFFERED ? null : held.layer || DEFAULT_LAYER;
+    const layer = held.stat === CELL_COUNT ? null : held.layer || DEFAULT_LAYER;
     return statisticChoices({ layer, kinds, held: held.stat }).map((e) => asOption(e, nameOf(e.value)));
 }
 
@@ -189,7 +189,7 @@ export function measureModel({ spec, datasetLayers, kinds, threshold, grouping =
         stat: spec.stat, layer: spec.layer,
         stats: statisticList({ kinds, held: spec }),
         layers: layerList({ datasetLayers, kinds, stat: spec.stat, held: spec }),
-        threshold: spec.stat !== ALWAYS_OFFERED && needsThreshold(spec.stat) ? threshold : null,
+        threshold: spec.stat !== CELL_COUNT && needsThreshold(spec.stat) ? threshold : null,
         own, grouping
     };
 }
