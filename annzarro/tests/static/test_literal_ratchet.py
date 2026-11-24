@@ -12,7 +12,7 @@ JS_ROOT = pathlib.Path(__file__).resolve().parents[3] / "static" / "js"
 LITERAL = re.compile(r"""['"](gene-score|cell-group|group-stat)['"]""")
 
 #: files that define a source type; they may name it
-PROVIDER_FILES = {"utils/score-source.js", "utils/cell-group-source.js"}
+PROVIDER_FILES = {"utils/score-source.js", "utils/cell-group-source.js", "utils/group-stat-source.js"}
 
 #: the base run (59b13127): 53 occurrences in 18 files, provider files left out; the ceiling may only fall from it
 BASE_TOTAL, BASE_FILES = 53, 18

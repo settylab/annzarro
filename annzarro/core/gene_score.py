@@ -167,6 +167,11 @@ READ_AHEAD_ENTRIES = 48_000_000
 #: (zarr and HDF5 decode whole chunks), up to ``MAX_GROUP_ENTRIES``.
 GROUP_GAP_ENTRIES = 1 << 16
 MAX_GROUP_ENTRIES = 1 << 22
+#: Rows of a CSR matrix whose pointers are held at once when the rows of a group are looked up (8 B a row), and the
+#: rows of a mask looked through at once.
+ROW_BLOCK = 1 << 21
+#: Entries a group's moments read ahead of the arithmetic (12 B an entry).
+MOMENT_READ_AHEAD_ENTRIES = 12_000_000
 #: Reader threads. HDF5 reads are serialised by h5py, so it uses one.
 READ_THREADS = 6
 #: A CSR matrix or a dense array is read this many genes (and at most BATCH_ENTRIES stored hits) at a time.
@@ -324,6 +329,76 @@ def parse_recipe(raw) -> Recipe:
 
 
 # ---------------------------------------------------------------------------
+# Moments of values per bin
+# ---------------------------------------------------------------------------
+
+class MomentSums:
+    """Running per-bin sums of values for several thresholds; ``seen`` counts the values given (finite or not),
+    which a negative threshold needs: a sparse gene's implicit zeros are above it.
+
+    A bin is a group (``core/group_features.py``) or a gene (``_Source.row_moments``)."""
+
+    def __init__(self, n_bins: int, thresholds: Sequence[float]):
+        self.thresholds = list(thresholds)
+        self.count_seen = any(t < 0 for t in self.thresholds)       # implicit zeros matter only below 0
+        z = lambda: np.zeros(n_bins, dtype=np.float64)                    # noqa: E731
+        self.seen, self.bad, self.sum, self.sumsq = z(), z(), z(), z()
+        self.n_above = [z() for _ in self.thresholds]
+        self.sum_above = [z() for _ in self.thresholds]
+
+    def add(self, b: np.ndarray, values: np.ndarray) -> None:
+        n = self.seen.size
+        v = values.astype(np.float64)
+        finite = np.isfinite(v)
+        if finite.all():
+            finite = None
+        else:
+            self.bad += np.bincount(b[~finite], minlength=n)
+            v[~finite] = 0.0
+        seen = np.bincount(b, minlength=n) if self.count_seen else None
+        if seen is not None:
+            self.seen += seen
+        total = np.bincount(b, weights=v, minlength=n)
+        self.sum += total
+        self.sumsq += np.bincount(b, weights=v * v, minlength=n)
+        for i, t in enumerate(self.thresholds):
+            above = v > t
+            if finite is not None and t < 0:
+                above &= finite
+            if t >= 0 and 2 * np.count_nonzero(above) > above.size:
+                # most values are above (an expressed gene's stored entries): count the few that are not. A
+                # non-finite value, held as 0, is among them; the sums lose nothing to cancellation, as the part
+                # taken away is the smaller one
+                below = ~above
+                b_below = b[below]
+                seen = np.bincount(b, minlength=n) if seen is None else seen
+                self.n_above[i] += seen - np.bincount(b_below, minlength=n)
+                self.sum_above[i] += total - np.bincount(b_below, weights=v[below], minlength=n)
+            else:
+                b_above = b[above]
+                self.n_above[i] += np.bincount(b_above, minlength=n)
+                self.sum_above[i] += np.bincount(b_above, weights=v[above], minlength=n)
+
+    def write(self, sizes: np.ndarray, outs: Sequence[Sequence[np.ndarray]]) -> None:
+        """The moments at threshold ``i`` into each ``[k, 5]`` array of ``outs[i]``; ``sizes`` are the cells per
+        bin. A cell given no value (a sparse gene's implicit zero) is a finite zero."""
+        k = sizes.size
+        for i, t in enumerate(self.thresholds):
+            if not outs[i]:
+                continue
+            m = outs[i][0]
+            m[:, 0] = sizes - self.bad[:k]
+            m[:, 1] = self.sum[:k]
+            m[:, 2] = self.sumsq[:k]
+            m[:, 3] = self.n_above[i][:k]
+            if 0.0 > t:
+                m[:, 3] += sizes - self.seen[:k]
+            m[:, 4] = self.sum_above[i][:k]
+            for other in outs[i][1:]:
+                other[...] = m
+
+
+# ---------------------------------------------------------------------------
 # Reading genes: one source per backing store
 # ---------------------------------------------------------------------------
 
@@ -371,8 +446,57 @@ class _Source:
         (over the finite values, zeros included; NaN for a gene with none). Float64, length ``n_var``."""
         raise NotImplementedError
 
+    def row_coverage(self, mask: np.ndarray) -> int:
+        """Stored entries (matrix elements for a dense array) of the data chunks that the rows of ``mask`` (a bool per
+        cell of the matrix) touch: what ``row_moments`` reads. Reads nothing but a CSR matrix's row pointers."""
+        raise NotImplementedError
+
+    def row_moments(self, mask: np.ndarray, thresholds: Sequence[float],
+                    should_stop: Optional[Callable[[], bool]] = None, pause=None,
+                    budget: int = MOMENT_READ_AHEAD_ENTRIES) -> Iterator[int]:
+        """The moments of every gene over the cells of ``mask``: yields the entries read after each read and returns a
+        float64 array ``[n_var, len(thresholds), 5]`` of ``n, sum, sumsq, n_above, sum_above`` (``MomentSums``'
+        definitions: a non-finite value is in none of the five, an unstored entry is a finite zero). ``should_stop`` is
+        asked and ``pause`` honoured between reads; at most ``budget`` entries are read ahead."""
+        raise NotImplementedError
+
     def close(self) -> None:
         pass
+
+
+def _moments_out(sums: "MomentSums", n_var: int, thresholds: Sequence[float], size: int) -> np.ndarray:
+    out = np.zeros((n_var, len(thresholds), 5), dtype=np.float64)
+    sums.write(np.full(n_var, float(size), dtype=np.float64), [[out[:, i, :]] for i in range(len(thresholds))])
+    return out
+
+
+def _check_mask(mask: np.ndarray, n_obs: int) -> np.ndarray:
+    mask = np.asarray(mask, dtype=bool)
+    if mask.shape != (n_obs,):
+        raise ValueError(f"The mask has {mask.shape} cells; the matrix has {n_obs}.")
+    return mask
+
+
+def _read_spans(starts: np.ndarray, ends: np.ndarray, chunk: int, cap: int) -> List[Tuple[int, int]]:
+    """``(i, j)``: the ranges ``i`` to ``j - 1`` (sorted, non-empty) to read in one go. Neighbours join when no stored
+    chunk lies between them (``chunk`` entries; 0 for a store that is not chunked: when they are within
+    ``GROUP_GAP_ENTRIES``), so a chunk is decoded by one read; a read is cut at a range's end past ``cap`` entries."""
+    if starts.size == 0:
+        return []
+    if chunk:
+        apart = starts[1:] // chunk - (ends[:-1] - 1) // chunk > 1
+    else:
+        apart = starts[1:] - ends[:-1] > GROUP_GAP_ENTRIES
+    bounds = [0] + (np.flatnonzero(apart) + 1).tolist() + [int(starts.size)]
+    out: List[Tuple[int, int]] = []
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        i = a
+        while i < b:
+            j = int(np.searchsorted(ends[i:b], starts[i] + cap, side="right")) + i
+            j = min(max(j, i + 1), b)
+            out.append((i, j))
+            i = j
+    return out
 
 
 def _sample_stored(data) -> np.ndarray:
@@ -484,6 +608,29 @@ class _CscSource(_Source):
                 yield genes, np.asarray(self.data[lo:hi])
         return _sparse_stat(kind, self.n_obs, self.n_var, chunks(), should_stop, pause)
 
+    def row_coverage(self, mask):
+        mask = _check_mask(mask, self.n_obs)
+        return int(self.indptr[-1]) if mask.any() else 0           # every gene's range is read
+
+    def row_moments(self, mask, thresholds, should_stop=None, pause=None, budget=MOMENT_READ_AHEAD_ENTRIES):
+        mask = _check_mask(mask, self.n_obs)
+        sums = MomentSums(self.n_var, thresholds)
+        total = int(self.indptr[-1]) if mask.any() else 0
+
+        def read(lo, hi):
+            genes = np.searchsorted(self.indptr, np.arange(lo, hi, dtype=np.int64), side="right") - 1
+            keep = mask[np.asarray(self.indices[lo:hi], dtype=np.int64)]
+            return [(0, genes[keep], np.asarray(self.data[lo:hi])[keep])]
+        tasks = [_Task([], min(STAT_CHUNK, total - lo), lambda lo=lo: read(lo, min(lo + STAT_CHUNK, total)))
+                 for lo in range(0, total, STAT_CHUNK)]
+        for task, result, _ in pipeline(tasks, self.threads, budget, pause):
+            _checkpoint(should_stop, None)
+            for _, genes, values in result:
+                if genes.size:
+                    sums.add(genes, values)
+            yield task.entries
+        return _moments_out(sums, self.n_var, thresholds, int(np.count_nonzero(mask)))
+
     def tasks(self, cols):
         cols = np.sort(np.asarray(cols, dtype=np.int64))
         starts, ends = self.indptr[cols], self.indptr[cols + 1]
@@ -558,6 +705,67 @@ class _CsrSource(_Source):
                        np.asarray(data[lo:hi]) if kind == "mean" else None)
         return _sparse_stat(kind, self.n_obs, self.n_var, chunks(), should_stop, pause)
 
+    def _chunk(self) -> int:
+        """Entries a stored chunk of ``data`` holds; 0 for an array that is not chunked."""
+        chunks = getattr(self.group["data"], "chunks", None)
+        return int(chunks[0]) if chunks else 0
+
+    def _row_ranges(self, mask, r0: int, r1: int):
+        """``(starts, ends)`` of the stored entries of the rows of ``mask`` in ``r0 <= row < r1`` that have any."""
+        sel = np.flatnonzero(mask[r0:r1])
+        if not sel.size:
+            return None
+        ptr = np.asarray(self.group["indptr"][r0:r1 + 1], dtype=np.int64)
+        starts, ends = ptr[sel], ptr[sel + 1]
+        keep = ends > starts
+        return (starts[keep], ends[keep]) if keep.any() else None
+
+    def row_coverage(self, mask):
+        mask = _check_mask(mask, self.n_obs)
+        c = self._chunk() or 1
+        touched, prev_hi, last_touched = 0, -1, False
+        last = (self.nnz - 1) // c
+        for r0 in range(0, self.n_obs, ROW_BLOCK):
+            ranges = self._row_ranges(mask, r0, min(r0 + ROW_BLOCK, self.n_obs))
+            if ranges is None:
+                continue
+            lo, hi = ranges[0] // c, (ranges[1] - 1) // c               # both never decrease from row to row
+            counted = np.concatenate(([prev_hi], hi[:-1]))
+            touched += int(np.maximum(hi - np.maximum(lo, counted + 1) + 1, 0).sum())
+            prev_hi = int(hi[-1])
+            last_touched = last_touched or prev_hi == last
+        return touched * c - (((last + 1) * c - self.nnz) if last_touched else 0)
+
+    def row_moments(self, mask, thresholds, should_stop=None, pause=None, budget=MOMENT_READ_AHEAD_ENTRIES):
+        mask = _check_mask(mask, self.n_obs)
+        sums = MomentSums(self.n_var, thresholds)
+        indices, data, chunk = self.group["indices"], self.group["data"], self._chunk()
+
+        def read(lo, hi, s, e):
+            genes, values = np.asarray(indices[lo:hi], dtype=np.int64), np.asarray(data[lo:hi])
+            if s.size > 1 and not np.array_equal(s[1:], e[:-1]):        # entries of rows that are not in the group
+                delta = np.bincount(s - lo, minlength=hi - lo + 1) - np.bincount(e - lo, minlength=hi - lo + 1)
+                keep = np.cumsum(delta[:-1]) > 0
+                genes, values = genes[keep], values[keep]
+            return [(0, genes, values)]
+        for r0 in range(0, self.n_obs, ROW_BLOCK):
+            _checkpoint(should_stop, pause)
+            ranges = self._row_ranges(mask, r0, min(r0 + ROW_BLOCK, self.n_obs))
+            if ranges is None:
+                continue
+            starts, ends = ranges
+            tasks = []
+            for i, j in _read_spans(starts, ends, chunk, max(MAX_GROUP_ENTRIES, chunk)):
+                lo, hi = int(starts[i]), int(ends[j - 1])
+                tasks.append(_Task([], hi - lo, lambda lo=lo, hi=hi, s=starts[i:j], e=ends[i:j]: read(lo, hi, s, e)))
+            for task, result, _ in pipeline(tasks, self.threads, budget, pause):
+                _checkpoint(should_stop, None)
+                for _, genes, values in result:
+                    if genes.size:
+                        sums.add(genes, values)
+                yield task.entries
+        return _moments_out(sums, self.n_var, thresholds, int(np.count_nonzero(mask)))
+
     def tasks(self, cols):
         cols = [int(c) for c in np.sort(np.asarray(cols, dtype=np.int64))]
         size = self._batch()
@@ -602,6 +810,57 @@ class _DenseSource(_Source):
             blocks = len({c // width for c in batch})
             total += self.n_obs * min(blocks * width, self.n_var)
         return total
+
+    def _height(self) -> int:
+        """Rows a stored chunk holds; 1 for an array that is not chunked (a row is then read as it is)."""
+        chunks = getattr(self.array, "chunks", None)
+        return int(chunks[0]) if chunks and len(chunks) == 2 else 1
+
+    def _blocks(self, mask) -> np.ndarray:
+        """The row chunks (ascending) that hold a cell of ``mask``."""
+        h, found = self._height(), []
+        for r0 in range(0, self.n_obs, ROW_BLOCK):
+            sel = np.flatnonzero(mask[r0:r0 + ROW_BLOCK]) + r0
+            if sel.size:
+                found.append(np.unique(sel // h))
+        return np.unique(np.concatenate(found)) if found else np.empty(0, dtype=np.int64)
+
+    def row_coverage(self, mask):
+        mask = _check_mask(mask, self.n_obs)
+        h, blocks = self._height(), self._blocks(mask)
+        if not blocks.size:
+            return 0
+        rows = blocks.size * h
+        if blocks[-1] == (self.n_obs - 1) // h:                  # the last chunk holds what is left
+            rows -= -(-self.n_obs // h) * h - self.n_obs
+        return int(rows) * self.n_var
+
+    def row_moments(self, mask, thresholds, should_stop=None, pause=None, budget=MOMENT_READ_AHEAD_ENTRIES):
+        mask = _check_mask(mask, self.n_obs)
+        sums = MomentSums(self.n_var, thresholds)
+        h, blocks = self._height(), self._blocks(mask)
+        per_read = max(h, max(SEGMENT_ENTRIES // max(self.n_var, 1), 1) // h * h)        # rows, whole chunks
+        reads, i = [], 0
+        while i < blocks.size:                                  # runs of neighbouring chunks, cut at per_read rows
+            j = i + 1
+            while j < blocks.size and blocks[j] == blocks[j - 1] + 1 and (blocks[j] - blocks[i] + 1) * h <= per_read:
+                j += 1
+            reads.append((int(blocks[i]) * h, min((int(blocks[j - 1]) + 1) * h, self.n_obs)))
+            i = j
+
+        def read(r0, r1):
+            return [(0, None, np.asarray(self.array[r0:r1])[mask[r0:r1]])]
+        tasks = [_Task([], (r1 - r0) * self.n_var, lambda r0=r0, r1=r1: read(r0, r1)) for r0, r1 in reads]
+        genes_of = np.arange(self.n_var, dtype=np.int64)
+        step = max(SEGMENT_ENTRIES // max(self.n_var, 1), 1)
+        for task, result, _ in pipeline(tasks, self.threads, budget, pause):
+            _checkpoint(should_stop, None)
+            for _, _, block in result:
+                for a in range(0, block.shape[0], step):
+                    part = block[a:a + step]
+                    sums.add(np.tile(genes_of, part.shape[0]), part.reshape(-1))
+            yield task.entries
+        return _moments_out(sums, self.n_var, thresholds, int(np.count_nonzero(mask)))
 
     def tasks(self, cols):
         return [_Task(batch, self.n_obs * len(batch), lambda b=batch: self._read(b))

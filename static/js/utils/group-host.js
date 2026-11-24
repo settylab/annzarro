@@ -25,7 +25,8 @@ import { serverRecipe, recipeHash } from './gene-signature.js';
 import { sourceName } from './cell-grouping.js';
 import { createGroupStore } from './group-store.js';
 import { createGroupSources, GROUPING } from './group-sources.js';
-import { createGroupsApi } from './cell-groups-client.js';
+import { createGroupsApi, createGenesApi } from './cell-groups-client.js';
+import { createDerivedStore } from './derived-store.js';
 import { pageLimiter } from './score-source.js';
 import { createSourceAdapter } from './score-source-panels.js';
 import { dependsOn } from './panel-references.js';
@@ -267,7 +268,11 @@ function pageContext() {
  */
 function createGroupBinding({ api, limiter = null, ledger: codes, host, context, timers = {} }) {
     const store = createGroupStore({ api, limiter, codes });
-    return { store, sources: createGroupSources({ store, host, context, ...timers }) };
+    // the moments of every gene over one group (the Gene Plot's group-stat): a derived store of its own, over the same api
+    const genesStore = createDerivedStore({ api: createGenesApi(api), limiter, refusalReason: 'groups_too_expensive',
+        isEmpty: (out) => !(out.values && out.values.moments),
+        refusedOf: (out) => (out.header && out.header.refused ? { reason: out.header.refused.reason, message: out.header.refused.message || null } : null) });
+    return { store, genesStore, sources: createGroupSources({ store, host, context, genesStore, ...timers }) };
 }
 
 let _binding = null;
