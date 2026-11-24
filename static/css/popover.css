@@ -54,3 +54,42 @@
 .az-range__field { width: 7.5rem; }
 .az-range__field--auto::placeholder { color: var(--az-muted); opacity: 1; font-style: italic; }
 .az-range__reset { padding: 0 6px; line-height: 1.4; }
+
+/*
+ * The pop-over body standard (U1, 0.8.0): the sections and fields every pop-over body uses, first rendered by the
+ * shared Plot Options (static/js/panels/plot-utilities/options-popover.js). Theme tokens only (theme.css), so light and
+ * dark both hold. The old po-* names stay as aliases for one release.
+ */
+.az-pop-options, .po-options { display: flex; flex-direction: column; gap: 2px; }
+
+.az-pop-section, .po-section { border-bottom: 1px solid var(--az-border); }
+.az-pop-section:last-child, .po-section:last-child { border-bottom: 0; }
+.az-pop-section[hidden], .po-section[hidden] { display: none; }
+.az-pop-section__title, .po-section__title {
+    padding: 6px 0; cursor: pointer; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--az-text-2); list-style-position: inside;
+}
+.az-pop-section__title:focus-visible, .po-section__title:focus-visible { outline: 2px solid var(--az-focus-border); outline-offset: 1px; border-radius: 2px; }
+.az-pop-section__body, .po-section__body { display: flex; flex-direction: column; gap: 6px; padding: 0 0 10px; }
+.az-pop-section__foot, .po-section__foot { display: flex; justify-content: flex-end; }
+.az-pop-reset, .po-reset { padding: 0; font-size: 0.75rem; }
+
+.az-pop-field, .po-field { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin: 0; }
+.az-pop-field[hidden], .po-field[hidden] { display: none; }
+.az-pop-field__label, .po-field__label { color: var(--az-muted); font-size: 0.75rem; margin: 0; }
+.az-pop-field__control, .po-field__control { display: inline-flex; align-items: center; gap: 4px; }
+.az-pop-field .form-select, .po-field .form-select { width: auto; max-width: 11rem; }
+.az-pop-num, .po-num { width: 5.5rem; }
+.az-pop-text, .po-text { width: 11rem; }
+.az-pop-field .form-control-color, .po-field .form-control-color { width: 2.5rem; padding: 2px; }
+.az-pop-color--auto, .po-color--auto { opacity: 0.45; }
+.az-pop-auto.active, .po-auto.active { background: var(--az-accent-bg); border-color: var(--az-link); color: var(--az-link); }
+.az-pop-field--check, .po-field--check { justify-content: flex-start; }
+.az-pop-check, .po-check { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.az-pop-check .form-check-input, .po-check .form-check-input { margin: 0; }
+.az-pop-help, .po-help { flex: 1 1 100%; color: var(--az-muted); font-size: 0.6875rem; line-height: 1.3; }
+
+.az-pop-buttons, .po-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+.az-pop-ask, .po-ask { display: flex; flex-direction: column; gap: 4px; }
+.az-pop-ask[hidden], .po-ask[hidden] { display: none; }
+.az-pop-ask__buttons, .po-ask__buttons { display: flex; gap: 4px; }

@@ -113,13 +113,13 @@ export function mountPlotOptions(ctx) {
     function fieldControl(field) {
         const id = `po-${panelId}-${field.id}`;
         const help = helpOf(field, kind);
-        const helpEl = help ? el('small', { class: 'po-help', text: help }) : null;
+        const helpEl = help ? el('small', { class: 'az-pop-help', text: help }) : null;
         let input;
         let wrap;
         let auto = null;
         if (field.type === 'check') {
             input = el('input', { type: 'checkbox', id, class: 'form-check-input', data: { option: field.id }, on: { change: () => set(field, input.checked) } });
-            wrap = el('div', { class: 'po-field po-field--check' }, el('label', { class: 'po-check', for: id }, input, ` ${field.label}`), helpEl);
+            wrap = el('div', { class: 'az-pop-field az-pop-field--check' }, el('label', { class: 'az-pop-check', for: id }, input, ` ${field.label}`), helpEl);
         } else {
             if (field.type === 'select') {
                 input = el('select', { id, class: 'form-select form-select-sm', data: { option: field.id }, on: { change: () => set(field, input.value) } },
@@ -128,14 +128,14 @@ export function mountPlotOptions(ctx) {
                 input = el('input', { type: 'color', id, class: 'form-control form-control-sm form-control-color', data: { option: field.id },
                     on: { change: () => set(field, input.value) } });
                 if (defaultOf(field, kind) === null) {
-                    auto = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary po-auto', data: { auto: field.id },
+                    auto = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-auto', data: { auto: field.id },
                         title: 'Follow the app theme', aria: { pressed: 'false' }, on: { click: () => set(field, null) } }, 'Auto');
                 }
             } else if (field.type === 'range') {
                 // a slider and a number box that say the same value; either commits one step (Cell Plot's sliders too, WP-5b)
-                const box = el('input', { type: 'number', id, class: 'form-control form-control-sm po-num', data: { option: `${field.id}Number` },
+                const box = el('input', { type: 'number', id, class: 'form-control form-control-sm az-pop-num', data: { option: `${field.id}Number` },
                     min: field.min, max: field.max, step: field.step ?? 'any', aria: { label: field.label } });
-                input = el('input', { type: 'range', class: 'form-range po-range', data: { option: field.id }, min: field.min, max: field.max,
+                input = el('input', { type: 'range', class: 'form-range az-pop-range', data: { option: field.id }, min: field.min, max: field.max,
                     step: field.step ?? 'any', aria: { label: field.label },
                     on: { input: () => { box.value = input.value; }, change: () => set(field, Number(input.value)) } });
                 const commitBox = () => {
@@ -149,7 +149,7 @@ export function mountPlotOptions(ctx) {
                 auto = box;          // painted with the slider
             } else {
                 const number = field.type === 'number';
-                input = el('input', { type: number ? 'number' : 'text', id, class: `form-control form-control-sm ${number ? 'po-num' : 'po-text'}`,
+                input = el('input', { type: number ? 'number' : 'text', id, class: `form-control form-control-sm ${number ? 'az-pop-num' : 'az-pop-text'}`,
                     data: { option: field.id }, autocomplete: 'off',
                     ...(number ? { min: field.min, max: field.max, step: field.step ?? 'any' } : {}) });
                 const commitIt = () => {
@@ -163,21 +163,21 @@ export function mountPlotOptions(ctx) {
                 input.addEventListener('change', commitIt);
                 input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitIt(); } });
             }
-            wrap = el('div', { class: `po-field po-field--${field.type}` },
-                el('label', { class: 'po-field__label', for: id, text: field.label }),
-                el('span', { class: 'po-field__control' }, input, auto), helpEl);
+            wrap = el('div', { class: `az-pop-field az-pop-field--${field.type}` },
+                el('label', { class: 'az-pop-field__label', for: id, text: field.label }),
+                el('span', { class: 'az-pop-field__control' }, input, auto), helpEl);
         }
         controls.set(field.id, { field, input, wrap, auto });
         return wrap;
     }
 
     // ---------------------------------------------------------------- Export and Apply
-    const imageBtns = IMAGE_FORMATS.map((format) => el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary po-export-btn ${classes.exportBtn || ''}`,
+    const imageBtns = IMAGE_FORMATS.map((format) => el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary az-pop-export-btn ${classes.exportBtn || ''}`,
         data: { format }, on: { click: () => exportAs(format) } }, format.toUpperCase()));
     // Copy: the plot as a PNG on the clipboard, at Export's size (plot-aesthetics-menu.js copyPlotToClipboard, passed in)
-    const copyBtn = ctx.copyImage ? el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary po-copy-btn',
+    const copyBtn = ctx.copyImage ? el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-copy-btn',
         on: { click: () => ctx.copyImage(exportSettings(resolveStyle(config(), kind), ctx.plotSize ? ctx.plotSize() : {})) } }, 'Copy') : null;
-    const csvBtn = ctx.csv ? el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary po-csv-btn ${classes.csv || ''}`, on: { click: () => ctx.csv() } }, 'Download CSV') : null;
+    const csvBtn = ctx.csv ? el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary az-pop-csv-btn ${classes.csv || ''}`, on: { click: () => ctx.csv() } }, 'Download CSV') : null;
 
     function exportAs(format) {
         if (!ctx.exportImage) return;
@@ -191,15 +191,15 @@ export function mountPlotOptions(ctx) {
         return pm.getActivePanels().filter((p) => p && p.getType && p.getType() === kind && p.getId() !== panelId);
     };
     const name = KIND_NAMES[kind] || kind;
-    const applyBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary po-apply-others' }, `Apply to other ${name} plots`);
-    const askText = el('span', { class: 'po-help' });
-    const askYes = el('button', { type: 'button', class: 'btn btn-sm btn-primary po-apply-yes' }, 'Apply');
-    const askNo = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary po-apply-no' }, 'Cancel');
-    const ask = el('div', { class: 'po-ask', hidden: true }, askText, el('span', { class: 'po-ask__buttons' }, askYes, askNo));
-    const applyDone = el('div', { class: 'po-help po-apply-done', role: 'status', aria: { live: 'polite' } });
-    const sessionState = el('div', { class: 'po-help po-session-state' });
-    const sessionSet = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary po-session-set' }, 'Make this the session default');
-    const sessionReset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary po-session-reset' }, 'Back to built-in');
+    const applyBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-apply-others' }, `Apply to other ${name} plots`);
+    const askText = el('span', { class: 'az-pop-help' });
+    const askYes = el('button', { type: 'button', class: 'btn btn-sm btn-primary az-pop-apply-yes' }, 'Apply');
+    const askNo = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-apply-no' }, 'Cancel');
+    const ask = el('div', { class: 'az-pop-ask', hidden: true }, askText, el('span', { class: 'az-pop-ask__buttons' }, askYes, askNo));
+    const applyDone = el('div', { class: 'az-pop-help az-pop-apply-done', role: 'status', aria: { live: 'polite' } });
+    const sessionState = el('div', { class: 'az-pop-help az-pop-session-state' });
+    const sessionSet = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-session-set' }, 'Make this the session default');
+    const sessionReset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-pop-session-reset' }, 'Back to built-in');
     applyBtn.addEventListener('click', () => {
         const n = others().length;
         applyDone.textContent = '';
@@ -240,35 +240,35 @@ export function mountPlotOptions(ctx) {
     }
 
     // ---------------------------------------------------------------- the sections
-    const root = el('div', { class: `po-options po-options--${kind}`, data: { kind } });
+    const root = el('div', { class: `az-pop-options az-pop-options--${kind}`, data: { kind } });
     for (const sec of sectionsOf(kind)) {
         const own = sec.panel ? panelSections[sec.id] : null;
         if (sec.panel && !own) continue;
         const title = sec.panel ? own.title : sec.title;
         const key = `${kind}:${sec.id}`;
         const open = _open.has(key) ? _open.get(key) : (sec.panel || OPEN_FIRST.has(sec.id));
-        const details = el('details', { class: `po-section${sec.id === 'export' && classes.export ? ` ${classes.export}` : ''}`, data: { section: sec.id }, open },
-            el('summary', { class: 'po-section__title', text: title }));
+        const details = el('details', { class: `az-pop-section${sec.id === 'export' && classes.export ? ` ${classes.export}` : ''}`, data: { section: sec.id }, open },
+            el('summary', { class: 'az-pop-section__title', text: title }));
         details.addEventListener('toggle', () => _open.set(key, details.open));
-        const body = el('div', { class: 'po-section__body' });
+        const body = el('div', { class: 'az-pop-section__body' });
         if (own && own.element) body.append(own.element);
         for (const f of sec.fields) body.append(fieldControl(f));
         if (sec.id === 'export') {
-            body.prepend(el('div', { class: 'po-buttons po-export-formats' }, imageBtns, copyBtn));
-            if (csvBtn) body.append(el('div', { class: 'po-buttons' }, csvBtn));
+            body.prepend(el('div', { class: 'az-pop-buttons az-pop-export-formats' }, imageBtns, copyBtn));
+            if (csvBtn) body.append(el('div', { class: 'az-pop-buttons' }, csvBtn));
         }
         if (sec.id === 'presets') {
-            body.append(el('div', { class: 'po-buttons po-presets' }, PRESETS.map((p) => el('button', { type: 'button',
-                class: 'btn btn-sm btn-outline-secondary po-preset', data: { preset: p }, on: { click: () => preset(p) } }, PRESET_LABELS[p]))));
+            body.append(el('div', { class: 'az-pop-buttons az-pop-presets' }, PRESETS.map((p) => el('button', { type: 'button',
+                class: 'btn btn-sm btn-outline-secondary az-pop-preset', data: { preset: p }, on: { click: () => preset(p) } }, PRESET_LABELS[p]))));
         }
         if (sec.id === 'apply') {
-            body.append(el('div', { class: 'po-buttons' }, applyBtn), ask, applyDone,
-                sessionState, el('div', { class: 'po-buttons' }, sessionSet, sessionReset));
+            body.append(el('div', { class: 'az-pop-buttons' }, applyBtn), ask, applyDone,
+                sessionState, el('div', { class: 'az-pop-buttons' }, sessionSet, sessionReset));
         }
         if (!sec.panel && sec.fields.length) {
-            const reset = el('button', { type: 'button', class: 'btn btn-sm btn-link po-reset', data: { reset: sec.id },
+            const reset = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset', data: { reset: sec.id },
                 on: { click: () => resetSection(sec) } }, 'Reset');
-            body.append(el('div', { class: 'po-section__foot' }, reset));
+            body.append(el('div', { class: 'az-pop-section__foot' }, reset));
         }
         details.append(body);
         sectionEls.set(sec.id, details);
@@ -313,7 +313,7 @@ export function mountPlotOptions(ctx) {
                     const isAuto = v === null;
                     auto.setAttribute('aria-pressed', String(isAuto));
                     auto.classList.toggle('active', isAuto);
-                    input.classList.toggle('po-color--auto', isAuto);
+                    input.classList.toggle('az-pop-color--auto', isAuto);
                 }
             } else if (document.activeElement !== input) input.value = v === null || v === undefined ? '' : String(v);
             if (field.type === 'number' && defaultOf(field, kind) !== null) input.placeholder = String(defaultOf(field, kind));
@@ -326,7 +326,7 @@ export function mountPlotOptions(ctx) {
             const anyShown = (own && own.element) || fields.some((f) => !controls.get(f.id).wrap.hidden) || id === 'export' || id === 'apply' || id === 'presets';
             details.hidden = !anyShown || (own && typeof own.when === 'function' && !own.when(c));
             if (own && typeof own.paint === 'function') own.paint();
-            const reset = details.querySelector('.po-reset');
+            const reset = details.querySelector('.az-pop-reset');
             if (reset) reset.disabled = !fields.some((f) => isSet(c, f, kind));
         }
         const can = ctx.canExport ? ctx.canExport() : true;
