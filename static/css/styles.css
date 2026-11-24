@@ -3394,12 +3394,12 @@ button.dtsb-button.dtsb-clear:hover {
 /* A source name longer than the others ("gene-score", "cell-group") widens the type select of EVERY row of the plot
    while any row uses one, so the keys of all rows keep lining up (UX risk 4). A row on a constant colour keeps its
    own width. On a narrow panel the row that uses it wraps so the key and the option are each read in full. */
-.plot-controls:has(.axis-type-select option:is([value="gene-score"], [value="cell-group"]):checked)
+.plot-controls:has(.axis-type-select option:is([value="gene-score"], [value="cell-group"], [value="group-stat"]):checked)
     .axis-selector:not(:has(> .axis-type-select option[value="none"]:checked)) > .axis-type-select { flex: 0 0 6.5rem; }
 @media (max-width: 1000px) {
-    .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"]):checked) { flex-wrap: wrap; }
-    .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"]):checked) > .axis-key-select { flex: 1 1 8rem; }
-    .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"]):checked) > .axis-column-select { flex: 1 1 100%; }
+    .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"], [value="group-stat"]):checked) { flex-wrap: wrap; }
+    .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"], [value="group-stat"]):checked) > .axis-key-select { flex: 1 1 8rem; }
+    .axis-selector:has(> .axis-type-select option:is([value="gene-score"], [value="cell-group"], [value="group-stat"]):checked) > .axis-column-select { flex: 1 1 100%; }
 }
 /* A score has four selects: the type and the source on the first line, the method and the layer on the second, so
    each is read in full (decision 31) */
@@ -3407,6 +3407,15 @@ button.dtsb-button.dtsb-clear:hover {
 .axis-selector:has(> .axis-layer-select) > .axis-key-select { flex: 1 1 calc(100% - 7.5rem); }
 .axis-selector:has(> .axis-layer-select) > .axis-column-select,
 .axis-selector > .axis-layer-select { flex: 1 1 calc(50% - var(--ctl-u)); }
+/* A group's statistic has five selects, on two lines like a score's: the type, the grouping and the group on the first (a
+   long list of groups has its filter field before the group select), the statistic and the layer side by side on the
+   second */
+.axis-selector:has(> .axis-stat-select) { flex-wrap: wrap; }
+.axis-selector:has(> .axis-stat-select) > .axis-key-select,
+.axis-selector:has(> .axis-stat-select) > .axis-column-select { flex: 1 1 calc(50% - 4rem); }
+.axis-selector > .axis-stat-select,
+.axis-selector:has(> .axis-stat-select) > .axis-layer-select { flex: 1 1 calc(50% - var(--ctl-u)); }
+.axis-selector > .group-filter { flex: 0 1 5rem; min-width: 0; }
 /* A score's layer select moved the method select to a usable value (or the other way round): said once */
 .axis-pair-note { margin: 0 0 0.25rem; font-size: 0.75rem; }
 

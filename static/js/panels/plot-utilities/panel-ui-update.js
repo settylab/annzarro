@@ -7,7 +7,7 @@ import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { noteDatasetLayers } from '../../utils/score-source.js';
 import { refreshHoverGroups } from './hover-columns.js';
 import { fillChoiceSelect } from '../../utils/pair-selects.js';
-import { attachSearch } from '../../utils/group-picker.js';
+import { attachFilter } from '../../utils/group-picker.js';
 import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -1254,9 +1254,9 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
 
 /** Fill a select with a provider's third menu (subKeyMenu): graded entries, an impossible one disabled with its reason. */
 function fillSubKeySelect(select, built) {
-  fillChoiceSelect(select, built.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '' })), built.chosen);
-  // a choice among many groups is searched, not scrolled (utils/group-picker.js)
-  if (built.search) attachSearch(select, { label: 'Group' });
+  fillChoiceSelect(select, built.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '', alt: o.alt || '' })), built.chosen);
+  // a long list of groups has a filter field beside its dropdown (utils/group-picker.js)
+  if (built.search) attachFilter(select, { label: 'Group' });
 }
 
 /** Fill a provider's layer select (layerMenu) for what the setting holds. */

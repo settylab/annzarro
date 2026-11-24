@@ -30,7 +30,7 @@ import {
     canAddSet, panelChoices, categoryChoices, groupingOfSet, isBooleanColumn, universeLine, setCounts, setColours
 } from '../../utils/set-plot-model.js';
 import { keepGroup, referToGroup } from '../../utils/group-reference.js';
-import { attachSearch } from '../../utils/group-picker.js';
+import { attachFilter } from '../../utils/group-picker.js';
 import { canonKey } from '../../utils/level-id.js';
 import { GROUPING_LIMITS } from '../../utils/cell-grouping.js';
 import { buildFigure } from './draw-sets.js';
@@ -201,7 +201,8 @@ function mount(host, ctx) {
         if (!snap || snap.state !== 'ready' || !snap.values || !snap.values.reply) return null;
         const reply = snap.values.reply;
         const names = groupSources().sources.namesOf(gid, reply);
-        return reply.groups.map((g, i) => ({ key: g.key, name: names[i] }));
+        const generated = groupSources().sources.coloursOf(gid, reply).generated;
+        return reply.groups.map((g, i) => ({ key: g.key, name: names[i], alt: generated[i] }));
     }
 
     function seenOf(gid) {
@@ -392,6 +393,7 @@ function mount(host, ctx) {
         const o = el('option', { value, text });
         if (extra.disabled) { o.disabled = true; o.title = extra.title || ''; }
         if (extra.selected) o.selected = true;
+        if (extra.alt && extra.alt !== text) o.dataset.alt = extra.alt;     // the generated name of a group a user renamed
         return o;
     }
 
@@ -509,9 +511,9 @@ function mount(host, ctx) {
                 if (ref) apply(at, { source: { type: GROUP_SOURCE, key: gid }, member: ref });
             } } },
         option('', groups ? (groups.length ? W.choose : W.noGroups) : W.computingGroups, { selected: !chosen }),
-        ...(groups || []).map((g) => option(canonKey(g.key), g.name, { selected: canonKey(g.key) === chosen })));
-        // a grouping can have thousands of groups: a long list is searched, a short one stays this select
-        queueMicrotask(() => { if (select.isConnected) attachSearch(select, { label: W.kinds.group }); });
+        ...(groups || []).map((g) => option(canonKey(g.key), g.name, { selected: canonKey(g.key) === chosen, alt: g.alt })));
+        // a grouping can have thousands of groups: a long list also has a filter field, a short one is this select alone
+        queueMicrotask(() => { if (select.isConnected) attachFilter(select, { label: W.kinds.group }); });
         return [pick, select];
     }
 
