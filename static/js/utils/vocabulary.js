@@ -690,19 +690,9 @@ const cellExport = Object.freeze({
  * What a menu of source types and a column chooser's tab call a source a panel makes, beside the dataset's own obs,
  * obsm, obsp and layers (whose AnnData names stay). Never the provider's type id.
  */
-/**
- * The symbols of the aggregations a set can give an axis (axis-aggregate-picker-080), by the value of the method or the
- * statistic. Their names and their order are the method tables' (utils/signature-options.js METHOD_INFO,
- * utils/group-statistics.js STATISTIC_INFO), never written again here.
- */
+/** What an aggregation is called; its symbols are utils/aggregation-symbols.js's, its names the method tables' labels. */
 const aggregation = Object.freeze({
     label: 'Aggregation',
-    score: Object.freeze({
-        zscore_mean: 'z\u0304', mean: 'x\u0304', sum: '\u03a3', control_adjusted: '\u0394', detected: 'f', fraction_of_total: '%'
-    }),
-    stat: Object.freeze({
-        mean: 'x\u0304', pct_expressing: '%', mean_expressing: 'x\u0304\u207a', sum: '\u03a3', sd: '\u03c3'
-    }),
     sections: Object.freeze({ genes: 'Genes', cells: 'Cells', signatures: 'Gene signatures', tables: 'Gene tables', groupings: 'Cell groupings' })
 });
 

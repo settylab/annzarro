@@ -30,6 +30,7 @@ import { referToGroup, resolveGroup, keepGroup, describeGroupReference } from '.
 import { layerFacts, datasetLayersNow } from './score-source.js';
 import * as M from './group-stat-model.js';
 import { STATISTIC_INFO } from './group-statistics.js';
+import { STAT_SYMBOLS } from './aggregation-symbols.js';
 
 const W = VOCABULARY.word;
 const PL = VOCABULARY.plural;
@@ -509,13 +510,13 @@ const groupAggregate = {
     entryOf: (setting) => JSON.stringify([setting.key, setting.column || '']),
     layerOf: (setting) => M.layerOf(setting),
     methods: (setting) => ({
-        options: M.statMenu(setting, kindsNow()).options.map(o => ({ value: o.value, name: STATISTIC_INFO.find(m => m.value === o.value).label, symbol: A.stat[o.value],
+        options: M.statMenu(setting, kindsNow()).options.map(o => ({ value: o.value, name: STATISTIC_INFO.find(m => m.value === o.value).label, symbol: STAT_SYMBOLS[o.value],
             disabled: !!o.disabled, title: o.title || '' })),
         chosen: M.statOf(setting)
     }),
     layers: (setting) => layerMenu(setting),
     after: (setting, kind, value) => settingAfter(setting, kind === 'method' ? 'stat' : kind, value),
-    symbolOf: (setting) => A.stat[M.statOf(setting)]
+    symbolOf: (setting) => STAT_SYMBOLS[M.statOf(setting)]
 };
 
 // a Gene Plot's colour of a group's statistic follows its grouping in a remap, as the grouping's own sources do

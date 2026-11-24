@@ -45,13 +45,17 @@ def aggregations(page, tile, axis):
     """What the button's menu lists: [{v, off, title, text}]; the menu is closed again."""
     page.click(button(tile, axis))
     rows = page.evaluate("""() => [...document.querySelectorAll("[data-popover='aggregation'] [data-agg]")].map(r => ({ v: r.dataset.agg, off: r.disabled,
-        title: r.title, text: r.textContent.replace(/\\s+/g, ' ').trim(), on: r.getAttribute('aria-checked') === 'true' }))""")
+        title: r.title, on: r.getAttribute('aria-checked') === 'true', sym: r.querySelector('.axis-agg-sym').textContent, name: r.querySelector('.axis-agg-name').textContent,
+        why: (r.querySelector('.axis-agg-why') || {}).textContent || '', over: r.querySelector('.axis-agg-sym').classList.contains('agg-sym--over'),
+        text: r.querySelector('.axis-agg-sym').textContent + ' ' + r.querySelector('.axis-agg-name').textContent }))""")
     page.keyboard.press("Escape")
+    page.locator("[data-popover='aggregation']").wait_for(state="hidden")
     return rows
 
 
 def choose_aggregation(page, tile, axis, value):
     page.click(button(tile, axis))
+    page.locator("[data-popover='aggregation']").wait_for(state="visible")
     page.click(f"[data-popover='aggregation'] [data-agg='{value}']")
 
 

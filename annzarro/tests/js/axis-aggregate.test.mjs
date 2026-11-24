@@ -15,7 +15,8 @@ await import('../../../static/js/utils/score-source.js');
 const A = await import('../../../static/js/utils/axis-aggregate.js');
 const { METHOD_INFO } = await import('../../../static/js/utils/signature-options.js');
 const { STATISTIC_INFO } = await import('../../../static/js/utils/group-statistics.js');
-const { VOCABULARY } = await import('../../../static/js/utils/vocabulary.js');
+const { SCORE_SYMBOLS, STAT_SYMBOLS } = await import('../../../static/js/utils/aggregation-symbols.js');
+const { DEFAULT_METHOD } = await import('../../../static/js/utils/signature-options.js');
 
 const score = () => ({ type: 'gene-score', key: 'gene-signature-S', column: 'mean', layer: 'counts', label: 'T cell score', labelFull: 'T cell score\nmean · counts', history: { layer: { key: 'X' } } });
 const group = () => ({ type: 'group-stat', key: 'cell-grouping-A', column: '["c:B cell"]', stat: 'sd', layer: 'logged', groupWas: ['B cell'], follow: true, label: 'Grouping 1' });
@@ -57,12 +58,19 @@ test('picking a single item or a set clears the setting completely but its histo
 });
 
 test('the aggregations are the method tables\', in their order and with their names, each with a symbol', () => {
-    // a signature's: every method of METHOD_INFO has a symbol, written once in the vocabulary
-    assert.deepEqual(Object.keys(VOCABULARY.aggregation.score), METHOD_INFO.map((m) => m.value));
-    assert.equal(VOCABULARY.aggregation.score.zscore_mean, 'z\u0304');
-    assert.equal(VOCABULARY.aggregation.score.fraction_of_total, '%');
-    assert.equal(A.aggregationOf(score()).symbol, VOCABULARY.aggregation.score.mean);
-    assert.equal(A.aggregateOf(score()).aggregate.symbolOf(score()), VOCABULARY.aggregation.score.mean);
+    // a signature's: every method of METHOD_INFO has a symbol, written once in aggregation-symbols.js; x and z carry a bar
+    assert.deepEqual(Object.keys(SCORE_SYMBOLS), METHOD_INFO.map((m) => m.value));
+    assert.deepEqual(SCORE_SYMBOLS.zscore_mean, { text: 'z', over: true });
+    assert.deepEqual(SCORE_SYMBOLS.mean, { text: 'x', over: true });
+    assert.equal(SCORE_SYMBOLS.fraction_of_total.text, '%');
+    assert.ok(Object.values(SCORE_SYMBOLS).every((y) => !/\u0304/.test(y.text)), 'a bar is CSS, never a combining character');
+    assert.deepEqual(Object.keys(STAT_SYMBOLS), STATISTIC_INFO.map((m) => m.value));
+    assert.equal(A.aggregationOf(score()).symbol, SCORE_SYMBOLS.mean);
+    assert.equal(A.aggregateOf(score()).aggregate.symbolOf(score()), SCORE_SYMBOLS.mean);
+    // a new set starts on the table's default: z-score mean for a signature, mean for a group
+    assert.equal(A.aggregateOf(score()).aggregate.start('gene-signature-S', 'X').column, DEFAULT_METHOD);
+    assert.equal(DEFAULT_METHOD, 'zscore_mean');
+    assert.equal(A.aggregateOf(group()).aggregate.start(JSON.stringify(['cell-grouping-A', '["c:B cell"]']), 'X').stat, 'mean');
     // a group's statistics
     const stats = A.aggregateOf(group()).aggregate.methods(group());
     assert.deepEqual(stats.options.map((o) => o.value), STATISTIC_INFO.map((m) => m.value));

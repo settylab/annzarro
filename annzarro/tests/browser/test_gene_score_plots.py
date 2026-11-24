@@ -1061,8 +1061,8 @@ def test_two_aggregations_of_one_signature_are_two_scores_and_one_aggregation_is
     assert titles == ["T cell score · z-score mean · X", "T cell score · mean · X"]
     # the button's menu lists every method the server computes, z-score mean first (decision 31); the layer is the row's own
     opts = [(o["v"], o["text"]) for o in axis_sets.aggregations(page, C, "y")]
-    assert opts == [("zscore_mean", "z\u0304 Z-score mean"), ("mean", "x\u0304 Mean"), ("sum", "\u03a3 Sum"), ("control_adjusted", "\u0394 Control-adjusted"),
-                    ("detected", "f Fraction detected"), ("fraction_of_total", "% % of total")]
+    assert opts == [("zscore_mean", "z Z-score mean"), ("mean", "x Mean"), ("sum", "\u03a3 Sum"), ("control_adjusted", "\u0394 Control-adjusted"),
+                    ("detected", "n/N Fraction detected"), ("fraction_of_total", "% % of total")]
     assert page.input_value(axis_sets.sel(C, "y", "key")) == "X"
     # choosing the other aggregation in the menu moves the axis to it
     axis_sets.choose_aggregation(page, C, "x", "mean")

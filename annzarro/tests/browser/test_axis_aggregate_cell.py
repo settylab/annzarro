@@ -21,6 +21,7 @@ else:
 
 from annzarro.tests.browser.test_gene_score_plots import (  # noqa: E402,F401
     C, SIG, SCORE, UMAP_X, UMAP_Y, _cell, _drawn, _open, _sig, page, served)
+from annzarro.tests.browser import axis_sets  # noqa: E402
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
 SHOTS = os.environ.get("ANNZARRO_SHOTS")
@@ -62,7 +63,8 @@ def test_the_item_picker_lists_signatures_in_sections_and_a_set_shows_the_aggreg
     _item(page, "color", "T cell score")
     button = f'{C} button.axis-agg-btn[data-axis="color"]'
     page.wait_for_selector(button)
-    assert page.inner_text(button).strip() == "z\u0304" and page.get_attribute(button, "aria-label") == "Aggregation: Z-score mean"
+    assert page.inner_text(button).strip() == "z" and page.get_attribute(button, "aria-label") == "Aggregation: Z-score mean"
+    assert page.evaluate("(s) => document.querySelector(s + ' .axis-agg-sym').classList.contains('agg-sym--over')", button), "z with a bar over it, drawn by CSS"
     assert _setting(page, "color")["type"] == "gene-score" and _setting(page, "color")["key"] == SIG
     assert page.input_value(_sel("color", "type")) == "layer", "the row reads layer, item, aggregation"
     assert [g for _, _, g in _options(page, "color", "column") if g][:1] == ["Genes"], _options(page, "color", "column")
@@ -76,12 +78,12 @@ def test_the_aggregation_popover_lists_symbols_and_choosing_one_is_one_request(p
     _open(page, served, plots=(("cell-plot-C", _cell(color=SCORE)),))
     button = f'{C} button.axis-agg-btn[data-axis="color"]'
     page.wait_for_selector(button)
-    page.click(button)
-    rows = page.evaluate("""() => [...document.querySelectorAll("[data-popover='aggregation'] [data-agg]")].map(r => [r.dataset.agg, r.textContent.replace(/\\s+/g, ' ').trim()])""")
-    assert ["mean", "x\u0304 Mean"] in rows and ["sum", "\u03a3 Sum"] in rows and ["zscore_mean", "z\u0304 Z-score mean"] in rows, rows
+    rows = [(r["v"], r["text"]) for r in axis_sets.aggregations(page, C, "color")]
+    assert ("mean", "x Mean") in rows and ("sum", "\u03a3 Sum") in rows and ("zscore_mean", "z Z-score mean") in rows, rows
     before = page.evaluate("() => window.__scoreCalls.filter(c => c.kind === 'compute').length")
-    page.click("[data-popover='aggregation'] [data-agg='sum']")
+    axis_sets.choose_aggregation(page, C, "color", "sum")
     until(page, "(s) => document.querySelector(s).textContent.trim() === 'Σ'", button)
+    assert page.get_attribute(button, "aria-label") == "Aggregation: Sum"
     until(page, "(n) => window.__scoreCalls.filter(c => c.kind === 'compute').length === n + 1", before)
     assert _setting(page, "color")["column"] == "sum"
 
@@ -123,6 +125,35 @@ def test_a_link_made_with_the_signature_as_a_source_loads_into_the_new_row_with_
     assert len([c for c in page.evaluate("() => window.__scoreCalls") if c["kind"] == "compute"]) == 1
 
 
+def test_the_menu_is_the_method_table_in_its_order_with_the_default_chosen_on_a_new_axis(page, served):
+    _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "none", "key": "", "column": ""})),))
+    _drawn(page)
+    axis_sets.pick_set(page, C, "color", SIG)
+    labels = page.evaluate("""async () => { const m = await import('/static/js/utils/signature-options.js');
+        return { order: m.METHOD_INFO.map(x => [x.value, x.label]), def: m.DEFAULT_METHOD }; }""")
+    rows = axis_sets.aggregations(page, C, "color")
+    assert [(r["v"], r["name"]) for r in rows] == [tuple(x) for x in labels["order"]], "the table's order and its labels"
+    assert [r["v"] for r in rows if r["on"]] == [labels["def"]] == ["zscore_mean"], "the default is chosen on a new axis"
+    assert len({r["sym"] for r in rows}) == len(rows), "one symbol per method"
+    assert [(r["v"], r["over"]) for r in rows if r["over"]] == [("zscore_mean", True), ("mean", True)], "x and z carry their bar as CSS"
+
+
+def test_the_menu_columns_line_up_and_a_disabled_entry_gives_its_reason(page, served):
+    _open(page, served, plots=(("cell-plot-C", _cell(color=SCORE)),))
+    button = f'{C} button.axis-agg-btn[data-axis="color"]'
+    page.wait_for_selector(button)
+    axis_sets.until_methods(page, "cell-plot-C", "color", "(o) => o.find(m => m.value === 'detected').disabled")
+    page.click(button)
+    xs = page.evaluate("""() => [...document.querySelectorAll("[data-popover='aggregation'] [data-agg]")].map(r => [Math.round(r.querySelector('.axis-agg-sym').getBoundingClientRect().left),
+        Math.round(r.querySelector('.axis-agg-name').getBoundingClientRect().left)])""")
+    assert len({a for a, _ in xs}) == 1 and len({b for _, b in xs}) == 1, f"every symbol and every name starts at one x: {xs}"
+    off = page.evaluate("""() => { const r = document.querySelector("[data-popover='aggregation'] [data-agg='detected']");
+        return { disabled: r.disabled, title: r.title, why: (r.querySelector('.axis-agg-why') || {}).textContent || '' }; }""")
+    assert off["disabled"] and "Raise Detected above" in off["title"] and off["why"] == off["title"], off
+    assert page.evaluate("() => document.querySelector(\"[data-popover='aggregation'] [data-agg='zscore_mean']\").getAttribute('aria-checked')") == "true"
+    page.keyboard.press("Escape")
+
+
 @pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")
 def test_screenshots_of_a_signature_on_x_and_a_gene_on_y(page, served):
     x = {**SCORE, "column": "sum", "layer": "X"}
@@ -131,9 +162,10 @@ def test_screenshots_of_a_signature_on_x_and_a_gene_on_y(page, served):
     page.wait_for_selector(f'{C} button.axis-agg-btn[data-axis="x"]')
     os.makedirs(SHOTS, exist_ok=True)
     for theme in ("light", "dark"):
-        page.evaluate("(t) => { document.documentElement.dataset.theme = t; }", theme)
+        page.evaluate("(t) => { document.documentElement.setAttribute('data-theme', t); document.documentElement.setAttribute('data-bs-theme', t); }", theme)
         page.locator(f"{C} .plot-controls").screenshot(path=os.path.join(SHOTS, f"axis-aggregate-cell-{theme}.png"))
-    page.evaluate("() => { document.documentElement.dataset.theme = 'light'; }")
-    page.click(f'{C} button.axis-agg-btn[data-axis="x"]')
-    page.locator("[data-popover='aggregation']").wait_for(state="visible")
-    page.screenshot(path=os.path.join(SHOTS, "axis-aggregate-cell-menu-light.png"), clip=page.locator(f"{C} .plot-controls").bounding_box() | {"height": 320})
+        page.click(f'{C} button.axis-agg-btn[data-axis="x"]')
+        page.locator("[data-popover='aggregation']").wait_for(state="visible")
+        box = page.locator(f"{C} .plot-controls").bounding_box()
+        page.screenshot(path=os.path.join(SHOTS, f"axis-aggregate-cell-menu-{theme}.png"), clip={**box, "height": 320})
+        page.keyboard.press("Escape")

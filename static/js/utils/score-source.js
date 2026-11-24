@@ -37,6 +37,7 @@ import { VOCABULARY } from './vocabulary.js';
 import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
+import { SCORE_SYMBOLS } from './aggregation-symbols.js';
 import { DEFAULT_INPUT, METHODS, METHOD_INFO, SIGNATURE_MODEL, methodShort } from './signature-options.js';
 import { legacyPair } from './options-model.js';
 import { createSourceAdapter, entityLabel, isSourceType, kindOfType, optionFieldsOf, scoreKeyOptions } from './score-source-panels.js';
@@ -706,13 +707,13 @@ const scoreAggregate = {
     layerOf: (setting) => heldLayer(setting),
     methods: (setting) => ({
         options: scorePairMenus(setting.key, { method: heldMethod(setting), layer: heldLayer(setting) }).methods.map(o => ({
-            value: o.value, name: (METHOD_INFO.find(m => m.value === o.value) || { label: o.text }).label, symbol: A.score[o.value] || o.text,
+            value: o.value, name: (METHOD_INFO.find(m => m.value === o.value) || { label: o.text }).label, symbol: SCORE_SYMBOLS[o.value],
             disabled: !!o.disabled, title: o.title || '' })),
         chosen: heldMethod(setting)
     }),
     layers: (setting) => scoreLayerMenu(setting),
     after: (setting, kind, value) => scoreSettingAfter(setting, kind, value),
-    symbolOf: (setting) => A.score[heldMethod(setting)] || ''
+    symbolOf: (setting) => SCORE_SYMBOLS[heldMethod(setting)]
 };
 
 registerSource({

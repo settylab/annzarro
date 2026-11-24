@@ -8,9 +8,9 @@ import { noteDatasetLayers } from '../../utils/score-source.js';
 import { refreshHoverGroups } from './hover-columns.js';
 import { fillChoiceSelect } from '../../utils/pair-selects.js';
 import { attachFilter, fillSections } from '../../utils/group-picker.js';
-import { aggregateProviders, setSections, isAggregate, displayType, heldSet, aggregationOf, aggregateOf } from '../../utils/axis-aggregate.js';
+import { aggregateProviders, setSections, isAggregate, displayType, heldSet, aggregateOf } from '../../utils/axis-aggregate.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
-import { createPopover } from '../../ui/popover.js';
+import { createAggregationButton } from '../../ui/aggregation-button.js';
 import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -640,57 +640,34 @@ function populateLayerItems(settings, columnSelect, plotType, use) {
 }
 
 /**
- * The aggregation button after a set's item picker: the aggregation's symbol (x̄, Σ, z...), its full name for the tooltip
- * and the label; it opens the menu of the provider's aggregations, each as symbol and name. None for a single item.
+ * The aggregation button after a set's item picker (ui/aggregation-button.js): the aggregation's symbol, and the menu of every
+ * aggregation of the set held, each as a symbol and a name. None for a single item. A choice is handed to the column
+ * select's own listeners, like every change of the row.
  */
 function ensureAggregationButton(columnSelect, settings) {
-  let button = columnSelect.__aggButton || null;
-  const held = settings ? aggregationOf(settings) : null;
-  if (!held) {
-    if (button) { button.__pop.destroy(); button.remove(); columnSelect.__aggButton = null; }
+  let made = columnSelect.__agg || null;
+  if (!settings || !isAggregate(settings)) {
+    if (made) { made.destroy(); columnSelect.__agg = null; }
     return;
   }
-  if (!button) {
-    button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'btn btn-sm btn-outline-secondary axis-agg-btn';
-    button.dataset.axis = columnSelect.dataset.axis || '';
-    button.__pop = createPopover({
-      anchor: button, name: 'aggregation', title: VOCABULARY.aggregation.label, menu: true,
-      render: (body) => {
+  if (!made) {
+    made = createAggregationButton({
+      label: VOCABULARY.aggregation.label, axis: columnSelect.dataset.axis || '',
+      methods: () => {
         const row = columnSelect.__row;
         const provider = row && aggregateOf(row.settings);
-        if (!provider) return;
-        const { options, chosen } = provider.aggregate.methods(row.settings);
-        for (const o of options) {
-          const item = document.createElement('button');
-          item.type = 'button';
-          item.className = 'axis-agg-item';
-          item.setAttribute('role', 'menuitemradio');
-          item.setAttribute('aria-checked', String(o.value === chosen));
-          item.dataset.agg = o.value;
-          item.disabled = !!o.disabled;
-          item.title = o.title || '';
-          item.innerHTML = '<span class="axis-agg-sym"></span> <span class="axis-agg-name"></span>';
-          item.firstChild.textContent = o.symbol;
-          item.lastChild.textContent = o.name;
-          item.setAttribute('role', 'menuitem');
-          item.addEventListener('click', () => {
-            columnSelect.__touched = 'agg';
-            columnSelect.__aggValue = o.value;
-            columnSelect.dispatchEvent(new Event('change', { bubbles: true }));
-          });
-          body.append(item);
-        }
+        return provider ? provider.aggregate.methods(row.settings) : null;
+      },
+      onPick: (value) => {
+        columnSelect.__touched = 'agg';
+        columnSelect.__aggValue = value;
+        columnSelect.dispatchEvent(new Event('change', { bubbles: true }));
       }
     });
-    columnSelect.__aggButton = button;
+    columnSelect.__agg = made;
   }
-  const anchor = columnSelect.__groupFilter ? columnSelect : columnSelect;
-  if (button.previousElementSibling !== anchor) anchor.after(button);
-  button.textContent = held.symbol;
-  button.title = `${VOCABULARY.aggregation.label}: ${held.name}`;
-  button.setAttribute('aria-label', `${VOCABULARY.aggregation.label}: ${held.name}`);
+  if (made.button.previousElementSibling !== columnSelect) columnSelect.after(made.button);
+  made.update();
 }
 
 /** The built-in sources of a type menu, by the entity a value belongs to. */
