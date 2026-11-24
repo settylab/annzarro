@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 
 const C = await import('../../../static/js/panels/cell-gene/controls.js');
 const S = await import('../../../static/js/panels/cell-gene/sections.js');
+const { METHODS } = await import('../../../static/js/utils/signature-options.js');
 const D = await import('../../../static/js/panels/cell-gene/draw.js');
 const G = await import('../../../static/js/utils/group-statistics.js');
 const { normalizeGrouping } = await import('../../../static/js/utils/cell-grouping.js');
@@ -85,31 +86,21 @@ test('pickLayer: the layer stays when it can give the statistic; else the first 
 
 // ------------------------------------------------------------------ one-row sections (item 7)
 
-test('aggregationEntries: the kind select is 4 summaries and 2 score kinds, nothing offered', () => {
-    const groups = S.aggregationEntries();
+test('rowStepEntries: the rows family, then every method of the source, nothing offered (decision 40)', () => {
+    const groups = S.rowStepEntries({ stat: 'mean' });
     assert.equal(groups.length, 2);
-    assert.deepEqual(values(groups[0].entries), ['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_pct_expressing']);
-    assert.deepEqual(values(groups[1].entries), ['score_mean', 'score_pct_above']);
-    assert.deepEqual(groups[1].entries.map((e) => e.label), ['Score, averaged', '% of cells with score above']);
+    assert.deepEqual(values(groups[0].entries), ['rows_mean', 'rows_sum', 'rows_z']);
+    assert.deepEqual(values(groups[1].entries), METHODS);
     assert.ok(!groups.flatMap((g) => g.entries).some((e) => /offer/i.test(e.label)));
 });
 
-test('aggregationAfter: a new score kind starts on z-score mean · X; method and layer move as one pair', () => {
-    const fresh = S.aggregationAfter({ agg: 'mean_of_means' }, 'kind', 'score_mean');
-    assert.deepEqual(fresh, { agg: { agg: 'score_mean', column: 'zscore_mean', layer: 'X' }, say: '' });
-    const held = { agg: 'score_pct_above', column: 'mean', layer: 'logged', above: 2 };
-    assert.deepEqual(S.aggregationAfter(held, 'kind', 'score_pct_above').agg, held, 'the same kind keeps its threshold');
-    assert.deepEqual(S.aggregationAfter(held, 'kind', 'score_mean').agg, { agg: 'score_mean', column: 'mean', layer: 'logged' });
-    assert.deepEqual(S.aggregationAfter(held, 'kind', 'sum_of_means').agg, { agg: 'sum_of_means' });
-    // the method touched wins; the layer moves when the pair is impossible, and says so
-    const choices = { after: (changed, value, pair) => (changed === 'method' && value === 'fraction_of_total' && pair.layer === 'X'
-        ? { method: value, layer: 'counts', say: 'Layer changed to counts: % of total is not available on X.' }
-        : { method: changed === 'method' ? value : pair.method, layer: changed === 'layer' ? value : pair.layer, say: '' }) };
-    const onX = { agg: 'score_mean', column: 'mean', layer: 'X' };
-    assert.deepEqual(S.aggregationAfter(onX, 'method', 'fraction_of_total', choices),
-        { agg: { agg: 'score_mean', column: 'fraction_of_total', layer: 'counts' }, say: 'Layer changed to counts: % of total is not available on X.' });
-    assert.deepEqual(S.aggregationAfter(onX, 'layer', 'logged', choices).agg, { agg: 'score_mean', column: 'mean', layer: 'logged' });
-    assert.equal(S.aggregationAfter({ agg: 'mean_of_means' }, 'method', 'sum'), null, 'a summary has no method');
+test('rowStepAfter: a score method keeps its threshold, a combining step has none', () => {
+    assert.deepEqual(S.rowStepAfter({ genes: 'rows_mean' }, 'genes', 'zscore_mean'), { genes: 'zscore_mean' });
+    assert.deepEqual(S.rowStepAfter({ genes: 'mean', above: 2 }, 'genes', 'sum'), { genes: 'sum', above: 2 });
+    assert.deepEqual(S.rowStepAfter({ genes: 'mean', above: 2 }, 'genes', 'rows_z'), { genes: 'rows_z' });
+    assert.deepEqual(S.rowStepAfter({ genes: 'mean', above: 2 }, 'above', 0), { genes: 'mean' });
+    assert.equal(S.rowStepAfter({ genes: 'rows_mean' }, 'above', 1), null, 'a combining step has no threshold');
+    assert.equal(S.rowStepAfter({ genes: 'rows_mean' }, 'genes', 'median'), null);
 });
 
 // ------------------------------------------------------------------ old links (section 6)

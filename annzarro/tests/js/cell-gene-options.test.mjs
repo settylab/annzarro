@@ -327,11 +327,11 @@ test('5.3 values printed in the cells: a heatmap option, ignored for dots', () =
 test('a one-row section with a quantity of its own is a column named by its section and aggregation, never "undefined"', () => {
     const { model } = compose();
     model.rows[5] = { ...model.rows[5], label: 'Pathway', section: { index: 1, title: 'Pathway' },
-        own: { color: { id: 'mean_of_means|logged|own', label: W.aggregation.mean_of_means } } };
+        own: { color: { id: 'rows_sum|mean|logged|', label: 'cells: Mean · logged; genes: sum' } } };
     const rows = longRows(O.tableOf(model));
     const head = rows[0];
-    const own = columnHeader({ label: W.aggregation.mean_of_means, scaling: 'none', section: 'Pathway' });
-    assert.equal(own, "Pathway · Mean of the genes' means · not scaled");
+    const own = columnHeader({ label: 'cells: Mean · logged; genes: sum', scaling: 'none', section: 'Pathway' });
+    assert.equal(own, 'Pathway · cells: Mean · logged; genes: sum · not scaled');
     assert.ok(head.includes(own), head.join(' | '));
     assert.ok(!head.some((h) => h.includes('undefined')), head.join(' | '));
     // its values are on its row only; the genes' column leaves that row empty

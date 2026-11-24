@@ -220,62 +220,65 @@ const setCase = () => {
 };
 const columnsOf = (genes, stat) => genes.map((g) => M.statisticColumn(stat, g, 3));
 
-test('the aggregations of SHR-21 are one list of two kinds, with the cheap summaries first', () => {
-    assert.deepEqual(Object.keys(M.ROW_AGGREGATIONS),
+test('the gene steps of a one-row section (decision 40): three that combine the gene rows, the mean first', () => {
+    assert.deepEqual(M.ROW_STEPS, ['rows_mean', 'rows_sum', 'rows_z']);
+    assert.equal(M.DEFAULT_ROW_STEP, 'rows_mean');
+    assert.ok(M.combinesRows('rows_sum') && !M.combinesRows('zscore_mean'));
+    assert.deepEqual(M.LEGACY_ROW_AGGREGATIONS,
         ['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_pct_expressing', 'score_mean', 'score_pct_above']);
-    for (const id of ['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_pct_expressing']) assert.equal(M.ROW_AGGREGATIONS[id].kind, 'summary');
-    for (const id of ['score_mean', 'score_pct_above']) assert.equal(M.ROW_AGGREGATIONS[id].kind, 'score');
-    assert.deepEqual(M.DEFAULT_ROW_AGGREGATIONS, { color: 'mean_of_means', size: 'mean_of_pct_expressing' });
 });
 
-test('mean and sum of the genes\' means skip a gene with no value in that group', () => {
+test('mean and sum of the gene rows skip a gene with no value in that group', () => {
     const genes = setCase();
     // means: g0: 1 5 0 | g1: 1 4 missing | g2: 0 0 2
-    assert.deepEqual(Array.from(M.setRow('mean_of_means', genes, 3)), [2 / 3, 3, 1]);
-    assert.deepEqual(Array.from(M.setRow('sum_of_means', genes, 3)), [2, 9, 2]);
+    assert.deepEqual(Array.from(M.combineRows('rows_mean', 'mean', genes, 3)), [2 / 3, 3, 1]);
+    assert.deepEqual(Array.from(M.combineRows('rows_sum', 'mean', genes, 3)), [2, 9, 2]);
 });
 
-test('mean of the genes\' % expressing', () => {
+test('the mean of the gene rows under % expressing; their sum is the genes detected per cell, not a %', () => {
     const genes = setCase();
     // pct: g0 50 100 0 | g1 100 100 NaN | g2 0 0 100
-    assert.deepEqual(Array.from(M.setRow('mean_of_pct_expressing', genes, 3)), [50, 200 / 3, 50]);
+    assert.deepEqual(Array.from(M.combineRows('rows_mean', 'pct_expressing', genes, 3)), [50, 200 / 3, 50]);
+    assert.deepEqual(Array.from(M.combineRows('rows_sum', 'pct_expressing', genes, 3)), [1.5, 2, 1]);
 });
 
-test('mean of the genes\' z-scores uses each gene\'s pooled mean and SD over the grouped cells', () => {
+test('the mean of the gene rows as z-scores: each gene row against its own groups, skipping a missing one', () => {
     const genes = setCase();
-    const counted = Uint8Array.of(1, 1, 0);
-    const refs = genes.map((g) => M.pooledReference(g, 3, counted));
     const means = columnsOf(genes, 'mean');
-    const z = (gi, g) => (refs[gi].sd === 0 ? 0 : (means[gi][g] - refs[gi].mean) / refs[gi].sd);
-    const out = M.setRow('mean_of_zscores', genes, 3, { counted });
-    near(out[0], (z(0, 0) + z(1, 0) + z(2, 0)) / 3, 'group 0');
-    near(out[1], (z(0, 1) + z(1, 1) + z(2, 1)) / 3, 'group 1');
-    near(out[2], (z(0, 2) + z(2, 2)) / 2, 'group 2 skips the gene with no value');
+    const zOf = (row) => {
+        const vals = row.filter((v) => !Number.isNaN(v));
+        const mean = vals.reduce((a, v) => a + v, 0) / vals.length;
+        const sd = Math.sqrt(vals.reduce((a, v) => a + (v - mean) ** 2, 0) / vals.length);
+        return row.map((v) => (Number.isNaN(v) ? NaN : sd === 0 ? 0 : (v - mean) / sd));
+    };
+    const z = means.map((row) => zOf(Array.from(row)));
+    const out = M.combineRows('rows_z', 'mean', genes, 3);
+    near(out[0], (z[0][0] + z[1][0] + z[2][0]) / 3, 'group 0');
+    near(out[1], (z[0][1] + z[1][1] + z[2][1]) / 3, 'group 1');
+    near(out[2], (z[0][2] + z[2][2]) / 2, 'group 2 skips the gene with no value');
 });
 
-test('a set row with no gene having a value in a group has no value there, never 0', () => {
+test('a combined row with no gene having a value in a group has no value there, never 0', () => {
     const genes = [wire(momentsFromValues([1]), momentsFromValues([]))];
-    for (const agg of ['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_pct_expressing']) {
-        const out = M.setRow(agg, genes, 2);
-        assert.ok(Number.isFinite(out[0]) && Number.isNaN(out[1]), agg);
+    for (const step of M.ROW_STEPS) {
+        const out = M.combineRows(step, 'mean', genes, 2);
+        assert.ok(Number.isFinite(out[0]) && Number.isNaN(out[1]), step);
     }
 });
 
-test('the per-cell score kinds are the score\'s own moments: its mean, and the share above', () => {
-    const score = wire(momentsFromValues([1, 2, 3, 4], 2), momentsFromValues([5, 5]), momentsFromValues([]));
-    assert.deepEqual(Array.from(M.setRow('score_mean', score, 3)).map((v) => (Number.isNaN(v) ? 'NaN' : v)), [2.5, 5, 'NaN']);
-    assert.deepEqual(Array.from(M.setRow('score_pct_above', score, 3)).map((v) => (Number.isNaN(v) ? 'NaN' : v)), [50, 100, 'NaN']);
+test('combineRows takes the genes\' moments and a combining step only', () => {
+    assert.throws(() => M.combineRows('rows_mean', 'mean', wire(momentsFromValues([1])), 1), /genes/);
+    assert.throws(() => M.combineRows('zscore_mean', 'mean', setCase(), 3), /combine/);
 });
 
-test('summaries and score kinds are not mixed up: each takes its own input', () => {
-    assert.throws(() => M.setRow('score_mean', setCase(), 3), /score/);
-    assert.throws(() => M.setRow('mean_of_means', wire(momentsFromValues([1])), 1), /genes/);
-    assert.throws(() => M.setRow('median', [], 1), /aggregation/);
-});
-
-test('summaries need no request: they are computed from the genes\' moments alone', () => {
-    // setRow takes no fetch, no store and no score; the list says which kind needs a score
-    for (const [id, a] of Object.entries(M.ROW_AGGREGATIONS)) assert.equal(a.needsScore, a.kind === 'score', id);
+test('rowStepGrade: Cell count, down genes, and the two sums with no honest name', () => {
+    assert.deepEqual(M.rowStepGrade('rows_mean', 'mean'), { ok: true });
+    assert.deepEqual(M.rowStepGrade('zscore_mean', 'count'), { ok: false, reason: 'count' });
+    assert.deepEqual(M.rowStepGrade('rows_mean', 'mean', { down: 2 }), { ok: false, reason: 'down' });
+    assert.deepEqual(M.rowStepGrade('zscore_mean', 'mean', { down: 2 }), { ok: true });
+    assert.deepEqual(M.rowStepGrade('rows_sum', 'sd'), { ok: false, reason: 'sum_sd' });
+    assert.deepEqual(M.rowStepGrade('rows_sum', 'mean_expressing'), { ok: false, reason: 'sum_mean_expressing' });
+    assert.deepEqual(M.rowStepGrade('rows_sum', 'pct_expressing'), { ok: true });
 });
 
 // --- availability and limits (OD 8, CXG-17) --------------------------------------------------------------------
@@ -347,7 +350,7 @@ test('a section at the limit (2,000 genes in 200 groups): statistics, every scal
     const matrix = matrixOf(genes.map((m) => M.statisticColumn('mean', m, G)), G);
     const refs = genes.map((m) => M.pooledReference(m, G));
     for (const s of M.SCALINGS) assert.equal(M.scale(matrix, s, refs).length, 2000 * G);
-    for (const agg of ['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_pct_expressing']) assert.equal(M.setRow(agg, genes, G).length, G);
+    for (const step of M.ROW_STEPS) assert.equal(M.combineRows(step, 'mean', genes, G).length, G);
     const took = performance.now() - started;
     // about 15 ms here: five statistics, five scalings and four set rows over 400,000 values. A quadratic slip is seconds.
     assert.ok(took < 1500, `${took.toFixed(0)} ms`);
@@ -375,15 +378,15 @@ test('the statistic, scaling and aggregation words of UX 3.2 and 3.3', () => {
     assert.equal(W.scaling.var, '0 to 1 per gene');
     assert.equal(W.scaled.var, 'scaled 0 to 1 per gene');
     assert.equal(W.scaling.z_pooled, 'z-score per gene, against all grouped cells');
-    assert.deepEqual(W.aggregationHeading, { summary: 'From the genes', score: 'From the score' });
-    for (const [id, a] of Object.entries(M.ROW_AGGREGATIONS)) {
-        assert.ok(W.aggregationHelp[id], id);
-        assert.equal(a.kind === 'summary', id in W.aggregation, id);
-        assert.equal(a.kind === 'score', id in W.scoreAggregation, id);
+    assert.deepEqual(W.rowStep.heading, { rows: 'Combine the gene rows', score: 'Score each cell' });
+    for (const step of M.ROW_STEPS) {
+        assert.ok(W.rowStep.name[step], step);
+        assert.ok(W.rowStep.help[step], step);
+        assert.ok(W.rowStep.how[step], step);
     }
-    assert.equal(W.aggregation.mean_of_zscores, "Mean of the genes' z-scores");
-    assert.equal(W.scoreAggregation.score_mean('z-score mean · X'), 'z-score mean · X, averaged');
-    assert.equal(W.scoreAggregation.score_pct_above('z-score mean · X'), '% of cells with z-score mean · X above');
+    for (const kind of M.LEGACY_ROW_AGGREGATIONS) assert.ok(W.rowStep.legacy[kind], kind);
+    assert.equal(W.rowStep.detectedPerCell, 'Genes detected per cell');
+    assert.equal(W.rowStep.cannot('Sum of the gene rows', 'SD', 'why.'), 'Sum of the gene rows cannot be computed with SD: why.');
     assert.equal(W.noExpressingCells, 'no expressing cells');
     assert.equal(W.csv.note, 'Note');
 });

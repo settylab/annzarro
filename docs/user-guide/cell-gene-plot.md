@@ -111,27 +111,37 @@ Each section is a row of the list: its title, the source and its gene count, **G
   with no gene the dataset has says so in the plot.
 - A section shows up to 2,000 genes: "DE genes has 5,120 genes; a section shows up to 2,000. Filter the table."
 
-**One row** stands for the whole list. Its **Color** and **Size** open from the row's summary button, and each first
-chooses a kind, in two parts:
+**One row** stands for the whole list. Its value is two steps: the plot's **Color** (or **Size**) statistic over a
+group's cells, and a way to combine the list's genes. The first step is the plot's: a one-row section always uses the
+statistic, the layer and the threshold of **Color** and **Size**, so its row compares with its genes' rows. Its
+**Color** and **Size** open from the row's summary button. Each shows the statistic it follows ("Mean · logged, from
+Color", with **Change in Color**, which takes you to the plot's own select) and chooses only how the genes are
+combined:
 
-| Kind | Is |
+| Genes | Each value is |
 |---|---|
-| *From the genes* | |
-| Mean of the genes' means | Each gene's mean in the group, averaged over the genes. Reads the genes once. |
-| Sum of the genes' means | Each gene's mean in the group, added up. |
-| Mean of the genes' z-scores | Each gene's group mean as a z-score against all grouped cells, averaged. |
-| Mean of the genes' % expressing | Each gene's % expressing in the group, averaged; 0 to 100. |
-| *From the score* | |
-| Score, averaged | The signature's score for each cell, averaged over the group, as a cell plot colored by it would average. Computes the score. |
-| % of cells with score above | Share of the group's cells whose score is above the threshold; 0 to 100. |
+| *Combine the gene rows* | |
+| Mean of the gene rows | Each gene's statistic in the group, as its own row shows it, averaged over the genes. On the same scale as the gene rows, and drawn under their colour bar or size legend. The default. |
+| Sum of the gene rows | The same, added up. Under % expressing it is named **Genes detected per cell**: the genes' fractions added up, the expected number of the list's genes detected in a cell, on its own scale rather than 0 to 100. |
+| Mean of the gene rows, as z-scores | Each gene's row as a z-score across the groups, then averaged, so every gene weighs the same. |
+| *Score each cell* | |
+| z-score mean, mean, sum, … | The source's score of each cell by that method, on the plot's layer, then the plot's statistic over the group's cells: its mean, its sum, its SD, or, under % expressing, the % of cells whose score is above **cells above** (a threshold in the score's units, 0 when empty). The method's settings are the source's ({ref}`gene-signature-scoring`). |
 
-A score kind then reads `[method ▾] of [layer ▾]`, and the share above a threshold adds `above [0]`. Both selects list
-every score method and every layer; a pair the source cannot score is greyed out with the reason, and choosing a
-method the layer cannot give moves the layer and says so. A new score starts on z-score mean of X. The method's
-parameters are the source's ({ref}`gene-signature-scoring`).
-The defaults are "Mean of the genes' means" and "Mean of the genes' % expressing", which need no score: choosing only
-"From the genes" entries asks for no score at all. A one-row section whose values are not on the gene rows' scale (a
-score, or a size that is not 0 to 100) gets its own colour bar or size legend, titled with the section.
+Some pairs have no honest meaning and are greyed out with the reason: under **Cell count** the row is the groups'
+sizes and does not depend on genes; a sum of SDs is not the spread of the list, and a sum of means of expressing cells
+is the mean of no cells. A gene signature with down genes cannot combine its gene rows (its down genes would count as
+up genes): its row is its score, by z-score mean unless you choose another method. When **Color** or **Size** changes to
+a statistic a one-row section's choice cannot follow, that section goes back to the mean of its gene rows in the same
+step, and the status line says so once.
+
+Combining the gene rows asks for nothing beyond the genes' own values; a score asks for one score per method and layer.
+The mean of the gene rows and the mean score of each cell give the same value for mean and sum when no gene is missing
+in the group's cells. A one-row section whose values are not on the gene rows' scale (a score, a sum, z-scores) gets its
+own colour bar or size legend, titled with the section and both steps ("genes: z-score mean; cells: Mean · logged").
+
+A link saved before this behavior opens with each one-row section on the nearest choice. Where that changes the values
+drawn (a score that was read on another layer, a summary that was not the plot's statistic), the status line says so
+once.
 
 ## Clustering and order
 
@@ -233,7 +243,9 @@ section and its entry), each value with its statistic and layer, and the group's
 
 **Download CSV** (Plot Options ▸ Export) gives the plotted values in long form, one row per group and row, with
 one column per statistic and headers that name the statistic, its threshold where it has one, the layer and the
-scaling ("% expressing (> 1) · counts · not scaled"), so two thresholds stay two columns apart. The image buttons
+scaling ("% expressing (> 1) · counts · not scaled"), so two thresholds stay two columns apart. With a one-row section,
+**Color: genes combined by** and **Size: genes combined by** say how its genes were combined; the column header is the
+statistic over the cells. The image buttons
 beside it, and the camera button in the plot's toolbar, save the figure as an image, with its brackets, strips, legends
 and dendrograms.
 
