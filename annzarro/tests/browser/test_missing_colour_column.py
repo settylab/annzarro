@@ -236,7 +236,9 @@ def test_part_step(server, which):
 
 
 @pytest.mark.parametrize("which", COLOURS)
-def test_panel_refresh(server, which):
+def test_header_refresh(server, which):
+    """After a re-read of the dataset (the header's Refresh; the plot's own is gone, decision 39) the column is still
+    missing and said so."""
     root, has, lacks, large = server
     colour, label = COLOURS[which]
     with playwright.sync_playwright() as p:
@@ -244,7 +246,7 @@ def test_panel_refresh(server, which):
         try:
             page, s = _open(browser, _link(root, lacks, colour, SUBSET))
             _grey_with_notice(s, label, large)
-            page.click(f"#refresh-plot-{PID}")
+            page.click("#refresh-dataset")
             page.wait_for_timeout(1500)
             s = _settle(page)
             _grey_with_notice(s, label, large)

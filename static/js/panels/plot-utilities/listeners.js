@@ -3,7 +3,7 @@ import { updateColorSliderUI, setupAxisSelector, takeSubKey, showDropdownLoading
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { autoPointCount, plotArea } from '../../utils/view-point-style.js';
-import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator, hoverPickFits, showHoverChoice } from './plot-make.js';
+import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, hoverPickFits, showHoverChoice } from './plot-make.js';
 import { hoverInfoFromSelection, hoverOffFromSelection, pickerValue, NO_HOVER } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { beginLoad, endLoad, wasCancelled } from '../../utils/load-scope.js';
@@ -20,8 +20,6 @@ import {
 import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate, autorangeValue, keepsOwnMarker, refreshScaleBar } from './plot-make-helper.js';
 import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
-import { notify } from '../../utils/notify.js';
-import { partialRefreshNotice } from '../../utils/session-permissions.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig, snapPointSize } from '../../utils/slider-scales.js';
 import { coalesce } from '../../utils/render-queue.js';
 
@@ -340,23 +338,9 @@ export function setupPlotControlListeners(
       });
     }
   
-    // --- Refresh Plot Button ---
-    const $refreshPlotButton = $controlsContainer.find(`#refresh-plot-${id}`);
-    // reloads the panel's data: re-checked on the server, past this browser's copies
-    // (the server may wait for its next walk of the dataset, up to
-    // server.refresh_min_interval_s: the panel shows it is busy meanwhile)
-    $refreshPlotButton.on('click', async () => {
-      loadingIndicator.show(plotContainer, 'refresh');
-      try {
-        const checked = await DataManager.reloadDatasetData();
-        const partial = partialRefreshNotice(checked);
-        if (partial) notify(partial.title, partial.message, 'info');
-      } finally {
-        loadingIndicator.hide(plotContainer, 'refresh');
-      }
-      loadDataAndCreatePlot();
-    });
-    
+    // No Refresh of its own (decision 39): every edit draws what a fresh draw of the settings draws
+    // (tests/browser/test_render_drift.py), and the header's Refresh re-reads the dataset keeping the view.
+
     // --- Table Filter Controls ---
     // Add event listeners for table filter dropdown
     // Try different selector strategies to find the table filter dropdown
