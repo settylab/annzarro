@@ -495,7 +495,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 // else is rebuilt, an empty group included: restyling trace 0 handed the "Not in table" trace
                 // the colours of every point (and left the points that had just left the table out of the
                 // plot), and a filter that matches nothing must grey every point, not only the old rest
-                const drawnAsGroups = plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t.name === 'In table'));
+                const drawnAsGroups = plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t._azTable));
                 if (nonTableIndices.length === 0 && !settings.removeNonTableEntries && !drawnAsGroups) {
                   // Fall back to standard numerical update
                   const update = {};
@@ -586,7 +586,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     const tableTrace = {
                       type: settings.z ? 'scatter3d' : 'scattergl',
                       mode: 'markers',
-                      name: 'In table',
+                      // named as a fresh draw names it (plot-make.js); told by _azTable, not by its name
+                      name: settings.color.key || 'Value',
+                      _azTable: true,
                       text: DataManager.cellLabels(tableFilteredIndices.map(i => entities[i])),
                       customdata: tableFilteredIndices.map(i => entities[i]),
                       hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
@@ -625,7 +627,10 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                   Plotly.addTraces(plotContainer, traces);
                 }
               } else {
-                // Standard numerical update (no table filter or removing non-table entries)
+                // Standard numerical update (no table filter or removing non-table entries). A plot still drawn as
+                // "In table" and "Not in table" (the filter just went) is drawn again: restyling trace 0 kept the
+                // table's grouping and names, which a fresh draw of the same settings does not have (render drift)
+                if (plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t._azTable))) refreshPlot();
                 const update = {};
                 const applyMask = idx => !indexMask || indexMask[idx];
 
@@ -672,7 +677,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     
                     // If one of the groups is empty, handle with standard approach
                     if (tableIndices.length === 0 || (nonTableIndices.length === 0 && !settings.removeNonTableEntries)) {
-                        // Fall back to standard constant color update
+                        // Fall back to standard constant color update; a plot drawn as the table's groups is drawn again
+                        if (plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t._azTable))) refreshPlot();
                         const update = {};
                         update['marker.color'] = constantColour(settings);
                         update['marker.showscale'] = false;
@@ -719,7 +725,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                             const tableTrace = {
                                 type: settings.z ? 'scatter3d' : 'scattergl',
                                 mode: 'markers',
-                                name: 'In table',
+                                name: 'Data points',          // as a fresh draw names it (plot-make.js)
+                                _azTable: true,
                                 text: DataManager.cellLabels(tableIndices.map(i => entities[i])),
                                 customdata: tableIndices.map(i => entities[i]),
                                 hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
@@ -753,7 +760,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         Plotly.addTraces(plotContainer, traces);
                     }
                 } else {
-                    // Standard constant color update (no table filter or removing non-table entries)
+                    // Standard constant color update (no table filter or removing non-table entries); a plot drawn
+                    // as the table's groups is drawn again, as for a number colour
+                    if (plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t._azTable))) refreshPlot();
                     const update = {};
                     update['marker.color'] = constantColour(settings);
                     update['marker.showscale'] = false;

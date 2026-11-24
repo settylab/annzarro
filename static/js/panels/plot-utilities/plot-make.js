@@ -3161,6 +3161,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: settings.color.key || 'Value',
+          _azTable: true,             // the points in the table (plot-update.js tells the grouping by it)
           text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
@@ -3327,6 +3328,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: 'Data points',
+          _azTable: true,
           text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
