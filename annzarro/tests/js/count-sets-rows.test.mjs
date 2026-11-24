@@ -135,7 +135,6 @@ test('an UpSet offers None first (the default), then Count; an old config reads 
     assert.equal(choices[0].label, 'None');
     assert.equal(choices[0].help, 'One color for every bar.');
     assert.equal(choices[1].help, 'Each bar colored by its cells, on the color scale.');
-    assert.equal(choices[1].help, 'Cells in the bar.', 'an UpSet draws bars, not rectangles');
     assert.equal(K.valueChoiceOf(upset), 'none');
     assert.equal(K.valueChoiceOf({ ...upset, value: { kind: 'count' } }), 'count');
     assert.equal(K.valueChoiceOf({ ...upset, value: { kind: 'share' } }), 'share:all');
