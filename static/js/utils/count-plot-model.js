@@ -22,6 +22,7 @@ import { groupNeed } from './group-store.js';
 import { csvField } from './csv-format.js';
 import { RESERVED } from './level-id.js';
 import { stableStringify } from './url-history.js';
+import { isColourString } from './uns-palette.js';
 
 const VERSION = 1;
 
@@ -135,18 +136,21 @@ function normalizeSets(raw, bad) {
         }
         const set = { ...item, source: source.source };
         if (member) set.member = member;
+        // a colour is stored only when the user picked one; text that is no colour is dropped
+        if (set.color !== undefined && !(typeof set.color === 'string' && isColourString(set.color))) delete set.color;
         out.push(set);
     }
     return out;
 }
 
-function normalizeValue(raw, bad, factorOf) {
+function normalizeValue(raw, bad, factorOf, keepCount = false) {
     if (!isObject(raw) || !VALUE_KINDS.includes(raw.kind)) {
         bad('value', 'bad_value');
         return null;
     }
     const out = { ...raw };
-    if (raw.kind === 'count' && Object.keys(raw).length === 1) return null;
+    // an UpSet keeps its stored Count: it colours the bars, where the default (no value) colours none
+    if (raw.kind === 'count' && Object.keys(raw).length === 1 && !keepCount) return null;
     if (raw.of !== undefined && !SHARE_BASES.includes(raw.of)) {
         bad('value.of', 'bad_value');
         delete out.of;
@@ -205,7 +209,7 @@ export function normalizeCountPlot(raw) {
     }
     if (raw.sets !== undefined) out.sets = normalizeSets(raw.sets, bad);
     if (raw.value !== undefined) {
-        const value = normalizeValue(raw.value, bad, (factor) => normalizeInput(factor, 'value.factor', bad));
+        const value = normalizeValue(raw.value, bad, (factor) => normalizeInput(factor, 'value.factor', bad), out.mode === 'upset');
         if (value) out.value = value;
     }
     if (raw.measure !== undefined) {
@@ -227,7 +231,8 @@ export function normalizeCountPlot(raw) {
 /**
  * The colour of the plot (WP-6a): `{map?, reverse?, min?, max?, center?, palette?}`. `map` is a colour scale's name,
  * `reverse` flips it, `min`, `max` and `center` fix the range of a colour scale (absent: automatic), `palette` names the
- * discrete palette of a Color by's levels. A field that is not valid is reported and left out; an empty colour is none.
+ * discrete palette of a Color by's levels, `slices: 'levels'` keeps a pie's bins of a number on that palette (their continuous colours are
+ * the default, so `continuous` is not stored). A field that is not valid is reported and left out; an empty colour is none.
  */
 function normalizeColor(raw, bad) {
     if (!isObject(raw)) {
@@ -238,6 +243,9 @@ function normalizeColor(raw, bad) {
     for (const field of ['map', 'palette']) {
         if (raw[field] === undefined) continue;
         if (typeof raw[field] === 'string' && raw[field]) out[field] = raw[field]; else bad(`color.${field}`, 'bad_color');
+    }
+    if (raw.slices !== undefined) {
+        if (raw.slices === 'levels') out.slices = 'levels'; else if (raw.slices !== 'continuous') bad('color.slices', 'bad_color');
     }
     if (raw.reverse !== undefined) {
         if (raw.reverse === true) out.reverse = true; else if (raw.reverse !== false) bad('color.reverse', 'bad_color');

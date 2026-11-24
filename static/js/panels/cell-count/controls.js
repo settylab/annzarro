@@ -27,13 +27,14 @@ import { listAvailableColormaps } from '../plot-utilities/colors.js';
 import { DEFAULT_COLORSCALE } from './colour.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import {
-    popoverUse, parseColourLimit, rowsOf, modeRefusal, arrangementChoices, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
+    popoverUse, sliceColourUse, parseColourLimit, rowsOf, modeRefusal, arrangementChoices, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
     setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
 } from './controls-model.js';
 
 const C = VOCABULARY.countPlot;
 const P = VOCABULARY.phrase;
 const CL = C.colour;
+const CL_SLICES = C.slices;
 const COLOR_MAPS = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || [DEFAULT_COLORSCALE]);
 
 // ================================================================================================ the view
@@ -567,10 +568,14 @@ export function createControls({ D, id, model, on }) {
         on: { change: () => { const next = { ...model().config }; if (logBox.checked) next.log = true; else delete next.log; commit(next, logBox.checked ? 'log count axis' : 'linear count axis'); } } });
     const ringBox = el('input', { type: 'checkbox', class: 'ccnt-ring',
         on: { change: () => { const next = { ...model().config }; if (ringBox.checked) next.ring = true; else delete next.ring; commit(next, ringBox.checked ? 'ring' : 'pie'); } } });
+    // a pie's slice names (with Labels' numbers, or alone when Labels is None)
+    const namesBox = el('input', { type: 'checkbox', class: 'ccnt-names',
+        on: { change: () => { const next = { ...model().config }; if (namesBox.checked) next.names = true; else delete next.names; commit(next, namesBox.checked ? 'slice names' : 'no slice names'); } } });
+    const namesWrap = el('label', { class: 'ccnt-opt', title: C.slices.namesTitle }, namesBox, ` ${C.slices.names}`);
     const logWrap = el('label', { class: 'ccnt-opt' }, logBox, ` ${C.buttons.log}`);
     const ringWrap = el('label', { class: 'ccnt-opt' }, ringBox, ` ${C.buttons.ring}`);
     const labelsRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--labels' },
-        el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, logWrap, ringWrap);
+        el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, logWrap, ringWrap, namesWrap);
 
     // the density row: Smoothing, Scale by level size, Image, and what the bandwidth and the floor were
     const adjust = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-adjust', inputmode: 'decimal', placeholder: '1',
@@ -638,8 +643,10 @@ export function createControls({ D, id, model, on }) {
         logBox.checked = o.log;
         ringWrap.hidden = !shownRows.ring;
         ringBox.checked = o.ring;
+        namesWrap.hidden = !shownRows.names;
+        namesBox.checked = o.names;
         // a row with nothing in it is not drawn (a density's modes have no Labels, a pie has no Log axis)
-        labelsRow.hidden = !(shownRows.labels || shownRows.sort || shownRows.reverse || shownRows.horizontal || shownRows.log || shownRows.ring);
+        labelsRow.hidden = !(shownRows.labels || shownRows.sort || shownRows.reverse || shownRows.horizontal || shownRows.log || shownRows.ring || shownRows.names);
         densityRow.hidden = !shownRows.density;
         if (document.activeElement !== adjust) adjust.value = m.config.adjust === undefined ? '' : String(m.config.adjust);
         bySize.wrap.hidden = !(shownRows.density && m.config.split);
@@ -689,7 +696,7 @@ export function createControls({ D, id, model, on }) {
     function fillColor() {
         if (!colorState.body) return;
         const m = model();
-        const use = popoverUse(m.config);
+        const use = popoverUse(m.config, m.isNumeric);
         const c = m.config.color || {};
         const body = colorState.body;
         const focusables = () => [...body.querySelectorAll('input, button, select')].filter((e) => !e.disabled);
@@ -697,6 +704,23 @@ export function createControls({ D, id, model, on }) {
         D.clear(body);
         const line = (...kids) => el('div', { class: 'ccnt-color__line' }, ...kids);
         const idOf = (k) => `ccnt-color-${k}-${id}`;
+        const slices = sliceColourUse(m.config, m.isNumeric);
+        if (slices.offered) {
+            // a pie's slices: a continuous scale for bins of a number (the default), the level palette for categories
+            const group = `ccnt-slices-${id}`;
+            const radio = (value, text, disabled, title) => {
+                const input = el('input', { type: 'radio', name: group, value, class: `ccnt-slices-${value}`, disabled,
+                    checked: value === (use.map ? 'continuous' : 'levels'),
+                    on: { change: () => withColor((o) => { if (value === 'levels') o.slices = 'levels'; else delete o.slices; }, `slice colors ${text.toLowerCase()}`) } });
+                return el('label', { class: 'ccnt-opt', ...(title ? { title } : {}) }, input, ` ${text}`);
+            };
+            const bins = binSpacingOf(m.config, 'x') === 'even';
+            body.append(el('div', { class: 'ccnt-slices', role: 'radiogroup', aria: { label: CL_SLICES.colours } },
+                el('span', { class: 'ccnt-color__heading', text: CL_SLICES.colours }),
+                radio('continuous', CL_SLICES.continuous, !slices.continuous, slices.refusal),
+                radio('levels', CL_SLICES.levels, false, '')),
+                el('p', { class: 'ccnt-help ccnt-slices__note', text: slices.refusal || (use.map ? (bins ? CL_SLICES.byOrder : CL_SLICES.byCentre) : '') }));
+        }
         if (use.map) {
             const map = el('select', { class: 'form-select form-select-sm ccnt-color-map', id: idOf('map'),
                 on: { change: () => withColor((o) => { if (map.value === DEFAULT_COLORSCALE) delete o.map; else o.map = map.value; }, `color map ${map.value}`) } });
@@ -769,7 +793,7 @@ export function createControls({ D, id, model, on }) {
     }
 
     function paintToolbar(m) {
-        const use = popoverUse(m.config);
+        const use = popoverUse(m.config, m.isNumeric);
         colorBtn.hidden = !(use.map || use.palette || use.range || use.points);
         if (colorBtn.hidden && colorPop.isOpen()) colorPop.close('api');
         else if (colorPop.isOpen()) fillColor();

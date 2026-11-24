@@ -8,8 +8,9 @@
  * 16 sets).
  *
  * Venn (2 or 3 sets; one is drawn too) is circles of equal size with each region's count and share, not area
- * proportional. The sets are lettered, the names stay in the set list and in the hover. UpSet is intersection bars
- * over a dot matrix, with the sets named in full and a bar for each set's size.
+ * proportional. Each circle has its set's colour and a label with the letter and the name (cut short, the whole name in
+ * the hover). UpSet is intersection bars over a dot matrix, with the sets named in full and a bar for each set's size
+ * in its colour; the bars are one neutral colour unless the plot is coloured.
  *
  * Both modes ship one trace that carries `customdata` = the region's index in `setPlot.regions`, so a click can
  * offer Save as grouping (CNT-21) without a lookup. Shapes and annotations export to PNG and SVG with the figure.
@@ -17,6 +18,7 @@
 import { fmtPercent } from '../../utils/csv-format.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { scaleKeys } from './colour.js';
+import { defaultSetColour } from '../../utils/set-plot-model.js';
 
 const VENN_MAX_SETS = 3;
 const UPSET_MAX_SETS = 16;
@@ -26,8 +28,10 @@ const ROW_PX = 22;
 const BARS_PX = 240;
 const GAP_PX = 28;
 const GLYPH_PX = 7;
-/** Okabe and Ito, the first three: tells apart under the common colour-vision differences. */
-const VENN_COLOURS = Object.freeze(['#0072B2', '#E69F00', '#009E73']);
+/** The longest a set's name is written beside its circle: more is cut, and the whole name is in the hover. */
+const LABEL_CHARS = 20;
+/** The colour of each set of a SetPlot: the one set in the model (`colour`), else the default of its position. */
+const coloursOf = (plot) => plot.sets.map((set, s) => set.colour || defaultSetColour(s));
 
 /** Venn geometry: circle centres, radius 1, and where each region's label sits (by the bit code of its key). */
 const VENN = Object.freeze({
@@ -98,14 +102,23 @@ function vennFigure(plot, theme, opts) {
         hover.push(regionHover(r, plot.sets, plot.universe));
         region.push(ri);
     }
+    const colours = coloursOf(plot);
     const shapes = geo.centres.map(([cx, cy], s) => ({
         type: 'circle', xref: 'x', yref: 'y', x0: cx - 1, x1: cx + 1, y0: cy - 1, y1: cy + 1,
-        fillcolor: VENN_COLOURS[s], opacity: 0.3, line: { color: VENN_COLOURS[s], width: 2 }, layer: 'below'
+        fillcolor: colours[s], opacity: 0.3, line: { color: colours[s], width: 2 }, layer: 'below'
     }));
-    const annotations = plot.sets.map((set, s) => ({
-        x: geo.letters[s][0], y: geo.letters[s][1], xref: 'x', yref: 'y', text: set.letter, showarrow: false,
-        font: { size: 16, color: theme.textColor }
-    }));
+    // the label beside each circle: the letter and the name; the two upper ones lean away from each other
+    const annotations = plot.sets.map((set, s) => {
+        const [lx, ly] = geo.letters[s];
+        const side = k > 1 && ly > 0 ? (lx < 0 ? -1 : 1) : 0;
+        const full = setName(set);
+        const cut = full.length > LABEL_CHARS ? `${full.slice(0, LABEL_CHARS - 1)}…` : full;
+        return {
+            x: lx + side * 0.15, y: ly, xref: 'x', yref: 'y', text: `${set.letter} · ${cut}`, showarrow: false, captureevents: true,
+            xanchor: side < 0 ? 'right' : (side > 0 ? 'left' : 'center'), hovertext: `${set.letter} · ${full}`,
+            font: { size: 14, color: theme.textColor }
+        };
+    });
     annotations.push({
         x: 1, y: 0, xref: 'paper', yref: 'paper', xanchor: 'right', yanchor: 'bottom', showarrow: false,
         text: text.noSet(plot.inNone), font: { size: 12, color: theme.textColor }
@@ -175,7 +188,7 @@ function upsetFigure(plot, theme, opts) {
         { type: 'scatter', mode: 'lines', name: 'links', xaxis: 'x', yaxis: 'y2', x: linkX, y: linkY, hoverinfo: 'skip', line: { width: 3, color: theme.textColor } },
         { type: 'scatter', mode: 'markers', name: 'in', xaxis: 'x', yaxis: 'y2', x: inX, y: inY, hoverinfo: 'skip', marker: { size: 9, color: theme.textColor } },
         { type: 'bar', orientation: 'h', name: 'set sizes', xaxis: 'x2', yaxis: rowsAxis, x: plot.sets.map(s => s.size), y: rows,
-            hovertext: plot.sets.map(s => `${s.name}<br>${plain(s.size)} cells`), hoverinfo: 'text', marker: { color: theme.axisColor, opacity: 0.7 } }
+            hovertext: plot.sets.map(s => `${s.name}<br>${plain(s.size)} cells`), hoverinfo: 'text', marker: { color: coloursOf(plot), opacity: 0.85 } }
     );
 
     const tickText = plot.sets.map(setName);

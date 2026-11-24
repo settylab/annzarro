@@ -50,6 +50,20 @@ opens: to the gene or cell the view itself focuses, with the filter conditions o
 view focuses none, the column is removed with its conditions and a notice says so. No table
 column follows the focus.
 
+## Undo a change to the table
+
+**Undo** in the table's controls (beside **Methods ▾** and **Export CSV**) takes back the last change to the table's
+settings: the columns, the filter, the search and its options, the rows per page, **Methods ▾** (a Cell Table), and **Score
+methods ▾** (a Gene Table). Its title says what it undoes ("Undo: change the filter"), and it is disabled when there is
+nothing to undo. Changes of one kind made close together, such as typing in the search box, are one step, and a table keeps
+its last 50 steps. The table is built again from the settings it had, as a link would build it.
+
+The sort order is not a step: it is not part of what a table saves (a link does not carry it either), so Undo leaves it as
+it is. Nor are the page shown and the scroll position. A change that comes from outside the table (a line drawn
+on a plot, a panel set, a link) starts the steps afresh, so Undo never goes back to a state unrelated to what is on screen.
+**Back** and **Forward** of the browser are separate and keep working: they rebuild the table from the view they step to,
+which also starts its steps afresh, and an undo is recorded in the address like any other change.
+
 ## Sort and search
 
 - Click a column header to sort ascending; click again for descending. Here, two clicks on

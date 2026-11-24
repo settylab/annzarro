@@ -26,6 +26,7 @@ import { makeDom } from './gene-set-utilities/dom.js';
 import { createCellMethods } from './cell-grouping/methods.js';
 import { METHODS_TEXT, cleanMethods, tableDefinition } from '../utils/group-statistics.js';
 import './table-utilities/table-background.js';
+import { createTableUndo, changesTableState, giveBack } from './table-utilities/table-undo.js';
 
 const CellTablePanel = (function() {
     /**
@@ -67,6 +68,7 @@ const CellTablePanel = (function() {
         // configuration only when one is not at its default. Kept apart from the DataTable's settings.
         let _methods = cleanMethods(options.methods);
         let _methodsUi = null;
+        let _undo = null;                   // Undo of the table's settings (table-utilities/table-undo.js)
         delete _settings.methods;
         // A "focused cell/gene" placeholder from an older view names the
         // entity focused now (the view's own focus is restored first), and
@@ -85,6 +87,7 @@ const CellTablePanel = (function() {
                 _tableContainer = tableContainer;
                 _controlsContainer = controlsContainer;
                 mountMethods();
+                mountUndo();
                 
                 // Manually update the UI based on dataset loading status
                 const isDatasetLoaded = DataManager.isDatasetLoaded();
@@ -123,11 +126,44 @@ const CellTablePanel = (function() {
             host.prepend(_methodsUi.element);
         }
 
+        /**
+         * Undo, in the control row beside Methods ▾: every change of the table's settings is one step (table-utilities/table-undo.js).
+         * Undo gives the settings before back and builds the table from them, as a link would.
+         */
+        function mountUndo() {
+            const host = _controlsContainer && _controlsContainer.querySelector('.action-buttons');
+            if (!host) return;
+            if (_undo) _undo.dispose();
+            _undo = createTableUndo({
+                root: _container, settings: () => _settings, extra: () => ({ methods: Object.keys(_methods).length ? _methods : undefined }),
+                busy: () => !!(_tableContainer && _tableContainer.querySelector('.table-loading')),
+                restore: restoreSettings
+            });
+            const methods = _methodsUi && _methodsUi.element;
+            host.insertBefore(_undo.button({ className: 'btn btn-sm btn-outline-secondary table-undo' }), methods ? methods.nextSibling : host.firstChild);
+            _undo.rebase();
+        }
+
+        /** Undo: the settings before become the settings, and the table is built again from them. */
+        async function restoreSettings(config) {
+            if (_dataTable) {
+                releaseTable(_dataTable, _settings);
+                _dataTable = null;
+            }
+            giveBack(_settings, config, ['methods']);
+            setMethods(cleanMethods(config.methods));
+            const length = document.getElementById(`table-length-${_id}`);
+            if (length) length.value = String(_settings.pageLength || 25);
+            await refreshTable();
+            await settleColumnChooser(_settings, _plotType);
+        }
+
         /** The method fields become `next` (cleaned); the saved state hears it. */
         function setMethods(next) {
             const clean = cleanMethods(Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined)));
             if (JSON.stringify(clean) === JSON.stringify(_methods)) return;
             _methods = clean;
+            if (_undo) _undo.observe('change the methods');
             if (_methodsUi) _methodsUi.paint();
             if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
         }
@@ -151,6 +187,7 @@ const CellTablePanel = (function() {
                 
                 // Always initialize the table, even if no columns are selected
                 await refreshTable();
+                if (_undo) _undo.rebase();             // what a dataset and its first build made of the settings is no step
                 
                 _isFirstLoad = false;
                 console.log(`Dataset ${datasetPath} loaded successfully for cell table panel ${_id}`);
@@ -355,6 +392,7 @@ const CellTablePanel = (function() {
             }
             forgetMemory(_id);
             if (_methodsUi) { _methodsUi.destroy(); _methodsUi = null; }
+            if (_undo) { _undo.dispose(); _undo = null; }
             // a closed table wants its scores only when something that filters by it needs them
             TableScores.release(_id);
             // its filter is now its closed selection (set above); nothing is rebuilt
@@ -506,6 +544,8 @@ const CellTablePanel = (function() {
             assignKnownSettings(_settings, config);
             // Methods ▾: a whole configuration (Back and Forward, a link) without `methods` is at the defaults
             if ('methods' in config || 'columns' in config) setMethods(cleanMethods(config.methods));
+            // a config from outside (a link, Back and Forward, a panel set's remap) is no step of the user's: the steps are forgotten
+            if (_undo && !_undo.restoring && changesTableState(config)) _undo.rebase();
         }
         
         /**
@@ -519,6 +559,7 @@ const CellTablePanel = (function() {
             const added = applyLineToSettings(_settings, line);
             await refreshTable();
             await settleColumnChooser(_settings, _plotType);
+            if (_undo) _undo.rebase();             // another panel's change
             return added;
         }
 
