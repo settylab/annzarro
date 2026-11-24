@@ -396,6 +396,8 @@ const GeneTablePanel = (function() {
                     _settings.columns = requested;
                     // rows swapped into the table shown when the columns match
                     await refreshTable(signal, { inPlace: true });
+                    // what another dataset (or the first one, for a panel made before it) made of the settings is no step of the user's
+                    if (_undo) _undo.rebase();
                     return;
                 } catch (error) {
                     // If this is an abort error, propagate it

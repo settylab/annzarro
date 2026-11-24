@@ -64,8 +64,8 @@ import { geneReads } from '../utils/cell-gene-model.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
 import { buildFigure, colourBars, sceneLabels, labelEdges, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
-import { recordCameraOnRelease } from '../utils/scene-camera.js';
-import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
+import { watchSceneCamera, sameCamera } from '../utils/scene-camera.js';
+import { exportPlot, copyPlotToClipboard } from './plot-utilities/plot-aesthetics-menu.js';
 import { createPlotToolbar } from '../ui/plot-toolbar.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
 import { resolveStyle } from './plot-utilities/options-schema.js';
@@ -111,8 +111,6 @@ const PARTS = Object.freeze({ options: OPTIONS_PART, clicks: CLICKS_PART });
 const W = VOCABULARY.word;
 const STATES = VOCABULARY.cellGene.states;
 const W3 = VOCABULARY.cellGene.view3d;
-/** A turn of the 3D camera is stored once it has rested this long (UX 6b: debounced). */
-const CAMERA_STORE_MS = 250;
 const CGV = VOCABULARY.cellGene;
 
 /** What a notice calls things (utils/source-notices.js): the plot waits on its groups. */
@@ -850,6 +848,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 // the matrix drawn, for the 3D cap; the image export of Plot Options
                 shape: () => (_shown ? { rows: _shown.rows, groups: _shown.groups } : null),
                 exportImage: (format, settings = {}) => { if (_dom && _shown) exportPlot(_dom.plot, format, settings, 'full'); },
+                copyImage: (settings) => { if (_dom && _shown) copyPlotToClipboard(_dom.plot, settings); },
                 // the shared Plot Options (WP-5a): a whole configuration as one undoable step, or (the session default
                 // followed) without one; the plot's size on screen, for an export of the size shown
                 commit: (next, label) => commit(next, label),
@@ -1212,61 +1211,10 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          * a mouse drag sends only plotly_relayouting until the button is released, and plotly_relayout once after.
          */
         function watchCamera(labels) {
-            const on = !!labels;
-            const gd = _dom && _dom.plot;
-            if (!gd || typeof gd.on !== 'function') return;
-            if (gd.__azCgCamera && typeof gd.removeListener === 'function') gd.removeListener('plotly_relayout', gd.__azCgCamera);
-            gd.__azCgCamera = null;
-            if (!on) return;
-            // a turn released outside the plot is recorded too (scene-camera.js)
-            recordCameraOnRelease();
-            let timer = null;
-            gd.__azCgCamera = (ev) => {
-                const camera = ev && ev['scene.camera'];
-                if (!camera) return;
-                relabel(gd, labels, camera, { settled: true });
-                clearTimeout(timer);
-                timer = setTimeout(() => storeCamera(camera), CAMERA_STORE_MS);
-            };
-            gd.on('plotly_relayout', gd.__azCgCamera);
-            if (gd.__azCgDragging && typeof gd.removeListener === 'function') gd.removeListener('plotly_relayouting', gd.__azCgDragging);
-            // at most once per animation frame, with the drag's latest camera
-            let frame = null;
-            let latest = null;
-            gd.__azCgDragging = (ev) => {
-                latest = ev && ev['scene.camera'];
-                if (!latest || frame !== null) return;
-                frame = requestAnimationFrame(() => { frame = null; if (latest) relabel(gd, labels, latest, { settled: false }); });
-            };
-            gd.on('plotly_relayouting', gd.__azCgDragging);
+            // live: the labels change sides while the scene is still being dragged, as Plotly's own did (operator)
+            watchSceneCamera(_dom && _dom.plot, { labelsFor: labels ? (camera) => sceneLabels(labels, camera) : null, store: storeCamera,
+                key: '__azCgCamera', live: true });
         }
-
-        /**
-         * The labels for a camera, changed only when an edge or an anchor did. While the scene is dragged (`settled`
-         * false) in place: the scene draws its annotations from these objects on each frame of the drag, so they move
-         * with it, where a Plotly.relayout mid-drag would put the camera back where the layout last had it. Once the
-         * camera has settled (the plotly_relayout after a drag, or a camera set at once), one relayout of the
-         * annotations draws them for good.
-         */
-        function relabel(gd, labels, camera, { settled }) {
-            if (!window.Plotly || !gd.layout || !gd.layout.scene || !gd._fullLayout || !gd._fullLayout.scene) return;
-            const next = sceneLabels(labels, camera);
-            const key = (list) => (list || []).map((a) => `${a.xanchor}|${a.yanchor}|${a.x}|${a.y}|${a.xshift}|${a.yshift}|${a.textangle}`).join(',');
-            const mine = gd.layout.scene.annotations || [];
-            const full = gd._fullLayout.scene.annotations || [];
-            if (settled) {
-                if (key(next) !== key(mine) || gd.__azCgLabelsMoved) window.Plotly.relayout(gd, { 'scene.annotations': next });
-                gd.__azCgLabelsMoved = false;
-                return;
-            }
-            if (key(next) === key(full) || mine.length !== next.length || full.length !== next.length) return;
-            const FIELDS = ['x', 'y', 'xanchor', 'yanchor', 'xshift', 'yshift', 'textangle'];
-            // a field a label leaves out is Plotly's default (0 for the shifts), never undefined (a NaN transform)
-            next.forEach((a, i) => { for (const f of FIELDS) full[i][f] = a[f] !== undefined ? a[f] : 0; });
-            gd.__azCgLabelsMoved = true;
-        }
-
-        const sameCamera = (a, b) => ['eye', 'center', 'up'].every((k) => ['x', 'y', 'z'].every((d) => Math.abs(((a[k] || {})[d] || 0) - ((b[k] || {})[d] || 0)) < 1e-3));
 
         /** The camera into the configuration: a view, like Cell Plot's zoom, so no undo step and no redraw. */
         function storeCamera(camera) {

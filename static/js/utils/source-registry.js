@@ -34,6 +34,13 @@
  *                     cannot be chosen, its reason the title. `adopt` ({column, layer}) is set when the setting holds
  *                     none, so it starts there. A provider without one has no third menu
  *   layered           optional: a setting keeps a `layer` of its own (another source drops it)
+ *   statMenu          optional, for a provider whose third select is a choice of cells (a group): (setting) => {options,
+ *                     chosen}, a select between the third and the layer, for the setting's `stat`. With it the provider
+ *                     has `settingAfter`
+ *   settingAfter      optional, with statMenu: (setting, touched: 'column'|'stat'|'layer', value) => the fields to write
+ *                     into the setting (`undefined` removes one) and `say`, the move of the other select said once
+ *   readsCellSubset   optional: a setting of it is made over the cells shown, so a change of the cell subset changes it
+ *                     (a Gene Plot's colour is otherwise read along the genes)
  *   layerMenu         optional, with `layered` (setting) => {options, chosen}|null: a fourth select, the layer, after
  *                     the third (decision 31: a gene score's method, then its layer, each listing everything). Options
  *                     as subKeyMenu's, graded for the method the setting holds

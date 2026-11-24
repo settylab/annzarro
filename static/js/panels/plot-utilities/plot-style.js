@@ -97,6 +97,8 @@ function countLegend(figure, s) {
     const none = { entries: 0, shown: 0, more: 0, proxies: false };
     if (!s.showLegend) { L.showlegend = false; return none; }
     if (L.showlegend !== true) return none;
+    // a 3D scene lists its levels with its own markers; the proxies are 2D traces
+    if (L.scene) return none;
     const pie = data.find((t) => t && t.type === 'pie');
     const traces = data.filter((t) => t && t.type !== 'pie' && t.showlegend !== false && t.visible !== false && isRealName(t.name));
     const n = pie ? (pie.labels || []).length : traces.length;

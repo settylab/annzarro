@@ -33,6 +33,7 @@ import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/
 import { registerStatusActions, setStatusTag } from './utils/panel-surface.js';
 import './utils/score-source.js';
 import './utils/cell-group-source.js';
+import './utils/group-stat-source.js';
 import { actions as sourceActions } from './utils/source-actions.js';
 import { TableScores } from './panels/table-utilities/table-scores.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
@@ -2779,7 +2780,8 @@ const App = (function() {
         if ((chosen || source === 'default') && !(datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset)) {
             _requestKeptSize();
         }
-        return _loadDataset(datasetPath);
+        // a Refresh re-reads the dataset that is open: the panels keep their views (refresh: true)
+        return _loadDataset(datasetPath, false, { refresh: source === 'refresh' && datasetPath === DataManager.getCurrentDataset() });
     }
 
     /** The next dataset load asks for the kept subset size (if one is kept). @private */
@@ -2831,7 +2833,7 @@ const App = (function() {
     let _currentLoadingAbortController = null;
     let _datasetLoadDone = null;   // settles when the dataset load running now ends
     
-    async function _loadDataset(datasetPath, silent = false) {
+    async function _loadDataset(datasetPath, silent = false, { refresh = false } = {}) {
         // This call's controller and its end. A load that a newer one aborted
         // must not reset the flag and the controller of the newer one (the
         // abort ends this call while the newer is running).
@@ -2925,7 +2927,7 @@ const App = (function() {
             if (!silent) {
                 // Notify panels of dataset change - this can cause UI resets
                 // Use await to ensure panels are updated (or update is aborted) before completing
-                await PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath });
+                await PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath, refresh });
             }
             
             DatasetState.set({ path: datasetPath, label: _labelOf(datasetPath), status: 'open' });

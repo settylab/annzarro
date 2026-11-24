@@ -34,6 +34,7 @@ import { createDerivedSources } from './derived-sources.js';
 import { VOCABULARY } from './vocabulary.js';
 import { normalizeGrouping, groupingHasher, groupNames, generatedGroupNames, serverRequest, MAX_NESTING } from './cell-grouping.js';
 import { groupNeed } from './group-store.js';
+import { genesRequest, momentsHash, thresholdOf } from './group-stat-model.js';
 import { labelledGroups } from './group-reference.js';
 import { groupLevelId } from './level-id.js';
 import { groupingColours, NO_COLOUR } from './grouping-colours.js';
@@ -94,12 +95,14 @@ export const GROUPING = Object.freeze({
  * @param {ReturnType<import('./group-store.js').createGroupStore>} options.store
  * @param {GroupHost} options.host
  * @param {() => {dataset: string, subset: (string|null), cells?: (number|null)}} options.context
+ * @param {ReturnType<import('./derived-store.js').createDerivedStore>} [options.genesStore] - where the moments of every
+ *   gene over one group live (the Gene Plot's `group-stat`, `watchGenes`); without one there is none
  * @param {number} [options.liveDelayMs]
  * @param {Function} [options.setTimer]
  * @param {Function} [options.clearTimer]
  */
 // export-unused-ok: G8a binds the page's groupings to the group store
-export function createGroupSources({ store, host, context, liveDelayMs = 350,
+export function createGroupSources({ store, host, context, genesStore = null, liveDelayMs = 350,
     setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (t) => clearTimeout(t) }) {
     /** @type {WeakMap<Object, Object>} stored recipe -> normalised */
     const normalised = new WeakMap();
@@ -235,7 +238,7 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
         hold.lastApplied = applied;
         hold.lastReply = reply;
         hold.lastColours = colours;
-        inner.sourceChanged(id);
+        changed(id);
     }
 
     /** Release what `id` watches upstream, and so on up the chain for what is then watched by no one. */
@@ -299,29 +302,32 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
         return found;
     }
 
+    /** The sources both derived sources read: the same recipes, gates and buttons, whatever is asked of them. */
+    const readers = {
+        get(id) {
+            const src = host.source(id);
+            if (!src) return null;
+            return {
+                title: src.title, kind: src.kind || 'grouping',
+                recipe: () => resolve(id),
+                gate: (dependant) => {
+                    const found = gateOf(id, dependant);
+                    return found ? found.gate : null;
+                },
+                // the buttons of a gate notice: whoever holds the gate now
+                actions: {
+                    accept: () => { const found = gateOf(id, null); if (found && found.actions) found.actions.accept(); },
+                    cancel: () => { const found = gateOf(id, null); if (found && found.actions) found.actions.cancel(); },
+                    retry: () => { const found = gateOf(id, null); if (found && found.actions) found.actions.retry(); }
+                }
+            };
+        },
+        off: (id) => !!(host.off && host.off(id))
+    };
+
     const inner = createDerivedSources({
         store,
-        sources: {
-            get(id) {
-                const src = host.source(id);
-                if (!src) return null;
-                return {
-                    title: src.title, kind: src.kind || 'grouping',
-                    recipe: () => resolve(id),
-                    gate: (dependant) => {
-                        const found = gateOf(id, dependant);
-                        return found ? found.gate : null;
-                    },
-                    // the buttons of a gate notice: whoever holds the gate now
-                    actions: {
-                        accept: () => { const found = gateOf(id, null); if (found && found.actions) found.actions.accept(); },
-                        cancel: () => { const found = gateOf(id, null); if (found && found.actions) found.actions.cancel(); },
-                        retry: () => { const found = gateOf(id, null); if (found && found.actions) found.actions.retry(); }
-                    }
-                };
-            },
-            off: (id) => !!(host.off && host.off(id))
-        },
+        sources: readers,
         context, liveDelayMs, setTimer, clearTimer,
         // a resolved recipe is made afresh by every read of the source and never edited, and each variant has its hash
         variantOf,
@@ -331,11 +337,58 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
         kind: 'grouping', thing: 'grouping'
     });
 
+    // THE MOMENTS OF EVERY GENE over one group (SO-8b): the same sources, read in an option `{group, layer}`. The request
+    // is the grouping's own with the group, the layer and the grouping's Expressed above, so an edit that moves the
+    // groups or the threshold is an edit here, and an edit of a name or a colour is none
+    // The moments wait for the groups: an edit of the grouping is asked for its groups first, so a group the edit took away
+    // is found gone before anything is asked of it (the consumer keeps what it shows meanwhile, as behind any gate).
+    const genesReaders = {
+        get(id) {
+            const src = readers.get(id);
+            if (!src) return null;
+            return { ...src, gate: (dependant) => src.gate(dependant) || (inner.isReady(id, {})
+                ? null : { state: 'computing', progress: null, estimate: null, message: null, reason: null }) };
+        },
+        off: readers.off
+    };
+    const genesInner = !genesStore ? null : createDerivedSources({
+        store: genesStore,
+        sources: genesReaders,
+        context, liveDelayMs, setTimer, clearTimer,
+        variantOf(resolved, option) {
+            const threshold = thresholdOf(resolved.recipe);
+            const grouping = serverRequest(resolved.recipe, ctxOf(resolved), { codes: false, histograms: [] });
+            return { recipe: genesRequest(grouping, option.group, option.layer, threshold),
+                hash: momentsHash(keyOf(resolved), option.group, option.layer, threshold) };
+        },
+        editHashOf: (resolved) => `${keyOf(resolved)}\u0001${thresholdOf(resolved.recipe)}`,
+        keyOf: ({ hash, dataset, subset }) => `${hash}\u0001${dataset || ''}\u0001${subset || ''}`,
+        countOf: (values) => values.reply.n_shown,
+        kind: 'genes', thing: 'statistic'
+    });
+
+    // a grouping whose groups arrive lifts the gate of the moments that wait for them
+    if (genesInner) {
+        const ready = new Set();
+        store.on((key, snap) => {
+            if (snap.state !== 'ready') { ready.delete(key); return; }
+            if (ready.has(key)) return;
+            ready.add(key);
+            genesInner.contextChanged();
+        });
+    }
+
+    /** A source or an upstream grouping was edited: both derived sources hear it. */
+    function changed(id) {
+        inner.sourceChanged(id);
+        if (genesInner) genesInner.sourceChanged(id);
+    }
+
     if (host.onUpstreamChange) {
         host.onUpstreamChange((panelId) => {
             for (const id of [...watched]) {
                 const src = host.source(id);
-                if (src && src.shape.sources(recipeOf(src)).some((s) => s.key === panelId)) inner.sourceChanged(id);
+                if (src && src.shape.sources(recipeOf(src)).some((s) => s.key === panelId)) changed(id);
             }
         });
     }
@@ -500,15 +553,36 @@ export function createGroupSources({ store, host, context, liveDelayMs = 350,
             return h;
         },
 
+        /**
+         * A consumer needs the moments of every gene over one group of source `id` (the Gene Plot's `group-stat`): as
+         * `watch`, with the option `{group: string[], layer: string}`. Needs the `genesStore`.
+         * @param {string} id
+         * @param {Object} spec
+         */
+        watchGenes(id, spec) {
+            if (!genesInner) throw new Error('These group sources have no store for the moments of genes');
+            const h = genesInner.watch(id, spec);
+            watched.add(id);
+            const release = h.release;
+            h.release = () => {
+                release();
+                if (!inner.handlesOf(id).length && !genesInner.handlesOf(id).length) { watched.delete(id); releaseHolds(id); }
+            };
+            return h;
+        },
+
+        /** The moments' handles of a source, as `handlesOf` has the groups'. */
+        genesHandlesOf: (id) => (genesInner ? genesInner.handlesOf(id) : []),
+
         /** A source, or a grouping it uses, was edited (or restored by Back and Forward). */
-        sourceChanged: inner.sourceChanged,
-        recheck: inner.recheck,
+        sourceChanged: changed,
+        recheck: () => { inner.recheck(); if (genesInner) genesInner.recheck(); },
         isReady: inner.isReady,
         estimate: inner.estimate,
         /** "Update groups": apply the held edits now. */
         update: inner.update,
-        contextChanged: inner.contextChanged,
-        visibilityChanged: inner.visibilityChanged,
+        contextChanged: () => { inner.contextChanged(); if (genesInner) genesInner.contextChanged(); },
+        visibilityChanged: () => { inner.visibilityChanged(); if (genesInner) genesInner.visibilityChanged(); },
         status: inner.status,
         onSource: inner.onSource,
         handlesOf: inner.handlesOf,

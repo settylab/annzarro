@@ -75,7 +75,7 @@ MAX_NESTING = 4
 #: Seconds per million cells and partitioning for the resolve (CMP-1).
 RESOLVE_SECONDS_PER_MCELL = 0.012
 
-SHAPES = ("grouping", "grid")
+SHAPES = ("grouping", "grid", "genes")
 _BODY_FIELDS = ("shape", "partitionings", "sets", "small", "subset", "features", "measures", "want",
                 "estimate_only", "confirm")
 _PART_FIELDS = ("source", "binning", "levels", "rest", "member")
@@ -378,9 +378,10 @@ def parse_request(body: Any) -> Request:
     _unknown(body, _BODY_FIELDS, "the request")
     shape = body.get("shape", "grouping")
     if shape not in SHAPES:
-        raise _bad("shape must be 'grouping' or 'grid'.", "bad_shape")
+        raise _bad("shape must be 'grouping', 'grid' or 'genes'.", "bad_shape")
     if shape != "grouping":
-        raise _bad("This parser takes the grouping shape; the grid has its own (core/cell_grid.py).", "bad_shape")
+        raise _bad("This parser takes the grouping shape; the grid and the genes shape have their own "
+                   "(core/cell_grid.py, core/gene_moments.py).", "bad_shape")
     grouping = _parse_grouping(body.get("partitionings"), body.get("small"), 0)
     raw_sets = body.get("sets") or {}
     if not isinstance(raw_sets, dict):

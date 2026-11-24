@@ -10,6 +10,8 @@
  * on its own. Gene-axis sources (var, varm, varp) never change.
  */
 
+import { getSource } from './source-registry.js';
+
 const CELL_AXIS_STORES = ['obs', 'obsm'];
 
 /**
@@ -20,6 +22,9 @@ const CELL_AXIS_STORES = ['obs', 'obsm'];
  */
 export function seriesReadsCellSubset(entity, series) {
     if (!series || !series.type || series.type === 'none') return false;
+    // a provider's source that is made over the cells shown (a statistic of a group, for a Gene Plot) says so itself
+    const provider = getSource(series.type);
+    if (provider && provider.readsCellSubset === true) return true;
     return entity === 'cells' || CELL_AXIS_STORES.includes(series.type);
 }
 

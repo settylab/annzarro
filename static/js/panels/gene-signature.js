@@ -537,7 +537,7 @@ const GeneSignaturePanel = (function() {
             const summary = el('span', { class: 'gsig-summary', id: sid('summary') });
             const definition = el('div', { class: 'gsig-definition', id: sid('definition') });
             const usedBy = el('div', { class: 'gsig-usedby' });
-            const scoreLine = el('div', { class: 'gsig-score', hidden: true });
+            const scoreLine = el('div', { class: 'gsig-score' });
             _scoreOptions = createScoreOptions({ id: _id, D, getOptions: getRecipe, setOptions: storeOptions, directions: true });
             // the score's toolbar: the settings of each method, and the score's distribution in a Count Plot (Inspect's job)
             const distributionBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-distribution',
@@ -637,7 +637,6 @@ const GeneSignaturePanel = (function() {
             if (!_dom) return;
             const n = _recipe.genes.length + _recipe.down.length;
             const loaded = _nameSet.size > 0;
-            const missing = loaded ? [..._recipe.genes, ..._recipe.down].filter(g => !_nameSet.has(g)).length : 0;
             const counts = directionCounts(_recipe);
             // how many are selected is the banner at the bottom (paintBanner); the top keeps only the first hint
             _dom.summary.textContent = n ? '' : 'Tick genes to build a score.';
@@ -645,7 +644,8 @@ const GeneSignaturePanel = (function() {
             paintBanner(loaded);
             // no single definition here: each plot or table chooses its method and layer (the Methods pop-over holds their settings)
             const sides = loaded ? emptySideNote() : '';
-            _dom.definition.textContent = [missing ? `${fmtCount(missing)} not in this dataset.` : '', sides].filter(Boolean).join(' ');
+            // genes not in this dataset are a note of the banner at the bottom (paintBanner), so this line rarely appears
+            _dom.definition.textContent = sides;
             _dom.definition.hidden = !_dom.definition.textContent;
             paintFocused();
 
@@ -705,6 +705,7 @@ const GeneSignaturePanel = (function() {
             paintScore();
             if (_scoreOptions) _scoreOptions.paint();
             _dom.message.textContent = _message;
+            _dom.message.title = _message;
         }
 
         /**
@@ -715,10 +716,14 @@ const GeneSignaturePanel = (function() {
         function paintBanner(loaded) {
             if (!loaded || !_grid) return;
             const total = _names.length;
-            const shown = [..._recipe.genes, ..._recipe.down].filter(g => _nameSet.has(g)).length;
-            const coverage = shown >= total ? Coverage.complete(total, 'genes')
-                : new Coverage({ shown, total, unit: 'genes',
-                    gaps: [{ reason: GAP.FILTERED, kind: 'unselected', detail: 'not ticked in this signature', count: total - shown }] });
+            const all = [..._recipe.genes, ..._recipe.down];
+            const shown = all.filter(g => _nameSet.has(g)).length;
+            const missing = all.length - shown;
+            const gaps = [];
+            if (shown < total) gaps.push({ reason: GAP.FILTERED, kind: 'unselected', detail: 'not ticked in this signature', count: total - shown });
+            // a selected gene the dataset lacks is not among its genes: a note, counted in its own words
+            if (missing) gaps.push({ reason: GAP.UNAVAILABLE, source: `${fmtCount(missing)} selected gene${missing === 1 ? '' : 's'}`, hides: false });
+            const coverage = new Coverage({ shown, total, unit: 'genes', gaps });
             renderCoverageNotice(_grid.element, coverage, 'genes', { persistent: true, verb: 'selected' });
         }
 
@@ -822,8 +827,9 @@ const GeneSignaturePanel = (function() {
             } else if (st.dependants && st.state === 'ready' && st.header) {
                 text = `Score ready: ${fmtCount(st.header.n_used)} gene${st.header.n_used === 1 ? '' : 's'} used.`;
             }
-            line.hidden = !text;
-            if (text) line.append(D.el('span', { class: 'gsig-score__text', text }), action ? ' ' : '', action || '');
+            // the line stays, empty or not: the list under it never moves (styles.css .gsig-score)
+            line.title = text;
+            if (text) line.append(D.el('span', { class: 'gsig-score__text', text }), action || '');
         }
 
         /** The dependants: Gene Plots filtered by this signature, Gene Set Analysis panels reading it. */
@@ -846,7 +852,7 @@ const GeneSignaturePanel = (function() {
         /** Say something in the panel's one live region. */
         function say(text) {
             _message = text;
-            if (_dom) _dom.message.textContent = text;
+            if (_dom) { _dom.message.textContent = text; _dom.message.title = text; }
         }
 
         // -------------------------------------------------------------------

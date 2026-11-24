@@ -104,3 +104,80 @@ export function recordCameraOnRelease() {
     window.addEventListener('touchend', recordSettled, true);
     window.addEventListener('wheel', recordSettled, { capture: true, passive: true });
 }
+
+/** How long a turned camera must rest before it is stored (ms): a drag is one stored view, not one per frame. */
+const CAMERA_STORE_MS = 250;
+
+/** Whether two cameras are the same view (eye, center and up, to 1e-3). */
+export function sameCamera(a, b) {
+    return ['eye', 'center', 'up'].every((k) => ['x', 'y', 'z'].every((d) => Math.abs(((a[k] || {})[d] || 0) - ((b[k] || {})[d] || 0)) < 1e-3));
+}
+
+/** What makes two label lists differ on screen: where each stands, how it is anchored, shifted and turned. */
+const LABEL_FIELDS = Object.freeze(['x', 'y', 'xanchor', 'yanchor', 'xshift', 'yshift', 'textangle']);
+const labelSig = (list) => (list || []).map((a) => LABEL_FIELDS.map((f) => a[f]).join('|')).join(',');
+
+/**
+ * Keep the camera of a 3D plot the user turns: `store(camera)` is called once the camera has rested (CAMERA_STORE_MS), and
+ * the category labels follow (`labelsFor(camera)` gives the scene's annotations for it; they change edge, anchor and
+ * angle as the camera turns). The listener is set again on each draw (a purge drops it); `labelsFor` null (a 2D draw)
+ * takes it away. A turn released outside the plot is recorded too (recordCameraOnRelease).
+ *
+ * `live`: the labels also follow WHILE the scene is dragged. A mouse drag sends only plotly_relayouting until the button
+ * is released, and plotly_relayout once after. During the drag the labels are set in place in Plotly's own annotation
+ * objects (the scene draws them from these on each frame of the drag), at most once per animation frame and only when
+ * something changed: a Plotly.relayout mid-drag would put the camera back where the layout last had it. Once the camera
+ * has settled (the plotly_relayout after a drag, or a camera set at once), one relayout of the annotations draws them
+ * for good.
+ * @param {HTMLElement} gd
+ * @param {{labelsFor: ?((camera: Object) => Object[]), store: (camera: Object) => void, key?: string, live?: boolean}} opts -
+ *   `key` names the listeners' slots on `gd`, one per owner
+ */
+export function watchSceneCamera(gd, { labelsFor, store, key = '__azCameraWatch', live = false }) {
+    if (!gd || typeof gd.on !== 'function') return;
+    const liveKey = `${key}Live`;
+    const movedKey = `${key}Moved`;
+    if (typeof gd.removeListener === 'function') {
+        if (gd[key]) gd.removeListener('plotly_relayout', gd[key]);
+        if (gd[liveKey]) gd.removeListener('plotly_relayouting', gd[liveKey]);
+    }
+    gd[key] = null;
+    gd[liveKey] = null;
+    gd[movedKey] = false;
+    if (!labelsFor) return;
+    recordCameraOnRelease();
+    let timer = null;
+    gd[key] = (ev) => {
+        const camera = ev && ev['scene.camera'];
+        if (!camera) return;
+        // the labels are set again only when one changed, or a drag moved them in place (the relayout carries no camera)
+        if (window.Plotly && gd.layout && gd.layout.scene) {
+            const next = labelsFor(camera);
+            if (labelSig(next) !== labelSig(gd.layout.scene.annotations) || gd[movedKey]) window.Plotly.relayout(gd, { 'scene.annotations': next });
+            gd[movedKey] = false;
+        }
+        clearTimeout(timer);
+        timer = setTimeout(() => store(camera), CAMERA_STORE_MS);
+    };
+    gd.on('plotly_relayout', gd[key]);
+    if (!live) return;
+    let frame = null;
+    let latest = null;
+    const moveInPlace = (camera) => {
+        const fl = gd._fullLayout;
+        if (!gd.layout || !gd.layout.scene || !fl || !fl.scene) return;
+        const next = labelsFor(camera);
+        const mine = gd.layout.scene.annotations || [];
+        const full = fl.scene.annotations || [];
+        if (mine.length !== next.length || full.length !== next.length || labelSig(next) === labelSig(full)) return;
+        // a field a label leaves out is Plotly's default (0 for the shifts), never undefined (a NaN transform)
+        next.forEach((a, i) => { for (const f of LABEL_FIELDS) full[i][f] = a[f] !== undefined ? a[f] : 0; });
+        gd[movedKey] = true;
+    };
+    gd[liveKey] = (ev) => {
+        latest = ev && ev['scene.camera'];
+        if (!latest || frame !== null) return;
+        frame = requestAnimationFrame(() => { frame = null; if (latest) moveInPlace(latest); });
+    };
+    gd.on('plotly_relayouting', gd[liveKey]);
+}

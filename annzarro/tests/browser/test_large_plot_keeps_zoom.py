@@ -11,6 +11,7 @@ Needs Playwright with Chromium; skipped otherwise, unless
 ANNZARRO_REQUIRE_BROWSER=1 (set in CI).
 """
 import pytest
+from annzarro.tests.browser.test_cell_gene_plot_options import open_point_size  # noqa: E402  (the point size is in Plot Options since WP-5b)
 
 from annzarro.tests.browser.test_large_plot_subset_roundtrip import server, GD, playwright  # noqa: F401
 from annzarro.tests.browser.test_large_plot_legend_hidden import page, READY  # noqa: F401
@@ -70,9 +71,12 @@ def test_zoom_survives_settings_changes_and_resets_on_double_click(page, server,
     assert _close(_drawn_again(page), view), "Reverse reset the zoom"
 
     # a point size
+    open_point_size(page, PID)
     page.fill(f"#point-size-input-{PID}", "6")
     page.dispatch_event(f"#point-size-input-{PID}", "change")
     assert _close(_drawn_again(page), view), "the point size reset the zoom"
+    page.keyboard.press("Escape")       # Plot Options (where the point size is) closed, to open it at Legend below
+    page.wait_for_selector("[data-popover='plot-options']", state="detached")
 
     # the legend (the colour bar) off and on
     page.click(f"#aesthetics-menu-btn-{PID}")

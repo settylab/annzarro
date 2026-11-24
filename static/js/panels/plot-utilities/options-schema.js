@@ -6,8 +6,8 @@
  *
  * SECTIONS. Every kind has the common sections Text, Background, Axes, Legend, Margins, Export and Apply, in that order,
  * and its own sections between them: the Cell-Gene Plot's Dots, Sections and Annotations (cell-gene/options.js declares
- * them in this format and registers them here, `registerPanelFields`), no section of the Cell Count Plot's own (its controls are
- * in its grid since WP-6a; a 3D section joins later). A panel's fields may also join a common section: Cell-Gene's gene and group labels
+ * them in this format and registers them here, `registerPanelFields`), the Cell Count Plot's 3D section (cell-count/options.js, shown only in 3D; its other controls are
+ * in its grid since WP-6a). A panel's fields may also join a common section: Cell-Gene's gene and group labels
  * are in Axes, its colour bar, size legend and strip switches and titles in Legend.
  *
  * FIELDS. `{ id, section, type, path, label, dflt, min, max, step, choices, applies, copy, when, help }`:
@@ -43,7 +43,7 @@ const COMMON_SECTIONS = Object.freeze(['presets', 'text', 'background', 'axes', 
 /** Each kind's sections in order: the common ones and its own (`panel:<id>`). */
 const ORDER = Object.freeze({
     'cell-gene': Object.freeze(['presets', 'text', 'background', 'axes', 'panel:dots', 'panel:sections', 'legend', 'panel:annotations', 'margins', 'export', 'apply']),
-    'cell-count': Object.freeze(['presets', 'text', 'background', 'axes', 'legend', 'margins', 'export', 'apply'])
+    'cell-count': Object.freeze(['presets', 'text', 'background', 'axes', 'panel:view3d', 'legend', 'margins', 'export', 'apply'])
 });
 
 /** The fonts offered, as Cell Plot's Plot Options names them; '' is the kind's default font. */
@@ -134,7 +134,9 @@ const COLOR = /^#[0-9a-f]{3}([0-9a-f]{3})?([0-9a-f]{2})?$/i;
 export function fieldsOf(kind) {
     const own = _kinds.get(kind);
     const takes = (f) => !f.applies || f.applies.includes(kind) || !!(own && own.applies && own.applies.includes(f.id));
-    return [...COMMON_FIELDS.filter(takes), ...(_panelFields.get(kind) || [])];
+    // a kind that stores its look at keys of its own (the Cell Plot and Gene Plot, WP-5b) takes no common field
+    const common = own && own.common === false ? [] : COMMON_FIELDS.filter(takes);
+    return [...common, ...(_panelFields.get(kind) || [])];
 }
 
 /** A field of `kind` by id, or null. */
@@ -276,11 +278,11 @@ export function sectionsOf(kind) {
 
 /**
  * Declare a kind (WP-5b: the Cell Plot and the Gene Plot): `order` its sections, `defaults` its own default per field
- * id, `applies` the ids of common fields limited to other kinds that it takes too, `presets` its preset values.
+ * id, `applies` the ids of common fields limited to other kinds that it takes too, `presets` its preset values,
+ * `common: false` for a kind whose fields are all its own (registerPanelFields), at the keys it has always stored.
  * @param {string} kind
- * @param {{order?: string[], defaults?: Object, applies?: string[], presets?: Object}} spec
+ * @param {{order?: string[], defaults?: Object, applies?: string[], presets?: Object, common?: boolean}} spec
  */
-// export-unused-ok: WP-5b declares the Cell Plot and Gene Plot with it
 export function registerKind(kind, spec) {
     _kinds.set(kind, Object.freeze({ ...spec }));
 }

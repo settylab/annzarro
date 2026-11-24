@@ -39,7 +39,10 @@
 /* The plot toolbar (static/js/ui/plot-toolbar.js): one row ending every plot panel's control grid,
    [actions] [menus] ... [Undo] [Plot Options], the same in every panel */
 .az-plot-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; width: 100%; padding-top: 4px; }
-.az-plot-toolbar > .btn { white-space: nowrap; }
 .az-plot-toolbar__gap { flex: 1 1 auto; min-width: 8px; }
 .az-plot-toolbar .az-gear { margin-right: 2px; }
 .az-plot-toolbar > .btn[hidden] { display: none; }
+
+/* The Cell Plot's and Gene Plot's menu (plot-aesthetics-menu.js) in the shared pop-over (WP-5b): the pop-over's body
+   is the one scroller, as in every other pop-over; the menu's own (from its Bootstrap days) is off */
+.az-popover .aesthetics-menu-content { max-height: none; overflow: visible; padding: 0; }

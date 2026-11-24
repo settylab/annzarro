@@ -185,6 +185,7 @@ def test_each_control_restyles_only_the_highlight_in_2d_3d_and_gene_plots(page, 
     _shot(page, "plots-restyled-light")
     # the point size moving keeps the factor
     before = _focus(page, A)["pointSize"]
+    _menu(page, A, "points")           # the point size is in Plot Options' Points group since WP-5b
     page.fill(f"#point-size-input-{A}", "8")
     page.press(f"#point-size-input-{A}", "Tab")
     page.wait_for_function("([id, ps]) => { const f = (%s)(id); return f && f.pointSize !== ps && f.size === f.pointSize * 3.5; }"

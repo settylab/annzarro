@@ -774,6 +774,12 @@ const ASPECT_CLAMP = 4;
 const ASPECT_Z = 0.6;
 const UIREVISION_3D = 'cgene-3d';
 
+/** The scene's aspect ratio for `xCount` bars along x and `yCount` along y (the Count Plot's 3D shares it). */
+export function sceneAspect(xCount, yCount) {
+    const ratio = Math.min(ASPECT_CLAMP, Math.max(1 / ASPECT_CLAMP, Math.max(xCount, 1) / Math.max(yCount, 1)));
+    return ratio >= 1 ? { x: 1, y: 1 / ratio, z: ASPECT_Z } : { x: ratio, y: 1, z: ASPECT_Z };
+}
+
 /**
  * The gap, px, between a label and its tick on the box edge, on the label's side (Plot Options ▸ Axes ▸ Padding, in 3D).
  * Plotly drops a scene annotation outside the axis ranges, so the anchor is ON the edge and the gap is a screen shift.
@@ -791,7 +797,7 @@ const LABEL_EM_MAX = 0.7;
  * centres a 3D tick label on its tick and has no anchor for it, and sets the axis title where its own labels end, so
  * both are hidden here and sceneLabels draws them.
  */
-function sceneAxis(labels, positions, extent, th) {
+export function sceneAxis(labels, positions, extent, th) {
     const base = {
         title: { text: '' }, color: th.textColor, gridcolor: th.gridColor, linecolor: th.axisColor, showticklabels: false,
         zeroline: false, showspikes: false, backgroundcolor: th.bgColor, range: [-0.5, Math.max(extent, 1) - 0.5], autorange: false
@@ -1119,8 +1125,7 @@ function figure3d(model, th) {
     // x:y by the bar counts (clamped), z a share of the longer side
     const xCount = swap ? G : P.span;
     const yCount = swap ? P.span : G;
-    const ratio = Math.min(ASPECT_CLAMP, Math.max(1 / ASPECT_CLAMP, Math.max(xCount, 1) / Math.max(yCount, 1)));
-    const aspect = ratio >= 1 ? { x: 1, y: 1 / ratio, z: ASPECT_Z } : { x: ratio, y: 1, z: ASPECT_Z };
+    const aspect = sceneAspect(xCount, yCount);
     const genePositions = rows.map((_, r) => P.pos[r]);
     const groupPositions = groups.map((_, g) => g);
     const geneAxis = sceneAxis(geneLabels, genePositions, P.span, th);

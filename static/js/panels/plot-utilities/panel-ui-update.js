@@ -7,6 +7,7 @@ import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { noteDatasetLayers } from '../../utils/score-source.js';
 import { refreshHoverGroups } from './hover-columns.js';
 import { fillChoiceSelect } from '../../utils/pair-selects.js';
+import { attachSearch } from '../../utils/group-picker.js';
 import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
@@ -324,6 +325,7 @@ function refreshSourceMenus() {
   for (const select of document.querySelectorAll('select.axis-column-select')) {
     const axis = axisOf(select);
     if (axis && axis.setting && axis.provider.subKeyMenu) fillSubKeySelect(select, axis.provider.subKeyMenu(axis.setting));
+    if (axis && axis.setting && select.__statSelect) fillStatSelect(select.__statSelect, axis.provider, axis.setting);
     if (axis && axis.setting && select.__layerSelect) fillLayerSelect(select.__layerSelect, axis.provider, axis.setting);
   }
   // the Hover pickers list what each provider offers, after the columns
@@ -346,6 +348,8 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   // a layer belongs to a provider that has them (a gene score) only: another source has none
   const provider = getSource(settings.type);
   if (!(provider && provider.layered) && settings.layer) delete settings.layer;
+  // the choice of a statistic of a group belongs to the provider that has one: another source holds none of it
+  if (!(provider && provider.statMenu)) for (const field of ['stat', 'groupWas', 'follow']) delete settings[field];
   // Initialize the settings history if it doesn't exist
   if (!settings.history) {
     settings.history = {};
@@ -369,6 +373,8 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   $columnSelect.prop('disabled', false);
 
   // a provider with layers (a gene score) has a fourth select, the layer, after the method; any other source has none
+  // a provider whose third select is a choice of cells (a group) has a statistic select too, between the column and the layer
+  const statSelect = statSelectFor(columnSelect, provider && provider.statMenu ? provider : null);
   const layerSelect = layerSelectFor(columnSelect, provider && provider.layerMenu ? provider : null);
   if (provider) {
     // level 3 is the provider's own menu (a score's methods: the method in `column`), or none
@@ -384,6 +390,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
       if (built.adopt.layer) settings.layer = built.adopt.layer; else delete settings.layer;
     }
     fillSubKeySelect($columnSelect[0], built);
+    if (statSelect) fillStatSelect(statSelect, provider, settings);
     if (layerSelect) fillLayerSelect(layerSelect, provider, settings);
     return;
   }
@@ -1248,6 +1255,8 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
 /** Fill a select with a provider's third menu (subKeyMenu): graded entries, an impossible one disabled with its reason. */
 function fillSubKeySelect(select, built) {
   fillChoiceSelect(select, built.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '' })), built.chosen);
+  // a choice among many groups is searched, not scrolled (utils/group-picker.js)
+  if (built.search) attachSearch(select, { label: 'Group' });
 }
 
 /** Fill a provider's layer select (layerMenu) for what the setting holds. */
@@ -1256,6 +1265,43 @@ function fillLayerSelect(select, provider, settings) {
   select.hidden = !built;
   select.disabled = !built;
   if (built) fillChoiceSelect(select, built.options, built.chosen);
+}
+
+/** Fill a provider's statistic select (statMenu) for what the setting holds. */
+function fillStatSelect(select, provider, settings) {
+  const built = provider.statMenu(settings);
+  select.hidden = !built;
+  select.disabled = !built;
+  if (built) fillChoiceSelect(select, built.options, built.chosen);
+}
+
+/**
+ * The statistic select after a column select, made when a provider has one (`statMenu`) and removed when not. As the
+ * layer select, a change of it is a change of the setting, handed to the column select's own listeners.
+ * @param {HTMLSelectElement} columnSelect
+ * @param {Object|null} provider
+ * @returns {HTMLSelectElement|null}
+ */
+function statSelectFor(columnSelect, provider) {
+  let select = columnSelect.__statSelect || null;
+  if (!provider) {
+    if (select) { select.remove(); columnSelect.__statSelect = null; }
+    return null;
+  }
+  if (!select) {
+    select = document.createElement('select');
+    select.className = 'form-select form-select-sm axis-stat-select';
+    select.dataset.axis = columnSelect.dataset.axis || '';
+    const named = columnSelect.getAttribute('aria-label');
+    select.setAttribute('aria-label', named ? named.replace(/column$/, 'statistic') : 'Statistic');
+    select.addEventListener('change', () => {
+      columnSelect.__touched = 'stat';
+      columnSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    columnSelect.__statSelect = select;
+  }
+  if (select.previousElementSibling !== columnSelect) columnSelect.after(select);
+  return select;
 }
 
 /**
@@ -1284,7 +1330,9 @@ function layerSelectFor(columnSelect, provider) {
     });
     columnSelect.__layerSelect = select;
   }
-  if (select.previousElementSibling !== columnSelect) columnSelect.after(select);
+  // after the statistic select when there is one (a group's statistic: group, statistic, layer)
+  const anchor = columnSelect.__statSelect || columnSelect;
+  if (select.previousElementSibling !== anchor) anchor.after(select);
   return select;
 }
 
@@ -1313,10 +1361,28 @@ function sayPair(columnSelect, text) {
  */
 export function takeSubKey(settings, select) {
   const provider = getSource(settings.type);
-  const touched = select.__touched === 'layer' ? 'layer' : 'method';
+  const touched = select.__touched === 'layer' || select.__touched === 'stat' ? select.__touched : 'method';
   select.__touched = null;
   if (!provider || !provider.subKeyMenu) return false;
   const layerSelect = select.__layerSelect || null;
+  if (provider.settingAfter) {
+    // a provider whose selects are a cell choice, a statistic and a layer (a group's statistic): it says what each touch writes
+    const value = touched === 'layer' ? layerSelect.value : touched === 'stat' ? select.__statSelect.value : select.value;
+    const next = provider.settingAfter(settings, touched === 'method' ? 'column' : touched, value);
+    if (!next) return false;
+    const { say, ...fields } = next;
+    let changed = false;
+    for (const [field, to] of Object.entries(fields)) {          // undefined removes a field
+      if (JSON.stringify(settings[field]) === JSON.stringify(to)) continue;
+      changed = true;
+      if (to === undefined) delete settings[field]; else settings[field] = to;
+    }
+    fillSubKeySelect(select, provider.subKeyMenu(settings));
+    if (select.__statSelect) fillStatSelect(select.__statSelect, provider, settings);
+    if (layerSelect) fillLayerSelect(layerSelect, provider, settings);
+    sayPair(select, say || '');
+    return changed;
+  }
   if (provider.pairAfter && layerSelect) {
     const value = touched === 'layer' ? layerSelect.value : select.value;
     const next = provider.pairAfter(settings, touched, value);

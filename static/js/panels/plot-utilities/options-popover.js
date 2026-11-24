@@ -85,6 +85,7 @@ function stepLabel(field, value) {
  * @param {(next: Object) => void} ctx.replace - the session default followed: no undo step
  * @param {Object<string, {title: string, element?: HTMLElement, paint?: Function}>} [ctx.sections] - the panel's sections
  * @param {(format: string, settings: Object) => void} [ctx.exportImage]
+ * @param {(settings: Object) => void} [ctx.copyImage] - the plot as a PNG on the clipboard (Export's Copy)
  * @param {() => {width?: number, height?: number}} [ctx.plotSize]
  * @param {() => void} [ctx.csv] - Download CSV
  * @param {() => boolean} [ctx.canExport] - whether there is a drawing to export
@@ -173,6 +174,9 @@ export function mountPlotOptions(ctx) {
     // ---------------------------------------------------------------- Export and Apply
     const imageBtns = IMAGE_FORMATS.map((format) => el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary po-export-btn ${classes.exportBtn || ''}`,
         data: { format }, on: { click: () => exportAs(format) } }, format.toUpperCase()));
+    // Copy: the plot as a PNG on the clipboard, at Export's size (plot-aesthetics-menu.js copyPlotToClipboard, passed in)
+    const copyBtn = ctx.copyImage ? el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary po-copy-btn',
+        on: { click: () => ctx.copyImage(exportSettings(resolveStyle(config(), kind), ctx.plotSize ? ctx.plotSize() : {})) } }, 'Copy') : null;
     const csvBtn = ctx.csv ? el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary po-csv-btn ${classes.csv || ''}`, on: { click: () => ctx.csv() } }, 'Download CSV') : null;
 
     function exportAs(format) {
@@ -250,7 +254,7 @@ export function mountPlotOptions(ctx) {
         if (own && own.element) body.append(own.element);
         for (const f of sec.fields) body.append(fieldControl(f));
         if (sec.id === 'export') {
-            body.prepend(el('div', { class: 'po-buttons po-export-formats' }, imageBtns));
+            body.prepend(el('div', { class: 'po-buttons po-export-formats' }, imageBtns, copyBtn));
             if (csvBtn) body.append(el('div', { class: 'po-buttons' }, csvBtn));
         }
         if (sec.id === 'presets') {
@@ -332,6 +336,7 @@ export function mountPlotOptions(ctx) {
             if (off) b.title = off; else b.removeAttribute('title');
         }
         if (csvBtn) csvBtn.disabled = !can;
+        if (copyBtn) copyBtn.disabled = !can;
         const onDefault = c.styleDefault === true;
         sessionState.textContent = onDefault ? (hasSessionStyle(kind) ? 'On Default: this plot follows the session default.' : 'On Default (built-in).') : 'Own style.';
         sessionReset.hidden = !hasSessionStyle(kind);

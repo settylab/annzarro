@@ -157,10 +157,9 @@ def _toggle(page, mode):
 def _menu(page, pid, section="background"):
     """Open the Plot Options popover of `pid` at `section`, and only ever work in a popover that is shown.
 
-    A click outside it (the theme toggle is one) starts to hide it: Bootstrap drops `.show` at once and
-    removes the element when the fade ends. Its inputs are still there for a while but are about to go, so
-    wait that out, then open the menu again."""
-    shown = f".popover.show details[data-panel='{pid}']"
+    A click outside it (the theme toggle is one) closes it (the shared pop-over, ui/popover.js, since WP-5b; it
+    has no fade), so open the menu again whenever it is not there."""
+    shown = f"[data-popover='plot-options'] details[data-panel='{pid}']"
     if not page.query_selector(shown):
         page.wait_for_selector(f"details[data-panel='{pid}']", state="detached")      # a fading one is gone
         page.click(f"#aesthetics-menu-btn-{pid}")

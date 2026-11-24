@@ -263,7 +263,7 @@ largest size that is drawn the regular way already chosen. A plot that has a tab
 
 ```{figure} ../_static/screens/user-guide/large-plot-all.png
 :class: screenshot
-:alt: A Cell Plot with every cell, in large-plot mode. The status line under the plot carries the tag Large plot. The 3D Plot button, the Hover list and the table filter are greyed out.
+:alt: A Cell Plot with every cell, in large-plot mode. The status line under the plot carries the tag Large plot. The 3D button, the Hover list and the table filter are greyed out.
 
 Every cell: large-plot mode. (Regenerated on the 8,090-cell demonstration store with the limit
 lowered to 5,000; `docs/_tools/shoot_large_plot.py`.)

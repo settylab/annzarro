@@ -29,6 +29,7 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 | **Smoothing**, **Scale curves by level size**, and for a 2D density **Density as opacity**, **Isolines**, **Filled isolines** | The density modes' own row, with the bandwidth and range notes under it |
 | **Fade by its share** | Under the most frequent level's factor, in a 2D histogram or heatmap |
 | **Save as grouping** | On the toolbar: turns the plot's bars into a {doc}`cell-grouping` |
+| **3D** | On the toolbar, after **Save as grouping**: draws the plot as bars on a grid (below); greyed out with its reason where there are no bars to draw |
 | **Display ▾** | On the toolbar, where the plot has a colour scale, colours levels, or is a 2D density (below) |
 | **Undo** | Undoes the last change |
 | **Plot Options** | On the toolbar, last: the look of the figure, its export and **Download CSV** (below) |
@@ -126,6 +127,33 @@ level or leaves them out.
 | **Most frequent level of…** (2D histogram, heatmap) | Colours each rectangle by its commonest level of a further input, exactly, from the same count; **Fade by its share** fades rectangles where that level is a small majority |
 
 Axis titles name the source and layer ("Mean of Mrpl15 · logged_counts", "% of cells shown").
+
+## 3D
+
+**3D** draws a 2D histogram, a heatmap, or a bar plot with a **Color by** as bars standing on a grid: X by Y, or X by
+the levels of the Color by. It is a view, not a mode, so the inputs, bins, levels, order and statistics stay as they are,
+and pressing **3D** again returns to the 2D plot. Turning it on or off is one step of **Undo**.
+
+- **Colour.** A bar has the colour its rectangle has in 2D: the same colour map, **Reverse** and range from **Display ▾**,
+  and the same colour bar. A bar plot's bars are coloured by the value they show, on the scale, as a 2D histogram's are.
+  Colouring by the **Most frequent level** draws each bar in that level's colour and lists the levels in the legend.
+- **3D height** appears under **Color** while 3D is on. **Same as Color**, the default, draws the colour's numbers as
+  heights; with the most frequent level, whose colour has no number, the height is the count. Any other choice is a count,
+  a share or a statistic, chosen from the same list as **Color**; a statistic reads the same source as the Color's. The
+  choice is kept when 3D is off. The hover adds the height when it is not the colour.
+- **Bins** are always drawn at the same width in 3D, each at its place in the order, with the grid lines at the bin borders
+  labelled by the edge values, as **Evenly** does in 2D.
+- **Left out.** 3D does not draw printed values, a log count axis, horizontal bars, arrangements or the fade by share, and
+  the status strip says so (**3D**). A rectangle with no cells, a bar of 0 and a missing value have no bar. Above 60
+  categories on an axis their labels are hidden and the hover names each bar.
+- **Offered for** the 2D histogram without a **Color by** (with one it is drawn in layers), the heatmap, and a bar plot with
+  a **Color by**. Elsewhere **3D** is greyed out and says why.
+- **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
+  step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
+- **Plot Options** has a **3D** section while 3D is on: the bar footprint (0.5 to 1 of its cell), lighting, the axis box
+  and the height's title. **Export** greys out SVG in 3D ("3D exports as an image only."); PNG, JPEG and WEBP work.
+- **Limit.** 3D draws at most 40,000 bars, by default (the cost limit `limits.bars_3d_max`, shared with the Cell-Gene Plot). Above that **3D** is greyed out and says why ("Use fewer bins."); a plot saved
+  in 3D that has grown past it is drawn in 2D, and the strip says **2D** with the reason.
 
 ## Densities
 

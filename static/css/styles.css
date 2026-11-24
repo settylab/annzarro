@@ -529,6 +529,31 @@ body {
     height: auto;
     min-height: 0;
 }
+/* The "Add New Panel" tile (a pane's chooser) takes the height its row or pane gives it and scrolls its list inside:
+   its content never sets a minimum, so spawning it cannot grow or push the layout. */
+.panel-wrapper > .tile-selector,
+.split-pane > .tile-selector {
+    flex: 1 1 0;
+    min-height: 11rem;                 /* bounded, whatever the content: the heading and a couple of entries stay in view */
+    overflow: hidden;
+}
+.panel-wrapper > .tile-selector > .tile-selection-container,
+.split-pane > .tile-selector > .tile-selection-container {
+    flex: 1 1 0;
+    min-height: 0;
+    height: auto;
+    overflow: auto;
+    padding: 0.75rem;                  /* small panes: the heading and a couple of entries first, then the scroll */
+}
+.panel-wrapper > .tile-selector > .tile-selection-container .tile-selection-header,
+.split-pane > .tile-selector > .tile-selection-container .tile-selection-header {
+    margin-bottom: 0.75rem;
+    flex: none;
+}
+.panel-wrapper > .tile-selector > .tile-selection-container .tile-selection-header p,
+.split-pane > .tile-selector > .tile-selection-container .tile-selection-header p { margin-bottom: 0; }
+.panel-wrapper > .tile-selector > .tile-selection-container .selection-sections,
+.split-pane > .tile-selector > .tile-selection-container .selection-sections { gap: 1rem; }
 /* A tile is clipped, not scrolled, so its automatic minimum width would be its
    content's: a narrow pane must stay as narrow as the split makes it. */
 .tile,
@@ -1491,6 +1516,14 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-status__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
 .gsig-summary { font-weight: 600; }
 .gsig-definition, .gsig-usedby { color: var(--az-muted); font-size: 0.75rem; }
+/* The score's line and the line that says what an edit did each keep ONE line, empty or not, so nothing in the
+   panel moves while you work (a tick, a clear, a score that starts or ends). A long sentence is cut with an
+   ellipsis; the whole of it is the line's title and what a screen reader hears. */
+.gsig-score, .gsig-message { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gsig-score::before, .gsig-message::before { content: "\200b"; }
+.gsig-score { display: flex; align-items: baseline; gap: 4px; }
+.gsig-score__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.gsig-score .gsig-link { flex: none; padding-top: 0; padding-bottom: 0; }
 
 /* The Methods pop-over (panels/score-options/methods-popover.js): one row per method, its definition, its parameters */
 .gsig-methods .gsig-scoring__body { display: flex; flex-direction: column; gap: 6px; font-size: 0.8125rem; }
@@ -1543,7 +1576,6 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-seg.active, .gsig-segopt.active { background: var(--az-muted); color: var(--az-surface); }
 .gsig-seg:focus-visible, .gsig-segopt:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
 .gsig-message { padding: 0 8px 4px; color: var(--az-muted); font-size: 0.75rem; }
-.gsig-message:empty { display: none; }
 .gsig-empty { padding: 8px; color: var(--az-muted); }
 .gsig-link { padding: 0 2px; font-size: 0.8125rem; }
 .gsig-grid {
@@ -3235,9 +3267,9 @@ button.dtsb-button.dtsb-clear:hover {
 @container plot-controls (min-width: 560px) {
     .ctl-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        grid-template-areas: "axes points" "colour colour" "acts end";
+        grid-template-areas: "axes points" "colour colour" "bar bar";
     }
-    .ctl-grid.ctl-no-colour { grid-template-areas: "axes points" "acts end"; }
+    .ctl-grid.ctl-no-colour { grid-template-areas: "axes points" "bar bar"; }
     .ctl-axes { grid-area: axes; }
     .ctl-colour {
         grid-area: colour;
@@ -3258,25 +3290,24 @@ button.dtsb-button.dtsb-clear:hover {
         border-left: var(--ctl-rule);
         padding-left: calc(4 * var(--ctl-u));
     }
-    .ctl-grid > .ctl-actions { display: contents; }
-    .ctl-grid .ctl-actions-toggles { grid-area: acts; align-self: start; }
-    .ctl-grid .ctl-actions-end { grid-area: end; justify-self: end; align-self: start; }
+    /* the shared plot toolbar (ui/plot-toolbar.js, WP-5b): one row under the groups, as in every plot panel */
+    .ctl-grid > .ctl-toolbar { grid-area: bar; }
 }
 
 @container plot-controls (min-width: 960px) {
     .ctl-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        grid-template-rows: auto 1fr;
-        grid-template-areas: "axes colour points" "acts colour points";
+        grid-template-rows: auto auto;
+        grid-template-areas: "axes colour points" "bar bar bar";
     }
+    /* The points column keeps the room it had before WP-5b (the point size's row, now in Plot Options, and the line the
+       buttons took, now the toolbar row), so the first row is as tall as it was, with a colour or without one: a
+       colour that arrives (a score) or is picked does not move the plot. */
+    .ctl-points { padding-bottom: calc(2 * var(--ctl-h) + 2 * var(--ctl-u)); }
     .ctl-grid.ctl-no-colour {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        grid-template-areas: "axes points" "acts points";
+        grid-template-areas: "axes points" "bar bar";
     }
-    /* Refresh / Plot Options sit in the points column's last line, which
-       the group keeps free, so the first row is only as tall as the axes. */
-    .ctl-points { padding-bottom: calc(var(--ctl-h) + var(--ctl-u)); }
-    .ctl-grid .ctl-actions-end { grid-area: points; align-self: end; }
     .ctl-colour {
         display: flex;
         border-top: 0;
@@ -3446,7 +3477,7 @@ button.dtsb-button.dtsb-clear:hover {
 
 .ctl-actions { justify-content: space-between; }
 @container plot-controls (max-width: 379px) {
-    .ctl-actions .ctl-btn-text { display: none; }
+    .ctl-actions .ctl-btn-text, .ctl-toolbar .ctl-btn-text { display: none; }
 }
 .ctl-actions-end {
     display: inline-flex;

@@ -28,10 +28,12 @@ import { DEFAULT_COLORSCALE } from './colour.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import {
     popoverUse, sliceColourUse, parseColourLimit, rowsOf, modeRefusal, arrangementChoices, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
-    setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
+    setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust,
+    SAME_HEIGHT, heightChoices, heightChoiceOf, applyHeightChoice
 } from './controls-model.js';
 
 const C = VOCABULARY.countPlot;
+const V3 = C.view3d;
 const P = VOCABULARY.phrase;
 const CL = C.colour;
 const CL_SLICES = C.slices;
@@ -477,6 +479,51 @@ export function createControls({ D, id, model, on }) {
     wireSelects(factorRow, () => inputOf('factor'), (source) => commitInput('factor', source));
     rows.set('factor', factorRow);
 
+    // the 3D height (UX 6b): its own source, Same as Color first; shown only in 3D
+    const heightSelect = el('select', { class: 'form-select form-select-sm ccnt-height3d', id: `ccnt-height3d-${id}`,
+        on: { change: () => chooseHeight(heightSelect.value) } });
+    const heightHelp = el('span', { class: 'ccnt-help ccnt-height3d__help' });
+    const heightRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--height3d', hidden: true },
+        el('label', { class: 'ctl-label', for: `ccnt-height3d-${id}`, text: V3.heightRow }), heightSelect, heightHelp);
+
+    function chooseHeight(choice) {
+        const m = model();
+        const next = applyHeightChoice(m.config, choice, m.valueDefaults());
+        const entry = heightChoices(m.config).find((c) => c.value === choice);
+        if (!next) { heightSelect.value = heightChoiceOf(m.config); return; }
+        commit(next, `${V3.heightRow} ${entry ? entry.label.replace('…', '') : choice}`);
+    }
+
+    function paintHeight(m) {
+        const shownNow = !!m.view3d && m.view3d.shown;
+        heightRow.hidden = !shownNow;
+        if (!shownNow) return;
+        D.clear(heightSelect);
+        const groups = new Map();
+        for (const c of heightChoices(m.config)) {
+            const o = option(c.value, c.label);
+            o.title = c.help;
+            if (!c.group) { heightSelect.appendChild(o); continue; }
+            if (!groups.has(c.group)) {
+                groups.set(c.group, el('optgroup', { label: C.value.groups[c.group] }));
+                heightSelect.appendChild(groups.get(c.group));
+            }
+            groups.get(c.group).appendChild(o);
+        }
+        const choice = heightChoiceOf(m.config);
+        heightSelect.value = choice;
+        const entry = heightChoices(m.config).find((c) => c.value === choice);
+        heightHelp.textContent = choice === SAME_HEIGHT ? V3.heightHelp : (entry ? entry.help : '');
+        // a statistic as the height reads the measure beside the Color's: its source and threshold are the row above's
+        if (choice.startsWith('stat:') && measureRow.element.hidden && m.config.measure) {
+            measureRow.element.hidden = false;
+            measureRow.sync();
+            dropCategorical(measureRow);
+            aboveWrap.hidden = choice !== 'stat:pct_above';
+            if (document.activeElement !== above) above.value = m.config.measure.above === undefined ? '' : String(m.config.measure.above);
+        }
+    }
+
     function commitAbove() {
         const c = model().config;
         if (!c.measure) return;
@@ -669,8 +716,16 @@ export function createControls({ D, id, model, on }) {
     // Download CSV is in its Export section
     const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-options-btn' }, C.buttons.options);
     const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-undo', disabled: true, on: { click: () => on.undo() } }, C.buttons.undo);
+    // 3D (UX 6b, WP-11): a view, one undoable step; disabled with its reason where it has no bars or over the bar cap
+    const view3dBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-3d-btn', aria: { pressed: 'false' }, on: { click: () => {
+        const c = model().config;
+        const was = c.view === '3d';
+        const next = { ...c };
+        if (was) delete next.view; else next.view = '3d';
+        commit(next, was ? 'show in 2D' : 'show in 3D');
+    } } }, V3.button);
     // the shared plot toolbar (ui/plot-toolbar.js): the same order, styles and places in every plot panel
-    const toolbar = createPlotToolbar({ className: 'ccnt-toolbar', actions: [saveBtn], menus: [colorBtn], undo: undoBtn, options: optionsBtn }).element;
+    const toolbar = createPlotToolbar({ className: 'ccnt-toolbar', actions: [saveBtn, view3dBtn], menus: [colorBtn], undo: undoBtn, options: optionsBtn }).element;
 
     // Color: the colour map, Reverse, the range, the level palette. Every edit applies live as one undoable step.
     const colorPop = createPopover({
@@ -799,6 +854,13 @@ export function createControls({ D, id, model, on }) {
         else if (colorPop.isOpen()) fillColor();
         saveBtn.hidden = !m.canSave;
         saveBtn.disabled = !m.canExport;
+        // 3D: pressed while it is drawn or stored over the cap; refused with its reason elsewhere (a stored 3D over the cap can always be turned off)
+        const v = m.view3d || { on: false, gate: { ok: true, why: '', text: '' } };
+        const pressed = v.on && (v.gate.ok || v.gate.why === 'cap');
+        view3dBtn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+        view3dBtn.classList.toggle('active', pressed);
+        view3dBtn.disabled = !v.gate.ok && !pressed;
+        view3dBtn.title = !v.gate.ok ? v.gate.text : v.on ? V3.buttonOnHelp : V3.buttonHelp;
     }
 
     // ---------------------------------------------------------------- the bar
@@ -809,7 +871,7 @@ export function createControls({ D, id, model, on }) {
     const setsSlot = el('div', { class: 'ccnt-sets', hidden: true });
     const kept = el('div', { class: 'ccnt-kept', role: 'note' });
     const element = el('div', { class: 'ccnt-controls', 'data-panel-controls': '' },
-        modeRow, xRow.wrap, yRow.wrap, splitRow.wrap, setsSlot, valueRow, measureRow.element, factorRow.element, labelsRow, densityRow, kept, toolbar);
+        modeRow, xRow.wrap, yRow.wrap, splitRow.wrap, setsSlot, valueRow, measureRow.element, factorRow.element, heightRow, labelsRow, densityRow, kept, toolbar);
 
     function commit(next, label) {
         on.commit(next, label);
@@ -839,6 +901,7 @@ export function createControls({ D, id, model, on }) {
         wanted = null;       // a reveal not met by this paint is stale
         paintArrangement(m, shownRows);
         if (m.structure) paintValue(m, shownRows); else valueRow.hidden = true;
+        if (m.structure) paintHeight(m); else heightRow.hidden = true;
         paintLabels(m, shownRows);
         paintToolbar(m);
         kept.textContent = keptLine(m.config, m.titleOf);

@@ -53,7 +53,8 @@ def _notices(page):
     return page.locator(NOTICE).all_inner_texts()
 
 
-@pytest.mark.parametrize("how", ["header", "panel"])
+# the header's Refresh is the one there is (the per-plot Refresh is gone, decision 39)
+@pytest.mark.parametrize("how", ["header"])
 def test_a_user_is_told_a_chunk_only_write_may_not_show(served, how):  # noqa: F811
     root, store = served
     with playwright.sync_playwright() as p:
@@ -61,7 +62,7 @@ def test_a_user_is_told_a_chunk_only_write_may_not_show(served, how):  # noqa: F
         try:
             page = _open(browser, root, store, as_user=True)
             assert not _notices(page)
-            page.click("#refresh-dataset" if how == "header" else f"#refresh-plot-{PID}")
+            page.click("#refresh-dataset")
             page.wait_for_selector(NOTICE, timeout=15000)
             page.wait_for_timeout(700)  # the toast fades in
             text = " ".join(_notices(page))

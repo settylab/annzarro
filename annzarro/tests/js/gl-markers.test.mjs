@@ -61,6 +61,21 @@ test('the scene gets the new size and opacity; Plotly state follows; legend entr
     assert.deepEqual(gd._fullData.map(t => t.marker.size), [1.18, 5, 1.18, 1.18]);
 });
 
+test('a new opacity carries the selection opacities Plotly derived from the old one (render drift)', () => {
+    const { gd } = fakeGd();
+    // as Plotly's defaults leave them: selected = the opacity, unselected = 0.2 of it; trace 2 sets its own
+    gd._fullData.forEach((t) => { t.selected = { marker: { opacity: 1 } }; t.unselected = { marker: { opacity: 0.2 } }; });
+    gd.data[2].unselected = { marker: { opacity: 0.5 } };
+    const scene = gd._fullLayout._plots.xy._scene;
+    scene.markerSelectedOptions = gd.data.map(() => ({ opacity: 1 }));
+    scene.markerUnselectedOptions = gd.data.map(() => ({ opacity: 0.2 }));
+    assert.equal(setGlMarkers(gd, style(3, 0.5)), true);
+    assert.deepEqual(gd._fullData.map(t => t.selected.marker.opacity), [0.5, 1, 1, 0.5]);
+    assert.deepEqual(gd._fullData.map(t => t.unselected.marker.opacity), [0.1, 0.2, 0.2, 0.1]);
+    assert.deepEqual(scene.markerUnselectedOptions.map(o => o.opacity), [0.1, 0.2, 0.2, 0.1]);
+    assert.deepEqual(scene.markerSelectedOptions.map(o => o.opacity), [0.5, 1, 1, 0.5]);
+});
+
 test('without the scene internals: false, nothing changed, one warning', () => {
     _resetGlMarkersWarning();
     const warnings = [];

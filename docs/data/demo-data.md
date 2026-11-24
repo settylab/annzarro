@@ -234,7 +234,7 @@ in `layers/logged_counts`.
 
 | Slot and key | What it is | Use in the app |
 |---|---|---|
-| `obsm/X_umap_3d` | 3-D UMAP of the stored kNN graph: `scanpy.tl.umap(n_components=3, min_dist=0.5, spread=1.0, random_state=42)` on `obsp/connectivities`, the same `a` and `b` as `X_umap` (checked in the build). Parameters and package versions are in `uns/umap_3d`. | Cell plot with **3D Plot**, or X, Y and Z from `obsm`; opens in 3D by itself when chosen as the plot's coordinates |
+| `obsm/X_umap_3d` | 3-D UMAP of the stored kNN graph: `scanpy.tl.umap(n_components=3, min_dist=0.5, spread=1.0, random_state=42)` on `obsp/connectivities`, the same `a` and `b` as `X_umap` (checked in the build). Parameters and package versions are in `uns/umap_3d`. | Cell plot with **3D**, or X, Y and Z from `obsm`; opens in 3D by itself when chosen as the plot's coordinates |
 | `varm/mean_by_celltype` | Mean `logged_counts` per gene in each of the 31 `highres_celltype` levels. Stored as a DataFrame whose columns are the cell-type names, in category order (also in `uns/mean_by_celltype_categories`). | Gene plot with one cell type per axis, e.g. HSC vs neutrophil |
 | `varm/fraction_expressing_by_celltype` | Fraction of cells with a raw count > 0, per gene and `highres_celltype` level. Same columns and order (`uns/fraction_expressing_by_celltype_categories`). | Gene plot axes or colour: how widely a gene is expressed in each type |
 | `varm/mean_by_age`, `varm/fraction_expressing_by_age` | The same two statistics per `obs/Age` group: Young, Mid, Old (`uns/mean_by_age_categories`, `uns/fraction_expressing_by_age_categories`) | Gene plot with Young against Old |

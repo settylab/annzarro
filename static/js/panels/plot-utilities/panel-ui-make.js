@@ -5,6 +5,8 @@ import { colorBoundToData } from '../../utils/array-stats.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
+import { createPlotToolbar } from '../../ui/plot-toolbar.js';
+import { VOCABULARY } from '../../utils/vocabulary.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { populateHoverSelect } from './hover-columns.js';
@@ -211,13 +213,12 @@ export function createPanelStructure(container, id, settings, { plotType, consum
           <!-- Panel-wide toggles and actions -->
           <div class="color-options ctl-actions">
             <span class="ctl-actions-toggles" role="group" aria-label="View">
-              <button class="btn btn-sm btn-outline-secondary" id="z-axis-toggle-${id}" aria-pressed="false">3D Plot</button>
+              <button class="btn btn-sm btn-outline-secondary" id="z-axis-toggle-${id}" aria-pressed="false" title="${VOCABULARY.plotPanel.view3dHelp}">${VOCABULARY.plotPanel.view3d}</button>
               <button type="button" class="btn btn-sm btn-outline-secondary" id="equal-aspect-${id}" aria-pressed="false" title="Same scale on x and y (spatial coordinates)">Equal aspect</button>
               <button class="btn btn-sm active btn-primary" id="highlight-focused-cell-${id}" aria-pressed="true" style="display:none;">Highlight Focused Cell</button>
               <button class="btn btn-sm active btn-primary" id="highlight-focused-gene-${id}" aria-pressed="true" style="display:none;">Highlight Focused Gene</button>
             </span>
             <span class="ctl-actions-end" role="group" aria-label="Plot actions">
-              <button class="btn btn-sm btn-outline-secondary" id="refresh-plot-${id}" title="Read the data again (re-checked against the disk) and redraw the plot" aria-label="Refresh"><i class="fas fa-rotate-right"></i> <span class="ctl-btn-text">Refresh</span></button>
               <button class="btn btn-sm btn-outline-secondary" id="aesthetics-menu-btn-${id}" title="Plot options" aria-label="Plot options"><i class="fas fa-sliders-h"></i> <span class="ctl-btn-text">Plot Options</span></button>
             </span>
           </div>
@@ -234,6 +235,34 @@ export function createPanelStructure(container, id, settings, { plotType, consum
 
   // Check dataset loading status and show/hide UI elements accordingly
   checkDatasetLoadingStatus(id);
+
+  // The shared plot toolbar (ui/plot-toolbar.js; design note options-ux-080 section 4, WP-5b): the panel's actions
+  // first (the view toggles, Refresh last of them, so that it can go on its own), then Undo (plot-undo.js) and Plot
+  // Options at the row's right end, the same places as in every plot panel. The buttons are the ones drawn above (their
+  // ids and listeners stay); the row ends the control grid.
+  const actionsRow = $container.find('.ctl-actions')[0];
+  if (actionsRow) {
+    const q = (sel) => actionsRow.querySelector(sel);
+    const toolbar = createPlotToolbar({
+      className: 'ctl-toolbar',
+      actions: [q(`#z-axis-toggle-${id}`), q(`#equal-aspect-${id}`), q(`#highlight-focused-cell-${id}`), q(`#highlight-focused-gene-${id}`),
+        q(`#refresh-plot-${id}`)].filter(Boolean),
+      options: q(`#aesthetics-menu-btn-${id}`)
+    });
+    actionsRow.replaceWith(toolbar.element);
+  }
+  // The point size is set in Plot Options (Points) since WP-5b: its controls wait in a hidden holder of the grid from
+  // the start (so the grid's height, and the plot's, never change when they move), and plot-aesthetics-menu.js moves
+  // them into the pop-over while it is open. Their listeners (listeners.js) find them here.
+  const sizeRow = $container.find('.point-size-control')[0];
+  const controlsEl = $container.find('.plot-controls')[0];
+  if (sizeRow && controlsEl) {
+    const holder = document.createElement('div');
+    holder.className = 'ctl-option-holder';
+    holder.hidden = true;
+    holder.appendChild(sizeRow);
+    controlsEl.appendChild(holder);
+  }
 
   return {
     plotContainer: document.getElementById(`plot-container-${id}`),

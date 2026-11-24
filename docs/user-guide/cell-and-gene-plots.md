@@ -12,7 +12,7 @@ Open a panel's controls with the chevron in its tile header.
 
 ```{figure} ../_static/screens/user-guide/plots-cell-controls.png
 :class: screenshot
-:alt: Cell plot controls with twelve numbered parts: X type, key and column drop-downs; the Color row; 3D Plot; Equal aspect; Highlight Focused Cell; Palette; Hide NaN; Size and Opacity sliders; Table filter; Plot Options.
+:alt: Cell plot controls with twelve numbered parts: X type, key and column drop-downs; the Color row; 3D; Equal aspect; Highlight Focused Cell; Palette; Hide NaN; Size and Opacity sliders; Table filter; Plot Options.
 
 Cell plot controls, coloured by a categorical obs column.
 ```
@@ -22,7 +22,7 @@ Cell plot controls, coloured by a categorical obs column.
 3. **Column**: which column of the matrix, or which focused row or column (see the tables below).
    obs and var columns have none, and the drop-down is not shown.
 4. **Color**: the same three drop-downs for the colour, plus **None (constant)**.
-5. **3D Plot** adds a **Z** row and draws the plot in 3D. Click it again for 2D.
+5. **3D** adds a **Z** row and draws the plot in 3D. Click it again for 2D.
 6. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
    ({doc}`spatial-coordinates`). A new Cell Plot starts with it on when both axes are the
    default, taken from one embedding (UMAP, PCA, spatial); it stays as you set it, and changing
@@ -34,7 +34,7 @@ Cell plot controls, coloured by a categorical obs column.
 9. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
    points of the **NA** legend entry). Numerical colours have more buttons next to it
    ({doc}`colour-scales`).
-10. **Size** (in px) and **Opacity** (0 to 1) of the points: a slider and a number box each.
+10. **Size** (in px, in **Plot Options** ▸ **Points**) and **Opacity** (0 to 1, in the controls) of the points: a slider and a number box each.
     The sliders move on a log scale, so their left half is the small sizes and faint opacities a
     plot of millions of cells needs: size 0.39 to 2.8 and opacity 0.002 to 0.045. WebGL draws 2D
     markers in steps of 100/255 = 0.39 px, so sizes snap to those steps (5 is shown as 5.1, the
@@ -76,10 +76,10 @@ Cell plot controls, coloured by a categorical obs column.
     as set, in saved panel sets and links too. The **auto** button beside each box is highlighted
     while its value is automatic; click it to make that value automatic again.
 11. **Table** links the plot to a table ({doc}`tables-and-filters`).
-12. **Plot Options** opens appearance and export settings ({doc}`plot-options`, {doc}`export`). **Refresh**, next to
-    it, reloads the panel's data and redraws it: the server first re-checks the dataset against
-    the disk, and the panel reads past this browser's copies, so values written to the store since
-    it was drawn appear (as with **Refresh dataset**, {doc}`interface`).
+12. **Plot Options** opens appearance and export settings ({doc}`plot-options`, {doc}`export`). A plot has no
+    Refresh of its own: whatever you change, it draws what a plot opened with the same settings
+    draws. To read values written to the store since, use **Refresh dataset** ({doc}`interface`),
+    which keeps each plot's zoom and 3D camera.
 
 A toggle that is on is filled blue and starts with a check mark. The controls rearrange with the
 panel's width: side by side in a wide panel, stacked in a narrow one.
@@ -113,6 +113,27 @@ distance matrix plots every cell's distance to the focused cell in both spaces, 
 `X` is listed first under the `layer` type. Columns of obsm and varm with more than ten entries are
 listed alphabetically. A sparse obsm matrix (for example a copy-number matrix `X_cnv` stored as
 CSR) can be an axis or a colour too; its columns are offered by position (0, 1, 2, …).
+
+### Colour a gene plot by a group of cells
+
+Choose **Cell group** as the colour's type to colour each gene by one statistic of that gene over the cells of one
+group of a Cell Grouping ({doc}`cell-grouping`). The selects after the type are the **grouping** (open or closed), the
+**group** (in group order, by its name; a grouping of more than 50 groups is searched by typing instead of scrolled), the **statistic** (mean, % expressing, mean of expressing cells, sum
+or SD) and the **layer**, each listing everything, with a pair that cannot be computed disabled and its reason as
+the hint ("% expressing cannot be computed on 'X': it has negative values"). Nothing is asked of the server until a group
+is chosen; then one request returns the five moments of every gene over the group, and the plot is coloured from
+them. A group chosen first starts on mean of `X`, and choosing another layer after it asks again; choose the statistic and
+the layer first, then the group, for one request. Switching to another statistic of the same layer, or back, asks for nothing. Another group or layer asks once, and
+so does an edit of the grouping's **Expressed above** in its **Methods ▾**, which % expressing and mean of expressing
+cells read. The statistics have the Cell-Gene Plot's names and units (% expressing is 0 to 100). The colour bar is titled by the
+grouping and the group, then the statistic and the layer ("% expressing (> 0) · logged").
+
+The group is kept by its key, so renaming a level or changing the separator changes only what is displayed. When the
+grouping's levels change what the group is made of, the plot keeps colouring by the same key and says "Group changed"
+with **Keep** (follow the new labels) and **Choose another**; when the key is no longer a group the plot says "No longer
+a group", asks for nothing, and offers **Choose another**. A group of a large dataset that is stored in scattered
+places can cost a read of the whole matrix: the plot then asks first, or says it was refused with the reason (the server's
+limits, {ref}`http-cell-groups-genes`). Cell groups are a source for colour only; a Cell Plot does not offer them.
 
 If a panel names a source the open dataset does not have (a view made for another dataset, or a
 column that was removed), the drop-down keeps the name and marks it "(not in this dataset)", and

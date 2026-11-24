@@ -109,3 +109,20 @@ test('an outer label wins over the inner label, and a reply with no generated na
     const plain = { ...reply, partitionings: [{ ...reply.partitionings[0], generatedNames: undefined }] };
     assert.deepEqual(generatedGroupNames(make(undefined), plain, () => undefined), ['B lymphocytes', 'T'], 'no generated names: the names stand');
 });
+
+test('Reset group names removes every label, keeps the colours, and drops entries left with nothing', () => {
+    const recipe = { groupOverrides: [{ name: 'B', label: 'Bs', color: '#112233' }, { name: 'T', label: 'Ts' }, { name: 'N', color: '#000000' }] };
+    assert.equal(colours.groupLabelCount(recipe), 2);
+    assert.deepEqual(colours.withoutGroupLabels(recipe), [{ name: 'B', color: '#112233' }, { name: 'N', color: '#000000' }]);
+    assert.equal(colours.withoutGroupLabels({ groupOverrides: [{ name: 'T', label: 'Ts' }] }), undefined);
+    assert.equal(colours.groupLabelCount({}), 0);
+    assert.equal(colours.withoutGroupLabels({}), undefined);
+});
+
+test('Reset names of a factor removes its level labels and nothing else', () => {
+    const p = { type: 'categorical', key: 'cell_type', labels: { a: 'A1' }, colors: { palette: 'x' } };
+    const next = colours.withoutLevelLabels(p);
+    assert.equal('labels' in next, false);
+    assert.deepEqual(next.colors, { palette: 'x' });
+    assert.equal(p.labels.a, 'A1', 'the factor is not changed in place');
+});
