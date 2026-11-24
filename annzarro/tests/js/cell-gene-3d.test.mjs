@@ -44,6 +44,8 @@ function model({ rows = 3, groups = 2, mode = 'dots', ...over } = {}) {
     };
 }
 
+/** The height's title: an annotation of the scene (Plotly's own z title is left empty, sceneLabels draws it). */
+const zTitleOf = (fig) => (fig.layout.scene.annotations.find((a) => a.name === 'z title') || {}).text;
 const meshes = (fig) => fig.data.filter((t) => t.type === 'mesh3d');
 /** The top of each bar: the z of its 5th vertex (bars-3d.js corner order). */
 const tops = (mesh) => Array.from({ length: mesh.x.length / B.VERTICES_PER_BAR }, (_, b) => mesh.z[b * B.VERTICES_PER_BAR + 4]);
@@ -60,7 +62,7 @@ test('a 3D figure for a dots model is one mesh3d with a bar per drawn cell, in a
     assert.equal(mesh.i.length, 12 * B.TRIANGLES_PER_BAR);
     assert.ok(fig.layout.scene, 'a 3D scene');
     assert.equal(fig.layout.scene.aspectmode, 'manual');
-    assert.equal(fig.layout.scene.zaxis.title.text, 'Mean · X');
+    assert.equal(zTitleOf(fig), 'Mean · X');
     assert.deepEqual(fig.layout.scene.camera.eye, { x: 1.6, y: -1.6, z: 1.1 }, 'the default camera');
     // a missing value is not drawn
     const m = model({ rows: 3, groups: 4 });
@@ -86,7 +88,7 @@ test('"Same as Color": the bars are the colour values; an own height is drawn as
     const fig = D.buildFigure(own, LIGHT);
     const mesh = meshes(fig)[0];
     assert.deepEqual(tops(mesh), [5, 6, 7, 8]);
-    assert.equal(fig.layout.scene.zaxis.title.text, 'Sum · counts');
+    assert.equal(zTitleOf(fig), 'Sum · counts');
     const text = mesh.hovertext[0];
     const lines = text.split('<br>');
     assert.equal(lines[0], 'Gene0');
@@ -312,4 +314,127 @@ test('the 3D colour bar is the Cell Plot\'s (plot-utilities/colour-bar.js): its 
     assert.equal(colorbar.title.font.color, LIGHT.textColor);
     assert.equal(colorbar.len, 0.7);
     assert.equal(D.buildFigure(model({ legend: { colorBar: false } }), LIGHT).data[0].showscale, false);
+});
+
+// ------------------------------------------------------------------ the 3D labels' options (operator: side and justification)
+
+const SPEC = { x: { labels: ['a', 'b', 'c'], positions: [0, 1, 2], extent: 3 }, y: { labels: ['p', 'q'], positions: [0, 1], extent: 2 },
+    aspect: { x: 1, y: 0.67, z: 0.6 }, z: 0, font: {} };
+const placed = (list, name) => {
+    const l = list.filter((a) => a.name === name);
+    return { edge: name === 'x label' ? l[0].y : l[0].x, xanchor: [...new Set(l.map((a) => a.xanchor))].join(), xshift: [...new Set(l.map((a) => a.xshift))].join() };
+};
+
+test('labels3d is kept in the configuration only when not the default, and a fixed side keeps its edges', () => {
+    const keep = { side: 'fixed', edges: { x: 'max', y: 'min' }, justify: 'center' };
+    assert.deepEqual(S.normalizeCellGene({ labels3d: keep }).config.labels3d, keep);
+    assert.equal('labels3d' in S.normalizeCellGene({ labels3d: { side: 'auto', justify: 'auto' } }).config, false, 'defaults are absent');
+    assert.deepEqual(S.normalizeCellGene({ labels3d: { justify: 'left' } }).config.labels3d, { justify: 'left' });
+    const bad = S.normalizeCellGene({ labels3d: { side: 'sideways', justify: 'up' } });
+    assert.equal('labels3d' in bad.config, false);
+    assert.equal(bad.problems.length, 2, bad.problems.join('; '));
+    // a fixed side with no edges stored is the default camera's edges
+    assert.deepEqual(S.normalizeCellGene({ labels3d: { side: 'fixed' } }).config.labels3d, { side: 'fixed', edges: { x: 'min', y: 'max' } });
+});
+
+test('Side Fixed keeps the edges as the camera turns; Justify Auto still runs outward for the camera', () => {
+    const fixed = { ...SPEC, options: { side: 'fixed', edges: { x: 'min', y: 'max' } } };
+    // from (+x, +y) Auto moves the genes to the edge now nearer (1.5); Fixed keeps them at -0.5, whose middle is now on the
+    // left of the screen, so they end at their ticks
+    assert.deepEqual(placed(D.sceneLabels(SPEC, ROTATED), 'x label'), { edge: 1.5, xanchor: 'left', xshift: '4' });
+    assert.deepEqual(placed(D.sceneLabels(fixed, ROTATED), 'x label'), { edge: -0.5, xanchor: 'right', xshift: '-4' });
+    assert.deepEqual(placed(D.sceneLabels(fixed, D.DEFAULT_CAMERA), 'x label'), { edge: -0.5, xanchor: 'right', xshift: '-4' });
+});
+
+test('Justify Left, Right or Center sets every label\'s anchor whatever the camera; Center sits on the tick', () => {
+    for (const camera of [D.DEFAULT_CAMERA, ROTATED]) {
+        assert.deepEqual(placed(D.sceneLabels({ ...SPEC, options: { justify: 'left' } }, camera), 'y label').xanchor, 'left');
+        assert.deepEqual(placed(D.sceneLabels({ ...SPEC, options: { justify: 'right' } }, camera), 'x label').xshift, '-4');
+        assert.deepEqual(placed(D.sceneLabels({ ...SPEC, options: { justify: 'center' } }, camera), 'x label').xanchor, 'center');
+        assert.deepEqual(placed(D.sceneLabels({ ...SPEC, options: { justify: 'center' } }, camera), 'y label').xshift, '0');
+    }
+});
+
+test('looking straight down, the anchors stay those of the default view rather than collapsing to one side', () => {
+    const above = { eye: { x: 0, y: 0, z: 2.5 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 } };
+    const list = D.sceneLabels(SPEC, above);
+    assert.notEqual(placed(list, 'x label').xanchor, placed(list, 'y label').xanchor);
+});
+
+test('the options reach the figure: figureExtras passes labels3d, and the 3D figure draws with it', () => {
+    const config = { mode: 'heatmap', view: '3d', labels3d: { justify: 'center' } };
+    assert.deepEqual(O.figureExtras(config).labels3d, { justify: 'center' });
+    const fig = D.buildFigure(model({ rows: 2, groups: 2, labels3d: { justify: 'center' } }), LIGHT);
+    assert.ok(fig.layout.scene.annotations.filter((a) => a.name === 'x label' || a.name === 'y label').every((a) => a.xanchor === 'center'));
+    assert.equal(fig.labels3d.options.justify, 'center');
+});
+
+// ------------------------------------------------------------------ Rotation, Padding, the Labels switches, the height's labels
+
+const withOpts = (options) => ({ ...SPEC, options: D.labelOptions3d({ labels3d: options }) });
+const xy = (list) => list.filter((a) => a.name === 'x label' || a.name === 'y label');
+
+test('Rotation: Horizontal is level; an angle tilts every label, anchored at the end of its text; Along follows each edge', () => {
+    assert.ok(xy(D.sceneLabels(withOpts({}), D.DEFAULT_CAMERA)).every((a) => a.textangle === 0 && a.yanchor === 'middle'));
+    const tilted = xy(D.sceneLabels(withOpts({ rotation: 30 }), D.DEFAULT_CAMERA));
+    assert.ok(tilted.every((a) => a.textangle === 30));
+    // clockwise: a label starting at its tick (left) has its start at the top of its box, one ending there at the bottom
+    assert.ok(tilted.every((a) => a.yanchor === (a.xanchor === 'left' ? 'top' : 'bottom')), JSON.stringify(tilted.map((a) => [a.xanchor, a.yanchor])));
+    const along = D.sceneLabels(withOpts({ rotation: 'along' }), D.DEFAULT_CAMERA);
+    const angleOf = (list, name) => [...new Set(list.filter((a) => a.name === name).map((a) => a.textangle))];
+    const [gx] = angleOf(along, 'x label');
+    const [gy] = angleOf(along, 'y label');
+    assert.equal(angleOf(along, 'x label').length, 1);
+    assert.ok(gx > 0 && gx < 90 && gy < 0 && gy > -90, `${gx} ${gy}`, 'from the default camera x runs down to the right, y up to the right');
+    const turned = D.sceneLabels(withOpts({ rotation: 'along' }), ROTATED);
+    assert.notEqual(angleOf(turned, 'x label')[0], gx, 'recomputed for the camera');
+    // Across: square to the edge, and running out of the box (the genes' edge is lower left: out is down and left)
+    const across = D.sceneLabels(withOpts({ rotation: 'across' }), D.DEFAULT_CAMERA);
+    const [ax] = angleOf(across, 'x label');
+    assert.ok(Math.abs(Math.abs(ax - gx) - 90) < 1e-6, `${ax} ${gx}`);
+    const genes = across.filter((a) => a.name === 'x label');
+    const t = ax * Math.PI / 180;
+    const sign = genes[0].xanchor === 'left' ? 1 : -1;
+    assert.ok(sign * Math.cos(t) < 0 && sign * Math.sin(t) > 0, `${ax} ${genes[0].xanchor}: the text runs down and to the left`);
+});
+
+test('Padding sets the gap between a label and its tick; the default is 4', () => {
+    assert.ok(xy(D.sceneLabels(withOpts({}), D.DEFAULT_CAMERA)).every((a) => Math.abs(a.xshift) === 4));
+    assert.ok(xy(D.sceneLabels(withOpts({ padding: 12 }), D.DEFAULT_CAMERA)).every((a) => Math.abs(a.xshift) === 12));
+    assert.equal(D.labelOptions3d({ labels3d: { padding: 99 } }).padding, 40);
+    assert.deepEqual(S.normalizeCellGene({ labels3d: { rotation: 'along', padding: 10 } }).config.labels3d, { rotation: 'along', padding: 10 });
+    // Rotation Angle keeps its angle beside it (the shared Plot Options writes one value per field), clamped to -90..90
+    assert.deepEqual(S.normalizeCellGene({ labels3d: { rotation: 'angle', angle: 120 } }).config.labels3d, { rotation: 'angle', angle: 90 });
+    assert.deepEqual(S.normalizeCellGene({ labels3d: { rotation: 120 } }).config.labels3d, { rotation: 'angle', angle: 90 }, 'a bare number reads as an Angle');
+    assert.deepEqual(D.labelOptions3d({ labels3d: { rotation: 'angle', angle: -30 } }).rotation, -30);
+    assert.equal('labels3d' in S.normalizeCellGene({ labels3d: { rotation: 'horizontal', padding: 4 } }).config, false);
+    assert.equal(S.normalizeCellGene({ labels3d: { rotation: 'diagonal', padding: 'x' } }).problems.length, 2);
+});
+
+test('Plot Options ▸ Labels apply in 3D: an axis\'s labels hidden take its title with them; the other stays', () => {
+    const shown = { annotations: { labels: { genes: false } } };
+    assert.deepEqual(D.labelOptions3d(shown).show, { genes: false, groups: true });
+    const fig = D.buildFigure(model({ rows: 3, groups: 2, ...shown }), LIGHT);
+    const names = fig.layout.scene.annotations.map((a) => a.name);
+    assert.ok(!names.includes('x label') && !names.includes('x title'), names.join());
+    assert.ok(names.includes('y label') && names.includes('y title'));
+    const swapped = D.buildFigure(model({ rows: 3, groups: 2, swap: true, ...shown }), LIGHT);
+    assert.ok(!swapped.layout.scene.annotations.some((a) => a.name === 'y label'), 'genes on y when swapped');
+});
+
+test('the height\'s labels: round ticks off the floor, ending at the left-most vertical edge; Plotly\'s own hidden', () => {
+    const fig = D.buildFigure(model({ rows: 3, groups: 4 }), LIGHT);
+    const { zaxis } = fig.layout.scene;
+    assert.equal(zaxis.showticklabels, false);
+    assert.equal(zaxis.title.text, '');
+    const z = fig.layout.scene.annotations.filter((a) => a.name === 'z label');
+    // heights 1 to 3.1: ticks 0 to 3 a step of 1 apart, and the floor (0) not labelled
+    assert.deepEqual(z.map((a) => a.text), ['1', '2', '3']);
+    assert.ok(z.every((a) => a.xanchor === 'right' && a.xshift === -4));
+    assert.deepEqual(zaxis.tickvals, [0, 1, 2, 3], 'the grid keeps its floor line');
+    // the default camera looks from (+x, -y): the left-most corner is (x min, y min)
+    assert.deepEqual([z[0].x, z[0].y], [-0.5, -0.5]);
+    const zt = fig.layout.scene.annotations.find((a) => a.name === 'z title');
+    assert.equal(zt.textangle, -90);
+    assert.ok(zt.xshift < -20);
 });

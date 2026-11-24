@@ -62,7 +62,7 @@ import { withoutLegacy } from '../utils/options-model.js';
 import { parseThresholdText } from '../utils/options-model.js';
 import { geneReads, combinesRows } from '../utils/cell-gene-model.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
-import { buildFigure, colourBars, sceneLabels, DEFAULT_CAMERA } from './cell-gene/draw.js';
+import { buildFigure, colourBars, sceneLabels, labelEdges, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
 import { watchSceneCamera, sameCamera } from '../utils/scene-camera.js';
 import { exportPlot, copyPlotToClipboard } from './plot-utilities/plot-aesthetics-menu.js';
@@ -597,8 +597,19 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             return cfg;
         }
 
+        /** The edges the 3D labels stand on now, from the camera on screen (Side Fixed keeps them). */
+        function currentLabelEdges() {
+            const fl = _dom && _dom.plot && _dom.plot._fullLayout;
+            const scene = fl && fl.scene && fl.scene._scene;
+            const camera = scene && typeof scene.getCamera === 'function' ? scene.getCamera() : _config.camera || DEFAULT_CAMERA;
+            return labelEdges(camera, fl && fl.scene ? fl.scene.aspectratio : { x: 1, y: 1, z: 0.6 });
+        }
+
         /** One undoable step: the configuration becomes `next`. */
         function commit(next, label, { said = '' } = {}) {
+            // Side Fixed (Plot Options ▸ Axes, in 3D) keeps the edges the labels are on now: read from the camera on screen
+            const l3 = next && next.labels3d;
+            if (l3 && l3.side === 'fixed' && !l3.edges) next = { ...next, labels3d: { ...l3, edges: currentLabelEdges() } };
             if (JSON.stringify(next) === JSON.stringify(_config)) return;
             _undo.push(label, [JSON.stringify(_config)]);
             _config = normalizeCellGene(next).config;
@@ -1231,10 +1242,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          * Keep the 3D camera in the configuration as the user turns it (UX 6b, Q17): stored once it rests, rounded, with no
          * undo step and no redraw; the default camera is stored as none. Off in 2D. The listener is set again on each draw
          * (a purge drops it). The category labels follow at once: turned to the other side, they change edge and anchor
-         * (draw.js sceneLabels; `labels` is the drawing's labels3d, null in 2D).
+         * (draw.js sceneLabels; `labels` is the drawing's labels3d, null in 2D). They follow WHILE the scene is dragged:
+         * a mouse drag sends only plotly_relayouting until the button is released, and plotly_relayout once after.
          */
         function watchCamera(labels) {
-            watchSceneCamera(_dom && _dom.plot, { labelsFor: labels ? (camera) => sceneLabels(labels, camera) : null, store: storeCamera, key: '__azCgCamera' });
+            // live: the labels change sides while the scene is still being dragged, as Plotly's own did (operator)
+            watchSceneCamera(_dom && _dom.plot, { labelsFor: labels ? (camera) => sceneLabels(labels, camera) : null, store: storeCamera,
+                key: '__azCgCamera', live: true });
         }
 
         /** The camera into the configuration: a view, like Cell Plot's zoom, so no undo step and no redraw. */
@@ -1341,7 +1355,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 size: _config.mode !== 'dots' ? { none: '' } : sizeNone ? { none: sizeNone }
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
-                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline, dotOpacity: extras.dotOpacity,
+                legend: extras.legend, plotTitle: extras.plotTitle, labels3d: extras.labels3d, annotations: extras.annotations, outline: extras.outline,
+                dotOpacity: extras.dotOpacity,
                 // the shared Plot Options' legend column: space, columns, cap (WP-5a)
                 legendLayout: cellGeneLegend(look),
                 pendingText: pending ? pendingText(plan, pending) : ''

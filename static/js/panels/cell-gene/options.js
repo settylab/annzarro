@@ -177,6 +177,7 @@ function scalingNotes(config) {
 // ================================================================================================ Plot Options' fields
 
 const dotsMode = (config) => !config || config.mode !== 'heatmap';
+const in3d = (config) => !!config && config.view === '3d';
 
 /**
  * The Cell-Gene Plot's own fields of the shared Plot Options (WP-5a, plot-utilities/options-schema.js), at the keys
@@ -193,6 +194,18 @@ const PLOT_OPTION_FIELDS = Object.freeze([
     { id: 'sectionTitles', section: 'panel:sections', type: 'check', path: 'sectionTitles', label: WO.sectionTitles, dflt: true },
     { id: 'geneLabels', section: 'axes', type: 'check', path: 'labels.genes', label: WO.geneLabels, dflt: true },
     { id: 'groupLabels', section: 'axes', type: 'check', path: 'labels.groups', label: WO.groupLabels, dflt: true },
+    // the 3D labels (operator: side, justification, rotation, padding), beside the label switches, shown in 3D only;
+    // draw.js labelOptions3d reads them, sections.js cleans them, the panel stores Side Fixed's edges from the camera
+    { id: 'labels3dSide', section: 'axes', type: 'select', path: 'labels3d.side', label: W3.labels.side, dflt: 'auto', when: in3d,
+        choices: [['auto', W3.labels.sides.auto], ['fixed', W3.labels.sides.fixed]], help: W3.labels.sideHelp },
+    { id: 'labels3dJustify', section: 'axes', type: 'select', path: 'labels3d.justify', label: W3.labels.justify, dflt: 'auto', when: in3d,
+        choices: ['auto', 'left', 'right', 'center'].map((v) => [v, W3.labels.justifies[v]]) },
+    { id: 'labels3dRotation', section: 'axes', type: 'select', path: 'labels3d.rotation', label: W3.labels.rotation, dflt: 'horizontal', when: in3d,
+        choices: ['horizontal', 'along', 'across', 'angle'].map((v) => [v, W3.labels.rotations[v]]) },
+    { id: 'labels3dAngle', section: 'axes', type: 'number', path: 'labels3d.angle', label: W3.labels.angle, dflt: 0, min: -90, max: 90, step: 5,
+        when: (c) => in3d(c) && !!c.labels3d && c.labels3d.rotation === 'angle' },
+    { id: 'labels3dPadding', section: 'axes', type: 'number', path: 'labels3d.padding', label: W3.labels.padding, dflt: 4, min: 0, max: 40, step: 1,
+        when: in3d },
     { id: 'colorBar', section: 'legend', type: 'check', path: 'legend.colorBar', label: WO.colorBar, dflt: true },
     { id: 'sizeLegend', section: 'legend', type: 'check', path: 'legend.sizeLegend', label: WO.sizeLegend, dflt: true, when: dotsMode },
     { id: 'strips', section: 'legend', type: 'check', path: 'legend.strips', label: WO.strips, dflt: true },
@@ -296,6 +309,8 @@ export function figureExtras(config, { reply, recipe, order, titleOf, colors, gr
     const outline = s.outline.width > 0 ? { color: s.outline.color, width: s.outline.width } : null;
     return {
         color, size, height, outline, dotOpacity: s.dotOpacity, legend: s.legend, plotTitle: s.titles.plot || undefined, gap: s.gap, sortBySize: s.sortGroups, cluster,
+        // the 3D labels' options, as stored (sections.js cleans them; draw.js labelOptions3d reads them)
+        labels3d: isObject(config && config.labels3d) ? config.labels3d : undefined,
         annotations: {
             brackets: { titles: s.sectionTitles },
             totals: s.totals,
