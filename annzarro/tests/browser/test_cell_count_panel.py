@@ -284,7 +284,8 @@ def test_a_mode_change_keeps_every_input_and_lists_what_the_mode_does_not_read(p
     groups = page.evaluate("""(s) => [...document.querySelectorAll(s + ' .ccnt-mode optgroup')].map(g =>
         [g.label, [...g.children].map(o => [o.textContent, o.disabled, o.title])])""", S)
     assert [g[0] for g in groups] == ["Counts", "Two inputs", "Smoothed", "Sets"]
-    assert groups[0][1] == [["Bar", False, ""], ["Histogram", False, ""], ["Pie", False, ""]]
+    # X is categorical: Histogram is disabled with why (the views follow the X axis type, 0.8.0)
+    assert groups[0][1] == [["Bar", False, ""], ["Histogram", True, "Histogram needs a numeric axis."], ["Pie", False, ""]]
     assert groups[3][1][0] == ["Venn", False, ""]
 
     page.select_option(f"{S} .ccnt-mode", "hist2d")

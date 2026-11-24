@@ -241,6 +241,8 @@ actions.register({
         /** The numbers the colour scale is drawn over (the Color pop-over's range sliders) */
         let _colourData = null;
         let _drawSerial = 0;
+        /** The kind of figure last drawn (mode and how each axis ticks): a change of it is drawn on a clean plot */
+        let _drawnKind = null;
         /** Choose levels of an input no reply shows yet (a refused plan): its levels, asked for alone (axisSource) */
         let _levelSource = null;
         let _levelHandle = null;
@@ -706,6 +708,7 @@ actions.register({
             _drawnFrom = from;
             if (!found || !window.Plotly) {
                 if (window.Plotly && _dom.plot._fullLayout) window.Plotly.purge(_dom.plot);
+                _drawnKind = null;
                 _drawing = null;
                 _drawSerial++;
                 _notes = null;
@@ -752,6 +755,11 @@ actions.register({
             delete _dom.root.dataset.drawn;
             const root = _dom.root;
             const plot = _dom.plot;
+            // a figure of another kind (a Histogram's number axis, then a Bar's categories) is drawn on a clean plot: Plotly.react
+            // keeps an axis's computed tick step through a change to an array of ticks, which a fresh plot would not have
+            const kind = JSON.stringify([config.mode, ['xaxis', 'yaxis'].map((a) => (fig.layout[a] && fig.layout[a].tickmode) || '')]);
+            if (_drawnKind !== null && kind !== _drawnKind && plot._fullLayout && window.Plotly) window.Plotly.purge(plot);
+            _drawnKind = kind;
             drawPlot(plot, fig.data, { ...fig.layout, autosize: true, modebar: modebarOf(PLOT_PALETTES[theme].textColor) },
                 { displaylogo: false, responsive: true, modeBarButtonsToRemove: [...MODEBAR_REMOVE] },
                 coverageOf(table, names), 'cells').then(() => {
