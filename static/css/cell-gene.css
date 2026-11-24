@@ -143,10 +143,13 @@
 .cgene-opt[hidden] { display: none; }
 .cgene-num { width: 5.5rem; }
 .cgene-title-input { width: 11rem; }
-.cgene-dot-range { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
-.cgene-dot-range input[type="range"] { width: 6rem; }
-.cgene-pop .cgene-dot-range .cgene-field__label { flex: 1 1 100%; }
-.cgene-pop .cgene-dot-range input[type="range"] { flex: 1 1 0; min-width: 0; }
+/* Largest dot (% of its cell) and Smallest dot (px): a label, the slider, the value said after it */
+.cgene-pop .cgene-dot-slider { align-items: center; }
+.cgene-pop .cgene-dot-slider .cgene-field__label { flex: 0 0 6.5rem; }
+.cgene-pop .cgene-dot-slider input[type="range"] { flex: 1 1 0; min-width: 4rem; }
+.cgene-pop .cgene-dot-opacity input[type="range"] { flex: 1 1 0; min-width: 4rem; }
+.cgene-pop .cgene-dot-opacity .cgene-num { flex: 0 0 4.5rem; }
+.cgene-dot-value { flex: 0 0 auto; min-width: 5.5rem; font-variant-numeric: tabular-nums; text-align: right; }
 .cgene-export { flex-direction: row; flex-wrap: wrap; align-items: center; }
 .cgene-export > legend { flex: 1 1 100%; }
 .cgene-pop__foot { display: flex; justify-content: flex-end; }
@@ -185,3 +188,5 @@
 .cgene-measure__word { color: var(--az-muted); font-size: 0.75rem; }
 .cgene-measure__word[hidden] { display: none; }
 .cgene-measure .form-control { width: 5rem; }
+/* decision 35: on a grouping axis the box overrides the grouping's Expressed above; empty, it shows "auto (grouping: 0)" */
+.cgene-measure .form-control.cgene-measure__above--grouping { width: 9.5rem; }

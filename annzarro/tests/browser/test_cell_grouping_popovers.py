@@ -77,6 +77,14 @@ def _open_three(page, served):
     page.wait_for_selector(f"{A} .cgrp-card[data-index='0']", timeout=30000)
     page.wait_for_selector(f"{TP} .cgene-panel[data-state]", timeout=30000)      # the neighbours are there and have started
     page.wait_for_selector(f"{SC} .js-plotly-plot", timeout=60000)
+    # A neighbour that is still drawing changes its tile's content, and with it the row height all three tiles share: wait, in
+    # the page, until the three boxes have been the same for 1.5 s (at most 30 s), so that what is measured next is the edit's.
+    page.evaluate("""([sels]) => new Promise((resolve) => {
+        const boxes = () => JSON.stringify(sels.map((s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.width, r.height]; }));
+        let last = boxes(), since = Date.now(); const start = since;
+        const tick = () => { const now = boxes(); if (now !== last) { last = now; since = Date.now(); }
+            if (Date.now() - since > 1500 || Date.now() - start > 30000) resolve(); else setTimeout(tick, 100); };
+        tick(); })""", [[A, TP, SC]])
 
 
 def _layout(page):

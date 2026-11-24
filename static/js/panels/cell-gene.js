@@ -227,9 +227,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         const _order = createCellGeneOrder();
         /** what the plot last drew from, so a repaint with the same inputs draws nothing */
         let _shown = null;
+        /** A drawing Plotly threw on: {key} of the values it was of, until a drawing succeeds. */
+        let _drawFailed = null;
         let _drawToken = 0;
         let _state = 'empty';
         let _resize = null;
+        let _refit = null;
+        /** A redraw building the figure once more at the plot's settled size (redraw's end): no third build from it. */
+        let _settling = false;
         /** gateMatrix's decision for the plan it was made for (CXG-17): what the plot asks of the server now */
         let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
         /** the cell axis's applied recipe as last seen: the recipe its groups are of while edits wait or are checked */
@@ -285,6 +290,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             if (_dom) binding.releaseHost(_dom.plot);
             if (_resize) _resize.disconnect();
             _resize = null;
+            clearTimeout(_refit);
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
             if (_dom && window.Plotly) window.Plotly.purge(_dom.plot);
             _initialized = false;
@@ -456,12 +462,13 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 const r = resolveSource(section.source);
                 return { section, genes: r.genes, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
             });
+            const threshold = baseThreshold();
             const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null,
-                height: heightOf(_config), threshold: baseThreshold() });
+                height: heightOf(_config), threshold });
             const rowsOf = new Array(entries.length).fill(0);
             for (const row of features.rows) rowsOf[row.section]++;
             const wires = features.features.map((f) => f.wire);
-            _plan = { ...features, entries, reads: geneReads(wires), featureCount: wires.length, option: { features: features.features.map((f) => f.wire), statistics: features.statistics },
+            _plan = { ...features, threshold, entries, reads: geneReads(wires), featureCount: wires.length, option: { features: features.features.map((f) => f.wire), statistics: features.statistics },
                 optionKey: features.features.map((f) => f.key).join('\u0003') + JSON.stringify(features.statistics),
                 // what the matrix limit and the notices read: each section's rows and genes, the genes read
                 shape: entries.map((e, i) => ({ rows: rowsOf[i], genes: e.genes.length })),
@@ -715,8 +722,17 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (typeof ResizeObserver !== 'undefined') {
-                _resize = new ResizeObserver(() => { if (_dom && _dom.plot._fullLayout) fitToContainer(_dom.plot); });
+                _resize = new ResizeObserver(() => {
+                    if (!_dom || !_dom.plot._fullLayout) return;
+                    fitToContainer(_dom.plot);
+                    // the figure is laid out in px (labels that fit, legend lines, dots that fill their cells): a new
+                    // size, once it settles, builds it again (no request; the values are the same)
+                    clearTimeout(_refit);
+                    _refit = setTimeout(refit, 150);
+                });
                 _resize.observe(area);
+                // the plot itself too: the status strip under it takes height from it inside the same area
+                _resize.observe(plot);
             }
             showControls();
             mountParts();
@@ -765,12 +781,26 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             commit({ ..._config, [which]: { ..._config[which], layer } }, `${measureName(which)} layer`);
         }
 
-        /** A measure's expression threshold, beside it (WP-4): a number from 0 up, else the box shows the one in force. */
+        /**
+         * A measure's expression threshold, beside it (WP-4): a number from 0 up, else the box shows the one in force. On a
+         * grouping axis the box is an override of the grouping's Expressed above (decision 35): emptied, the measure follows
+         * the grouping again.
+         */
         function setThreshold(which, text) {
-            if (which !== 'height') _fresh = false;
+            const spec = _config[which];
+            if (axisGrouping() && String(text).trim() === '') {
+                if (!spec || !isNumber(spec.detect_above)) { paint(); return; }
+                if (which !== 'height') _fresh = false;
+                const next = { ...spec };
+                delete next.detect_above;
+                commit({ ..._config, [which]: next }, `${measureName(which)} threshold follows the grouping`);
+                return;
+            }
             const p = parseThresholdText(text);
             if (!p.ok) { paint(); return; }
-            commit({ ..._config, [which]: { ..._config[which], detect_above: p.value } }, `${measureName(which)} threshold`);
+            if (spec && spec.detect_above === p.value) { paint(); return; }
+            if (which !== 'height') _fresh = false;
+            commit({ ..._config, [which]: { ...spec, detect_above: p.value } }, `${measureName(which)} threshold`);
         }
 
         function mountParts() {
@@ -823,7 +853,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         }
 
         function measure(spec) {
-            return measureModel({ spec, datasetLayers: datasetLayers(), kinds: _kinds, threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold() });
+            const g = axisGrouping();
+            return measureModel({ spec, datasetLayers: datasetLayers(), kinds: _kinds, threshold: isNumber(spec.detect_above) ? spec.detect_above : baseThreshold(),
+                grouping: g ? { title: g.getTitle(), value: baseThreshold() } : null });
         }
 
         /** Height's row: its own measure, or Same as Color (Color's statistics listed after it, no layer, no threshold). */
@@ -900,7 +932,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const rec = record();
             if (!rec) return 'empty';
             const snap = rec.handle.read();
-            return plotState(snap, { tooLarge: !!_gate.tooLarge, drawn: !!_shown && _shown.key === (snap.shownKey || snap.key) });
+            const state = plotState(snap, { tooLarge: !!_gate.tooLarge, drawn: !!_shown && _shown.key === (snap.shownKey || snap.key) });
+            // the values came but Plotly threw drawing them: failed, not "drawing" for good
+            return state === 'drawing' && _drawFailed && _drawFailed.key === (snap.shownKey || snap.key) ? 'failed' : state;
         }
 
         /** What the plot's notices are worded from (states.js describePlot): counts made once per plan, nothing per gene. */
@@ -939,6 +973,15 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          */
         function snapshotChanged(snap) {
             if (!_dom) return;
+            // the grouping's Expressed above was edited (Methods ▾, decision 34): it is outside the grouping's hash, so the
+            // groups stay; the measures that follow it are read again at the new threshold
+            if (_plan && _plan.threshold !== baseThreshold()) {
+                _plan = null;
+                sync();
+                paint();
+                redraw();
+                return;
+            }
             // the groups changed since they were counted (the grouping was edited): unknown again, so with rows that could
             // exceed the limit the groups go first, before any gene (CXG-17, Q4)
             if (_gate.ask === 'all' && _gate.groupsOf && !sameGroups(groupsIdentity(axisId()), _gate.groupsOf)) {
@@ -1048,8 +1091,27 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             }
             if (token !== _drawToken || !_dom || !window.Plotly) return;
             // every group the reply has is drawn: the cells shown are covered; the matrix's own count is a tag of the strip
-            await drawPlot(_dom.plot, figure.data, figure.layout, figure.config, Coverage.complete(values.reply.n_shown || 0, 'cells'), 'cells');
+            try {
+                await drawPlot(_dom.plot, figure.data, figure.layout, figure.config, Coverage.complete(values.reply.n_shown || 0, 'cells'), 'cells');
+            } catch (error) {
+                // Plotly threw part-way: the div holds half a figure, and the next Plotly.react, diffed against it,
+                // redrew only part of the next one (operator, 2026-11-23: a heatmap whose annotations changed over the
+                // dots). Start clean and say so; the next change draws afresh
+                console.error(`Cell-Gene Plot ${_id}: the drawing failed`, error);
+                if (token !== _drawToken || !_dom) return;
+                window.Plotly.purge(_dom.plot);
+                _shown = null;
+                _drawFailed = { key };
+                const why = String((error && error.message) || error).replace(/[.\s]+$/, '');
+                setStatusTag(_dom.plot, 'cgene-notdrawn', { text: STATES.tags.notDrawn, title: STATES.notDrawn(why), severity: 'error' });
+                paint();
+                return;
+            }
             if (token !== _drawToken || !_dom) return;
+            if (_drawFailed) {
+                _drawFailed = null;
+                setStatusTag(_dom.plot, 'cgene-notdrawn', null);
+            }
             setStatusTag(_dom.plot, 'cgene-matrix', matrixTag(figure.groups, figure.rows, figure.missing));
             // what a narrow width gave up so the matrix stays readable (draw.js fitMatrix)
             const gaveUp = (figure.hidden || []).map((part) => VOCABULARY.cellGene.narrow[part]).join(' ');
@@ -1062,8 +1124,30 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const oneCell = oneCellPerGroup({ mode: _config.mode, size: _config.size, sized: sizeDrawn(), groups: values.reply.groups || [] });
             _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell, colours };
             rec.drawnKey = key;
+            // the figure is laid out in px for the plot's size when it was built; the drawing's notice and status strip
+            // can take height from it since. Build it once more at the size it has now, before the panel says it is
+            // drawn, so nothing redraws it later at idle (a menu opened on a label would lose its anchor)
+            if (!_settling && sizeMoved(model.pixels)) {
+                _settling = true;
+                _shown = null;
+                try { await redraw(); } finally { _settling = false; }
+                return;
+            }
             binding.paint(_dom.plot);
             paint();
+        }
+
+        /** Whether the plot's size differs from `px` (the size a figure was built for) by more than a pixel. */
+        function sizeMoved(px) {
+            return !!(px && _dom && (Math.abs(_dom.plot.clientWidth - px.width) > 1 || Math.abs(_dom.plot.clientHeight - px.height) > 1));
+        }
+
+        /** Draw again when the plot's size differs from the size its figure was built for. */
+        function refit() {
+            if (_shown && _shown.model && sizeMoved(_shown.model.pixels)) {
+                _shown = null;
+                redraw();
+            }
         }
 
         function clearPlot() {
@@ -1214,14 +1298,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 size: _config.mode !== 'dots' ? { none: '' } : sizeNone ? { none: sizeNone }
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
-                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline,
+                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline, dotOpacity: extras.dotOpacity,
                 pendingText: pending ? pendingText(plan, pending) : ''
             };
             // 3D (UX 6b): within the bar cap; above it the plot is drawn in 2D and the strip says why
             const gate3d = _config.view === '3d' ? view3dGate({ rows: R, groups: G }) : null;
             if (gate3d && gate3d.ok && matrix.height) {
                 model.view = '3d';
-                model.height = matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) };
+                model.height = { ...(matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) }), ...extras.height };
                 if (_config.camera) model.camera = _config.camera;
             }
             const figure = buildFigure(model, { ...PLOT_PALETTES[currentTheme() === 'dark' ? 'dark' : 'light'] });

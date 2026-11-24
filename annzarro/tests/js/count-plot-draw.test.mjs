@@ -253,14 +253,14 @@ const rect = (mode, over = {}) => {
     return { config, table: tableOf(config, { axes: [{ levels: xl }, { levels: yl }], counts: [1, 0, 2, 3, 4, 5], n_counted: 15 }, ['x', 'y']) };
 };
 
-test('a 2D histogram is a heatmap of the counts: rows are y, columns x, an empty rectangle is no color', () => {
+test('a 2D histogram is a heatmap of the counts: rows are y, columns x, an empty rectangle is 0', () => {
     const { config, table } = rect('hist2d');
     const f = D.countFigure(config, table, opts());
     const t = f.data[0];
     assert.equal(t.type, 'heatmap');
     assert.deepEqual(t.x, [5, 15, 25]);
     assert.deepEqual(t.y, [5, 15]);
-    assert.deepEqual(t.z, [[1, 2, 4], [null, 3, 5]]);
+    assert.deepEqual(t.z, [[1, 2, 4], [0, 3, 5]], 'an empty rectangle is a real 0, in the scale\'s 0 colour');
     assert.equal(t.colorbar.title.text, 'Cell count');
     assert.equal(f.layout.showlegend, false);
 });
@@ -575,7 +575,7 @@ test('a 2D histogram with a Color by is one transparent-to-color layer per level
     const layers = f.data.filter((t) => t.type === 'heatmap');
     assert.equal(layers.length, 2);
     assert.deepEqual(layers[0].z, [[1, 3, 5], [2, 4, 6]]);
-    assert.deepEqual(layers[1].z, [[10, null, null], [null, null, null]], 'a level with no cell in a rectangle leaves it empty');
+    assert.deepEqual(layers[1].z, [[10, 0, 0], [0, 0, 0]], 'a level with no cell in a rectangle has a real 0 there (its transparent end)');
     for (const t of layers) {
         assert.equal(t.zmin, 0);
         assert.equal(t.zmax, 10, 'one scale for every level: the highest count of any');
