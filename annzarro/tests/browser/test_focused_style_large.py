@@ -84,7 +84,7 @@ def test_the_focused_shape_takes_every_option(page, server):
     page.wait_for_function("([id, ps]) => { const s = (%s)(id); return s && s.pointSize !== ps && s.r === Math.max(2, s.pointSize * 7 / 2); }"
                            % SHAPE, arg=[A, before], timeout=10000)
     # a set colour stays across a theme switch; the shape is still drawn
-    page.click(f"#reset-focused-color-{A}")
+    page.click("[data-popover='plot-options'] [data-auto='focusedColor']")
     _wait(page, "fill", "#ff0000")
     page.click('#theme-toggle button[data-theme-mode="dark"]')
     page.wait_for_function("() => document.documentElement.getAttribute('data-theme') === 'dark'")

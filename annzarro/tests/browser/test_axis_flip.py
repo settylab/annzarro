@@ -46,7 +46,7 @@ def test_flip_y_reverses_the_axis_and_survives_zoom_reset_and_double_click(page,
     assert not _reversed(_range(page, A)) and not _reversed(_range(page, A, "xaxis"))
     _menu(page, A, "axes")
     assert page.is_visible(f"#flip-y-{A}")
-    assert "downwards" in page.evaluate("(id) => document.getElementById('flip-y-' + id).closest('.form-check').title", A)
+    assert "downwards" in page.evaluate("(id) => document.getElementById('flip-y-' + id).closest('.az-pop-field').textContent", A)
     page.check(f"#flip-y-{A}")
     _wait_reversed(page, A)
     assert not _reversed(_range(page, A, "xaxis"))

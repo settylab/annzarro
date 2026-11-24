@@ -24,7 +24,7 @@ from annzarro.tests.browser.test_memory_guard import STORE, _serve  # noqa: E402
 
 A, B = "cell-plot-A", "cell-plot-B"
 # the shared order of Plot Options (WP-5b, options-ux-080 section 4): Text after Presets, the plot's own groups after Axes
-GROUPS = ["Presets", "Text", "Background", "Axes and ticks", "Points", "Focused cell", "Legend and colour bar", "Margins", "Export",
+GROUPS = ["Presets", "Text", "Background", "Axes", "Points", "Focused cell", "Legend and colour bar", "Margins", "Export",
           "Apply to other panels"]
 
 
@@ -283,7 +283,7 @@ def test_scale_bar_is_greyed_with_its_reason_without_equal_aspect(page, server):
     assert page.is_disabled(f"#show-scale-bar-{B}")
     assert page.is_disabled(f"#scale-bar-size-{B}")
     assert "Equal aspect" in page.inner_text(f"#scale-bar-note-{B}")
-    assert "Needs Equal aspect" in page.get_attribute(f"#scale-bar-options-{B} .form-check", "title")
+    assert "Needs Equal aspect" in page.get_attribute(f"#show-scale-bar-{B}", "title")
     assert page.evaluate(SB, B)["shapes"] == 0
 
 

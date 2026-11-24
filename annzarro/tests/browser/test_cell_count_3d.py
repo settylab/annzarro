@@ -175,8 +175,8 @@ def test_plot_options_has_a_3d_section_and_svg_is_greyed_in_3d(page, served):
     _open(page, served, {CC: _count(**HIST2D)})
     _drawn(page, "hist2d")
     page.click(f"{S} .ccnt-options-btn")
-    section = "[data-popover='plot-options'] .po-section[data-section='panel:view3d']"
-    svg = "[data-popover='plot-options'] .po-export-btn[data-format='svg']"
+    section = "[data-popover='plot-options'] .az-pop-section[data-section='panel:view3d']"
+    svg = "[data-popover='plot-options'] .az-pop-export-btn[data-format='svg']"
     page.wait_for_selector(svg, state="visible")
     assert page.locator(section).is_hidden(), "the 3D section is shown only in 3D"
     assert page.is_enabled(svg), "2D exports SVG"
@@ -188,10 +188,10 @@ def test_plot_options_has_a_3d_section_and_svg_is_greyed_in_3d(page, served):
     assert page.is_disabled(svg)
     assert page.get_attribute(svg, "title") == "3D exports as an image only."
     for fmt in ("png", "jpeg", "webp"):
-        assert page.is_enabled(f"[data-popover='plot-options'] .po-export-btn[data-format='{fmt}']"), fmt
+        assert page.is_enabled(f"[data-popover='plot-options'] .az-pop-export-btn[data-format='{fmt}']"), fmt
     assert page.locator(section).is_visible()
     # the footprint reaches the mesh: the bar's side is 0.5 of its cell
-    page.evaluate("""() => { const s = document.querySelector("[data-popover='plot-options'] .po-section[data-section='panel:view3d']");
+    page.evaluate("""() => { const s = document.querySelector("[data-popover='plot-options'] .az-pop-section[data-section='panel:view3d']");
         s.open = true; }""")
     box = "[data-popover='plot-options'] [data-option='footprint3dNumber']"
     page.fill(box, "0.5")
