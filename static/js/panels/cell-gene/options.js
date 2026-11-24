@@ -607,10 +607,6 @@ function mount(slot, ctx) {
     }
 
     // ---------------------------------------------------------------- paint
-    function setValue(input, v) {
-        if (document.activeElement !== input) input.value = v === null || v === undefined ? '' : String(v);
-    }
-
     function paint() {
         const c = config();
         const s = styleOf(c);
