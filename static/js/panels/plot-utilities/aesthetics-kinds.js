@@ -11,7 +11,9 @@
  * and the section order for its groups. Pure, no DOM.
  */
 import { registerKind, registerPanelFields, fieldsOf } from './options-schema.js';
-import { DEFAULT_MARGINS, SCALE_BAR_CORNERS, tickMarksOn } from './plot-options.js';
+import { DEFAULT_MARGINS, SCALE_BAR_CORNERS, COLORBAR_POSITIONS, tickMarksOn } from './plot-options.js';
+import { legendTitleSize, defaultTitleGap, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX, TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX,
+    COLUMN_GAP_MAX, COLUMN_GAP_DEFAULT } from '../../utils/legend-options.js';
 import { FOCUS_DEFAULTS, FOCUS_SCALE_MAX, FOCUS_EDGE_MAX } from '../../utils/focus-style.js';
 import { plotColour } from '../../utils/plot-theme.js';
 
@@ -113,18 +115,27 @@ const FIELDS = Object.freeze([
     f('focusedNoFill', 'panel:focused', 'check', 'No fill', true, { domId: 'focused-no-fill' }),
     themed('focusedEdgeColor', 'panel:focused', 'Edge color', 'focused-edge-color'),
     // Legend and colour bar
-    f('showLegend', 'legend', 'check', 'Show Legend', true),
-    f('legendPosition', 'legend', 'select', 'Legend Position', 'right'),
-    f('showLegendTitle', 'legend', 'check', 'Legend title', true),
-    f('legendTitleSize', 'legend', 'number', 'Title size', null),
-    f('legendTitleAlign', 'legend', 'select', 'Title align', null),
-    f('legendTitleGap', 'legend', 'number', 'Title gap', null),
-    f('legendDotSize', 'legend', 'number', 'Dot size', null),
-    f('legendColumns', 'legend', 'number', 'Columns', null),
-    f('legendColumnGap', 'legend', 'number', 'Column gap', null),
-    f('colorbarPosition', 'legend', 'select', 'Colour bar position', 'legend'),
-    f('colorbarLength', 'legend', 'number', 'Colour bar length', 1),
-    f('colorbarTicks', 'legend', 'number', 'Colour bar ticks', null),
+    f('showLegend', 'legend', 'check', 'Show legend', true, { domId: 'show-legend' }),
+    f('legendPosition', 'legend', 'select', 'Legend position', 'right', { domId: 'legend-position',
+        choices: [['right', 'Right'], ['left', 'Left'], ['top', 'Top'], ['bottom', 'Bottom']] }),
+    f('showLegendTitle', 'legend', 'check', 'Legend title', true, { domId: 'show-legend-title' }),
+    f('legendTitleSize', 'legend', 'number', 'Title size (px)', null, { min: TITLE_SIZE_MIN, max: TITLE_SIZE_MAX, step: 1, domId: 'legend-title-size',
+        placeholder: (c) => legendTitleSize({ fontSize: c.fontSize }), stepFrom: true, help: 'Empty: 2 px above the text size.' }),
+    f('legendTitleAlign', 'legend', 'select', 'Title align', null, { domId: 'legend-title-align',
+        choices: [[null, 'Auto'], ['markers', 'Markers'], ['labels', 'Labels'], ['centre', 'Centre'], ['right', 'Right']],
+        help: 'Auto: centred over a legend above or below the plot, at the markers beside it. Centre and Right are across all the columns.' }),
+    f('legendTitleGap', 'legend', 'number', 'Title gap (px)', null, { min: 0, max: TITLE_GAP_MAX, step: 1, domId: 'legend-title-gap',
+        placeholder: (c) => defaultTitleGap({ fontSize: c.fontSize }), stepFrom: true, help: 'Empty: one blank line.' }),
+    f('legendDotSize', 'legend', 'number', 'Dot size (px)', null, { min: DOT_SIZE_MIN, max: DOT_SIZE_MAX, step: 1, domId: 'legend-dot-size',
+        placeholder: DOT_SIZE_AUTO, stepFrom: true, help: 'The dots of a categorical legend, apart from the points\' size.' }),
+    f('legendColumns', 'legend', 'number', 'Columns', null, { min: 1, max: COLUMNS_MAX, step: 1, domId: 'legend-columns', placeholder: 1, stepFrom: true,
+        help: 'The entries in order down each column; labels too long for the room are cut short.' }),
+    f('legendColumnGap', 'legend', 'number', 'Column gap (px)', null, { min: 0, max: COLUMN_GAP_MAX, step: 1, domId: 'legend-column-gap',
+        placeholder: COLUMN_GAP_DEFAULT, stepFrom: true }),
+    f('colorbarPosition', 'legend', 'select', 'Color bar position', 'legend', { domId: 'colorbar-position',
+        choices: COLORBAR_POSITIONS.map((c) => [c, c === 'legend' ? 'With the legend' : c[0].toUpperCase() + c.slice(1)]) }),
+    f('colorbarLength', 'legend', 'range', 'Color bar length (%)', 1, { min: 0.1, max: 1, step: 0.05, percent: true, live: true, domId: 'colorbar-length' }),
+    f('colorbarTicks', 'legend', 'number', 'Color bar ticks', null, { min: 2, max: 30, step: 1, domId: 'colorbar-ticks', placeholder: 'auto', stepFrom: 5 }),
     // Margins
     f('margins', 'margins', 'text', 'Margins', DEFAULT_MARGINS),
     f('marginsUnlinked', 'margins', 'check', 'Set each side separately', false),

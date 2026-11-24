@@ -134,8 +134,7 @@ def test_title_size_and_gap(page, server):
     # Reset puts the box and the look back
     page.click("#aesthetics-menu-btn-cell-plot-M")
     page.click("details[data-panel='cell-plot-M'][data-section='legend'] summary")
-    page.click("#reset-legend-title-size-cell-plot-M")
-    page.click("#reset-legend-title-gap-cell-plot-M")
+    page.click("#reset-section-legend-cell-plot-M")             # the Legend group's one Reset (the title size and gap were all that was set)
     page.wait_for_timeout(600)
     back = page.evaluate(SIZES)
     assert back["size"] == 14 and abs(back["gap"] - base["gap"]) < 2, (back, base)

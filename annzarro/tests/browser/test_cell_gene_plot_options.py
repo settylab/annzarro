@@ -225,6 +225,32 @@ def test_axes_points_and_focused_use_the_body_standard_and_a_flip_is_a_view(page
     assert s["flipY"] is True and page.is_checked(f"{POP} #flip-y-{pid}")
 
 
+@pytest.mark.parametrize("which", WHICH)
+def test_legend_and_colour_bar_use_the_body_standard(page, served, which):
+    """U5: the Legend group is the shared renderer's: help under the field, units in the label, Title align has an Auto choice that
+    writes absent, the colour bar's length is a percent slider, and the group has one Reset (no Reset per box)."""
+    pid = _open(page, served, which)
+    _open_options(page, pid)
+    _section(page, pid, "legend")
+    sec = f"{POP} details[data-panel='{pid}'][data-section='legend']"
+    assert "az-pop-section" in page.get_attribute(sec, "class") and page.locator(f"{sec} .az-pop-reset").count() == 1
+    assert page.locator(f"{sec} .input-group, {sec} .form-switch, {sec} [id^='reset-legend-']").count() == 0
+    assert page.locator(f"{sec} #legend-title-size-{pid}.az-pop-num").count() == 1
+    assert page.locator(f"{sec} #legend-title-size-{pid}").evaluate("(e) => e.closest('.az-pop-field').querySelector('.az-pop-help').textContent") != ""
+    assert page.locator(f"{sec} #legend-title-align-{pid} option").evaluate_all("(os) => os.map((o) => o.textContent)")[0] == "Auto"
+    assert page.get_attribute(f"{sec} #colorbar-length-{pid}", "max") == "100", "a percent slider"
+    page.select_option(f"{sec} #legend-title-align-{pid}", "centre")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().legendTitleAlign === 'centre'", pid)
+    page.select_option(f"{sec} #legend-title-align-{pid}", "")
+    until(page, "(id) => !window.PanelManager.getPanel(id).getConfig().legendTitleAlign", pid)
+    page.fill(f"{sec} #legend-columns-{pid}", "2")
+    page.press(f"{sec} #legend-columns-{pid}", "Tab")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().legendColumns === 2", pid)
+    page.click(f"{sec} #reset-section-legend-{pid}")
+    until(page, "(id) => !window.PanelManager.getPanel(id).getConfig().legendColumns", pid)
+    assert page.input_value(f"{sec} #legend-columns-{pid}") == ""
+
+
 # ------------------------------------------------------------------ 5. a link keeps it all
 
 @pytest.mark.parametrize("which", WHICH)
