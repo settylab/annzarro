@@ -81,6 +81,20 @@ def page(served):
             browser.close()
 
 
+SETTLED = """() => !window.localStorage.getItem('annzarro_restoring') && !window.sessionStorage.getItem('annzarro_restoring')"""
+
+
+def _settled_link(page, pid):
+    """Wait until the link in the address is drawn AND its restore marker is gone.
+
+    A page that ends while it draws a link leaves a marker, and a reload then does not draw that link by itself
+    (session-manager.js linkDidNotFinishHere: on purpose, against crash loops). The marker stands for SETTLE_MS after
+    the last panel is drawn, so a reload sent on the plots alone can land inside it, as it did under load.
+    """
+    page.wait_for_function(DRAWN, arg=pid, timeout=60000)
+    page.wait_for_function(SETTLED, timeout=60000)
+
+
 def _link(served):
     root, store = served
     x = {"type": "obsm", "key": "X_umap", "column": "0"}
@@ -324,6 +338,7 @@ def test_a_link_carries_the_default_and_renders_the_same_for_the_receiver(page, 
     receiver.click(f"#session-style-set-{A}")
     _close_menu(receiver, A)
     receiver.goto(url)
+    _settled_link(receiver, n1)
     receiver.reload()
     receiver.wait_for_function(DRAWN, arg=n1, timeout=60000)
     receiver.wait_for_timeout(1500)
@@ -338,6 +353,7 @@ def test_a_link_carries_the_default_and_renders_the_same_for_the_receiver(page, 
     sender_url = _share_url(clear, served)
     assert "sessionStyles" not in clear.evaluate("() => window.sessionManager.captureView()")
     receiver.goto(sender_url)
+    _settled_link(receiver, n2)
     receiver.reload()
     receiver.wait_for_function(DRAWN, arg=n2, timeout=60000)
     receiver.wait_for_timeout(1500)
