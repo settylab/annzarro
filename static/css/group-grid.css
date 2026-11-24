@@ -39,7 +39,10 @@
 .cgg-headcell, .cgg-cell { padding: 0 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cgg-num { text-align: right; font-variant-numeric: tabular-nums; }
 .cgg-cell--name { display: flex; align-items: center; gap: 6px; }
-.cgg-swatch { flex: 0 0 auto; width: 0.75rem; height: 0.75rem; border-radius: 2px; border: 1px solid var(--az-border-strong); }
+.cgg-swatch { flex: 0 0 auto; position: relative; width: 0.75rem; height: 0.75rem; border-radius: 2px; border: 1px solid var(--az-border-strong); }
+/* the picker sits over the swatch, unseen: a click on the swatch opens the browser's color picker */
+.cgg-swatch-input { position: absolute; inset: -1px; width: calc(100% + 2px); height: calc(100% + 2px); margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.cgg-swatch-input:focus-visible { opacity: 1; outline: 2px solid var(--az-focus-border); }
 .cgg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .cgg-small {
     flex: 0 0 auto; padding: 0 6px; border-radius: 8px; font-size: 0.6875rem; line-height: 1.5;

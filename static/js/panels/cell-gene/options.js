@@ -36,7 +36,7 @@ import { RESERVED } from '../../utils/level-id.js';
 import { GAP_COLOUR } from '../../utils/plot-theme.js';
 import { MAX_ROWS } from '../../utils/hclust.js';
 import { longCsv } from '../../utils/cell-gene-model.js';
-import { generateDiscreteColors } from '../plot-utilities/colors.js';
+import { groupingColours } from '../../utils/grouping-colours.js';
 import { createPopover } from '../../ui/popover.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import { dendrogramBlocks } from './draw-annotations.js';
@@ -170,27 +170,27 @@ function scalingNotes(config) {
 // ================================================================================================ strips and trees
 
 /**
- * One strip per factor of the cell axis (CXG-14): each drawn group's level, colored by its factor's levels (a
- * categorical column's own colors where the reply has them, the app's palette by level otherwise), and the legend of
- * the strip, the factor's levels in level order. The collected small group takes the gap color and no level.
+ * One strip per factor of the cell axis (CXG-14): each drawn group's level, colored as the factor colors its levels
+ * (utils/grouping-colours.js: the column's own colors, a palette, an override), and the legend of the strip, the factor's
+ * levels in level order. The collected small group takes the gap color and no level.
  * @param {Object} reply - the cell axis's reply
  * @param {Object} recipe - the grouping recipe the reply is of
  * @param {Int32Array} groupOrder - the reply's group at each drawn position
  * @param {(source: Object) => (string|undefined)} titleOf
+ * @param {Map<string, string>[]} [colors] - each factor's colors as the recipe has them now (group-sources.js `coloursOf`);
+ *   left out, the recipe's own
  * @returns {{title: string, colours: string[], levels: string[], legend: {label: string, colour: string}[]}[]}
  */
-function groupStrips(reply, recipe, groupOrder, titleOf) {
+function groupStrips(reply, recipe, groupOrder, titleOf, colors) {
     const parts = recipe && Array.isArray(recipe.partitionings) ? recipe.partitionings : [];
     if (!reply || !Array.isArray(reply.groups) || !Array.isArray(reply.partitionings) || reply.partitionings.length !== parts.length) return [];
     const maps = defaultLabelMaps(recipe, reply, titleOf);
+    const factors = colors || groupingColours(recipe, reply).factors;
     return parts.map((p, i) => {
         const info = reply.partitionings[i] || {};
         const levels = Array.isArray(info.levels) ? info.levels : [];
-        const own = !p.binning && isObject(info.colors) ? info.colors : null;
-        const palette = generateDiscreteColors(Math.max(1, levels.length));
-        const at = new Map(levels.map((id, k) => [id, k]));
         const label = (id) => (p.labels && p.labels[id]) || maps[i].get(id) || id;
-        const colour = (id) => (own && own[id]) || (at.has(id) ? palette[at.get(id) % palette.length] : GAP_COLOUR);
+        const colour = (id) => (factors[i] && factors[i].get(id)) || GAP_COLOUR;
         const colours = [];
         const names = [];
         for (const g of groupOrder) {
@@ -219,13 +219,13 @@ function dendrogramsOf(cluster, order) {
 /**
  * What the options add to the drawing model of draw.js and draw-annotations.js, and what the panel orders by.
  * @param {Object} config - the plot's configuration
- * @param {{reply?: Object, recipe?: Object, order?: Object, titleOf?: Function}} [ctx] - the cell axis's reply and its
- *   recipe, cell-gene-order.js's answer for the matrix, and the title of a panel behind a source; without them no
+ * @param {{reply?: Object, recipe?: Object, order?: Object, titleOf?: Function, colors?: Map[]}} [ctx] - the cell axis's reply
+ *   and its recipe, each factor's colors, cell-gene-order.js's answer for the matrix, and the title of a panel behind a source; without them no
  *   strip and no tree
  * @returns {{color: Object, size: Object, legend: Object, plotTitle: (string|undefined), annotations: Object,
  *   gap: number, sortBySize: boolean, cluster: Object}}
  */
-export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
+export function figureExtras(config, { reply, recipe, order, titleOf, colors } = {}) {
     const s = styleOf(config);
     const cluster = clusterOf(config);
     const color = { colorscale: plotlyColorscale(s.colorScale) };
@@ -252,7 +252,7 @@ export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
             brackets: { titles: s.sectionTitles },
             totals: s.totals,
             labels: s.labels,
-            strips: order ? groupStrips(reply, recipe, order.groups, titleOf) : [],
+            strips: order ? groupStrips(reply, recipe, order.groups, titleOf, colors) : [],
             dendrograms: dendrogramsOf(cluster, order)
         }
     };
