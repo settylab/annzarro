@@ -181,10 +181,11 @@ def test_colour_by_a_grouping_from_the_menus_in_group_order_with_its_colours(pag
     for axis in ("color", "x", "y", "z"):
         _menus(page, axis)
         types = [v for v, _ in _options(page, "type", axis)]
-        assert "cell-group" in types and types.index("cell-group") > types.index("gene-score"), (axis, types)
+        assert "cell-group" in types and types.index("cell-group") > types.index("layer"), (axis, types)
+        assert "gene-score" not in types, "a signature is picked in the item picker of a layer, not as a source"
         # what the menu shows is a word, never a provider's type id
         shown = dict(_options(page, "type", axis))
-        assert shown["cell-group"] == "Cell Grouping" and shown["gene-score"] == "Gene score", (axis, shown)
+        assert shown["cell-group"] == "Cell Grouping", (axis, shown)
     page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "cell-group")
     until(page, """(t) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="color"] option`)].some(o => o.value === 'cell-grouping-B')""", C)
     keys = _options(page, "key", "color")

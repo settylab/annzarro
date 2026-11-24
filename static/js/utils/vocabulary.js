@@ -690,6 +690,22 @@ const cellExport = Object.freeze({
  * What a menu of source types and a column chooser's tab call a source a panel makes, beside the dataset's own obs,
  * obsm, obsp and layers (whose AnnData names stay). Never the provider's type id.
  */
+/**
+ * The symbols of the aggregations a set can give an axis (axis-aggregate-picker-080), by the value of the method or the
+ * statistic. Their names and their order are the method tables' (utils/signature-options.js METHOD_INFO,
+ * utils/group-statistics.js STATISTIC_INFO), never written again here.
+ */
+const aggregation = Object.freeze({
+    label: 'Aggregation',
+    score: Object.freeze({
+        zscore_mean: 'z\u0304', mean: 'x\u0304', sum: '\u03a3', control_adjusted: '\u0394', detected: 'f', fraction_of_total: '%'
+    }),
+    stat: Object.freeze({
+        mean: 'x\u0304', pct_expressing: '%', mean_expressing: 'x\u0304\u207a', sum: '\u03a3', sd: '\u03c3'
+    }),
+    sections: Object.freeze({ genes: 'Genes', cells: 'Cells', signatures: 'Gene signatures', tables: 'Gene tables', groupings: 'Cell groupings' })
+});
+
 const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping', groupStat: 'Cell group' });
 
 /** Show as table (UX 7): a plot's CSV rows as an HTML table, in every plot that offers it (count plot, Cell-Gene Plot). */
@@ -732,4 +748,4 @@ const plotPanel = Object.freeze({
     view3dOnHelp: 'The plot is in 3D; click to go back to 2D'
 });
 
-export const VOCABULARY = Object.freeze({ plotPanel, range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+export const VOCABULARY = Object.freeze({ aggregation, plotPanel, range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });

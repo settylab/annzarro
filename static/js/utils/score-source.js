@@ -37,7 +37,7 @@ import { VOCABULARY } from './vocabulary.js';
 import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-registry.js';
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
-import { DEFAULT_INPUT, METHODS, SIGNATURE_MODEL, methodShort } from './signature-options.js';
+import { DEFAULT_INPUT, METHODS, METHOD_INFO, SIGNATURE_MODEL, methodShort } from './signature-options.js';
 import { legacyPair } from './options-model.js';
 import { createSourceAdapter, entityLabel, isSourceType, kindOfType, optionFieldsOf, scoreKeyOptions } from './score-source-panels.js';
 import { findCycle, TableResolver } from './table-resolver.js';
@@ -685,6 +685,36 @@ const scoreTable = {
     }
 };
 
+/**
+ * The sets of a gene score in an axis's item picker (utils/axis-aggregate.js): signatures, then gene tables; the method is
+ * the aggregation, read on the layer of the row.
+ */
+const A = VOCABULARY.aggregation;
+const scoreAggregate = {
+    sections: () => {
+        const list = sourceList();
+        const entry = (g) => ({ entry: g.id, text: g.title });
+        // the way to make a signature ends the signatures: it opens beside the plot and the axis takes it
+        return [{ heading: A.sections.signatures, entries: [...list.filter(g => g.kind !== 'table').map(entry), { entry: NEW_SIGNATURE, text: 'New signature\u2026' }] },
+            { heading: A.sections.tables, entries: list.filter(g => g.kind === 'table').map(entry) }];
+    },
+    start: (id, layer) => {
+        const p = scorePairAfter(id, 'layer', layer, { method: DEFAULT_METHOD, layer });
+        return { type: SCORE_TYPE, key: id, column: p.method, layer: p.layer || layer, label: scoreTitle({ key: id }) };
+    },
+    entryOf: (setting) => setting.key,
+    layerOf: (setting) => heldLayer(setting),
+    methods: (setting) => ({
+        options: scorePairMenus(setting.key, { method: heldMethod(setting), layer: heldLayer(setting) }).methods.map(o => ({
+            value: o.value, name: (METHOD_INFO.find(m => m.value === o.value) || { label: o.text }).label, symbol: A.score[o.value] || o.text,
+            disabled: !!o.disabled, title: o.title || '' })),
+        chosen: heldMethod(setting)
+    }),
+    layers: (setting) => scoreLayerMenu(setting),
+    after: (setting, kind, value) => scoreSettingAfter(setting, kind, value),
+    symbolOf: (setting) => A.score[heldMethod(setting)] || ''
+};
+
 registerSource({
     type: SCORE_TYPE,
     label: VOCABULARY.sourceType.score,
@@ -695,6 +725,7 @@ registerSource({
     largeAxes: ['x', 'y', 'color'],
     defaultSub: DEFAULT_METHOD,
     layered: true,
+    aggregate: scoreAggregate,
     entities: () => sourceList(),
     keyEntries: scoreKeyEntries,
     newEntity: { value: NEW_SIGNATURE, run: (nextTo) => (PanelManager.createPanelNextTo('gene-signature', nextTo) || null) },

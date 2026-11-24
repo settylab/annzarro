@@ -30,6 +30,7 @@ else:
 from annzarro.tests.browser.test_cell_gene_panel import served, GENES  # noqa: E402,F401
 from annzarro.tests.browser import waits  # noqa: E402
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
+from annzarro.tests.browser import axis_sets  # noqa: E402
 
 SIG = "gene-signature-S1"
 PLOT = "cell-plot-C"
@@ -40,8 +41,8 @@ C = f'.tile[data-tile-id="{PLOT}"]'
 UMAP_X = {"type": "obsm", "key": "X_umap", "column": "0"}
 UMAP_Y = {"type": "obsm", "key": "X_umap", "column": "1"}
 SCORE = {"type": "gene-score", "key": SIG, "label": "B cell markers", "column": "zscore_mean", "layer": "X"}
-METHOD = f"{C} select.axis-column-select[data-axis='color']"
-LAYER = f"{C} select.axis-layer-select[data-axis='color']"
+METHOD = f"{C} button.axis-agg-btn[data-axis='color']"      # the aggregation button of the row
+LAYER = f"{C} select.axis-key-select[data-axis='color']"        # the row's layer list
 OPTIONS = "(s) => [...document.querySelector(s).options].map(o => ({ value: o.value, text: o.textContent, disabled: o.disabled, title: o.title }))"
 
 
@@ -116,8 +117,7 @@ def _coloured(page):
 
 def _x_graded(page):
     """Wait until the page knows X is signed: % of total is then disabled on it."""
-    until(page, "(s) => { const o = [...document.querySelector(s).options].find(o => o.value === 'fraction_of_total'); return !!o && o.disabled; }",
-          METHOD, timeout=30)
+    axis_sets.until_methods(page, PLOT, "color", "(o) => o.find(m => m.value === 'fraction_of_total').disabled")
 
 
 def test_cell_plot_colour_on_pct_of_total_counts_in_two_clicks_with_no_panel_opened(page, served):
@@ -128,12 +128,12 @@ def test_cell_plot_colour_on_pct_of_total_counts_in_two_clicks_with_no_panel_ope
     assert before == [PLOT], "the signature is closed"
     _x_graded(page)
     # on X, % of total is listed and disabled, with why
-    share = next(o for o in page.evaluate(OPTIONS, METHOD) if o["value"] == "fraction_of_total")
-    assert share["disabled"] and "negative values" in share["title"], share
+    share = next(o for o in axis_sets.aggregations(page, C, "color") if o["v"] == "fraction_of_total")
+    assert share["off"] and "negative values" in share["title"], share
     # click 1: the layer; click 2: the method
     page.select_option(LAYER, "counts")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().color.layer === 'counts'", PLOT)
-    page.select_option(METHOD, "fraction_of_total")
+    axis_sets.choose_aggregation(page, C, "color", "fraction_of_total")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().color.column === 'fraction_of_total'", PLOT)
     color = _color(page)
     assert (color["column"], color["layer"]) == ("fraction_of_total", "counts")
@@ -155,13 +155,14 @@ def test_x_is_disabled_in_the_layer_select_under_pct_of_total_with_the_reason_as
     x = layers[0]
     assert x["disabled"] is True and "negative values" in x["title"], x
     assert not layers[2]["disabled"]
-    methods = page.evaluate(OPTIONS, METHOD)
-    assert [o["value"] for o in methods] == ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"]
-    assert [o["text"] for o in methods] == ["z-score mean", "mean", "sum", "control-adjusted", "fraction detected", "% of total"]
-    assert all("@" not in o["value"] and "·" not in o["text"] for o in methods), "no method x layer pair"
-    assert "Reads the whole matrix once." in next(o for o in methods if o["value"] == "fraction_of_total")["title"]
+    methods = axis_sets.aggregations(page, C, "color")
+    assert [o["v"] for o in methods] == ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"]
+    assert [o["text"].split(" ", 1)[1] for o in methods] == ["Z-score mean", "Mean", "Sum", "Control-adjusted", "Fraction detected", "% of total"]
+    assert all("@" not in o["v"] and "·" not in o["text"] for o in methods), "no method x layer pair"
+    assert "Reads the whole matrix once." in next(o for o in methods if o["v"] == "fraction_of_total")["title"]
     text = page.evaluate("(s) => [...document.querySelector(s).closest('.axis-selector').querySelectorAll('option')].map(o => o.textContent).join('|')", LAYER)
     assert "offer" not in text.lower(), text
+    assert page.locator(f"{C} select.axis-layer-select").count() == 0, "the layer is the row's own: no second layer control"
     page.locator(LAYER).focus()
     _shot(page.locator(f"{C} .plot-controls").first, "cell-plot-layer-select.png")
 
@@ -203,8 +204,9 @@ def test_the_cell_plot_hover_picker_lists_no_gene_score(page, served):
         return { groups: [...s.querySelectorAll('optgroup')].map(g => g.label), values: [...s.options].map(o => o.value) }; }""", C)
     assert "Gene scores" not in picker["groups"], picker["groups"]
     assert not any(v.startswith("gene-score:") for v in picker["values"]), picker["values"]
-    # a score is still a source of the plot's axes and colour
-    assert "gene-score" in page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-type-select[data-axis=\"color\"] option')].map(o => o.value)", C)
+    # a score is still a set the plot's axes and colour read: in the item picker of a layer
+    page.select_option(f"{C} select.axis-type-select[data-axis='color']", "layer")
+    until(page, "(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] optgroup[label=\"Gene signatures\"] option')].length > 0", C)
 
 
 def test_an_old_link_with_a_score_hover_column_loads_without_error_and_drops_it(page, served):

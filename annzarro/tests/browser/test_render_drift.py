@@ -736,6 +736,19 @@ def _axis(pid, axis, field):
         t = base + f'.axis-type-select[data-axis="{axis}"]'
         if not _usable(page, t):
             return False
+        if field["type"] == "gene-score":
+            # a signature is picked in the item picker of a layer, its method in the aggregation button's menu
+            from annzarro.tests.browser import axis_sets
+            tile = TILE.format(pid)
+            if page.evaluate("([b, a]) => { const x = document.querySelector(b + `button.axis-agg-btn[data-axis=\"${a}\"]`); return !!x; }", [base, axis]) \
+                    and axis_sets.aggregation_of(page, tile, axis) == field.get("column"):
+                return False
+            if not page.evaluate("([s]) => !!document.querySelector(s) && !document.querySelector(s).disabled", [axis_sets.sel(tile, axis, "type")]):
+                return False
+            axis_sets.pick_set(page, tile, axis, field["key"])
+            if field.get("column") and axis_sets.aggregation_of(page, tile, axis) != field["column"]:
+                axis_sets.choose_aggregation(page, tile, axis, field["column"])
+            return None
         cur = page.evaluate("""([b, a]) => ['type', 'key', 'column'].map((k) => {
             const e = document.querySelector(b + `.axis-${k}-select[data-axis="${a}"]`); return e ? e.value : ''; })""", [base, axis])
         if cur == [field["type"], field.get("key", ""), field.get("column", "")]:
@@ -756,6 +769,31 @@ def _axis(pid, axis, field):
             page.wait_for_function("([s, v]) => [...document.querySelector(s).options].some((o) => o.value === v)", arg=[col, field["column"]])
             if page.input_value(col) != field["column"]:
                 page.select_option(col, field["column"])
+    return act
+
+
+def _aggregation(pid, axis, value):
+    """Another aggregation of the set an axis reads, from the button's menu; False when the axis reads no set (or has it)."""
+    def act(page):
+        from annzarro.tests.browser import axis_sets
+        tile = TILE.format(pid)
+        if not page.evaluate("(s) => { const b = document.querySelector(s); return !!b && b.offsetParent !== null; }", axis_sets.button(tile, axis)):
+            return False
+        rows = {r["v"]: r for r in axis_sets.aggregations(page, tile, axis)}
+        if value not in rows or rows[value]["off"] or rows[value]["on"]:
+            return False
+        axis_sets.choose_aggregation(page, tile, axis, value)
+    return act
+
+
+def _aggregate_layer(pid, axis, layer):
+    """The layer a set is read on, in the row's own layer list; False when the axis reads no set."""
+    def act(page):
+        from annzarro.tests.browser import axis_sets
+        tile = TILE.format(pid)
+        if not page.evaluate("(s) => { const b = document.querySelector(s); return !!b && b.offsetParent !== null; }", axis_sets.button(tile, axis)):
+            return False
+        return _select(axis_sets.sel(tile, axis, "key"), layer)(page)
     return act
 
 
@@ -856,7 +894,7 @@ CELL_PLOT_VOCABULARY = [
     lambda r: (lambda n: (f"subset {n}", _subset(n)))(r.choice([300, 600, None])),
     lambda r: ("colour obsp connectivities", _axis(CP, "color", OBSP)),
     lambda r: (lambda m: (f"colour gene score {m}", _axis(CP, "color", SCORE(m))))(r.choice(METHODS)),
-    lambda r: (lambda v: (f"score layer {v}", _select(f"{TILE.format(CP)} .axis-layer-select[data-axis='color']", v)))(r.choice(["X", "logged", "counts"])),
+    lambda r: (lambda v: (f"score layer {v}", _aggregate_layer(CP, "color", v)))(r.choice(["X", "logged", "counts"])),
     lambda r: (lambda f: (f"drag colour min to {f}", _slider(CP, "color-min-slider", f)))(r.choice([0.1, 0.3])),
     lambda r: (lambda f: (f"drag colour max to {f}", _slider(CP, "color-max-slider", f)))(r.choice([0.6, 0.9])),
 ] + _plot_options_vocabulary(CP)
@@ -886,9 +924,9 @@ CELL_PLOT_RISKY = {
     "obsp-follows-focus": [("colour obsp connectivities", _axis(CP, "color", OBSP)), ("focus cell", _focus_cell(CELLS[6])),
                            ("focus cell", _focus_cell(CELLS[9]))],
     "gene-score-method-and-layer": [("colour gene score z-score mean", _axis(CP, "color", SCORE("zscore_mean"))),
-                                    ("method mean", _select(f"{TILE.format(CP)} .axis-column-select[data-axis='color']", "mean")),
-                                    ("layer logged", _select(f"{TILE.format(CP)} .axis-layer-select[data-axis='color']", "logged")),
-                                    ("method detected", _select(f"{TILE.format(CP)} .axis-column-select[data-axis='color']", "detected"))],
+                                    ("method mean", _aggregation(CP, "color", "mean")),
+                                    ("layer logged", _aggregate_layer(CP, "color", "logged")),
+                                    ("method detected", _aggregation(CP, "color", "detected"))],
     "colour-slider-drag": [("colour obs score", _axis(CP, "color", OBS("score"))), ("drag colour min", _slider(CP, "color-min-slider", 0.3)),
                            ("drag colour max", _slider(CP, "color-max-slider", 0.7)), ("colour obs depth", _axis(CP, "color", OBS("depth"))),
                            ("drag colour min", _slider(CP, "color-min-slider", 0.1))],

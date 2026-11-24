@@ -5066,3 +5066,22 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .table-controls { flex-wrap: wrap; }                                  /* the tables' controls wrap, as before SO-2 */
 .az-score-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 0.5rem; }
 .az-score-options__label { font-size: 0.8125rem; font-weight: 600; margin-right: 4px; }
+
+/* The aggregation of a set on an axis row (axis-aggregate-picker-080): a compact button after the item picker, labelled with
+   the aggregation's symbol, and the menu it opens, each aggregation as symbol and name. */
+.axis-selector > .axis-agg-btn {
+    flex: 0 0 auto;
+    min-width: var(--ctl-h);
+    height: var(--ctl-h);
+    padding: 0 calc(2 * var(--ctl-u));
+    font-size: 0.8125rem;
+    line-height: 1;
+    color: var(--az-text);
+    border-color: var(--az-control-border);
+}
+.axis-agg-item { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 4px 8px; border: 0; background: none; color: inherit; text-align: left; }
+.axis-agg-item[aria-checked="true"] { font-weight: 600; }
+.axis-agg-item:disabled { opacity: 0.5; }
+.axis-agg-sym { flex: 0 0 1.5rem; text-align: center; }
+/* the sections of an item picker keep their headings readable */
+.axis-column-select optgroup { font-style: normal; font-weight: 600; }
