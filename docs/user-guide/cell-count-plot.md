@@ -42,10 +42,10 @@ leaves the panel's layout as it is and closes with its button, its **×**, Escap
 | Presets | **Default** (the session default, or the built-in look), **Publication** (white, black text and lines, Arial 16, no grid), **Bare** (no grid, axis lines or legend) |
 | Text | **Font**, **Font size**, **Text color**, **Plot title**, **Title size** |
 | Background | **Background** |
-| Axes | **Grid lines** (on by default), **Grid color**, **Grid width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**, **Axis titles**, **Tick labels**, **Zero lines**, **Ticks, about** (the count axis; a category axis keeps one tick per level) |
-| Legend | **Show legend**, **Legend title**, **Position** (right, bottom, top or left), **Space** (at most this share of the width for a legend beside the plot; longer labels are cut short, with the full name in hover), **Column gap**, **Columns**, **Entries, at most** (25) |
+| Axes | **Grid lines** (on by default), **Grid color**, **Grid line width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**, **Axis titles**, **Tick labels**, **Zero lines**, **Ticks per axis** (the count axis; a category axis keeps one tick per level) |
+| Legend | **Show legend**, **Legend title**, **Legend position** (right, bottom, top or left), **Space** (at most this share of the width for a legend beside the plot; longer labels are cut short, with the full name in hover), **Column gap**, **Columns**, **Entries, at most** (25) |
 | Margins | Room added on each side, in px |
-| Export | **PNG**, **SVG**, **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV**, the plotted table |
+| Export | **PNG**, **SVG**, **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **Export at 2x**; **Download CSV**, the plotted table |
 | Apply | **Apply to other Cell Count plots**; **Make this the session default**, **Back to built-in** |
 
 A legend with more levels than **Entries, at most** lists the first ones and a last line "+ 3 more"; every level is still

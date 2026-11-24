@@ -250,3 +250,31 @@ def test_screenshots_with_the_same_group_open(page, served):
                 sheet.paste(im, (x, 16))
                 x += im.width + 16
             sheet.save(os.path.join(SHOTS, f"side-by-side-{group}-{theme}.png"))
+
+
+# ------------------------------------------------------------------ one name for one setting
+
+# (concept) -> why a plot may name it differently. Empty on purpose.
+LABEL_EXCEPTIONS = {}
+
+LABELS = """() => [...document.querySelectorAll("[data-popover='plot-options'] [data-concept]")].map((w) => {
+    const l = w.querySelector('.az-pop-field__label, .az-pop-check');
+    return [w.dataset.concept, l ? l.textContent.trim() : null]; })"""
+
+
+def test_a_setting_has_one_name_on_every_plot(page, served):
+    page.set_viewport_size({"width": 1700, "height": 1100})
+    page.goto(_url(served, [CP, GP, P, CC], _config()))
+    _ready(page)
+    names = {}
+    for kind, (pid, button) in KINDS.items():
+        page.click(button)
+        page.wait_for_selector(POP)
+        for concept, label in page.evaluate(LABELS):
+            names.setdefault(concept, {})[kind] = label
+        page.keyboard.press("Escape")
+        page.wait_for_selector(POP, state="detached")
+    shared = {c: v for c, v in names.items() if len(v) >= 2}
+    assert len(shared) >= 10, sorted(shared)
+    bad = [f"{c}: {v}" for c, v in shared.items() if len(set(v.values())) > 1 and c not in LABEL_EXCEPTIONS]
+    assert not bad, "A setting is named differently on different plots:\n" + "\n".join(bad)
