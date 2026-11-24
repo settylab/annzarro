@@ -418,7 +418,7 @@ const countPlot = Object.freeze({
         bins: (name, n, mode, max) => `${name} has ${fmt(n)} bins; ${mode} shows up to ${fmt(max)}.`,
         pair: (names, counts, mode, limits) => `${names[0]} × ${names[1]} is ${fmt(counts[0])} × ${fmt(counts[1])}; ${mode} shows up to ${fmt(limits[0])} × ${fmt(limits[1])}.`,
         colorBy: (name, n, mode, max) => `Color by ${name} has ${fmt(n)} ${plural.level}; ${mode} colors up to ${fmt(max)}.`,
-        colorsAs: Object.freeze({ histogram: 'a histogram', density: 'a density', hist2d: '2D histogram', density2d: '2D density' }),
+        colorsAs: Object.freeze({ density: 'a density', hist2d: '2D histogram', density2d: '2D density' }),
         sets: (mode, max) => `${mode} shows up to ${fmt(max)} ${plural.set}.`,
         grid: (mode, n, max) => `${mode} would count ${fmt(n)} cells of a grid; it counts up to ${fmt(max)}.`
     }),
