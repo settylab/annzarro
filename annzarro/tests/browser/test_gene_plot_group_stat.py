@@ -66,13 +66,13 @@ def _genes(page):
 def _colours(page):
     """The colour of every gene as drawn, sorted (the plot may order its points by colour)."""
     return page.evaluate("""(t) => { const gd = document.querySelector(t + ' .js-plotly-plot');
-        const v = (gd.data || []).flatMap(d => Array.from((d.marker && d.marker.color) || []));
+        const v = ((gd && gd.data) || []).flatMap(d => Array.from((d.marker && d.marker.color) || []));
         return v.filter(x => typeof x === 'number').sort((a, b) => a - b); }""", C)
 
 
 def _wait_colours(page, n):
     until(page, """([t, n]) => { const gd = document.querySelector(t + ' .js-plotly-plot');
-        return !!gd && (gd.data || []).flatMap(d => Array.from((d.marker && d.marker.color) || [])).filter(x => typeof x === 'number').length === n; }""",
+        return !!gd && ((gd && gd.data) || []).flatMap(d => Array.from((d.marker && d.marker.color) || [])).filter(x => typeof x === 'number').length === n; }""",
           [C, n], timeout=60)
 
 
@@ -125,7 +125,7 @@ def _items(page, axis="color"):
 def _wait_stat(page, stat):
     """Wait until the colours drawn are the statistic of the genes over the B cells."""
     until(page, """([t, want]) => { const gd = document.querySelector(t + ' .js-plotly-plot');
-        const v = (gd.data || []).flatMap(d => Array.from((d.marker && d.marker.color) || [])).filter(x => typeof x === 'number').sort((a, b) => a - b);
+        const v = ((gd && gd.data) || []).flatMap(d => Array.from((d.marker && d.marker.color) || [])).filter(x => typeof x === 'number').sort((a, b) => a - b);
         return v.length === want.length && v.every((x, i) => Math.abs(x - want[i]) < 1e-6 * Math.max(1, Math.abs(want[i])) + 1e-7); }""",
           [C, _numbers(stat).tolist()], timeout=30)
 
@@ -215,7 +215,7 @@ def test_expressed_above_edited_in_the_groupings_methods_sends_one_request(page,
         page.press(box, "Enter")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().detect_above === 0.5", GA)
     until(page, """([t, want]) => { const gd = document.querySelector(t + ' .js-plotly-plot');
-        const v = (gd.data || []).flatMap(d => Array.from((d.marker && d.marker.color) || [])).filter(x => typeof x === 'number').sort((a, b) => a - b);
+        const v = ((gd && gd.data) || []).flatMap(d => Array.from((d.marker && d.marker.color) || [])).filter(x => typeof x === 'number').sort((a, b) => a - b);
         return v.length === want.length && v.every((x, i) => Math.abs(x - want[i]) < 1e-6); }""", [C, _numbers("pct_expressing", threshold=0.5).tolist()], timeout=60)
     new = _genes(page)[n:]
     assert len(new) == 1 and new[0]["thresholds"] == [0.5], new
@@ -355,7 +355,7 @@ def _same_set(got, want):
 
 def _axis_values(page, axis):
     return page.evaluate("""([t, axis]) => { const gd = document.querySelector(t + ' .js-plotly-plot');
-        const v = (gd.data || []).flatMap(d => Array.from(d[axis] || [])).filter(x => typeof x === 'number');
+        const v = ((gd && gd.data) || []).flatMap(d => Array.from(d[axis] || [])).filter(x => typeof x === 'number');
         return v; }""", [C, axis])
 
 
@@ -371,7 +371,7 @@ def test_x_and_y_take_a_group_statistic_and_two_axes_on_one_group_share_one_requ
     stat_x = _stat(stat="mean")
     stat_y = _stat(stat="sd")                     # another statistic of the same moments
     _open(page, served, {G: _plot(x=stat_x, y=stat_y), GA: _grouping()})
-    until(page, "([t]) => { const gd = document.querySelector(t + ' .js-plotly-plot'); return !!gd && (gd.data || []).some(d => (d.x || []).filter(v => typeof v === 'number').length === 40); }", [C], timeout=60)
+    until(page, "([t]) => { const gd = document.querySelector(t + ' .js-plotly-plot'); return !!gd && ((gd && gd.data) || []).some(d => (d.x || []).filter(v => typeof v === 'number').length === 40); }", [C], timeout=60)
     xs, ys = _axis_values(page, "x"), _axis_values(page, "y")
     want_x, want_y = DATA.logged[B].astype(np.float64).mean(axis=0), DATA.logged[B].astype(np.float64).std(axis=0)
     assert _same_set(xs, want_x) and _same_set(ys, want_y)

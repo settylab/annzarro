@@ -96,7 +96,7 @@ def test_switching_back_to_a_normal_source_clears_the_aggregation_and_the_plot_d
     s = _setting(page, "x")
     assert s["type"] == "obsm" and not [f for f in LEGACY if f in s], s
     assert not page.is_visible(f'{C} button.axis-agg-btn[data-axis="x"]')
-    until(page, "(t) => { const gd = document.querySelector(t + ' .js-plotly-plot'); return !!gd && gd.data.some(d => (d.x || []).length > 5 && Array.from(d.x).every(v => typeof v === 'number')); }", C, timeout=30)
+    until(page, "(t) => { const gd = document.querySelector(t + ' .js-plotly-plot'); return !!gd && Array.isArray(gd.data) && gd.data.some(d => (d.x || []).length > 5 && Array.from(d.x).every(v => typeof v === 'number')); }", C, timeout=30)
 
 
 def test_three_aggregated_axes_are_three_one_line_rows(page, served):
