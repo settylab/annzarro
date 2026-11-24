@@ -153,6 +153,9 @@ def register_zarr_routes(app, api_version):
             dataset_path, min_interval_s=float(app.config.get("refresh_min_interval_s", 10)),
             inspect=lambda: {"consolidated_stale": consolidated_staleness(dataset_path)}, after=after)
         stale = result.pop("consolidated_stale", None)
+        if stale and result.get("changed"):
+            logger.warning(f"Refresh of {dataset_path}: the consolidated metadata (.zmetadata / zarr.json listing) "
+                           f"is out of date ({stale}); reading the store from its own metadata files instead.")
         return jsonify({**result, "result": "success", "dataset_path": dataset_path,
                         "consolidated_metadata": consolidated_notice(stale)})
 

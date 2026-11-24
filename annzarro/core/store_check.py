@@ -26,7 +26,7 @@ import numpy as np
 import zarr
 
 from . import layout_thresholds as T
-from . import read_guard
+from . import read_guard, unconsolidated
 
 __all__ = [
     "check_store",
@@ -109,7 +109,7 @@ def _open(path: str, max_read_mb: Optional[float]):
     try:
         # a listing that no longer matches the disk is read around, as the reader does
         stale = consolidated_staleness(path)
-        root = zarr.open_group(path, mode="r", **({"use_consolidated": False} if stale and _ZARR3 else {}))
+        root = unconsolidated.open_group(path) if stale and _ZARR3 else zarr.open_group(path, mode="r")
     except Exception as exc:
         raise StoreCheckError(f"Cannot open {path}: {exc}") from exc
     if os.path.exists(os.path.join(path, ".zmetadata")):

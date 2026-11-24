@@ -57,7 +57,10 @@ stale listing from then on, so the new element still shows, and says so in a not
 > obs/mhc1_score is on disk but not in it. AnnZarro now reads the store without it, which is
 > slower to open. Run zarr.consolidate_metadata(path) on the store, then Refresh dataset.
 
-Run `zarr.consolidate_metadata(path)` and refresh again to clear it. A request for an array that
+AnnZarro only reads your store here: it never rewrites `.zmetadata` or any other file, and the server
+log says when it read around a stale listing. Gene and cell names, and every other element, are served as
+before. Reading without the listing is slower to open, so run `zarr.consolidate_metadata(path)` and
+refresh again to clear the notice. A request for an array that
 was rewritten with another shape or dtype while `.zmetadata` still describes the old one answers
 `500 stale_metadata` until then ({doc}`../reference/http-api`).
 
