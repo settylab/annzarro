@@ -82,8 +82,8 @@ READ = """([pieces, props, sized]) => {
     const out = {};
     for (const [name, sel] of Object.entries(pieces)) {
         // a control is read in its plain state (enabled; a check box unchecked), so the state does not look like a difference
-        const plain = (e) => !e.disabled && !e.checked;
-        const el = [...pop.querySelectorAll(sel)].find((e) => (e.offsetParent !== null || e === pop) && (name !== 'range' && name !== 'check box' || plain(e)))
+        const plain = (e) => (name === 'reset' ? e.disabled : !e.disabled && !e.checked);
+        const el = [...pop.querySelectorAll(sel)].find((e) => (e.offsetParent !== null || e === pop) && (name !== 'range' && name !== 'check box' && name !== 'reset' || plain(e)))
             || (pop.matches(sel) ? pop : null);
         if (!el) continue;
         const cs = getComputedStyle(el);
@@ -156,20 +156,25 @@ def test_plot_options_look_the_same_in_all_four_plot_kinds(page, served):
     assert not problems, "Plot Options differ between plot kinds:\n" + "\n".join(problems)
 
 
-# ------------------------------------------------------------------ the point size row (the panel's own markup) in the same look
+# ------------------------------------------------------------------ the point size row is the renderer's, like every other row
 
 ROW = """() => {
     const pop = document.querySelector("[data-popover='plot-options']");
     const pick = (sel) => { const e = pop.querySelector(sel); const c = getComputedStyle(e);
-        return ['fontFamily', 'fontSize', 'fontWeight', 'color', 'backgroundColor', 'borderTopWidth', 'borderTopColor', 'borderTopLeftRadius',
+        return ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'color', 'backgroundColor', 'borderTopWidth', 'borderTopColor', 'borderTopLeftRadius',
                 'paddingTop', 'paddingLeft', 'marginTop', 'marginBottom', 'height', 'width'].map((p) => [p, c[p]]); };
-    return { label: [pick('.point-size-control .ctl-label'), pick('.az-pop-field--number .az-pop-field__label')],
-             number: [pick('.point-size-control input[type=number]'), pick('.az-pop-field--number input[type=number]')],
-             auto: [pick('.point-size-control .point-auto-btn'), pick('.az-pop-auto')] }; }"""
+    return { label: [pick('.az-pop-field--scaled .az-pop-field__label'), pick('.az-pop-field--number .az-pop-field__label')],
+             number: [pick('.az-pop-field--scaled input[type=number]'), pick('.az-pop-field--number input[type=number]')],
+             range: [pick('.az-pop-field--scaled input[type=range]'), pick('.az-pop-field--range input[type=range]:not(:disabled)')],
+             auto: [pick('.az-pop-field--scaled .az-pop-auto'), pick('.az-pop-field--color .az-pop-auto')],
+             row: [pick('.az-pop-field--scaled'), pick('.az-pop-field--number')],
+             old: pop.querySelectorAll('.point-size-control, .ctl-row, .ctl-label').length }; }"""
 
 
 @pytest.mark.parametrize("kind", ["cell-plot", "gene-plot"])
-def test_the_point_size_row_looks_like_the_other_rows(page, served, kind):
+def test_the_point_size_row_is_drawn_by_the_renderer_like_the_other_rows(page, served, kind):
+    """No panel-made row is left in Plot Options, and the size row's label, number box, slider and Auto are styled as the rows beside
+    it, with no named exception."""
     page.set_viewport_size({"width": 1700, "height": 1100})
     page.goto(_url(served, [CP, GP, P, CC], _config()))
     _ready(page)
@@ -177,12 +182,10 @@ def test_the_point_size_row_looks_like_the_other_rows(page, served, kind):
     page.wait_for_selector(POP)
     page.evaluate("() => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach((d) => { d.open = true; })")
     got = page.evaluate(ROW)
-    # the number box is the same control; a label is text and Auto is a button, so those keep their own box sizes
-    skip = {"label": {"height", "width", "marginTop", "marginBottom"}, "number": {"color"},   # named exception: an automatic size is drawn muted and italic (.is-auto), by design
-            
-            "auto": {"height", "width", "fontSize", "fontWeight", "borderTopColor", "color", "backgroundColor", "paddingLeft", "paddingTop"}}
+    assert got.pop("old") == 0, "a row the panel made is still in Plot Options"
     bad = [f"{what} {a[i][0]}: {a[i][1]} vs {b[i][1]}" for what, (a, b) in got.items() for i in range(len(a))
-           if a[i][1] != b[i][1] and a[i][0] not in skip[what]]
+           if a[i][1] != b[i][1] and not (what in ("row", "label") and a[i][0] == "width")   # a row or a label is as wide as its room and its text
+            and not (what == "range" and a[i][0] in ("width", "height"))]
     assert not bad, "\n".join(bad)
 
 
@@ -209,13 +212,20 @@ def test_a_long_plot_options_scrolls_in_steady_steps(page, served, kind):
         tops.append(page.evaluate("(b) => document.querySelector(b).scrollTop", body))
     assert tops == sorted(tops) and len(set(tops)) == len(tops), f"{kind}: scrolling stuck or jumped {tops}"
     assert all(b - a <= 130 for a, b in zip(tops, tops[1:])), f"{kind}: a step jumped {tops}"
-    # a change made while scrolled keeps the place: a check box in view is toggled (the body is painted again, not rebuilt from the top)
-    before = tops[-1]
-    clicked = page.evaluate("""(b) => { const body = document.querySelector(b); const r = body.getBoundingClientRect();
-        const c = [...body.querySelectorAll('input[type=checkbox]:not(:disabled)')].find((e) => { const q = e.getBoundingClientRect(); return q.top > r.top + 20 && q.bottom < r.bottom - 20; });
-        if (!c) return false; c.click(); return true; }""", body)
-    assert clicked, f"{kind}: no check box in view"
+    # a change made while scrolled keeps the place: the same check box in every kind (Grid lines, by its concept) is scrolled to the
+    # middle of the window and toggled; the body is painted again, not rebuilt from the top
+    box = f"{POP} [data-concept='grid'] input[type=checkbox]"
+    page.evaluate("(sel) => document.querySelector(sel).scrollIntoView({ block: 'center' })", box)
     _frames(page)
+    before = page.evaluate("(b) => document.querySelector(b).scrollTop", body)
+    assert before > 0, f"{kind}: the check box is at the top, nothing was scrolled"
+    inside = page.evaluate("""([b, sel]) => { const r = document.querySelector(b).getBoundingClientRect(); const q = document.querySelector(sel).getBoundingClientRect();
+        return q.top >= r.top && q.bottom <= r.bottom; }""", [body, box])
+    assert inside, f"{kind}: the check box is not in the window"
+    was = page.is_checked(box)
+    page.click(box)
+    _frames(page)
+    assert page.is_checked(box) != was, f"{kind}: the click did not toggle it"
     assert abs(page.evaluate("(b) => document.querySelector(b).scrollTop", body) - before) <= 2, f"{kind}: a change moved the scroll"
 
 
@@ -278,3 +288,51 @@ def test_a_setting_has_one_name_on_every_plot(page, served):
     assert len(shared) >= 10, sorted(shared)
     bad = [f"{c}: {v}" for c, v in shared.items() if len(set(v.values())) > 1 and c not in LABEL_EXCEPTIONS]
     assert not bad, "A setting is named differently on different plots:\n" + "\n".join(bad)
+
+
+# ------------------------------------------------------------------ help text reads below the labels, and is legible, in both themes
+
+HELP = """() => {
+    const pop = document.querySelector("[data-popover='plot-options']");
+    const rgb = (s) => s.match(/[\\d.]+/g).slice(0, 3).map(Number);
+    const lum = (c) => { const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const ratio = (a, b) => { const [x, y] = [lum(rgb(a)), lum(rgb(b))].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+    const bg = getComputedStyle(pop).backgroundColor;
+    const help = pop.querySelector('.az-pop-section__body .az-pop-help');
+    const label = pop.querySelector('.az-pop-field__label');
+    return { help: ratio(getComputedStyle(help).color, bg), label: ratio(getComputedStyle(label).color, bg),
+             helpColor: getComputedStyle(help).color, labelColor: getComputedStyle(label).color }; }"""
+
+
+def test_help_text_is_legible_and_never_louder_than_the_labels(page, served):
+    page.set_viewport_size({"width": 1700, "height": 1100})
+    page.goto(_url(served, [CP, GP, P, CC], _config()))
+    _ready(page)
+    for theme in ("light", "dark"):
+        page.click(f'#theme-toggle button[data-theme-mode="{theme}"]')
+        page.wait_for_function("(t) => document.documentElement.getAttribute('data-theme') === t", arg=theme)
+        _frames(page)
+        for kind, (pid, button) in KINDS.items():
+            page.click(button)
+            page.wait_for_selector(POP)
+            page.evaluate("() => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach((d) => { d.open = true; })")
+            got = page.evaluate(HELP)
+            assert got["help"] >= 4.5, f"{theme} {kind}: help contrast {got['help']:.2f} (WCAG AA is 4.5): {got}"
+            assert got["help"] <= got["label"] + 0.01, f"{theme} {kind}: help is louder than the labels: {got}"
+            page.keyboard.press("Escape")
+            page.wait_for_selector(POP, state="detached")
+
+
+def test_every_plot_offers_the_same_fonts_in_the_same_order(page, served):
+    page.set_viewport_size({"width": 1700, "height": 1100})
+    page.goto(_url(served, [CP, GP, P, CC], _config()))
+    _ready(page)
+    lists = {}
+    for kind, (pid, button) in KINDS.items():
+        page.click(button)
+        page.wait_for_selector(POP)
+        lists[kind] = page.evaluate("() => [...document.querySelectorAll(\"[data-popover='plot-options'] [data-concept='fontFamily'] option\")].map((o) => o.textContent)")
+        page.keyboard.press("Escape")
+        page.wait_for_selector(POP, state="detached")
+    assert lists["cell-plot"][0] == "Open Sans" and len(lists["cell-plot"]) == 7, lists
+    assert all(v == lists["cell-plot"] for v in lists.values()), lists

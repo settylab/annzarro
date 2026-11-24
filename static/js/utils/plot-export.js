@@ -24,6 +24,7 @@
  * figure can then be made again from itself (`annzarro export --from
  * fig.png`), exactly so with the same store and version.
  */
+import { embedFonts, fontsReady } from './fonts.js';
 import { exportWithCoverage } from './panel-surface.js';
 import { releasePlot } from './release-plot.js';
 import { syncSceneCamera } from './scene-camera.js';
@@ -77,6 +78,7 @@ function _plotly() {
  * @returns {Promise<string>}
  */
 export async function fullImage(gd, { format = 'png', width = 1200, height = 800, scale = 1 } = {}) {
+    await fontsReady();      // the plot is drawn and measured with the font the image will hold
     const P = _plotly();
     const S = P.Snapshot;
     const clone = document.createElement('div');
@@ -115,6 +117,7 @@ export async function fullImage(gd, { format = 'png', width = 1200, height = 800
         releasePlot(clone);
         clone.remove();
     }
+    svg = await embedFonts(svg);
     if (format === 'svg') return svg;
     return S.svgToImg({ format, width: w, height: h, scale, canvas: document.createElement('canvas'), svg, promise: true });
 }
@@ -200,7 +203,7 @@ export function snapshotSvg(gd) {
  */
 export async function snapshotImage(gd, { format = 'png', ratio = ratioOf(gd) } = {}) {
     const P = _plotly();
-    const svg = snapshotSvg(gd);
+    const svg = await embedFonts(snapshotSvg(gd));
     if (format === 'svg') return svg;
     const fl = gd._fullLayout;
     const grown = Number((/^<svg\b[^>]*?\sheight="([\d.]+)"/.exec(svg) || [])[1]);     // a long legend made it taller

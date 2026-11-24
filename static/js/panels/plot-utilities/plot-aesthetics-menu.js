@@ -1,3 +1,4 @@
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, refreshScaleBar, flipRelayout } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
@@ -47,8 +48,7 @@ registerPresets((config, name, kind) => {
  * The plot's Plot Options on the shared pop-over (ui/popover.js; WP-5b, design note options-ux-080 section 5): Escape
  * from anywhere and a press outside close it, focus goes into it and back to its button, one pop-over is open
  * page-wide, and opening it moves nothing in the panel. Its groups are the shared order (aesthetics-kinds.js), each
- * with a Reset; the point size, which was a slider in the control grid, is in its Points group (the same controls,
- * moved in while the pop-over is open and kept by the panel while it is closed).
+
  * @param {string} id - Panel ID
  * @param {HTMLElement} menuButton - Existing menu button element
  * @param {HTMLElement} container - Container element for passing to listeners
@@ -57,11 +57,6 @@ registerPresets((config, name, kind) => {
  * @returns {Function} cleanup function to remove listeners and dispose popover
  */
 export function createAestheticsMenu(id, menuButton, container, plotContainer, settings) {
-  // the point size's controls (WP-5b): in the grid's hidden holder (panel-ui-make.js) while the pop-over is closed
-  const pointSizeRow = container && container.querySelector ? container.querySelector('.point-size-control') : null;
-  const holder = pointSizeRow ? pointSizeRow.parentElement : null;
-  const putBack = () => { if (pointSizeRow && holder && pointSizeRow.parentElement !== holder) holder.appendChild(pointSizeRow); };
-
   let sizeWatch = null;
   const kind = `${plotKindOf(settings)}-plot`;
   // what each migrated field does to the plot once the adapter has written it (plot-aesthetics-adapter.js): the plot's
@@ -98,6 +93,8 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   const legendPlace = (s) => updateLegendPosition(plotContainer, s);
   Object.assign(hooks, {
     margins: (s) => updateMargins(plotContainer, s),
+    // the point size: the panel's own redraw (listeners.js), which also works the automatic size out when Auto is on
+    pointSize: (s) => plotContainer.__pointSizeChanged && plotContainer.__pointSizeChanged(s),
     showLegend: (s) => updateLegendVisibility(plotContainer, s), legendPosition: legendPlace,
     showLegendTitle: legend, legendTitleSize: legend, legendTitleAlign: legend, legendTitleGap: legend, legendDotSize: legend, legendColumns: legend, legendColumnGap: legend,
     colorbarPosition: legendPlace, colorbarLength: legendPlace, colorbarTicks: legendPlace,
@@ -123,12 +120,11 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   options = mountPlotOptions({
     anchor: menuButton, kind, panelId: id, noFollow: true,
     config: () => settings,
-    commit: (next, label) => { adapter.commit(next, label); options.update(); },
+    commit: (next, label) => { adapter.commit(next, label); options.update(); showPointStyle(id, settings); },
     replace: (next) => { Object.assign(settings, next); },
     sectionKey: (sec) => sec.replace(/^panel:/, ''),
     // the kinds' own groups; the point size is the panel's row (listeners.js), moved in while the pop-over is open
     sections: { 'panel:points': { title: 'Points', reset: true }, 'panel:focused': { title: `Focused ${plotKindOf(settings)}`, reset: true } },
-    elements: { pointSize: () => pointSizeRow },
     openFirst: new Set(['export']),      // as the menu has always opened: only Export, the rest as it was left
     ids: true, guide: 'https://annzarro.readthedocs.io/en/latest/user-guide/plot-options.html#session-default-style',
     classes: { exportBtn: 'export-btn' },
@@ -155,26 +151,22 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
     onOpen: (body, ctl) => {
       ctl.surface.classList.add('aesthetics-popover');
       menuButton.classList.add('btn-aesthetics-active');
-      placePointSize();
+      showPointStyle(id, settings);         // the point size's titles and Auto state, as the panel words them
       syncColourControls(id, settings);     // a colour that follows the theme has nothing to reset
       return () => {
         sizeWatch?.disconnect();
         sizeWatch = null;
-        putBack();
         menuButton.classList.remove('btn-aesthetics-active');
       };
     }
   });
   const popover = options.popover;
-  /** The point size's row in its slot of the Points group, shown as the settings are now. */
-  function placePointSize() {
-    if (pointSizeRow) showPointStyle(id, settings);
-  }
   // Settings-change listener: the pop-over follows a taller or shorter body
   const onSettingsChange = (e) => {
     if (e.detail.id !== id) return;
     syncColourControls(id, settings);     // a colour set now has a Reset; one reset follows the theme again
     options.update();
+    showPointStyle(id, settings);
     popover.update();
   };
   document.addEventListener('plotSettingsChanged', onSettingsChange);
@@ -260,7 +252,7 @@ export function initializeAestheticsSettings(settings) {
         
         // Fonts
         FONT_SIZE: 12,
-        FONT_FAMILY: 'Arial, Helvetica, sans-serif',
+        FONT_FAMILY: DEFAULT_FONT,
         
         // Margins
         MARGINS: { l: 80, r: 80, t: 80, b: 60, pad: 4 },
@@ -540,7 +532,7 @@ function updateFontFamily(plotContainer, settings) {
  */
 function applyTextFont(plotContainer, settings) {
     if (!plotContainer) return;
-    const family = settings.fontFamily || 'Arial, Helvetica, sans-serif';
+    const family = settings.fontFamily || DEFAULT_FONT;
     const size = settings.fontSize || 12;
     const colour = plotColour(settings, 'textColor');
     const text = (prefix, extra) => ({

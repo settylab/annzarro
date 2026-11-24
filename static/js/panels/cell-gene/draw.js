@@ -40,6 +40,7 @@
  * **Cost.** One pass over the matrix for the layout and one for the traces; nothing here grows faster than the cells
  * (a heatmap draws up to 400,000, CXG-17). Hover text is built per cell from strings made once per row and group.
  */
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { PLOT_PALETTES, GAP_COLOUR, MODEBAR_REMOVE } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
@@ -1143,11 +1144,11 @@ function figure3d(model, th) {
     const zTitle = model.zTitle || (height.same ? main.lines.join(' · ') : statisticTitle(height));
     const labels3d = { x: swap ? groupSpec : geneSpec, y: swap ? geneSpec : groupSpec, aspect, z: zLo, zTicks, zRange: [zLo, zHi], zTitle: esc(zTitle),
         options: labelOpts,
-        font: { color: th.textColor, size: th.fontSize || 12, family: th.fontFamily || 'Arial, Helvetica, sans-serif' } };
+        font: { color: th.textColor, size: th.fontSize || 12, family: th.fontFamily || DEFAULT_FONT } };
     const camera = model.camera ? JSON.parse(JSON.stringify(model.camera)) : JSON.parse(JSON.stringify(DEFAULT_CAMERA));
     const layout = {
         paper_bgcolor: th.bgColor, plot_bgcolor: th.bgColor, showlegend: false, hovermode: 'closest', uirevision: UIREVISION_3D,
-        font: { family: th.fontFamily || 'Arial, Helvetica, sans-serif', size: th.fontSize || 12, color: th.textColor },
+        font: { family: th.fontFamily || DEFAULT_FONT, size: th.fontSize || 12, color: th.textColor },
         margin: { l: 0, r: 0, t: model.plotTitle ? 40 : 10, b: 0 }, annotations: [],
         scene: {
             xaxis: swap ? groupAxis : geneAxis,
@@ -1196,7 +1197,7 @@ export function buildFigure(given, theme) {
     const data = dots ? dotTraces(model, P, stack, th) : heatmapTraces(model, P, stack, th);
     const layout = {
         paper_bgcolor: th.bgColor, plot_bgcolor: th.bgColor, showlegend: false, hovermode: 'closest',
-        font: { family: th.fontFamily || 'Arial, Helvetica, sans-serif', size: th.fontSize || 12, color: th.textColor },
+        font: { family: th.fontFamily || DEFAULT_FONT, size: th.fontSize || 12, color: th.textColor },
         margin: { ...MARGIN }, annotations: [],
         ...layoutAxes(model, P, th, right)
     };

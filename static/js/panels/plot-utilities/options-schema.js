@@ -29,7 +29,8 @@
  *    control is off now, '' when it is on. `look: false`: a view, not a look (not reset, never takes a plot off Default).
  *  - select: a choice whose value is `null` writes absent (Auto). range: `percent: true` shows 100 times the stored
  *    fraction. `type: 'margins'`: the four sides in one field (`unlinkedPath` keeps the link switch).
- *  - `element`: a function returning a node the panel made, shown in the field's place. `domId`: the control's element id
+ *  - `type: 'scaled'`: a slider on `scale` (utils/slider-scales.js) and a number box, `snap(v, config, fromTrack)` the values it takes,
+ *    `autoPath` the stored switch that makes the value follow the plot (Auto). `domId`: the control's element id
  *    is `<domId>-<panel id>` (tests, drift harness and links read those ids), beside `data-option`.
  *  - `apply(value, config)`: what the adapter runs after the value is written (plot-aesthetics-adapter.js; not read here).
  *
@@ -38,6 +39,7 @@
  */
 
 import { withVocabulary } from './options-vocabulary.js';
+import { FONT_CHOICES, DEFAULT_FONT, ARIAL } from '../../utils/fonts.js';
 
 /**
  * KINDS. A kind is declared with `registerKind(kind, { order, defaults, applies, presets })`: its sections in order,
@@ -59,16 +61,8 @@ const ORDER = Object.freeze({
     'cell-count': Object.freeze(['presets', 'text', 'background', 'axes', 'panel:view3d', 'legend', 'margins', 'export', 'apply'])
 });
 
-/** The fonts offered, as Cell Plot's Plot Options names them; '' is the kind's default font. */
-const FONT_FAMILIES = Object.freeze([
-    ['Arial, Helvetica, sans-serif', 'Arial'],
-    ["'Times New Roman', Times, serif", 'Times New Roman'],
-    ['Courier, monospace', 'Courier'],
-    ['Georgia, serif', 'Georgia'],
-    ["'Trebuchet MS', sans-serif", 'Trebuchet MS'],
-    ['Verdana, sans-serif', 'Verdana'],
-    ['"Open Sans", verdana, arial, sans-serif', 'Open Sans']
-]);
+/** The fonts offered: one list on every plot (utils/fonts.js); the default is Open Sans. */
+const FONT_FAMILIES = FONT_CHOICES;
 
 /** The legend's columns, at most (as Cell Plot's, utils/legend-options.js COLUMNS_MAX). */
 const LEGEND_COLUMNS_MAX = 8;
@@ -76,8 +70,7 @@ const LEGEND_COLUMNS_MAX = 8;
 /** The common fields. Labels are interface text in US spelling; the panel's own are its vocabulary's. */
 const COMMON_FIELDS = Object.freeze(([
     // ---------------------------------------------------------------- Text
-    { id: 'fontFamily', section: 'text', type: 'select', path: 'look.fontFamily', label: 'Font', choices: FONT_FAMILIES,
-        dflt: { 'cell-gene': 'Arial, Helvetica, sans-serif', 'cell-count': '"Open Sans", verdana, arial, sans-serif' } },
+    { id: 'fontFamily', section: 'text', type: 'select', path: 'look.fontFamily', label: 'Font', choices: FONT_FAMILIES, dflt: DEFAULT_FONT },
     { id: 'fontSize', section: 'text', type: 'number', path: 'look.fontSize', label: 'Font size (px)', dflt: 12, min: 6, max: 36, step: 1 },
     { id: 'textColor', section: 'text', type: 'color', path: 'look.textColor', label: 'Text color', dflt: null },
     { id: 'plotTitle', section: 'text', type: 'text', path: 'titles.plot', label: 'Plot title', dflt: '', copy: false },
@@ -209,6 +202,7 @@ function clean(field, v) {
     case 'select': return !field.choices || field.choices.some(([value]) => value === v) ? v : undefined;
     case 'color': return typeof v === 'string' && COLOR.test(v) ? v : undefined;
     case 'text': return typeof v === 'string' ? v : undefined;
+    case 'scaled': return isNumber(v) && v > 0 ? v : undefined;
     case 'margins': {
         if (!isObject(v)) return undefined;
         const out = { ...v };
@@ -306,6 +300,19 @@ export function writeMargins(config, field, { sides, unlinked }, kind) {
     return out;
 }
 
+/**
+ * A `scaled` field's automatic switch (`autoPath`, a boolean the plot stores as it is): the point size, a slider on a log scale
+ * with its number box and an Auto that makes the value follow the number of points.
+ */
+export function readAuto(config, field) {
+    return getPath(isObject(config) ? config : {}, field.autoPath) === true;
+}
+
+/** `config` with a scaled field's automatic switch set (a copy); the value is the field's own. */
+export function writeAuto(config, field, auto) {
+    return setPath(isObject(config) ? config : {}, field.autoPath, auto === true);
+}
+
 /** The paths a look of `kind` may hold (what utils/session-style.js keeps of a stored default). */
 export function lookPaths(kind) {
     return copiedFields(kind).map((f) => f.path);
@@ -375,7 +382,7 @@ function presetValues(name, kind) {
     if (name === 'default') {
         for (const f of copiedFields(kind)) if (f.section !== 'export') out[f.id] = null;
     } else if (name === 'publication') {
-        Object.assign(out, { bgColor: '#ffffff', textColor: '#000000', axisColor: '#000000', fontFamily: 'Arial, Helvetica, sans-serif',
+        Object.assign(out, { bgColor: '#ffffff', textColor: '#000000', axisColor: '#000000', fontFamily: ARIAL,
             fontSize: 16, grid: false, axisLines: true, axisWidth: 1.5, tickMarks: true, zeroLines: false });
     } else if (name === 'bare') {
         Object.assign(out, { grid: false, axisLines: false, tickMarks: false, showLegend: false, colorBar: false, sizeLegend: false,

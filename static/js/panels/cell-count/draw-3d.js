@@ -21,6 +21,7 @@
  *
  * Left out in 3D (the strip says so): printed values, the log count axis, horizontal bars, arrangements and the fade.
  */
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { axisOrder, heightChoiceValues, splitUsed } from '../../utils/count-plot-model.js';
 import { bars3d, checkBarCap, bars3dMax, BAR_FILL, VERTICES_PER_BAR } from '../../utils/bars-3d.js';
@@ -202,7 +203,7 @@ export function figure3d(config, table, opts) {
 
     const aspect = sceneAspect(parts.x.extent, parts.y.extent);
     const zTitle = v3.zTitle ? v3.zTitle : parts.zTitle;
-    const font = { color: th.textColor, size: th.fontSize || 12, family: th.fontFamily || 'Arial, Helvetica, sans-serif' };
+    const font = { color: th.textColor, size: th.fontSize || 12, family: th.fontFamily || DEFAULT_FONT };
     const labels3d = { x: { ...parts.x, title: esc(parts.x.title) }, y: { ...parts.y, title: esc(parts.y.title) }, aspect,
         z: Math.min(0, built.zRange[0]), font };
     const camera = config.camera ? JSON.parse(JSON.stringify(config.camera)) : JSON.parse(JSON.stringify(DEFAULT_CAMERA));

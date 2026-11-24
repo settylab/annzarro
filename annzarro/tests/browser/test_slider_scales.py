@@ -211,6 +211,7 @@ def test_old_linear_link_values_are_drawn_unchanged(server):
             assert m["size"] == 0.1
             assert m["opacity"] == 0.37
             assert (m["cmin"], m["cmax"]) == (1000, 4321.5)
+            open_point_size(page, PID)                     # the size is in Plot Options, drawn when it is open
             assert page.input_value(f"#point-size-input-{PID}") == "0.1"
             assert page.input_value(f"#point-opacity-input-{PID}") == "0.37"
             assert "is-auto" not in page.get_attribute(f"#point-size-input-{PID}", "class")
@@ -275,6 +276,7 @@ def test_automatic_point_style(server):
             # size scattergl draws it: 13 steps of 100/255 px = 5.1 (5 drew the same)
             assert (m["size"], m["opacity"]) == (5.1, 1)
             size_box, opacity_box = f"#point-size-input-{PID}", f"#point-opacity-input-{PID}"
+            open_point_size(page, PID)                     # the size is in Plot Options, drawn when it is open
             assert page.input_value(size_box) == "5.1"
             assert "is-auto" in page.get_attribute(size_box, "class")
             assert "auto" in page.get_attribute(size_box, "title")

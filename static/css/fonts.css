@@ -1,0 +1,12 @@
+/*
+ * Open Sans, the default font of every plot (static/fonts/open-sans/NOTICE.md: OFL, Latin, Latin-1, Greek and the plot symbols).
+ * One variable file serves Regular (400) to Bold (700). No CDN: the file ships with the app. Plotly draws its text with this
+ * family, and exported images embed it (static/js/utils/fonts.js), so a plot looks the same on a machine without Open Sans.
+ */
+@font-face {
+    font-family: "Open Sans";
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("../fonts/open-sans/OpenSans-latin-greek.woff2") format("woff2");
+}

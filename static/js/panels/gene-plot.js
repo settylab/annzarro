@@ -1,3 +1,4 @@
+import { legacyFont } from '../utils/fonts.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
 import { focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { attachPlotUndo } from './plot-utilities/plot-undo.js';
@@ -72,6 +73,8 @@ const GenePlotPanel = (function() {
         // Override with provided options, if any (colour bounds stored in
         // data units go back to drawn units: array-stats.js restoreColorRange)
         Object.assign(_settings, restoreColorRange(options));
+        // a plot saved when Arial was the default has no font of its own: it keeps drawing in Arial (utils/fonts.js)
+        legacyFont(_settings);
         // On Default (made from the chooser, or saved on Default): the look is the session's default, whichever
         // session this opens in (utils/session-style.js)
         if (_settings.styleDefault === true) followSessionDefault(_settings, 'gene-plot');

@@ -4,6 +4,7 @@
  * count. Every site that draws or redraws a colour bar uses it (a first draw,
  * a change of colour, large-plot mode), so none drops an option.
  */
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { colorbarPosition, colorbarExtras } from './plot-options.js';
 import { plotColour } from '../../utils/plot-theme.js';
@@ -12,7 +13,7 @@ import { plotColour } from '../../utils/plot-theme.js';
 function barFont(settings, extra) {
   return {
     size: settings.fontSize ? settings.fontSize + extra : 12 + extra,
-    family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+    family: settings.fontFamily || DEFAULT_FONT,
     color: plotColour(settings, 'textColor')
   };
 }

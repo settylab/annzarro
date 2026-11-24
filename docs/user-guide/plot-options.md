@@ -204,9 +204,9 @@ and **Apply to other plots** copies it.
 
 ## Legend and colour bar
 
-- **Show Legend** and **Legend Position** (right, left, top or bottom). A legend on top or at the
+- **Show legend** and **Position** (right, left, top or bottom). A legend on top or at the
   bottom lies outside the axes, below the x-axis title at the bottom, and the margin grows to make room.
-- For the legend of a categorical colour: **Legend title** (on by default), **Dot size** (2 to 16 px;
+- For the legend of a categorical colour: **Title** (on by default), **Dot size** (2 to 16 px;
   empty draws the 12 px dots of the default legend, whatever the points' size) and **Columns** (2 to
   8; 1 or empty is one column). The group's **Reset** puts them back. The entries read down the columns in order
   (the first column takes the first ceil(n / columns) of them), with the title above the first one.
@@ -231,7 +231,7 @@ and **Apply to other plots** copies it.
 
 ## Text
 
-**Font** (Arial, Times New Roman, Courier, Georgia, Trebuchet MS or Verdana), **Size** (8 to
+**Font** (Open Sans, the default, which ships with the app and is in exported images too; Arial, Times New Roman, Courier, Georgia, Trebuchet MS or Verdana; the same list on every plot), **Size** (8 to
 24 px; 12 by default) and **Color**, with **Auto**.
 
 ## Margins
@@ -245,7 +245,7 @@ defaults.
 ## Export
 
 The **JPEG**, **SVG**, **WEBP** and **PNG** buttons, and **Width** and **Height** in pixels (100
-to 5000; 1200 by 800 by default), as in {doc}`export`. **Export at 2x** is on by default: PNG, JPEG
+to 5000; 1200 by 800 by default), as in {doc}`export`. **2x resolution** is on by default: PNG, JPEG
 and WEBP files are drawn at twice the width and height set, 2400 by 1600 pixels by default, so a
 figure stays sharp in print. Switch it off for files of exactly the pixels set. An SVG is vector
 and keeps the size set either way.

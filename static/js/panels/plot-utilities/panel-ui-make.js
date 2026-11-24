@@ -12,7 +12,7 @@ import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { populateHoverSelect } from './hover-columns.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
 import { escapeHtml } from '../../utils/safe-markdown.js';
-import { SLIDER_STEPS, pointSizeScale, opacityScale, trackValue } from '../../utils/slider-scales.js';
+import { SLIDER_STEPS, opacityScale, trackValue } from '../../utils/slider-scales.js';
 
 // Create array of discrete color scales
 const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Portland'];
@@ -171,14 +171,6 @@ export function createPanelStructure(container, id, settings, { plotType, consum
           <!-- How the points are drawn and labelled -->
           <div class="ctl-group ctl-points" role="group" aria-label="Points">
             <div class="point-controls">
-              <div class="point-size-control ctl-row ctl-slider">
-                <label class="ctl-label" for="point-size-input-${id}">Size</label>
-                <input type="range" class="form-range" min="0" max="${SLIDER_STEPS}" step="1" value="${trackValue(pointSizeScale, settings.pointSize)}" id="point-size-${id}"
-                       title="Marker size in px (log scale)" aria-label="Point size (log scale)">
-                <input type="number" class="form-control form-control-sm" min="0" step="any" value="${settings.pointSize}" id="point-size-input-${id}" title="Marker size in px">
-                <span class="point-auto"><button type="button" class="btn btn-sm btn-outline-secondary point-auto-btn" id="point-size-auto-${id}"
-                      title="Automatic size: follows the number of points drawn (in view when zoomed)">auto</button></span>
-              </div>
               <div class="point-opacity-control ctl-row ctl-slider">
                 <label class="ctl-label" for="point-opacity-input-${id}">Opacity</label>
                 <input type="range" class="form-range" min="0" max="${SLIDER_STEPS}" step="1" value="${trackValue(opacityScale, settings.pointOpacity)}" id="point-opacity-${id}"
@@ -251,18 +243,7 @@ export function createPanelStructure(container, id, settings, { plotType, consum
     });
     actionsRow.replaceWith(toolbar.element);
   }
-  // The point size is set in Plot Options (Points) since WP-5b: its controls wait in a hidden holder of the grid from
-  // the start (so the grid's height, and the plot's, never change when they move), and plot-aesthetics-menu.js moves
-  // them into the pop-over while it is open. Their listeners (listeners.js) find them here.
-  const sizeRow = $container.find('.point-size-control')[0];
-  const controlsEl = $container.find('.plot-controls')[0];
-  if (sizeRow && controlsEl) {
-    const holder = document.createElement('div');
-    holder.className = 'ctl-option-holder';
-    holder.hidden = true;
-    holder.appendChild(sizeRow);
-    controlsEl.appendChild(holder);
-  }
+  // The point size is Plot Options' (Points group, options-popover.js): it is not in this grid; its opacity stays here.
 
   return {
     plotContainer: document.getElementById(`plot-container-${id}`),

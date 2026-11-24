@@ -31,6 +31,7 @@
  * are refused with a message (largePlotRefusal): far above the threshold the
  * regular path would close the tab.
  */
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { plotColour, noneColour, GAP_COLOUR, MODEBAR_REMOVE } from '../../utils/plot-theme.js';
@@ -303,7 +304,7 @@ function interleave(groups) {
 
 function titleFont(settings) {
   return { size: legendTitleFontSize(settings),
-    family: settings.fontFamily || 'Arial, Helvetica, sans-serif', color: plotColour(settings, 'textColor') };
+    family: settings.fontFamily || DEFAULT_FONT, color: plotColour(settings, 'textColor') };
 }
 
 /**

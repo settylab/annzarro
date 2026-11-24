@@ -15,7 +15,7 @@
  *
  * Pure: no DOM and no Plotly (everything that touches the plot is passed in), so annzarro/tests/js holds it in Node.
  */
-import { fieldsOf, readField, readMargins } from './options-schema.js';
+import { fieldsOf, readField, readMargins, readAuto } from './options-schema.js';
 
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const clone = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
@@ -35,12 +35,14 @@ export function createSettingsAdapter({ kind, settings, hooks, initialize, reloo
         config: () => settings,
         commit(next, label = '') {
             const differs = (f) => !same(readField(next, f, kind), readField(settings, f, kind))
-                || (f.unlinkedPath && readMargins(next, f, kind).unlinked !== readMargins(settings, f, kind).unlinked);
+                || (f.unlinkedPath && readMargins(next, f, kind).unlinked !== readMargins(settings, f, kind).unlinked)
+                || (f.autoPath && readAuto(next, f) !== readAuto(settings, f));
             const was = settings.styleDefault === true;
             const changed = fieldsOf(kind).filter((f) => f.path && !f.element && differs(f));
             for (const f of changed) {
                 if (next[f.path] === undefined) delete settings[f.path];
                 else settings[f.path] = clone(next[f.path]);
+                if (f.autoPath) settings[f.autoPath] = readAuto(next, f);      // stored as true or false, as the plot always did
                 if (f.unlinkedPath) {
                     if (next[f.unlinkedPath] === undefined) delete settings[f.unlinkedPath];
                     else settings[f.unlinkedPath] = next[f.unlinkedPath];

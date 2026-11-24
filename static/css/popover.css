@@ -89,7 +89,8 @@
 .az-pop-field--check, .po-field--check { justify-content: flex-start; }
 .az-pop-check, .po-check { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .az-pop-check .form-check-input, .po-check .form-check-input { margin: 0; }
-.az-pop-help, .po-help { flex: 1 1 100%; color: var(--az-muted); font-size: 0.6875rem; line-height: 1.3; }
+/* under .az-popover: the dark theme's `small { color: inherit }` (theme.css) would otherwise win and draw help in the full text colour */
+.az-popover .az-pop-help, .az-popover .po-help { flex: 1 1 100%; color: var(--az-muted); font-size: 0.6875rem; line-height: 1.3; }
 
 .az-pop-buttons, .po-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
 .az-pop-ask, .po-ask { display: flex; flex-direction: column; gap: 4px; }
@@ -108,11 +109,7 @@
 .az-pop-note { font-size: 0.75rem; padding: 3px 6px; border-left: 3px solid var(--az-border-strong); background: var(--az-surface-3); }
 .az-pop-note[hidden] { display: none; }
 
-/* A field the panel made itself (the Cell Plot's and Gene Plot's point size row, a grid row with its own markup and ids): laid out
-   and sized as the other rows of the body (label left, 5.5rem number box, the same small controls), so the group looks alike */
-.az-pop-field--element { display: block; }
-.az-pop-field--element .ctl-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin: 0; }
-.az-pop-field--element .ctl-label { flex: 0 0 auto; color: var(--az-muted); font-size: 0.75rem; font-weight: 400; margin: 0; }
-.az-pop-field--element .ctl-row .form-range { flex: 1 1 5rem; min-width: 0; width: auto; }
-.az-pop-field--element .ctl-row input[type="number"] { flex: 0 0 auto; width: 5.5rem; }
-.az-pop-field--element .point-auto { flex: 0 0 auto; }
+/* A scaled field (the point size): the slider takes the room the label leaves, the box and Auto are as in every row */
+.az-pop-field--scaled .az-pop-field__control { flex: 1 1 12rem; justify-content: flex-end; min-width: 0; }
+.az-pop-field--scaled .form-range { flex: 1 1 4rem; min-width: 0; width: auto; }
+.az-pop-field--scaled .az-pop-num { flex: 0 0 auto; }

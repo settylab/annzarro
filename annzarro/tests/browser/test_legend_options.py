@@ -166,7 +166,7 @@ def test_the_options_in_a_link_draw_the_first_legend(page, server):
 
 def test_text_size_has_a_reset(page, server):
     """The Text group has one Reset (pop-over unification: no Reset of its own per field); it is off while the group is at its defaults."""
-    _open(page, server)
+    _open(page, server, {"fontFamily": "\"Open Sans\", verdana, arial, sans-serif"})      # the default font stored: a plot saved with none is Arial
     _menu(page, A, "text")
     reset = f"details[data-panel='{A}'][data-section='text'] [data-reset='text']"
     assert page.is_disabled(reset)                                          # 12 is the default

@@ -1,3 +1,4 @@
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { plotColour, constantColour } from '../../utils/plot-theme.js';
@@ -498,7 +499,7 @@ async function updateNow(plotContainer, data, settings, refreshPlot, options = {
                     'legend.title.text': legendTitleText(settings),
                     'legend.title.font': { 
                         size: legendTitleFontSize(settings),
-                        family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+                        family: settings.fontFamily || DEFAULT_FONT,
                         color: plotColour(settings, 'textColor')
                     }
                 });
@@ -902,7 +903,7 @@ async function updateNow(plotContainer, data, settings, refreshPlot, options = {
                         'legend.title.text': legendTitleText(settings),
                         'legend.title.font': { 
                             size: legendTitleFontSize(settings),
-                            family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+                            family: settings.fontFamily || DEFAULT_FONT,
                             color: plotColour(settings, 'textColor')
                         }
                     });
