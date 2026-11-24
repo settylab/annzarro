@@ -87,7 +87,8 @@ const proxies = (fig) => fig.data.filter((t) => t.meta === 'az-legend');
 test('each kind has the common sections in order, with its own sections between them', () => {
     assert.deepEqual(S.sectionsOf(CG).map((s) => s.id),
         ['presets', 'text', 'background', 'axes', 'panel:dots', 'panel:sections', 'legend', 'panel:annotations', 'margins', 'export', 'apply']);
-    assert.deepEqual(S.sectionsOf(CC).map((s) => s.id), ['presets', 'text', 'background', 'axes', 'legend', 'margins', 'export', 'apply']);
+    // the count plot's own section is its 3D one (WP-11, cell-count/options.js)
+    assert.deepEqual(S.sectionsOf(CC).map((s) => s.id), ['presets', 'text', 'background', 'axes', 'panel:view3d', 'legend', 'margins', 'export', 'apply']);
     // the Cell-Gene Plot's fields of before are in the schema, at the keys they always had
     const cg = Object.fromEntries(S.fieldsOf(CG).map((f) => [f.id, f.path]));
     assert.equal(cg.outlineWidth, 'outline.width');

@@ -304,22 +304,12 @@ export function figureExtras(config, { reply, recipe, order, titleOf, colors, gr
 // ================================================================================================ 3D
 
 /**
- * The bar cap in force: the server's limits.bars_3d_max, or a lower one the browser tests set before the app loads
- * (`window.__azBars3dMax`, as `window.__azTableLimits` sets the table's limits), so a small grid can stand for one over
- * the cap.
- */
-function barMax() {
-    const set = typeof window !== 'undefined' ? window.__azBars3dMax : undefined;
-    return typeof set === 'number' && set > 0 ? set : bars3dMax();
-}
-
-/**
  * Whether the matrix may be drawn in 3D (UX 6b): one bar per row and group, at most the cap. Refused with the matrix's
  * words ("Use fewer genes or groups.").
  * @param {{rows: number, groups: number, max?: number}} shape
  * @returns {{ok: boolean, count: number, max: number, text: string}}
  */
-export function view3dGate({ rows, groups, max = barMax() }) {
+export function view3dGate({ rows, groups, max = bars3dMax() }) {
     return checkBarCap(rows * groups, { max, hint: 'matrix' });
 }
 

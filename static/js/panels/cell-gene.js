@@ -64,7 +64,7 @@ import { geneReads } from '../utils/cell-gene-model.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
 import { buildFigure, colourBars, sceneLabels, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
-import { recordCameraOnRelease } from '../utils/scene-camera.js';
+import { watchSceneCamera, sameCamera } from '../utils/scene-camera.js';
 import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
 import { createPlotToolbar } from '../ui/plot-toolbar.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
@@ -111,8 +111,6 @@ const PARTS = Object.freeze({ options: OPTIONS_PART, clicks: CLICKS_PART });
 const W = VOCABULARY.word;
 const STATES = VOCABULARY.cellGene.states;
 const W3 = VOCABULARY.cellGene.view3d;
-/** A turn of the 3D camera is stored once it has rested this long (UX 6b: debounced). */
-const CAMERA_STORE_MS = 250;
 const CGV = VOCABULARY.cellGene;
 
 /** What a notice calls things (utils/source-notices.js): the plot waits on its groups. */
@@ -1200,35 +1198,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          * (draw.js sceneLabels; `labels` is the drawing's labels3d, null in 2D).
          */
         function watchCamera(labels) {
-            const on = !!labels;
-            const gd = _dom && _dom.plot;
-            if (!gd || typeof gd.on !== 'function') return;
-            if (gd.__azCgCamera && typeof gd.removeListener === 'function') gd.removeListener('plotly_relayout', gd.__azCgCamera);
-            gd.__azCgCamera = null;
-            if (!on) return;
-            // a turn released outside the plot is recorded too (scene-camera.js)
-            recordCameraOnRelease();
-            let timer = null;
-            gd.__azCgCamera = (ev) => {
-                const camera = ev && ev['scene.camera'];
-                if (!camera) return;
-                relabel(gd, labels, camera);
-                clearTimeout(timer);
-                timer = setTimeout(() => storeCamera(camera), CAMERA_STORE_MS);
-            };
-            gd.on('plotly_relayout', gd.__azCgCamera);
+            watchSceneCamera(_dom && _dom.plot, { labelsFor: labels ? (camera) => sceneLabels(labels, camera) : null, store: storeCamera, key: '__azCgCamera' });
         }
-
-        /** The labels for a camera, set only when an edge or an anchor changed (the relayout carries no camera). */
-        function relabel(gd, labels, camera) {
-            if (!window.Plotly || !gd.layout || !gd.layout.scene) return;
-            const next = sceneLabels(labels, camera);
-            const key = (list) => (list || []).map((a) => `${a.xanchor}|${a.x}|${a.y}`).join(',');
-            if (key(next) === key(gd.layout.scene.annotations)) return;
-            window.Plotly.relayout(gd, { 'scene.annotations': next });
-        }
-
-        const sameCamera = (a, b) => ['eye', 'center', 'up'].every((k) => ['x', 'y', 'z'].every((d) => Math.abs(((a[k] || {})[d] || 0) - ((b[k] || {})[d] || 0)) < 1e-3));
 
         /** The camera into the configuration: a view, like Cell Plot's zoom, so no undo step and no redraw. */
         function storeCamera(camera) {

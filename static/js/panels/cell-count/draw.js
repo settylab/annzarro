@@ -30,7 +30,7 @@ const FADE_FROM = 0.3;
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const num = (v) => (Number.isInteger(v) ? v.toLocaleString('en-US') : String(Number(v.toPrecision(4))));
 const pct = (f) => `${Number((f * 100).toPrecision(3))}%`;
-const axisOf = (table, input) => table.axes.findIndex((a) => a.input === input);
+export const axisOf = (table, input) => table.axes.findIndex((a) => a.input === input);
 
 // --- what is drawn: the value and its words --------------------------------------------------------------------------
 
@@ -44,7 +44,7 @@ function valueOf(config) {
  * The numbers a bar's height or a rectangle's color shows, with the axis title and the format that go with them.
  * @returns {{kind: string, values: ArrayLike<number>|null, title: string, show: (v: number) => string, percent: boolean}}
  */
-function valueSpec(config, table, opts) {
+export function valueSpec(config, table, opts) {
     const { kind, base } = valueOf(config);
     const { words, inputNames } = opts;
     if (kind === 'share') return { kind, values: heightValues(config, table), title: words.share(base, inputNames), show: pct, percent: true };
@@ -86,7 +86,7 @@ function labelSpec(config, table, opts) {
 const textOf = (spec, r) => (spec && Number.isFinite(spec.values[r]) ? spec.show(spec.values[r]) : '');
 
 /** The hover of row `r` (CNT-21): the levels, the count, the share and, when there is one, the measure. */
-function hoverOf(config, table, opts, r, labelAt) {
+export function hoverOf(config, table, opts, r, labelAt) {
     const { words } = opts;
     const share = shareValues(table, valueOf(config).kind === 'share' ? valueOf(config).base : 'all');
     const lines = [levelsAt(table, r).map(labelAt).map(esc).join(' × '), `${esc(words.hoverCount)}: ${num(table.count[r])}`];
@@ -101,10 +101,10 @@ function hoverOf(config, table, opts, r, labelAt) {
 // --- levels, positions and colors ------------------------------------------------------------------------------------
 
 /** One Map per axis: level id to the label shown. */
-const labelMapsOf = (config, table, opts) => opts.labels || levelLabelsOf(config, table, opts.titleOf);
+export const labelMapsOf = (config, table, opts) => opts.labels || levelLabelsOf(config, table, opts.titleOf);
 
 /** The label of a level of axis `a`: the caller's, or the id (a level the labels do not know). */
-const labelFn = (maps) => (id, a) => (maps[a] && maps[a].get(id)) || id;
+export const labelFn = (maps) => (id, a) => (maps[a] && maps[a].get(id)) || id;
 
 function colorOf(config, table, a, i, opts) {
     return tableLevelColour(config, table, a, i, opts.theme.notInTableColor);
@@ -154,7 +154,7 @@ const MAX_BORDER_LABELS = 12;
  * @param {number[]} order - the level indexes in drawing order
  * @returns {{positions: number[], tickvals: number[], ticktext: string[]}|null}
  */
-function evenBins(table, a, order) {
+export function evenBins(table, a, order) {
     const { levels, info } = table.axes[a];
     const edges = info.edges;
     if (!Array.isArray(edges) || edges.length < 1) return null;
