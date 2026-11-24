@@ -582,6 +582,8 @@ const CellPlotPanel = (function() {
                     _settings.viewport2D = null;
                     _settings.viewport3D = null;
                     await refreshPlot(signal);
+                    // a dataset that arrived is not a change of the user's: Undo starts here (plot-undo.js)
+                    if (_undo) _undo.settled();
                     
                     // If we get here, the operation completed successfully
                     return;

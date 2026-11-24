@@ -14,6 +14,7 @@ import { registerKind, registerPanelFields, fieldsOf } from './options-schema.js
 import { DEFAULT_MARGINS } from './plot-options.js';
 
 /** The kinds, as their panel types. */
+// export-unused-ok: the Node tests walk both kinds
 export const AESTHETICS_KINDS = Object.freeze(['cell-plot', 'gene-plot']);
 
 /** The sections of the two kinds in the shared order; `panel:*` are their own. */

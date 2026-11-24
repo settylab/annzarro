@@ -3268,6 +3268,10 @@ button.dtsb-button.dtsb-clear:hover {
         grid-template-rows: auto auto;
         grid-template-areas: "axes colour points" "bar bar bar";
     }
+    /* The points column keeps the room it had before WP-5b (the point size's row, now in Plot Options, and the line the
+       buttons took, now the toolbar row), so the first row is as tall as it was, with a colour or without one: a
+       colour that arrives (a score) or is picked does not move the plot. */
+    .ctl-points { padding-bottom: calc(2 * var(--ctl-h) + 2 * var(--ctl-u)); }
     .ctl-grid.ctl-no-colour {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         grid-template-areas: "axes points" "bar bar";

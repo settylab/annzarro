@@ -26,10 +26,10 @@ const TRANSIENT = Object.freeze(['controlsVisible', 'viewport2D', 'viewport3D', 
  */
 const NAMES = Object.freeze({
     equalAspect: 'equal aspect', z: '3D', tableFilter: 'table filter', subsettedCells: 'subset',
-    x: 'x axis', y: 'y axis', z: '3D', color: 'colour', colorScale: 'colour map', colorReversed: 'reverse colours',
+    x: 'x axis', y: 'y axis', color: 'colour', colorScale: 'colour map', colorReversed: 'reverse colours',
     colorMin: 'colour minimum', colorMax: 'colour maximum', lockColorRange: 'lock colour range', logColor: 'log colour',
-    categoryPalette: 'palette', hideNan: 'hide NaN', tableFilter: 'table filter', pointSize: 'point size',
-    autoPointSize: 'point size', pointOpacity: 'opacity', autoPointOpacity: 'opacity', equalAspect: 'equal aspect',
+    categoryPalette: 'palette', hideNan: 'hide NaN', pointSize: 'point size',
+    autoPointSize: 'point size', pointOpacity: 'opacity', autoPointOpacity: 'opacity',
     hoverInfo: 'hover', title: 'title'
 });
 
@@ -48,6 +48,7 @@ function panelOf(id) {
 }
 
 /** The plot's config as a step compares it: plain, without the view and the automatic point style. */
+// export-unused-ok: the Node tests hold what a step compares
 export function storedConfig(config) {
     const c = JSON.parse(JSON.stringify(config || {}));
     for (const k of TRANSIENT) delete c[k];

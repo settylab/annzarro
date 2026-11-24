@@ -255,14 +255,29 @@ def test_a_long_plot_options_scrolls_and_keeps_its_place(page, served):
     room = page.evaluate("() => { const b = document.querySelector(\"[data-popover='plot-options'] .az-popover-body\"); return [b.scrollHeight, b.clientHeight]; }")
     assert room[0] > room[1], "taller than its room"
     page.locator(f"#apply-others-{pid}").scroll_into_view_if_needed()
-    page.wait_for_timeout(300)
     top = page.evaluate("() => document.querySelector(\"[data-popover='plot-options'] .az-popover-body\").scrollTop")
     assert top > 0
     assert page.is_visible(f"#apply-others-{pid}")
     b = page.locator("[data-popover='plot-options'] .az-popover-body").bounding_box()
     page.mouse.move(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
     page.mouse.wheel(0, -40)
-    page.wait_for_timeout(300)
+    page.wait_for_function("(t) => document.querySelector(\"[data-popover='plot-options'] .az-popover-body\").scrollTop < t", arg=top)
     after = page.evaluate("() => document.querySelector(\"[data-popover='plot-options'] .az-popover-body\").scrollTop")
     assert 0 < after < top, (top, after)
     assert page.locator(POP).count() == 1
+
+
+# ------------------------------------------------------------------ for other tests
+
+def open_point_size(page, pid):
+    """Show the point size's controls, in Plot Options ▸ Points since WP-5b, ready to use (other tests call this)."""
+    if not page.query_selector(f"[data-popover='plot-options'] details[data-panel='{pid}']"):
+        if page.query_selector(POP):
+            page.keyboard.press("Escape")                 # another plot's pop-over
+            page.wait_for_selector(POP, state="detached")
+        page.click(f"#aesthetics-menu-btn-{pid}")
+        page.wait_for_selector(f"{POP} details[data-panel='{pid}']")
+    page.evaluate("(id) => { const d = document.querySelector(`[data-popover='plot-options'] details[data-panel='${id}'][data-section='points']`);"
+                  " if (!d.open) d.querySelector('summary').click(); }", pid)
+    page.locator(f"#point-size-input-{pid}").scroll_into_view_if_needed()
+    page.wait_for_selector(f"#point-size-input-{pid}", state="visible")
