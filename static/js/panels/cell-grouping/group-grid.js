@@ -13,6 +13,7 @@ import { createVirtualGrid, columnRange } from '../../utils/virtual-grid.js';
 import { groupSources, sourceTitleOf } from '../../utils/group-host.js';
 import { codesRefusal } from '../../utils/cell-group-source.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
+import { inlineRename } from '../../ui/inline-rename.js';
 import { cellExportEntry } from './cell-export.js';
 import { sourceName } from '../../utils/cell-grouping.js';
 import { toHex, withGroupColor, withGroupLabel, withoutGroupOverride, withoutInactiveOverrides } from './colours.js';
@@ -268,52 +269,21 @@ function mount(host, ctx) {
 
     function ensureEditor() {
         if (editor) return editor;
-        const input = el('input', { type: 'text', class: 'form-control form-control-sm cgg-edit__name', autocomplete: 'off', spellcheck: 'false',
-            data: { azOwnEscape: '' }, title: 'Enter saves, Escape cancels, Tab saves and moves to the next group.',
-            aria: { label: 'New name of the group', description: 'Enter saves, Escape cancels, Tab saves and moves to the next group.' } });
+        const hint = 'Enter saves, Escape cancels, Tab saves and moves to the next group.';
         const color = el('input', { type: 'color', class: 'cgg-edit__color', title: 'Color of this group (Alt+C)',
             aria: { label: 'Color of this group', keyshortcuts: 'Alt+C' } });
-        const ok = el('button', { type: 'button', class: 'btn btn-sm btn-outline-success cgg-edit__ok', title: 'Save the name',
-            aria: { label: 'Save the new name of the group' } }, '✓');
-        const cancel = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgg-edit__cancel', title: 'Cancel',
-            aria: { label: 'Cancel renaming the group' } }, '✕');
+        const rename = inlineRename({ el, swatch: color, onInput: (text) => { if (renaming) renaming.draft = text; },
+            classes: { input: 'form-control form-control-sm cgg-edit__name', ok: 'btn btn-sm btn-outline-success cgg-edit__ok', cancel: 'btn btn-sm btn-outline-secondary cgg-edit__cancel' },
+            labels: { field: 'New name of the group', ok: 'Save the new name of the group', cancel: 'Cancel renaming the group', hint },
+            onSave: (text, move) => leaveRename(true, move), onCancel: () => leaveRename(false) });
+        const { input, ok, cancel } = rename;
         const box = el('span', { class: 'cgg-edit', role: 'group', aria: { label: 'Rename the group' } }, color, input, ok, cancel);
-        editor = { box, input, color, ok, cancel };
-        input.addEventListener('input', () => { if (renaming) renaming.draft = input.value; });
-        const escape = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leaveRename(false); } };
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); leaveRename(true); }
-            else if (e.key === 'Tab') { e.preventDefault(); leaveRename(true, e.shiftKey ? -1 : 1); }
-            else if (e.altKey && e.key.toLowerCase() === 'c') {
-                e.preventDefault();
-                if (typeof color.showPicker === 'function') { try { color.showPicker(); } catch { color.click(); } } else color.click();
-            } else escape(e);
-        });
-        for (const b of [ok, cancel, color]) b.addEventListener('keydown', escape);
-        for (const b of [ok, cancel]) b.addEventListener('mousedown', (e) => e.preventDefault());       // a press keeps the focus in the field
-        ok.addEventListener('click', () => leaveRename(true));
-        cancel.addEventListener('click', () => leaveRename(false));
+        editor = { box, input, color, ok, cancel, rearm: rename.rearm };
         color.addEventListener('change', () => {
             const r = renaming && model && model.rows.find((x) => x.generated === renaming.name);
             if (r) setGroupColor(r, color.value);
         });
-        // Leaving the field by a click saves it, once the click has landed (a redraw between press and release would take the
-        // control pressed from under it); the first of the click, the release or a short timer decides. A redraw that takes the
-        // field away blurs it too, and is no way out.
-        box.addEventListener('focusout', (e) => {
-            if (!renaming || (e.relatedTarget && box.contains(e.relatedTarget))) return;
-            let done = false;
-            const later = () => {
-                if (done) return;
-                done = true;
-                document.removeEventListener('click', later, true);
-                document.removeEventListener('pointerup', later, true);
-                setTimeout(() => { if (renaming && box.isConnected) leaveRename(true); }, 0);
-            };
-            document.addEventListener('click', later, true);
-            document.addEventListener('pointerup', later, true);
-            setTimeout(later, 350);
-        });
+        rename.attach(box);
         return editor;
     }
 
@@ -333,6 +303,7 @@ function mount(host, ctx) {
         e.color.value = toHex(r.color);
         if (renaming.fresh) {
             renaming.fresh = false;
+            e.rearm();
             setTimeout(() => { if (e.input.isConnected) { e.input.focus(); e.input.select(); } }, 0);
         }
     }

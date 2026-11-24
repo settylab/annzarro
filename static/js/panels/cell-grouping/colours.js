@@ -126,6 +126,29 @@ function withoutGroupColors(recipe) {
     return list.length ? list : undefined;
 }
 
+/** A recipe's `groupOverrides` with every group's label removed, its colors kept; an entry left with neither goes. Undefined when none is left. */
+// export-unused-ok: unit-tested helper of this module's own buttons
+export function withoutGroupLabels(recipe) {
+    const list = (Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : []).map((o) => {
+        const out = { ...o };
+        delete out.label;
+        return out;
+    }).filter((o) => Object.keys(o).length > 1);
+    return list.length ? list : undefined;
+}
+
+/** How many groups the user has named by hand, active or not. */
+// export-unused-ok: unit-tested helper of this module's own buttons
+export const groupLabelCount = (recipe) => (Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides.filter((o) => typeof o.label === 'string' && o.label !== '').length : 0);
+
+/** A factor without the names given to its levels (a copy; its colors and levels stay). */
+// export-unused-ok: unit-tested helper of this module's own buttons
+export function withoutLevelLabels(p) {
+    const out = { ...p };
+    delete out.labels;
+    return out;
+}
+
 /** How many groups' colors the user has set by hand, active or not. */
 const groupColorCount = (recipe) => (Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides.filter((o) => isColourString(o.color)).length : 0);
 
@@ -148,9 +171,13 @@ export function factorColorsSection({ D, p, info, kind, commit, name }) {
     palette.addEventListener('change', () => commit(withColors(p, { palette: palette.value }), `palette ${palette.value || 'default'} for ${name}`));
     const reset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-colors-reset', disabled: !p.colors,
         on: { click: () => commit(withoutOverrides(p, true), `reset colors of ${name}`) } }, 'Reset colors');
+    const labelled = p.labels && Object.keys(p.labels).length;
+    const resetNames = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-names-reset', disabled: !labelled,
+        title: 'Back to the generated names of the levels; their colors stay',
+        on: { click: () => commit(withoutLevelLabels(p), `reset level names of ${name}`) } }, 'Reset names');
     return el('div', { class: 'cgrp-colors', role: 'group', aria: { label: 'Colors' } },
         el('div', { class: 'cgrp-colors__head', text: 'Colors' }),
-        el('div', { class: 'cgrp-colors__line' }, el('label', { text: 'Palette ' }, palette), reset));
+        el('div', { class: 'cgrp-colors__line' }, el('label', { text: 'Palette ' }, palette), reset, resetNames));
 }
 
 /**
@@ -177,15 +204,19 @@ export function groupColorsSection({ D, id, recipe, names, set }) {
     const palette = el('select', { class: 'form-select form-select-sm cgrp-group-palette', id: `cgrp-grouppal-${id}`, aria: { label: 'Palette of the groups' } });
     for (const o of groupPalettes()) palette.appendChild(el('option', { value: o.value, text: o.text }));
     const reset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-group-reset' });
+    const resetNames = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-group-names-reset',
+        title: 'Back to the generated names of the groups; their colors stay' });
     const byLine = el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-colorby-${id}`, text: 'Color groups by ' }), by);
     const paletteLine = el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-grouppal-${id}`, text: 'Palette ' }), palette);
     const element = el('div', { class: 'cgrp-settings__colors', role: 'group', aria: { label: 'Colors' } },
-        el('div', { class: 'cgrp-colors__head', text: 'Colors' }), byLine, paletteLine, el('div', { class: 'cgrp-settings__line' }, reset));
+        el('div', { class: 'cgrp-colors__head', text: 'Colors' }), byLine, paletteLine, el('div', { class: 'cgrp-settings__line' }, reset, resetNames));
     const change = (patch, label) => set({ colors: patched(recipe().colors, patch) }, label);
     by.addEventListener('change', () => change({ by: by.value === 'own' ? undefined : Number(by.value) },
         by.value === 'own' ? 'color groups by their own palette' : `color groups by ${by.selectedOptions[0].textContent}`));
     palette.addEventListener('change', () => change({ palette: palette.value }, `group palette ${palette.value || 'default'}`));
     reset.addEventListener('click', () => set({ groupOverrides: withoutGroupColors(recipe()) }, 'reset group colors'));
+
+    resetNames.addEventListener('click', () => set({ groupOverrides: withoutGroupLabels(recipe()) }, 'reset group names'));
 
     function paint() {
         const r = recipe();
@@ -204,6 +235,9 @@ export function groupColorsSection({ D, id, recipe, names, set }) {
         const n = groupColorCount(r);
         reset.textContent = `Reset group colors (${n})`;
         reset.disabled = n === 0;
+        const named = groupLabelCount(r);
+        resetNames.textContent = `Reset group names (${named})`;
+        resetNames.disabled = named === 0;
     }
 
     return { element, paint };

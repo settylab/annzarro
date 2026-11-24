@@ -529,6 +529,31 @@ body {
     height: auto;
     min-height: 0;
 }
+/* The "Add New Panel" tile (a pane's chooser) takes the height its row or pane gives it and scrolls its list inside:
+   its content never sets a minimum, so spawning it cannot grow or push the layout. */
+.panel-wrapper > .tile-selector,
+.split-pane > .tile-selector {
+    flex: 1 1 0;
+    min-height: 11rem;                 /* bounded, whatever the content: the heading and a couple of entries stay in view */
+    overflow: hidden;
+}
+.panel-wrapper > .tile-selector > .tile-selection-container,
+.split-pane > .tile-selector > .tile-selection-container {
+    flex: 1 1 0;
+    min-height: 0;
+    height: auto;
+    overflow: auto;
+    padding: 0.75rem;                  /* small panes: the heading and a couple of entries first, then the scroll */
+}
+.panel-wrapper > .tile-selector > .tile-selection-container .tile-selection-header,
+.split-pane > .tile-selector > .tile-selection-container .tile-selection-header {
+    margin-bottom: 0.75rem;
+    flex: none;
+}
+.panel-wrapper > .tile-selector > .tile-selection-container .tile-selection-header p,
+.split-pane > .tile-selector > .tile-selection-container .tile-selection-header p { margin-bottom: 0; }
+.panel-wrapper > .tile-selector > .tile-selection-container .selection-sections,
+.split-pane > .tile-selector > .tile-selection-container .selection-sections { gap: 1rem; }
 /* A tile is clipped, not scrolled, so its automatic minimum width would be its
    content's: a narrow pane must stay as narrow as the split makes it. */
 .tile,
