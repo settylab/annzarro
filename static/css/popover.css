@@ -93,3 +93,12 @@
 .az-pop-ask, .po-ask { display: flex; flex-direction: column; gap: 4px; }
 .az-pop-ask[hidden], .po-ask[hidden] { display: none; }
 .az-pop-ask__buttons, .po-ask__buttons { display: flex; gap: 4px; }
+
+/* A field the panel made itself (the Cell Plot's and Gene Plot's point size row, a grid row with its own markup and ids): laid out
+   and sized as the other rows of the body (label left, 5.5rem number box, the same small controls), so the group looks alike */
+.az-pop-field--element { display: block; }
+.az-pop-field--element .ctl-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin: 0; }
+.az-pop-field--element .ctl-label { flex: 0 0 auto; color: var(--az-muted); font-size: 0.75rem; font-weight: 400; margin: 0; }
+.az-pop-field--element .ctl-row .form-range { flex: 1 1 5rem; min-width: 0; width: auto; }
+.az-pop-field--element .ctl-row input[type="number"] { flex: 0 0 auto; width: 5.5rem; }
+.az-pop-field--element .point-auto { flex: 0 0 auto; }

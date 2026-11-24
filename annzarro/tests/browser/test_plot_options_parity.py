@@ -48,21 +48,31 @@ PIECES = {
     "select row": ".az-pop-field--select",
     "select": ".az-pop-field--select select",
     "range": "input[type=range]",
+    "color box": ".az-pop-field--color input[type=color]",
+    "auto toggle": ".az-pop-auto",
+    "preset button": ".az-pop-preset",
+    "apply button": ".az-pop-apply-others",
+    "session button": ".az-pop-session-set",
     "check row": ".az-pop-field--check",
     "check label": ".az-pop-check",
     "check box": ".az-pop-check input[type=checkbox]",
     "help": ".az-pop-section__body .az-pop-help",
     "reset": ".az-pop-reset",
+    "export button": ".az-pop-export-btn",
+    "copy button": ".az-pop-copy-btn",
     "footer": ".az-pop-section__foot",
 }
 
 PROPS = ["display", "flexDirection", "alignItems", "justifyContent", "flexWrap", "fontFamily", "fontSize", "fontWeight", "lineHeight",
-         "letterSpacing", "textTransform", "color", "backgroundColor", "borderTopWidth", "borderBottomWidth", "borderLeftWidth",
+         "letterSpacing", "textTransform", "color", "backgroundColor", "borderTopWidth", "borderBottomWidth", "borderLeftWidth", "borderTopStyle", "borderLeftStyle", "overflowX", "overflowY",
          "borderTopColor", "borderBottomColor", "borderLeftColor", "borderTopLeftRadius", "paddingTop", "paddingRight", "paddingBottom",
          "paddingLeft", "marginTop", "marginRight", "marginBottom", "marginLeft", "rowGap", "columnGap", "boxShadow", "opacity"]
 # the sizes only where the piece fixes them (a select's width follows its choices, a row's follows the pop-over)
-SIZED = {"surface": ["width"], "number box": ["width", "height"], "select": ["height", "maxWidth"], "range": ["height"],
+SIZED = {"surface": ["width"], "export button": ["height"], "copy button": ["height"], "color box": ["width", "height"], "auto toggle": ["height"], "preset button": ["height"], "apply button": ["height"], "session button": ["height"], "number box": ["width", "height"], "select": ["height", "maxWidth"], "range": ["height"],
          "check box": ["width", "height"], "reset": ["height"], "heading": ["height"], "header": ["height"]}
+
+# the pieces a kind does not have at all (it has no such control): piece -> kinds. Anything else must be in all four
+ABSENT = {"range": ["cell-count"]}      # the Count Plot has no slider in its pop-over
 
 # (piece, property) -> why a difference is allowed. Empty on purpose.
 EXCEPTIONS = {}
@@ -136,9 +146,107 @@ def test_plot_options_look_the_same_in_all_four_plot_kinds(page, served):
         got = _snapshot(page, theme, SHOTS)
         for piece in PIECES:
             have = {k: v[piece] for k, v in got.items() if piece in v}
+            missing = sorted(set(KINDS) - set(have) - set(ABSENT.get(piece, ())))
+            assert not missing, f"{piece}: not found in {missing} ({theme}); only {sorted(ABSENT.get(piece, ()))} may lack it"
             assert len(have) >= 2, f"{piece}: found in {sorted(have)} only ({theme}); the guard compares at least two kinds"
             for prop in set().union(*[set(v) for v in have.values()]):
                 values = {k: v.get(prop) for k, v in have.items()}
                 if len(set(values.values())) > 1 and (piece, prop) not in EXCEPTIONS:
                     problems.append(f"{theme} / {piece} / {prop}: {values}")
     assert not problems, "Plot Options differ between plot kinds:\n" + "\n".join(problems)
+
+
+# ------------------------------------------------------------------ the point size row (the panel's own markup) in the same look
+
+ROW = """() => {
+    const pop = document.querySelector("[data-popover='plot-options']");
+    const pick = (sel) => { const e = pop.querySelector(sel); const c = getComputedStyle(e);
+        return ['fontFamily', 'fontSize', 'fontWeight', 'color', 'backgroundColor', 'borderTopWidth', 'borderTopColor', 'borderTopLeftRadius',
+                'paddingTop', 'paddingLeft', 'marginTop', 'marginBottom', 'height', 'width'].map((p) => [p, c[p]]); };
+    return { label: [pick('.point-size-control .ctl-label'), pick('.az-pop-field--number .az-pop-field__label')],
+             number: [pick('.point-size-control input[type=number]'), pick('.az-pop-field--number input[type=number]')],
+             auto: [pick('.point-size-control .point-auto-btn'), pick('.az-pop-auto')] }; }"""
+
+
+@pytest.mark.parametrize("kind", ["cell-plot", "gene-plot"])
+def test_the_point_size_row_looks_like_the_other_rows(page, served, kind):
+    page.set_viewport_size({"width": 1700, "height": 1100})
+    page.goto(_url(served, [CP, GP, P, CC], _config()))
+    _ready(page)
+    page.click(KINDS[kind][1])
+    page.wait_for_selector(POP)
+    page.evaluate("() => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach((d) => { d.open = true; })")
+    got = page.evaluate(ROW)
+    # the number box is the same control; a label is text and Auto is a button, so those keep their own box sizes
+    skip = {"label": {"height", "width", "marginTop", "marginBottom"}, "number": {"color"},   # named exception: an automatic size is drawn muted and italic (.is-auto), by design
+            
+            "auto": {"height", "width", "fontSize", "fontWeight", "borderTopColor", "color", "backgroundColor", "paddingLeft", "paddingTop"}}
+    bad = [f"{what} {a[i][0]}: {a[i][1]} vs {b[i][1]}" for what, (a, b) in got.items() for i in range(len(a))
+           if a[i][1] != b[i][1] and a[i][0] not in skip[what]]
+    assert not bad, "\n".join(bad)
+
+
+# ------------------------------------------------------------------ a long pop-over scrolls smoothly, and screenshots with one group open
+
+@pytest.mark.parametrize("kind", list(KINDS))
+def test_a_long_plot_options_scrolls_in_steady_steps(page, served, kind):
+    page.set_viewport_size({"width": 1700, "height": 700})
+    page.goto(_url(served, [CP, GP, P, CC], _config()))
+    _ready(page)
+    page.click(KINDS[kind][1])
+    page.wait_for_selector(POP)
+    page.evaluate("() => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach((d) => { d.open = true; })")
+    _frames(page)
+    body = f"{POP} .az-popover-body"
+    room = page.evaluate("(b) => { const e = document.querySelector(b); return e.scrollHeight - e.clientHeight; }", body)
+    assert room > 300, f"{kind}: not long enough to scroll ({room})"
+    box = page.locator(body).bounding_box()
+    page.mouse.move(box["x"] + 40, box["y"] + box["height"] / 2)
+    tops = []
+    for _ in range(6):
+        page.mouse.wheel(0, 120)
+        _frames(page)
+        tops.append(page.evaluate("(b) => document.querySelector(b).scrollTop", body))
+    assert tops == sorted(tops) and len(set(tops)) == len(tops), f"{kind}: scrolling stuck or jumped {tops}"
+    assert all(b - a <= 130 for a, b in zip(tops, tops[1:])), f"{kind}: a step jumped {tops}"
+    # a change made while scrolled keeps the place: a check box in view is toggled (the body is painted again, not rebuilt from the top)
+    before = tops[-1]
+    clicked = page.evaluate("""(b) => { const body = document.querySelector(b); const r = body.getBoundingClientRect();
+        const c = [...body.querySelectorAll('input[type=checkbox]:not(:disabled)')].find((e) => { const q = e.getBoundingClientRect(); return q.top > r.top + 20 && q.bottom < r.bottom - 20; });
+        if (!c) return false; c.click(); return true; }""", body)
+    assert clicked, f"{kind}: no check box in view"
+    _frames(page)
+    assert abs(page.evaluate("(b) => document.querySelector(b).scrollTop", body) - before) <= 2, f"{kind}: a change moved the scroll"
+
+
+def test_screenshots_with_the_same_group_open(page, served):
+    if not SHOTS:
+        pytest.skip("ANNZARRO_SHOTS names the directory")
+    from PIL import Image
+    page.set_viewport_size({"width": 1700, "height": 1100})
+    page.goto(_url(served, [CP, GP, P, CC], _config()))
+    _ready(page)
+    os.makedirs(SHOTS, exist_ok=True)
+    for theme in ("light", "dark"):
+        page.click(f'#theme-toggle button[data-theme-mode="{theme}"]')
+        page.wait_for_function("(t) => document.documentElement.getAttribute('data-theme') === t", arg=theme)
+        _frames(page)
+        for group in ("text", "legend"):
+            files = []
+            for kind, (pid, button) in KINDS.items():
+                page.click(button)
+                page.wait_for_selector(POP)
+                page.evaluate("(g) => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach((d) => { d.open = d.dataset.section === g; })", group)
+                _frames(page)
+                path = os.path.join(SHOTS, f"{kind}-{group}-{theme}.png")
+                page.locator(POP).screenshot(path=path)
+                files.append(path)
+                page.keyboard.press("Escape")
+                page.wait_for_selector(POP, state="detached")
+            ims = [Image.open(f) for f in files]
+            sheet = Image.new("RGB", (sum(i.width for i in ims) + 16 * (len(ims) + 1), max(i.height for i in ims) + 32), (128, 128, 128))
+            x = 16
+            for im in ims:
+                sheet.paste(im, (x, 16))
+                x += im.width + 16
+            sheet.save(os.path.join(SHOTS, f"side-by-side-{group}-{theme}.png"))
