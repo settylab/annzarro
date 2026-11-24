@@ -12,7 +12,7 @@
  *   title      the panel's title
  *   kind       'signature' | 'table'
  *   recipe()   the recipe now: the genes, and the option fields (utils/signature-options.js: one schema)
- *   options()  the option fields alone (what is offered, and how it is scored), without reading the genes
+ *   options()  the option fields alone (how it is scored), without reading the genes
  *   gate()     null when the genes can be read; else why not yet: the table is opening, being built in the
  *              background (utils/table-resolver.js), waits for a click, is refused or failed, or is part of a cycle
  *   actions    what the notices' buttons do to a gate (build now, cancel, retry)
@@ -58,7 +58,7 @@ export function optionsOf(panel) {
 }
 
 /**
- * The option fields (input, method, offered, layers, clip...) of any source panel: a signature's recipe has them, a
+ * The option fields (input, method, clip, seed...) of any source panel: a signature's recipe has them, a
  * gene table keeps them apart from its genes. What a menu, a label or a notice reads of a source is only these.
  * @param {Object} panel - a source panel
  * @returns {Object}

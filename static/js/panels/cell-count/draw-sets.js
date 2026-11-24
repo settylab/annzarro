@@ -14,7 +14,7 @@
  * Both modes ship one trace that carries `customdata` = the region's index in `setPlot.regions`, so a click can
  * offer Save as grouping (CNT-21) without a lookup. Shapes and annotations export to PNG and SVG with the figure.
  */
-import { fmtPercent } from '../../utils/score-inspect.js';
+import { fmtPercent } from '../../utils/csv-format.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { scaleKeys } from './colour.js';
 
