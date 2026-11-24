@@ -61,9 +61,6 @@
 .ccnt-level__tick { display: inline-flex; align-items: center; gap: 4px; margin: 0; flex: 1 1 auto; min-width: 0; }
 .ccnt-level__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ccnt-level__n { margin-left: auto; color: var(--az-muted); font-variant-numeric: tabular-nums; }
-.ccnt-levels__wait { color: var(--az-muted); }
-.ccnt-rest-row, .ccnt-levels__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; }
-.ccnt-rest-opt { display: inline-flex; align-items: center; gap: 2px; margin: 0; }
 
 .ccnt-row--labels .btn.active { background: var(--az-surface-3); border-color: var(--az-link); color: var(--az-text); }
 .ccnt-row[hidden] { display: none; }
@@ -77,11 +74,6 @@
 .ccnt-toolbar__gap { flex: 1 1 auto; }
 
 /* the Color pop-over's lines (its surface is the shared one, popover.css) */
-.ccnt-color__line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 6px; }
-.ccnt-color__line > .form-select { width: auto; max-width: 14rem; }
-.ccnt-color__limit { display: inline-flex; align-items: center; gap: 4px; }
-.ccnt-color__limit .form-control { width: 5rem; }
-.ccnt-color__problem:empty { display: none; }
 .ccnt-sets[hidden] { display: none; }
 
 /* The set list of a Venn and an UpSet: one compact line per set, as the Cell Grouping panel lists its groups. Every row is
@@ -120,10 +112,8 @@
 .ccnt-set__note { margin: 0 0 2px 3.1rem; font-size: 0.75rem; }
 .ccnt-set__note[hidden] { display: none; }
 .ccnt-set__note p { margin: 0 0 2px; }
-.ccnt-set__problem { color: var(--az-danger-text); font-size: 0.75rem; }
 .ccnt-set__problem[hidden] { display: none; }
-.ccnt-set__pop { display: flex; flex-direction: column; gap: 6px; }
-.ccnt-set__pop .ccnt-set__editor { flex-wrap: wrap; }
+.ccnt-set__pop .ccnt-set__editor { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin: 0; }
 .ccnt-set__pop .ccnt-set__levels { max-height: 14rem; overflow-y: auto; }
 
 /* the plot, and what it says when there is nothing to draw (never resizes the plot) */

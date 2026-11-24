@@ -327,3 +327,14 @@ def test_a_link_carries_the_sets_as_stored_and_nothing_computed(page, served):
     assert cfg["top"] == 12
     assert "n_no_value" not in json.dumps(cfg) and "regions" not in json.dumps(cfg)
     assert _rows(page)[1]["name"] == "late (follows the bin)", "a following set's row says so, after its own name"
+
+
+def test_the_set_definition_pop_over_uses_the_az_pop_body(page, served):
+    from annzarro.tests.browser.popover_standard import assert_body_standard
+    _open(page, served, {CC: _count(mode="venn")})
+    until(page, "(s) => document.querySelector(s + ' .ccnt-sets') && !document.querySelector(s + ' .ccnt-sets').hidden", S)
+    page.select_option(f"{S} .ccnt-sets__add", "levels")
+    draft = "[data-popover='set-definition']"
+    page.select_option(f"{draft} select[data-field='column']", "cell_type")
+    page.wait_for_selector(f"{draft} .ccnt-set__levels input[value='c:T cell']")
+    assert_body_standard(page, draft, fields=False, shot="count-set-definition")

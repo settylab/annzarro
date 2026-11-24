@@ -322,6 +322,10 @@ export function createControls({ D, id, model, on }) {
         editors.delete(field);
     }
 
+    /** A titled section of a pop-over body (the standard of popover.css) around `content`. */
+    const sectionOf = (title, content) => el('details', { class: 'az-pop-section', open: true },
+        el('summary', { class: 'az-pop-section__title', text: title }), el('div', { class: 'az-pop-section__body' }, content));
+
     /** The editor's body drawn from the model now; the focused control stays focused. */
     function fillEditor(entry) {
         if (!entry.body) return;
@@ -335,7 +339,7 @@ export function createControls({ D, id, model, on }) {
         D.clear(body);
         if (entry.kind === 'binning') {
             const host = el('div', { class: 'ccnt-binning' });
-            body.appendChild(host);
+            body.appendChild(el('div', { class: 'az-pop-options' }, sectionOf('Bins', host)));
             if (BINNING_SLOT.mount) {
                 const max = binsRange(m.config.mode, row.field).max;
                 entry.mounts.push(BINNING_SLOT.mount(host, {
@@ -356,7 +360,7 @@ export function createControls({ D, id, model, on }) {
                 }));
             }
         } else {
-            body.appendChild(el('div', { class: 'ccnt-levels' }, ...levelChooser(row.field, p, m.infos[row.field] || (m.levelsOf ? m.levelsOf(row.field) : null), m)));
+            body.appendChild(el('div', { class: 'az-pop-options' }, sectionOf('Levels', el('div', { class: 'ccnt-levels' }, ...levelChooser(row.field, p, m.infos[row.field] || (m.levelsOf ? m.levelsOf(row.field) : null), m)))));
         }
         if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
         entry.ctl.update();
@@ -396,12 +400,12 @@ export function createControls({ D, id, model, on }) {
         // the levels did not come (refused for their number, or failed): why, and the way out when there is one
         const said = !info && m.levelsSaid ? m.levelsSaid(field) : null;
         if (said) {
-            return [el('div', { class: 'ccnt-levels__note', role: 'status', data: { state: said.state } },
-                el('p', { class: 'ccnt-levels__said', text: said.text }),
+            return [el('div', { class: 'ccnt-levels__note az-pop-buttons', role: 'status', data: { state: said.state } },
+                el('small', { class: 'ccnt-levels__said az-pop-help', text: said.text }),
                 ...said.actions.map(([action, label]) => el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', data: { action },
                     on: { click: () => on.wayOut(action) } }, label)))];
         }
-        if (!info) return [el('div', { class: 'ccnt-levels__wait', text: `${VOCABULARY.plural.level[0].toUpperCase()}${VOCABULARY.plural.level.slice(1)} follow once the cells are counted.` })];
+        if (!info) return [el('small', { class: 'ccnt-levels__wait az-pop-help', text: `${VOCABULARY.plural.level[0].toUpperCase()}${VOCABULARY.plural.level.slice(1)} follow once the cells are counted.` })];
         const set = (next, label) => commit({ ...model().config, [field]: next }, label);
         const rowsOfLevels = levelRows(p, info, m.labelsOf(field));
         const name = sourceName(p.source, m.titleOf);
@@ -419,14 +423,15 @@ export function createControls({ D, id, model, on }) {
             return li;
         }));
         const restName = `ccnt-rest-${id}-${field}`;
-        const rest = (value, text) => el('label', { class: 'ccnt-rest-opt' },
+        const rest = (value, text) => el('label', { class: 'ccnt-rest-opt az-pop-check' },
             el('input', { type: 'radio', class: 'ccnt-rest', name: restName, value, checked: (p.rest === 'exclude') === (value === 'exclude'),
                 on: { change: () => set(setRest(p, value), value === 'exclude' ? 'leave unticked levels out' : 'group unticked levels') } }), ` ${text}`);
         return [
             list,
-            el('div', { class: 'ccnt-rest-row', role: 'radiogroup', aria: { label: 'Unticked levels' } },
-                el('span', { text: 'Unticked levels ' }), rest('other', `Count as '${P.other(name)}'`), rest('exclude', 'Leave out')),
-            el('div', { class: 'ccnt-levels__actions' },
+            el('div', { class: 'ccnt-rest-row az-pop-field az-pop-field--block', role: 'radiogroup', aria: { label: 'Unticked levels' } },
+                el('span', { class: 'az-pop-field__label', text: 'Unticked levels' }),
+                el('span', { class: 'az-pop-field__control az-pop-field__control--stack' }, rest('other', `Count as '${P.other(name)}'`), rest('exclude', 'Leave out'))),
+            el('div', { class: 'ccnt-levels__actions az-pop-buttons' },
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', on: { click: () => set(tickAll(p), 'tick all levels') } }, 'Tick all'),
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', on: { click: () => set(tickNone(p), 'tick no level') } }, 'Tick none'))
         ];
@@ -757,7 +762,23 @@ export function createControls({ D, id, model, on }) {
         const focusables = () => [...body.querySelectorAll('input, button, select')].filter((e) => !e.disabled);
         const at = focusables().indexOf(document.activeElement);
         D.clear(body);
-        const line = (...kids) => el('div', { class: 'ccnt-color__line' }, ...kids);
+        const root = el('div', { class: 'az-pop-options ccnt-color-body' });
+        body.append(root);
+        // one titled section per group of controls (the body standard, popover.css); `cur` is the body of the open one
+        let cur = null;
+        const section = (title) => {
+            cur = el('div', { class: 'az-pop-section__body' });
+            root.append(el('details', { class: 'az-pop-section', open: true }, el('summary', { class: 'az-pop-section__title', text: title }), cur));
+        };
+        // a row: its label left, its control right; a lone checkbox label is a check row
+        const line = (label, ...controls) => {
+            if (!controls.length) {
+                label.classList.add('az-pop-check');
+                return el('div', { class: 'az-pop-field az-pop-field--check' }, label);
+            }
+            label.classList.add('az-pop-field__label');
+            return el('div', { class: 'az-pop-field' }, label, el('span', { class: 'az-pop-field__control' }, ...controls));
+        };
         const idOf = (k) => `ccnt-color-${k}-${id}`;
         const slices = sliceColourUse(m.config, m.isNumeric);
         if (slices.offered) {
@@ -767,14 +788,15 @@ export function createControls({ D, id, model, on }) {
                 const input = el('input', { type: 'radio', name: group, value, class: `ccnt-slices-${value}`, disabled,
                     checked: value === (use.map ? 'continuous' : 'levels'),
                     on: { change: () => withColor((o) => { if (value === 'levels') o.slices = 'levels'; else delete o.slices; }, `slice colors ${text.toLowerCase()}`) } });
-                return el('label', { class: 'ccnt-opt', ...(title ? { title } : {}) }, input, ` ${text}`);
+                return el('label', { class: 'ccnt-opt az-pop-check', ...(title ? { title } : {}) }, input, ` ${text}`);
             };
             const bins = binSpacingOf(m.config, 'x') === 'even';
-            body.append(el('div', { class: 'ccnt-slices', role: 'radiogroup', aria: { label: CL_SLICES.colours } },
-                el('span', { class: 'ccnt-color__heading', text: CL_SLICES.colours }),
-                radio('continuous', CL_SLICES.continuous, !slices.continuous, slices.refusal),
-                radio('levels', CL_SLICES.levels, false, '')),
-                el('p', { class: 'ccnt-help ccnt-slices__note', text: slices.refusal || (use.map ? (bins ? CL_SLICES.byOrder : CL_SLICES.byCentre) : '') }));
+            section(CL_SLICES.colours);
+            cur.append(el('div', { class: 'ccnt-slices az-pop-field az-pop-field--check', role: 'radiogroup', aria: { label: CL_SLICES.colours } },
+                el('span', { class: 'az-pop-field__control az-pop-field__control--stack' },
+                    radio('continuous', CL_SLICES.continuous, !slices.continuous, slices.refusal),
+                    radio('levels', CL_SLICES.levels, false, '')),
+                el('small', { class: 'ccnt-slices__note az-pop-help', text: slices.refusal || (use.map ? (bins ? CL_SLICES.byOrder : CL_SLICES.byCentre) : '') })));
         }
         if (use.map) {
             const map = el('select', { class: 'form-select form-select-sm ccnt-color-map', id: idOf('map'),
@@ -783,12 +805,13 @@ export function createControls({ D, id, model, on }) {
             map.value = COLOR_MAPS.includes(c.map) ? c.map : DEFAULT_COLORSCALE;
             const reverse = el('input', { type: 'checkbox', class: 'ccnt-color-reverse', checked: c.reverse === true,
                 on: { change: () => withColor((o) => { if (reverse.checked) o.reverse = true; else delete o.reverse; }, reverse.checked ? 'reverse color map' : 'color map as is') } });
-            body.append(line(el('label', { for: idOf('map'), text: CL.map }), map),
+            section('Color map');
+            cur.append(line(el('label', { for: idOf('map'), text: CL.map }), map),
                 line(el('label', { class: 'ccnt-opt' }, reverse, ` ${CL.reverse}`)));
         }
         if (use.map || use.range) {
-            if (use.range && !use.map) body.append(el('p', { class: 'ccnt-color__heading', text: CL.densityRange }));
-            const problem = el('span', { class: 'ccnt-help ccnt-color__problem', role: 'alert' });
+            section(use.map ? 'Color range' : CL.densityRange);
+            const problem = el('small', { class: 'ccnt-color__problem az-pop-error', role: 'alert' });
             // Min, Max and Center: boxes saying "auto" with the drawn value, and ↺ back to auto (ui/range-boxes.js). With a map
             // they are the colour scale's; for a density they are the density's, mapping its opacity and isoline levels alike
             const setLimit = (key, text, value) => withColor((o) => { if (value === null) delete o[key]; else o[key] = value; },
@@ -801,8 +824,8 @@ export function createControls({ D, id, model, on }) {
                 onCommit: (k, v) => setLimit(ENDS[k].key, ENDS[k].label, v),
                 onReset: () => withColor((o) => { delete o.min; delete o.max; delete o.center; }, `${use.map ? 'color' : 'density'} range to auto`) });
             range.set({ limits: ENDS.map((e) => c[e.key]), drawn: drawnRange(m.colourData) });
-            body.append(range.element, problem);
-            if (use.map && Number.isFinite(c.center) && Number.isFinite(c.min) && Number.isFinite(c.max)) body.append(el('p', { class: 'ccnt-help', text: CL.centerNote }));
+            cur.append(range.element, problem);
+            if (use.map && Number.isFinite(c.center) && Number.isFinite(c.min) && Number.isFinite(c.max)) cur.append(el('small', { class: 'az-pop-help', text: CL.centerNote }));
         }
         if (use.palette) {
             const palette = el('select', { class: 'form-select form-select-sm ccnt-color-palette', id: idOf('palette'),
@@ -811,37 +834,38 @@ export function createControls({ D, id, model, on }) {
             for (const name of listAvailableColormaps()['Discrete Palettes']) palette.appendChild(option(name, name));
             palette.value = c.palette || '';
             if (palette.value !== (c.palette || '')) palette.value = '';
-            body.append(line(el('label', { for: idOf('palette'), text: CL.palette }), palette));
+            section(CL.palette);
+            cur.append(line(el('label', { for: idOf('palette'), text: CL.palette }), palette));
         }
         if (use.points) {
             // the Cell points layer: its size and opacity live here, so no control outside a pop-over moves the panel
             const o = drawOptions(m.config);
-            body.append(el('p', { class: 'ccnt-color__heading', text: CL.points }));
+            section(CL.points);
             const stored = (key, value, dflt, label, make) => {
                 const next = { ...model().config };
                 if (value === undefined || value === dflt) delete next[key]; else next[key] = value;
                 if (JSON.stringify(next) !== JSON.stringify(model().config)) commit(next, make(value === undefined ? dflt : value));
             };
-            const size = el('input', { type: 'number', class: 'form-control form-control-sm ccnt-point-size', id: idOf('size'), min: '1', max: '12', step: '1',
+            const size = el('input', { type: 'number', class: 'form-control form-control-sm az-pop-num ccnt-point-size', id: idOf('size'), min: '1', max: '12', step: '1',
                 placeholder: '3', autocomplete: 'off', value: m.config.pointSize === undefined ? '' : String(m.config.pointSize) });
             size.addEventListener('change', () => {
                 const v = Number(size.value);
                 stored('pointSize', size.value === '' || !Number.isFinite(v) ? undefined : Math.min(12, Math.max(1, Math.round(v))), 3, CL.pointSize, (x) => `point size ${x}`);
             });
-            const opacity = el('input', { type: 'number', class: 'form-control form-control-sm ccnt-point-opacity', id: idOf('opacity'), min: '0.05', max: '1', step: '0.05',
+            const opacity = el('input', { type: 'number', class: 'form-control form-control-sm az-pop-num ccnt-point-opacity', id: idOf('opacity'), min: '0.05', max: '1', step: '0.05',
                 placeholder: '1', autocomplete: 'off', value: m.config.pointOpacity === undefined ? '' : String(m.config.pointOpacity) });
             opacity.addEventListener('change', () => {
                 const v = Number(opacity.value);
                 stored('pointOpacity', opacity.value === '' || !Number.isFinite(v) ? undefined : Math.min(1, Math.max(0.05, v)), 1, CL.pointOpacity, (x) => `point opacity ${x}`);
             });
-            body.append(line(el('label', { for: idOf('size'), text: CL.pointSize }), size), line(el('label', { for: idOf('opacity'), text: CL.pointOpacity }), opacity));
+            cur.append(line(el('label', { for: idOf('size'), text: CL.pointSize }), size), line(el('label', { for: idOf('opacity'), text: CL.pointOpacity }), opacity));
             if (use.fade) {
                 const fade = el('input', { type: 'checkbox', class: 'ccnt-point-fade', checked: o.pointFade,
                     on: { change: () => stored('pointFade', fade.checked ? true : undefined, undefined, CL.pointFade, () => `${fade.checked ? '' : 'no '}${CL.pointFade.toLowerCase()}`) } });
-                body.append(line(el('label', { class: 'ccnt-opt' }, fade, ` ${CL.pointFade}`)));
+                cur.append(line(el('label', { class: 'ccnt-opt' }, fade, ` ${CL.pointFade}`)));
             }
         }
-        body.append(line(el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-color-reset', disabled: !(m.config.color || m.config.pointSize !== undefined || m.config.pointOpacity !== undefined || m.config.pointFade),
+        root.append(el('div', { class: 'az-pop-section__foot' }, el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset ccnt-color-reset', disabled: !(m.config.color || m.config.pointSize !== undefined || m.config.pointOpacity !== undefined || m.config.pointFade),
             on: { click: () => { const next = { ...model().config }; for (const k of ['color', 'pointSize', 'pointOpacity', 'pointFade']) delete next[k]; commit(next, 'reset display'); } } }, CL.reset)));
         if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
         colorState.ctl.update();

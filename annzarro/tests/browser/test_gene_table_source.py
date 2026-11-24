@@ -450,3 +450,12 @@ def test_a_gene_table_source_with_no_layer_is_pinned_like_a_signature(page, serv
     # time for the plot to move to counts, were it going to; it was pinned to X before the change
     page.wait_for_timeout(800)
     assert page.evaluate("() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.layer") == "X"
+
+
+def test_the_tables_score_methods_pop_over_uses_the_az_pop_body(page, served):
+    from annzarro.tests.browser.popover_standard import assert_body_standard
+    _open_table_link(page, served)
+    _wait_coloured(page)
+    page.click(METHODS)
+    page.wait_for_selector(POP, state="visible")
+    assert_body_standard(page, POP, help=True, sections=6, shot="table-methods")

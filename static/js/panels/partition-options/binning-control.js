@@ -375,7 +375,7 @@ function h(tag, props = {}, ...children) {
     return e;
 }
 
-const label = (text, ...inner) => h('label', { class: 'pbc-field' }, h('span', { class: 'pbc-field__name', text }), ...inner);
+const label = (text, ...inner) => h('label', { class: 'pbc-field az-pop-field' }, h('span', { class: 'pbc-field__name az-pop-field__label', text }), ...inner);
 
 /**
  * Draw the control in `host`.
@@ -440,7 +440,7 @@ function mount(host, ctx) {
     }
 
     // ---- the message of an invalid entry
-    const message = h('div', { class: 'pbc-message', role: 'alert', hidden: !mem.error, text: mem.error || '' });
+    const message = h('div', { class: 'pbc-message az-pop-error', role: 'alert', hidden: !mem.error, text: mem.error || '' });
     const refuse = (input, text, shown) => {
         mem.error = text;
         input.value = shown;
@@ -448,7 +448,7 @@ function mount(host, ctx) {
         message.hidden = false;
     };
     const textInput = (cls, value, title, onValue, width) => {
-        const input = h('input', { type: 'text', class: `form-control form-control-sm pbc-input ${cls}`, value, title, inputMode: 'decimal',
+        const input = h('input', { type: 'text', class: `form-control form-control-sm az-pop-num pbc-input ${cls}`, value, title, inputMode: 'decimal',
             style: width ? `width:${width}` : undefined, autocomplete: 'off', spellcheck: false });
         if (mem.drafts[cls] !== undefined) input.value = mem.drafts[cls];
         const run = () => {
@@ -470,7 +470,7 @@ function mount(host, ctx) {
     const select = h('select', { class: 'form-select form-select-sm pbc-method', title: METHOD_HELP[method],
         on: { change: () => apply(setMethod(binning, select.value, info, nb), `${METHOD_LABEL[select.value].toLowerCase()} bins of ${name}`) } },
     methods.map((m) => h('option', { value: m, text: METHOD_LABEL[m], selected: m === method })));
-    const row = h('div', { class: 'pbc-row' }, label('Method', select));
+    const row = h('div', { class: 'pbc-row pbc-rows' }, label('Method', select));
 
     if (method in DEFAULT_BINS) {
         const shown = String(binning.bins === undefined ? DEFAULT_BINS[method] : binning.bins);
@@ -491,7 +491,7 @@ function mount(host, ctx) {
     if (method !== 'categories' && zeroBinOffered(info)) {
         const box = h('input', { type: 'checkbox', class: 'pbc-zero', checked: !!binning.zero_bin,
             on: { change: () => apply(setZeroBin(binning, box.checked, nb), `${box.checked ? 'zero as its own bin' : 'no zero bin'} of ${name}`) } });
-        row.append(h('label', { class: 'pbc-zero-field', title: 'Cells at exactly 0 form one bin; the method divides the rest.' }, box, ' Zero as its own bin'));
+        row.append(h('label', { class: 'pbc-zero-field az-pop-check', title: 'Cells at exactly 0 form one bin; the method divides the rest.' }, box, ' Zero as its own bin'));
     }
 
     // ---- the second row: the population of the edges, the range
@@ -501,10 +501,10 @@ function mount(host, ctx) {
         const radio = (value, text, tip) => {
             const input = h('input', { type: 'radio', name: group, value, checked: (binning.edges_from || 'shown') === value,
                 on: { change: () => { if (input.checked) apply(setEdgesFrom(binning, value, nb), `edges from ${value === 'all' ? 'all cells' : 'cells shown'} of ${name}`); } } });
-            return h('label', { class: 'pbc-radio', title: tip }, input, ` ${text}`);
+            return h('label', { class: 'pbc-radio az-pop-check', title: tip }, input, ` ${text}`);
         };
-        rows.push(h('div', { class: 'pbc-row' },
-            h('div', { class: 'pbc-edges', role: 'radiogroup', aria: { label: 'Edges from' } }, h('span', { class: 'pbc-field__name', text: 'Edges from' }),
+        rows.push(h('div', { class: 'pbc-row az-pop-field' },
+            h('div', { class: 'pbc-edges', role: 'radiogroup', aria: { label: 'Edges from' } }, h('span', { class: 'pbc-field__name az-pop-field__label', text: 'Edges from' }),
                 radio('shown', 'cells shown', 'Edges follow the subset.'), radio('all', 'all cells', 'The same edges for every subset.'))));
     }
     if (method === 'equal_width' || method === 'log') {
@@ -520,9 +520,9 @@ function mount(host, ctx) {
             input.placeholder = 'auto';
             return input;
         };
-        rows.push(h('div', { class: 'pbc-row pbc-range' }, h('span', { class: 'pbc-field__name', text: 'Range' }),
+        rows.push(h('div', { class: 'pbc-row pbc-range az-pop-field' }, h('span', { class: 'pbc-field__name az-pop-field__label', text: 'Range' }),
             side('pbc-range-lo', range[0], 0), ' to ', side('pbc-range-hi', range[1], 1)),
-        h('div', { class: 'pbc-help pbc-range-help', text: rangeHelp(kind) }));
+        h('div', { class: 'pbc-help pbc-range-help az-pop-help', text: rangeHelp(kind) }));
     }
 
     // ---- count plot only: how the bins are drawn (WP-9)
@@ -531,10 +531,10 @@ function mount(host, ctx) {
         const drawn = (value, text, tip) => {
             const input = h('input', { type: 'radio', name: spacingGroup, value, class: `pbc-spacing-${value}`, checked: ctx.spacing.value === value,
                 on: { change: () => { if (input.checked && ctx.spacing.value !== value) ctx.spacing.set(value); } } });
-            return h('label', { class: 'pbc-radio', title: tip }, input, ` ${text}`);
+            return h('label', { class: 'pbc-radio az-pop-check', title: tip }, input, ` ${text}`);
         };
-        rows.push(h('div', { class: 'pbc-row pbc-spacing' },
-            h('div', { class: 'pbc-edges', role: 'radiogroup', aria: { label: 'Bins drawn' } }, h('span', { class: 'pbc-field__name', text: 'Bins drawn' }),
+        rows.push(h('div', { class: 'pbc-row pbc-spacing az-pop-field' },
+            h('div', { class: 'pbc-edges', role: 'radiogroup', aria: { label: 'Bins drawn' } }, h('span', { class: 'pbc-field__name az-pop-field__label', text: 'Bins drawn' }),
                 drawn('even', 'Evenly', 'Every bin the same width, with the edges on the axis.'),
                 drawn('value', 'At their values', 'Each bin as wide as its range of values.'))));
     }
@@ -636,21 +636,21 @@ function mount(host, ctx) {
             apply(frozen, `freeze thresholds of ${name}`);
         } } }, 'Freeze thresholds');
     const line = method === 'manual' || method === 'categories' ? '' : edgesLine(info);
-    const foot = h('div', { class: 'pbc-foot' }, h('span', { class: 'pbc-edges-line', text: line }), freezeBtn);
+    const foot = h('div', { class: 'pbc-foot' }, h('span', { class: 'pbc-edges-line az-pop-help', text: line }), freezeBtn);
     const extra = [];
     if (mem.moved !== null && method !== 'manual' && method !== 'categories') {
-        extra.push(h('div', { class: 'pbc-moved', role: 'status' }, movedLine(mem.moved), ' ',
+        extra.push(h('div', { class: 'pbc-moved az-pop-help', role: 'status' }, movedLine(mem.moved), ' ',
             h('button', { type: 'button', class: 'btn btn-sm btn-link pbc-moved__freeze', disabled: !frozen, on: { click: () => freezeBtn.click() } }, 'Freeze thresholds')));
     }
     if (mem.frozen && method === 'manual' && mem.frozen.after === sig) {
-        extra.push(h('div', { class: 'pbc-frozen pbc-help' }, frozenLine(mem.frozen), ' ',
+        extra.push(h('div', { class: 'pbc-frozen pbc-help az-pop-help' }, frozenLine(mem.frozen), ' ',
             h('button', { type: 'button', class: 'btn btn-sm btn-link pbc-undo', on: { click: () => {
                 const before = mem.frozen.before;
                 mem.frozen = null;
                 apply(before, `undo freeze of ${name}`);
             } } }, 'Undo')));
     }
-    const notes = h('div', { class: 'pbc-notes', role: 'status' }, binningNotes(binning, info, { kind }).map((n) => h('p', { class: `pbc-note pbc-note--${n.id}`, text: n.text })));
+    const notes = h('div', { class: 'pbc-notes', role: 'status' }, binningNotes(binning, info, { kind }).map((n) => h('p', { class: `pbc-note az-pop-help pbc-note--${n.id}`, text: n.text })));
 
     const root = h('div', { class: 'pbc', data: { method } }, rows, ...(hist || kind !== 'count' ? [preview, ticks] : []), ctx.levels || null, foot, extra, notes, message);
     // Escape closes the control, unless a field that is being typed in took it (it undoes the draft instead)

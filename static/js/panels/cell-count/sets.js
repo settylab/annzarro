@@ -411,7 +411,7 @@ function mount(host, ctx) {
     function editor(at, kind, holder) {
         const structure = structureRead();
         const row = el('div', { class: 'ctl-row ccnt-set__editor', data: { kind } });
-        const problemEl = el('div', { class: 'ccnt-set__problem', role: 'alert', hidden: !holder.problem }, holder.problem || '');
+        const problemEl = el('div', { class: 'ccnt-set__problem az-pop-error', role: 'alert', hidden: !holder.problem }, holder.problem || '');
         switch (kind) {
             case 'table':
                 row.append(panelSelect('table', PANEL_TYPES[TABLE_SOURCE], holder.source && holder.source.key,
@@ -456,7 +456,7 @@ function mount(host, ctx) {
                             if (!next.length) return;
                             apply(at, { source: { type: 'obs', key: column }, member: { levels: next } });
                         } } });
-                    box.append(el('label', { class: 'form-check form-check-inline' }, input, ` ${cats.labels[i]}`));
+                    box.append(el('label', { class: 'form-check form-check-inline az-pop-check' }, input, ` ${cats.labels[i]}`));
                 });
             }
         }
@@ -537,13 +537,15 @@ function mount(host, ctx) {
         const pop = createPopover({
             anchor: chip, name: 'set-definition', title: W.setTitle(letter), wide: true,
             render: (body) => {
-                const wrap = el('div', { class: 'ccnt-set__pop', data: { kind } });
+                const wrap = el('div', { class: 'ccnt-set__pop az-pop-options', data: { kind } });
+                const section = el('div', { class: 'az-pop-section__body' });
+                wrap.append(el('details', { class: 'az-pop-section', open: true }, el('summary', { class: 'az-pop-section__title', text: 'Definition' }), section));
                 const current = at === 'draft' ? draft : ctx.config().sets[at];
                 if (!current) return;
-                wrap.append(...editor(at, kind, at === 'draft' ? draft : holderOf(at, current)));
+                section.append(...editor(at, kind, at === 'draft' ? draft : holderOf(at, current)));
                 if (row && row.state === 'changed' && row.note) {
                     const keepAction = row.note.actions.find((a) => a.id === 'keep');
-                    if (keepAction) wrap.append(el('div', { class: 'ctl-row ccnt-set__actions' }, actionButton(keepAction, at)));
+                    if (keepAction) section.append(el('div', { class: 'ctl-row ccnt-set__actions az-pop-buttons' }, actionButton(keepAction, at)));
                 }
                 body.append(wrap);
             },

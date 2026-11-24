@@ -404,16 +404,20 @@ export function createSectionList({ D, id, model, on }) {
         const chosen = select.selectedOptions && select.selectedOptions[0];
         select.title = chosen ? [chosen.textContent, chosen.title].filter(Boolean).join(': ') : '';
         const scored = part.above !== null;
-        const above = el('input', { type: 'number', step: 'any', class: 'form-control form-control-sm cgene-section__above', data: { which },
+        const above = el('input', { type: 'number', step: 'any', class: 'form-control form-control-sm az-pop-num cgene-section__above', data: { which },
             aria: { label: `${name} of the row: ${R.cellsAbove}` }, value: scored ? String(part.above) : '0',
             on: { change: () => on.above(i, which, above.value), keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); on.above(i, which, above.value); } } } });
-        const help = el('div', { class: 'cgene-section__help', data: { which }, text: part.help });
-        return el('div', { class: 'cgene-section__value', data: { which } },
-            el('span', { class: 'cgene-field__label', text: name }), inherited,
-            el('span', { class: 'cgene-field__label cgene-section__genes-label', text: R.genes }),
-            el('span', { class: 'cgene-section__step' }, select,
-                el('span', { class: 'cgene-section__pair', hidden: !scored }, el('span', { class: 'cgene-measure__word', text: R.cellsAbove }), above)),
-            help);
+        const help = el('small', { class: 'cgene-section__help az-pop-help', data: { which }, text: part.help });
+        return el('details', { class: 'az-pop-section cgene-section__value', data: { which }, open: true },
+            el('summary', { class: 'az-pop-section__title', text: name }),
+            el('div', { class: 'az-pop-section__body' },
+                el('div', { class: 'az-pop-field az-pop-field--block' }, el('span', { class: 'az-pop-field__label', text: 'Taken from' }), inherited),
+                el('div', { class: 'az-pop-field az-pop-field--block cgene-section__step' },
+                    el('span', { class: 'az-pop-field__label cgene-section__genes-label', text: R.genes }),
+                    el('span', { class: 'az-pop-field__control' }, select)),
+                el('div', { class: 'az-pop-field cgene-section__pair', hidden: !scored },
+                    el('span', { class: 'az-pop-field__label', text: R.cellsAbove }), el('span', { class: 'az-pop-field__control' }, above)),
+                help));
     }
 
     /** The pop-over's body: the section's Color and Size blocks, drawn from the model as it is now. */
@@ -424,7 +428,7 @@ export function createSectionList({ D, id, model, on }) {
         // the header follows a renamed section
         const heading = body.parentElement && body.parentElement.querySelector('.az-popover-title');
         if (heading) heading.textContent = `Color and Size of ${s.title}`;
-        body.appendChild(el('div', { class: 'cgene-section__values' }, stepBlock(i, s.color), s.size ? stepBlock(i, s.size) : null));
+        body.appendChild(el('div', { class: 'az-pop-options cgene-section__values' }, stepBlock(i, s.color), s.size ? stepBlock(i, s.size) : null));
     }
 
     /** The summary button of a one-row section (WP-8): "Color: … · Size: …", opening Color and Size in a pop-over. */

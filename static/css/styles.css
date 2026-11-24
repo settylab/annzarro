@@ -1526,23 +1526,14 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-score .gsig-link { flex: none; padding-top: 0; padding-bottom: 0; }
 
 /* The Methods pop-over (panels/score-options/methods-popover.js): one row per method, its definition, its parameters */
-.gsig-methods .gsig-scoring__body { display: flex; flex-direction: column; gap: 6px; font-size: 0.8125rem; }
-.gsig-scoring__option { padding: 3px 0; display: flex; flex-direction: column; gap: 2px; }
-.gsig-scoring__option + .gsig-scoring__option { border-top: 1px solid var(--az-border); }
-.gsig-scoring__optionhead { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
-.gsig-scoring__optionname { margin: 0; font-weight: 600; }
-.gsig-scoring__use { margin-left: auto; font-size: 0.75rem; color: var(--az-muted); white-space: nowrap; }
-.gsig-scoring__definition, .gsig-scoring__help { color: var(--az-muted); font-size: 0.75rem; }
-.gsig-scoring__definition { padding-left: 1.5rem; }
-.gsig-scoring__params { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 2px 0 2px 1.5rem; }
-.gsig-scoring__field { display: inline-flex; align-items: center; gap: 4px; }
-.gsig-scoring__field label, .gsig-scoring__params label { margin: 0; }
-.gsig-scoring__params .form-control-sm { padding-top: 1px; padding-bottom: 1px; }
+.gsig-methods .gsig-scoring__body { display: flex; flex-direction: column; gap: 2px; }
+.gsig-scoring__optionhead { display: flex; align-items: center; gap: 2px 8px; }
+.gsig-scoring__optionname { margin: 0; }
+.az-pop-section__title .gsig-scoring__use { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--az-muted); white-space: nowrap; }
+.gsig-scoring__stack { display: flex; flex-direction: column; gap: 6px; }
+.gsig-scoring__params.az-pop-field { padding: 0; }
 .gsig-scoring__number.is-invalid { border-color: var(--az-danger-text); }
-.gsig-scoring__error { flex-basis: 100%; color: var(--az-danger-text); font-size: 0.75rem; }
-.gsig-scoring__error[hidden], .gsig-scoring__notice[hidden] { display: none; }
-.gsig-scoring__notice { font-size: 0.75rem; padding: 3px 6px; border-left: 3px solid var(--az-border-strong); background: var(--az-surface-3); }
-.gsig-scoring__actions { display: flex; justify-content: flex-end; }
+.gsig-scoring__error[hidden] { display: none; }
 .gsig-menu-wrap { position: relative; }
 /* Add from: a fixed popover under body, above every panel (placed by the panel from its button) */
 .gsig-menu { position: fixed; right: auto; z-index: 3000; overflow-y: auto; max-width: calc(100vw - 8px); }
@@ -1622,7 +1613,6 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-methods__toggle { position: relative; }
 .gsig-methods__dot { display: inline-block; width: 6px; height: 6px; margin-left: 4px; border-radius: 50%; background: var(--az-link); vertical-align: middle; }
 .gsig-methods__dot[hidden] { display: none; }
-.gsig-methods__usedby { padding-top: 4px; border-top: 1px solid var(--az-border); }
 .gsig-scoring__params[hidden], .gsig-scoring__help[hidden], .gsig-scoring__resetmethod[hidden] { display: none; }
 .gsig-updown.active { background: var(--az-surface-3); color: var(--az-text); border-color: var(--az-border-strong); font-weight: 600; }
 .gsig-dirask { margin: 0 8px 4px; }

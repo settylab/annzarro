@@ -92,7 +92,7 @@
 }
 .cgrp-card__note { padding: 0 8px 4px; color: var(--az-danger-text); font-size: 0.75rem; }
 .cgrp-card__wait, .cgrp-card__follows { color: var(--az-muted); }
-.cgrp-levels__head { display: flex; justify-content: space-between; color: var(--az-muted); font-size: 0.75rem; }
+.cgrp-levels__head { display: flex; justify-content: space-between; }
 .cgrp-levels { list-style: none; margin: 0; padding: 0; }
 .cgrp-level { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
 .cgrp-level__tick { display: inline-flex; align-items: center; gap: 4px; margin: 0; flex: 1 1 auto; min-width: 0; }
@@ -106,24 +106,12 @@
 .cgrp-level__name { max-width: 14rem; }
 /* a level's color: a small swatch that opens the browser's color picker */
 .cgrp-level-color { flex: 0 0 auto; width: 1.25rem; height: 1rem; padding: 0; border: 1px solid var(--az-border-strong); border-radius: 2px; background: none; cursor: pointer; }
-.cgrp-colors { margin-top: 0.75rem; }
-.cgrp-colors__head { font-weight: 600; margin-bottom: 0.25rem; }
-.cgrp-colors__line, .cgrp-settings__colors .cgrp-settings__line { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
-.cgrp-settings__colors { margin-top: 0.75rem; }
 /* the row being renamed: a field, a tinted row and a bar at its edge; every other row is plain */
 .cgrp-level--editing { background: var(--az-accent-bg); box-shadow: inset 3px 0 0 var(--az-link); padding-left: 4px; border-radius: 3px; }
 .cgrp-level--editing .cgrp-level__name { border-color: var(--az-link); flex: 1 1 auto; min-width: 5rem; }
 .cgrp-level__ok, .cgrp-level__cancel { padding: 0 6px; line-height: 1.4; }
-.cgrp-rest-row, .cgrp-levels__actions, .cgrp-keepout-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-top: 4px; }
-.cgrp-rest-opt, .cgrp-keepout-row { margin: 0; }
 
 /* 5. Settings: the pop-over's form */
-.cgrp-settings__body { display: flex; flex-direction: column; gap: 6px; }
-.cgrp-settings__line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.cgrp-settings__line .form-control { width: auto; }
-.cgrp-smallmode-opt { margin: 0; }
-.cgrp-settings__problem { color: var(--az-danger-text); font-size: 0.75rem; }
-.cgrp-settings__problem:empty { display: none; }
 
 /* Toggle Controls: the cards lose their Edit button (UX 2.1) */
 .cgrp-compact .cgrp-card__edit { display: none; }
@@ -138,17 +126,5 @@
 .cmeth__toggle { position: relative; }
 .cmeth__dot { display: inline-block; width: 6px; height: 6px; margin-left: 4px; border-radius: 50%; background: var(--az-link); vertical-align: middle; }
 .cmeth__dot[hidden] { display: none; }
-.cmeth { display: flex; flex-direction: column; gap: 6px; font-size: 0.8125rem; }
-.cmeth__intro { margin: 0; color: var(--az-muted); }
-.cmeth__list { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; }
-.cmeth__name { font-weight: 600; margin: 0; }
-.cmeth__definition { margin: 0; }
-.cmeth__params { grid-column: 1 / -1; margin: 0 0 4px 12px; }
-.cmeth__param { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
-.cmeth__param .form-control { width: 5rem; }
-.cmeth__help { flex-basis: 100%; color: var(--az-muted); font-size: 0.75rem; }
-.cmeth__error { flex-basis: 100%; color: var(--az-danger-text); font-size: 0.75rem; }
-.cmeth__error:empty { display: none; }
-.cmeth__foot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 6px; }
-.cmeth__used { color: var(--az-muted); font-size: 0.75rem; flex: 1 1 12rem; }
-@media (max-width: 480px) { .cmeth__list { grid-template-columns: 1fr; } .cmeth__params { margin-left: 0; } }
+.cmeth .cmeth__foot { align-items: flex-end; justify-content: space-between; gap: 6px; padding-bottom: 8px; }
+.cmeth .cmeth__used { flex: 1 1 12rem; }

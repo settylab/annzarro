@@ -480,15 +480,17 @@ function createFactors({ D, id, model, on }) {
         if (!info) return [el('div', { class: 'cgrp-card__wait', text: 'Levels follow once the groups are computed.' })];
         const name = factorTitle(p, model().titleOf);
         const restName = `cgrp-rest-${id}-${i}`;
-        const rest = (value, text) => el('label', { class: 'cgrp-rest-opt' },
+        const rest = (value, text) => el('label', { class: 'cgrp-rest-opt az-pop-check' },
             el('input', { type: 'radio', class: 'cgrp-rest', name: restName, value, checked: (p.rest === 'exclude') === (value === 'exclude'),
                 on: { change: () => commitFactor(i, setRest(p, value), value === 'exclude' ? 'leave unticked levels out' : 'group unticked levels') } }), ` ${text}`);
         return [
-            el('div', { class: 'cgrp-levels__head' }, el('span', { text: 'Levels' }), el('span', { class: 'cgrp-levels__cells', text: 'cells' })),
+            el('div', { class: 'cgrp-levels__head az-pop-help' }, el('span', { text: 'Levels' }), el('span', { class: 'cgrp-levels__cells', text: 'cells' })),
             ...levelList(i, p, info, defaults),
-            el('div', { class: 'cgrp-rest-row', role: 'radiogroup', aria: { label: 'Unticked levels' } },
-                el('span', { text: 'Unticked levels ' }), rest('other', `Group as '${VOCABULARY.phrase.other(name)}'`), rest('exclude', 'Leave out of all groups')),
-            el('div', { class: 'cgrp-levels__actions' },
+            el('div', { class: 'cgrp-rest-row az-pop-field az-pop-field--block', role: 'radiogroup', aria: { label: 'Unticked levels' } },
+                el('span', { class: 'az-pop-field__label', text: 'Unticked levels' }),
+                el('span', { class: 'az-pop-field__control az-pop-field__control--stack' },
+                    rest('other', `Group as '${VOCABULARY.phrase.other(name)}'`), rest('exclude', 'Leave out of all groups'))),
+            el('div', { class: 'cgrp-levels__actions az-pop-buttons' },
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', on: { click: () => commitFactor(i, tickAll(p), 'tick all levels') } }, 'Tick all'),
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', on: { click: () => commitFactor(i, tickNone(p, info), 'tick no level') } }, 'Tick none'),
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', on: { click: () => commitFactor(i, sortByCells(p, info), 'sort levels by cells') } }, 'Sort by cells'))
@@ -504,8 +506,8 @@ function createFactors({ D, id, model, on }) {
             on: { change: () => commitFactor(i, setRest(p, keep.checked ? 'other' : 'exclude'), keep.checked ? 'keep cells not in the table' : 'leave cells not in the table out') } });
         return [
             el('ul', { class: 'cgrp-levels', role: 'list' }, rows.map((r) => levelRow(i, p, info, r))),
-            el('label', { class: 'cgrp-keepout-row' }, keep, ` Keep cells ${VOCABULARY.phrase.notInTable(title)} as a ${W.level}`),
-            el('div', { class: 'cgrp-card__follows' }, `Follows the table's filter. `,
+            el('label', { class: 'cgrp-keepout-row az-pop-check' }, keep, ` Keep cells ${VOCABULARY.phrase.notInTable(title)} as a ${W.level}`),
+            el('div', { class: 'cgrp-card__follows az-pop-help' }, `Follows the table's filter. `,
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-open', on: { click: () => on.open(p.source.key) } }, 'Open table'))
         ];
     }
@@ -533,11 +535,15 @@ function createFactors({ D, id, model, on }) {
         const kind = factorKind(p);
         const body = kind === 'categorical' || kind === 'grouping' ? categoricalBody(i, p, info)
             : kind === 'table' ? tableBody(i, p, info) : binnedBody(i, p, info, entry);
+        const levelsSection = el('details', { class: 'az-pop-section', data: { section: 'levels' }, open: true },
+            el('summary', { class: 'az-pop-section__title', text: kind === 'binned' ? 'Bins' : 'Levels' }),
+            el('div', { class: 'az-pop-section__body' }, ...body));
+        const sections = [levelsSection];
         // a table's two levels have no colors of their own: they are in the table or not (grey)
         if (info && kind !== 'table') {
-            body.push(factorColorsSection({ D, p, info, kind, name: factorTitle(p, m.titleOf), commit: (next, label) => commitFactor(i, next, label) }));
+            sections.push(factorColorsSection({ D, p, info, kind, name: factorTitle(p, m.titleOf), commit: (next, label) => commitFactor(i, next, label) }));
         }
-        return body;
+        return [el('div', { class: 'az-pop-options cgrp-editor' }, ...sections)];
     }
 
     /** Draw the open pop-over of factor i again from the recipe now (every edit does), the focus kept on its place. */
@@ -774,10 +780,10 @@ function createSettings({ D, id, recipe, set, names }) {
     const summary = el('span', { class: 'cgrp-settings__summary visually-hidden' });
     const head = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-settings-btn' },
         el('i', { class: 'fas fa-cog', aria: { hidden: 'true' } }), ' Settings', summary);
-    const problem = el('div', { class: 'cgrp-settings__problem', role: 'status' });
-    const separator = el('input', { type: 'text', class: 'form-control form-control-sm cgrp-separator', id: `cgrp-sep-${id}`,
+    const problem = el('div', { class: 'cgrp-settings__problem az-pop-error', role: 'status' });
+    const separator = el('input', { type: 'text', class: 'form-control form-control-sm az-pop-text cgrp-separator', id: `cgrp-sep-${id}`,
         autocomplete: 'off', spellcheck: 'false', size: '4' });
-    const threshold = el('input', { type: 'text', inputmode: 'numeric', class: 'form-control form-control-sm cgrp-threshold', id: `cgrp-thr-${id}`,
+    const threshold = el('input', { type: 'text', inputmode: 'numeric', class: 'form-control form-control-sm az-pop-num cgrp-threshold', id: `cgrp-thr-${id}`,
         autocomplete: 'off', size: '4' });
     const modeName = `cgrp-small-${id}`;
     const modes = {};
@@ -785,14 +791,24 @@ function createSettings({ D, id, recipe, set, names }) {
         on: { change: () => setSmall({ mode: value }, `small groups ${smallModeWord(value)}`) } }));
     const collectText = el('span');
     const colors = groupColorsSection({ D, id, recipe, names, set });
-    const body = el('div', { class: 'cgrp-settings__body', id: `cgrp-settings-${id}` },
-        el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-sep-${id}`, text: 'Separator ' }), separator),
-        el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-thr-${id}`, text: 'Small groups under ' }), threshold, el('span', { text: ' cells' })),
-        el('div', { class: 'cgrp-settings__line', role: 'radiogroup', aria: { label: 'Small groups' } },
-            el('label', { class: 'cgrp-smallmode-opt' }, radio('keep'), ' Keep'),
-            el('label', { class: 'cgrp-smallmode-opt' }, radio('collect'), ' Collect into ', collectText),
-            el('label', { class: 'cgrp-smallmode-opt' }, radio('hide'), ` Hide: their cells go in no ${VOCABULARY.word.group}`)),
-        colors.element, problem);
+    const field = (label, control, ...extra) => el('div', { class: 'az-pop-field' },
+        el('label', { class: 'az-pop-field__label', for: control.id, text: label }), el('span', { class: 'az-pop-field__control' }, control), ...extra);
+    const mode = (value, text) => el('label', { class: 'az-pop-check cgrp-smallmode-opt' }, radio(value), ` ${text}`);
+    const body = el('div', { class: 'az-pop-options cgrp-settings__body', id: `cgrp-settings-${id}` },
+        el('details', { class: 'az-pop-section', open: true },
+            el('summary', { class: 'az-pop-section__title', text: 'Groups' }),
+            el('div', { class: 'az-pop-section__body' },
+                field('Separator', separator),
+                field('Small groups under (cells)', threshold),
+                el('div', { class: 'az-pop-field az-pop-field--block', role: 'radiogroup', aria: { label: 'Small groups' } },
+                    el('span', { class: 'az-pop-field__label', text: 'Small groups' }),
+                    el('span', { class: 'az-pop-field__control az-pop-field__control--stack' },
+                        mode('keep', 'Keep'),
+                        el('label', { class: 'az-pop-check cgrp-smallmode-opt' }, radio('collect'), ' Collect into ', collectText),
+                        mode('hide', 'Hide')),
+                    el('small', { class: 'az-pop-help', text: `Hide: their cells go in no ${VOCABULARY.word.group}.` })),
+                problem)),
+        colors.element);
     const pop = createPopover({ anchor: head, name: 'settings', title: 'Settings',
         render: (host) => { host.append(body); paint(); return () => body.remove(); } });
 

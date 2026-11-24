@@ -172,3 +172,21 @@ def test_each_form_is_its_own_popover(page, served):
     _open_editor(page, 1, "[data-popover='binning']")
     page.wait_for_selector("[data-popover='binning'] .pbc", timeout=10000)
     assert page.locator("[data-popover='binning'][role='dialog']").count() == 1
+
+
+@pytest.mark.parametrize("which", ["settings", "levels", "bins"])
+def test_the_grouping_pop_overs_use_the_az_pop_body(page, served, which):
+    from annzarro.tests.browser.popover_standard import assert_body_standard
+    _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE, {"source": {"type": "obs", "key": "depth"}, "binning": {"method": "equal_count"}}])})
+    _ready(page)
+    if which == "settings":
+        page.click(f"{A} .cgrp-settings-btn")
+        page.wait_for_selector("[data-popover='settings']", timeout=10000)
+        assert_body_standard(page, "[data-popover='settings']", sections=2, shot="grouping-settings")
+    elif which == "levels":
+        _open_editor(page, 0)
+        assert_body_standard(page, POP, sections=2, shot="grouping-levels")
+    else:
+        _open_editor(page, 1, "[data-popover='binning']")
+        page.wait_for_selector("[data-popover='binning'] .pbc", timeout=10000)
+        assert_body_standard(page, "[data-popover='binning']", sections=2, shot="grouping-bins")

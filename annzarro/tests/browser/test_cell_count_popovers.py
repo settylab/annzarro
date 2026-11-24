@@ -160,3 +160,19 @@ def test_screenshots_of_the_toolbar_and_each_popover(page, served):
     page.click(f"{S} .ccnt-choose")
     page.wait_for_selector("[data-popover='levels']")
     shot("levels")
+
+
+@pytest.mark.parametrize("name, config, button, popover", [
+    ("count-levels", dict(mode="bar", x=cc.CELL_TYPE, split=cc.CONDITION), "[data-row='x'] .ccnt-choose", "levels"),
+    ("count-bins", dict(mode="histogram", x=obs("depth")), "[data-row='x'] .ccnt-bins", "binning"),
+    ("count-display", dict(mode="hist2d", x=obs("depth"), y=obs("score")), ".ccnt-toolbar .ccnt-color-btn", "color"),
+])
+def test_the_count_pop_overs_use_the_az_pop_body(page, served, name, config, button, popover):
+    from annzarro.tests.browser.popover_standard import assert_body_standard
+    _open(page, served, {CC: _count(**config)})
+    _drawn(page, config["mode"])
+    page.click(f"{S} {button}")
+    page.wait_for_selector(f"[data-popover='{popover}']")
+    if popover == "binning":
+        page.wait_for_selector("[data-popover='binning'] .pbc")
+    assert_body_standard(page, f"[data-popover='{popover}']", sections=1 if popover != "color" else 2, help=False, shot=name)

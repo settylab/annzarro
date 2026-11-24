@@ -3,16 +3,16 @@
  * its edges and sliders, the chips' foot and the sentences under it. Colors are the theme's tokens, so light and dark
  * follow the page.
  */
-.pbc { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; font-size: 0.8125rem; container-type: inline-size; }
+.pbc { display: flex; flex-direction: column; gap: 6px; padding: 0 0 4px; font-size: 0.875rem; container-type: inline-size; }
 .pbc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
-.pbc-field { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
-.pbc-field__name { color: var(--az-muted); font-size: 0.75rem; }
+.pbc-rows { flex-direction: column; align-items: stretch; gap: 6px; }
+.pbc-field.az-pop-field { width: 100%; }
+.pbc-edges .az-pop-field__label { flex: 1 1 auto; }
+.pbc-field { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 0; }
 .pbc-method { width: auto; }
-.pbc-input { width: auto; }
 .pbc-zero-field, .pbc-radio { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
-.pbc-edges { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.pbc-edges { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 10px; }
 .pbc-range { gap: 6px; }
-.pbc-help { color: var(--az-muted); font-size: 0.75rem; }
 
 /* the preview: 100 bars and the edges on them */
 .pbc-hist { position: relative; height: 56px; margin: 4px 7px 0; border-bottom: 1px solid var(--az-border-strong); }
@@ -37,10 +37,8 @@
 .pbc-tick { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 
 .pbc-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; }
-.pbc-edges-line { color: var(--az-muted); }
-.pbc-moved { color: var(--az-warn-text); }
+.pbc .pbc-moved { color: var(--az-warn-text); }
 .pbc-moved .btn-link, .pbc-frozen .btn-link { padding: 0 2px; vertical-align: baseline; font-size: inherit; }
 .pbc-notes { display: flex; flex-direction: column; gap: 2px; }
-.pbc-note { margin: 0; color: var(--az-warn-text); }
-.pbc-message { color: var(--az-danger-text); }
+.pbc .pbc-note { margin: 0; color: var(--az-warn-text); }
 .pbc-message[hidden], .pbc-notes:empty { display: none; }
