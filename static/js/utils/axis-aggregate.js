@@ -13,7 +13,8 @@
  * A provider's `aggregate` is: `sections()` [{heading, entries: [{entry, text, alt?}]}], `start(entry, layer)` the
  * setting of a set newly picked on a layer, `entryOf(setting)`, `layerOf(setting)`, `methods(setting)` {options:
  * [{value, name, symbol, disabled?, title?}], chosen}, `after(setting, 'method'|'layer', value)` the fields to write
- * (with `say`), `layers(setting)` {options: [{value, text, disabled?, title?}], chosen} the row's layer list graded for the
+ * (with `say`; `'member'` for a member chosen), `members(setting)` optional, a set's members in a select of their own
+ * ({options, chosen}; a grouping's groups), `layers(setting)` {options: [{value, text, disabled?, title?}], chosen} the row's layer list graded for the
  * aggregation held, and `symbolOf(setting)`.
  *
  * Pure apart from the registry; Node tests hold it.
@@ -94,9 +95,16 @@ export function startItem(setting, layer, column) {
 export function startSet(setting, value, layer) {
     const picked = decodeSet(value);
     if (!picked) return null;
+    const previous = { ...setting };            // what the row read: a grouping chosen after another keeps the group's name
     clearSetting(setting);
-    Object.assign(setting, getSource(picked.type).aggregate.start(picked.entry, layer));
+    Object.assign(setting, getSource(picked.type).aggregate.start(picked.entry, layer, previous));
     return setting;
+}
+
+/** The members of a set the row lists in a select of their own (a grouping's groups), or null when the set has none. */
+export function membersOf(setting) {
+    const provider = aggregateOf(setting);
+    return provider && typeof provider.aggregate.members === 'function' ? provider.aggregate.members(setting) : null;
 }
 
 /**

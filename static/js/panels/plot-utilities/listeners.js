@@ -1272,10 +1272,11 @@ function setupAxisSelectorListeners(
       const touched = this.__touched;
       this.__touched = null;
       const picked = jQuery(this).val();
-      if (touched === 'agg' || isAggregate(s) || decodeSet(picked)) {
+      if (touched === 'agg' || touched === 'member' || isAggregate(s) || decodeSet(picked)) {
         let said = '';
         const layer = $container.find(`.axis-key-select[data-axis="${axis}"]`).val();
         if (touched === 'agg') said = applyAfter(s, 'method', this.__aggValue);
+        else if (touched === 'member') said = applyAfter(s, 'member', this.__memberValue);
         else if (decodeSet(picked)) {
           // the provider's way to make a set ("New signature…"): it opens beside this plot and this axis takes it
           const d = decodeSet(picked);

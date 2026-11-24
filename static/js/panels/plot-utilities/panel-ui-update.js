@@ -7,8 +7,8 @@ import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
 import { noteDatasetLayers } from '../../utils/score-source.js';
 import { refreshHoverGroups } from './hover-columns.js';
 import { fillChoiceSelect } from '../../utils/pair-selects.js';
-import { attachFilter, fillSections } from '../../utils/group-picker.js';
-import { aggregateProviders, setSections, isAggregate, displayType, heldSet, aggregateOf } from '../../utils/axis-aggregate.js';
+import { fillSections } from '../../utils/group-picker.js';
+import { aggregateProviders, setSections, isAggregate, displayType, heldSet, aggregateOf, membersOf } from '../../utils/axis-aggregate.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { createAggregationButton } from '../../ui/aggregation-button.js';
 import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed, paletteLabelOf } from '../../utils/source-registry.js';
@@ -635,8 +635,36 @@ function populateLayerItems(settings, columnSelect, plotType, use) {
   }
   fillSections(columnSelect, { loose, sections, chosen: asSet ? heldSet(settings) : (focused || '') });
   columnSelect.disabled = false;
-  attachFilter(columnSelect, { label: 'Item', placeholder: 'Filter' });
+  ensureMemberSelect(columnSelect, asSet ? settings : null);
   ensureAggregationButton(columnSelect, asSet ? settings : null);
+}
+
+/**
+ * The select of a set's members after the item picker (a grouping's groups, by their names, in the grouping's order): its
+ * own native select of the row's size, sharing the item column's width with it. None for a set with no members (a
+ * signature) or a single item. A choice is handed to the column select's listeners, like every change of the row.
+ */
+function ensureMemberSelect(columnSelect, settings) {
+  const menu = settings ? membersOf(settings) : null;
+  let select = columnSelect.__member || null;
+  if (!menu) {
+    if (select) { select.remove(); columnSelect.__member = null; }
+    return;
+  }
+  if (!select) {
+    select = document.createElement('select');
+    select.className = 'form-select form-select-sm axis-member-select';
+    select.dataset.axis = columnSelect.dataset.axis || '';
+    select.setAttribute('aria-label', 'Group');
+    select.addEventListener('change', () => {
+      columnSelect.__touched = 'member';
+      columnSelect.__memberValue = select.value;
+      columnSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    columnSelect.__member = select;
+  }
+  if (select.previousElementSibling !== columnSelect) columnSelect.after(select);
+  fillChoiceSelect(select, menu.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '' })), menu.chosen);
 }
 
 /**
@@ -666,7 +694,8 @@ function ensureAggregationButton(columnSelect, settings) {
     });
     columnSelect.__agg = made;
   }
-  if (made.button.previousElementSibling !== columnSelect) columnSelect.after(made.button);
+  const anchor = columnSelect.__member || columnSelect;
+  if (made.button.previousElementSibling !== anchor) anchor.after(made.button);
   made.update();
 }
 
@@ -1360,8 +1389,6 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
 /** Fill a select with a provider's third menu (subKeyMenu): graded entries, an impossible one disabled with its reason. */
 function fillSubKeySelect(select, built) {
   fillChoiceSelect(select, built.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '', alt: o.alt || '' })), built.chosen);
-  // a long list of groups has a filter field beside its dropdown (utils/group-picker.js)
-  if (built.search) attachFilter(select, { label: 'Group' });
 }
 
 /** Fill a provider's layer select (layerMenu) for what the setting holds. */

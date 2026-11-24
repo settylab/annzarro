@@ -4970,3 +4970,10 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .axis-agg-why { flex: 0 0 100%; padding-left: calc(2rem + 4px); font-size: 0.6875rem; }
 /* the sections of an item picker keep their headings readable */
 .axis-column-select optgroup { font-style: normal; font-weight: 600; }
+
+/* The columns of a plot's axis rows on a layer keep their edges on every row (a plain item, a signature, a grouping and its
+   group): the layer name has one width, and the item takes what is left, shared with the group select on a grouping's row, so
+   the button at the end of a row (the lock, the aggregation) is in the same place on every row. */
+.plot-controls .axis-selector:has(> .axis-type-select option[value="layer"]:checked) > .axis-key-select { flex: 0 0 6rem; min-width: 0; }
+.plot-controls .axis-selector:has(> .axis-type-select option[value="layer"]:checked) > .axis-column-select,
+.plot-controls .axis-selector > .axis-member-select { flex: 1 1 0; min-width: 0; text-overflow: ellipsis; }
