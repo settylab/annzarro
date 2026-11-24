@@ -178,6 +178,110 @@ def test_reset_of_a_group_puts_back_only_that_group(page, served):
     assert page.input_value(f"#font-size-{pid}") == "12"
 
 
+@pytest.mark.parametrize("which", WHICH)
+def test_text_and_background_use_the_one_pop_over_body_standard(page, served, which):
+    """U3: the Cell Plot's and Gene Plot's Text and Background are the shared renderer's, as the Cell-Gene Plot's are: az-pop-*
+    sections and rows (label left, control right), one Reset at the foot of each, a colour with Auto, no input-group boxes."""
+    pid = _open(page, served, which)
+    _open_options(page, pid)
+    for name in ("text", "background"):
+        _section(page, pid, name)
+        sec = f"{POP} details[data-panel='{pid}'][data-section='{name}']"
+        assert "az-pop-section" in page.get_attribute(sec, "class")
+        assert page.locator(f"{sec} .az-pop-section__body .az-pop-field").count() >= 1
+        assert page.locator(f"{sec} .az-pop-reset").count() == 1, "one Reset per group"
+        assert page.locator(f"{sec} .input-group, {sec} .form-switch").count() == 0
+    assert page.locator(f"{POP} #font-size-{pid}.az-pop-num").count() == 1
+    assert page.locator(f"{POP} #reset-font-size-{pid}").count() == 0, "no Reset of its own per field"
+    assert page.locator(f"{POP} #text-color-{pid}").count() == 1 and page.locator(f"{POP} [data-auto='textColor']").count() == 1
+    assert page.evaluate("(s) => getComputedStyle(document.querySelector(s)).textTransform", f"{POP} details[data-section='text'] > summary") == "uppercase"
+
+
+@pytest.mark.parametrize("which", WHICH)
+def test_axes_points_and_focused_use_the_body_standard_and_a_flip_is_a_view(page, served, which):
+    """U4: Axes, Points and Focused are the shared renderer's: az-pop-* rows, one Reset each, a colour with Auto, a gated control
+    says why under itself; the flips are views, so their group's Reset leaves them as they are."""
+    pid = _open(page, served, which)
+    _open_options(page, pid)
+    for name in ("axes", "points", "focused"):
+        _section(page, pid, name)
+        sec = f"{POP} details[data-panel='{pid}'][data-section='{name}']"
+        assert "az-pop-section" in page.get_attribute(sec, "class")
+        assert page.locator(f"{sec} .az-pop-reset").count() == 1, f"one Reset in {name}"
+        assert page.locator(f"{sec} .input-group, {sec} .form-switch").count() == 0
+        assert page.locator(f"{sec} [id^='reset-'][id$='-{pid}']:not(.az-pop-reset)").count() == 0, "no Reset of its own per field"
+    assert page.locator(f"{POP} [data-auto='gridColor']").count() == 1 and page.locator(f"{POP} [data-auto='focusedEdgeColor']").count() == 1
+    # the scale bar is gated (no Equal aspect): off, and the reason is its help line
+    assert page.is_disabled(f"{POP} #show-scale-bar-{pid}")
+    assert "Needs Equal aspect" in page.inner_text(f"{POP} #scale-bar-note-{pid}")
+    # a flip is a view: Axes' Reset does not touch it, and the grid it does
+    page.check(f"{POP} #flip-y-{pid}")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().flipY === true", pid)
+    page.uncheck(f"{POP} #grid-toggle-{pid}")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().showGrid === false", pid)
+    page.click(f"{POP} #reset-section-axes-{pid}")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().showGrid === true", pid)
+    s = _settings(page, pid)
+    assert s["flipY"] is True and page.is_checked(f"{POP} #flip-y-{pid}")
+
+
+@pytest.mark.parametrize("which", WHICH)
+def test_legend_and_colour_bar_use_the_body_standard(page, served, which):
+    """U5: the Legend group is the shared renderer's: help under the field, units in the label, Title align has an Auto choice that
+    writes absent, the colour bar's length is a percent slider, and the group has one Reset (no Reset per box)."""
+    pid = _open(page, served, which)
+    _open_options(page, pid)
+    _section(page, pid, "legend")
+    sec = f"{POP} details[data-panel='{pid}'][data-section='legend']"
+    assert "az-pop-section" in page.get_attribute(sec, "class") and page.locator(f"{sec} .az-pop-reset").count() == 1
+    assert page.locator(f"{sec} .input-group, {sec} .form-switch, {sec} [id^='reset-legend-']").count() == 0
+    assert page.locator(f"{sec} #legend-title-size-{pid}.az-pop-num").count() == 1
+    assert page.locator(f"{sec} #legend-title-size-{pid}").evaluate("(e) => e.closest('.az-pop-field').querySelector('.az-pop-help').textContent") != ""
+    assert page.locator(f"{sec} #legend-title-align-{pid} option").evaluate_all("(os) => os.map((o) => o.textContent)")[0] == "Auto"
+    assert page.get_attribute(f"{sec} #colorbar-length-{pid}", "max") == "100", "a percent slider"
+    page.select_option(f"{sec} #legend-title-align-{pid}", "centre")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().legendTitleAlign === 'centre'", pid)
+    page.select_option(f"{sec} #legend-title-align-{pid}", "")
+    until(page, "(id) => !window.PanelManager.getPanel(id).getConfig().legendTitleAlign", pid)
+    page.fill(f"{sec} #legend-columns-{pid}", "2")
+    page.press(f"{sec} #legend-columns-{pid}", "Tab")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().legendColumns === 2", pid)
+    page.click(f"{sec} #reset-section-legend-{pid}")
+    until(page, "(id) => !window.PanelManager.getPanel(id).getConfig().legendColumns", pid)
+    assert page.input_value(f"{sec} #legend-columns-{pid}") == ""
+
+
+@pytest.mark.parametrize("which", WHICH)
+def test_the_whole_body_is_the_one_standard_with_one_reset_per_group(page, served, which):
+    """U6: Margins, Export, Presets and Apply are the shared renderer's too, so nothing of the old menu is left: every group is an
+    az-pop-section, no card, switch or input-group box, one Reset per group that has a look to reset, a presets row of three."""
+    pid = _open(page, served, which)
+    _open_options(page, pid)
+    page.evaluate("() => document.querySelectorAll(\"[data-popover='plot-options'] details\").forEach((d) => { d.open = true; })")
+    names = page.evaluate("(id) => [...document.querySelectorAll(`[data-popover='plot-options'] details[data-panel='${id}']`)].map((d) => d.dataset.section)", pid)
+    assert names == ["presets", "text", "background", "axes", "points", "focused", "legend", "margins", "export", "apply"]
+    old = page.evaluate("""(pid) => { const body = document.querySelector("[data-popover='plot-options'] .az-popover-body");
+        const bad = [...body.querySelectorAll('.aesthetics-section, .aesthetics-body, .form-switch, .form-label, .form-check')]
+            .filter((e) => !e.closest('.az-pop-field--element'));
+        const groups = [...body.querySelectorAll('details')].filter((d) => !d.classList.contains('az-pop-section'));
+        return { bad: bad.map((e) => e.className), groups: groups.map((d) => d.dataset.section),
+                 resets: [...body.querySelectorAll('details')].map((d) => [d.dataset.section, d.querySelectorAll('.az-pop-reset').length]) }; }""", pid)
+    assert old["bad"] == [] and old["groups"] == [], old
+    resets = dict(old["resets"])
+    assert resets["presets"] == 0 and resets["apply"] == 0, "presets and apply have nothing to reset"
+    assert all(resets[n] == 1 for n in ("text", "background", "axes", "points", "focused", "legend", "margins", "export")), resets
+    assert page.locator(f"{POP} .az-pop-preset").count() == 3
+    assert page.locator(f"{POP} #reset-margins-{pid}").count() == 0, "no Reset Margins of its own"
+    assert page.locator(f"{POP} #margin-all-input-{pid}.az-pop-num").count() == 1
+    assert page.locator(f"{POP} details[data-section='export'] #plot-width-{pid}.az-pop-num").count() == 1
+    # the margins link, and the group's Reset puts them back
+    page.fill(f"{POP} #margin-all-input-{pid}", "30")
+    page.press(f"{POP} #margin-all-input-{pid}", "Tab")
+    until(page, "(id) => { const m = window.PanelManager.getPanel(id).getConfig().margins; return m.t === 30 && m.l === 30; }", pid)
+    page.click(f"{POP} #reset-section-margins-{pid}")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().margins.t === 80", pid)
+
+
 # ------------------------------------------------------------------ 5. a link keeps it all
 
 @pytest.mark.parametrize("which", WHICH)

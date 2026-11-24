@@ -131,11 +131,10 @@ def _exercise(page, root, extra=None, large=False):
     # the options travel with the panel
     s = _settings(page, A)
     assert (s["legendDotSize"], s["legendColumns"], s["showLegendTitle"]) == (16, 3, False), s
-    # Reset puts both boxes back to today's legend; at the default there is nothing to reset
-    page.click(f"#reset-legend-dot-size-{A}")
-    page.click(f"#reset-legend-columns-{A}")
+    # the Legend group's one Reset puts the boxes back to today's legend; at the defaults there is nothing to reset
+    page.click(f"#reset-section-legend-{A}")
     assert page.input_value(f"#legend-dot-size-{A}") == "" and page.input_value(f"#legend-columns-{A}") == ""
-    assert page.is_disabled(f"#reset-legend-dot-size-{A}") and page.is_disabled(f"#reset-legend-columns-{A}")
+    assert page.is_disabled(f"#reset-section-legend-{A}")
     s = _settings(page, A)
     assert (s["legendDotSize"], s["legendColumns"]) == (None, None), s
     page.check(f"#show-legend-title-{A}")
@@ -166,15 +165,17 @@ def test_the_options_in_a_link_draw_the_first_legend(page, server):
 
 
 def test_text_size_has_a_reset(page, server):
+    """The Text group has one Reset (pop-over unification: no Reset of its own per field); it is off while the group is at its defaults."""
     _open(page, server)
     _menu(page, A, "text")
-    assert page.is_disabled(f"#reset-font-size-{A}")                       # 12 is the default
+    reset = f"details[data-panel='{A}'][data-section='text'] [data-reset='text']"
+    assert page.is_disabled(reset)                                          # 12 is the default
     _change(page, f"#font-size-{A}", 18)
-    assert not page.is_disabled(f"#reset-font-size-{A}")
+    assert not page.is_disabled(reset)
     page.wait_for_function("(id) => (%s)(id)._fullLayout.font.size === 18" % GD, arg=A)
-    page.click(f"#reset-font-size-{A}")
+    page.click(reset)
     page.wait_for_function("(id) => (%s)(id)._fullLayout.font.size === 12" % GD, arg=A)
-    assert page.input_value(f"#font-size-{A}") == "12" and page.is_disabled(f"#reset-font-size-{A}")
+    assert page.input_value(f"#font-size-{A}") == "12" and page.is_disabled(reset)
     assert _settings(page, A)["fontSize"] == 12
 
 

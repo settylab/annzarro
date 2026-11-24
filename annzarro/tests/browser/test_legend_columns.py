@@ -412,11 +412,11 @@ def test_the_menu_sets_and_resets_the_alignment(page, server):
     _open(page, server, 2)
     page.click("#aesthetics-menu-btn-cell-plot-M")
     page.click("details[data-panel='cell-plot-M'][data-section='legend'] summary")
-    assert page.is_disabled("#reset-legend-title-align-cell-plot-M")
+    assert page.input_value("#legend-title-align-cell-plot-M") == ""            # Auto
     page.select_option("#legend-title-align-cell-plot-M", "centre")
     page.wait_for_function("(sel) => [...document.querySelector(sel).querySelectorAll('g.infolayer g.annotation text')].some(t => t.textContent.trim() === 'lineage')", arg=TILE, timeout=15000)
-    assert not page.is_disabled("#reset-legend-title-align-cell-plot-M")
-    page.click("#reset-legend-title-align-cell-plot-M")
+    page.select_option("#legend-title-align-cell-plot-M", "")                   # back to Auto: the choice that writes absent
+    assert page.evaluate("() => window.PanelManager.saveLayout().panelConfigs['cell-plot-M'].legendTitleAlign ?? null") is None
     page.wait_for_function("(sel) => ![...document.querySelector(sel).querySelectorAll('g.infolayer g.annotation text')].some(t => t.textContent.trim() === 'lineage')", arg=TILE, timeout=15000)
     page.wait_for_timeout(500)
     r = page.evaluate(ALIGN, TILE)

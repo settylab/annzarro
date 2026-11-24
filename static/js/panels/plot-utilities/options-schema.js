@@ -204,7 +204,7 @@ function clean(field, v) {
         return n;
     }
     case 'check': return typeof v === 'boolean' ? v : undefined;
-    case 'select': return field.choices.some(([value]) => value === v) ? v : undefined;
+    case 'select': return !field.choices || field.choices.some(([value]) => value === v) ? v : undefined;
     case 'color': return typeof v === 'string' && COLOR.test(v) ? v : undefined;
     case 'text': return typeof v === 'string' ? v : undefined;
     case 'margins': {
