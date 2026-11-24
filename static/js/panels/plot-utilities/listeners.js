@@ -1252,7 +1252,12 @@ function setupAxisSelectorListeners(
       if (takeSubKey(settings[axis], this, id)) handleAxisUpdate(axis, plotType);
       return;
     }
-    settings[axis].column = jQuery(this).val();
+    const s = settings[axis];
+    s.column = jQuery(this).val();
+    // the column chosen is the one this key remembers: the axis setup prefers the remembered one, so the column a
+    // link or a panel set reopens on was the one chosen before the last switch away (render drift, decision 39)
+    const h = s.history && s.history[s.type];
+    if (h && h.columns && s.key in h.columns) h.columns[s.key] = s.column;
     handleAxisUpdate(axis, plotType);
   });
   
