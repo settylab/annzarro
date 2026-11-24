@@ -1126,7 +1126,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             };
             gd.on('plotly_relayout', gd.__azCgCamera);
             if (gd.__azCgDragging && typeof gd.removeListener === 'function') gd.removeListener('plotly_relayouting', gd.__azCgDragging);
-            gd.__azCgDragging = (ev) => { const camera = ev && ev['scene.camera']; if (camera) relabel(gd, labels, camera, { settled: false }); };
+            // at most once per animation frame, with the drag's latest camera
+            let frame = null;
+            let latest = null;
+            gd.__azCgDragging = (ev) => {
+                latest = ev && ev['scene.camera'];
+                if (!latest || frame !== null) return;
+                frame = requestAnimationFrame(() => { frame = null; if (latest) relabel(gd, labels, latest, { settled: false }); });
+            };
             gd.on('plotly_relayouting', gd.__azCgDragging);
         }
 
@@ -1140,7 +1147,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function relabel(gd, labels, camera, { settled }) {
             if (!window.Plotly || !gd.layout || !gd.layout.scene || !gd._fullLayout || !gd._fullLayout.scene) return;
             const next = sceneLabels(labels, camera);
-            const key = (list) => (list || []).map((a) => `${a.xanchor}|${a.x}|${a.y}|${a.xshift}|${a.yshift}`).join(',');
+            const key = (list) => (list || []).map((a) => `${a.xanchor}|${a.yanchor}|${a.x}|${a.y}|${a.xshift}|${a.yshift}|${a.textangle}`).join(',');
             const mine = gd.layout.scene.annotations || [];
             const full = gd._fullLayout.scene.annotations || [];
             if (settled) {
@@ -1149,7 +1156,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 return;
             }
             if (key(next) === key(full) || mine.length !== next.length || full.length !== next.length) return;
-            const FIELDS = ['x', 'y', 'xanchor', 'xshift', 'yshift'];
+            const FIELDS = ['x', 'y', 'xanchor', 'yanchor', 'xshift', 'yshift', 'textangle'];
             // a field a label leaves out is Plotly's default (0 for the shifts), never undefined (a NaN transform)
             next.forEach((a, i) => { for (const f of FIELDS) full[i][f] = a[f] !== undefined ? a[f] : 0; });
             gd.__azCgLabelsMoved = true;

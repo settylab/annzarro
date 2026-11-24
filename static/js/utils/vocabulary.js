@@ -160,8 +160,13 @@ const cellGene = Object.freeze({
             sides: Object.freeze({ auto: 'Auto', fixed: 'Fixed' }),
             justify: 'Justify',
             justifies: Object.freeze({ auto: 'Auto', left: 'Left', right: 'Right', center: 'Center' }),
+            rotation: 'Rotation',
+            rotations: Object.freeze({ horizontal: 'Horizontal', along: 'Along the axis', across: 'Across the axis', angle: 'Angle' }),
+            angle: 'Angle (°, clockwise)',
+            padding: 'Padding (px)',
             help: 'Side Auto puts the names on the edges nearer you as the plot turns; Fixed keeps the edges they are on now. '
-                + 'Justify Auto runs each name outward from the bars.'
+                + 'Justify Auto runs each name outward from the bars. Rotation Along the axis tilts the names with their edge as '
+                + 'the plot turns. Padding is the gap between a name and its tick.'
         })
     }),
     /** What a narrow plot gave up so the matrix keeps its columns readable (panels/cell-gene/draw.js fitMatrix): the strip. */

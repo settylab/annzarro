@@ -541,6 +541,8 @@ function mount(slot, ctx) {
         const next = { ...stored('labels3d'), ...patch };
         if (next.side !== 'fixed') { delete next.side; delete next.edges; }
         if (!next.justify || next.justify === 'auto') delete next.justify;
+        if (next.rotation === undefined || next.rotation === 'horizontal') delete next.rotation;
+        if (next.padding === undefined || next.padding === null || next.padding === 4) delete next.padding;
         ctx.set({ labels3d: Object.keys(next).length ? next : undefined }, label);
     };
     const labels3dSection = section(W3.labels.heading,
@@ -548,7 +550,18 @@ function mount(slot, ctx) {
             (v) => setLabels3d(v === 'fixed' ? { side: 'fixed', edges: ctx.labelEdges ? ctx.labelEdges() : undefined } : { side: 'auto' },
                 `3D labels ${W3.labels.sides[v].toLowerCase()}`)),
         select('labels3dJustify', W3.labels.justify, ['auto', 'left', 'right', 'center'].map((v) => [v, W3.labels.justifies[v]]),
-            (v) => setLabels3d({ justify: v }, `3D labels justified ${W3.labels.justifies[v].toLowerCase()}`)));
+            (v) => setLabels3d({ justify: v }, `3D labels justified ${W3.labels.justifies[v].toLowerCase()}`)),
+        select('labels3dRotation', W3.labels.rotation, ['horizontal', 'along', 'across', 'angle'].map((v) => [v, W3.labels.rotations[v]]),
+            (v) => setLabels3d({ rotation: v === 'angle' ? (isNumber(stored('labels3d').rotation) ? stored('labels3d').rotation : 0) : v },
+                `3D labels ${W3.labels.rotations[v].toLowerCase()}`)),
+        // only while Rotation is Angle: the box's change on leaving it must not undo a Rotation chosen since
+        number('labels3dAngle', W3.labels.angle, (v) => {
+            if (controls.labels3dRotation.value !== 'angle') return;
+            setLabels3d({ rotation: v === null ? 0 : Math.max(-90, Math.min(90, v)) }, '3D label angle');
+        },
+            { min: -90, max: 90, step: 5 }),
+        number('labels3dPadding', W3.labels.padding, (v) => setLabels3d({ padding: v === null ? 4 : Math.max(0, Math.min(40, v)) }, '3D label padding'),
+            { min: 0, max: 40, step: 1 }));
     labels3dSection.classList.add('cgene-labels3d');
     labels3dSection.title = W3.labels.help;
 
@@ -689,6 +702,11 @@ function mount(slot, ctx) {
         labels3dSection.hidden = c.view !== '3d';
         controls.labels3dSide.value = l3.side === 'fixed' ? 'fixed' : 'auto';
         controls.labels3dJustify.value = l3.justify || 'auto';
+        const angled = isNumber(l3.rotation);
+        controls.labels3dRotation.value = angled ? 'angle' : l3.rotation === 'along' || l3.rotation === 'across' ? l3.rotation : 'horizontal';
+        controls.labels3dAngle.closest('label').hidden = !angled;
+        setValue(controls.labels3dAngle, angled ? l3.rotation : 0);
+        setValue(controls.labels3dPadding, isNumber(l3.padding) ? l3.padding : 4);
 
         const drawn = ctx.drawn();
         csvBtn.disabled = !drawn;

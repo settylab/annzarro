@@ -677,10 +677,16 @@ const ASPECT_Z = 0.6;
 const UIREVISION_3D = 'cgene-3d';
 
 /**
- * The gap, px, between a category label and its tick on the box edge, on the label's side. Plotly drops a scene
- * annotation outside the axis ranges, so the anchor is ON the edge and the gap is a screen shift.
+ * The gap, px, between a label and its tick on the box edge, on the label's side (Plot Options ▸ 3D labels ▸ Padding).
+ * Plotly drops a scene annotation outside the axis ranges, so the anchor is ON the edge and the gap is a screen shift.
  */
 const LABEL_GAP_PX = 4;
+const PADDING_MAX = 40;
+/** A z tick this close to the floor (a share of the z span) is not labelled: the floor corner is where the labels start. */
+const Z_FLOOR_SKIP = 0.08;
+const Z_TICKS = 5;
+/** A capital letter's width in em (Arial's widest are about 0.72): the label band's width for the title's place. */
+const LABEL_EM_MAX = 0.7;
 
 /**
  * A scene axis of categories: grid lines at the bar centres, thinned, over a box that is exactly the cells. Plotly
@@ -697,47 +703,69 @@ function sceneAxis(labels, positions, extent, th) {
     return { ...base, tickmode: 'array', tickvals: ticks.tickvals.map((k) => positions[k]), ticktext: ticks.ticktext };
 }
 
+/** About `count` round values from lo to hi (1, 2 or 5 times a power of ten apart), as an axis would tick them. */
+function niceTicks(lo, hi, count) {
+    if (!(hi > lo)) return [lo];
+    const raw = (hi - lo) / Math.max(count, 1);
+    const p = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 5, 10].map((m) => m * p).find((v) => v >= raw) || 10 * p;
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(Number(v.toPrecision(12)));
+    return out;
+}
+
 const minus = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 const unit = (a) => { const n = Math.hypot(a.x, a.y, a.z) || 1; return { x: a.x / n, y: a.y / n, z: a.z / n }; };
 const cross = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+
+/** The camera looked through: the default one when looking straight down or up, where the camera sets no screen right. */
+function lookOf(camera) {
+    const c0 = camera.center || DEFAULT_CAMERA.center;
+    return Math.hypot(camera.eye.x - c0.x, camera.eye.y - c0.y) < 1e-6 ? DEFAULT_CAMERA : camera;
+}
+
+/** The screen's right and up in the scene (orthographic): forward x up, and right x forward. */
+function screenAxes(camera) {
+    const look = lookOf(camera);
+    const forward = minus(look.center || DEFAULT_CAMERA.center, look.eye);
+    const right = unit(cross(forward, look.up || DEFAULT_CAMERA.up));
+    return { right, up: unit(cross(right, forward)) };
+}
+
+/** The screen's right in the scene: forward x up, in the frame Plotly's camera is given in. */
+function screenRight(camera) {
+    return cross(minus(camera.center || DEFAULT_CAMERA.center, camera.eye), camera.up || DEFAULT_CAMERA.up);
+}
+
+/** The anchors Justify may set (Plot Options ▸ 3D labels); Auto is none of them. */
+const JUSTIFY = Object.freeze(['left', 'right', 'center']);
 
 /**
  * Where each category axis's labels go for a camera (operator: a label is never centred on its tick). Each axis's labels
  * run along the box edge nearer the camera, and the side of the screen that edge's middle falls on sets the anchor: on
  * the right a label starts at its tick (`left`), on the left it ends there (`right`), so it always runs outward, away
  * from the bars. One anchor per axis, so an axis never mixes them. Screen right is forward x up, in the scene's
- * normalised box (the aspect ratio, centred on 0), the frame Plotly's camera is given in.
- * @param {{camera: {eye, center?, up?}, aspect: {x: number, y: number, z: number}}} opts
- * @returns {{x: {edge: 'min'|'max', xanchor: 'left'|'right'}, y: {edge: 'min'|'max', xanchor: 'left'|'right'}}}
+ * normalised box (the aspect ratio, centred on 0), the frame Plotly's camera is given in. Side Fixed keeps the stored
+ * edges; Justify Left, Right or Center sets the anchor.
+ * @returns {{x: {edge: 'min'|'max', xanchor: string}, y: {edge: 'min'|'max', xanchor: string}}}
  */
 function sceneLabelSides({ camera, aspect, options = {} }) {
-    // straight down (or up) neither the nearer edges nor the screen's right are set by the camera: the default view's are used
-    const c0 = camera.center || DEFAULT_CAMERA.center;
-    const look = Math.hypot(camera.eye.x - c0.x, camera.eye.y - c0.y) < 1e-6 ? DEFAULT_CAMERA : camera;
+    const look = lookOf(camera);
     const eye = look.eye;
     const center = look.center || DEFAULT_CAMERA.center;
     const right = screenRight(look);
     const side = (p) => (p.x * right.x + p.y * right.y > 0 ? 'left' : 'right');
-    // Side (Plot Options ▸ 3D labels): Auto, the edges nearer the camera; Fixed, the edges stored when it was chosen
     const fixed = options.side === 'fixed' && options.edges ? options.edges : null;
     const yEdge = fixed ? fixed.x : eye.y < center.y ? 'min' : 'max';
     const xEdge = fixed ? fixed.y : eye.x < center.x ? 'min' : 'max';
     const half = (edge, len) => (edge === 'min' ? -len / 2 : len / 2);
-    // Justify: Auto runs outward from the bars; Left, Right or Center set every label's anchor
     const justify = JUSTIFY.includes(options.justify) ? options.justify : null;
     const anchor = (p) => justify || side(p);
     return {
         x: { edge: yEdge, xanchor: anchor({ x: 0, y: half(yEdge, aspect.y) }) },
         y: { edge: xEdge, xanchor: anchor({ x: half(xEdge, aspect.x), y: 0 }) }
     };
-}
-
-/** The anchors Justify may set (UX: Plot Options ▸ 3D labels); Auto is none of them. */
-const JUSTIFY = Object.freeze(['left', 'right', 'center']);
-
-/** The screen's right in the scene: forward x up, in the frame Plotly's camera is given in. */
-function screenRight(camera) {
-    return cross(minus(camera.center || DEFAULT_CAMERA.center, camera.eye), camera.up || DEFAULT_CAMERA.up);
 }
 
 /**
@@ -750,55 +778,175 @@ export function labelEdges(camera, aspect) {
 }
 
 /**
- * The category labels as scene annotations for a camera (figure3d's `labels3d`, again for each camera the user turns
- * to): each at its tick on the near edge of the box, on the floor, anchored by sceneLabelSides, LABEL_GAP_PX away.
- * The axis title (`title`) stands at the middle of that edge, moved on screen along the edge's outward normal by the
- * thickness of the label band in that direction (labels estimated at CHAR_EM per character), so it clears every label.
- * @param {{x: {labels, positions, extent}, y: {labels, positions, extent}, aspect, z: number, font: Object,
- *   options?: {side?: 'fixed', edges?: {x, y}, justify?: 'left'|'right'|'center'}}} spec - `options` is the plot's
- *   `labels3d` (Plot Options ▸ 3D labels)
+ * The angle (Plotly's textangle: degrees, clockwise) of the edge an axis's labels stand on, as drawn: Rotation ▸ Along
+ * the axis. The edge's two ends are projected as Plotly's camera does, in perspective, in the scene's box (each axis
+ * from -aspect/2 to aspect/2, the floor at the bottom), and the angle turned to read left to right (-90 to 90).
+ * @param {'x'|'y'} dim
+ * @param {'min'|'max'} edge - the edge across the box the labels stand on
+ */
+function axisAngle(dim, edge, aspect, camera) {
+    return edgeOnScreen(dim, edge, aspect, camera).angle;
+}
+
+/**
+ * The edge's angle on screen (as axisAngle) and which way is out of the box there: `outward` is the screen direction
+ * (x right, y down) from the edge's middle away from the box's centre line.
+ */
+function edgeOnScreen(dim, edge, aspect, camera) {
+    const look = lookOf(camera);
+    const eye = look.eye;
+    const forward = unit(minus(look.center || DEFAULT_CAMERA.center, eye));
+    const right = unit(cross(forward, look.up || DEFAULT_CAMERA.up));
+    const up = cross(right, forward);
+    const across = edge === 'min' ? -0.5 : 0.5;
+    const at = (t) => (dim === 'x' ? { x: t * aspect.x, y: across * aspect.y, z: -0.5 * aspect.z }
+        : { x: across * aspect.x, y: t * aspect.y, z: -0.5 * aspect.z });
+    const screen = (p) => { const v = minus(p, eye); const depth = dot(v, forward) || 1e-9; return { x: dot(v, right) / depth, y: dot(v, up) / depth }; };
+    const a = screen(at(-0.5));
+    const b = screen(at(0.5));
+    let deg = Math.atan2(-(b.y - a.y), b.x - a.x) * 180 / Math.PI;
+    if (deg > 90) deg -= 180;
+    if (deg <= -90) deg += 180;
+    // out of the box: from the middle of the opposite edge to the middle of this one, on screen (y down)
+    const mid = screen(at(0));
+    const opposite = screen(dim === 'x' ? { x: 0, y: -across * aspect.y, z: -0.5 * aspect.z } : { x: -across * aspect.x, y: 0, z: -0.5 * aspect.z });
+    return { angle: Math.round(deg * 10) / 10, outward: { x: mid.x - opposite.x, y: -(mid.y - opposite.y) } };
+}
+
+/**
+ * Rotation ▸ Across the axis: perpendicular to the edge on screen, each name running straight out of the box from its
+ * tick, so names along a dense edge stand side by side instead of end to end. The anchor follows: a name whose text
+ * runs outward starts at its tick (left), else it ends there (right).
+ */
+function acrossAxis(dim, edge, aspect, camera) {
+    const { angle, outward } = edgeOnScreen(dim, edge, aspect, camera);
+    let deg = angle + 90;
+    if (deg > 90) deg -= 180;
+    const t = deg * Math.PI / 180;
+    // the text's direction on screen (y down) at Plotly's clockwise angle
+    const runsOut = Math.cos(t) * outward.x + Math.sin(t) * outward.y > 0;
+    return { angle: Math.round(deg * 10) / 10, xanchor: runsOut ? 'left' : 'right' };
+}
+
+/**
+ * Where a label stands on its tick for an anchor and an angle. Plotly anchors the rotated label's bounding box, so a
+ * tilted label is anchored at the corner where its text starts (left) or ends (right): its start, or end, is at the tick.
+ */
+function anchored(xanchor, angle, pad) {
+    const yanchor = !angle || xanchor === 'center' ? 'middle' : (angle > 0) === (xanchor === 'left') ? 'top' : 'bottom';
+    return { xanchor, yanchor, xshift: xanchor === 'left' ? pad : xanchor === 'right' ? -pad : 0 };
+}
+
+/**
+ * The 3D labels' options as the drawing reads them, in one place (so the shared Plot Options of WP-5a can move them):
+ * Plot Options ▸ 3D labels (`labels3d`: side, edges, justify, rotation, padding) and ▸ Labels (`annotations.labels`:
+ * gene labels and group labels shown).
+ * @param {Object} model - the drawing model
+ * @returns {{side?: string, edges?: Object, justify?: string, rotation: ('horizontal'|'along'|number), padding: number,
+ *   show: {genes: boolean, groups: boolean}}}
+ */
+export function labelOptions3d(model) {
+    const l3 = (model && model.labels3d) || {};
+    const shown = (model && model.annotations && model.annotations.labels) || {};
+    const rotation = l3.rotation === 'along' || l3.rotation === 'across' || (typeof l3.rotation === 'number' && Number.isFinite(l3.rotation))
+        ? l3.rotation : 'horizontal';
+    const padding = typeof l3.padding === 'number' && Number.isFinite(l3.padding) ? Math.max(0, Math.min(PADDING_MAX, l3.padding)) : LABEL_GAP_PX;
+    return { ...l3, rotation, padding, show: { genes: shown.genes !== false, groups: shown.groups !== false } };
+}
+
+/**
+ * The labels as scene annotations for a camera (figure3d's `labels3d`, again for each camera the user turns to):
+ * - each category label at its tick on the near edge of the box, on the floor, anchored by sceneLabelSides and Padding
+ *   px off it, at the Rotation's angle (Horizontal, Along the axis, or an angle);
+ * - each axis's title at the middle of that edge, moved on screen along the edge's outward normal past the label band
+ *   (labels estimated at CHAR_EM per character; with the labels hidden, by the padding alone);
+ * - the height's labels and title on the vertical edge at the left of the screen, ending at the edge; the tick at the
+ *   floor is not labelled, since the floor corner is where the category labels start (operator: the 0 collided).
+ * An axis whose labels are hidden (Plot Options ▸ Labels) has neither labels nor title.
+ * @param {{x: {labels, positions, extent, title, show?}, y: {...}, aspect, z: number, zTicks?: number[], zRange?: number[],
+ *   zTitle?: string, font: Object, options?: Object}} spec - `options` is labelOptions3d's
  * @param {{eye, center?, up?}} camera
  * @returns {Object[]}
  */
 export function sceneLabels(spec, camera) {
-    const sides = sceneLabelSides({ camera, aspect: spec.aspect, options: spec.options || {} });
+    const opts = spec.options || {};
+    const pad = typeof opts.padding === 'number' ? opts.padding : LABEL_GAP_PX;
+    const sides = sceneLabelSides({ camera, aspect: spec.aspect, options: opts });
     const out = [];
     const edgeAt = (edge, extent) => (edge === 'min' ? -0.5 : Math.max(extent, 1) - 0.5);
     const fontPx = (spec.font && spec.font.size) || 12;
-    // the screen's axes in the scene (orthographic): right, and up (Plotly's yshift is up)
-    const forward = minus(camera.center || DEFAULT_CAMERA.center, camera.eye);
-    const right = unit(cross(forward, camera.up || DEFAULT_CAMERA.up));
-    const screenUp = unit(cross(right, forward));
+    const lineH = fontPx * 1.3;
+    const { right, up: screenUp } = screenAxes(camera);
     for (const dim of ['x', 'y']) {
         const axis = spec[dim];
+        if (axis.show === false) continue;
         const other = spec[dim === 'x' ? 'y' : 'x'];
         const across = edgeAt(sides[dim].edge, other.extent);
         const shown = axis.labels.length <= LABELS_3D_MAX;
+        const perpendicular = opts.rotation === 'across' ? acrossAxis(dim, sides[dim].edge, spec.aspect, camera) : null;
+        const angle = perpendicular ? perpendicular.angle : opts.rotation === 'along' ? axisAngle(dim, sides[dim].edge, spec.aspect, camera)
+            : typeof opts.rotation === 'number' ? opts.rotation : 0;
+        // Across picks the end that runs out of the box, unless Justify sets the anchor
+        const xanchor = perpendicular && !JUSTIFY.includes(opts.justify) ? perpendicular.xanchor : sides[dim].xanchor;
         if (axis.title) {
-            const outward = dim === 'x' ? { x: 0, y: sides[dim].edge === 'min' ? -1 : 1, z: 0 } : { x: sides[dim].edge === 'min' ? -1 : 1, y: 0, z: 0 };
-            let ux = outward.x * right.x + outward.y * right.y;
-            let uy = outward.x * screenUp.x + outward.y * screenUp.y;
-            const n = Math.hypot(ux, uy) || 1;
-            ux /= n;
-            uy /= n;
+            // square to the edge as drawn (in perspective; x right, y down), on the side out of the box: the label band is
+            // a strip along the edge, so this is the shortest way past it
+            const edgeShape = edgeOnScreen(dim, sides[dim].edge, spec.aspect, camera);
+            const e = edgeShape.angle * Math.PI / 180;
+            let ux = -Math.sin(e);
+            let uy = Math.cos(e);
+            if (ux * edgeShape.outward.x + uy * edgeShape.outward.y < 0) { ux = -ux; uy = -uy; }
+            // the label band's depth along that direction: a label is a w x lineH box turned by its angle, its widths
+            // at a capital's em (names are often capitals, which CHAR_EM's average under-reads)
             const longest = shown ? axis.labels.reduce((m, l) => (String(l).length > m ? String(l).length : m), 0) : 0;
-            const labelW = LABEL_GAP_PX + longest * CHAR_EM * fontPx;
+            const w = longest * LABEL_EM_MAX * fontPx;
+            const t = angle * Math.PI / 180;
+            const band = shown ? pad + Math.abs(w * (Math.cos(t) * ux + Math.sin(t) * uy)) + Math.abs(lineH * (-Math.sin(t) * ux + Math.cos(t) * uy)) : 0;
             const titleW = String(axis.title).length * CHAR_EM * (fontPx + 1);
-            const lineH = fontPx * 1.3;
-            const push = labelW * Math.abs(ux) + lineH * Math.abs(uy) + LABEL_GAP_PX + (titleW / 2) * Math.abs(ux) + (lineH / 2) * Math.abs(uy);
+            const push = band + pad + (titleW / 2) * Math.abs(ux) + (lineH / 2) * Math.abs(uy) + (angle ? lineH / 2 : 0);
             const mid = (Math.max(axis.extent, 1) - 1) / 2;
             out.push({ name: `${dim} title`, x: dim === 'x' ? mid : across, y: dim === 'x' ? across : mid, z: spec.z, text: axis.title,
                 showarrow: false, xanchor: 'center', yanchor: 'middle', font: { ...spec.font, size: fontPx + 1 },
-                xshift: Math.round(ux * push), yshift: Math.round(uy * push) });
+                // Plotly's yshift is up
+                xshift: Math.round(ux * push), yshift: Math.round(-uy * push), textangle: 0 });
         }
         if (!shown) continue;
         const ticks = axisTicks(axis.labels, LABELS_3D_MAX);
+        const place = anchored(xanchor, angle, pad);
         ticks.tickvals.forEach((k, n) => {
             const at = axis.positions[k];
             out.push({ name: `${dim} label`, x: dim === 'x' ? at : across, y: dim === 'x' ? across : at, z: spec.z,
-                text: esc(ticks.ticktext[n]), showarrow: false, xanchor: sides[dim].xanchor, yanchor: 'middle', font: spec.font,
-                xshift: sides[dim].xanchor === 'left' ? LABEL_GAP_PX : sides[dim].xanchor === 'right' ? -LABEL_GAP_PX : 0 });
+                text: esc(ticks.ticktext[n]), showarrow: false, font: spec.font, textangle: angle, yshift: 0, ...place });
         });
+    }
+    if (spec.zTicks && spec.zTicks.length) out.push(...zLabels(spec, camera, pad, fontPx, lineH));
+    return out;
+}
+
+/** The height's tick labels and title on the floor corner furthest left on screen, ending at its vertical edge. */
+function zLabels(spec, camera, pad, fontPx, lineH) {
+    const { right } = screenAxes(camera);
+    const X = Math.max(spec.x.extent, 1) - 0.5;
+    const Y = Math.max(spec.y.extent, 1) - 0.5;
+    const xMid = (X - 0.5) / 2;
+    const yMid = (Y - 0.5) / 2;
+    const corners = [[-0.5, -0.5], [X, -0.5], [-0.5, Y], [X, Y]];
+    const screenX = ([x, y]) => ((x - xMid) / (X + 0.5)) * spec.aspect.x * right.x + ((y - yMid) / (Y + 0.5)) * spec.aspect.y * right.y;
+    const [cx, cy] = corners.reduce((a, b) => (screenX(b) < screenX(a) ? b : a));
+    const [lo, hi] = spec.zRange;
+    const out = [];
+    const labelled = spec.zTicks.filter((v) => v - lo > Z_FLOOR_SKIP * (hi - lo));
+    let widest = 0;
+    for (const v of labelled) {
+        const text = fmt(v);
+        widest = Math.max(widest, text.length);
+        out.push({ name: 'z label', x: cx, y: cy, z: v, text, showarrow: false, font: spec.font, xanchor: 'right', yanchor: 'middle',
+            xshift: -pad, yshift: 0, textangle: 0 });
+    }
+    if (spec.zTitle) {
+        out.push({ name: 'z title', x: cx, y: cy, z: (lo + hi) / 2, text: spec.zTitle, showarrow: false, font: { ...spec.font, size: fontPx + 1 },
+            xanchor: 'center', yanchor: 'middle', textangle: -90,
+            xshift: -Math.round(pad + widest * CHAR_EM * fontPx + pad + lineH / 2), yshift: 0 });
     }
     return out;
 }
@@ -877,13 +1025,19 @@ function figure3d(model, th) {
     const groupPositions = groups.map((_, g) => g);
     const geneAxis = sceneAxis(geneLabels, genePositions, P.span, th);
     const groupAxis = sceneAxis(groupLabels, groupPositions, G, th);
-    const geneSpec = { labels: geneLabels, positions: genePositions, extent: P.span, title: esc(W.view3d.genes) };
-    const groupSpec = { labels: groupLabels, positions: groupPositions, extent: G, title: esc(W.view3d.groups) };
-    const labels3d = { x: swap ? groupSpec : geneSpec, y: swap ? geneSpec : groupSpec, aspect, z: Math.min(0, built.zRange[0]),
-        options: model.labels3d || {},
+    const labelOpts = labelOptions3d(model);
+    const geneSpec = { labels: geneLabels, positions: genePositions, extent: P.span, title: esc(W.view3d.genes), show: labelOpts.show.genes };
+    const groupSpec = { labels: groupLabels, positions: groupPositions, extent: G, title: esc(W.view3d.groups), show: labelOpts.show.groups };
+    // the height's axis: a range over the bars from the floor (0, or below it), round ticks, labelled by sceneLabels
+    const zLo = Math.min(0, built.zRange[0]);
+    const zTop = Math.max(0, built.zRange[1]);
+    const zHi = zTop > zLo ? zTop + 0.02 * (zTop - zLo) : zLo + 1;
+    const zTicks = niceTicks(zLo, zHi, Z_TICKS);
+    const zTitle = model.zTitle || (height.same ? main.lines.join(' · ') : statisticTitle(height));
+    const labels3d = { x: swap ? groupSpec : geneSpec, y: swap ? geneSpec : groupSpec, aspect, z: zLo, zTicks, zRange: [zLo, zHi], zTitle: esc(zTitle),
+        options: labelOpts,
         font: { color: th.textColor, size: th.fontSize || 12, family: th.fontFamily || 'Arial, Helvetica, sans-serif' } };
     const camera = model.camera ? JSON.parse(JSON.stringify(model.camera)) : JSON.parse(JSON.stringify(DEFAULT_CAMERA));
-    const zTitle = model.zTitle || (height.same ? main.lines.join(' · ') : statisticTitle(height));
     const layout = {
         paper_bgcolor: th.bgColor, plot_bgcolor: th.bgColor, showlegend: false, hovermode: 'closest', uirevision: UIREVISION_3D,
         font: { family: th.fontFamily || 'Arial, Helvetica, sans-serif', size: th.fontSize || 12, color: th.textColor },
@@ -891,8 +1045,11 @@ function figure3d(model, th) {
         scene: {
             xaxis: swap ? groupAxis : geneAxis,
             yaxis: swap ? geneAxis : groupAxis,
-            zaxis: { title: { text: esc(zTitle), font: { color: th.textColor } }, color: th.textColor, gridcolor: th.gridColor,
-                linecolor: th.axisColor, zerolinecolor: th.axisColor, showspikes: false, backgroundcolor: th.bgColor },
+            // Plotly's own z labels and title stand where they collide with the category labels at the floor corner, so
+            // sceneLabels draws them (zLabels); the grid stays at the same ticks
+            zaxis: { title: { text: '' }, showticklabels: false, tickmode: 'array', tickvals: zTicks, range: [zLo, zHi], autorange: false,
+                color: th.textColor, gridcolor: th.gridColor, linecolor: th.axisColor, zerolinecolor: th.axisColor, showspikes: false,
+                backgroundcolor: th.bgColor },
             aspectmode: 'manual', aspectratio: aspect,
             camera, annotations: sceneLabels(labels3d, camera),
             bgcolor: th.bgColor

@@ -202,7 +202,7 @@ def _labels(page):
 
 def _assert_anchored(boxes, gene_side, group_side):
     """A label on the right starts at its tick, one on the left ends there; never centred on it."""
-    for b in (b for b in boxes if b["name"].endswith(" label")):
+    for b in (b for b in boxes if b["name"] in ("x label", "y label")):
         side = gene_side if b["name"] == "x label" else group_side
         edge = b["left"] if side == "right" else b["right"]
         assert abs(edge - b["tickX"]) <= TICK_PX, (side, b)
@@ -212,10 +212,10 @@ def _assert_anchored(boxes, gene_side, group_side):
 
 def _assert_titles_clear(boxes):
     """Each axis title over no label."""
-    titles = [b for b in boxes if b["name"].endswith(" title")]
+    titles = [b for b in boxes if b["name"] in ("x title", "y title")]
     assert sorted(t["text"] for t in titles) == ["Genes", "Groups"]
     for t in titles:
-        for b in (b for b in boxes if b["name"].endswith(" label")):
+        for b in (b for b in boxes if b["name"] in ("x label", "y label")):
             apart = t["right"] <= b["left"] or b["right"] <= t["left"] or t["bottom"] <= b["top"] or b["bottom"] <= t["top"]
             assert apart, ("title over a label", t, b)
 
@@ -367,7 +367,7 @@ def test_3d_label_options_side_and_justify_are_undoable_and_hidden_in_2d(page, s
     assert page.input_value(f"{section} [data-option='labels3dJustify']") == "auto"
     page.select_option(f"{section} [data-option='labels3dJustify']", "center")
     until(page, "(id) => JSON.stringify(window.PanelManager.getPanel(id).getConfig().labels3d) === JSON.stringify({justify: 'center'})", P)
-    until(page, "(s) => document.querySelector(s)._fullLayout.scene.annotations.filter(a => a.name.endsWith(' label')).every(a => a.xanchor === 'center')", PLOT)
+    until(page, "(s) => document.querySelector(s)._fullLayout.scene.annotations.filter(a => (a.name === 'x label' || a.name === 'y label')).every(a => a.xanchor === 'center')", PLOT)
     assert _state(page)["undo"] == undo + 1, "one undo step"
     # Fixed: the edges the labels are on now stay as the scene is dragged round
     page.select_option(f"{section} [data-option='labels3dSide']", "fixed")
@@ -384,3 +384,164 @@ def test_3d_label_options_side_and_justify_are_undoable_and_hidden_in_2d(page, s
     page.click(f"{TP} .cgene-undo")
     until(page, "(id) => !('labels3d' in window.PanelManager.getPanel(id).getConfig())", P)
     assert st["rows"] > 0
+
+
+AZIMUTH = "(s) => { const e = document.querySelector(s)._fullLayout.scene._scene.getCamera().eye; return Math.atan2(e.y, e.x) * 180 / Math.PI; }"
+GENE_ANCHOR = "(s) => { const a = document.querySelector(s)._fullLayout.scene.annotations.find(x => x.name === 'x label'); return a.xanchor + '@' + a.y; }"
+
+
+def test_labels_switch_live_and_the_camera_keeps_turning_through_the_switch(page, served):
+    _open3d(page, served, view="3d", mode="heatmap")
+    _mesh_drawn(page)
+    _labels(page)
+    box = page.locator(PLOT).bounding_box()
+    x, y = box["x"] + box["width"] - 60, box["y"] + box["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    seen = []   # (azimuth, gene labels' anchor and edge) after each move, the mouse held throughout
+    while x > box["x"] + 40 and len(seen) < 200:
+        x -= 4
+        page.mouse.move(x, y)
+        page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+        seen.append((page.evaluate(AZIMUTH, PLOT), page.evaluate(GENE_ANCHOR, PLOT)))
+        if len([s for s in seen if s[1] != seen[0][1]]) > 15:
+            break
+    page.mouse.up()
+    switched = next((i for i, s in enumerate(seen) if s[1] != seen[0][1]), None)
+    assert switched is not None, ("the labels did not switch while the mouse was held", seen[-1])
+    assert seen[switched][1] == "left@5.5", seen[switched]
+    # the camera turned on through the switch: the azimuth rises move after move, in small steps, never back
+    around = [a for a, _ in seen[max(0, switched - 10):switched + 15]]
+    steps = [b - a for a, b in zip(around, around[1:])]
+    assert all(-0.5 <= d <= 15 for d in steps), steps
+    assert sum(steps) > 10, ("the camera moved on", steps)
+
+
+def _set_option(page, name, value, kind="select"):
+    sel = f"[data-popover='plot-options'] [data-option='{name}']"
+    if page.locator("[data-popover='plot-options']").count() == 0 or page.locator("[data-popover='plot-options']").is_hidden():
+        page.click(f"{TP} .cgene-options-btn")
+    page.wait_for_selector(sel, state="visible")
+    if kind == "select":
+        page.select_option(sel, value)
+    elif kind == "check":
+        page.set_checked(sel, value)
+    else:
+        page.fill(sel, str(value))
+        page.press(sel, "Enter")
+
+
+ROTATIONS = """(s) => { const g = document.querySelector(s);
+  return g._fullLayout.scene.annotations.map((a, i) => { if (a.name !== 'x label') return null;
+    const t = g.querySelector(`g.annotation-scene[data-index="${i}"] .annotation-text-g`);
+    const m = t && /rotate\\(([-\\d.e]+)/.exec(t.getAttribute('transform') || ''); return m ? Number(m[1]) : null; }).filter(v => v !== null); }"""
+
+
+def _edge_angle(boxes):
+    """The gene edge's angle on screen (clockwise, -90 to 90), from its first and last ticks' pixels."""
+    genes = [b for b in boxes if b["name"] == "x label"]
+    a, b = genes[0], genes[-1]
+    import math
+    ang = math.degrees(math.atan2(b["tickY"] - a["tickY"], b["tickX"] - a["tickX"]))
+    return ang - 180 if ang > 90 else ang + 180 if ang <= -90 else ang
+
+
+def test_rotation_horizontal_angle_and_along_the_axis_as_rendered(page, served):
+    _open3d(page, served, genes=8, view="3d", mode="dots")
+    _mesh_drawn(page)
+    _labels(page)
+    assert set(page.evaluate(ROTATIONS, PLOT)) == {0}, "Horizontal by default"
+    _set_option(page, "labels3dRotation", "angle")
+    _set_option(page, "labels3dAngle", 30, kind="fill")
+    until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().labels3d || {}).rotation === 30", P)
+    until(page, "([s, f]) => { const r = (" + ROTATIONS + ")(s); return r.length > 0 && r.every(v => v === 30); }", [PLOT, ""])
+    _set_option(page, "labels3dRotation", "along")
+    until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().labels3d || {}).rotation === 'along'", P)
+    for camera in (None, {"eye": {"x": 1.6, "y": 1.6, "z": 1.1}, "center": {"x": 0, "y": 0, "z": 0}, "up": {"x": 0, "y": 0, "z": 1}}):
+        if camera:
+            page.evaluate("([s, c]) => window.Plotly.relayout(document.querySelector(s), {'scene.camera': c})", [PLOT, camera])
+        end = time.time() + 10
+        while True:
+            boxes = _labels(page)
+            rendered = set(page.evaluate(ROTATIONS, PLOT))
+            want = _edge_angle(boxes)
+            if len(rendered) == 1 and abs(rendered.pop() - want) <= 6:
+                break
+            if time.time() > end:
+                raise AssertionError(("not along the gene edge", page.evaluate(ROTATIONS, PLOT), want))
+    # Across: square to the gene edge as drawn
+    _set_option(page, "labels3dRotation", "across")
+    until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().labels3d || {}).rotation === 'across'", P)
+    end = time.time() + 10
+    while True:
+        boxes = _labels(page)
+        rendered = set(page.evaluate(ROTATIONS, PLOT))
+        want = _edge_angle(boxes)
+        if len(rendered) == 1 and abs(abs(rendered.pop() - want) - 90) <= 6:
+            # names square to their edge stand side by side, so the titles must clear them
+            _assert_titles_clear(boxes)
+            break
+        if time.time() > end:
+            raise AssertionError(("not across the gene edge", page.evaluate(ROTATIONS, PLOT), want))
+    _set_option(page, "labels3dRotation", "horizontal")
+    until(page, "(id) => !('labels3d' in window.PanelManager.getPanel(id).getConfig())", P)
+
+
+Z_CLEAR = [None,
+           {"eye": {"x": 1.6, "y": 1.6, "z": 1.1}, "center": {"x": 0, "y": 0, "z": 0}, "up": {"x": 0, "y": 0, "z": 1}},
+           {"eye": {"x": -1.2, "y": -1.9, "z": 0.9}, "center": {"x": 0, "y": 0, "z": 0}, "up": {"x": 0, "y": 0, "z": 1}}]
+
+
+def test_no_height_label_meets_a_gene_or_group_label_at_any_camera(page, served):
+    _open3d(page, served, genes=12, view="3d", mode="heatmap")
+    _mesh_drawn(page)
+    for camera in Z_CLEAR:
+        if camera:
+            page.evaluate("([s, c]) => window.Plotly.relayout(document.querySelector(s), {'scene.camera': c})", [PLOT, camera])
+            page.wait_for_function("([s, x]) => Math.abs(document.querySelector(s)._fullLayout.scene._scene.getCamera().eye.x - x) < 1e-3",
+                                   arg=[PLOT, camera["eye"]["x"]])
+        end = time.time() + 10
+        while True:
+            boxes = _labels(page)
+            z = [b for b in boxes if b["name"] == "z label"]
+            cats = [b for b in boxes if b["name"] in ("x label", "y label")]
+            hits = [(a["text"], b["text"]) for a in z for b in cats
+                    if not (a["right"] <= b["left"] or b["right"] <= a["left"] or a["bottom"] <= b["top"] or b["bottom"] <= a["top"])]
+            if z and not hits:
+                break
+            if time.time() > end:
+                raise AssertionError(("height labels over category labels", camera, hits, len(z)))
+
+
+def test_the_labels_switches_apply_in_3d_and_undo(page, served):
+    _open3d(page, served, view="3d", mode="heatmap")
+    _mesh_drawn(page)
+    _labels(page)
+    names = "(s) => [...new Set(document.querySelector(s)._fullLayout.scene.annotations.map(a => a.name))].sort().join()"
+    assert page.evaluate(names, PLOT) == "x label,x title,y label,y title,z label,z title"
+    undo = _state(page)["undo"]
+    _set_option(page, "geneLabels", False, kind="check")
+    until(page, "([s, want]) => (" + names + ")(s) === want", [PLOT, "y label,y title,z label,z title"])
+    assert _state(page)["undo"] == undo + 1
+    _set_option(page, "geneLabels", True, kind="check")
+    until(page, "([s, want]) => (" + names + ")(s) === want", [PLOT, "x label,x title,y label,y title,z label,z title"])
+    _set_option(page, "groupLabels", False, kind="check")
+    until(page, "([s, want]) => (" + names + ")(s) === want", [PLOT, "x label,x title,z label,z title"])
+    page.click("[data-popover='plot-options'] .az-popover-close")
+    page.click(f"{TP} .cgene-undo")
+    until(page, "([s, want]) => (" + names + ")(s) === want", [PLOT, "x label,x title,y label,y title,z label,z title"])
+
+
+def test_padding_sets_the_gap_between_a_label_and_its_tick(page, served):
+    _open3d(page, served, view="3d", mode="heatmap")
+    _mesh_drawn(page)
+    _set_option(page, "labels3dPadding", 14, kind="fill")
+    until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().labels3d || {}).padding === 14", P)
+    end = time.time() + 10
+    while True:
+        boxes = [b for b in _labels(page) if b["name"] in ("x label", "y label")]
+        gaps = [abs((b["left"] if b["xanchor"] == "left" else b["right"]) - b["tickX"]) for b in boxes]
+        if gaps and all(12 <= g <= 17 for g in gaps):
+            break
+        if time.time() > end:
+            raise AssertionError(("padding 14 not drawn", gaps))

@@ -175,9 +175,17 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
   and the hover names each bar.
 - **Labels.** Gene and group names run outward from their tick: on the right of the scene a name starts at its tick,
   on the left it ends there, never centred over the bars. As the scene is turned they move to the edges nearer you,
-  while it turns, with each axis's title beyond them. **Plot Options ▸ 3D labels** changes this: **Side** **Fixed**
-  keeps the names on the edges they are on now, however the scene is turned, and **Justify** **Left**, **Right** or
-  **Center** sets every name's alignment instead of running it outward. Each change is one step of **Undo**.
+  while it turns, with each axis's title beyond them. The height's values stand on the left-most vertical edge; the
+  floor's value is left out there, since the gene and group names start at that corner. **Plot Options ▸ Labels**
+  applies in 3D too: unticking **Gene labels** or **Group labels** hides that axis's names and its title.
+  **Plot Options ▸ 3D labels** changes the rest, each change one step of **Undo**:
+  - **Side**: **Auto** follows the camera; **Fixed** keeps the names on the edges they are on now.
+  - **Justify**: **Auto** runs each name outward; **Left**, **Right** or **Center** sets every name's alignment.
+  - **Rotation**: **Horizontal** (level on screen); **Along the axis** tilts the names with their edge as the scene
+    turns (names lie end to end, so it suits a few short ones); **Across the axis** stands each name square to its
+    edge, running out of the box, which keeps many names apart; **Angle** tilts them by a fixed angle, from -90 to 90
+    degrees, clockwise.
+  - **Padding**: the gap in px between a name and its tick (4 by default).
 - **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
   step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
 - **Limit.** 3D draws at most 40,000 bars (genes × groups). Above that **3D** is greyed out and says why ("Use fewer
@@ -215,7 +223,7 @@ need not be a percentage. The height limits clip the bars: one taller than **Max
 | Labels | **Gene labels**, **Group labels**; **Plot title**, **Color bar title**, **Size legend title** |
 | Legend | **Color bar**, **Size legend**, **Strip legend** |
 | Totals | **Cells per group** (a bar along the group axis) |
-| 3D labels | **Side** (Auto, Fixed) and **Justify** (Auto, Left, Right, Center); in 3D only |
+| 3D labels | **Side** (Auto, Fixed), **Justify** (Auto, Left, Right, Center), **Rotation** (Horizontal, Along the axis, Across the axis, Angle) and **Padding**; in 3D only |
 | Export | **PNG**, **JPEG**, **WEBP**, **SVG** (not in 3D) · **Download CSV** |
 
 The colour scale is **Reds** by default. Under a z-score scaling the default is **RdBu**, centred at 0, so that

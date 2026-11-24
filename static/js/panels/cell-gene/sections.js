@@ -95,8 +95,8 @@ const EDGES = Object.freeze(['min', 'max']);
 const DEFAULT_LABEL_EDGES = Object.freeze({ x: 'min', y: 'max' });
 
 /**
- * The 3D labels' Side and Justify (Plot Options ▸ 3D labels): `{side?: 'fixed', edges?: {x, y}, justify?: 'left'|'right'|
- * 'center'}`, Auto left out; null when nothing but defaults is left.
+ * The 3D labels' options (Plot Options ▸ 3D labels): `{side?: 'fixed', edges?: {x, y}, justify?: 'left'|'right'|'center',
+ * rotation?: 'along'|number, padding?: number}`, defaults left out; null when nothing but defaults is left.
  */
 function cleanLabels3d(raw, problems) {
     if (!isObject(raw)) {
@@ -112,6 +112,21 @@ function cleanLabels3d(raw, problems) {
         out.edges = isObject(e) && EDGES.includes(e.x) && EDGES.includes(e.y) ? { x: e.x, y: e.y } : { ...DEFAULT_LABEL_EDGES };
     }
     if (LABEL_JUSTIFY.includes(raw.justify) && raw.justify !== 'auto') out.justify = raw.justify;
+    // Rotation: Horizontal (the default, absent), Along or Across the axis, or an angle from -90 to 90 (Plotly's, clockwise)
+    if ('rotation' in raw) {
+        if (raw.rotation === 'along' || raw.rotation === 'across') out.rotation = raw.rotation;
+        else if (isNumber(raw.rotation)) out.rotation = Math.max(-90, Math.min(90, raw.rotation));
+        else if (raw.rotation !== 'horizontal') problems.push(`labels3d: rotation ${JSON.stringify(raw.rotation)} is not known, horizontal used`);
+    }
+    // Padding: px between a label and its tick, 0 to 40; 4 is the default (absent)
+    if ('padding' in raw) {
+        if (isNumber(raw.padding)) {
+            const pad = Math.max(0, Math.min(40, raw.padding));
+            if (pad !== 4) out.padding = pad;
+        } else {
+            problems.push('labels3d: padding is not a number, 4 used');
+        }
+    }
     return Object.keys(out).length ? out : null;
 }
 
