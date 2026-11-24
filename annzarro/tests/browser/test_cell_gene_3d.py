@@ -315,21 +315,25 @@ EYE = "(s) => document.querySelector(s)._fullLayout.scene._scene.getCamera().eye
 
 def _drag_until(page, reached, release=True):
     """A real mouse drag on the scene: down near its right edge, then leftward in small moves until `reached(eye)` (the
-    camera lags the mouse and is damped, so the turn per pixel depends on the frames drawn), then up, or held."""
+    camera lags the mouse and is damped, so the turn per pixel depends on the frames drawn), then up, or held. Released,
+    a turn too far for one stroke across the scene takes further strokes; held, it must be one stroke."""
     box = page.locator(PLOT).bounding_box()
-    x, y = box["x"] + box["width"] - 60, box["y"] + box["height"] / 2
-    page.mouse.move(x, y)
-    page.mouse.down()
-    left = box["x"] + 40
-    while x > left:
-        x -= 6
+    for stroke in range(4 if release else 1):
+        x, y = box["x"] + box["width"] - 60, box["y"] + box["height"] / 2
         page.mouse.move(x, y)
-        if reached(page.evaluate(EYE, PLOT)):
-            break
-    else:
-        raise AssertionError(("the drag did not turn the camera there", page.evaluate(EYE, PLOT)))
-    if release:
+        page.mouse.down()
+        left = box["x"] + 40
+        done = False
+        while x > left and not done:
+            x -= 6
+            page.mouse.move(x, y)
+            done = reached(page.evaluate(EYE, PLOT))
+        if done:
+            if release:
+                page.mouse.up()
+            return
         page.mouse.up()
+    raise AssertionError(("the drag did not turn the camera there", page.evaluate(EYE, PLOT)))
 
 
 @pytest.mark.parametrize("mode", ["heatmap", "dots"])
