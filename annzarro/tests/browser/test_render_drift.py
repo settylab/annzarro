@@ -539,9 +539,10 @@ def _table_search(text):
 
 # ================================================================== Count Plot
 
+# (SCORE below the Gene Plot's section is a function: the Count Plot's obs column has its own name)
 CT = {"source": {"type": "obs", "key": "cell_type"}}
 COND = {"source": {"type": "obs", "key": "condition"}}
-SCORE = {"source": {"type": "obs", "key": "score"}}
+COUNT_SCORE = {"source": {"type": "obs", "key": "score"}}
 DEPTH = {"source": {"type": "obs", "key": "depth"}}
 PSEUDO = {"source": {"type": "obs", "key": "pseudotime"}}
 C_TILE = TILE.format(CC)
@@ -564,8 +565,8 @@ COUNT_VOCABULARY = [
     lambda r: (lambda m: (f"mode {m} (control)", _count_mode(m)))(r.choice(COUNT_MODES)),
     lambda r: (lambda m: (f"mode {m} (control)", _count_mode(m)))(r.choice(COUNT_MODES)),
     lambda r: ("undo (control)", _click(f"{C_TILE} .ccnt-undo")),
-    lambda r: (lambda x: (f"x {x['source']['key']}", _update(CC, {"x": x})))(r.choice([CT, COND, SCORE, DEPTH])),
-    lambda r: (lambda y: (f"y {y['source']['key']}", _update(CC, {"y": y})))(r.choice([SCORE, DEPTH, PSEUDO, CT])),
+    lambda r: (lambda x: (f"x {x['source']['key']}", _update(CC, {"x": x})))(r.choice([CT, COND, COUNT_SCORE, DEPTH])),
+    lambda r: (lambda y: (f"y {y['source']['key']}", _update(CC, {"y": y})))(r.choice([COUNT_SCORE, DEPTH, PSEUDO, CT])),
     lambda r: (lambda s: (f"split {s and s['source']['key']}", _update(CC, {"split": s})))(r.choice([None, COND, CT])),
     lambda r: (lambda a: (f"arrangement {a}", _update(CC, {"arrangement": a})))(r.choice(["stack", "dodge", "overlay", "fill"])),
     lambda r: (lambda v: (f"labels {v}", _update(CC, {"labels": v})))(r.choice(["none", "count", "share"])),
@@ -592,7 +593,7 @@ COUNT_RISKY = {
     "subset-in-and-out": [("subset 300", _subset(300)), ("mode pie (control)", _count_mode("pie")), ("subset all", _subset(None))],
     "color-by-off-and-on": [("split none", _update(CC, {"split": None})), ("split condition", _update(CC, {"split": COND})),
                             ("split none", _update(CC, {"split": None}))],
-    "density-layers": [("x score", _update(CC, {"x": SCORE})), ("y depth", _update(CC, {"y": DEPTH})),
+    "density-layers": [("x score", _update(CC, {"x": COUNT_SCORE})), ("y depth", _update(CC, {"y": DEPTH})),
                        ("mode density2d (control)", _count_mode("density2d")),
                        ("layers image", _update(CC, {"layers": {"image": True}})),
                        ("layers lines+points", _update(CC, {"layers": {"lines": True, "points": True}})),
@@ -600,7 +601,7 @@ COUNT_RISKY = {
                        ("split none", _update(CC, {"split": None})),
                        ("layers image+lines", _update(CC, {"layers": {"image": True, "lines": True}}))],
     # 3D (WP-11): on, a colour change redrawn in the scene, off; and a 3D height of its own, back through a mode that has no bars
-    "3d-toggle-colour-back": [("x score", _update(CC, {"x": SCORE})), ("y depth", _update(CC, {"y": DEPTH})),
+    "3d-toggle-colour-back": [("x score", _update(CC, {"x": COUNT_SCORE})), ("y depth", _update(CC, {"y": DEPTH})),
                               ("mode hist2d (control)", _count_mode("hist2d")), ("split none", _update(CC, {"split": None})),
                               ("3D (control)", _click(f"{C_TILE} .ccnt-3d-btn")), ("color Reds", _update(CC, {"color": {"map": "Reds"}})),
                               ("height share", _update(CC, {"height": "share:total"})), ("color RdBu", _update(CC, {"color": {"map": "RdBu", "reverse": True}})),
@@ -616,7 +617,7 @@ COUNT_RISKY = {
                                    ("colour levels", _update(CC, {"color": {"slices": "levels"}})), ("labels none", _update(CC, {"labels": None})),
                                    ("undo (control)", _click(f"{C_TILE} .ccnt-undo")), ("undo (control)", _click(f"{C_TILE} .ccnt-undo")),
                                    ("colour continuous", _update(CC, {"color": None})), ("x cell_type", _update(CC, {"x": CT}))],
-    "mode-and-undo": [("x score", _update(CC, {"x": SCORE})), ("y depth", _update(CC, {"y": DEPTH})),
+    "mode-and-undo": [("x score", _update(CC, {"x": COUNT_SCORE})), ("y depth", _update(CC, {"y": DEPTH})),
                       ("mode hist2d (control)", _count_mode("hist2d")), ("mode density (control)", _count_mode("density")),
                       ("undo (control)", _click(f"{C_TILE} .ccnt-undo")), ("undo (control)", _click(f"{C_TILE} .ccnt-undo"))],
 }
@@ -629,7 +630,7 @@ def test_count_plot_risky_sequence(browser, served, name):
 
 # the views follow the X axis type (0.8.0): a link stored as a Histogram of categories opens as a Bar; edited from there,
 # through a number (a Histogram), its arrangements and back, it draws what the fresh link of its final config draws
-COUNT_VIEWS = [("arrangement overlay", _update(CC, {"arrangement": "overlay"})), ("x score", _update(CC, {"x": SCORE})),
+COUNT_VIEWS = [("arrangement overlay", _update(CC, {"arrangement": "overlay"})), ("x score", _update(CC, {"x": COUNT_SCORE})),
                ("mode histogram (control)", _count_mode("histogram")), ("arrangement dodge", _update(CC, {"arrangement": "dodge"})),
                ("arrangement fill", _update(CC, {"arrangement": "fill"})), ("undo (control)", _click(f"{C_TILE} .ccnt-undo")),
                ("x cell_type", _update(CC, {"x": CT}))]
