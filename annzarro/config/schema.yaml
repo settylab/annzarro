@@ -986,6 +986,20 @@ limits:
       description: >-
         Most bars a 3D bar view draws (provisional: WebGL memory of the tab).
       default: 40000
+    density_points_draw:
+      type: integer
+      minimum: 1
+      maximum: 10000000
+      description: >-
+        Most cells the Cell points layer of a Cell Count Plot's 2D density draws; above it a seeded uniform sample of this many is drawn.
+      default: 1000000
+    density_points_load:
+      type: integer
+      minimum: 1
+      maximum: 250000000
+      description: >-
+        Most cells whose positions the Cell points layer of a 2D density loads into the browser tab (about 9 bytes a cell); above it the layer is refused.
+      default: 25000000
     dendrogram_rows:
       type: integer
       minimum: 2

@@ -128,6 +128,8 @@ users' computers) has the memory and time it protects.
 | `obsp_source_max_cells`{#cost-obsp-source-max-cells} | 1,000,000 | 1 to 10,000,000 | server | safety | `422 obsp_too_large` |
 | `cell_export_max`{#cost-cell-export-max} | 1,000,000 | 1 to 10,000,000 | browser | safety | the export is disabled, with the reason |
 | `bars_3d_max`{#cost-bars-3d-max} | 40,000 | 1 to 400,000 | browser | safety | the 3D view is not drawn, with the reason |
+| `density_points_draw`{#cost-density-points-draw} | 1,000,000 | 1 to 10,000,000 | browser | safety | a seeded sample of this many cells is drawn, and the plot says so |
+| `density_points_load`{#cost-density-points-load} | 25,000,000 | 1 to 250,000,000 | browser | safety | the Cell points layer is refused, with the count and the limit |
 | `dendrogram_rows`{#cost-dendrogram-rows} | 2,000 | 2 to 20,000 | browser | safety | no dendrogram, with the reason |
 
 ## Other limits

@@ -317,6 +317,8 @@ and fails `annzarro config validate`. What each limit protects, its refusal and 
 | `obsp_source_max_cells` | 1,000,000 | 1 to 10,000,000 | Most cells a dataset may have for one of its obsp rows to be used as a per-cell source. |
 | `cell_export_max` | 1,000,000 | 1 to 10,000,000 | Most cells a grouping's cell export (CSV) writes; it is built in the browser tab. |
 | `bars_3d_max` | 40,000 | 1 to 400,000 | Most bars a 3D bar view draws (provisional: WebGL memory of the tab). |
+| `density_points_draw` | 1,000,000 | 1 to 10,000,000 | Most cells the Cell points layer of a Cell Count Plot's 2D density draws; above it a seeded uniform sample of this many is drawn. |
+| `density_points_load` | 25,000,000 | 1 to 250,000,000 | Most cells whose positions the Cell points layer of a 2D density loads into the browser tab (about 9 bytes a cell); above it the layer is refused. |
 | `dendrogram_rows` | 2,000 | 2 to 20,000 | Most rows (or columns) clustered in the browser for a dendrogram; clustering costs memory and time in proportion to the square of the rows. |
 
 ```yaml

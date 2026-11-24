@@ -509,6 +509,8 @@ limits:
   obsp_source_max_cells: 1000000
   cell_export_max: 1000000
   bars_3d_max: 40000
+  density_points_draw: 1000000
+  density_points_load: 25000000
   dendrogram_rows: 2000
 
 # Policy registry: settings an administrator may change at run time

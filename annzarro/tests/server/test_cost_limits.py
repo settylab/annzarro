@@ -457,6 +457,9 @@ def test_the_browser_reads_every_limit_through_limits_js_and_keeps_no_copy():
         "utils/derived-sources.js": ("LIVE_MAX_S = ",),
         "utils/bars-3d.js": ("BARS_3D_MAX = 40000",),
         "utils/source-notices.js": ("BAR_AFTER_S = 10",),
+        "panels/cell-count/density-points.js": ("1_000_000", "25_000_000"),
+        "panels/cell-count/density-points-load.js": ("import { DENSITY_POINTS_DRAW", "DENSITY_POINTS_LOAD, sampleIndices"),
+        "config.js": ("DENSITY_POINTS_DRAW: 1000000", "DENSITY_POINTS_LOAD: 25000000"),
     }
     for path, words in gone.items():
         with open(os.path.join(js, path), encoding="utf-8") as fh:

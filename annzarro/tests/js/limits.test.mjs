@@ -138,3 +138,18 @@ test('a block over the served dendrogram rows is not clustered, and the limit tr
     assert.deepEqual(o.groupBlocks.map((b) => [b.count, b.state]), [[4, 'too_many']]);
     assert.deepEqual(asked, [{ rows: 2, maxRows: 3 }]);              // the two genes are clustered, told the limit
 });
+
+test('the Cell points layer refuses past the served load cap and samples at the served draw cap', async () => {
+    const D = await import('../../../static/js/panels/cell-count/density-points-load.js');
+    const num = (key) => ({ source: { type: 'obs', key } });
+    const config = { mode: 'density2d', x: num('depth'), y: num('score') };
+    const structure = { obs: { columns_info: { depth: { type: 'numeric' }, score: { type: 'numeric' } } } };
+    assert.equal(D.loadCap(), 25000000);
+    assert.equal(D.drawCap(), 1000000);
+    assert.equal(D.pointsRefused(config, structure, 101), null);
+    await serve({ 'limits.density_points_load': 100, 'limits.density_points_draw': 40 });
+    assert.equal(D.loadCap(), 100);
+    assert.equal(D.drawCap(), 40);
+    assert.deepEqual(D.pointsRefused(config, structure, 101), { kind: 'too_many', total: 101, limit: 100 });
+    assert.equal(D.pointsRefused(config, structure, 100), null, 'the cap itself is allowed');
+});

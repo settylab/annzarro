@@ -120,6 +120,14 @@ COST_LIMITS: Dict[str, CostLimit] = {c.name: c for c in (
     _limit("bars_3d_max", 40_000, 400_000, enforced="browser", group="browser",
            label="Bars in a 3D view",
            help="Most bars a 3D bar view draws (provisional: WebGL memory of the tab)."),
+    _limit("density_points_draw", 1_000_000, 10_000_000, enforced="browser", group="browser",
+           label="Cells drawn as density points",
+           help="Most cells the Cell points layer of a Cell Count Plot's 2D density draws; above it a seeded "
+                "uniform sample of this many is drawn."),
+    _limit("density_points_load", 25_000_000, 250_000_000, enforced="browser", group="browser",
+           label="Cells loaded for density points",
+           help="Most cells whose positions the Cell points layer of a 2D density loads into the browser tab "
+                "(about 9 bytes a cell); above it the layer is refused."),
     _limit("dendrogram_rows", 2_000, 20_000, minimum=2, enforced="browser", group="browser",
            label="Rows clustered for a dendrogram",
            help="Most rows (or columns) clustered in the browser for a dendrogram; clustering costs memory and "

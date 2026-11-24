@@ -114,7 +114,7 @@ ADMIN_EDITABLE_COSTS = {
     "ask_first_s", "refuse_s", "live_update_s", "progress_bar_s", "matrix_values", "genes_per_section", "groups",
     "partitionings", "request_partitionings", "measures", "thresholds", "grid_cells", "grid_2d_bins", "grid_2d_split",
     "grid_1d_bins", "grid_1d_split", "grid_categorical_levels", "grid_sets", "obsp_source_max_cells",
-    "cell_export_max", "bars_3d_max", "dendrogram_rows",
+    "cell_export_max", "bars_3d_max", "dendrogram_rows", "density_points_draw", "density_points_load",
 }
 #: read when the server starts (gunicorn, the ledger, the read and subset budgets and their waits and shares)
 READ_AT_START = {
