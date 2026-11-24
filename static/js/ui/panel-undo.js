@@ -71,7 +71,12 @@ export function createPanelUndo({ snapshot, restore, max = UNDO_MAX, coalesceMs 
     let restoring = false;
     let buttons = [];
 
-    const tell = () => { for (const fn of listeners) fn(); for (const b of buttons) paintButton(b); };
+    // a button whose panel was replaced is no longer in the page: it is dropped, so the list does not grow with every replacement
+    const tell = () => {
+        for (const fn of listeners) fn();
+        buttons = buttons.filter((b) => b.isConnected !== false);
+        for (const b of buttons) paintButton(b);
+    };
     const known = () => { if (base === null) base = snapshot(); return base; };
     // the config at the start, when the panel can say it already; a panel that cannot yet calls `rebase()` once it is built
     try { base = snapshot(); } catch { base = null; }
