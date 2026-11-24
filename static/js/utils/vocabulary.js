@@ -229,7 +229,8 @@ const cellGene = Object.freeze({
         totals: 'Cells per group',
         /** The band of each group in its own colour, beside the factors' strips, and its switch in Plot Options. */
         groupBand: 'Group',
-        groupBandSwitch: 'Group band',
+        colorStrips: 'Color strips',
+        colorStripsChoice: Object.freeze({ factors: 'Factors', group: 'Group', none: 'None' }),
         sortGroups: 'Sort groups by size',
         scalingNote: 'Groups with no value are skipped; a constant gene gives 0.',
         pooledNote: 'A one-row section has no pooled cells of its own, so it is z-scored across its own groups.',

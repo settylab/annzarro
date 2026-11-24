@@ -1286,9 +1286,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const permute = (arr) => (arr ? reorder(arr, order.rows, order.groups, G) : arr);
             const coloured = groupSources().sources.coloursOf(axisId(), reply);
             const colours = coloured.factors;
-            // each group's own colour and names, for the Group band (decision 38)
+            // each group's own colour and names, for the Group band (Color strips: Group; decision 38)
             const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf, colors: colours,
-                groups: { colours: coloured.groups, generated: coloured.generated, names } });
+                groups: { colours: coloured.groups, names } });
             const look = resolveStyle(_config, TYPE);
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];

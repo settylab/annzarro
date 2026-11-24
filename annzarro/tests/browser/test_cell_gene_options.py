@@ -203,8 +203,8 @@ def test_plot_options_reach_the_drawing_and_ask_for_nothing(page, served):
                          S1: _sig(S1, "Markers", GENES[:4]), S2: _sig(S2, "Pathway", GENES[4:8]), GA: TWO}, open_ids=(P, S1, S2))
     _drawn(page)
     names = _trace_names(page)
-    # two factors: a strip and a legend each, and the Group band after them with its legend (decision 38)
-    assert "section brackets" in names and names.count("group strip") == 3 and names.count("strip legend") == 3, names
+    # two factors: a strip and a legend each (Color strips: Factors, the default)
+    assert "section brackets" in names and names.count("group strip") == 2 and names.count("strip legend") == 2, names
     n = len(page.calls)
     _open_color(page)
     help_text = page.locator("[data-popover='color'] .cgene-scaling-note").inner_text()
