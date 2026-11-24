@@ -248,7 +248,7 @@ def test_admin_and_user_through_the_login_page(server):
         browser = p.chromium.launch()
         try:
             # --- the user -------------------------------------------------
-            ctx, page, posts, errors, _ = _sign_in(browser, srv, "alice", "alice-pw")
+            ctx, page, posts, errors, ucookie = _sign_in(browser, srv, "alice", "alice-pw")
             me = _fetch(page, "api/v1/auth/me")["body"]
             assert (me["username"], me["is_admin"], me["may_open_any_path"]) == ("alice", False, False)
             assert "only an admin" in page.get_attribute("#refresh-dataset", "title")
@@ -256,6 +256,18 @@ def test_admin_and_user_through_the_login_page(server):
                 _refresh(page)
             assert posts.count("/api/v1/data/refresh") >= 2
             assert "/api/v1/cache/reset" not in posts, posts
+
+            # decision 44: a user's Refresh makes every worker read a chunk overwritten in place again
+            warm = _per_worker(srv, ucookie)
+            (was,) = {v for values in warm.values() for v in values}
+            import zarr
+            zarr.open_group(srv.store, mode="r+", use_consolidated=False)["obs/total_counts"][0] = was + 500
+            assert all(values == {was} for values in _per_worker(srv, ucookie).values()), "cached until a refresh"
+            _refresh(page)
+            assert "/api/v1/cache/reset" not in posts, posts
+            fresh_user = _per_worker(srv, ucookie)
+            assert all(values == {was + 500} for values in fresh_user.values()), \
+                f"after a user's Refresh every worker serves the new chunk: {fresh_user}"
             refused = _fetch(page, "api/v1/data/info", dataset_path=srv.outside)
             assert refused["status"] == 403 and refused["body"]["reason"] == "outside_data_dir"
             assert not errors, errors

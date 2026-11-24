@@ -93,7 +93,7 @@ the web client reads the same values from `GET /api/v1/policy/effective`, so a l
 Cell-Gene matrix, the groups of a grouping, the cells of a count grid) is the server's, never a copy of its own. A
 refusal names the limit in force in its `limit` field.
 
-A value set in the configuration file is a ceiling: the admin may lower it on the Settings page, never raise it.
+A value set in the configuration file is a ceiling: the admin may lower it on the Settings page, never raise it. The one limit where higher is stricter, `refresh_min_interval_large_s`, has the file's value as a floor instead: the admin may raise it, never lower it.
 Leave a key out of the file and the admin may set anything within its bounds. `policy.locked` fixes a key to the
 file's value altogether. The time tiers keep their order, `live_update_s` ≤ `ask_first_s` ≤ `refuse_s` (and
 `partitionings` ≤ `request_partitionings`): a configuration file that breaks it does not start, the Settings page
@@ -111,6 +111,8 @@ users' computers) has the memory and time it protects.
 | `refuse_s`{#cost-refuse-s} | 600 | 0 to 6000 | server | safety | `413 score_too_expensive`, `413 groups_too_expensive` |
 | `live_update_s`{#cost-live-update-s} | 5 | 0 to 50 | server and browser | safety | edits wait for **Update**; the job runs in the heavy lane |
 | `progress_bar_s`{#cost-progress-bar-s} | 10 | 0 to 100 | browser | when to ask | (a progress bar is shown) |
+| `refresh_min_interval_large_s`{#cost-refresh-min-interval-large-s} | 60 | 0 to 600 | server | safety | a non-admin's **Refresh** of a dataset above `refresh_large_cells` on a shared server is answered `scheduled` and runs at the end of the interval; the app says when |
+| `refresh_large_cells`{#cost-refresh-large-cells} | 10,000,000 | 1 to 100,000,000 | server | safety | (the cell count above which the interval above applies) |
 | `matrix_values`{#cost-matrix-values} | 400,000 | 1 to 4,000,000 | server and browser | safety | `too_many_values` in the result; the browser does not ask (`matrix_too_large`) |
 | `genes_per_section`{#cost-genes-per-section} | 2,000 | 1 to 20,000 | browser | when to ask | the browser does not ask (`too_many_genes`) |
 | `groups`{#cost-groups} | 2,000 | 2 to 20,000 | server and browser | safety | `too_many_groups`, `too_many_levels` in the result |

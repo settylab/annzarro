@@ -19,6 +19,7 @@ from collections import OrderedDict
 
 from flask import current_app, jsonify, request
 
+from ...core import freshness
 from .. import access
 from ..http_cache import CACHE_CONTROL
 
@@ -65,7 +66,7 @@ def etag_for(path, parts):
     if remote.is_remote_path(path) or not os.path.exists(path):
         return None
     try:
-        signature = _signature(path, False)
+        signature = (_signature(path, False), freshness.generation(path))
     except OSError:
         return None
     raw = f"{ENCODING_VERSION}|{__version__}|{','.join(parts)}|{path}|{signature}"
@@ -84,7 +85,7 @@ def describe(path, parts):
         remote.check_remote_access(path)
     elif not os.path.exists(path):
         raise FileNotFoundError(path)
-    signature = _signature(path, is_remote)
+    signature = (_signature(path, is_remote), freshness.generation(path))     # a refresh starts a new generation
     with _LOCK:
         hit = _CACHE.get(path)
         entry = hit[1] if hit is not None and hit[0] == signature else None

@@ -42,9 +42,11 @@ def clear_cache():
 
 def _signature(path, remote):
     from . import data_routes
+    from ...core import freshness
+    gen = freshness.generation(path)      # a refresh starts a new one: the cached details are read again
     if remote:
-        return ("remote", int(time.time() // REMOTE_TTL_S))
-    return data_routes._listing_signature(path)
+        return ("remote", int(time.time() // REMOTE_TTL_S), gen)
+    return (data_routes._listing_signature(path), gen)
 
 
 def _cached(path, signature):

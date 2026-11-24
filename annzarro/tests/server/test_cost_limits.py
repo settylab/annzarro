@@ -349,6 +349,37 @@ def test_a_value_of_the_config_file_is_a_ceiling_the_admin_can_lower(tmp_path):
     assert keys_of(admin.get(POLICY))["limits.groups"]["value"] == 50
 
 
+def test_only_a_minimum_interval_tightens_upward():
+    """``tighten`` says which way is stricter; every limit is "down" (lower is stricter) except the minimum interval."""
+    assert cl.tightens_up() == ("refresh_min_interval_large_s",)
+    assert {c.tighten for n, c in cl.COST_LIMITS.items() if n != "refresh_min_interval_large_s"} == {"down"}
+    with pytest.raises(ValueError, match="tighten"):
+        cl._limit("x", 1, 2, label="x", help="x", tighten="sideways")
+
+
+def test_a_config_value_of_a_minimum_interval_is_a_floor_the_admin_can_raise(tmp_path):
+    """Direction "up": the file's 120 s is the shortest interval the admin may set; lowering it would loosen."""
+    app = make_app(tmp_path, limits={"refresh_min_interval_large_s": 120})
+    admin = login(app, ADMIN)
+    key = keys_of(admin.get(POLICY))["limits.refresh_min_interval_large_s"]
+    assert (key["value"], key["source"]) == (120, "config") and "floor the admin can raise" in key["description"]
+    reply = put(admin, {"limits.refresh_min_interval_large_s": 30})
+    assert reply.status_code == 409 and reply.get_json()["errors"] == {"limits.refresh_min_interval_large_s": "config_ceiling"}
+    assert put(admin, {"limits.refresh_min_interval_large_s": 300}).status_code == 200
+    values = login(app, USER).get("/api/v1/policy/effective").get_json()["values"]
+    assert values["limits.refresh_min_interval_large_s"] == 300
+
+
+def test_a_config_value_of_the_large_cell_count_is_a_ceiling_the_admin_can_lower(tmp_path):
+    """Direction "down": raising refresh_large_cells exempts datasets from the interval, so lowering is stricter."""
+    app = make_app(tmp_path, limits={"refresh_large_cells": 5_000_000})
+    admin = login(app, ADMIN)
+    reply = put(admin, {"limits.refresh_large_cells": 8_000_000})
+    assert reply.status_code == 409 and reply.get_json()["errors"] == {"limits.refresh_large_cells": "config_ceiling"}
+    assert put(admin, {"limits.refresh_large_cells": 1_000_000}).status_code == 200
+    assert keys_of(admin.get(POLICY))["limits.refresh_large_cells"]["value"] == 1_000_000
+
+
 def test_tiers_out_of_order_in_the_stored_layers_resolve_to_the_stricter():
     """An overlay the Settings page would refuse (edited by hand, or written before the file changed) never makes
     the server ask first above where it refuses: the stricter tier wins, marked forced."""

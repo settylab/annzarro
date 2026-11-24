@@ -146,7 +146,8 @@ export function failureLine(result, what) {
  * What the header's Refresh button does for this user.
  *
  * Every user's refresh asks the server to re-check the store against the
- * disk (POST data/refresh), which serves a changed store afresh to everyone.
+ * disk (POST data/refresh), which starts a new generation whatever it finds,
+ * so every worker reads the dataset afresh for everyone.
  * On a hosted server (login on, or reachable from the network) clearing the
  * whole server cache is admin-only (POST /cache/reset answers 403
  * admin_only): the cache is shared by every user. Everyone else gets the
@@ -161,34 +162,25 @@ export function refreshPlan(me) {
     return {
         resetServerCache,
         title: resetServerCache
-            ? "Reload this dataset, re-checked against the disk, and clear the server's cache for it"
-            : "Reload this dataset, re-checked against the disk (only an admin can clear the server's shared cache)"
+            ? "Reload this dataset from the disk, and clear the server's cache for it"
+            : "Reload this dataset from the disk: the server drops what it remembered of it (only an admin can clear the server's shared cache)"
     };
 }
 
 /**
  * What to tell the user when a refresh answered `status: "partial"`: the
- * store has too many files to check within the server's time budget, so a
- * change that only overwrote chunk files is not detected and the generation
- * was not bumped. An admin's header Refresh also clears the server's cache,
- * which does serve such changes; anyone else (and every panel's Refresh,
- * which does not clear it) is told who can pick them up.
+ * store has too many files to check within the server's time budget, so the
+ * server cannot say whether anything changed. It does not need to: every
+ * refresh makes the server drop what it remembered of the dataset and read
+ * it again, so the notice says that and does not claim the data is unchanged.
  * @param {Object|null} result - the reply of POST data/refresh
- * @param {{cleared?: boolean}} [options] - the server cache was cleared in this refresh
  * @returns {{title: string, message: string}|null} null unless the check was partial
  */
-export function partialRefreshNotice(result, { cleared = false } = {}) {
+export function partialRefreshNotice(result) {
     if (!result || result.status !== 'partial') return null;
-    if (cleared) {
-        return {
-            title: 'Large dataset refreshed',
-            message: 'This dataset is too large to check completely, so the server\'s cache for it was ' +
-                'cleared instead. Changes inside its data chunks are shown.'
-        };
-    }
     return {
-        title: 'Refresh may not show every change',
-        message: 'This dataset is too large to check completely, so a change made only inside its ' +
-            'data chunks may not show. An admin\'s Refresh dataset will show it.'
+        title: 'Large dataset refreshed',
+        message: 'This dataset is too large to check file by file, so AnnZarro cannot tell whether it ' +
+            'changed. It dropped everything it remembered of it and read it again from disk.'
     };
 }
