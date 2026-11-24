@@ -15,20 +15,23 @@
  *   table.describe(snap, {sharers})
  *                             optional: the notice of a column that is not ready (utils/score-column.js describeColumn
  *                             is the default). `snap` carries `source` and `title`
- *   table.canOffer(column), table.offer(column)
- *                             optional: the notice's way to offer a lapsed option again
  *   table.open(column, hostId)  optional: the notice's way to open the entity beside the table
  *   table.chooser             the tab's list, one group per entity:
  *       entityLabel(entity)       the group's heading
  *       options(entity, ticked, tableId)
- *                                 [{column, layer?, text, note?}]: what the entity gives a column, then any ticked column
- *                                 it no longer offers. `note` is shown under the option (in this table it can be shown
- *                                 but not filtered on: operator decision 15)
+ *                                 [{column, layer?, text, note?}]: what the entity gives a column. A provider with an
+ *                                 `add` row lists only the entity's ticked columns. `note` is shown under the option (in
+ *                                 this table it can be shown but not filtered on: operator decision 15)
  *       layerOf(column)           the layer a column names, or what a column of none reads ('' for a source with no layers)
  *       note(structure)           optional: the dataset's structure, noted when the tab is built
  *       empty                     {text, button}: what the tab says with no entity, and the label of the way to make one
  *                                 (the provider's `newEntity`)
- *       more                      optional {text, run(entity, nextTo)}: a link under each group
+ *       add                       optional, the add row under each group, `[method] on [layer] [Add column]`
+ *                                 (decision 31: the chooser never lists method x layer pairs):
+ *                                   start(entity) -> {method, layer}       where the selects start
+ *                                   menus(entity, pair) -> {methods, layers}  each [{value, text, disabled, title}]
+ *                                   after(entity, changed, value, pair) -> {method, layer, say}  the touched select wins
+ *                                   label(pair)                              a new column's text in the list
  *   table.filterable(column, tableId)
  *                             optional: false when a condition on the column must not be built in this table (it would
  *                             close a loop). The condition builder then leaves the column out, unless a condition names

@@ -34,7 +34,7 @@ cell.
    | **Column…** | an obs column or an obsm column, as in a Cell Plot | A categorical column gives one level per category at once; a numeric column gives 4 equal-count bins |
    | **Cell names** | nothing more: the obs index | One group per cell, while at most 2,000 cells are shown (see {ref}`per-cell-views`) |
    | **Gene…** | a layer and a gene name; **Use focused gene** fills the box | 4 equal-count bins of the gene's values |
-   | **Score…** | a signature or gene table, and one of its offered scores | 4 equal-count bins of the score |
+   | **Score…** | a signature or gene table, a method and a layer (every method and every layer, as in a Cell Plot; a combination that cannot be computed is greyed out) | 4 equal-count bins of the score |
    | **Cell table…** | an open or closed Cell Table | `in Table 1` and `not in Table 1` |
    | **Neighbors of a cell…** | an obsp matrix and a cell name; **Use focused cell** fills the box | 4 equal-count bins of that cell's row |
 
@@ -58,7 +58,7 @@ the button put the focus back on **Edit ▾**. Only one pop-over is open at a ti
 down**, **Duplicate**, **Rename levels…** and **Remove**. Drag a card by **≡**, or move the focused card with **Alt+Up**
 and **Alt+Down**. The order of the factors is the order of the names and of the groups: the first factor varies slowest.
 
-The toolbar above the cards holds **Add factor ▾**, **Settings** and **Undo**. The list of groups takes
+The toolbar above the cards holds **Add factor ▾**, **Methods ▾**, **Settings** and **Undo**. The list of groups takes
 the rest of the panel and is the only part that grows with it.
 
 **A categorical factor** lists its levels with their cells and a box for each:
@@ -67,6 +67,8 @@ the rest of the panel and is the only part that grows with it.
   other'**, or are left out: **Leave out of all groups** puts their cells in no group.
 - Drag ticked levels to change their order. **Tick all**, **Tick none** and **Sort by cells** help with long lists.
 - **✎** renames a level. The new name is used everywhere the grouping is shown; hovering the level shows what it was.
+  While you type, **Enter** saves, **Escape** cancels (a second Escape closes the pop-over), **Tab** saves and moves to the
+  next level's name, and a click anywhere else saves. The focus then stays on the level, not in a new edit.
   A rename never changes which cells are in the group, and never makes the server compute anything.
 - A boolean column's levels are the column's name and `not` the name, for example `is_doublet` and `not is_doublet`.
 - A column with more than 2,000 levels that hold a cell is refused: "cell_id has 8,090 levels; a factor holds up to
@@ -138,11 +140,7 @@ small-group threshold carries **small** ("Under 10 cells: statistics are unrelia
 list. With exactly two factors, **Cross-table** shows the first factor's levels down and the second's across, with
 the cells of each combination; an empty combination is a muted 0, because it is not a group.
 
-**The focused gene.** The list also gives the focused gene's mean and % expressing per group, on X. They are
-computed only while the panel is visible and the computation would take under 5 seconds; otherwise the column header is a button, **Show Mrpl15**, and a new focus asks nothing until you press it.
-A group with no value for the gene shows "—", never 0.
-
-**Export CSV** downloads the list (key, name, cells, share and the focused gene's columns), or the cross-table.
+**Export CSV** downloads the list (key, name, cells and share), or the cross-table.
 **Export cells** downloads every cell shown with its group, up to 1,000,000 cells.
 
 **Settings** (a button in the toolbar; its pop-over holds):
@@ -151,10 +149,53 @@ A group with no value for the gene shows "—", never 0.
 - **Small groups under** 10 cells: **Keep** them (the default; they are marked), **Collect** them into one group
   "Small groups (under 10 cells)", or **Hide** them (their cells go in no group).
 
+**Methods ▾** (a button in the toolbar) sets how the statistics over a group's cells are computed, for every plot
+that reads the grouping and on every layer. Plots still choose the statistic and the layer themselves; nothing here
+limits what they can pick. The pop-over lists each statistic with its definition: **Mean**, **% expressing**, **Mean of
+expressing cells**, **Sum** and **SD**. Under the two that count expressing cells sits their one parameter:
+
+- **Expressed above** (0 by default, any number from 0 up): a cell counts as expressing when its value is above it.
+  Type a number and press **Enter**, or leave the box; a value that is not a number from 0 up is refused with the
+  reason and the box goes back to the value in force.
+
+Each change is one step that **Undo** takes back. The groups stay as they are (the threshold is not part of what makes
+them), and every Cell-Gene Plot on the grouping reads its genes again at the new threshold, unless a measure of that
+plot sets its own ({doc}`cell-gene-plot`). The foot of the pop-over says which plots read the grouping and with what
+("Used by: Cell-Gene Plot 1 (mean · logged, % expressing · counts)"), and **Reset to defaults** puts every parameter
+back. While a parameter is not at its default the button carries a dot and its tooltip names the setting
+("expressed above 2"). **Escape**, the **×** or a click outside closes the pop-over; opening it moves nothing in the
+panel.
+
 Names are made in the browser from the levels and their renames; two groups that end up with the same name get
-`(2)`, `(3)`. Colours: a grouping of one categorical column takes that column's colours, so it matches a plot coloured
-by the column; any other grouping takes the palette in group order. One grouping has the same colours in every panel,
-but its colours can change when a new subset changes which groups exist.
+`(2)`, `(3)`.
+
+### Colours
+
+One grouping has the same colours in every panel: the group list, a Cell Plot coloured by it (large plots too), the
+Cell-Gene Plot's strips and their legend, and a Cell Count Plot split by it. Nothing is asked of the server when you
+change a colour, and the change is one undo step.
+
+**Factor colours.** A categorical column takes the colours the dataset stores for it (`uns["<column>_colors"]`, used
+when it holds at least as many colours as the column has categories, as scanpy does; each category keeps its colour
+whichever cells are shown). Otherwise it takes the app's group colours in level order. A binned factor takes a
+sequential map (viridis) over its bins, in order. In a factor's **Edit ▾** pop-over, **Colors** has a **Palette**
+(**Dataset colors** when the column has them, **Default**, or a named palette; a binned factor offers sequential maps), a
+colour swatch on each level that opens the browser's colour picker, and **Reset colors**. A factor's palette does not
+change a Cell Plot coloured by the bare column: that plot has its own palette select.
+
+**Group colours.** A grouping of one factor shows that factor's colours. A grouping of several factors has its own
+palette in group order, repeating by the 64 colour groups. Under **Settings** ▸ **Colors**, **Color groups by** chooses
+**Own palette** (the default) or one of the factors, so that every group takes the colour of its level of that factor;
+**Palette** changes the own palette; and **Reset group colors (n)** removes the n colours you set by hand. Click a
+group's swatch in the group list, or press **Enter** or **Space** on a focused row, to give that group a colour of its
+own; it wins over everything else. That colour is kept under the group's generated name (its level labels joined by
+the separator), not its place in the list: when another dataset, another factor or moved bins leave no group of that
+name, the colour applies to no group and is kept, and it applies again as soon as a group of that name is back. A Count
+Plot's level palette (under its **Color** button) and a Cell Plot's own palette select still recolour that plot alone.
+
+The settings are stored in the recipe (`colors` for palettes, `groupOverrides` for single groups, only what is not at
+its default), so a link or a panel set carries them and a link made before colours existed opens unchanged. They are no
+part of what is computed.
 
 ### Cells in no group
 
@@ -171,14 +212,14 @@ a plot, and enter no statistic.
 | **Cell Plot** colour, x, y, z and hover | Choose **Cell Grouping** in the type list (beside obs, obsm, obsp, layer and **Gene score**), or a grouping at the end of the obs column list, under **Groupings**; **New grouping…** ends the list. Colour draws one legend entry per group, in group order, with the grouping's colours, and every categorical legend option applies. The hover reads `Grouping 1: B cell \| Old` |
 | **Cell Table** | The column chooser has a **Cell Grouping** tab. The column shows each cell's group, sorts in group order and filters with **Equals** like a categorical column |
 | **Cell-Gene Plot** | As **Groups** ({doc}`cell-gene-plot`) |
-
-A grouping chooses no statistics for the plots built on it: each plot lists every statistic and every layer itself
-({doc}`cell-gene-plot`). The grouping keeps its threshold for % expressing and mean of expressing cells, "Expressed
-above" (0 by default), and a Cell-Gene Plot built on it reads that threshold unless a measure sets its own. A link
-saved by an earlier 0.8.0 build may still carry a grouping's own list of statistics and layers: it loads without a
-message, changes nothing, and the grouping's next edit drops it.
 | **Cell Count Plot** | As X, Y or **Color by**, and one group of it as a set ({doc}`cell-count-plot`) |
 | **Another grouping** | As a factor: its groups become the levels |
+
+A grouping chooses no statistics for the plots built on it: each plot lists every statistic and every layer itself
+({doc}`cell-gene-plot`). The grouping sets how they are computed, in **Methods ▾**: a Cell-Gene Plot built on it reads
+its **Expressed above** unless a measure sets its own. A link saved by an earlier 0.8.0 build may still carry a
+grouping's own list of statistics and layers: it loads without a message, changes nothing, and the grouping's next
+edit drops it.
 
 From any of them, **Open grouping** opens the grouping's panel beside it.
 

@@ -1,7 +1,7 @@
 """The `gene-score` source in Cell Plots, in a real browser.
 
 Step 5 of the gene-signature plan. A signature is a named recipe (genes plus
-how to score them); a Cell Plot can take its x, y, colour or hover from the
+how to score them); a Cell Plot can take its x, y, z or colour from the
 signature's score, open or closed, in the regular plot and in large-plot mode.
 The score is computed by the server (POST /api/v1/data/gene_score) when a plot
 needs it, held in the browser as a Float32Array, and never written to a link.
@@ -24,7 +24,7 @@ and the stream are then the test's, and the plot cannot tell.
 5.  Every dependant state: computing, queued, cancelled, failed, retry,
     refused, deleted, out of date and held behind Update score, no genes, no
     gene in the dataset. A notice never changes the plot's size.
-6.  The x and y axes, hover and the titles name the signature.
+6.  The x and y axes and the titles name the signature (a score is no hover line: decision 32).
 7.  Large-plot mode: colour, axes and tooltip.
 8.  History makes no request when the key is unchanged; a recipe edit does.
 9.  Link and panel-set round trip with a closed signature; no computed value in
@@ -573,23 +573,6 @@ def test_a_score_on_an_axis_is_a_placeholder_while_it_computes_and_names_the_sig
     assert title == "T cell score · z-score mean · X", "the axis names the signature, not the panel id"
 
 
-def test_hover_lists_the_score_beside_the_columns_and_labels_it_by_title(page, served):
-    cfg = _cell(hoverInfo=[{"type": "obs", "key": "_index"}, {"type": "gene-score", "key": SIG}], color={"type": "none", "key": "", "column": ""})
-    _open(page, served, plots=(("cell-plot-C", cfg),))
-    options = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.hover-columns-select optgroup[label="Gene scores"] option')]
-        .map(o => [o.value, o.textContent, o.selected])""", C)
-    assert options == [[f"gene-score:{SIG}:zscore_mean:X", "T cell score", True], [f"gene-score:{SIG}:mean:X", "T cell score · mean", False],
-                       [f"gene-score:{SIG}:sum:X", "T cell score · sum", False]]
-    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score')))); }", C)
-    text = page.evaluate("""(t) => document.querySelector(t + ' .js-plotly-plot').data.flatMap(d => d.hovertext || []).filter(h => String(h).includes('T cell score'))[0]""", C)
-    assert "T cell score:" in text
-    # picking it in the Hover list writes the setting
-    page.goto("about:blank")
-    _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "none", "key": "", "column": ""})),))
-    page.select_option(f"{C} select.hover-columns-select", [f"gene-score:{SIG}:zscore_mean:X"])
-    until(page, "() => (window.PanelManager.getPanel('cell-plot-C').getConfig().hoverInfo || []).some(h => h.type === 'gene-score' && h.key === 'gene-signature-S')")
-
-
 # The score request the page sends, kept so a test can ask the route itself for the reply (its own oracle)
 KEEP_COMPUTE = """
 window.__computeRequests = [];
@@ -1078,11 +1061,14 @@ def test_two_aggregations_of_one_signature_are_two_scores_and_one_aggregation_is
     assert len(_calls(page, "estimate")) == 2
     titles = page.evaluate("(t) => { const l = document.querySelector(t + ' .js-plotly-plot').layout; return [l.xaxis.title.text, l.yaxis.title.text]; }", C)
     assert titles == ["T cell score · z-score mean · X", "T cell score · mean · X"]
-    # the third level is a menu: the aggregations the server computes, z-score mean first
+    # the third level is the method select: every method the server computes, z-score mean first (decision 31), and
+    # the layer beside it in a select of its own
     opts = page.evaluate("(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"y\"] option')].map(o => [o.value, o.textContent])", C)
-    assert opts == [["zscore_mean@X", "z-score mean"], ["mean@X", "mean"], ["sum@X", "sum"], ["__offer_more__", "Offer other scores…"]]
+    assert opts == [["zscore_mean", "z-score mean"], ["mean", "mean"], ["sum", "sum"], ["control_adjusted", "control-adjusted"],
+                    ["detected", "fraction detected"], ["fraction_of_total", "% of total"]]
+    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-layer-select[data-axis=\"y\"]').value", C) == "X"
     # choosing the other aggregation in the menu moves the axis to it
-    page.select_option(f"{C} select.axis-column-select[data-axis='x']", "mean@X")
+    page.select_option(f"{C} select.axis-column-select[data-axis='x']", "mean")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().x.column === 'mean'")
     # time for a second compute, were one going to; the mean was already in the store
     page.wait_for_timeout(800)
@@ -1094,7 +1080,8 @@ def test_a_link_made_before_sub_keys_has_no_column_and_means_the_z_score_mean(pa
     _open(page, served, plots=(("cell-plot-C", _cell(color={"type": "gene-score", "key": SIG, "label": "T cell score"})),))
     _wait_coloured(page)
     assert _calls(page, "compute")[0]["method"] == "zscore_mean"
-    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').value", C) == "zscore_mean@X"
+    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').value", C) == "zscore_mean"
+    assert page.evaluate("(t) => document.querySelector(t + ' select.axis-layer-select[data-axis=\"color\"]').value", C) == "X"
 
 
 def test_the_registry_lists_a_closed_signature_and_its_aggregations(page, served):
@@ -1108,7 +1095,9 @@ def test_the_registry_lists_a_closed_signature_and_its_aggregations(page, served
                  forGenePlot: reg.sourcesFor('gene-plot', 'x').map(q => q.type) };
     }""")
     assert sorted((e["id"], e["open"]) for e in got["entities"]) == [(SIG, True), (SIG2, False)], "the closed one is listed"
-    assert [s["value"] for s in got["subs"]] == ["zscore_mean", "mean", "sum"] and got["def"] == "zscore_mean"
+    assert [s["value"] for s in got["subs"]] == ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"], \
+        "every method: nothing is offered (decision 31)"
+    assert got["def"] == "zscore_mean"
     assert got["forX"] == ["gene-score", "cell-group"] and got["forZ"] == ["gene-score", "cell-group"] and got["forGenePlot"] == []
 
 
@@ -1251,22 +1240,6 @@ def test_an_open_signature_nobody_uses_states_its_genes_without_computing(page, 
     # time for a score request, were one going to; nobody uses the score
     page.wait_for_timeout(800)
     assert _calls(page) == [], "no score is computed for a score nobody uses"
-
-
-def test_hover_offers_each_aggregation(page, served):
-    cfg = _cell(hoverInfo=[{"type": "obs", "key": "_index"}, {"type": "gene-score", "key": SIG, "column": "mean"}],
-                color={"type": "none", "key": "", "column": ""})
-    _open(page, served, plots=(("cell-plot-C", cfg),))
-    sel = page.evaluate("""(t) => [...document.querySelectorAll(t + ' select.hover-columns-select optgroup[label="Gene scores"] option')]
-        .map(o => [o.textContent, o.selected])""", C)
-    assert sel == [["T cell score", False], ["T cell score · mean", True], ["T cell score · sum", False]]
-    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score · mean:')))); }", C)
-    assert _calls(page, "compute")[0]["method"] == "mean"
-    # both at once: two scores in the hover, two requests
-    page.select_option(f"{C} select.hover-columns-select", [f"gene-score:{SIG}:zscore_mean:X", f"gene-score:{SIG}:mean:X"])
-    until(page, "() => (window.PanelManager.getPanel('cell-plot-C').getConfig().hoverInfo || []).filter(h => h.type === 'gene-score').length === 2")
-    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!(g && g.data.some(d => (d.hovertext || []).some(h => String(h).includes('T cell score:') && String(h).includes('T cell score · mean:')))); }", C)
-    assert sorted(c["method"] for c in _calls(page, "compute")) == ["mean", "zscore_mean"]
 
 
 def test_signatures_turned_off_by_the_administrator_says_so_over_the_plot(page, served):

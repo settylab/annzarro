@@ -13,6 +13,7 @@ import { expected } from './fixtures/grouping.mjs';
 const M = await import('../../../static/js/utils/count-plot-model.js');
 const D = await import('../../../static/js/panels/cell-count/draw.js');
 const { PLOT_PALETTES } = await import('../../../static/js/utils/plot-theme.js');
+const { groupColours } = await import('../../../static/js/panels/plot-utilities/colors.js');
 
 const obs = (key) => ({ source: { type: 'obs', key } });
 const norm = (config) => M.normalizeCountPlot({ version: 1, ...config }).config;
@@ -23,6 +24,9 @@ const words = {
     topLevel: (name) => `Most frequent level of ${name}`
 };
 const PALETTE = ['#111111', '#222222', '#333333', '#444444'];
+// the colors of a factor's levels with nothing set (utils/grouping-colours.js): the app's group colors in level order; PALETTE is the
+// color of a plot with no split
+const LEVELS = groupColours(4);
 const inputNames = { x: 'cell_type', y: 'condition', split: 'condition', factor: 'sample' };
 const opts = (options = {}, extra = {}) => ({ options, words, inputNames, palette: PALETTE, theme: PLOT_PALETTES.light, measureSource: 'score', ...extra });
 
@@ -81,7 +85,7 @@ test('a split makes one trace per level, colored by level, with the arrangement 
         assert.equal(f.layout.showlegend, true);
         assert.equal(f.layout.legend.title.text, 'condition');
         f.data.forEach((t, s) => {
-            assert.equal(t.marker.color, PALETTE[s % PALETTE.length]);
+            assert.equal(t.marker.color, LEVELS[s % LEVELS.length]);
             for (let l = 0; l < cts; l++) assert.equal(t.y[l], table.count[l * table.stride[0] + s * table.stride[1]]);
         });
     }
@@ -93,7 +97,7 @@ test('a level\'s own color from the reply wins over the palette', () => {
     table.axes[1].info = { ...table.axes[1].info, colors: { [table.axes[1].levels[0]]: '#abcdef' } };
     const f = D.countFigure(config, table, opts());
     assert.equal(f.data[0].marker.color, '#abcdef');
-    assert.equal(f.data[1].marker.color, PALETTE[1]);
+    assert.equal(f.data[1].marker.color, LEVELS[1]);
 });
 
 test('a share is drawn as the model computes it, as a percent axis; stacked means are never added', () => {
@@ -249,14 +253,14 @@ const rect = (mode, over = {}) => {
     return { config, table: tableOf(config, { axes: [{ levels: xl }, { levels: yl }], counts: [1, 0, 2, 3, 4, 5], n_counted: 15 }, ['x', 'y']) };
 };
 
-test('a 2D histogram is a heatmap of the counts: rows are y, columns x, an empty rectangle is no color', () => {
+test('a 2D histogram is a heatmap of the counts: rows are y, columns x, an empty rectangle is 0', () => {
     const { config, table } = rect('hist2d');
     const f = D.countFigure(config, table, opts());
     const t = f.data[0];
     assert.equal(t.type, 'heatmap');
     assert.deepEqual(t.x, [5, 15, 25]);
     assert.deepEqual(t.y, [5, 15]);
-    assert.deepEqual(t.z, [[1, 2, 4], [null, 3, 5]]);
+    assert.deepEqual(t.z, [[1, 2, 4], [0, 3, 5]], 'an empty rectangle is a real 0, in the scale\'s 0 colour');
     assert.equal(t.colorbar.title.text, 'Cell count');
     assert.equal(f.layout.showlegend, false);
 });
@@ -320,8 +324,8 @@ test('a rectangle is colored by its most frequent level; an empty one has no col
     assert.deepEqual(t.z, [[0, 1], [0, null]]);
     assert.equal(t.showscale, false);
     assert.equal(t.colorscale.length, 4);
-    assert.deepEqual(t.colorscale.map((s) => s[1]), [PALETTE[0], PALETTE[0], PALETTE[1], PALETTE[1]]);
-    assert.deepEqual(f.data.slice(1).map((s) => [s.type, s.name, s.marker.color]), [['scatter', 'A', PALETTE[0]], ['scatter', 'B', PALETTE[1]]]);
+    assert.deepEqual(t.colorscale.map((s) => s[1]), [LEVELS[0], LEVELS[0], LEVELS[1], LEVELS[1]]);
+    assert.deepEqual(f.data.slice(1).map((s) => [s.type, s.name, s.marker.color]), [['scatter', 'A', LEVELS[0]], ['scatter', 'B', LEVELS[1]]]);
     assert.equal(f.layout.showlegend, true);
     assert.equal(f.layout.legend.title.text, 'sample');
     assert.ok(t.hovertext[0][0].endsWith('A: 75%'), t.hovertext[0][0]);
@@ -337,7 +341,7 @@ test('fading by the level\'s share steps each level through lighter colors', () 
     const light = t.colorscale[0][1];
     const full = t.colorscale[2 * 3][1];
     assert.notEqual(light, full);
-    assert.equal(full, '#111111');
+    assert.equal(full, LEVELS[0]);
 });
 
 test('the labels of the most frequent level come from the caller when it has them', () => {
@@ -358,7 +362,7 @@ test('a pie has one slice per level in its order, none sorted behind the caller\
     assert.equal(t.sort, false);
     assert.deepEqual(t.labels, ['a', 'b', 'c']);
     assert.deepEqual(t.values, [30, 10, 60]);
-    assert.deepEqual(t.marker.colors, PALETTE.slice(0, 3));
+    assert.deepEqual(t.marker.colors, LEVELS.slice(0, 3));
     assert.equal(t.hole, 0);
     assert.equal(t.textinfo, 'none');
     assert.deepEqual(D.countFigure(config, table, opts({ sort: 'height' })).data[0].labels, ['c', 'a', 'b']);
@@ -571,7 +575,7 @@ test('a 2D histogram with a Color by is one transparent-to-color layer per level
     const layers = f.data.filter((t) => t.type === 'heatmap');
     assert.equal(layers.length, 2);
     assert.deepEqual(layers[0].z, [[1, 3, 5], [2, 4, 6]]);
-    assert.deepEqual(layers[1].z, [[10, null, null], [null, null, null]], 'a level with no cell in a rectangle leaves it empty');
+    assert.deepEqual(layers[1].z, [[10, 0, 0], [0, 0, 0]], 'a level with no cell in a rectangle has a real 0 there (its transparent end)');
     for (const t of layers) {
         assert.equal(t.zmin, 0);
         assert.equal(t.zmax, 10, 'one scale for every level: the highest count of any');

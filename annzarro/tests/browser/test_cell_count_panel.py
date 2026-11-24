@@ -340,7 +340,7 @@ def test_a_density_per_condition_draws_through_v3_with_its_sentences_and_adjust(
     fig = _plot(page)
     assert sorted(t["name"] for t in fig["data"]) == sorted(DATA.obs["condition"].unique())
     assert _rows(page) == ["Mode", "X", "Color by", "Smoothing"]
-    assert page.inner_text(f"{S} .ccnt-strip").startswith("Range from the 0.1st to the 99.9th percentile")
+    assert "Range from the 0.1st to the 99.9th percentile" in page.inner_text(f"{S} .ccnt-density-notes")
     assert page.inner_text(f"{S} .ccnt-density-notes").startswith("Bandwidth ")
     asked = len(_requests(page))
     page.fill(f"{S} .ccnt-adjust", "2")
@@ -668,7 +668,7 @@ def _points(page):
 
 
 def _strip(page):
-    return page.inner_text(f"{S} .ccnt-strip")
+    return page.inner_text(f"{S} .ccnt-density-notes")
 
 
 def _points_config(split, **extra):
@@ -683,7 +683,7 @@ def test_the_cell_points_layer_alone_draws_the_cells_with_the_grid_hover_under_i
     _open(page, served, {CC: _points_config(split, layers={"points": True})})
     _drawn(page, "density2d")
     until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot .scattergl, ' + s + ' .ccnt-plot canvas').length > 0", S)
-    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     got = _points(page)
     assert 0 < got["n"] <= N, got
     assert got["types"].count("heatmap") == (2 if split else 1), "a transparent heatmap carries the hover"
@@ -696,7 +696,7 @@ def test_the_cell_points_layer_alone_draws_the_cells_with_the_grid_hover_under_i
 def test_the_cell_points_layer_combines_with_filled_isolines_and_takes_a_point_size(page, served):
     _open(page, served, {CC: _points_config(True, layers={"fill": True, "lines": True, "points": True})})
     _drawn(page, "density2d")
-    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot').length > 0 && /Cells drawn/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => document.querySelectorAll(s + ' .ccnt-plot').length > 0 && /Cells drawn/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     got = _points(page)
     assert got["n"] > 0 and got["types"].index("contour") < got["types"].index("scattergl") and "heatmap" not in got["types"], got
     assert got["size"] == 3
@@ -714,7 +714,7 @@ def test_the_cell_points_layer_draws_a_seeded_sample_above_the_cap_and_says_so(p
     _drawn(page, "density2d")
     _caps(page, draw=300)
     page.check(f"{S} .ccnt-layer--points")
-    until(page, "(s) => /a random sample/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => /a random sample/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     assert re.search(r"Cells drawn as points: [\d,]+ of a random sample of 300 of the 1,200 cells\.", _strip(page)), _strip(page)
     drawn = int(re.search(r"Cells drawn as points: ([\d,]+) of", _strip(page)).group(1).replace(",", ""))
     assert drawn == _points(page)["n"], "the notice counts the points on the plot"
@@ -724,7 +724,7 @@ def test_the_cell_points_layer_draws_a_seeded_sample_above_the_cap_and_says_so(p
     page.uncheck(f"{S} .ccnt-layer--points")
     _drawn(page, "density2d", "!c.layers.points")
     page.check(f"{S} .ccnt-layer--points")
-    until(page, "(s) => /a random sample/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => /a random sample/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     assert _points(page)["n"] == first["n"]
 
 
@@ -733,7 +733,7 @@ def test_the_cell_points_layer_is_refused_above_the_load_cap_and_for_a_source_it
     _drawn(page, "density2d")
     _caps(page, load=500)
     page.check(f"{S} .ccnt-layer--points")
-    until(page, "(s) => /more than the 500/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S)
+    until(page, "(s) => /more than the 500/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S)
     assert _points(page)["n"] == 0
     assert "Turn on a subset" in _strip(page)
     _caps(page, load=25_000_000)
@@ -750,7 +750,7 @@ def test_cell_points_take_a_grouping_as_color_by_and_match_its_groups(page, serv
     count = _points_config({"source": {"type": "cell-group", "key": GA}}, layers={"points": True})
     _open(page, served, {CC: count, GA: grouping}, open_ids=(CC, GA))
     _drawn(page, "density2d")
-    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S, timeout=60)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S, timeout=60)
     colours = _point_colours(page)
     assert len(colours) == 2, colours
     # the groups of the grouping are the grid's levels: each is drawn in the color of its legend entry
@@ -763,7 +763,7 @@ def test_cell_points_take_a_number_as_color_by_binned_by_the_reply_s_edges(page,
     score = {"source": {"type": "obs", "key": "score"}, "binning": {"method": "equal_width", "bins": 3}}
     _open(page, served, {CC: _points_config(score, layers={"points": True})})
     _drawn(page, "density2d")
-    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S, timeout=60)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S, timeout=60)
     assert len(_point_colours(page)) == 3, _point_colours(page)
     shot = os.environ.get("ANNZARRO_FB1F_SHOTS")
     if shot:
@@ -776,7 +776,7 @@ def test_cell_points_reload_when_the_grouping_is_edited_and_match_its_new_groups
     count = _points_config({"source": {"type": "cell-group", "key": GA}}, layers={"points": True})
     _open(page, served, {CC: count, GA: grouping}, open_ids=(CC, GA))
     _drawn(page, "density2d")
-    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S, timeout=60)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S, timeout=60)
     before = _points(page)
     assert len(_point_colours(page)) == 2
     # tick off a level of the grouping and leave the unticked cells out: one group is left
@@ -784,9 +784,9 @@ def test_cell_points_reload_when_the_grouping_is_edited_and_match_its_new_groups
               "partitionings": [{**CONDITION, "levels": ["c:ctrl"], "rest": "exclude"}]}
     page.evaluate("(cfg) => window.PanelManager.getPanel('%s').setConfig(cfg)" % GA, edited)
     # the points reload against the new groups: the cells of the group that is left, the others in no group and not drawn
-    until(page, """([s, n]) => { const m = /Cells drawn as points: ([\\d,]+) of/.exec(document.querySelector(s + ' .ccnt-strip').textContent);
+    until(page, """([s, n]) => { const m = /Cells drawn as points: ([\\d,]+) of/.exec(document.querySelector(s + ' .ccnt-density-notes').textContent);
         return !!m && Number(m[1].replace(/,/g, '')) !== n; }""", [S, before["n"]], timeout=60)
-    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S, timeout=60)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S, timeout=60)
     after = _points(page)
     assert len(_point_colours(page)) == 1, "the one group left is the one color drawn"
     drawn = int(re.search(r"Cells drawn as points: ([\d,]+) of", _strip(page)).group(1).replace(",", ""))
@@ -804,7 +804,7 @@ def test_cell_points_reload_when_an_edit_makes_new_groups_the_old_codes_do_not_h
     count = _points_config({"source": {"type": "cell-group", "key": GA}}, layers={"points": True})
     _open(page, served, {CC: count, GA: grouping}, open_ids=(CC, GA))
     _drawn(page, "density2d")
-    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-strip').textContent)", S, timeout=60)
+    until(page, "(s) => /Cells drawn as points/.test(document.querySelector(s + ' .ccnt-density-notes').textContent)", S, timeout=60)
     assert len(_point_colours(page)) == 2
     page.evaluate("(cfg) => window.PanelManager.getPanel('%s').setConfig(cfg)" % GA,
                   {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [depth(3)]})

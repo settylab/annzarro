@@ -324,27 +324,6 @@ test('other, no value, table in and out, a collected small group, a group used a
     assert.deepEqual(G.groupNames({ version: 1, partitionings: [{ source: { type: 'cell-group', key: 'cell-grouping-1' } }] }, g), ['Group A']);
 });
 
-test('a grouping of one categorical factor takes that column\'s colours; anything else the palette in group order', () => {
-    const palette = ['#111111', '#222222', '#333333', '#444444'];
-    const one = { partitionings: [{ levels: ['c:a', 'c:b'], colors: { 'c:a': '#aa0000', 'c:b': '#00aa00' } }], groups: [{ key: ['c:a'], n: 1 }, { key: ['c:b'], n: 1 }] };
-    assert.deepEqual(G.groupColours({ version: 1, partitionings: [obs('x')] }, one, palette), ['#aa0000', '#00aa00']);
-    const partial = { partitionings: [{ levels: ['c:a', 'c:b'], colors: { 'c:a': '#aa0000' } }], groups: one.groups };
-    assert.deepEqual(G.groupColours({ version: 1, partitionings: [obs('x')] }, partial, palette), ['#aa0000', '#222222']);
-    const two = { partitionings: [{ levels: ['c:a'], colors: { 'c:a': '#aa0000' } }, { levels: ['c:b', 'c:c'] }], groups: [{ key: ['c:a', 'c:b'], n: 1 }, { key: ['c:a', 'c:c'], n: 1 }] };
-    assert.deepEqual(G.groupColours({ version: 1, partitionings: [obs('x'), obs('y')] }, two, palette), ['#111111', '#222222']);
-    const binned = { partitionings: [{ levels: ['bin:0', 'bin:1'], colors: { 'bin:0': '#ff0000' } }], groups: [{ key: ['bin:0'], n: 1 }, { key: ['bin:1'], n: 1 }] };
-    assert.deepEqual(G.groupColours({ version: 1, partitionings: [obs('x', { binning: { method: 'equal_count' } })] }, binned, palette), ['#111111', '#222222']);
-});
-
-test('above 64 groups the colours repeat by the 64 colour groups, as for any large category list', () => {
-    const palette = Array.from({ length: 64 }, (_, i) => `#${String(i).padStart(6, '0')}`);
-    const groups = Array.from({ length: 130 }, (_, i) => ({ key: [`c:g${i}`], n: 1 }));
-    const r = { partitionings: [{ levels: groups.map((g) => g.key[0]) }, ], groups };
-    const colours = G.groupColours({ version: 1, partitionings: [obs('x'), obs('y')] }, { ...r, partitionings: [r.partitionings[0], { levels: [] }] }, palette);
-    assert.equal(colours.length, 130);
-    assert.equal(colours[64], colours[0]);
-    assert.equal(colours[129], colours[1]);
-});
 
 // --- the request ----------------------------------------------------------------------------------------------------
 

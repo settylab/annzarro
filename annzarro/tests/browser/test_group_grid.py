@@ -5,13 +5,10 @@ under the small-group threshold), condition, layers X (signed) and logged.
 
 1.  The grid is a `role="grid"` with `aria-rowcount`; per group: colour, name, cells, share and the small mark.
 2.  List and Cross-table: the cross-table of exactly two factors, counts, "N of M combinations hold cells".
-3.  The focused gene's columns: from the offered statistics on the first offered layer; "No gene focused"; values equal
-    the brute-force means; a statistic the layer cannot give is left out.
-4.  The gate: slow estimate or panel off screen gives a "Show GENE005" button, and a focus change then sends no request.
-5.  2,000 groups: a constant number of rows in the DOM, however far it is scrolled, and the keys of a grid.
-6.  Export: the CSV has the grid's columns, after the key.
-7.  "in no group" shows the reasons as the grid's rows.
-8.  Screenshots, light and dark, when ANNZARRO_G9C_SHOTS names a folder.
+3.  2,000 groups: a constant number of rows in the DOM, however far it is scrolled, and the keys of a grid.
+4.  Export: the CSV has the grid's columns, after the key.
+5.  "in no group" shows the reasons as the grid's rows.
+6.  Screenshots, light and dark, when ANNZARRO_G9C_SHOTS names a folder.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -20,7 +17,6 @@ import os
 import pathlib
 from decimal import ROUND_HALF_UP, Decimal
 
-import numpy as np
 import pytest
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
@@ -29,7 +25,6 @@ else:
     playwright = pytest.importorskip("playwright.sync_api")
 
 from annzarro.tests.browser import test_cell_grouping_panel as base  # noqa: E402
-from annzarro.tests.browser import waits  # noqa: E402
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 from annzarro.tests.core import grouping_store as gstore  # noqa: E402
 
@@ -40,25 +35,12 @@ CELL_TYPE, CONDITION = base.CELL_TYPE, base.CONDITION
 SHOTS = os.environ.get("ANNZARRO_G9C_SHOTS")
 GRID = f"{A} .cgg-grid"
 ROWS = f"{GRID} .cgg-row"
-GENE = "GENE005"
-GENE_INDEX = 5
 
 
 def _open(page, served, partitionings, **extra):
     base._open(page, served, {GA: base._grouping(partitionings=partitionings, **extra)})
     base._ready(page)
     page.wait_for_selector(GRID)
-    _no_gene(page)
-
-
-def _focus_gene(page, name):
-    page.evaluate("async (g) => { const { DataManager } = await import('/static/js/data-manager.js'); DataManager.setFocusedGene(g); }", name)
-
-
-def _no_gene(page):
-    """The server's default focused gene is on at load: switch it off, and forget the requests made for it."""
-    _focus_gene(page, None)
-    until(page, "() => import('/static/js/data-manager.js').then(m => m.DataManager.getFocusedGene() === null)")
     page.calls.clear()
 
 
@@ -87,11 +69,6 @@ def _share(n):
 def _expected_groups():
     sizes = DATA.obs.groupby(["cell_type", "condition"], observed=True).size()
     return {f"{ct} | {cond}": int(n) for (ct, cond), n in sizes.items()}
-
-
-def _feature_computes(page):
-    """The requests that compute a gene's statistics (an estimate asks the same body, and computes nothing)."""
-    return [c for c in page.calls if c.get("features") and not c.get("estimate_only")]
 
 
 # ------------------------------------------------------------------ 1. the grid
@@ -151,189 +128,6 @@ def test_the_cross_table_is_offered_for_exactly_two_factors(page, served):
     assert page.locator(f"{A} .cgg__view [data-view='cross']").is_disabled()
     page.evaluate("() => window.PanelManager.getPanel('%s').addFactor({source: {type: 'obs', key: 'condition'}})" % GA)
     until(page, "(s) => !document.querySelector(s + ' .cgg__view [data-view=cross]').disabled", A)
-
-
-# ------------------------------------------------------------------ 3. the focused gene
-
-def _column_values(page, header_text):
-    return page.evaluate("""([s, h]) => { const g = document.querySelector(s);
-        const heads = [...g.querySelectorAll('[role=columnheader]')].map(e => e.textContent.trim());
-        const i = heads.indexOf(h); if (i < 0) return null;
-        return [...g.querySelectorAll('.cgg-row')].map(r => [r.querySelector('.cgg-name').textContent.replace(/ small$/, '').trim(),
-            r.querySelectorAll('[role=gridcell]')[i].textContent.trim()]); }""", [f"{A} .cgg-grid", header_text])
-
-
-def _close(text, x):
-    """The text is the value to the decimals the column shows."""
-    decimals = len(text.split(".")[1]) if "." in text else 0
-    return abs(float(text.replace(",", "")) - x) <= 0.5 * 10 ** -decimals + 1e-9
-
-
-def test_with_no_gene_focused_the_columns_say_so(page, served):
-    _open(page, served, [CELL_TYPE, CONDITION])
-    assert "No gene focused" in page.inner_text(f"{A} .cgg-grid .cgg-head")
-    waits.expect_stays(lambda: not page.calls, "with no gene focused nothing may be asked of the server", page=page, seconds=1.0)
-
-
-def test_the_focused_gene_columns_are_its_offered_statistics_on_the_first_layer(page, served):
-    _open(page, served, [CELL_TYPE, CONDITION], layers=["logged", "X"])
-    _focus_gene(page, GENE)
-    until(page, "(s) => document.querySelector(s + ' .cgg-grid [role=columnheader]:nth-child(5)') !== null", A)
-    until(page, "(s) => ![...document.querySelectorAll(s + ' .cgg-row .cgg-val')].some(e => e.textContent.trim() === '…')", A)
-    mean = dict(_column_values(page, f"{GENE} mean"))
-    pct = dict(_column_values(page, f"{GENE} % expressing"))
-    column = DATA.logged[:, GENE_INDEX]
-    obs = DATA.obs
-    for (ct, cond), idx in obs.groupby(["cell_type", "condition"], observed=True).indices.items():
-        name = f"{ct} | {cond}"
-        assert _close(mean[name], float(column[idx].mean())), name
-        assert _close(pct[name], 100 * float((column[idx] > 0).mean())), name
-        assert "." in pct[name] and len(pct[name].split(".")[1]) == 1, "% expressing has one decimal in every row"
-    sent = _feature_computes(page)
-    assert sent and sent[-1]["features"][0]["name"] == GENE and sent[-1]["features"][0]["layer"] == "logged"
-
-
-def _wait_gene_columns(page, gene):
-    until(page, "([s, h]) => [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].some(e => e.textContent.trim() === h)", [A, f"{gene} mean"])
-    until(page, "(s) => ![...document.querySelectorAll(s + ' .cgg-row .cgg-val')].some(e => e.textContent.trim() === '…')", A)
-
-
-def _check_means(page, gene, index):
-    mean = dict(_column_values(page, f"{gene} mean"))
-    column = DATA.logged[:, index]
-    for (ct, cond), idx in DATA.obs.groupby(["cell_type", "condition"], observed=True).indices.items():
-        assert _close(mean[f"{ct} | {cond}"], float(column[idx].mean())), (gene, ct, cond)
-
-
-def test_a_focus_change_gives_the_new_genes_values_and_no_focus_takes_the_columns_away(page, served):
-    _open(page, served, [CELL_TYPE, CONDITION], layers=["logged"])
-    _focus_gene(page, GENE)
-    _wait_gene_columns(page, GENE)
-    _check_means(page, GENE, GENE_INDEX)
-    _focus_gene(page, "GENE006")
-    _wait_gene_columns(page, "GENE006")
-    _check_means(page, "GENE006", 6)
-    assert f"{GENE} mean" not in _grid(page)["headers"]
-    _focus_gene(page, None)
-    until(page, "(s) => !document.querySelector(s + ' .cgg-val') && document.querySelector(s + ' .cgg-head').textContent.includes('No gene focused')", A)
-    assert _grid(page)["headers"] == ["Name", "Cells", "Share"]
-
-
-def test_the_focused_gene_rides_the_first_request_and_costs_no_request_of_its_own(page, served):
-    base._open(page, served, {GA: base._grouping(partitionings=[CELL_TYPE, CONDITION])})
-    base._ready(page)
-    until(page, "(s) => [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].length > 3", A)
-    until(page, "(s) => ![...document.querySelectorAll(s + ' .cgg-row .cgg-val')].some(e => e.textContent.trim() === '…')", A)
-    computes = [c for c in page.calls if not c.get("estimate_only")]
-    assert len(computes) == 1, [c.get("features") for c in computes]
-    assert [f["name"] for f in computes[0]["features"]] == ["GENE000"], "the server's default focused gene"
-    # an edit costs one request too: the gene rides it
-    page.calls.clear()
-    page.evaluate("() => window.PanelManager.getPanel('%s').addFactor({source: {type: 'obs', key: 'sample'}})" % GA)
-    base._ready(page, text=f"{base._groups_of('cell_type', 'condition', 'sample')} groups · {N:,} of {N:,} cells in a group")
-    waits.expect_stays(lambda: len([c for c in page.calls if not c.get("estimate_only")]) == 1,
-                       "an edit asks once, with the gene in it, and nothing follows", page=page, seconds=1.0)
-    assert [f["name"] for f in [c for c in page.calls if not c.get("estimate_only")][0]["features"]] == ["GENE000"]
-
-
-def test_a_grouping_that_waits_on_another_panel_gets_the_gene_columns_once_its_groups_are_there(page, served):
-    configs = {GA: base._grouping(partitionings=[CELL_TYPE]),
-               base.GB: base._grouping(base.GB, "Grouping 2", partitionings=[{"source": {"type": "cell-group", "key": GA}}])}
-    base._open(page, served, configs, open_ids=(base.GB,), sel=base.B)
-    base._ready(page, sel=base.B, text=f"6 groups · {N:,} of {N:,} cells in a group")
-    until(page, "(s) => [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].some(e => e.textContent.trim() === 'GENE000 mean')", base.B)
-    until(page, "(s) => ![...document.querySelectorAll(s + ' .cgg-row .cgg-val')].some(e => e.textContent.trim() === '…')", base.B)
-    waits.expect_stays(lambda: len(_feature_computes(page)) <= 2, "the gene is asked for once the groups are there, not on every paint", page=page, seconds=1.0)
-
-
-def test_a_statistic_the_layer_cannot_give_is_left_out(page, served):
-    _open(page, served, [CELL_TYPE, CONDITION])          # X is signed: no % expressing
-    _focus_gene(page, GENE)
-    until(page, "(s) => [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].some(e => e.textContent.trim() === '%s mean')" % GENE, A)
-    heads = _grid(page)["headers"]
-    assert f"{GENE} mean" in heads and f"{GENE} % expressing" not in heads
-
-
-# ------------------------------------------------------------------ 4. the gate
-
-def _slow_estimates(page, seconds=40):
-    def handler(route):
-        body = json.loads(route.request.post_data or "{}")
-        if not body.get("estimate_only"):
-            return route.continue_()
-        reply = route.fetch().json()
-        reply["estimate"] = {**reply.get("estimate", {}), "seconds": seconds, "tier": "auto", "live_max_s": 5}
-        route.fulfill(status=200, body=json.dumps(reply), headers={"Content-Type": "application/json"})
-    page.route("**/api/v1/data/cell_groups*", handler)
-
-
-def test_a_slow_estimate_gives_a_button_and_a_focus_change_then_sends_no_request(page, served):
-    _open(page, served, [CELL_TYPE, CONDITION], layers=["logged"])
-    _slow_estimates(page)
-    _focus_gene(page, GENE)
-    until(page, "(s) => !!document.querySelector(s + ' .cgg-show')", A)
-    assert page.inner_text(f"{A} .cgg-show") == f"Show {GENE}"
-    assert not _feature_computes(page), "the estimate says slow, and nothing is computed"
-    before = len(page.calls)
-    _focus_gene(page, "GENE006")
-    until(page, "(s) => document.querySelector(s + ' .cgg-show').textContent === 'Show GENE006'", A)
-    waits.expect_stays(lambda: len(page.calls) == before, "a focus change must send no request while the header is a button", page=page, seconds=1.0)
-    page.click(f"{A} .cgg-show")
-    until(page, "(s) => !document.querySelector(s + ' .cgg-show') && [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].some(e => e.textContent.trim() === 'GENE006 mean')", A)
-    mean = dict(_column_values(page, "GENE006 mean"))
-    until(page, "(s) => ![...document.querySelectorAll(s + ' .cgg-row .cgg-val')].some(e => e.textContent.trim() === '…')", A)
-    mean = dict(_column_values(page, "GENE006 mean"))
-    assert all(v != "—" for v in mean.values())
-
-
-def test_a_gene_that_would_leave_the_live_tier_is_dropped_and_never_holds_the_grouping(page, served):
-    def handler(route):
-        body = json.loads(route.request.post_data or "{}")
-        if not body.get("estimate_only") or not body.get("features"):
-            return route.continue_()
-        reply = route.fetch().json()
-        reply["estimate"] = {**reply.get("estimate", {}), "seconds": 40, "tier": "auto", "live_max_s": 5}
-        route.fulfill(status=200, body=json.dumps(reply), headers={"Content-Type": "application/json"})
-    page.route("**/api/v1/data/cell_groups*", handler)
-    base._open(page, served, {GA: base._grouping(partitionings=[CELL_TYPE, CONDITION])})
-    base._ready(page)
-    until(page, "(s) => !!document.querySelector(s + ' .cgg-show')", A)
-    assert page.inner_text(f"{A} .cgg-show") == "Show GENE000"
-    assert not _feature_computes(page)
-    assert base._status(page)["state"] == "ready", "the gene never changes the grouping's own state"
-    assert [c for c in page.calls if not c.get("estimate_only") and not c.get("features")], "the groups were computed without it"
-
-
-def test_a_focus_change_on_a_code_cache_hit_reads_only_the_gene(page, served):
-    replies = []
-
-    def handler(route):
-        if json.loads(route.request.post_data or "{}").get("estimate_only"):
-            return route.continue_()
-        response = route.fetch()
-        replies.append(response.body().split(b"\n", 1)[0].decode())
-        route.fulfill(response=response)
-    page.route("**/api/v1/data/cell_groups*", handler)
-    _open(page, served, [CELL_TYPE, CONDITION], layers=["logged"])
-    _focus_gene(page, GENE)
-    _wait_gene_columns(page, GENE)
-    n = len(replies)
-    page.calls.clear()
-    _focus_gene(page, "GENE006")
-    _wait_gene_columns(page, "GENE006")
-    assert len(replies) == n + 1, "one request for the new gene"
-    assert json.loads(replies[-1]).get("codes") == "hit", replies[-1]
-
-
-def test_a_panel_off_screen_asks_for_nothing_when_the_focus_changes(page, served):
-    _open(page, served, [CELL_TYPE, CONDITION])
-    page.evaluate("(s) => { document.querySelector(s).style.visibility = 'hidden'; document.querySelector(s).style.display = 'none'; }", A)
-    until(page, "(s) => window.PanelManager.getPanel('%s')._debugState().visible === false" % GA, A)
-    before = len(page.calls)
-    _focus_gene(page, GENE)
-    waits.expect_stays(lambda: len(page.calls) == before, "a panel off screen must send no request for the focused gene", page=page, seconds=1.0)
-    page.evaluate("(s) => { document.querySelector(s).style.display = ''; document.querySelector(s).style.visibility = ''; }", A)
-    until(page, "(s) => [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].some(e => e.textContent.trim() === '%s mean')" % GENE, A)
 
 
 # ------------------------------------------------------------------ 5. 2,000 groups
@@ -407,11 +201,9 @@ def test_the_keys_of_a_grid_move_between_rows(page, served):
 # ------------------------------------------------------------------ 6. export
 
 def test_the_csv_has_the_grids_columns_after_the_key(page, served):
-    _open(page, served, [CELL_TYPE, CONDITION], layers=["logged"])
-    _focus_gene(page, GENE)
-    until(page, "(s) => [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].some(e => e.textContent.trim() === '%s mean')" % GENE, A)
-    until(page, "(s) => ![...document.querySelectorAll(s + ' .cgg-row .cgg-val')].some(e => e.textContent.trim() === '…')", A)
+    _open(page, served, [CELL_TYPE, CONDITION])
     headers = _grid(page)["headers"]
+    assert headers == ["Name", "Cells", "Share"], "no column for a focused gene"
     with page.expect_download() as info:
         page.click(f"{A} .cgg__export")
     path = info.value.path()
@@ -446,10 +238,7 @@ def test_screenshots(page, served, theme):
     out = pathlib.Path(SHOTS)
     out.mkdir(parents=True, exist_ok=True)
     page.emulate_media(color_scheme=theme)
-    _open(page, served, [CELL_TYPE, CONDITION], layers=["logged"])
-    _focus_gene(page, GENE)
-    until(page, "(s) => [...document.querySelectorAll(s + ' .cgg-grid [role=columnheader]')].some(e => e.textContent.trim() === '%s mean')" % GENE, A)
-    until(page, "(s) => ![...document.querySelectorAll(s + ' .cgg-row .cgg-val')].some(e => e.textContent.trim() === '…')", A)
+    _open(page, served, [CELL_TYPE, CONDITION])
     page.locator(f"{A} .cgrp-groups").screenshot(path=str(out / f"group-grid-list-{theme}.png"))
     page.locator(A).screenshot(path=str(out / f"group-grid-panel-{theme}.png"))
     page.click(f"{A} .cgg__view [data-view='cross']")

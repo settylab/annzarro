@@ -39,10 +39,15 @@ the **×** closes them, and **Escape** puts the focus back on the button that op
 
 **Colour.** **Color ▾** shows when a colour scale or a palette applies: a 2D histogram, a 2D density without a Color by,
 a heatmap's number, an UpSet coloured by a share or a statistic, and any plot with a Color by. It holds the **Map**
-(Viridis by default), **Reverse**, **Min**, **Max** and **Center** of the scale (empty means automatic; Center has no
-effect while both Min and Max are set), and the **Level palette** of a Color by's levels. **Reset** returns them all to
-the defaults. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
+(Viridis by default), **Reverse**, **Min**, **Max** and **Center** of the scale (Center has no effect while both Min and Max
+are set), and the **Level palette** of a Color by's levels. **Reset** returns them all to
+the defaults. A box that is not set says "auto" with the value the plot draws, such as "auto (412)"; type a number to fix it, or clear
+the box. The **↺** button beside the boxes returns **Min**, **Max** and **Center** to auto in one undo step. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
 gets the full colour of every level.
+
+**Colours.** The bars, slices and curves of a **Color by** input are in the colours of its levels: a column's stored
+colours when it has them, else the app's group colours; for a {doc}`cell-grouping`, the grouping's own colours of its
+groups, so a bar is the colour of the group's swatch (see Colours in {doc}`cell-grouping`).
 
 Switching mode keeps every input: those the new mode uses stay in place, and the others are kept for when you switch
 back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: in Table 1, in Table 2".

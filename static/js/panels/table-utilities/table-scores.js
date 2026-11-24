@@ -270,16 +270,6 @@ export const TableScores = {
     /** A column's name in an export's header. */
     fullLabelOf(entry) { return tableHalfOf(entry.column).fullLabel(entry.column); },
 
-    /** Whether the provider can offer a lapsed option of the column again (a notice's action), and doing it. */
-    canOffer(column) {
-        const half = tableHalfOf(column);
-        return !!half && !!half.canOffer && !!half.offer && !!half.canOffer(column);
-    },
-    offer(column) {
-        const half = tableHalfOf(column);
-        return half && half.offer ? half.offer(column) : false;
-    },
-
     /** Open the entity a column reads beside its table, when its provider can. */
     open(column, hostId) {
         const half = tableHalfOf(column);

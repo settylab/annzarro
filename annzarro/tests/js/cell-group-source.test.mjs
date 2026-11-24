@@ -26,7 +26,7 @@ const R = await import('../../../static/js/utils/source-registry.js');
 const F = await import('../../../static/js/panels/cell-grouping/factors.js');
 const A = await import('../../../static/js/utils/source-actions.js');
 const PR = await import('../../../static/js/utils/panel-references.js');
-const { generateDiscreteColors, groupColours: colourGroups } = await import('../../../static/js/panels/plot-utilities/colors.js');
+const { groupColours: colourGroups } = await import('../../../static/js/panels/plot-utilities/colors.js');
 const { ledger } = await import('../../../static/js/utils/memory-guard-ui.js');
 const { Config } = await import('../../../static/js/config.js');
 const { panelBuffers, GB } = await import('../../../static/js/utils/memory-guard.js');
@@ -247,7 +247,7 @@ test('a series: the codes as they came, MISSING by their width, the names in gro
     assert.deepEqual(Array.from(got.codes), [0, 1, 1, 255, 0, 2]);
     assert.equal(got.MISSING, 255);
     assert.deepEqual(got.categories, TYPES);
-    assert.deepEqual(got.colours, generateDiscreteColors(3), "the app's palette in group order: a plot coloured by the column matches");
+    assert.deepEqual(got.colours, colourGroups(3), "the app's group colors in group order (utils/grouping-colours.js): the grid shows the same");
     assert.equal(got.rankOf, null);
     assert.equal(got.values, undefined, 'colour and axes: a cell in no group is missing');
     assert.equal(s.label, 'Cell type', 'named by its title (CAT-8)');
@@ -291,7 +291,7 @@ test("past 64 groups: each group ranked by its place in group order, so its colo
     assert.ok(got.rankOf instanceof Map);
     assert.equal(got.rankOf.size, 150);
     for (const i of [0, 1, 63, 64, 149]) assert.equal(got.rankOf.get(names[i]), i);
-    // the plot gives rank r the colour group r mod 64: the grouping's own colour (cell-grouping.js groupColours)
+    // the plot gives rank r the colour group r mod 64: the grouping's own colour (utils/grouping-colours.js)
     const palette = colourGroups(64);
     assert.equal(palette[got.rankOf.get('g70') % 64], palette[6]);
 });
