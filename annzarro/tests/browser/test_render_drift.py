@@ -590,7 +590,7 @@ def _cg_remove(index):
         if sec.count() <= index:
             return False
         sec.nth(index).locator(".cgene-section__menu-btn").click()
-        page.locator(f"{G_TILE} .cgene-section__menu:not([hidden]) .cgene-section__menu-item[data-op='remove']").click()
+        page.locator("[data-popover='section-menu'] .cgene-section__menu-item[data-op='remove']").click()
     return act
 
 

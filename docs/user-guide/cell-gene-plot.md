@@ -29,8 +29,7 @@ alone, and a gene shown in two sections, or by colour and size on one layer, is 
 |---|---|
 | What | **Groups** · **Mode** (**Dots** or **Heatmap**) · **Genes**: the section list and **Add genes ▾** |
 | Values | **Color** · **Scale** · **Size** (dots only) · **Height** (3D only) |
-| Layout | **Swap axes** |
-| Toolbar (the last row) | **3D** · **Cluster ▾** · **Color ▾**, then at its right end **Undo** and **Plot Options**, in the same places as in the Cell Count Plot |
+| Toolbar (the last row) | **3D** · **Swap axes** · **Cluster ▾** · **Color ▾**, then at its right end **Undo** and **Plot Options**, in the same places as in the Cell Count Plot |
 
 **Color** and **Size** each read their own statistic from their own layer, in one row:
 `Color [Mean ▾] of [logged ▾]` and `Size [% expressing ▾] of [counts ▾] above [0]`. A common dot plot is exactly this:

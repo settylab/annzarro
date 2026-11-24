@@ -9,12 +9,12 @@
  *   one stays, marked "(not available)" (SHR-27). These are utils/group-statistics.js `statisticChoices` and
  *   `statisticLayerChoices` with the Cell-Gene Plot's words.
  * - THE CONTROL GRID (`createControls`): What (Groups, Mode), Values (Color, Scale, Size, each `statistic of layer
- *   above threshold`), Layout (Swap axes). The
+ *   above threshold`); Swap axes, returned as `swap`, is a button of the shared plot toolbar. The
  *   section list of UX 3.2 sits in the What group (`createSectionList`). Toggle Controls hides the grid
  *   (`data-panel-controls`).
  *
- * Cluster ▾ and Plot Options are X5's (panels/cell-gene/options.js): `createControls` leaves `layoutSlot`, the end of
- * the Layout group, for them.
+ * Cluster ▾ and Plot Options are X5's (panels/cell-gene/options.js), on the shared plot toolbar; `createControls`
+ * leaves `layoutSlot`, at the end of the grid, for a panel with no toolbar.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { normalizeGrouping } from '../../utils/cell-grouping.js';
@@ -238,8 +238,9 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
         el('div', { class: 'cgene-genes' }, el('div', { class: 'cgene-genes__head' }, el('span', { class: 'cgene-field__label', text: 'Genes' }), addGenes), sections));
     const values = el('div', { class: 'cgene-group cgene-group--values', role: 'group', aria: { label: 'Values' } },
         color.element, field('Scale', scaleSel), size.element, height.element);
-    const layout = el('div', { class: 'cgene-group cgene-group--layout', role: 'group', aria: { label: 'Layout' } }, swap, layoutSlot);
-    const element = el('div', { class: 'cgene-controls', 'data-panel-controls': '' }, what, values, layout);
+    // Swap axes is a panel action of the shared plot toolbar (panels/cell-gene.js puts it there, after 3D; operator,
+    // 2026-11-23: in a group of its own it was often pushed onto a line by itself); the slot is options.js's fallback
+    const element = el('div', { class: 'cgene-controls', 'data-panel-controls': '' }, what, values, layoutSlot);
 
     function onKey() {
         const v = axisKey.value;
@@ -286,7 +287,7 @@ export function createControls({ D, id, model, on, sections, addGenes }) {
         swap.classList.toggle('active', !!m.swap);
     }
 
-    return { element, layoutSlot, paint };
+    return { element, layoutSlot, swap, paint };
 }
 
 // ================================================================================================ the section list

@@ -736,7 +736,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             plot.__azChooser = null;
             const area = el('div', { class: 'cgene-area' }, plot, el('div', { class: 'cgene-empty' }, checklist));
             // Cluster ▾, Color ▾ and Plot Options are pop-overs (cell-gene/options.js), out of the panel's flow
-            // the shared plot toolbar (ui/plot-toolbar.js): [3D] [Cluster ▾] [Color ▾] ... [Undo] [Plot Options], as in every plot
+            // the shared plot toolbar (ui/plot-toolbar.js): [3D] [Swap axes] [Cluster ▾] [Color ▾] ... [Undo] [Plot Options], as in every plot
             _toolbar = createPlotToolbar({ className: 'cgene-toolbar', undo: undoBtn });
             _controls.element.append(_toolbar.element);
             root.append(_controls.element, message, hint, area);
@@ -850,6 +850,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 tag: (kind, tag) => { if (_dom) setStatusTag(_dom.plot, kind, tag); }
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
+            // [3D] [Swap axes] [Cluster ▾] [Color ▾] … [Undo] [⚙ Plot Options] (decision 39): Swap axes after 3D, both views
+            if (_toolbar) _toolbar.add({ actions: [_controls.swap] });
             // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
             _parts.push(PARTS.clicks.mount(_dom.area, {
                 D, plot: _dom.plot, drawn: () => (_shown ? _shown.model : null),
