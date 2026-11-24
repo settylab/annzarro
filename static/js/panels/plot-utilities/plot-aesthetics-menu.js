@@ -1,8 +1,7 @@
 import { registerCameraExport, setStatusTag, nudgeStatusTag, exportWithCoverage } from '../../utils/panel-surface.js';
 import { axisTitle, refreshScaleBar, flipRelayout } from './plot-make-helper.js';
 import { hasLegendEntries } from '../../utils/legend-entries.js';
-import { applyLegendOptions, legendOrientation, legendTitleText, legendTitleSize, legendTitleFontSize, defaultTitleGap, DOT_SIZE_MIN, DOT_SIZE_MAX, DOT_SIZE_AUTO, COLUMNS_MAX,
-    TITLE_SIZE_MIN, TITLE_SIZE_MAX, TITLE_GAP_MAX, COLUMN_GAP_MAX, COLUMN_GAP_DEFAULT, legendTitleKeys } from '../../utils/legend-options.js';
+import { applyLegendOptions, legendOrientation, legendTitleText, legendTitleFontSize, legendTitleKeys } from '../../utils/legend-options.js';
 import { restyleMarkers, restyleFocus } from './plot-update.js';
 import { FOCUS_DEFAULTS } from '../../utils/focus-style.js';
 import {
@@ -11,7 +10,7 @@ import {
 import { THEME_EVENT } from '../../utils/theme.js';
 import {
   normalizePlotOptions, tickKeys, axisPaths, colorbarPosition, colorbarExtras, linkedMargins,
-  COLORBAR_POSITIONS, applyPreset, pickStyle, adoptStyle, exportOptions, STYLE_KEYS, defaultLook
+  applyPreset, pickStyle, adoptStyle, exportOptions, STYLE_KEYS, defaultLook
 } from './plot-options.js';
 import { exportImage, fullImage, canSnapshot, snapshotSize } from '../../utils/plot-export.js';
 import {
@@ -80,7 +79,13 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
     if (s.focusedNoFill !== false && !((s.focusedEdgeWidth ?? FOCUS_DEFAULTS.edgeWidth) >= 1)) s.focusedEdgeWidth = 1;
     return restyleFocus(plotContainer, s).catch(err => console.warn('Focused marker style not updated:', err && err.message));
   };
+  // the legend's own options redraw it in its position's orientation; the colour bar follows the legend's place and its own keys
+  const legend = (s) => applyLegendOptions(plotContainer, s, getPositioningByLocation(s.legendPosition || 'right').legendOrientation);
+  const legendPlace = (s) => updateLegendPosition(plotContainer, s);
   Object.assign(hooks, {
+    showLegend: (s) => updateLegendVisibility(plotContainer, s), legendPosition: legendPlace,
+    showLegendTitle: legend, legendTitleSize: legend, legendTitleAlign: legend, legendTitleGap: legend, legendDotSize: legend, legendColumns: legend, legendColumnGap: legend,
+    colorbarPosition: legendPlace, colorbarLength: legendPlace, colorbarTicks: legendPlace,
     showGrid: (s) => toggleGrid(plotContainer, s), gridColor: (s) => updateGridColor(plotContainer, s),
     axisColor: (s) => updateAxisColor(plotContainer, s), zeroLineColor: (s) => updateZeroLineColor(plotContainer, s),
     showAxisTitles: axisVisibility, showAxisLabels: axisVisibility, showAxisLines: axisVisibility, showZeroLines: axisVisibility,
@@ -102,7 +107,7 @@ export function createAestheticsMenu(id, menuButton, container, plotContainer, s
   let options = null;
   /** The pop-over's body as it was drawn: the sections the panel still draws itself, and the point size's row in its slot. */
   const legacy = (key) => () => legacySection(id, settings, key);
-  const LEGACY_SECTIONS = ['presets', 'legend', 'margins', 'export', 'apply'];
+  const LEGACY_SECTIONS = ['presets', 'margins', 'export', 'apply'];
   options = mountPlotOptions({
     anchor: menuButton, kind, panelId: id, noFollow: true,
     config: () => settings,
@@ -232,106 +237,6 @@ export function createPopoverContent(id, settings) {
                 <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" id="preset-default-${id}"
                     title="${hasSessionStyle(`${plotKind}-plot`) ? 'Session default style: the look every plot on Default has' : 'Built-in style'}">Default</button>
             </div>
-        `)}
-        ${details(id, 'legend', 'Legend and colour bar', `
-            <div class="form-check form-switch mb-2">
-                <input class="form-check-input" type="checkbox" id="show-legend-${id}" 
-                    ${settings.showLegend !== false ? 'checked' : ''}>
-                <label class="form-check-label" for="show-legend-${id}">Show Legend</label>
-            </div>
-            
-            <div class="mb-2">
-                <label class="form-label mb-1">Legend Position</label>
-                <select class="form-select form-select-sm" id="legend-position-${id}">
-                    <option value="right" ${(settings.legendPosition === 'right') ? 'selected' : ''}>Right</option>
-                    <option value="left" ${(settings.legendPosition === 'left') ? 'selected' : ''}>Left</option>
-                    <option value="top" ${(settings.legendPosition === 'top') ? 'selected' : ''}>Top</option>
-                    <option value="bottom" ${(settings.legendPosition === 'bottom') ? 'selected' : ''}>Bottom</option>
-                </select>
-            </div>
-            <!-- Legend of a categorical colouring: title, dots, columns -->
-            <div class="mb-2">
-                <div class="form-check form-switch mb-1">
-                    <input class="form-check-input" type="checkbox" id="show-legend-title-${id}"
-                        ${settings.showLegendTitle !== false ? 'checked' : ''}>
-                    <label class="form-check-label" for="show-legend-title-${id}">Legend title</label>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Title size</span>
-                    <input type="number" class="form-control" id="legend-title-size-${id}" value="${settings.legendTitleSize ?? ''}"
-                        placeholder="${legendTitleSize({ fontSize: settings.fontSize })}" data-step-from="${legendTitleSize({ fontSize: settings.fontSize })}"
-                        min="${TITLE_SIZE_MIN}" max="${TITLE_SIZE_MAX}" step="1"
-                        title="Size of the legend title; empty: 2 px above the text size">
-                    <span class="input-group-text">px</span>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-size-${id}" title="Back to the default size"
-                        ${settings.legendTitleSize == null ? 'disabled' : ''}>Reset</button>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Title align</span>
-                    <select class="form-select" id="legend-title-align-${id}"
-                        title="Where the legend title sits: Auto is centred over a legend above or below the plot and at the markers beside it; Markers: its left edge at the markers'; Labels: at the labels'. Centre and Right are across all the columns.">
-                        ${[['', 'Auto'], ['markers', 'Markers'], ['labels', 'Labels'], ['centre', 'Centre'], ['right', 'Right']]
-                            .map(([v, label]) => `<option value="${v}" ${(settings.legendTitleAlign || '') === v ? 'selected' : ''}>${label}</option>`).join('')}
-                    </select>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-align-${id}" title="Back to Auto"
-                        ${settings.legendTitleAlign == null ? 'disabled' : ''}>Reset</button>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Title gap</span>
-                    <input type="number" class="form-control" id="legend-title-gap-${id}" value="${settings.legendTitleGap ?? ''}"
-                        placeholder="${defaultTitleGap({ fontSize: settings.fontSize })}" data-step-from="${defaultTitleGap({ fontSize: settings.fontSize })}"
-                        min="0" max="${TITLE_GAP_MAX}" step="1"
-                        title="Space in px between the legend title and the first entry; empty: one blank line">
-                    <span class="input-group-text">px</span>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-title-gap-${id}" title="Back to the default gap"
-                        ${settings.legendTitleGap == null ? 'disabled' : ''}>Reset</button>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Dot size</span>
-                    <input type="number" class="form-control" id="legend-dot-size-${id}" value="${settings.legendDotSize ?? ''}"
-                        placeholder="${DOT_SIZE_AUTO}" data-step-from="${DOT_SIZE_AUTO}" min="${DOT_SIZE_MIN}" max="${DOT_SIZE_MAX}" step="1"
-                        title="Size of the dots in the legend of a categorical colouring, independent of the points' size; empty: ${DOT_SIZE_AUTO} px">
-                    <span class="input-group-text">px</span>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-dot-size-${id}" title="Back to the default dots"
-                        ${settings.legendDotSize == null ? 'disabled' : ''}>Reset</button>
-                </div>
-                <div class="input-group input-group-sm mb-1">
-                    <span class="input-group-text">Columns</span>
-                    <input type="number" class="form-control" id="legend-columns-${id}" value="${settings.legendColumns ?? ''}"
-                        placeholder="1" data-step-from="1" min="1" max="${COLUMNS_MAX}" step="1"
-                        title="Lay the legend out in this many columns, side by side, the entries in order down each; 1 or empty: one column. Labels too long for the room are cut short.">
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-columns-${id}" title="Back to one column"
-                        ${settings.legendColumns == null ? 'disabled' : ''}>Reset</button>
-                </div>
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text">Column gap</span>
-                    <input type="number" class="form-control" id="legend-column-gap-${id}" value="${settings.legendColumnGap ?? ''}"
-                        placeholder="${COLUMN_GAP_DEFAULT}" data-step-from="${COLUMN_GAP_DEFAULT}" min="0" max="${COLUMN_GAP_MAX}" step="1"
-                        title="Space in px between the columns of the legend; empty: ${COLUMN_GAP_DEFAULT} px">
-                    <span class="input-group-text">px</span>
-                    <button class="btn btn-outline-secondary" type="button" id="reset-legend-column-gap-${id}" title="Back to the default gap"
-                        ${settings.legendColumnGap == null ? 'disabled' : ''}>Reset</button>
-                </div>
-            </div>
-            <!-- Colour bar -->
-            <div class="mb-2">
-                <label class="form-label mb-1">Colour bar</label>
-                <select class="form-select form-select-sm mb-1" id="colorbar-position-${id}" title="Position">
-                    ${COLORBAR_POSITIONS.map(c => `<option value="${c}" ${settings.colorbarPosition === c ? 'selected' : ''}>${c === 'legend' ? 'with the legend' : c}</option>`).join('')}
-                </select>
-                <div class="d-flex align-items-center gap-2 mb-1">
-                    <span class="small text-nowrap">Length</span>
-                    <input type="range" class="form-range flex-grow-1" id="colorbar-length-${id}" min="10" max="100" step="5"
-                        value="${Math.round(settings.colorbarLength * 100)}" title="Length of the colour bar, % of the plot">
-                    <span class="small text-nowrap" id="colorbar-length-value-${id}">${Math.round(settings.colorbarLength * 100)}%</span>
-                </div>
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text">Ticks</span>
-                    <input type="number" class="form-control" id="colorbar-ticks-${id}" value="${settings.colorbarTicks ?? ''}"
-                        placeholder="auto" data-step-from="5" min="2" max="30" step="1">
-                </div>
-            </div>
-
         `)}
         ${details(id, 'margins', 'Margins', `
             <div class="d-flex align-items-center gap-2 mb-1">
@@ -655,62 +560,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             return;
         }
         
-        // Legend visibility
-        if (target.id === `show-legend-${id}`) {
-            settings.showLegend = target.checked;
-            updateLegendVisibility(plotContainer, settings);
-            notifySettingsChanged(id, 'showLegend', settings.showLegend);
-            return;
-        }
-        
-        // Legend position - only update when selection changes, not on dropdown open
-        if (target.id === `legend-position-${id}` && e.type === 'change') {
-            settings.legendPosition = target.value;
-            updateLegendPosition(plotContainer, settings);
-            notifySettingsChanged(id, 'legendPosition', settings.legendPosition);
-            return;
-        }
-        
-        // Legend of a categorical colouring: title, dot size, columns
-        if (target.id === `show-legend-title-${id}`) {
-            settings.showLegendTitle = target.checked;
-            applyLegendOptions(plotContainer, settings);
-            notifySettingsChanged(id, 'showLegendTitle', settings.showLegendTitle);
-            return;
-        }
-        if ((target.id === `legend-title-align-${id}` && e.type === 'change') || (target.id === `reset-legend-title-align-${id}` && e.type === 'click')) {
-            const reset = target.id.startsWith('reset-');
-            settings.legendTitleAlign = reset ? null : (target.value || null);
-            if (reset) document.getElementById(`legend-title-align-${id}`).value = '';
-            applyLegendOptions(plotContainer, settings,
-                getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
-            notifySettingsChanged(id, 'legendTitleAlign', settings.legendTitleAlign);
-            syncOptionResets(id, settings);
-            return;
-        }
-        const legendBox = LEGEND_BOXES.find(b => target.id === `${b.box}-${id}`);
-        if (legendBox) {
-            const n = parseInt(target.value, 10);
-            if (target.value !== '' && !(n >= legendBox.min)) return;
-            // empty is unset, and so is one column
-            settings[legendBox.key] = target.value === '' || (legendBox.key === 'legendColumns' && n === 1) ? null : Math.min(n, legendBox.max);
-            applyLegendOptions(plotContainer, settings,
-                getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
-            notifySettingsChanged(id, legendBox.key, settings[legendBox.key]);
-            syncOptionResets(id, settings);
-            return;
-        }
-        const legendReset = LEGEND_BOXES.find(b => target.id === `reset-${b.box}-${id}`);
-        if (legendReset) {
-            settings[legendReset.key] = null;
-            document.getElementById(`${legendReset.box}-${id}`).value = '';
-            applyLegendOptions(plotContainer, settings,
-                getPositioningByLocation(settings.legendPosition || 'right').legendOrientation);
-            notifySettingsChanged(id, legendReset.key, null);
-            syncOptionResets(id, settings);
-            return;
-        }
-
         // Margins: one value for all four sides, or each side
         if (target.id === `margin-all-${id}` || target.id === `margin-all-input-${id}`) {
             const v = parseFloat(target.value);
@@ -725,27 +574,6 @@ export function setupAestheticsMenuListeners(container, settings, plotContainer,
             if (!target.checked) settings.margins = linkedMargins(settings, settings.margins.t);   // one value again: the top one
             syncMarginInputs(id, settings);
             updateMargins(plotContainer, settings);
-            return;
-        }
-
-        // Colour bar
-        if (target.id === `colorbar-position-${id}`) {
-            settings.colorbarPosition = target.value;
-            updateLegendPosition(plotContainer, settings);
-            return;
-        }
-        if (target.id === `colorbar-length-${id}`) {
-            settings.colorbarLength = Math.max(0.1, Math.min(1, parseInt(target.value, 10) / 100));
-            const out = document.getElementById(`colorbar-length-value-${id}`);
-            if (out) out.textContent = `${Math.round(settings.colorbarLength * 100)}%`;
-            updateLegendPosition(plotContainer, settings);
-            return;
-        }
-        if (target.id === `colorbar-ticks-${id}`) {
-            const n = parseInt(target.value, 10);
-            if (target.value !== '' && !(n >= 2)) return;
-            settings.colorbarTicks = target.value === '' ? null : Math.min(n, 30);
-            updateLegendPosition(plotContainer, settings);
             return;
         }
 
@@ -1386,26 +1214,6 @@ export function updateColorInputs(container, id, settings) {
     if (focusedColorInput) focusedColorInput.value = plotColour(settings, 'focusedColor');
     if (focusedEdgeColorInput) focusedEdgeColorInput.value = plotColour(settings, 'focusedEdgeColor');
     syncColourControls(id, settings);
-}
-
-/** The number boxes of the legend: the box's id, the setting, the least and the most it takes. */
-const LEGEND_BOXES = [
-    { box: 'legend-dot-size', key: 'legendDotSize', min: DOT_SIZE_MIN, max: DOT_SIZE_MAX },
-    { box: 'legend-columns', key: 'legendColumns', min: 1, max: COLUMNS_MAX },
-    { box: 'legend-title-size', key: 'legendTitleSize', min: TITLE_SIZE_MIN, max: TITLE_SIZE_MAX },
-    { box: 'legend-title-gap', key: 'legendTitleGap', min: 0, max: TITLE_GAP_MAX },
-    { box: 'legend-column-gap', key: 'legendColumnGap', min: 0, max: COLUMN_GAP_MAX }
-];
-
-/** The Reset buttons of the number boxes (text size, legend dots and columns): disabled at the default, where there is nothing to reset. */
-function syncOptionResets(id, settings) {
-    const atDefault = { 'legend-dot-size': settings.legendDotSize == null,
-                        'legend-columns': settings.legendColumns == null, 'legend-title-size': settings.legendTitleSize == null,
-                        'legend-title-gap': settings.legendTitleGap == null, 'legend-column-gap': settings.legendColumnGap == null, 'legend-title-align': settings.legendTitleAlign == null };
-    for (const [name, yes] of Object.entries(atDefault)) {
-        const reset = document.getElementById(`reset-${name}-${id}`);
-        if (reset) reset.disabled = yes;
-    }
 }
 
 /** The ids of each colour's Reset button, by settings key. */

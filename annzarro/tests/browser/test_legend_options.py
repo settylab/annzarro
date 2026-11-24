@@ -131,11 +131,10 @@ def _exercise(page, root, extra=None, large=False):
     # the options travel with the panel
     s = _settings(page, A)
     assert (s["legendDotSize"], s["legendColumns"], s["showLegendTitle"]) == (16, 3, False), s
-    # Reset puts both boxes back to today's legend; at the default there is nothing to reset
-    page.click(f"#reset-legend-dot-size-{A}")
-    page.click(f"#reset-legend-columns-{A}")
+    # the Legend group's one Reset puts the boxes back to today's legend; at the defaults there is nothing to reset
+    page.click(f"#reset-section-legend-{A}")
     assert page.input_value(f"#legend-dot-size-{A}") == "" and page.input_value(f"#legend-columns-{A}") == ""
-    assert page.is_disabled(f"#reset-legend-dot-size-{A}") and page.is_disabled(f"#reset-legend-columns-{A}")
+    assert page.is_disabled(f"#reset-section-legend-{A}")
     s = _settings(page, A)
     assert (s["legendDotSize"], s["legendColumns"]) == (None, None), s
     page.check(f"#show-legend-title-{A}")
