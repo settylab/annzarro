@@ -26,6 +26,7 @@ import {
 import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
 import { stableStringify } from '../../utils/url-history.js';
 import { cellGroupType } from '../../utils/cell-group-source.js';
+import { limit } from '../../utils/limits.js';
 import { DEFAULT_METHOD } from '../../utils/signature-options.js';
 
 const CG = VOCABULARY.cellGene;
@@ -36,8 +37,6 @@ export const GROUP_AXIS = cellGroupType();
 /** The value of "Same as Color" in Height's statistic select (UX 6b): stored as no `height`. */
 export const SAME_AS_COLOR = '__same_as_color__';
 
-/** The most genes a section draws (CXG-17); utils/cell-gene-model.js `matrixLimits` holds the same number. */
-const GENES_PER_SECTION_MAX = 2000;
 
 const MODES = Object.freeze(['dots', 'heatmap']);
 const ROWS = Object.freeze(['genes', 'set']);
@@ -356,8 +355,9 @@ export function sectionLine({ total, missing }) {
 
 /** Over 2,000 genes (CXG-17): what the section says, or null. */
 export function tooManyGenesText(title, total) {
-    return total > GENES_PER_SECTION_MAX
-        ? `${title} has ${fmt(total)} genes; a section shows up to ${fmt(GENES_PER_SECTION_MAX)}. Filter the table.` : null;
+    const most = limit('genes_per_section');    // the most genes a section draws (CXG-17), as matrixLimits reads it
+    return total > most
+        ? `${title} has ${fmt(total)} genes; a section shows up to ${fmt(most)}. Filter the table.` : null;
 }
 
 // ================================================================================================ one row: Color and Size

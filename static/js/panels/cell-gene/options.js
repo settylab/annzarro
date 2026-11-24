@@ -34,7 +34,7 @@ import { scaleOptionLabel, plotlyColorscale, DIVERGING_SCALES } from '../../util
 import { defaultLabelMaps, sourceName } from '../../utils/cell-grouping.js';
 import { RESERVED } from '../../utils/level-id.js';
 import { GAP_COLOUR } from '../../utils/plot-theme.js';
-import { MAX_ROWS } from '../../utils/hclust.js';
+import { limit } from '../../utils/limits.js';
 import { longCsv } from '../../utils/cell-gene-model.js';
 import { groupingColours, groupOverrideState } from '../../utils/grouping-colours.js';
 import { createPopover } from '../../ui/popover.js';
@@ -42,7 +42,7 @@ import { registerPanelFields } from '../plot-utilities/options-schema.js';
 import { mountPlotOptions } from '../plot-utilities/options-popover.js';
 import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import { dendrogramBlocks } from './draw-annotations.js';
-import { BARS_3D_MAX, checkBarCap } from '../../utils/bars-3d.js';
+import { bars3dMax, checkBarCap } from '../../utils/bars-3d.js';
 
 const W = VOCABULARY.cellGene;
 const WO = VOCABULARY.cellGene.options;
@@ -304,12 +304,13 @@ export function figureExtras(config, { reply, recipe, order, titleOf, colors, gr
 // ================================================================================================ 3D
 
 /**
- * The bar cap in force: BARS_3D_MAX, or a lower one the browser tests set before the app loads (`window.__azBars3dMax`,
- * as `window.__azTableLimits` sets the table's limits), so a small grid can stand for one over the cap.
+ * The bar cap in force: the server's limits.bars_3d_max, or a lower one the browser tests set before the app loads
+ * (`window.__azBars3dMax`, as `window.__azTableLimits` sets the table's limits), so a small grid can stand for one over
+ * the cap.
  */
 function barMax() {
     const set = typeof window !== 'undefined' ? window.__azBars3dMax : undefined;
-    return typeof set === 'number' && set > 0 ? set : BARS_3D_MAX;
+    return typeof set === 'number' && set > 0 ? set : bars3dMax();
 }
 
 /**
@@ -377,7 +378,7 @@ function clusterNotes(drawn) {
     for (const block of order.rowBlocks || []) {
         if (block.state !== 'too_many') continue;
         const row = model.rows[block.start];
-        out.push(WO.tooMany(row && row.section ? row.section.title : '', block.count, MAX_ROWS));
+        out.push(WO.tooMany(row && row.section ? row.section.title : '', block.count, limit('dendrogram_rows')));
     }
     if (order.rowsLeftOut) out.push(WO.leftOut(order.rowsLeftOut, 'row'));
     if (order.groupsLeftOut) out.push(WO.leftOut(order.groupsLeftOut, VOCABULARY.word.group));

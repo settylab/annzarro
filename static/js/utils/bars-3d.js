@@ -18,9 +18,17 @@
  */
 
 import { VOCABULARY } from './vocabulary.js';
+import { limit, limitDefault } from './limits.js';
 
-/** At most this many bars in 3D. Provisional: WP-13 measures the real one. */
-export const BARS_3D_MAX = 40000;
+/** At most this many bars in 3D, by default; the cap in force is limits.bars_3d_max (`bars3dMax`). Provisional: WP-13
+ *  measures the real one. */
+// export-unused-ok: the default, for the tests and for whoever words the cap without a policy
+export const BARS_3D_MAX = limitDefault('bars_3d_max');
+
+/** The bar cap in force: the server's limits.bars_3d_max (utils/limits.js). */
+export function bars3dMax() {
+    return limit('bars_3d_max');
+}
 /** Fraction of its cell a bar fills, so neighbours stay apart (UX 6b). */
 // export-unused-ok: the 3D builder API for WP-11 (Cell Count) and WP-12 (Cell-Gene)
 export const BAR_FILL = 0.85;
@@ -43,7 +51,7 @@ const TRI = [
 ];
 
 /** Is the bar count within the cap? `{ok, count, max, text}`; `text` is the refusal and `hint` picks its last sentence. */
-export function checkBarCap(count, { max = BARS_3D_MAX, hint = 'bins' } = {}) {
+export function checkBarCap(count, { max = bars3dMax(), hint = 'bins' } = {}) {
     const ok = Number.isFinite(count) && count <= max;
     return { ok, count, max, text: ok ? '' : VOCABULARY.view3d.tooMany(max, count, hint) };
 }
