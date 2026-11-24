@@ -223,8 +223,8 @@ By default the largest dot fills its cell: the spacing of the genes or of the gr
 plots and the session default carry both. When the size legend has too little room for dots that large, it draws its reference dots
 smaller and says so under its title, for example "(legend scaled 1:3)". The smallest dot is 3 px. A view saved before the dots filled their cells
 keeps its dot sizes in px: **Smallest dot** shows its smallest, and the empty **Largest dot** box says "12 px (saved)"
-until you type a share. Applying a look whose Largest dot is empty (a full cell) does not change such a view: type the
-share in its own Largest dot box. Dots are opaque unless
+until you move the slider or type a share. Applying a look whose Largest dot is empty (a full cell) does not change such a view: type the
+share in its own Largest dot. Dots are opaque unless
 you lower **Dot opacity** in Plot Options, and neither the dots nor the heatmap draw grid lines.
 
 **Ranges.** Colour, size and, in 3D, height each have **Min** and **Max** boxes in one style (colour also has **Center**).
@@ -246,7 +246,7 @@ defaults and sections:
 | Text | **Font**, **Font size**, **Text color** (**Auto** follows the app theme), **Plot title**, **Title size** |
 | Background | **Background** (**Auto** follows the app theme) |
 | Axes | **Grid lines** (off by default; on the matrix only), **Grid color**, **Grid width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**; **Gene labels**, **Group labels**; in 3D, **Side**, **Justify**, **Rotation** (with **Angle**) and **Padding** of the gene and group names |
-| Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none); **Dot opacity**, a slider and a box from 0.1 to 1 (opaque by default), for the dots and the size legend's dots; **Largest dot (% of cell)**, a box from 10 to 100 (empty: the dot fills its cell); **Smallest dot (px)**, a slider and a box from 1 to 40 |
+| Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none); **Dot opacity**, a slider and a box from 0.1 to 1 (opaque by default), for the dots and the size legend's dots; **Largest dot (% of cell)**, a slider and a box from 10 to 100 (unset, the slider stands at 100 and the empty box says what is drawn: the dot fills its cell); **Smallest dot (px)**, a slider and a box from 1 to 40 |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
 | Legend | **Space** (the legend column's share of the width; empty lets the figure decide), **Columns** and **Entries, at most** (20) of the strip legends; **Color bar**, **Size legend**, **Strip legend**; **Color bar title**, **Size legend title** |
 | Totals | **Cells per group** (a bar along the group axis); **Color strips**: **Factors** (the default), **Group** or **None** |

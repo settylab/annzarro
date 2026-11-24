@@ -469,9 +469,20 @@ export function mountPlotOptions(ctx) {
             if (field.disabled) { if (off) input.title = off; else input.removeAttribute('title'); }
             if (field.type === 'check') input.checked = v === null && shown !== undefined ? !!shown : !!v;
             else if (field.type === 'range') {
-                const shownV = v === null || v === undefined ? v : field.percent ? toPercent(v) : v;
-                if (document.activeElement !== input) input.value = String(shownV);
-                if (document.activeElement !== auto) auto.value = String(shownV);
+                // an unset range with a placeholder: the box is empty and shows it; the slider stands at stepFrom, else at
+                // the placeholder's number. Moving either sets the value (Cell-Gene's Largest dot says an old link's px)
+                const ph = v === null || v === undefined ? placeholderOf(field, c, env) : null;
+                if (ph !== null) {
+                    const at = typeof field.stepFrom === 'number' ? field.stepFrom : Number(ph);
+                    if (document.activeElement !== input) input.value = String(Number.isFinite(at) ? (field.percent ? toPercent(at) : at) : input.min);
+                    if (document.activeElement !== auto) auto.value = '';
+                    auto.placeholder = String(ph);
+                } else {
+                    const shownV = v === null || v === undefined ? v : field.percent ? toPercent(v) : v;
+                    if (document.activeElement !== input) input.value = String(shownV);
+                    if (document.activeElement !== auto) auto.value = String(shownV);
+                    auto.removeAttribute('placeholder');
+                }
                 auto.disabled = !!off;
             }
             else if (field.type === 'color') {

@@ -777,8 +777,9 @@ test('Largest dot and Smallest dot are Plot Options ▸ Dots fields, and Apply a
     const scale = S.fieldOf('cell-gene', 'dotScale');
     const smallest = S.fieldOf('cell-gene', 'dotSmallest');
     assert.ok(scale && smallest, 'both are fields of the schema');
-    // Largest dot: a number box, empty when the dot fills its cell, saying what is drawn (U2 placeholder)
-    assert.deepEqual([scale.section, scale.type, scale.path, scale.min, scale.max, S.defaultOf(scale, 'cell-gene')], ['panel:dots', 'number', 'dotScale', 10, 100, null]);
+    // Largest dot: a slider and a box, the box empty when the dot fills its cell and saying what is drawn (placeholder)
+    assert.deepEqual([scale.section, scale.type, scale.path, scale.min, scale.max, S.defaultOf(scale, 'cell-gene')], ['panel:dots', 'range', 'dotScale', 10, 100, null]);
+    assert.equal(scale.stepFrom, 100, 'unset, the slider stands at a full cell');
     assert.equal(S.placeholderOf(scale, normalizeCellGene({ version: 1, sections: [] }).config), 100);
     assert.equal(S.placeholderOf(scale, normalizeCellGene({ version: 1, sections: [], dotSizes: [5, 12] }).config), '12 px (saved)');
     assert.equal(S.placeholderOf(scale, normalizeCellGene({ version: 1, sections: [], dotSizes: [5, 12], dotScale: 80 }).config), 100);

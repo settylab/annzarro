@@ -190,10 +190,10 @@ const PLOT_OPTION_FIELDS = Object.freeze([
         min: 0, max: OUTLINE_MAX, step: 0.25, when: dotsMode },
     { id: 'dotOpacity', section: 'panel:dots', type: 'range', path: 'dotOpacity', label: WO.dotOpacity, dflt: DOT_OPACITY.max,
         min: DOT_OPACITY.min, max: DOT_OPACITY.max, step: DOT_OPACITY.step, when: dotsMode },
-    // the largest dot as a share of its cell, the smallest in px. Largest dot is a number box: empty, the dot fills its
-    // cell, and the box says what is drawn (U2 placeholder): 100, or a link from before's largest dot in px, which it keeps
-    // (`dotSizes`) until a share is typed (panels/cell-gene.js commit)
-    { id: 'dotScale', section: 'panel:dots', type: 'number', path: 'dotScale', label: WO.largestDotOfCell, dflt: null,
+    // the largest dot as a share of its cell, the smallest in px. Largest dot unset: the dot fills its cell, the slider
+    // stands at 100 and the empty box says what is drawn (placeholder): 100, or a link from before's largest dot in px,
+    // which it keeps (`dotSizes`) until Largest dot is moved (panels/cell-gene.js commit)
+    { id: 'dotScale', section: 'panel:dots', type: 'range', path: 'dotScale', label: WO.largestDotOfCell, dflt: null,
         min: DOT_SCALE.min, max: DOT_SCALE.max, step: DOT_SCALE.step, when: dotsMode, stepFrom: DOT_SCALE.max,
         placeholder: (c) => { const s = styleOf(c); return s.dotSizes && s.dotScale === null ? WO.largestPx(s.dotSizes[1]) : DOT_SCALE.max; } },
     { id: 'dotSmallest', section: 'panel:dots', type: 'range', path: 'dotSmallest', label: WO.smallestDotPx, dflt: DOT_PX.smallest,

@@ -101,3 +101,14 @@ test("a field's element and domId are plain keys of the schema", () => {
   assert.equal(typeof f("pointSize").element, "function");
   assert.ok(S.sectionsOf(KIND).some((s) => s.id === "panel:points" && s.fields.length === 1));
 });
+
+// --- a range field with a placeholder (w27, Cell-Gene's Largest dot) ----------------------------------------------
+
+test("a range field takes a placeholder too: a value or a function of the configuration, null when it has none", () => {
+  const range = { id: "share", section: "x", type: "range", path: "share", dflt: null, min: 10, max: 100, step: 5, stepFrom: 100,
+    placeholder: (c) => (Array.isArray(c.old) ? `${c.old[1]} px (saved)` : 100) };
+  assert.equal(S.placeholderOf(range, {}), 100);
+  assert.equal(S.placeholderOf(range, { old: [5, 12] }), "12 px (saved)");
+  assert.equal(S.placeholderOf({ ...range, placeholder: undefined }, {}), null, "no placeholder: the range as before");
+  assert.equal(S.readField({}, range, "cell-gene"), null, "unset: nothing stored, so the box is empty");
+});
