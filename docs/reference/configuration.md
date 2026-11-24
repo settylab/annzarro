@@ -300,6 +300,8 @@ and fails `annzarro config validate`. What each limit protects, its refusal and 
 | `refuse_s` | 600 | 0 to 6000 | Estimated seconds above which a gene score, a grouping or a Cell-Gene read is refused, even when the user agrees. Bounds the time one request may hold a compute slot. |
 | `live_update_s` | 5 | 0 to 50 | Estimated seconds below which a computation updates live while it is edited and runs in the light lane; above it, edits wait for Update. Never above ask_first_s. |
 | `progress_bar_s` | 10 | 0 to 100 | Seconds (estimated, or waited so far) after which a computation shows a progress bar. |
+| `refresh_min_interval_large_s` | 60 | 0 to 600 | Seconds between two Refreshes of one dataset with more cells than refresh_large_cells, for a user who is not an admin on a shared server (an admin keeps server.refresh_min_interval_s). Every Refresh makes every user read the dataset again, so this bounds how often one user can do that to a large one. A Refresh inside it is scheduled for the end of the interval, not refused. |
+| `refresh_large_cells` | 10,000,000 | 1 to 100,000,000 | Cells above which a dataset counts as large for refresh_min_interval_large_s. |
 | `matrix_values` | 400,000 | 1 to 4,000,000 | Most values one Cell-Gene matrix or grouping request may hold: groups x genes and measures on the server, groups x drawn rows in the browser. |
 | `genes_per_section` | 2,000 | 1 to 20,000 | Most genes one section of a Cell-Gene Plot draws. |
 | `groups` | 2,000 | 2 to 20,000 | Most levels one partitioning may make and most groups one grouping may have; a larger one is refused with too_many_groups or too_many_levels. |

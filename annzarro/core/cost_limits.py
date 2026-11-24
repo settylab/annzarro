@@ -66,6 +66,15 @@ COST_LIMITS: Dict[str, CostLimit] = {c.name: c for c in (
     _limit("progress_bar_s", 10.0, 100.0, minimum=0, integer=False, enforced="browser", kind="ux", group="time",
            label="Progress bar after (s)",
            help="Seconds (estimated, or waited so far) after which a computation shows a progress bar."),
+    _limit("refresh_min_interval_large_s", 60.0, 600.0, minimum=0, integer=False, enforced="server", group="time",
+           label="Refresh interval, large datasets (s)",
+           help="Seconds between two Refreshes of one dataset with more cells than refresh_large_cells, for a user "
+                "who is not an admin on a shared server (an admin keeps server.refresh_min_interval_s). Every "
+                "Refresh makes every user read the dataset again, so this bounds how often one user can do that "
+                "to a large one. A Refresh inside it is scheduled for the end of the interval, not refused."),
+    _limit("refresh_large_cells", 10_000_000, 100_000_000, enforced="server", group="time",
+           label="Large dataset for Refresh (cells)",
+           help="Cells above which a dataset counts as large for refresh_min_interval_large_s."),
     _limit("matrix_values", 400_000, 4_000_000, enforced="both",
            label="Cell-Gene matrix values",
            help="Most values one Cell-Gene matrix or grouping request may hold: groups x genes and measures on the "

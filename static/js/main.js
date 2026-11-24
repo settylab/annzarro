@@ -2416,7 +2416,10 @@ const App = (function() {
 
                 // Every user: the server checks the store against the disk
                 // and, if it changed, serves the change from every worker.
-                const refreshed = await DataManager.revalidateDataset(datasetPath);
+                const refreshed = await DataManager.revalidateDataset(datasetPath, {
+                    // a large dataset's Refresh waits for its interval: say when it runs
+                    onScheduled: (answer) => _showNotification('Refresh scheduled', answer.message, 'info')
+                });
                 // Clearing the server's whole cache for the dataset as well is
                 // for an admin of a hosted server (and the desktop); a refusal
                 // (403 admin_only) is expected, not an error.
