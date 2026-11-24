@@ -33,6 +33,7 @@ import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/
 import { registerStatusActions, setStatusTag } from './utils/panel-surface.js';
 import './utils/score-source.js';
 import './utils/cell-group-source.js';
+import './utils/group-stat-source.js';
 import { actions as sourceActions } from './utils/source-actions.js';
 import { TableScores } from './panels/table-utilities/table-scores.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';

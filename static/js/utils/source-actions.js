@@ -14,7 +14,7 @@
 
 /** Every action a notice may offer. A provider may declare only some of them. */
 const ACTIONS = Object.freeze(['score-compute', 'score-cancel', 'score-retry', 'score-update', 'score-open', 'score-choose',
-    'score-remove', 'score-unfilter', 'fewer-genes']);
+    'score-remove', 'score-unfilter', 'fewer-genes', 'group-keep']);
 
 /**
  * @typedef {Object} ActionProvider

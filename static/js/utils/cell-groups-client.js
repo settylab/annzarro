@@ -79,3 +79,35 @@ export function createGroupsApi({ url, fetchImpl = (u, init) => csrfFetch(u, ini
         }
     };
 }
+
+/**
+ * The api of the moments of every gene over one group (`shape: "genes"`, the Gene Plot's `group-stat`), over the groups
+ * api: the derived store's api (utils/derived-store.js).
+ *
+ * The estimate of a group the server does not know yet (its grouping is not in its code cache) is the whole layer, which
+ * it says in `coverage.known`; its tier is then not decided, and is `auto` here, for the exact figure is applied by the
+ * server once the grouping is resolved: a request that needs asking or is refused then ends in a `result` that says so
+ * (`refused.reason` `confirmation_required` or `groups_too_expensive`), which is thrown as the 409 or 413 of a request
+ * decided before the stream, so the store states it as `awaiting` or `refused`. Any other refusal is the result's.
+ * @param {{estimate: Function, compute: Function}} groupsApi - createGroupsApi's
+ */
+// export-unused-ok: the page's group binding makes the store of the moments of genes with this api
+export function createGenesApi(groupsApi) {
+    return {
+        async estimate(req) {
+            const reply = await groupsApi.estimate(req);
+            const known = !reply.estimate || !reply.estimate.coverage || reply.estimate.coverage.known !== false;
+            return known ? reply : { ...reply, estimate: { ...reply.estimate, tier: 'auto' } };
+        },
+        async compute(req) {
+            const { header, values } = await groupsApi.compute(req);
+            const refused = header.refused;
+            if (refused && (refused.reason === 'confirmation_required' || refused.reason === 'groups_too_expensive')) {
+                throw Object.assign(new Error(refused.message), { status: refused.reason === 'confirmation_required' ? 409 : 413,
+                    reason: refused.reason, estimate: refused.estimate });
+            }
+            if (refused) return { header, values: {} };
+            return { header, values: { moments: values.moments, reply: header } };
+        }
+    };
+}

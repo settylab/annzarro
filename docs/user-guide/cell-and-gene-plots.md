@@ -114,6 +114,26 @@ distance matrix plots every cell's distance to the focused cell in both spaces, 
 listed alphabetically. A sparse obsm matrix (for example a copy-number matrix `X_cnv` stored as
 CSR) can be an axis or a colour too; its columns are offered by position (0, 1, 2, …).
 
+### Colour a gene plot by a group of cells
+
+Choose **Cell group** as the colour's type to colour each gene by one statistic of that gene over the cells of one
+group of a Cell Grouping ({doc}`cell-grouping`). The selects after the type are the **grouping** (open or closed), the
+**group** (in group order, by its name), the **statistic** (mean, % expressing, mean of expressing cells, sum
+or SD) and the **layer**, each listing everything, with a pair that cannot be computed disabled and its reason as
+the hint ("% expressing cannot be computed on 'X': it has negative values"). Nothing is asked of the server until a group
+is chosen; then one request returns the five moments of every gene over the group, and the plot is coloured from
+them. Switching to another statistic of the same layer, or back, asks for nothing. Another group or layer asks once, and
+so does an edit of the grouping's **Expressed above** in its **Methods ▾**, which % expressing and mean of expressing
+cells read. A fraction is in units 0 to 1 here (the Cell-Gene Plot shows 0 to 100). The colour bar is titled by the
+grouping and the group, then the statistic and the layer.
+
+The group is kept by its key, so renaming a level or changing the separator changes only what is displayed. When the
+grouping's levels change what the group is made of, the plot keeps colouring by the same key and says "Group changed"
+with **Keep** (follow the new labels) and **Choose another**; when the key is no longer a group the plot says "No longer
+a group", asks for nothing, and offers **Choose another**. A group of a large dataset that is stored in scattered
+places can cost a read of the whole matrix: the plot then asks first, or says it was refused with the reason (the server's
+limits, {ref}`http-cell-groups-genes`). Cell groups are a source for colour only; a Cell Plot does not offer them.
+
 If a panel names a source the open dataset does not have (a view made for another dataset, or a
 column that was removed), the drop-down keeps the name and marks it "(not in this dataset)", and
 the plot's status line ({ref}`plot-status-line`) says which source is missing, for example

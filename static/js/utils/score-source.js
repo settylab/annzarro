@@ -759,7 +759,8 @@ const _layerFacts = new Map();
  * built again. Nothing is asked outside a page (Node tests pass their own `facts`).
  * @param {string[]} layers
  */
-function layerFacts(layers) {
+// export-unused-ok: the Gene Plot's group-stat grades its statistic and layer menus by the same facts
+export function layerFacts(layers) {
     const kinds = {};
     const stats = {};
     const page = typeof window !== 'undefined' && typeof document !== 'undefined';
@@ -789,4 +790,10 @@ function layerFacts(layers) {
 let _datasetLayers = null;
 export function noteDatasetLayers(list) {
     _datasetLayers = Array.isArray(list) ? [...list] : null;
+}
+
+/** The dataset's layers as the last menu noted them (X first), or null before one has. */
+// export-unused-ok: the Gene Plot's group-stat lists the same layers
+export function datasetLayersNow() {
+    return _datasetLayers ? [..._datasetLayers] : null;
 }

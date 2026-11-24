@@ -597,7 +597,7 @@ const cellExport = Object.freeze({
  * What a menu of source types and a column chooser's tab call a source a panel makes, beside the dataset's own obs,
  * obsm, obsp and layers (whose AnnData names stay). Never the provider's type id.
  */
-const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping' });
+const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping', groupStat: 'Cell group' });
 
 /** Show as table (UX 7): a plot's CSV rows as an HTML table, in every plot that offers it (count plot, Cell-Gene Plot). */
 const table = Object.freeze({

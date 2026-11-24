@@ -5,6 +5,7 @@ import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
 import { highlightFocusedEntity, updatePlotOnTableChange, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
 import { followSessionDefault } from './plot-utilities/plot-aesthetics-menu.js';
 import { PanelManager } from '../panel-manager.js';
+import { releaseSourceHost } from '../utils/source-registry.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { setupPlotEventListeners } from './plot-utilities/listeners.js';
@@ -399,6 +400,9 @@ const GenePlotPanel = (function() {
          * Clean up resources
          */
         function cleanup() {
+            // what this plot shows from a provider (a group's statistic) is no longer needed by it: each provider lets go
+            if (_plotContainer) releaseSourceHost(_plotContainer);
+
             // Remove document event listeners
             if (handleFocusedCellChanged.eventHandler) {
                 document.removeEventListener('focusedCellChanged', handleFocusedCellChanged.eventHandler);
