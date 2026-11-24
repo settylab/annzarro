@@ -36,6 +36,7 @@ import numpy as np
 from . import binning as bn
 from . import cell_groups as cg
 from . import cell_sources as cs
+from . import cost_limits
 from . import gene_score as gs
 from . import group_features as gf
 from .remote import is_remote_path
@@ -44,12 +45,29 @@ ALGORITHM_VERSION = 1
 
 #: The most levels of each axis, in request order, per mode (SHR-39): 2D x, y, split; 1D x, split; a categorical
 #: x, y; the most sets. An axis past its mode's tuple (the factor of a categorical heatmap) has only the cell cap.
+#: The defaults of limits.grid_*; ``grid_limits()`` gives the values in force.
 GRID_LIMITS = {"2d": (512, 512, 8), "1d": (2000, 200), "categorical": (200, 200), "sets": 16}
-#: The most grid cells, so measure moments stay at 84 MB (512 x 512 x 8, five Float64 each): group_features'.
+#: The most grid cells, so measure moments stay at 84 MB (512 x 512 x 8, five Float64 each): group_features'
+#: default; ``gf.grid_cells()`` is the value in force.
 MAX_GRID_MEASURE_CELLS = gf.MAX_GRID_MEASURE_CELLS
 MODES = tuple(GRID_LIMITS)
-#: Axes each mode takes, fewest and most: the inputs its count-plot modes send (UX 4.2).
+#: Axes each mode takes, fewest and most: the inputs its count-plot modes send (UX 4.2); the most sets is
+#: limits.grid_sets (``axes_of``).
 AXES = {"1d": (1, 2), "2d": (2, 3), "categorical": (1, 3), "sets": (2, GRID_LIMITS["sets"])}
+
+
+def grid_limits() -> Dict[str, Any]:
+    """``GRID_LIMITS`` as in force (limits.grid_2d_bins, grid_2d_split, grid_1d_bins, grid_1d_split,
+    grid_categorical_levels, grid_sets)."""
+    get = cost_limits.get
+    bins2, cat = get("grid_2d_bins"), get("grid_categorical_levels")
+    return {"2d": (bins2, bins2, get("grid_2d_split")), "1d": (get("grid_1d_bins"), get("grid_1d_split")),
+            "categorical": (cat, cat), "sets": get("grid_sets")}
+
+
+def axes_of(mode: str) -> Tuple[int, int]:
+    """The fewest and most axes of ``mode``, the most sets in force."""
+    return (AXES["sets"][0], cost_limits.get("grid_sets")) if mode == "sets" else AXES[mode]
 #: Axes of a density, first in the request: x in 1D, x and y in 2D.
 DENSITY_AXES = {"1d": 1, "2d": 2}
 DENSITY_QUANTILES = (0.001, 0.999)
@@ -111,7 +129,7 @@ def parse_request(body: Any) -> Request:
     raw_parts = body.get("partitionings")
     if not isinstance(raw_parts, list) or not raw_parts:
         raise _bad("A grid needs at least one partitioning.")
-    fewest, most = AXES[mode]
+    fewest, most = axes_of(mode)
     n = len(raw_parts)
     if mode == "sets" and not fewest <= n <= most:
         reason, limit = ("too_few_sets", fewest) if n < fewest else ("too_many_sets", most)
@@ -171,7 +189,7 @@ class Plan:
 
     def estimate(self) -> Dict[str, Any]:
         return {"seconds": round(self.seconds, 2), "tier": self.tier,
-                "live_max_s": gs.LIVE_MAX_S, "auto_max_s": gs.AUTO_MAX_S, "max_s": gs.CONFIRM_MAX_S,
+                **gs.tier_limits(),
                 "entries": self.entries, "layout": self.layout, "n_cells": self.n_cells, "lane": self.lane,
                 "cells": self.cells,
                 "parts": [{"type": p.spec.source["type"], "seconds": round(p.seconds, 3), "entries": p.entries,
@@ -210,12 +228,12 @@ def _declared(reader, dataset_path: str, part: cg.PartPlan, limit: Optional[int]
         # stored categories bound the levels only up to the limit; past it, the categories that hold a cell shown
         # count (SHR-6, SHR-7), which only the read tells (cell_groups._Levels)
         n = _n_categories(reader, dataset_path, part.spec.source["key"])
-        return n if n is not None and n <= (limit if limit is not None else cg.GROUPING_LIMITS["levels"]) else None
+        return n if n is not None and n <= (limit if limit is not None else cg.grouping_limits()["levels"]) else None
     return None
 
 
 def _axis_limit(mode: str, i: int) -> Optional[int]:
-    limits = GRID_LIMITS[mode]
+    limits = grid_limits()[mode]
     if not isinstance(limits, tuple):
         return None
     return limits[i] if i < len(limits) else None
@@ -224,7 +242,7 @@ def _axis_limit(mode: str, i: int) -> Optional[int]:
 def _over_cap(sizes: Sequence[Optional[int]]) -> Optional[int]:
     """The grid cells the known sizes already make, when that is more than the cap."""
     known = int(np.prod([s for s in sizes if s is not None], dtype=np.int64))
-    return known if known > MAX_GRID_MEASURE_CELLS else None
+    return known if known > gf.grid_cells() else None
 
 
 def _limit_reason(part: cg.PartPlan) -> str:
@@ -235,8 +253,8 @@ def _check_limits(mode: str, axes: List[cg.PartPlan], sizes: Sequence[Optional[i
     """Refuse, 422, a grid over its cell cap and then an axis over its mode's limit, with the count and the limit."""
     cells = _over_cap(sizes)
     if cells is not None:
-        raise _bad(f"The grid would have {cells:,} cells; the most is {MAX_GRID_MEASURE_CELLS:,}.", "grid_too_large",
-                   422, count=cells, limit=MAX_GRID_MEASURE_CELLS, mode=mode)
+        raise _bad(f"The grid would have {cells:,} cells; the most is {gf.grid_cells():,}.", "grid_too_large",
+                   422, count=cells, limit=gf.grid_cells(), mode=mode)
     for i, (part, n) in enumerate(zip(axes, sizes)):
         limit = _axis_limit(mode, i)
         if n is not None and limit is not None and n > limit:
@@ -277,7 +295,7 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
         n_cells = cs.n_cells(root)
     remote = is_remote_path(dataset_path)
     axes = [cg._plan_part(reader, dataset_path, p, request.levels, n_cells, remote, allow_exclude=True,
-                          max_bins=_axis_limit(request.mode, i) or MAX_GRID_MEASURE_CELLS)
+                          max_bins=_axis_limit(request.mode, i) or gf.grid_cells())
             for i, p in enumerate(request.partitionings)]
     _check_kinds(request, axes)
     declared = [_declared(reader, dataset_path, a, _axis_limit(request.mode, i)) for i, a in enumerate(axes)]
@@ -291,7 +309,7 @@ def plan(reader, dataset_path: str, request: Request) -> Plan:
     seconds = gs.BASE_SECONDS + sum(a.seconds for a in axes) + work.seconds
     entries = sum(p.entries for p in parts if p.nested is None) + work.entries
     layouts = sorted({p.layout for p in parts if p.entries} | set(work.layouts))
-    lane = "light" if seconds <= gs.LIVE_MAX_S and not work.whole_matrix and \
+    lane = "light" if seconds <= gs.live_max_s() and not work.whole_matrix and \
         not any(p.whole_matrix for p in parts) else "heavy"
     return Plan(reader=reader, dataset_path=dataset_path, request=request, axes=axes, work=work,
                 declared=declared, n_cells=n_cells, seconds=seconds, entries=entries,
@@ -459,7 +477,7 @@ def _check_axis(mode: str, i: int, axis: _Axis, sizes: List[Optional[int]]) -> N
     sizes[i] = axis.n_levels
     cells = _over_cap(sizes)
     if cells is not None:
-        raise cg._Refused(reason="grid_too_large", count=cells, limit=MAX_GRID_MEASURE_CELLS, mode=mode)
+        raise cg._Refused(reason="grid_too_large", count=cells, limit=gf.grid_cells(), mode=mode)
     limit = _axis_limit(mode, i)
     if limit is not None and axis.n_levels > limit:
         raise cg._Refused(reason=_limit_reason(axis.part), axis=i, count=axis.n_levels, limit=limit, mode=mode)
@@ -521,8 +539,8 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, should_stop
         keeps.append(np.asarray([k for k, sid in enumerate(axis.slots) if sid in listed], dtype=np.int64))
         result.axes.append(info)
     cells = int(np.prod([k.size for k in keeps], dtype=np.int64))
-    if req.measures and cells > MAX_GRID_MEASURE_CELLS:
-        result.refused = {"reason": "grid_too_large", "count": cells, "limit": MAX_GRID_MEASURE_CELLS,
+    if req.measures and cells > gf.grid_cells():
+        result.refused = {"reason": "grid_too_large", "count": cells, "limit": gf.grid_cells(),
                           "mode": req.mode, "levels": [k.size for k in keeps]}
         yield "result", result
         return

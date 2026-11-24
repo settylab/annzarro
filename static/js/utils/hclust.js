@@ -15,6 +15,8 @@
 //   * it shares fewer than two columns with another row that takes part (judged once, both rows of the pair leave).
 // When the values two rows share are all equal their correlation is undefined and the distance is 1 (r = 0).
 
+// The most rows clustered, by default; the caller passes the limit in force (`maxRows`, the server's
+// limits.dendrogram_rows: utils/limits.js, which this module does not import, as it also runs in the worker).
 // export-unused-ok: X5 words the over-2,000-rows sentence from it
 export const MAX_ROWS = 2000;
 const MEMO_SIZE = 16;
@@ -30,11 +32,11 @@ function settingsOf(opts) {
   return { linkage, distance };
 }
 
-function checkShape(values, rows, cols) {
+function checkShape(values, rows, cols, maxRows = MAX_ROWS) {
   if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows < 0 || cols < 0 || values.length !== rows * cols) {
     throw new Error(`The values do not make a ${rows} x ${cols} matrix.`);
   }
-  if (rows > MAX_ROWS) throw new Error(`A block is clustered up to ${MAX_ROWS.toLocaleString("en-US")} rows; this one has ${rows}.`);
+  if (rows > maxRows) throw new Error(`A block is clustered up to ${maxRows.toLocaleString("en-US")} rows; this one has ${rows}.`);
 }
 
 // Rows that can take part (before the pairwise test): at least two values, and not constant under correlation.
@@ -245,7 +247,7 @@ function leafOrder(Z, k) {
  */
 export function clusterRows(values, rows, cols, opts = {}) {
   const { linkage, distance } = settingsOf(opts);
-  checkShape(values, rows, cols);
+  checkShape(values, rows, cols, opts.maxRows ?? MAX_ROWS);
   const { keep, anyMissing } = participants(values, rows, cols, distance);
   let part = keep, D = null;
   if (keep.length > 1) {
@@ -317,8 +319,9 @@ export function createHclustClient(makeWorker = spawnWorker) {
     cluster(values, rows, cols, opts = {}) {
       if (ended) return Promise.reject(new Error("The clustering worker was terminated."));
       const linkage = opts.linkage ?? "complete", distance = opts.distance ?? "correlation";
+      const maxRows = opts.maxRows ?? MAX_ROWS;
       const copy = Float64Array.from(values);
-      const key = `${rows}x${cols}|${linkage}|${distance}|${hashOf(copy)}`;
+      const key = `${rows}x${cols}|${linkage}|${distance}|${maxRows}|${hashOf(copy)}`;
       const known = memo.get(key);
       if (known) {
         memo.delete(key);
@@ -328,7 +331,7 @@ export function createHclustClient(makeWorker = spawnWorker) {
       const id = nextId++;
       const answer = new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject });
-        open().postMessage({ id, values: copy, rows, cols, linkage, distance }, [copy.buffer]);
+        open().postMessage({ id, values: copy, rows, cols, linkage, distance, maxRows }, [copy.buffer]);
       });
       memo.set(key, answer);
       answer.catch(() => { if (memo.get(key) === answer) memo.delete(key); });

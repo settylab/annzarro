@@ -623,9 +623,9 @@ def test_bad_measures_are_refused_with_a_reason(measures, reason):
     assert e.value.reason == reason
 
 
-def test_more_values_than_the_cell_gene_limit_are_refused_after_the_groups(store, monkeypatch):
+def test_more_values_than_the_cell_gene_limit_are_refused_after_the_groups(store, monkeypatch, cost_limit):
     """CXG-17's 400,000 values (groups x features) bound the accumulators; the browser never asks for more."""
-    monkeypatch.setattr(gf, "MAX_FEATURE_CELLS", 6 * 3 - 1)
+    cost_limit(matrix_values=6 * 3 - 1)
     res = run(store, [{"source": {"type": "obs", "key": "cell_type"}}],
               [gene_feature(f"f{i}", gs.gene(i)) for i in range(3)])
     assert res.refused == {"reason": "too_many_values", "count": 18, "limit": 17}

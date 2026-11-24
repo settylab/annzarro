@@ -6,9 +6,12 @@
  * Sets row; `memberFor(set)` is a set's member on the wire) and `PARTS.draw.venn` / `.upset` (the figure: the SetPlot of
  * utils/set-plot-model.js, drawn by draw-sets.js `buildFigure`).
  *
- * The list: one row per set, lettered, with its text, its cells, its cells without a value ("312 without a value,
- * counted as out"), its tag, and ⋯, which opens the kind's inline row (UX 4.6) with Rename and Remove. Add set offers
- * the five kinds and stops at 16. Every edit is one undoable step through the panel's `commit`.
+ * The list: one compact line per set, as the Cell Grouping panel lists its groups: a color swatch (a native color
+ * picker), the letter (a button that opens the pop-over with the kind's definition, UX 4.6), the name (a double click or
+ * the pencil renames it in place, as a grouping's level), its cells, its share of the cells shown and Remove. The cells
+ * without a value ("312 without a value, counted as out") and the tag ("Group changed") are a muted second line of the
+ * row only when there is one, and in the name's title. Add set offers the five kinds and stops at 16. Every edit is one
+ * undoable step through the panel's `commit`; a color pick and a rename ask the server for nothing.
  *
  * A group set names one group of a grouping (utils/group-reference.js). The grouping is watched through the page's
  * group sources as a plot (consumer kind 'plot', role 'set'), which shares its request with everything else that reads
@@ -24,7 +27,7 @@ import { DataManager } from '../../data-manager.js';
 import { makeDom } from '../gene-set-utilities/dom.js';
 import {
     SET_KINDS, setKind, setText, memberOnWire, setStates, setPlotModel, upsetOptions, parseUpsetOption, withUpsetOption,
-    canAddSet, panelChoices, categoryChoices, groupingOfSet, isBooleanColumn, universeLine, setCounts
+    canAddSet, panelChoices, categoryChoices, groupingOfSet, isBooleanColumn, universeLine, setCounts, setColours
 } from '../../utils/set-plot-model.js';
 import { keepGroup, referToGroup } from '../../utils/group-reference.js';
 import { canonKey } from '../../utils/level-id.js';
@@ -34,6 +37,9 @@ import { settingOf, sourceFromSetting, isNumericSource } from './controls-model.
 import { setupAxisSelector, takeSubKey } from '../plot-utilities/panel-ui-update.js';
 import { groupSources, panelOf, typeOf, structureRead, sourceTitleOf, titleOfPanel } from '../../utils/group-host.js';
 import { TABLE_SOURCE, GROUP_SOURCE } from '../cell-grouping/factors.js';
+import { shareText } from '../cell-grouping/group-rows.js';
+import { toHex } from '../cell-grouping/colours.js';
+import { createPopover } from '../../ui/popover.js';
 
 const W = VOCABULARY.countSets;
 const C = VOCABULARY.countPlot;
@@ -146,12 +152,19 @@ function mount(host, ctx) {
     const heard = new Map();
     let drawn = { sets: null, plot: null };
     let drawnStates = '';
-    const expanded = new Set();
+    /** the set whose definition pop-over is open (an index, or 'draft'), else -1; kept across the redraws a commit makes */
+    let popAt = -1;
+    /** the pop-overs of the rows drawn (set index or 'draft' -> pop-over) */
+    const pops = new Map();
     /** set index -> what its open row holds before it is committed (a grouping chosen, a condition's selects) */
     const holders = new Map();
     let draft = null;
     let reviewing = false;
     let renaming = -1;
+    /** what the name field of the row being renamed holds, kept across a redraw */
+    let renameDraft;
+    /** leaves the name field being edited, saving it (set while one is open) */
+    let pendingLeave = null;
     let problem = '';
     let paintedFrom = null;
     let groupsVersion = 0;
@@ -159,7 +172,7 @@ function mount(host, ctx) {
     let alive = true;
 
     const addSelect = el('select', { class: 'form-select form-select-sm ccnt-sets__add', aria: { label: W.add },
-        on: { change: () => { const kind = addSelect.value; addSelect.value = ''; if (kind) { draft = { kind, history: {} }; paint(); } } } });
+        on: { change: () => { const kind = addSelect.value; addSelect.value = ''; if (kind) { draft = { kind, history: {} }; popAt = 'draft'; paint(true); } } } });
     const head = el('div', { class: 'ctl-row ccnt-sets__head' }, el('span', { class: 'ctl-label', text: C.rows.sets }), addSelect);
     const summary = el('div', { class: 'ccnt-sets__summary', role: 'status', hidden: true }, el('p', { class: 'ccnt-sets__summary-text' }),
         el('span', { class: 'ccnt-sets__summary-actions' }));
@@ -281,7 +294,8 @@ function mount(host, ctx) {
             const sets = [...(ctx.config().sets || []), set];
             const kind = draft.kind;
             draft = null;
-            if (kind === 'levels') expanded.add(sets.length - 1);
+            // a levels set is made by ticking: its pop-over stays open, now on the set
+            popAt = kind === 'levels' ? sets.length - 1 : -1;
             commitSets(sets, `add ${VOCABULARY.word.set} ${name}`);
             return;
         }
@@ -292,7 +306,7 @@ function mount(host, ctx) {
     function remove(i) {
         const sets = [...(ctx.config().sets || [])];
         const [gone] = sets.splice(i, 1);
-        expanded.clear();
+        popAt = -1;
         holders.clear();
         renaming = -1;
         commitSets(sets, `remove ${VOCABULARY.word.set} ${setText(gone, textContext())}`);
@@ -315,11 +329,10 @@ function mount(host, ctx) {
         commitSets(sets, `keep ${VOCABULARY.plural.group}`);
     }
 
+    /** Choose another: the definition's pop-over opens on the set, its first control focused. */
     function chooseAnother(i) {
-        expanded.add(i);
+        popAt = i;
         paint(true);
-        const select = list.querySelector(`.ccnt-set[data-set-index="${i}"] select[data-field="group"], .ccnt-set[data-set-index="${i}"] select`);
-        if (select) select.focus();
     }
 
     /** Following sets whose labels moved: their new labels, stored with no history step (UX 2.8). */
@@ -462,7 +475,7 @@ function mount(host, ctx) {
         const take = () => {
             const source = sourceFromSetting(s);
             const v = Number(String(value.value).trim());
-            const say = (text) => { holder.problem = text; const p = selector.closest('.ccnt-set').querySelector('.ccnt-set__problem'); p.textContent = text; p.hidden = !text; };
+            const say = (text) => { holder.problem = text; const p = selector.closest('.ccnt-set__pop').querySelector('.ccnt-set__problem'); p.textContent = text; p.hidden = !text; };
             if (!source || !isNumericSource(source, structure)) { say(W.needsNumber); return; }
             if (String(value.value).trim() === '' || !Number.isFinite(v)) { say(W.needsValue); return; }
             holder.problem = '';
@@ -508,75 +521,158 @@ function mount(host, ctx) {
     }
 
     function actionButton(action, i) {
-        return el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', data: { setAction: action.id },
+        return el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary ccnt-set__action', data: { setAction: action.id },
             on: { click: () => (action.id === 'keep' ? keep(i) : chooseAnother(i)) } }, action.label);
     }
 
-    function setRow(set, i, row, showNotes, texts) {
+    /** The letter of a row: a button that opens the pop-over with the set's definition (what the kind's editor holds). */
+    function letterButton(at, letter, kind, row) {
+        const chip = el('button', { type: 'button', class: 'ccnt-set__letter', title: W.buttons.definition, aria: { label: `${W.buttons.definition}: ${letter}` } }, letter);
+        const pop = createPopover({
+            anchor: chip, name: 'set-definition', title: W.setTitle(letter), wide: true,
+            render: (body) => {
+                const wrap = el('div', { class: 'ccnt-set__pop', data: { kind } });
+                const current = at === 'draft' ? draft : ctx.config().sets[at];
+                if (!current) return;
+                wrap.append(...editor(at, kind, at === 'draft' ? draft : holderOf(at, current)));
+                if (row && row.state === 'changed' && row.note) {
+                    const keepAction = row.note.actions.find((a) => a.id === 'keep');
+                    if (keepAction) wrap.append(el('div', { class: 'ctl-row ccnt-set__actions' }, actionButton(keepAction, at)));
+                }
+                body.append(wrap);
+            },
+            onClose: (reason) => { if (reason !== 'api' && popAt === at) popAt = -1; }
+        });
+        chip.addEventListener('click', () => { popAt = pop.isOpen() ? at : -1; });
+        pops.set(at, pop);
+        return chip;
+    }
+
+    /** Start renaming set `i` in place; a name being edited elsewhere is saved first. */
+    function startRename(i) {
+        if (pendingLeave) pendingLeave();
+        renaming = i;
+        renameDraft = undefined;
+        paint(true);
+    }
+
+    function swatchOf(set, i, colour, name) {
+        const input = el('input', { type: 'color', class: 'ccnt-set__swatch', value: toHex(colour), title: W.buttons.colour(name), aria: { label: W.buttons.colour(name) } });
+        input.addEventListener('change', () => {
+            if (input.value === toHex(colour)) return;
+            replaceSet(i, { ...ctx.config().sets[i], color: input.value }, `color ${name}`);
+        });
+        return input;
+    }
+
+    /**
+     * The name of a row being edited, as a grouping's level is: a field with ✓ and ✕ in the row's own height. Enter and ✓ save,
+     * Escape and ✕ cancel, leaving the field by a click saves it once the click has landed (a redraw between its press and
+     * release would take the control it pressed from under it).
+     */
+    function renameCell(set, i, li, cell, name, shown) {
+        const mine = i;
+        const input = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-set__name', value: renameDraft !== undefined ? renameDraft : (set.name || shown),
+            title: W.renameHint, data: { azOwnEscape: '' }, aria: { label: W.renameLabel, description: W.renameHint } });
+        let finished = false;
+        const leave = (save) => {
+            if (finished) return;
+            finished = true;
+            pendingLeave = null;
+            if (renaming === mine) renaming = -1;
+            renameDraft = undefined;
+            const text = input.value.trim();
+            const next = { ...set };
+            if (text && text !== shown) next.name = text; else delete next.name;
+            if (!save || (next.name || '') === (set.name || '')) { paint(true); return; }
+            replaceSet(i, next, `rename ${VOCABULARY.word.set} ${next.name || shown}`);
+        };
+        pendingLeave = () => leave(true);
+        input.addEventListener('input', () => { renameDraft = input.value; });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); leave(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); leave(false); }
+        });
+        li.addEventListener('focusout', (e) => {
+            if (finished) return;
+            if (e.relatedTarget && li.contains(e.relatedTarget)) return;
+            let done = false;
+            const later = () => {
+                if (done) return;
+                done = true;
+                document.removeEventListener('click', later, true);
+                document.removeEventListener('pointerup', later, true);
+                setTimeout(() => { if (input.isConnected) leave(true); }, 0);
+            };
+            document.addEventListener('click', later, true);
+            document.addEventListener('pointerup', later, true);
+            setTimeout(later, 350);
+        });
+        const ok = el('button', { type: 'button', class: 'ccnt-set__btn ccnt-set__ok', title: W.buttons.saveName, aria: { label: `${W.buttons.saveName}: ${name}` },
+            on: { mousedown: (e) => e.preventDefault(), click: () => leave(true) } }, '✓');
+        const cancel = el('button', { type: 'button', class: 'ccnt-set__btn ccnt-set__cancel', title: W.buttons.cancel, aria: { label: `${W.buttons.cancel}: ${name}` },
+            on: { mousedown: (e) => e.preventDefault(), click: () => leave(false) } }, '✕');
+        cell.append(input, ok, cancel);
+        setTimeout(() => { if (input.isConnected) { input.focus(); input.select(); } }, 0);
+    }
+
+    function setRow(set, i, row, showNotes, texts, colours) {
         const kind = setKind(set, structureRead());
         const drawnSet = drawnSetOf(set);
         const counts = drawnSet ? setCounts(drawnSet) : { cells: '', noValue: '' };
         const following = kind === 'group' && set.member.follow === true && row.state === 'ok';
-        const name = texts[i] + (following ? ` ${W.follows}` : '');
+        const shown = texts[i];
+        const name = shown + (following ? ` ${W.follows}` : '');
         const tag = row.state === 'deleted' ? W.deleted : (row.note ? row.note.tag : '');
-        const nameEl = renaming === i ? renameInput(set, i)
-            : el('button', { type: 'button', class: 'btn btn-link btn-sm ccnt-set__name', title: W.buttons.rename, on: { click: () => { renaming = i; paint(true); } } }, name);
-        const more = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-set__more', aria: { label: W.buttons.more, expanded: expanded.has(i) },
-            on: { click: () => { if (expanded.has(i)) expanded.delete(i); else expanded.add(i); paint(true); } } }, '⋯');
-        const li = el('li', { class: 'ccnt-set', data: { setIndex: i, state: row.state, kind } },
-            el('div', { class: 'ctl-row ccnt-set__line' },
-                el('span', { class: 'ccnt-set__letter', text: 'ABCDEFGHIJKLMNOP'[i] }), nameEl,
-                el('span', { class: 'ccnt-set__count', text: counts.cells }),
-                el('span', { class: 'ccnt-set__novalue', text: counts.noValue }),
-                el('span', { class: 'ccnt-set__tag', text: tag }), more));
+        const share = drawnSet && drawn.plot ? shareText(drawnSet.size / (drawn.plot.universe || 1)) : '';
+        const extra = [tag, counts.noValue].filter(Boolean).join('; ');
+        const li = el('li', { class: `ccnt-set${renaming === i ? ' ccnt-set--editing' : ''}`, data: { setIndex: i, state: row.state, kind } });
+        const cell = el('div', { class: 'ccnt-set__namecell' });
+        if (renaming === i) renameCell(set, i, li, cell, name, shown);
+        else {
+            cell.append(
+                el('span', { class: 'ccnt-set__name', title: `${name}${extra ? ` (${extra})` : ''}\n${W.renameHint}`, on: { dblclick: () => startRename(i) } }, name),
+                el('button', { type: 'button', class: 'ccnt-set__btn ccnt-set__rename', title: W.buttons.rename, aria: { label: `${W.buttons.rename}: ${name}` },
+                    on: { click: () => startRename(i) } }, '✎'));
+        }
+        const remove_ = el('button', { type: 'button', class: 'ccnt-set__btn ccnt-set__remove', title: W.buttons.remove, data: { setAction: 'remove' },
+            aria: { label: `${W.buttons.remove}: ${name}` }, on: { click: () => remove(i) } }, '×');
+        li.append(el('div', { class: 'ccnt-set__line' }, swatchOf(set, i, colours[i], name), letterButton(i, 'ABCDEFGHIJKLMNOP'[i], kind, row), cell,
+            el('span', { class: 'ccnt-set__count', title: counts.cells, text: drawnSet ? drawnSet.size.toLocaleString('en-US') : '' }),
+            el('span', { class: 'ccnt-set__share', title: W.shareTitle, text: share }), remove_));
+        // what the row has to say beyond its line: a tag, the cells without a value, and for a deleted set Choose another
+        const sub = el('div', { class: 'ccnt-set__sub', hidden: !(tag || counts.noValue) },
+            el('span', { class: 'ccnt-set__tag', text: tag }), el('span', { class: 'ccnt-set__novalue', text: counts.noValue }));
+        if (row.state === 'deleted') sub.append(actionButton({ id: 'chooseAnother', label: W.buttons.chooseAnother }, i));
+        li.append(sub);
         const show = !!row.note && !!row.note.text && (showNotes || row.state === 'gone');
         li.append(noteBox(row.note || { text: '', actions: [] }, show, i));
-        // a set whose panel is gone keeps its row, marked deleted, with Choose another (SHR-38)
-        if (row.state === 'deleted') li.querySelector('.ccnt-set__line').insertBefore(actionButton({ id: 'chooseAnother', label: W.buttons.chooseAnother }, i), more);
-        const edit = el('div', { class: 'ccnt-set__edit', hidden: !expanded.has(i) });
-        if (expanded.has(i)) {
-            edit.append(...editor(i, kind, holderOf(i, set)));
-            const actions = el('div', { class: 'ctl-row ccnt-set__actions' });
-            if (row.note && row.state === 'changed') for (const a of row.note.actions) actions.append(actionButton(a, i));
-            actions.append(
-                el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { setAction: 'rename' }, on: { click: () => { renaming = i; paint(true); } } }, W.buttons.rename),
-                el('button', { type: 'button', class: 'btn btn-sm btn-outline-danger', data: { setAction: 'remove' }, on: { click: () => remove(i) } }, W.buttons.remove));
-            edit.append(actions);
-        }
-        li.append(edit);
         return li;
     }
 
-    function renameInput(set, i) {
-        const input = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-set__name', value: set.name || '', aria: { label: W.renameLabel },
-            placeholder: setText({ ...set, name: undefined }, textContext()) });
-        let done = false;
-        const finish = (save) => {
-            if (done) return;
-            done = true;
-            renaming = -1;
-            const text = input.value.trim();
-            if (!save || text === (set.name || '')) { paint(true); return; }
-            const next = { ...set };
-            if (text) next.name = text; else delete next.name;
-            replaceSet(i, next, `rename ${VOCABULARY.word.set} ${text || setText(next, textContext())}`);
-        };
-        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } else if (e.key === 'Escape') finish(false); });
-        input.addEventListener('blur', () => finish(true));
-        queueMicrotask(() => input.focus());
-        return input;
-    }
-
     function draftRow() {
+        const at = (ctx.config().sets || []).length;
         const li = el('li', { class: 'ccnt-set ccnt-set--draft', data: { kind: draft.kind } });
-        li.append(el('div', { class: 'ctl-row ccnt-set__line' }, el('span', { class: 'ccnt-set__letter', text: 'ABCDEFGHIJKLMNOP'[(ctx.config().sets || []).length] }),
+        li.append(el('div', { class: 'ccnt-set__line' }, el('span', { class: 'ccnt-set__swatch-gap' }), letterButton('draft', 'ABCDEFGHIJKLMNOP'[at], draft.kind, null),
             el('span', { class: 'ccnt-set__kind', text: W.kinds[draft.kind] }),
-            el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', data: { setAction: 'cancel' }, on: { click: () => { draft = null; paint(true); } } }, W.buttons.remove)));
-        li.append(...editor('draft', draft.kind, draft));
+            el('button', { type: 'button', class: 'ccnt-set__btn ccnt-set__remove', title: W.buttons.remove, data: { setAction: 'cancel' }, aria: { label: W.buttons.remove },
+                on: { click: () => { draft = null; popAt = -1; paint(true); } } }, '×')));
         return li;
     }
 
     // ---------------------------------------------------------------- paint
+
+    /** Which control of an open pop-over has the focus: its field name (or a level's value) and kind. */
+    function focusOf(surface) {
+        const a = document.activeElement;
+        if (!surface || !a || !surface.contains(a)) return null;
+        return { field: a.dataset ? a.dataset.field || a.dataset.axis || '' : '', value: a.value, tag: a.tagName, type: a.type };
+    }
+
+    function refocus(surface, at) {
+        const all = [...surface.querySelectorAll(at.tag.toLowerCase())].filter((e) => e.type === at.type);
+        const hit = all.find((e) => (e.dataset.field || e.dataset.axis || '') === at.field && (at.tag === 'INPUT' && at.type === 'checkbox' ? e.value === at.value : true));
+        if (hit) hit.focus({ preventScroll: true });
+    }
 
     function paint(force = false) {
         if (!alive) return;
@@ -589,7 +685,7 @@ function mount(host, ctx) {
         const texts = sets.map((set) => setText(set, textContext()));
         const add = canAddSet(config);
         const from = JSON.stringify([config, states, texts, groupsVersion, [...holders.values()].map((x) => x.holder), drawn.plot && drawn.plot.universe, drawn.plot && drawn.plot.inNone,
-            drawn.plot && drawn.plot.sets.map((s) => s.size), [...expanded], draft, reviewing, renaming, problem]);
+            drawn.plot && drawn.plot.sets.map((s) => s.size), popAt, draft, reviewing, renaming, problem]);
         if (!force && from === paintedFrom) return;
         paintedFrom = from;
 
@@ -612,9 +708,24 @@ function mount(host, ctx) {
             }
         } else reviewing = false;
 
+        // the rows are drawn again, so the open definition goes with its letter and comes back on the new one, its focus kept
+        const open = popAt !== -1 && pops.get(popAt) && pops.get(popAt).isOpen() ? pops.get(popAt) : null;
+        const focus = open ? focusOf(open.surface) : null;
+        for (const pop of pops.values()) pop.destroy();
+        pops.clear();
+        if (pendingLeave && renaming === -1) pendingLeave = null;
         D.clear(list);
-        sets.forEach((set, i) => list.append(setRow(set, i, states.rows[i], !many || reviewing, texts)));
+        const colours = setColours(sets);
+        sets.forEach((set, i) => list.append(setRow(set, i, states.rows[i], !many || reviewing, texts, colours)));
         if (draft) list.append(draftRow());
+        if (popAt !== -1) {
+            const pop = pops.get(popAt);
+            if (!pop) popAt = -1;
+            else {
+                pop.open();
+                if (focus && pop.surface) refocus(pop.surface, focus);
+            }
+        }
         universe.hidden = !drawn.plot;
         universe.textContent = drawn.plot ? universeLine(drawn.plot) : '';
         paintUpsetLine(config);

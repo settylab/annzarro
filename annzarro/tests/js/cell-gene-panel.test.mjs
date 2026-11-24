@@ -417,3 +417,17 @@ test('nothing is "no longer offered": a held statistic and layer read as plain c
     assert.equal(layer.label, 'logged');
     assert.equal(layer.lapsed, undefined);
 });
+
+test('⋯ Duplicate: the copy follows the section, titled "<name> (copy)", with settings of its own', () => {
+    let cfg = { ...base(), sections: [{ source: 's1', rows: 'set', color: { agg: 'mean_of_means' } }, { source: 't1', rows: 'genes' }] };
+    cfg = duplicateSection(cfg, 0, 'Pathway');
+    assert.deepEqual(cfg.sections.map((s) => s.source), ['s1', 's1', 't1']);
+    assert.equal(cfg.sections[1].title, 'Pathway (copy)');
+    assert.equal('title' in cfg.sections[0], false, 'the original keeps its source title');
+    assert.notEqual(cfg.sections[1].color, cfg.sections[0].color, 'its settings are its own objects');
+    cfg = setSectionRows(cfg, 1, 'genes');
+    assert.equal(cfg.sections[0].rows, 'set', 'changing the copy leaves the original');
+    // a copy of a copy, and a copy with no name given
+    assert.equal(duplicateSection(cfg, 1, 'Pathway (copy)').sections[2].title, 'Pathway (copy) (copy)');
+    assert.equal('title' in duplicateSection(cfg, 2).sections[3], false, 'no name given: the source title, as before');
+});

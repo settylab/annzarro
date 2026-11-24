@@ -744,3 +744,34 @@ test('Dot opacity: the dots and the size legend\'s dots follow it, opaque by def
     const c = normalizeCellGene({ version: 1, mode: 'dots', dotOpacity: 0.4, sections: [] }).config;
     assert.equal(c.dotOpacity, 0.4, 'the configuration keeps it');
 });
+
+// --- the Group band (decision 38) --------------------------------------------------------------------------------
+
+test('the Group band: each group in its own colour, after the factors\' strips, for two factors or a group with its own colour', () => {
+    const reply = reply2();
+    const order = unclustered(6, reply.groups.length);
+    const groups = { colours: ['#111111', '#222222', '#333333', '#fedcba'], generated: ['B | Old', 'B | Young', 'T | Old', 'T | Young'],
+        names: ['B, Old', 'B, Young', 'T, Old', 'T, Young'] };
+    const strips = (config, recipe, g = groups) => O.figureExtras(normalizeCellGene({ version: 1, mode: 'dots', ...config }).config,
+        { reply, recipe, order, titleOf: () => undefined, groups: g }).annotations.strips;
+    const two = strips({}, TWO_FACTORS);
+    assert.equal(two.length, 3);
+    const band = two[2];
+    assert.equal(band.title, W.options.groupBand);
+    assert.deepEqual(band.colours, groups.colours);
+    assert.deepEqual(band.levels, groups.names);
+    assert.deepEqual(band.legend.map((e) => e.colour), groups.colours);
+    // switched off in Plot Options
+    assert.equal(strips({ groupBand: false }, TWO_FACTORS).length, 2);
+    // one factor: no band, unless a group has a colour of its own
+    const oneReply = { ...reply, partitionings: [reply.partitionings[0]] };
+    const one = (recipe) => O.figureExtras(normalizeCellGene({ version: 1, mode: 'dots' }).config,
+        { reply: oneReply, recipe, order, titleOf: () => undefined, groups }).annotations.strips;
+    assert.equal(one(ONE_FACTOR).length, 1);
+    const own = { ...ONE_FACTOR, groupOverrides: [{ name: 'T | Young', color: '#fedcba' }] };
+    assert.equal(one(own).length, 2);
+    // a group's own colour that names no group now: no band
+    assert.equal(one({ ...ONE_FACTOR, groupOverrides: [{ name: 'Gone', color: '#fedcba' }] }).length, 1);
+    // no group colours given (an old caller): the factors' strips only
+    assert.equal(strips({}, TWO_FACTORS, null).length, 2);
+});

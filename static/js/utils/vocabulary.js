@@ -256,6 +256,9 @@ const cellGene = Object.freeze({
         sizeLegend: 'Size legend',
         strips: 'Strip legend',
         totals: 'Cells per group',
+        /** The band of each group in its own colour, beside the factors' strips, and its switch in Plot Options. */
+        groupBand: 'Group',
+        groupBandSwitch: 'Group band',
         sortGroups: 'Sort groups by size',
         scalingNote: 'Groups with no value are skipped; a constant gene gives 0.',
         pooledNote: 'A one-row section has no pooled cells of its own, so it is z-scored across its own groups.',
@@ -405,6 +408,7 @@ const countPlot = Object.freeze({
     }),
     /** The entries of Height and Color (UX 4.5), and the help line of each. */
     value: Object.freeze({
+        none: 'None',
         count: 'Count',
         share: Object.freeze({
             all: `Share of all ${word.cellsShown}`, x: 'Share within each X', split: 'Share within each color',
@@ -415,6 +419,8 @@ const countPlot = Object.freeze({
         groups: Object.freeze({ share: 'Share', stat: capital(word.statistic) })
     }),
     valueHelp: Object.freeze({
+        none: 'One color for every bar.',
+        countUpset: 'Each bar colored by its cells, on the color scale.',
         count: 'Cells in the bar.',
         countColor: 'Cells in the rectangle.',
         share: 'As percent.',
@@ -424,6 +430,15 @@ const countPlot = Object.freeze({
         topLevel: `Colors each rectangle by its commonest ${word.level}.`
     }),
     labels: Object.freeze({ none: 'None', count: 'Count', share: 'Share', measure: capital(word.statistic) }),
+    /** A pie's slices: their names, and their colours (continuous for bins of a number, the level palette for categories). */
+    slices: Object.freeze({
+        names: 'Names', namesTitle: 'Print each slice\'s name on it (a slice under 3% shows it in its hover only)',
+        colours: 'Slice colors', continuous: 'Continuous', levels: 'Level palette',
+        refused: 'Slices that are categories have no order to color by; bins of a number do.',
+        byCentre: 'Slices take the color of their bin\'s center. The bar shows the numbers.',
+        byOrder: 'These bins are drawn evenly (log, equal-count or manual), so slices take the color of their bin\'s order: each bin is one step.',
+        barCentre: (name) => `${name} (bin center)`, barOrder: (name) => `${name} (bin order)`
+    }),
     buttons: Object.freeze({
         sort: 'Sort by height', reverse: 'Reverse', horizontal: 'Horizontal', options: 'Plot Options', ring: 'Ring', log: 'Log count axis',
         fade: 'Fade by its share', csv: 'Download CSV', chooseLevels: `Choose ${plural.level}`, undo: 'Undo',
@@ -546,7 +561,13 @@ const countSets = Object.freeze({
     tooManyCategories: (n, max) => `${n.toLocaleString('en-US')} categories; a ${word.set} picks from up to ${max.toLocaleString('en-US')}. Use a condition or a ${word.grouping}.`,
     needsNumber: 'Choose a numeric source.',
     needsValue: 'Enter a number.',
-    buttons: Object.freeze({ more: `More for this ${word.set}`, remove: 'Remove', rename: 'Rename', chooseAnother: 'Choose another' }),
+    buttons: Object.freeze({
+        more: `More for this ${word.set}`, remove: 'Remove', rename: 'Rename', chooseAnother: 'Choose another',
+        definition: `Change what the ${word.set} is`, colour: (name) => `Color of ${name}`, saveName: 'Save the name', cancel: 'Cancel'
+    }),
+    setTitle: (letter) => `${capital(word.set)} ${letter}`,
+    shareTitle: `Share of the ${word.cellsShown}`,
+    renameHint: 'Double-click to rename. Enter saves, Escape cancels.',
     renameLabel: `Name of the ${word.set}`,
     /** An UpSet's own options (UX 4.2): Sort, Show top, Minimum size. */
     sort: 'Sort',

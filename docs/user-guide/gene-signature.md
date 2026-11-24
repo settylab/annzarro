@@ -18,7 +18,9 @@ it can be the source of a Gene Set Analysis panel.
 3. Choose the signature where you choose any source: a Gene Plot's **Table** menu, a Gene Set Analysis
    panel's **Source** menu, or **Gene score** in a Cell Plot or Cell Table (see below).
 
-The panel states how many genes it holds. **There is no limit** on the length of the list: a score takes no
+The panel states how many genes it holds in the status banner at its bottom ("5 of 3,000 genes selected"), the same
+strip a plot has for "n of N cells shown": it stays in place as the list changes, and **details** opens how many genes
+are not selected. **There is no limit** on the length of the list: a score takes no
 more memory than a gene table, which has none. What guards a large list is the cost estimate, which asks
 before a slow score and refuses one that would take too long (see *When a score is slow*). A signature of
 every gene of a dataset is allowed; a link or panel set that holds thousands of genes is long, see
@@ -230,7 +232,7 @@ property of the gene list; how down genes weigh is a setting of the methods, und
   genes are flipped and all genes are averaged. For **control-adjusted**, each side subtracts the mean of its own
   control genes, as two calls of scanpy's `score_genes` would, and the two are subtracted.
   The panel states the formula with your numbers ("Score = the 42 up genes minus the 8 down genes, averaged over all
-  50 genes: each gene weighs equally"), and the summary line says "50 genes selected: 42 up, 8 down".
+  50 genes: each gene weighs equally"), and the **Selected** view says "Selected 50: 42 up, 8 down".
 - **How down genes weigh.** For the z-score mean and the mean, **Down genes** under the method in **Methods ▾** chooses between **each
   gene weighs equally** (the default) and **each side weighs equally**. By gene, the signs of the down genes are
   flipped and every usable gene is averaged: (sum of up - sum of down) / (number of up + number of down), so 40 up
