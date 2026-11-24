@@ -444,10 +444,11 @@ Nothing is cached or kept: the server holds a score only while it computes it.
 ## Cell groups
 
 `POST /data/cell_groups?dataset_path=` puts the cells shown into groups and, per group, counts and summarises genes,
-scores and per-cell columns. One route serves two shapes: `grouping` (the groups of a list of partitionings, one
-code per cell, moments per group) and `grid` (the dense counts of a count plot). The dataset is in the query, as on
+scores and per-cell columns. One route serves three shapes: `grouping` (the groups of a list of partitionings, one
+code per cell, moments per group), `grid` (the dense counts of a count plot) and `genes` (the moments of every gene
+over one group of cells, {ref}`http-cell-groups-genes`). The dataset is in the query, as on
 every data route; the JSON body is `{shape, partitionings, sets, subset, small, features, measures, want, mode,
-density, estimate_only, confirm}`. A field the shape does not take is `400 unknown_field`, a field no shape takes
+density, estimate_only, confirm}` (and, for `genes`, `group`, `member`, `layer` and `thresholds`). A field the shape does not take is `400 unknown_field`, a field no shape takes
 `400 bad_request`.
 
 Like the score route it has the access gate, the CSRF check, the 16 MB body limit (`413 request_too_large`),
@@ -627,6 +628,46 @@ coloured by a grouping and a Cell-Gene Plot over it read the grouping once; a ca
 store's freshness check sees it change (Refresh dataset forces the check). A request kept waiting only by its own
 user's running computations waits without the 30-second limit and is told its place every 5 seconds; behind another
 user's work the wait ends after 30 seconds in the `read_busy` error frame.
+
+(http-cell-groups-genes)=
+
+### The genes shape
+
+`shape: "genes"` answers the question a Gene Plot colours by: what is each gene's statistic over the cells of one
+group? The moments above (`n`, `sum`, `sumsq`, `n_above`, `sum_above`) are sent for every gene of a matrix over one
+group, so the browser derives mean, % expressing, mean of expressing cells, sum and SD from them without another
+request.
+
+```json
+{"shape": "genes",
+ "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}], "group": ["c:B cell"],
+ "layer": "logged", "thresholds": [0]}
+```
+
+| Field | Meaning |
+|---|---|
+| `partitionings`, `small`, `group` | the grouping and the key of the group, as its `groups` list gives it: a list of level ids, or the JSON of that list. A grouping the worker holds (the code cache) is not resolved again. A key the grouping lacks is `422 group_missing` |
+| `sets`, `member` | instead of a group: the cells of a table's bitset, `member` naming the set. Exactly one of `group` and `member` |
+| `layer` | `X` (the default) or a layer; `404 key_not_found` when the dataset has none |
+| `thresholds` | the "expressed above" values, one to 4 distinct finite numbers (default `[0]`); `n_above` and `sum_above` are taken at each |
+| `subset`, `estimate_only`, `confirm` | as above; the group is of the cells shown |
+
+The result frame has `n_shown`, `n_group`, `n_var`, `moments` (the five names), `thresholds` and `group`, and one
+float64 block `moments` of shape `[n_var, 5 * len(thresholds)]`: column `5 * t + m` is moment `m` at
+`thresholds[t]`. Progress frames have `stage` `groups` while an unresolved grouping is read and `genes` after; for
+`genes`, `done` and `total` are stored entries, as `entries_done` and `entries_total` are.
+
+A CSR matrix reads only the stored ranges of the group's rows, a CSC matrix every gene, a dense array the row chunks
+that hold a cell of the group. The estimate therefore counts the stored entries of the **data chunks** the rows touch,
+from the row pointers and the chunk size: a group scattered over the dataset touches every chunk, so costs the whole
+layer, while a group stored together costs its chunks only. The estimate carries `coverage`: `{entries,
+layer_entries, fraction, known, n_group}`. It is exact (`known: true`) for a table's cells and for a grouping in the
+code cache; for a grouping not yet resolved it is the whole layer (`known: false`), and the tier of the exact figure
+is applied once the grouping has been resolved and kept: a request that needs asking or is refused then ends with a
+`result` frame holding `refused: {reason: "confirmation_required" | "groups_too_expensive", message, seconds, tier,
+limit, estimate}` and no block. The tiers are the others': above 60 s `409 confirmation_required`, above 10 minutes
+`413 groups_too_expensive`, whose message suggests a subset (at 100 million cells only a group stored together in a
+CSR matrix is cheap).
 
 (http-matrix-kind)=
 ### What an input looks like

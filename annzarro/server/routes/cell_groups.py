@@ -1,7 +1,8 @@
 """``POST /api/v1/data/cell_groups``: cells into groups, with features and measures per group (SHR-29).
 
 The dataset is named, as on every data route, by ``?dataset_path=`` (what the access gate and the path confinement
-read). Two shapes share the route: ``grouping`` (the groups of a list of partitionings, one code per cell, moments of
+read). Three shapes share the route: ``genes`` (the moments of every gene over one group of cells or a table's cells, SO-8a;
+``core/gene_moments.py``, documented there and in :func:`_genes_response`), ``grouping`` (the groups of a list of partitionings, one code per cell, moments of
 genes, scores and columns per group; ``core/cell_groups.py`` and ``core/group_features.py``) and ``grid`` (the dense
 counts of a count plot; ``core/cell_grid.py``). The body is plan 1.2's::
 
@@ -9,6 +10,7 @@ counts of a count plot; ``core/cell_grid.py``). The body is plan 1.2's::
      "partitionings": [...], "sets": {...}, "subset": "<spec>" | {...},
      "small": {...}, "features": [...], "measures": [...], "want": {...},      # grouping
      "mode": "2d" | "1d" | "categorical" | "sets", "density": false,            # grid
+     "group": [...], "member": "<set>", "layer": "X", "thresholds": [0],        # genes
      "estimate_only": false, "confirm": false}
 
 A field the shape does not take is refused by the engine (``unknown_field``), a field no shape takes by the body
@@ -54,7 +56,7 @@ import logging
 from flask import jsonify, request
 
 from .. import access
-from ...core import cell_grid, cell_groups, gene_score, get_reader, read_guard, remote
+from ...core import cell_grid, cell_groups, gene_moments, gene_score, get_reader, read_guard, remote
 from ...core import group_cache, group_features
 from ...core import subset as cell_subset
 from . import compute_stream, data_routes
@@ -73,8 +75,9 @@ REMOTE_COMPUTE_S = 1800.0
 MAX_PARTITIONINGS = 64
 MIMETYPE = "application/x-annzarro-groups-stream"
 #: Every field a shape takes; the engine refuses, per shape, those the shape does not (``unknown_field``).
-_BODY_FIELDS = ("shape", "mode", "partitionings", "sets", "small", "subset", "features", "measures", "want", "density",
-                "estimate_only", "confirm")
+_BODY_FIELDS = tuple(dict.fromkeys(("shape", "mode", "partitionings", "sets", "small", "subset", "features",
+                                    "measures", "want", "density", "estimate_only", "confirm")
+                                   + gene_moments.BODY_FIELDS))
 
 #: Bytes of the reservation: FX-E's measured formula for a resolve (superseding E3's), E5's additions for features.
 _RESOLVE_TEMPORARIES = int(0.35 * 2 ** 30)  # what a resolve works on besides its codes and its source column
@@ -330,6 +333,217 @@ def _refusal(job, body, plan_layout):
         confirm_message=f"This would take about {seconds:.0f} seconds. Send confirm: true to compute it.")
 
 
+def _resolve_rows(app_, reader, dataset_path, body):
+    """``(rows, None)``: the dataset rows of the body's ``subset`` (None: every cell), or ``(None, response)``."""
+    if body.get("subset") is None:
+        return None, None
+    raw = body["subset"]
+    try:
+        resolved = cell_subset.resolve(reader, dataset_path, raw if isinstance(raw, str) else json.dumps(raw),
+                                       app_.config, client=None, low=False)
+    except cell_subset.SubsetError as exc:
+        return None, _error(exc.status, exc.reason, exc.message)
+    except Exception as exc:
+        return None, data_routes._reader_error_response(exc, dataset_path)
+    return (None if resolved is None else resolved.indices), None
+
+
+#: Bytes a genes job holds beyond a grouping's resolve: its accumulators, 8 B each of ``4 + 2 * thresholds`` figures
+#: and the result's 5 per threshold for every gene, a byte a cell for the mask, the read-ahead (12 B an entry) and the
+#: segment temporaries. :func:`reservation` has a grouping's resolve.
+def genes_reservation(plan, n_shown, cover_entries, codes_held=False):
+    """``(full, keep)`` bytes a genes request holds on the ledger while it runs and while it has given way."""
+    t = len(plan.request.thresholds)
+    held = plan.n_cells + 8 * plan.n_var * (4 + 2 * t + 5 * t)
+    resolve_full = resolve_keep = 0
+    if plan.groups is not None:
+        empty = group_features.Work(features=(), measures=(), n_cells=plan.n_cells, reads=[], vectors=[],
+                                    gene_target={}, vector_of={}, missing=[], entries=0, seconds=0.0,
+                                    whole_matrix=False, layouts=[])
+        resolve_full, resolve_keep = reservation(group_features.Plan(plan.groups, empty), n_shown, codes_held)
+    full = resolve_full + held + 12 * min(gene_moments.READ_AHEAD_ENTRIES, cover_entries) + _SEGMENT_TEMPORARIES
+    if codes_held:
+        full += HIT_MARGIN_BYTES                       # a hit reads genes without a resolve's temporaries (as features)
+    return full, min(resolve_keep + held, full)
+
+
+class _GenesJob(_Job):
+    """One ``genes`` request past its refusals. Its grouping is looked up, claimed and kept as a grouping's own is
+    (:class:`_Job`); the cells' coverage is exact once the group is known (a hit, or a table's cells), else it is the
+    whole layer until the grouping is resolved, and the tier of the exact figure is then applied in the stream."""
+
+    def __init__(self, plan, rows, mask, cover, est, cached=None):
+        self.shape, self.plan, self.rows, self.want_codes, self.grid = "genes", plan, rows, False, False
+        self.mask, self.cover, self.estimate, self.cached, self.pinned = mask, cover, est, cached, None
+        self.entries, self.lane, self.tier = est["entries"], est["lane"], est["tier"]
+        if plan.groups is not None and cached is None:      # the resolve's own entries come before the genes'
+            self.entries += plan.groups.entries
+        self.n_cells, self.dataset_path = plan.n_cells, plan.dataset_path
+        self.n_shown = plan.n_cells if rows is None else int(rows.size)
+        self.confirm = plan.request.confirm
+
+    def queued_frame(self, job):
+        return {"type": "progress", "stage": "genes", "done": 0, "total": self.entries,
+                **compute_stream.progress_fields(job, 0, self.entries)}
+
+    def _refused_frame(self, est):
+        message = (f"This would take about {est['seconds'] / 60:.0f} minutes; the limit is "
+                   f"{gene_moments.REFUSE_S / 60:.0f}. Use a subset." if est["tier"] == "refused" else
+                   f"This would take about {est['seconds']:.0f} seconds. Send confirm: true to compute it.")
+        reason = "groups_too_expensive" if est["tier"] == "refused" else "confirmation_required"
+        return {"type": "result", "version": gene_moments.ALGORITHM_VERSION, "shape": "genes",
+                "refused": {"reason": reason, "message": message, "seconds": est["seconds"], "tier": est["tier"],
+                            "limit": gene_moments.REFUSE_S if est["tier"] == "refused" else gene_moments.ASK_FIRST_S,
+                            "estimate": est}}
+
+    def frames(self, job):
+        claim, events, mask, cover, est = None, None, self.mask, self.cover, self.estimate
+        entries = [0]
+
+        def read(n):
+            entries[0] += n
+        try:
+            with remote.deadline(REMOTE_COMPUTE_S if remote.is_remote_path(self.dataset_path) else None):
+                grouped = self.plan.groups is not None
+                cached = None
+                if grouped:
+                    cached, claim = (self.cached, None) if self.cached is not None else self._lookup(job)
+                yield _frame({"type": "start", **({"codes": "miss" if cached is None else "hit"} if grouped else {}),
+                              "lane": self.lane, "entries_total": self.entries, "queue": job.queue()})
+                if grouped:
+                    grouping = None
+                    events = cell_groups.compute(self.plan.groups, self.rows, codes=cached, pause=job,
+                                                 on_entries=read)
+                    for kind, payload in events:
+                        if kind == "progress":
+                            yield _frame({"type": "progress", **payload,
+                                          **compute_stream.progress_fields(job, entries[0], self.entries)})
+                        else:
+                            grouping = payload
+                    if claim is not None and grouping.refused is None:
+                        claim.fill(grouping)
+                    if grouping.refused is not None:
+                        yield _frame({"type": "result", "version": gene_moments.ALGORITHM_VERSION, "shape": "genes",
+                                      "n_shown": self.n_shown, "refused": grouping.refused})
+                        return
+                    mask = gene_moments.mask_of(self.plan, self.rows, grouping)
+                    if self.mask is None:              # the exact figures, now the group is known
+                        cover = gene_moments.coverage(self.plan, mask)
+                        est = gene_moments.estimate(self.plan, cover)
+                        if est["tier"] == "refused" or (est["tier"] == "confirm" and not self.confirm):
+                            yield _frame(self._refused_frame(est))
+                            return
+                base = entries[0]                          # what the resolve read; the genes' reads follow
+                for kind, payload in gene_moments.compute(self.plan, mask, pause=job, n_shown=self.n_shown,
+                                                          entries_total=cover["entries"]):
+                    if kind == "progress":
+                        yield _frame({"type": "progress", **payload, **compute_stream.progress_fields(
+                            job, base + payload["done"], base + cover["entries"])})
+                        continue
+                    head, blocks = payload.to_reply()
+                    head["estimate"] = est
+                    yield _frame(head)
+                    yield from compute_stream.block_bytes([array for _, array in blocks])
+        except GeneratorExit:
+            raise
+        except gene_score.ScoreCancelled:
+            return
+        except Exception as exc:
+            yield _frame(_error_frame(exc))
+        finally:
+            if claim is not None:
+                claim.abandon()
+            if self.pinned is not None:
+                CODES.unpin(self.pinned)
+                self.pinned = None
+            if events is not None:
+                events.close()
+
+
+def _genes_response(app_, reader, dataset_path, body):
+    """``shape: "genes"``: the moments of every gene over one group (SO-8a, ``core/gene_moments.py``).
+
+    The body: ``partitionings`` and ``group`` (a group's key), or ``sets`` and ``member`` (a table's cells), ``layer``,
+    ``thresholds``, and the route's ``subset``, ``estimate_only`` and ``confirm``. Before the stream everything is
+    plain HTTP as for a grouping. ``estimate_only`` answers ``{"estimate": {..., "coverage": {entries, layer_entries,
+    fraction, known, n_group}}}``: the stored entries of the data chunks the group's rows touch (exact when the group
+    is known: a table's cells, or a grouping in the code cache; else the whole layer, ``known`` false). A known
+    estimate in the ``refused`` tier is ``413 groups_too_expensive``, in ``confirm`` without ``confirm: true`` a
+    ``409``. An unknown one runs: the grouping is resolved (and kept) and the exact figure then ends the stream in
+    a ``result`` frame with ``refused: {reason: groups_too_expensive | confirmation_required, ...}`` when it
+    needs to. The stream is a grouping's: ``start`` (``codes`` hit or miss for a group), ``progress`` (``stage``
+    ``groups`` then ``genes``, whose ``done`` and ``total`` are entries), then ``result`` (``moments`` block
+    ``[n_var, 5 * thresholds]``, threshold-major) or ``error``."""
+    try:
+        parsed = gene_moments.parse_request(body)
+        plan = gene_moments.plan(reader, dataset_path, parsed)
+    except gene_score.ScoreError as exc:
+        return _error(exc.status, exc.reason, exc.message, **exc.extra)
+    except Exception as exc:
+        return data_routes._reader_error_response(exc, dataset_path)
+    rows, failure = _resolve_rows(app_, reader, dataset_path, body)
+    if failure is not None:
+        return failure
+    n_shown = plan.n_cells if rows is None else int(rows.size)
+    for ref, members in parsed.sets.items():
+        if members.size != n_shown:
+            return _error(400, "set_length_mismatch", f"Set '{ref}' has {members.size} cells; the request shows "
+                          f"{n_shown}.", count=int(members.size), shown=n_shown)
+    unpin, cached, mask = None, None, None
+    try:
+        if plan.groups is not None:
+            key = group_cache.key_of(dataset_path, plan.cache_key, n_shown)
+            cached = None if key is None else CODES.peek(key, parsed.grouping.histograms, pin=True)
+            if cached is not None:                    # pinned until the stream ends, however it ends
+                unpin = lambda: CODES.unpin(key)       # noqa: E731
+        if plan.groups is None or cached is not None:
+            mask = gene_moments.mask_of(plan, rows, cached)
+        cover = gene_moments.coverage(plan, mask)
+        estimate = gene_moments.estimate(plan, cover, resolve=plan.groups is not None and cached is None)
+        failure = None
+        if parsed.estimate_only:
+            failure = jsonify({"estimate": estimate, "missing": {}})
+        elif mask is not None:
+            failure = _genes_refusal(estimate, parsed.confirm)
+        if failure is not None:
+            if unpin is not None:
+                unpin()
+            return failure
+        job = _GenesJob(plan, rows, mask, cover, estimate, cached=cached)
+        full, keep = genes_reservation(plan, n_shown, cover["entries"], codes_held=cached is not None)
+    except gene_score.ScoreError as exc:
+        if unpin is not None:
+            unpin()
+        return _error(exc.status, exc.reason, exc.message, **exc.extra)
+    except BaseException:
+        if unpin is not None:
+            unpin()
+        raise
+
+    def admit():
+        if job.lane != "heavy":
+            return lambda: None
+        admitted = read_guard.admit(full)
+        admitted.__enter__()
+        return lambda: admitted.__exit__(None, None, None)
+    return compute_stream.respond(
+        job.lane, nbytes=full, keep_bytes=keep, what="this request", wait_s=QUEUE_WAIT_S, admit=admit,
+        admit_bytes=full if job.lane == "heavy" else 0, on_release=unpin,
+        work=job.frames, queued_frame=job.queued_frame, mimetype=MIMETYPE,
+        headers={"X-Annzarro-Groups-Version": str(cell_groups.ALGORITHM_VERSION)})
+
+
+def _genes_refusal(estimate, confirm):
+    """The plain-HTTP answer to a known cost tier of a genes request that may not run now, or None."""
+    seconds = estimate["seconds"]
+    return compute_stream.tier_refusal(
+        estimate["tier"], confirm, estimate, too_expensive="groups_too_expensive",
+        refused_message=f"This would take about {seconds / 60:.0f} minutes; the limit is "
+                        f"{gene_moments.REFUSE_S / 60:.0f}. The group is spread over the matrix, and the matrix is read "
+                        f"in whole chunks; use a subset.",
+        confirm_message=f"This would take about {seconds:.0f} seconds. Send confirm: true to compute it.")
+
+
 def register_cell_groups_routes(app_, api_version):
     @app_.route(f"/api/{api_version}/data/cell_groups", methods=["POST"])
     @access.gate("dataset")
@@ -349,6 +563,8 @@ def register_cell_groups_routes(app_, api_version):
             return _error(422, "too_many_partitionings",
                           f"A request holds at most {MAX_PARTITIONINGS} partitionings, groupings used as sources "
                           f"included; this one holds {count} or more.", count=count, limit=MAX_PARTITIONINGS)
+        if body.get("shape") == "genes":
+            return _genes_response(app_, reader, dataset_path, body)
         try:
             if body.get("shape") == "grid":
                 shape, parsed = "grid", cell_grid.parse_request(body)

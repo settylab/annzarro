@@ -404,68 +404,8 @@ class _Bins:
         return np.minimum(codes, self.k).astype(np.intp)
 
 
-class _Sums:
-    """Running per-bin sums of values for several thresholds; ``seen`` counts the values given (finite or not),
-    which a negative threshold needs: a sparse gene's implicit zeros are above it."""
-
-    def __init__(self, n_bins: int, thresholds: Sequence[float]):
-        self.thresholds = list(thresholds)
-        self.count_seen = any(t < 0 for t in self.thresholds)       # implicit zeros matter only below 0
-        z = lambda: np.zeros(n_bins, dtype=np.float64)                    # noqa: E731
-        self.seen, self.bad, self.sum, self.sumsq = z(), z(), z(), z()
-        self.n_above = [z() for _ in self.thresholds]
-        self.sum_above = [z() for _ in self.thresholds]
-
-    def add(self, b: np.ndarray, values: np.ndarray) -> None:
-        n = self.seen.size
-        v = values.astype(np.float64)
-        finite = np.isfinite(v)
-        if finite.all():
-            finite = None
-        else:
-            self.bad += np.bincount(b[~finite], minlength=n)
-            v[~finite] = 0.0
-        seen = np.bincount(b, minlength=n) if self.count_seen else None
-        if seen is not None:
-            self.seen += seen
-        total = np.bincount(b, weights=v, minlength=n)
-        self.sum += total
-        self.sumsq += np.bincount(b, weights=v * v, minlength=n)
-        for i, t in enumerate(self.thresholds):
-            above = v > t
-            if finite is not None and t < 0:
-                above &= finite
-            if t >= 0 and 2 * np.count_nonzero(above) > above.size:
-                # most values are above (an expressed gene's stored entries): count the few that are not. A
-                # non-finite value, held as 0, is among them; the sums lose nothing to cancellation, as the part
-                # taken away is the smaller one
-                below = ~above
-                b_below = b[below]
-                seen = np.bincount(b, minlength=n) if seen is None else seen
-                self.n_above[i] += seen - np.bincount(b_below, minlength=n)
-                self.sum_above[i] += total - np.bincount(b_below, weights=v[below], minlength=n)
-            else:
-                b_above = b[above]
-                self.n_above[i] += np.bincount(b_above, minlength=n)
-                self.sum_above[i] += np.bincount(b_above, weights=v[above], minlength=n)
-
-    def write(self, sizes: np.ndarray, outs: Sequence[Sequence[np.ndarray]]) -> None:
-        """The moments at threshold ``i`` into each ``[k, 5]`` array of ``outs[i]``; ``sizes`` are the cells per
-        code. A cell given no value (a sparse gene's implicit zero) is a finite zero."""
-        k = sizes.size
-        for i, t in enumerate(self.thresholds):
-            if not outs[i]:
-                continue
-            m = outs[i][0]
-            m[:, 0] = sizes - self.bad[:k]
-            m[:, 1] = self.sum[:k]
-            m[:, 2] = self.sumsq[:k]
-            m[:, 3] = self.n_above[i][:k]
-            if 0.0 > t:
-                m[:, 3] += sizes - self.seen[:k]
-            m[:, 4] = self.sum_above[i][:k]
-            for other in outs[i][1:]:
-                other[...] = m
+#: The running per-bin sums (``gene_score.MomentSums``, shared with the genes shape's ``row_moments``).
+_Sums = gs.MomentSums
 
 
 def _segments(n: int) -> Iterator[Tuple[int, int]]:
