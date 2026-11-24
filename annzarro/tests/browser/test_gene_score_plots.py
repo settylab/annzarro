@@ -1235,7 +1235,8 @@ def test_new_signature_in_the_key_list_opens_a_signature_beside_the_plot_and_wir
 def test_an_open_signature_nobody_uses_states_its_genes_without_computing(page, served):
     _open(page, served, plots=(), sig=_sig(genes=("GENE0001", "GENE0002", "NOT_A_GENE")), sig_open=True, wait=False)
     page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
-    until(page, "(s) => !!document.querySelector(s + ' .gsig-score') && !document.querySelector(s + ' .gsig-score').hidden", S)
+    # the line is always there (it keeps its height); wait for it to say something
+    until(page, "(s) => !!document.querySelector(s + ' .gsig-score') && document.querySelector(s + ' .gsig-score').textContent !== ''", S)
     assert page.inner_text(f"{S} .gsig-score") == "Ready, 2 of 3 genes in this dataset."
     # time for a score request, were one going to; nobody uses the score
     page.wait_for_timeout(800)
