@@ -89,6 +89,33 @@ export function withGroupColor(recipe, name, css) {
     return next.length ? next : undefined;
 }
 
+/**
+ * A recipe's `groupOverrides` with the label of the group of generated name `name` set (an empty label clears it); the entry
+ * keeps its colour, and an entry left with nothing but its name goes. Undefined when none is left.
+ */
+export function withGroupLabel(recipe, name, label) {
+    const list = Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : [];
+    const at = list.findIndex((o) => o.name === name);
+    const entry = { ...(at >= 0 ? list[at] : { name }) };
+    if (label) entry.label = label; else delete entry.label;
+    const next = list.filter((_, i) => i !== at);
+    if (Object.keys(entry).length > 1) next.splice(at >= 0 ? at : next.length, 0, entry);
+    return next.length ? next : undefined;
+}
+
+/** A recipe's `groupOverrides` without the entry of generated name `name` (Reset, Drop); undefined when none is left. */
+export function withoutGroupOverride(recipe, name) {
+    const next = (Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : []).filter((o) => o.name !== name);
+    return next.length ? next : undefined;
+}
+
+/** A recipe's `groupOverrides` without the entries no current group (`generated` names) matches; undefined when none is left. */
+export function withoutInactiveOverrides(recipe, generated) {
+    const names = new Set(generated);
+    const next = (Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : []).filter((o) => names.has(o.name));
+    return next.length ? next : undefined;
+}
+
 /** A recipe's `groupOverrides` with every group's color removed, its labels kept; undefined when none is left. */
 function withoutGroupColors(recipe) {
     const list = (Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : []).map((o) => {

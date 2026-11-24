@@ -140,6 +140,17 @@ small-group threshold carries **small** ("Under 10 cells: statistics are unrelia
 list. With exactly two factors, **Cross-table** shows the first factor's levels down and the second's across, with
 the cells of each combination; an empty combination is a muted 0, because it is not a group.
 
+**Naming a group.** Double-click a group's name, press the **✎** that appears when you point at it, or press **F2** on a
+focused row. The field has the group's colour beside it (**Alt+C** opens the picker from the keyboard), **✓** and
+**✕**. **Enter**, **✓** or a click elsewhere saves; **Escape** or **✕** cancels; **Tab** saves and edits the next group.
+A name is only a label, so nothing is computed again, and every panel that shows the grouping (the list, a Cell Plot's
+legend, a Cell-Gene Plot's axis, a Count Plot, a Cell Table column, the exports) uses it. If the name is another group's,
+it is qualified as `name (2)`. **Reset** (shown on a group you have named or coloured) puts back the generated name and
+the default colour. The name and colour of a group are kept under the group's generated name; when no group has that
+name any more (another factor, another dataset, moved bins), they are listed under **Not in these groups** below the
+list, muted, with **Drop** (and **Drop all inactive**), and they apply again if a group of that name returns. A level's
+colour is set beside its name in the same way, in the factor's **Edit ▾** pop-over.
+
 **Export CSV** downloads the list (key, name, cells and share), or the cross-table.
 **Export cells** downloads every cell shown with its group, up to 1,000,000 cells.
 

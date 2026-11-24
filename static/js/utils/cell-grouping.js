@@ -416,12 +416,25 @@ export function groupLabels(recipe, reply, titleOf) {
 }
 
 /**
- * The name of each group (SHR-9): its generated name (`generatedGroupNames`).
+ * The name of each group (SHR-9): its generated name (`generatedGroupNames`), or the label the user gave that group
+ * (`groupOverrides`, decision 38, keyed by the generated name). A label that another group already has is qualified the way
+ * level duplicates are, `name (2)`: the group that is called that keeps it.
  * @returns {string[]} one per group of the reply, in its order
  */
-// export-unused-ok: G8a lists the groups of a grouping as the levels of a source
 export function groupNames(recipe, reply, titleOf) {
-    return generatedGroupNames(recipe, reply, titleOf);
+    const generated = generatedGroupNames(recipe, reply, titleOf);
+    const labels = new Map((Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : [])
+        .filter((o) => typeof o.label === 'string' && o.label !== '').map((o) => [o.name, o.label]));
+    if (!labels.size) return generated;
+    const taken = new Set(generated.filter((name) => !labels.has(name)));
+    return generated.map((name) => {
+        if (!labels.has(name)) return name;
+        const label = labels.get(name);
+        let out = label;
+        for (let n = 2; taken.has(out); n++) out = P.suffixed(label, n);
+        taken.add(out);
+        return out;
+    });
 }
 
 /**
