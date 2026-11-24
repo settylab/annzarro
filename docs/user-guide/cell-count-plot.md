@@ -56,10 +56,15 @@ the **×** closes them, and **Escape** puts the focus back on the button that op
 
 **Colour.** **Color ▾** shows when a colour scale or a palette applies: a 2D histogram, a 2D density without a Color by,
 a heatmap's number, an UpSet coloured by a share or a statistic, and any plot with a Color by. It holds the **Map**
-(Viridis by default), **Reverse**, **Min**, **Max** and **Center** of the scale (empty means automatic; Center has no
-effect while both Min and Max are set), and the **Level palette** of a Color by's levels. **Reset** returns them all to
-the defaults. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
+(Viridis by default), **Reverse**, **Min**, **Max** and **Center** of the scale (Center has no effect while both Min and Max
+are set), and the **Level palette** of a Color by's levels. **Reset** returns them all to
+the defaults. A box that is not set says "auto" with the value the plot draws, such as "auto (412)"; type a number to fix it, or clear
+the box. The **↺** button beside the boxes returns **Min**, **Max** and **Center** to auto in one undo step. A 2D histogram with a Color by has no scale, only the palette, and **Max** is then the cell count that
 gets the full colour of every level.
+
+**Colours.** The bars, slices and curves of a **Color by** input are in the colours of its levels: a column's stored
+colours when it has them, else the app's group colours; for a {doc}`cell-grouping`, the grouping's own colours of its
+groups, so a bar is the colour of the group's swatch (see Colours in {doc}`cell-grouping`).
 
 Switching mode keeps every input: those the new mode uses stay in place, and the others are kept for when you switch
 back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: in Table 1, in Table 2".
@@ -146,10 +151,12 @@ setting opens with the matching layers.
 **Cell points** colors each cell by the density of its group where it lies: with a Color by, in the group's color with
 the density as the opacity, in eight steps on the same scale as the other layers; with one group, on the color map. The
 density at a cell is read from the same smoothed grid the isolines come from, so the points and the contours agree. The
-positions of the cells are loaded as a Cell Plot loads them, so **X** and **Y** must be an obs column, an embedding or a
-gene, and a Color by an obs column of categories; for anything else the strip says what to change. **Point size** (1 to
+positions of the cells are loaded as a Cell Plot loads them, so **X** and **Y** must be an obs column, an embedding, a
+gene or a gene score. The Color by can be an obs column of categories, a {doc}`cell-grouping` (each cell in its
+group's color), or a number, which each cell is binned into by the plot's own bin edges; for anything else the strip says
+what to change. **Point size** (1 to
 12 pixels, 3 by default) sits beside the layer. The plot draws at most 1,000,000 points: above that it draws a seeded
-random sample (the same cells each time) and the strip says "Cells drawn as points: 1,000,000 of 12,345,678 (a sample)."
+random sample (the same cells each time) and the strip says "Cells drawn as points: 998,812 of a random sample of 1,000,000 of the 12,345,678 cells." The first number is the points on the plot: cells outside the density's range are not drawn
 The density itself always counts every cell. With more than 25,000,000 cells shown the layer is not drawn, because every
 cell's position would have to be loaded: turn on a subset. Hovering shows the density grid's x, y, group and density at
 that place, not a single cell, and the CSV stays the table of counts.

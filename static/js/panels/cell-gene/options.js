@@ -11,14 +11,16 @@
  * - The menus (`OPTIONS_PART`), three buttons mounted by panels/cell-gene.js in the control grid's Layout group, each
  *   opening a pop-over (ui/popover.js; design note options-ux-080 section 5): Cluster ▾ (scopes, Sort groups, Linkage,
  *   Distance, the Ward note, the two Dendrograms), Color ▾ (map, Reverse, Min, Max, Center, Print values; in dots the
- *   dot sizes and the % at the smallest and largest dot) and Plot Options (dots' outline, sections, labels, legends,
+ *   largest dot as a share of its cell, the smallest dot in px, and Size min and max) and Plot Options (dots' outline and opacity, sections, labels, legends,
  *   totals, Export with Download CSV from the CSV's rows, utils/cell-gene-model.js `longRows`; UX 7, CXG-20). A
  *   pop-over never changes the size of the panel. Every change applies live as one undoable step of the panel
  *   (`ctx.set(patch, label)`). Before them, the `3D` toggle (UX 6b, WP-12): `view: '3d'`, disabled with its reason
  *   over the bar cap (`view3dGate`); in 3D, Plot Options' Export greys SVG ("3D exports as an image only").
  *
  * STYLE FIELDS (plan 1.6: additive, default when absent, never frozen): `colorScale`, `reverse`, `limits: [min, max]`, `center`,
- * `printValues`, `dotSizes: [smallest, largest]` (px), `dotMin`, `dotMax` (% at the smallest and largest dot), `gap`
+ * `printValues`, `heightLimits: [min, max]` (the 3D bars' range), `dotScale` (10 to 100: the % of its cell the largest dot fills; absent, 100), `dotSmallest` (px),
+ * `dotOpacity` (0.1 to 1; absent, 1), `dotSizes: [smallest, largest]` (px; written before the dots filled their cells, still read: a link that has it draws
+ * those px until Largest dot is moved), `dotMin`, `dotMax` (% at the smallest and largest dot), `gap`
  * (0 to 3 cells), `sectionTitles`, `labels: {genes, groups}`, `titles: {plot, color, size}`, `legend: {colorBar,
  * sizeLegend, strips}`, `totals`, `sortGroups`, and `cluster.dendrograms: {genes, groups}` beside the frozen cluster
  * fields (a stored `true` or `false` reads as both). A field at its default is written as absent, so links stay short.
@@ -34,13 +36,15 @@ import { RESERVED } from '../../utils/level-id.js';
 import { GAP_COLOUR } from '../../utils/plot-theme.js';
 import { MAX_ROWS } from '../../utils/hclust.js';
 import { longCsv } from '../../utils/cell-gene-model.js';
-import { generateDiscreteColors } from '../plot-utilities/colors.js';
+import { groupingColours } from '../../utils/grouping-colours.js';
 import { createPopover } from '../../ui/popover.js';
 import { registerPanelFields } from '../plot-utilities/options-schema.js';
 import { mountPlotOptions } from '../plot-utilities/options-popover.js';
+import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import { dendrogramBlocks } from './draw-annotations.js';
 import { BARS_3D_MAX, checkBarCap } from '../../utils/bars-3d.js';
 
+const W = VOCABULARY.cellGene;
 const WO = VOCABULARY.cellGene.options;
 const W3 = VOCABULARY.cellGene.view3d;
 
@@ -50,9 +54,13 @@ const Z_DEFAULT_SCALE = 'RdBu';
 const Z_SCALINGS = Object.freeze(['z_groups', 'z_pooled']);
 const DEFAULT_OUTLINE = Object.freeze({ color: '#000', width: 0.5 });
 const OUTLINE_MAX = 3;
+/** Dot opacity: the slider's ends and step; 1 (the default) is opaque. */
+const DOT_OPACITY = Object.freeze({ min: 0.1, max: 1, step: 0.05 });
 const DEFAULT_GAP = 1;
 const GAP_MAX = 3;
 const DOT_PX = Object.freeze({ min: 1, max: 40, smallest: 3, largest: 20 });
+/** Largest dot, in % of its cell: the slider's ends and step; 100 (the default) fills the cell. */
+const DOT_SCALE = Object.freeze({ min: 10, max: 100, step: 5 });
 const DEFAULT_CLUSTER = Object.freeze({ genes: 'off', groups: 'off', linkage: 'complete', distance: 'correlation',
     dendrograms: Object.freeze({ genes: true, groups: true }) });
 const GENE_SCOPES = Object.freeze(['off', 'sections']);
@@ -117,7 +125,10 @@ function styleOf(config) {
             width: isNumber(o.width) ? Math.max(0, Math.min(OUTLINE_MAX, o.width)) : DEFAULT_OUTLINE.width
         },
         printValues: c.printValues === true,
+        dotOpacity: isNumber(c.dotOpacity) ? Math.max(DOT_OPACITY.min, Math.min(DOT_OPACITY.max, c.dotOpacity)) : DOT_OPACITY.max,
         dotSizes: rangeOf(c.dotSizes, DOT_PX.min, DOT_PX.max),
+        dotScale: isNumber(c.dotScale) ? Math.max(DOT_SCALE.min, Math.min(DOT_SCALE.max, c.dotScale)) : null,
+        dotSmallest: isNumber(c.dotSmallest) ? Math.max(DOT_PX.min, Math.min(DOT_PX.max, c.dotSmallest)) : null,
         dotMin: isNumber(c.dotMin) ? c.dotMin : null,
         dotMax: isNumber(c.dotMax) ? c.dotMax : null,
         sectionTitles: c.sectionTitles !== false,
@@ -171,6 +182,8 @@ const PLOT_OPTION_FIELDS = Object.freeze([
     { id: 'outlineColor', section: 'panel:dots', type: 'color', path: 'outline.color', label: WO.outlineColor, dflt: DEFAULT_OUTLINE.color, when: dotsMode },
     { id: 'outlineWidth', section: 'panel:dots', type: 'number', path: 'outline.width', label: WO.outlineWidth, dflt: DEFAULT_OUTLINE.width,
         min: 0, max: OUTLINE_MAX, step: 0.25, when: dotsMode },
+    { id: 'dotOpacity', section: 'panel:dots', type: 'range', path: 'dotOpacity', label: WO.dotOpacity, dflt: DOT_OPACITY.max,
+        min: DOT_OPACITY.min, max: DOT_OPACITY.max, step: DOT_OPACITY.step, when: dotsMode },
     { id: 'gap', section: 'panel:sections', type: 'number', path: 'gap', label: `${WO.gap} (${WO.gapUnit})`, dflt: DEFAULT_GAP, min: 0, max: GAP_MAX, step: 1 },
     { id: 'sectionTitles', section: 'panel:sections', type: 'check', path: 'sectionTitles', label: WO.sectionTitles, dflt: true },
     { id: 'geneLabels', section: 'axes', type: 'check', path: 'labels.genes', label: WO.geneLabels, dflt: true },
@@ -187,27 +200,27 @@ registerPanelFields('cell-gene', PLOT_OPTION_FIELDS);
 // ================================================================================================ strips and trees
 
 /**
- * One strip per factor of the cell axis (CXG-14): each drawn group's level, colored by its factor's levels (a
- * categorical column's own colors where the reply has them, the app's palette by level otherwise), and the legend of
- * the strip, the factor's levels in level order. The collected small group takes the gap color and no level.
+ * One strip per factor of the cell axis (CXG-14): each drawn group's level, colored as the factor colors its levels
+ * (utils/grouping-colours.js: the column's own colors, a palette, an override), and the legend of the strip, the factor's
+ * levels in level order. The collected small group takes the gap color and no level.
  * @param {Object} reply - the cell axis's reply
  * @param {Object} recipe - the grouping recipe the reply is of
  * @param {Int32Array} groupOrder - the reply's group at each drawn position
  * @param {(source: Object) => (string|undefined)} titleOf
+ * @param {Map<string, string>[]} [colors] - each factor's colors as the recipe has them now (group-sources.js `coloursOf`);
+ *   left out, the recipe's own
  * @returns {{title: string, colours: string[], levels: string[], legend: {label: string, colour: string}[]}[]}
  */
-function groupStrips(reply, recipe, groupOrder, titleOf) {
+function groupStrips(reply, recipe, groupOrder, titleOf, colors) {
     const parts = recipe && Array.isArray(recipe.partitionings) ? recipe.partitionings : [];
     if (!reply || !Array.isArray(reply.groups) || !Array.isArray(reply.partitionings) || reply.partitionings.length !== parts.length) return [];
     const maps = defaultLabelMaps(recipe, reply, titleOf);
+    const factors = colors || groupingColours(recipe, reply).factors;
     return parts.map((p, i) => {
         const info = reply.partitionings[i] || {};
         const levels = Array.isArray(info.levels) ? info.levels : [];
-        const own = !p.binning && isObject(info.colors) ? info.colors : null;
-        const palette = generateDiscreteColors(Math.max(1, levels.length));
-        const at = new Map(levels.map((id, k) => [id, k]));
         const label = (id) => (p.labels && p.labels[id]) || maps[i].get(id) || id;
-        const colour = (id) => (own && own[id]) || (at.has(id) ? palette[at.get(id) % palette.length] : GAP_COLOUR);
+        const colour = (id) => (factors[i] && factors[i].get(id)) || GAP_COLOUR;
         const colours = [];
         const names = [];
         for (const g of groupOrder) {
@@ -236,31 +249,40 @@ function dendrogramsOf(cluster, order) {
 /**
  * What the options add to the drawing model of draw.js and draw-annotations.js, and what the panel orders by.
  * @param {Object} config - the plot's configuration
- * @param {{reply?: Object, recipe?: Object, order?: Object, titleOf?: Function}} [ctx] - the cell axis's reply and its
- *   recipe, cell-gene-order.js's answer for the matrix, and the title of a panel behind a source; without them no
+ * @param {{reply?: Object, recipe?: Object, order?: Object, titleOf?: Function, colors?: Map[]}} [ctx] - the cell axis's reply
+ *   and its recipe, each factor's colors, cell-gene-order.js's answer for the matrix, and the title of a panel behind a source; without them no
  *   strip and no tree
  * @returns {{color: Object, size: Object, legend: Object, plotTitle: (string|undefined), annotations: Object,
  *   gap: number, sortBySize: boolean, cluster: Object}}
  */
-export function figureExtras(config, { reply, recipe, order, titleOf } = {}) {
+export function figureExtras(config, { reply, recipe, order, titleOf, colors } = {}) {
     const s = styleOf(config);
     const cluster = clusterOf(config);
     const color = { colorscale: plotlyColorscale(s.colorScale) };
     if (s.reverse) color.reversescale = true;
     if (config && config.mode === 'heatmap' && s.printValues) color.printValues = true;
     const size = {};
+    // the largest dot fills a share of its cell (draw.js), unless a link from before gives it in px and Largest dot
+    // was not moved since
     if (s.dotSizes) [size.smallest, size.largest] = s.dotSizes;
+    if (s.dotScale !== null) { delete size.largest; size.scale = s.dotScale / 100; }
+    if (s.dotSmallest !== null) size.smallest = s.dotSmallest;
     if (s.dotMin !== null) size.dotMin = s.dotMin;
     if (s.dotMax !== null) size.dotMax = s.dotMax;
     if (s.titles.size) size.title = s.titles.size;
+    // the 3D bars' height range (`heightLimits`): the heights are drawn between the two (draw.js figure3d)
+    const height = {};
+    const hl = Array.isArray(config && config.heightLimits) ? config.heightLimits : [];
+    if (isNumber(hl[0])) height.min = hl[0];
+    if (isNumber(hl[1])) height.max = hl[1];
     const outline = s.outline.width > 0 ? { color: s.outline.color, width: s.outline.width } : null;
     return {
-        color, size, outline, legend: s.legend, plotTitle: s.titles.plot || undefined, gap: s.gap, sortBySize: s.sortGroups, cluster,
+        color, size, height, outline, dotOpacity: s.dotOpacity, legend: s.legend, plotTitle: s.titles.plot || undefined, gap: s.gap, sortBySize: s.sortGroups, cluster,
         annotations: {
             brackets: { titles: s.sectionTitles },
             totals: s.totals,
             labels: s.labels,
-            strips: order ? groupStrips(reply, recipe, order.groups, titleOf) : [],
+            strips: order ? groupStrips(reply, recipe, order.groups, titleOf, colors) : [],
             dendrograms: dendrogramsOf(cluster, order)
         }
     };
@@ -354,7 +376,7 @@ function clusterNotes(drawn) {
 const fileName = (title) => `${String(title || 'cell-gene').replace(/[^\w.-]+/g, '_') || 'cell-gene'}.csv`;
 
 /** The fields Color ▾'s Reset clears: the map, its direction and range, and the dots' sizes. */
-const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center', 'printValues', 'dotSizes', 'dotMin', 'dotMax']);
+const COLOR_FIELDS = Object.freeze(['colorScale', 'reverse', 'limits', 'center', 'printValues', 'dotScale', 'dotSmallest', 'dotSizes', 'dotMin', 'dotMax', 'heightLimits']);
 
 /**
  * Mount the menus: three buttons in `slot`, each opening a pop-over (ui/popover.js) that is filled with the same
@@ -380,20 +402,6 @@ function mount(slot, ctx) {
     const check = (name, label, onChange) => {
         controls[name] = el('input', { type: 'checkbox', data: { option: name }, on: { change: (e) => onChange(e.target.checked) } });
         return el('label', { class: 'cgene-opt' }, controls[name], ` ${label}`);
-    };
-    /** A number box that commits on change or Enter; an empty box is the default. */
-    const number = (name, label, onCommit, attrs = {}) => {
-        const input = el('input', { type: 'number', class: 'form-control form-control-sm cgene-num', data: { option: name }, aria: { label }, ...attrs });
-        const commitIt = () => {
-            const raw = input.value.trim();
-            const v = raw === '' ? null : Number(raw);
-            if (v !== null && !Number.isFinite(v)) { paint(); return; }
-            onCommit(v);
-        };
-        input.addEventListener('change', commitIt);
-        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitIt(); } });
-        controls[name] = input;
-        return field(label, input);
     };
     const select = (name, label, entries, onChange) => {
         const s = el('select', { class: 'form-select form-select-sm', data: { option: name }, aria: { label }, on: { change: () => onChange(s.value) } },
@@ -437,7 +445,6 @@ function mount(slot, ctx) {
         select('distance', WO.distanceLabel, DISTANCES.map((d) => [d, WO.distance[d]]),
             (v) => setCluster({ distance: v }, `distance ${WO.distance[v]}`)),
         wardNote, summary, dendroRow);
-    const note = el('div', { class: 'cgene-cluster-note cgene-help', role: 'status', aria: { live: 'polite' } });
 
     /** A scope's radios, made again only when its entries change (a factor more or less), so focus stays put. */
     function radios(row, scope, entries, value) {
@@ -477,26 +484,61 @@ function mount(slot, ctx) {
         ctx.set({ limits: isNumber(now[0]) || isNumber(now[1]) ? [isNumber(now[0]) ? now[0] : null, isNumber(now[1]) ? now[1] : null] : undefined },
             k === 0 ? 'color minimum' : 'color maximum');
     };
-    const dotRow = el('div', { class: 'cgene-dot-range', role: 'group', aria: { label: WO.dotSizes } },
-        el('span', { class: 'cgene-field__label', text: WO.dotSizes }));
-    const dotEnd = (name, which) => {
-        const input = el('input', { type: 'range', min: DOT_PX.min, max: DOT_PX.max, step: 1, data: { option: name }, aria: { label: `${WO.dotSizes}: ${which}` },
-            on: { change: () => setDots() } });
+    const pairOf = (v) => [isNumber(v && v[0]) ? v[0] : null, isNumber(v && v[1]) ? v[1] : null];
+    // Color: Min, Max (`limits`) and Center (`center`), auto with the drawn value, ↺ back to auto in one step
+    const colorRange = createRangeBoxes({ el, what: WO.rangeWhat.color, group: 'colorRange',
+        ends: [{ label: WO.min, option: 'min' }, { label: WO.max, option: 'max' }, { label: WO.center, option: 'center', hint: false }],
+        onCommit: (k, v) => (k === 2 ? flat('center', v, null, 'color center') : limit(k)(v)),
+        onReset: () => ctx.set({ limits: undefined, center: undefined }, 'color range to auto') });
+    controls.min = colorRange.fields[0];
+    controls.max = colorRange.fields[1];
+    controls.center = colorRange.fields[2];
+    controls.center.title = WO.centerDiverging;
+    // the 3D bars' height range: heights are drawn between Min and Max (stored as `heightLimits`)
+    const heightRange = createRangeBoxes({ el, what: WO.rangeWhat.height, group: 'heightRange',
+        ends: [{ label: `${W3.height} ${WO.min.toLowerCase()}`, option: 'heightMin' }, { label: `${W3.height} ${WO.max.toLowerCase()}`, option: 'heightMax' }],
+        onCommit: (k, v) => {
+            const now = pairOf(config().heightLimits);
+            now[k] = v;
+            ctx.set({ heightLimits: now[0] !== null || now[1] !== null ? now : undefined }, k === 0 ? 'height minimum' : 'height maximum');
+        },
+        onReset: () => ctx.set({ heightLimits: undefined }, 'height range to auto') });
+    const heightSection = section(W3.height, heightRange.element);
+    /** A slider with its value said beside it; `onCommit` on release (one undoable step), the words follow the drag. */
+    const slider = (name, label, range, say, onCommit) => {
+        const out = el('output', { class: 'cgene-dot-value', data: { option: `${name}Value` } });
+        const input = el('input', { type: 'range', class: 'form-range', min: range.min, max: range.max, step: range.step || 1, data: { option: name }, aria: { label },
+            on: { input: (e) => { out.textContent = say(Number(e.target.value)); }, change: (e) => onCommit(Number(e.target.value)) } });
         controls[name] = input;
-        dotRow.appendChild(input);
+        controls[`${name}Value`] = out;
+        return el('label', { class: 'cgene-field cgene-dot-slider' }, el('span', { class: 'cgene-field__label', text: label }), input, out);
     };
-    dotEnd('dotSmallest', 'smallest');
-    dotEnd('dotLargest', 'largest');
-    function setDots() {
-        const lo = Number(controls.dotSmallest.value);
-        const hi = Number(controls.dotLargest.value);
-        const range = rangeOf([Math.min(lo, hi), Math.max(lo, hi)], DOT_PX.min, DOT_PX.max);
-        const plain = !range || (range[0] === DOT_PX.smallest && range[1] === DOT_PX.largest);
-        ctx.set({ dotSizes: plain ? undefined : range }, 'dot sizes');
-    }
-    const dotSizes = section(WO.heading.dots, dotRow,
-        number('dotMin', WO.dotMin, (v) => flat('dotMin', v, null, 'percent at the smallest dot'), { min: 0, max: 100, step: 'any' }),
-        number('dotMax', WO.dotMax, (v) => flat('dotMax', v, null, 'percent at the largest dot'), { min: 0, max: 100, step: 'any' }));
+    // Largest dot fills its cell by default (operator, 2026-11-23); moving it leaves an older link's px range behind,
+    // keeping its smallest dot
+    const largestRow = slider('dotScale', WO.largestDot, DOT_SCALE, WO.ofCell, (v) => {
+        const s = styleOf(config());
+        const smallest = s.dotSmallest !== null ? s.dotSmallest : s.dotSizes ? s.dotSizes[0] : null;
+        ctx.set({ dotScale: v === DOT_SCALE.max ? undefined : v, dotSizes: undefined,
+            dotSmallest: smallest === null || smallest === DOT_PX.smallest ? undefined : smallest }, 'largest dot');
+    });
+    const smallestRow = slider('dotSmallest', WO.smallestDot, { min: DOT_PX.min, max: DOT_PX.max }, WO.px, (v) => {
+        const s = styleOf(config());
+        // an older link's px range keeps its largest dot: the smallest end of it moves
+        if (s.dotSizes && s.dotScale === null && s.dotSmallest === null) {
+            const range = rangeOf([v, s.dotSizes[1]], DOT_PX.min, DOT_PX.max);
+            if (range) { ctx.set({ dotSizes: range }, 'smallest dot'); return; }
+        }
+        ctx.set({ dotSmallest: v === DOT_PX.smallest ? undefined : v }, 'smallest dot');
+    });
+    // the size statistic's own range: the values at the smallest and the largest dot (stored as `dotMin`, `dotMax`);
+    // named by the statistic, which need not be a percentage
+    const sizeRange = createRangeBoxes({ el, what: WO.rangeWhat.size, group: 'sizeRange',
+        ends: [{ label: WO.sizeMin, option: 'dotMin' }, { label: WO.sizeMax, option: 'dotMax' }],
+        onCommit: (k, v) => flat(k === 0 ? 'dotMin' : 'dotMax', v, null, k === 0 ? 'size minimum' : 'size maximum'),
+        onReset: () => ctx.set({ dotMin: undefined, dotMax: undefined }, 'size range to auto') });
+    controls.dotMin = sizeRange.fields[0];
+    controls.dotMax = sizeRange.fields[1];
+    const dotSizes = section(WO.heading.dots, largestRow, smallestRow, sizeRange.element);
     const resetColor = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-color-reset', title: WO.resetColorHelp,
         on: { click: () => ctx.set(Object.fromEntries(COLOR_FIELDS.map((k) => [k, undefined])), 'reset colors') } }, WO.resetColor);
     const colorBody = el('div', { class: 'cgene-pop cgene-color-menu' },
@@ -504,25 +546,20 @@ function mount(slot, ctx) {
             select('colorScale', WO.colorScale, SCALES.map((s) => [s, scaleOptionLabel(s)]),
                 (v) => flat('colorScale', v, Z_SCALINGS.includes(config().scale) ? null : DEFAULT_SCALE, `color scale ${v}`)),
             check('reverse', WO.reverse, (on) => flat('reverse', on, false, onOff(on, `${WO.reverse} colors`))),
-            number('min', WO.min, limit(0), { step: 'any' }),
-            number('max', WO.max, limit(1), { step: 'any' }),
-            number('center', WO.center, (v) => flat('center', v, null, 'color center'), { step: 'any', title: WO.centerDiverging }),
+            colorRange.element,
             check('printValues', WO.printValues, (on) => flat('printValues', on, false, onOff(on, WO.printValues))),
             scalingNote),
         dotSizes,
+        heightSection,
         el('div', { class: 'cgene-pop__foot' }, resetColor));
 
     // ---------------------------------------------------------------- Plot Options: the shared pop-over (WP-5a)
     const optionsBtn = button('cgene-options-btn', WO.plotOptions);
 
     // the shared plot toolbar (ui/plot-toolbar.js) when the panel gives one: 3D an action, Cluster and Color its menus,
-    // Plot Options last; the clustering's sentence stays in the grid
-    if (ctx.toolbar) {
-        ctx.toolbar.add({ actions: [view3dBtn], menus: [clusterBtn, colorBtn], options: optionsBtn });
-        slot.append(note);
-    } else {
-        slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn, note);
-    }
+    // Plot Options last
+    if (ctx.toolbar) ctx.toolbar.add({ actions: [view3dBtn], menus: [clusterBtn, colorBtn], options: optionsBtn });
+    else slot.append(view3dBtn, clusterBtn, colorBtn, optionsBtn);
 
     // ---------------------------------------------------------------- the pop-overs (ui/popover.js)
     const popover = (anchor, name, title, body) => createPopover({
@@ -591,24 +628,38 @@ function mount(slot, ctx) {
         controls.colorScale.value = s.colorScale;
         controls.reverse.checked = s.reverse;
         const limits = Array.isArray(c.limits) ? c.limits : [];
-        setValue(controls.min, isNumber(limits[0]) ? limits[0] : null);
-        setValue(controls.max, isNumber(limits[1]) ? limits[1] : null);
+        // the boxes say "auto" with the value drawn now; only while the pop-over is open
+        const shownModel = ctx.drawn() ? ctx.drawn().model : null;
+        if (colorBody.isConnected) {
+            colorRange.set({ limits: [...pairOf(limits), s.center], drawn: drawnRange(shownModel && shownModel.color.values) });
+            const sized = shownModel && shownModel.size && shownModel.size.values ? shownModel.size : null;
+            const unit = sized && W.statistic[sized.stat] ? ` (${W.statistic[sized.stat]})` : '';
+            sizeRange.set({ limits: [s.dotMin, s.dotMax], drawn: drawnRange(sized && sized.values), labels: [`${WO.sizeMin}${unit}`, `${WO.sizeMax}${unit}`] });
+            const h = shownModel && shownModel.view === '3d' ? shownModel.height : null;
+            heightRange.set({ limits: pairOf(c.heightLimits), drawn: drawnRange(h && h.values) });
+        }
+        heightSection.hidden = !(c.view === '3d');
         controls.center.disabled = !DIVERGING_SCALES.has(s.colorScale);
-        setValue(controls.center, s.center);
         controls.printValues.checked = s.printValues;
         controls.printValues.closest('label').hidden = dotsMode;
         scalingNote.textContent = scalingNotes(c).join(' ');
         scalingNote.hidden = !scalingNote.textContent;
         dotSizes.hidden = !dotsMode;
-        const range = s.dotSizes || [DOT_PX.smallest, DOT_PX.largest];
-        setValue(controls.dotSmallest, range[0]);
-        setValue(controls.dotLargest, range[1]);
-        setValue(controls.dotMin, s.dotMin);
-        setValue(controls.dotMax, s.dotMax);
+        // an older link's largest dot in px is said as such; the slider stands at a full cell until it is moved
+        const legacy = s.dotSizes && s.dotScale === null;
+        const scale = s.dotScale !== null ? s.dotScale : DOT_SCALE.max;
+        const smallest = s.dotSmallest !== null ? s.dotSmallest : s.dotSizes ? s.dotSizes[0] : DOT_PX.smallest;
+        setValue(controls.dotScale, scale);
+        controls.dotScaleValue.textContent = legacy ? WO.largestPx(s.dotSizes[1]) : WO.ofCell(scale);
+        setValue(controls.dotSmallest, smallest);
+        controls.dotSmallestValue.textContent = WO.px(smallest);
         resetColor.disabled = !COLOR_FIELDS.some((k) => c[k] !== undefined);
 
         const drawn = ctx.drawn();
-        note.textContent = clusterNotes(drawn).join(' ');
+        // rows or groups the clustering left out: a tag of the plot's status strip, not a line that wraps in the control
+        // grid (it grew the panel, and with it the row, as the plot drew)
+        const notes = clusterNotes(drawn);
+        if (ctx.tag) ctx.tag('cgene-cluster', notes.length ? { text: WO.notClusteredTag, title: notes.join(' '), severity: 'notice', pop: { text: notes.join(' ') } } : null);
 
         // 3D: pressed while stored; over the cap it cannot be turned on, and says why (a stored 3D can always be turned off)
         const in3d = c.view === '3d';

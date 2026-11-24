@@ -50,8 +50,6 @@ const USAGE_BY = Object.freeze({ method: (o) => o.sub || DEFAULT_METHOD, layer: 
  *   (it is being built in the background, waits for a click, is refused, failed or part of a cycle) has a `gate`: its
  *   dependants wait on it, with the table resolver's own states, before any score is asked for.
  * @property {() => boolean} [off] - gene signatures are turned off here
- * @property {(options: Object, method: string, layer: string) => boolean} [offers] - whether a source offers a method
- *   and layer; one it no longer offers is `lapsed`
  */
 
 /**
@@ -65,20 +63,9 @@ const USAGE_BY = Object.freeze({ method: (o) => o.sub || DEFAULT_METHOD, layer: 
  */
 export function createScoreSources({ store, signatures, context, liveDelayMs = 350,
     setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (t) => clearTimeout(t) }) {
-    /**
-     * An option the signature no longer offers: the consumer keeps drawing what it has and says so ("Not offered"),
-     * never moves to another. What is offered is in the option fields: the genes are not read for it (a table's
-     * would be read and sorted).
-     */
-    const lapsedOf = (sig, { sub, layer }) => {
-        if (!signatures.offers) return null;
-        const options = sig.options ? sig.options() : sig.recipe();
-        if (signatures.offers(options, sub || DEFAULT_METHOD, layer || '')) return null;
-        return { sub: sub || DEFAULT_METHOD, layer: layer || options.input, ownInput: options.input };
-    };
     const sources = createDerivedSources({
         store, sources: signatures, context, liveDelayMs, setTimer, clearTimer,
-        variantOf, hashOf: recipeHasher, editHashOf, keyOf: scoreKey, copyOf: copyRecipe, lapsedOf,
+        variantOf, hashOf: recipeHasher, editHashOf, keyOf: scoreKey, copyOf: copyRecipe,
         // a column left over from another source (an obsm dimension) is not a method: nothing is asked for it
         isOption: ({ sub }) => !sub || METHODS.includes(sub),
         failureStates: { key_not_found: 'nolayer' },

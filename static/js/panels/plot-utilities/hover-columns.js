@@ -12,6 +12,10 @@ import { getSource, hoverSources } from '../../utils/source-registry.js';
  * as they are when the selection changes. A provider's entries are what its
  * `hover` says (utils/source-registry.js): its group, its entries and the
  * picker value of each, `${type}:...`; the picker names no source type.
+ *
+ * A provider that is registered but lists nothing here (a gene score since
+ * decision 32) has no hover line: an entry of it that a link or a session
+ * stored is dropped when the plot is made (`shownHoverInfo`), quietly.
  */
 
 /**
@@ -27,6 +31,26 @@ export function hoverAnnotation(plotType) {
 
 /** The consumer a plot's Hover picker lists providers for. */
 const consumerOf = (plotType) => (plotType === 'genes' ? 'gene-plot' : 'cell-plot');
+
+/**
+ * A plot's stored hover entries without those it can no longer show: an entry of a provider this page has registered
+ * that the plot's Hover picker does not list (a gene score, decision 32). An entry of a provider this page has not
+ * loaded is kept, as hoverInfoFromSelection keeps it. Returns the same array when nothing goes.
+ * @param {Array<Object>|*} hoverInfo
+ * @param {'cells'|'genes'} plotType
+ */
+export function shownHoverInfo(hoverInfo, plotType) {
+  if (!Array.isArray(hoverInfo)) return hoverInfo;
+  const listed = hoverSources(consumerOf(plotType));
+  const kept = hoverInfo.filter(h => !retired(h, listed));
+  return kept.length === hoverInfo.length ? hoverInfo : kept;
+}
+
+/** Whether a stored hover entry is a registered provider's that the picker does not list. */
+function retired(h, listed) {
+  const provider = h && h.type ? getSource(h.type) : null;
+  return !!provider && !listed.includes(provider);
+}
 
 /** The picker value of a stored hover entry: a provider's own (its hover.valueOf), else the column's key. */
 export function pickerValue(h) {
@@ -85,7 +109,7 @@ export function hoverInfoFromSelection(plotType, selected, previous) {
   // the picker lists every entry of its providers: their entries are what it selects; another provider's (one this
   // page has not loaded, from a link) is kept
   const kept = (Array.isArray(previous) ? previous : [])
-    .filter(h => h && !(h.type === type && !h.column && h.key !== '_index') && !providers.some(p => p.type === h.type));
+    .filter(h => h && !(h.type === type && !h.column && h.key !== '_index') && !providers.some(p => p.type === h.type) && !retired(h, providers));
   if (!kept.some(h => h.type === type && h.key === '_index')) kept.unshift({ type, key: '_index' });
   return kept.concat((selected || []).filter(k => k && k !== '_index').map(key => ({ type, key })),
     picked.map(v => { const provider = providerOf(v, providers); return { type: provider.type, ...provider.hover.parse(v) }; }));

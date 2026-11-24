@@ -1248,8 +1248,7 @@ function setupAxisSelectorListeners(
     const axis = jQuery(this).data('axis');
     delete settings[axis].auto;
     if (getSource(settings[axis].type)) {
-      // the provider's third menu: an entry is what the setting stores (a score's method in `column`, its layer
-      // beside it), or a way somewhere (Offer other scores…) after which the plot keeps what it had
+      // the provider's method select (a score's method in `column`), or its layer select, which hands its change here
       if (takeSubKey(settings[axis], this, id)) handleAxisUpdate(axis, plotType);
       return;
     }

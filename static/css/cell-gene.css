@@ -128,8 +128,6 @@
 .cgene-cluster-scope .cgene-field__label { min-width: 6.5rem; }
 .cgene-help { margin: 0; color: var(--az-muted); font-size: 0.75rem; }
 .cgene-help[hidden] { display: none; }
-.cgene-cluster-note { flex: 1 1 100%; }
-.cgene-cluster-note:empty { display: none; }
 .cgene-dendrograms { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .cgene-dendrograms .cgene-field__label { min-width: 6.5rem; }
 .cgene-pop .cgene-field { display: flex; justify-content: space-between; gap: 8px; }
@@ -143,10 +141,13 @@
 .cgene-opt[hidden] { display: none; }
 .cgene-num { width: 5.5rem; }
 .cgene-title-input { width: 11rem; }
-.cgene-dot-range { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
-.cgene-dot-range input[type="range"] { width: 6rem; }
-.cgene-pop .cgene-dot-range .cgene-field__label { flex: 1 1 100%; }
-.cgene-pop .cgene-dot-range input[type="range"] { flex: 1 1 0; min-width: 0; }
+/* Largest dot (% of its cell) and Smallest dot (px): a label, the slider, the value said after it */
+.cgene-pop .cgene-dot-slider { align-items: center; }
+.cgene-pop .cgene-dot-slider .cgene-field__label { flex: 0 0 6.5rem; }
+.cgene-pop .cgene-dot-slider input[type="range"] { flex: 1 1 0; min-width: 4rem; }
+.cgene-pop .cgene-dot-opacity input[type="range"] { flex: 1 1 0; min-width: 4rem; }
+.cgene-pop .cgene-dot-opacity .cgene-num { flex: 0 0 4.5rem; }
+.cgene-dot-value { flex: 0 0 auto; min-width: 5.5rem; font-variant-numeric: tabular-nums; text-align: right; }
 .cgene-export { flex-direction: row; flex-wrap: wrap; align-items: center; }
 .cgene-export > legend { flex: 1 1 100%; }
 .cgene-pop__foot { display: flex; justify-content: flex-end; }
@@ -159,8 +160,11 @@
 /* One cell per group (X3b, CXG-27): the suggestion of a heatmap, with its button */
 .cgene-hint { display: flex; align-items: center; gap: 6px; padding: 2px 8px; font-size: 0.75rem; }
 .cgene-hint[hidden] { display: none; }
-/* the plot fills the area; the status strip of utils/panel-surface.js follows it, below */
-.cgene-area { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 240px; }
+/* the plot fills the area; the status strip of utils/panel-surface.js follows it, below. The area takes what the tile
+   leaves and never sizes the tile: Plotly's figure is drawn in px to the plot, and with the strip it made the row grow
+   when the plot drew (operator: a panel must not resize or move the layout while working). `contain: size` leaves the
+   area's own content out of its size; its 240 px minimum stays. */
+.cgene-area { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 240px; contain: size; }
 .cgene-plot { position: relative; flex: 1 1 auto; min-height: 0; }
 .cgene-empty { display: none; }
 .cgene-area--empty .cgene-empty {

@@ -311,8 +311,6 @@ def test_a_combination_that_cannot_be_computed_is_left_out_of_the_menu_and_the_p
     # under a method: nothing, because X and counts do not share the issue
     for method in ("mean", "zscore_mean", "detected", "fraction_of_total"):
         assert page.query_selector(f"{S} [data-method='{method}'] .gsig-scoring__grade") is None, method
-    values = [v for v, _ in page.eval_on_selector_all(f"{D} select.axis-column-select[data-axis='color'] option", "els => els.map(e => [e.value, e.textContent])")]
-    assert "detected@counts" in values, "counts is offered, so the plot may pick it"
 
 
 def test_warnings_are_said_once_on_the_layer_row_and_under_a_method_only_when_every_offered_layer_shares_them(page, served):
@@ -346,7 +344,6 @@ def test_fraction_detected_follows_the_threshold_and_the_menus_follow_it(page, s
     _enter(page, _sel("detect"), "1")                                    # raised: about 70% of the values are above 1
     until(page, "(id) => window.PanelManager.getPanel(id).getOfferedOptions().some(o => o.id === 'detected@X')", SIG)
     assert page.query_selector(f"{S} [data-layer='X'] [data-input-warning='layer']") is None, "the line goes with the problem"
-    until(page, "(t) => !!document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"] option[value=\"detected@X\"]')", D)
     _enter(page, _sel("detect"), "3.39")                                 # raised too far: almost nothing is above it
     until(page, "(id) => !window.PanelManager.getPanel(id).getOfferedOptions().some(o => o.id === 'detected@X')", SIG)
     assert "almost no value is above 3.39. Lower Detected above" in page.inner_text(f"{S} [data-layer='X']")
@@ -399,42 +396,9 @@ def test_layers_are_offered_in_order_and_the_first_is_where_a_new_consumer_start
     assert page.evaluate("(id) => window.PanelManager.getPanel(id).getOfferedOptions()[0].id", SIG) == "zscore_mean@counts"
 
 
-# ------------------------------------------------------------------ what plots and tables are offered
-
-def _agg_options(page, tile=C, axis="color"):
-    got = page.eval_on_selector_all(f"{tile} select.axis-column-select[data-axis='{axis}'] option",
-                                    "els => els.map(e => [e.value, e.textContent])")
-    return [o for o in got if o[0] != "__offer_more__"]
-
-
-def test_a_plot_is_offered_what_the_panel_offers_and_a_switched_off_option_is_kept_and_marked(page, served):
-    _open(page, served, plots=(("cell-plot-D", _cell("cell-plot-D", color=MEAN)),), sig=_sig(), sig_open=True, wait=False)
-    page.wait_for_selector(f"{D} .js-plotly-plot", timeout=30000)
-    _wait_coloured(page, D)
-    values = [v for v, _ in _agg_options(page, D)]
-    assert values == ["zscore_mean@X", "mean@X", "sum@X"]
-    _expand(page)
-    _offer(page, "control_adjusted")
-    until(page, "(t) => document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] option').length === 5", D)
-    assert [v for v, _ in _agg_options(page, D)] == ["zscore_mean@X", "mean@X", "sum@X", "control_adjusted@X"]
-    _offer(page, "mean", False)                                          # the plot reads the mean
-    until(page, "(t) => /no longer offered/.test(document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').textContent)", D)
-    options = _agg_options(page, D)
-    assert any(v == "mean@X" and "no longer offered" in t for v, t in options)
-    assert page.eval_on_selector(f"{D} select.axis-column-select[data-axis='color']", "s => s.value") == "mean@X", "its setting is kept"
-    assert _numbers(page, D), "and it still draws"
-    cfg = page.evaluate("() => window.PanelManager.getPanel('cell-plot-D').getConfig().color")
-    assert cfg["column"] == "mean", "the link stays valid"
-    _offer(page, "mean", True)
-    until(page, "(t) => !/no longer offered/.test(document.querySelector(t + ' select.axis-column-select[data-axis=\"color\"]').textContent)", D)
-
-
-def test_the_hover_picker_lists_only_what_is_offered(page, served):
-    _open(page, served, plots=(("cell-plot-C", None),), sig=_sig(offered=["zscore_mean", "control_adjusted"]), sig_open=True)
-    _wait_coloured(page)
-    opts = page.eval_on_selector_all(f"{C} select.hover-columns-select optgroup[label='Gene scores'] option", "els => els.map(e => e.value)")
-    assert opts == [f"gene-score:{SIG}:zscore_mean:X", f"gene-score:{SIG}:control_adjusted:X"]
-
+# ------------------------------------------------------------------ which options plots use
+# (what a plot may choose is every method and every layer since decision 31: test_gene_score_layers.py and
+# test_score_consumers.py)
 
 def test_the_section_shows_which_options_plots_use(page, served):
     _open(page, served, plots=(("cell-plot-C", None), ("cell-plot-D", _cell("cell-plot-D", color=MEAN)),

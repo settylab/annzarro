@@ -130,6 +130,22 @@ export function mountPlotOptions(ctx) {
                     auto = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary po-auto', data: { auto: field.id },
                         title: 'Follow the app theme', aria: { pressed: 'false' }, on: { click: () => set(field, null) } }, 'Auto');
                 }
+            } else if (field.type === 'range') {
+                // a slider and a number box that say the same value; either commits one step (Cell Plot's sliders too, WP-5b)
+                const box = el('input', { type: 'number', id, class: 'form-control form-control-sm po-num', data: { option: `${field.id}Number` },
+                    min: field.min, max: field.max, step: field.step ?? 'any', aria: { label: field.label } });
+                input = el('input', { type: 'range', class: 'form-range po-range', data: { option: field.id }, min: field.min, max: field.max,
+                    step: field.step ?? 'any', aria: { label: field.label },
+                    on: { input: () => { box.value = input.value; }, change: () => set(field, Number(input.value)) } });
+                const commitBox = () => {
+                    const raw = box.value.trim();
+                    const v = raw === '' ? null : Number(raw);
+                    if (v !== null && !Number.isFinite(v)) { paint(); return; }
+                    set(field, v);
+                };
+                box.addEventListener('change', commitBox);
+                box.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitBox(); } });
+                auto = box;          // painted with the slider
             } else {
                 const number = field.type === 'number';
                 input = el('input', { type: number ? 'number' : 'text', id, class: `form-control form-control-sm ${number ? 'po-num' : 'po-text'}`,
@@ -283,9 +299,13 @@ export function mountPlotOptions(ctx) {
             wrap.hidden = typeof field.when === 'function' ? !field.when(c) : false;
             const v = readField(c, field, kind);
             if (field.type === 'check') input.checked = !!v;
+            else if (field.type === 'range') {
+                if (document.activeElement !== input) input.value = String(v);
+                if (document.activeElement !== auto) auto.value = String(v);
+            }
             else if (field.type === 'color') {
                 input.value = sixDigits(v ?? '#000000');
-                if (auto) {
+                if (auto && field.type === 'color') {
                     const isAuto = v === null;
                     auto.setAttribute('aria-pressed', String(isAuto));
                     auto.classList.toggle('active', isAuto);

@@ -25,6 +25,7 @@ import { Config } from '../../config.js';
 import { scaleOptionLabel } from '../../utils/color-scales.js';
 import { listAvailableColormaps } from '../plot-utilities/colors.js';
 import { DEFAULT_COLORSCALE } from './colour.js';
+import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import {
     colorUse, parseColourLimit, rowsOf, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
     setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, parseAdjust
@@ -689,21 +690,19 @@ export function createControls({ D, id, model, on }) {
             body.append(line(el('label', { for: idOf('map'), text: CL.map }), map),
                 line(el('label', { class: 'ccnt-opt' }, reverse, ` ${CL.reverse}`)));
             const problem = el('span', { class: 'ccnt-help ccnt-color__problem', role: 'alert' });
-            const limit = (key, text) => {
-                const input = el('input', { type: 'text', class: `form-control form-control-sm ccnt-color-${key}`, id: idOf(key), inputmode: 'decimal',
-                    autocomplete: 'off', placeholder: CL.auto, value: Number.isFinite(c[key]) ? String(c[key]) : '' });
-                const apply = () => {
-                    const r = parseColourLimit(input.value);
-                    problem.textContent = r.ok ? '' : r.message;
-                    if (!r.ok) { input.value = Number.isFinite(c[key]) ? String(c[key]) : ''; return; }
-                    if (r.value === (Number.isFinite(c[key]) ? c[key] : undefined)) return;
-                    withColor((o) => { if (r.value === undefined) delete o[key]; else o[key] = r.value; }, `color ${text.toLowerCase()} ${r.value === undefined ? 'auto' : r.value}`);
-                };
-                input.addEventListener('change', apply);
-                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
-                return el('span', { class: 'ccnt-color__limit' }, el('label', { for: idOf(key), text: text }), input);
-            };
-            body.append(line(limit('min', CL.min), limit('max', CL.max), limit('center', CL.center)), problem);
+            // Min, Max and Center: boxes saying "auto" with the drawn value, and ↺ back to auto (ui/range-boxes.js)
+            const setLimit = (key, text, value) => withColor((o) => { if (value === null) delete o[key]; else o[key] = value; },
+                `color ${text.toLowerCase()} ${value === null ? 'auto' : value}`);
+            const KEYS = [['min', CL.min], ['max', CL.max], ['center', CL.center]];
+            const range = createRangeBoxes({ el, what: CL.button, group: 'colorRange', inputType: 'text', onProblem: (msg) => { problem.textContent = msg; },
+                parse: parseColourLimit,
+                ends: [{ label: CL.min, option: 'min', className: 'ccnt-color-min', id: idOf('min') },
+                    { label: CL.max, option: 'max', className: 'ccnt-color-max', id: idOf('max') },
+                    { label: CL.center, option: 'center', className: 'ccnt-color-center', id: idOf('center'), hint: false }],
+                onCommit: (k, v) => setLimit(KEYS[k][0], KEYS[k][1], v),
+                onReset: () => withColor((o) => { delete o.min; delete o.max; delete o.center; }, 'color range to auto') });
+            range.set({ limits: [c.min, c.max, c.center], drawn: drawnRange(m.colourData) });
+            body.append(range.element, problem);
             if (Number.isFinite(c.center) && Number.isFinite(c.min) && Number.isFinite(c.max)) body.append(el('p', { class: 'ccnt-help', text: CL.centerNote }));
         }
         if (use.palette) {

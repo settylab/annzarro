@@ -40,8 +40,10 @@ import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLab
 import { countFigure, countCsv, DRAWN_MODES } from './cell-count/draw.js';
 import { densityFigure, DENSITY_MODES } from './cell-count/draw-density.js';
 import { pointsRefusal } from './cell-count/density-points.js';
+import { groupLevelId } from '../utils/level-id.js';
 import { pointsRefused, pointsKey, loadCellPoints, pointsForFigure } from './cell-count/density-points-load.js';
 import { createControls } from './cell-count/controls.js';
+import { colourValues } from './cell-count/colour.js';
 import {
     countReferences, shownConfig, drawOptions, inputNames, shownLabels, followFocus, measureSourceName, levelTotals,
     isNumericSource, levelCountOf, valueDefaults, rowsOf
@@ -227,11 +229,15 @@ actions.register({
         /** The cells of a 2D density's Cell points layer: {key, state: 'none'|'loading'|'ready'|'refused'|'failed', data?, why?} */
         let _points = { key: null, state: 'none' };
         let _pointsAbort = null;
+        /** The watch on the grouping that is the Cell points' Color by, for its per-cell codes: {id, handle, waiting: Function[]} */
+        let _pointsGroup = null;
         let _controlsFrom = null;
         let _drawing = null;                 // {config, table, labels, names} of the drawing shown, for the CSV
         let _infos = {};
         let _labelMaps = {};
         let _notes = null;
+        /** The numbers the colour scale is drawn over (the Color pop-over's range sliders) */
+        let _colourData = null;
         let _drawSerial = 0;
         /** Choose levels of an input no reply shows yet (a refused plan): its levels, asked for alone (axisSource) */
         let _levelSource = null;
@@ -345,6 +351,7 @@ actions.register({
         function releaseLevels() {
             if (_levelHandle) _levelHandle.release();
             _levelHandle = null;
+            releasePointsGroup();
             _levelSource = _levelInfo = null;
         }
 
@@ -410,6 +417,8 @@ actions.register({
             if (_resize) _resize.disconnect();
             _observer = _resize = null;
             releaseLevels();
+            releasePointsGroup();
+            if (_pointsAbort) _pointsAbort.abort();
             if (_dialog) _dialog.close();
             if (_controls) _controls.destroy();
             if (_sets) _sets.destroy();
@@ -647,7 +656,7 @@ actions.register({
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, densityNote: densityNote(), levelsOf, levelsSaid,
+                isNumeric: page.isNumeric, drawable, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null)
             };
         }
@@ -658,7 +667,7 @@ actions.register({
             if (!_dom) return;
             draw();
             paintState();
-            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _points];
+            const from = [_config, structureRead(), _structureVersion, _undo.peek(), _infos, !!_drawing, _notes, _levelInfo, _points, _colourData];
             if (!_controlsFrom || from.some((x, i) => x !== _controlsFrom[i])) {
                 _controlsFrom = from;
                 _controls.paint();
@@ -680,6 +689,7 @@ actions.register({
                 _drawing = null;
                 _drawSerial++;
                 _notes = null;
+                _colourData = null;
                 _infos = {};
                 _labelMaps = {};
                 delete _dom.root.dataset.drawn;
@@ -692,21 +702,21 @@ actions.register({
             const table = countTable(config, grid, inputs);
             const names = inputNames(config, sourceTitleOf);
             const labels = shownLabels(config, table, live, sourceTitleOf);
-            const levels = table.axes.filter((a) => a.input === 'split' || (config.mode === 'pie' && a.input === 'x')).map((a) => a.levels.length);
-            const n = (table.top ? table.top.levels.length : 0) + levels.reduce((p, k) => p + k, 0);
             // the shared Plot Options (WP-5a): the font and colours the builders colour their parts with, then the rest
             const look = resolveStyle(live, TYPE);
             const opts = {
-                options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(Math.max(1, n), config.color && config.color.palette), theme: styleTheme(look, PLOT_PALETTES[theme]),
+                options: drawOptions(config), words: C, inputNames: names, labels, palette: groupColours(1, config.color && config.color.palette),
+                theme: styleTheme(look, PLOT_PALETTES[theme]),
                 measureSource: config.measure ? measureSourceName(config.measure.source, sourceTitleOf) : undefined, titleOf: sourceTitleOf, panelId: _id
             };
             const wantsPoints = config.mode === 'density2d' && opts.options.layers && opts.options.layers.points;
             if (wantsPoints) {
                 const sa = table.axes.findIndex((x) => x.input === 'split');
                 const loaded = pointsFor(config);
-                if (loaded) opts.points = pointsForFigure(loaded, sa >= 0 ? table.axes[sa].levels : null);
+                if (loaded) opts.points = pointsForFigure(loaded, sa >= 0 ? table.axes[sa].levels : null, sa >= 0 ? table.axes[sa].info : {});
             } else if (_points.state !== 'none') {
                 if (_pointsAbort) _pointsAbort.abort();
+                releasePointsGroup();
                 _points = { key: null, state: 'none' };
             }
             const part = PARTS.draw[config.mode];
@@ -717,6 +727,7 @@ actions.register({
             applyPlotStyle(fig, look, TYPE);
             // a density's sentences (UX 4.4): the bandwidth and the floor in Plot Options, the range in the strip
             _notes = fig.notes || null;
+            _colourData = colourValues(fig.data);
             const serial = ++_drawSerial;
             delete _dom.root.dataset.drawn;
             const root = _dom.root;
@@ -762,9 +773,59 @@ actions.register({
             _pointsAbort = control;
             _points = { key, state: 'loading' };
             const settle = (next) => { if (control.signal.aborted) return; _points = { key, ...next }; _drawnFrom = null; paint(); };
-            loadCellPoints(config, { structure: structureRead(), signal: control.signal })
+            loadCellPoints(config, { structure: structureRead(), signal: control.signal, groupCodes })
                 .then((data) => settle({ state: 'ready', data }), (error) => settle({ state: 'failed', why: String(error && error.message || error) }));
             return null;
+        }
+
+        /** The watch on the Color by grouping of the Cell points, let go (the layer is off, or the panel closes). */
+        function releasePointsGroup() {
+            if (_pointsGroup) _pointsGroup.handle.release();
+            _pointsGroup = null;
+        }
+
+        /**
+         * The per-cell group codes of grouping `id` for the Cell points: the panel watches the grouping with the option of
+         * codes, as a Cell Plot does, so the codes are the store's one copy and the memory guard counts them. Resolves when
+         * they are ready; rejects with the grouping's own reason when it is refused or failed.
+         * @returns {Promise<{codes: ArrayBufferView, MISSING: number, groupIds: string[]}>}
+         */
+        function groupCodes(id) {
+            if (!_pointsGroup || _pointsGroup.id !== id) {
+                releasePointsGroup();
+                const waiting = [];
+                const handle = groupSources().sources.watch(id, {
+                    consumer: { kind: 'plot', role: 'color', panelId: _id, host: _dom.plot }, option: { codes: true },
+                    visible: () => _visible && !!_dom && _dom.root.isConnected,
+                    onChange: (snap) => {
+                        for (const check of waiting.slice()) if (check(snap)) waiting.splice(waiting.indexOf(check), 1);
+                        // the grouping was edited: its codes are new, the cells are loaded against them again
+                        const now = snap.state === 'ready' && snap.values ? snap.values.codes : null;
+                        if (now && group.loaded && group.loaded !== now && _pointsGroup === group) {
+                            group.loaded = null;
+                            _points = { key: null, state: 'none' };
+                            _drawnFrom = null;
+                            paint();
+                        }
+                    }
+                });
+                const group = { id, handle, waiting, loaded: null };
+                _pointsGroup = group;
+            }
+            const group = _pointsGroup;
+            return new Promise((resolve, reject) => {
+                const check = (snap) => {
+                    if (snap.state === 'ready' && snap.values && snap.values.codes) {
+                        const { codes, reply } = snap.values;
+                        group.loaded = codes;
+                        resolve({ codes, MISSING: codes.BYTES_PER_ELEMENT === 1 ? 0xff : 0xffff, groupIds: (reply.groups || []).map((g) => groupLevelId(g.key)) });
+                        return true;
+                    }
+                    if (snap.state === 'refused' || snap.state === 'failed') { reject(new Error(snap.message || `The grouping was ${snap.state}.`)); return true; }
+                    return false;
+                };
+                if (!check(group.handle.read())) group.waiting.push(check);
+            });
         }
 
         /** What the strip says of the Cell points layer: that it loads, why it cannot be drawn, or how many cells it draws. */

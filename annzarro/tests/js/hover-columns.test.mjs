@@ -69,41 +69,27 @@ test('the panel builds the picker and the listener writes hoverInfo', () => {
     assert.match(listeners, /data\.hoverExtra = extra;\s*await applyHoverInfo\(plotContainer, data, settings\)/);
 });
 
-test('a cell plot lists each score a signature offers, the default first; a gene plot lists none', async () => {
-    const { hoverColumnOptions: options, hoverInfoFromSelection: info } =
+test('decision 32: a Cell Plot\'s Hover picker lists no gene score, and a stored one goes quietly', async () => {
+    const { hoverColumnOptions: options, hoverInfoFromSelection: info, shownHoverInfo } =
         await import('../../../static/js/panels/plot-utilities/hover-columns.js');
-    // the score's Hover entries are its provider's (utils/score-source.js); the page's lists the open signatures, this
-    // one the ones below, with the same helpers
-    const { scoreValue, parseScoreValue, scoreHoverOptions, hoverScoreValue } = await import('../../../static/js/utils/score-source.js');
+    // the score's provider is registered (as on the page) and still a source of axes, colour and table columns
+    await import('../../../static/js/utils/score-source.js');
     const R = await import('../../../static/js/utils/source-registry.js');
-    const offers = [{ method: 'zscore_mean', layer: 'X', label: 'Z-score mean' }, { method: 'mean', layer: 'X', label: 'Mean' },
-        { method: 'mean', layer: 'counts', label: 'Mean · counts' }];
-    const sigs = [{ id: 'gene-signature-1', title: 'T cell score', input: 'X', options: offers }, { id: 'gene-signature-2', title: 'B cell score', input: 'X', options: offers.slice(0, 1) }];
     const score = R.getSource('gene-score');
-    R.registerSource({ ...score, hover: { ...score.hover, options: (kept) => scoreHoverOptions(sigs, kept),
-        valueOf: (h) => hoverScoreValue(h, (key) => (sigs.find(s => s.id === key) || {}).input) } });
-    try {
-    const cells = options('cells', structure, [{ type: 'gene-score', key: 'gene-signature-2' }], false);
-    const scores = cells.filter(o => o.group === 'Gene scores');
-    assert.deepEqual(scores.map(o => [o.value, o.label, o.selected]), [
-        ['gene-score:gene-signature-1:zscore_mean:X', 'T cell score', false], ['gene-score:gene-signature-1:mean:X', 'T cell score · Mean', false],
-        ['gene-score:gene-signature-1:mean:counts', 'T cell score · Mean · counts', false], ['gene-score:gene-signature-2:zscore_mean:X', 'B cell score', true]]);
-    assert.equal(options('genes', structure, [], false).some(o => o.group), false);
-    // a pick the signature no longer offers is kept and marked
-    const lapsed = options('cells', structure, [{ type: 'gene-score', key: 'gene-signature-2', column: 'sum' }], false)
-        .filter(o => o.group === 'Gene scores').map(o => [o.label, o.selected]);
-    assert.deepEqual(lapsed.at(-1), ['B cell score · sum · X (no longer offered)', true]);
-    // the same entries when the picker is rebuilt from what is selected in the page (panels came or went)
-    assert.deepEqual(scoreHoverOptions(sigs, [scoreValue('gene-signature-2', 'sum', 'X')]).map(o => o.label),
-        ['T cell score', 'T cell score · Mean', 'T cell score · Mean · counts', 'B cell score', 'B cell score · sum · X (no longer offered)']);
-    assert.equal(scoreHoverOptions([{ id: 'gene-table-1', title: 'DE genes', kind: 'table', options: offers.slice(0, 1) }], [])[0].label, 'DE genes (table)');
-    // a pick stores the method in column and the layer beside it (none for the default)
-    assert.deepEqual(parseScoreValue(scoreValue('gene-signature-1', 'mean', 'counts')), { key: 'gene-signature-1', column: 'mean', layer: 'counts' });
-    assert.deepEqual(parseScoreValue(scoreValue('gene-signature-1', 'mean', '')), { key: 'gene-signature-1', column: 'mean' });
-    const picked = info('cells', ['Age', scoreValue('gene-signature-1', 'mean', 'counts')], [{ type: 'obs', key: '_index' }]);
-    assert.deepEqual(picked, [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' }, { type: 'gene-score', key: 'gene-signature-1', column: 'mean', layer: 'counts' }]);
-    assert.deepEqual(info('cells', ['Age'], picked), [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' }]);
-    } finally {
-        R.registerSource(score);
-    }
+    assert.ok(score, 'the gene-score provider is registered');
+    assert.equal(score.axes.includes('hover'), false, 'a score fills no hover line');
+    assert.equal(R.hoverSources('cell-plot').includes(score), false);
+    const stored = [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' },
+        { type: 'gene-score', key: 'gene-signature-1', column: 'mean', layer: 'counts', label: 'T cell score' },
+        { type: 'not-loaded-here', key: 'x' }];
+    // the picker shows no Gene scores group, whatever is stored
+    const cells = options('cells', structure, stored, false);
+    assert.equal(cells.some(o => o.group === 'Gene scores' || String(o.value).startsWith('gene-score:')), false);
+    // an old link's score entry is dropped when the plot is made; a provider this page has not loaded is kept
+    assert.deepEqual(shownHoverInfo(stored, 'cells'), [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' }, { type: 'not-loaded-here', key: 'x' }]);
+    const clean = [{ type: 'obs', key: '_index' }];
+    assert.equal(shownHoverInfo(clean, 'cells'), clean, 'nothing to drop: the same array');
+    assert.equal(shownHoverInfo(undefined, 'cells'), undefined);
+    // and a pick in the picker does not carry it on
+    assert.deepEqual(info('cells', ['Age'], stored), [{ type: 'obs', key: '_index' }, { type: 'not-loaded-here', key: 'x' }, { type: 'obs', key: 'Age' }]);
 });

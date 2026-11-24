@@ -11,7 +11,8 @@
  * are in Axes, its colour bar, size legend and strip switches and titles in Legend.
  *
  * FIELDS. `{ id, section, type, path, label, dflt, min, max, step, choices, applies, copy, when, help }`:
- *  - `type`: 'number' (an empty box is the default), 'check', 'select', 'color' (with Auto: the app theme), 'text'.
+ *  - `type`: 'number' (an empty box is the default), 'range' (a slider and a number box that say the same value; the
+ *    box is `data-option=<id>Number`), 'check', 'select', 'color' (with Auto: the app theme), 'text'.
  *  - `path`: where the value lives in the panel's configuration, dotted. The common look is under `look`
  *    (`look.fontSize`); a panel field keeps the key it always had (`outline.width`, `labels.genes`), so links made before
  *    this keep their meaning. A value at its default is written as absent, and an object left empty goes (links stay short).
@@ -182,6 +183,7 @@ function setPath(obj, path, value) {
 function clean(field, v) {
     if (v === undefined || v === null) return undefined;
     switch (field.type) {
+    case 'range':
     case 'number': {
         if (!isNumber(v)) return undefined;
         const step = isNumber(field.step) && field.step >= 1 ? 1 : null;

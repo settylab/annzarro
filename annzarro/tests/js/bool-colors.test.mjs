@@ -113,3 +113,17 @@ test('an older server without categories still draws both values', async () => {
     const colours = await coloursOf([true, false], { served: null, unsColors: null });
     assert.ok(colours.true && colours.false);
 });
+
+test('a longer uns list and a subset: each category keeps the colour of its place in the full category list (decision 33)', () => {
+    const categories = ['a', 'b', 'c', 'd'];
+    const uns = ['#010101', '#020202', '#030303', '#040404', '#050505', '#060606'];
+    const cells = ['c0', 'c1', 'c2'];
+    const data = {
+        entities: 'cells', cells, x: { values: [0, 1, 2] }, y: { values: [0, 1, 2] },
+        color: ['d', 'c', 'd'], colorType: 'categorical', colorCategories: categories
+    };
+    const traces = processCategories({ categoryPalette: 'uns', tableFilter: 'none', z: null }, data, categories, uns).filter(t => !isLegendProxy(t));
+    const byLabel = Object.fromEntries(traces.map(t => [t.name, t.marker.color]));
+    assert.equal(byLabel.c, '#030303');
+    assert.equal(byLabel.d, '#040404');
+});

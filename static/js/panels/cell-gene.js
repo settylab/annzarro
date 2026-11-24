@@ -232,9 +232,14 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         const _order = createCellGeneOrder();
         /** what the plot last drew from, so a repaint with the same inputs draws nothing */
         let _shown = null;
+        /** A drawing Plotly threw on: {key} of the values it was of, until a drawing succeeds. */
+        let _drawFailed = null;
         let _drawToken = 0;
         let _state = 'empty';
         let _resize = null;
+        let _refit = null;
+        /** A redraw building the figure once more at the plot's settled size (redraw's end): no third build from it. */
+        let _settling = false;
         /** gateMatrix's decision for the plan it was made for (CXG-17): what the plot asks of the server now */
         let _gate = { ask: 'all', tooLarge: null, planKey: null, axis: null, groupsOf: null };
         /** the cell axis's applied recipe as last seen: the recipe its groups are of while edits wait or are checked */
@@ -290,6 +295,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             if (_dom) binding.releaseHost(_dom.plot);
             if (_resize) _resize.disconnect();
             _resize = null;
+            clearTimeout(_refit);
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
             if (_dom && window.Plotly) window.Plotly.purge(_dom.plot);
             _initialized = false;
@@ -723,8 +729,17 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _dom = { root, controls: _controls.element, undoBtn, message, checklist, hint, plot, area,
                 noData: root.querySelector(`#loading-screen-${_id}`) };
             if (typeof ResizeObserver !== 'undefined') {
-                _resize = new ResizeObserver(() => { if (_dom && _dom.plot._fullLayout) fitToContainer(_dom.plot); });
+                _resize = new ResizeObserver(() => {
+                    if (!_dom || !_dom.plot._fullLayout) return;
+                    fitToContainer(_dom.plot);
+                    // the figure is laid out in px (labels that fit, legend lines, dots that fill their cells): a new
+                    // size, once it settles, builds it again (no request; the values are the same)
+                    clearTimeout(_refit);
+                    _refit = setTimeout(refit, 150);
+                });
                 _resize.observe(area);
+                // the plot itself too: the status strip under it takes height from it inside the same area
+                _resize.observe(plot);
             }
             showControls();
             mountParts();
@@ -812,7 +827,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 replace: (next) => { _config = normalizeCellGene(next).config; changed(); },
                 plotSize: () => (_dom ? { width: _dom.plot.clientWidth, height: _dom.plot.clientHeight } : {}),
                 plot: () => (_dom ? _dom.plot : null),
-                toolbar: _toolbar
+                toolbar: _toolbar,
+                // a tag of the plot's status strip (the clustering's sentences)
+                tag: (kind, tag) => { if (_dom) setStatusTag(_dom.plot, kind, tag); }
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
             // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
@@ -931,7 +948,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const rec = record();
             if (!rec) return 'empty';
             const snap = rec.handle.read();
-            return plotState(snap, { tooLarge: !!_gate.tooLarge, drawn: !!_shown && _shown.key === (snap.shownKey || snap.key) });
+            const state = plotState(snap, { tooLarge: !!_gate.tooLarge, drawn: !!_shown && _shown.key === (snap.shownKey || snap.key) });
+            // the values came but Plotly threw drawing them: failed, not "drawing" for good
+            return state === 'drawing' && _drawFailed && _drawFailed.key === (snap.shownKey || snap.key) ? 'failed' : state;
         }
 
         /** What the plot's notices are worded from (states.js describePlot): counts made once per plan, nothing per gene. */
@@ -999,6 +1018,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 }
             }
             if (snap.state === 'ready' && snap.values && (!_shown || _shown.key !== (snap.shownKey || snap.key))) { redraw(); return; }
+            // a color changed in the grouping: the strips and their legend are drawn again, with nothing asked of the server
+            if (snap.state === 'ready' && snap.values && snap.values.reply && _shown && _shown.colours
+                && groupSources().sources.coloursOf(axisId(), snap.values.reply).factors !== _shown.colours) { redraw(); return; }
             // a section added while the others are drawn: its placeholder rows, once per plan, not per progress frame (CXG-18)
             if (snap.state === 'updating' && snap.values && _plan && _pending.now !== _plan && _planOf.has(snap.values) && _planOf.get(snap.values) !== _plan) {
                 redraw();
@@ -1070,21 +1092,42 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 binding.paint(_dom.plot);
             }
             if (snap.state !== 'ready' && !pending && _shown) { paint(); return; }
-            const inputs = [values, shownPlan, _config, _kinds, currentTheme()];
+            // the colors of the groups are an input: a color changed in the grouping draws the strips again, asking nothing
+            const inputs = [values, shownPlan, _config, _kinds, currentTheme(), groupSources().sources.coloursOf(axisId(), values.reply).factors];
             if (_shown && _shown.inputs.every((x, i) => x === inputs[i])) { paint(); return; }
             let figure;
             let order;
             let model;
+            let colours;
             try {
-                ({ figure, order, model } = await drawFigure(values, plan, shownPlan, pending));
+                ({ figure, order, model, colours } = await drawFigure(values, plan, shownPlan, pending));
             } catch (error) {
                 console.error(`Cell-Gene Plot ${_id}:`, error);
                 return;
             }
             if (token !== _drawToken || !_dom || !window.Plotly) return;
             // every group the reply has is drawn: the cells shown are covered; the matrix's own count is a tag of the strip
-            await drawPlot(_dom.plot, figure.data, figure.layout, figure.config, Coverage.complete(values.reply.n_shown || 0, 'cells'), 'cells');
+            try {
+                await drawPlot(_dom.plot, figure.data, figure.layout, figure.config, Coverage.complete(values.reply.n_shown || 0, 'cells'), 'cells');
+            } catch (error) {
+                // Plotly threw part-way: the div holds half a figure, and the next Plotly.react, diffed against it,
+                // redrew only part of the next one (operator, 2026-11-23: a heatmap whose annotations changed over the
+                // dots). Start clean and say so; the next change draws afresh
+                console.error(`Cell-Gene Plot ${_id}: the drawing failed`, error);
+                if (token !== _drawToken || !_dom) return;
+                window.Plotly.purge(_dom.plot);
+                _shown = null;
+                _drawFailed = { key };
+                const why = String((error && error.message) || error).replace(/[.\s]+$/, '');
+                setStatusTag(_dom.plot, 'cgene-notdrawn', { text: STATES.tags.notDrawn, title: STATES.notDrawn(why), severity: 'error' });
+                paint();
+                return;
+            }
             if (token !== _drawToken || !_dom) return;
+            if (_drawFailed) {
+                _drawFailed = null;
+                setStatusTag(_dom.plot, 'cgene-notdrawn', null);
+            }
             setStatusTag(_dom.plot, 'cgene-matrix', matrixTag(figure.groups, figure.rows, figure.missing));
             // what a narrow width gave up so the matrix stays readable (draw.js fitMatrix)
             const gaveUp = (figure.hidden || []).map((part) => VOCABULARY.cellGene.narrow[part]).join(' ');
@@ -1095,10 +1138,32 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 : want3d && figure.refused3d ? { text: W3.offTag, title: figure.refused3d, severity: 'warning', pop: { text: figure.refused3d } } : null);
             watchCamera(model.view === '3d' ? figure.labels3d : null);
             const oneCell = oneCellPerGroup({ mode: _config.mode, size: _config.size, sized: sizeDrawn(), groups: values.reply.groups || [] });
-            _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell };
+            _shown = { key, inputs, order, model, rows: figure.rows, groups: figure.groups, oneCell, colours };
             rec.drawnKey = key;
+            // the figure is laid out in px for the plot's size when it was built; the drawing's notice and status strip
+            // can take height from it since. Build it once more at the size it has now, before the panel says it is
+            // drawn, so nothing redraws it later at idle (a menu opened on a label would lose its anchor)
+            if (!_settling && sizeMoved(model.pixels)) {
+                _settling = true;
+                _shown = null;
+                try { await redraw(); } finally { _settling = false; }
+                return;
+            }
             binding.paint(_dom.plot);
             paint();
+        }
+
+        /** Whether the plot's size differs from `px` (the size a figure was built for) by more than a pixel. */
+        function sizeMoved(px) {
+            return !!(px && _dom && (Math.abs(_dom.plot.clientWidth - px.width) > 1 || Math.abs(_dom.plot.clientHeight - px.height) > 1));
+        }
+
+        /** Draw again when the plot's size differs from the size its figure was built for. */
+        function refit() {
+            if (_shown && _shown.model && sizeMoved(_shown.model.pixels)) {
+                _shown = null;
+                redraw();
+            }
         }
 
         function clearPlot() {
@@ -1226,7 +1291,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 cluster: style.cluster, sortBySize: style.sortBySize });
             const names = groupSources().sources.namesOf(axisId(), reply);
             const permute = (arr) => (arr ? reorder(arr, order.rows, order.groups, G) : arr);
-            const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf });
+            const colours = groupSources().sources.coloursOf(axisId(), reply).factors;
+            const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf, colors: colours });
             const look = resolveStyle(_config, TYPE);
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
@@ -1249,7 +1315,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 size: _config.mode !== 'dots' ? { none: '' } : sizeNone ? { none: sizeNone }
                     : { id: matrix.size.id, stat: matrix.size.stat, layer: matrix.size.layer, detectAbove: matrix.size.detectAbove,
                         ...extras.size, values: permute(matrix.size.values) },
-                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline,
+                legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline, dotOpacity: extras.dotOpacity,
                 // the shared Plot Options' legend column: space, columns, cap (WP-5a)
                 legendLayout: cellGeneLegend(look),
                 pendingText: pending ? pendingText(plan, pending) : ''
@@ -1258,7 +1324,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const gate3d = _config.view === '3d' ? view3dGate({ rows: R, groups: G }) : null;
             if (gate3d && gate3d.ok && matrix.height) {
                 model.view = '3d';
-                model.height = matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) };
+                model.height = { ...(matrix.height.same ? { same: true, values: model.color.values } : { ...matrix.height, values: permute(matrix.height.values) }), ...extras.height };
                 if (_config.camera) model.camera = _config.camera;
             }
             // the shared Plot Options (WP-5a): the font and colours the builder measures with, then the rest of the look
@@ -1273,7 +1339,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 if (pending && pending[r]) continue;
                 for (let i = r * G, end = i + G; i < end; i++) if (Number.isNaN(matrix.color.values[i])) missing++;
             }
-            return { figure: { ...figure, rows: rows.length, groups: model.groups.length, missing }, order, model };
+            return { figure: { ...figure, rows: rows.length, groups: model.groups.length, missing }, order, model, colours };
         }
 
         /** "Reading 12 genes": what the placeholder rows of a plan say (CXG-18), from the genes of their sections. */
