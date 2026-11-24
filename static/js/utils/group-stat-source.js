@@ -1,5 +1,6 @@
 /**
- * The page's side of the `group-stat` source: a Cell Grouping's group as the cells whose statistic colours a Gene Plot
+ * The page's side of the `group-stat` source: a Cell Grouping's group as the cells whose statistic colours a Gene Plot, or
+ * is its x, y or z axis (each axis its own setting and record; the moments are shared by the key they are asked under)
  * (offered-removal-080.md 10.1, SO-8b). Each gene's value is one statistic (mean, % expressing, mean of expressing cells,
  * sum, SD) of that gene over the group's cells, on a layer.
  *
@@ -153,7 +154,10 @@ function groupMenu(setting) {
     const choose = { value: '', text: id ? (reply ? 'Choose a group' : 'Groups…') : 'Choose a grouping first', column: '', disabled: true };
     if (!reply) return { options: [choose], chosen: '', adopt: null, search: true };
     const names = groupSources().sources.namesOf(id, reply);
-    const options = [choose, ...reply.groups.map((g, i) => ({ value: M.columnOf(g.key), text: names[i], column: M.columnOf(g.key) }))];
+    // a group is found by the name it is shown with (a label the user gave it) and by its generated name
+    const generated = groupSources().sources.coloursOf(id, reply).generated;
+    const options = [choose, ...reply.groups.map((g, i) => ({ value: M.columnOf(g.key), text: names[i], column: M.columnOf(g.key),
+        alt: generated[i] !== names[i] ? generated[i] : '' }))];
     const held = setting.column || '';
     if (held && M.groupKeyOf(setting) && !options.some((o) => o.value === held)) {
         const was = Array.isArray(setting.groupWas) ? setting.groupWas.join(' | ') : held;
@@ -402,9 +406,9 @@ function loadForPlot(setting, { host, role, expected, unit = 'genes', signal }) 
 // ---------------------------------------------------------------------------------------------- actions
 
 /** The select a plot's grouping is chosen in, to take the user to: null when the plot has none. */
-function chooser(host) {
+function chooser(host, role) {
     const tile = host.closest ? host.closest('.tile') : null;
-    const select = tile && tile.querySelector('.axis-key-select[data-axis="color"]');
+    const select = tile && tile.querySelector(`.axis-key-select[data-axis="${role}"]`);
     if (!select) return null;
     return { focus() { if (select.scrollIntoView) select.scrollIntoView({ block: 'nearest' }); select.focus(); } };
 }
@@ -442,7 +446,7 @@ actions.register({
         'score-update': { target: (host) => binding().shownRecord(host) || null, run: (rec) => { groupSources().sources.update(rec.groupId); } },
         'score-open': { target: (host) => { const rec = binding().shownRecord(host); return rec && groupingPanel(rec.groupId) ? rec : null; },
             run: (rec, host) => { openGrouping(rec.groupId, panelIdOf(host)); } },
-        'score-choose': { target: (host) => { const rec = binding().shownRecord(host); return rec ? chooser(host) : null; }, run: (place) => { place.focus(); } },
+        'score-choose': { target: (host) => { const rec = binding().shownRecord(host); return rec ? chooser(host, rec.role) : null; }, run: (place) => { place.focus(); } },
         'group-keep': { target: (host) => { const rec = binding().shownRecord(host); return rec && rec.handle.read().group && rec.handle.read().group.state === 'changed' ? rec : null; },
             run: (rec, host) => { keep(rec, host); } }
     }
@@ -481,7 +485,7 @@ registerSource({
     valueType: 'numerical',
     entity: 'genes',
     consumers: ['gene-plot'],
-    axes: ['color'],
+    axes: ['x', 'y', 'z', 'color'],
     defaultSub: '',
     layered: true,
     // made over the cells shown: a change of the cell subset changes it (utils/subset-reads.js)

@@ -204,6 +204,7 @@ def test_over_the_cap_the_3d_button_is_disabled_and_a_stored_3d_is_drawn_in_2d(p
     _open(page, served, {CC: _count(**HIST2D)})
     _drawn(page, "hist2d")
     until(page, "(s) => document.querySelector(s).disabled", BTN)
+    assert _visible(page), "over the cap 3D IS an option for the mode: shown, disabled, with its reason"
     title = page.get_attribute(BTN, "title")
     assert re.fullmatch(r"3D draws at most 10 bars; this plot has [\d,]+\. Use fewer bins\.", title), title
     # a link stored in 3D over the cap: drawn in 2D, the strip says why
@@ -218,15 +219,50 @@ def test_over_the_cap_the_3d_button_is_disabled_and_a_stored_3d_is_drawn_in_2d(p
     assert page.is_enabled(BTN) and page.get_attribute(BTN, "aria-pressed") == "true", "a stored 3D can always be turned off"
 
 
-def test_3d_is_disabled_with_its_reason_where_it_has_no_bars(page, served):
+TOOLBAR_BOX = "(s) => { const t = document.querySelector(s + ' .az-plot-toolbar'); const r = t.getBoundingClientRect(); return {h: r.height, top: r.top}; }"
+
+
+def _visible(page):
+    return page.locator(BTN).is_visible()
+
+
+def test_the_3d_button_is_shown_only_in_the_modes_that_have_bars_and_the_toolbar_keeps_its_height(page, served):
     _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE)})
     _drawn(page, "bar")
-    assert page.is_disabled(BTN)
-    assert "Color by" in page.get_attribute(BTN, "title")
+    height = page.evaluate(TOOLBAR_BOX, S)["h"]
+
+    def edit(**patch):
+        page.evaluate("""([id, patch]) => { const p = window.PanelManager.getPanel(id); const c = {...p.getConfig()};
+            for (const [k, v] of Object.entries(patch)) { if (v === null) delete c[k]; else c[k] = v; } p.updateConfig(c); }""", [CC, patch])
+
+    # mode, edit, whether there are bars to stand up: a bar plot needs its Color by, a 2D histogram must have none (with one it is layers)
+    cases = [("bar", {"x": CELL_TYPE, "split": None}, False), ("bar", {"split": CONDITION}, True),
+             ("pie", {"mode": "pie"}, False), ("histogram", {"mode": "histogram", "x": DEPTH}, False),
+             ("hist2d", {"mode": "hist2d", "x": DEPTH, "y": SCORE, "split": None}, True),
+             ("hist2d", {"split": CONDITION}, False), ("heatmap", {"mode": "heatmap", "x": CELL_TYPE, "y": CONDITION, "split": None}, True),
+             ("density", {"mode": "density", "x": DEPTH}, False)]
+    for mode, patch, shown in cases:
+        edit(**patch)
+        until(page, f"(s) => {{ const b = document.querySelector(s); return !!b && (b.offsetParent !== null) === {str(shown).lower()}; }}", BTN)
+        assert _visible(page) == shown, (mode, patch)
+        if shown:
+            assert page.is_enabled(BTN), (mode, patch)
+        assert page.evaluate(TOOLBAR_BOX, S)["h"] == height, f"{mode} {patch}: the toolbar keeps its height"
+    # the Mode select itself shows and hides it too
+    edit(mode="bar", x=CELL_TYPE, split=CONDITION)
+    until(page, "(s) => document.querySelector(s).offsetParent !== null", BTN)
     page.select_option(f"{S} .ccnt-mode", "pie")
+    until(page, "(s) => document.querySelector(s).offsetParent === null", BTN)
+    page.select_option(f"{S} .ccnt-mode", "bar")
+    until(page, "(s) => document.querySelector(s).offsetParent !== null", BTN)
+
+
+def test_a_stored_3d_in_a_mode_without_bars_draws_2d_with_no_button_and_no_tag(page, served):
+    _open(page, served, {CC: _count(mode="pie", x=CELL_TYPE, view="3d")})
     _drawn(page, "pie")
-    assert page.is_disabled(BTN)
-    assert page.get_attribute(BTN, "title").startswith("3D is for")
+    assert not _visible(page)
+    assert _tag(page) is None, "silently 2D"
+    assert page.evaluate("(s) => !document.querySelector(s)._fullLayout.scene", PLOT)
 
 
 def test_a_bar_plot_with_a_color_by_and_a_heatmap_draw_in_3d(page, served):

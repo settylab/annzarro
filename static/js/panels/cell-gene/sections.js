@@ -92,6 +92,56 @@ function cleanCamera(raw) {
     return out;
 }
 
+const LABEL_SIDES = Object.freeze(['auto', 'fixed']);
+const LABEL_JUSTIFY = Object.freeze(['auto', 'left', 'right', 'center']);
+const EDGES = Object.freeze(['min', 'max']);
+/** The edges of the default camera, for a fixed Side stored without its own (draw.js labelEdges of DEFAULT_CAMERA). */
+const DEFAULT_LABEL_EDGES = Object.freeze({ x: 'min', y: 'max' });
+
+/**
+ * The 3D labels' options (Plot Options ▸ Axes, in 3D): `{side?: 'fixed', edges?: {x, y}, justify?: 'left'|'right'|'center',
+ * rotation?: 'along'|'across'|'angle', angle?: number, padding?: number}`, defaults left out; null when nothing but
+ * defaults is left.
+ */
+function cleanLabels3d(raw, problems) {
+    if (!isObject(raw)) {
+        problems.push('labels3d: not an object, left out');
+        return null;
+    }
+    const out = {};
+    if ('side' in raw && !LABEL_SIDES.includes(raw.side)) problems.push(`labels3d: side ${JSON.stringify(raw.side)} is not auto or fixed, auto used`);
+    if ('justify' in raw && !LABEL_JUSTIFY.includes(raw.justify)) problems.push(`labels3d: justify ${JSON.stringify(raw.justify)} is not known, auto used`);
+    if (raw.side === 'fixed') {
+        const e = raw.edges;
+        out.side = 'fixed';
+        out.edges = isObject(e) && EDGES.includes(e.x) && EDGES.includes(e.y) ? { x: e.x, y: e.y } : { ...DEFAULT_LABEL_EDGES };
+    }
+    if (LABEL_JUSTIFY.includes(raw.justify) && raw.justify !== 'auto') out.justify = raw.justify;
+    // Rotation: Horizontal (the default, absent), Along or Across the axis, or Angle with `angle` from -90 to 90 (Plotly's,
+    // clockwise; 0 absent). A number as the rotation is read as an Angle of it
+    if ('rotation' in raw) {
+        if (raw.rotation === 'along' || raw.rotation === 'across' || raw.rotation === 'angle') out.rotation = raw.rotation;
+        else if (isNumber(raw.rotation)) { out.rotation = 'angle'; out.angle = raw.rotation; }
+        else if (raw.rotation !== 'horizontal') problems.push(`labels3d: rotation ${JSON.stringify(raw.rotation)} is not known, horizontal used`);
+    }
+    if (out.rotation === 'angle') {
+        const a = isNumber(out.angle) ? out.angle : isNumber(raw.angle) ? raw.angle : 0;
+        if ('angle' in raw && !isNumber(raw.angle)) problems.push('labels3d: angle is not a number, 0 used');
+        const clamped = Math.max(-90, Math.min(90, a));
+        if (clamped !== 0) out.angle = clamped; else delete out.angle;
+    }
+    // Padding: px between a label and its tick, 0 to 40; 4 is the default (absent)
+    if ('padding' in raw) {
+        if (isNumber(raw.padding)) {
+            const pad = Math.max(0, Math.min(40, raw.padding));
+            if (pad !== 4) out.padding = pad;
+        } else {
+            problems.push('labels3d: padding is not a number, 4 used');
+        }
+    }
+    return Object.keys(out).length ? out : null;
+}
+
 /** The gene steps a one-row section stores (decision 40): the ways to combine the gene rows, and the score methods. */
 const GENE_STEPS = Object.freeze([...ROW_STEPS, ...METHODS]);
 
@@ -198,7 +248,8 @@ function cleanSection(raw, i, problems, channels, notices, at) {
  * when not the default. A stored `offer` (the plot's own offered statistics of WP-4, retired by decision 31) is read
  * and dropped, with no problem said. The 3D view
  * (UX 6b, WP-12): `view: '3d'` (absent is 2D), `height` (the bars' own measure; absent is "Same as Color", and a stored
- * one is kept while 3D is off), `camera` (the 3D camera, stored without an undo step).
+ * one is kept while 3D is off), `camera` (the 3D camera, stored without an undo step), `labels3d` (its labels' Side and
+ * Justify, Rotation and Padding, Plot Options ▸ Axes in 3D, defaults absent).
  * A one-row section's Color and Size (decision 40) are `{genes, above?}`; a kind stored before it (`{agg, ...}`) is read
  * into one, and where that changes the values drawn, `notices` says so (`{section, which, was}`, the panel words it).
  * @param {Object} raw
@@ -251,6 +302,10 @@ export function normalizeCellGene(raw) {
     if (!VIEWS.includes(src.view)) {
         if ('view' in src && src.view !== undefined) problems.push(`view ${JSON.stringify(src.view)} is not 3d, 2D used`);
         delete config.view;
+    }
+    if ('labels3d' in src) {
+        const labels = src.labels3d === undefined ? null : cleanLabels3d(src.labels3d, problems);
+        if (labels) config.labels3d = labels; else delete config.labels3d;
     }
     if ('camera' in src) {
         const camera = cleanCamera(src.camera);

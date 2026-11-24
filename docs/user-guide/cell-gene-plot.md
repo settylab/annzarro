@@ -187,8 +187,18 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
   strip says so (**3D**). A missing value or a value of 0 has no bar. Above 60 genes or groups their labels are hidden
   and the hover names each bar.
 - **Labels.** Gene and group names run outward from their tick: on the right of the scene a name starts at its tick,
-  on the left it ends there, never centred over the bars. When the scene is turned to another side, the names move to
-  the edge nearer you once the mouse is released, with each axis's title beyond them.
+  on the left it ends there, never centred over the bars. As the scene is turned they move to the edges nearer you,
+  while it turns, with each axis's title beyond them. The height's values stand on the left-most vertical edge; the
+  floor's value is left out there, since the gene and group names start at that corner. **Plot Options ▸ Labels**
+  applies in 3D too: unticking **Gene labels** or **Group labels** hides that axis's names and its title.
+  **Plot Options ▸ Axes** has the rest in 3D, each change one step of **Undo**:
+  - **Side**: **Auto** follows the camera; **Fixed** keeps the names on the edges they are on now.
+  - **Justify**: **Auto** runs each name outward; **Left**, **Right** or **Center** sets every name's alignment.
+  - **Rotation**: **Horizontal** (level on screen); **Along the axis** tilts the names with their edge as the scene
+    turns (names lie end to end, so it suits a few short ones); **Across the axis** stands each name square to its
+    edge, running out of the box, which keeps many names apart; **Angle** tilts them by a fixed angle, from -90 to 90
+    degrees, clockwise.
+  - **Padding**: the gap in px between a name and its tick (4 by default).
 - **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
   step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
 - **Limit.** 3D draws at most 40,000 bars (genes × groups). Above that **3D** is greyed out and says why ("Use fewer
@@ -235,7 +245,7 @@ defaults and sections:
 | Presets | **Default** (the session default, or the built-in look), **Publication** (white, black text and lines, Arial 16), **Bare** (no grid, axis lines or legends) |
 | Text | **Font**, **Font size**, **Text color** (**Auto** follows the app theme), **Plot title**, **Title size** |
 | Background | **Background** (**Auto** follows the app theme) |
-| Axes | **Grid lines** (off by default; on the matrix only), **Grid color**, **Grid width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**; **Gene labels**, **Group labels** |
+| Axes | **Grid lines** (off by default; on the matrix only), **Grid color**, **Grid width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**; **Gene labels**, **Group labels**; in 3D, **Side**, **Justify**, **Rotation** (with **Angle**) and **Padding** of the gene and group names |
 | Dots | **Dot outline color** and **Dot outline width** (a black 0.5 px ring by default; 0 draws none; heatmap cells have none); **Dot opacity**, a slider and a box from 0.1 to 1 (opaque by default), for the dots and the size legend's dots; **Largest dot (% of cell)**, a box from 10 to 100 (empty: the dot fills its cell); **Smallest dot (px)**, a slider and a box from 1 to 40 |
 | Sections | **Gap between sections** (0 to 3 cells); **Show section titles** |
 | Legend | **Space** (the legend column's share of the width; empty lets the figure decide), **Columns** and **Entries, at most** (20) of the strip legends; **Color bar**, **Size legend**, **Strip legend**; **Color bar title**, **Size legend title** |

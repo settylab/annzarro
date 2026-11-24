@@ -185,7 +185,23 @@ const cellGene = Object.freeze({
         leftOut: '3D does not draw dendrograms, strips, section brackets, totals or printed values.',
         offTag: '2D',
         resetCamera: 'Reset camera',
-        svgOff: '3D exports as an image only.'
+        svgOff: '3D exports as an image only.',
+        /** Plot Options ▸ 3D labels: where the gene and group names stand, and which way they run. */
+        labels: Object.freeze({
+            heading: '3D labels',
+            side: 'Side',
+            sides: Object.freeze({ auto: 'Auto', fixed: 'Fixed' }),
+            justify: 'Justify',
+            justifies: Object.freeze({ auto: 'Auto', left: 'Left', right: 'Right', center: 'Center' }),
+            rotation: 'Rotation',
+            rotations: Object.freeze({ horizontal: 'Horizontal', along: 'Along the axis', across: 'Across the axis', angle: 'Angle' }),
+            angle: 'Angle (°, clockwise)',
+            padding: 'Padding (px)',
+            sideHelp: 'Auto puts the gene and group names on the edges nearer you as the plot turns; Fixed keeps the edges they are on now.',
+            help: 'Side Auto puts the names on the edges nearer you as the plot turns; Fixed keeps the edges they are on now. '
+                + 'Justify Auto runs each name outward from the bars. Rotation Along the axis tilts the names with their edge as '
+                + 'the plot turns. Padding is the gap between a name and its tick.'
+        })
     }),
     /** What a narrow plot gave up so the matrix keeps its columns readable (panels/cell-gene/draw.js fitMatrix): the strip. */
     narrow: Object.freeze({
@@ -592,7 +608,7 @@ const countSets = Object.freeze({
     }),
     setTitle: (letter) => `${capital(word.set)} ${letter}`,
     shareTitle: `Share of the ${word.cellsShown}`,
-    renameHint: 'Double-click to rename. Enter saves, Escape cancels.',
+    renameHint: 'Double-click to rename. Enter saves, Escape cancels, Tab saves and moves to the next set.',
     renameLabel: `Name of the ${word.set}`,
     /** An UpSet's own options (UX 4.2): Sort, Show top, Minimum size. */
     sort: 'Sort',
