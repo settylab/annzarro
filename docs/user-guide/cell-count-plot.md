@@ -85,7 +85,9 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 | **UpSet** | 2 to 16 sets | Cells in every exclusive intersection, and each set's size | Intersection bars over a matrix of dots, with set-size bars |
 
 **Bar or Histogram follows X.** Choosing a number as **X** makes a Bar a **Histogram**; **Bar** stays in the list and
-draws the number's bins as categories (chosen for a number, it is kept). With a categorical X, **Histogram** is greyed out
+draws the number's bins as categories (chosen for a number, it is kept: only a change of X switches the view, never
+Color by, an arrangement, Undo or a link opened again). In a Histogram, **Sort by height** is greyed out: bins keep the
+number's order. With a categorical X, **Histogram** is greyed out
 in the **Mode** list, and pointing at it says "Histogram needs a numeric axis." Categories chosen while a Histogram is shown
 make it a Bar. Each switch is said once beside **Mode**, and **Undo** takes it back with the change of X. A link saved as a
 Histogram of categories opens as a Bar, with "Histogram needs a numeric axis, so this plot is drawn as Bar."

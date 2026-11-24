@@ -368,6 +368,8 @@ const countPlot = Object.freeze({
     }),
     /** Why a view cannot draw the X (the Mode select's title of a disabled view). */
     viewRefused: Object.freeze({ histogramNumeric: 'Histogram needs a numeric axis.' }),
+    /** Why Sort by height does not apply (its title where it is disabled). */
+    sortRefused: 'Bins of a number keep the order of the number.',
     /** What a switch of view by the X axis type says, once. */
     viewSwitched: Object.freeze({
         toHistogram: 'A number as X: shown as Histogram. Bar shows its bins as categories.',

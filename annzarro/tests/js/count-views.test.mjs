@@ -54,6 +54,19 @@ test('choosing a number as X makes Histogram the view; Bar stays available, and 
     assert.equal(K.viewForX(pie, { ...pie, x: obs('depth') }, isNumeric).config.mode, 'pie');
 });
 
+test('the switch fires only when X changes: Bar chosen on a number stays through every other edit', () => {
+    const bar = norm({ mode: 'bar', x: obs('depth'), split: obs('condition') });
+    const edits = [
+        { ...bar, split: obs('cell_type') },                    // Color by
+        { ...bar, arrangement: 'fill' },                        // arrangement
+        { ...bar, labels: 'count' },                            // labels
+        { ...bar, x: obs('depth', { binning: { method: 'equal_width', bins: 20 } }) }   // its binning, the same source
+    ];
+    for (const next of edits) assert.equal(K.viewForX(bar, next, isNumeric).config.mode, 'bar', JSON.stringify(next));
+    // Undo, Redo and a link reload are no commit: a Bar of a number is no fallback either
+    assert.equal(K.histogramFallback(bar, isNumeric), null);
+});
+
 test('a link stored as a Histogram of categories falls back to Bar with a one-time note; one of a number is untouched', () => {
     const stored = norm({ mode: 'histogram', x: obs('cell_type'), split: obs('condition'), arrangement: 'fill' });
     const back = K.histogramFallback(stored, isNumeric);

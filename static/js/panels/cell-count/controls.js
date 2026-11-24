@@ -631,7 +631,11 @@ export function createControls({ D, id, model, on }) {
         labelsSelect.hidden = !shownRows.labels;
         labelsRow.querySelector('label.ctl-label').hidden = !shownRows.labels;
         const show = (btn, visible, isOn) => { btn.hidden = !visible; btn.setAttribute('aria-pressed', String(!!isOn)); btn.classList.toggle('active', !!isOn); };
-        show(sortBtn, shownRows.sort, o.sort === 'height');
+        // a histogram's bins keep the number's order: Sort by height is shown there disabled, with why
+        const binSort = m.config.mode === 'histogram';
+        show(sortBtn, shownRows.sort || binSort, o.sort === 'height' && !binSort);
+        sortBtn.disabled = binSort;
+        sortBtn.title = binSort ? C.sortRefused : '';
         show(reverseBtn, shownRows.reverse, o.reverse);
         show(horizontalBtn, shownRows.horizontal, o.horizontal);
         logWrap.hidden = !shownRows.log;

@@ -103,3 +103,30 @@ def test_a_histogram_link_of_categories_opens_as_a_bar_with_the_note(page, serve
     assert page.evaluate(NOTE, S) == "Histogram needs a numeric axis, so this plot is drawn as Bar."
     assert page.evaluate("(s) => { const b = document.querySelector(s + ' .ccnt-state'); return !b || b.hidden; }", S), "drawn, not refused"
     until(page, "(s) => document.querySelector(s + ' .ccnt-panel').dataset.drawn === 'bar'", S)
+
+
+def test_bar_chosen_on_a_number_stays_through_every_edit_that_does_not_change_x(page, served):
+    _open(page, served, {CC: _count(mode="histogram", x=DEPTH, split=CONDITION)})
+    _drawn(page, "histogram")
+    page.select_option(f"{S} .ccnt-mode", "bar")
+    _drawn(page, "bar", "c.x.source.key === 'depth'")
+    # an arrangement, the labels, Undo and Redo of them: X never changes, so the view never flips back
+    page.click(f"{S} .ccnt-arrangement__opt:has(input[value='fill'])")
+    _drawn(page, "bar", "c.arrangement === 'fill'")
+    page.select_option(f"{S} .ccnt-labels", "count")
+    _drawn(page, "bar", "c.labels === 'count'")
+    page.click(f"{S} .ccnt-undo")
+    _drawn(page, "bar", "!c.labels")
+    # the Color by, from its own select
+    page.select_option(f"{S} [data-row='split'] select.axis-key-select", "cell_type")
+    _drawn(page, "bar", "c.split && c.split.source.key === 'cell_type'")
+    # and the plot's link, opened again
+    cfg = _config(page)
+    _open(page, served, {CC: _count(**{k: v for k, v in cfg.items() if k not in ("title", "controlsVisible", "id")})})
+    _drawn(page, "bar", "c.x.source.key === 'depth'")
+    assert _config(page)["mode"] == "bar"
+    # a Histogram's Sort by height is shown disabled, with why
+    page.select_option(f"{S} .ccnt-mode", "histogram")
+    _drawn(page, "histogram")
+    sort = page.locator(f"{S} .ccnt-sort")
+    assert sort.is_visible() and sort.is_disabled() and sort.get_attribute("title") == "Bins of a number keep the order of the number."
