@@ -1642,6 +1642,22 @@ export function stableAxisRanges(data, settings) {
 }
 
 /**
+ * The ranges Hide NaN / Hide Outliers pin, as given to Plotly, kept on the graph: Plotly widens one of them to keep
+ * Equal aspect, and when the plot area changes later (a margin made for the legend) it widened the widened range
+ * again; the graph's relayout handler gives these again instead (plot-make-helper.js attachViewportTracking).
+ * Null when nothing is pinned by hiding (autorange, a kept zoom, 3D).
+ * @param {HTMLElement} gd
+ * @param {Object} data
+ * @param {Object} settings
+ */
+export function notePinned(gd, data, settings) {
+  if (!gd) return;
+  const hiding = !settings.z && (settings.hideNaN || settings.hideOutliers) && !keptViewRanges(settings);
+  const pinned = hiding && data ? stableAxisRanges(data, settings) : null;
+  gd.__azPinned = pinned && pinned['xaxis.range'] && pinned['yaxis.range'] ? pinned : null;
+}
+
+/**
  * Hover labels: the configured hoverInfo columns, numbers to 4 significant
  * digits.
  *
@@ -1918,7 +1934,9 @@ export async function unsortTraces(gd) {
  */
 export function applyLogColor(data, settings) {
   data.colorLog = null;
-  if (!settings.color || !settings.color.log || data.colorType !== 'numerical' || !Array.isArray(data.color)) return;
+  // a typed array too: a gene score's values (float32) came back linear under Log when recoloured into a plot
+  if (!settings.color || !settings.color.log || data.colorType !== 'numerical'
+      || !(Array.isArray(data.color) || ArrayBuffer.isView(data.color))) return;
   data.colorRaw = data.color;
   const { values, floor } = logColorValues(data.color, settings.color.logFloor ?? null);
   data.color = values;
@@ -1927,7 +1945,9 @@ export function applyLogColor(data, settings) {
 
 export async function applyLogColorbar(gd, data, settings) {
   if (!gd || !Array.isArray(gd.data) || typeof Plotly === 'undefined') return;
-  const idx = gd.data.findIndex(t => t && t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+  // a typed array too (a gene score's float32 values): the log ticks were left off a score recoloured into the plot
+  const idx = gd.data.findIndex(t => t && t.marker && (Array.isArray(t.marker.color) || ArrayBuffer.isView(t.marker.color))
+    && t.marker.colorscale !== undefined);
   if (idx < 0) return;
   const update = {};
   if (data.colorLog) {
@@ -2928,6 +2948,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   }
 
   const layout = buildPlotLayout(settings, data);
+  notePinned(plotContainer, data, settings);
 
   // A graph already drawn stays, and the new points are drawn into it
   clearForDraw(plotContainer);
@@ -3144,6 +3165,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: settings.color.key || 'Value',
+          _azTable: true,             // the points in the table (plot-update.js tells the grouping by it)
           text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
@@ -3158,6 +3180,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
             colorscale: plotlyColorscale(settings.colorScale),
             reversescale: settings.colorReversed,
             cmin: cmin,
+            cauto: false,   // as a restyle of cmin leaves it (plotly-batch.js implied edits): one value for both paths
             cmax: cmax,
             showscale: settings.showLegend !== false,     // Show Legend off hides the colour bar too
             colorbar: colorbarSettings
@@ -3216,6 +3239,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       }
       
       baseTrace.marker.cmin = cmin;
+      baseTrace.marker.cauto = false;   // as a restyle of cmin leaves it: an equal min and max drew otherwise
       baseTrace.marker.cmax = cmax;
       baseTrace.marker.colorbar = colourBar(settings, colourTitle(settings.color));
   
@@ -3310,6 +3334,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
           name: 'Data points',
+          _azTable: true,
           text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
