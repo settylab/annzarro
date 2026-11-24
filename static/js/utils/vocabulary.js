@@ -698,10 +698,10 @@ const cellExport = Object.freeze({
 /** What an aggregation is called; its symbols are utils/aggregation-symbols.js's, its names the method tables' labels. */
 const aggregation = Object.freeze({
     label: 'Aggregation',
-    sections: Object.freeze({ genes: 'Genes', cells: 'Cells', signatures: 'Gene signatures', tables: 'Gene tables', groupings: 'Cell groupings' })
+    sections: Object.freeze({ genes: 'Genes', cells: 'Cells', signatures: 'Gene signatures', tables: 'Gene tables', groupings: 'Cell groupings', cellTables: 'Cell tables' })
 });
 
-const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping', groupStat: 'Cell group' });
+const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping', groupStat: 'Cell group', tableStat: 'Cell table' });
 
 /** Show as table (UX 7): a plot's CSV rows as an HTML table, in every plot that offers it (count plot, Cell-Gene Plot). */
 const table = Object.freeze({

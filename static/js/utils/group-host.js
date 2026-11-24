@@ -33,6 +33,7 @@ import { dependsOn } from './panel-references.js';
 import { findCycle, TableResolver } from './table-resolver.js';
 import { selectionOnCells } from './closed-table.js';
 import { ledger } from './memory-guard-ui.js';
+import { tableOfCells } from './group-stat-model.js';
 import { missingFactors, PANEL_SOURCES, SCORE_SOURCE, GROUP_SOURCE, TABLE_SOURCE } from '../panels/cell-grouping/factors.js';
 
 /** The panel type whose panels are groupings. */
@@ -51,7 +52,7 @@ export const typeOf = (p) => (p && typeof p.getType === 'function' ? p.getType()
 /** Whether a panel is open (not closed). */
 export const isOpen = (p) => !!p && !!panels() && panels().getActivePanels().includes(p);
 /** A panel's title, or its id when it has none. */
-export const titleOfPanel = (id) => { const p = panelOf(id); return p && p.getTitle ? p.getTitle() : id; };
+export const titleOfPanel = (id) => { const p = panelOf(tableOfCells(id) || id); return p && p.getTitle ? p.getTitle() : id; };
 
 /** A cycle member's kind, as a notice names a ring. */
 function kindOfPanel(id) {
@@ -208,6 +209,16 @@ export const sourceTitleOf = (source) => (PANEL_SOURCES.includes(source.type) &&
 function pageHost() {
     return {
         source(id) {
+            // a cell table's cells (the Gene Plot's table-stat): a grouping of one table factor, its group `@in` the passing cells
+            const table = tableOfCells(id);
+            if (table) {
+                const t = panelOf(table);
+                if (typeOf(t) !== 'cell-table') return null;
+                const methods = typeof t.getMethods === 'function' ? t.getMethods() : {};
+                return { title: t.getTitle(), kind: 'table', shape: GROUPING, recipe: () => ({
+                    version: 1, partitionings: [{ source: { type: TABLE_SOURCE, key: table } }],
+                    ...(typeof methods.detect_above === 'number' && methods.detect_above > 0 ? { detect_above: methods.detect_above } : {}) }) };
+            }
             // a panel's own cell axis (a Cell-Gene Plot on an obs column): the panel says what it is
             if (typeof id === 'string' && id.startsWith(AXIS_PREFIX)) {
                 const owner = panelOf(id.slice(AXIS_PREFIX.length));
@@ -222,6 +233,7 @@ function pageHost() {
         // per id: a panel's own cell axis is off when its owner's type is; a panel that is a source of groups itself
         // (a count plot, groupSource()) when its own type is; anything else (a grouping) when Cell Grouping is
         off: (id) => {
+            if (tableOfCells(id)) return !Policy.panelEnabled('cell-table');
             if (typeof id === 'string' && id.startsWith(AXIS_PREFIX)) {
                 const owner = panelOf(id.slice(AXIS_PREFIX.length));
                 return !!owner && !Policy.panelEnabled(typeOf(owner));

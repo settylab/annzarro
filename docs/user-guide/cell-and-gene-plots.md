@@ -131,6 +131,18 @@ so does an edit of the grouping's **Expressed above** in its **Methods ▾**, wh
 cells read. The statistics have the Cell-Gene Plot's names and units (% expressing is 0 to 100). The colour bar is titled by the
 grouping and the group, then the statistic and the layer ("% expressing (> 0) · logged").
 
+### Colour or place a gene plot by a Cell Table's cells
+
+The item list of a layer also has **Cell tables**: every Cell Table, open or closed, by its name; a line says so when there is none.
+Pick one and each gene's value is one statistic of that gene over the cells that pass the table's filter, on the layer of the row,
+with the table's own **Expressed above** (its **Methods ▾**) as the threshold of % expressing and mean of expressing cells.
+No group select follows: the table is the group of cells. The aggregation button is the same as a grouping's.
+
+The axis follows the table. A change of its filter, or a row added or removed, asks once for the new cells (cells that are the
+same as before are asked for no more), and the plot keeps what it shows until they come; an edit that would take long asks to be
+applied (**Update**), as a grouping's does. A table with no rows says so over the plot, and a table that was deleted says so and the
+plot keeps its setting, with **Choose another**.
+
 The group is kept by its key, so renaming a level or changing the separator changes only what is displayed. When the
 grouping's levels change what the group is made of, the plot keeps colouring by the same key and says "Group changed"
 with **Keep** (follow the new labels) and **Choose another**; when the key is no longer a group the plot says "No longer

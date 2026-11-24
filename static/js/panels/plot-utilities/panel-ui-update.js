@@ -369,7 +369,7 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   const provider = getSource(settings.type);
   if (!(provider && provider.layered) && settings.layer) delete settings.layer;
   // the choice of a statistic of a group belongs to the provider that has one: another source holds none of it
-  if (!(provider && provider.statMenu)) for (const field of ['stat', 'groupWas', 'follow']) delete settings[field];
+  if (!(provider && (provider.statMenu || provider.aggregate))) for (const field of ['stat', 'groupWas', 'follow']) delete settings[field];
   // Initialize the settings history if it doesn't exist
   if (!settings.history) {
     settings.history = {};

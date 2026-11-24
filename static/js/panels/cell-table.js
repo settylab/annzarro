@@ -164,6 +164,8 @@ const CellTablePanel = (function() {
             if (JSON.stringify(clean) === JSON.stringify(_methods)) return;
             _methods = clean;
             if (_undo) _undo.observe('change the methods');
+            // what a Gene Plot's axis of this table's cells stands for moved (its Expressed above): the page's group sources hear it
+            document.dispatchEvent(new CustomEvent('annzarro:table-filtered', { detail: { id: _id } }));
             if (_methodsUi) _methodsUi.paint();
             if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
         }

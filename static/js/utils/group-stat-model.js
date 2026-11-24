@@ -126,3 +126,31 @@ export function pairAfter(held, changed, value, kinds, datasetLayers) {
     const p = statisticPairAfter(changed === 'stat' ? 'method' : 'layer', value, { method: statOf(held), layer: layerOf(held) }, { datasetLayers, kinds });
     return { stat: p.method || statOf(held), layer: p.layer || layerOf(held), say: p.say || '' };
 }
+
+// ------------------------------------------------------------------------------------------------ a cell table's cells
+
+/**
+ * A Cell Table's cells are a source of groups of their own (the Gene Plot's `table-stat`): the page host describes a table as a
+ * grouping of one table factor, whose group `@in` is the table's passing cells. Its id is the table's, behind this prefix.
+ */
+export const TABLE_CELLS = 'table-cells:';
+
+/** The id of the group source that stands for table `tableId`'s cells. */
+export const tableCellsId = (tableId) => `${TABLE_CELLS}${tableId}`;
+
+/** The table a group source id stands for, or null when it is not a table's cells. */
+export const tableOfCells = (id) => (typeof id === 'string' && id.startsWith(TABLE_CELLS) ? id.slice(TABLE_CELLS.length) : null);
+
+/** The group of a table's cells that is the table's passing cells. */
+export const IN_GROUP = Object.freeze(['@in']);
+
+/**
+ * The body of the `genes` request for a table's cells: the table's bitset as the route's `sets` and `member` (nothing is
+ * resolved on the server), the layer and the table's Expressed above. The cells shown (`subset`) are added by the groups client.
+ * @param {Object} tableRequest - `serverRequest` of the one-factor grouping: its `sets` hold the table's bitset
+ */
+export function memberRequest(tableRequest, layer, threshold) {
+    const refs = Object.keys(tableRequest.sets || {});
+    if (refs.length !== 1) throw new Error('A table\'s cells are one bitset');
+    return { shape: 'genes', sets: tableRequest.sets, member: refs[0], layer, thresholds: [threshold] };
+}
