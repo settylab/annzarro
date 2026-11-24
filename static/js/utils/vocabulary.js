@@ -676,4 +676,14 @@ const range = Object.freeze({
     fixed: (value) => `Overrides the drawn values (set to ${value}). Clear to follow them.`
 });
 
-export const VOCABULARY = Object.freeze({ range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+/**
+ * The Cell Plot's and Gene Plot's own words (WP-5b): the 3D toggle reads "3D", as in the Cell-Gene and Cell Count Plots'
+ * toolbars (operator, 2026-11-23); its title says what it does.
+ */
+const plotPanel = Object.freeze({
+    view3d: '3D',
+    view3dHelp: 'Show the plot in 3D: adds a Z row',
+    view3dOnHelp: 'The plot is in 3D; click to go back to 2D'
+});
+
+export const VOCABULARY = Object.freeze({ plotPanel, range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });

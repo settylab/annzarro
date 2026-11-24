@@ -1,5 +1,6 @@
 import { pinLayers } from '../utils/score-source.js';
 import { shownHoverInfo } from './plot-utilities/hover-columns.js';
+import { attachPlotUndo } from './plot-utilities/plot-undo.js';
 import { releaseSourceHost } from '../utils/source-registry.js';
 import { cancelIndexBuild } from './plot-utilities/large-plot.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
@@ -36,6 +37,8 @@ const CellPlotPanel = (function() {
         const _plotType = 'cells'; 
         const _container = container;
         let _plotContainer = null;
+        /** Undo in the toolbar (plot-utilities/plot-undo.js, WP-5b). */
+        let _undo = null;
         let _controlsContainer = null;
         let _resizeObserver = null;
         let _isFirstLoad = true;
@@ -97,6 +100,9 @@ const CellPlotPanel = (function() {
                 // Store references for later use
                 _plotContainer = plotContainer;
                 _controlsContainer = controlsContainer;
+                // Undo: the same as the new panels', in the toolbar's Undo slot (WP-5b); before the first draw, so the
+                // toolbar's row never changes height after it
+                _undo = attachPlotUndo(_id, _container);
                 
                 console.log('Panel structure created: ', 
                     'plotContainer=', _plotContainer ? 'defined' : 'undefined',
@@ -111,6 +117,7 @@ const CellPlotPanel = (function() {
                 
                 // Set up event listeners (these work even when no dataset is loaded)
                 _setupEventListeners();
+                if (_undo) _undo.settled();
             } catch (error) {
                 console.error('Error initializing panel:', error);
                 console.error(error.stack);
@@ -424,6 +431,7 @@ const CellPlotPanel = (function() {
          * Clean up resources
          */
         function cleanup() {
+            if (_undo) { _undo.destroy(); _undo = null; }
             // what this plot shows from a provider (a score, a grouping) is no longer needed by it: each provider lets go
             // at once, and a value nothing else needs stops computing and leaves the memory guard's ledger
             if (_plotContainer) releaseSourceHost(_plotContainer);
@@ -577,6 +585,8 @@ const CellPlotPanel = (function() {
                         _settings.viewport3D = null;
                     }
                     await refreshPlot(signal);
+                    // a dataset that arrived is not a change of the user's: Undo starts here (plot-undo.js)
+                    if (_undo) _undo.settled();
                     
                     // If we get here, the operation completed successfully
                     return;

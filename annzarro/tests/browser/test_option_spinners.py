@@ -26,6 +26,8 @@ def test_first_spinner_click_steps_once_and_menu_stays(page, server, section, se
     _open(page, server, _cfgs(extra_a=extra))
     _menu(page, A, section)
     page.wait_for_timeout(600)
+    # the pop-over scrolls inside itself (ui/popover.js, WP-5b): the box is brought into its view first
+    page.locator(selector).scroll_into_view_if_needed()
     before = _box(page)
     box = page.locator(selector).bounding_box()
     x, y = box["x"] + box["width"] - 12, box["y"] + box["height"] * 0.3      # the up arrow
@@ -62,6 +64,7 @@ def test_the_arrow_of_an_empty_box_steps_from_the_default(page, server, section,
     _menu(page, A, section)
     page.wait_for_timeout(600)
     assert page.input_value(selector) == ""
+    page.locator(selector).scroll_into_view_if_needed()      # the pop-over scrolls inside itself (WP-5b)
     box = page.locator(selector).bounding_box()
     x, y = box["x"] + box["width"] - 12, box["y"] + box["height"] * 0.3
     page.mouse.move(x, y)

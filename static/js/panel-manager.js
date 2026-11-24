@@ -1114,17 +1114,7 @@ const PanelManager = (function() {
         const type = panelTypeFromTileId(id);
         const Constructor = _panelTypes.get(type);
         if (!old || !content || !Constructor || old.isPlaceholder || !_activePanels.has(old)) return false;
-        // An open Plot Options menu is hidden first, to the end of its transition: disposed in the middle
-        // of it, Bootstrap throws when the hide ends
-        const menuButton = document.getElementById(`aesthetics-menu-btn-${id}`);
-        const menu = menuButton && window.bootstrap && window.bootstrap.Popover.getInstance(menuButton);
-        if (menu && document.querySelector('.aesthetics-popover')) {
-            await new Promise(resolve => {
-                menuButton.addEventListener('hidden.bs.popover', resolve, { once: true });
-                setTimeout(resolve, 600);
-                menu.hide();
-            });
-        }
+        // An open Plot Options pop-over (ui/popover.js since WP-5b) closes with the panel's cleanup, at once
         _activePanels.delete(old);
         try {
             if (typeof old.destroy === 'function') old.destroy();

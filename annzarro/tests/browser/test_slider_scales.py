@@ -26,6 +26,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
+from annzarro.tests.browser.test_cell_gene_plot_options import open_point_size  # noqa: E402  (the point size is in Plot Options since WP-5b)
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -144,6 +145,7 @@ def test_sliders_low_end_and_number_boxes(server):
             page, errors = _open(browser, _link(server))
 
             # --- size: 10% of the log track is about 0.3 px, not 2 px
+            open_point_size(page, PID)
             _click_track(page, f"#point-size-{PID}", 0.10)
             size = float(page.input_value(f"#point-size-input-{PID}"))
             assert size == 0.392, size                     # the smallest size scattergl draws
@@ -179,6 +181,7 @@ def test_sliders_low_end_and_number_boxes(server):
                 assert drawn == pytest.approx(value, rel=0.01), (which, drawn, value)
 
             # --- the number boxes edit the plot, also off the tracks' range
+            open_point_size(page, PID)
             _type(page, f"#point-size-input-{PID}", 1.7)
             assert _marker(page)["size"] == 1.57          # snapped: 4 steps of 100/255 px
             assert page.input_value(f"#point-size-input-{PID}") == "1.57"
@@ -187,6 +190,7 @@ def test_sliders_low_end_and_number_boxes(server):
             _type(page, f"#color-max-{PID}", 20000)
             assert _marker(page)["cmax"] == 20000
             assert page.input_value(f"#color-max-slider-{PID}") == "1000"   # pinned to the end
+            open_point_size(page, PID)
             _type(page, f"#point-size-input-{PID}", 0.1)                     # below one step
             assert _marker(page)["size"] == 0.392
             assert page.input_value(f"#point-size-{PID}") == "0"
@@ -232,6 +236,7 @@ def test_large_plot_mode_sliders(large_server):
             traces = """() => document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot').data""" % PID
             assert len(page.evaluate(traces)) > 2, "not drawn by the large-plot path"
 
+            open_point_size(page, PID)
             _click_track(page, f"#point-size-{PID}", 0.10)
             size = float(page.input_value(f"#point-size-input-{PID}"))
             assert size == 0.392, size
@@ -276,6 +281,7 @@ def test_automatic_point_style(server):
             assert "active" in page.get_attribute(f"#point-size-auto-{PID}", "class")
             assert "active" in page.get_attribute(f"#point-opacity-auto-{PID}", "class")
 
+            open_point_size(page, PID)
             _type(page, size_box, 2.5)
             assert _marker(page)["size"] == 2.35            # snapped to 6 steps
             assert "is-auto" not in page.get_attribute(size_box, "class")
@@ -294,6 +300,7 @@ def test_automatic_point_style(server):
             assert (cfg["pointSize"], cfg["autoPointSize"]) == (2.35, False)
             assert (cfg["pointOpacity"], cfg["autoPointOpacity"]) == (1, True)
 
+            open_point_size(page, PID)
             page.click(f"#point-size-auto-{PID}")
             page.wait_for_timeout(500)
             assert _marker(page)["size"] == 5.1
@@ -334,6 +341,7 @@ def test_marker_change_draws_like_a_fresh_load(request, mode, size, opacity):
             page, errors2 = _open(browser, _link(server, **colour))
             page.evaluate("""() => { window.__restyles = 0; document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot')
                              .on('plotly_restyle', () => window.__restyles++); }""" % PID)
+            open_point_size(page, PID)
             _type(page, f"#point-size-input-{PID}", size)
             _type(page, f"#point-opacity-input-{PID}", opacity)
             state = page.evaluate("""() => { const gd = document.querySelector('.tile[data-tile-id="%s"] .js-plotly-plot');
@@ -347,6 +355,7 @@ def test_marker_change_draws_like_a_fresh_load(request, mode, size, opacity):
             shown = float(page.input_value(f"#point-size-input-{PID}"))
             assert round(255 * shown / 100) == max(1, round(255 * size / 100)), shown
             assert state["sizes"][0] == shown
+            page.keyboard.press("Escape")           # Plot Options closed: the plot as a fresh load shows it
             got = _plot_pixels(page)
             assert got.shape == ref.shape
             differ = int((abs(got - ref).max(axis=2) > 8).sum())
@@ -364,6 +373,7 @@ def test_hover_finds_the_point_after_a_size_change(server):
         browser = p.chromium.launch()
         try:
             page, errors = _open(browser, _link(server, highlightFocusedCell=False))
+            open_point_size(page, PID)
             _type(page, f"#point-size-input-{PID}", 6)
             _type(page, f"#point-opacity-input-{PID}", 0.3)
             assert _marker(page)["size"] == 5.88

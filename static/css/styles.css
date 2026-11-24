@@ -3235,9 +3235,9 @@ button.dtsb-button.dtsb-clear:hover {
 @container plot-controls (min-width: 560px) {
     .ctl-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        grid-template-areas: "axes points" "colour colour" "acts end";
+        grid-template-areas: "axes points" "colour colour" "bar bar";
     }
-    .ctl-grid.ctl-no-colour { grid-template-areas: "axes points" "acts end"; }
+    .ctl-grid.ctl-no-colour { grid-template-areas: "axes points" "bar bar"; }
     .ctl-axes { grid-area: axes; }
     .ctl-colour {
         grid-area: colour;
@@ -3258,25 +3258,24 @@ button.dtsb-button.dtsb-clear:hover {
         border-left: var(--ctl-rule);
         padding-left: calc(4 * var(--ctl-u));
     }
-    .ctl-grid > .ctl-actions { display: contents; }
-    .ctl-grid .ctl-actions-toggles { grid-area: acts; align-self: start; }
-    .ctl-grid .ctl-actions-end { grid-area: end; justify-self: end; align-self: start; }
+    /* the shared plot toolbar (ui/plot-toolbar.js, WP-5b): one row under the groups, as in every plot panel */
+    .ctl-grid > .ctl-toolbar { grid-area: bar; }
 }
 
 @container plot-controls (min-width: 960px) {
     .ctl-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        grid-template-rows: auto 1fr;
-        grid-template-areas: "axes colour points" "acts colour points";
+        grid-template-rows: auto auto;
+        grid-template-areas: "axes colour points" "bar bar bar";
     }
+    /* The points column keeps the room it had before WP-5b (the point size's row, now in Plot Options, and the line the
+       buttons took, now the toolbar row), so the first row is as tall as it was, with a colour or without one: a
+       colour that arrives (a score) or is picked does not move the plot. */
+    .ctl-points { padding-bottom: calc(2 * var(--ctl-h) + 2 * var(--ctl-u)); }
     .ctl-grid.ctl-no-colour {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        grid-template-areas: "axes points" "acts points";
+        grid-template-areas: "axes points" "bar bar";
     }
-    /* Refresh / Plot Options sit in the points column's last line, which
-       the group keeps free, so the first row is only as tall as the axes. */
-    .ctl-points { padding-bottom: calc(var(--ctl-h) + var(--ctl-u)); }
-    .ctl-grid .ctl-actions-end { grid-area: points; align-self: end; }
     .ctl-colour {
         display: flex;
         border-top: 0;
@@ -3446,7 +3445,7 @@ button.dtsb-button.dtsb-clear:hover {
 
 .ctl-actions { justify-content: space-between; }
 @container plot-controls (max-width: 379px) {
-    .ctl-actions .ctl-btn-text { display: none; }
+    .ctl-actions .ctl-btn-text, .ctl-toolbar .ctl-btn-text { display: none; }
 }
 .ctl-actions-end {
     display: inline-flex;

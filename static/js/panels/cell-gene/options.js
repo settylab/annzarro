@@ -581,7 +581,7 @@ function mount(slot, ctx) {
         commit: ctx.commit || ((next, label) => ctx.set(next, label)), replace: ctx.replace || ((next) => ctx.set(next, '')),
         sections: { 'panel:dots': { title: WO.heading.dots, when: dotsMode }, 'panel:sections': { title: WO.heading.sections },
             'panel:annotations': { title: WO.heading.totals } },
-        exportImage: ctx.exportImage, plotSize: ctx.plotSize, plot: ctx.plot, csv: downloadCsv, canExport: () => !!ctx.drawn(),
+        exportImage: ctx.exportImage, copyImage: ctx.copyImage, plotSize: ctx.plotSize, plot: ctx.plot, csv: downloadCsv, canExport: () => !!ctx.drawn(),
         exportOff: (format) => (format === 'svg' && drawn3d() ? W3.svgOff : ''),
         classes: { export: 'cgene-export', exportBtn: 'cgene-export-btn', csv: 'cgene-csv-btn' }
     });

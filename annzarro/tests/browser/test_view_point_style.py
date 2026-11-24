@@ -24,6 +24,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
+from annzarro.tests.browser.test_cell_gene_plot_options import open_point_size  # noqa: E402  (the point size is in Plot Options since WP-5b)
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -177,6 +178,7 @@ def test_automatic_style_follows_the_view(server, page, colour, controls):
     if not controls:
         return
     # a size the user sets stays; the opacity is still automatic
+    open_point_size(page, PID)
     box = page.locator(f"#point-size-input-{PID}")
     box.fill("3")
     box.dispatch_event("change")

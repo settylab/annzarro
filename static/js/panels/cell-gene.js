@@ -65,7 +65,7 @@ import { createCellGeneOrder } from '../utils/cell-gene-order.js';
 import { buildFigure, colourBars, sceneLabels, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
 import { watchSceneCamera, sameCamera } from '../utils/scene-camera.js';
-import { exportPlot } from './plot-utilities/plot-aesthetics-menu.js';
+import { exportPlot, copyPlotToClipboard } from './plot-utilities/plot-aesthetics-menu.js';
 import { createPlotToolbar } from '../ui/plot-toolbar.js';
 import { PLOT_PALETTES } from '../utils/plot-theme.js';
 import { resolveStyle } from './plot-utilities/options-schema.js';
@@ -837,6 +837,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 // the matrix drawn, for the 3D cap; the image export of Plot Options
                 shape: () => (_shown ? { rows: _shown.rows, groups: _shown.groups } : null),
                 exportImage: (format, settings = {}) => { if (_dom && _shown) exportPlot(_dom.plot, format, settings, 'full'); },
+                copyImage: (settings) => { if (_dom && _shown) copyPlotToClipboard(_dom.plot, settings); },
                 // the shared Plot Options (WP-5a): a whole configuration as one undoable step, or (the session default
                 // followed) without one; the plot's size on screen, for an export of the size shown
                 commit: (next, label) => commit(next, label),

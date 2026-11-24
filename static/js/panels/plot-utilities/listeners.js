@@ -22,6 +22,7 @@ import { aspectUpdate, autorangeValue, keepsOwnMarker, refreshScaleBar } from '.
 import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig, snapPointSize } from '../../utils/slider-scales.js';
 import { coalesce } from '../../utils/render-queue.js';
+import { VOCABULARY } from '../../utils/vocabulary.js';
 
 export function setupPlotEventListeners({
     plotContainer,
@@ -172,7 +173,7 @@ export function setupPlotControlListeners(
     // Use jQuery for element selection and event binding
     const $controlsContainer = jQuery(controlsContainer);
     
-    // --- 3D Plot Toggle ---
+    // --- 3D toggle ---
     const $zAxisToggle = $controlsContainer.find(`#z-axis-toggle-${id}`);
     const $zAxisContainer = $controlsContainer.find(`#z-axis-container-${id}`);
     
@@ -181,14 +182,14 @@ export function setupPlotControlListeners(
       if (is3D) {
         // Disable 3D: reset classes, hide 3D controls, update settings
         $.updateButtonState($zAxisToggle, false);
-        $zAxisToggle.attr('title', 'Enable 3D plot');
+        $zAxisToggle.attr('title', VOCABULARY.plotPanel.view3dHelp);
         $zAxisContainer.hide();
         settings.z = null;
         loadDataAndCreatePlot();
       } else {
         // Enable 3D: change button appearance, show controls
         $.updateButtonState($zAxisToggle, true);
-        $zAxisToggle.attr('title', '3rd dimension active - click to disable');
+        $zAxisToggle.attr('title', VOCABULARY.plotPanel.view3dOnHelp);
         $zAxisContainer.show();
         
         if (!settings.z) {

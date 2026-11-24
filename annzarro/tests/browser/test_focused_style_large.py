@@ -78,6 +78,7 @@ def test_the_focused_shape_takes_every_option(page, server):
     assert _spied(page)["relayout"] == 0
     # the point size moving keeps the factor
     before = _shape(page)["pointSize"]
+    _menu(page, A, "points")           # the point size is in Plot Options' Points group since WP-5b
     page.fill(f"#point-size-input-{A}", "8")
     page.press(f"#point-size-input-{A}", "Tab")
     page.wait_for_function("([id, ps]) => { const s = (%s)(id); return s && s.pointSize !== ps && s.r === Math.max(2, s.pointSize * 7 / 2); }"
