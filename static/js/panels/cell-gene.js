@@ -813,7 +813,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 title: () => _title,
                 // the matrix drawn, for the 3D cap; the image export of Plot Options
                 shape: () => (_shown ? { rows: _shown.rows, groups: _shown.groups } : null),
-                exportImage: (format) => { if (_dom && _shown) exportPlot(_dom.plot, format, {}, 'full'); }
+                exportImage: (format) => { if (_dom && _shown) exportPlot(_dom.plot, format, {}, 'full'); },
+                // a tag of the plot's status strip (the clustering's sentences)
+                tag: (kind, tag) => { if (_dom) setStatusTag(_dom.plot, kind, tag); }
             };
             _parts.push(PARTS.options.mount(_controls.layoutSlot, ctx));
             // a gene clicked is focused; a group's label offers Open grouping when the groups are a grouping's (CXG-15)
