@@ -645,6 +645,8 @@ const GenePlotPanel = (function() {
             setConfig,
             updateConfig,
             onDataUpdate,
+            // a subset change it does not read: the series it holds stay current (plot-update.js isPlotDataCurrent)
+            subsetUnread: () => { if (_data && _data.generation !== null && _data.generation !== undefined) _data.generation = DataManager.getDatasetGeneration(); },
             // whether other cells change what it draws (utils/subset-reads.js)
             readsCellSubset: () => readsCellSubset('genes', [_settings.x, _settings.y, _settings.z, _settings.color, ...(_settings.hoverInfo || [])], _settings.tableFilter)
         };

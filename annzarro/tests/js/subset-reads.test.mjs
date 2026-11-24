@@ -37,3 +37,14 @@ test('a subset change is not handed to a panel that does not read the cells; oth
   await notifyEach(panels, 'datasetChanged', {});
   assert.deepEqual(got.map(g => g[0]), ['cells', 'genes', 'legacy']);
 });
+
+test('a panel passed over for a subset change is told, so what it holds stays current (render drift)', async () => {
+  const told = [];
+  const panel = (id, reads) => ({ getId: () => id, readsCellSubset: () => reads, onDataUpdate: () => told.push([id, 'update']),
+    subsetUnread: () => told.push([id, 'unread']) });
+  await notifyEach([panel('genes', false), panel('cells', true)], 'subsetChanged', {});
+  assert.deepEqual(told, [['genes', 'unread'], ['cells', 'update']]);
+  told.length = 0;
+  await notifyEach([panel('genes', false)], 'datasetChanged', {});
+  assert.deepEqual(told, [['genes', 'update']], 'only a subset change passes a panel over');
+});
