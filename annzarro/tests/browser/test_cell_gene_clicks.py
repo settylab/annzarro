@@ -118,7 +118,7 @@ def test_a_click_on_a_dot_or_a_heatmap_cell_focuses_its_gene_and_marks_its_label
     assert _weight(page, genes[0]) not in ("bold", "700")
 
     # a heatmap cell, the mark following the focus
-    page.click(f"{TP} .cgene-mode input[value='heatmap']")
+    page.select_option(f"{TP} select.cgene-mode", "heatmap")
     _until_drawn_again(page, "(p) => p.data[0].type === 'heatmap'")
     page.mouse.click(*_at(page, _gene_position(page, genes[2]), 3))
     _until_focused(page, genes[2])

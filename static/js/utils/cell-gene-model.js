@@ -45,6 +45,28 @@ const FLAT = 1e-12;
 export const SCALINGS = Object.freeze(['none', 'var', 'group', 'z_groups', 'z_pooled']);
 
 /**
+ * The Cell-Gene Plot's modes, one row each (aggregation-unify-080.md 5.1.3). `channels` lists the measures the mode
+ * draws (Color, Size); the control grid shows exactly those. A new mode is a row here, with nothing else to change in
+ * the grid. The stored `value`s are the configuration's `mode`.
+ */
+export const MODE_INFO = Object.freeze([
+    Object.freeze({ value: 'dots', label: 'Dots', channels: Object.freeze(['color', 'size']) }),
+    Object.freeze({ value: 'heatmap', label: 'Heatmap', channels: Object.freeze(['color']) })
+]);
+
+/**
+ * Whether a mode draws a channel, so whether the control grid shows that channel's row. An unknown mode shows nothing.
+ * @param {string} mode - a MODE_INFO value
+ * @param {string} channel - 'color' or 'size'
+ * @param {ReadonlyArray<{value: string, channels: ReadonlyArray<string>}>} [info] - the registry (tests pass their own)
+ * @returns {boolean}
+ */
+export function modeShowsChannel(mode, channel, info = MODE_INFO) {
+    const row = info.find((m) => m.value === mode);
+    return !!row && row.channels.includes(channel);
+}
+
+/**
  * The gene step of a one-row section that combines its gene rows (decision 40, one-row-ux-080.md): each gene's statistic
  * per group, exactly as the gene rows show it, then the mean, the sum or the mean of their z-scores across groups. Any
  * other gene step is a score method of the section's source: each cell is scored, then the channel's statistic is taken

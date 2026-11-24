@@ -28,6 +28,7 @@ import {
     noExpressingCells, pooledReference, scale
 } from '../../utils/cell-gene-model.js';
 import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
+import { MODE_INFO } from '../../utils/cell-gene-model.js';
 import { stableStringify } from '../../utils/url-history.js';
 import { cellGroupType } from '../../utils/cell-group-source.js';
 import { limit } from '../../utils/limits.js';
@@ -43,7 +44,7 @@ export const GROUP_AXIS = cellGroupType();
 export const SAME_AS_COLOR = '__same_as_color__';
 
 
-const MODES = Object.freeze(['dots', 'heatmap']);
+const MODES = Object.freeze(MODE_INFO.map((m) => m.value));
 const ROWS = Object.freeze(['genes', 'set']);
 const DEFAULT_LAYER = 'X';
 const DEFAULT_COLOR = Object.freeze({ stat: 'mean', layer: DEFAULT_LAYER });
