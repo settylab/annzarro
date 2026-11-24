@@ -170,7 +170,8 @@ def test_a_click_on_the_popovers_empty_space_and_one_on_the_page_both_commit(pag
     _start(page, served)
     page.fill(FIELD, "B space")
     box = page.locator(f"{P} .az-popover-body").bounding_box()
-    page.mouse.click(box["x"] + box["width"] - 3, box["y"] + box["height"] - 3)      # the body's padding, no control
+    # the body's padding, no control: the top corner (the bottom one is the Colors section's Reset links since U7)
+    page.mouse.click(box["x"] + box["width"] - 3, box["y"] + 3)
     until(page, "() => !document.querySelector(\"[data-popover='levels'] input.cgrp-level__name\")")
     assert _labels(page) == {"c:B cell": "B space"} and page.locator(P).count() == 1
     page.click(f"{B_ROW} .cgrp-level__rename")

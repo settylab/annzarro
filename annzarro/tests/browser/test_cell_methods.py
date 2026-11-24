@@ -224,3 +224,11 @@ def test_screenshots_of_both_popovers(page, served):
     page.locator(POP).wait_for(state="visible")
     page.screenshot(path=os.path.join(SHOTS, "so7-table-methods.png"))
     page.locator(POP).screenshot(path=os.path.join(SHOTS, "so7-table-methods-popover.png"))
+
+
+def test_the_grouping_methods_pop_over_uses_the_az_pop_body(page, served):
+    from annzarro.tests.browser.popover_standard import assert_body_standard
+    _plot_on_grouping(page, served)
+    page.click(f"{TG} .cmeth__toggle")
+    page.wait_for_selector(POP, state="visible")
+    assert_body_standard(page, POP, help=True, shot="grouping-methods")

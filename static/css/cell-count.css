@@ -61,9 +61,6 @@
 .ccnt-level__tick { display: inline-flex; align-items: center; gap: 4px; margin: 0; flex: 1 1 auto; min-width: 0; }
 .ccnt-level__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ccnt-level__n { margin-left: auto; color: var(--az-muted); font-variant-numeric: tabular-nums; }
-.ccnt-levels__wait { color: var(--az-muted); }
-.ccnt-rest-row, .ccnt-levels__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; }
-.ccnt-rest-opt { display: inline-flex; align-items: center; gap: 2px; margin: 0; }
 
 .ccnt-row--labels .btn.active { background: var(--az-surface-3); border-color: var(--az-link); color: var(--az-text); }
 .ccnt-row[hidden] { display: none; }
@@ -77,11 +74,6 @@
 .ccnt-toolbar__gap { flex: 1 1 auto; }
 
 /* the Color pop-over's lines (its surface is the shared one, popover.css) */
-.ccnt-color__line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 6px; }
-.ccnt-color__line > .form-select { width: auto; max-width: 14rem; }
-.ccnt-color__limit { display: inline-flex; align-items: center; gap: 4px; }
-.ccnt-color__limit .form-control { width: 5rem; }
-.ccnt-color__problem:empty { display: none; }
 .ccnt-sets[hidden] { display: none; }
 
 /* The set list of a Venn and an UpSet: one compact line per set, as the Cell Grouping panel lists its groups. Every row is

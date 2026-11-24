@@ -402,16 +402,19 @@ export function createSectionList({ D, id, model, on }) {
             layer.value = held.layer || 'X';
         }
         const thresholded = held.agg === 'score_pct_above';
-        const above = el('input', { type: 'number', step: 'any', class: 'form-control form-control-sm cgene-section__above', data: { which },
+        const above = el('input', { type: 'number', step: 'any', class: 'form-control form-control-sm az-pop-num cgene-section__above', data: { which },
             aria: { label: 'Threshold' }, value: thresholded ? String(held.above || 0) : '0',
             on: { change: () => on.above(i, which, above.value), keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); on.above(i, which, above.value); } } } });
-        const help = el('div', { class: 'cgene-section__help', data: { which }, text: aggregationHelp(held, part.layer) });
-        return el('div', { class: 'cgene-section__value', data: { which } },
-            el('span', { class: 'cgene-field__label', text: name }), kind,
-            el('span', { class: 'cgene-section__score', hidden: !scored }, method,
-                el('span', { class: 'cgene-section__pair' }, el('span', { class: 'cgene-measure__word', text: CG.sources.of }), layer),
-                el('span', { class: 'cgene-section__pair', hidden: !thresholded }, el('span', { class: 'cgene-measure__word', text: CG.sources.above }), above)),
-            help);
+        const help = el('small', { class: 'cgene-section__help az-pop-help', data: { which }, text: aggregationHelp(held, part.layer) });
+        const row = (label, control, attrs = {}) => el('div', { class: 'az-pop-field', ...attrs },
+            el('span', { class: 'az-pop-field__label', text: label }), el('span', { class: 'az-pop-field__control' }, control));
+        return el('details', { class: 'az-pop-section cgene-section__value', data: { which }, open: true },
+            el('summary', { class: 'az-pop-section__title', text: name }),
+            el('div', { class: 'az-pop-section__body' },
+                row('Value', kind),
+                el('div', { class: 'cgene-section__score az-pop-section__body', hidden: !scored },
+                    row('Method', method), row('Layer', layer), row('Above', above, { hidden: !thresholded, class: 'az-pop-field cgene-section__pair' })),
+                help));
     }
 
     /** The pop-over's body: the section's Color and Size blocks, drawn from the model as it is now. */
@@ -419,7 +422,7 @@ export function createSectionList({ D, id, model, on }) {
         const s = model().sections[i];
         D.clear(body);
         if (!s || s.rows !== 'set') return;
-        body.appendChild(el('div', { class: 'cgene-section__values' }, aggregationBlock(i, 'color', s.color), s.size ? aggregationBlock(i, 'size', s.size) : null));
+        body.appendChild(el('div', { class: 'az-pop-options cgene-section__values' }, aggregationBlock(i, 'color', s.color), s.size ? aggregationBlock(i, 'size', s.size) : null));
     }
 
     /** The summary button of a one-row section (WP-8): "Color: … · Size: …", opening Color and Size in a pop-over. */

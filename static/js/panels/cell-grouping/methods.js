@@ -50,10 +50,10 @@ export function createCellMethods({ D, id, intro = METHODS_TEXT.intro, definitio
     const boxes = new Map();
     function paramBlock(param) {
         const input = el('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false',
-            class: 'form-control form-control-sm cmeth__number', id: sid(param.key), data: { param: param.key },
+            class: 'form-control form-control-sm az-pop-num cmeth__number', id: sid(param.key), data: { param: param.key },
             aria: { label: param.name, describedby: `${sid(`${param.key}-help`)} ${sid(`${param.key}-error`)}` } });
-        const help = el('div', { class: 'cmeth__help', id: sid(`${param.key}-help`), data: { paramHelp: param.key } });
-        const error = el('div', { class: 'cmeth__error', id: sid(`${param.key}-error`), role: 'alert' });
+        const help = el('small', { class: 'cmeth__help az-pop-help', id: sid(`${param.key}-help`), data: { paramHelp: param.key } });
+        const error = el('div', { class: 'cmeth__error az-pop-error', id: sid(`${param.key}-error`), role: 'alert' });
         const read = () => {
             const v = getFields()[param.key];
             return typeof v === 'number' && Number.isFinite(v) ? v : param.default;
@@ -72,22 +72,25 @@ export function createCellMethods({ D, id, intro = METHODS_TEXT.intro, definitio
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
         input.addEventListener('change', commit);
         boxes.set(param.key, { input, help, error, read, param });
-        return el('div', { class: 'cmeth__param', data: { paramRow: param.key } },
-            el('label', { class: 'cmeth__param-label', for: sid(param.key), text: param.label }), input, help, error);
+        return el('div', { class: 'cmeth__param az-pop-field', data: { paramRow: param.key } },
+            el('label', { class: 'cmeth__param-label az-pop-field__label', for: sid(param.key), text: param.label }),
+            el('span', { class: 'az-pop-field__control' }, input), help, error);
     }
 
     // ------------------------------------------------------------ the body
 
-    const list = el('dl', { class: 'cmeth__list' });
+    const list = el('div', { class: 'cmeth__list' });
     for (const m of STATISTIC_INFO) {
-        list.append(el('dt', { class: 'cmeth__name', data: { method: m.value }, text: m.label }),
-            el('dd', { class: 'cmeth__definition', text: definitionOf(m) }));
-        for (const param of METHOD_PARAMS.filter((p) => p.after === m.value)) list.append(el('dd', { class: 'cmeth__params' }, paramBlock(param)));
+        const params = METHOD_PARAMS.filter((p) => p.after === m.value).map(paramBlock);
+        list.append(el('details', { class: 'az-pop-section cmeth__stat', open: true },
+            el('summary', { class: 'az-pop-section__title' }, el('span', { class: 'cmeth__name', data: { method: m.value }, text: m.label })),
+            el('div', { class: 'az-pop-section__body' }, el('small', { class: 'cmeth__definition az-pop-help', text: definitionOf(m) }), ...params)));
     }
-    const used = el('div', { class: 'cmeth__used', data: { usedBy: '' } });
-    const reset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cmeth__reset', on: { click: resetAll } }, METHODS_TEXT.reset);
-    const body = el('div', { class: 'cmeth', id: sid('body') },
-        el('p', { class: 'cmeth__intro', text: intro }), list, el('div', { class: 'cmeth__foot' }, used, reset));
+    const used = el('div', { class: 'cmeth__used az-pop-help', data: { usedBy: '' } });
+    const reset = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset cmeth__reset', on: { click: resetAll } }, METHODS_TEXT.reset);
+    const body = el('div', { class: 'az-pop-options cmeth', id: sid('body') },
+        el('p', { class: 'az-pop-intro cmeth__intro', text: intro }), list,
+        el('div', { class: 'az-pop-section__foot cmeth__foot' }, used, reset));
 
     function resetAll() {
         const patch = {};

@@ -56,3 +56,12 @@ def test_escape_closes_the_values_popover_and_focus_returns_to_its_button(page, 
     page.keyboard.press("Escape")
     page.wait_for_selector(VALUES_POP, state="detached")
     assert page.evaluate("(s) => document.activeElement === document.querySelector(s)", VALUES_BUTTON)
+
+
+def test_the_values_pop_over_uses_the_az_pop_body(page, served):
+    from annzarro.tests.browser.popover_standard import assert_body_standard
+    _one_section(page, served, rows="set")
+    page.click(VALUES_BUTTON)
+    page.wait_for_selector(VALUES_POP, state="visible")
+    got = assert_body_standard(page, VALUES_POP, help=True, sections=2, shot="cgene-values")
+    assert [t["text"] for t in got["titles"]] == ["Color", "Size"]

@@ -152,6 +152,8 @@ export function withoutLevelLabels(p) {
 /** How many groups' colors the user has set by hand, active or not. */
 const groupColorCount = (recipe) => (Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides.filter((o) => isColourString(o.color)).length : 0);
 
+let paletteSerial = 0;
+
 function selectOf(el, className, label, options, value) {
     const select = el('select', { class: `form-select form-select-sm ${className}`, aria: { label } });
     for (const o of options) select.appendChild(el('option', { value: o.value, text: o.text }));
@@ -168,16 +170,20 @@ function selectOf(el, className, label, options, value) {
 export function factorColorsSection({ D, p, info, kind, commit, name }) {
     const { el } = D;
     const palette = selectOf(el, 'cgrp-palette', `Palette of ${name}`, factorPalettes(p, info, kind), (p.colors && p.colors.palette) || '');
+    palette.id = `cgrp-palette-${++paletteSerial}`;
     palette.addEventListener('change', () => commit(withColors(p, { palette: palette.value }), `palette ${palette.value || 'default'} for ${name}`));
-    const reset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-colors-reset', disabled: !p.colors,
+    const reset = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset cgrp-colors-reset', disabled: !p.colors,
         on: { click: () => commit(withoutOverrides(p, true), `reset colors of ${name}`) } }, 'Reset colors');
     const labelled = p.labels && Object.keys(p.labels).length;
-    const resetNames = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-names-reset', disabled: !labelled,
+    const resetNames = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset cgrp-names-reset', disabled: !labelled,
         title: 'Back to the generated names of the levels; their colors stay',
         on: { click: () => commit(withoutLevelLabels(p), `reset level names of ${name}`) } }, 'Reset names');
-    return el('div', { class: 'cgrp-colors', role: 'group', aria: { label: 'Colors' } },
-        el('div', { class: 'cgrp-colors__head', text: 'Colors' }),
-        el('div', { class: 'cgrp-colors__line' }, el('label', { text: 'Palette ' }, palette), reset, resetNames));
+    return el('details', { class: 'az-pop-section cgrp-colors', open: true },
+        el('summary', { class: 'az-pop-section__title', text: 'Colors' }),
+        el('div', { class: 'az-pop-section__body' },
+            el('div', { class: 'az-pop-field' }, el('label', { class: 'az-pop-field__label', for: palette.id, text: 'Palette' }),
+                el('span', { class: 'az-pop-field__control' }, palette)),
+            el('div', { class: 'az-pop-section__foot' }, reset, resetNames)));
 }
 
 /**
@@ -203,13 +209,16 @@ export function groupColorsSection({ D, id, recipe, names, set }) {
     const by = el('select', { class: 'form-select form-select-sm cgrp-color-by', id: `cgrp-colorby-${id}`, aria: { label: 'Color groups by' } });
     const palette = el('select', { class: 'form-select form-select-sm cgrp-group-palette', id: `cgrp-grouppal-${id}`, aria: { label: 'Palette of the groups' } });
     for (const o of groupPalettes()) palette.appendChild(el('option', { value: o.value, text: o.text }));
-    const reset = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-group-reset' });
-    const resetNames = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-group-names-reset',
+    const reset = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset cgrp-group-reset' });
+    const resetNames = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset cgrp-group-names-reset',
         title: 'Back to the generated names of the groups; their colors stay' });
-    const byLine = el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-colorby-${id}`, text: 'Color groups by ' }), by);
-    const paletteLine = el('div', { class: 'cgrp-settings__line' }, el('label', { for: `cgrp-grouppal-${id}`, text: 'Palette ' }), palette);
-    const element = el('div', { class: 'cgrp-settings__colors', role: 'group', aria: { label: 'Colors' } },
-        el('div', { class: 'cgrp-colors__head', text: 'Colors' }), byLine, paletteLine, el('div', { class: 'cgrp-settings__line' }, reset, resetNames));
+    const fieldOf = (label, control) => el('div', { class: 'az-pop-field' },
+        el('label', { class: 'az-pop-field__label', for: control.id, text: label }), el('span', { class: 'az-pop-field__control' }, control));
+    const byLine = fieldOf('Color groups by', by);
+    const paletteLine = fieldOf('Palette', palette);
+    const element = el('details', { class: 'az-pop-section cgrp-settings__colors', open: true },
+        el('summary', { class: 'az-pop-section__title', text: 'Colors' }),
+        el('div', { class: 'az-pop-section__body' }, byLine, paletteLine, el('div', { class: 'az-pop-section__foot' }, reset, resetNames)));
     const change = (patch, label) => set({ colors: patched(recipe().colors, patch) }, label);
     by.addEventListener('change', () => change({ by: by.value === 'own' ? undefined : Number(by.value) },
         by.value === 'own' ? 'color groups by their own palette' : `color groups by ${by.selectedOptions[0].textContent}`));

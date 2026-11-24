@@ -507,3 +507,12 @@ def test_distribution_opens_a_count_plot_of_the_score_beside_the_panel(page, ser
         return !!(gd && gd.data && gd.data.some(d => d.type === 'bar' && (d.y || []).length > 1)); }""", tile)
     assert page.query_selector(f"{tile} .coverage-placeholder") is None, "the score is drawn, not refused"
     assert "T cell score" in page.inner_text(tile), "the x axis names the score"
+
+
+def test_the_methods_pop_over_uses_the_az_pop_body(page, served):
+    from annzarro.tests.browser.popover_standard import assert_body_standard
+    _sig_open(page, served)
+    page.click(BUTTON)
+    page.wait_for_selector(POP, state="visible")
+    got = assert_body_standard(page, POP, help=True, sections=6, shot="signature-methods")
+    assert [t["text"] for t in got["titles"]][:2] == ["Z-score mean", "Mean"], "a section per method, titled by its name"

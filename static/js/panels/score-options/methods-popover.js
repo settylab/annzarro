@@ -74,12 +74,11 @@ export function createMethodsPopover({ D, id, label = 'Methods', getRecipe, appl
     // ------------------------------------------------------------ numbers
 
     /** A number box: checked as typed, applied on Enter or on leaving it, the last valid value put back otherwise. */
-    function numberBox({ key, name, parse, read, write, width }) {
+    function numberBox({ key, name, parse, read, write }) {
         const input = el('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false',
-            class: 'form-control form-control-sm gsig-scoring__number', id: sid(key), data: { param: key },
+            class: 'form-control form-control-sm az-pop-num gsig-scoring__number', id: sid(key), data: { param: key },
             aria: { label: name, describedby: sid(`${key}-error`) } });
-        if (width) input.style.width = width;
-        const error = el('div', { class: 'gsig-scoring__error', id: sid(`${key}-error`), role: 'alert', hidden: true });
+        const error = el('div', { class: 'gsig-scoring__error az-pop-error', id: sid(`${key}-error`), role: 'alert', hidden: true });
         const show = (message) => {
             error.hidden = !message;
             error.textContent = message || '';
@@ -105,28 +104,30 @@ export function createMethodsPopover({ D, id, label = 'Methods', getRecipe, appl
         on: { change: () => { apply({ clip: clipBox.checked ? lastClip : null }); paint(); } } });
     const boxes = {
         clip: numberBox({ key: 'clip', name: 'Clip z-scores at plus and minus this value', parse: parseClipText,
-            read: (r) => (r.clip === null ? lastClip : r.clip), write: (v) => { lastClip = v; return { clip: v }; }, width: '5rem' }),
+            read: (r) => (r.clip === null ? lastClip : r.clip), write: (v) => { lastClip = v; return { clip: v }; } }),
         bins: numberBox({ key: 'bins', name: 'Number of gene bins', parse: (t) => parseWholeText(t, BINS_RANGE),
-            read: (r) => r.bins, write: (v) => ({ bins: v }), width: '4rem' }),
+            read: (r) => r.bins, write: (v) => ({ bins: v }) }),
         controls: numberBox({ key: 'controls', name: 'Control genes per bin', parse: (t) => parseWholeText(t, CONTROLS_RANGE),
-            read: (r) => r.controls, write: (v) => ({ controls: v }), width: '4.5rem' }),
+            read: (r) => r.controls, write: (v) => ({ controls: v }) }),
         seed: numberBox({ key: 'seed', name: 'Seed of the control genes', parse: parseSeedText,
-            read: (r) => (r.seed === null ? DEFAULT_SEED : r.seed), write: (v) => ({ seed: v }), width: '5.5rem' }),
+            read: (r) => (r.seed === null ? DEFAULT_SEED : r.seed), write: (v) => ({ seed: v }) }),
         detect: numberBox({ key: 'detect', name: 'A gene counts as detected above this value', parse: parseThresholdText,
-            read: (r) => r.detect_above, write: (v) => ({ detect_above: v }), width: '5rem' })
+            read: (r) => r.detect_above, write: (v) => ({ detect_above: v }) })
     };
-    const field = (text, control, forId) => el('span', { class: 'gsig-scoring__field' }, el('label', { for: forId, text }), control);
-    const clipHelp = el('span', { class: 'gsig-scoring__help', data: { clipHelp: '' } });
-    const detectHelp = el('span', { class: 'gsig-scoring__help', data: { detectHelp: '' } });
+    const field = (text, control, forId) => el('div', { class: 'gsig-scoring__field az-pop-field' },
+        el('label', { class: 'az-pop-field__label', for: forId, text }), el('span', { class: 'az-pop-field__control' }, control));
+    const clipHelp = el('small', { class: 'gsig-scoring__help az-pop-help', data: { clipHelp: '' } });
+    const detectHelp = el('small', { class: 'gsig-scoring__help az-pop-help', data: { detectHelp: '' } });
     const params = {
-        zscore_mean: el('div', { class: 'gsig-scoring__params' },
-            el('span', { class: 'gsig-scoring__field' }, clipBox, el('label', { for: sid('clipbox'), text: 'Clip at ±' }), boxes.clip.input),
+        zscore_mean: el('div', { class: 'gsig-scoring__params az-pop-field' },
+            el('label', { class: 'gsig-scoring__field az-pop-check', for: sid('clipbox') }, clipBox, ' Clip at ±'),
+            el('span', { class: 'az-pop-field__control' }, boxes.clip.input),
             clipHelp, boxes.clip.error),
-        control_adjusted: el('div', { class: 'gsig-scoring__params' },
+        control_adjusted: el('div', { class: 'gsig-scoring__params gsig-scoring__stack' },
             field('Bins', boxes.bins.input, sid('bins')), field('Controls per bin', boxes.controls.input, sid('controls')),
             field('Seed', boxes.seed.input, sid('seed')), boxes.bins.error, boxes.controls.error, boxes.seed.error,
-            el('span', { class: 'gsig-scoring__help', text: METHODS_HELP.seed })),
-        detected: el('div', { class: 'gsig-scoring__params' },
+            el('small', { class: 'gsig-scoring__help az-pop-help', text: METHODS_HELP.seed })),
+        detected: el('div', { class: 'gsig-scoring__params gsig-scoring__stack' },
             field('Detected above', boxes.detect.input, sid('detect')), boxes.detect.error, detectHelp)
     };
 
@@ -140,39 +141,41 @@ export function createMethodsPopover({ D, id, label = 'Methods', getRecipe, appl
             const input = el('input', { type: 'radio', name: group, id: sid(`dw-${method}-${value}`), data: { downWeight: value },
                 on: { change: () => { if (input.checked) { apply({ down_weight: value }); paint(); } } } });
             radios[value] = input;
-            return el('label', { class: 'gsig-scoring__field', for: sid(`dw-${method}-${value}`) }, input, ` ${DOWN_WEIGHT_WORDS[value]}`);
+            return el('label', { class: 'gsig-scoring__field az-pop-check', for: sid(`dw-${method}-${value}`) }, input, ` ${DOWN_WEIGHT_WORDS[value]}`);
         };
-        const node = el('div', { class: 'gsig-scoring__params', role: 'radiogroup', aria: { label: METHODS_HELP.downWeight }, data: { weighting: method } },
-            el('span', { text: `${METHODS_HELP.downWeight}: ` }), radio('gene'), radio('side'));
+        const node = el('div', { class: 'gsig-scoring__params az-pop-field az-pop-field--block', role: 'radiogroup', aria: { label: METHODS_HELP.downWeight }, data: { weighting: method } },
+            el('span', { class: 'az-pop-field__label', text: METHODS_HELP.downWeight }),
+            el('span', { class: 'az-pop-field__control az-pop-field__control--stack' }, radio('gene'), radio('side')));
         return { node, radios };
     }
 
     // ------------------------------------------------------------ the rows, made once and painted in place
 
-    const formula = el('div', { class: 'gsig-scoring__help', data: { directionFormula: '' }, hidden: true });
+    const formula = el('small', { class: 'gsig-scoring__help az-pop-help', data: { directionFormula: '' }, hidden: true });
     const rows = model.methods.map((info) => {
-        const definition = el('div', { class: 'gsig-scoring__definition', text: info.definition });
-        const reset = el('button', { type: 'button', class: 'btn btn-link btn-sm gsig-link gsig-scoring__resetmethod', hidden: true,
+        const definition = el('small', { class: 'gsig-scoring__definition az-pop-help', text: info.definition });
+        const reset = el('button', { type: 'button', class: 'btn btn-link btn-sm az-pop-reset gsig-link gsig-scoring__resetmethod', hidden: true,
             data: { resetMethod: info.value }, on: { click: () => resetMethod(info.value) } }, 'Reset');
         const why = info.value === 'control_adjusted' && directions
-            ? el('div', { class: 'gsig-scoring__help', data: { downWeightWhy: '' }, hidden: true, text: METHODS_HELP.downWeightWhy }) : null;
+            ? el('small', { class: 'gsig-scoring__help az-pop-help', data: { downWeightWhy: '' }, hidden: true, text: METHODS_HELP.downWeightWhy }) : null;
         const weight = directions && WEIGHTED_METHODS.includes(info.value) ? weightControl(info.value) : null;
         const use = el('span', { class: 'gsig-scoring__use', data: { inUse: info.value } });
-        const node = el('div', { class: 'gsig-scoring__option gsig-methods__method', data: { method: info.value } },
-            el('div', { class: 'gsig-scoring__optionhead' }, el('span', { class: 'gsig-scoring__optionname', text: info.label }), use, reset),
-            definition, why, params[info.value] || null, weight ? weight.node : null);
+        const node = el('details', { class: 'az-pop-section gsig-scoring__option gsig-methods__method', data: { method: info.value }, open: true },
+            el('summary', { class: 'az-pop-section__title gsig-scoring__optionhead' }, el('span', { class: 'gsig-scoring__optionname', text: info.label }), use),
+            el('div', { class: 'az-pop-section__body' }, definition, why, params[info.value] || null, weight ? weight.node : null,
+                el('div', { class: 'az-pop-section__foot' }, reset)));
         return { info, node, definition, reset, why, weight, use };
     });
-    const usedBy = el('div', { class: 'gsig-scoring__help gsig-methods__usedby', data: { usedBy: '' } });
-    const resetNote = el('div', { class: 'gsig-scoring__notice', role: 'status', hidden: true, data: { resetNote: '' } });
-    const resetAllBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-scoring__reset', data: { resetAll: '' },
+    const usedBy = el('div', { class: 'gsig-scoring__help az-pop-help gsig-methods__usedby', data: { usedBy: '' } });
+    const resetNote = el('div', { class: 'gsig-scoring__notice az-pop-note', role: 'status', hidden: true, data: { resetNote: '' } });
+    const resetAllBtn = el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset gsig-scoring__reset', data: { resetAll: '' },
         on: { click: () => resetAll(false) } }, 'Reset to defaults');
-    const content = el('div', { class: 'gsig-methods', data: { methodsBody: '' } },
+    const content = el('div', { class: 'az-pop-options gsig-methods', data: { methodsBody: '' } },
         el('div', { class: 'gsig-scoring__body' },
-            el('div', { class: 'gsig-scoring__help', data: { methodsIntro: '' }, text: METHODS_HELP.intro }),
+            el('p', { class: 'az-pop-intro', data: { methodsIntro: '' }, text: METHODS_HELP.intro }),
             formula,
-            el('div', { class: 'gsig-scoring__options' }, ...rows.map(r => r.node)),
-            usedBy, resetNote, el('div', { class: 'gsig-scoring__actions' }, resetAllBtn)));
+            ...rows.map(r => r.node),
+            usedBy, resetNote, el('div', { class: 'az-pop-section__foot gsig-scoring__actions' }, resetAllBtn)));
 
     // ------------------------------------------------------------ edits
 
