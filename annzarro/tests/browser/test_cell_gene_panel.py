@@ -377,6 +377,14 @@ def test_mode_is_a_select_listing_the_registry(page, served):
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().mode === 'heatmap'", P)
     assert not page.locator(f"{TP} .cgene-field--size").is_visible()
     assert _state(page)["undo"] == before + 1, "one undo step"
+    # the header Refresh keeps the mode and what it hides (decision 42)
+    with page.expect_response(lambda r: r.request.method == "POST" and "/api/v1/data/refresh" in r.url, timeout=30000):
+        page.click("#refresh-dataset")
+    page.wait_for_timeout(1500)
+    _drawn(page)
+    assert _config(page)["mode"] == "heatmap"
+    assert page.input_value(f"{TP} select.cgene-mode") == "heatmap"
+    assert not page.locator(f"{TP} .cgene-field--size").is_visible()
     page.click(f"{TP} .cgene-undo")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().mode === 'dots'", P)
     assert page.input_value(f"{TP} select.cgene-mode") == "dots" and page.locator(f"{TP} .cgene-field--size").is_visible()

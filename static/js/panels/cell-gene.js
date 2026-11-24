@@ -752,7 +752,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 title: (i, text) => commit(setSectionTitle(_config, i, text), `rename ${sectionName(i)}`),
                 op: sectionOp, move, genes: setRowGenes, above: setRowAbove, channel: focusChannel
             } });
-            _controls = createControls({ D, id: _id, model: controlsModel, sections: _sections.element, addGenes: _addGenes.element, on: {
+            _controls = createControls({ D, model: controlsModel, sections: _sections.element, addGenes: _addGenes.element, on: {
                 axis: setAxis, newGrouping,
                 mode: (mode) => commit({ ..._config, mode }, mode === 'dots' ? 'show as dots' : 'show as a heatmap'),
                 stat: setStat, layer: setLayer, above: setThreshold,
