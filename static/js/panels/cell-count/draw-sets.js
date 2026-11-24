@@ -18,7 +18,7 @@
 import { fmtPercent } from '../../utils/csv-format.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { scaleKeys } from './colour.js';
-import { defaultSetColour } from '../../utils/set-plot-model.js';
+import { defaultSetColour } from '../../utils/set-colours.js';
 
 const VENN_MAX_SETS = 3;
 const UPSET_MAX_SETS = 16;
