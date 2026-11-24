@@ -393,10 +393,11 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     panel_sets.log_startup(app.config)
     
     # A limit that is not a number would fail at its first request, not here
-    from annzarro.server.limits import deprecated_settings, validate_limits
+    from annzarro.server.limits import (configured_cost_limits, deprecated_settings, validate_cost_limits,
+                                        validate_limits)
     for warning in deprecated_settings(app.config):
         logger.warning(warning)
-    problems = validate_limits(app.config)
+    problems = validate_limits(app.config) + validate_cost_limits(configured_cost_limits(app.config))
     if problems:
         raise ValueError("; ".join(problems))
 
@@ -721,6 +722,9 @@ def register_routes(app: Flask) -> None:
     install_policy(app, api_version)
     from annzarro.server.admin.settings import wire_sources
     wire_sources(app)
+    # the cost limits and the admin's live server limits, resolved once per request (server/limits.py)
+    from annzarro.server import limits as server_limits
+    server_limits.install(app)
     # with the admin's overlay readable: a hosted server that publishes no imprint and no privacy notice
     from annzarro.server.site import warn_if_unpublished
     warn_if_unpublished(app)

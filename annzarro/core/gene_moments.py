@@ -11,7 +11,7 @@ the cells of a table's bitset, as a grouping's table factor sends it::
     {"shape": "genes", "sets": {"t": {"encoding": "bitset-base64", ...}}, "member": "t", "layer": "X"}
 
 ``small`` and ``subset`` are the grouping's; ``estimate_only`` and ``confirm`` the route's. ``layer`` is ``X`` or a
-layer (default ``X``); ``thresholds`` are one to ``MAX_THRESHOLDS`` distinct finite numbers (default ``[0]``), the
+layer (default ``X``); ``thresholds`` are one to ``limits.thresholds`` distinct finite numbers (default ``[0]``), the
 "expressed above" values the group's ``n_above`` and ``sum_above`` are taken at.
 
 The reply is the moments of ``group_features.MOMENTS``, ``n, sum, sumsq, n_above, sum_above``, over the cells of the
@@ -38,6 +38,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 import numpy as np
 
 from . import cell_groups as cg
+from . import cost_limits
 from . import gene_score as gs
 from . import group_features as gf
 from .remote import is_remote_path
@@ -51,20 +52,12 @@ BODY_FIELDS = ("shape", "partitionings", "small", "group", "sets", "member", "la
 
 #: The moments, as a grouping's features have them.
 MOMENTS = gf.MOMENTS
-#: The most thresholds one request is compared with: a gene's, as a grouping's features have them.
-MAX_THRESHOLDS = gf.MAX_THRESHOLDS
 #: Entries read ahead of the arithmetic: a grouping's features'.
 READ_AHEAD_ENTRIES = gs.MOMENT_READ_AHEAD_ENTRIES
 
-#: The cost tiers' limits, in seconds: asked first above ``ASK_FIRST_S``, refused above ``REFUSE_S``. The one place
-#: this shape reads them.
-ASK_FIRST_S, REFUSE_S = gs.AUTO_MAX_S, gs.CONFIRM_MAX_S         # cost-limits: becomes limits.value("ask_first_s"), ("refuse_s")
-
-
-def tier_of(seconds: float) -> str:
-    if seconds <= ASK_FIRST_S:
-        return "auto"
-    return "confirm" if seconds <= REFUSE_S else "refused"
+#: The cost tiers are the score engine's, from the limits in force (``gene_score.tier_of``, ``tier_limits``): asked first
+#: above ``limits.ask_first_s``, refused above ``limits.refuse_s``, light lane up to ``limits.live_update_s``. The most
+#: thresholds a request is compared with is ``limits.thresholds``.
 
 
 def _bad(message: str, reason: str = "bad_request", **extra) -> cg.GroupError:
@@ -110,9 +103,10 @@ def _thresholds(raw: Any) -> Tuple[float, ...]:
     values = tuple(float(t) for t in raw)
     if len(set(values)) != len(values):
         raise _bad("thresholds must be distinct.", "bad_threshold")
-    if len(values) > MAX_THRESHOLDS:
-        raise cg.GroupError(422, "too_many_thresholds", f"A request is compared with at most {MAX_THRESHOLDS} "
-                            f"thresholds; this one has {len(values)}.", count=len(values), limit=MAX_THRESHOLDS)
+    most = cost_limits.get("thresholds")
+    if len(values) > most:
+        raise cg.GroupError(422, "too_many_thresholds", f"A request is compared with at most {most} "
+                            f"thresholds; this one has {len(values)}.", count=len(values), limit=most)
     return values
 
 
@@ -229,10 +223,9 @@ def estimate(plan_: Plan, cover: Dict[str, Any], *, resolve: bool = False) -> Di
     if resolve and plan_.groups is not None:
         seconds += max(plan_.groups.seconds - gs.BASE_SECONDS, 0.0)
     whole = cover["entries"] >= plan_.layer_entries and plan_.layer_entries > 0
-    live = seconds <= gs.LIVE_MAX_S and not whole
+    live = seconds <= gs.live_max_s() and not whole
     light = live and (plan_.groups is None or not resolve or plan_.groups.lane == "light")
-    return {"seconds": round(seconds, 2), "tier": tier_of(seconds), "live_max_s": gs.LIVE_MAX_S,
-            "auto_max_s": ASK_FIRST_S, "max_s": REFUSE_S, "entries": cover["entries"], "layout": plan_.layout,
+    return {"seconds": round(seconds, 2), "tier": gs.tier_of(seconds), **gs.tier_limits(), "entries": cover["entries"], "layout": plan_.layout,
             "n_cells": plan_.n_cells, "lane": "light" if light else "heavy", "coverage": cover,
             "n_var": plan_.n_var}
 

@@ -59,6 +59,7 @@ import numpy as np
 
 from . import cell_groups as cg
 from . import cell_sources as cs
+from . import cost_limits
 from . import gene_score as gs
 from .remote import is_remote_path
 
@@ -67,8 +68,9 @@ ALGORITHM_VERSION = 1
 #: The five moments of every group, in the order of the blocks' last axis.
 MOMENTS = ("n", "sum", "sumsq", "n_above", "sum_above")
 
-#: The most grid cells a measure is accumulated over: 512 x 512 x 8, the largest grid (SHR-39).
-MAX_GRID_MEASURE_CELLS = 2_097_152
+#: The most grid cells a measure is accumulated over: 512 x 512 x 8, the largest grid (SHR-39). The default of
+#: limits.grid_cells; ``grid_cells()`` is the value in force.
+MAX_GRID_MEASURE_CELLS = cost_limits.COST_LIMITS["grid_cells"].default
 
 #: Entries a feature job reads ahead of its arithmetic: a quarter of the score engine's (``READ_AHEAD_ENTRIES``), so
 #: within CMP-2's bound. The arithmetic, not the read, is the slower side (it holds the GIL), so a deeper read-ahead
@@ -78,16 +80,26 @@ READ_AHEAD_ENTRIES = 12_000_000
 #: The most values (groups x (features + measures)) one grouping request accumulates: CXG-17's matrix limit, which
 #: the browser keeps to, so the accumulators stay under 16 MB (40 B a value). A request over it is refused once its
 #: groups are known. ``accumulate`` itself holds at most ``MAX_GRID_MEASURE_CELLS`` values, whatever its caller.
-MAX_FEATURE_CELLS = 400_000
+MAX_FEATURE_CELLS = cost_limits.COST_LIMITS["matrix_values"].default
 
 #: The most measures one request carries. A count plot sends one (CNT-16); a grouping's are bounded by the value
 #: limit as well, and this bounds the planning before the groups are known.
-MAX_MEASURES = 16
+MAX_MEASURES = cost_limits.COST_LIMITS["measures"].default
 
 #: The most distinct thresholds one gene of one matrix, or one vector, is compared with. The interface asks for two
 #: at most (a row's colour and its size); each costs a pass over the gene's entries that the estimate does not
 #: charge, so more are refused before anything is read.
-MAX_THRESHOLDS = 4
+MAX_THRESHOLDS = cost_limits.COST_LIMITS["thresholds"].default
+
+
+def grid_cells() -> int:
+    """The most grid cells, and values a measure accumulates, in force (limits.grid_cells)."""
+    return cost_limits.get("grid_cells")
+
+
+def feature_cells() -> int:
+    """The most values one grouping request accumulates, in force (limits.matrix_values)."""
+    return cost_limits.get("matrix_values")
 
 _GENE_FIELDS = ("id", "kind", "name", "layer", "detect_above")
 _SCORE_FIELDS = ("id", "kind", "recipe", "column", "layer", "above")
@@ -174,9 +186,10 @@ def parse_measures(raw: Any) -> Tuple[Measure, ...]:
     """Validate ``measures``: a numeric per-cell source each, with ``above``."""
     if not isinstance(raw, (list, tuple)):
         raise _bad("measures must be a list.")
-    if len(raw) > MAX_MEASURES:
-        raise _bad(f"A request has at most {MAX_MEASURES} measures; this one has {len(raw)}.", "too_many_measures",
-                   count=len(raw), limit=MAX_MEASURES)
+    most = cost_limits.get("measures")
+    if len(raw) > most:
+        raise _bad(f"A request has at most {most} measures; this one has {len(raw)}.", "too_many_measures",
+                   count=len(raw), limit=most)
     seen: set = set()
     out = []
     for m in raw:
@@ -253,10 +266,11 @@ def _add_threshold(ts: List[float], threshold: float, fid: str) -> None:
     """Add a distinct threshold, in order of first use; refuse past ``MAX_THRESHOLDS``."""
     if threshold in ts:
         return
-    if len(ts) >= MAX_THRESHOLDS:
+    most = cost_limits.get("thresholds")
+    if len(ts) >= most:
         raise cg.GroupError(422, "too_many_thresholds", f"One gene or source is compared with at most "
-                            f"{MAX_THRESHOLDS} thresholds; '{fid}' asks for one more.", count=len(ts) + 1,
-                            limit=MAX_THRESHOLDS, id=fid)
+                            f"{most} thresholds; '{fid}' asks for one more.", count=len(ts) + 1,
+                            limit=most, id=fid)
     ts.append(threshold)
 
 
@@ -366,7 +380,7 @@ def plan(reader, dataset_path: str, request: cg.Request) -> Plan:
         return Plan(groups, work)
     seconds = groups.seconds + work.seconds
     layouts = sorted({p.layout for p in groups.top.all_parts() if p.entries} | set(work.layouts))
-    light = groups.lane == "light" and not work.whole_matrix and seconds <= gs.LIVE_MAX_S
+    light = groups.lane == "light" and not work.whole_matrix and seconds <= gs.live_max_s()
     merged = dataclasses.replace(groups, seconds=seconds, entries=groups.entries + work.entries,
                                  tier=gs.tier_of(seconds), lane="light" if light else "heavy",
                                  layout=layouts[0] if len(layouts) == 1 else ("mixed" if layouts else "column"))
@@ -458,14 +472,15 @@ def accumulate(work: Work, reader, dataset_path: str, rows: Optional[np.ndarray]
     ``("result", Moments)``. ``on_entries(n)`` is told the stored entries as they are read; the calls add up to
     ``work.entries``. ``should_stop`` and ``pause`` are asked between batches and slabs.
     """
-    if n_codes > MAX_GRID_MEASURE_CELLS:
+    most = grid_cells()
+    if n_codes > most:
         raise cg.GroupError(422, "grid_too_large", f"Measures are accumulated over at most "
-                            f"{MAX_GRID_MEASURE_CELLS:,} cells; this asks for {n_codes:,}.", count=int(n_codes),
-                            limit=MAX_GRID_MEASURE_CELLS)
+                            f"{most:,} cells; this asks for {n_codes:,}.", count=int(n_codes),
+                            limit=most)
     values = int(n_codes) * (len(work.features) + len(work.measures))
-    if values > MAX_GRID_MEASURE_CELLS:                  # the blocks below: 40 B a value, 84 MB at the limit
-        raise cg.GroupError(422, "too_many_values", f"At most {MAX_GRID_MEASURE_CELLS:,} values are accumulated; "
-                            f"this asks for {values:,}.", count=values, limit=MAX_GRID_MEASURE_CELLS)
+    if values > most:                                    # the blocks below: 40 B a value, 84 MB at the default
+        raise cg.GroupError(422, "too_many_values", f"At most {most:,} values are accumulated; "
+                            f"this asks for {values:,}.", count=values, limit=most)
     rows = None if rows is None else np.asarray(rows, dtype=np.int64)
     bins = _Bins(np.asarray(codes), int(n_codes), rows, work.n_cells)
     if sizes is None:
@@ -649,8 +664,9 @@ def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None, *, codes: Opti
         return
     k = len(grouping.groups)
     values = k * (len(work.features) + len(work.measures))
-    if values > MAX_FEATURE_CELLS:
-        result.over_limit = {"reason": "too_many_values", "count": values, "limit": MAX_FEATURE_CELLS}
+    most = feature_cells()
+    if values > most:
+        result.over_limit = {"reason": "too_many_values", "count": values, "limit": most}
         yield "result", result
         return
     sizes = np.asarray([g["n"] for g in grouping.groups], dtype=np.int64)

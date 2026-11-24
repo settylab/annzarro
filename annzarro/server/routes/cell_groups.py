@@ -57,7 +57,7 @@ from flask import jsonify, request
 
 from .. import access
 from ...core import cell_grid, cell_groups, gene_moments, gene_score, get_reader, read_guard, remote
-from ...core import group_cache, group_features
+from ...core import cost_limits, group_cache, group_features
 from ...core import subset as cell_subset
 from . import compute_stream, data_routes
 
@@ -71,8 +71,9 @@ QUEUE_WAIT_S = 30.0
 #: Seconds a remote store may be read for one request.
 REMOTE_COMPUTE_S = 1800.0
 #: The most partitionings a request holds counted across nesting (a ``cell-group`` source holds a grouping of its
-#: own): any real use is a few; a request of thousands is refused before the store is opened for any of them.
-MAX_PARTITIONINGS = 64
+#: own): any real use is a few; a request of thousands is refused before the store is opened for any of them. The
+#: default of limits.request_partitionings; the value in force is the request's.
+MAX_PARTITIONINGS = cost_limits.COST_LIMITS["request_partitionings"].default
 MIMETYPE = "application/x-annzarro-groups-stream"
 #: Every field a shape takes; the engine refuses, per shape, those the shape does not (``unknown_field``).
 _BODY_FIELDS = tuple(dict.fromkeys(("shape", "mode", "partitionings", "sets", "small", "subset", "features",
@@ -115,7 +116,7 @@ def _partitionings_in(body):
         if not isinstance(parts, list):
             continue
         total += len(parts)
-        if total > MAX_PARTITIONINGS:
+        if total > cost_limits.get("request_partitionings"):
             return total
         for part in parts:
             source = part.get("source") if isinstance(part, dict) else None
@@ -135,7 +136,7 @@ def _level_bound(part):
         return bins + 3                                     # the bins, the zero bin, the two outsides or no value
     if part.spec.levels is not None:
         return len(part.spec.levels) + 2                    # the levels, the rest and no value
-    return cell_groups.GROUP_LIMIT + 2
+    return cell_groups.grouping_limits()["levels"] + 2
 
 
 def _resolve_bytes(parts, n_shown, n_cells, grid=False):
@@ -198,14 +199,16 @@ def reservation(plan, n_shown, codes_held=False):
             features_keep += 4 * n_shown + accumulators
             features_full += 4 * n_shown + accumulators + read_ahead
     n_items = len(work.features) + len(work.measures)
-    per_group = _PER_GROUP * cell_groups.GROUP_LIMIT * n_items
+    per_group = _PER_GROUP * cell_groups.grouping_limits()["groups"] * n_items
     if work.reads:
         entries = sum(read.entries for read in work.reads)
         features_full += 12 * max(min(group_features.READ_AHEAD_ENTRIES, entries), min(entries, n_cells))
         features_full += _SEGMENT_TEMPORARIES
     if grid and work.measures:
-        features_full += _GRID_MEASURE_AT_LIMIT
-        features_keep += _GRID_MEASURE_AT_LIMIT
+        # measured at the default cell limit; the moments, codes and lookup grow with the limit in force
+        at_limit = int(_GRID_MEASURE_AT_LIMIT * max(1.0, group_features.grid_cells() / group_features.MAX_GRID_MEASURE_CELLS))
+        features_full += at_limit
+        features_keep += at_limit
     keep = max(resolve - _RESOLVE_PAUSE_FREES, 0) + features_keep + per_group
     full = resolve + features_full + per_group
     if codes_held and (work.features or work.measures):
@@ -240,7 +243,7 @@ class _Job:
         self.lane = plan.lane if self.grid else plan.groups.lane
         if cached is not None:                         # it reads its features and measures only (SHR-41)
             work = plan.work
-            live = gene_score.BASE_SECONDS + work.seconds <= gene_score.LIVE_MAX_S
+            live = gene_score.BASE_SECONDS + work.seconds <= gene_score.live_max_s()
             self.lane = "light" if live and not work.whole_matrix else "heavy"
         self.tier = plan.tier if self.grid else plan.groups.tier
         self.n_cells = plan.n_cells if self.grid else plan.groups.n_cells
@@ -328,8 +331,8 @@ def _refusal(job, body, plan_layout):
     seconds = job.plan.estimate()["seconds"]
     return compute_stream.tier_refusal(
         job.tier, body.get("confirm", False), job.plan.estimate(), too_expensive="groups_too_expensive",
-        refused_message=f"This would take about {seconds / 60:.0f} minutes; the limit is "
-                        f"{gene_score.CONFIRM_MAX_S / 60:.0f}. Use fewer genes or groups, or a subset.{hint}",
+        refused_message=f"This would take about {gene_score.duration(seconds)}; the limit is "
+                        f"{gene_score.duration(gene_score.confirm_max_s())}. Use fewer genes or groups, or a subset.{hint}",
         confirm_message=f"This would take about {seconds:.0f} seconds. Send confirm: true to compute it.")
 
 
@@ -381,19 +384,20 @@ class _GenesJob(_Job):
         self.n_cells, self.dataset_path = plan.n_cells, plan.dataset_path
         self.n_shown = plan.n_cells if rows is None else int(rows.size)
         self.confirm = plan.request.confirm
+        self.limits = cost_limits.snapshot()           # the stream runs after the request: its limits are this request's
 
     def queued_frame(self, job):
         return {"type": "progress", "stage": "genes", "done": 0, "total": self.entries,
                 **compute_stream.progress_fields(job, 0, self.entries)}
 
     def _refused_frame(self, est):
-        message = (f"This would take about {est['seconds'] / 60:.0f} minutes; the limit is "
-                   f"{gene_moments.REFUSE_S / 60:.0f}. Use a subset." if est["tier"] == "refused" else
+        message = (f"This would take about {gene_score.duration(est['seconds'])}; the limit is "
+                   f"{gene_score.duration(est['max_s'])}. Use a subset." if est["tier"] == "refused" else
                    f"This would take about {est['seconds']:.0f} seconds. Send confirm: true to compute it.")
         reason = "groups_too_expensive" if est["tier"] == "refused" else "confirmation_required"
         return {"type": "result", "version": gene_moments.ALGORITHM_VERSION, "shape": "genes",
                 "refused": {"reason": reason, "message": message, "seconds": est["seconds"], "tier": est["tier"],
-                            "limit": gene_moments.REFUSE_S if est["tier"] == "refused" else gene_moments.ASK_FIRST_S,
+                            "limit": est["max_s"] if est["tier"] == "refused" else est["auto_max_s"],
                             "estimate": est}}
 
     def frames(self, job):
@@ -429,9 +433,11 @@ class _GenesJob(_Job):
                     mask = gene_moments.mask_of(self.plan, self.rows, grouping)
                     if self.mask is None:              # the exact figures, now the group is known
                         cover = gene_moments.coverage(self.plan, mask)
-                        est = gene_moments.estimate(self.plan, cover)
+                        with cost_limits.override(**self.limits):
+                            est = gene_moments.estimate(self.plan, cover)
+                            message = self._refused_frame(est)
                         if est["tier"] == "refused" or (est["tier"] == "confirm" and not self.confirm):
-                            yield _frame(self._refused_frame(est))
+                            yield _frame(message)
                             return
                 base = entries[0]                          # what the resolve read; the genes' reads follow
                 for kind, payload in gene_moments.compute(self.plan, mask, pause=job, n_shown=self.n_shown,
@@ -538,9 +544,9 @@ def _genes_refusal(estimate, confirm):
     seconds = estimate["seconds"]
     return compute_stream.tier_refusal(
         estimate["tier"], confirm, estimate, too_expensive="groups_too_expensive",
-        refused_message=f"This would take about {seconds / 60:.0f} minutes; the limit is "
-                        f"{gene_moments.REFUSE_S / 60:.0f}. The group is spread over the matrix, and the matrix is read "
-                        f"in whole chunks; use a subset.",
+        refused_message=f"This would take about {gene_score.duration(seconds)}; the limit is "
+                        f"{gene_score.duration(estimate['max_s'])}. The group is spread over the matrix, and the matrix is "
+                        f"read in whole chunks; use a subset.",
         confirm_message=f"This would take about {seconds:.0f} seconds. Send confirm: true to compute it.")
 
 
@@ -558,11 +564,11 @@ def register_cell_groups_routes(app_, api_version):
         body, refusal = compute_stream.read_body(_BODY_FIELDS, MAX_BODY_BYTES)
         if refusal:
             return _error(*refusal)
-        count = _partitionings_in(body)
-        if count > MAX_PARTITIONINGS:
+        count, most = _partitionings_in(body), cost_limits.get("request_partitionings")
+        if count > most:
             return _error(422, "too_many_partitionings",
-                          f"A request holds at most {MAX_PARTITIONINGS} partitionings, groupings used as sources "
-                          f"included; this one holds {count} or more.", count=count, limit=MAX_PARTITIONINGS)
+                          f"A request holds at most {most} partitionings, groupings used as sources "
+                          f"included; this one holds {count} or more.", count=count, limit=most)
         if body.get("shape") == "genes":
             return _genes_response(app_, reader, dataset_path, body)
         try:

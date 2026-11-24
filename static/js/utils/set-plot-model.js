@@ -23,12 +23,14 @@ import { wouldLoop, loopReason } from './panel-references.js';
 import { GROUP_SOURCE, PANEL_SOURCES } from '../panels/cell-grouping/factors.js';
 import { groupColours } from '../panels/plot-utilities/colors.js';
 import { isColourString } from './uns-palette.js';
+import { limit } from './limits.js';
 
 const W = VOCABULARY.countSets;
 const P = VOCABULARY.phrase;
 
-/** The most sets an UpSet takes (CNT-12; count-plot-model.js refuses more, and Add set stops here). */
-const SETS_MAX = 16;
+/** The most sets an UpSet takes (CNT-12; count-plot-model.js refuses more, and Add set stops here): the server's
+ *  limits.grid_sets, 16 by default and at most. */
+const setsMax = () => limit('grid_sets');
 /** The kinds Add set offers (UX 4.6), in its order. */
 export const SET_KINDS = Object.freeze(['table', 'boolean', 'levels', 'condition', 'group']);
 /** An UpSet's own options when the config stores none (CNT-12). */
@@ -247,7 +249,8 @@ export function panelChoices(panels, plotId) {
 /** Whether another set may be added, and why not (UX 4.3: Add set disabled at 16, with the reason). */
 export function canAddSet(config) {
     const n = Array.isArray(config.sets) ? config.sets.length : 0;
-    return n < SETS_MAX ? { ok: true } : { ok: false, reason: W.tooMany(SETS_MAX) };
+    const most = setsMax();
+    return n < most ? { ok: true } : { ok: false, reason: W.tooMany(most) };
 }
 
 /** What the bars of an UpSet are colored by (UX 4.5), or null: nothing for None (no value stored), and nothing in a Venn. */

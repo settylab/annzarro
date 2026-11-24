@@ -81,7 +81,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tupl
 
 import numpy as np
 
-from . import matrix_kind
+from . import cost_limits, matrix_kind
 
 logger = logging.getLogger(__name__)
 
@@ -114,13 +114,39 @@ BINNINGS = ("detection", "mean")
 #: Stored entries read at a time when counting or summing every gene.
 STAT_CHUNK = 1 << 22
 
-#: Estimated seconds up to which a score is computed without asking, and up to which it may be
-#: asked for with one confirmation. Above the second it is refused.
-AUTO_MAX_S = 60.0
-#: Estimated seconds below which an open signature may update live; from here edits wait for "Update score".
-#: Reported with the estimate so a client does not hard-code it.
-LIVE_MAX_S = 5.0
-CONFIRM_MAX_S = 600.0
+#: The defaults of the cost tiers (limits.ask_first_s, limits.live_update_s, limits.refuse_s): estimated seconds up to
+#: which a score is computed without asking, and up to which it may be asked for with one confirmation (above it is
+#: refused); below LIVE_MAX_S an open signature may update live, and from there edits wait for "Update score". The
+#: values in force are the request's (``cost_limits.get``, read by the functions below), reported with every estimate
+#: so a client does not hard-code them.
+AUTO_MAX_S = cost_limits.COST_LIMITS["ask_first_s"].default
+LIVE_MAX_S = cost_limits.COST_LIMITS["live_update_s"].default
+CONFIRM_MAX_S = cost_limits.COST_LIMITS["refuse_s"].default
+
+
+def auto_max_s() -> float:
+    """Estimated seconds up to which a computation runs without asking (limits.ask_first_s)."""
+    return cost_limits.get("ask_first_s")
+
+
+def live_max_s() -> float:
+    """Estimated seconds below which a computation updates live and runs in the light lane (limits.live_update_s)."""
+    return cost_limits.get("live_update_s")
+
+
+def confirm_max_s() -> float:
+    """Estimated seconds above which a computation is refused (limits.refuse_s)."""
+    return cost_limits.get("refuse_s")
+
+
+def duration(seconds: float) -> str:
+    """``seconds`` in words for a refusal: "45 seconds", "10 minutes"."""
+    return f"{seconds:.0f} seconds" if seconds < 90 else f"{seconds / 60:.0f} minutes"
+
+
+def tier_limits() -> Dict[str, float]:
+    """The tiers as an estimate reports them."""
+    return {"live_max_s": live_max_s(), "auto_max_s": auto_max_s(), "max_s": confirm_max_s()}
 
 #: Stored entries (or matrix elements) read per second, by layout. Set conservatively below
 #: what ``annzarro/tests/server/test_gene_score_bench.py`` measures, so an estimate is rarely low.
@@ -1138,7 +1164,7 @@ class Plan:
 
     def estimate(self) -> Dict[str, Any]:
         return {"entries": self.entries, "seconds": round(self.seconds, 2), "tier": self.tier,
-                "live_max_s": LIVE_MAX_S, "auto_max_s": AUTO_MAX_S, "max_s": CONFIRM_MAX_S, "layout": self.layout,
+                **tier_limits(), "layout": self.layout,
                 "n_cells": self.n_obs, "genes": len(self.columns), "genes_requested": len(self.recipe.genes) + len(self.recipe.down),
                 "genes_missing": len(self.missing), "down_requested": len(self.recipe.down),
                 **({"controls": (len(self.controls) + len(self.down_controls or ()))
@@ -1147,9 +1173,9 @@ class Plan:
 
 
 def tier_of(seconds: float) -> str:
-    if seconds <= AUTO_MAX_S:
+    if seconds <= auto_max_s():
         return "auto"
-    return "confirm" if seconds <= CONFIRM_MAX_S else "refused"
+    return "confirm" if seconds <= confirm_max_s() else "refused"
 
 
 def estimate_seconds(layout: str, entries: int, remote: bool) -> float:
