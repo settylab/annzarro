@@ -384,8 +384,9 @@ export function createSectionList({ D, id, model, on }) {
         const name = which === 'color' ? 'Color' : 'Size';
         const kind = el('select', { class: 'form-select form-select-sm cgene-section__agg', data: { which },
             aria: { label: `${name} of the row` }, on: { change: () => on.aggregation(i, which, 'kind', kind.value) } });
-        for (const group of aggregationEntries()) {
-            kind.appendChild(el('optgroup', { label: group.heading }, group.entries.map((e) => el('option', { value: e.value, text: e.label }))));
+        for (const group of aggregationEntries({ down: part.down })) {
+            kind.appendChild(el('optgroup', { label: group.heading }, group.entries.map((e) => el('option',
+                { value: e.value, text: e.label, disabled: !!e.disabled, title: e.title || '' }))));
         }
         kind.value = held.agg;
         const scored = !!part.methods;
