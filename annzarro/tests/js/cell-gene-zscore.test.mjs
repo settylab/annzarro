@@ -87,14 +87,14 @@ test('(4) Size cannot be z-score mean, and a Gene Plot cell group cannot yet; Co
     assert.equal(g('csc').disabled, false);
     for (const layout of ['csr', 'dense']) {
         assert.equal(g(layout).disabled, true);
-        assert.match(g(layout).title, /needs a whole-layer read on this store's layout; coming with the moments cache/);
+        assert.match(g(layout).title, /needs this layer stored by gene \(CSC\)/);
     }
     assert.equal(g(undefined).disabled, true);
     // the Gene Plot lists it first, in the same place
     const menu = statMenu({ stat: 'mean', layer: 'logged' }, kinds, { logged: 'csr' });
     assert.equal(menu.options[0].value, 'zscore_mean');
     assert.equal(menu.options[0].disabled, true);
-    assert.match(menu.options[0].title, /moments cache/);
+    assert.match(menu.options[0].title, /stored by gene \(CSC\)/);
     assert.equal(statMenu({ stat: 'mean', layer: 'logged' }, kinds, { logged: 'csc' }).options[0].disabled, false);
     // a stored Size of z-score mean reads as the default Size
     const read = normalizeCellGene({ color: { stat: 'mean', layer: 'X' }, size: { stat: 'zscore_mean', layer: 'X' } });

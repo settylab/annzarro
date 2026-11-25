@@ -290,10 +290,10 @@ def test_zscore_mean_greyed_on_csr(page, served_csr):
         const R = await import('/static/js/utils/source-registry.js');
         const m = R.getSource('group-stat').table.chooser.add.menus({ id: 'cell-grouping-A', title: 'Cell types' }, { method: 'mean', layer: 'logged' });
         const z = m.methods.find(o => o.value === 'zscore_mean');
-        return z.disabled && z.title.includes('whole-layer read');
+        return z.disabled && z.title.includes('stored by gene (CSC)');
     }""", timeout=60)
     z = {e["v"]: e for e in _agg_entries(page)}["zscore_mean"]
-    assert z["off"] is True and "whole-layer read" in z["title"]
+    assert z["off"] is True and "stored by gene (CSC)" in z["title"]
 
 
 # ------------------------------------------------------------------ states of a column

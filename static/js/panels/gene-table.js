@@ -592,7 +592,7 @@ const GeneTablePanel = (function() {
             const D = makeDom(document);
             _scoreOptions = createScoreOptions({ id: _id, D, getOptions: getScoreOptions, setOptions: storeScoreOptions, label: 'Score methods' });
             const distribution = D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-distribution',
-                data: { distribution: '' }, title: 'Open a Count Plot of this table\'s gene score (z-score mean of X) beside the table',
+                data: { distribution: '' }, title: 'Open a Cell Count Plot of this table\'s gene score (z-score mean of X) beside the table',
                 on: { click: openDistribution } }, 'Distribution');
             const tools = D.el('div', { class: 'az-score-options', role: 'toolbar', aria: { label: 'Gene score' }, data: { scoreOptions: '' } },
                 D.el('span', { class: 'az-score-options__label', text: 'Gene score' }), _scoreOptions.methods.button, distribution);

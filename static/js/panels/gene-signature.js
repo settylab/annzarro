@@ -541,7 +541,7 @@ const GeneSignaturePanel = (function() {
             _scoreOptions = createScoreOptions({ id: _id, D, getOptions: getRecipe, setOptions: storeOptions, directions: true });
             // the score's toolbar: the settings of each method, and the score's distribution in a Count Plot (Inspect's job)
             const distributionBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-distribution',
-                data: { distribution: '' }, title: 'Open a Count Plot of this score (z-score mean of X) beside the panel',
+                data: { distribution: '' }, title: 'Open a Cell Count Plot of this score (z-score mean of X) beside the panel',
                 on: { click: openDistribution } }, 'Distribution');
             const tools = el('span', { class: 'gsig-status__tools', role: 'toolbar', aria: { label: 'Score' } },
                 _scoreOptions.methods.button, distributionBtn);

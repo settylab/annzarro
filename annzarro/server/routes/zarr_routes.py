@@ -149,10 +149,12 @@ def register_zarr_routes(app, api_version):
         ``after`` and ``retry_after_s``; the client asks again with ``after``.
 
         Open to every user who may read the dataset, unlike cache/reset: it
-        walks the store's files (core/freshness.py ``revalidate``) and starts
-        a new generation only when they changed, so every server process
-        then reads the changed store afresh, while an unchanged store keeps
-        what every user has cached. A hosted server's non-admins could not
+        walks the store's files (core/freshness.py ``revalidate``) and always
+        starts a new generation, whether or not the walk saw a change, so
+        every server process then reads the store afresh (a store whose
+        chunks were overwritten in place looks unchanged to the walk). The
+        interval limit is what keeps one user from making every other user
+        read again at will. A hosted server's non-admins could not
         see a change until a restart, and an admin's reset reached one
         gunicorn worker.
         """
