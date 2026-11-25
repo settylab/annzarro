@@ -37,6 +37,9 @@ The store holds no per-cell-type statistic of the fold-change layer. Every stati
 a panel asks for it: one request returns the mean, the fraction of cells and the other statistics of every gene over
 the group's cells. At 8,090 cells each takes a moment.
 
+`kompot_de_Young_to_Old_is_de` marks 190 genes. The paper's Figure 3D, at a local false discovery rate of 0.05, reports
+192 for the same comparison (55 up, 12 down and 125 subtle) {cite:p}`otto2025kompot`; the counts below are the store's.
+
 (tut-gstat-axes)=
 ## 1. Two cell types as the axes of a gene plot
 
@@ -80,8 +83,10 @@ Read the quadrants. Hover a point for its gene and both values.
 
 Of the 190 called genes, 125 change in the same direction in both cell types and 65 in opposite directions.
 
-The paper reports that in monocytes the genes that rise with age are MHC class II genes, and names H2-Aa, H2-Ab1, H2-Eb1,
-Cd74 and AW112010 among them {cite:p}`otto2025kompot`. Here their mean fold change over all monocytes is positive and
+In monocytes, the paper finds the genes that fall with age enriched for defence response, and those that rise enriched
+for antigen processing and presentation, driven by MHC class II genes; it recovers H2-Aa, H2-Ab1, H2-Eb1, Cd74 and
+AW112010, which an earlier study identified as the top dysregulated genes in ageing monocytes {cite:p}`otto2025kompot`.
+Here their mean fold change over all monocytes is positive and
 modest: AW112010 +0.35, H2-Ab1 +0.19, H2-Aa +0.13, H2-Eb1 +0.08, Cd74 +0.08. The same genes rise more in HSCs (H2-Aa
 +0.48, H2-Eb1 +0.42), in line with the paper's reading that the rise of MHC class II genes is a feature of ageing across
 cell types {cite:p}`otto2025kompot`.
