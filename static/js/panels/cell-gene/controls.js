@@ -367,123 +367,66 @@ const SECTION_OPS = Object.freeze([
 
 /**
  * The section list of UX 3.2: one row per section with its title (edited in place), its source when the title is its
- * own, its gene count, Genes / One row and ⋯; a one-row section's Color and Size selects with their help lines and
- * threshold boxes. Reordered by ⋯, by Alt+Up and Alt+Down on the focused row, and by drag (UX 7).
+ * own, its gene count, Genes / One row, for a one-row section its one gene-step button, and ⋯. Reordered by ⋯, by Alt+Up
+ * and Alt+Down on the focused row, and by drag (UX 7).
  * @param {Object} opts
  * @param {Object} opts.D
- * @param {string} opts.id
- * @param {() => {sections: Object[], dots: boolean}} opts.model - each section: {title, source (shown when it differs),
- *   line, note, rows, color: {which, step, above, channel, label, entries, help}, size: {...}}: the gene step and its
- *   name, the channel it follows in words ("Mean · logged"), the select's grouped entries, the score's own threshold
- *   (null when it has none) and the help line (decision 40)
- * @param {Object} opts.on - rows(i, rows), title(i, text), op(i, op), move(from, to), genes(i, which, step),
- *   above(i, which, text), channel(which) (focus the plot's own statistic select)
+ * @param {() => {sections: Object[]}} opts.model - each section: {title, source (shown when it differs), line, note, rows,
+ *   step: {step, pressed, name, label, reading, entries}|null}: the one-row section's gene step, whether it is off the
+ *   default, the button's accessible name and tooltip, and the menu's entries (symbol, name, heading, reason)
+ * @param {Object} opts.on - rows(i, rows), title(i, text), op(i, op), move(from, to), genes(i, step)
  */
-export function createSectionList({ D, id, model, on }) {
+export function createSectionList({ D, model, on }) {
     const { el } = D;
     const list = el('ul', { class: 'cgene-sections', role: 'list', aria: { label: 'Gene sections' } });
     let drawnKey = null;
     let dragFrom = null;
-    const values = new Map();      // section index -> {button, pop}: the row's summary button and its pop-over, kept across repaints
+    const steps = new Map();       // section index -> the row's aggregation button, kept across repaints
     const menus = new Map();       // section index -> {button, pop}: the row's ⋯ button and its menu, kept across repaints
 
     /**
-     * Color or Size of a one-row section (decision 40, one-row-ux-080.md B): the channel it follows, read only, with
-     * "Change in Color"; one select for the gene step ("Combine the gene rows", "Score each cell"), every entry the
-     * channel or the down genes rule out disabled with its reason; "cells above [t]" for a score's share; the help line.
+     * The one button of a one-row section (aggregation-unify-080.md 10.2): its gene step as a symbol, plain on the default and
+     * accent when set away from it; its menu lists the ways to combine the gene rows, then the source's score methods, each
+     * greyed with its reason when Color or Size rules it out. Kept across repaints, so an open menu and the focus stay.
      */
-    function stepBlock(i, part) {
-        const which = part.which;
-        const name = which === 'color' ? 'Color' : 'Size';
-        const R = CG.rowStep;
-        const change = el('button', { type: 'button', class: 'btn btn-sm btn-link cgene-section__change', data: { which },
-            title: R.changeHelp(name), on: { click: () => {
-                const held = values.get(i);
-                if (held) held.pop.close('api');
-                on.channel(which);
-            } } }, R.change(name));
-        const inherited = el('div', { class: 'cgene-section__inherited', data: { which }, title: R.changeHelp(name) },
-            el('span', { class: 'cgene-section__channel', data: { which }, text: part.channel }),
-            el('span', { class: 'cgene-section__from', text: R.from(name) }), change);
-        const select = el('select', { class: 'form-select form-select-sm cgene-section__genes', data: { which },
-            aria: { label: `${name} of the row: ${R.genes.toLowerCase()}` }, on: { change: () => on.genes(i, which, select.value) } });
-        for (const group of part.entries) {
-            select.appendChild(el('optgroup', { label: group.heading }, group.entries.map((e) => el('option',
-                { value: e.value, text: e.label, disabled: !!e.disabled, title: e.title || undefined }))));
-        }
-        select.value = part.step;
-        const chosen = select.selectedOptions && select.selectedOptions[0];
-        select.title = chosen ? [chosen.textContent, chosen.title].filter(Boolean).join(': ') : '';
-        const scored = part.above !== null;
-        const above = el('input', { type: 'number', step: 'any', class: 'form-control form-control-sm az-pop-num cgene-section__above', data: { which },
-            aria: { label: `${name} of the row: ${R.cellsAbove}` }, value: scored ? String(part.above) : '0',
-            on: { change: () => on.above(i, which, above.value), keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); on.above(i, which, above.value); } } } });
-        const help = el('small', { class: 'cgene-section__help az-pop-help', data: { which }, text: part.help });
-        return el('details', { class: 'az-pop-section cgene-section__value', data: { which }, open: true },
-            el('summary', { class: 'az-pop-section__title', text: name }),
-            el('div', { class: 'az-pop-section__body' },
-                el('div', { class: 'az-pop-field az-pop-field--block' }, el('span', { class: 'az-pop-field__label', text: 'Taken from' }), inherited),
-                el('div', { class: 'az-pop-field az-pop-field--block cgene-section__step' },
-                    el('span', { class: 'az-pop-field__label cgene-section__genes-label', text: R.genes }),
-                    el('span', { class: 'az-pop-field__control' }, select)),
-                el('div', { class: 'az-pop-field cgene-section__pair', hidden: !scored },
-                    el('span', { class: 'az-pop-field__label', text: R.cellsAbove }), el('span', { class: 'az-pop-field__control' }, above)),
-                help));
-    }
-
-    /** The pop-over's body: the section's Color and Size blocks, drawn from the model as it is now. */
-    function fillValues(i, body) {
-        const s = model().sections[i];
-        D.clear(body);
-        if (!s || s.rows !== 'set') return;
-        // the header follows a renamed section
-        const heading = body.parentElement && body.parentElement.querySelector('.az-popover-title');
-        if (heading) heading.textContent = `Color and Size of ${s.title}`;
-        body.appendChild(el('div', { class: 'az-pop-options cgene-section__values' }, stepBlock(i, s.color), s.size ? stepBlock(i, s.size) : null));
-    }
-
-    /** The summary button of a one-row section (WP-8): "Color: … · Size: …", opening Color and Size in a pop-over. */
-    function valuesButton(s, i) {
-        let held = values.get(i);
+    function stepButton(s, i) {
+        let held = steps.get(i);
         if (!held) {
-            const button = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgene-section__values-btn' });
-            const pop = createPopover({ anchor: button, name: 'values', title: `Color and Size of ${s.title}`,
-                render: (body) => { fillValues(i, body); } });
-            held = { button, pop };
-            values.set(i, held);
+            const part = () => (model().sections[i] || {}).step || null;
+            const made = createAggregationButton({
+                label: 'One row', axis: `row-${i}`,
+                methods: () => {
+                    const p = part();
+                    return p ? { options: p.entries, chosen: p.step } : null;
+                },
+                onPick: (value) => on.genes(i, value),
+                pressed: () => !!(part() || {}).pressed
+            });
+            made.button.classList.add('cgene-section__step');
+            held = made;
+            steps.set(i, held);
         }
-        const text = s.size ? `Color: ${s.color.label} · Size: ${s.size.label}` : `Color: ${s.color.label}`;
-        held.button.textContent = `${text} ▾`;
-        held.button.title = text;
-        held.button.setAttribute('aria-label', `Color and Size of ${s.title}: ${text}`);
+        const p = s.step;
+        held.update();
+        held.button.setAttribute('aria-label', p.label);
+        held.button.title = p.reading;
         return held.button;
     }
 
-    /** Keep the buttons of the one-row sections only, and refresh a pop-over that is open (its select values follow the model). */
-    function syncValues(m) {
-        for (const [i, held] of [...values]) {
+    /** Keep the buttons of the one-row sections only. */
+    function syncSteps(m) {
+        for (const [i, held] of [...steps]) {
             const s = m.sections[i];
-            if (!s || s.rows !== 'set') { held.pop.destroy(); values.delete(i); continue; }
-            if (held.pop.isOpen()) refreshValues(i, held.pop.surface.querySelector('.az-popover-body'), held.pop);
+            if (!s || s.rows !== 'set') { held.destroy(); steps.delete(i); }
         }
     }
 
-    function refreshValues(i, body, pop) {
-        const active = document.activeElement;
-        const keep = active && body.contains(active) ? { cls: active.className.split(' ').find((c) => c.startsWith('cgene-section__')), which: active.dataset.which } : null;
-        fillValues(i, body);
-        if (keep) {
-            const target = body.querySelector(`.${keep.cls}${keep.which ? `[data-which="${keep.which}"]` : ''}`);
-            if (target) target.focus();
-        }
-        pop.update();
-    }
-
-    function rowsGroup(i, rows) {
-        const name = `cgene-rows-${id}-${i}`;
-        const radio = (value, label) => el('label', { class: 'cgene-radio' },
-            el('input', { type: 'radio', name, value, checked: rows === value, on: { change: (e) => { if (e.target.checked) on.rows(i, value); } } }), ` ${label}`);
-        return el('div', { class: 'cgene-section__rows', role: 'radiogroup', aria: { label: 'Show as' } }, radio('genes', 'Genes'), radio('set', 'One row'));
+    function rowsSelect(i, rows) {
+        const select = el('select', { class: 'form-select form-select-sm cgene-section__rows', aria: { label: 'Show as' },
+            on: { change: () => on.rows(i, select.value) } },
+            el('option', { value: 'genes', text: 'Genes' }), el('option', { value: 'set', text: 'One row' }));
+        select.value = rows;
+        return select;
     }
 
     /**
@@ -529,10 +472,9 @@ export function createSectionList({ D, id, model, on }) {
             el('span', { class: 'cgene-section__grip', aria: { hidden: 'true' }, text: '≡' }), title,
             s.source ? el('span', { class: 'cgene-section__source', text: s.source }) : null,
             el('span', { class: 'cgene-section__count', text: s.line }),
-            rowsGroup(i, s.rows), el('span', { class: 'cgene-section__more' }, menuButton(s, i)));
+            rowsSelect(i, s.rows), s.rows === 'set' ? stepButton(s, i) : null, el('span', { class: 'cgene-section__more' }, menuButton(s, i)));
         const li = el('li', { class: 'cgene-section', tabindex: '0', draggable: 'true', data: { index: i }, aria: { label: s.title } }, head,
-            s.note ? el('div', { class: 'cgene-section__note', role: 'note', text: s.note }) : null,
-            s.rows === 'set' ? el('div', { class: 'cgene-section__summary' }, valuesButton(s, i)) : null);
+            s.note ? el('div', { class: 'cgene-section__note', role: 'note', text: s.note }) : null);
         li.addEventListener('keydown', (e) => {
             if (e.target !== li || !e.altKey) return;
             if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); on.move(i, i - 1); }
@@ -553,7 +495,7 @@ export function createSectionList({ D, id, model, on }) {
             which: active.dataset ? active.dataset.which : undefined } : null;
         D.clear(list);
         m.sections.forEach((s, i) => list.appendChild(row(s, i, m.sections.length)));
-        syncValues(m);
+        syncSteps(m);
         for (const [i, held] of [...menus]) if (i >= m.sections.length) { held.pop.destroy(); menus.delete(i); }
         if (!focus) return;
         const li = list.querySelector(`.cgene-section[data-index="${focus.index}"]`);

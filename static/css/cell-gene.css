@@ -32,7 +32,9 @@
 .cgene-field .form-select { width: auto; max-width: 16rem; }
 .cgene-axis { display: inline-flex; gap: 4px; }
 .cgene-field .form-select.cgene-scale { width: 7.5rem; }
-.cgene-section__rows { display: inline-flex; gap: 8px; align-items: center; }
+.cgene-section__head .form-select.cgene-section__rows { width: auto; flex: 0 0 auto; }
+.cgene-section__step { flex: 0 0 auto; min-width: 2rem; padding: 0 0.5rem; font-size: 0.8125rem; line-height: 1; height: 1.75rem; color: var(--az-text); border-color: var(--az-control-border); opacity: 1; }
+.cgene-section__step.active { background-color: var(--az-accent-bg); }
 .cgene-radio { display: inline-flex; align-items: center; gap: 2px; margin: 0; white-space: nowrap; }
 .cgene-swap.active { background-color: var(--az-accent-bg); }
 .cgene-layout-slot { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -88,15 +90,6 @@
 .cgene-section__more { position: relative; margin-left: auto; }
 .cgene-section__menu-btn { padding: 0 6px; line-height: 1.2; text-decoration: none; }
 .cgene-section__note { color: var(--az-danger-text); font-size: 0.75rem; padding: 2px 0 0 18px; }
-/* WP-8: a one-row section's Color and Size live in a pop-over; its row shows one summary button, a single line */
-.cgene-section__summary { padding: 2px 0 0 18px; min-width: 0; }
-.cgene-section__values-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-/* decision 40: `Color  Mean · logged  from Color  Change in Color`, then `Genes [step ▾] cells above [t]` */
-.cgene-section__inherited { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; min-width: 0; }
-.cgene-section__channel { font-weight: 600; }
-.cgene-section__from { color: var(--az-muted); font-size: 0.75rem; }
-.cgene-section__change { padding: 0; font-size: 0.75rem; }
-.cgene-section__value .az-pop-field .cgene-section__genes { width: 100%; max-width: 100%; min-width: 0; }
 .cgene-lapsed { font-style: italic; }
 
 /* Cluster ▾, Color ▾ and Plot Options (X5; pop-overs since 0.8.0 WP-2, static/js/ui/popover.js): the buttons in the

@@ -64,13 +64,20 @@ async function fontFace() {
     return _face;
 }
 
-/** The page's fonts are loaded (the plot is measured and drawn with them). */
-export async function fontsReady() {
+/**
+ * The page's fonts are loaded: the bundled Open Sans is fetched if it has not been, and the promise is kept until it is in (at
+ * most `limit` ms, so a font that never comes cannot hold the page back; its plots are then measured in the fallback).
+ * Everything that measures text for a layout (Plotly's tick and legend room, the legend's columns and truncation, title wrapping)
+ * runs after this: main.js waits for it before the app starts, and an image export before it draws.
+ */
+export async function fontsReady(limit = 5000) {
     if (typeof document === 'undefined' || !document.fonts) return;
-    try {
+    const loaded = (async () => {
         await document.fonts.load('12px "Open Sans"');
+        await document.fonts.load('bold 12px "Open Sans"');
         await document.fonts.ready;
-    } catch { /* a font that did not load is the fallback's */ }
+    })().catch(() => { /* a font that did not load is the fallback's */ });
+    await Promise.race([loaded, new Promise((resolve) => setTimeout(resolve, limit))]);
 }
 
 /** SVG text with the font in it when it names Open Sans; otherwise as it came. */

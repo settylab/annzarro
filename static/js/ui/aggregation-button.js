@@ -12,6 +12,10 @@
  * Optionally a setting that goes with the aggregation (the Cell-Gene Plot's "Expressed above"): `fields()` lists number
  * boxes drawn under the entries, `onField(key, text)` hears a change, and `suffix()` is text after the symbol on the
  * button (">1"), so a value in force never hides behind a closed pop-over. A caller that gives none gets what it had.
+ *
+ * Also optional: an entry may carry `heading` (drawn above it when it differs from the entry before: a one-row section's
+ * "Combine the gene rows" and "Score each cell"), and `pressed()` marks the button as set away from its default (accent
+ * fill, `aria-pressed`).
  */
 import { createPopover } from './popover.js';
 import { symbolSpan } from '../utils/aggregation-symbols.js';
@@ -54,9 +58,10 @@ function fieldRow(f, onField) {
  * @param {() => Array<{key: string, label: string, value: string, placeholder?: string, title?: string}>} [options.fields]
  * @param {(key: string, text: string) => void} [options.onField]
  * @param {() => string} [options.suffix]
+ * @param {() => boolean} [options.pressed]
  * @returns {{button: HTMLButtonElement, update: () => void, destroy: () => void}}
  */
-export function createAggregationButton({ label, axis = '', methods, onPick, fields = null, onField = null, suffix = null }) {
+export function createAggregationButton({ label, axis = '', methods, onPick, fields = null, onField = null, suffix = null, pressed = null }) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn btn-sm btn-outline-secondary axis-agg-btn';
@@ -66,7 +71,16 @@ export function createAggregationButton({ label, axis = '', methods, onPick, fie
         render: (body) => {
             const held = methods();
             if (!held) return;
+            let heading = null;
             for (const o of held.options) {
+                if (o.heading && o.heading !== heading) {
+                    heading = o.heading;
+                    const title = document.createElement('div');
+                    title.className = 'az-pop-section__title axis-agg-heading';
+                    title.setAttribute('role', 'presentation');
+                    title.textContent = heading;
+                    body.append(title);
+                }
                 const item = document.createElement('button');
                 item.type = 'button';
                 item.className = 'axis-agg-item';
@@ -103,6 +117,11 @@ export function createAggregationButton({ label, axis = '', methods, onPick, fie
             button.append(tail);
         }
         const text = chosen ? `${label}: ${chosen.name}${extra ? ` ${extra}` : ''}` : label;
+        if (pressed) {
+            const on = !!pressed();
+            button.classList.toggle('active', on);
+            button.setAttribute('aria-pressed', String(on));
+        }
         button.title = text;
         button.setAttribute('aria-label', text);
     }

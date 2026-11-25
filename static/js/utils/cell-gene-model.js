@@ -91,30 +91,29 @@ export const ROW_STEPS = Object.freeze(['rows_mean', 'rows_sum', 'rows_z']);
 /** A new one-row section's gene step: the mean of its gene rows (the same as Color and Size, decision 40). */
 export const DEFAULT_ROW_STEP = 'rows_mean';
 
-/** The row kinds stored before decision 40; a link holding one is read into a gene step (sections.js). */
-// export-unused-ok: the legacy reader and the golden-link test name them
-export const LEGACY_ROW_AGGREGATIONS = Object.freeze(['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_pct_expressing',
-    'score_mean', 'score_pct_above']);
-
 /** Whether a gene step combines the gene rows (else it scores each cell). */
 export const combinesRows = (step) => ROW_STEPS.includes(step);
 
 /**
- * Whether a gene step can follow a channel's statistic (decision 40). Cell count does not depend on genes; a source with
- * down genes cannot be combined from its rows (they would count as up); a sum of SDs is not the spread of the set, and a
- * sum of means over each gene's own expressing cells is the mean of no cells.
+ * Whether a section's one gene step can serve a channel (aggregation-unify-080.md 10.1). Cell count does not depend on
+ * genes, so it never grades. A source with down genes cannot be combined from its rows (they would count as up); a sum of
+ * SDs is not the spread of the set, and a sum of means over each gene's own expressing cells is the mean of no cells; a
+ * score has no mean over its expressing cells (a % channel shows the share of cells expressing any gene instead). Under
+ * z-score mean a set's row is its z-score mean score: only the default step stands (aggregation-unify-080.md 2.3, 10.1).
  * @param {string} step - one of ROW_STEPS or a score method
  * @param {string} stat - the channel's statistic
  * @param {{down?: number}} [opts] - the section's down genes in the dataset
- * @returns {{ok: true}|{ok: false, reason: 'count'|'down'|'zscore'|'sum_sd'|'sum_mean_expressing'}}
+ * @returns {{ok: true}|{ok: false, reason: 'down'|'zscore'|'sum_sd'|'sum_mean_expressing'|'score_mean_expressing'}}
  */
 export function rowStepGrade(step, stat, { down = 0 } = {}) {
-    if (stat === 'count') return { ok: false, reason: 'count' };
-    // under z-score mean a set's row is its z-score mean score and nothing else (aggregation-unify-080 2.3)
-    if (stat === 'zscore_mean') return step === 'zscore_mean' ? { ok: true } : { ok: false, reason: 'zscore' };
+    if (stat === 'count') return { ok: true };
+    // the default step: the mean of the gene rows, or the z-score mean score for a source with down genes
+    if (stat === 'zscore_mean') return step === (down > 0 ? 'zscore_mean' : DEFAULT_ROW_STEP) ? { ok: true } : { ok: false, reason: 'zscore' };
     if (combinesRows(step)) {
         if (down > 0) return { ok: false, reason: 'down' };
         if (step === 'rows_sum' && (stat === 'sd' || stat === 'mean_expressing')) return { ok: false, reason: `sum_${stat}` };
+    } else if (stat === 'mean_expressing') {
+        return { ok: false, reason: 'score_mean_expressing' };
     }
     return { ok: true };
 }

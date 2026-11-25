@@ -923,7 +923,7 @@ def test_the_density_range_is_in_the_display_pop_over_with_auto_hints_and_a_rese
     _drawn(page, "density2d")
     _pop(page)
     hint = page.get_attribute("[data-popover='color'] .ccnt-color-max", "placeholder")
-    assert hint.startswith("auto"), hint
+    assert hint == "auto" or float(hint) >= 0, hint       # the drawn value alone, or auto while none is drawn
     page.fill("[data-popover='color'] .ccnt-color-max", "0.02")
     page.press("[data-popover='color'] .ccnt-color-max", "Enter")
     _drawn(page, "density2d", "c.color && c.color.max === 0.02")
