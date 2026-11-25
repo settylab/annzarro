@@ -59,7 +59,7 @@ A row of the walk matrix says where a five-step random walk on the diffusion ker
 the focused cell, ends up. It is a similarity that respects the data's manifold. Walking the focus
 along a trajectory shows how far each cell state reaches.
 
-1. Choose `bm_aging_annzarro.zarr` in **Dataset**. Set **Focused Cell** to
+1. Choose `bm_aging_annzarro.zarr` with the dataset button (left of the bar under the header). Set **Focused Cell** to
    `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` (click the box, type, Enter, Esc).
 2. In the Welcome tile click **Cell Plot**. **X** `obsm` · `X_umap` · `0`, **Y**
    `obsm` · `X_umap` · `1`, **Color** `obsp` · `diffusion_walk_t5`. The third dropdown reads

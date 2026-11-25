@@ -55,7 +55,7 @@ Panel set file: {download}`gene-by-gene-ab.json <../_static/panelsets/paper/gene
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
-1. Open `bm_aging_annzarro.zarr` from **Dataset**.
+1. Open `bm_aging_annzarro.zarr` with the dataset button (left of the bar under the header).
 2. In the bottom selector, add a gene plot. Open its controls (the chevron in the tile header).
 3. Set **X** to `var`, `kompot_de_Young_to_Old_mean_lfc` and **Y** to `var`,
    `kompot_de_Young_to_Old_mahalanobis`. You now have the Kompot volcano.
@@ -322,7 +322,7 @@ Python from the same stored columns and match the paper's `figures/numbers/fig3.
 ```{note}
 The `rho_fc_*` and `rho_smoothed_*` columns of the store hold H2-Q7's (and S100a9's,
 H2-Aa's) rows of `varp/…` as fixed columns. A gene table can also show a `varp` row directly: on
-its `varp` tab, `spearman_fold_change: H2-Q7 (focused)` adds H2-Q7's row, which stays H2-Q7's
+its `varp` tab, the add row (`H2-Q7 (focused)`, `spearman_fold_change`, **Add column**) adds H2-Q7's row, which stays H2-Q7's
 when you focus another gene ({doc}`gene-groups`). The boolean
 `kompot_de_Young_to_Old_is_de` works as a filter too: **Equals** `Yes` keeps the 190 DE genes.
 ```

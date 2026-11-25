@@ -40,7 +40,7 @@ some controls have changed since, and the steps in the text use today's names.
 (tut-tour-focus)=
 ## 1. Open the data and set the focus
 
-1. In the header choose `bm_aging_annzarro.zarr` in **Dataset**.
+1. Click the dataset button at the left of the bar under the header and choose `bm_aging_annzarro.zarr`.
 2. Click the **Focused Gene** box, type `H2-Q7`, press Enter. Click the **Focused Cell** box,
    type or paste `HSPC_Old_1#GAAGCCCGTGGCTCTG-1`, press Enter. Both lists stay open after
    Enter; press Esc to close them.
@@ -59,8 +59,8 @@ Panel set file: {download}`protocol-A-kernel-walk.json <../_static/panelsets/pro
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
-3. In the Welcome tile, under "Create New Panel", click **Cell Plot**. A new panel opens with
-   its controls showing. Set:
+3. In the Welcome tile, under "Create New Panel", click **Cell Plot** (the tile lists nine panel types; this
+   tour uses the first five). A new panel opens with its controls showing, and **Equal aspect** on. Set:
    - **X** `obsm` · `X_umap` · `0`; **Y** `obsm` · `X_umap` · `1`.
    - **Color** `obsp` · `diffusion_walk_t5`. The third dropdown now reads "Focused cell
      HSPC_Old_1#…": the colour is that cell's row.
@@ -341,7 +341,7 @@ needs no new data from the server, because the plot already holds every cell.
 
     ```{figure} ../_static/screens/paper/fig2-table-controls.png
     :class: screenshot
-    :alt: Cell table with its controls open. Available Columns tabs obs, obsm, obsp, layers; Selected Columns Age, highres_celltype, kompot_da_Young_to_Old_lfc_zscore; Advanced Search (2) with highres_celltype Equals HSC AND kompot_da_Young_to_Old_lfc_zscore Greater Than 2; 290 of 8,090 entries.
+    :alt: Cell table with its controls open. Available Columns tabs obs, obsm, obsp, layers, Gene score, Cell groupings; Selected Columns Age, highres_celltype, kompot_da_Young_to_Old_lfc_zscore; Advanced Search (2) with highres_celltype Equals HSC AND kompot_da_Young_to_Old_lfc_zscore Greater Than 2; 290 of 8,090 entries.
     :width: 80%
 
     The table with its controls open (column chooser at the top) and the two conditions.

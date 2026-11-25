@@ -54,8 +54,8 @@ differentially expressed, and that also rise in one chosen haematopoietic stem c
    change, **Y** the Mahalanobis distance) whose **Table** is the gene table
    ({doc}`../user-guide/tables-and-filters`). The start link has both.
 3. Open the table's controls. On the `var` tab tick `kompot_de_Young_to_Old_is_de`. On the
-   `layers` tab tick `kompot_de_Young_to_Old_fold_change: HSPC_Old_1#GAAGCCCGTGGCTCTG-1 (focused)`.
-   Press **Apply Changes**. The new column is named after the cell and keeps it when you focus
+   `layers` tab use the add row: choose `HSPC_Old_1#GAAGCCCGTGGCTCTG-1 (focused)` and
+   `kompot_de_Young_to_Old_fold_change`, then **Add column**. Press **Apply Changes**. The new column is named after the cell and keeps it when you focus
    another one ({doc}`gene-groups`).
 4. In **Advanced Search**, add four conditions, one with each **Add Condition**:
 

@@ -41,7 +41,7 @@ The link is ready for a local server; {ref}`what to change for yours <tut-start-
 (tut-gg-setup)=
 ## 1. Focus a gene and a cell, and lay out the panels
 
-1. Open `bm_aging_annzarro.zarr` from **Dataset**.
+1. Open `bm_aging_annzarro.zarr` with the dataset button (left of the bar under the header).
 2. Set **Focused Gene** to `H2-Q7`. Set **Focused Cell** to `HSPC_Old_1#GAAGCCCGTGGCTCTG-1`
    (type `GAAGCCCGTGGCTCTG` and pick it).
 3. Add a **Gene Table**. Open its controls (the chevron in the tile header) and, on the `var`
@@ -57,25 +57,29 @@ The link is ready for a local server; {ref}`what to change for yours <tut-start-
 (tut-gg-columns)=
 ## 2. Add a column from the focused gene and one from the focused cell
 
-1. In the gene table's controls, open the `varp` tab. It lists one entry per matrix for the
-   focused gene, marked `(focused)`, and one for every gene a plot is locked to. Tick
-   `spearman_fold_change: H2-Q7 (focused)`.
+1. In the gene table's controls, open the `varp` tab. It lists the columns the table has, and under
+   them one **add row**: a select for the gene (the focused gene, marked `(focused)`, and every gene a
+   plot is locked to), a select for the matrix and the button **Add column**. Choose `H2-Q7 (focused)`
+   and `spearman_fold_change`, then press **Add column**. The tab says "Added
+   spearman_fold_change: H2-Q7. Apply Changes to show it in the table.", and the column is listed in
+   **Selected Columns**.
 
    ```{figure} ../_static/screens/tutorials/gene-groups-chooser-varp.png
    :class: screenshot
-   :alt: The gene table's column chooser on the varp tab, with spearman_fold_change: H2-Q7 (focused) ticked.
+   :alt: The gene table's column chooser on the varp tab, with the add row for H2-Q7 and spearman_fold_change and the new column in Selected Columns.
 
-   The focused gene's row of each `varp` matrix, offered as a column.
+   The focused gene's row of a `varp` matrix, added as a column.
    ```
 
-2. Open the `layers` tab. It lists every layer for the focused cell. Tick
-   `kompot_de_Young_to_Old_fold_change: HSPC_Old_1#GAAGCCCGTGGCTCTG-1 (focused)`.
+2. Open the `layers` tab. Its add row offers the focused cell, marked `(focused)`, and the layer.
+   Choose `HSPC_Old_1#GAAGCCCGTGGCTCTG-1 (focused)` and
+   `kompot_de_Young_to_Old_fold_change`, then press **Add column**.
 
    ```{figure} ../_static/screens/tutorials/gene-groups-chooser-layer.png
    :class: screenshot
-   :alt: The layers tab with the fold change of the focused HSC ticked; Selected Columns lists four columns.
+   :alt: The layers tab with the fold change of the focused HSC added: the cell under its layer, the add row beneath it, and four columns in Selected Columns.
 
-   The focused cell's row of each layer. **Selected Columns** now lists four columns.
+   The focused cell's row of a layer. **Selected Columns** now lists four columns.
    ```
 
 3. Press **Apply Changes**. The table gains two columns, headed
@@ -200,12 +204,13 @@ The focused cell is the monocyte; the column header still names the HSC.
 
 A table column depends on its cell or gene, never on the fact that it was focused when you
 picked it. The group you built stays the group you built; the focus is free for exploring. To
-compare with the monocyte, open the `layers` tab: it now offers the monocyte's row, marked
-`(focused)`, next to the HSC's, marked `(in this table)`. Tick it to add a second column.
+compare with the monocyte, open the `layers` tab: the add row now offers the monocyte, marked
+`(focused)`, next to the HSC, which the tab lists as ticked under the layer. Choose it and press **Add column** to
+add a second column.
 
 ```{figure} ../_static/screens/tutorials/gene-groups-chooser-after.png
 :class: screenshot
-:alt: The layers tab after the focus change: the HSC's fold change marked (in this table), the monocyte's marked (focused).
+:alt: The layers tab after the focus change: the HSC's fold change still ticked under its layer, and the add row offering the monocyte as the focused cell.
 
 The chooser offers the new focus; the table keeps what it has.
 ```
