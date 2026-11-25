@@ -166,7 +166,7 @@ The server estimates the time before it reads anything, and the plot follows wha
   you press **Compute**.
 - **Longer**: it is not started by itself, and the plot says why and what to do ("Use fewer genes"). Where the server
   allows it the notice has **Try anyway**, which runs it with a time limit of its own; see
-  {doc}`cell-gene-plot` (Try anyway, and not asking again).
+  {doc}`long-computations` (Try anyway, and not asking again).
 
 The notice lies over the plot and a short tag appears in the status strip, so the plot never moves.
 On an axis, where nothing can be drawn without the score, the plot area shows the same sentence instead.
@@ -285,8 +285,8 @@ is kept in the browser (up to 1 GiB, least recently used first) so it is not ask
 
 ## See a score's distribution
 
-**Distribution**, beside **Methods ▾** in the panel's toolbar, opens a Count Plot beside the panel with a histogram of
-the score (the z-score mean of X) over the cells shown. Everything a Count Plot does applies: change the method or the
+**Distribution**, beside **Methods ▾** in the panel's toolbar, opens a Cell Count Plot beside the panel with a histogram of
+the score (the z-score mean of X) over the cells shown. Everything a Cell Count Plot does applies: change the method or the
 layer on its x axis, split it by a grouping, and read the cells with no score (every gene missing there) in its count
 of cells left out. Genes left out of the score (absent from the dataset, constant, or without a value) are named in
 the panel's status line.
@@ -333,9 +333,9 @@ Analysis and Gene Plot filters read the table as before.
 A Cell Table can show a signature's score as a column, so you can sort the cells by it, filter on it and
 export it. Open the table's
 column chooser and choose the **Gene score** tab. Under each signature are the score columns the table has
-("mean · counts"), each with its tick box, then one row: **[method] on [layer] Add column**. Choose a method and a
-layer, graded as a plot's selects are, and press **Add column**: the column is ticked, and **Apply Changes** puts it
-in the table. The tab never lists every combination of method and layer. Add as many as you like: several
+("mean · counts"), each with its tick box, then one row: **[layer ▾] [aggregation button] [Add column]**. Choose a layer and, with the symbol button, a method
+(the symbols are explained under {ref}`interface-symbols`), graded as a plot's selects are, and press **Add column**: the column is ticked, and **Apply Changes** puts it
+in the table (the row says "Added …. Apply Changes to show it in the table."). The tab never lists every combination of method and layer. Add as many as you like: several
 signatures, and several methods or layers of one, are several columns, and each is computed once however many plots
 and tables use it.
 

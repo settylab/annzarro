@@ -144,7 +144,7 @@ the cells of each combination; an empty combination is a muted 0, because it is 
 focused row. The field has the group's colour beside it (**Alt+C** opens the picker from the keyboard), **✓** and
 **✕**. **Enter**, **✓** or a click elsewhere saves; **Escape** or **✕** cancels; **Tab** saves and edits the next group.
 A name is only a label, so nothing is computed again, and renaming a group never changes what another grouping built on this one has set (those are kept under the group's generated name, not its label), and every panel that shows the grouping (the list, a Cell Plot's
-legend, a Cell-Gene Plot's axis, a Count Plot, a Cell Table column, the exports) uses it. If the name is another group's,
+legend, a Cell-Gene Plot's axis, a Cell Count Plot, a Cell Table column, the exports) uses it. If the name is another group's,
 it is qualified as `name (2)`. **Reset** (shown on a group you have named or coloured) puts back the generated name and
 the default colour. The name and colour of a group are kept under the group's generated name; when no group has that
 name any more (another factor, another dataset, moved bins), they are listed under **Not in these groups** below the
@@ -162,8 +162,8 @@ colour is set beside its name in the same way, in the factor's **Edit ▾** pop-
 
 **Methods ▾** (a button in the toolbar) sets how the statistics over a group's cells are computed, for every plot
 that reads the grouping and on every layer. Plots still choose the statistic and the layer themselves; nothing here
-limits what they can pick. The pop-over lists each statistic with its definition: **Mean**, **Fraction of cells**, **Mean of
-expressing cells**, **Sum** and **SD**. Under the two that count expressing cells sits their one parameter:
+limits what they can pick. The pop-over lists each statistic with its definition: **Z-score mean**, **Mean**, **Fraction of
+cells**, **Mean of expressing cells**, **Sum** and **SD**. Under the two that count expressing cells sits their one parameter:
 
 - **Expressed above** (0 by default, any number from 0 up): a cell counts as expressing when its value is above it.
   Type a number and press **Enter**, or leave the box; a value that is not a number from 0 up is refused with the
@@ -201,8 +201,8 @@ palette in group order, repeating by the 64 colour groups. Under **Settings** �
 group's swatch in the group list, or press **Enter** or **Space** on a focused row, to give that group a colour of its
 own; it wins over everything else. That colour is kept under the group's generated name (its level labels joined by
 the separator), not its place in the list: when another dataset, another factor or moved bins leave no group of that
-name, the colour applies to no group and is kept, and it applies again as soon as a group of that name is back. A Count
-Plot's level palette (under its **Color** button) and a Cell Plot's own palette select still recolour that plot alone.
+name, the colour applies to no group and is kept, and it applies again as soon as a group of that name is back. A Cell Count
+Plot's level palette (under its **Display ▾** button) and a Cell Plot's own palette select still recolour that plot alone.
 
 The settings are stored in the recipe (`colors` for palettes, `groupOverrides` for single groups, only what is not at
 its default), so a link or a panel set carries them and a link made before colours existed opens unchanged. They are no
@@ -220,8 +220,8 @@ a plot, and enter no statistic.
 
 | Where | How |
 |---|---|
-| **Cell Plot** colour, x, y, z and hover | Choose **Cell Grouping** in the type list (beside obs, obsm, obsp, layer and **Gene score**), or a grouping at the end of the obs column list, under **Groupings**; **New grouping…** ends the list. Colour draws one legend entry per group, in group order, with the grouping's colours, and every categorical legend option applies. The hover reads `Grouping 1: B cell \| Old` |
-| **Cell Table** | The column chooser has a **Cell Grouping** tab. The column shows each cell's group, sorts in group order and filters with **Equals** like a categorical column |
+| **Cell Plot** colour, x, y, z and hover | Choose **Cell Grouping** in the type list (beside obs, obsm, obsp and layer; a gene score is picked under **layer**, see {doc}`gene-signature`), or a grouping at the end of the obs column list, under **Groupings**; **New grouping…** ends the list. Colour draws one legend entry per group, in group order, with the grouping's colours, and every categorical legend option applies. The hover reads `Grouping 1: B cell \| Old` |
+| **Cell Table** | The column chooser has a **Cell groupings** tab. The column shows each cell's group, sorts in group order and filters with **Equals** like a categorical column |
 | **Cell-Gene Plot** | As **Groups** ({doc}`cell-gene-plot`) |
 | **Cell Count Plot** | As X, Y or **Color by**, and one group of it as a set ({doc}`cell-count-plot`) |
 | **Another grouping** | As a factor: its groups become the levels |
@@ -249,7 +249,8 @@ Edits follow the cost tiers of scores. Under 5 seconds they apply as you make th
 "2 changes not applied. About 40 s. **Update groups**", and plots using the grouping keep the previous groups until
 you update. Past a minute the panel asks first ("Grouping 95.6M cells will take about 2 minutes."), and past 10
 minutes it refuses, saying why, with **Try anyway** where the server allows a longer run (a tried run stops by itself
-at the server's limit, 30 minutes by default; see {doc}`cell-gene-plot`). While the grouping computes, its factors stay editable and the plots keep their
+at the server's limit, 30 minutes by default). What each notice says, and every way out, is on
+{doc}`long-computations`. While the grouping computes, its factors stay editable and the plots keep their
 previous drawing. Grouping by obs columns is fast at any size; a gene of a layer stored by cell (CSR), a wide obsm
 column and a score cost more, and the estimate counts them.
 
