@@ -16,7 +16,7 @@ const O = await import('../../../static/js/utils/signature-options.js');
 // ---------------------------------------------------------------- a two-method fake with one shared threshold
 
 const FAKE_METHODS = [
-    { value: 'pct', label: '% expressing', menu: '% expressing', needs: ['threshold'], unit: '0 to 100',
+    { value: 'pct', label: 'Fraction of cells', menu: 'Fraction of cells', needs: ['threshold'], unit: '0 to 100',
         definition: 'Share of the group\'s cells above the threshold, 0 to 100.' },
     { value: 'mean_expr', label: 'Mean of expressing cells', menu: 'mean of expressing cells', needs: ['threshold'], unit: 'layer units',
         definition: 'Average over the cells above the threshold.' }
@@ -56,12 +56,12 @@ test('the graded selects of a fake table list every method and layer and disable
     const kinds = { X: 'signed', logged: 'log' };
     const methods = m.methodChoices({ layer: 'X', kinds });
     assert.deepEqual(methods.map(o => [o.value, o.disabled]), [['pct', true], ['mean_expr', true]]);
-    assert.equal(methods[0].title, "% expressing cannot be computed on 'X': it has negative values.");
+    assert.equal(methods[0].title, "Fraction of cells cannot be computed on 'X': it has negative values.");
     assert.deepEqual(m.methodChoices({ layer: 'logged', kinds }).map(o => o.disabled), [false, false]);
     const layers = m.layerChoices({ method: 'pct', datasetLayers: ['X', 'logged'], kinds });
     assert.deepEqual(layers.map(o => [o.value, o.disabled]), [['X', true], ['logged', false]]);
     const moved = m.pairAfter('method', 'pct', { layer: 'X' }, { datasetLayers: ['X', 'logged'], kinds });
-    assert.deepEqual([moved.layer, moved.say], ['logged', "Layer changed to logged: % expressing cannot be computed on 'X'."]);
+    assert.deepEqual([moved.layer, moved.say], ['logged', "Layer changed to logged: Fraction of cells cannot be computed on 'X'."]);
 });
 
 test('every grading sentence has one phrasing: the method, then why', () => {
@@ -69,7 +69,7 @@ test('every grading sentence has one phrasing: the method, then why', () => {
     assert.equal(M.REASON.cannotWith('Sum', 'down genes', 'a signed sum depends on how many genes each side has.'),
         'Sum cannot be computed with down genes: a signed sum depends on how many genes each side has.');
     assert.equal(M.REASON.note('Mean', M.quoted('counts'), 'follows sequencing depth.'), "Mean on 'counts' follows sequencing depth.");
-    assert.equal(M.REASON.moved('Method', 'mean', '% expressing', M.quoted('X')), "Method changed to mean: % expressing cannot be computed on 'X'.");
+    assert.equal(M.REASON.moved('Method', 'mean', 'Fraction of cells', M.quoted('X')), "Method changed to mean: Fraction of cells cannot be computed on 'X'.");
 });
 
 test('the signature is that same model: its names are the model\'s, bound', () => {
@@ -94,7 +94,7 @@ test('threshold line: names the threshold, and keeps the sentence the page has a
     for (const t of [0, 0.1, 0.5, 1, 2.5, 10, 123.456, 1e-3]) {
         const line = O.thresholdLine(t);
         assert.ok(line.includes(`above ${M.figure(t)}.`), `${t}: ${line}`);
-        assert.ok(line.startsWith('A gene counts as detected in a cell when its value is above this.'), 'the old sentence leads');
+        assert.ok(line.startsWith('A gene counts as expressed in a cell when its value is above this.'), 'the old sentence leads');
     }
     assert.equal(O.thresholdLine(-1), O.thresholdLine(0), 'an invalid threshold is read as 0, and the line says 0');
 });

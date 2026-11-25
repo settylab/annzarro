@@ -167,7 +167,7 @@ def test_a_fresh_panel_names_its_groups_source_in_words_and_offers_its_own_defau
     shown = page.evaluate("(s) => [...document.querySelectorAll(s + ' .cgene-axis-type option')].map(o => [o.value, o.textContent])", TP)
     assert shown == [["obs", "obs"], ["cell-group", "Cell Grouping"]], shown
     config = _config(page)
-    assert config["color"] == {"stat": "mean", "layer": "X"} and config["size"] == {"stat": "pct_expressing", "layer": "X"}
+    assert config["color"] == {"stat": "mean", "layer": "X"} and config["size"] == {"stat": "fraction_of_cells", "layer": "X"}
     _no_lapsed(page)
 
 

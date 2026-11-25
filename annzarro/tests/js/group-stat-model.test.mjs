@@ -46,7 +46,7 @@ test('a setting survives a link: the group key, the statistic, the layer and the
     assert.equal(M.columnOf(['g:["c:T cell"]', 'c:ctrl']), '["g:[\\"c:T cell\\"]","c:ctrl"]', 'the canonical JSON of the key');
 });
 
-test('every statistic from the moments equals the Cell-Gene Plot\'s, in its units (% expressing is 0 to 100)', () => {
+test('every statistic from the moments equals the Cell-Gene Plot\'s, in its units (Fraction of cells is 0 to 1)', () => {
     for (const stat of M.STAT_IDS) {
         const want = statisticColumn(stat, MOMENTS, 4);
         const got = M.statValues(stat, MOMENTS, 4);
@@ -56,7 +56,7 @@ test('every statistic from the moments equals the Cell-Gene Plot\'s, in its unit
             else assert.equal(got[i], expected, `${stat} gene ${i}`);
         }
     }
-    assert.deepEqual([...M.statValues('pct_expressing', MOMENTS, 4)].map((v) => (Number.isNaN(v) ? null : v)), [80, 0, null, 50]);
+    assert.deepEqual([...M.statValues('fraction_of_cells', MOMENTS, 4)].map((v) => (Number.isNaN(v) ? null : v)), [0.8, 0, null, 0.5]);
     assert.equal(M.statValues('mean', MOMENTS, 4)[0], 2);
     assert.equal(M.statValues('mean_expressing', MOMENTS, 4)[1], 0, 'cells but none expressing: 0, as the Cell-Gene Plot writes it');
     assert.throws(() => M.statValues('count', MOMENTS, 4), /unknown statistic/);
@@ -96,29 +96,29 @@ test('a group is ok, changed (its default labels differ) or gone, as the group r
 
 test('the statistic select lists every statistic but Cell count, graded on the layer; the layer select every layer', () => {
     const stat = M.statMenu(setting({ layer: 'X' }), { X: 'signed', logged: 'log' });
-    assert.deepEqual(stat.options.map((o) => o.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']);
+    assert.deepEqual(stat.options.map((o) => o.value), ['zscore_mean', 'mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd']);
     assert.equal(stat.chosen, 'mean');
     const byValue = Object.fromEntries(stat.options.map((o) => [o.value, o]));
-    assert.equal(byValue.pct_expressing.disabled, true, '% expressing cannot be computed on a signed layer');
-    assert.ok(byValue.pct_expressing.title.includes('negative values'));
+    assert.equal(byValue.fraction_of_cells.disabled, true, 'Fraction of cells cannot be computed on a signed layer');
+    assert.ok(byValue.fraction_of_cells.title.includes('negative values'));
     assert.equal(byValue.mean.disabled, false);
-    const layers = M.layerMenu(setting({ stat: 'pct_expressing', layer: 'logged' }), { X: 'signed', logged: 'log' }, ['X', 'logged']);
+    const layers = M.layerMenu(setting({ stat: 'fraction_of_cells', layer: 'logged' }), { X: 'signed', logged: 'log' }, ['X', 'logged']);
     assert.deepEqual(layers.options.map((o) => [o.value, o.disabled]), [['X', true], ['logged', false]]);
     assert.equal(layers.chosen, 'logged');
     // a held impossible pair stays, marked
-    assert.ok(M.statMenu(setting({ stat: 'pct_expressing', layer: 'X' }), { X: 'signed' }).options.find((o) => o.value === 'pct_expressing').text.includes('not available'));
+    assert.ok(M.statMenu(setting({ stat: 'fraction_of_cells', layer: 'X' }), { X: 'signed' }).options.find((o) => o.value === 'fraction_of_cells').text.includes('not available'));
 });
 
 test('the pair after a touch: the one touched wins, the other moves only when impossible, said once', () => {
     const kinds = { X: 'signed', logged: 'log' };
     const layers = ['X', 'logged'];
-    const moved = M.pairAfter(setting({ layer: 'X' }), 'stat', 'pct_expressing', kinds, layers);
-    assert.deepEqual([moved.stat, moved.layer], ['pct_expressing', 'logged']);
-    assert.equal(moved.say, REASON.moved('Layer', 'logged', '% expressing', "'X'"));
+    const moved = M.pairAfter(setting({ layer: 'X' }), 'stat', 'fraction_of_cells', kinds, layers);
+    assert.deepEqual([moved.stat, moved.layer], ['fraction_of_cells', 'logged']);
+    assert.equal(moved.say, REASON.moved('Layer', 'logged', 'fraction of cells', "'X'"));
     const kept = M.pairAfter(setting({ layer: 'logged' }), 'stat', 'sd', kinds, layers);
     assert.deepEqual([kept.stat, kept.layer, kept.say], ['sd', 'logged', '']);
-    const layer = M.pairAfter(setting({ stat: 'pct_expressing', layer: 'logged' }), 'layer', 'X', kinds, layers);
-    assert.notEqual(layer.stat, 'pct_expressing', 'the statistic moved off what X cannot give');
+    const layer = M.pairAfter(setting({ stat: 'fraction_of_cells', layer: 'logged' }), 'layer', 'X', kinds, layers);
+    assert.notEqual(layer.stat, 'fraction_of_cells', 'the statistic moved off what X cannot give');
     assert.equal(layer.layer, 'X');
 });
 

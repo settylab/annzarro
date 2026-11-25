@@ -77,7 +77,7 @@ test('a gene table has no down genes: every gene passing its filter is up, and t
 });
 
 test('the same options give the same recipe fields as a signature: one schema', () => {
-    const opts = { offered: ['mean', 'detected'], layers: ['X', 'counts'], input: 'X', method: 'mean', clip: 3, detect_above: 1 };
+    const opts = { offered: ['mean', 'fraction_of_genes'], layers: ['X', 'counts'], input: 'X', method: 'mean', clip: 3, detect_above: 1 };
     const t = table({ options: opts });
     const sources = adapterOf(new Map([[t.id, t], ['gene-signature-1', signature('gene-signature-1', ['A1'])]]), { open: new Set([t.id]) });
     const fromTable = sources.get(t.id).recipe();

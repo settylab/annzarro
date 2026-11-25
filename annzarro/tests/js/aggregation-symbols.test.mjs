@@ -32,7 +32,8 @@ test('no symbol stands for two different meanings across the three tables', () =
     }
 });
 
-test('% expressing and % of total are told apart', () => {
-    assert.equal(STAT_SYMBOLS.pct_expressing.text, '%\u207a');
+test('Fraction of cells is c\u207a, Fraction of genes g\u207a and % of total %: the words of the three shares are told apart', () => {
+    assert.equal(STAT_SYMBOLS.fraction_of_cells.text, 'c\u207a');
+    assert.equal(SCORE_SYMBOLS.fraction_of_genes.text, 'g\u207a');
     assert.equal(SCORE_SYMBOLS.fraction_of_total.text, '%');
 });

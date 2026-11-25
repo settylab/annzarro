@@ -7,7 +7,7 @@ counts.
 1.  Methods ▾ sits in the grouping's toolbar (Add factor ▾ · Methods ▾ · Settings · Undo), lists the five statistics with
     their definitions and Expressed above under them; Escape closes it and the panel's box is unchanged.
 2.  Expressed above 2 is one undo step of the grouping: a Cell-Gene Plot on that grouping asks each gene at 2 in one POST
-    and reads "% expressing (> 2)"; its override box stays empty and says "auto (grouping: 2)". Undo restores 0.
+    and reads "Fraction of cells (> 2)"; its override box stays empty and says "auto (grouping: 2)". Undo restores 0.
 3.  A measure with its own threshold (an override) is unaffected by the grouping's edit.
 4.  The Cell Table's Methods ▾ stores `methods: {detect_above}` in the table's configuration, omitted at default, and a
     link carries it back; Escape closes it and the panel's box is unchanged.
@@ -36,7 +36,7 @@ TT = f'.tile[data-tile-id="{T}"]'
 POP = "[data-popover='methods']"
 OBS = {"type": "obs", "key": "cell_type"}
 AXIS = {"type": "cell-group", "key": GA}
-STATS = ["Z-score mean", "Mean", "% expressing", "Mean of expressing cells", "Sum", "SD"]
+STATS = ["Z-score mean", "Mean", "Fraction of cells", "Mean of expressing cells", "Sum", "SD"]
 
 
 def _grouping(**fields):
@@ -64,7 +64,7 @@ def _set_threshold(page, value):
 
 def _plot_on_grouping(page, served, size=None):
     plot = _plot(cellAxis=AXIS, sections=[{"source": S1, "rows": "genes"}],
-                 size=size or {"stat": "pct_expressing", "layer": "counts"})
+                 size=size or {"stat": "fraction_of_cells", "layer": "counts"})
     _open(page, served, {P: plot, GA: _grouping(), S1: _sig(S1, "Markers", GENES[:3])}, open_ids=(P, GA))
     _drawn(page)
     page.wait_for_selector(f"{TG} .cgrp-controls .cmeth__toggle", timeout=30000)
@@ -84,7 +84,7 @@ def test_methods_opens_from_the_grouping_toolbar_lists_every_statistic_and_escap
     assert names == STATS, names
     assert page.eval_on_selector_all(f"{POP} .cmeth__definition", "ds => ds.every(d => d.textContent.length > 15)")
     assert page.input_value(f"{POP} [data-param='detect_above']") == "0"
-    assert "Used by % expressing and mean of expressing cells. Now: above 0." in pop.inner_text()
+    assert "Used by fraction of cells and mean of expressing cells. Now: above 0." in pop.inner_text()
     assert "Cell-Gene Plot 1 (" in page.inner_text(f"{POP} [data-used-by]"), page.inner_text(f"{POP} [data-used-by]")
     assert page.locator(f"{POP} .cmeth__reset").is_disabled(), "nothing to reset at the defaults"
     assert _box(page, TG) == before, "opening the pop-over moves no box"
@@ -96,7 +96,7 @@ def test_methods_opens_from_the_grouping_toolbar_lists_every_statistic_and_escap
 
 def test_expressed_above_redraws_the_cell_gene_plot_and_undo_restores_it(page, served):
     _plot_on_grouping(page, served)
-    assert "% expressing (> 0) · counts" in _hover(page)
+    assert "Fraction of cells (> 0) · counts" in _hover(page)
     assert CC.above(page, TP, "size")["value"] == ""
     assert CC.above(page, TP, "size")["placeholder"] == "auto (grouping: 0)"
     n = len(page.calls)
@@ -105,7 +105,7 @@ def test_expressed_above_redraws_the_cell_gene_plot_and_undo_restores_it(page, s
     _set_threshold(page, 2)
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().detect_above === 2", GA)
     until(page, "(s) => { const p = document.querySelector(s + ' .cgene-plot'); const t = JSON.stringify(p.data[0].hovertext || p.data[0].text);"
-          " return t.includes('% expressing (> 2) · counts'); }", TP, timeout=60)
+          " return t.includes('Fraction of cells (> 2) · counts'); }", TP, timeout=60)
     # the grouping's own grid reads the focused gene on X at the new threshold too (its own POST); the plot's is one
     new = [c for c in page.calls[n:] if any(f.get("layer") in ("counts", "logged") for f in c.get("features") or [])]
     assert len(new) == 1, f"one POST for the plot at the new threshold, got {len(new)}"
@@ -125,14 +125,14 @@ def test_expressed_above_redraws_the_cell_gene_plot_and_undo_restores_it(page, s
     page.click(f"{TG} .cgrp-undo")
     until(page, "(id) => !('detect_above' in window.PanelManager.getPanel(id).getConfig())", GA)
     until(page, "(s) => { const p = document.querySelector(s + ' .cgene-plot'); const t = JSON.stringify(p.data[0].hovertext || p.data[0].text);"
-          " return t.includes('% expressing (> 0) · counts'); }", TP, timeout=60)
+          " return t.includes('Fraction of cells (> 0) · counts'); }", TP, timeout=60)
     assert CC.above(page, TP, "size")["placeholder"] == "auto (grouping: 0)"
     assert page.locator(f"{TG} .cmeth__toggle .cmeth__dot").is_hidden()
 
 
 def test_a_measure_with_its_own_threshold_is_unaffected(page, served):
-    _plot_on_grouping(page, served, size={"stat": "pct_expressing", "layer": "counts", "detect_above": 0.5})
-    assert "% expressing (> 0.5) · counts" in _hover(page)
+    _plot_on_grouping(page, served, size={"stat": "fraction_of_cells", "layer": "counts", "detect_above": 0.5})
+    assert "Fraction of cells (> 0.5) · counts" in _hover(page)
     box = CC.above(page, TP, "size")
     assert box["value"] == "0.5", "an override shows its value"
     assert "Overrides Grouping 1" in box["title"]
@@ -144,13 +144,13 @@ def test_a_measure_with_its_own_threshold_is_unaffected(page, served):
     page.keyboard.press("Escape")
     _drawn(page)
     assert not any(f.get("layer") == "counts" and f.get("detect_above") == 2 for f in _features(page.calls[n:])), "Size keeps its own threshold"
-    assert "% expressing (> 0.5) · counts" in _hover(page)
+    assert "Fraction of cells (> 0.5) · counts" in _hover(page)
     assert _config(page)["size"]["detect_above"] == 0.5
     # clearing the override follows the grouping again
     CC.set_above(page, TP, "size", "")
     until(page, "(id) => !('detect_above' in window.PanelManager.getPanel(id).getConfig().size)", P)
     until(page, "(s) => { const p = document.querySelector(s + ' .cgene-plot'); const t = JSON.stringify(p.data[0].hovertext || p.data[0].text);"
-          " return t.includes('% expressing (> 2) · counts'); }", TP, timeout=60)
+          " return t.includes('Fraction of cells (> 2) · counts'); }", TP, timeout=60)
 
 
 def _open_table(page, served, table, more=None, open_ids=(T,)):

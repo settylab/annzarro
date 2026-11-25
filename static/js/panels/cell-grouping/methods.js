@@ -6,12 +6,12 @@
  *   Methods ▾
  *   Statistics over a group's cells. Plots choose the statistic and the layer; these settings apply on every layer.
  *   Mean                       Average over the group's cells, zeros included.
- *   % expressing               Share of the group's cells above the threshold, 0 to 100.
+ *   fraction of cells               Share of the group's cells above the threshold, from 0 to 1.
  *   Mean of expressing cells   Average over the cells above the threshold.
- *     Expressed above [ 0 ]    Used by % expressing and mean of expressing cells. Now: above 0.
+ *     Expressed above [ 0 ]    Used by fraction of cells and mean of expressing cells. Now: above 0.
  *   Sum                        Total over the group's cells (pseudobulk).
  *   SD                         Spread over the group's cells.
- *   Used by: Cell-Gene Plot 1 (% expressing · counts)
+ *   Used by: Cell-Gene Plot 1 (fraction of cells · counts)
  *                                                    [Reset to defaults]
  *
  * The statistics and their parameters are the tables of utils/group-statistics.js (STATISTIC_INFO, METHOD_PARAMS), so
@@ -34,7 +34,7 @@ import { STATISTIC_INFO, METHOD_PARAMS, METHODS_TEXT, methodsSummary } from '../
  * @param {(m: Object) => string} [o.definitionOf] - a statistic's definition (a table speaks of the table's cells)
  * @param {() => Object} o.getFields - the method fields now (a grouping's recipe, a table's `methods`)
  * @param {(patch: Object, label: string) => void} o.apply - set the fields of `patch` (undefined: back to the default)
- * @param {() => string[]} [o.usedBy] - one line per reader: "Cell-Gene Plot 1 (% expressing · counts)"
+ * @param {() => string[]} [o.usedBy] - one line per reader: "Cell-Gene Plot 1 (fraction of cells · counts)"
  * @returns {{element: HTMLElement, paint: () => void, reveal: () => void, isOpen: () => boolean, destroy: () => void}}
  */
 export function createCellMethods({ D, id, intro = METHODS_TEXT.intro, definitionOf = (m) => m.definition, getFields, apply, usedBy = () => [] }) {

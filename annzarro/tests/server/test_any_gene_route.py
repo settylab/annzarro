@@ -55,8 +55,8 @@ def client(layout, tmp_path):
 
 def feature(genes, layer, t, down=()):
     return {"id": "any", "kind": "score",
-            "recipe": {"genes": list(genes), "down": list(down), "method": "detected", "detect_above": t},
-            "column": "detected", "layer": layer, "above": 0}
+            "recipe": {"genes": list(genes), "down": list(down), "method": "fraction_of_genes", "detect_above": t},
+            "column": "fraction_of_genes", "layer": layer, "above": 0}
 
 
 def ask(client, layout, kind, features, **kw):

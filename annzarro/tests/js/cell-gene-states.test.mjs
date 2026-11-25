@@ -253,9 +253,9 @@ test('the strip of a drawn plot: groups by rows, and the cells of the matrix wit
     assert.equal(matrixTag(28, 63, 12).title, '28 groups × 63 rows · 12 cells of the matrix have no value');
 });
 
-test('One cell per group: suggested only for dots sized by % expressing, over groups of one cell each', () => {
+test('One cell per group: suggested only for dots sized by Fraction of cells, over groups of one cell each', () => {
     const ones = [{ n: 1 }, { n: 1 }, { n: 1 }];
-    const size = { stat: 'pct_expressing', layer: 'logged' };
+    const size = { stat: 'fraction_of_cells', layer: 'logged' };
     assert.equal(oneCellPerGroup({ mode: 'dots', size, sized: true, groups: ones }), true);
     assert.equal(oneCellPerGroup({ mode: 'heatmap', size, sized: true, groups: ones }), false);
     assert.equal(oneCellPerGroup({ mode: 'dots', size, sized: false, groups: ones }), false, 'No size draws no size to suggest about');
@@ -266,13 +266,13 @@ test('One cell per group: suggested only for dots sized by % expressing, over gr
 
 test('No size: the Size layer select keeps the statistic and lists the layers that can give it (WP-4, decision 31)', () => {
     const kinds = { X: 'signed', logged_counts: 'log', raw_counts: 'counts' };
-    const held = { stat: 'pct_expressing', layer: 'X' };
+    const held = { stat: 'fraction_of_cells', layer: 'X' };
     const list = layerList({ datasetLayers: ['X', 'logged_counts', 'raw_counts'], kinds, stat: held.stat, held });
     assert.deepEqual(list.filter((o) => !o.disabled && !o.lapsed).map((o) => o.value), ['logged_counts', 'raw_counts']);
     const x = list.find((o) => o.value === 'X');
     assert.equal(x.label, 'X (not available)', 'the held layer stays, marked, so the select shows what is held');
     assert.equal(x.lapsed, true);
-    assert.equal(statisticList({ kinds, held }).find((o) => o.value === 'pct_expressing').label, '% expressing (not available)');
+    assert.equal(statisticList({ kinds, held }).find((o) => o.value === 'fraction_of_cells').label, 'Fraction of cells (not available)');
 });
 
 test('the state word follows the snapshot and the drawing', () => {

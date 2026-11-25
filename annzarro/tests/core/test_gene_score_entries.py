@@ -13,7 +13,7 @@ from annzarro.core import gene_score as gs
 from annzarro.core import get_reader
 from annzarro.tests.core.gene_score_store import BACKENDS, LAYOUTS, make_store, wide_matrix, wide_names
 
-CASES = [("zscore_mean", "detection"), ("mean", "detection"), ("sum", "detection"), ("detected", "detection"),
+CASES = [("zscore_mean", "detection"), ("mean", "detection"), ("sum", "detection"), ("fraction_of_genes", "detection"),
          ("fraction_of_total", "detection"), ("control_adjusted", "detection"), ("control_adjusted", "mean")]
 
 

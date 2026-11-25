@@ -38,7 +38,7 @@ function model({ rows = 3, groups = 2, mode = 'dots', ...over } = {}) {
         groups: Array.from({ length: groups }, (_, g) => ({ label: `group ${g}`, n: 100 * (g + 1) })),
         rows: Array.from({ length: rows }, (_, r) => ({ label: `Gene${r}`, section: { index: 0, title: 's' } })),
         color: { id: 'mean|X', stat: 'mean', layer: 'X', scaling: 'none', values: colour, colorscale: 'Reds' },
-        size: { id: 'pct|X', stat: 'pct_expressing', layer: 'X', detectAbove: 0, values: size },
+        size: { id: 'pct|X', stat: 'fraction_of_cells', layer: 'X', detectAbove: 0, values: size },
         height: { same: true, values: colour },
         ...over
     };
@@ -94,7 +94,7 @@ test('"Same as Color": the bars are the colour values; an own height is drawn as
     assert.equal(lines[0], 'Gene0');
     assert.match(lines[1], /^group 0 · Cells: 100$/);
     assert.match(lines[2], /^Mean · X: 1$/);
-    assert.match(lines[3], /^% expressing \(> 0\) · X: 10$/);
+    assert.match(lines[3], /^Fraction of cells \(> 0\) · X: 10$/);
     assert.match(lines[4], /^Height · Sum · counts: 5$/);
 });
 
@@ -142,7 +142,7 @@ test('"Same as Color" heights equal the colour values as displayed, scaling incl
 
 test('a Height source of its own adds a feature only when its layer or threshold is new', () => {
     const color = { stat: 'mean', layer: 'X' };
-    const size = { stat: 'pct_expressing', layer: 'X' };
+    const size = { stat: 'fraction_of_cells', layer: 'X' };
     const base = S.planFeatures({ sections: sections(GENES), color, size }).features.length;
     assert.equal(base, 3);
     assert.equal(S.planFeatures({ sections: sections(GENES), color, size, height: { stat: 'sum', layer: 'X' } }).features.length, 3,
@@ -154,7 +154,7 @@ test('a Height source of its own adds a feature only when its layer or threshold
     assert.deepEqual(counts.features.filter((f) => f.wire.layer === 'counts').map((f) => f.wire.name), GENES);
     assert.ok(counts.rows.every((r) => typeof r.height === 'string'));
     assert.ok(counts.statistics.some((s) => s.stat === 'sum' && s.layer === 'counts'), 'the grouping counts the plot among its users');
-    const above = S.planFeatures({ sections: sections(GENES), color, size, height: { stat: 'pct_expressing', layer: 'X', detect_above: 2 } });
+    const above = S.planFeatures({ sections: sections(GENES), color, size, height: { stat: 'fraction_of_cells', layer: 'X', detect_above: 2 } });
     assert.equal(above.features.length, 6, 'a new threshold on the same layer is a feature per gene too');
 });
 
@@ -171,10 +171,10 @@ test('an own height is unscaled, and the plan with a height on a third layer is 
     const big = Array.from({ length: 10 }, (_, s) => ({ section: { source: `s${s}`, rows: 'genes' },
         genes: Array.from({ length: 2000 }, (_, k) => `G${s}_${k}`), title: `s${s}`, scoreRecipe: () => null }));
     const shape = big.map(() => ({ rows: 2000, genes: 2000 }));
-    const two = S.planFeatures({ sections: big, color: { stat: 'mean', layer: 'X' }, size: { stat: 'pct_expressing', layer: 'X' } });
+    const two = S.planFeatures({ sections: big, color: { stat: 'mean', layer: 'X' }, size: { stat: 'fraction_of_cells', layer: 'X' } });
     assert.deepEqual(M.matrixLimits({ groups: 12, sections: shape, features: two.features.length }), { ok: true });
     // ... and a Height on counts makes them 40,000 (480,000 values): refused
-    const three = S.planFeatures({ sections: big, color: { stat: 'mean', layer: 'X' }, size: { stat: 'pct_expressing', layer: 'X' }, height: { stat: 'sum', layer: 'counts' } });
+    const three = S.planFeatures({ sections: big, color: { stat: 'mean', layer: 'X' }, size: { stat: 'fraction_of_cells', layer: 'X' }, height: { stat: 'sum', layer: 'counts' } });
     assert.deepEqual(M.matrixLimits({ groups: 12, sections: shape, features: three.features.length }),
         { ok: false, reason: 'too_many_values', count: 480000, limit: 400000 });
 });

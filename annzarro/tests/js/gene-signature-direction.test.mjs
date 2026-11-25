@@ -24,7 +24,7 @@ test('the methods that can score down genes are the server\'s', () => {
     const methods = /DOWN_METHODS = \(([^)]*)\)/.exec(py)[1].split(',').map(s => s.trim().replace(/"/g, '')).filter(Boolean);
     assert.deepEqual(methods, [...O.DOWN_METHODS]);
     assert.ok(O.canScoreDown('zscore_mean') && O.canScoreDown('mean') && O.canScoreDown('control_adjusted'));
-    assert.ok(!O.canScoreDown('sum') && !O.canScoreDown('detected') && !O.canScoreDown('fraction_of_total'));
+    assert.ok(!O.canScoreDown('sum') && !O.canScoreDown('fraction_of_genes') && !O.canScoreDown('fraction_of_total'));
 });
 
 test('an old link has no down genes and the switch is off; down genes switch it on', () => {
@@ -144,18 +144,18 @@ test('undo restores both sides', () => {
 
 // ------------------------------------------------------------------ what can be offered
 
-test('with down genes sum, fraction detected and % of total cannot, with the reason, and are disabled where chosen', () => {
+test('with down genes sum, fraction of genes and % of total cannot, with the reason, and are disabled where chosen', () => {
     const choices = (r, kind) => Object.fromEntries(O.scoreMethodChoices({ recipe: r, layer: 'X', kinds: { X: kind } }).map(o => [o.value, o]));
     const by = choices(recipe({ genes: ['A'], down: ['B'] }), 'normalised');
     for (const m of ['zscore_mean', 'mean', 'control_adjusted']) assert.equal(by[m].disabled, false, m);
-    for (const m of ['sum', 'detected', 'fraction_of_total']) {
+    for (const m of ['sum', 'fraction_of_genes', 'fraction_of_total']) {
         assert.equal(by[m].disabled, true, m);
         assert.match(by[m].title, / cannot be computed with down genes: /);
     }
-    assert.notEqual(by.sum.reason, by.detected.reason);
+    assert.notEqual(by.sum.reason, by.fraction_of_genes.reason);
     // without down genes nothing changes
     const plain = choices(recipe({ genes: ['A'] }), 'counts');
-    assert.equal(plain.sum.disabled || plain.detected.disabled, false);
+    assert.equal(plain.sum.disabled || plain.fraction_of_genes.disabled, false);
     assert.equal(O.gradeOption('sum', 'X', 'normalised').grade, 'ok');
     assert.equal(O.gradeOption('sum', 'X', 'normalised', true).down, true);
 });

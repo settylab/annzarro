@@ -811,7 +811,7 @@ def test_a_score_column_on_a_table_the_memory_guard_refuses_asks_for_nothing_unt
 
 ADD_ROW = f"#gene-score-content-{TID} .az-score-group[data-entity='{SIG}']"
 # METHOD_INFO's order, each with its symbol (utils/aggregation-symbols.js SCORE_SYMBOLS)
-METHOD_SYMBOLS = [("zscore_mean", "z"), ("mean", "x"), ("sum", "Σ"), ("control_adjusted", "Δ"), ("detected", "n/N"), ("fraction_of_total", "%")]
+METHOD_SYMBOLS = [("zscore_mean", "z"), ("mean", "x"), ("sum", "Σ"), ("control_adjusted", "Δ"), ("fraction_of_genes", "g⁺"), ("fraction_of_total", "%")]
 
 
 def test_add_row_is_layer_then_aggregation_button(page, served):
@@ -826,11 +826,11 @@ def test_add_row_is_layer_then_aggregation_button(page, served):
     assert order == ["az-score-add-layer", "az-score-add-agg", "az-score-add-btn"], order
     entries = add_row_entries(page, ADD_ROW)
     assert [(e["v"], e["sym"]) for e in entries] == METHOD_SYMBOLS
-    assert [e["name"] for e in entries] == ["Z-score mean", "Mean", "Sum", "Control-adjusted", "Fraction detected", "% of total"]
+    assert [e["name"] for e in entries] == ["Z-score mean", "Mean", "Sum", "Control-adjusted", "Fraction of genes", "% of total"]
     # on X the shares need counts: greyed with the reason, in the menu
     page.select_option(f"{ADD_ROW} .az-score-add-layer", "X")
     on_x = {e["v"]: e for e in add_row_entries(page, ADD_ROW)}
-    assert on_x["detected"]["off"] and on_x["detected"]["title"], on_x["detected"]
+    assert on_x["fraction_of_genes"]["off"] and on_x["fraction_of_genes"]["title"], on_x["fraction_of_genes"]
     assert not on_x["mean"]["off"]
     # the button holds the chosen method's symbol and says it
     pick_add_method(page, ADD_ROW, "mean")

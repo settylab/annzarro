@@ -13,12 +13,12 @@
  * **One request, each part once (CXG-9, CXG-18, OD 15).** `planFeatures` names every feature the drawing reads by the
  * key the group store caches it under (the feature as the request carries it), so a gene read by two sections, by its
  * own row and by a one-row section, or by Color and Size on one layer, is one feature, asked for once. A statistic that
- * uses no threshold reads the features of one that does on the same layer, so mean and % expressing share them.
+ * uses no threshold reads the features of one that does on the same layer, so mean and fraction of cells share them.
  *
  * **One row (aggregation-unify-080.md 11).** A one-row section is the set treated as one gene: it has no setting, and each
  * channel shows it by one fixed rule per statistic (cell-gene-model.js ROW_RULE): the statistics of the gene rows combined
- * (no request beyond them), the set's z-score mean score, or, under % expressing, the share of cells expressing ANY gene
- * (the source's `detected` score on the channel's threshold). The layer and the threshold are the channel's.
+ * (no request beyond them), the set's z-score mean score, or, under fraction of cells, the share of cells expressing ANY gene
+ * (the source's `fraction_of_genes` score on the channel's threshold). The layer and the threshold are the channel's.
  *
  * Words the user reads come from utils/vocabulary.js where it has them (statistics, aggregations, headings, help).
  */
@@ -27,7 +27,7 @@ import {
     rowRule, combineRows, SCALINGS, statisticColumn,
     noExpressingCells, pooledReference, scale, scalingGrade
 } from '../../utils/cell-gene-model.js';
-import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
+import { STATISTIC_IDS, canonicalStatistic, isOldStatisticId } from '../../utils/cell-grouping.js';
 import { MODE_INFO } from '../../utils/cell-gene-model.js';
 import { stableStringify } from '../../utils/url-history.js';
 import { cellGroupType } from '../../utils/cell-group-source.js';
@@ -47,9 +47,9 @@ const MODES = Object.freeze(MODE_INFO.map((m) => m.value));
 const ROWS = Object.freeze(['genes', 'set']);
 const DEFAULT_LAYER = 'X';
 const DEFAULT_COLOR = Object.freeze({ stat: 'mean', layer: DEFAULT_LAYER });
-const DEFAULT_SIZE = Object.freeze({ stat: 'pct_expressing', layer: DEFAULT_LAYER });
+const DEFAULT_SIZE = Object.freeze({ stat: 'fraction_of_cells', layer: DEFAULT_LAYER });
 /** The statistics that compare each cell with an expression threshold. */
-const THRESHOLD_STATS = Object.freeze(['pct_expressing', 'mean_expressing']);
+const THRESHOLD_STATS = Object.freeze(['fraction_of_cells', 'mean_expressing']);
 
 /** The statistic whose gene rows are z-scored by the server, and its clip: the signature's default (gene_score.DEFAULT_CLIP). */
 const ZSCORE = 'zscore_mean';
@@ -70,7 +70,8 @@ const fmt = (n) => Number(n).toLocaleString('en-US');
 /** A statistic setting `{stat, layer, detect_above?}`: known fields cleaned, others kept. */
 function cleanStatistic(raw, fallback, what, problems) {
     if (!isObject(raw)) return { ...fallback };
-    const out = { ...raw };
+    const out = { ...raw, stat: canonicalStatistic(raw.stat) };
+    raw = out;
     if (!STATISTIC_IDS.includes(raw.stat)) {
         problems.push(`${what}: unknown statistic ${JSON.stringify(raw.stat)}, ${fallback.stat} used`);
         out.stat = fallback.stat;
@@ -192,6 +193,12 @@ export function normalizeCellGene(raw) {
     const src = isObject(raw) ? raw : {};
     const problems = [];
     const config = { ...src, version: 1 };
+    // a statistic read from an old id (a percentage, 0 to 100) was drawn on a style stored in those units: a size range, a
+    // colour range or centre, a height range. They are dropped, silently, and the plot draws on its defaults (13.3)
+    const oldOf = (channel) => isObject(channel) && isOldStatisticId(channel.stat);
+    if (oldOf(src.size)) { delete config.dotMin; delete config.dotMax; }
+    if (oldOf(src.color)) { delete config.limits; delete config.center; if (!isObject(src.height)) delete config.heightLimits; }
+    if (oldOf(src.height)) delete config.heightLimits;
     if (!MODES.includes(src.mode)) {
         if ('mode' in src) problems.push(`mode ${JSON.stringify(src.mode)} is not dots or heatmap, dots used`);
         config.mode = 'dots';
@@ -425,7 +432,7 @@ export function tooManyGenesText(title, total) {
 
 const fmtValue = (v) => String(Number(Number(v).toPrecision(4)));
 
-/** A statistic as a legend names it: "% expressing (> 0) · counts" (draw.js statisticTitle says the same). */
+/** A statistic as a legend names it: "fraction of cells (> 0) · counts" (draw.js statisticTitle says the same). */
 function statisticName({ stat, layer, detect_above: t }) {
     const threshold = THRESHOLD_STATS.includes(stat) ? ` (> ${fmtValue(isNumber(t) ? t : 0)})` : '';
     return `${CG.statistic[stat]}${threshold}${stat !== 'count' && layer ? ` · ${layer}` : ''}`;
@@ -440,7 +447,7 @@ function stepName(genes) {
 
 /**
  * What one value of a one-row section is under each channel, in a sentence (the section's tooltip): "Color: the mean of the
- * genes' means. Size: % of cells expressing at least one gene." With down genes the mean is the signature's score.
+ * genes' means. Size: the fraction of cells expressing at least one gene." With down genes the mean is the signature's score.
  * @param {{color: Object, size: ?Object}} channels
  * @param {number} [down] - the section's down genes in the dataset
  */
@@ -463,7 +470,7 @@ export const needsThreshold = (stat) => THRESHOLD_STATS.includes(stat);
  *   usable genes now (`down` of them down genes); `empty` says why it has none; `scoreRecipe(method, layer, extra?)` gives
  *   the score route's recipe of the source read by that method on that layer (null when it cannot be read now); `extra`
  *   `{detect_above, anyGene: true}` asks for the "any gene" recipe: the up genes (the down genes when it has no up
- *   ones) on `detected` at that threshold
+ *   ones) on `fraction_of_genes` at that threshold
  * @param {{stat: string, layer?: string, detect_above?: number}} input.color
  * @param {{stat: string, layer?: string, detect_above?: number}|null} input.size - null when the plot draws no size
  * @param {{stat: string, layer?: string, detect_above?: number}|null} [input.height] - the 3D bars' own measure
@@ -512,10 +519,10 @@ export function planFeatures({ sections, color, size, height = null, threshold =
         const layer = spec.layer || DEFAULT_LAYER;
         return scoreWire(entry.scoreRecipe(genes, layer), genes, layer);
     };
-    // % expressing of a score row: the share of cells expressing any gene, `detected` above 0 at the channel's threshold (10.1a)
+    // fraction of cells of a score row: the share of cells expressing any gene, `fraction_of_genes` above 0 at the channel's threshold (10.1a)
     const anyGene = (spec, entry) => {
         const layer = spec.layer || DEFAULT_LAYER;
-        return scoreWire(entry.scoreRecipe('detected', layer, { detect_above: thresholdFor('pct_expressing', spec), anyGene: true }), 'detected', layer);
+        return scoreWire(entry.scoreRecipe('fraction_of_genes', layer, { detect_above: thresholdFor('fraction_of_cells', spec), anyGene: true }), 'fraction_of_genes', layer);
     };
     const stat = (spec, genes) => {
         if (!spec) return null;

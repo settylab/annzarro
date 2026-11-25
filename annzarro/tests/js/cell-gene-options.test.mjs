@@ -55,7 +55,7 @@ function compose(fields = {}, { rows = 6, split = 3, reply = reply2(), recipe = 
     const config = normalizeCellGene({
         version: 1, mode: 'dots', cellAxis: { type: 'obs', key: 'cell_type' },
         sections: [{ source: 'S1', rows: 'genes' }, { source: 'S2', rows: 'genes' }],
-        color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'logged' }, ...fields
+        color: { stat: 'mean', layer: 'logged' }, size: { stat: 'fraction_of_cells', layer: 'logged' }, ...fields
     }).config;
     const G = reply.groups.length;
     const colour = values || Float64Array.from({ length: rows * G }, (_, i) => (i % 7) / 2);
@@ -72,7 +72,7 @@ function compose(fields = {}, { rows = 6, split = 3, reply = reply2(), recipe = 
         color: { id: 'mean|logged', stat: 'mean', layer: 'logged', scaling: scaling || config.scale || 'none', ...O.barSettings(config),
             ...extras.color, values: colour, raw: colour },
         size: config.mode !== 'dots' ? { none: '' }
-            : { id: 'pct|logged', stat: 'pct_expressing', layer: 'logged', detectAbove: 0, ...extras.size, values: sized },
+            : { id: 'pct|logged', stat: 'fraction_of_cells', layer: 'logged', detectAbove: 0, ...extras.size, values: sized },
         legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline, dotOpacity: extras.dotOpacity
     };
     return { config, model, figure: D.buildFigure(model, LIGHT), extras };
@@ -148,7 +148,7 @@ test('5.3 layer: the color bar names the statistic and the layer it reads', () =
 
 test('5.3 expression_cutoff: the Size threshold Plot Options stores is what the size statistic is read with', () => {
     // Plot Options writes it as size.detect_above (the browser test drives the box); empty, Size reads Color's
-    const config = normalizeCellGene({ size: { stat: 'pct_expressing', layer: 'logged', detect_above: 0.5 } }).config;
+    const config = normalizeCellGene({ size: { stat: 'fraction_of_cells', layer: 'logged', detect_above: 0.5 } }).config;
     const plan = planFeatures({ sections: [{ section: { source: 'S1', rows: 'genes' }, genes: ['G1'], title: 'S1' }],
         color: config.color, size: config.size, threshold: 0 });
     assert.ok(plan.features.some((f) => f.wire.detect_above === 0.5), 'the gene is asked with the size threshold');
@@ -156,7 +156,7 @@ test('5.3 expression_cutoff: the Size threshold Plot Options stores is what the 
     model.size.detectAbove = 0.5;
     const fig = D.buildFigure(model, LIGHT);
     // the title wraps to the legend column at 900 px; read as one line it names the threshold
-    assert.ok(fig.layout.annotations.some((a) => a.text.split('<br>').join(' ') === '% expressing (> 0.5) · logged'), 'the size legend names the threshold');
+    assert.ok(fig.layout.annotations.some((a) => a.text.split('<br>').join(' ') === 'Fraction of cells (> 0.5) · logged'), 'the size legend names the threshold');
 });
 
 test('5.3 mean_only_expressed: a group with no expressing cell is noted in the table and the CSV', () => {
@@ -186,8 +186,8 @@ test('5.3 dot_color_df, dot_size_df: Color and Size are separate columns, each w
     model.size.layer = 'counts';
     const head = longRows(O.tableOf(model))[0];
     assert.deepEqual(head, [W.csv.section, W.csv.row, W.csv.group, W.csv.cells,
-        columnHeader({ stat: 'mean', layer: 'logged', scaling: 'none' }), columnHeader({ stat: 'pct_expressing', layer: 'counts', detectAbove: 0, scaling: 'none' })]);
-    assert.equal(head[5], '% expressing (> 0) · counts · not scaled', 'a thresholded column names its threshold (WP-4)');
+        columnHeader({ stat: 'mean', layer: 'logged', scaling: 'none' }), columnHeader({ stat: 'fraction_of_cells', layer: 'counts', detectAbove: 0, scaling: 'none' })]);
+    assert.equal(head[5], 'Fraction of cells (> 0) · counts · not scaled', 'a thresholded column names its threshold (WP-4)');
     // the CSV and the table are one specification
     assert.equal(longCsv(O.tableOf(model)).split('\n')[0], head.join(','));
 });
@@ -391,7 +391,7 @@ test('legend titles fit the legend column of a narrow figure, wrapping at spaces
         for (const line of lines) assert.ok(line.replace(/&amp;/g, '&').replace(/&lt;/g, '<').length <= chars, `"${line}" is over ${chars} characters`);
     }
     // the size legend's title wraps whole: nothing is cut, so its words read back unchanged
-    const size = fig.layout.annotations.find((a) => a.text.split('<br>').join(' ') === '% expressing (> 0) · logged');
+    const size = fig.layout.annotations.find((a) => a.text.split('<br>').join(' ') === 'Fraction of cells (> 0) · logged');
     assert.ok(size, 'the size legend title wraps at spaces and loses nothing');
     assert.equal(size.hovertext, undefined);
     assert.ok(size.text.split('<br>').some((l) => l.includes('(> 0)')), `a bracketed part never breaks: ${size.text}`);

@@ -23,12 +23,12 @@ const recipeOf = (name) => G.normalizeGrouping({ version: 1, ...expected.groupin
 
 // --- the golden configs (R1): read unchanged ------------------------------------------------------------------------
 
-test('a grouping golden config is read unchanged: nothing added, nothing dropped, nothing reordered', () => {
+test('a grouping golden config is read unchanged: nothing added, nothing dropped, nothing reordered (an old statistic id is read as the new one)', () => {
     for (const name of ['cell_grouping_1', 'cell_grouping_3', 'cell_grouping_6_named40']) {
         const raw = golden(name);
         const { recipe, problems } = G.normalizeGrouping(raw);
         assert.deepEqual(problems, [], name);
-        assert.equal(JSON.stringify(recipe), JSON.stringify(raw), name);
+        assert.equal(JSON.stringify(recipe), JSON.stringify(raw).replace(/pct_expressing/g, 'fraction_of_cells'), name);
     }
 });
 
@@ -44,9 +44,9 @@ test('a partitioning golden config of every kind of source is read unchanged', (
 });
 
 test('the golden configs of the other schemas use only ids and field names the plan froze', () => {
-    const STAT = ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count'];
+    const STAT = ['mean', 'fraction_of_cells', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count'];     // the plan froze `pct_expressing`; it is read as `fraction_of_cells`
     const MEASURE_STAT = ['mean', 'sum', 'pct_above', 'sd', 'zscore'];
-    const AGG = ['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_pct_expressing', 'score_mean', 'score_pct_above'];
+    const AGG = ['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_fraction_of_cells', 'score_mean', 'score_pct_above'];
     const SCALING = ['none', 'var', 'group', 'z_groups', 'z_pooled'];
     const MODES = ['bar', 'histogram', 'hist2d', 'density', 'density2d', 'pie', 'heatmap', 'venn', 'upset'];
     for (const name of ['cell_gene_1', 'cell_gene_6']) {

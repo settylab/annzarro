@@ -1,7 +1,7 @@
 /**
  * SO-7 of decision 34: Methods ▾ on the Cell Grouping and the Cell Table (offered-removal-080.md 10.2).
  *
- * - The parameters of the statistics are one table (METHOD_PARAMS): Expressed above, used by % expressing and mean of
+ * - The parameters of the statistics are one table (METHOD_PARAMS): Expressed above, used by Fraction of cells and mean of
  *   expressing cells, listed after the last of them.
  * - A grouping's Methods fields round-trip through its recipe (omitted at 0, outside the grouping's hash); a Cell
  *   Table's through its configuration's `methods` (omitted at default).
@@ -28,11 +28,11 @@ test('the parameter table holds Expressed above, used by the two thresholded sta
     const [t] = G.METHOD_PARAMS;
     assert.equal(t.label, 'Expressed above');
     assert.equal(t.default, 0);
-    assert.deepEqual(t.users, ['pct_expressing', 'mean_expressing']);
+    assert.deepEqual(t.users, ['fraction_of_cells', 'mean_expressing']);
     assert.equal(t.after, 'mean_expressing');
     assert.ok(G.STATISTIC_INFO.some((m) => m.value === t.after), 'listed under a statistic of the table');
-    assert.equal(t.line({ detect_above: 2 }), 'Used by % expressing and mean of expressing cells. Now: above 2.');
-    assert.equal(t.line({}), 'Used by % expressing and mean of expressing cells. Now: above 0.');
+    assert.equal(t.line({ detect_above: 2 }), 'Used by fraction of cells and mean of expressing cells. Now: above 2.');
+    assert.equal(t.line({}), 'Used by fraction of cells and mean of expressing cells. Now: above 0.');
 });
 
 test('a grouping\'s Methods fields round-trip through its recipe, omitted at 0 and outside its hash', () => {
@@ -62,38 +62,38 @@ test('a Cell Table\'s Methods fields round-trip through its configuration, omitt
 
 test('"Used by" names each reading panel with the statistics and layers it reads; viewers are not users', () => {
     const handles = [
-        { kind: 'plot', panelId: 'cg1', option: { statistics: [{ stat: 'pct_expressing', layer: 'counts' }, { stat: 'mean', layer: 'logged' }, { stat: 'count' }] } },
-        { kind: 'plot', panelId: 'cg1', option: { statistics: [{ stat: 'pct_expressing', layer: 'counts' }] } },
+        { kind: 'plot', panelId: 'cg1', option: { statistics: [{ stat: 'fraction_of_cells', layer: 'counts' }, { stat: 'mean', layer: 'logged' }, { stat: 'count' }] } },
+        { kind: 'plot', panelId: 'cg1', option: { statistics: [{ stat: 'fraction_of_cells', layer: 'counts' }] } },
         { kind: 'inspect', panelId: 'grp', option: { statistics: [{ stat: 'mean', layer: 'X' }] } },
         { kind: 'plot', panelId: 'cp2', option: {} }
     ];
     const titles = { cg1: 'Cell-Gene Plot 1', cp2: 'Cell Count Plot 2' };
     assert.deepEqual(G.methodsUsedBy(handles, (id) => titles[id] || ''),
-        ['Cell-Gene Plot 1 (% expressing · counts, mean · logged, cell count)', 'Cell Count Plot 2']);
+        ['Cell-Gene Plot 1 (fraction of cells · counts, mean · logged, cell count)', 'Cell Count Plot 2']);
     assert.deepEqual(G.methodsUsedBy([], () => ''), []);
 });
 
 test('a measure with no threshold of its own plans at the grouping\'s value; with one stored, at that one', () => {
     const sections = [{ section: { source: 's1', rows: 'genes' }, genes: ['G1', 'G2'], title: 'Sig', scoreRecipe: () => null }];
     const color = { stat: 'mean', layer: 'logged' };
-    const follows = S.planFeatures({ sections, color, size: { stat: 'pct_expressing', layer: 'counts' }, threshold: 2 });
+    const follows = S.planFeatures({ sections, color, size: { stat: 'fraction_of_cells', layer: 'counts' }, threshold: 2 });
     const counts = (plan) => plan.features.filter((f) => f.wire.layer === 'counts').map((f) => f.wire.detect_above);
     assert.deepEqual(counts(follows), [2, 2]);
-    const own = S.planFeatures({ sections, color, size: { stat: 'pct_expressing', layer: 'counts', detect_above: 0.5 }, threshold: 2 });
+    const own = S.planFeatures({ sections, color, size: { stat: 'fraction_of_cells', layer: 'counts', detect_above: 0.5 }, threshold: 2 });
     assert.deepEqual(counts(own), [0.5, 0.5], 'the override wins');
-    const drawn = S.withGroupingThreshold({ color, size: { stat: 'pct_expressing', layer: 'counts' } }, 2);
+    const drawn = S.withGroupingThreshold({ color, size: { stat: 'fraction_of_cells', layer: 'counts' } }, 2);
     assert.equal(drawn.size.detect_above, 2, 'the legend names the threshold in force');
 });
 
 test('the override box\'s model: empty while it follows the grouping, which it names; the wording is the vocabulary\'s', () => {
     const base = { datasetLayers: ['X', 'counts'], kinds: { X: 'signed', counts: 'counts' } };
-    const follows = C.measureModel({ ...base, spec: { stat: 'pct_expressing', layer: 'counts' }, threshold: 1, grouping: { title: 'Grouping 1', value: 1 } });
+    const follows = C.measureModel({ ...base, spec: { stat: 'fraction_of_cells', layer: 'counts' }, threshold: 1, grouping: { title: 'Grouping 1', value: 1 } });
     assert.equal(follows.threshold, 1);
     assert.equal(follows.own, null);
     assert.deepEqual(follows.grouping, { title: 'Grouping 1', value: 1 });
-    const own = C.measureModel({ ...base, spec: { stat: 'pct_expressing', layer: 'counts', detect_above: 3 }, threshold: 3, grouping: { title: 'Grouping 1', value: 1 } });
+    const own = C.measureModel({ ...base, spec: { stat: 'fraction_of_cells', layer: 'counts', detect_above: 3 }, threshold: 3, grouping: { title: 'Grouping 1', value: 1 } });
     assert.equal(own.own, 3);
-    const obs = C.measureModel({ ...base, spec: { stat: 'pct_expressing', layer: 'counts' }, threshold: 0 });
+    const obs = C.measureModel({ ...base, spec: { stat: 'fraction_of_cells', layer: 'counts' }, threshold: 0 });
     assert.equal(obs.grouping, null, 'an obs axis has no grouping to follow');
     const W = VOCABULARY.cellGene.sources;
     assert.equal(W.thresholdAuto(1), 'auto (grouping: 1)');
@@ -102,6 +102,6 @@ test('the override box\'s model: empty while it follows the grouping, which it n
 
 test('a new plot\'s Size stores no threshold: it follows the grouping (decision 35)', () => {
     const m = G.defaultMeasures(['X', 'logged', 'counts'], { X: 'signed', logged: 'log', counts: 'counts' });
-    assert.deepEqual(m.size, { stat: 'pct_expressing', layer: 'counts' });
+    assert.deepEqual(m.size, { stat: 'fraction_of_cells', layer: 'counts' });
     assert.ok(!('detect_above' in m.color));
 });

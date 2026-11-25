@@ -227,12 +227,12 @@ export function matrixTag(groups, rows, missing) {
 }
 
 /**
- * Whether to suggest a heatmap (CXG-27): dots sized by % expressing over groups of one cell each, where the size can
+ * Whether to suggest a heatmap (CXG-27): dots sized by fraction of cells over groups of one cell each, where the size can
  * only be 0 or 100.
  * @param {{mode: string, size: (Object|null), sized: boolean, groups: Array<{n: number}>}} opts - `sized`: the size is drawn
  */
 export function oneCellPerGroup({ mode, size, sized, groups }) {
-    if (mode !== 'dots' || !sized || !size || size.stat !== 'pct_expressing' || !groups.length) return false;
+    if (mode !== 'dots' || !sized || !size || size.stat !== 'fraction_of_cells' || !groups.length) return false;
     for (const g of groups) if (g.n !== 1) return false;
     return true;
 }

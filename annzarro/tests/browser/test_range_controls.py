@@ -3,7 +3,7 @@ scale in one box style. An unset box reads the value drawn, never empty; a set b
 reset (the arrow) returns it to auto in one undo step.
 
 1.  Cell-Gene colour: Min, Max and Center boxes reach cmin, cmax; auto with the drawn value; reset, then Undo.
-2.  Cell-Gene size (dots): "Size min (% expressing)" and "Size max (% expressing)", stored as dotMin and dotMax; the dots' sizes follow.
+2.  Cell-Gene size (dots): "Size min (Fraction of cells)" and "Size max (Fraction of cells)", stored as dotMin and dotMax; the dots' sizes follow.
 3.  Cell-Gene 3D height: new Height min and max boxes limit the bars; reset, then Undo.
 4.  Count Plot colour: Min, Max and Center, auto with the drawn value, reset, then Undo.
 5.  An old link's fields (`limits`, `dotMin`, `dotMax`) are read.
@@ -100,7 +100,7 @@ def test_cell_gene_colour_boxes_reach_the_figure_and_reset_to_auto_with_undo(pag
 def test_the_size_boxes_are_named_by_the_statistic_and_keep_the_stored_fields(page, served):
     _gene(page, served)
     labels = page.eval_on_selector_all(f"{POP} .az-range__label", "els => els.map(e => e.textContent)")
-    assert "Size min (% expressing)" in labels and "Size max (% expressing)" in labels, labels
+    assert "Size min (Fraction of cells)" in labels and "Size max (Fraction of cells)" in labels, labels
     assert not any("% at the" in t for t in labels), labels
     sizes = "(s) => JSON.stringify(Array.from(document.querySelector(s).data[0].marker.size))"
     first = page.evaluate(sizes, PLOT)

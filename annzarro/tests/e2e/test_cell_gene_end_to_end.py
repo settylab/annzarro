@@ -4,7 +4,7 @@ Nothing is stubbed: a real server and store. The user opens **Cell Grouping** (c
 genes) and **Cell-Gene Plot** from "Create New Panel", takes the grouping as the groups and the signature as the genes,
 and the plot is drawn from ``POST /api/v1/data/cell_groups``. A new plot reads Color as the mean of the log-normalised
 layer on a grouping axis too (decision 24, kept by decision 32), so every group's mean of each gene on ``logged``, in the
-heatmap and in the dots' colours, is compared with values computed here from the store's own arrays. % expressing is
+heatmap and in the dots' colours, is compared with values computed here from the store's own arrays. Fraction of cells is
 not asserted here.
 
 Needs Playwright with Chromium; skipped without it, or failed when ANNZARRO_REQUIRE_BROWSER=1.

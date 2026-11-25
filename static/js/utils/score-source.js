@@ -35,10 +35,13 @@ import { actions } from './source-actions.js';
 import { createHostBinding, isHover, isVisible, panelIdOf, PENDING } from './host-binding.js';
 import { VOCABULARY } from './vocabulary.js';
 import { registerSource, subKeyOf, layerOf, SourceUnavailable } from './source-registry.js';
+
+/** A score's method (its `column`) under its current id: a link from before `detected` was renamed holds the old one. */
+const scoreSub = (setting) => canonicalMethod(subKeyOf(setting));
 import { pinScoreLayers } from './score-column.js';
 import { DEFAULT_METHOD, effectiveDownWeight } from './gene-signature.js';
 import { SCORE_SYMBOLS } from './aggregation-symbols.js';
-import { DEFAULT_INPUT, METHODS, METHOD_INFO, SIGNATURE_MODEL, methodShort } from './signature-options.js';
+import { DEFAULT_INPUT, METHODS, METHOD_INFO, SIGNATURE_MODEL, methodShort, canonicalMethod } from './signature-options.js';
 import { legacyPair } from './options-model.js';
 import { createSourceAdapter, entityLabel, isSourceType, kindOfType, optionFieldsOf, scoreKeyOptions } from './score-source-panels.js';
 import { findCycle, TableResolver } from './table-resolver.js';
@@ -161,7 +164,7 @@ export function scoreTitle(setting) {
 
 /** The name a consumer shows for a score: the source's title, the method when it is not the default, the layer when it is not the source's own. */
 export function scoreLabel(setting) {
-    const sub = subKeyOf(setting);
+    const sub = scoreSub(setting);
     const layer = layerOf(setting);
     const parts = [scoreTitle(setting)];
     if (sub && sub !== DEFAULT_METHOD) parts.push(SUB_LABELS[sub] || sub);
@@ -176,7 +179,7 @@ export function scoreLabel(setting) {
  */
 export function scoreLabelLines(setting) {
     const panel = sourcePanel(setting && setting.key);
-    const sub = subKeyOf(setting);
+    const sub = scoreSub(setting);
     // down genes weighed by side (not the default) change the numbers, so the name says so wherever the score leaves the app
     const recipe = panel && typeof panel.getRecipe === 'function' ? panel.getRecipe() : null;
     const by = recipe && effectiveDownWeight(recipe, sub) === 'side' ? ', each side weighs equally' : '';
@@ -238,7 +241,7 @@ function stillUsed(rec) {
     // a score is no hover line any more (decision 32)
     if (isHover(rec.role)) return false;
     const s = cfg[rec.role];
-    return !!(s && s.type === SCORE_TYPE && s.key === rec.sigId && subKeyOf(s) === rec.sub && layerOf(s) === (rec.layer || ''));
+    return !!(s && s.type === SCORE_TYPE && s.key === rec.sigId && scoreSub(s) === rec.sub && layerOf(s) === (rec.layer || ''));
 }
 
 /** Draw the panel of a host again: the score it drew changed. */
@@ -280,14 +283,14 @@ function binding() {
         _binding = createHostBinding({
             id: PLOT_PROVIDER,
             open: (host, role, setting, onChange) => {
-                const sub = subKeyOf(setting);
+                const sub = scoreSub(setting);
                 const panelId = panelIdOf(host);
                 const handle = scores().sources.watch(setting.key, {
                     kind: 'plot', host, role, sub, layer: setting.layer || null, dependant: panelId, visible: () => isVisible(host), onChange
                 });
                 return { sigId: setting.key, sub, layer: setting.layer || null, handle, consumer: { kind: 'plot', role, panelId, host } };
             },
-            matches: (rec, setting) => rec.sigId === setting.key && rec.sub === subKeyOf(setting) && (rec.layer || '') === layerOf(setting),
+            matches: (rec, setting) => rec.sigId === setting.key && rec.sub === scoreSub(setting) && (rec.layer || '') === layerOf(setting),
             describe: describeScore,
             stillUsed,
             // drawn without a value, its strip says "not ready yet", "not available" or "not in this dataset": the
@@ -538,7 +541,7 @@ const WHOLE_MATRIX_NOTE = 'Reads the whole matrix once.';
 /** The layer a setting reads: its own, else (a link made before layers were stored) the source's input. */
 const heldLayer = (setting) => layerOf(setting) || sourceInput(setting && setting.key) || DEFAULT_INPUT;
 /** The method a setting reads: its column when that is a method, else the default (an empty column). */
-const heldMethod = (setting) => (METHODS.includes(subKeyOf(setting)) ? subKeyOf(setting) : DEFAULT_METHOD);
+const heldMethod = (setting) => (METHODS.includes(scoreSub(setting)) ? scoreSub(setting) : DEFAULT_METHOD);
 
 /** One select entry of a graded choice: disabled with its reason as title; a costly method says so. */
 function entryOf(c, costly = false) {
@@ -596,7 +599,7 @@ export function scoreStartPair(id) {
 }
 
 /** Whether a setting holds no score choice of its own yet: no method (a column left over from another source) and no layer. */
-const holdsNoPair = (setting) => !METHODS.includes(setting.column) && !setting.layer;
+const holdsNoPair = (setting) => !METHODS.includes(canonicalMethod(setting.column)) && !setting.layer;
 
 /**
  * The method select of a gene score (the registry's subKeyMenu) and the entry that is chosen, without changing
@@ -662,7 +665,7 @@ const scoreTable = {
     tab: VOCABULARY.sourceType.score,
     tabOrder: 10,
     watch: (column, { host, visible, onChange }) => scores().sources.watch(column.key, {
-        kind: 'table', sub: subKeyOf(column), layer: column.layer || '', host, role: 'column', visible, onChange
+        kind: 'table', sub: scoreSub(column), layer: column.layer || '', host, role: 'column', visible, onChange
     }),
     visibilityChanged: () => scores().sources.visibilityChanged(),
     update: (column) => scores().sources.update(column.key),

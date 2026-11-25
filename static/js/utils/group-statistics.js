@@ -28,8 +28,8 @@ export const STATISTIC_INFO = Object.freeze([
         definition: 'Each gene scaled to mean 0 and SD 1 over all cells of the dataset (clipped at ±10), then averaged over the group\'s cells. The same number as a one-gene signature\'s z-score mean.' },
     { value: 'mean', label: NAME.mean, menu: 'mean', needs: [], unit: 'layer units',
         definition: 'Average over the group\'s cells, zeros included.' },
-    { value: 'pct_expressing', label: NAME.pct_expressing, menu: '% expressing', needs: ['detect_above'], unit: '0 to 100',
-        definition: 'Share of the group\'s cells above the threshold, 0 to 100.' },
+    { value: 'fraction_of_cells', label: NAME.fraction_of_cells, menu: 'fraction of cells', needs: ['detect_above'], unit: '0 to 1',
+        definition: 'Share of the group\'s cells in which the gene is above Expressed above, from 0 to 1.' },
     { value: 'mean_expressing', label: NAME.mean_expressing, menu: 'mean of expressing cells', needs: ['detect_above'], unit: 'layer units',
         definition: 'Average over the cells above the threshold.' },
     { value: 'sum', label: NAME.sum, menu: 'sum', needs: [], unit: 'layer units',
@@ -40,18 +40,18 @@ export const STATISTIC_INFO = Object.freeze([
 
 /** The statistics a new plot starts on, and what an old link's empty `offered` meant (SHR-26). */
 // export-unused-ok: consumed by X3a (a new plot's first statistics)
-export const DEFAULT_STATISTICS = Object.freeze(['mean', 'pct_expressing']);
+export const DEFAULT_STATISTICS = Object.freeze(['mean', 'fraction_of_cells']);
 /** The statistic every menu lists after the table: it reads no feature and no layer. */
 // export-unused-ok: consumed by X3a and C2a (cell count is in every menu)
 export const CELL_COUNT = 'count';
 const DEFAULT_LAYER = 'X';
 const THRESHOLD_USERS = STATISTIC_INFO.filter((m) => m.needs.includes('detect_above')).map((m) => m.value);
 /** The statistic a dot plot's size starts on (SHR-27). */
-const SIZE_STATISTIC = 'pct_expressing';
+const SIZE_STATISTIC = 'fraction_of_cells';
 /** The statistics that follow how deeply a cell was sequenced, on raw counts. */
 const DEPTH_STATISTICS = Object.freeze(['zscore_mean', 'mean', 'sum', 'sd']);
 
-/** "% expressing cannot be computed on 'X': it has negative values. Choose a layer." (SHR-27) */
+/** "fraction of cells cannot be computed on 'X': it has negative values. Choose a layer." (SHR-27) */
 // export-unused-ok: consumed by X3a (the control says it where a size would have been)
 export function negativeValuesSentence(stat, layer) {
     return `${REASON.cannotOn(NAME[stat], quoted(layer), 'it has negative values.')} Choose a layer.`;
@@ -142,7 +142,7 @@ export function methodsSummary(fields) {
 }
 
 /**
- * Who reads a source's statistics, one entry per consumer panel: "Cell-Gene Plot 1 (% expressing · counts, mean · logged)".
+ * Who reads a source's statistics, one entry per consumer panel: "Cell-Gene Plot 1 (fraction of cells · counts, mean · logged)".
  * @param {Array<{kind: string, panelId?: string, option?: {statistics?: Array<{stat: string, layer?: string}>}}>} handles
  * @param {(panelId: string) => string} titleOf - a panel's title ('' for one not found)
  * @returns {string[]}
@@ -169,7 +169,7 @@ export function methodsUsedBy(handles, titleOf) {
 // export-unused-ok: the `source` of options-model.js's free forms (methodChoices, layerChoices, pairAfter); Node tests read it
 export const GROUP_STATISTICS_MODEL = createOptionsModel({
     methods: STATISTIC_INFO, defaultMethod: 'mean', defaultOffered: DEFAULT_STATISTICS, defaultLayer: DEFAULT_LAYER,
-    paramDefaults: { pct_expressing: { detect_above: 0 }, mean_expressing: { detect_above: 0 } },
+    paramDefaults: { fraction_of_cells: { detect_above: 0 }, mean_expressing: { detect_above: 0 } },
     sameParam: (key, have, want) => (have === undefined ? 0 : have) === want,
     paramValue: (recipe, key) => (key === 'detect_above' ? thresholdOf(recipe) : recipe[key]),
     grade: (method, layer, kind) => statisticGrade(method, layer, kind),
@@ -221,7 +221,7 @@ export function statisticChoices({ consumer, layout, ...rest } = {}) {
 }
 
 /**
- * Where a dot plot's size starts (SHR-27): % expressing on X (or the layer picked), or nothing and the sentence that says
+ * Where a dot plot's size starts (SHR-27): fraction of cells on X (or the layer picked), or nothing and the sentence that says
  * why when that layer cannot give it. Nothing is drawn until the user picks another layer. Every layer is pickable (decision 31).
  * @param {Object} recipe - the grouping's recipe
  * @param {Object<string, string>} kinds - layer -> what it looks like; a layer not listed is not yet known
@@ -285,7 +285,7 @@ function kindLayers(layers, kinds) {
 
 /**
  * Color and Size of a new Cell-Gene Plot (decision 24, kept by decision 32 on both axis kinds): the mean on the
- * log-normalised layer and % expressing on the counts layer (above the grouping's threshold, 0 by default), when matrix-kind facts identify both among ALL the
+ * log-normalised layer and fraction of cells on the counts layer (above the grouping's threshold, 0 by default), when matrix-kind facts identify both among ALL the
  * dataset's layers; else both on X.
  * @param {string[]} layers - the dataset's matrices, X first
  * @param {Object<string, string>} kinds

@@ -42,10 +42,13 @@ registerReferences('cell-gene', cellGeneReferences);
 
 // ------------------------------------------------------------------ the configuration
 
-test('the golden configs read unchanged (plan 1.6: every later normaliser reads them unchanged)', () => {
+/** A golden (a link from before the rename) as it is read now: its old statistic id is read as the new one, nothing else changes. */
+const newIds = (obj) => JSON.parse(JSON.stringify(obj).replace(/pct_expressing/g, 'fraction_of_cells'));
+
+test('the golden configs read unchanged (plan 1.6: every later normaliser reads them unchanged), except `pct_expressing` is read as `fraction_of_cells`', () => {
     const raw = golden('cell_gene_1');
     const { config, problems, notices } = normalizeCellGene(raw);
-    assert.deepEqual(config, raw);
+    assert.deepEqual(config, newIds(raw));
     assert.deepEqual(problems, []);
     assert.deepEqual(notices, []);
 });
@@ -53,7 +56,7 @@ test('the golden configs read unchanged (plan 1.6: every later normaliser reads 
 /** cell_gene_6 as the one-choice model reads it (aggregation-unify-080.md 10.4): every field as stored, except each one-row
  * section's per-channel steps, which are not read: the section is on its default. */
 function cellGene6Migrated() {
-    const out = golden('cell_gene_6');
+    const out = newIds(golden('cell_gene_6'));
     out.sections = out.sections.map((s) => (s.rows !== 'set' ? s : { source: s.source, rows: 'set' }));
     return out;
 }
@@ -88,10 +91,10 @@ test('golden cell_gene_6 draws its one-row sections on the default: the mean of 
     }
 });
 
-test('a new plot: version 1, dots, no sections, mean and % expressing on X, nothing else written', () => {
+test('a new plot: version 1, dots, no sections, mean and Fraction of cells on X, nothing else written', () => {
     const { config } = normalizeCellGene({});
     assert.deepEqual(config, { version: 1, mode: 'dots', sections: [],
-        color: { stat: 'mean', layer: 'X' }, size: { stat: 'pct_expressing', layer: 'X' } });
+        color: { stat: 'mean', layer: 'X' }, size: { stat: 'fraction_of_cells', layer: 'X' } });
     assert.equal('cellAxis' in config, false);
     assert.equal('scale' in config, false, 'scale none is the default and is not written');
 });
@@ -231,7 +234,7 @@ function plan(cfg, extra = {}) {
 
 const kinds = (p) => p.features.map((f) => f.wire.kind);
 
-test('a section of genes asks for each gene once: color mean and size % expressing on one layer share it (OD 15)', () => {
+test('a section of genes asks for each gene once: color mean and size Fraction of cells on one layer share it (OD 15)', () => {
     const cfg = addSection(base(), 's1');
     const p = plan(cfg);
     assert.deepEqual(p.features.map((f) => f.wire), [
@@ -239,7 +242,7 @@ test('a section of genes asks for each gene once: color mean and size % expressi
         { kind: 'gene', name: 'G2', layer: 'X', detect_above: 0 },
         { kind: 'gene', name: 'G3', layer: 'X', detect_above: 0 }]);
     assert.deepEqual(p.features.map((f) => f.key), p.features.map((f) => stableStringify(f.wire)));
-    assert.deepEqual(p.statistics, [{ stat: 'mean', layer: 'X' }, { stat: 'pct_expressing', layer: 'X' }]);
+    assert.deepEqual(p.statistics, [{ stat: 'mean', layer: 'X' }, { stat: 'fraction_of_cells', layer: 'X' }]);
 });
 
 test('the same genes as rows and as one row, in two sections, are asked for once (CXG-9, CXG-18)', () => {
@@ -255,10 +258,10 @@ test('a one-row section asks for no more than its rule needs: the gene rows, or 
     const set = (fields) => setSectionRows(addSection({ ...base(), ...fields }, 's1'), 0, 'set');
     const sd = plan(set({ color: { stat: 'mean', layer: 'logged' }, size: { stat: 'sd', layer: 'logged' } }));
     assert.ok(!kinds(sd).includes('score'), 'the gene rows\' own features serve a mean and an SD');
-    const pct = plan(set({ color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'logged' } }));
+    const pct = plan(set({ color: { stat: 'mean', layer: 'logged' }, size: { stat: 'fraction_of_cells', layer: 'logged' } }));
     const scores = pct.features.filter((f) => f.wire.kind === 'score');
-    // Size under % expressing: the share of cells expressing any gene (`detected`, above 0)
-    assert.deepEqual(scores.map((f) => f.wire.column), ['detected']);
+    // Size under Fraction of cells: the share of cells expressing any gene (`detected`, above 0)
+    assert.deepEqual(scores.map((f) => f.wire.column), ['fraction_of_genes']);
     assert.equal(scores[0].wire.layer, 'logged');
     assert.equal(scores[0].wire.above, 0);
 });
@@ -276,7 +279,7 @@ test('a change of statistic on the same layer and threshold asks for nothing new
     const cfg = addSection(base(), 's1');
     const keys = (c) => plan(c).features.map((f) => f.key).sort().join('|');
     const k0 = keys(cfg);
-    for (const stat of ['sum', 'sd', 'mean_expressing', 'pct_expressing', 'count']) {
+    for (const stat of ['sum', 'sd', 'mean_expressing', 'fraction_of_cells', 'count']) {
         assert.equal(keys({ ...cfg, color: { stat, layer: 'X' } }), k0, stat);
     }
     assert.equal(keys({ ...cfg, scale: 'z_pooled' }), k0);
@@ -285,7 +288,7 @@ test('a change of statistic on the same layer and threshold asks for nothing new
 });
 
 test('each of color and size has its own threshold; a statistic that uses none shares the other\'s features (CXG-9)', () => {
-    const cfg = { ...addSection(base(), 's1'), size: { stat: 'pct_expressing', layer: 'X', detect_above: 0.5 } };
+    const cfg = { ...addSection(base(), 's1'), size: { stat: 'fraction_of_cells', layer: 'X', detect_above: 0.5 } };
     const p = plan(cfg);
     assert.deepEqual([...new Set(p.features.map((f) => f.wire.detect_above))], [0.5], 'mean reads the size\'s features');
     const two = plan({ ...cfg, color: { stat: 'mean_expressing', layer: 'X', detect_above: 1 } });
@@ -337,7 +340,7 @@ test('the matrix: gene rows from their moments, an aggregated row from its genes
     const out = buildMatrix(p, (key) => by.get(key) || null, [{ n: 3 }, { n: 3 }], cfg);
     assert.equal(out.rows.length, 4);
     assert.deepEqual(Array.from(out.color.raw.subarray(0, G)), Array.from(statisticColumn('mean', m.G1, G)));
-    assert.deepEqual(Array.from(out.size.values.subarray(G, 2 * G)), Array.from(statisticColumn('pct_expressing', m.G2, G)));
+    assert.deepEqual(Array.from(out.size.values.subarray(G, 2 * G)), Array.from(statisticColumn('fraction_of_cells', m.G2, G)));
     assert.ok(out.color.raw.subarray(2 * G, 3 * G).every(Number.isNaN), 'a gene with no moments has no value, not 0');
     const set = combineRows('rows_mean', 'mean', [m.G1, m.G2], G);
     assert.deepEqual(Array.from(out.color.raw.subarray(3 * G)), Array.from(set));
@@ -386,18 +389,18 @@ test('the cell axis as the page\'s group sources read it: a grouping by its id, 
 
 test('Color and Size list every statistic and every layer, graded, then Cell count, whatever the grouping stored (CXG-11, decision 31)', () => {
     // a grouping saved before decision 31 with its own offer: read, and gating nothing
-    const recipe = normalizeGrouping({ offered: ['mean', 'pct_expressing', 'sd'], layers: ['logged'] }).recipe;
-    assert.deepEqual(recipe.offered, ['mean', 'pct_expressing', 'sd'], 'kept as stored until the next edit');
+    const recipe = normalizeGrouping({ offered: ['mean', 'fraction_of_cells', 'sd'], layers: ['logged'] }).recipe;
+    assert.deepEqual(recipe.offered, ['mean', 'fraction_of_cells', 'sd'], 'kept as stored until the next edit');
     const kinds = { X: 'signed', logged: 'log' };
     const datasetLayers = ['X', 'logged', 'counts'];
     const stats = statisticList({ kinds, held: { stat: 'mean', layer: 'X' } });
-    assert.deepEqual(stats.map((e) => e.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
-    assert.equal(stats.find((e) => e.value === 'pct_expressing').disabled, true, '% expressing cannot be read on a signed X (OD 8)');
+    assert.deepEqual(stats.map((e) => e.value), ['zscore_mean', 'mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.equal(stats.find((e) => e.value === 'fraction_of_cells').disabled, true, 'Fraction of cells cannot be read on a signed X (OD 8)');
     assert.equal(stats.find((e) => e.value === 'mean').label, 'Mean');
     assert.equal(stats.find((e) => e.value === 'count').label, 'Cell count');
     const layers = layerList({ datasetLayers, kinds, stat: 'mean', held: { stat: 'mean', layer: 'X' } });
     assert.deepEqual(layers.map((e) => e.value), datasetLayers, 'every layer of the dataset');
-    const pct = layerList({ datasetLayers, kinds, stat: 'pct_expressing', held: { stat: 'pct_expressing', layer: 'logged' } });
+    const pct = layerList({ datasetLayers, kinds, stat: 'fraction_of_cells', held: { stat: 'fraction_of_cells', layer: 'logged' } });
     assert.deepEqual(pct.filter((e) => !e.disabled).map((e) => e.value), ['logged', 'counts']);
     assert.deepEqual(layerList({ datasetLayers, kinds, stat: 'count', held: { stat: 'count' } }), [], 'Cell count reads no layer');
 });

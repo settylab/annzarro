@@ -58,7 +58,7 @@ test('the table\'s statistic list is the Gene Plot\'s, in order, without cell co
     const half = tableHalfOf({ type: TYPE });
     const menu = (layout) => half.chooser.add.menus(ENTITY, { method: 'mean', layer: 'logged' }, { kinds: { logged: 'log' }, layouts: { logged: layout } });
     const csc = menu('csc').methods;
-    assert.deepEqual(csc.map((o) => o.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']);
+    assert.deepEqual(csc.map((o) => o.value), ['zscore_mean', 'mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd']);
     assert.equal(csc[0].disabled, false);
     const csr = menu('csr').methods[0];
     assert.equal(csr.disabled, true);

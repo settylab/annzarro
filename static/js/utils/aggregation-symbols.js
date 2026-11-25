@@ -14,12 +14,12 @@ const sym = (text, over = false) => Object.freeze({ text, over });
 /** A signature's (and a gene table's) methods: z̄ reads "mean of z", so it is not mistaken for a plain z-score. */
 export const SCORE_SYMBOLS = Object.freeze({
     zscore_mean: sym('z', true), mean: sym('x', true), sum: sym('Σ'), control_adjusted: sym('Δ'),
-    detected: sym('n/N'), fraction_of_total: sym('%')
+    fraction_of_genes: sym('g⁺'), fraction_of_total: sym('%')
 });
 
-/** The statistics over a group's cells. `%⁺` is the share of cells expressing, `%` alone the signature method's share of the total. */
+/** The statistics over a group's cells. `c⁺` is the fraction of cells expressing (`g⁺`, the fraction of a set's genes expressed in a cell); `⁺` marks a measure that reads Expressed above. `%` alone is a share of a total. */
 export const STAT_SYMBOLS = Object.freeze({
-    zscore_mean: sym('z', true), mean: sym('x', true), pct_expressing: sym('%⁺'), mean_expressing: sym('x⁺', true), sum: sym('Σ'), sd: sym('σ')
+    zscore_mean: sym('z', true), mean: sym('x', true), fraction_of_cells: sym('c⁺'), mean_expressing: sym('x⁺', true), sum: sym('Σ'), sd: sym('σ')
 });
 
 /**

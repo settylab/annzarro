@@ -101,13 +101,13 @@ export const combinesRows = (step) => ROW_STEPS.includes(step);
  *   - `rows`: the statistic of each gene, combined (`how`: `rows_mean` or `rows_sum`), over the up genes; no request beyond the gene rows;
  *     `downScore` names the score that stands in when the source has down genes (they cannot be combined from their rows);
  *   - `score`: the group mean of the source's score `method` (z-score mean, decision 43);
- *   - `any`: the share of cells expressing at least one up gene, the source's `detected` score at the channel's threshold (10.1a);
+ *   - `any`: the share of cells expressing at least one up gene, the source's `fraction_of_genes` score at the channel's threshold (10.1a);
  *   - `count`: the group's size, no genes.
  */
 export const ROW_RULE = Object.freeze({
     mean: Object.freeze({ plan: 'rows', how: 'rows_mean', downScore: 'mean', ownScale: false }),
     zscore_mean: Object.freeze({ plan: 'score', method: 'zscore_mean', ownScale: false }),
-    pct_expressing: Object.freeze({ plan: 'any', ownScale: false }),
+    fraction_of_cells: Object.freeze({ plan: 'any', ownScale: false }),
     mean_expressing: Object.freeze({ plan: 'rows', how: 'rows_mean', ownScale: false }),
     sum: Object.freeze({ plan: 'rows', how: 'rows_sum', ownScale: true }),
     sd: Object.freeze({ plan: 'rows', how: 'rows_mean', ownScale: false }),
@@ -129,7 +129,7 @@ export function rowRule(stat, { down = 0 } = {}) {
 }
 
 /** The statistics read at an expression threshold. */
-const THRESHOLDED = Object.freeze(['pct_expressing', 'mean_expressing']);
+const THRESHOLDED = Object.freeze(['fraction_of_cells', 'mean_expressing']);
 
 
 // --- the statistics ---------------------------------------------------------------------------------------------
@@ -147,6 +147,17 @@ function spreadOf(n, sum, sumsq) {
     return variance <= FLAT * meanSquare ? 0 : Math.sqrt(variance);
 }
 
+/**
+ * A fraction (0 to 1) as text: `digits` decimals, 2 in legends and ticks (`0.25`), 3 in hover (`0.342`); exactly 0 and 1 are
+ * `0` and `1`; trailing zeros are dropped unless `keepZeros` (a table column, for alignment). Never a % sign.
+ */
+export function formatFraction(v, digits = 2, keepZeros = false) {
+    if (!Number.isFinite(v)) return '';
+    if (v === 0 || v === 1) return String(v);
+    const text = v.toFixed(digits);
+    return keepZeros ? text : text.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+}
+
 /** One statistic of one group from its five moments at `o`; NaN when the group has no value. */
 function valueOf(stat, m, o) {
     const n = m[o + N];
@@ -154,7 +165,7 @@ function valueOf(stat, m, o) {
     switch (stat) {
         case 'zscore_mean':        // the moments are those of the z-scored gene (server transform zscore): a mean
         case 'mean': return m[o + SUM] / n;
-        case 'pct_expressing': return 100 * m[o + N_ABOVE] / n;
+        case 'fraction_of_cells': return m[o + N_ABOVE] / n;
         case 'mean_expressing': return meanOfExpressing(m[o + N_ABOVE], m[o + SUM_ABOVE]);
         case 'sum': return m[o + SUM];
         case 'sd': return spreadOf(n, m[o + SUM], m[o + SUMSQ]);
@@ -164,7 +175,7 @@ function valueOf(stat, m, o) {
 
 /**
  * One statistic of one feature in every group.
- * @param {string} stat - zscore_mean, mean, pct_expressing, mean_expressing, sum, sd or count
+ * @param {string} stat - zscore_mean, mean, fraction_of_cells, mean_expressing, sum, sd or count
  * @param {Float64Array|null} moments - groups x 5; null for `count`, which needs no feature
  * @param {number} groups
  * @param {Float64Array} [sizes] - the groups' cell counts, for `count`
@@ -200,13 +211,13 @@ export function noExpressingCells(stat, moments, groups) {
 }
 
 /**
- * Whether a statistic can be computed on a layer of this kind (OD 8, SHR-27): % expressing and mean of expressing cells
+ * Whether a statistic can be computed on a layer of this kind (OD 8, SHR-27): fraction of cells and mean of expressing cells
  * cannot on a layer with negative values. `kind` is the `kind` of `/api/v1/data/matrix_kind`.
  * @returns {{available: true}|{available: false, reason: 'negative_values'}}
  */
 // export-unused-ok: consumed by X3a (menus leave the statistic out, with the reason)
 export function statisticAvailability(stat, kind) {
-    if ((stat === 'pct_expressing' || stat === 'mean_expressing') && kind === 'signed') return { available: false, reason: 'negative_values' };
+    if ((stat === 'fraction_of_cells' || stat === 'mean_expressing') && kind === 'signed') return { available: false, reason: 'negative_values' };
     return { available: true };
 }
 
@@ -326,8 +337,8 @@ export function scale(matrix, scaling, references) {
  * The one value per group of a one-row section that combines its gene rows: each gene's `stat` per group (what its gene
  * row shows), then over the genes:
  * - `rows_mean`: the mean of the genes with a value in that group;
- * - `rows_sum`: their sum; under % expressing the sum of the genes' fractions, the expected number of the set's genes
- *   detected in a cell (decision 40: "Genes detected per cell", never on the 0 to 100 scale);
+ * - `rows_sum`: their sum; under fraction of cells the sum of the genes' fractions, the expected number of the set's genes
+ *   expressed in a cell (decision 40: "Genes expressed per cell");
  * - `rows_z`: each gene row as a z-score across the groups (population SD, a flat row 0), then the mean.
  * A gene with no value in a group is skipped there; a group where no gene has one is missing (NaN, never 0).
  * @param {string} step - one of ROW_STEPS
@@ -342,14 +353,13 @@ export function combineRows(step, stat, input, groups) {
     const total = new Float64Array(groups);
     const seen = new Uint32Array(groups);
     const column = new Float64Array(groups);
-    const fraction = stat === 'pct_expressing' && step === 'rows_sum' ? 0.01 : 1;
     for (const moments of input) {
         for (let g = 0; g < groups; g++) column[g] = valueOf(stat, moments, g * MOMENT_STRIDE);
         if (step === 'rows_z') zAcrossGroups(column, column, 0, groups);
         for (let g = 0; g < groups; g++) {
             const v = column[g];
             if (Number.isNaN(v)) continue;
-            total[g] += v * fraction;
+            total[g] += v;
             seen[g] += 1;
         }
     }

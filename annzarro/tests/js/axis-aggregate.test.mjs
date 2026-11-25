@@ -81,7 +81,7 @@ test('the aggregations are the method tables\', in their order and with their na
 });
 
 test('a layer after the user moved it: the aggregation moves only when it became impossible, said once', () => {
-    const s = { type: 'group-stat', key: 'cell-grouping-A', column: '["c:B cell"]', stat: 'pct_expressing', layer: 'logged', groupWas: ['B cell'] };
+    const s = { type: 'group-stat', key: 'cell-grouping-A', column: '["c:B cell"]', stat: 'fraction_of_cells', layer: 'logged', groupWas: ['B cell'] };
     const said = A.applyAfter(s, 'layer', 'X');
     assert.equal(s.layer, 'X');
     assert.equal(typeof said, 'string');

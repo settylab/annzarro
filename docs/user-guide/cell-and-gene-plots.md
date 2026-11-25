@@ -121,21 +121,21 @@ list that follows. The list has the focused cell first and then **Cell groupings
 closed. A select of that grouping's groups follows it, by their names (a label you gave a group shows), in the grouping's order, all
 of them; the first group is chosen. Changing the grouping keeps the group if the new one has a group of the same name, else takes
 its first. Each gene's value is then one statistic of that gene over the cells of that group of a Cell Grouping
-({doc}`cell-grouping`). After the selects a button holds the **aggregation**: its symbol (x̄ mean, % expressing, Σ sum,
+({doc}`cell-grouping`). After the selects a button holds the **aggregation**: its symbol (x̄ mean, fraction of cells, Σ sum,
 σ SD), opening the statistics, each as a symbol and a name, with one the layer cannot give disabled and its reason as the hint
-("% expressing cannot be computed on 'X': it has negative values"). The row is one line: source, layer, grouping, group,
+("Fraction of cells cannot be computed on 'X': it has negative values"). The row is one line: source, layer, grouping, group,
 aggregation; the grouping and the group share the width the item has on every other row. Nothing is asked of the server until a
 group is chosen; then one request returns the five moments of every gene over the group, and the plot is coloured from them.
 Choosing another layer asks again. Switching   to another statistic of the same layer, or back, asks for nothing. Another group or layer asks once, and
-so does an edit of the grouping's **Expressed above** in its **Methods ▾**, which % expressing and mean of expressing
-cells read. The statistics have the Cell-Gene Plot's names and units (% expressing is 0 to 100). The colour bar is titled by the
-grouping and the group, then the statistic and the layer ("% expressing (> 0) · logged").
+so does an edit of the grouping's **Expressed above** in its **Methods ▾**, which fraction of cells and mean of expressing
+cells read. The statistics have the Cell-Gene Plot's names and units (fraction of cells is 0 to 1). The colour bar is titled by the
+grouping and the group, then the statistic and the layer ("Fraction of cells (> 0) · logged").
 
 ### Colour or place a gene plot by a Cell Table's cells
 
 The item list of a layer also has **Cell tables**: every Cell Table, open or closed, by its name; a line says so when there is none.
 Pick one and each gene's value is one statistic of that gene over the cells that pass the table's filter, on the layer of the row,
-with the table's own **Expressed above** (its **Methods ▾**) as the threshold of % expressing and mean of expressing cells.
+with the table's own **Expressed above** (its **Methods ▾**) as the threshold of fraction of cells and mean of expressing cells.
 No group select follows: the table is the group of cells. The aggregation button is the same as a grouping's.
 
 The axis follows the table. A change of its filter, or a row added or removed, asks once for the new cells (cells that are the

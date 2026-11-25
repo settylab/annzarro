@@ -157,8 +157,8 @@ def test_x_is_disabled_in_the_layer_select_under_pct_of_total_with_the_reason_as
     assert x["disabled"] is True and "negative values" in x["title"], x
     assert not layers[2]["disabled"]
     methods = axis_sets.aggregations(page, C, "color")
-    assert [o["v"] for o in methods] == ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"]
-    assert [o["text"].split(" ", 1)[1] for o in methods] == ["Z-score mean", "Mean", "Sum", "Control-adjusted", "Fraction detected", "% of total"]
+    assert [o["v"] for o in methods] == ["zscore_mean", "mean", "sum", "control_adjusted", "fraction_of_genes", "fraction_of_total"]
+    assert [o["text"].split(" ", 1)[1] for o in methods] == ["Z-score mean", "Mean", "Sum", "Control-adjusted", "Fraction of genes", "% of total"]
     assert all("@" not in o["v"] and "·" not in o["text"] for o in methods), "no method x layer pair"
     assert "Reads the whole matrix once." in next(o for o in methods if o["v"] == "fraction_of_total")["title"]
     text = page.evaluate("(s) => [...document.querySelector(s).closest('.axis-selector').querySelectorAll('option')].map(o => o.textContent).join('|')", LAYER)

@@ -100,7 +100,7 @@ def page(served):
 
 def _plot(**fields):
     return {"id": P, "title": "Cell-Gene Plot 1", "version": 1, "mode": "dots", "sections": [],
-            "color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "pct_expressing", "layer": "logged"}, **fields}
+            "color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "fraction_of_cells", "layer": "logged"}, **fields}
 
 
 def _sig(pid, title, genes):
@@ -240,12 +240,12 @@ def test_job3_one_row_per_pathway(page, served):
     assert st["rows"] == 1
     # the set is one gene: no control of its own, only the rule in its tooltip (aggregation-unify-080.md 11)
     assert page.locator(f"{TP} .cgene-section button").count() == 2, "the card's head and ⋯ only"
-    assert CR.rule(page, TP, 0) == "Color: the mean of the genes' means. Size: % of cells expressing at least one gene."
-    # Color reads the gene rows; Size, the share of cells expressing any gene: one score feature (`detected`), on Size's layer
+    assert CR.rule(page, TP, 0) == "Color: the mean of the genes' means. Size: the fraction of cells expressing at least one gene."
+    # Color reads the gene rows; Size, the share of cells expressing any gene: one score feature (`fraction_of_genes`), on Size's layer
     feats = _features(page.calls)
     assert sorted(f["kind"] for f in feats) == ["gene"] * 6 + ["score"]
     score = next(f for f in feats if f["kind"] == "score")
-    assert score["column"] == "detected" and score["layer"] == "logged" and score["above"] == 0
+    assert score["column"] == "fraction_of_genes" and score["layer"] == "logged" and score["above"] == 0
     assert _config(page)["sections"][0] == {"source": S1, "rows": "set"}
 
 
@@ -260,7 +260,7 @@ def test_a_sections_genes_are_requested_once_and_one_gene_adds_one_feature(page,
     feats = _features(page.calls)
     # each gene once, though two sections read it; the one-row section's own feature is Size's any-gene score
     assert sorted(f["name"] for f in feats if f["kind"] == "gene") == GENES[0:4]
-    assert [f["column"] for f in feats if f["kind"] == "score"] == ["detected"]
+    assert [f["column"] for f in feats if f["kind"] == "score"] == ["fraction_of_genes"]
     assert len(page.calls) == 1
     # a duplicate section asks for nothing
     page.click(f"{TP} .cgene-section >> nth=0 >> .az-card__more")
@@ -275,7 +275,7 @@ def test_a_sections_genes_are_requested_once_and_one_gene_adds_one_feature(page,
     assert len(page.calls) == 2
     # the gene alone, and the one-row section's any-gene score, whose set changed
     assert [f["name"] for f in page.calls[1]["features"] if f["kind"] == "gene"] == ["GENE020"]
-    assert [f["column"] for f in page.calls[1]["features"] if f["kind"] == "score"] == ["detected"]
+    assert [f["column"] for f in page.calls[1]["features"] if f["kind"] == "score"] == ["fraction_of_genes"]
 
 
 # ------------------------------------------------------------------ 6. the section list

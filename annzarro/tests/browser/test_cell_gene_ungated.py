@@ -17,6 +17,7 @@ counts, as core/matrix_kind.py reads them from the stored values.
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
 import os
+import re
 
 import pytest
 
@@ -46,7 +47,7 @@ def _labels(page, selector):
 
 
 def _kinds_known(page):
-    """The layer kinds are read once per dataset: X's option is disabled for % expressing once they are known."""
+    """The layer kinds are read once per dataset: X's option is disabled for Fraction of cells once they are known."""
     until(page, "(s) => { const o = document.querySelector(s + ' .cgene-size-layer option[value=\"X\"]'); return !!o && o.disabled; }",
           TP, timeout=30)
 
@@ -61,7 +62,7 @@ def test_a_default_grouping_axis_plot_says_no_longer_offered_nowhere_and_lists_e
         labels = _labels(page, f"{TP} .cgene-{which}-layer option")
         assert labels == ["X", "counts", "logged"], labels  # the dataset's order, X first
         stats = CC.stat_names(page, TP, which)
-        assert stats == ["Z-score mean", "Mean", "% expressing", "Mean of expressing cells", "Sum", "SD", "Cell count"], stats
+        assert stats == ["Z-score mean", "Mean", "Fraction of cells", "Mean of expressing cells", "Sum", "SD", "Cell count"], stats
         assert not any("offer" in t.lower() or "(no longer" in t for t in labels + stats)
     assert page.input_value(f"{TP} .cgene-color-layer") == "logged"
 
@@ -72,7 +73,7 @@ def test_a_new_plot_on_a_grouping_axis_reads_decision_24_from_all_layers(page, s
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.layer === 'counts'", P, timeout=30)
     cfg = _config(page)
     assert cfg["color"] == {"stat": "mean", "layer": "logged"}
-    assert cfg["size"] == {"stat": "pct_expressing", "layer": "counts"}, "no threshold of its own: it follows the grouping (decision 35)"
+    assert cfg["size"] == {"stat": "fraction_of_cells", "layer": "counts"}, "no threshold of its own: it follows the grouping (decision 35)"
     assert "offer" not in cfg
     assert page.locator(f"{TP} .cgene-undo").is_disabled(), "a default is not an edit"
 
@@ -87,7 +88,7 @@ def test_the_grouping_toolbar_has_no_statistics_button(page, served):
 
 
 def test_the_groupings_threshold_is_read_by_the_plot_and_survives_the_groupings_next_edit(page, served):
-    old = _grouping(offered=["mean", "pct_expressing", "sd"], layers=["logged"], detect_above=1)
+    old = _grouping(offered=["mean", "pct_expressing", "sd"], layers=["logged"], detect_above=1)      # an old link: the id of before the rename
     _open(page, served, {P: _plot(cellAxis=AXIS, sections=[{"source": S1, "rows": "genes"}]), GA: old, S1: _sig(S1, "Markers", GENES[:3])},
           open_ids=(P, GA))
     _drawn(page)
@@ -96,7 +97,7 @@ def test_the_groupings_threshold_is_read_by_the_plot_and_survives_the_groupings_
     assert all(f["detect_above"] == 1 for f in _features(page.calls)), "every gene is read above 1"
     hover = page.evaluate("(s) => JSON.stringify(document.querySelector(s + ' .cgene-plot').data[0].hovertext"
                           " || document.querySelector(s + ' .cgene-plot').data[0].text)", TP)
-    assert "% expressing (> 1) · logged" in hover, hover[:300]
+    assert "Fraction of cells (> 1) · logged" in hover, hover[:300]
     box = CC.above(page, TP, "size")
     assert box["value"] == "", "the override box is empty: the measure follows the grouping"
     assert box["placeholder"] == "auto (grouping: 1)", "it shows the grouping's value"
@@ -134,3 +135,20 @@ def test_screenshots_of_the_ungated_controls(page, served):
     page.locator(TP).screenshot(path=os.path.join(SHOTS, "so4-cg-grouping-axis.png"))
     page.locator(TG).screenshot(path=os.path.join(SHOTS, "so4-grouping-toolbar.png"))
     page.screenshot(path=os.path.join(SHOTS, "so4-values-popover.png"))
+
+
+def test_an_old_link_with_pct_expressing_and_detected_opens_and_draws_on_the_new_scale(page, served):
+    """V1: `pct_expressing` is read as `fraction_of_cells` and `detected` as `fraction_of_genes`; the size and colour ranges stored in the
+    old units are dropped; the plot draws, says nothing, and writes the new ids."""
+    configs = {P: _plot(cellAxis=OBS, sections=[{"source": S1, "rows": "genes"}], size={"stat": "pct_expressing", "layer": "counts"},
+                        dotMin=10, dotMax=80), S1: _sig(S1, "Markers", GENES[:3])}
+    _open(page, served, configs, open_ids=(P, S1))
+    _drawn(page)
+    cfg = _config(page)
+    assert cfg["size"]["stat"] == "fraction_of_cells", cfg["size"]
+    assert "dotMin" not in cfg and "dotMax" not in cfg, cfg
+    hover = page.evaluate("(s) => JSON.stringify(document.querySelector(s + ' .cgene-plot').data[0].hovertext"
+                          " || document.querySelector(s + ' .cgene-plot').data[0].text)", TP)
+    assert "Fraction of cells (> 0) · counts" in hover and "% expressing" not in hover, hover[:300]
+    values = [float(v) for v in re.findall(r"Fraction of cells \(> 0\) · counts: ([0-9.]+)", hover)]
+    assert values and all(0 <= v <= 1 for v in values), values

@@ -52,14 +52,14 @@ test('dot colour and size equal scanpy for every layer, grouping, cutoff, mean-o
             const moments = momentsOf(layer, groupby, cut);
             for (const mo of [0, 1]) {
                 const colour = moments.map((m) => M.statisticColumn(mo ? 'mean_expressing' : 'mean', m, G));
-                const size = moments.map((m) => M.statisticColumn('pct_expressing', m, G));
+                const size = moments.map((m) => M.statisticColumn('fraction_of_cells', m, G));
                 for (const ss of oracle.scales) {
                     const ref = oracle.dot[`${layer}__${groupby}__cut${cutTag(cut)}__mo${mo}__ss${ss}`];
                     const scaled = M.scale(matrixOf(colour, G), ss === 'none' ? 'none' : ss);
                     const want = transpose(ref.color);
                     want.forEach((row, r) => row.forEach((v, g) => near(scaled[r * G + g], v, `${layer} ${groupby} cut${cut} mo${mo} ss${ss} colour [${r}][${g}]`)));
-                    // scanpy never scales the size, and writes a fraction where this model writes 0 to 100
-                    transpose(ref.size).forEach((row, r) => row.forEach((v, g) => near(size[r][g], 100 * v, `${layer} ${groupby} cut${cut} size [${r}][${g}]`)));
+                    // scanpy never scales the size, and writes a fraction: so does this model, with no factor
+                    transpose(ref.size).forEach((row, r) => row.forEach((v, g) => near(size[r][g], v, `${layer} ${groupby} cut${cut} size [${r}][${g}]`)));
                     compared += want.length * G;
                 }
             }
@@ -113,7 +113,7 @@ test('every statistic of SHR-19 from the five moments', () => {
     const m = wire(momentsFromValues([0, 0, 2, 4]), momentsFromValues([1, 3]));
     const G = 2;
     assert.deepEqual(Array.from(M.statisticColumn('mean', m, G)), [1.5, 2]);
-    assert.deepEqual(Array.from(M.statisticColumn('pct_expressing', m, G)), [50, 100]);
+    assert.deepEqual(Array.from(M.statisticColumn('fraction_of_cells', m, G)), [0.5, 1]);
     assert.deepEqual(Array.from(M.statisticColumn('mean_expressing', m, G)), [3, 2]);
     assert.deepEqual(Array.from(M.statisticColumn('sum', m, G)), [6, 4]);
     near(M.statisticColumn('sd', m, G)[0], Math.sqrt(((0 - 1.5) ** 2 * 2 + (2 - 1.5) ** 2 + (4 - 1.5) ** 2) / 4), 'population SD, ddof 0');
@@ -123,7 +123,7 @@ test('every statistic of SHR-19 from the five moments', () => {
 
 test('a group with no finite value has no value, never 0, for every statistic that needs a cell', () => {
     const m = wire(momentsFromValues([NaN, Infinity]), momentsFromValues([1]));
-    for (const stat of ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']) {
+    for (const stat of ['mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd']) {
         const col = M.statisticColumn(stat, m, 2);
         assert.ok(Number.isNaN(col[0]), `${stat} of a group with no finite value is ${col[0]}`);
         assert.ok(Number.isFinite(col[1]), stat);
@@ -235,11 +235,11 @@ test('mean and sum of the gene rows skip a gene with no value in that group', ()
     assert.deepEqual(Array.from(M.combineRows('rows_sum', 'mean', genes, 3)), [2, 9, 2]);
 });
 
-test('the mean of the gene rows under % expressing; their sum is the genes detected per cell, not a %', () => {
+test('the mean of the gene rows under Fraction of cells; their sum is the genes expressed per cell, not a fraction', () => {
     const genes = setCase();
-    // pct: g0 50 100 0 | g1 100 100 NaN | g2 0 0 100
-    assert.deepEqual(Array.from(M.combineRows('rows_mean', 'pct_expressing', genes, 3)), [50, 200 / 3, 50]);
-    assert.deepEqual(Array.from(M.combineRows('rows_sum', 'pct_expressing', genes, 3)), [1.5, 2, 1]);
+    // fraction of cells: g0 .5 1 0 | g1 1 1 NaN | g2 0 0 1
+    assert.deepEqual(Array.from(M.combineRows('rows_mean', 'fraction_of_cells', genes, 3)), [0.5, 2 / 3, 0.5]);
+    assert.deepEqual(Array.from(M.combineRows('rows_sum', 'fraction_of_cells', genes, 3)), [1.5, 2, 1]);
 });
 
 test('the mean of the gene rows as z-scores: each gene row against its own groups, skipping a missing one', () => {
@@ -276,7 +276,7 @@ test('ROW_RULE: one rule per statistic, the one place a row\'s rule is chosen', 
     assert.equal(M.ROW_RULE.mean.how, 'rows_mean');
     assert.equal(M.ROW_RULE.mean.downScore, 'mean');
     assert.equal(M.ROW_RULE.sum.ownScale, true);
-    assert.equal(M.ROW_RULE.pct_expressing.plan, 'any');
+    assert.equal(M.ROW_RULE.fraction_of_cells.plan, 'any');
     assert.equal(M.ROW_RULE.zscore_mean.method, 'zscore_mean');
     assert.equal(Object.values(M.ROW_RULE).filter((r) => r.ownScale).length, 1, 'only the sum leaves the gene rows\' scale');
 });
@@ -286,15 +286,15 @@ test('ROW_RULE: one rule per statistic, the one place a row\'s rule is chosen', 
     assert.equal(M.ROW_RULE.mean.how, 'rows_mean');
     assert.equal(M.ROW_RULE.mean.downScore, 'mean');
     assert.equal(M.ROW_RULE.sum.ownScale, true);
-    assert.equal(M.ROW_RULE.pct_expressing.plan, 'any');
+    assert.equal(M.ROW_RULE.fraction_of_cells.plan, 'any');
     assert.equal(M.ROW_RULE.zscore_mean.method, 'zscore_mean');
     assert.equal(Object.values(M.ROW_RULE).filter((r) => r.ownScale).length, 1, 'only the sum leaves the gene rows\' scale');
 });
 
 // --- availability and limits (OD 8, CXG-17) --------------------------------------------------------------------
 
-test('on a signed layer % expressing and mean of expressing cells are unavailable, with the reason (OD 8)', () => {
-    for (const stat of ['pct_expressing', 'mean_expressing']) {
+test('on a signed layer Fraction of cells and mean of expressing cells are unavailable, with the reason (OD 8)', () => {
+    for (const stat of ['fraction_of_cells', 'mean_expressing']) {
         assert.deepEqual(M.statisticAvailability(stat, 'signed'), { available: false, reason: 'negative_values' });
         assert.deepEqual(M.statisticAvailability(stat, 'log'), { available: true });
         assert.deepEqual(M.statisticAvailability(stat, 'unknown'), { available: true });
@@ -316,7 +316,7 @@ test('the matrix limit is 400,000 cells and 2,000 genes per section; above, the 
 
 test('a column header names statistic, layer and scaling', () => {
     assert.equal(M.columnHeader({ stat: 'mean', layer: 'X', scaling: 'var' }), 'Mean · X · scaled 0 to 1 per gene');
-    assert.equal(M.columnHeader({ stat: 'pct_expressing', layer: 'logged', scaling: 'none' }), '% expressing · logged · not scaled');
+    assert.equal(M.columnHeader({ stat: 'fraction_of_cells', layer: 'logged', scaling: 'none' }), 'Fraction of cells · logged · not scaled');
     assert.equal(M.columnHeader({ stat: 'mean', layer: 'X', scaling: 'none', section: 'B markers' }), 'B markers · Mean · X · not scaled');
 });
 
@@ -326,11 +326,11 @@ test('the long CSV has one row per row and group, one column per statistic, an e
         rows: [{ section: 'Markers', label: 'GENE000' }, { section: 'Markers', label: '=SUM' }],
         columns: [
             { stat: 'mean', layer: 'X', scaling: 'none', values: Float64Array.of(1.5, NaN, 0.25, 2) },
-            { stat: 'pct_expressing', layer: 'X', scaling: 'none', values: Float64Array.of(10, 20, 30, 40) }
+            { stat: 'fraction_of_cells', layer: 'X', scaling: 'none', values: Float64Array.of(10, 20, 30, 40) }
         ]
     });
     assert.deepEqual(csv.split('\n'), [
-        'Section,Row,Group,Cells,Mean · X · not scaled,% expressing · X · not scaled',
+        'Section,Row,Group,Cells,Mean · X · not scaled,Fraction of cells · X · not scaled',
         'Markers,GENE000,B cell,500,1.5,10',
         'Markers,GENE000,"T, cell",3,,20',
         "Markers,'=SUM,B cell,500,0.25,30",
@@ -356,7 +356,7 @@ test('a section at the limit (2,000 genes in 200 groups): statistics, every scal
     const G = 200;
     const genes = Array.from({ length: 2000 }, (_, i) => Float64Array.from({ length: G * 5 }, (_, k) => (k % 5 === 0 ? 10 : (i + k) % 7)));
     const started = performance.now();
-    for (const stat of ['mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd']) genes.forEach((m) => M.statisticColumn(stat, m, G));
+    for (const stat of ['mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd']) genes.forEach((m) => M.statisticColumn(stat, m, G));
     const matrix = matrixOf(genes.map((m) => M.statisticColumn('mean', m, G)), G);
     const refs = genes.map((m) => M.pooledReference(m, G));
     for (const s of M.SCALINGS) assert.equal(M.scale(matrix, s, refs).length, 2000 * G);
@@ -373,7 +373,7 @@ test('this module writes no interface word as a literal', () => {
         .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const strings = source.match(/(['"`])(?:\\.|(?!\1)[^\\\n])*\1/g) || [];
     for (const literal of strings) {
-        for (const word of ['no expressing', '% expressing', 'Mean', 'Sum', 'scaled', 'z-score', 'Note', 'Section', 'From the']) {
+        for (const word of ['no expressing', 'Fraction of cells', 'Mean', 'Sum', 'scaled', 'z-score', 'Note', 'Section', 'From the']) {
             assert.ok(!literal.includes(word), `writes ${literal}`);
         }
     }
@@ -381,8 +381,8 @@ test('this module writes no interface word as a literal', () => {
 
 test('the statistic, scaling and aggregation words of UX 3.2 and 3.3', () => {
     const W = V.cellGene;
-    assert.deepEqual(Object.keys(W.statistic), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
-    assert.equal(W.statistic.pct_expressing, V.word.percentExpressing);
+    assert.deepEqual(Object.keys(W.statistic), ['zscore_mean', 'mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.equal(W.statistic.fraction_of_cells, V.word.fractionOfCells);
     assert.deepEqual(Object.keys(W.scaling), M.SCALINGS);
     assert.deepEqual(Object.keys(W.scaled), M.SCALINGS);
     assert.equal(W.scaling.var, '0 to 1 per gene');
@@ -404,5 +404,5 @@ test('an unknown statistic is refused by the one list of the grouping', () => {
 test('rowRule: the rule of a statistic, with down genes where the rule names a score to stand in', () => {
     assert.deepEqual(M.rowRule('mean'), M.ROW_RULE.mean);
     assert.deepEqual(M.rowRule('mean', { down: 2 }), { plan: 'score', method: 'mean', ownScale: false, downMean: true });
-    for (const stat of ['zscore_mean', 'pct_expressing', 'sum', 'sd', 'mean_expressing', 'count']) assert.equal(M.rowRule(stat, { down: 2 }), M.ROW_RULE[stat], stat);
+    for (const stat of ['zscore_mean', 'fraction_of_cells', 'sum', 'sd', 'mean_expressing', 'count']) assert.equal(M.rowRule(stat, { down: 2 }), M.ROW_RULE[stat], stat);
 });

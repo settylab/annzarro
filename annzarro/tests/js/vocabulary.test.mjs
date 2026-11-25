@@ -16,8 +16,8 @@ const { VOCABULARY: V } = await import('../../../static/js/utils/vocabulary.js')
 test('every concept of the table in UX 6.1 has its word, its plural and the words it must never be given', () => {
     const concepts = {
         factor: 'factor', level: 'level', group: 'group', grouping: 'grouping', set: 'set', statistic: 'statistic',
-        aggregation: 'aggregation', scoreOption: 'score option', percentExpressing: '% expressing',
-        fractionDetected: 'fraction detected', cellsShown: 'cells shown', notInAnyGroup: 'not in any group',
+        aggregation: 'aggregation', scoreOption: 'score option', fractionOfCells: 'Fraction of cells',
+        fractionOfGenes: 'Fraction of genes', cellsShown: 'cells shown', notInAnyGroup: 'not in any group',
         smallGroup: 'small group', noValue: 'no value', split: 'split'
     };
     for (const [key, word] of Object.entries(concepts)) assert.equal(V.word[key], word, key);

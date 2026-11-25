@@ -73,7 +73,7 @@ DRAW = """async ([mode, swap, dark]) => {
     rows: Array.from({length: rows}, (_, r) => ({label: 'Gene' + r, gapBefore: r === 7 ? 1 : 0,
       section: r < 7 ? {index: 0, title: 'B cell markers', note: '2 genes not in this dataset'} : {index: 1, title: 'T cell markers'}})),
     color: {id: 'mean|X', stat: 'mean', layer: 'X', scaling: 'none', values: color, colorscale: 'Viridis'},
-    size: {id: 'pct|X', stat: 'pct_expressing', layer: 'X', detectAbove: 0, values: size}
+    size: {id: 'pct|X', stat: 'fraction_of_cells', layer: 'X', detectAbove: 0, values: size}
   };
   const palette = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3'];
   // a dendrogram of the groups as one block, and of each section's genes

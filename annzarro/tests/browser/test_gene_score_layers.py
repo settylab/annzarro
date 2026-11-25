@@ -53,7 +53,7 @@ def test_a_score_is_chosen_by_a_layer_and_an_aggregation_each_listing_everything
     method = axis_sets.button(C, "color")
     layer = axis_sets.sel(C, "color", "key")
     opts = axis_sets.aggregations(page, C, "color")
-    assert [o["v"] for o in opts] == ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"], opts
+    assert [o["v"] for o in opts] == ["zscore_mean", "mean", "sum", "control_adjusted", "fraction_of_genes", "fraction_of_total"], opts
     assert not any("offer" in o["text"].lower() or "·" in o["text"] for o in opts), opts
     assert page.evaluate("(s) => [...document.querySelector(s).options].map(o => o.value)", layer) == ["X", "counts"]
     assert page.evaluate("(s) => document.querySelector(s).value", layer) == "X"
@@ -247,7 +247,7 @@ def test_plot_and_table_menus_disable_a_combination_that_cannot_be_computed_and_
     from annzarro.tests.browser import test_gene_score_tables as T
     def handler(route):
         want = urllib.parse.parse_qs(urllib.parse.urlparse(route.request.url).query).get("input", ["X"])[0]
-        q = [0.01 + 3.39 * i / 50 for i in range(51)]                  # every value of X is above 0: fraction detected is constant there
+        q = [0.01 + 3.39 * i / 50 for i in range(51)]                  # every value of X is above 0: fraction of genes is constant there
         stats = {"max": 3.4, "min": 0.01, "density": 1.0, "quantiles": q} if want == "X" else \
             {"max": 5, "min": 1, "density": 0.05, "quantiles": [1 + 4 * i / 50 for i in range(51)]}
         body = {"input": want, "kind": "signed" if want == "X" else "counts", "stats": stats, "suggest": None, "checked": {}}
@@ -263,12 +263,12 @@ def test_plot_and_table_menus_disable_a_combination_that_cannot_be_computed_and_
         return {o["v"]: o for o in axis_sets.aggregations(page, C, "color")}
     axis_sets.until_methods(page, 'cell-plot-C', 'color', "(o) => o.find(m => m.value === 'fraction_of_total').disabled")
     on_x = methods()
-    assert on_x["detected"]["off"] and on_x["fraction_of_total"]["off"], on_x
+    assert on_x["fraction_of_genes"]["off"] and on_x["fraction_of_total"]["off"], on_x
     assert "negative values" in on_x["fraction_of_total"]["title"], on_x["fraction_of_total"]
-    assert on_x["detected"]["title"], "the reason is the option's title"
+    assert on_x["fraction_of_genes"]["title"], "the reason is the option's title"
     assert not on_x["zscore_mean"]["off"] and not on_x["mean"]["off"]
     page.select_option(layer, "counts")
-    axis_sets.until_methods(page, 'cell-plot-C', 'color', "(o) => !o.find(m => m.value === 'detected').disabled")
+    axis_sets.until_methods(page, 'cell-plot-C', 'color', "(o) => !o.find(m => m.value === 'fraction_of_genes').disabled")
     axis_sets.choose_aggregation(page, C, "color", "fraction_of_total")
     until(page, "() => window.PanelManager.getPanel('cell-plot-C').getConfig().color.column === 'fraction_of_total'")
     under_share = {o["v"]: o for o in axis_sets.layer_options(page, C, "color")}
@@ -282,10 +282,10 @@ def test_plot_and_table_menus_disable_a_combination_that_cannot_be_computed_and_
     page.wait_for_selector(f"{row} .az-score-add-agg", timeout=10000)
     page.select_option(f"{row} .az-score-add-layer", "X")
     table_x = {o["v"]: o for o in T.add_row_entries(page, row)}
-    assert table_x["detected"]["off"] and table_x["fraction_of_total"]["off"], table_x
+    assert table_x["fraction_of_genes"]["off"] and table_x["fraction_of_total"]["off"], table_x
     page.select_option(f"{row} .az-score-add-layer", "counts")
     table_counts = {o["v"]: o for o in T.add_row_entries(page, row)}
-    assert not table_counts["detected"]["off"] and not table_counts["fraction_of_total"]["off"], table_counts
+    assert not table_counts["fraction_of_genes"]["off"] and not table_counts["fraction_of_total"]["off"], table_counts
 
 
 def _colour_snapshot(page):

@@ -348,7 +348,7 @@ test('who uses a source: plots and tables by method and by layer; Inspect and it
     watchAs('table', 'column', 'mean', 'X');
     watchAs('plot', 'hover:S1:zscore_mean:', 'zscore_mean', null);
     const inspect = watchAs('inspect', 'inspect', 'sum', 'X');
-    const exporting = watchAs('inspect-export', 'inspect-export', 'detected', 'X');
+    const exporting = watchAs('inspect-export', 'inspect-export', 'fraction_of_genes', 'X');
     const byValue = (rows) => Object.fromEntries(rows.map(r => [r.value, [r.plots, r.tables]]));
     assert.deepEqual(byValue(w.sources.usage('S1', 'method')), { mean: [2, 1], zscore_mean: [1, 0] });
     assert.deepEqual(byValue(w.sources.usage('S1', 'layer')), { X: [1, 1], counts: [1, 0], null: [1, 0] });

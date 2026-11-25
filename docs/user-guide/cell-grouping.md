@@ -162,7 +162,7 @@ colour is set beside its name in the same way, in the factor's **Edit ▾** pop-
 
 **Methods ▾** (a button in the toolbar) sets how the statistics over a group's cells are computed, for every plot
 that reads the grouping and on every layer. Plots still choose the statistic and the layer themselves; nothing here
-limits what they can pick. The pop-over lists each statistic with its definition: **Mean**, **% expressing**, **Mean of
+limits what they can pick. The pop-over lists each statistic with its definition: **Mean**, **Fraction of cells**, **Mean of
 expressing cells**, **Sum** and **SD**. Under the two that count expressing cells sits their one parameter:
 
 - **Expressed above** (0 by default, any number from 0 up): a cell counts as expressing when its value is above it.
@@ -172,7 +172,7 @@ expressing cells**, **Sum** and **SD**. Under the two that count expressing cell
 Each change is one step that **Undo** takes back. The groups stay as they are (the threshold is not part of what makes
 them), and every Cell-Gene Plot on the grouping reads its genes again at the new threshold, unless a measure of that
 plot sets its own ({doc}`cell-gene-plot`). The foot of the pop-over says which plots read the grouping and with what
-("Used by: Cell-Gene Plot 1 (mean · logged, % expressing · counts)"), and **Reset to defaults** puts every parameter
+("Used by: Cell-Gene Plot 1 (mean · logged, fraction of cells · counts)"), and **Reset to defaults** puts every parameter
 back. While a parameter is not at its default the button carries a dot and its tooltip names the setting
 ("expressed above 2"). **Escape**, the **×** or a click outside closes the pop-over; opening it moves nothing in the
 panel.

@@ -400,7 +400,7 @@ def test_methods_without_a_signed_version_are_graded_cannot_with_the_reason(page
     choices = page.evaluate("""async (id) => { const m = await import('/static/js/utils/score-source.js');
         return m.scoreChoices(id, {}, { datasetLayers: ['X', 'counts'] }).methods; }""", SIG)
     by = {c["value"]: c for c in choices}
-    for method, words in (("sum", "depends on how many genes each side has"), ("detected", "not a fraction"),
+    for method, words in (("sum", "depends on how many genes each side has"), ("fraction_of_genes", "not a fraction"),
                           ("fraction_of_total", "not a share")):
         assert by[method]["disabled"], method
         assert " cannot be computed with down genes: " in by[method]["title"] and words in by[method]["title"], method
@@ -410,7 +410,7 @@ def test_methods_without_a_signed_version_are_graded_cannot_with_the_reason(page
     page.evaluate("(id) => window.PanelManager.getPanel(id).setDirection(['GENE0002'], 'up')", SIG)
     choices = page.evaluate("""async (id) => { const m = await import('/static/js/utils/score-source.js');
         return m.scoreChoices(id, {}, { datasetLayers: ['X', 'counts'] }).methods; }""", SIG)
-    assert not any(c["disabled"] for c in choices if c["value"] != "detected"), "only the layer can still refuse a method"
+    assert not any(c["disabled"] for c in choices if c["value"] != "fraction_of_genes"), "only the layer can still refuse a method"
 
 
 def test_a_plot_on_a_method_that_cannot_says_so_and_asks_nothing(page, served):

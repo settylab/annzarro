@@ -104,7 +104,7 @@ def _boxes(page):
         .map(e => { const r = e.getBoundingClientRect(); return [e.className, r.x, r.y, r.width, r.height]; })""", S)
 
 
-ALL = ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"]
+ALL = ["zscore_mean", "mean", "sum", "control_adjusted", "fraction_of_genes", "fraction_of_total"]
 
 
 # ------------------------------------------------------------------ the pop-over
@@ -126,7 +126,7 @@ def test_methods_opens_a_popover_with_every_method_escape_closes_it_and_the_pane
     methods = page.eval_on_selector_all(f"{POP} [data-method]", "els => els.map(e => e.dataset.method)")
     assert methods == ALL, "every method, always"
     names = page.eval_on_selector_all(f"{POP} [data-method] .gsig-scoring__optionname", "els => els.map(e => e.textContent)")
-    assert names == ["Z-score mean", "Mean", "Sum", "Control-adjusted", "Fraction detected", "% of total"]
+    assert names == ["Z-score mean", "Mean", "Sum", "Control-adjusted", "Fraction of genes", "% of total"]
     for method in ALL:
         assert len(page.inner_text(f"{POP} [data-method='{method}'] .gsig-scoring__definition")) > 20
     for key in ("clip", "bins", "controls", "seed", "detect"):
@@ -185,14 +185,14 @@ def test_control_adjusted_has_bins_controls_and_a_seed(page, served):
     assert page.get_attribute(BUTTON, "title") == "control-adjusted: bins 10, controls 20, seed 42"
 
 
-def test_the_detection_threshold_is_a_number_from_zero_up_shown_under_fraction_detected(page, served):
+def test_the_expression_threshold_is_a_number_from_zero_up_shown_under_fraction_of_genes(page, served):
     _sig_open(page, served)
     _methods(page)
     assert page.input_value(_sel("detect")) == "0"
-    assert "A gene counts as detected in a cell when its value is above this." in page.inner_text(f"{POP} [data-method='detected']")
+    assert "A gene counts as expressed in a cell when its value is above this." in page.inner_text(f"{POP} [data-method='fraction_of_genes']")
     _enter(page, _sel("detect"), "1.5")
     assert _recipe(page)["detect_above"] == 1.5
-    assert page.get_attribute(BUTTON, "title") == "fraction detected: above 1.5"
+    assert page.get_attribute(BUTTON, "title") == "fraction of genes: above 1.5"
     for bad in ("-1", "x", ""):
         page.fill(_sel("detect"), bad)
         assert page.inner_text(_sel("detect-error")) == "Enter a number from 0 up."
@@ -388,7 +388,7 @@ def test_a_clip_edit_recomputes_only_a_z_score_mean_consumer(rec, served):
         last = _recipes(page)[-1]
         assert last["method"] == "control_adjusted" and last[key] == int(value), key
 
-    # the detection threshold: nothing reads fraction detected
+    # the detection threshold: nothing reads fraction of genes
     _enter(page, _sel("detect"), "1")
     # time for a request, were one going to; none should be asked
     page.wait_for_timeout(600)

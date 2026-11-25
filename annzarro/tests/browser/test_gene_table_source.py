@@ -251,7 +251,7 @@ def test_a_table_filtered_by_a_table_that_reads_its_score_is_a_cycle_and_asks_fo
 
 OPTIONS = {"input": "X", "method": "zscore_mean", "clip": 3, "bins": 25, "controls": 50, "seed": None, "detect_above": 1}
 # what a link made before decision 31 stored: the offer is read for its pair only, never written back
-OLD_OFFER = {**OPTIONS, "offered": ["zscore_mean", "mean", "detected"], "layers": ["X", "counts"]}
+OLD_OFFER = {**OPTIONS, "offered": ["zscore_mean", "mean", "fraction_of_genes"], "layers": ["X", "counts"]}
 POP = "[data-popover='methods']"
 METHODS = f"{G} [data-methods]"
 
@@ -269,7 +269,7 @@ def test_a_tables_gene_score_is_two_buttons_beside_the_column_chooser_and_the_ta
     page.click(METHODS)
     page.wait_for_selector(POP, state="visible")
     assert page.eval_on_selector_all(f"{POP} [data-method]", "els => els.map(e => e.dataset.method)") == \
-        ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"]
+        ["zscore_mean", "mean", "sum", "control_adjusted", "fraction_of_genes", "fraction_of_total"]
     assert page.locator(f"{POP} [data-weighting]").count() == 0, "a table has no down genes"
     page.keyboard.press("Escape")
     page.wait_for_selector(POP, state="detached")
@@ -286,7 +286,7 @@ def test_a_tables_parameters_are_stored_as_recipe_fields_without_offered_or_laye
     page.press(f"#gsig-methods-clip-{TAB}", "Enter")
     cfg = page.evaluate("(id) => PanelManager.getPanel(id).getConfig().scoreOptions", TAB)
     assert cfg == OPTIONS, cfg
-    assert page.get_attribute(METHODS, "title") == "z-score mean: clip ±3; fraction detected: above 1"
+    assert page.get_attribute(METHODS, "title") == "z-score mean: clip ±3; fraction of genes: above 1"
     page.click(f"{POP} [data-reset-all]")
     page.click(f"{POP} [data-reset-anyway]")                                # the plot reads z-score mean: it asked first
     assert page.evaluate("(id) => PanelManager.getPanel(id).getConfig().scoreOptions", TAB) is None, "the defaults store nothing"
