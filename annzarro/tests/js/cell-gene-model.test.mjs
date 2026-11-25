@@ -425,7 +425,7 @@ test('matrixWaysOut: a section as one row, then a section removed, each only whe
 });
 
 test('oneRowReadsNoGenes: a score, the share expressing any gene and the cell count do not read genes one by one', () => {
-    assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'zscore_mean' }, size: { stat: 'pct_expressing' } }), true);
+    assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'zscore_mean' }, size: { stat: 'fraction_of_cells' } }), true);
     assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'count' } }), true);
     assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'mean' } }), false, 'the mean of the genes\' means reads them');
     assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'zscore_mean' }, size: { stat: 'mean_expressing' } }), false);
