@@ -32,20 +32,20 @@ const values = (list) => list.map((o) => o.value);
 
 test('statisticList: the 5 statistics and Cell count, and no "Offer other…"', () => {
     const list = C.statisticList({ kinds: KINDS, held: { stat: 'mean', layer: 'logged' } });
-    assert.deepEqual(values(list), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.deepEqual(values(list), ['zscore_mean', 'mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd', 'count']);
     assert.ok(!list.some((o) => /offer/i.test(o.label)), 'no Offer other…');
     assert.ok(!list.some((o) => o.disabled), 'logged gives every statistic');
     // on X (signed) the two threshold statistics are disabled with the reason as their title
     const onX = C.statisticList({ kinds: KINDS, held: { stat: 'mean', layer: 'X' } });
-    for (const stat of ['pct_expressing', 'mean_expressing']) {
+    for (const stat of ['fraction_of_cells', 'mean_expressing']) {
         const e = onX.find((o) => o.value === stat);
         assert.equal(e.disabled, true, stat);
         assert.match(e.title, /negative values/);
     }
 });
 
-test('layerList: all 3 layers, X disabled for % expressing with its reason; none for Cell count', () => {
-    const list = C.layerList({ datasetLayers: LAYERS, kinds: KINDS, stat: 'pct_expressing', held: { stat: 'pct_expressing', layer: 'logged' } });
+test('layerList: all 3 layers, X disabled for Fraction of cells with its reason; none for Cell count', () => {
+    const list = C.layerList({ datasetLayers: LAYERS, kinds: KINDS, stat: 'fraction_of_cells', held: { stat: 'fraction_of_cells', layer: 'logged' } });
     assert.deepEqual(values(list), LAYERS);
     const x = list.find((o) => o.value === 'X');
     assert.equal(x.disabled, true);
@@ -58,7 +58,7 @@ test('layerList: all 3 layers, X disabled for % expressing with its reason; none
 test('a default grouping-axis plot on logged and counts reads "(no longer offered)" nowhere', () => {
     const d = G.defaultMeasures(LAYERS, KINDS);
     assert.deepEqual(d.color, { stat: 'mean', layer: 'logged' });
-    assert.deepEqual(d.size, { stat: 'pct_expressing', layer: 'counts' }, 'no threshold of its own: it follows the grouping (decision 35)');
+    assert.deepEqual(d.size, { stat: 'fraction_of_cells', layer: 'counts' }, 'no threshold of its own: it follows the grouping (decision 35)');
     for (const spec of [d.color, d.size]) {
         const m = C.measureModel({ spec, datasetLayers: LAYERS, kinds: KINDS, threshold: 0 });
         for (const o of [...m.stats, ...m.layers]) assert.ok(!/offered|not available/.test(o.label), o.label);
@@ -67,8 +67,8 @@ test('a default grouping-axis plot on logged and counts reads "(no longer offere
 });
 
 test('a stored impossible pair stays, marked "(not available)"; a layer the dataset lacks is marked so', () => {
-    const held = { stat: 'pct_expressing', layer: 'X' };
-    assert.equal(C.statisticList({ kinds: KINDS, held }).find((o) => o.value === 'pct_expressing').label, '% expressing (not available)');
+    const held = { stat: 'fraction_of_cells', layer: 'X' };
+    assert.equal(C.statisticList({ kinds: KINDS, held }).find((o) => o.value === 'fraction_of_cells').label, 'Fraction of cells (not available)');
     const x = C.layerList({ datasetLayers: LAYERS, kinds: KINDS, stat: held.stat, held }).find((o) => o.value === 'X');
     assert.equal(x.label, 'X (not available)');
     assert.equal(x.disabled, undefined, 'the held pair stays selectable');
@@ -78,9 +78,9 @@ test('a stored impossible pair stays, marked "(not available)"; a layer the data
 
 test('pickLayer: the layer stays when it can give the statistic; else the first that can, said once', () => {
     assert.deepEqual(C.pickLayer({ datasetLayers: LAYERS, kinds: KINDS, stat: 'sd', preferred: 'X' }), { layer: 'X', say: '' });
-    const moved = C.pickLayer({ datasetLayers: LAYERS, kinds: KINDS, stat: 'pct_expressing', preferred: 'X' });
+    const moved = C.pickLayer({ datasetLayers: LAYERS, kinds: KINDS, stat: 'fraction_of_cells', preferred: 'X' });
     assert.equal(moved.layer, 'logged');
-    assert.match(moved.say, /^Layer changed to logged: % expressing cannot be computed on 'X'\.$/);
+    assert.match(moved.say, /^Layer changed to logged: fraction of cells cannot be computed on 'X'\.$/);
 });
 
 // ------------------------------------------------------------------ one-row sections (item 7)
@@ -100,7 +100,7 @@ function momentsOf(groups, t) {
     return m;
 }
 
-test('golden link: a grouping with detect_above 1 draws "% expressing (> 1)", read from the grouping (decision 34)', () => {
+test('golden link: a grouping with detect_above 1 draws "Fraction of cells (> 1)", read from the grouping (decision 34)', () => {
     const link = golden('link_cell_gene_grouping_detect_above');
     const grouping = normalizeGrouping(link.grouping);
     assert.deepEqual(grouping.problems, [], 'the retired offered and layers load with no problem said');
@@ -122,8 +122,8 @@ test('golden link: a grouping with detect_above 1 draws "% expressing (> 1)", re
     assert.equal(S.withGroupingThreshold(drawn, 2), drawn, 'a measure\'s own threshold wins');
     const matrix = S.buildMatrix(plan, (key) => by.get(key) || null, [{ n: 4 }, { n: 4 }], drawn);
     assert.equal(matrix.size.detectAbove, 1);
-    assert.deepEqual(Array.from(matrix.size.values.subarray(0, 2)), [50, 50], 'a cell counts as expressing above 1 (above 0 it would be 75, 75)');
+    assert.deepEqual(Array.from(matrix.size.values.subarray(0, 2)), [0.5, 0.5], 'a cell counts as expressing above 1 (above 0 it would be 0.75, 0.75)');
     const fig = D.buildFigure({ mode: 'dots', groups: [{ label: 'a', n: 4 }, { label: 'b', n: 4 }], rows: matrix.rows,
         color: { ...matrix.color, colorscale: 'Viridis' }, size: matrix.size }, PLOT_PALETTES.light);
-    assert.match(JSON.stringify(fig), /% expressing \(> 1\)/);
+    assert.match(JSON.stringify(fig), /Fraction of cells \(> 1\)/);
 });

@@ -12,6 +12,7 @@
  *   nolayer    the consumer's layer is not in the dataset (the server's not-found reply)
  */
 import { recipeHasher, DEFAULT_METHOD, METHODS, canScoreDown } from './gene-signature.js';
+import { canonicalMethod } from './signature-options.js';
 import { scoreKey } from './score-store.js';
 import { createDerivedSources } from './derived-sources.js';
 
@@ -67,7 +68,7 @@ export function createScoreSources({ store, signatures, context, liveDelayMs = 3
         store, sources: signatures, context, liveDelayMs, setTimer, clearTimer,
         variantOf, hashOf: recipeHasher, editHashOf, keyOf: scoreKey, copyOf: copyRecipe,
         // a column left over from another source (an obsm dimension) is not a method: nothing is asked for it
-        isOption: ({ sub }) => !sub || METHODS.includes(sub),
+        isOption: ({ sub }) => !sub || METHODS.includes(canonicalMethod(sub)),
         failureStates: { key_not_found: 'nolayer' },
         kind: 'signature', thing: 'score'
     });

@@ -229,19 +229,19 @@ def test_refused_for_a_csr_layer_names_the_layout_and_the_way_out(page, served):
 
 def test_no_size_draws_one_size_says_why_and_lists_the_layers_that_work_first(page, served):
     grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}],
-                "offered": ["mean", "pct_expressing"], "layers": ["X", "logged", "counts"]}
+                "offered": ["mean", "fraction_of_cells"], "layers": ["X", "logged", "counts"]}
     _open(page, served, {P: _plot(cellAxis={"type": "cell-group", "key": GA}, sections=_sections(1),
-                                  size={"stat": "pct_expressing", "layer": "X"}, color={"stat": "mean", "layer": "X"}),
+                                  size={"stat": "fraction_of_cells", "layer": "X"}, color={"stat": "mean", "layer": "X"}),
                          S1: _sig(S1, "Markers", GENES[:5]), GA: grouping}, open_ids=(P, S1, GA))
     _drawn(page)
-    sentence = "% expressing cannot be computed on 'X': it has negative values. Choose a layer."
+    sentence = "Fraction of cells cannot be computed on 'X': it has negative values. Choose a layer."
     until(page, "(s) => { const t = document.querySelector(s + ' .ps-tag[data-tag=\"cgene-nosize\"]'); return t && t.textContent === 'No size'; }", TP)
     until(page, "([s, want]) => (document.querySelector(s + ' .cgene-plot').textContent || '').includes(want)", [TP, sentence])
     # the Size layer select (WP-4): the held X marked, the layers that can give the size enabled
     layers = page.eval_on_selector_all(f"{TP} .cgene-size-layer option",
                                        "os => os.filter(o => !o.disabled && !o.classList.contains('cgene-lapsed')).map(o => o.value)")
     assert layers == ["counts", "logged"], layers  # every layer, in the dataset's order (decision 31)
-    assert CC.chosen_stat(page, TP, "size") == "pct_expressing"
+    assert CC.chosen_stat(page, TP, "size") == "fraction_of_cells"
     assert page.locator(f"{TP} .cgene-size-layer option[value='X']").inner_text() == "X (not available)"
     # no size is asked for: only Color's genes
     assert {f["layer"] for f in _features(page.calls)} == {"X"}
@@ -256,7 +256,7 @@ def test_one_cell_per_group_suggests_a_heatmap_and_switching_asks_nothing(page, 
     assert st["groups"] == 1200
     hint = page.locator(f"{TP} .cgene-hint")
     until(page, "(s) => !document.querySelector(s + ' .cgene-hint').hidden", TP)
-    assert hint.inner_text().startswith("One cell per group: % expressing is 0 or 100.")
+    assert hint.inner_text().startswith("One cell per group: Fraction of cells is 0 or 1.")
     n = len(page.calls)
     hint.locator(".cgene-hint__do").click()
     until(page, "(s) => document.querySelector(s + ' .cgene-plot').data[0].type === 'heatmap'", TP)

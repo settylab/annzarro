@@ -17,8 +17,8 @@ covers is shown here by GENE003, which no cell expresses.
 How a statistic maps (the CSV's columns):
 - ``dot_color_df`` with ``mean_only_expressed`` off: Color ``mean`` (no threshold; scanpy's cutoff does not enter).
 - ``dot_color_df`` with ``mean_only_expressed`` on: Color ``mean_expressing`` with ``detect_above`` = the cutoff.
-- ``dot_size_df``: Size ``pct_expressing`` with ``detect_above`` = the cutoff. AnnZarro writes a percentage (0 to 100),
-  scanpy a fraction: the CSV's value is 100 times scanpy's.
+- ``dot_size_df``: Size ``fraction_of_cells`` with ``detect_above`` = the cutoff. Both write a fraction from 0 to 1,
+  so the CSV's value is scanpy's.
 - ``standard_scale``: Scale ``var`` or ``group``; the CSV has the Color column as computed and as displayed.
 
 Each intended difference of 5.3 (and of the statistics behind it) has its own test below, which shows the difference
@@ -29,8 +29,8 @@ and says why:
 4.  ``standard_scale``: a constant gene gives 0, as in scanpy (and two z-score scalings scanpy does not have).
 5.  ``dendrogram``: same method as ``sc.tl.dendrogram`` (complete, Pearson), on the displayed values, not on group
     means of ``X_pca`` (CXG-26), and the panel says so.
-6.  ``dot_size_df``: % expressing (0 to 100), not a fraction (in every parity case above).
-7.  A layer with negative values: % expressing and mean of expressing cells are not read on it (OD 8, SHR-27), where
+6.  (retired) ``dot_size_df``: Fraction of cells is a fraction from 0 to 1, as scanpy's is (checked in every parity case above).
+7.  A layer with negative values: Fraction of cells and mean of expressing cells are not read on it (OD 8, SHR-27), where
     scanpy computes them.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
@@ -64,18 +64,18 @@ LINK = np.load(os.path.join(ORACLE, "linkage.npz"), allow_pickle=False)
 B = [str(g) for g in DOT["genes"]]
 assert B == GENES[:12]
 REL = 1e-9
-STATS = ["mean", "pct_expressing", "mean_expressing"]
+STATS = ["mean", "fraction_of_cells", "mean_expressing"]
 LAYERS = ["X", "logged", "counts"]
-LABEL = {"mean": "Mean", "pct_expressing": "% expressing", "mean_expressing": "Mean of expressing cells"}
+LABEL = {"mean": "Mean", "fraction_of_cells": "Fraction of cells", "mean_expressing": "Mean of expressing cells"}
 SCALED = {"none": "not scaled", "var": "scaled 0 to 1 per gene", "group": "scaled 0 to 1 per group",
           "z_groups": "z-score per gene, across groups", "z_pooled": "z-score per gene, against all grouped cells"}
 NOTE = "no expressing cells"
 
 
 def _named(stat, cut):
-    """A statistic as the CSV header names it: a thresholded one with its threshold, "% expressing (> 0.5)" (WP-4),
+    """A statistic as the CSV header names it: a thresholded one with its threshold, "Fraction of cells (> 0.5)" (WP-4),
     the number written as the page writes it."""
-    if stat not in ("pct_expressing", "mean_expressing"):
+    if stat not in ("fraction_of_cells", "mean_expressing"):
         return LABEL[stat]
     return f"{LABEL[stat]} (> {int(cut) if float(cut).is_integer() else cut})"
 
@@ -197,8 +197,8 @@ DOT_CASES += [("X", groupby, 0.0, 0) for groupby in ("cell_type", "condition", "
 def test_the_csv_of_a_link_equals_scanpy_dotplot(page, served, layer, groupby, cut, mo):
     stat = "mean_expressing" if mo else "mean"
     color = {"stat": stat, "layer": layer, **({"detect_above": cut} if mo else {})}
-    # on X (negative values) Size cannot be % expressing (difference 7); it is drawn on one size and the CSV has none
-    size = {"stat": "pct_expressing", "layer": layer, "detect_above": cut}
+    # on X (negative values) Size cannot be Fraction of cells (difference 7); it is drawn on one size and the CSV has none
+    size = {"stat": "fraction_of_cells", "layer": layer, "detect_above": cut}
     _link(page, served, {"color": color, "size": size, "scale": "var"}, _grouping(groupby))
     for ss in ("var", "group"):
         if ss != "var":
@@ -211,12 +211,12 @@ def test_the_csv_of_a_link_equals_scanpy_dotplot(page, served, layer, groupby, c
         _assert_close(_column(head, body, title + SCALED["none"], groups), DOT[_key(layer, groupby, cut, mo, "none") + "__color"],
                       f"dot_color_df, {key}, as computed")
         _assert_close(_column(head, body, title + SCALED[ss], groups), DOT[key + "__color"], f"dot_color_df, {key}, as displayed")
-        size_title = f"{_named('pct_expressing', cut)} · {layer} · {SCALED['none']}"
+        size_title = f"{_named('fraction_of_cells', cut)} · {layer} · {SCALED['none']}"
         if layer == "X":
-            assert not any(h.startswith(LABEL["pct_expressing"]) for h in head), "no % expressing on a layer with negative values"
+            assert not any(h.startswith(LABEL["fraction_of_cells"]) for h in head), "no Fraction of cells on a layer with negative values"
             continue
-        # scanpy's size is a fraction; AnnZarro's % expressing is a percentage (difference 6)
-        _assert_close(_column(head, body, size_title, groups) / 100, DOT[key + "__size"], f"dot_size_df, {key}")
+        # scanpy's size is a fraction, and so is Fraction of cells: no factor
+        _assert_close(_column(head, body, size_title, groups), DOT[key + "__size"], f"dot_size_df, {key}")
 
 
 # ------------------------------------------------------------------ parity: heatmap mode (matrixplot)
@@ -235,7 +235,7 @@ def test_the_csv_of_a_heatmap_link_equals_scanpy_matrixplot(page, served, layer,
                       f"matrixplot {layer} {groupby} none")
         _assert_close(_column(head, body, title + SCALED[ss], groups), DOT[f"matrix__{layer}__{groupby}__ss{ss}"],
                       f"matrixplot {layer} {groupby} {ss}")
-        assert not any(h.startswith(LABEL["pct_expressing"]) for h in head), "a heatmap has no size"
+        assert not any(h.startswith(LABEL["fraction_of_cells"]) for h in head), "a heatmap has no size"
 
 
 # ------------------------------------------------------------------ 1. num_categories: [lo, hi) against (a, b]
@@ -250,7 +250,7 @@ def test_difference_1_a_value_on_an_inner_edge_falls_in_the_upper_bin_not_the_lo
     assert pandas_counts != ours_expected, "the case must have values on an inner edge"
     grouping = {"id": GA, "title": "Grouping 1", "version": 1,
                 "partitionings": [{"source": {"type": "obs", "key": "pseudotime"}, "binning": {"method": "equal_width", "bins": n}}]}
-    _link(page, served, {"color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "pct_expressing", "layer": "logged"}},
+    _link(page, served, {"color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "fraction_of_cells", "layer": "logged"}},
           grouping, genes=B[:1])
     head, body = _csv(page)
     cells = [int(r[3]) for r in body]
@@ -271,7 +271,7 @@ def test_difference_2_raw_is_never_offered_as_a_layer(page, served):
     _, store = served
     assert "X" in zarr_compat.open_group(store, mode="r")["raw"], "the dataset has a .raw"
     # even a grouping whose (retired) recipe names "raw" does not get it: the dataset's layers are X and its layers
-    _link(page, served, {"color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "pct_expressing", "layer": "logged"}},
+    _link(page, served, {"color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "fraction_of_cells", "layer": "logged"}},
           {**_grouping("cell_type"), "layers": [*LAYERS, "raw"]})
     for sel in (".cgene-color-layer", ".cgene-size-layer"):
         values = page.locator(f"{TP} {sel}").evaluate("e => [...e.options].map(o => o.value)")
@@ -286,7 +286,7 @@ def test_differences_3_and_4_no_expressing_cell_is_0_as_scanpy_and_the_csv_says_
     expressed by no cell: 0 in every group, noted in every group. Under standard_scale='var' the constant GENE003
     gives 0, as in scanpy, where a division by its range of 0 would give NaN."""
     _link(page, served, {"color": {"stat": "mean_expressing", "layer": "logged", "detect_above": 0.5},
-                         "size": {"stat": "pct_expressing", "layer": "logged", "detect_above": 0.5}, "scale": "var"},
+                         "size": {"stat": "fraction_of_cells", "layer": "logged", "detect_above": 0.5}, "scale": "var"},
           _grouping("cell_type"))
     head, body = _csv(page)
     assert head[-1] == "Note"
@@ -327,7 +327,7 @@ def test_difference_5_clustering_is_scanpys_method_on_the_displayed_values_not_o
     panel uses the same linkage and distance (the defaults), on the values as displayed (CXG-26). Held against scipy on
     the displayed matrix (R2's linkage.npz: means of `logged` per cell type, 6 x 12; and its transpose without the
     constant GENE003), the order is scipy's; and it follows the display: another scaling, another order."""
-    _link(page, served, {"color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "pct_expressing", "layer": "logged"},
+    _link(page, served, {"color": {"stat": "mean", "layer": "logged"}, "size": {"stat": "fraction_of_cells", "layer": "logged"},
                          "cluster": {"genes": "sections", "groups": "all", **CLUSTER}}, _grouping("cell_type"))
     page.click(f"{TP} .cgene-cluster-btn")
     summary = page.locator("[data-popover='cluster'] .cgene-cluster-menu .cgene-cluster-summary").inner_text()
@@ -351,14 +351,14 @@ def test_difference_5_clustering_is_scanpys_method_on_the_displayed_values_not_o
 
 # ------------------------------------------------------------------ 7. a layer with negative values
 
-def test_difference_7_no_pct_expressing_on_a_layer_with_negative_values(page, served):
+def test_difference_7_no_fraction_of_cells_on_a_layer_with_negative_values(page, served):
     """scanpy computes dot_size_df on any matrix (the share of values above the cutoff, here of a scaled, signed X);
-    AnnZarro does not read % expressing on a layer with negative values (OD 8, SHR-27): the dots are drawn on one size,
+    AnnZarro does not read Fraction of cells on a layer with negative values (OD 8, SHR-27): the dots are drawn on one size,
     the panel says why, and the CSV has no size column. The colour (the mean) still equals scanpy's."""
-    _link(page, served, {"color": {"stat": "mean", "layer": "X"}, "size": {"stat": "pct_expressing", "layer": "X"}},
+    _link(page, served, {"color": {"stat": "mean", "layer": "X"}, "size": {"stat": "fraction_of_cells", "layer": "X"}},
           _grouping("cell_type"))
     head, body = _csv(page)
-    assert not any(h.startswith(LABEL["pct_expressing"]) for h in head), "no size column, under any threshold"
+    assert not any(h.startswith(LABEL["fraction_of_cells"]) for h in head), "no size column, under any threshold"
     assert "Mean · X · not scaled" in head
     assert DOT[_key("X", "cell_type", 0.0, 0, "none") + "__size"].max() > 0, "scanpy has a size for it"
     hint = page.locator(f"{TP} .cgene-panel").inner_text()

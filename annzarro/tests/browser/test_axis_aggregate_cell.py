@@ -143,14 +143,14 @@ def test_the_menu_columns_line_up_and_a_disabled_entry_gives_its_reason(page, se
     _open(page, served, plots=(("cell-plot-C", _cell(color=SCORE)),))
     button = f'{C} button.axis-agg-btn[data-axis="color"]'
     page.wait_for_selector(button)
-    axis_sets.until_methods(page, "cell-plot-C", "color", "(o) => o.find(m => m.value === 'detected').disabled")
+    axis_sets.until_methods(page, "cell-plot-C", "color", "(o) => o.find(m => m.value === 'fraction_of_genes').disabled")
     page.click(button)
     xs = page.evaluate("""() => [...document.querySelectorAll("[data-popover='aggregation'] [data-agg]")].map(r => [Math.round(r.querySelector('.axis-agg-sym').getBoundingClientRect().left),
         Math.round(r.querySelector('.axis-agg-name').getBoundingClientRect().left)])""")
     assert len({a for a, _ in xs}) == 1 and len({b for _, b in xs}) == 1, f"every symbol and every name starts at one x: {xs}"
-    off = page.evaluate("""() => { const r = document.querySelector("[data-popover='aggregation'] [data-agg='detected']");
+    off = page.evaluate("""() => { const r = document.querySelector("[data-popover='aggregation'] [data-agg='fraction_of_genes']");
         return { disabled: r.disabled, title: r.title, why: (r.querySelector('.axis-agg-why') || {}).textContent || '' }; }""")
-    assert off["disabled"] and "Raise Detected above" in off["title"] and off["why"] == off["title"], off
+    assert off["disabled"] and "Raise Expressed above" in off["title"] and off["why"] == off["title"], off
     assert page.evaluate("() => document.querySelector(\"[data-popover='aggregation'] [data-agg='zscore_mean']\").getAttribute('aria-checked')") == "true"
     page.keyboard.press("Escape")
 
@@ -160,7 +160,7 @@ def test_screenshots_of_the_open_menu_of_a_signature_on_x(page, served):
     y = {"type": "layer", "key": "X", "column": "GAPDH"}
     _open(page, served, plots=(("cell-plot-C", _cell(x=SCORE, y=y, color={"type": "none", "key": "", "column": ""})),))
     page.wait_for_selector(f'{C} button.axis-agg-btn[data-axis="x"]')
-    axis_sets.until_methods(page, "cell-plot-C", "x", "(o) => o.find(m => m.value === 'detected').disabled")
+    axis_sets.until_methods(page, "cell-plot-C", "x", "(o) => o.find(m => m.value === 'fraction_of_genes').disabled")
     os.makedirs(SHOTS, exist_ok=True)
     for theme in ("light", "dark"):
         page.evaluate("(t) => { document.documentElement.setAttribute('data-theme', t); document.documentElement.setAttribute('data-bs-theme', t); }", theme)

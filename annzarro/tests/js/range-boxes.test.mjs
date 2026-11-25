@@ -92,15 +92,15 @@ test('typing commits a number; empty commits null; text that is no number is ref
 
 test('the labels follow the data when set() gives them', () => {
     const { boxes } = mount();
-    boxes.set({ limits: [], labels: ['Size min (% expressing)', 'Size max (% expressing)', 'Center'] });
-    assert.equal(boxes.fields[0].attributes['aria-label'], 'Size min (% expressing)');
+    boxes.set({ limits: [], labels: ['Size min (Fraction of cells)', 'Size max (Fraction of cells)', 'Center'] });
+    assert.equal(boxes.fields[0].attributes['aria-label'], 'Size min (Fraction of cells)');
 });
 
 test('the size boxes are worded by the statistic, not by "%"', () => {
     const W = VOCABULARY.cellGene;
     assert.equal(W.options.sizeMin, 'Size min');
     assert.equal(W.options.sizeMax, 'Size max');
-    assert.equal(W.statistic.pct_expressing, '% expressing');
+    assert.equal(W.statistic.fraction_of_cells, 'Fraction of cells');
     assert.equal(W.options.dotMin, undefined, 'the "% at the smallest dot" wording is gone');
 });
 

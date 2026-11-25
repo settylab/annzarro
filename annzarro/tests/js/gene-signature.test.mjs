@@ -132,7 +132,7 @@ test('a hasher of one recipe gives each variant the hash it has on its own', () 
     const r = recipe({ genes: ['A', 'B', 'C'], down: ['D'], clip: 4, seed: 2 });
     const hash = G.recipeHasher(r);
     for (const variant of [r, { ...r, method: 'mean' }, { ...r, method: 'control_adjusted', input: 'counts' }, { ...r, down_weight: 'side' },
-        { ...r, method: 'detected', detect_above: 0.5 }]) {
+        { ...r, method: 'fraction_of_genes', detect_above: 0.5 }]) {
         assert.equal(hash(variant), G.recipeHash(variant));
     }
 });

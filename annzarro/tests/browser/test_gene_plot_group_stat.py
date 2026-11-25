@@ -3,8 +3,8 @@ cell_groups route (`shape: "genes"`, SO-8a).
 
 1.  Color > layer logged > Grouping 1 / B cell (in the item picker, under Cell groupings) sends ONE `genes` POST, and the
     colours are the mean of each gene over the B cells.
-2.  Switching between statistics of the same moments (% expressing, SD, mean of expressing cells) sends none; % expressing
-    is in the Cell-Gene Plot's units, 0 to 100.
+2.  Switching between statistics of the same moments (Fraction of cells, SD, mean of expressing cells) sends none; Fraction of cells
+    is in the Cell-Gene Plot's units (Fraction of cells is 0 to 1).
 3.  Expressed above edited in the grouping's Methods sends one, at the new threshold.
 4.  A grouping whose level was renamed keeps the colour: the group is keyed by its key, the label is display.
 5.  A group that is no longer one says "No longer a group" and asks for nothing.
@@ -100,8 +100,8 @@ def _numbers(stat, layer="logged", threshold=0.0):
         out = x.sum(axis=0)
     elif stat == "sd":
         out = x.std(axis=0)
-    elif stat == "pct_expressing":
-        out = 100 * above.mean(axis=0)                              # % expressing, as the Cell-Gene Plot has it: 0 to 100
+    elif stat == "fraction_of_cells":
+        out = above.mean(axis=0)                              # Fraction of cells, as the Cell-Gene Plot has it: 0 to 1
     else:
         out = np.where(above.sum(axis=0) > 0, (x * above).sum(axis=0) / np.maximum(above.sum(axis=0), 1), 0.0)
     return np.sort(out)
@@ -192,15 +192,15 @@ def test_the_path_through_the_row_sends_one_request_and_a_switch_of_statistic_se
         ("group-stat", GA, B_KEY, "mean", "logged", ["B cell"])
     assert page.get_attribute(axis_sets.button(C, "color"), "aria-label") == "Aggregation: Mean"
     stats = axis_sets.aggregations(page, C, "color")
-    assert [r["v"] for r in stats] == ["zscore_mean", "mean", "pct_expressing", "mean_expressing", "sum", "sd"], "every statistic but Cell count"
-    assert [r["text"].split(" ", 1)[1] for r in stats] == ["Z-score mean", "Mean", "% expressing", "Mean of expressing cells", "Sum", "SD"]
-    # the other statistics are the same moments: no request; % expressing is 0 to 100
-    for stat in ("pct_expressing", "sd", "mean_expressing", "sum", "mean"):
+    assert [r["v"] for r in stats] == ["zscore_mean", "mean", "fraction_of_cells", "mean_expressing", "sum", "sd"], "every statistic but Cell count"
+    assert [r["text"].split(" ", 1)[1] for r in stats] == ["Z-score mean", "Mean", "Fraction of cells", "Mean of expressing cells", "Sum", "SD"]
+    # the other statistics are the same moments: no request; Fraction of cells is 0 to 1
+    for stat in ("fraction_of_cells", "sd", "mean_expressing", "sum", "mean"):
         axis_sets.choose_aggregation(page, C, "color", stat)
         until(page, "([id, s]) => window.PanelManager.getPanel(id).getConfig().color.stat === s", [G, stat])
         _wait_stat(page, stat)
     assert len(_genes(page)) == 1, "switching between statistics of the same moments sent nothing"
-    assert max(_numbers("pct_expressing")) <= 100.0
+    assert max(_numbers("fraction_of_cells")) <= 1.0
 
 
 def test_another_layer_is_another_request(page, served):
@@ -217,9 +217,9 @@ def test_another_layer_is_another_request(page, served):
 # ------------------------------------------------------------------ 3: Expressed above
 
 def test_expressed_above_edited_in_the_groupings_methods_sends_one_request(page, served):
-    _open(page, served, {G: _plot(color=_stat(stat="pct_expressing")), GA: _grouping()})
+    _open(page, served, {G: _plot(color=_stat(stat="fraction_of_cells")), GA: _grouping()})
     _wait_colours(page, 40)
-    assert _close(_colours(page), _numbers("pct_expressing"))
+    assert _close(_colours(page), _numbers("fraction_of_cells"))
     n = len(_genes(page))
     page.wait_for_selector(f"{TG} .cgrp-controls .cmeth__toggle", timeout=30000)
     page.click(f"{TG} .cmeth__toggle")
@@ -231,7 +231,7 @@ def test_expressed_above_edited_in_the_groupings_methods_sends_one_request(page,
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().detect_above === 0.5", GA)
     until(page, """([t, want]) => { const gd = document.querySelector(t + ' .js-plotly-plot');
         const v = ((gd && gd.data) || []).flatMap(d => Array.from((d.marker && d.marker.color) || [])).filter(x => typeof x === 'number').sort((a, b) => a - b);
-        return v.length === want.length && v.every((x, i) => Math.abs(x - want[i]) < 1e-6); }""", [C, _numbers("pct_expressing", threshold=0.5).tolist()], timeout=60)
+        return v.length === want.length && v.every((x, i) => Math.abs(x - want[i]) < 1e-6); }""", [C, _numbers("fraction_of_cells", threshold=0.5).tolist()], timeout=60)
     new = _genes(page)[n:]
     assert len(new) == 1 and new[0]["thresholds"] == [0.5], new
 
@@ -443,7 +443,7 @@ def test_an_axis_is_chosen_in_its_own_row_and_survives_a_link(page, served):
 
 
 def test_three_aggregated_axes_are_three_one_line_rows_and_leaving_the_layer_clears_the_set(page, served):
-    _open(page, served, {G: _plot(x=_stat(), y=_stat(stat="sd"), color=_stat(stat="pct_expressing")), GA: _grouping()})
+    _open(page, served, {G: _plot(x=_stat(), y=_stat(stat="sd"), color=_stat(stat="fraction_of_cells")), GA: _grouping()})
     for axis in ("x", "y", "color"):
         page.wait_for_selector(axis_sets.button(C, axis), timeout=30000)
     boxes = page.evaluate("""(t) => ['x', 'y', 'color'].map((a) => { const row = document.querySelector(t + ` select.axis-type-select[data-axis="${a}"]`).closest('.axis-selector');
@@ -454,7 +454,7 @@ def test_three_aggregated_axes_are_three_one_line_rows_and_leaving_the_layer_cle
         assert b["extra"] == 0 and b["height"] <= b["select"] + 6, f"one line per axis: {b}"
     # each axis says its own aggregation, so the rows can be told apart
     assert [page.get_attribute(axis_sets.button(C, a), "aria-label") for a in ("x", "y", "color")] == \
-        ["Aggregation: Mean", "Aggregation: SD", "Aggregation: % expressing"]
+        ["Aggregation: Mean", "Aggregation: SD", "Aggregation: Fraction of cells"]
     # leaving the layer source clears the set completely: no stale statistic or group, and the axis is a plain one
     page.select_option(axis_sets.sel(C, "y", "type"), "var")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().y.type === 'var'", G)

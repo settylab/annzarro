@@ -41,6 +41,7 @@
  * (a heatmap draws up to 400,000, CXG-17). Hover text is built per cell from strings made once per row and group.
  */
 import { DEFAULT_FONT } from '../../utils/fonts.js';
+import { formatFraction } from '../../utils/cell-gene-model.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { PLOT_PALETTES, GAP_COLOUR, MODEBAR_REMOVE } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax } from '../../utils/array-stats.js';
@@ -100,10 +101,12 @@ const PENDING_DOT = 5;
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const fmt = (v) => String(Number(v.toPrecision(4)));
 const fmtCount = (n) => n.toLocaleString('en-US');
+/** A statistic's value as text: a fraction in the fraction's format (`digits` decimals), any other as `fmt`. */
+const fmtOf = (stat, digits = 2) => (stat === 'fraction_of_cells' ? (v) => formatFraction(v, digits) : fmt);
 
-/** "Mean · X", "% expressing (> 0) · logged_counts": a quantity named by statistic, threshold and layer. */
+/** "Mean · X", "fraction of cells (> 0) · logged_counts": a quantity named by statistic, threshold and layer. */
 function statisticTitle({ stat, layer, detectAbove }) {
-    const threshold = (stat === 'pct_expressing' || stat === 'mean_expressing') && detectAbove != null ? ` (> ${fmt(detectAbove)})` : '';
+    const threshold = (stat === 'fraction_of_cells' || stat === 'mean_expressing') && detectAbove != null ? ` (> ${fmt(detectAbove)})` : '';
     return `${W.statistic[stat]}${threshold}${layer ? ` · ${layer}` : ''}`;
 }
 
@@ -315,10 +318,10 @@ function describer(model, P, dots) {
         } else {
             colourText = scaled
                 ? color.raw ? `${colourName[r]}: ${fmt(color.raw[i])} (${scaledWord}: ${fmt(v)})` : `${colourName[r]} (${scaledWord}): ${fmt(v)}`
-                : `${colourName[r]}: ${fmt(v)}${unit}`;
+                : `${colourName[r]}: ${fmtOf(color.stat, 3)(v)}${unit}`;
             if (color.noExpressing && color.noExpressing[i]) colourText += ` (${W.noExpressingCells})`;
         }
-        const sizeText = sizeName && Number.isFinite(size.values[i]) ? `<br>${sizeName[r]}: ${fmt(size.values[i])}` : '';
+        const sizeText = sizeName && Number.isFinite(size.values[i]) ? `<br>${sizeName[r]}: ${fmtOf(size.stat, 3)(size.values[i])}` : '';
         return `${groupLine[g]}<br>${rowLine[r]}<br>${colourText}${sizeText}`;
     };
 }
@@ -548,7 +551,7 @@ function sizeLegendParts(model, k, entry, n, th) {
         type: 'scatter', mode: 'markers+text', name: 'size legend', hoverinfo: 'skip', showlegend: false,
         xaxis: `x${axisId}`, yaxis: `y${axisId}`,
         x: refs.map(() => 0), y: refs.map((_, j) => j),
-        text: refs.map((v) => (k.hi > k.lo ? fmt(v) : fmt(k.lo))), textposition: 'middle right', cliponaxis: false,
+        text: refs.map((v) => (k.hi > k.lo ? fmtOf(model.size.stat)(v) : fmtOf(model.size.stat)(k.lo))), textposition: 'middle right', cliponaxis: false,
         marker: { size: refs.map((v) => diameterOf(v, k.lo, k.hi, drawn.smallest, drawn.largest)), color: th.axisColor, opacity: LEGEND_DOT_OPACITY * dotOpacityOf(model), line: model.outline ? { color: model.outline.color, width: model.outline.width } : { width: 0 } }
     };
     const axes = {

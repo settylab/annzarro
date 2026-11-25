@@ -122,7 +122,7 @@ def _zmeans():
 def _numbers(stat, layer="logged", threshold=0.0):
     x = DATA.layer(layer)[B].astype(np.float64)
     above = x > threshold
-    return {"mean": x.mean(axis=0), "sum": x.sum(axis=0), "sd": x.std(axis=0), "pct_expressing": 100 * above.mean(axis=0)}[stat]
+    return {"mean": x.mean(axis=0), "sum": x.sum(axis=0), "sd": x.std(axis=0), "fraction_of_cells": above.mean(axis=0)}[stat]
 
 
 def _wait_column(page, header_part):
@@ -160,7 +160,7 @@ def test_add_row_is_group_layer_aggregation_then_add(page, served):
     groups = page.eval_on_selector_all(f"{g} .az-score-add-group option", "os => os.map(o => [o.value, o.textContent, o.disabled])")
     assert groups[1] == [B_KEY, "B cell", False] and len(groups) == 7, groups
     names = [e["name"] for e in _agg_entries(page)]
-    assert names == ["Z-score mean", "Mean", "% expressing", "Mean of expressing cells", "Sum", "SD"]
+    assert names == ["Z-score mean", "Mean", "Fraction of cells", "Mean of expressing cells", "Sum", "SD"]
 
 
 # ------------------------------------------------------------------ the values
@@ -192,9 +192,9 @@ def test_second_statistic_sends_no_request(page, served):
     _apply(page)
     _wait_column(page, "B cell: sum")
     assert len(_genes(page)) == 1, "sum reads the held moments"
-    _add(page, "pct_expressing", "logged")
+    _add(page, "fraction_of_cells", "logged")
     _apply(page)
-    _wait_column(page, "B cell: % expressing")
+    _wait_column(page, "B cell: fraction of cells")
     assert len(_genes(page)) == 1
     _add(page, "zscore_mean", "logged")
     _apply(page)
@@ -209,15 +209,15 @@ def test_second_statistic_sends_no_request(page, served):
 
 
 def test_column_names(page, served):
-    _open(page, served, columns=[_column("mean"), _column("pct_expressing", "counts")])
-    _wait_column(page, "B cell: % expressing")
+    _open(page, served, columns=[_column("mean"), _column("fraction_of_cells", "counts")])
+    _wait_column(page, "B cell: fraction of cells")
     heads = _headers(page)
-    assert "B cell: mean · logged" in heads and "B cell: % expressing · counts" in heads, heads
+    assert "B cell: mean · logged" in heads and "B cell: fraction of cells · counts" in heads, heads
     exported = page.evaluate("(box) => [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].map(th => th.dataset.exportTitle || '')", BOX)
     assert "Cell types › B cell: mean · logged" in exported, exported
     _open_tab(page)
     rows = page.eval_on_selector_all(f"{_group_group()} .form-check label", "ls => ls.map(l => l.textContent)")
-    assert rows == ["B cell: mean · logged", "B cell: % expressing · counts"], rows
+    assert rows == ["B cell: mean · logged", "B cell: fraction of cells · counts"], rows
 
 
 def test_sorting_by_the_column_keeps_values_with_their_genes(page, served):

@@ -168,7 +168,7 @@ def test_a_gene_on_both_sides_scores_as_if_down_never_named_it(stores):
 
 # --- the methods that have no signed version ---------------------------------------------------------------
 
-@pytest.mark.parametrize("method", ["sum", "detected", "fraction_of_total"])
+@pytest.mark.parametrize("method", ["sum", "fraction_of_genes", "fraction_of_total"])
 def test_methods_without_a_signed_meaning_refuse_down_genes(method):
     with pytest.raises(gs.ScoreError) as caught:
         gs.parse_recipe({"genes": ["A"], "down": ["B"], "method": method})

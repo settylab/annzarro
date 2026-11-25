@@ -17,14 +17,14 @@ const W = V.cellGene;
 const LIGHT = PLOT_PALETTES.light;
 const DARK = PLOT_PALETTES.dark;
 
-/** A model of `rows` genes in `groups` groups; colour is r + g / 10, size is 10 * (g + 1) (percent). */
+/** A model of `rows` genes in `groups` groups; colour is r + g / 10, size is 0.1 * (g + 1) (a fraction). */
 function model({ rows = 3, groups = 2, mode = 'dots', ...over } = {}) {
     const colour = new Float64Array(rows * groups);
     const size = new Float64Array(rows * groups);
     for (let r = 0; r < rows; r++) {
         for (let g = 0; g < groups; g++) {
             colour[r * groups + g] = r + g / 10;
-            size[r * groups + g] = 10 * (g + 1);
+            size[r * groups + g] = 0.1 * (g + 1);
         }
     }
     return {
@@ -32,7 +32,7 @@ function model({ rows = 3, groups = 2, mode = 'dots', ...over } = {}) {
         groups: Array.from({ length: groups }, (_, g) => ({ label: `group ${g}`, n: 100 * (g + 1) })),
         rows: Array.from({ length: rows }, (_, r) => ({ label: `Gene${r}` })),
         color: { id: 'mean|X', stat: 'mean', layer: 'X', scaling: 'none', values: colour, colorscale: 'Viridis' },
-        size: { id: 'pct|X', stat: 'pct_expressing', layer: 'X', detectAbove: 0, values: size },
+        size: { id: 'pct|X', stat: 'fraction_of_cells', layer: 'X', detectAbove: 0, values: size },
         ...over
     };
 }
@@ -68,11 +68,11 @@ test('dot_min and dot_max clamp the size range', () => {
     m.size.smallest = 4;
     m.size.largest = 20;
     m.size.dotMin = 0;
-    m.size.dotMax = 40;
+    m.size.dotMax = 0.4;
     const [t] = traces(D.buildFigure(m, LIGHT), 'scatter');
     assert.deepEqual([...new Set(t.marker.size)].sort((a, b) => a - b), [4 + 16 * 0.25, 4 + 16 * 0.5]);
-    m.size.dotMin = 15;
-    m.size.dotMax = 15.0001;
+    m.size.dotMin = 0.15;
+    m.size.dotMax = 0.150001;
     const sizes = new Set(traces(D.buildFigure(m, LIGHT), 'scatter')[0].marker.size);
     assert.deepEqual([...sizes].sort((a, b) => a - b), [4, 20], 'values under dot_min draw smallest, over dot_max largest');
 });
@@ -186,15 +186,15 @@ test('a title the user edited replaces the default, on the color bar and the siz
 test('the size legend: five reference dots from dot_min to dot_max, titled with statistic, threshold and layer', () => {
     const m = model();
     m.size.dotMin = 0;
-    m.size.dotMax = 100;
+    m.size.dotMax = 1;
     m.size.smallest = 4;
     m.size.largest = 24;
     const fig = D.buildFigure(m, LIGHT);
     const legend = sizeLegend(fig);
     assert.equal(legend.marker.size.length, 5);
     assert.deepEqual(legend.marker.size, [4, 9, 14, 19, 24]);
-    assert.deepEqual(legend.text, ['0', '25', '50', '75', '100']);
-    assert.ok(fig.layout.annotations.some((a) => a.text === `${W.statistic.pct_expressing} (> 0) · X`));
+    assert.deepEqual(legend.text, ['0', '0.25', '0.5', '0.75', '1'], 'a fraction, two decimals at most, no % sign');
+    assert.ok(fig.layout.annotations.some((a) => a.text === `${W.statistic.fraction_of_cells} (> 0) · X`));
     assert.equal(legend.hoverinfo, 'skip');
 });
 
@@ -214,7 +214,7 @@ test('a heatmap has a color bar and no size legend', () => {
 // --- No size (SHR-27) -------------------------------------------------------------------------------------------
 
 test('No size: every dot at one size, the size legend replaced by the sentence it is given', () => {
-    const says = "% expressing cannot be computed on 'X': it has negative values. Choose a layer.";
+    const says = "Fraction of cells cannot be computed on 'X': it has negative values. Choose a layer.";
     const m = model({ size: { none: says } });
     const fig = D.buildFigure(m, LIGHT);
     const [t] = traces(fig, 'scatter');
@@ -231,7 +231,7 @@ const withOwnRows = (over = {}) => {
     m.rows[2] = { label: 'B cell score', section: { index: 1, title: 'Pathway' },
         own: { color: { id: 'score_mean|B', label: 'z-score mean · X, averaged' }, size: { id: 'mean_of_means|X', label: "Mean of the genes' means" } } };
     m.rows[3] = { label: 'T score', section: { index: 2, title: 'Immune' },
-        own: { color: { id: 'mean|X', label: 'Mean · X' }, size: { id: 'pct|X', label: '% expressing' } } };
+        own: { color: { id: 'mean|X', label: 'Mean · X' }, size: { id: 'pct|X', label: 'Fraction of cells' } } };
     return m;
 };
 
@@ -268,7 +268,7 @@ test('a one-row section whose size is not the genes\' size gets its own size leg
     assert.equal(legends.length, 2);
     const titles = fig.layout.annotations.map((a) => a.text);
     assert.ok(titles.includes(`Pathway<br>Mean of the genes' means`), titles.join('|'));
-    assert.ok(titles.includes(`${W.statistic.pct_expressing} (> 0) · X`));
+    assert.ok(titles.includes(`${W.statistic.fraction_of_cells} (> 0) · X`));
     assert.ok(!titles.some((t) => t.startsWith('Immune')), 'the section on the genes\' size draws no legend of its own');
     const own = legends[1];
     assert.equal(own.marker.size.length, 5);
@@ -294,7 +294,7 @@ test('hover names the group and its cells, the gene, and each value with its sta
     assert.equal(lines2[0], `group 1 · ${W.csv.cells}: 200`);
     assert.equal(lines2[1], 'Gene1');
     assert.equal(lines2[2], `${W.statistic.mean} · X: 1.1`);
-    assert.equal(lines2[3], `${W.statistic.pct_expressing} (> 0) · X: 20`);
+    assert.equal(lines2[3], `${W.statistic.fraction_of_cells} (> 0) · X: 0.2`);
     assert.equal(t.hoverinfo, 'text');
 });
 

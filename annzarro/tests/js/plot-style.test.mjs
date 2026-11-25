@@ -36,7 +36,7 @@ const CC = 'cell-count';
 function cellGene(fields = {}, { levels = 6, pixels = { width: 900, height: 600 } } = {}) {
     const config = normalizeCellGene({
         version: 1, mode: 'dots', cellAxis: { type: 'obs', key: 'cell_type' }, sections: [{ source: 'S1', rows: 'genes' }],
-        color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'logged' }, ...fields
+        color: { stat: 'mean', layer: 'logged' }, size: { stat: 'fraction_of_cells', layer: 'logged' }, ...fields
     }).config;
     const ids = Array.from({ length: levels }, (_, i) => `c:L${i}`);
     const reply = { partitionings: [{ levels: ids }], groups: ids.map((id, i) => ({ key: [id], n: 10 + i })), n_shown: 100 };
@@ -52,7 +52,7 @@ function cellGene(fields = {}, { levels = 6, pixels = { width: 900, height: 600 
         groups: ids.map((_, g) => ({ label: `group ${g}`, n: 10 + g })),
         rows: Array.from({ length: R }, (_, r) => ({ label: `Gene${r}`, section: { index: 0, title: 'Markers' } })),
         color: { id: 'm', stat: 'mean', layer: 'logged', scaling: 'none', ...O.barSettings(config), ...extras.color, values, raw: values },
-        size: { id: 's', stat: 'pct_expressing', layer: 'logged', detectAbove: 0, ...extras.size, values: Float64Array.from({ length: R * G }, (_, i) => (i * 7) % 100) },
+        size: { id: 's', stat: 'fraction_of_cells', layer: 'logged', detectAbove: 0, ...extras.size, values: Float64Array.from({ length: R * G }, (_, i) => (i * 7) % 100) },
         legend: extras.legend, plotTitle: extras.plotTitle, annotations: extras.annotations, outline: extras.outline,
         legendLayout: P.cellGeneLegend(look)
     };

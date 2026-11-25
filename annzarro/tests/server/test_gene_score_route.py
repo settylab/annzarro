@@ -261,7 +261,7 @@ def test_a_body_over_the_limit_is_refused_before_it_is_parsed(client, layout):
     ('{"recipe": {"genes": []}, "estimate_only": "yes"}', "bad_request"),
     ('{"recipe": {"genes": [], "clip": 0}}', "bad_clip"), ('{"recipe": {"genes": [], "clip": -3}}', "bad_clip"),
     ('{"recipe": {"genes": ["A"], "down": ["B"], "method": "sum"}}', "method_no_down"),
-    ('{"recipe": {"genes": ["A"], "down": ["B"], "method": "detected"}}', "method_no_down"),
+    ('{"recipe": {"genes": ["A"], "down": ["B"], "method": "fraction_of_genes"}}', "method_no_down"),
     ('{"recipe": {"genes": ["A"], "down": ["B"], "method": "fraction_of_total"}}', "method_no_down"),
     ('{"recipe": {"genes": ["A"], "down": "B"}}', "bad_recipe"),
     ('{"recipe": {"genes": ["A"], "down": [3]}}', "bad_recipe"),
@@ -607,7 +607,7 @@ def test_a_refused_or_failed_control_adjusted_request_leaves_the_slot_and_the_bu
     assert run_big(client, big, {"method": "control_adjusted"})[0][-1]["scored"], "and the next score runs"
 
 
-@pytest.mark.parametrize("method", ["sum", "detected", "fraction_of_total"])
+@pytest.mark.parametrize("method", ["sum", "fraction_of_genes", "fraction_of_total"])
 def test_the_new_aggregations_stream_like_any_other(client, layout, matrix, method):
     frames, vector = score(client, layout, {"method": method})
     result = frames[-1]
@@ -638,7 +638,7 @@ def test_only_down_genes_are_the_negated_score(client, layout, matrix):
 
 
 def test_down_genes_are_validated_before_anything_is_read(client, layout):
-    for method in ("sum", "detected", "fraction_of_total"):
+    for method in ("sum", "fraction_of_genes", "fraction_of_total"):
         resp = post(client, layout, {"recipe": {"genes": NAMES, "down": [gene(9)], "method": method}})
         assert resp.status_code == 400 and resp.get_json()["reason"] == "method_no_down"
     for method in ("mean", "zscore_mean", "control_adjusted"):

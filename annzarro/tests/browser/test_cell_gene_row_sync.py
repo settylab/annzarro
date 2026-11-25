@@ -2,7 +2,7 @@
 
 Genes / One row is a select and a one-row section has no other control: each channel shows it by the fixed rule of its
 statistic (cell-gene-model.js ROW_RULE), on the channel's layer and threshold, and the section's tooltip says the rule.
-Under % expressing it is the share of cells expressing ANY gene of the set. The settings of earlier builds are not read.
+Under Fraction of cells it is the share of cells expressing ANY gene of the set. The settings of earlier builds are not read.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -49,7 +49,7 @@ def test_one_row_section_has_no_aggregation_control(page, served):
 
 def test_section_tooltip_states_the_rule(page, served):
     _one_row(page, served)
-    assert CR.rule(page, TP, 0) == "Color: the mean of the genes' means. Size: % of cells expressing at least one gene."
+    assert CR.rule(page, TP, 0) == "Color: the mean of the genes' means. Size: the fraction of cells expressing at least one gene."
     CC.pick_stat(page, TP, "color", "zscore_mean")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().color.stat === 'zscore_mean'", P)
     CC.pick_stat(page, TP, "size", "sum")
@@ -87,22 +87,22 @@ def test_score_row_sizes_by_cells_expressing_any_gene(page, served):
     size legend, and a value equal to an oracle computed here from the fixture matrix."""
     _one_row(page, served)
     first = [f for f in _features(page.calls) if f["kind"] == "score"]
-    assert sorted(f["column"] for f in first) == ["detected"], first
-    detected = next(f for f in first if f["column"] == "detected")
+    assert sorted(f["column"] for f in first) == ["fraction_of_genes"], first
+    detected = next(f for f in first if f["column"] == "fraction_of_genes")
     assert detected["above"] == 0 and detected["layer"] == "logged" and detected["recipe"]["detect_above"] == 0
     names = [str(c) for c in DATA.obs["cell_type"].cat.categories]
     idx = [GENES.index(g) for g in GENES[0:6]]
     counts = DATA.logged[:, idx]
     codes = DATA.obs["cell_type"].cat.codes.to_numpy()
-    oracle = {n: 100.0 * np.mean((counts[codes == k] > 0).any(axis=1)) for k, n in enumerate(names)}
+    oracle = {n: np.mean((counts[codes == k] > 0).any(axis=1)) for k, n in enumerate(names)}
     seen = {}
     for text in _hovers(page):
-        m = re.search(r"^(.*?) · Cells: .*% of cells expressing at least one of Pathway's 6 genes \(> 0\) · logged: ([0-9.]+)", text.replace("<br>", " "))
+        m = re.search(r"^(.*?) · Cells: .*Fraction of cells expressing at least one of Pathway's 6 genes \(> 0\) · logged: ([0-9.]+)", text.replace("<br>", " "))
         if m:
             seen[m.group(1)] = float(m.group(2))
     assert set(seen) == set(names), seen
     for n in names:
-        assert abs(seen[n] - oracle[n]) < 0.06, (n, seen[n], oracle[n])
+        assert abs(seen[n] - oracle[n]) < 0.0006, (n, seen[n], oracle[n])      # the hover gives three decimals
     # the size legend is the gene rows' (a score row has none of its own)
     assert page.evaluate("(s) => (document.querySelector(s + ' .cgene-plot').layout.annotations || []).filter(a => /at least one/.test(a.text || '')).length", TP) == 0
 
@@ -113,7 +113,7 @@ def test_threshold_change_in_size_moves_the_any_gene_value(page, served):
     CC.set_above(page, TP, "size", "1")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.detect_above === 1", P)
     _drawn(page)
-    scores = [f for f in _features(page.calls[n:]) if f["kind"] == "score" and f["column"] == "detected"]
+    scores = [f for f in _features(page.calls[n:]) if f["kind"] == "score" and f["column"] == "fraction_of_genes"]
     assert scores and all(f["recipe"]["detect_above"] == 1 for f in scores), scores
     assert any("(> 1) · logged" in t for t in _hovers(page))
 
@@ -125,7 +125,7 @@ def test_old_link_loads_on_defaults_without_notice(page, served):
     assert set(cfg["sections"][0]) == {"source", "rows"}, cfg["sections"][0]
     text = page.locator(f"{TP} .cgene-panel").inner_text()
     assert "now follows" not in text and "it showed" not in text, text
-    assert [f["column"] for f in _features(page.calls) if f["kind"] == "score"] == ["detected"], "only Size's any-gene score"
+    assert [f["column"] for f in _features(page.calls) if f["kind"] == "score"] == ["fraction_of_genes"], "only Size's any-gene score"
     assert page.evaluate("(s) => (document.querySelector(s + ' .cgene-plot').data || []).length > 0", TP)
 
 
@@ -142,7 +142,7 @@ def test_a_signature_with_down_genes_draws_its_mean_score_and_the_up_genes_for_a
     sig = {**_sig(S1, "Pathway", GENES[0:4]), "down": GENES[4:6]}
     _one_row(page, served, sig=sig)
     scores = [f for f in _features(page.calls) if f["kind"] == "score"]
-    assert sorted((f["column"], f["layer"]) for f in scores) == [("detected", "logged"), ("mean", "logged")], scores
-    detected = next(f for f in scores if f["column"] == "detected")
+    assert sorted((f["column"], f["layer"]) for f in scores) == [("fraction_of_genes", "logged"), ("mean", "logged")], scores
+    detected = next(f for f in scores if f["column"] == "fraction_of_genes")
     assert detected["recipe"]["genes"] == GENES[0:4] and detected["recipe"]["down"] == [], "the up genes only"
     assert not [f for f in _features(page.calls) if f["kind"] == "gene"], "the gene rows' features are not read"

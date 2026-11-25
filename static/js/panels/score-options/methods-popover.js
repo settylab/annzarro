@@ -9,7 +9,7 @@
  *   Z-score mean      Each gene scaled to mean 0 and SD 1 ...
  *     [x] Clip at ± [10]   Z-scores are cut at ±10. ...
  *     Down genes: (•) each gene weighs equally ( ) each side weighs equally      (a signature with Up/Down on)
- *   Mean ...  Sum ...  Control-adjusted (bins, controls per bin, seed) ...  Fraction detected (detected above) ...
+ *   Mean ...  Sum ...  Control-adjusted (bins, controls per bin, seed) ...  Fraction of genes (expressed above) ...
  *   % of total ...
  *   Used by 2 plots, 1 table: z-score mean, mean · X, counts                     [Reset to defaults]
  *
@@ -111,7 +111,7 @@ export function createMethodsPopover({ D, id, label = 'Methods', getRecipe, appl
             read: (r) => r.controls, write: (v) => ({ controls: v }) }),
         seed: numberBox({ key: 'seed', name: 'Seed of the control genes', parse: parseSeedText,
             read: (r) => (r.seed === null ? DEFAULT_SEED : r.seed), write: (v) => ({ seed: v }) }),
-        detect: numberBox({ key: 'detect', name: 'A gene counts as detected above this value', parse: parseThresholdText,
+        detect: numberBox({ key: 'detect', name: 'A gene counts as expressed above this value', parse: parseThresholdText,
             read: (r) => r.detect_above, write: (v) => ({ detect_above: v }) })
     };
     const field = (text, control, forId) => el('div', { class: 'gsig-scoring__field az-pop-field' },
@@ -127,8 +127,8 @@ export function createMethodsPopover({ D, id, label = 'Methods', getRecipe, appl
             field('Bins', boxes.bins.input, sid('bins')), field('Controls per bin', boxes.controls.input, sid('controls')),
             field('Seed', boxes.seed.input, sid('seed')), boxes.bins.error, boxes.controls.error, boxes.seed.error,
             el('small', { class: 'gsig-scoring__help az-pop-help', text: METHODS_HELP.seed })),
-        detected: el('div', { class: 'gsig-scoring__params gsig-scoring__stack' },
-            field('Detected above', boxes.detect.input, sid('detect')), boxes.detect.error, detectHelp)
+        fraction_of_genes: el('div', { class: 'gsig-scoring__params gsig-scoring__stack' },
+            field('Expressed above', boxes.detect.input, sid('detect')), boxes.detect.error, detectHelp)
     };
 
     // ------------------------------------------------------------ down genes

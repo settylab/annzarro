@@ -5,7 +5,7 @@ raw counts, as core/matrix_kind.py reads them from the stored values (never from
 
 1.  An obs column as groups: Size's layer select lists every layer (decision 31); choosing ``counts`` before the genes
     are added sends one POST whose features hold each gene on both layers once (no wire change).
-2.  A new plot: Color = mean on the log-normalised layer, Size = % expressing on counts above 0 (decision 24).
+2.  A new plot: Color = mean on the log-normalised layer, Size = Fraction of cells on counts above 0 (decision 24).
 3.  Nothing is offered on either axis kind: the plot has no Statistics offered of its own, and a grouping as the groups
     lists the same layers as an obs column.
 
@@ -58,7 +58,7 @@ def test_size_on_counts_on_an_obs_axis_is_one_post_with_each_gene_on_both_layers
     # each dot's hover names Size by statistic, threshold and layer
     hover = page.evaluate("(s) => JSON.stringify(document.querySelector(s + ' .cgene-plot').data[0].hovertext"
                           " || document.querySelector(s + ' .cgene-plot').data[0].text)", TP)
-    assert "% expressing (> 0) · counts: " in hover, hover[:300]
+    assert "Fraction of cells (> 0) · counts: " in hover, hover[:300]
 
 
 def test_a_new_plot_reads_color_on_the_log_normalised_layer_and_size_on_counts(page, served):
@@ -66,9 +66,9 @@ def test_a_new_plot_reads_color_on_the_log_normalised_layer_and_size_on_counts(p
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.layer === 'counts'", P, timeout=30)
     cfg = _config(page)
     assert cfg["color"] == {"stat": "mean", "layer": "logged"}
-    assert cfg["size"] == {"stat": "pct_expressing", "layer": "counts"}, "no threshold stored: 0 on an obs axis, a grouping's on a grouping axis"
+    assert cfg["size"] == {"stat": "fraction_of_cells", "layer": "counts"}, "no threshold stored: 0 on an obs axis, a grouping's on a grouping axis"
     assert CC.chosen_stat(page, TP, "color") == "mean" and page.input_value(f"{TP} .cgene-color-layer") == "logged"
-    assert CC.chosen_stat(page, TP, "size") == "pct_expressing" and page.input_value(f"{TP} .cgene-size-layer") == "counts"
+    assert CC.chosen_stat(page, TP, "size") == "fraction_of_cells" and page.input_value(f"{TP} .cgene-size-layer") == "counts"
     assert CC.above(page, TP, "size")["value"] == "0"
     assert page.locator(f"{TP} .cgene-undo").is_disabled(), "a default is not an edit"
 

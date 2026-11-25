@@ -32,7 +32,7 @@ alone, and a gene shown in two sections, or by colour and size on one layer, is 
 | Toolbar (the last row) | **3D** · **Swap axes** · **Cluster ▾** · **Color ▾**, then at its right end **Undo** and **Plot Options**, in the same places as in every plot panel |
 
 **Color** and **Size** each read their own statistic from their own layer, in one row:
-`Color [Mean ▾] of [logged ▾]` and `Size [% expressing ▾] of [counts ▾] above [0]`. A common dot plot is exactly this:
+`Color [Mean ▾] of [logged ▾]` and `Size [Fraction of cells ▾] of [counts ▾] above [0]`. A common dot plot is exactly this:
 the colour from the mean of the log-normalised layer, the size from the share of cells expressing in the raw counts.
 
 - **The statistic select** lists all five statistics, then **Cell count** (which reads no layer, so the layer select
@@ -40,8 +40,8 @@ the colour from the mean of the log-normalised layer, the size from the share of
 - **The layer select** lists every layer of the dataset. A statistic a layer cannot give is greyed out there, with the
   reason as its tooltip; one that can be computed but misleads (a mean of raw counts follows sequencing depth) carries
   the warning as its tooltip. Choosing a statistic the current layer cannot give moves the layer to the first one that
-  can, and the status line says so once ("Layer changed to logged: % expressing cannot be computed on 'X'.").
-- **The threshold** appears beside a statistic that counts expressing cells (% expressing, mean of expressing cells).
+  can, and the status line says so once ("Layer changed to logged: fraction of cells cannot be computed on 'X'.").
+- **The threshold** appears beside a statistic that counts expressing cells (fraction of cells, mean of expressing cells).
   A cell counts as expressing above it. When the groups are a grouping, the box is empty and reads
   `auto (grouping: 0)`: the measure follows the grouping's **Expressed above**, set in the grouping's **Methods ▾**
   ({doc}`cell-grouping`), and changes with it. A value typed here overrides the grouping for that measure only (Color,
@@ -50,10 +50,10 @@ the colour from the mean of the log-normalised layer, the size from the share of
   holds the measure's own threshold, 0 by default. The legends and the hover name the threshold in force either way.
 
 The lists are the same whether the groups are a grouping or an obs column: nothing has to be set up first. A choice
-stored in a link that the layer cannot give (% expressing on a scaled X) stays selected, marked "(not available)", and
+stored in a link that the layer cannot give (fraction of cells on a scaled X) stays selected, marked "(not available)", and
 draws nothing until you choose another layer.
 
-**A new plot** starts with Color as the mean of the log-normalised layer and Size as % expressing in the raw counts,
+**A new plot** starts with Color as the mean of the log-normalised layer and Size as fraction of cells in the raw counts,
 above 0, when the dataset has both kinds of layer (judged from the stored values, never from layer names); otherwise
 both read X. This holds with a grouping as the groups too, so such a plot may read two layers. The statistics, over the cells of a
 group that have a value:
@@ -61,7 +61,7 @@ group that have a value:
 | Statistic | Is |
 |---|---|
 | **Mean** | The average, zeros included |
-| **% expressing** | The share of the group's cells above the threshold (0 by default), from 0 to 100 |
+| **Fraction of cells** | The share of the group's cells above the threshold (0 by default), from 0 to 1 |
 | **Mean of expressing cells** | The average over the cells above the threshold. A group with no expressing cell gets 0, as scanpy writes it; the hover then says "no expressing cells" |
 | **Sum** | The total over the group's cells |
 | **SD** | The spread (population SD) |
@@ -70,8 +70,8 @@ group that have a value:
 A gene with no value in a group (all of its values missing) has no statistic there: no dot, or the gap colour in a
 heatmap, never a 0. The strip below the plot counts them ("12 cells of the matrix have no value").
 
-**Size on a signed layer.** On a layer with negative values, such as a scaled X, % expressing cannot be computed. The
-dots are then drawn at one size, the size legend says "% expressing cannot be computed on 'X': it has negative values.
+**Size on a signed layer.** On a layer with negative values, such as a scaled X, fraction of cells cannot be computed. The
+dots are then drawn at one size, the size legend says "Fraction of cells cannot be computed on 'X': it has negative values.
 Choose a layer.", the strip says **No size**, and the Size layer select marks X "(not available)" and lists the
 layers that work.
 
@@ -90,7 +90,7 @@ Groups with no value are skipped in every minimum, maximum, mean and SD, and a c
 has no cells of its own to pool, so under the last scaling it is z-scored across its own groups; **Color ▾** says so.
 
 The colour bar names the statistic, the layer and the scaling ("Mean · X", "scaled 0 to 1 per gene"); the size legend
-names its statistic, threshold and layer ("% expressing (> 0) · logged_counts").
+names its statistic, threshold and layer ("Fraction of cells (> 0) · logged_counts").
 
 **Cluster ▾**, **Color ▾** and **Plot Options** each open a pop-over over the plot. Opening one leaves the panel's
 layout as it is. A change applies at once and is one step of **Undo**. A pop-over closes with its button, its **×**,
@@ -124,7 +124,7 @@ compares with its genes' rows. Hover over the section to read the rule in force.
 |---|---|---|
 | Mean | The mean over the genes of each gene's mean. A signature with down genes cannot be combined from its rows (its down genes would count as up genes): it shows the signature's mean score, up minus down. | The gene rows' |
 | Z-score mean | The group mean of the set's z-score mean score ({ref}`gene-signature-scoring`). | The gene rows' |
-| % expressing | The % of the group's cells that express at least one gene of the set, above the plot's threshold. With down genes, the up genes only. | The gene rows' |
+| Fraction of cells | The fraction of the group's cells that express at least one gene of the set, above the plot's threshold. With down genes, the up genes only. | The gene rows' |
 | Mean of expressing cells | The mean over the genes of each gene's mean over its expressing cells. | The gene rows' |
 | Sum | The sum over the genes of each gene's sum (the set's pseudobulk). | Its own |
 | SD | The mean over the genes of each gene's SD. | The gene rows' |
@@ -132,7 +132,7 @@ compares with its genes' rows. Hover over the section to read the rule in force.
 
 A row on the gene rows' scale is drawn under their colour bar or size legend. The **Sum** row has its own, titled with
 the section and both steps ("cells: Sum; genes: sum"). The plot's **Scale** select z-scores every row, one-row sections
-included. The other score methods of a signature (control-adjusted, fraction detected, % of total) are not drawn as
+included. The other score methods of a signature (control-adjusted, fraction of genes, % of total) are not drawn as
 Cell-Gene rows; they stay available on a Cell Plot's axes, in a Count Plot, in a Cell Table's columns and as a Cell Grouping's
 score factor.
 
@@ -228,8 +228,8 @@ you lower **Dot opacity** in Plot Options, and neither the dots nor the heatmap 
 A box that is not set says "auto" with the value the plot draws, such as "auto (0.12)", so it never looks empty; type a
 number to fix it, or clear the box. The **↺** button beside each scale returns its boxes to auto in one undo step, and
 **Reset** at the foot puts the whole pop-over back. Colour limits clip the colours. **Size min** and **Size max** are the
-values of the size statistic at the smallest and largest dot, named by the statistic ("Size min (% expressing)"), since it
-need not be a percentage. The height limits clip the bars: one taller than **Max** is drawn at **Max**, one shorter than
+values of the size statistic at the smallest and largest dot, named by the statistic ("Size min (fraction of cells)"), since it
+is not always a fraction. The height limits clip the bars: one taller than **Max** is drawn at **Max**, one shorter than
 **Min** at **Min**, and a bar of 0 stays undrawn.
 
 **Reset** puts all of these back to their defaults in one step.
@@ -272,7 +272,7 @@ section and its entry), each value with its statistic and layer, and the group's
 
 **Download CSV** (Plot Options ▸ Export) gives the plotted values in long form, one row per group and row, with
 one column per statistic and headers that name the statistic, its threshold where it has one, the layer and the
-scaling ("% expressing (> 1) · counts · not scaled"), so two thresholds stay two columns apart. With a one-row section,
+scaling ("Fraction of cells (> 1) · counts · not scaled"), so two thresholds stay two columns apart. With a one-row section,
 **Color: genes combined by** and **Size: genes combined by** say how its genes were combined; the column header is the
 statistic over the cells. The image buttons
 beside it, and the camera button in the plot's toolbar, save the figure as an image, with its brackets, strips, legends
@@ -295,7 +295,7 @@ stays.
 | Refused, layout | "logged_counts is stored by cell (CSR), so 200 genes mean reading the whole matrix: …" A copy of the layer stored by gene (CSC) makes this fast: see {doc}`../data/preparing-a-store` |
 | Too large | "28 groups × 15,000 rows = 420,000 cells of the matrix; the limit is 400,000. Remove a section or use fewer groups." |
 | Too many values | "12 groups × 40,000 values per group = 480,000 values; the limit is 400,000. Color and Size read different layers, so each gene is read twice." |
-| One cell per group | "One cell per group: % expressing is 0 or 100.", with **Show as Heatmap** |
+| One cell per group | "One cell per group: fraction of cells is 0 or 1.", with **Show as Heatmap** |
 
 ### Try anyway, and not asking again
 
@@ -338,7 +338,7 @@ There is no separate mode for one row per cell. Two recipes give it:
 
 1. **One group per cell.** In a Cell Grouping, **Add factor ▾** → **Cell names**. Each cell shown is a group, as long
    as at most 2,000 cells are shown: choose a subset of up to 2,000 cells first (the badge in the dataset bar,
-   {doc}`subsets`). Use the grouping as **Groups**. With one cell per group, % expressing is 0 or 100, so the panel
+   {doc}`subsets`). Use the grouping as **Groups**. With one cell per group, fraction of cells is 0 or 1, so the panel
    offers **Show as Heatmap**: a heatmap of single cells. The matrix limit then allows 200 genes at 2,000 cells.
 2. **An ordered strip at any size.** Bin a numeric value finely: in a Cell Grouping, **Add factor ▾** → **Column…**
    → `pseudotime`, then **Method** Equal count and **Bins** 200. Each group is a slice of 1/200 of the cells, in
@@ -360,7 +360,7 @@ How scanpy's options map onto the plot:
 |---|---|
 | `dot_color_df` (`mean_only_expressed=False`) | **Color**: Mean. The cutoff does not enter, in either |
 | `dot_color_df` with `mean_only_expressed=True`, `expression_cutoff=t` | **Color**: Mean of expressing cells, threshold `t` |
-| `dot_size_df` with `expression_cutoff=t` | **Size**: % expressing, threshold `t` (a value counts when it is above `t`, as in scanpy) |
+| `dot_size_df` with `expression_cutoff=t` | **Size**: fraction of cells, threshold `t` (a value counts when it is above `t`, as in scanpy) |
 | `layer` | The layer of **Color**; **Size** can read another |
 | `standard_scale='var'` | **Scale**: 0 to 1 per gene |
 | `standard_scale='group'` (`'obs'` in a heatmap) | **Scale**: 0 to 1 per group |
@@ -386,8 +386,7 @@ displayed.
 
 **The intended differences.** Each is deliberate, and each is tested.
 
-1. **% expressing is a percentage.** scanpy's `dot_size_df` is a fraction from 0 to 1; % expressing here runs from 0
-   to 100, so a CSV value is 100 times scanpy's.
+1. **Fraction of cells is the same number as scanpy's.** scanpy's `dot_size_df` is a fraction from 0 to 1, and so is Fraction of cells here (`c⁺`), so a CSV value is scanpy's. A link made when it ran from 0 to 100 opens on the new scale with its size and colour ranges reset to auto.
 2. **Bins of a numeric column (`num_categories`).** Equal-width bins here include their lower edge, `[a, b)`, the last
    bin both edges. scanpy bins with `pandas.cut`, whose bins include their upper edge, `(a, b]`. A cell exactly on an
    inner edge is therefore in the upper bin here and in the lower one in scanpy. On a column whose values sit on round
@@ -400,8 +399,8 @@ displayed.
 4. **A group with no expressing cell.** Mean of expressing cells is then 0, the number scanpy writes. The hover says
    "no expressing cells", and so does the CSV's **Note** column, so that 0 is not read as a measured mean. A measured 0,
    such as a mean of 0, carries no note.
-5. **A layer with negative values.** % expressing and mean of expressing cells are not computed on a layer with
-   negative values, such as a scaled X: the dots are drawn at one size, the plot says "% expressing is not available
+5. **A layer with negative values.** fraction of cells and mean of expressing cells are not computed on a layer with
+   negative values, such as a scaled X: the dots are drawn at one size, the plot says "Fraction of cells is not available
    on X: X has negative values. Choose a layer.", and the CSV has no size column. scanpy computes the share above the
    cutoff on any matrix. The mean on such a layer still equals scanpy's.
 6. **A constant gene under scaling.** 0 to 1 per gene gives 0 for a constant gene, as scanpy does, never NaN. The two

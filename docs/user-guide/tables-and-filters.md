@@ -63,12 +63,13 @@ There are three kinds of tab.
   |---|---|
   | z̄ | z-score mean |
   | x̄ | mean |
-  | % | % expressing (a score: % of total) |
+  | c⁺ | fraction of cells |
+  | % | % of total (a score) |
   | x̄⁺ | mean of expressing cells |
   | Σ | sum |
   | σ | SD |
   | Δ | control-adjusted |
-  | n/N | fraction detected |
+  | g⁺ | fraction of genes (a score) |
 
   The tabs for layers, obsp, varp, Gene score and Cell groupings have no search field: they list only what the table holds.
   An add row keeps your choices when the chooser is rebuilt, for example when a panel is renamed.
@@ -249,7 +250,7 @@ toggle, or a colour map without grey, when that matters ({doc}`colour-scales`).
 
 A Cell Table has **Methods ▾** beside **Export CSV**. It sets how statistics over the table's cells (the rows that pass
 its filter) are computed, on every layer, as a Cell Grouping's **Methods ▾** does for its groups
-({doc}`cell-grouping`): it lists **Mean**, **% expressing**, **Mean of expressing cells**, **Sum** and **SD** with their
+({doc}`cell-grouping`): it lists **Mean**, **Fraction of cells**, **Mean of expressing cells**, **Sum** and **SD** with their
 definitions, and **Expressed above** (0 by default), the value above which a cell counts as expressing. Plots choose the
 statistic and the layer; nothing here limits what they can pick. The setting is kept with the table in panel sets and
 share links (only when it is not the default), **Reset to defaults** puts it back, and a dot on the button shows that

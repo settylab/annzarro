@@ -197,24 +197,24 @@ when one is changed:
 | **Z-score mean** (default) | each gene scaled to mean 0 and SD 1 over all cells, then averaged, so every gene counts equally | **Clip at ±** (default 10, any number above 0, or off) |
 | **Mean** | the average of the genes' values, in the layer's units | none |
 | **Sum** | the total of the genes' values, in the layer's units; it grows with the number of genes | none |
-| **Control-adjusted** | the mean of the genes minus the mean of control genes with similar detection, like scanpy's `score_genes` (genes are binned by detection, not by mean) | **Bins** (25), **Controls per bin** (50), **Seed** (0) |
-| **Fraction detected** | the share of the signature's genes detected in the cell, from 0 to 1 | **Detected above** (0): a gene is detected when its value is above this |
+| **Control-adjusted** | the mean of the genes minus the mean of control genes expressed in a similar share of cells, like scanpy's `score_genes` (genes are binned by the share of cells expressing them, not by mean) | **Bins** (25), **Controls per bin** (50), **Seed** (0) |
+| **Fraction of genes** | the share of the set's genes that are above **Expressed above** in the cell, from 0 to 1 | **Expressed above** (0): a gene counts when its value is above this |
 | **% of total** | the genes' share of the cell's total over all genes, in percent, as for % mitochondrial | none |
 
 A parameter holds for its method on every layer. The clip stops one rare gene dominating the average (its z-score can
-reach the hundreds when a gene is detected in a handful of cells). A number that is not valid is refused ("Enter a
+reach the hundreds when a gene is expressed in a handful of cells). A number that is not valid is refused ("Enter a
 number above 0.") and the last good value stays. While a parameter is not at its default, the **Methods** button
 carries a dot and its tooltip names each one ("z-score mean: not clipped; control-adjusted: seed 3"), so a link opened
 with other settings hides nothing.
 
-**Fraction detected** is a share, not a count, so it means the same when a gene is missing from the dataset and
+**Fraction of genes** is a share, not a count, so it means the same when a gene is missing from the dataset and
 compares between signatures of different sizes. **% of total** divides by the cell's total over every gene of the
 matrix, the signature's own included, which needs one pass over the whole matrix: it takes longer than the others and
 asks first on a large dataset. **Control-adjusted** removes differences in depth and quality between cells that move
 every gene together; the same seed always gives the same controls, so a link keeps its meaning.
 
 Whether a method suits a layer is said where the pair is chosen, not in the pop-over: a pair that cannot be computed
-(% of total on a scaled layer, whose values are negative; fraction detected where the threshold makes it constant) is
+(% of total on a scaled layer, whose values are negative; fraction of genes where the threshold makes it constant) is
 greyed out in the plot's or table's menu with the reason, and one that misleads (a sum on raw counts follows
 sequencing depth) carries the reason as a note. A new plot or table starts on the z-score mean of X.
 
@@ -252,7 +252,7 @@ property of the gene list; how down genes weigh is a setting of the methods, und
 - **Only down genes** give the negative of their average, and the panel says so. A side with no usable gene (not in
   this dataset, constant, or no values) is left out, and the panel names it ("None of the 8 down genes are in this
   dataset, so only up genes are scored"). With no usable gene on either side there is no score.
-- **Sum, fraction detected and % of total** cannot be chosen while a signature has down genes, and the menus say why:
+- **Sum, fraction of genes and % of total** cannot be chosen while a signature has down genes, and the menus say why:
   a signed sum depends on how many genes each side has, the difference of two fractions is not a fraction, and the
   difference of two shares is not a share of anything. A plot or table that already uses one says so and asks the
   server for nothing; remove the down genes, or choose another option, and it comes back.

@@ -71,7 +71,7 @@ DRAW = """async ([mode, own, dots, groups]) => {
     mode, groups: Array.from({length: groups}, (_, g) => ({label: 'group ' + g, n: 100 + g})),
     rows: Array.from({length: rows}, (_, r) => ({label: 'Gene' + r})),
     color: {id: 'mean|X', stat: 'mean', layer: 'X', scaling: 'none', values: color, colorscale: 'Viridis'},
-    size: {id: 'pct|X', stat: 'pct_expressing', layer: 'X', detectAbove: 0, values: size}
+    size: {id: 'pct|X', stat: 'fraction_of_cells', layer: 'X', detectAbove: 0, values: size}
   };
   if (own) {
     model.rows[rows - 1] = {label: 'Score', section: {index: 1, title: 'Pathway'},
@@ -173,8 +173,8 @@ CROWDED = """async ([mode, width, height]) => {
     ]}
   };
   model.rows[rows - 1] = {label: 'Gene Signature 1', section: {index: 1, title: 'Gene Signature 1'},
-    own: {color: {id: 'score|zm', label: 'Gene Signature 1 % of cells with z-score mean · logged_counts above 0'},
-          size: {id: 'score|m', label: 'Gene Signature 1 % of cells with mean · logged_counts above 0'}}};
+    own: {color: {id: 'score|zm', label: 'Gene Signature 1 fraction of cells with z-score mean · logged_counts above 0'},
+          size: {id: 'score|m', label: 'Gene Signature 1 fraction of cells with mean · logged_counts above 0'}}};
   const fig = D.buildFigure(model, {bgColor: '#ffffff', gridColor: '#e6e6e6', axisColor: '#000000', textColor: '#000000'});
   const div = document.createElement('div');
   div.style.cssText = `width:${width}px;height:${height}px;position:fixed;left:0;top:0`;

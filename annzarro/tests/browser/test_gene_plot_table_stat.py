@@ -79,7 +79,7 @@ def _numbers(stat, mask, layer="logged", threshold=0.0):
     elif stat == "sum":
         out = x.sum(axis=0)
     else:
-        out = 100 * above.mean(axis=0)
+        out = above.mean(axis=0)
     return out
 
 
@@ -148,9 +148,9 @@ def test_a_table_is_one_request_of_its_bitset_and_a_switch_of_statistic_sends_no
     assert cfg.get("column", "") == "", "the table has no group: nothing is stored in column"
     assert page.get_attribute(axis_sets.button(C, "color"), "aria-label") == "Aggregation: Mean"
     rows = axis_sets.aggregations(page, C, "color")
-    assert [r["v"] for r in rows] == ["zscore_mean", "mean", "pct_expressing", "mean_expressing", "sum", "sd"], "the group statistics, in their order"
+    assert [r["v"] for r in rows] == ["zscore_mean", "mean", "fraction_of_cells", "mean_expressing", "sum", "sd"], "the group statistics, in their order"
     assert rows[0]["off"] is True and "cell groups" in rows[0]["title"], "z-score mean is not offered for a table, and says why"
-    for stat in ("pct_expressing", "sum", "mean"):
+    for stat in ("fraction_of_cells", "sum", "mean"):
         axis_sets.choose_aggregation(page, C, "color", stat)
         until(page, "([s]) => window.PanelManager.getPanel('gene-plot-G').getConfig().color.stat === s", [stat])
         _wait_colours(page, _numbers(stat, ALL))
@@ -202,9 +202,9 @@ def test_a_table_with_no_rows_says_so_and_a_deleted_table_says_so_and_the_settin
 # ------------------------------------------------------------------ 4: Expressed above of the table
 
 def test_the_tables_expressed_above_is_the_threshold_and_a_change_is_one_request(page, served):
-    _open(page, served, {G: _plot(color=_stat(stat="pct_expressing")), TA: _table()})
+    _open(page, served, {G: _plot(color=_stat(stat="fraction_of_cells")), TA: _table()})
     page.wait_for_selector(f"{T} .cmeth__toggle", timeout=30000)
-    _wait_colours(page, _numbers("pct_expressing", ALL))
+    _wait_colours(page, _numbers("fraction_of_cells", ALL))
     n = len(_genes(page))
     page.click(f"{T} .cmeth__toggle")
     page.locator(POP).wait_for(state="visible")
@@ -213,7 +213,7 @@ def test_the_tables_expressed_above_is_the_threshold_and_a_change_is_one_request
     with page.expect_request(_computes_genes) as asked:
         page.press(box, "Enter")
     assert json.loads(asked.value.post_data)["thresholds"] == [0.5]
-    _wait_colours(page, _numbers("pct_expressing", ALL, threshold=0.5))
+    _wait_colours(page, _numbers("fraction_of_cells", ALL, threshold=0.5))
     assert len(_genes(page)) == n + 1
 
 

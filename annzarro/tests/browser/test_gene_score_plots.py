@@ -1062,7 +1062,7 @@ def test_two_aggregations_of_one_signature_are_two_scores_and_one_aggregation_is
     # the button's menu lists every method the server computes, z-score mean first (decision 31); the layer is the row's own
     opts = [(o["v"], o["text"]) for o in axis_sets.aggregations(page, C, "y")]
     assert opts == [("zscore_mean", "z Z-score mean"), ("mean", "x Mean"), ("sum", "\u03a3 Sum"), ("control_adjusted", "\u0394 Control-adjusted"),
-                    ("detected", "n/N Fraction detected"), ("fraction_of_total", "% % of total")]
+                    ("fraction_of_genes", "g⁺ Fraction of genes"), ("fraction_of_total", "% % of total")]
     assert page.input_value(axis_sets.sel(C, "y", "key")) == "X"
     # choosing the other aggregation in the menu moves the axis to it
     axis_sets.choose_aggregation(page, C, "x", "mean")
@@ -1092,7 +1092,7 @@ def test_the_registry_lists_a_closed_signature_and_its_aggregations(page, served
                  forGenePlot: reg.sourcesFor('gene-plot', 'x').map(q => q.type) };
     }""")
     assert sorted((e["id"], e["open"]) for e in got["entities"]) == [(SIG, True), (SIG2, False)], "the closed one is listed"
-    assert [s["value"] for s in got["subs"]] == ["zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"], \
+    assert [s["value"] for s in got["subs"]] == ["zscore_mean", "mean", "sum", "control_adjusted", "fraction_of_genes", "fraction_of_total"], \
         "every method: nothing is offered (decision 31)"
     assert got["def"] == "zscore_mean"
     assert got["forX"] == ["gene-score", "cell-group"] and got["forZ"] == ["gene-score", "cell-group"] and got["forGenePlot"] == ["group-stat", "table-stat"], "a gene score is no Gene Plot source; a group statistic is, for every axis"

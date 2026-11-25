@@ -1,7 +1,7 @@
 /**
  * The page's side of the `group-stat` source: a Cell Grouping's group as the cells whose statistic colours a Gene Plot, or
  * is its x, y or z axis (each axis its own setting and record; the moments are shared by the key they are asked under)
- * (offered-removal-080.md 10.1, SO-8b). Each gene's value is one statistic (mean, % expressing, mean of expressing cells,
+ * (offered-removal-080.md 10.1, SO-8b). Each gene's value is one statistic (mean, fraction of cells, mean of expressing cells,
  * sum, SD) of that gene over the group's cells, on a layer.
  *
  * A setting is `{type, key, column, stat, layer, groupWas, follow?}` (utils/group-stat-model.js): the grouping's panel id,
@@ -216,8 +216,8 @@ function nameSetting(setting) {
     const title = groupingTitle(setting);
     const panel = groupingPanel(setting.key);
     const above = panel && typeof panel.getConfig === 'function' ? M.thresholdOf(panel.getConfig()) : 0;
-    const threshold = ['pct_expressing', 'mean_expressing'].includes(M.statOf(setting)) ? ` (> ${Number(above.toPrecision(4))})` : '';
-    // the Cell-Gene Plot's words for a statistic: "Mean · logged", "% expressing (> 0) · counts"
+    const threshold = ['fraction_of_cells', 'mean_expressing'].includes(M.statOf(setting)) ? ` (> ${Number(above.toPrecision(4))})` : '';
+    // the Cell-Gene Plot's words for a statistic: "Mean · logged", "fraction of cells (> 0) · counts"
     const lines = [[title, groupNameOf(setting)].filter(Boolean).join(' · '), `${VOCABULARY.cellGene.statistic[M.statOf(setting)]}${threshold} · ${M.layerOf(setting)}`].join('\n');
     const changed = (!!title && setting.label !== title) || setting.labelFull !== lines;
     if (title) setting.label = title;

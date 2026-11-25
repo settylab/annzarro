@@ -32,7 +32,7 @@ function model({ rows = 6, groups = 4, split = 3, mode = 'dots', swap = false, a
             section: r < split ? { index: 0, title: 'B cell markers', note: '3 genes not in this dataset' } : { index: 1, title: 'T cell markers' }
         })),
         color: { id: 'mean|X', stat: 'mean', layer: 'X', scaling: 'none', values: colour, colorscale: 'Viridis' },
-        size: { id: 'pct|X', stat: 'pct_expressing', layer: 'X', detectAbove: 0, values: size },
+        size: { id: 'pct|X', stat: 'fraction_of_cells', layer: 'X', detectAbove: 0, values: size },
         ...over
     };
 }

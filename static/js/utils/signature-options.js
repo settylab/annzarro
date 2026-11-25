@@ -35,14 +35,18 @@ export const METHOD_INFO = Object.freeze([
     { value: 'sum', label: 'Sum', menu: 'sum', needs: [], unit: 'layer units',
         definition: 'Total of the genes\' values, in the layer\'s units. Grows with the number of genes.' },
     { value: 'control_adjusted', label: 'Control-adjusted', menu: 'control-adjusted', needs: ['bins', 'controls', 'seed'], unit: 'layer units',
-        definition: 'Mean of the genes minus the mean of control genes with similar detection, like scanpy\'s score_genes.' },
-    { value: 'detected', label: 'Fraction detected', menu: 'fraction detected', needs: ['detect_above'], unit: '0 to 1',
-        definition: 'The share of the signature\'s genes detected in the cell, from 0 to 1.' },
+        definition: 'Mean of the genes minus the mean of control genes expressed in a similar share of cells, like scanpy\'s score_genes.' },
+    { value: 'fraction_of_genes', label: 'Fraction of genes', menu: 'fraction of genes', needs: ['detect_above'], unit: '0 to 1',
+        definition: 'Share of the set\'s genes that are above Expressed above in the cell, from 0 to 1.' },
     { value: 'fraction_of_total', label: '% of total', menu: '% of total', needs: [], unit: '%',
         definition: 'The genes\' share of the cell\'s total over all genes, in percent, as for % mitochondrial.' }
 ]);
 
 export const METHODS = Object.freeze(METHOD_INFO.map(m => m.value));
+/** Ids an old link, session or panel set may hold for a method: read as the new id, never written (aggregation-unify-080.md 13.3). */
+const METHOD_ALIASES = Object.freeze({ detected: 'fraction_of_genes' });
+/** `method` under its current id. */
+export const canonicalMethod = (method) => (typeof method === 'string' && METHOD_ALIASES[method]) || method;
 export const DEFAULT_METHOD = 'zscore_mean';
 /** What an old link's missing `offered` list meant (before decision 31): read for links only. */
 export const DEFAULT_OFFERED = Object.freeze(['zscore_mean', 'mean', 'sum']);
@@ -63,11 +67,11 @@ export const cleanDownWeight = (value) => (DOWN_WEIGHTS.includes(value) ? value 
 /** Why a method cannot score down genes: the clause after "<Method> cannot be computed with down genes: ". */
 const DOWN_REASONS = Object.freeze({
     sum: 'a signed sum depends on how many genes each side has.',
-    detected: 'the difference of two fractions is not a fraction.',
+    fraction_of_genes: 'the difference of two fractions is not a fraction.',
     fraction_of_total: 'the difference of two shares is not a share of anything.'
 });
 
-/** A method's name at the start of a sentence ("% of total", "Fraction detected"). */
+/** A method's name at the start of a sentence ("% of total", "Fraction of genes"). */
 const sentenceName = (method) => (METHOD_INFO.find(m => m.value === method) || { label: method }).label;
 
 /** Whether `method` can score a signature that has down genes. */
@@ -77,7 +81,7 @@ export const canScoreDown = (method) => DOWN_METHODS.includes(method);
 export const PARAM_DEFAULTS = Object.freeze({
     zscore_mean: Object.freeze({ clip: 10 }),
     control_adjusted: Object.freeze({ bins: 25, controls: 50, seed: null }),
-    detected: Object.freeze({ detect_above: 0 })
+    fraction_of_genes: Object.freeze({ detect_above: 0 })
 });
 
 // ---------------------------------------------------------------------------
@@ -115,7 +119,7 @@ export function shareAbove(stats, threshold) {
 
 /**
  * How one method reads one layer: `ok`, `warn` (it can be computed but misleads: the note rides on the option) or
- * `cannot` (disabled where the pair is chosen, the reason as its title). From what the layer looks like and, for fraction detected, from how many of
+ * `cannot` (disabled where the pair is chosen, the reason as its title). From what the layer looks like and, for fraction of genes, from how many of
  * its values are above the threshold: that is a measure, not a kind, so it follows the parameter.
  * @param {string} method
  * @param {string} layer
@@ -133,7 +137,7 @@ export function gradeOption(method, layer, kind, hasDown = false, ctx = {}) {
         return { grade: 'cannot', code: 'down', down: true,
             reason: REASON.cannotWith(label, 'down genes', DOWN_REASONS[method] || 'it has no signed version.') };
     }
-    if (method === 'detected') {
+    if (method === 'fraction_of_genes') {
         const t = typeof ctx.detectAbove === 'number' ? ctx.detectAbove : 0;
         const share = shareAbove(ctx.stats, t);
         if (share === null) return ok;
@@ -141,11 +145,11 @@ export function gradeOption(method, layer, kind, hasDown = false, ctx = {}) {
             ? ` (values here range from ${figure(ctx.stats.min)} to ${figure(ctx.stats.max)})` : '';
         if (share > DETECT_TOO_MANY) {
             return { grade: 'cannot', code: 'detect_high',
-                reason: REASON.cannotOn(label, name, `almost every value is above ${figure(t)}${range}. Raise Detected above.`) };
+                reason: REASON.cannotOn(label, name, `almost every value is above ${figure(t)}${range}. Raise Expressed above.`) };
         }
         if (share < DETECT_TOO_FEW) {
             return { grade: 'cannot', code: 'detect_low',
-                reason: REASON.cannotOn(label, name, `almost no value is above ${figure(t)}${range}.${t > 0 ? ' Lower Detected above.' : ''}`) };
+                reason: REASON.cannotOn(label, name, `almost no value is above ${figure(t)}${range}.${t > 0 ? ' Lower Expressed above.' : ''}`) };
         }
         return ok;
     }
@@ -171,7 +175,7 @@ function paramNotes(recipe, method) {
         if (nonDefault(recipe, 'bins', 25) !== 25) notes.push(`bins ${recipe.bins}`);
         if (nonDefault(recipe, 'controls', 50) !== 50) notes.push(`controls ${recipe.controls}`);
         if (nonDefault(recipe, 'seed', 0) !== 0) notes.push(`seed ${recipe.seed}`);
-    } else if (method === 'detected') {
+    } else if (method === 'fraction_of_genes') {
         if (nonDefault(recipe, 'detect_above', 0) !== 0) notes.push(`above ${recipe.detect_above}`);
     }
     return notes;
@@ -199,7 +203,7 @@ export function clipLine(clip) {
 
 /** What the detection threshold does: names the threshold. */
 export function thresholdLine(threshold) {
-    return `A gene counts as detected in a cell when its value is above this. Now: above ${figure(cleanThreshold(threshold))}.`;
+    return `A gene counts as expressed in a cell when its value is above this. Now: above ${figure(cleanThreshold(threshold))}.`;
 }
 
 /** The words for a down-gene weighting. */
@@ -251,6 +255,12 @@ export function reservedMethods(value) {
     }
 }
 
+/** `src` with a method held under an old id read as the current one (the method, and each of an old link's `offered`). */
+function readAliases(src) {
+    const old = canonicalMethod(src.method) !== src.method || (Array.isArray(src.offered) && src.offered.some((m) => canonicalMethod(m) !== m));
+    return !old ? src : { ...src, method: canonicalMethod(src.method), ...(Array.isArray(src.offered) ? { offered: src.offered.map(canonicalMethod) } : {}) };
+}
+
 /**
  * The option fields a saved config describes, every one valid. Anything missing or invalid takes its default, so a
  * hand-edited link still opens. An old link's `offered`/`layers` give its method and input (the first of each).
@@ -259,7 +269,7 @@ export function reservedMethods(value) {
  *   bins: number, controls: number, detect_above: number}}
  */
 export function normalizeOptions(raw) {
-    const src = raw && typeof raw === 'object' ? raw : {};
+    const src = readAliases(raw && typeof raw === 'object' ? raw : {});
     // `method` and `input` are the pair an old consumer without a layer resolves to (the score route reads them too);
     // an old link names them through its first `offered` method and its first `layers` entry.
     const offered = cleanOffered(src.offered, METHODS.includes(src.method) ? src.method : DEFAULT_METHOD);

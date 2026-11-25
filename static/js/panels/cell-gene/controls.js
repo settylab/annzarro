@@ -120,7 +120,7 @@ export function layerList({ datasetLayers, kinds, stat, held }) {
 
 /**
  * A measure after its statistic changed (decision 31): the layer it read, when that layer can give the statistic; else
- * the first that can, and `say` names the move once ("Layer changed to logged: % expressing cannot be computed on 'X'.").
+ * the first that can, and `say` names the move once ("Layer changed to logged: fraction of cells cannot be computed on 'X'.").
  * @returns {{layer: string, say: string}}
  */
 export function pickLayer({ datasetLayers, kinds, stat, preferred }) {

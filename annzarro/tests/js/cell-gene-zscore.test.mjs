@@ -25,7 +25,7 @@ import { statMenu, statInfo, genesRequest, momentsHash } from '../../../static/j
 const RECIPE = { genes: ['UP1', 'UP2'], method: 'zscore_mean', input: 'X' };
 const scoreRecipe = (column, layer) => ({ ...RECIPE, method: column, input: layer });
 const Z = { stat: 'zscore_mean', layer: 'logged' };
-const base = (fields = {}) => normalizeCellGene({ color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'counts' }, mode: 'heatmap', ...fields }).config;
+const base = (fields = {}) => normalizeCellGene({ color: { stat: 'mean', layer: 'logged' }, size: { stat: 'fraction_of_cells', layer: 'counts' }, mode: 'heatmap', ...fields }).config;
 const oneRow = (fields = {}, section = {}) => {
     const cfg = setSectionRows(addSection(base(fields), 'sig'), 0, 'set');
     return { ...cfg, sections: [{ ...cfg.sections[0], ...section }] };
@@ -40,7 +40,7 @@ test('the table lists z-score mean first, and every id is known', () => {
     assert.equal(STATISTIC_INFO[0].value, 'zscore_mean');
     assert.equal(STATISTIC_INFO[0].unit, 'SD');
     assert.deepEqual(STATISTIC_INFO[0].needs, []);
-    assert.deepEqual([...STATISTIC_IDS], ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.deepEqual([...STATISTIC_IDS], ['zscore_mean', 'mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd', 'count']);
     assert.equal(statInfo('nonsense').value, 'mean', 'an unknown statistic still reads as the mean, not as the first row');
 });
 
@@ -61,7 +61,7 @@ test('(1) a gene row under Color z-score mean asks for the gene z-scored, a feat
     assert.notEqual(key(base({ color: Z })), key(base()));
     // beside a Size that reads the raw gene on the same layer, the two are two features of one gene
     const both = planFeatures({ sections: [{ section: { source: 'sig', rows: 'genes' }, genes: ['G1'], down: 0, title: 'S', scoreRecipe }],
-        color: { stat: 'zscore_mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'logged' }, threshold: 0 });
+        color: { stat: 'zscore_mean', layer: 'logged' }, size: { stat: 'fraction_of_cells', layer: 'logged' }, threshold: 0 });
     assert.equal(both.features.length, 2);
     assert.deepEqual(both.features.map((f) => f.wire.transform || 'raw').sort(), ['raw', 'zscore']);
 });
@@ -98,7 +98,7 @@ test('(4) Size cannot be z-score mean, and a Gene Plot cell group cannot yet; Co
     assert.equal(statMenu({ stat: 'mean', layer: 'logged' }, kinds, { logged: 'csc' }).options[0].disabled, false);
     // a stored Size of z-score mean reads as the default Size
     const read = normalizeCellGene({ color: { stat: 'mean', layer: 'X' }, size: { stat: 'zscore_mean', layer: 'X' } });
-    assert.equal(read.config.size.stat, 'pct_expressing');
+    assert.equal(read.config.size.stat, 'fraction_of_cells');
     assert.ok(read.problems.some((p) => /size/.test(p)));
 });
 

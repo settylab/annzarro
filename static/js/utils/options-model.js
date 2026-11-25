@@ -101,7 +101,7 @@ export function figure(x) {
  *   cannotOn('% of total', "'X'", 'it has negative values.')   "% of total cannot be computed on 'X': it has negative values."
  *   cannotWith('Sum', 'down genes', 'a signed sum ...')         "Sum cannot be computed with down genes: a signed sum ..."
  *   note('Mean', "'counts'", 'follows sequencing depth.')       "Mean on 'counts' follows sequencing depth."
- *   moved('Layer', 'logged', '% expressing', "'X'")             "Layer changed to logged: % expressing cannot be computed on 'X'."
+ *   moved('Layer', 'logged', 'fraction of cells', "'X'")             "Layer changed to logged: fraction of cells cannot be computed on 'X'."
  */
 export const REASON = Object.freeze({
     cannotOn: (name, layer, why) => `${name} cannot be computed on ${layer}: ${why}`,
@@ -245,7 +245,7 @@ export function createOptionsModel(spec) {
 
     /**
      * Both selects after the user touched one: the select touched wins and the other moves, to the first usable value,
-     * only when its value is now impossible. `say` names it once ("Layer changed to logged: % expressing cannot be
+     * only when its value is now impossible. `say` names it once ("Layer changed to logged: fraction of cells cannot be
      * computed on 'X'."); `impossible` is true when nothing else works, and the pair is then left as the user made it.
      * @param {'method'|'layer'} changed - the select the user touched
      * @param {string} value - what it now says

@@ -689,7 +689,7 @@ G_TILE = TILE.format(CG)
 def _gene_config(**extra):
     return {"id": CG, "title": "Cell-Gene 1", "version": 1, "mode": "dots", "cellAxis": {"type": "obs", "key": "cell_type"},
             "sections": [{"source": S1, "rows": "genes"}], "color": {"stat": "mean", "layer": "logged"},
-            "size": {"stat": "pct_expressing", "layer": "logged"}, **extra}
+            "size": {"stat": "fraction_of_cells", "layer": "logged"}, **extra}
 
 
 def _cell_gene(browser, served, **extra):
@@ -720,7 +720,7 @@ CELL_GENE_VOCABULARY = [
     lambda r: (lambda m: (f"mode {m} (control)", _cg_mode(m)))(r.choice(["dots", "heatmap"])),
     lambda r: (lambda m: (f"mode {m} (control)", _cg_mode(m)))(r.choice(["dots", "heatmap"])),
     lambda r: (lambda s: (f"scale {s} (control)", _select(f"{G_TILE} .cgene-scale", s)))(r.choice(["none", "var", "group", "z_groups", "z_pooled"])),
-    lambda r: (lambda s: (f"color {s} (control)", _cg_stat("color", s)))(r.choice(["mean", "pct_expressing", "sum", "sd"])),
+    lambda r: (lambda s: (f"color {s} (control)", _cg_stat("color", s)))(r.choice(["mean", "fraction_of_cells", "sum", "sd"])),
     lambda r: ("3D (control)", _click(f"{G_TILE} .cgene-3d-btn")),
     lambda r: ("undo (control)", _click(f"{G_TILE} .cgene-undo")),
     lambda r: ("remove section 2 (control)", _cg_remove(1)),
@@ -917,7 +917,7 @@ def _cell_plot(browser, served, **extra):
 
 SCORE = lambda method: {"type": "gene-score", "key": SIG, "column": method}  # noqa: E731
 OBSP = {"type": "obsp", "key": "connectivities", "column": ""}
-METHODS = ["zscore_mean", "mean", "sum", "detected"]
+METHODS = ["zscore_mean", "mean", "sum", "fraction_of_genes"]
 
 
 CELL_PLOT_VOCABULARY = [
@@ -967,7 +967,7 @@ CELL_PLOT_RISKY = {
     "gene-score-method-and-layer": [("colour gene score z-score mean", _axis(CP, "color", SCORE("zscore_mean"))),
                                     ("method mean", _aggregation(CP, "color", "mean")),
                                     ("layer logged", _aggregate_layer(CP, "color", "logged")),
-                                    ("method detected", _aggregation(CP, "color", "detected"))],
+                                    ("method detected", _aggregation(CP, "color", "fraction_of_genes"))],
     "colour-slider-drag": [("colour obs score", _axis(CP, "color", OBS("score"))), ("drag colour min", _slider(CP, "color-min-slider", 0.3)),
                            ("drag colour max", _slider(CP, "color-max-slider", 0.7)), ("colour obs depth", _axis(CP, "color", OBS("depth"))),
                            ("drag colour min", _slider(CP, "color-min-slider", 0.1))],

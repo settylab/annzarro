@@ -2,8 +2,8 @@
 
 A section with a score step and a % expressing channel asks for the existing ``detected`` score feature::
 
-    {"kind": "score", "recipe": {"genes": <up genes>, "down": [], "method": "detected", "detect_above": t},
-     "column": "detected", "layer": L, "above": 0}
+    {"kind": "score", "recipe": {"genes": <up genes>, "down": [], "method": "fraction_of_genes", "detect_above": t},
+     "column": "fraction_of_genes", "layer": L, "above": 0}
 
 and reads the value of a group as ``100 * n_above / n`` of its moments. This file pins that, against a direct count
 written with NumPy alone (the engine's code is not used to make the expected numbers):
@@ -33,8 +33,8 @@ DOWN = gs.SIGNATURES["up_and_down"]["down"]        # GENE012 .. GENE015, broadly
 def feature(genes, layer, t, down=(), fid="any"):
     """The feature the browser plans for "% expressing any gene" (10.1a)."""
     return {"id": fid, "kind": "score",
-            "recipe": {"genes": list(genes), "down": list(down), "method": "detected", "detect_above": t},
-            "column": "detected", "layer": layer, "above": 0}
+            "recipe": {"genes": list(genes), "down": list(down), "method": "fraction_of_genes", "detect_above": t},
+            "column": "fraction_of_genes", "layer": layer, "above": 0}
 
 
 def column_of(data, names):

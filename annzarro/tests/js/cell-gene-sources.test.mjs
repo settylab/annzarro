@@ -4,7 +4,7 @@
  *
  *   - the layer menus list every layer and the statistic menus every statistic (decision 31, which retired the offered
  *     lists of operator ruling Q1 and the plot's own `offer`);
- *   - a new plot's Color is the mean on the log-normalised layer and its Size % expressing on the counts layer, threshold
+ *   - a new plot's Color is the mean on the log-normalised layer and its Size Fraction of cells on the counts layer, threshold
  *     0, when matrix-kind facts (never names) identify both; X otherwise (Q2);
  *   - a pair a layer cannot give is disabled with its reason, a warn pair carries its note (SHR-27);
  *   - matrixLimits counts groups x planned features against the server's 400,000 (finding 9), and says why two layers
@@ -29,28 +29,28 @@ const enabled = (list) => list.filter((o) => !o.disabled).map((o) => o.value);
 
 // ------------------------------------------------------------------ every statistic and layer (decision 31)
 
-test('every layer is listed for Color and Size; % expressing is disabled on a signed X with its reason', () => {
-    const list = C.layerList({ datasetLayers: LAYERS, kinds: KINDS, stat: 'pct_expressing', held: { stat: 'pct_expressing', layer: 'logged' } });
+test('every layer is listed for Color and Size; Fraction of cells is disabled on a signed X with its reason', () => {
+    const list = C.layerList({ datasetLayers: LAYERS, kinds: KINDS, stat: 'fraction_of_cells', held: { stat: 'fraction_of_cells', layer: 'logged' } });
     assert.deepEqual(list.map((o) => o.value), ['X', 'logged', 'counts']);
-    assert.deepEqual(enabled(list), ['logged', 'counts'], '% expressing cannot be read on a signed X (SHR-27)');
+    assert.deepEqual(enabled(list), ['logged', 'counts'], 'Fraction of cells cannot be read on a signed X (SHR-27)');
     const x = list.find((o) => o.value === 'X');
-    assert.equal(x.title, G.negativeValuesSentence('pct_expressing', 'X'), 'disabled with its reason');
+    assert.equal(x.title, G.negativeValuesSentence('fraction_of_cells', 'X'), 'disabled with its reason');
     assert.ok(!list.some((o) => /offer/i.test(o.label)), 'no Offer other…');
 });
 
 test('with no kinds known every layer is listed and none is disabled: nothing is guessed (OD 8)', () => {
-    const list = C.layerList({ datasetLayers: LAYERS, kinds: {}, stat: 'pct_expressing', held: { stat: 'pct_expressing', layer: 'X' } });
+    const list = C.layerList({ datasetLayers: LAYERS, kinds: {}, stat: 'fraction_of_cells', held: { stat: 'fraction_of_cells', layer: 'X' } });
     assert.deepEqual(enabled(list), LAYERS);
 });
 
 test('the statistic select grades each statistic on the held layer: a warn pair carries its note, Cell count is last', () => {
-    const list = C.statisticList({ kinds: KINDS, held: { stat: 'pct_expressing', layer: 'counts' } });
-    assert.deepEqual(list.map((o) => o.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+    const list = C.statisticList({ kinds: KINDS, held: { stat: 'fraction_of_cells', layer: 'counts' } });
+    assert.deepEqual(list.map((o) => o.value), ['zscore_mean', 'mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd', 'count']);
     assert.match(list.find((o) => o.value === 'mean').title, /sequencing depth/);
     const onX = C.statisticList({ kinds: KINDS, held: { stat: 'mean', layer: 'X' } });
-    const pct = onX.find((o) => o.value === 'pct_expressing');
+    const pct = onX.find((o) => o.value === 'fraction_of_cells');
     assert.equal(pct.disabled, true);
-    assert.equal(pct.title, G.negativeValuesSentence('pct_expressing', 'X'));
+    assert.equal(pct.title, G.negativeValuesSentence('fraction_of_cells', 'X'));
 });
 
 test('a held layer the dataset lacks stays listed and marked, so the select shows what is drawn', () => {
@@ -71,14 +71,14 @@ test('a stored `offer` (WP-4, retired by decision 31) loads with no problem and 
 
 // ------------------------------------------------------------------ a new plot's defaults (Q2)
 
-test('a new plot: Color mean on the log-normalised layer, Size % expressing on counts, when kinds identify both', () => {
+test('a new plot: Color mean on the log-normalised layer, Size Fraction of cells on counts, when kinds identify both', () => {
     // Size stores no threshold: it follows the grouping's Expressed above, 0 by default (decision 35)
     assert.deepEqual(G.defaultMeasures(LAYERS, KINDS),
-        { color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'counts' } });
+        { color: { stat: 'mean', layer: 'logged' }, size: { stat: 'fraction_of_cells', layer: 'counts' } });
     assert.deepEqual(G.defaultMeasures(['X', 'raw', 'lognorm'], { X: 'signed', raw: 'other', lognorm: 'log' }),
-        { color: { stat: 'mean', layer: 'X' }, size: { stat: 'pct_expressing', layer: 'X' } }, 'no counts layer: X for both');
+        { color: { stat: 'mean', layer: 'X' }, size: { stat: 'fraction_of_cells', layer: 'X' } }, 'no counts layer: X for both');
     assert.deepEqual(G.defaultMeasures(['X', 'n1', 'n2'], { X: 'log', n1: 'counts', n2: 'log' }),
-        { color: { stat: 'mean', layer: 'X' }, size: { stat: 'pct_expressing', layer: 'n1' } });
+        { color: { stat: 'mean', layer: 'X' }, size: { stat: 'fraction_of_cells', layer: 'n1' } });
 });
 
 // ------------------------------------------------------------------ the request and the limit (finding 9)
@@ -86,16 +86,16 @@ test('a new plot: Color mean on the log-normalised layer, Size % expressing on c
 test('Color and Size on two layers: each gene once per layer, and the reads say why they double', () => {
     const genes = ['A', 'B', 'C'];
     const sections = [{ section: { source: 's', rows: 'genes' }, genes, title: 's', scoreRecipe: () => null }];
-    const plan = S.planFeatures({ sections, color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'counts', detect_above: 0 } });
+    const plan = S.planFeatures({ sections, color: { stat: 'mean', layer: 'logged' }, size: { stat: 'fraction_of_cells', layer: 'counts', detect_above: 0 } });
     const wires = plan.features.map((f) => f.wire);
     assert.equal(wires.length, 6);
     for (const g of genes) {
         assert.deepEqual(wires.filter((w) => w.name === g).map((w) => w.layer).sort(), ['counts', 'logged']);
     }
     assert.deepEqual(M.geneReads(wires), { genes: 3, reads: 6, cause: 'layers' });
-    const twoThresholds = S.planFeatures({ sections, color: { stat: 'pct_expressing', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'logged', detect_above: 1 } });
+    const twoThresholds = S.planFeatures({ sections, color: { stat: 'fraction_of_cells', layer: 'logged' }, size: { stat: 'fraction_of_cells', layer: 'logged', detect_above: 1 } });
     assert.deepEqual(M.geneReads(twoThresholds.features.map((f) => f.wire)), { genes: 3, reads: 6, cause: 'thresholds' });
-    const one = S.planFeatures({ sections, color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'logged' } });
+    const one = S.planFeatures({ sections, color: { stat: 'mean', layer: 'logged' }, size: { stat: 'fraction_of_cells', layer: 'logged' } });
     assert.deepEqual(M.geneReads(one.features.map((f) => f.wire)), { genes: 3, reads: 3, cause: null });
 });
 
@@ -122,14 +122,14 @@ test('the progress and the cost count both layers: "3 genes on 2 layers"', () =>
 
 // ------------------------------------------------------------------ the CSV header
 
-test('a thresholded column names its threshold: "% expressing (> 1) · counts"', () => {
-    assert.equal(M.columnHeader({ stat: 'pct_expressing', layer: 'counts', detectAbove: 1, scaling: 'none' }), '% expressing (> 1) · counts · not scaled');
+test('a thresholded column names its threshold: "Fraction of cells (> 1) · counts"', () => {
+    assert.equal(M.columnHeader({ stat: 'fraction_of_cells', layer: 'counts', detectAbove: 1, scaling: 'none' }), 'Fraction of cells (> 1) · counts · not scaled');
     assert.equal(M.columnHeader({ stat: 'mean', layer: 'logged', detectAbove: 1, scaling: 'none' }), 'Mean · logged · not scaled', 'a mean uses no threshold');
     const model = {
         mode: 'dots', groups: [{ label: 'a', n: 4 }], rows: [{ kind: 'gene', label: 'A', section: { index: 0, title: 's' } }],
         color: { id: 'c', stat: 'mean', layer: 'logged', scaling: 'none', values: Float64Array.of(1), raw: Float64Array.of(1) },
-        size: { id: 's', stat: 'pct_expressing', layer: 'counts', detectAbove: 1, values: Float64Array.of(50) }
+        size: { id: 's', stat: 'fraction_of_cells', layer: 'counts', detectAbove: 1, values: Float64Array.of(50) }
     };
     const head = M.longRows(O.tableOf(model))[0];
-    assert.ok(head.includes('% expressing (> 1) · counts · not scaled'), head.join(' | '));
+    assert.ok(head.includes('Fraction of cells (> 1) · counts · not scaled'), head.join(' | '));
 });

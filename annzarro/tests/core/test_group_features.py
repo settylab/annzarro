@@ -762,7 +762,7 @@ METHOD_RECIPES = {
     "sum": {"genes": B_GENES, "method": "sum", "input": "counts"},
     "control_adjusted": {"genes": B_GENES[:6], "method": "control_adjusted", "input": "logged", "bins": 4,
                          "controls": 3},
-    "detected": {"genes": B_GENES, "method": "detected", "input": "counts", "detect_above": 1},
+    "fraction_of_genes": {"genes": B_GENES, "method": "fraction_of_genes", "input": "counts", "detect_above": 1},
     "fraction_of_total": {"genes": B_GENES, "method": "fraction_of_total", "input": "counts"},
 }
 

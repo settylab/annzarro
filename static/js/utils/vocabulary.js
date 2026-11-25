@@ -18,8 +18,8 @@ const word = Object.freeze({
     statistic: 'statistic',
     aggregation: 'aggregation',
     scoreOption: 'score option',
-    percentExpressing: '% expressing',
-    fractionDetected: 'fraction detected',
+    fractionOfCells: 'Fraction of cells',
+    fractionOfGenes: 'Fraction of genes',
     cellsShown: 'cells shown',
     notInAnyGroup: 'not in any group',
     smallGroup: 'small group',
@@ -51,7 +51,7 @@ const never = Object.freeze({
     statistic: Object.freeze(['measure', 'metric']),
     aggregation: Object.freeze(['statistic']),
     scoreOption: Object.freeze(['statistic']),
-    percentExpressing: Object.freeze(['fraction expressing']),
+    fractionOfCells: Object.freeze(['fraction expressing']),
     cellsShown: Object.freeze(['visible', 'selected cells']),
     notInAnyGroup: Object.freeze(['other', 'excluded']),
     smallGroup: Object.freeze(['Other']),
@@ -88,7 +88,7 @@ const cellGene = Object.freeze({
     statistic: Object.freeze({
         zscore_mean: 'Z-score mean',
         mean: 'Mean',
-        pct_expressing: '% expressing',
+        fraction_of_cells: 'Fraction of cells',
         mean_expressing: 'Mean of expressing cells',
         sum: 'Sum',
         sd: 'SD',
@@ -134,12 +134,12 @@ const cellGene = Object.freeze({
         name: Object.freeze({ rows_mean: 'Mean of the gene rows', rows_sum: 'Sum of the gene rows' }),
         /** A score where the step is named on its own (the CSV, the hover): "z-score mean score". */
         score: (method) => `${method} score`,
-        /** Under % expressing the set is the share of cells expressing at least one gene (aggregation-unify-080.md 10.1a). */
+        /** Under fraction of cells the set is the share of cells expressing at least one gene (aggregation-unify-080.md 10.1a). */
         anyGeneHow: 'any gene',
-        anyGene: (title, up, down, t, layer) => `% of cells expressing at least one of ${title}'s ${up} ${down > 0 && up > 0 ? 'up ' : ''}genes (> ${t}) \u00b7 ${layer}`,
+        anyGene: (title, up, down, t, layer) => `Fraction of cells expressing at least one of ${title}'s ${up} ${down > 0 && up > 0 ? 'up ' : ''}genes (> ${t}) \u00b7 ${layer}`,
         /** What a one-row section shows under each statistic, for its tooltip (the rule of cell-gene-model.js ROW_RULE). */
         reading: Object.freeze({
-            mean: "the mean of the genes' means", zscore_mean: 'the z-score mean score of the set', pct_expressing: '% of cells expressing at least one gene',
+            mean: "the mean of the genes' means", zscore_mean: 'the z-score mean score of the set', fraction_of_cells: 'the fraction of cells expressing at least one gene',
             mean_expressing: "the mean of the genes' means over their expressing cells", sum: "the sum of the genes' sums", sd: "the mean of the genes' SDs",
             count: "the group's size", downMean: "the signature's mean score (up minus down)"
         }),
@@ -307,7 +307,7 @@ const cellGene = Object.freeze({
         csrWayOut: 'A copy of the layer stored by gene (CSC) makes this fast; see the documentation.',
         tooLarge: (groups, rows, cells, limit) => `${groups} × ${rows} = ${cells} cells of the matrix; the limit is ${limit}.`,
         tooLargeWayOut: 'Remove a section or use fewer groups.',
-        oneCell: `One cell per group: ${word.percentExpressing} is 0 or 100.`,
+        oneCell: `One cell per group: ${word.fractionOfCells} is 0 or 1.`,
         failed: (reason) => `Could not be computed: ${reason}.`,
         noAnswer: 'the server stopped responding',
         matrix: (groups, rows) => `${groups} × ${rows}`,

@@ -20,7 +20,7 @@ const recipe = (raw) => G.normalizeRecipe({ genes: ['A', 'B'], ...raw }).recipe;
 const offer = (raw) => ({ ...recipe(raw), ...O.normalizeOptions(raw) });
 
 test('the aggregations are listed by common use with z-score mean first, each with a one-line definition', () => {
-    assert.deepEqual(O.METHODS, ['zscore_mean', 'mean', 'sum', 'control_adjusted', 'detected', 'fraction_of_total']);
+    assert.deepEqual(O.METHODS, ['zscore_mean', 'mean', 'sum', 'control_adjusted', 'fraction_of_genes', 'fraction_of_total']);
     assert.equal(O.DEFAULT_METHOD, 'zscore_mean');
     for (const m of O.METHOD_INFO) assert.ok(m.definition.length > 20 && !m.definition.includes('\n'), m.value);
     const py = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'core', 'gene_score.py'), 'utf8');
@@ -57,7 +57,7 @@ test('each method has its own key; a parameter moves only the methods that read 
     assert.deepEqual(moved({ clip: null }), ['zscore_mean']);
     assert.deepEqual(moved({ seed: 4 }), ['control_adjusted']);
     assert.deepEqual(moved({ bins: 10 }), ['control_adjusted']);
-    assert.deepEqual(moved({ detect_above: 2 }), ['detected']);
+    assert.deepEqual(moved({ detect_above: 2 }), ['fraction_of_genes']);
     assert.deepEqual(moved({ controls: 20 }), ['control_adjusted']);
     assert.deepEqual(moved({ input: 'counts' }), [...O.METHODS], 'a layer moves every method');
     assert.deepEqual(moved({ genes: ['A', 'B', 'C'] }), [...O.METHODS]);
@@ -106,23 +106,23 @@ test('each method is graded on each kind of layer: ok, warn once on the layer ro
     assert.deepEqual(['log', 'normalised', 'counts', 'signed', 'other', 'unknown'].map(k => g('fraction_of_total', k)), ['warn', 'ok', 'ok', 'cannot', 'ok', 'ok']);
     assert.equal(O.gradeOption('fraction_of_total', 'X', 'signed').reason, "% of total cannot be computed on 'X': it has negative values.");
     assert.equal(O.gradeOption('fraction_of_total', 'X', 'log').reason, "% of total on 'X' is compressed by the log: it is usually read from counts.");
-    // fraction detected is not a property of the kind: with nothing sampled it is ok on every kind
-    for (const kind of ['log', 'normalised', 'counts', 'signed', 'other', 'unknown']) assert.equal(g('detected', kind), 'ok', kind);
+    // fraction of genes is not a property of the kind: with nothing sampled it is ok on every kind
+    for (const kind of ['log', 'normalised', 'counts', 'signed', 'other', 'unknown']) assert.equal(g('fraction_of_genes', kind), 'ok', kind);
 });
 
-test('fraction detected is graded against the threshold: cannot when it makes the score constant, and re-graded when it moves', () => {
-    const at = (stats, detectAbove, kind = 'signed') => O.gradeOption('detected', 'kompot_smoothed', kind, false, { stats, detectAbove });
+test('fraction of genes is graded against the threshold: cannot when it makes the score constant, and re-graded when it moves', () => {
+    const at = (stats, detectAbove, kind = 'signed') => O.gradeOption('fraction_of_genes', 'kompot_smoothed', kind, false, { stats, detectAbove });
     assert.equal(at(SCALED, 0).grade, 'ok', 'a scaled layer has about half its values above 0');
     assert.equal(at(SMOOTH, 0).grade, 'cannot');
     assert.equal(at(SMOOTH, 0).code, 'detect_high');
-    assert.equal(at(SMOOTH, 0).reason, "Fraction detected cannot be computed on 'kompot_smoothed': almost every value is above 0 (values here range from 0.01 to 3.4). Raise Detected above.");
+    assert.equal(at(SMOOTH, 0).reason, "Fraction of genes cannot be computed on 'kompot_smoothed': almost every value is above 0 (values here range from 0.01 to 3.4). Raise Expressed above.");
     assert.equal(at(SMOOTH, 1).grade, 'ok', 'raised: it becomes meaningful');
     assert.equal(at(SMOOTH, 3.39).code, 'detect_low', 'raised too far: almost nothing is above it');
-    assert.equal(at(SMOOTH, 3.39).reason, "Fraction detected cannot be computed on 'kompot_smoothed': almost no value is above 3.39 (values here range from 0.01 to 3.4). Lower Detected above.");
+    assert.equal(at(SMOOTH, 3.39).reason, "Fraction of genes cannot be computed on 'kompot_smoothed': almost no value is above 3.39 (values here range from 0.01 to 3.4). Lower Expressed above.");
     assert.equal(at(SPARSE, 0).grade, 'ok', 'sparse counts: 5% of all values, fine');
     assert.equal(at({ ...SPARSE, density: 0.004 }, 0).code, 'detect_low');
     assert.equal(at({ ...SCALED, min: -2.1, max: 3.4, density: 1, quantiles: quant(-2.1, -0.01) }, 0).reason,
-        "Fraction detected cannot be computed on 'kompot_smoothed': almost no value is above 0 (values here range from \u22122.1 to 3.4).", 'at 0 there is nothing to lower');
+        "Fraction of genes cannot be computed on 'kompot_smoothed': almost no value is above 0 (values here range from \u22122.1 to 3.4).", 'at 0 there is nothing to lower');
     assert.equal(at(null, 0).grade, 'ok', 'nothing sampled yet: nothing said');
 });
 
@@ -131,10 +131,10 @@ test('every method is listed on every layer; what cannot be computed is disabled
     const stats = { X: SMOOTH, counts: SPARSE };
     const onX = O.scoreMethodChoices({ recipe: recipe({}), layer: 'X', kinds, stats });
     assert.deepEqual(onX.map(o => o.value), [...O.METHODS], 'all six, always');
-    assert.deepEqual(onX.filter(o => o.disabled).map(o => o.value), ['detected', 'fraction_of_total']);
+    assert.deepEqual(onX.filter(o => o.disabled).map(o => o.value), ['fraction_of_genes', 'fraction_of_total']);
     assert.ok(onX.filter(o => o.disabled).every(o => o.title === o.reason && / cannot be computed on 'X': /.test(o.title)));
-    // raise the threshold: fraction detected can be chosen again
-    assert.equal(O.scoreMethodChoices({ recipe: recipe({ detect_above: 1 }), layer: 'X', kinds, stats }).find(o => o.value === 'detected').disabled, false);
+    // raise the threshold: fraction of genes can be chosen again
+    assert.equal(O.scoreMethodChoices({ recipe: recipe({ detect_above: 1 }), layer: 'X', kinds, stats }).find(o => o.value === 'fraction_of_genes').disabled, false);
     // a warning rides on the option as a note, and it stays usable
     const mean = O.scoreMethodChoices({ recipe: recipe({}), layer: 'counts', kinds, stats }).find(o => o.value === 'mean');
     assert.deepEqual([mean.disabled, mean.grade, mean.note], [false, 'warn', "Mean on 'counts' follows sequencing depth."]);
@@ -178,7 +178,7 @@ test('a method with parameters can be reset on its own', () => {
     assert.ok(O.isMethodDefault(recipe({}), 'zscore_mean') && O.isMethodDefault(recipe({}), 'mean'));
     assert.ok(!O.isMethodDefault(recipe({ clip: 3 }), 'zscore_mean') && !O.isMethodDefault(recipe({ clip: null }), 'zscore_mean'));
     assert.ok(!O.isMethodDefault(recipe({ seed: 2 }), 'control_adjusted') && O.isMethodDefault(recipe({ seed: 0 }), 'control_adjusted'));
-    assert.ok(!O.isMethodDefault(recipe({ detect_above: 0.5 }), 'detected'));
+    assert.ok(!O.isMethodDefault(recipe({ detect_above: 0.5 }), 'fraction_of_genes'));
     assert.deepEqual(O.PARAM_DEFAULTS.control_adjusted, { bins: 25, controls: 50, seed: null });
 });
 
@@ -188,7 +188,7 @@ test('the detection threshold is a number from 0 up and reads as 0 otherwise', (
     assert.deepEqual(G.parseThresholdText(' 1.5 '), { ok: true, value: 1.5 });
     assert.deepEqual(G.parseThresholdText('0'), { ok: true, value: 0 });
     for (const bad of ['', '-1', 'x', '1e999']) assert.deepEqual(G.parseThresholdText(bad), { ok: false, error: 'Enter a number from 0 up.' }, bad);
-    assert.deepEqual(O.paramsOf(recipe({}), 'detected'), { detect_above: 0 });
+    assert.deepEqual(O.paramsOf(recipe({}), 'fraction_of_genes'), { detect_above: 0 });
 });
 
 // ---------------------------------------------------------------------------------------------------------------

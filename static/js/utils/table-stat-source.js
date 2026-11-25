@@ -1,6 +1,6 @@
 /**
  * The page's side of the `table-stat` source: a Cell Table's passing cells as the cells whose statistic colours a Gene Plot, or
- * is its x, y or z axis (offered-removal-080.md 10.1, SO-8c). Each gene's value is one statistic (mean, % expressing, mean of
+ * is its x, y or z axis (offered-removal-080.md 10.1, SO-8c). Each gene's value is one statistic (mean, fraction of cells, mean of
  * expressing cells, sum, SD; utils/group-statistics.js) of that gene over the table's cells, on a layer, with the table's
  * Expressed above (Methods of the table) as the threshold.
  *
@@ -75,7 +75,7 @@ function nameSetting(setting) {
     const panel = tablePanel(setting.key);
     const methods = panel && typeof panel.getMethods === 'function' ? panel.getMethods() : {};
     const above = M.thresholdOf(methods);
-    const threshold = ['pct_expressing', 'mean_expressing'].includes(M.statOf(setting)) ? ` (> ${Number(above.toPrecision(4))})` : '';
+    const threshold = ['fraction_of_cells', 'mean_expressing'].includes(M.statOf(setting)) ? ` (> ${Number(above.toPrecision(4))})` : '';
     const lines = [title, `${VOCABULARY.cellGene.statistic[M.statOf(setting)]}${threshold} · ${M.layerOf(setting)}`].join('\n');
     const changed = (!!title && setting.label !== title) || setting.labelFull !== lines;
     if (title) setting.label = title;

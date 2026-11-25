@@ -11,9 +11,10 @@
  * (`shape: "genes"`, core/gene_moments.py), one float64 block `[n_var, 5 * thresholds]`. The statistic is derived here
  * (`statValues`), so a change of statistic or a switch between statistics of the same moments sends no request; the
  * request names the group, the layer and the grouping's Expressed above only. A statistic has the Cell-Gene Plot's
- * name and units (% expressing is 0 to 100), from the same table (utils/group-statistics.js).
+ * name and units (fraction of cells is 0 to 1), from the same table (utils/group-statistics.js).
  */
 import { statisticColumn, MOMENT_STRIDE } from './cell-gene-model.js';
+import { canonicalStatistic } from './cell-grouping.js';
 import { STATISTIC_INFO, CELL_COUNT, statisticChoices, statisticLayerChoices, statisticPairAfter } from './group-statistics.js';
 import { stableStringify } from './url-history.js';
 
@@ -31,7 +32,7 @@ export const ZSCORE = 'zscore_mean';
 export const statInfo = (stat) => STATISTIC_INFO.find((m) => m.value === stat) || STATISTIC_INFO.find((m) => m.value === DEFAULT_STAT);
 
 /** The statistic a setting holds, or the default for one that holds none (or one this page does not know). */
-export const statOf = (setting) => (setting && STAT_IDS.includes(setting.stat) ? setting.stat : DEFAULT_STAT);
+export const statOf = (setting) => (setting && STAT_IDS.includes(canonicalStatistic(setting.stat)) ? canonicalStatistic(setting.stat) : DEFAULT_STAT);
 
 /** The layer a setting holds, or the default. */
 export const layerOf = (setting) => (setting && setting.layer ? String(setting.layer) : DEFAULT_LAYER);
@@ -87,7 +88,7 @@ export function momentsHash(groupingKey, group, layer, threshold, transform = nu
 /**
  * One statistic of every gene from the moments the route sent: `statisticColumn` of the Cell-Gene model over the same
  * moments, genes in the place of groups. NaN where the group has no cell with a finite value of that gene.
- * @param {string} stat - mean, pct_expressing, mean_expressing, sum or sd
+ * @param {string} stat - mean, fraction_of_cells, mean_expressing, sum or sd
  * @param {Float64Array} moments - `[genes, 5]` (one threshold), as the route's block
  * @param {number} genes
  * @returns {Float64Array}

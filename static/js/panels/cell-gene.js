@@ -337,7 +337,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             return s ? layerKeys(s) : ['X'];
         }
 
-        /** What each layer holds (core/matrix_kind.py), asked once per dataset: % expressing cannot be read on a signed one. */
+        /** What each layer holds (core/matrix_kind.py), asked once per dataset: fraction of cells cannot be read on a signed one. */
         function readKinds() {
             const dataset = DataManager.getCurrentDataset();
             if (_kindsOf === dataset) return;
@@ -369,7 +369,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         /**
          * A new plot's Color and Size from what the layers hold (operator ruling Q2), once every layer's kind is known:
-         * the mean on the log-normalised layer and % expressing on the counts layer when both are identified. Not an
+         * the mean on the log-normalised layer and fraction of cells on the counts layer when both are identified. Not an
          * edit, so no undo step; never once the user has chosen either.
          */
         function freshDefaults() {

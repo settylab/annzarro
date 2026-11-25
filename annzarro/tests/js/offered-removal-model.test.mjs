@@ -52,12 +52,12 @@ test('% of total is disabled on X, with the reason as its title; the layer selec
     assert.ok(warn.title.length > 0);
 });
 
-test('fraction detected is disabled at threshold 0 on a dense layer, enabled once the threshold is raised', () => {
+test('fraction of genes is disabled at threshold 0 on a dense layer, enabled once the threshold is raised', () => {
     const at0 = M.methodChoices({ source: S.SIGNATURE_MODEL, recipe: { detect_above: 0 }, layer: 'logged', kinds: KINDS, stats: STATS });
-    assert.equal(find(at0, 'detected').disabled, true);
-    assert.match(find(at0, 'detected').title, /^Fraction detected cannot be computed on 'logged': almost every value is above 0/);
+    assert.equal(find(at0, 'fraction_of_genes').disabled, true);
+    assert.match(find(at0, 'fraction_of_genes').title, /^Fraction of genes cannot be computed on 'logged': almost every value is above 0/);
     const at1 = M.methodChoices({ source: S.SIGNATURE_MODEL, recipe: { detect_above: 1 }, layer: 'logged', kinds: KINDS, stats: STATS });
-    assert.equal(find(at1, 'detected').disabled, false);
+    assert.equal(find(at1, 'fraction_of_genes').disabled, false);
 });
 
 test('a held pair that is impossible stays selectable and says "(not available)"', () => {
@@ -70,27 +70,27 @@ test('a held pair that is impossible stays selectable and says "(not available)"
 
 test('pairAfter: the select touched wins and the other one moves, with one sentence saying so', () => {
     const G2 = G.GROUP_STATISTICS_MODEL;
-    const moved = G2.pairAfter('method', 'pct_expressing', { layer: 'X' }, ctx);
-    assert.deepEqual([moved.method, moved.layer, moved.moved], ['pct_expressing', 'logged', 'layer']);
-    assert.equal(moved.say, "Layer changed to logged: % expressing cannot be computed on 'X'.");
+    const moved = G2.pairAfter('method', 'fraction_of_cells', { layer: 'X' }, ctx);
+    assert.deepEqual([moved.method, moved.layer, moved.moved], ['fraction_of_cells', 'logged', 'layer']);
+    assert.equal(moved.say, "Layer changed to logged: fraction of cells cannot be computed on 'X'.");
     // a method that works on the layer keeps it, and nothing is said
     const kept = G2.pairAfter('method', 'mean', { layer: 'X' }, ctx);
     assert.deepEqual([kept.method, kept.layer, kept.moved, kept.say], ['mean', 'X', null, '']);
     // the layer touched wins: the method moves to the first usable one
-    const other = G2.pairAfter('layer', 'X', { method: 'pct_expressing' }, ctx);
+    const other = G2.pairAfter('layer', 'X', { method: 'fraction_of_cells' }, ctx);
     assert.deepEqual([other.method, other.layer, other.moved], ['mean', 'X', 'method']);
-    assert.equal(other.say, "Method changed to mean: % expressing cannot be computed on 'X'.");
+    assert.equal(other.say, "Method changed to mean: fraction of cells cannot be computed on 'X'.");
     // the free function is the same thing
-    assert.deepEqual(M.pairAfter('method', 'pct_expressing', { layer: 'X' }, { source: G2, ...ctx }), moved);
+    assert.deepEqual(M.pairAfter('method', 'fraction_of_cells', { layer: 'X' }, { source: G2, ...ctx }), moved);
     // nothing usable: the pair is left as the user made it
-    const none = G2.pairAfter('method', 'pct_expressing', { layer: 'X' }, { datasetLayers: ['X'], kinds: { X: 'signed' } });
+    const none = G2.pairAfter('method', 'fraction_of_cells', { layer: 'X' }, { datasetLayers: ['X'], kinds: { X: 'signed' } });
     assert.deepEqual([none.layer, none.moved, none.impossible], ['X', null, true]);
 });
 
 test('group statistics list all five and Cell count, which reads no layer', () => {
     const list = G.statisticChoices({ recipe: {}, layer: 'X', kinds: KINDS });
-    assert.deepEqual(list.map((e) => e.value), ['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
-    assert.equal(find(list, 'pct_expressing').disabled, true);
+    assert.deepEqual(list.map((e) => e.value), ['zscore_mean', 'mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd', 'count']);
+    assert.equal(find(list, 'fraction_of_cells').disabled, true);
     assert.equal(find(list, 'count').disabled, false);
     assert.deepEqual(G.GROUP_STATISTICS_MODEL.layerChoices({ method: 'count', ...ctx }), []);
     const toCount = G.GROUP_STATISTICS_MODEL.pairAfter('method', 'count', { layer: 'X' }, ctx);

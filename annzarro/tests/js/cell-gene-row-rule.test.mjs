@@ -20,7 +20,7 @@ const RECIPE = { genes: ['G1', 'G2', 'G3'], down: [], method: 'zscore_mean', inp
 const scoreRecipe = (column, layer, extra = null) => (extra && extra.anyGene
     ? { genes: [...RECIPE.genes], down: [], method: column, input: layer, detect_above: extra.detect_above }
     : { ...RECIPE, method: column, input: layer });
-const LOGGED = { color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'counts' } };
+const LOGGED = { color: { stat: 'mean', layer: 'logged' }, size: { stat: 'fraction_of_cells', layer: 'counts' } };
 const base = (fields = {}) => normalizeCellGene({ ...LOGGED, ...fields }).config;
 const oneRow = (fields = {}) => setSectionRows(addSection(base(fields), 'sig'), 0, 'set');
 const GENES = ['G1', 'G2', 'G3'];
@@ -55,7 +55,7 @@ const cellsOf = (gene, g, c) => CELLS[gene][g][c];
 /** What the score route computes of a cell, by method: the mean of its genes, or `detected` (the share of the genes above t). */
 function scoreOf(wire, g, c) {
     const genes = wire.recipe.genes;
-    if (wire.column === 'detected') return genes.filter((gene) => cellsOf(gene, g, c) > wire.recipe.detect_above).length / genes.length;
+    if (wire.column === 'fraction_of_genes') return genes.filter((gene) => cellsOf(gene, g, c) > wire.recipe.detect_above).length / genes.length;
     return genes.reduce((a, gene) => a + cellsOf(gene, g, c), 0) / genes.length;
 }
 
@@ -96,7 +96,7 @@ test('x\u0304 Mean with down genes: the signature\'s mean score stands in, one s
     const p = planOf(cfg, { genes: ['UP1', 'UP2', 'DN1'], down: 1 });
     const row = p.rows.find((r) => r.kind === 'set');
     assert.ok(row.color.key && row.color.keys === undefined);
-    assert.deepEqual(p.features.filter((f) => f.wire.kind === 'score').map((f) => f.wire.column).sort(), ['detected', 'mean']);
+    assert.deepEqual(p.features.filter((f) => f.wire.kind === 'score').map((f) => f.wire.column).sort(), ['fraction_of_genes', 'mean']);
     assert.equal(p.features.filter((f) => f.wire.kind === 'gene').length, 0);
     assert.equal(rowQuantity(row.color.step, cfg.color).id, 'mean|logged|', 'on the gene rows\' bar');
 });
@@ -104,30 +104,30 @@ test('x\u0304 Mean with down genes: the signature\'s mean score stands in, one s
 test('z\u0304 Z-score mean: the group mean of the set\'s z-score mean score, one feature, the gene rows\' bar', () => {
     const cfg = oneRow({ color: { stat: 'zscore_mean', layer: 'logged' } });
     const p = planOf(cfg);
-    assert.deepEqual(p.features.filter((f) => f.wire.kind === 'score').map((f) => f.wire.column).sort(), ['detected', 'zscore_mean']);
+    assert.deepEqual(p.features.filter((f) => f.wire.kind === 'score').map((f) => f.wire.column).sort(), ['fraction_of_genes', 'zscore_mean']);
     const row = p.rows[0];
     assert.equal(rowQuantity(row.color.step, cfg.color).id, 'zscore_mean|logged|');
 });
 
-test('% expressing: the share of cells expressing at least one gene (`detected`, above 0, the channel\'s threshold)', () => {
+test('Fraction of cells: the share of cells expressing at least one gene (`detected`, above 0, the channel\'s threshold)', () => {
     const cfg = oneRow();
     const p = planOf(cfg, { genes: GENES, down: 0 }, 1);
-    const detected = p.features.find((f) => f.wire.column === 'detected').wire;
+    const detected = p.features.find((f) => f.wire.column === 'fraction_of_genes').wire;
     assert.equal(detected.recipe.detect_above, 1);
     assert.equal(detected.above, 0);
     assert.equal(detected.layer, 'counts');
     assert.deepEqual(detected.recipe.genes, GENES);
-    const own = oneRow({ size: { stat: 'pct_expressing', layer: 'counts', detect_above: 2 } });
-    assert.equal(planOf(own, { genes: GENES, down: 0 }, 1).features.find((f) => f.wire.column === 'detected').wire.recipe.detect_above, 2);
+    const own = oneRow({ size: { stat: 'fraction_of_cells', layer: 'counts', detect_above: 2 } });
+    assert.equal(planOf(own, { genes: GENES, down: 0 }, 1).features.find((f) => f.wire.column === 'fraction_of_genes').wire.recipe.detect_above, 2);
     const { out } = matrixOf(cfg);
-    const any = [0, 1].map((g) => (100 * CELLS.G1[g].filter((_, c) => GENES.some((gene) => cellsOf(gene, g, c) > 0)).length) / GROUPS[g].n);
-    close(rowOf(out.size.values, 0), any, '100 * n_above / n');
+    const any = [0, 1].map((g) => (CELLS.G1[g].filter((_, c) => GENES.some((gene) => cellsOf(gene, g, c) > 0)).length) / GROUPS[g].n);
+    close(rowOf(out.size.values, 0), any, 'n_above / n');
     assert.equal(out.rows[0].own.size.id, out.size.id);
-    assert.match(out.rows[0].own.size.label, /^% of cells expressing at least one of Sig's 3 genes \(> 0\) \u00b7 counts$/);
+    assert.match(out.rows[0].own.size.label, /^Fraction of cells expressing at least one of Sig's 3 genes \(> 0\) \u00b7 counts$/);
     assert.equal(out.rows[0].own.size.how, 'any gene');
 });
 
-test('a one-gene set\'s "any gene" is that gene\'s % expressing', () => {
+test('a one-gene set\'s "any gene" is that gene\'s Fraction of cells', () => {
     const recipe = { genes: ['G2'], down: [], method: 'zscore_mean', input: 'X' };
     const cfg = oneRow();
     const sections = [{ section: cfg.sections[0], genes: ['G2'], down: 0, title: 'Sig',
@@ -136,7 +136,7 @@ test('a one-gene set\'s "any gene" is that gene\'s % expressing', () => {
     const by = new Map(p.features.map((f) => [f.key, f.wire.kind === 'gene' ? momentsOf(CELLS[f.wire.name], f.wire.detect_above)
         : momentsOf(GROUPS.map((_, g) => CELLS.G2[g].map((x) => (x > f.wire.recipe.detect_above ? 1 : 0))), f.wire.above)]));
     const out = buildMatrix(p, (key) => by.get(key) || null, GROUPS, cfg);
-    close(rowOf(out.size.values, 0), Array.from(statisticColumn('pct_expressing', momentsOf(CELLS.G2, 0), 2)), 'the gene row\'s own value');
+    close(rowOf(out.size.values, 0), Array.from(statisticColumn('fraction_of_cells', momentsOf(CELLS.G2, 0), 2)), 'the gene row\'s own value');
 });
 
 test('x\u0304\u207a Mean of expressing cells: the mean over the genes of each gene\'s, the gene rows\' scale', () => {
@@ -175,13 +175,13 @@ test('down genes: x\u0304\u207a, \u03a3, \u03c3 and % use the up genes only', ()
         assert.deepEqual([...names].sort(), ['UP1', 'UP2'], stat);
     }
     const pct = planOf(oneRow(), { genes: ['UP1', 'UP2', 'DN1'], down: 1 });
-    const any = pct.features.find((f) => f.wire.column === 'detected').wire;
+    const any = pct.features.find((f) => f.wire.column === 'fraction_of_genes').wire;
     assert.deepEqual(any.recipe.genes, GENES, 'the fixture recipe names its genes; the panel gives the up genes only');
 });
 
 test('the tooltip states the rule of each channel', () => {
     const cfg = oneRow();
-    assert.equal(rowReading({ color: cfg.color, size: cfg.size }), "Color: the mean of the genes' means. Size: % of cells expressing at least one gene.");
+    assert.equal(rowReading({ color: cfg.color, size: cfg.size }), "Color: the mean of the genes' means. Size: the fraction of cells expressing at least one gene.");
     assert.equal(rowReading({ color: { stat: 'zscore_mean' }, size: { stat: 'sum' } }), "Color: the z-score mean score of the set. Size: the sum of the genes' sums.");
     assert.match(rowReading({ color: cfg.color, size: null }, 2), /signature's mean score \(up minus down\)/);
 });

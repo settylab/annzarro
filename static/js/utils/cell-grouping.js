@@ -45,7 +45,13 @@ export const GROUPING_LIMITS = Object.freeze({
 });
 
 /** The statistic ids a grouping can offer to its consumers (plan 1.6). */
-export const STATISTIC_IDS = Object.freeze(['zscore_mean', 'mean', 'pct_expressing', 'mean_expressing', 'sum', 'sd', 'count']);
+export const STATISTIC_IDS = Object.freeze(['zscore_mean', 'mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd', 'count']);
+/** Ids an old link, session or panel set may hold for a statistic: read as the current id, never written (aggregation-unify-080.md 13.3). */
+const STATISTIC_ALIASES = Object.freeze({ pct_expressing: 'fraction_of_cells' });
+/** `stat` under its current id. */
+export const canonicalStatistic = (stat) => (typeof stat === 'string' && STATISTIC_ALIASES[stat]) || stat;
+/** Whether `stat` is an old id: its stored style fields (a size or colour range) are in the old units and are dropped. */
+export const isOldStatisticId = (stat) => typeof stat === 'string' && Object.hasOwn(STATISTIC_ALIASES, stat);
 const SMALL_MODES = Object.freeze(['keep', 'collect', 'hide']);
 const DEFAULT_SMALL = Object.freeze({ threshold: 10, mode: 'keep' });
 const DEFAULT_SEPARATOR = ' | ';
@@ -271,7 +277,7 @@ export function normalizeGrouping(raw) {
     // `offered` and `layers` were retired by decision 31: kept as stored while valid, never flagged, dropped by the
     // panel's next edit. `detect_above` stays: the grouping's method parameter (decision 34)
     if (Array.isArray(raw.offered)) {
-        const kept = unique(raw.offered.filter((id) => STATISTIC_IDS.includes(id)));
+        const kept = unique(raw.offered.map(canonicalStatistic).filter((id) => STATISTIC_IDS.includes(id)));
         if (kept.length) out.offered = kept;
     }
     if (Array.isArray(raw.layers)) {

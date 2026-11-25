@@ -10,12 +10,12 @@ Recipe (``version`` 1), a JSON object::
      "down": [],                  # down genes: the score is the up side minus the down side (methods zscore_mean, mean,
                                   # control_adjusted only); a gene named on both sides counts as up
      "input": "X",                # "X" or the name of a layer
-     "method": "zscore_mean",     # "zscore_mean" (default), "mean", "sum", "detected", "fraction_of_total", "control_adjusted"
+     "method": "zscore_mean",     # "zscore_mean" (default), "mean", "sum", "fraction_of_genes", "fraction_of_total", "control_adjusted"
      "clip": 10,                  # z-scores are clipped at +-clip: a number above 0, or null for no clipping
      "seed": null,                # control_adjusted only: the seed of the control genes (null is 0)
      "bins": 25,                  # control_adjusted only: gene bins, 2 to 200
      "controls": 50,              # control_adjusted only: control genes drawn per bin, 1 to 1,000
-     "detect_above": 0,           # detected only: a gene is detected in a cell when its value is above this (0 or more)
+     "detect_above": 0,           # fraction_of_genes only: a gene is expressed in a cell when its value is above this (Expressed above, 0 or more)
      "version": 1}                # the algorithm version
 
 Every field but ``genes`` is optional.
@@ -26,7 +26,7 @@ says how: ``gene`` (the default) flips the sign of the down genes and averages e
 ``score_genes`` calls). With one side empty both are the same score. Each side is scored with the method: the mean of the z-scores (``zscore_mean``), the mean of the values (``mean``), or the
 control-adjusted mean (``control_adjusted``: each side subtracts the mean of ITS OWN controls, drawn outside that
 side's genes, as two calls of scanpy's ``score_genes`` would; a down gene may serve as an up gene's control).
-``sum``, ``detected`` and ``fraction_of_total`` have no signed version that means anything: a signed sum depends on
+``sum``, ``fraction_of_genes`` and ``fraction_of_total`` have no signed version that means anything: a signed sum depends on
 how many genes each side has, a difference of two fractions is not a fraction, a difference of two shares is not a
 share of anything. The engine refuses them with ``method_no_down``.
 Edge cases: a side with no usable gene (absent, constant for the z-score mean, no values) is left out and the score
@@ -39,7 +39,9 @@ Methods
     zscore_mean  mean over genes of clip((x - mu) / sd, +-clip); mu and sd over all cells, zeros included
     mean         mean over genes of x
     sum          sum over genes of x; a gene with no value in a cell adds nothing, a cell with no value for any gene is NaN
-    detected     the FRACTION of the signature's genes detected in the cell, 0 to 1: the mean of the indicator
+    fraction_of_genes
+                 the FRACTION of the signature's genes expressed in the cell, 0 to 1 (was ``detected``, still read as an alias,
+                 with the same values): the mean of the indicator
                  "x > detect_above" (the default 0: a non-zero value, for the non-negative matrices counts and
                  normalised values are). A fraction rather than a count, so it means the same when a gene is missing from
                  the dataset or has no value in a cell, and compares between signatures of different sizes.
@@ -93,7 +95,9 @@ MAX_NAME_CHARS = 1000
 
 DEFAULT_CLIP = 10.0
 DEFAULT_METHOD = "zscore_mean"
-METHODS = ("zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total")
+METHODS = ("zscore_mean", "mean", "sum", "control_adjusted", "fraction_of_genes", "fraction_of_total")
+# ids an older recipe may hold (a link, a saved panel, a client from before the rename): read as the current id, answered with it
+METHOD_ALIASES = {"detected": "fraction_of_genes"}
 #: Methods that can score a signature with down genes (see the module docstring).
 DOWN_METHODS = ("zscore_mean", "mean", "control_adjusted")
 #: How down genes weigh in the z-score mean and the mean: ``gene`` (each gene weighs equally: the signs of the down
@@ -246,7 +250,7 @@ class Recipe:
 
     @property
     def effective_detect_above(self) -> Optional[float]:
-        return self.detect_above if self.method == "detected" else None
+        return self.detect_above if self.method == "fraction_of_genes" else None
 
     @property
     def effective_bins(self) -> Optional[int]:
@@ -310,6 +314,7 @@ def parse_recipe(raw) -> Recipe:
     if down_weight not in DOWN_WEIGHTS:
         raise ScoreError(400, "bad_down_weight", f"down_weight must be one of {', '.join(DOWN_WEIGHTS)}.")
     method = raw.get("method", DEFAULT_METHOD)
+    method = METHOD_ALIASES.get(method, method) if isinstance(method, str) else method
     if method not in METHODS:
         raise ScoreError(400, "bad_method", f"Unknown method {method!r}; use one of {', '.join(METHODS)}.")
     if down and method not in DOWN_METHODS:
@@ -1516,9 +1521,9 @@ class _Accumulator:
         self.recipe, self.n_obs, self.shown = recipe, n_obs, shown
         self.n_shown = n_obs if shown is None else int(shown.size)
         self.zscore = recipe.method == "zscore_mean"
-        self.indicator = recipe.method == "detected"          # a gene adds 1 where its value is above detect_above
+        self.indicator = recipe.method == "fraction_of_genes"          # a gene adds 1 where its value is above detect_above
         self.detect_above = recipe.detect_above
-        self.divide = recipe.method in ("zscore_mean", "mean", "detected")   # sum and the share of the total are not averages
+        self.divide = recipe.method in ("zscore_mean", "mean", "fraction_of_genes")   # sum and the share of the total are not averages
         self.clip = recipe.effective_clip
         self.acc = np.zeros(self.n_shown, dtype=np.float64 if self.n_shown <= FLOAT64_CELLS else np.float32)
         self.baseline = 0.0               # sum over sparse genes of the score of a cell holding zero

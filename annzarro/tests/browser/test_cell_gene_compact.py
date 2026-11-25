@@ -1,7 +1,7 @@
 """The Cell-Gene Plot's compact controls (aggregation-unify-080.md 5.1, package C1).
 
 Color and Size are `[label] [layer ▾] [aggregation button]`; the threshold is in the button's pop-over and shown on the
-button (`%⁺ >1`); the control rows are packed (Groups, Mode, Color, Size, Scale and Add genes share lines).
+button (`c⁺ >1`); the control rows are packed (Groups, Mode, Color, Size, Scale and Add genes share lines).
 
 The example of 5.2: three sections (Markers as genes; Pathway and IFN as one row), dots, 2D.
 
@@ -77,18 +77,18 @@ def test_color_is_layer_then_agg_button(page, served):
 def test_channel_menu_equals_statistic_info(page, served):
     """Order and names of the menu: every statistic of STATISTIC_INFO, then Cell count; each with its symbol."""
     _example(page, served)
-    names = ["Z-score mean", "Mean", "% expressing", "Mean of expressing cells", "Sum", "SD", "Cell count"]
+    names = ["Z-score mean", "Mean", "Fraction of cells", "Mean of expressing cells", "Sum", "SD", "Cell count"]
     for which in ("color", "size"):
         assert CC.stat_names(page, TP, which) == names
     CC.open_menu(page, TP, "color")
     syms = page.eval_on_selector_all(f"{CC.MENU} [data-agg] .axis-agg-sym", "os => os.map(o => o.textContent)")
     CC.close_menu(page)
-    assert syms == ["z", "x", "%⁺", "x⁺", "Σ", "σ", "n"], syms
+    assert syms == ["z", "x", "c⁺", "x⁺", "Σ", "σ", "n"], syms
 
 
 def test_threshold_lives_in_the_popover_and_shows_on_the_button(page, served):
     configs = {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}],
-                        size={"stat": "pct_expressing", "layer": "logged", "detect_above": 1}),
+                        size={"stat": "fraction_of_cells", "layer": "logged", "detect_above": 1}),
                S1: _sig(S1, "Markers", GENES[0:3])}
     _open(page, served, configs, open_ids=(P,))
     _drawn(page)
@@ -117,7 +117,7 @@ def test_height_lists_same_as_color_first(page, served):
     _drawn(page)
     entries = CC.stat_entries(page, TP, "height")
     assert entries[0]["v"] == "__same_as_color__" and entries[0]["on"]
-    assert [e["v"] for e in entries[1:]] == ["zscore_mean", "mean", "pct_expressing", "mean_expressing", "sum", "sd", "count"]
+    assert [e["v"] for e in entries[1:]] == ["zscore_mean", "mean", "fraction_of_cells", "mean_expressing", "sum", "sd", "count"]
 
 
 def test_one_undo_step_per_pick(page, served):
