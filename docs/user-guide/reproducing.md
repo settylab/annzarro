@@ -122,7 +122,7 @@ $ annzarro export --from fig.png --store bm_aging_annzarro.zarr --out again.png
 - `--store` is the store to draw from. If its cells or genes differ from the store the view was
   saved on, the command stops; `--allow-other-store` exports anyway.
 - `--out` ends in `.png` or `.svg`. A view with several plots writes one file per plot,
-  `<name>-<panel id>.<ext>`; `--panel cell-plot-1` writes just that one.
+  `<name>-<panel id>.<ext>`; `--panel cell-plot-1` writes just that one (any plot panel works: a Cell Plot, a Cell-Gene Plot or a Cell Count Plot).
 - If the view was saved with another AnnZarro version, the command says which, and that the
   exact figure needs that version (`pip install annzarro==<version>`).
 

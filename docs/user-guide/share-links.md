@@ -107,7 +107,7 @@ a number box's arrows several times, typing, or an action that sets several thin
 other. Only the panels a step changes are rebuilt or redrawn; the others, large plots included, stay as they are, also when the step opens or closes a panel or moves a split. Switching to
 another dataset is an entry too, and Back returns to that dataset with the view it had. The zoom and pan of a
 2D plot and the camera of a 3D plot are part of the view (`viewport2D`, `viewport3D`), so they are steps too: Back
-returns the plot to its earlier zoom; a plot that was zoomed and drawn from the same data is not redrawn. Back from the first view leaves
+returns the plot to its earlier zoom. Back from the first view leaves
 AnnZarro for the page before it, and a reload keeps the entries. The browser keeps only the most
 recent entries of a tab (about fifty in Chrome).
 
