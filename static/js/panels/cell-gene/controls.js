@@ -21,8 +21,8 @@ import { normalizeGrouping } from '../../utils/cell-grouping.js';
 import { CELL_COUNT, STATISTIC_INFO, statisticChoices, statisticLayerChoices, statisticPairAfter } from '../../utils/group-statistics.js';
 import { SCALINGS, MODE_INFO, modeShowsChannel, scalingGrade } from '../../utils/cell-gene-model.js';
 import { loopReason } from '../../utils/panel-references.js';
-import { createPopover } from '../../ui/popover.js';
 import { createAggregationButton } from '../../ui/aggregation-button.js';
+import { createEntityCard } from '../../ui/entity-card.js';
 import { MEASURE_SYMBOLS } from '../../utils/aggregation-symbols.js';
 import { GROUP_AXIS, SAME_AS_COLOR, needsThreshold } from './sections.js';
 
@@ -379,74 +379,30 @@ const SECTION_OPS = Object.freeze([
  */
 export function createSectionList({ D, model, on }) {
     const { el } = D;
-    const list = el('ul', { class: 'cgene-sections', role: 'list', aria: { label: 'Gene sections' } });
+    const list = el('ul', { class: 'cgene-sections az-cards', role: 'list', aria: { label: 'Gene sections' } });
     let drawnKey = null;
-    let dragFrom = null;
-    const menus = new Map();       // section index -> {button, pop}: the row's ⋯ button and its menu, kept across repaints
+    const cards = [];             // the entity cards on the page now: their menus are destroyed when the list is drawn again
 
     function rowsSelect(i, rows) {
-        const select = el('select', { class: 'form-select form-select-sm cgene-section__rows', aria: { label: 'Show as' },
+        const select = el('select', { class: 'form-select form-select-sm cgene-section__rows az-card__select', aria: { label: 'Show as' },
             on: { change: () => on.rows(i, select.value) } },
             el('option', { value: 'genes', text: 'Genes' }), el('option', { value: 'set', text: 'One row' }));
         select.value = rows;
         return select;
     }
 
-    /**
-     * The ⋯ button of a section and its menu: a menu pop-over of ui/popover.js, in the page's one top layer, so no part of
-     * the panel (the control grid's scroller, the plot and its modebar) covers or clips it (operator, 2026-11-23: items
-     * under the plot could not be clicked). Filled on every open from the list as it is then.
-     */
-    function menuButton(s, i) {
-        let held = menus.get(i);
-        if (!held) {
-            const button = el('button', { type: 'button', class: 'btn btn-sm btn-link cgene-section__menu-btn' }, '⋯');
-            const pop = createPopover({ anchor: button, name: 'section-menu', title: 'Section', menu: true,
-                render: (body) => { fillMenu(i, body); } });
-            held = { button, pop };
-            menus.set(i, held);
-        }
-        held.button.setAttribute('aria-label', `More for ${s.title}`);
-        return held.button;
-    }
-
-    function fillMenu(i, body) {
-        D.clear(body);
-        const n = model().sections.length;
-        for (const { op, label } of SECTION_OPS) {
-            const disabled = (op === 'up' && i === 0) || (op === 'down' && i === n - 1);
-            body.appendChild(el('button', { type: 'button', role: 'menuitem', class: 'cgene-section__menu-item', data: { op }, disabled,
-                on: { click: () => on.op(i, op) } }, label));
-        }
-    }
-
-    function commitTitle(i, input) {
-        if (input.value !== input.defaultValue) on.title(i, input.value);
-    }
-
+    /** A section is an entity card (ui/entity-card.js), as a Cell Grouping's factor is: Genes / One row is its one control. */
     function row(s, i, n) {
-        const title = el('input', { type: 'text', class: 'form-control form-control-sm cgene-section__title', value: s.title, aria: { label: 'Section title' },
-            on: { keydown: (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); commitTitle(i, title); }
-                else if (e.key === 'Escape') { title.value = title.defaultValue; title.blur(); }
-            }, blur: () => commitTitle(i, title) } });
-        title.defaultValue = s.title;
-        const head = el('div', { class: 'cgene-section__head', title: s.rule || undefined },
-            el('span', { class: 'cgene-section__grip', aria: { hidden: 'true' }, text: '≡' }), title,
-            s.source ? el('span', { class: 'cgene-section__source', text: s.source }) : null,
-            el('span', { class: 'cgene-section__count', text: s.line }),
-            rowsSelect(i, s.rows), el('span', { class: 'cgene-section__more' }, menuButton(s, i)));
-        const li = el('li', { class: 'cgene-section', tabindex: '0', draggable: 'true', data: { index: i }, aria: { label: s.title } }, head,
-            s.note ? el('div', { class: 'cgene-section__note', role: 'note', text: s.note }) : null);
-        li.addEventListener('keydown', (e) => {
-            if (e.target !== li || !e.altKey) return;
-            if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); on.move(i, i - 1); }
-            else if (e.key === 'ArrowDown' && i < n - 1) { e.preventDefault(); on.move(i, i + 1); }
-        });
-        li.addEventListener('dragstart', (e) => { dragFrom = i; if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; });
-        li.addEventListener('dragover', (e) => { if (dragFrom !== null) e.preventDefault(); });
-        li.addEventListener('drop', (e) => { e.preventDefault(); if (dragFrom !== null && dragFrom !== i) on.move(dragFrom, i); dragFrom = null; });
-        return li;
+        const made = createEntityCard({ el, index: i, kind: s.rows, className: 'cgene-section', dragType: 'text/x-cgene-section',
+            title: s.title, summary: s.summary, preview: s.preview, note: s.note,
+            headLabel: `Open ${s.title}`, headTitle: s.rule || undefined,
+            controls: [rowsSelect(i, s.rows)],
+            rename: { label: 'Section title', onSave: (text) => on.title(i, text) },
+            onOpen: () => on.op(i, 'open'), onMove: (from, to) => on.move(from, to),
+            menu: { label: `More for ${s.title}`, onOp: (op) => on.op(i, op),
+                items: SECTION_OPS.map(({ op, label }) => ({ op, label, disabled: (op === 'up' && i === 0) || (op === 'down' && i === n - 1) })) } });
+        cards.push(made);
+        return made.element;
     }
 
     /** Draw the list again, keeping the focus on the same control of the same section. */
@@ -454,15 +410,13 @@ export function createSectionList({ D, model, on }) {
         const m = model();
         const active = document.activeElement;
         const at = active && list.contains(active) ? active.closest('.cgene-section') : null;
-        const focus = at ? { index: at.dataset.index, cls: active === at ? null : active.className.split(' ').find((c) => c.startsWith('cgene-section__')),
-            which: active.dataset ? active.dataset.which : undefined } : null;
+        const cls = at ? ['az-card__head', 'az-card__more', 'cgene-section__rows'].find((c) => active.classList.contains(c)) : null;
+        const focus = at ? { index: at.dataset.index, cls } : null;
+        for (const old of cards.splice(0)) old.destroy();
         D.clear(list);
         m.sections.forEach((s, i) => list.appendChild(row(s, i, m.sections.length)));
-        for (const [i, held] of [...menus]) if (i >= m.sections.length) { held.pop.destroy(); menus.delete(i); }
-        if (!focus) return;
-        const li = list.querySelector(`.cgene-section[data-index="${focus.index}"]`);
-        if (!li) return;
-        const target = focus.cls ? li.querySelector(`.${focus.cls}${focus.which ? `[data-which="${focus.which}"]` : ''}`) : li;
+        if (!focus || !focus.cls) return;
+        const target = list.querySelector(`.cgene-section[data-index="${focus.index}"] .${focus.cls}`);
         if (target) target.focus();
     }
 
@@ -474,16 +428,14 @@ export function createSectionList({ D, model, on }) {
         drawnKey = key;
     }
 
-    /** Close a ⋯ menu that is open (the pop-over closes itself on a click elsewhere and on Escape). */
-    function closeMenus() {
-        for (const held of menus.values()) if (held.pop.isOpen()) held.pop.close('api');
-    }
+    /** The ⋯ menus are pop-overs: they close themselves on a click elsewhere and on Escape. */
+    function closeMenus() {}
 
-    /** Focus a section (after a move, Alt+Up keeps it under the cursor). */
+    /** Focus a section's head (after a move, Alt+Up keeps it under the cursor). */
     function focus(i) {
-        const li = list.querySelector(`.cgene-section[data-index="${i}"]`);
-        if (li) li.focus();
+        const head = list.querySelector(`.cgene-section[data-index="${i}"] .az-card__head`);
+        if (head) head.focus();
     }
 
-    return { element: list, paint, closeMenus, focus };
+    return { element: list, paint, closeMenus, focus, destroy() { for (const old of cards.splice(0)) old.destroy(); } };
 }

@@ -21,7 +21,7 @@ from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 P = "[data-popover='levels']"
 FIELD = f"{P} input.cgrp-level__name"
 B_ROW = f"{P} .cgrp-level[data-id='c:B cell']"
-EDIT = f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit"
+EDIT = f"{A} .az-card[data-index='0'] .az-card__edit"
 
 
 def _labels(page):
@@ -42,7 +42,7 @@ def _active(page):
         const li = a.closest('.cgrp-level'); const id = li ? li.dataset.id : null;
         if (a.matches('input.cgrp-level__name')) return 'field:' + id;
         if (a.matches('.cgrp-level__rename')) return 'rename:' + id;
-        if (a.matches('.cgrp-card__edit')) return 'edit';
+        if (a.matches('.az-card__edit')) return 'edit';
         return a.className || a.tagName; }""")
 
 
@@ -261,7 +261,7 @@ def test_the_levels_editor_keeps_its_rows_and_focus_while_the_groups_recompute(p
     page.uncheck(f"{P} .cgrp-level[data-id='c:T cell'] input[type=checkbox]")
     until(page, "() => !!window.PanelManager.getPanel('cell-grouping-A').getRecipe().partitionings[0].levels")
     _computing(page)
-    waits.expect_stays(lambda: page.locator(f"{P} .cgrp-level").count() >= rows and page.locator(f"{P} .cgrp-card__wait").count() == 0
+    waits.expect_stays(lambda: page.locator(f"{P} .cgrp-level").count() >= rows and page.locator(f"{P} .az-card__wait").count() == 0
                        and page.locator(f"{P} .cgrp-levels").count() == 1,
                        "the groups are held back on purpose: the editor must stay as it was for as long as they are", page=page, seconds=1.0)
     assert page.locator(f"{P} .cgrp-level[data-id='c:T cell'] input[type=checkbox]").is_checked() is False, "it shows the edit at once"
@@ -294,7 +294,7 @@ def test_a_rename_sends_no_request_and_never_blanks_the_editor(page, served):
     page.fill(FIELD, "no request")
     page.keyboard.press("Enter")
     until(page, "() => !document.querySelector('.cgrp-level--editing')")
-    waits.expect_stays(lambda: not held.held and len(page.calls) == asked and page.locator(f"{P} .cgrp-card__wait").count() == 0
+    waits.expect_stays(lambda: not held.held and len(page.calls) == asked and page.locator(f"{P} .az-card__wait").count() == 0
                        and page.locator(f"{P} .cgrp-level__n.is-stale").count() == 0,
                        "a rename is a label: past the live delay a request would have gone", page=page, seconds=1.0)
     assert page.inner_text(f"{B_ROW} .cgrp-level__label") == "no request"

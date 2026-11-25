@@ -13,4 +13,4 @@ def show_as(page, tp, i, rows):
 
 def rule(page, tp, i):
     """The section line's tooltip: the rule in force under Color and Size."""
-    return page.get_attribute(f"{section(tp, i)} .cgene-section__head", "title")
+    return page.get_attribute(f"{section(tp, i)} .az-card__head", "title")

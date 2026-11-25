@@ -32,9 +32,6 @@
 .cgene-field .form-select { width: auto; max-width: 16rem; }
 .cgene-axis { display: inline-flex; gap: 4px; }
 .cgene-field .form-select.cgene-scale { width: 7.5rem; }
-.cgene-section__head .form-select.cgene-section__rows { width: auto; flex: 0 0 auto; }
-.cgene-section__step { flex: 0 0 auto; min-width: 2rem; padding: 0 0.5rem; font-size: 0.8125rem; line-height: 1; height: 1.75rem; color: var(--az-text); border-color: var(--az-control-border); opacity: 1; }
-.cgene-section__step.active { background-color: var(--az-accent-bg); }
 .cgene-radio { display: inline-flex; align-items: center; gap: 2px; margin: 0; white-space: nowrap; }
 .cgene-swap.active { background-color: var(--az-accent-bg); }
 .cgene-layout-slot { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -59,7 +56,7 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 .cgene-add-heading, .cgene-group-menu__head { padding: 4px 10px 2px; color: var(--az-muted); font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.03em; }
-.cgene-add-item, .cgene-section__menu-item, .cgene-group-menu__item {
+.cgene-add-item, .cgene-group-menu__item {
     display: block;
     width: 100%;
     padding: 3px 10px;
@@ -68,28 +65,13 @@
     background: none;
     border: 0;
 }
-.cgene-add-item:hover, .cgene-add-item:focus, .cgene-group-menu__item:hover, .cgene-group-menu__item:focus,
-.cgene-section__menu-item:hover:not(:disabled), .cgene-section__menu-item:focus {
+.cgene-add-item:hover, .cgene-add-item:focus, .cgene-group-menu__item:hover, .cgene-group-menu__item:focus {
     background-color: var(--az-accent-bg);
     outline: none;
 }
-.cgene-section__menu-item:disabled { color: var(--az-faint); }
 
-.cgene-sections { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
-.cgene-section {
-    padding: 3px 6px;
-    border: 1px solid var(--az-border-soft);
-    border-radius: 4px;
-    background-color: var(--az-surface-2);
-}
-.cgene-section:focus { outline: 2px solid var(--az-focus-border); outline-offset: 1px; }
-.cgene-section__head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-.cgene-section__grip { color: var(--az-muted); cursor: grab; user-select: none; }
-.cgene-section__title { width: 12rem; max-width: 100%; font-weight: 600; }
-.cgene-section__source, .cgene-section__count { color: var(--az-muted); font-size: 0.75rem; }
-.cgene-section__more { position: relative; margin-left: auto; }
-.cgene-section__menu-btn { padding: 0 6px; line-height: 1.2; text-decoration: none; }
-.cgene-section__note { color: var(--az-danger-text); font-size: 0.75rem; padding: 2px 0 0 18px; }
+/* the sections are entity cards (css/cards.css); the list sits flush in the control grid */
+.cgene-sections.az-cards { padding: 0; }
 .cgene-lapsed { font-style: italic; }
 
 /* Cluster ▾, Color ▾ and Plot Options (X5; pop-overs since 0.8.0 WP-2, static/js/ui/popover.js): the buttons in the

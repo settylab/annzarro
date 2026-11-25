@@ -51,12 +51,11 @@
     background: var(--az-surface); border: 1px solid var(--az-border-strong); border-radius: 4px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
-.cgrp-add-item, .cgrp-card__op {
+.cgrp-add-item {
     display: block; width: 100%; padding: 3px 10px; border: 0; background: none; text-align: left;
     font-size: 0.8125rem; color: var(--az-text);
 }
-.cgrp-add-item:hover, .cgrp-add-item:focus, .cgrp-card__op:hover, .cgrp-card__op:focus { background: var(--az-surface-3); outline: none; }
-.cgrp-card__op:disabled { color: var(--az-muted); }
+.cgrp-add-item:hover, .cgrp-add-item:focus { background: var(--az-surface-3); outline: none; }
 .cgrp-addrow__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .cgrp-addrow__controls .form-select, .cgrp-addrow__controls .form-control { width: auto; max-width: 14rem; }
 .cgrp-addrow__note { color: var(--az-danger-text); font-size: 0.75rem; min-height: 0; }
@@ -66,32 +65,8 @@
 .cgrp-message { padding: 0 8px; color: var(--az-muted); font-size: 0.75rem; min-height: 1.1em; }
 .cgrp-message__undo { padding: 0 4px; font-size: inherit; vertical-align: baseline; }
 
-/* the factor cards (UX 2.2) */
-.cgrp-factors { list-style: none; margin: 0; padding: 0 8px 6px; display: flex; flex-direction: column; gap: 4px; }
-.cgrp-card { border: 1px solid var(--az-border); border-radius: 4px; background: var(--az-surface); }
-.cgrp-card.is-missing { border-color: var(--az-danger-text); }
-.cgrp-card__bar { display: flex; align-items: center; background: var(--az-panel-header-bg); border-radius: 3px 3px 0 0; }
-.cgrp-card__head {
-    flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 6px; padding: 4px 6px;
-    border: 0; background: none; text-align: left; color: var(--az-text);
-}
-.cgrp-card__head:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
-.cgrp-card__grip { cursor: grab; color: var(--az-muted); }
-.cgrp-card__pos { color: var(--az-muted); font-variant-numeric: tabular-nums; }
-/* in a narrow tile the preview gives way first, then the summary, and the name last */
-.cgrp-card__title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 3rem; }
-.cgrp-card__summary { color: var(--az-muted); white-space: nowrap; flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.cgrp-card__preview { color: var(--az-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1000 auto; }
-.cgrp-card__edit { flex: 0 0 auto; margin: 0 2px; padding: 0 8px; font-size: 0.75rem; }
-.cgrp-card__menu-wrap { position: relative; }
-.cgrp-card__more { padding: 0 6px; text-decoration: none; }
-.cgrp-card__menu {
-    position: absolute; z-index: 30; top: 100%; right: 0; min-width: 11rem; padding: 4px 0;
-    background: var(--az-surface); border: 1px solid var(--az-border-strong); border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}
-.cgrp-card__note { padding: 0 8px 4px; color: var(--az-danger-text); font-size: 0.75rem; }
-.cgrp-card__wait, .cgrp-card__follows { color: var(--az-muted); }
+/* the factor cards are the shared entity cards (css/cards.css) */
+.az-card__wait, .az-card__follows { color: var(--az-muted); }
 .cgrp-levels__head { display: flex; justify-content: space-between; }
 .cgrp-levels { list-style: none; margin: 0; padding: 0; }
 .cgrp-level { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
@@ -114,11 +89,10 @@
 /* 5. Settings: the pop-over's form */
 
 /* Toggle Controls: the cards lose their Edit button (UX 2.1) */
-.cgrp-compact .cgrp-card__edit { display: none; }
+.cgrp-compact .az-card__edit { display: none; }
 
 /* Narrow (about 360 px): cards show source and kind only (UX 2.6) */
 @container cgrp (max-width: 420px) {
-    .cgrp-card__preview { display: none; }
     .cgrp-usedby { margin-left: 0; }
 }
 

@@ -59,7 +59,7 @@ def test_every_panel_header_has_the_same_grey(page, served):
 INNER = {"table toolbar strip": ".tile[data-tile-id='cell-table-H'] .table-controls",
          "gene table toolbar strip": ".tile[data-tile-id='gene-table-H'] .table-controls",
          "gene signature status strip": ".tile[data-tile-id='gene-signature-H'] .gsig-status",
-         "grouping factor card bar": ".tile[data-tile-id='cell-grouping-H'] .cgrp-card__bar",
+         "grouping factor card bar": ".tile[data-tile-id='cell-grouping-H'] .az-card__bar",
          "gene set section header": ".tile[data-tile-id='gene-set-H'] .gs-section__head"}
 INNER_EXCEPTIONS = {}      # name -> reason; empty on purpose
 

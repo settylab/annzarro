@@ -19,7 +19,7 @@ from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401 (th
     served, page, _open, _plot, _sig, _drawn, _config, P, TP, S1, S2, GENES)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
-ITEM = ".cgene-section__menu-item"
+ITEM = ".az-card__op"
 
 # every visible item of the open section menu: is it what the pointer hits at its centre?
 HITS = """(item) => [...document.querySelectorAll(item)].filter(e => e.offsetParent !== null).map(e => {
@@ -30,7 +30,7 @@ HITS = """(item) => [...document.querySelectorAll(item)].filter(e => e.offsetPar
 
 
 def _open_menu(page, i):
-    page.locator(f"{TP} .cgene-section").nth(i).locator(".cgene-section__menu-btn").click()
+    page.locator(f"{TP} .cgene-section").nth(i).locator(".az-card__more").click()
     page.wait_for_selector(f"{ITEM}[data-op='remove']:visible", timeout=10000)
 
 

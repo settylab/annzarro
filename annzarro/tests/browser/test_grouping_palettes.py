@@ -39,7 +39,7 @@ TYPES = [name for name, _ in gstore.CELL_TYPES]
 UNS = ["#112233", "#223344", "#334455", "#445566", "#556677", "#667788", "#778899", "#8899aa"]
 SET1 = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#ffff33"]
 DATA = gstore.make_data()
-EDIT = f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit"
+EDIT = f"{A} .az-card[data-index='0'] .az-card__edit"
 LEVELS = "[data-popover='levels']"
 SETTINGS = "[data-popover='settings']"
 SETTINGS_BUTTON = f"{A} .cgrp-settings-btn"

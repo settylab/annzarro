@@ -29,6 +29,7 @@
 import { PanelManager } from '../panel-manager.js';
 import { createPopover } from '../ui/popover.js';
 import { inlineRename } from '../ui/inline-rename.js';
+import { createEntityCard } from '../ui/entity-card.js';
 import { DataManager } from '../data-manager.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
@@ -122,7 +123,7 @@ function createFactors({ D, id, model, on }) {
     const menu = el('div', { class: 'cgrp-add-menu', id: `cgrp-add-menu-${id}`, role: 'menu', hidden: true, on: { keydown: onMenuKey } });
     const addWrap = el('div', { class: 'cgrp-add-wrap' }, addBtn, menu);
     const addRow = el('div', { class: 'cgrp-addrow', hidden: true });
-    const list = el('ul', { class: 'cgrp-factors', role: 'list', aria: { label: VOCABULARY.plural.factor } });
+    const list = el('ul', { class: 'az-cards', role: 'list', aria: { label: VOCABULARY.plural.factor } });
     const addElement = el('div', { class: 'cgrp-addzone' }, addWrap, addRow);
 
     function toggleMenu() {
@@ -325,24 +326,17 @@ function createFactors({ D, id, model, on }) {
         closeEditors();
         on.commit(moveFactor(model().recipe.partitionings, i, j), `move factor ${name}`);
         on.announce(`${name} moved to position ${j + 1} of ${n}`);
-        const head = list.querySelector(`.cgrp-card[data-index="${j}"] .cgrp-card__head`);
+        const head = list.querySelector(`.az-card[data-index="${j}"] .az-card__head`);
         if (head) head.focus();
     }
 
-    function cardMenu(i, name, n, kind) {
-        const items = [
-            ['up', 'Move up', i === 0], ['down', 'Move down', i === n - 1], ['duplicate', 'Duplicate', !!addFactorRefusal(model().recipe)],
-            ...(kind === 'categorical' || kind === 'table' ? [['rename', 'Rename levels…', false]] : []), ['remove', 'Remove', false]
+    /** The items of a factor's ⋯ menu (the entity card draws it). */
+    function cardMenuItems(i, n, kind) {
+        return [
+            { op: 'up', label: 'Move up', disabled: i === 0 }, { op: 'down', label: 'Move down', disabled: i === n - 1 },
+            { op: 'duplicate', label: 'Duplicate', disabled: !!addFactorRefusal(model().recipe) },
+            ...(kind === 'categorical' || kind === 'table' ? [{ op: 'rename', label: 'Rename levels…', disabled: false }] : []), { op: 'remove', label: 'Remove', disabled: false }
         ];
-        const pop = el('div', { class: 'cgrp-card__menu', role: 'menu', hidden: true });
-        const btn = el('button', { type: 'button', class: 'btn btn-sm btn-link cgrp-card__more', aria: { haspopup: 'menu', expanded: 'false',
-            label: `More for ${name}` }, on: { click: (e) => { e.stopPropagation(); pop.hidden = !pop.hidden; btn.setAttribute('aria-expanded', String(!pop.hidden)); } } }, '⋯');
-        for (const [op, label, disabled] of items) {
-            pop.appendChild(el('button', { type: 'button', role: 'menuitem', class: 'cgrp-card__op', data: { op }, disabled,
-                on: { click: (e) => { e.stopPropagation(); pop.hidden = true; runOp(op, i, name); } } }, label));
-        }
-        pop.addEventListener('keydown', (e) => { if (e.key === 'Escape') { pop.hidden = true; btn.focus(); e.stopPropagation(); } });
-        return el('span', { class: 'cgrp-card__menu-wrap' }, btn, pop);
     }
 
     function runOp(op, i, name) {
@@ -477,7 +471,7 @@ function createFactors({ D, id, model, on }) {
 
     function categoricalBody(i, p, info) {
         const defaults = defaultsOf(i);
-        if (!info) return [el('div', { class: 'cgrp-card__wait', text: 'Levels follow once the groups are computed.' })];
+        if (!info) return [el('div', { class: 'az-card__wait', text: 'Levels follow once the groups are computed.' })];
         const name = factorTitle(p, model().titleOf);
         const restName = `cgrp-rest-${id}-${i}`;
         const rest = (value, text) => el('label', { class: 'cgrp-rest-opt az-pop-check' },
@@ -507,7 +501,7 @@ function createFactors({ D, id, model, on }) {
         return [
             el('ul', { class: 'cgrp-levels', role: 'list' }, rows.map((r) => levelRow(i, p, info, r))),
             el('label', { class: 'cgrp-keepout-row az-pop-check' }, keep, ` Keep cells ${VOCABULARY.phrase.notInTable(title)} as a ${W.level}`),
-            el('div', { class: 'cgrp-card__follows az-pop-help' }, `Follows the table's filter. `,
+            el('div', { class: 'az-card__follows az-pop-help' }, `Follows the table's filter. `,
                 el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-open', on: { click: () => on.open(p.source.key) } }, 'Open table'))
         ];
     }
@@ -572,7 +566,7 @@ function createFactors({ D, id, model, on }) {
         let entry = editors.get(i);
         if (entry && entry.name !== popName) { entry.pop.destroy(); editors.delete(i); entry = null; }
         if (entry) return entry;
-        const btn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cgrp-card__edit', data: { index: i } },
+        const btn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary az-card__edit', data: { index: i } },
             'Edit ', el('span', { aria: { hidden: 'true' }, text: '▾' }));
         entry = { btn, name: popName, body: null, ctl: null, mounts: [], pop: null };
         entry.pop = createPopover({
@@ -601,6 +595,8 @@ function createFactors({ D, id, model, on }) {
         for (const entry of editors.values()) if (entry.pop.isOpen()) entry.pop.close('api');
     }
 
+    const cards = [];       // the entity cards on the page now: their menus are destroyed when the list is drawn again
+
     function card(i, p, n) {
         const m = model();
         const info = m.infos[i] || null;
@@ -609,31 +605,15 @@ function createFactors({ D, id, model, on }) {
         const name = factorTitle(p, m.titleOf);
         const edit = editorOf(i, kind, name);
         edit.btn.setAttribute('aria-label', `Edit ${name}`);
-        const head = el('button', { type: 'button', class: 'cgrp-card__head',
-            on: { click: () => edit.btn.click(),
-                keydown: (e) => {
-                    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
-                    e.preventDefault();
-                    moveTo(i, i + (e.key === 'ArrowUp' ? -1 : 1), name);
-                } } },
-        el('span', { class: 'cgrp-card__grip', aria: { hidden: 'true' }, text: '≡' }),
-        el('span', { class: 'cgrp-card__pos', text: String(i + 1) }),
-        el('span', { class: 'cgrp-card__title', text: factorTitle(p, m.titleOf, missing) }),
-        el('span', { class: 'cgrp-card__summary', text: factorSummary(p, info) }),
-        el('span', { class: 'cgrp-card__preview', text: levelPreview(info, mergedLabels(p, i)) }));
+        edit.btn.className = 'btn btn-sm btn-outline-secondary az-card__edit';
         const note = m.notes.get(i) || (missing ? 'Replace or remove it: nothing is computed until then.' : '');
-        const li = el('li', { class: `cgrp-card${missing ? ' is-missing' : ''}`, data: { index: i, kind }, draggable: 'true' },
-            el('div', { class: 'cgrp-card__bar' }, head, edit.btn, cardMenu(i, name, n, kind)),
-            el('div', { class: 'cgrp-card__note', role: 'note', hidden: !note, text: note }));
-        li.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-cgrp-factor', String(i)); e.dataTransfer.effectAllowed = 'move'; });
-        li.addEventListener('dragover', (e) => { if ([...e.dataTransfer.types].includes('text/x-cgrp-factor')) e.preventDefault(); });
-        li.addEventListener('drop', (e) => {
-            const from = Number(e.dataTransfer.getData('text/x-cgrp-factor'));
-            if (!Number.isInteger(from) || from === i) return;
-            e.preventDefault();
-            moveTo(from, i, factorTitle(model().recipe.partitionings[from], model().titleOf));
-        });
-        return li;
+        const made = createEntityCard({ el, index: i, kind, missing, note, dragType: 'text/x-cgrp-factor',
+            title: factorTitle(p, m.titleOf, missing), summary: factorSummary(p, info), preview: levelPreview(info, mergedLabels(p, i)),
+            controls: [edit.btn], onOpen: () => edit.btn.click(),
+            onMove: (from, to) => moveTo(from, to, factorTitle(model().recipe.partitionings[from], model().titleOf)),
+            menu: { label: `More for ${name}`, items: cardMenuItems(i, n, kind), onOp: (op) => runOp(op, i, name) } });
+        cards.push(made);
+        return made.element;
     }
 
     /** The labels a card shows: the user's renames over the defaults. */
@@ -656,14 +636,15 @@ function createFactors({ D, id, model, on }) {
         addBtn.title = refusal || '';
         // a card's own buttons keep the focus across the redraw (Escape from its pop-over leaves it on Edit)
         const had = list.contains(document.activeElement) ? document.activeElement : null;
-        const hadAt = had ? { card: had.closest('.cgrp-card'), cls: ['cgrp-card__head', 'cgrp-card__more'].find((c) => had.classList.contains(c)) } : null;
+        const hadAt = had ? { card: had.closest('.az-card'), cls: ['az-card__head', 'az-card__more'].find((c) => had.classList.contains(c)) } : null;
         const hadIndex = hadAt && hadAt.card ? hadAt.card.dataset.index : null;
+        for (const old of cards.splice(0)) old.destroy();
         D.clear(list);
         m.recipe.partitionings.forEach((p, i) => list.appendChild(card(i, p, n)));
         list.hidden = !n;
         if (had && had.isConnected) had.focus({ preventScroll: true });
         else if (hadAt && hadAt.cls && hadIndex !== null) {
-            const again = list.querySelector(`.cgrp-card[data-index="${hadIndex}"] .${hadAt.cls}`);
+            const again = list.querySelector(`.az-card[data-index="${hadIndex}"] .${hadAt.cls}`);
             if (again) again.focus({ preventScroll: true });
         }
         if (menuOpen) paintMenu();
@@ -701,9 +682,9 @@ function createFactors({ D, id, model, on }) {
         },
         closeMenus() {
             closeMenu();
-            for (const pop of list.querySelectorAll('.cgrp-card__menu')) pop.hidden = true;
         },
         destroy() {
+            for (const old of cards.splice(0)) old.destroy();
             for (const entry of editors.values()) {
                 entry.pop.destroy();
                 for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
