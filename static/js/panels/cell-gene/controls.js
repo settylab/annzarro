@@ -368,7 +368,8 @@ const SECTION_OPS = Object.freeze([
 /**
  * The section list of UX 3.2: one row per section with its title (edited in place), its source when the title is its
  * own, its gene count, Genes / One row, for a one-row section its one gene-step button, and ⋯. Reordered by ⋯, by Alt+Up
- * and Alt+Down on the focused row, and by drag (UX 7).
+ * and Alt+Down on the focused row, and by drag (UX 7). A one-row section has no setting: its tooltip says the rule each
+ * channel shows it by.
  * @param {Object} opts
  * @param {Object} opts.D
  * @param {() => {sections: Object[]}} opts.model - each section: {title, source (shown when it differs), line, note, rows,
@@ -381,45 +382,7 @@ export function createSectionList({ D, model, on }) {
     const list = el('ul', { class: 'cgene-sections', role: 'list', aria: { label: 'Gene sections' } });
     let drawnKey = null;
     let dragFrom = null;
-    const steps = new Map();       // section index -> the row's aggregation button, kept across repaints
     const menus = new Map();       // section index -> {button, pop}: the row's ⋯ button and its menu, kept across repaints
-
-    /**
-     * The one button of a one-row section (aggregation-unify-080.md 10.2): its gene step as a symbol, plain on the default and
-     * accent when set away from it; its menu lists the ways to combine the gene rows, then the source's score methods, each
-     * greyed with its reason when Color or Size rules it out. Kept across repaints, so an open menu and the focus stay.
-     */
-    function stepButton(s, i) {
-        let held = steps.get(i);
-        if (!held) {
-            const part = () => (model().sections[i] || {}).step || null;
-            const made = createAggregationButton({
-                label: 'One row', axis: `row-${i}`,
-                methods: () => {
-                    const p = part();
-                    return p ? { options: p.entries, chosen: p.step } : null;
-                },
-                onPick: (value) => on.genes(i, value),
-                pressed: () => !!(part() || {}).pressed
-            });
-            made.button.classList.add('cgene-section__step');
-            held = made;
-            steps.set(i, held);
-        }
-        const p = s.step;
-        held.update();
-        held.button.setAttribute('aria-label', p.label);
-        held.button.title = p.reading;
-        return held.button;
-    }
-
-    /** Keep the buttons of the one-row sections only. */
-    function syncSteps(m) {
-        for (const [i, held] of [...steps]) {
-            const s = m.sections[i];
-            if (!s || s.rows !== 'set') { held.destroy(); steps.delete(i); }
-        }
-    }
 
     function rowsSelect(i, rows) {
         const select = el('select', { class: 'form-select form-select-sm cgene-section__rows', aria: { label: 'Show as' },
@@ -468,11 +431,11 @@ export function createSectionList({ D, model, on }) {
                 else if (e.key === 'Escape') { title.value = title.defaultValue; title.blur(); }
             }, blur: () => commitTitle(i, title) } });
         title.defaultValue = s.title;
-        const head = el('div', { class: 'cgene-section__head' },
+        const head = el('div', { class: 'cgene-section__head', title: s.rule || undefined },
             el('span', { class: 'cgene-section__grip', aria: { hidden: 'true' }, text: '≡' }), title,
             s.source ? el('span', { class: 'cgene-section__source', text: s.source }) : null,
             el('span', { class: 'cgene-section__count', text: s.line }),
-            rowsSelect(i, s.rows), s.rows === 'set' ? stepButton(s, i) : null, el('span', { class: 'cgene-section__more' }, menuButton(s, i)));
+            rowsSelect(i, s.rows), el('span', { class: 'cgene-section__more' }, menuButton(s, i)));
         const li = el('li', { class: 'cgene-section', tabindex: '0', draggable: 'true', data: { index: i }, aria: { label: s.title } }, head,
             s.note ? el('div', { class: 'cgene-section__note', role: 'note', text: s.note }) : null);
         li.addEventListener('keydown', (e) => {
@@ -495,7 +458,6 @@ export function createSectionList({ D, model, on }) {
             which: active.dataset ? active.dataset.which : undefined } : null;
         D.clear(list);
         m.sections.forEach((s, i) => list.appendChild(row(s, i, m.sections.length)));
-        syncSteps(m);
         for (const [i, held] of [...menus]) if (i >= m.sections.length) { held.pop.destroy(); menus.delete(i); }
         if (!focus) return;
         const li = list.querySelector(`.cgene-section[data-index="${focus.index}"]`);

@@ -30,7 +30,7 @@ import { VOCABULARY } from '../../../static/js/utils/vocabulary.js';
 import { stableStringify } from '../../../static/js/utils/url-history.js';
 import {
     normalizeCellGene, cellGeneReferences, addSection, duplicateSection, removeSection, moveSection, setSectionRows,
-    setSectionTitle, setRowStep, effectiveRowStep, sectionGenes, sectionLine, tooManyGenesText, rowStepEntries,
+    setSectionTitle, sectionGenes, sectionLine, tooManyGenesText,
     planFeatures, buildMatrix, sectionTitle
 } from '../../../static/js/panels/cell-gene/sections.js';
 import {
@@ -38,7 +38,6 @@ import {
 } from '../../../static/js/panels/cell-gene/controls.js';
 
 const golden = (name) => JSON.parse(readFileSync(new URL(`../data/golden/${name}.json`, import.meta.url), 'utf8'));
-const W = VOCABULARY.cellGene;
 
 registerReferences('cell-gene', cellGeneReferences);
 
@@ -72,7 +71,7 @@ test('golden cell_gene_6 (per-channel row kinds) loads on the defaults, with no 
 
 test('golden cell_gene_6 draws its one-row sections on the default: the mean of the genes\' means, asking for no score', () => {
     const { config } = normalizeCellGene(golden('cell_gene_6'));
-    const cfg = { ...config, mode: 'dots' };
+    const cfg = { ...config, mode: 'dots', size: { stat: 'sd', layer: 'X' } };   // a Size the gene rows serve: no score asked for
     const genes = ['G1', 'G2', 'G3'];
     const sections = cfg.sections.map((section) => ({ section, genes, title: section.source, scoreRecipe }));
     const p = planFeatures({ sections, color: cfg.color, size: cfg.size, threshold: 0 });
@@ -117,10 +116,9 @@ test('a hand-edited link is cleaned, and says what it dropped; unknown fields ar
     assert.ok(problems.length >= 4, problems.join(' / '));
 });
 
-test('per-channel steps of an earlier build are not kept: the default, the mean of the gene rows, stands', () => {
-    const { config } = normalizeCellGene({ sections: [{ source: 's', rows: 'set', color: { agg: 'score_mean' }, size: { genes: 'mean' } }] });
-    assert.equal('color' in config.sections[0] || 'size' in config.sections[0], false);
-    assert.deepEqual(effectiveRowStep(config.sections[0], { color: config.color, size: config.size }), { genes: 'rows_mean', moved: null });
+test('the per-channel steps and the section step of an earlier build are not kept: a one-row section has no setting', () => {
+    const { config } = normalizeCellGene({ sections: [{ source: 's', rows: 'set', color: { agg: 'score_mean' }, size: { genes: 'mean' }, genes: 'sum' }] });
+    assert.deepEqual(config.sections[0], { source: 's', rows: 'set' });
 });
 
 // ------------------------------------------------------------------ references
@@ -193,17 +191,12 @@ test('Add genes adds a section as Genes; duplicate, move, remove and the title a
     assert.deepEqual(cfg.sections.map((s) => s.source), ['t1', 's1']);
 });
 
-test('Genes and One row: a set row keeps its gene step, which a switch back to Genes keeps too', () => {
+test('Genes and One row: a section switches between the two and carries no setting', () => {
     let cfg = addSection(base(), 's1');
     cfg = setSectionRows(cfg, 0, 'set');
-    assert.equal(cfg.sections[0].rows, 'set');
-    cfg = setRowStep(cfg, 0, 'mean');
-    cfg = setSectionRows(cfg, 0, 'genes');
-    cfg = setSectionRows(cfg, 0, 'set');
-    assert.equal(cfg.sections[0].genes, 'mean');
-    cfg = setRowStep(cfg, 0, 'rows_sum');
-    cfg = setRowStep(cfg, 0, 'rows_mean');
-    assert.equal('genes' in cfg.sections[0], false, 'the default is not written');
+    assert.deepEqual(cfg.sections[0], { source: 's1', rows: 'set' });
+    cfg = setSectionRows(setSectionRows(cfg, 0, 'genes'), 0, 'set');
+    assert.deepEqual(cfg.sections[0], { source: 's1', rows: 'set' });
 });
 
 test('a section\'s title is its own, or its source\'s', () => {
@@ -225,16 +218,6 @@ test('a section\'s genes: up then down, each once, in the source\'s order; absen
 test('over 2,000 genes: the section says so and names what to do (CXG-17)', () => {
     assert.equal(tooManyGenesText('DE genes', 5120), 'DE genes has 5,120 genes; a section shows up to 2,000. Filter the table.');
     assert.equal(tooManyGenesText('DE genes', 2000), null);
-});
-
-// ------------------------------------------------------------------ one row: Color and Size
-
-test('one gene step, under "Combine the gene rows" and "Score each cell", each with a symbol (aggregation-unify-080.md 10)', () => {
-    const list = rowStepEntries({ channels: { color: { stat: 'mean' }, size: { stat: 'sd' } } });
-    assert.deepEqual([...new Set(list.map((e) => e.heading))], [W.rowStep.heading.rows, W.rowStep.heading.score]);
-    assert.deepEqual(list.slice(0, 3).map((e) => e.name), ['Mean of the gene rows', 'Sum of the gene rows', 'Mean, z-scored across groups']);
-    assert.ok(list.some((e) => e.heading === W.rowStep.heading.score && e.name === 'z-score mean'));
-    assert.ok(list.every((e) => e.symbol));
 });
 
 // ------------------------------------------------------------------ the request
@@ -261,7 +244,7 @@ test('a section of genes asks for each gene once: color mean and size % expressi
 });
 
 test('the same genes as rows and as one row, in two sections, are asked for once (CXG-9, CXG-18)', () => {
-    let cfg = addSection(addSection(base(), 's1'), 's1');
+    let cfg = addSection(addSection({ ...base(), size: { stat: 'sd', layer: 'X' } }, 's1'), 's1');
     cfg = setSectionRows(cfg, 1, 'set');
     const p = plan(cfg);
     assert.equal(p.features.length, 3);
@@ -269,20 +252,16 @@ test('the same genes as rows and as one row, in two sections, are asked for once
     assert.equal(p.rows.length, 4);
 });
 
-test('combining the gene rows sends no score request; a score adds one score feature per channel, on the channel\'s layer (CXG-9)', () => {
-    let cfg = setSectionRows(addSection({ ...base(), color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'logged' } }, 's1'), 0, 'set');
-    for (const step of ['rows_mean', 'rows_sum', 'rows_z']) {
-        const p = plan(setRowStep(cfg, 0, step));
-        assert.ok(!kinds(p).includes('score'), step);
-    }
-    cfg = setRowStep(cfg, 0, 'mean');
-    const scores = plan(cfg).features.filter((f) => f.wire.kind === 'score');
-    // Color: the score; Size under % expressing: the share of cells expressing any gene (`detected`, above 0)
-    assert.deepEqual(scores.map((f) => f.wire.column).sort(), ['detected', 'mean']);
-    assert.deepEqual(scores.find((f) => f.wire.column === 'mean').wire, { kind: 'score', recipe: scoreRecipe('mean', 'logged'), column: 'mean', layer: 'logged', above: 0 });
-    // a Size of a value statistic reads the same score on the same layer: one feature
-    const sum = plan({ ...cfg, size: { stat: 'sum', layer: 'logged' } });
-    assert.equal(sum.features.filter((f) => f.wire.kind === 'score').length, 1);
+test('a one-row section asks for no more than its rule needs: the gene rows, or one score per channel on its layer (CXG-9)', () => {
+    const set = (fields) => setSectionRows(addSection({ ...base(), ...fields }, 's1'), 0, 'set');
+    const sd = plan(set({ color: { stat: 'mean', layer: 'logged' }, size: { stat: 'sd', layer: 'logged' } }));
+    assert.ok(!kinds(sd).includes('score'), 'the gene rows\' own features serve a mean and an SD');
+    const pct = plan(set({ color: { stat: 'mean', layer: 'logged' }, size: { stat: 'pct_expressing', layer: 'logged' } }));
+    const scores = pct.features.filter((f) => f.wire.kind === 'score');
+    // Size under % expressing: the share of cells expressing any gene (`detected`, above 0)
+    assert.deepEqual(scores.map((f) => f.wire.column), ['detected']);
+    assert.equal(scores[0].wire.layer, 'logged');
+    assert.equal(scores[0].wire.above, 0);
 });
 
 test('adding one gene to a section adds one feature, and the others keep their keys (CXG-18)', () => {

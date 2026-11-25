@@ -8,6 +8,7 @@
  *
  * Run:  node --test annzarro/tests/js/cell-gene-model.test.mjs
  */
+import { STATISTIC_IDS } from '../../../static/js/utils/cell-grouping.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -270,15 +271,24 @@ test('combineRows takes the genes\' moments and a combining step only', () => {
     assert.throws(() => M.combineRows('zscore_mean', 'mean', setCase(), 3), /combine/);
 });
 
-test('rowStepGrade: Cell count, down genes, and the two sums with no honest name', () => {
-    assert.deepEqual(M.rowStepGrade('rows_mean', 'mean'), { ok: true });
-    assert.deepEqual(M.rowStepGrade('zscore_mean', 'count'), { ok: true }, 'Cell count ignores genes: nothing to grade');
-    assert.deepEqual(M.rowStepGrade('mean', 'mean_expressing'), { ok: false, reason: 'score_mean_expressing' });
-    assert.deepEqual(M.rowStepGrade('rows_mean', 'mean', { down: 2 }), { ok: false, reason: 'down' });
-    assert.deepEqual(M.rowStepGrade('zscore_mean', 'mean', { down: 2 }), { ok: true });
-    assert.deepEqual(M.rowStepGrade('rows_sum', 'sd'), { ok: false, reason: 'sum_sd' });
-    assert.deepEqual(M.rowStepGrade('rows_sum', 'mean_expressing'), { ok: false, reason: 'sum_mean_expressing' });
-    assert.deepEqual(M.rowStepGrade('rows_sum', 'pct_expressing'), { ok: true });
+test('ROW_RULE: one rule per statistic, the one place a row\'s rule is chosen', () => {
+    assert.deepEqual(Object.keys(M.ROW_RULE).sort(), [...STATISTIC_IDS].sort());
+    assert.equal(M.ROW_RULE.mean.how, 'rows_mean');
+    assert.equal(M.ROW_RULE.mean.downScore, 'mean');
+    assert.equal(M.ROW_RULE.sum.ownScale, true);
+    assert.equal(M.ROW_RULE.pct_expressing.plan, 'any');
+    assert.equal(M.ROW_RULE.zscore_mean.method, 'zscore_mean');
+    assert.equal(Object.values(M.ROW_RULE).filter((r) => r.ownScale).length, 1, 'only the sum leaves the gene rows\' scale');
+});
+
+test('ROW_RULE: one rule per statistic, the one place a row\'s rule is chosen', () => {
+    assert.deepEqual(Object.keys(M.ROW_RULE).sort(), [...STATISTIC_IDS].sort());
+    assert.equal(M.ROW_RULE.mean.how, 'rows_mean');
+    assert.equal(M.ROW_RULE.mean.downScore, 'mean');
+    assert.equal(M.ROW_RULE.sum.ownScale, true);
+    assert.equal(M.ROW_RULE.pct_expressing.plan, 'any');
+    assert.equal(M.ROW_RULE.zscore_mean.method, 'zscore_mean');
+    assert.equal(Object.values(M.ROW_RULE).filter((r) => r.ownScale).length, 1, 'only the sum leaves the gene rows\' scale');
 });
 
 // --- availability and limits (OD 8, CXG-17) --------------------------------------------------------------------
@@ -378,14 +388,11 @@ test('the statistic, scaling and aggregation words of UX 3.2 and 3.3', () => {
     assert.equal(W.scaling.var, '0 to 1 per gene');
     assert.equal(W.scaled.var, 'scaled 0 to 1 per gene');
     assert.equal(W.scaling.z_pooled, 'z-score per gene, against all grouped cells');
-    assert.deepEqual(W.rowStep.heading, { rows: 'Combine the gene rows', score: 'Score each cell' });
-    for (const step of M.ROW_STEPS) {
-        assert.ok(W.rowStep.name[step], step);
+    for (const step of ['rows_mean', 'rows_sum']) {
         assert.ok(W.rowStep.how[step], step);
     }
     assert.equal(W.rowStep.legacy, undefined);
-    assert.equal(W.rowStep.detectedPerCell, 'Genes detected per cell');
-    assert.deepEqual(W.rowStep.why.sum_sd, ['SD', 'a sum of spreads is not the spread of the set.']);
+    assert.deepEqual(Object.keys(W.rowStep.reading).sort(), [...STATISTIC_IDS, 'downMean'].sort());
     assert.equal(W.noExpressingCells, 'no expressing cells');
     assert.equal(W.csv.note, 'Note');
 });

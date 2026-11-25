@@ -127,31 +127,22 @@ const cellGene = Object.freeze({
         z_pooled: 'z-score per gene, against all grouped cells'
     }),
     /**
-     * A one-row section's one choice (aggregation-unify-080.md 10): how its genes are combined, shared by Color and Size,
-     * the channels' statistic and layer being the plot's. Reasons are phrased by options-model.js REASON.cannotWith from
-     * `why`: [what, why].
+     * The words of a one-row section's values (aggregation-unify-080.md 11): the set as one gene, by the rule of each
+     * channel's statistic (cell-gene-model.js ROW_RULE).
      */
     rowStep: Object.freeze({
-        heading: Object.freeze({ rows: 'Combine the gene rows', score: 'Score each cell' }),
-        name: Object.freeze({ rows_mean: 'Mean of the gene rows', rows_sum: 'Sum of the gene rows', rows_z: 'Mean, z-scored across groups' }),
-        /** The first entry's tooltip: the default is what Color and Size show of each gene. */
-        same: 'Same as Color and Size: their statistic of each gene, averaged over the genes.',
-        /** Sum of the gene rows under % expressing (decision 40): the sum of the genes' fractions, on its own scale. */
-        detectedPerCell: 'Genes detected per cell',
-        /** A score method where the step is named on its own (the button, the CSV): "z-score mean score". */
+        name: Object.freeze({ rows_mean: 'Mean of the gene rows', rows_sum: 'Sum of the gene rows' }),
+        /** A score where the step is named on its own (the CSV, the hover): "z-score mean score". */
         score: (method) => `${method} score`,
-        /** A score row under % expressing: the share of cells expressing at least one gene of the set (10.1a). */
-        anyGeneName: '% expressing any gene',
+        /** Under % expressing the set is the share of cells expressing at least one gene (aggregation-unify-080.md 10.1a). */
         anyGeneHow: 'any gene',
         anyGene: (title, up, down, t, layer) => `% of cells expressing at least one of ${title}'s ${up} ${down > 0 && up > 0 ? 'up ' : ''}genes (> ${t}) \u00b7 ${layer}`,
-        why: Object.freeze({
-            down: ['down genes', 'it would count them as up genes. Score each cell instead.'],
-            sum_sd: ['SD', 'a sum of spreads is not the spread of the set.'],
-            sum_mean_expressing: ['mean of expressing cells', "each gene's expressing cells differ, so the sum is the mean of no cells."],
-            score_mean_expressing: ['mean of expressing cells', 'a score is one value per cell. % expressing shows the share of cells expressing any gene.']
+        /** What a one-row section shows under each statistic, for its tooltip (the rule of cell-gene-model.js ROW_RULE). */
+        reading: Object.freeze({
+            mean: "the mean of the genes' means", zscore_mean: 'the z-score mean score of the set', pct_expressing: '% of cells expressing at least one gene',
+            mean_expressing: "the mean of the genes' means over their expressing cells", sum: "the sum of the genes' sums", sd: "the mean of the genes' SDs",
+            count: "the group's size", downMean: "the signature's mean score (up minus down)"
         }),
-        /** Under a z-score mean Color every other step is disabled: a set's row is its z-score mean score (2.3). */
-        zscoreWhy: "Color is z-score mean: a set's row is its z-score mean score.",
         /** The cell step of a score, in the legend. */
         cells: Object.freeze({
             zscore_mean: () => 'mean', mean: () => 'mean', sum: () => 'sum', sd: () => 'SD'
@@ -161,9 +152,7 @@ const cellGene = Object.freeze({
             rows: (stat, how) => `cells: ${stat}; genes: ${how}`,
             score: (method, cells) => `genes: ${method}; cells: ${cells}`
         }),
-        how: Object.freeze({ rows_mean: 'mean', rows_sum: 'sum', rows_z: 'mean, z-scored across groups' }),
-        /** Said once when a channel's move sends a section's step back to the default. */
-        moved: (title, now, reason) => `${title}'s row changed to ${now}. ${reason}`
+        how: Object.freeze({ rows_mean: 'mean', rows_sum: 'sum' })
     }),
     noExpressingCells: 'no expressing cells',
     /** A size legend whose dots are drawn smaller than the plot's, to fit their slot: 1 to `n` (draw.js sizeLegendParts). */

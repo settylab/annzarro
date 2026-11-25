@@ -95,28 +95,24 @@ export const DEFAULT_ROW_STEP = 'rows_mean';
 export const combinesRows = (step) => ROW_STEPS.includes(step);
 
 /**
- * Whether a section's one gene step can serve a channel (aggregation-unify-080.md 10.1). Cell count does not depend on
- * genes, so it never grades. A source with down genes cannot be combined from its rows (they would count as up); a sum of
- * SDs is not the spread of the set, and a sum of means over each gene's own expressing cells is the mean of no cells; a
- * score has no mean over its expressing cells (a % channel shows the share of cells expressing any gene instead). Under
- * z-score mean a set's row is its z-score mean score: only the default step stands (aggregation-unify-080.md 2.3, 10.1).
- * @param {string} step - one of ROW_STEPS or a score method
- * @param {string} stat - the channel's statistic
- * @param {{down?: number}} [opts] - the section's down genes in the dataset
- * @returns {{ok: true}|{ok: false, reason: 'down'|'zscore'|'sum_sd'|'sum_mean_expressing'|'score_mean_expressing'}}
+ * What a one-row section shows under each channel statistic (aggregation-unify-080.md 11.1): the set treated as one gene,
+ * by one fixed rule per statistic. The ONE place a rule is chosen or added: `plan` is how it is computed, `ownScale` whether
+ * it leaves the gene rows' colour bar or size legend. The tooltip's words are vocabulary.js rowStep.reading.
+ *   - `rows`: the statistic of each gene, combined (`how`: `rows_mean` or `rows_sum`), over the up genes; no request beyond the gene rows;
+ *     `downScore` names the score that stands in when the source has down genes (they cannot be combined from their rows);
+ *   - `score`: the group mean of the source's score `method` (z-score mean, decision 43);
+ *   - `any`: the share of cells expressing at least one up gene, the source's `detected` score at the channel's threshold (10.1a);
+ *   - `count`: the group's size, no genes.
  */
-export function rowStepGrade(step, stat, { down = 0 } = {}) {
-    if (stat === 'count') return { ok: true };
-    // the default step: the mean of the gene rows, or the z-score mean score for a source with down genes
-    if (stat === 'zscore_mean') return step === (down > 0 ? 'zscore_mean' : DEFAULT_ROW_STEP) ? { ok: true } : { ok: false, reason: 'zscore' };
-    if (combinesRows(step)) {
-        if (down > 0) return { ok: false, reason: 'down' };
-        if (step === 'rows_sum' && (stat === 'sd' || stat === 'mean_expressing')) return { ok: false, reason: `sum_${stat}` };
-    } else if (stat === 'mean_expressing') {
-        return { ok: false, reason: 'score_mean_expressing' };
-    }
-    return { ok: true };
-}
+export const ROW_RULE = Object.freeze({
+    mean: Object.freeze({ plan: 'rows', how: 'rows_mean', downScore: 'mean', ownScale: false }),
+    zscore_mean: Object.freeze({ plan: 'score', method: 'zscore_mean', ownScale: false }),
+    pct_expressing: Object.freeze({ plan: 'any', ownScale: false }),
+    mean_expressing: Object.freeze({ plan: 'rows', how: 'rows_mean', ownScale: false }),
+    sum: Object.freeze({ plan: 'rows', how: 'rows_sum', ownScale: true }),
+    sd: Object.freeze({ plan: 'rows', how: 'rows_mean', ownScale: false }),
+    count: Object.freeze({ plan: 'count', ownScale: false })
+});
 
 /** The statistics read at an expression threshold. */
 const THRESHOLDED = Object.freeze(['pct_expressing', 'mean_expressing']);
