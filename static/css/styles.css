@@ -780,7 +780,7 @@ body {
 
 .table-controls {
     padding: 0.5rem;
-    background-color: var(--az-surface-2);
+    background-color: var(--az-panel-header-bg);
     border-bottom: 1px solid var(--az-border);
     /* the columns stack in a narrow panel (below), by the panel's width */
     container: table-controls / inline-size;
@@ -1511,7 +1511,7 @@ button.dtsb-button.dtsb-clear:hover {
 .gsig-status {
     padding: 6px 8px;
     border-bottom: 1px solid var(--az-border);
-    background-color: var(--az-surface-2);
+    background-color: var(--az-panel-header-bg);
 }
 .gsig-status__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
 .gsig-summary { font-weight: 600; }
@@ -1639,7 +1639,7 @@ button.dtsb-button.dtsb-clear:hover {
 
 .gs-sections { flex: 1 1 auto; min-height: 12rem; contain: size; overflow: auto; padding: 4px 6px 12px; }
 .gs-section { border: 1px solid var(--az-border); border-radius: 4px; margin: 6px 0; background: var(--az-surface); }
-.gs-section__head { display: flex; align-items: center; gap: 6px; padding: 2px 6px; background: var(--az-surface-2); border-radius: 4px; }
+.gs-section__head { display: flex; align-items: center; gap: 6px; padding: 2px 6px; background: var(--az-panel-header-bg); border-radius: 4px; }
 .gs-section__toggle {
     flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 4px;
     border: 0; background: none; padding: 3px 0; text-align: left; font-size: 0.875rem; font-weight: 600;

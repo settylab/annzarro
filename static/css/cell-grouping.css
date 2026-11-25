@@ -70,7 +70,7 @@
 .cgrp-factors { list-style: none; margin: 0; padding: 0 8px 6px; display: flex; flex-direction: column; gap: 4px; }
 .cgrp-card { border: 1px solid var(--az-border); border-radius: 4px; background: var(--az-surface); }
 .cgrp-card.is-missing { border-color: var(--az-danger-text); }
-.cgrp-card__bar { display: flex; align-items: center; }
+.cgrp-card__bar { display: flex; align-items: center; background: var(--az-panel-header-bg); border-radius: 3px 3px 0 0; }
 .cgrp-card__head {
     flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 6px; padding: 4px 6px;
     border: 0; background: none; text-align: left; color: var(--az-text);
