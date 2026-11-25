@@ -4,16 +4,16 @@ Same method as shoot_userguide.py (docs/_tools/shots.py): every image comes from
 operated by real input where the step is about it, and a callout is a numbered outline drawn over the element it names.
 
 Writes
-  docs/_static/screens/user-guide/signature-*.png, grouping-*.png, cellgene-*.png, longcomp-*.png
+  docs/_static/screens/user-guide/signature-*.png, grouping-*.png, cellgene-*.png, count-*.png, longcomp-*.png
   docs/_tools/views/userguide-080-*.json     the `view` objects used below
 
 Run (the server starts, shoots and stops inside this one command):
-  .venv-docs/bin/python docs/_tools/shoot_userguide_080.py [--port 8818] [--only signature grouping cellgene longcomp]
+  .venv-docs/bin/python docs/_tools/shoot_userguide_080.py [--port 8818] [--only signature grouping cellgene count longcomp]
 
 Data: bm_aging_annzarro.zarr in ANNZARRO_DOCS_DATA (default ~/annzarro-data), served through a temporary directory of symlinks.
 The long-computations shots use a scratch server configuration that lowers the cost limits so the notices appear on a small
-store; the page says so. The Cell Count Plot figures are not here yet: that plot's wording was still changing when this was
-written (see docs/user-guide/cell-count-plot.md).
+store; the page says so. The Cell Count Plot figures (count-*.png) are made by the `count` step: a 3 by 3 grid of the nine modes cut from nine shots, the
+bins line with its pop-over, Display ▾, a Venn and a 3D bar plot.
 """
 from __future__ import annotations
 
@@ -220,6 +220,107 @@ def shoot_refusal_ways(sh, data_dir):
     page.context.close()
 
 
+CC = "cell-count-1"
+SETS = [
+    {"source": OBS("Compartment"), "member": {"levels": ["c:HSPC"]}},
+    {"source": OBS("Age"), "member": {"levels": ["c:Old"]}},
+    {"source": {"type": "obs", "key": "n_genes_by_counts", "column": ""}, "member": {"op": ">", "value": 2500}},
+]
+MODES = [  # (mode, title, config fields) in the order of the grid, left to right and top to bottom
+    ("bar", "Bar", {"x": {"source": OBS("midres_celltype")}, "split": {"source": OBS("Age")}}),
+    ("histogram", "Histogram", {"x": {"source": OBS("total_counts")}, "split": {"source": OBS("Age")}}),
+    ("pie", "Pie", {"x": {"source": OBS("Age")}}),
+    ("hist2d", "2D histogram", {"x": {"source": OBS("total_counts")}, "y": {"source": OBS("n_genes_by_counts")}}),
+    ("heatmap", "Heatmap", {"x": {"source": OBS("midres_celltype")}, "y": {"source": OBS("Age")}}),
+    ("density", "Density", {"x": {"source": OBS("total_counts")}, "split": {"source": OBS("Age")}}),
+    ("density2d", "2D density", {"x": {"source": OBS("total_counts")}, "y": {"source": OBS("n_genes_by_counts")}}),
+    ("venn", "Venn", {"sets": SETS}),
+    ("upset", "UpSet", {"sets": SETS + [{"source": OBS("phase"), "member": {"levels": ["c:S"]}}]}),
+]
+
+
+def count_view(fields, controls=False, name=None):
+    cfg = {CC: {"id": CC, "title": "Cell Count Plot 1", "version": 1, **fields}}
+    return view([CC], extra=cfg, name=name, controls=controls)
+
+
+def shoot_count(sh, data_dir):
+    from PIL import Image, ImageDraw
+    from shoot_userguide import _font
+    tiles = []
+    for mode, title, fields in MODES:
+        page = sh.open(count_view({"mode": mode, **fields}, name=f"count-{mode}"), dataset=ds(D, data_dir), viewport={"width": 800, "height": 560})
+        page.wait_for_selector(f"{T(CC)} .ccnt-panel[data-state='ready']", timeout=90000)
+        time.sleep(3.0)
+        path = OUT / f"_count-{mode}.png"
+        style = page.add_style_tag(content=".modebar-container { display: none !important; }")
+        page.locator(f"{T(CC)} .tile-content").screenshot(path=str(path))
+        style.evaluate("e => e.remove()")
+        tiles.append((title, path))
+        page.context.close()
+    # the 3 by 3 grid: each tile is a shot of the plot area, titled with its mode
+    w, h = 800, 520
+    gap, head = 10, 34
+    sheet = Image.new("RGB", (3 * w + 4 * gap, 3 * (h + head) + 4 * gap), "white")
+    draw = ImageDraw.Draw(sheet)
+    font = _font(24)
+    for i, (title, path) in enumerate(tiles):
+        im = Image.open(path).convert("RGB")
+        im = im.resize((w, int(im.height * w / im.width)))
+        canvas = Image.new("RGB", (w, h), "white")
+        canvas.paste(im.crop((0, 0, w, min(h, im.height))), (0, 0))
+        im = canvas
+        x, y = gap + (i % 3) * (w + gap), gap + (i // 3) * (h + head + gap)
+        draw.text((x + 6, y + 4), title, fill=(20, 20, 20), font=font)
+        sheet.paste(im, (x, y + head))
+        draw.rectangle([x, y + head, x + w - 1, y + head + h - 1], outline=(200, 200, 200))
+    out = OUT / "count-modes.png"
+    sheet.save(out)
+    finish(out)
+    for _, path in tiles:
+        path.unlink()
+    sh.log.append("wrote count-modes.png")
+
+    ui = {"controls": True}
+    # the bins line of a numeric input and its pop-over
+    page = sh.open(count_view({"mode": "histogram", "x": {"source": OBS("total_counts")}}, controls=True, name="count-bins"),
+                   dataset=ds(D, data_dir), viewport={"width": 1200, "height": 760})
+    page.wait_for_selector(f"{T(CC)} .ccnt-panel[data-state='ready']", timeout=90000)
+    time.sleep(2.0)
+    page.locator(f"{T(CC)} .ccnt-bins").first.click()
+    page.wait_for_selector(pop(page, "binning"))
+    time.sleep(1.0)
+    capture_union(sh, page, "count-bins", [f"{T(CC)} .ccnt-controls", pop(page, "binning")], pad=10,
+                  marks=[(1, f"{T(CC)} .ccnt-bins"), (2, pop(page, "binning"))])
+    page.keyboard.press("Escape")
+    page.context.close()
+    # Display ▾ of a 2D histogram: the colour map, its range and Reset
+    page = sh.open(count_view({"mode": "hist2d", "x": {"source": OBS("total_counts")}, "y": {"source": OBS("n_genes_by_counts")}},
+                              controls=True, name="count-display"), dataset=ds(D, data_dir), viewport={"width": 1100, "height": 720})
+    page.wait_for_selector(f"{T(CC)} .ccnt-panel[data-state='ready']", timeout=90000)
+    time.sleep(2.0)
+    page.locator(f"{T(CC)} .ccnt-color-btn").click()
+    page.wait_for_selector(pop(page, "color"))
+    time.sleep(1.0)
+    capture(sh, page, "count-display", pop(page, "color"))
+    page.keyboard.press("Escape")
+    page.context.close()
+    # a Venn with its set list, and the same sets as an UpSet are in the grid
+    page = sh.open(count_view({"mode": "venn", "sets": SETS}, controls=True, name="count-venn-view"), dataset=ds(D, data_dir),
+                   viewport={"width": 1200, "height": 760})
+    page.wait_for_selector(f"{T(CC)} .ccnt-panel[data-state='ready']", timeout=90000)
+    time.sleep(3.0)
+    capture(sh, page, "count-venn", T(CC))
+    page.context.close()
+    # 3D: a heatmap of two small factors as bars on a grid (names that stay readable)
+    page = sh.open(count_view({"mode": "heatmap", "x": {"source": OBS("phase")}, "y": {"source": OBS("Age")}, "view": "3d"},
+                              name="count-3d"), dataset=ds(D, data_dir), viewport={"width": 1100, "height": 720})
+    page.wait_for_selector(f"{T(CC)} .ccnt-panel[data-state='ready']", timeout=90000)
+    time.sleep(4.0)
+    capture(sh, page, "count-3d", T(CC) + " .tile-content")
+    page.context.close()
+
+
 # The limits are lowered for the long-computations pictures, so the notices appear on a store of 8,090 cells: a scratch server
 # configuration (limits.* of docs/deployment/resource-limits.md), never a setting of the product. The page says so.
 LOWERED = "limits:\n  live_update_s: 0.1\n  ask_first_s: 0.4\n  refuse_s: 0.9\n  try_max_s: 120\n"
@@ -258,7 +359,7 @@ def shoot_longcomp(sh, data_dir):
     page.context.close()
 
 
-STEPS = {"signature": shoot_signature, "grouping": shoot_grouping, "cellgene": shoot_cellgene, "refusal": shoot_refusal_ways, "longcomp": shoot_longcomp}
+STEPS = {"signature": shoot_signature, "grouping": shoot_grouping, "cellgene": shoot_cellgene, "count": shoot_count, "refusal": shoot_refusal_ways, "longcomp": shoot_longcomp}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
