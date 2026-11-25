@@ -84,7 +84,7 @@
   "browser/test_names_dataset_scope.py": 1,
   "browser/test_names_race.py": 10,
   "browser/test_nested_split_links.py": 2,
-    "browser/test_no_unnamed_legend.py": 3,
+  "browser/test_no_unnamed_legend.py": 3,
   "browser/test_not_in_table_style.py": 3,
   "browser/test_notices.py": 4,
   "browser/test_option_spinners.py": 6,
