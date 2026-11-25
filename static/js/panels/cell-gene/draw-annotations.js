@@ -287,7 +287,9 @@ export function annotateFigure(figure, model, theme) {
         axis.ticktext = Array.from(keep, (i) => textOf(i));
     };
     const geneText = (i) => {
-        const text = esc(cut(rows[i].label, geneChars));
+        // the symbol is the point of the suffix: it is kept whole, the name gives way to it
+        const tail = rows[i].symbol ? ` \u2039${rows[i].symbol}\u203a` : '';
+        const text = esc(cut(rows[i].label, Math.max(geneChars - tail.length, 3))) + esc(tail);
         return rows[i].own ? `<i>${text}</i>` : text;
     };
     const groupLabel = (i) => {

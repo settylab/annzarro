@@ -34,6 +34,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_rows as CR  # noqa: E402
 from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser import test_focus_outside_subset as _focus  # noqa: E402
 from annzarro.tests.browser import waits  # noqa: E402
@@ -47,7 +48,6 @@ S1 = "gene-signature-S1"
 S2 = "gene-signature-S2"
 S3 = "gene-signature-S3"
 TP = f'.tile[data-tile-id="{P}"]'
-VALUES = "[data-popover='values']"
 DATA = gstore.make_data()
 GENES = [gstore.gene(i) for i in range(gstore.N_VAR)]
 
@@ -232,56 +232,28 @@ def test_job2_three_lists_side_by_side(page, served):
 
 # ------------------------------------------------------------------ 4. job 3
 
-def _step_options(page, which):
-    return page.evaluate("""([s, w]) => { const sel = document.querySelector(s + ' .cgene-section__genes[data-which="' + w + '"]');
-        return [...sel.querySelectorAll('optgroup')].map(g => [g.label, [...g.querySelectorAll('option')].map(o => o.textContent)]); }""",
-                         [VALUES, which])
-
-
 def test_job3_one_row_per_pathway(page, served):
     configs = {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "set"}]),
                S1: _sig(S1, "Pathway", GENES[0:6])}
     _open(page, served, configs, open_ids=(P, S1))
     st = _drawn(page)
     assert st["rows"] == 1
-    # Color and Size open in a pop-over from the row's summary button (WP-8)
-    page.click(f"{TP} .cgene-section__values-btn")
-    page.wait_for_selector(VALUES)
-    # each channel: the statistic and layer it follows, read only, then one gene step select under two headings (decision 40)
-    for which, channel in (("color", "Mean · logged"), ("size", "% expressing (> 0) · logged")):
-        assert page.locator(f"{VALUES} .cgene-section__channel[data-which='{which}']").inner_text() == channel
-        groups = _step_options(page, which)
-        assert [g[0] for g in groups] == ["Combine the gene rows", "Score each cell"]
-        assert groups[1][1][0] == "z-score mean"
-    assert _step_options(page, "size")[0][1] == ["Mean of the gene rows", "Genes detected per cell", "Mean of the gene rows, z-scored across groups"]
-    assert page.locator(f"{VALUES} select").count() == 2, "no layer and no statistic select: those are the plot's"
-    sec = page.locator(VALUES)
-    assert sec.locator(".cgene-section__genes[data-which='color']").input_value() == "rows_mean"
-    assert sec.locator(".cgene-section__genes[data-which='size']").input_value() == "rows_mean"
-    assert sec.locator(".cgene-section__help[data-which='color']").inner_text() == \
-        "Each gene's Mean · logged in the group, averaged over the 6 genes of Pathway. Same scale as the gene rows."
+    # one button on the section line opens one menu (aggregation-unify-080.md 10): the gene rows combined, then the source's methods
+    entries = CR.entries(page, TP, 0)
+    assert [e["heading"] for e in entries] == ["Combine the gene rows"] * 3 + ["Score each cell"] * 6
+    assert [e["name"] for e in entries[:3]] == ["Mean of the gene rows", "Sum of the gene rows", "Mean, z-scored across groups"]
+    assert entries[3]["name"] == "z-score mean"
+    assert entries[0]["on"]
     # the mean of the gene rows: no score asked for
     assert [f["kind"] for f in _features(page.calls)] == ["gene"] * 6
-    # Size from a score, with its threshold box: one score feature on Size's layer, the threshold in the request
+    # a score: Color reads it, Size is the share of cells expressing any gene; each one score feature
     n = len(page.calls)
-    sec.locator(".cgene-section__genes[data-which='size']").select_option("zscore_mean")
-    above = sec.locator(".cgene-section__above[data-which='size']")
-    above.wait_for(state="visible")
-    assert above.input_value() == "0"
+    CR.pick_step(page, TP, 0, "zscore_mean")
     until(page, "(s) => document.querySelector(s + ' .cgene-panel').dataset.state === 'ready'", TP, timeout=90)
     new = _features(page.calls[n:])
-    assert [f["kind"] for f in new] == ["score"]
-    assert new[0]["column"] == "zscore_mean" and new[0]["layer"] == "logged" and new[0]["above"] == 0
-    assert sec.locator(".cgene-section__help[data-which='size']").inner_text() == \
-        "Each cell's z-score mean score of Pathway on logged, then the group's % of cells above 0. Its settings: Pathway ▸ Methods ▾."
-    above.fill("0.5")
-    above.press("Enter")
-    until(page, "(id) => (window.PanelManager.getPanel(id).getConfig().sections[0].size || {}).above === 0.5", P)
-    cfg = _config(page)
-    assert cfg["sections"][0]["size"] == {"genes": "zscore_mean", "above": 0.5}
-    # nothing is offered: no select of the pop-over leads elsewhere (decision 31)
-    texts = page.eval_on_selector_all(f"{VALUES} option", "os => os.map(o => o.textContent)")
-    assert not any("offer" in t.lower() for t in texts), texts
+    assert sorted((f["kind"], f["column"]) for f in new) == [("score", "detected"), ("score", "zscore_mean")]
+    assert all(f["above"] == 0 for f in new)
+    assert _config(page)["sections"][0] == {"source": S1, "rows": "set", "genes": "zscore_mean"}
     assert _config(page)["sections"][0].get("color") is None
 
 
@@ -327,9 +299,9 @@ def test_the_section_list_edits_are_undoable_steps(page, served):
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 2", P)
     sec = page.locator(f"{TP} .cgene-section")
     assert sec.nth(0).locator(".cgene-section__title").input_value() == "B cell markers"
-    # Genes / One row is a radiogroup
-    assert sec.nth(0).locator("[role='radiogroup']").count() == 1
-    sec.nth(1).locator("input[value='set']").check()
+    # Genes / One row is a select
+    assert sec.nth(0).locator("select.cgene-section__rows").count() == 1
+    CR.show_as(page, TP, 1, "set")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[1].rows === 'set'", P)
     # the title, edited in place
     title = sec.nth(0).locator(".cgene-section__title")
@@ -421,7 +393,7 @@ def test_groups_from_a_grouping_and_new_grouping(page, served):
 def test_a_link_carries_the_configuration_unchanged(page, served):
     cfg = _plot(cellAxis={"type": "cell-group", "key": GA},
                 sections=[{"source": S1, "rows": "genes", "title": "Mine"},
-                          {"source": S1, "rows": "set", "size": {"genes": "mean"}}],
+                          {"source": S1, "rows": "set", "genes": "mean"}],
                 scale="z_groups", swap=True, colorScale="Viridis")
     grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}]}
     _open(page, served, {P: cfg, S1: _sig(S1, "Markers", GENES[0:3]), GA: grouping}, open_ids=(P, S1, GA))

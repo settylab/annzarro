@@ -1,7 +1,8 @@
 /**
  * Range boxes: the Min and Max (and, for a colour, Center) boxes of one scale in the Cell-Gene and Count Plots' Color
- * pop-overs, all in one style. A scale that is not set shows "auto" with the value the plot draws now, "auto (0.12)", in
- * the box's hint (muted), so it reads as a value and never as an empty field; a scale that is set shows its number.
+ * pop-overs, all in one style. A scale that is not set shows the value the plot draws now, "0.12", as the box's muted
+ * placeholder (the value alone, so it fits a 5.5rem box; the box's title says it is automatic), or "auto" when none is
+ * drawn, so it reads as a value and never as an empty field; a scale that is set shows its number.
  * Each group has a reset button (↺) that returns all of its boxes to auto in one step.
  *
  * A box commits on change or Enter: empty is automatic; text that is no number is refused with `onProblem`. A limit is
@@ -76,7 +77,7 @@ export function createRangeBoxes({ el, ends, onCommit, onReset, parse = defaultP
         if (document.activeElement !== input) input.value = Number.isFinite(limit) ? String(limit) : '';
         const at = i === 0 ? 0 : 1;
         const drawn = ends[i].hint !== false && state.drawn ? state.drawn[at] : null;
-        input.placeholder = drawn !== null && Number.isFinite(drawn) ? `${R.auto} (${formatRangeValue(drawn)})` : R.auto;
+        input.placeholder = drawn !== null && Number.isFinite(drawn) ? formatRangeValue(drawn) : R.auto;
         input.classList.toggle('az-range__field--auto', !Number.isFinite(limit));
         const hint = drawn !== null && Number.isFinite(drawn) ? formatRangeValue(drawn) : null;
         input.title = Number.isFinite(limit) ? R.fixed(formatRangeValue(limit)) : hint !== null ? R.follows(at === 0 ? R.smallest : R.largest, hint) : R.followsNone;

@@ -123,8 +123,10 @@ def test_a_filter_change_updates_the_plot_at_once_when_the_score_is_cheap(page, 
     _filter(page, 8)
     until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
     assert _asked(page)[1] == sorted(FIRST_FIVE + ["GAPDH", "KLF1", "GENE0000"])
-    _wait_coloured(page)
-    until(page, "(first) => JSON.stringify(window.__lastColours || null) !== JSON.stringify(first)", first)
+    # the old colours stay drawn until the new score arrives, so wait for the numbers themselves to change
+    until(page, """([tile, first]) => { const gd = document.querySelector(tile + ' .js-plotly-plot');
+        const t = gd && gd.data && gd.data.find(t => t.marker && (Array.isArray(t.marker.color) || ArrayBuffer.isView(t.marker.color)));
+        return !!t && JSON.stringify(Array.from(t.marker.color).map(Number)) !== JSON.stringify(first); }""", [C, first])
     assert _numbers(page) != first
 
 
@@ -222,8 +224,9 @@ def test_renaming_the_table_renames_its_score(page, served):
     _wait_coloured(page)
     page.evaluate("(id) => PanelManager.getPanel(id).setTitle('Marker genes')", TAB)
     page.wait_for_function("() => PanelManager.getPanel('cell-plot-C').getConfig().color.label === 'Marker genes'", timeout=20000)
-    labels = page.eval_on_selector_all(f"{C} select.axis-key-select[data-axis='color'] option", "els => els.map(e => e.textContent)")
-    assert labels == ["Marker genes", "New signature…"], labels
+    labels = page.eval_on_selector_all(f"{C} select.axis-column-select[data-axis='color'] option", "els => els.map(e => e.textContent)")
+    # the item picker of the layer row (w43): the focused gene, the way to make a signature, then the renamed table
+    assert labels == ["Focused gene ACTB", "New signature…", "Marker genes"], labels
 
 
 # ------------------------------------------------------------------ 4. a cycle
@@ -352,9 +355,11 @@ def test_the_source_menu_tells_tables_from_signatures_and_the_label_names_the_ta
     sig = {"id": "gene-signature-S", "title": "T cell score", "genes": ["GENE0001", "GENE0002"]}
     _open_table_link(page, served, plots={"gene-signature-S": sig})
     _wait_coloured(page)
-    groups = page.eval_on_selector_all(f"{C} select.axis-key-select[data-axis='color'] optgroup",
+    groups = page.eval_on_selector_all(f"{C} select.axis-column-select[data-axis='color'] optgroup",
                                        "els => els.map(g => [g.label, [...g.querySelectorAll('option')].map(o => o.textContent)])")
-    assert groups == [["Gene signatures", ["T cell score"]], ["Gene tables", ["Gene Table 1"]]], groups
+    # the item picker's headings: the focused gene; signatures (and the way to make one); tables
+    assert groups == [["Genes", ["Focused gene ACTB"]], ["Gene signatures", ["T cell score", "New signature…"]],
+                      ["Gene tables", ["Gene Table 1"]]], groups
 
 
 # ------------------------------------------------------------------ 7. no gene limit

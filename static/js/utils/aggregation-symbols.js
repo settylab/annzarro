@@ -17,16 +17,27 @@ export const SCORE_SYMBOLS = Object.freeze({
     detected: sym('n/N'), fraction_of_total: sym('%')
 });
 
-/** The statistics over a group's cells. */
+/** The statistics over a group's cells. `%⁺` is the share of cells expressing, `%` alone the signature method's share of the total. */
 export const STAT_SYMBOLS = Object.freeze({
-    zscore_mean: sym('z', true), mean: sym('x', true), pct_expressing: sym('%'), mean_expressing: sym('x⁺', true), sum: sym('Σ'), sd: sym('σ')
+    zscore_mean: sym('z', true), mean: sym('x', true), pct_expressing: sym('%⁺'), mean_expressing: sym('x⁺', true), sum: sym('Σ'), sd: sym('σ')
 });
 
 /**
  * What the Cell-Gene Plot's Color, Size and Height choose from: the group statistics, Cell count (`n`) and, for Height,
- * "Same as Color" (`=`).
+ * "Same as Color" (`≡`).
  */
-export const MEASURE_SYMBOLS = Object.freeze({ ...STAT_SYMBOLS, count: sym('n'), same: sym('=') });
+export const MEASURE_SYMBOLS = Object.freeze({ ...STAT_SYMBOLS, count: sym('n'), same: sym('\u2261') });
+
+/**
+ * How a one-row section's gene rows are combined (aggregation-unify-080.md 10.2): the mean of the gene rows (the default), their
+ * sum, or their mean z-scored across groups. A score method shows its SCORE_SYMBOLS entry instead.
+ */
+export const ROW_SYMBOLS = Object.freeze({ rows_mean: sym('='), rows_sum: sym('+'), rows_z: sym('z\u2194') });
+
+/** A symbol as plain text, for a plot's tick label (a bar is a combining macron there; the page draws it with CSS). */
+export function plainSymbol(symbol) {
+    return symbol.over ? `${symbol.text}\u0304` : symbol.text;
+}
 
 /** The element of a symbol: a span in the symbol column of the button and of the menu. */
 export function symbolSpan(symbol, className = 'axis-agg-sym') {

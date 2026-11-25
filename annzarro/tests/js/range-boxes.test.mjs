@@ -49,11 +49,11 @@ test('drawnRange is the smallest and largest finite value; null with none', () =
     assert.equal(drawnRange(new Float64Array(0)), null);
 });
 
-test('an unset box says auto with the drawn value; a set box shows its number; Center has no drawn value', () => {
+test('an unset box shows the drawn value alone (its title says it is automatic); a set box shows its number; Center has no drawn value', () => {
     const { boxes } = mount();
     boxes.set({ limits: [null, null, null], drawn: [0.125, 87.4] });
-    assert.equal(boxes.fields[0].placeholder, 'auto (0.125)');
-    assert.equal(boxes.fields[1].placeholder, 'auto (87.4)');
+    assert.equal(boxes.fields[0].placeholder, '0.125');
+    assert.equal(boxes.fields[1].placeholder, '87.4');
     assert.equal(boxes.fields[2].placeholder, 'auto');
     assert.equal(boxes.fields[0].value, '');
     boxes.set({ limits: [2, null, 0], drawn: [0.125, 87.4] });
