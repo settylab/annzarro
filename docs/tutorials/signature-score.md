@@ -1,7 +1,3 @@
----
-orphan: true
----
-
 (tut-signature)=
 # Is the stem cell ageing signature kept as cells differentiate? The paper's gene sets as signatures
 
@@ -263,5 +259,5 @@ changes "confined to HSCs".
   step, with a count of what was new.
 - A statistic over all cells (the volcano) and a statistic by cell type can tell different stories about the same gene.
 
-Next: the tutorial on gene statistics from groups of cells takes the per-group statistics further, as plot axes and table
+Next: {doc}`group-statistics` takes the per-group statistics further, as plot axes and table
 columns.

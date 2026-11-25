@@ -1,7 +1,3 @@
----
-orphan: true
----
-
 (tut-dotplot)=
 # Where does each gene change with age? Kompot's result as a cell type by gene plot
 

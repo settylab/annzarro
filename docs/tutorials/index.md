@@ -15,19 +15,12 @@ tour
 :maxdepth: 1
 :caption: Groups, signatures and dot plots
 
+marker-dot-plot
+signature-score
 composition
 group-statistics
 ```
 
-<!-- The other two 0.8.0 tutorials are switched on when their pages merge:
-```{toctree}
-:maxdepth: 1
-:caption: Dot plots and signatures
-
-marker-dot-plot
-signature-score
-```
--->
 
 ```{toctree}
 :maxdepth: 1
