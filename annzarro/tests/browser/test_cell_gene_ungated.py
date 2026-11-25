@@ -110,39 +110,27 @@ def test_the_groupings_threshold_is_read_by_the_plot_and_survives_the_groupings_
     assert all(f["detect_above"] == 1 for f in _features(page.calls[n:])), "the new groups are read above 1 still"
 
 
-def test_a_one_row_score_reads_its_method_from_one_menu_and_its_layer_from_color(page, served):
-    plot = _plot(cellAxis=OBS, sections=[{"source": S1, "rows": "set", "genes": "mean"}])
+def test_a_one_row_section_reads_its_layer_from_color(page, served):
+    plot = _plot(cellAxis=OBS, sections=[{"source": S1, "rows": "set"}], size={"stat": "sd", "layer": "logged"})
     _open(page, served, {P: plot, S1: _sig(S1, "Markers", GENES[:3])}, open_ids=(P, S1))
     _drawn(page)
-    entries = CR.entries(page, TP, 0)
-    assert [e["v"] for e in entries] == ["rows_mean", "rows_sum", "rows_z", "zscore_mean", "mean", "sum", "control_adjusted", "detected", "fraction_of_total"]
-    assert not any("offer" in e["name"].lower() for e in entries)
-    # another method: one edit, no layer stored
-    CR.pick_step(page, TP, 0, "sum")
-    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].genes === 'sum'", P)
-    assert _config(page)["sections"][0] == {"source": S1, "rows": "set", "genes": "sum"}
-    _drawn(page)
-    # Color's layer moves: the row's score is read on the new layer (one request, the score on counts)
+    # Color's layer moves: the row's genes are read on the new layer (one request)
     n = len(page.calls)
     page.select_option(f"{TP} .cgene-color-layer", "counts")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().color.layer === 'counts'", P)
     _drawn(page)
-    scores = [f for f in _features(page.calls[n:]) if f["kind"] == "score" and f["column"] == "sum"]
-    assert [(f["column"], f["layer"]) for f in scores] == [("sum", "counts")], scores
-    # back to the mean of the gene rows: the default, not stored
-    CR.pick_step(page, TP, 0, "rows_mean")
-    until(page, "(id) => !('genes' in window.PanelManager.getPanel(id).getConfig().sections[0])", P)
+    assert {f["layer"] for f in _features(page.calls[n:])} == {"counts"}
+    assert _config(page)["sections"][0] == {"source": S1, "rows": "set"}
 
 
 @pytest.mark.skipif(not SHOTS, reason="screenshots only when ANNZARRO_SHOTS names a directory")
 def test_screenshots_of_the_ungated_controls(page, served):
     plot = _plot(cellAxis=AXIS, sections=[{"source": S1, "rows": "genes"},
-                                          {"source": S1, "rows": "set", "genes": "mean"}])
+                                          {"source": S1, "rows": "set"}])
     _open(page, served, {P: plot, GA: _grouping(), S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, GA))
     _drawn(page)
     _kinds_known(page)
     os.makedirs(SHOTS, exist_ok=True)
     page.locator(TP).screenshot(path=os.path.join(SHOTS, "so4-cg-grouping-axis.png"))
     page.locator(TG).screenshot(path=os.path.join(SHOTS, "so4-grouping-toolbar.png"))
-    CR.open_step(page, TP, 1)
     page.screenshot(path=os.path.join(SHOTS, "so4-values-popover.png"))

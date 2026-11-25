@@ -15,9 +15,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    normalizeCellGene, addSection, setSectionRows, setRowStep, planFeatures, buildMatrix, effectiveRowStep, rowStepEntries, rowQuantity, stepFor, rowReading,
+    normalizeCellGene, addSection, setSectionRows, planFeatures, buildMatrix, rowQuantity, rowReading,
 } from '../../../static/js/panels/cell-gene/sections.js';
-import { statisticColumn, scalingGrade, rowStepGrade, MOMENT_STRIDE } from '../../../static/js/utils/cell-gene-model.js';
+import { statisticColumn, scalingGrade, MOMENT_STRIDE } from '../../../static/js/utils/cell-gene-model.js';
 import { STATISTIC_INFO, statisticChoices, statisticGrade } from '../../../static/js/utils/group-statistics.js';
 import { STATISTIC_IDS } from '../../../static/js/utils/cell-grouping.js';
 import { statMenu, statInfo, genesRequest, momentsHash } from '../../../static/js/utils/group-stat-model.js';
@@ -66,41 +66,14 @@ test('(1) a gene row under Color z-score mean asks for the gene z-scored, a feat
     assert.deepEqual(both.features.map((f) => f.wire.transform || 'raw').sort(), ['raw', 'zscore']);
 });
 
-test('(2) a one-row section under Color z-score mean is one score feature, the one a mean Color with the override plans', () => {
+test('(2) a one-row section under Color z-score mean is one score feature, the set\'s z-score mean score', () => {
     const under = planOf(oneRow({ color: Z }));
     assert.equal(under.features.length, 1);
     const [w] = wires(under);
     assert.equal(w.kind, 'score');
     assert.equal(w.column, 'zscore_mean');
     assert.equal(w.layer, 'logged');
-    const overridden = planOf(setRowStep(oneRow(), 0, 'zscore_mean'));
-    assert.equal(overridden.features.length, 1);
-    assert.equal(under.features[0].key, overridden.features[0].key);
-});
-
-test('under Color z-score mean a stored gene step is the default, and Color reads the z-score mean score', () => {
-    const cfg = oneRow({ color: Z }, { genes: 'rows_sum' });
-    const step = effectiveRowStep(cfg.sections[0], { color: cfg.color, size: cfg.size });
-    assert.equal(step.genes, 'rows_mean');
-    assert.deepEqual(step.moved, { reason: 'zscore', which: 'color' });
-    assert.equal(stepFor(step.genes, cfg.color), 'zscore_mean');
-    const plain = oneRow({ color: Z });
-    assert.equal(effectiveRowStep(plain.sections[0], { color: plain.color, size: plain.size }).moved, null);
-    assert.deepEqual(wires(planOf(cfg)).map((x) => x.column), ['zscore_mean']);
-});
-
-test('(3) the row\'s steps are all disabled but the default, with the reason', () => {
-    const cfg = oneRow({ color: Z });
-    const entries = rowStepEntries({ channels: { color: cfg.color, size: null } });
-    const enabled = entries.filter((e) => !e.disabled).map((e) => e.value);
-    assert.deepEqual(enabled, ['rows_mean']);
-    for (const e of entries.filter((x) => x.disabled)) assert.match(e.title, /z-score mean/i);
-    assert.match(entries.find((e) => e.value === 'rows_sum').title, /a set's row is its z-score mean score/);
-    assert.equal(rowStepGrade('mean', 'zscore_mean').ok, false);
-    assert.equal(rowStepGrade('rows_mean', 'zscore_mean').ok, true);
-    assert.equal(rowStepGrade('zscore_mean', 'zscore_mean', { down: 1 }).ok, true, 'a source with down genes: its score is the default');
-    // other channels keep every step, z-score mean included
-    assert.ok(rowStepEntries({ channels: { color: { stat: 'mean' }, size: null } }).every((e) => !e.disabled));
+    assert.deepEqual(under.rows[0].color.step, { genes: 'zscore_mean' });
 });
 
 test('(4) Size cannot be z-score mean, and a Gene Plot cell group cannot yet; Color and Height can', () => {
@@ -129,18 +102,11 @@ test('(4) Size cannot be z-score mean, and a Gene Plot cell group cannot yet; Co
     assert.ok(read.problems.some((p) => /size/.test(p)));
 });
 
-test('(5) both paths to a set\'s z-score mean row have one id and one name', () => {
-    const viaChannel = oneRow({ color: Z });
-    const viaOverride = setRowStep(oneRow(), 0, 'zscore_mean');
-    const q = (cfg) => rowQuantity({ genes: stepFor(effectiveRowStep(cfg.sections[0], { color: cfg.color }).genes, cfg.color) }, { ...cfg.color, detect_above: 0 });
-    assert.deepEqual(q(viaChannel), q(viaOverride));
-    assert.equal(q(viaChannel).id, 'zscore_mean|logged|');
-    assert.equal(q(viaChannel).label, 'Z-score mean · logged');
-    // under a z-score mean Color the row is on the gene rows' scale; under a mean Color it has a scale of its own
-    assert.equal(q(viaChannel).id, `zscore_mean|logged|`);
-    // another cell step keeps the two-step wording
-    const sd = rowQuantity({ genes: 'zscore_mean' }, { stat: 'sd', layer: 'logged' });
-    assert.match(sd.label, /genes: .*cells: /);
+test('(5) the set\'s z-score mean row is on the gene rows\' bar, with one id and one name', () => {
+    const cfg = oneRow({ color: Z });
+    const q = rowQuantity(planOf(cfg).rows[0].color.step, { ...cfg.color, detect_above: 0 });
+    assert.equal(q.id, 'zscore_mean|logged|');
+    assert.equal(q.label, 'Z-score mean · logged');
 });
 
 test('(6) Scale z-scores are disabled under z-score mean, and a link that holds both reads as no scale', () => {
@@ -178,9 +144,8 @@ test('a constant gene draws no value and says why; its Z-score mean CSV header n
     assert.deepEqual([...out.color.constant], [0, 1]);
 });
 
-test('the one-row button\'s reading under z-score mean names the score and the cell step', () => {
-    const channel = { stat: 'zscore_mean', layer: 'logged' };
-    assert.match(rowReading('rows_mean', { color: channel, size: null }), /^Color: z-score mean score, then Z-score mean · logged\.$/);
+test('the one-row tooltip under z-score mean names the rule', () => {
+    assert.equal(rowReading({ color: { stat: 'zscore_mean', layer: 'logged' }, size: null }), 'Color: the z-score mean score of the set.');
 });
 
 test('the Gene Plot asks for the z-score of each gene as a request of its own', () => {

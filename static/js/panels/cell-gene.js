@@ -50,7 +50,7 @@ import { registerReferences, wouldLoop, dependsOn } from '../utils/panel-referen
 import { createHostBinding, isVisible } from '../utils/host-binding.js';
 import { GROUPING } from '../utils/group-sources.js';
 import { actions } from '../utils/source-actions.js';
-import { sourceList, scoreChoices, openSignature, onSourceStatus } from '../utils/score-source.js';
+import { sourceList, openSignature, onSourceStatus } from '../utils/score-source.js';
 import { createSourceAdapter, KIND_HEADING } from '../utils/score-source-panels.js';
 import { TableResolver, findCycle } from '../utils/table-resolver.js';
 import { KIND_CLIENT } from './score-options/score-options.js';
@@ -58,10 +58,9 @@ import { layerKeys } from '../utils/structure-keys.js';
 import {
     statisticGrade, negativeValuesSentence, defaultMeasures
 } from '../utils/group-statistics.js';
-import { SIGNATURE_MODEL } from '../utils/signature-options.js';
 import { withoutLegacy } from '../utils/options-model.js';
 import { parseThresholdText } from '../utils/options-model.js';
-import { geneReads, combinesRows, scalingGrade } from '../utils/cell-gene-model.js';
+import { geneReads, scalingGrade } from '../utils/cell-gene-model.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
 import { buildFigure, colourBars, sceneLabels, labelEdges, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
@@ -77,8 +76,7 @@ import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { VOCABULARY } from '../utils/vocabulary.js';
 import {
     normalizeCellGene, cellGeneReferences, addSection, duplicateSection, removeSection, moveSection, setSectionRows,
-    setSectionTitle, setRowStep, effectiveRowStep, regradeRows, rowStepEntries, rowStepReason, rowReading,
-    sectionTitle, sectionGenes, sectionLine, tooManyGenesText,
+    setSectionTitle, rowReading, sectionTitle, sectionGenes, sectionLine, tooManyGenesText,
     planFeatures, buildMatrix, heightOf, withGroupingThreshold, SAME_AS_COLOR, GROUP_AXIS
 } from './cell-gene/sections.js';
 import {
@@ -723,13 +721,6 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _sections.focus(to);
         }
 
-        /** A one-row section's one gene step (aggregation-unify-080.md 10): Color and Size read it, each with its own statistic. */
-        function setRowGenes(i, value) {
-            const section = _config.sections[i];
-            if (!section) { paint(); return; }
-            commit(setRowStep(_config, i, value), `gene step of ${sectionName(i)}`);
-        }
-
         // ---------------------------------------------------------------- DOM
 
         function buildDom() {
@@ -740,7 +731,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _sections = createSectionList({ D, model: sectionsModel, on: {
                 rows: (i, rows) => commit(setSectionRows(_config, i, rows), `${sectionName(i)} as ${rows === 'set' ? 'one row' : 'genes'}`),
                 title: (i, text) => commit(setSectionTitle(_config, i, text), `rename ${sectionName(i)}`),
-                op: sectionOp, move, genes: setRowGenes
+                op: sectionOp, move
             } });
             _controls = createControls({ D, model: controlsModel, sections: _sections.element, addGenes: _addGenes.element, on: {
                 axis: setAxis, newGrouping,
@@ -808,16 +799,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 return;
             }
             const { layer, say } = pickLayer({ datasetLayers: datasetLayers(), kinds: _kinds, stat, preferred: spec.layer });
-            // a one-row section whose gene step the new statistic rules out goes back to the default, in this step, said once
-            const regraded = regradeRows({ ..._config, [which]: { ...withThreshold(spec), stat, layer } });
-            const { moved } = regraded;
-            let config = regraded.config;
-            // a section whose one step the channels now rule out goes back to the default (the mean of the gene rows; the
-            // z-score mean score when Color is z-score mean), said once
-            const colorStat = which === 'color' ? stat : _config.color.stat;
-            const now = colorStat === 'zscore_mean' ? CGV.rowStep.score(SIGNATURE_MODEL.methodShort('zscore_mean')) : CGV.rowStep.name.rows_mean;
-            const said = [say, ...moved.map((m) => CGV.rowStep.moved(sectionName(m.section), now,
-                rowStepReason(m.from, m.which === which ? stat : (_config[m.which] || {}).stat, m.reason, m.which)))].filter(Boolean).join(' ');
+            let config = { ..._config, [which]: { ...withThreshold(spec), stat, layer } };
+            const said = say;
             // under z-score mean the colour is a z-score already: a z Scale moves to None in this same step, said once (2.2)
             let scaleSaid = '';
             if (config.scale && !scalingGrade(config.scale, config.color.stat).ok) {
@@ -968,39 +951,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             };
         }
 
-        /**
-         * What a one-row section's one button shows (aggregation-unify-080.md 10.2): the step it draws (Color and Size read
-         * it), its symbol, whether it is off the default, and the menu: the ways to combine the gene rows, then the source's
-         * methods graded on the layer each channel reads, so one a channel's layer cannot give is greyed naming that channel.
-         */
-        function sectionPart(section, r) {
-            const view = withGroupingThreshold(_config, baseThreshold());
-            const channels = { color: view.color, size: _config.mode === 'dots' && sizeDrawn() ? view.size : null };
-            const down = r.down || 0;
-            const eff = effectiveRowStep(section, channels, down);
-            const fallback = down > 0 ? 'zscore_mean' : 'rows_mean';
-            const choices = ['color', 'size'].map((which) => {
-                const channel = channels[which];
-                if (!channel || channel.stat === 'count') return null;
-                return { which, c: scoreChoices(section.source, { method: combinesRows(eff.genes) ? undefined : eff.genes, layer: channel.layer }, { datasetLayers: datasetLayers() }) };
-            }).filter((x) => x && x.c);
-            const methods = choices.length ? choices[0].c.methods.map((e) => {
-                const out = { value: e.value, label: SIGNATURE_MODEL.methodShort(e.value) };
-                for (const { which, c } of choices) {
-                    const g = c.methods.find((m) => m.value === e.value);
-                    if (g && g.disabled && !out.disabled) Object.assign(out, { disabled: true, title: `${g.title} (${which === 'color' ? 'Color' : 'Size'})` });
-                }
-                return out;
-            }) : undefined;
-            const title = sectionTitle(section, () => r.title);
-            const name = combinesRows(eff.genes) ? CGV.rowStep.name[eff.genes] : CGV.rowStep.score(SIGNATURE_MODEL.methodShort(eff.genes));
-            return {
-                step: eff.genes, pressed: eff.genes !== fallback, name,
-                label: `${title}, one row: ${name}`, reading: rowReading(eff.genes, channels),
-                entries: rowStepEntries({ channels, down, methods })
-            };
-        }
-
+        /** The sections' rows: title, source, count and, for a one-row section, the rule in force as its tooltip. */
         function sectionsModel() {
             return {
                 sections: _config.sections.map((section) => {
@@ -1009,7 +960,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     return {
                         title, source: title !== r.title ? r.title : null, rows: section.rows,
                         line: r.kind ? sectionLine(r) : r.empty, note: r.kind && r.empty ? r.empty : null,
-                        step: section.rows === 'set' ? sectionPart(section, r) : null
+                        rule: section.rows === 'set' ? rowReading({ color: withGroupingThreshold(_config, baseThreshold()).color, size: _config.mode === 'dots' && sizeDrawn() ? withGroupingThreshold(_config, baseThreshold()).size : null }, r.down || 0) : null
                     };
                 })
             };
@@ -1349,7 +1300,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
                 const prev = k > 0 ? matrix.rows[order.rows[k - 1]] : null;
-                return { kind: row.kind, label: row.label, symbol: row.symbol, section: row.section, own: row.own, pending: !!(pending && pending[r]),
+                return { kind: row.kind, label: row.label, section: row.section, own: row.own, pending: !!(pending && pending[r]),
                     gapBefore: prev && prev.section.index !== row.section.index ? extras.gap : 0 };
             });
             const sizeNone = sizeProblem();

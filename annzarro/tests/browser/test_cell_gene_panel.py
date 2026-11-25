@@ -238,23 +238,15 @@ def test_job3_one_row_per_pathway(page, served):
     _open(page, served, configs, open_ids=(P, S1))
     st = _drawn(page)
     assert st["rows"] == 1
-    # one button on the section line opens one menu (aggregation-unify-080.md 10): the gene rows combined, then the source's methods
-    entries = CR.entries(page, TP, 0)
-    assert [e["heading"] for e in entries] == ["Combine the gene rows"] * 3 + ["Score each cell"] * 6
-    assert [e["name"] for e in entries[:3]] == ["Mean of the gene rows", "Sum of the gene rows", "Mean, z-scored across groups"]
-    assert entries[3]["name"] == "z-score mean"
-    assert entries[0]["on"]
-    # the mean of the gene rows: no score asked for
-    assert [f["kind"] for f in _features(page.calls)] == ["gene"] * 6
-    # a score: Color reads it, Size is the share of cells expressing any gene; each one score feature
-    n = len(page.calls)
-    CR.pick_step(page, TP, 0, "zscore_mean")
-    until(page, "(s) => document.querySelector(s + ' .cgene-panel').dataset.state === 'ready'", TP, timeout=90)
-    new = _features(page.calls[n:])
-    assert sorted((f["kind"], f["column"]) for f in new) == [("score", "detected"), ("score", "zscore_mean")]
-    assert all(f["above"] == 0 for f in new)
-    assert _config(page)["sections"][0] == {"source": S1, "rows": "set", "genes": "zscore_mean"}
-    assert _config(page)["sections"][0].get("color") is None
+    # the set is one gene: no control of its own, only the rule in its tooltip (aggregation-unify-080.md 11)
+    assert page.locator(f"{TP} .cgene-section button, {TP} .cgene-section [data-popover]").count() == 1, "only the ⋯ button"
+    assert CR.rule(page, TP, 0) == "Color: the mean of the genes' means. Size: % of cells expressing at least one gene."
+    # Color reads the gene rows; Size, the share of cells expressing any gene: one score feature (`detected`), on Size's layer
+    feats = _features(page.calls)
+    assert sorted(f["kind"] for f in feats) == ["gene"] * 6 + ["score"]
+    score = next(f for f in feats if f["kind"] == "score")
+    assert score["column"] == "detected" and score["layer"] == "logged" and score["above"] == 0
+    assert _config(page)["sections"][0] == {"source": S1, "rows": "set"}
 
 
 # ------------------------------------------------------------------ 5. requested once
@@ -266,7 +258,9 @@ def test_a_sections_genes_are_requested_once_and_one_gene_adds_one_feature(page,
     _open(page, served, configs, open_ids=(P, S1))
     _drawn(page)
     feats = _features(page.calls)
-    assert sorted(f["name"] for f in feats) == GENES[0:4], "each gene once, though two sections read it"
+    # each gene once, though two sections read it; the one-row section's own feature is Size's any-gene score
+    assert sorted(f["name"] for f in feats if f["kind"] == "gene") == GENES[0:4]
+    assert [f["column"] for f in feats if f["kind"] == "score"] == ["detected"]
     assert len(page.calls) == 1
     # a duplicate section asks for nothing
     page.click(f"{TP} .cgene-section >> nth=0 >> .cgene-section__menu-btn")
@@ -279,7 +273,9 @@ def test_a_sections_genes_are_requested_once_and_one_gene_adds_one_feature(page,
     until(page, "(s) => document.querySelector(s + ' .cgene-panel').dataset.state === 'ready'"
                 " && window.PanelManager.getPanel('cell-gene-P')._debugState().rows === 11", TP, timeout=60)
     assert len(page.calls) == 2
-    assert [f["name"] for f in page.calls[1]["features"]] == ["GENE020"]
+    # the gene alone, and the one-row section's any-gene score, whose set changed
+    assert [f["name"] for f in page.calls[1]["features"] if f["kind"] == "gene"] == ["GENE020"]
+    assert [f["column"] for f in page.calls[1]["features"] if f["kind"] == "score"] == ["detected"]
 
 
 # ------------------------------------------------------------------ 6. the section list
@@ -393,7 +389,7 @@ def test_groups_from_a_grouping_and_new_grouping(page, served):
 def test_a_link_carries_the_configuration_unchanged(page, served):
     cfg = _plot(cellAxis={"type": "cell-group", "key": GA},
                 sections=[{"source": S1, "rows": "genes", "title": "Mine"},
-                          {"source": S1, "rows": "set", "genes": "mean"}],
+                          {"source": S1, "rows": "set"}],
                 scale="z_groups", swap=True, colorScale="Viridis")
     grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "cell_type"}}]}
     _open(page, served, {P: cfg, S1: _sig(S1, "Markers", GENES[0:3]), GA: grouping}, open_ids=(P, S1, GA))

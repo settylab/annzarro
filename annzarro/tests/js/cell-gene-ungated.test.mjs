@@ -17,7 +17,6 @@ import { readFileSync } from 'node:fs';
 
 const C = await import('../../../static/js/panels/cell-gene/controls.js');
 const S = await import('../../../static/js/panels/cell-gene/sections.js');
-const { METHODS } = await import('../../../static/js/utils/signature-options.js');
 const D = await import('../../../static/js/panels/cell-gene/draw.js');
 const G = await import('../../../static/js/utils/group-statistics.js');
 const { normalizeGrouping } = await import('../../../static/js/utils/cell-grouping.js');
@@ -85,13 +84,6 @@ test('pickLayer: the layer stays when it can give the statistic; else the first 
 });
 
 // ------------------------------------------------------------------ one-row sections (item 7)
-
-test('rowStepEntries: the rows family, then every method of the source, nothing offered', () => {
-    const entries = S.rowStepEntries({ channels: { color: { stat: 'mean' }, size: null } });
-    assert.deepEqual(values(entries.filter((e) => e.heading === 'Combine the gene rows')), ['rows_mean', 'rows_sum', 'rows_z']);
-    assert.deepEqual(values(entries.filter((e) => e.heading === 'Score each cell')), METHODS);
-    assert.ok(!entries.some((e) => /offer/i.test(e.name)));
-});
 
 // ------------------------------------------------------------------ old links (section 6)
 
