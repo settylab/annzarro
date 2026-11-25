@@ -1,0 +1,102 @@
+{
+ "name": "Tutorial: composition, check",
+ "timestamp": "2026-11-25T21:59:34+00:00",
+ "dataset": "bm_aging_annzarro.zarr",
+ "datasetName": "bm_aging_annzarro",
+ "constants": {
+  "focusedGene": "Apoe",
+  "taxonomyId": "10090"
+ },
+ "panelConfigs": {
+  "cell-grouping-check": {
+   "id": "cell-grouping-check",
+   "type": "cell-grouping",
+   "title": "Your call against the stored one",
+   "config": {
+    "id": "cell-grouping-check",
+    "title": "Your call against the stored one",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "kompot_da_Young_to_Old_lfc_direction"
+      }
+     },
+     {
+      "source": {
+       "type": "obs",
+       "key": "kompot_da_Young_to_Old_lfc"
+      },
+      "binning": {
+       "method": "manual",
+       "thresholds": [
+        -1,
+        1
+       ]
+      },
+      "labels": {
+       "bin:0": "lost",
+       "bin:1": "between",
+       "bin:2": "gained"
+      }
+     }
+    ]
+   },
+   "isSelectionTile": false
+  }
+ },
+ "view": {
+  "v": 1,
+  "constants": {
+   "focusedGene": "Apoe",
+   "taxonomyId": "10090"
+  },
+  "layout": {
+   "v": 1,
+   "hierarchy": [
+    {
+     "type": "tile",
+     "id": "cell-grouping-check",
+     "controlsVisible": false
+    }
+   ],
+   "controlState": {
+    "cell-grouping-check": true
+   },
+   "panelConfigs": {
+    "cell-grouping-check": {
+     "id": "cell-grouping-check",
+     "title": "Your call against the stored one",
+     "version": 1,
+     "partitionings": [
+      {
+       "source": {
+        "type": "obs",
+        "key": "kompot_da_Young_to_Old_lfc_direction"
+       }
+      },
+      {
+       "source": {
+        "type": "obs",
+        "key": "kompot_da_Young_to_Old_lfc"
+       },
+       "binning": {
+        "method": "manual",
+        "thresholds": [
+         -1,
+         1
+        ]
+       },
+       "labels": {
+        "bin:0": "lost",
+        "bin:1": "between",
+        "bin:2": "gained"
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,248 @@
+{
+ "name": "Tutorial: composition, call",
+ "timestamp": "2026-11-25T21:59:34+00:00",
+ "dataset": "bm_aging_annzarro.zarr",
+ "datasetName": "bm_aging_annzarro",
+ "constants": {
+  "focusedGene": "Apoe",
+  "taxonomyId": "10090"
+ },
+ "panelConfigs": {
+  "cell-grouping-call": {
+   "id": "cell-grouping-call",
+   "type": "cell-grouping",
+   "title": "Age call",
+   "config": {
+    "id": "cell-grouping-call",
+    "title": "Age call",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "kompot_da_Young_to_Old_lfc"
+      },
+      "binning": {
+       "method": "manual",
+       "thresholds": [
+        -1,
+        1
+       ]
+      }
+     },
+     {
+      "source": {
+       "type": "obs",
+       "key": "kompot_da_Young_to_Old_neg_log10_lfc_ptp"
+      },
+      "binning": {
+       "method": "manual",
+       "thresholds": [
+        1.301
+       ]
+      }
+     }
+    ],
+    "groupOverrides": [
+     {
+      "name": "kompot_da_Young_to_Old_lfc \u2265 1 | kompot_da_Young_to_Old_neg_log10_lfc_ptp \u2265 1.3",
+      "label": "gained with age",
+      "color": "#b2182b"
+     },
+     {
+      "name": "kompot_da_Young_to_Old_lfc < -1 | kompot_da_Young_to_Old_neg_log10_lfc_ptp \u2265 1.3",
+      "label": "lost with age",
+      "color": "#2166ac"
+     },
+     {
+      "name": "kompot_da_Young_to_Old_lfc -1 to 1 | kompot_da_Young_to_Old_neg_log10_lfc_ptp < 1.3",
+      "label": "within \u00b11, not significant",
+      "color": "#d9d9d9"
+     },
+     {
+      "name": "kompot_da_Young_to_Old_lfc -1 to 1 | kompot_da_Young_to_Old_neg_log10_lfc_ptp \u2265 1.3",
+      "label": "within \u00b11, significant",
+      "color": "#a6a6a6"
+     }
+    ]
+   },
+   "isSelectionTile": false
+  },
+  "cell-plot-call": {
+   "id": "cell-plot-call",
+   "type": "cell-plot",
+   "title": "Cells by the age call",
+   "config": {
+    "id": "cell-plot-call",
+    "title": "Cells by the age call",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "cell-group",
+     "key": "cell-grouping-call",
+     "label": "Age call"
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "midres_celltype"
+     },
+     {
+      "type": "obs",
+      "key": "kompot_da_Young_to_Old_lfc"
+     }
+    ]
+   },
+   "isSelectionTile": false
+  }
+ },
+ "view": {
+  "v": 1,
+  "constants": {
+   "focusedGene": "Apoe",
+   "taxonomyId": "10090"
+  },
+  "layout": {
+   "v": 1,
+   "hierarchy": [
+    {
+     "type": "split",
+     "direction": "horizontal",
+     "panes": [
+      {
+       "percentage": 44,
+       "controlsVisible": false
+      },
+      {
+       "percentage": 56,
+       "controlsVisible": false
+      }
+     ],
+     "children": [
+      {
+       "type": "tile",
+       "id": "cell-grouping-call",
+       "controlsVisible": false
+      },
+      {
+       "type": "tile",
+       "id": "cell-plot-call",
+       "controlsVisible": false
+      }
+     ]
+    }
+   ],
+   "controlState": {
+    "cell-grouping-call": true,
+    "cell-plot-call": false
+   },
+   "panelConfigs": {
+    "cell-grouping-call": {
+     "id": "cell-grouping-call",
+     "title": "Age call",
+     "version": 1,
+     "partitionings": [
+      {
+       "source": {
+        "type": "obs",
+        "key": "kompot_da_Young_to_Old_lfc"
+       },
+       "binning": {
+        "method": "manual",
+        "thresholds": [
+         -1,
+         1
+        ]
+       }
+      },
+      {
+       "source": {
+        "type": "obs",
+        "key": "kompot_da_Young_to_Old_neg_log10_lfc_ptp"
+       },
+       "binning": {
+        "method": "manual",
+        "thresholds": [
+         1.301
+        ]
+       }
+      }
+     ],
+     "groupOverrides": [
+      {
+       "name": "kompot_da_Young_to_Old_lfc \u2265 1 | kompot_da_Young_to_Old_neg_log10_lfc_ptp \u2265 1.3",
+       "label": "gained with age",
+       "color": "#b2182b"
+      },
+      {
+       "name": "kompot_da_Young_to_Old_lfc < -1 | kompot_da_Young_to_Old_neg_log10_lfc_ptp \u2265 1.3",
+       "label": "lost with age",
+       "color": "#2166ac"
+      },
+      {
+       "name": "kompot_da_Young_to_Old_lfc -1 to 1 | kompot_da_Young_to_Old_neg_log10_lfc_ptp < 1.3",
+       "label": "within \u00b11, not significant",
+       "color": "#d9d9d9"
+      },
+      {
+       "name": "kompot_da_Young_to_Old_lfc -1 to 1 | kompot_da_Young_to_Old_neg_log10_lfc_ptp \u2265 1.3",
+       "label": "within \u00b11, significant",
+       "color": "#a6a6a6"
+      }
+     ]
+    },
+    "cell-plot-call": {
+     "id": "cell-plot-call",
+     "title": "Cells by the age call",
+     "x": {
+      "type": "obsm",
+      "key": "X_umap",
+      "column": "0"
+     },
+     "y": {
+      "type": "obsm",
+      "key": "X_umap",
+      "column": "1"
+     },
+     "z": null,
+     "color": {
+      "type": "cell-group",
+      "key": "cell-grouping-call",
+      "label": "Age call"
+     },
+     "pointSize": 3,
+     "pointOpacity": 0.8,
+     "hoverInfo": [
+      {
+       "type": "obs",
+       "key": "_index"
+      },
+      {
+       "type": "obs",
+       "key": "midres_celltype"
+      },
+      {
+       "type": "obs",
+       "key": "kompot_da_Young_to_Old_lfc"
+      }
+     ]
+    }
+   }
+  }
+ }
+}
