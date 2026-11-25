@@ -48,6 +48,7 @@ def test_the_routes_size_refusal_is_a_refusal_with_the_ways_out_and_no_retry_or_
     _open_refused(page, served)
     text = page.inner_text(NOTICE)
     assert "46" in text and "8" in text and "second" not in text and "minute" not in text
+    assert "Color by cell_type has 46 levels; 2D histogram colors up to 8." in text, text      # the plan's own sentence
     labels = page.eval_on_selector_all(f"{NOTICE} button", "bs => bs.map(b => b.textContent)")
     assert labels[:2] == ["Split by another column ▾", "Switch to Bar"], labels
     assert "Retry" not in labels and "Try anyway" not in labels
