@@ -219,7 +219,8 @@ def test_refused_for_a_csr_layer_names_the_layout_and_the_way_out(page, served):
     _wait_state(page, "refused")
     text = _says(page, "logged is stored by cell (CSR), so 5 genes mean reading the whole matrix: about 40 minutes.")
     assert text == "A copy of the layer stored by gene (CSC) makes this fast; see the documentation."
-    assert _buttons(page) == []
+    # the server's estimate says a run of 40 minutes may be tried (within ten times the 30 minute limit)
+    assert _buttons(page) == ["Try anyway"]
     assert len(answered) == len(page.calls), "every computation was refused before the stream: no gene was read"
 
 

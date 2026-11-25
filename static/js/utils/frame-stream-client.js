@@ -97,7 +97,7 @@ export async function readFrameStream(response, { onFrame = () => {}, blocksOf =
             line = [];
             if (!joined.length) continue;
             const f = parse(joined);
-            if (f.type === 'error') throw streamError(f.message || failed, { reason: f.reason || 'failed' });
+            if (f.type === 'error') throw streamError(f.message || failed, { reason: f.reason || 'failed', ...(f.limit_s !== undefined ? { limit_s: f.limit_s } : {}) });
             if (f.type === 'result') {
                 header = f;
                 wanted = blocksOf(f);

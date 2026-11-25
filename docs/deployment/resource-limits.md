@@ -99,6 +99,14 @@ file's value altogether. The time tiers keep their order, `live_update_s` ≤ `a
 `partitionings` ≤ `request_partitionings`): a configuration file that breaks it does not start, the Settings page
 refuses such a change, and a value that comes out of order between the two layers is lowered to the next tier.
 
+**Try anyway.** Time is soft and size is hard. An estimate above `refuse_s` is a guess, so a request that carries
+`force: true` may run it, and the web client offers a **Try anyway** button for such a refusal. The server stays the
+authority: a tried run has a wall-clock deadline of `try_max_s`, a user may have one tried run going at a time
+(`429 try_busy`), and only an estimate within ten times `try_max_s` is offered. `force` never passes a size limit
+(`matrix_values`, `groups`, the grid caps, the memory ledger): those refuse as before. Set `try_max_s` to `0` to keep
+the behaviour of earlier versions, where nothing above `refuse_s` ever runs. The panel's "Don't ask again" tick lasts
+for the page session only and is never saved in a link or a panel set.
+
 The seconds are the server's estimates, from read rates measured on each matrix layout; the estimate itself is not a
 setting. The upper bounds are ten times the defaults for now, until each is measured at its maximum; the group,
 level and grid limits also stay below the 16-bit group codes, and `grid_sets` cannot rise above 16 (the sets of a
@@ -109,6 +117,7 @@ users' computers) has the memory and time it protects.
 |---|---|---|---|---|---|
 | `ask_first_s`{#cost-ask-first-s} | 60 | 0 to 600 | server and browser | when to ask | `409 confirmation_required` until the request carries `confirm: true` (the panel asks) |
 | `refuse_s`{#cost-refuse-s} | 600 | 0 to 6000 | server | safety | `413 score_too_expensive`, `413 groups_too_expensive` |
+| `try_max_s`{#cost-try-max-s} | 1,800 | 0 to 18,000 | server | safety | the longest wall-clock a run started with **Try anyway** may hold a compute slot; the server stops it there with `try_time_exceeded`. `0` turns Try anyway off, and an estimate above ten times it is not offered |
 | `live_update_s`{#cost-live-update-s} | 5 | 0 to 50 | server and browser | safety | edits wait for **Update**; the job runs in the heavy lane |
 | `progress_bar_s`{#cost-progress-bar-s} | 10 | 0 to 100 | browser | when to ask | (a progress bar is shown) |
 | `refresh_min_interval_large_s`{#cost-refresh-min-interval-large-s} | 60 | 0 to 600 | server | safety | a non-admin's **Refresh** of a dataset above `refresh_large_cells` on a shared server is answered `scheduled` and runs at the end of the interval; the app says when |

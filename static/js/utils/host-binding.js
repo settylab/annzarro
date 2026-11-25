@@ -21,7 +21,8 @@
  *
  * A provider's painter id and its action provider id are the same string ('plot-score', 'table-score').
  */
-import { worstNotice, paintNotice, paintStripProgress, progressBar, barAfterS } from './source-notices.js';
+import { worstNotice, paintNotice, paintStripProgress, progressBar, barAfterS, withTry, paintUnasked } from './source-notices.js';
+import { askPolicy } from './ask-policy.js';
 import { actions } from './source-actions.js';
 
 /** The axes a source can be an x, y or z of; their notice may block the plot (a placeholder instead of a drawing). */
@@ -68,14 +69,19 @@ export function panelIdOf(host) {
  * @param {(host: HTMLElement, notice: (Object|null), opts: Object) => void} [options.paint] - source-notices.js paintNotice
  * @param {(host: HTMLElement, bar: (Object|null), notice?: Object, snap?: Object) => void} [options.strip] - the strip's
  *   bar of a quiet load: source-notices.js paintStripProgress
+ * @param {(host: HTMLElement, level: (string|null)) => void} [options.unasked] - the strip's tag "Runs without asking":
+ *   source-notices.js paintUnasked
+ * @param {{get: (panelId: string) => (string|null), onChange: Function}} [options.policy] - the panel ticks (utils/ask-policy.js)
  */
 // export-unused-ok: the page's painter is made here; a test makes one with its own clock and timers (the 10 s rule)
 export function createPainter({ now = () => Date.now(), setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (t) => clearTimeout(t),
-    paint = paintNotice, strip = paintStripProgress } = {}) {
+    paint = paintNotice, strip = paintStripProgress, unasked = paintUnasked, policy = askPolicy } = {}) {
     /** @type {Map<string, NoticeSource>} */
     const sources = new Map();
     /** host -> {since: Map(entry key -> ms), timer, shown, placeholder} */
     const states = new WeakMap();
+    /** The hosts painted, to paint again when a panel's tick changes (the ones gone from the page are forgotten). */
+    const seen = new Set();
 
     function stateOf(host) {
         let st = states.get(host);
@@ -145,6 +151,9 @@ export function createPainter({ now = () => Date.now(), setTimer = (fn, ms) => s
         const notice = withBar(st, shownEntry, t);
         // an axis that cannot be drawn: nothing truthful can be shown, so the plot area says it, as a placeholder
         paint(host, notice, { overlay: !axisEntry });
+        // the panel's tick, in its strip, whatever the host says now
+        seen.add(host);
+        unasked(host, policy.get(panelIdOf(host)));
         // a load that keeps its drawing is never covered: once it has run 10 s, the strip under the plot says it
         const quiet = all.filter(e => !e.notice && e.quiet);
         const said = quietBar(st, quiet, t);
@@ -163,6 +172,12 @@ export function createPainter({ now = () => Date.now(), setTimer = (fn, ms) => s
         }
         host.__sourcePlaceholder = false;
     }
+
+    policy.onChange(() => {
+        for (const host of [...seen]) {
+            if (!host.isConnected) seen.delete(host); else paintHost(host);
+        }
+    });
 
     return {
         /**
@@ -275,7 +290,7 @@ export function createHostBinding({ id, open, matches, describe, stillUsed = () 
         const snap = rec.handle.read();
         // while a load waits for a value that is only pending, nothing is said over the plot: it keeps what it shows and
         // its loading pill speaks, and after 10 s a bar in its strip (the painter's)
-        const notice = describe(snap, { role: roleWord(rec.role), sharers: rec.handle.sharers(), consumer: rec.consumer });
+        const notice = withTry(snap, describe(snap, { role: roleWord(rec.role), sharers: rec.handle.sharers(), consumer: rec.consumer }));
         if (rec.quiet && PENDING.includes(snap.state)) return { role: rec.role, snap, notice: null, quiet: notice, rec };
         return { role: rec.role, snap, notice, rec };
     }
@@ -424,6 +439,6 @@ export function createHostBinding({ id, open, matches, describe, stillUsed = () 
         /** The hosts this provider has records on. */
         hosts: () => [...live],
         /** The notice a record would say now, for a host's own use (an axis placeholder of a load that failed). */
-        describe: (snap, role, sharers = 1) => describe(snap, { role: roleWord(role), sharers })
+        describe: (snap, role, sharers = 1) => withTry(snap, describe(snap, { role: roleWord(role), sharers }))
     };
 }

@@ -70,9 +70,10 @@ export function createGroupsApi({ url, fetchImpl = (u, init) => csrfFetch(u, ini
             return response.json();
         },
         /** Compute a request for the cells shown (`subset`); `recipe` is the request without them. */
-        async compute({ recipe, dataset, subset, confirm, signal, onProgress }) {
+        async compute({ recipe, dataset, subset, confirm, force, signal, onProgress }) {
             const body = { ...recipe, subset: subset || null };
             if (confirm) body.confirm = true;
+            if (force) body.force = true;
             const response = await post(dataset, body, signal);
             if (!response.ok) throw await errorOf(response);
             return readGroupsStream(response, { onProgress });

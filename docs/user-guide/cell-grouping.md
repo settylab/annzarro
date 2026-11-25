@@ -248,7 +248,8 @@ cannot filter on it.
 Edits follow the cost tiers of scores. Under 5 seconds they apply as you make them. Longer, they are collected:
 "2 changes not applied. About 40 s. **Update groups**", and plots using the grouping keep the previous groups until
 you update. Past a minute the panel asks first ("Grouping 95.6M cells will take about 2 minutes."), and past 10
-minutes it refuses, saying why. While the grouping computes, its factors stay editable and the plots keep their
+minutes it refuses, saying why, with **Try anyway** where the server allows a longer run (a tried run stops by itself
+at the server's limit, 30 minutes by default; see {doc}`cell-gene-plot`). While the grouping computes, its factors stay editable and the plots keep their
 previous drawing. Grouping by obs columns is fast at any size; a gene of a layer stored by cell (CSR), a wide obsm
 column and a score cost more, and the estimate counts them.
 

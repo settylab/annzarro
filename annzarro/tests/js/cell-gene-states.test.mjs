@@ -173,7 +173,7 @@ test('Asks first: an upper bound from the estimate, the stored values, Compute a
 
 test('Refused by cost: how long it would take and the ways out', () => {
     const n = say({ state: 'refused', reason: 'groups_too_expensive', estimate: { ...HEAVY, seconds: 1500, tier: 'refused' } });
-    assert.equal(n.headline, 'Would take about 25 minutes, so it was not run.');
+    assert.equal(n.headline, 'Not run: it is estimated at about 25 minutes.');
     assert.equal(n.text, 'Use fewer genes, a smaller subset, or a layer stored by gene (CSC).');
 });
 
@@ -225,7 +225,7 @@ test('Refused with no figures and no cost reason: it says it was refused and why
 
 test('A cost refusal is quoted in seconds only when the seconds are over the limit the estimate reports', () => {
     const over = say({ state: 'refused', reason: 'groups_too_expensive', estimate: { ...HEAVY, seconds: 1500, tier: 'refused', max_s: 600 } });
-    assert.equal(over.headline, 'Would take about 25 minutes, so it was not run.');
+    assert.equal(over.headline, 'Not run: it is estimated at about 25 minutes (runs over 10 minutes are not started by themselves).');
     const under = say({ state: 'refused', reason: 'groups_too_expensive', estimate: { ...CHEAP, tier: 'refused' }, message: 'This would take about 1 seconds; the limit is 10 minutes.' });
     assert.doesNotMatch(under.headline, /would take about 1 second/i, under.headline);
 });

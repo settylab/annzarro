@@ -91,11 +91,17 @@ def test_every_estimate_says_whether_it_may_be_tried(layout, tmp_path):
 ], ids=["groups", "grid_cells"])
 def test_a_size_refusal_does_not_change_under_force(layout, tmp_path, limits, body, status, reason):
     client = client_with(layout, tmp_path, **limits)
-    plain, forced = post(client, layout, body), post(client, layout, {**body, "force": True})
-    assert plain.status_code == forced.status_code == status
+    plain = post(client, layout, body)
     if status == 200:
-        assert last_frame(plain)["refused"]["reason"] == last_frame(forced)["refused"]["reason"] == reason
+        first = last_frame(plain)["refused"]["reason"]
+        plain.close()                               # a refused grouping keeps no claim once its stream is closed
+        forced = post(client, layout, {**body, "force": True})
+        second = last_frame(forced)["refused"]["reason"]
+        forced.close()
+        assert first == second == reason
     else:
+        forced = post(client, layout, {**body, "force": True})
+        assert plain.status_code == forced.status_code == status
         assert plain.get_json()["reason"] == forced.get_json()["reason"] == reason
 
 

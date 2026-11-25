@@ -290,7 +290,7 @@ test('each state has its sentence, tag and actions (design 7.3)', () => {
     assert.deepEqual(t('awaiting', { estimate: { seconds: 125 } }).actions[0], ['score-compute', 'Compute']);
     assert.equal(t('cancelled').headline, "'T cell score' was cancelled. This plot has no color.");
     const refused = t('refused', { estimate: { seconds: 1500 }, message: 'This score would take about 25 minutes; the limit is 10. Use fewer genes.' });
-    assert.equal(refused.headline, "'T cell score' would take about 25 minutes, so it was not run.");
+    assert.equal(refused.headline, "'T cell score' was not run: it is estimated at about 25 minutes.");
     assert.match(refused.text, /Use fewer genes/);
     assert.deepEqual(refused.actions.map(a => a[0]), ['score-open', 'score-choose']);
     // a refusal for something else than cost never quotes the estimate: a limit of the grouping, one the page has its words for
@@ -299,7 +299,7 @@ test('each state has its sentence, tag and actions (design 7.3)', () => {
     assert.doesNotMatch(size.headline, /would take|second/i, size.headline);
     assert.match(size.text, /too many values/);
     const cost = t('refused', { reason: 'score_too_expensive', estimate: { seconds: 1500, tier: 'refused', max_s: 600 }, message: 'x' });
-    assert.equal(cost.headline, "'T cell score' would take about 25 minutes, so it was not run.");
+    assert.equal(cost.headline, "'T cell score' was not run: it is estimated at about 25 minutes (runs over 10 minutes are not started by themselves).");
     const lie = t('refused', { reason: 'score_too_expensive', estimate: { seconds: 1.2, tier: 'refused', max_s: 600 }, message: 'x' });
     assert.doesNotMatch(lie.headline, /second/i, 'a cost refusal under the limit does not claim a duration');
     const failed = t('failed', { message: 'The server stopped responding.' });
