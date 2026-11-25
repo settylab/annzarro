@@ -123,8 +123,10 @@ def test_a_filter_change_updates_the_plot_at_once_when_the_score_is_cheap(page, 
     _filter(page, 8)
     until(page, "() => window.__scoreCalls.filter(c => c.kind === 'compute').length === 2")
     assert _asked(page)[1] == sorted(FIRST_FIVE + ["GAPDH", "KLF1", "GENE0000"])
-    _wait_coloured(page)
-    until(page, "(first) => JSON.stringify(window.__lastColours || null) !== JSON.stringify(first)", first)
+    # the old colours stay drawn until the new score arrives, so wait for the numbers themselves to change
+    until(page, """([tile, first]) => { const gd = document.querySelector(tile + ' .js-plotly-plot');
+        const t = gd && gd.data && gd.data.find(t => t.marker && (Array.isArray(t.marker.color) || ArrayBuffer.isView(t.marker.color)));
+        return !!t && JSON.stringify(Array.from(t.marker.color).map(Number)) !== JSON.stringify(first); }""", [C, first])
     assert _numbers(page) != first
 
 
