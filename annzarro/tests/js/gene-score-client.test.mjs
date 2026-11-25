@@ -110,3 +110,11 @@ test('the api posts the recipe in the body, the dataset in the query, the subset
     assert.equal(posts[1].body.confirm, true);
     assert.equal('estimate_only' in posts[1].body, false);
 });
+
+test('errorOf keeps the figures of a size refusal: count, limit, axis, mode', async () => {
+    const body = enc.encode(JSON.stringify({ error: 'too many', reason: 'too_many_levels', count: 46, limit: 8, axis: 2, mode: '2d' }));
+    const error = await C.errorOf(reply(body, 1000, { ok: false, status: 422 }));
+    assert.deepEqual(error.figures, { count: 46, limit: 8, axis: 2, mode: '2d' });
+    const plain = await C.errorOf(reply(enc.encode(JSON.stringify({ error: 'x', reason: 'bad_x' })), 1000, { ok: false, status: 422 }));
+    assert.equal(plain.figures, null);
+});

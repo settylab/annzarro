@@ -130,14 +130,14 @@ def test_choose_levels_says_why_when_the_levels_are_refused_for_their_number(pag
 
 def test_color_by_over_the_limit_is_removed_by_its_way_out_in_one_undoable_step(page, served):
     _open(page, served, {CC: _count(mode="histogram", x=obs("depth"), split=obs("many"))})
-    _refused(page, "Color by many has 2,001 levels; a histogram colors up to 200.", ["Remove Color by"])
+    _refused(page, "Color by many has 2,001 levels; a histogram colors up to 200.", ["Split by another column ▾", "Remove Color by"])
     page.click(f"{S} .ccnt-state-box button:has-text('Remove Color by')")
     _drawn(page, "histogram", "!c.split")
     assert _config(page)["x"] == obs("depth")
     assert _undo_label(page) == "Undo: no Color by"
     page.click(f"{S} .ccnt-undo")
     until(page, "(s) => { const b = document.querySelector(s + ' .ccnt-state'); return b && !b.hidden && b.dataset.state === 'refused'; }", S)
-    assert _state(page)["actions"] == ["Remove Color by"]
+    assert _state(page)["actions"] == ["Split by another column ▾", "Remove Color by"]
     assert _config(page)["split"] == obs("many")
 
 
@@ -172,7 +172,7 @@ def test_a_typed_bin_count_is_checked_against_the_modes_limit_where_it_is_typed(
 
 def test_too_many_bins_for_bar_opens_the_binning_control_and_a_histogram_of_a_category_shows_as_bar(page, served):
     _open(page, served, {CC: _count(mode="bar", x=obs("depth", binning={"method": "equal_width", "bins": 300}))})
-    _refused(page, "depth has 300 bins; Bar shows up to 200.", ["Bin it"])
+    _refused(page, "depth has 300 bins; Bar shows up to 200.", ["Fewer bins", "Bin it"])
     page.click(f"{S} .ccnt-state-box button:has-text('Bin it')")
     # the most bins Bar shows, one undoable step, and the control open on it
     _drawn(page, "bar", "c.x.binning && c.x.binning.bins === 200")

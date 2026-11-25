@@ -19,7 +19,7 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { describeSource } from '../../utils/source-notices.js';
-import { binsRange } from '../../utils/count-plot-model.js';
+import { binsRange, waysOut, withFewerBins } from '../../utils/count-plot-model.js';
 import { setMode } from './controls-model.js';
 
 const C = VOCABULARY.countPlot;
@@ -57,18 +57,31 @@ function axisWays(field, p, isNumeric) {
 }
 
 /** The sentence and way out of a plan over a limit of its mode (UX 4.3). */
-function refusal(snap, { config, nameOf, isNumeric }) {
+/** The buttons of `waysOut` as this panel's actions: `<kind>:<field, mode or bins>` for `wayOut`, and their words. */
+function sizeWays(snap, config, plan) {
+    if (!plan) return [];
+    return waysOut(config, snap, plan).map((w) => [wayAction(w), wayLabel(w)]);
+}
+
+/** The size ways first (each one draws), then the older ones, at most three. */
+const MOST_ACTIONS = 3;
+const withSizeWays = (ways, rest) => {
+    const seen = new Set(ways.map(([a]) => a));
+    return [...ways, ...rest.filter(([a]) => !seen.has(a))].slice(0, MOST_ACTIONS);
+};
+
+function refusal(snap, { config, nameOf, isNumeric, plan }) {
     const mode = C.modes[snap.mode] || snap.mode;
     if (snap.reason === 'too_many_sets') return { text: L.sets(mode, snap.limits[0]), actions: [] };
-    if (snap.reason === 'grid_too_large') return { text: L.grid(mode, snap.counts[0], snap.limits[0]), actions: [] };
+    if (snap.reason === 'grid_too_large') return { text: L.grid(mode, snap.counts[0], snap.limits[0]), actions: withSizeWays(sizeWays(snap, config, plan), []) };
     const first = snap.over[0];
     const at = (field) => snap.inputs.indexOf(field);
     if (COLOR_BY.includes(first)) {
         const i = at(first);
         return { text: L.colorBy(nameOf(first), snap.counts[i], L.colorsAs[snap.mode] || mode, snap.limits[i]),
-            actions: [[`remove:${first}`, C.wayOut.removeSplit]] };
+            actions: withSizeWays(sizeWays(snap, config, plan), [[`remove:${first}`, C.wayOut.removeSplit]]) };
     }
-    const actions = axisWays(first, inputOf(config, first), isNumeric);
+    const actions = withSizeWays(sizeWays(snap, config, plan), axisWays(first, inputOf(config, first), isNumeric));
     const axes = AXES.filter((f) => at(f) >= 0);
     if (axes.length === 2) {
         const [x, y] = axes.map(at);
@@ -82,8 +95,9 @@ function refusal(snap, { config, nameOf, isNumeric }) {
 /**
  * What the plot area says for a plan that asks nothing, with its way out; null for any other state.
  * @param {Object} snap - the handle's snapshot (a plan's: utils/count-plot-model.js planGrid)
- * @param {{config: Object, nameOf?: (field: string) => string, isNumeric?: (source: Object) => boolean}} ctx - the config
- *   the plan is of, the name of an input ('x', 'y', 'split', 'factor'), whether a source is a number
+ * @param {{config: Object, nameOf?: (field: string) => string, isNumeric?: (source: Object) => boolean, plan?: Object}} ctx
+ *   - the config the plan is of, the name of an input ('x', 'y', 'split', 'factor'), whether a source is a number, and
+ *   what `planGrid` was given (`plan`: with it the notice offers the ways out of a size cap that would draw)
  * @returns {null|{state: string, reason: string, text: string, actions: Array<[string, string]>}} each action is
  *   `<kind>:<field or mode>`, for `wayOut`
  */
@@ -113,7 +127,7 @@ export function wayOut(action, config) {
     const [kind, arg] = String(action).split(':');
     switch (kind) {
         case 'mode':
-            return C.modes[arg] ? { config: setMode(config, arg), label: `mode ${C.modes[arg]}` } : null;
+            return C.modes[arg] ? { config: setMode(config, arg), label: `mode ${C.modes[arg]}`, said: C.wayOut.did.switched(C.modes[arg]) } : null;
         case 'remove': {
             if (!COLOR_BY.includes(arg)) return null;
             const next = { ...config };
@@ -140,6 +154,17 @@ export function wayOut(action, config) {
         }
         case 'levels':
             return AXES.includes(arg) && config[arg] ? { reveal: { field: arg, what: 'levels' } } : null;
+        case 'picker':
+            return COLOR_BY.includes(arg) ? { reveal: { field: arg, what: 'picker' } } : null;
+        case 'fewer': {
+            const bins = {};
+            for (const part of String(arg).split(',')) {
+                const [f, n] = part.split('=');
+                if (AXES.includes(f) && Number.isInteger(Number(n)) && Number(n) >= 2) bins[f] = Number(n);
+            }
+            if (!Object.keys(bins).length) return null;
+            return { config: withFewerBins(config, bins), label: C.wayOut.did.fewerBins(bins).replace(/\.$/, '').toLowerCase(), said: C.wayOut.did.fewerBins(bins) };
+        }
         default:
             return null;
     }
@@ -219,7 +244,31 @@ function sizeRefusal(snap, { out, tagOf, Result, open, choose }, facts) {
  */
 export function gridNotice(snap, ctx, cells, facts = null) {
     if (!snap || isPlanState(snap)) return null;
-    return describeSource(snap, ctx, noticeWords(cells, facts));
+    const notice = describeSource(snap, ctx, noticeWords(cells, facts));
+    // the ways out of a size cap the route refused (the page could not know it before): ahead of the notice's own
+    // buttons, which they do not replace; the sentence is the notice's
+    if (notice && notice.state === 'refused' && Array.isArray(snap.ways) && snap.ways.length) {
+        const own = snap.ways.map((w) => ROUTE_ACTIONS[w.kind] && [ROUTE_ACTIONS[w.kind], wayLabel(w)]).filter(Boolean);
+        return { ...notice, actions: [...own, ...notice.actions] };
+    }
+    return notice;
+}
+
+/** The registry's action of each kind of way out (utils/source-actions.js), for a refusal the route made. */
+const ROUTE_ACTIONS = Object.freeze({ picker: 'count-way-picker', mode: 'count-way-mode', bins: 'count-way-bins' });
+
+/** The words of a way out (`waysOut`'s entry). */
+function wayLabel(w) {
+    if (w.kind === 'picker') return C.wayOut.splitBy;
+    if (w.kind === 'mode') return C.wayOut.switchTo(C.modes[w.mode]);
+    return C.wayOut.fewerBins;
+}
+
+/** The action string `wayOut` takes for a way out. */
+export function wayAction(w) {
+    if (w.kind === 'picker') return `picker:${w.field}`;
+    if (w.kind === 'mode') return `mode:${w.mode}`;
+    return `fewer:${Object.entries(w.bins).map(([f, n]) => `${f}=${n}`).join(',')}`;
 }
 
 /**

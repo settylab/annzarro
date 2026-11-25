@@ -37,7 +37,11 @@ export async function errorOf(response) {
     return scoreError(message, {
         status: response.status,
         reason: (body && body.reason) || (body && body.error_type) || `http_${response.status}`,
-        estimate: (body && body.estimate) || null
+        estimate: (body && body.estimate) || null,
+        // a refusal for a size cap names its figures: how many, the limit, which axis (a grid's 422)
+        figures: body && Number.isFinite(Number(body.count)) && Number.isFinite(Number(body.limit))
+            ? { count: Number(body.count), limit: Number(body.limit), ...(Number.isInteger(body.axis) ? { axis: body.axis } : {}),
+                ...(typeof body.mode === 'string' ? { mode: body.mode } : {}) } : null
     });
 }
 

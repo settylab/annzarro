@@ -36,7 +36,7 @@ import { makeDom } from './gene-set-utilities/dom.js';
 import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { UndoStack } from '../utils/gene-signature.js';
-import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLabelsOf } from '../utils/count-plot-model.js';
+import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLabelsOf, waysOut } from '../utils/count-plot-model.js';
 import { countFigure, countCsv, DRAWN_MODES } from './cell-count/draw.js';
 import { figure3d, view3dGate, sceneLabels, DEFAULT_CAMERA } from './cell-count/draw-3d.js';
 import { view3dOptions, COUNT_SECTIONS } from './cell-count/options.js';
@@ -58,7 +58,7 @@ import { registerReferences } from '../utils/panel-references.js';
 import { VOCABULARY } from '../utils/vocabulary.js';
 import { createHostBinding, isVisible, PENDING } from '../utils/host-binding.js';
 import { actions } from '../utils/source-actions.js';
-import { isPlanState, describePlan, wayOut, gridNotice, levelsNote } from './cell-count/states.js';
+import { isPlanState, describePlan, wayOut, wayAction, gridNotice, levelsNote } from './cell-count/states.js';
 import { saveOffered, savePlan, openSaveDialog } from './cell-count/save-grouping.js';
 import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
 import { parseAlsoListed } from '../utils/source-registry.js';
@@ -156,17 +156,20 @@ const cellsShown = () => (DataManager.getCells() || []).length;
 const binding = createHostBinding({
     id: PROVIDER,
     open: (host, role, setting, onChange) => {
+        const consumer = { kind: 'plot', role: 'panel', panelId: setting.id, host };
         const handle = groupSources().sources.watch(setting.id, {
-            consumer: { kind: 'plot', role: 'panel', panelId: setting.id, host }, option: {},
+            consumer, option: {},
             visible: () => isVisible(host),
             onChange: (snap) => { onChange(snap); const p = panelOfHost(host); if (p) p.snapshotChanged(snap); }
         });
         return { id: setting.id, handle, host, consumer: { panelId: setting.id } };
     },
     matches: (rec, setting) => rec.id === setting.id,
+    // a size cap the route refused (the page could not count the levels first) offers the same ways out as one it knew of
     describe: (snap, ctx) => {
         const p = ctx && ctx.consumer ? panelOf(ctx.consumer.panelId) : null;
-        return gridNotice(snap, ctx, cellsShown(), p && typeof p.refusalFacts === 'function' ? p.refusalFacts() : null);
+        const shown = p && typeof p.routeWays === 'function' ? { ...snap, ways: p.routeWays(snap) } : snap;
+        return gridNotice(shown, ctx, cellsShown(), p && typeof p.refusalFacts === 'function' ? p.refusalFacts() : null);
     },
     visibilityChanged: () => groupSources().sources.visibilityChanged()
 });
@@ -190,6 +193,14 @@ function openTarget(rec) {
     return (snap && snap.table) || ring.find((x) => x !== rec.id) || null;
 }
 
+/** The way out of this kind that the plot's refusal offers now, or null. */
+function wayTarget(host, kind) {
+    const panel = panelOfHost(host);
+    const rec = binding.shownRecord(host);
+    if (!panel || !panel.routeWays || !rec) return null;
+    return panel.routeWays(rec.handle.read()).find((w) => w.kind === kind) || null;
+}
+
 actions.register({
     id: PROVIDER,
     owns: (host) => !!(host && host.__azCellCount),
@@ -200,7 +211,10 @@ actions.register({
         'score-update': { target: (host) => binding.shownRecord(host), run: (rec) => { groupSources().sources.update(rec.id); } },
         'score-open': { target: (host) => { const rec = binding.shownRecord(host); return rec ? openTarget(rec) : null; },
             run: (id, host) => { openPanel(id, host.__azPanelId); } },
-        'score-choose': { target: (host) => host.__azChooser || null, run: (select) => { select.focus(); } }
+        'score-choose': { target: (host) => host.__azChooser || null, run: (select) => { select.focus(); } },
+        'count-way-picker': { target: (host) => wayTarget(host, 'picker'), run: (way, host) => { panelOfHost(host).takeWayOut(wayAction(way)); } },
+        'count-way-mode': { target: (host) => wayTarget(host, 'mode'), run: (way, host) => { panelOfHost(host).takeWayOut(wayAction(way)); } },
+        'count-way-bins': { target: (host) => wayTarget(host, 'bins'), run: (way, host) => { panelOfHost(host).takeWayOut(wayAction(way)); } }
     }
 });
 
@@ -682,13 +696,22 @@ actions.register({
             }
         }
 
+        /** The most levels the plot's refusal allows an input (the cap its notice names), or null when it is not refused for them. */
+        function levelCapOf(field) {
+            const s = _snap;
+            if (!s || s.state !== 'refused') return null;
+            if (Array.isArray(s.inputs)) return (s.over || []).includes(field) ? s.limits[s.inputs.indexOf(field)] : null;
+            const route = routeFigures(s);                      // the route's own refusal: its figures name the axis
+            return route && route.field === field ? route.limit : null;
+        }
+
         function controlsModel() {
             const step = _undo.peek();
             return {
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, viewNote: _viewNote, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
+                isNumeric: page.isNumeric, levelCountOf: (source) => levelCountOf({ source }, structureRead()), levelCap: levelCapOf, drawable, viewNote: _viewNote, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null),
                 view3d: view3dState()
             };
@@ -954,7 +977,7 @@ actions.register({
             let say = null;
             if (DataManager.isDatasetLoaded()) {
                 say = !drawable(_config.mode) ? { state: 'unavailable', text: C.notDrawn(C.modes[_config.mode]), actions: [] }
-                    : describePlan(snap, { config: shown(), nameOf: nameOfInput, isNumeric: page.isNumeric });
+                    : describePlan(snap, { config: shown(), nameOf: nameOfInput, isNumeric: page.isNumeric, plan: page });
             }
             box.hidden = _dom.stateBox.hidden = !say;
             box.dataset.state = say ? say.state : (snap ? snap.state : 'none');
@@ -1005,12 +1028,45 @@ actions.register({
             return p && p.source ? inputNames({ x: p }, sourceTitleOf).x : C.rows[field] || field;
         }
 
+        /**
+         * What the route's size refusal says: the axis' input, its count and limit (null for any other state).
+         */
+        function routeFigures(snap) {
+            const fig = snap && snap.state === 'refused' ? (snap.refused || (snap.header && snap.header.refused)) : null;
+            if (!fig || !Number.isInteger(fig.axis) || !Number.isFinite(Number(fig.count)) || !Number.isFinite(Number(fig.limit))) return null;
+            let plan;
+            try { plan = planGrid(shown(), page); } catch { return null; }
+            if (plan.state !== 'ready') return null;
+            const inputs = plan.inputs.map((i) => i.input);
+            return inputs[fig.axis] ? { fig, field: inputs[fig.axis], inputs, count: Number(fig.count), limit: Number(fig.limit) } : null;
+        }
+
+        /**
+         * The ways out of a size cap the ROUTE refused (the page could not count the levels first), for the plan the config
+         * makes now: the same `waysOut` the plan's own refusals use, given the count the route told. Empty for any other state.
+         */
+        function routeWays(snap) {
+            const found = routeFigures(snap);
+            if (!found) return [];
+            const { fig, field, inputs } = found;
+            const config = shown();
+            const over = config[field];
+            const refusal = { state: 'refused', reason: fig.reason, mode: config.mode, inputs,
+                counts: inputs.map((f, i) => (i === fig.axis ? Number(fig.count) : null)),
+                limits: inputs.map((f, i) => (i === fig.axis ? Number(fig.limit) : null)), over: [field] };
+            const ctx = { ...page, levelCount: (p) => (p === over ? Number(fig.count) : page.levelCount(p)) };
+            return waysOut(config, refusal, ctx);
+        }
+
         /** A way out of a plan's state (states.js): one undoable step, a control opened in place, or both. */
         function takeWayOut(action) {
             if (action.startsWith('levels-retry:')) { if (_levelHandle) _levelHandle.retry(); return; }
             const way = wayOut(action, _config);
             if (!way) return;
-            if (way.config) commit(way.config, way.label);
+            if (way.config) {
+                commit(way.config, way.label);
+                if (way.said) { _viewNote = way.said; paint(); }       // the status line says what the step did
+            }
             if (way.reveal && _controls) _controls.reveal(way.reveal.field, way.reveal.what);
         }
 
@@ -1095,6 +1151,8 @@ actions.register({
             snapshotChanged,
             /** What a notice of a size refusal needs of the plan: the mode, the inputs in the order of the request's axes, their names. */
             refusalFacts: () => ({ mode: shown().mode, inputs: (inputsOf(shown()) || []).map((e) => e.input), nameOf: nameOfInput }),
+            routeWays,
+            takeWayOut,
             // for the steps after this one, and the tests
             undo,
             _debugState
