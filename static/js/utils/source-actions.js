@@ -12,10 +12,15 @@
  * (`routeBy`). Only when no provider's notice is shown does the first provider that owns the host answer.
  */
 
+import { askPolicy, panelOfHost } from './ask-policy.js';
+
 /** Every action a notice may offer. A provider may declare only some of them. */
 const ACTIONS = Object.freeze(['score-compute', 'score-cancel', 'score-retry', 'score-update', 'score-open', 'score-choose',
     'score-remove', 'score-unfilter', 'fewer-genes', 'group-keep',
     'count-way-picker', 'count-way-mode', 'count-way-bins']);
+
+/** The panel-level actions of the tick "Don't ask again for this panel" (utils/ask-policy.js), which no provider owns. */
+const ASK_ACTIONS = Object.freeze(['ask-tick:confirm', 'ask-tick:try', 'ask-again']);
 
 /**
  * @typedef {Object} ActionProvider
@@ -74,10 +79,17 @@ function createActionRegistry() {
         fresh: createActionRegistry,
         /** Whether an action applies to this host now. */
         available(name, host) {
+            if (ASK_ACTIONS.includes(name)) return !!panelOfHost(host) && (name === 'ask-again' ? !!askPolicy.get(panelOfHost(host)) : true);
             return targetOf(name, host) !== null;
         },
         /** Run an action on this host. @returns {boolean} whether it ran: always the same as `available` was */
         run(name, host) {
+            if (ASK_ACTIONS.includes(name)) {
+                const panel = panelOfHost(host);
+                if (!panel) return false;
+                if (name === 'ask-again') askPolicy.clear(panel); else askPolicy.set(panel, name.slice('ask-tick:'.length));
+                return true;
+            }
             const found = targetOf(name, host);
             if (!found) return false;
             found.action.run(found.target, host);

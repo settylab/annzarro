@@ -289,8 +289,8 @@ count and the limit, and offers the fix:
 | UpSet | 16 sets | |
 
 A set that is a cell table needs at most 1,000,000 cells shown, as a table does. Long counts follow the cost tiers
-of scores (Update, asking first, refusing past 10 minutes), with a progress bar after 10 seconds; the previous drawing
-stays while a new count runs.
+of scores (Update, asking first, refusing past 10 minutes, with **Try anyway** where the server allows a longer run; see
+{doc}`cell-gene-plot`), with a progress bar after 10 seconds; the previous drawing stays while a new count runs.
 
 **The strip** below the plot says what was counted: "8,090 cells counted · 78 without a value for total_counts · 41
 outside the range".

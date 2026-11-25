@@ -277,12 +277,14 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         const working = PASSING.includes(snap.state);
         if (previous && working) {
             return { ...base, held, state: 'updating', previous: true, values: previous.values, header: previous.header,
-                shownKey: previous.key, progress: snap.progress, estimate: snap.estimate, owners: snap.owners };
+                shownKey: previous.key, progress: snap.progress, estimate: snap.estimate, owners: snap.owners,
+                forced: snap.forced, unasked: snap.unasked };
         }
         if (!working) setShown(handle, null);
         // a refusal for its size keeps the route's figures (header.refused: count, limit), which its notice names
         return { ...base, held, state: snap.state === 'idle' ? 'estimating' : snap.state, progress: snap.progress,
             estimate: snap.estimate, message: snap.message, reason: snap.reason, owners: snap.owners,
+            forced: snap.forced, unasked: snap.unasked, limitS: snap.limitS,
             ...(snap.state === 'refused' && snap.header ? { header: snap.header } : {}) };
     }
 

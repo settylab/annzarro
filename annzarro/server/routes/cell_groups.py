@@ -11,7 +11,12 @@ counts of a count plot; ``core/cell_grid.py``). The body is plan 1.2's::
      "small": {...}, "features": [...], "measures": [...], "want": {...},      # grouping
      "mode": "2d" | "1d" | "categorical" | "sets", "density": false,            # grid
      "group": [...], "member": "<set>", "layer": "X", "thresholds": [0],        # genes
-     "estimate_only": false, "confirm": false}
+     "estimate_only": false, "confirm": false, "force": false}
+
+``force: true`` (which implies ``confirm``) runs a request whose estimate is refused for time, under
+``limits.try_max_s``: a wall-clock deadline (the stream ends with ``error: try_time_exceeded``), one such run per user at a
+time (``429 try_busy``), and only while the estimate is within ten times that limit (``estimate.try``). A size check is
+never passed by it. A tried run's first frame (``start``) carries ``forced: true`` and ``deadline_s``.
 
 A field the shape does not take is refused by the engine (``unknown_field``), a field no shape takes by the body
 reader (``bad_request``). It follows the score route (``gene_score.py``) in the access gate, the CSRF check, the body
@@ -236,6 +241,7 @@ class _Job:
 
     def __init__(self, shape, plan, rows, want_codes, cached=None):
         self.shape, self.plan, self.rows, self.want_codes = shape, plan, rows, want_codes
+        self.tried = None                              # a TriedRun, when the request was started with Try anyway
         self.grid = shape == "grid"
         self.cached = cached                           # the grouping from the code cache, found before queueing
         self.pinned = None                             # the cache key a hit found in the stream pinned
@@ -278,6 +284,11 @@ class _Job:
         """The bytes of the stream, given the job the lane gave (the pause of the engine)."""
         events, claim = None, None
         entries = [0]                                  # stored entries read so far (the engine's on_entries)
+        tried = self.tried
+        pause = job if tried is None else tried.pause(job)
+        extra = {} if tried is None else tried.fields()
+        if tried is not None:
+            tried.begin()
 
         def read(n):
             entries[0] += n
@@ -289,11 +300,11 @@ class _Job:
                     start["codes"] = "miss" if cached is None else "hit"
                     if cached is not None:
                         total = self.plan.work.entries            # the grouping's own entries are not read
-                yield _frame({**start, "lane": self.lane, "entries_total": total, "queue": job.queue()})
+                yield _frame({**start, "lane": self.lane, "entries_total": total, "queue": job.queue(), **extra})
                 if self.grid:
-                    events = cell_grid.compute(self.plan, self.rows, pause=job)
+                    events = cell_grid.compute(self.plan, self.rows, pause=pause)
                 else:
-                    events = group_features.compute(self.plan, self.rows, codes=cached, pause=job, on_entries=read,
+                    events = group_features.compute(self.plan, self.rows, codes=cached, pause=pause, on_entries=read,
                                                     grouping_event=True)
                 for kind, payload in events:
                     if kind == "grouping":                     # the groups are known: keep them before any gene is read
@@ -311,6 +322,8 @@ class _Job:
         except GeneratorExit:
             raise
         except gene_score.ScoreCancelled:
+            if tried is not None and tried.exceeded:
+                yield _frame(self._stopped(tried))
             return
         except Exception as exc:
             yield _frame(_error_frame(exc))
@@ -323,6 +336,11 @@ class _Job:
             if events is not None:
                 events.close()
 
+    def _stopped(self, tried):
+        logger.info("tried grouping stopped at its deadline: dataset=%s estimate=%.0fs limit=%.0fs",
+                    self.dataset_path, self.plan.estimate()["seconds"], tried.max_s)
+        return tried.error_frame()
+
 
 def _refusal(job, body, plan_layout):
     """The plain-HTTP answer to a cost tier that may not run now, or None."""
@@ -331,6 +349,7 @@ def _refusal(job, body, plan_layout):
     seconds = job.plan.estimate()["seconds"]
     return compute_stream.tier_refusal(
         job.tier, body.get("confirm", False), job.plan.estimate(), too_expensive="groups_too_expensive",
+        forced=bool(body.get("force", False)),
         refused_message=f"This would take about {gene_score.duration(seconds)}; the limit is "
                         f"{gene_score.duration(gene_score.confirm_max_s())}. Use fewer genes or groups, or a subset.{hint}",
         confirm_message=f"This would take about {seconds:.0f} seconds. Send confirm: true to compute it.")
@@ -375,8 +394,9 @@ class _GenesJob(_Job):
     (:class:`_Job`); the cells' coverage is exact once the group is known (a hit, or a table's cells), else it is the
     whole layer until the grouping is resolved, and the tier of the exact figure is then applied in the stream."""
 
-    def __init__(self, plan, rows, mask, cover, est, cached=None):
+    def __init__(self, plan, rows, mask, cover, est, cached=None, force=False):
         self.shape, self.plan, self.rows, self.want_codes, self.grid = "genes", plan, rows, False, False
+        self.force, self.tried = force, None            # force: Try anyway was asked for; tried: the run holding its slot
         self.mask, self.cover, self.estimate, self.cached, self.pinned = mask, cover, est, cached, None
         self.entries, self.lane, self.tier = est["entries"], est["lane"], est["tier"]
         if plan.groups is not None and cached is None:      # the resolve's own entries come before the genes'
@@ -403,6 +423,9 @@ class _GenesJob(_Job):
     def frames(self, job):
         claim, events, mask, cover, est = None, None, self.mask, self.cover, self.estimate
         entries = [0]
+        tried = self.tried                              # taken before the stream when the estimate was known
+        if tried is not None:
+            tried.begin()
 
         def read(n):
             entries[0] += n
@@ -413,11 +436,12 @@ class _GenesJob(_Job):
                 if grouped:
                     cached, claim = (self.cached, None) if self.cached is not None else self._lookup(job)
                 yield _frame({"type": "start", **({"codes": "miss" if cached is None else "hit"} if grouped else {}),
-                              "lane": self.lane, "entries_total": self.entries, "queue": job.queue()})
+                              "lane": self.lane, "entries_total": self.entries, "queue": job.queue(),
+                              **({} if tried is None else tried.fields())})
                 if grouped:
                     grouping = None
-                    events = cell_groups.compute(self.plan.groups, self.rows, codes=cached, pause=job,
-                                                 on_entries=read)
+                    events = cell_groups.compute(self.plan.groups, self.rows, codes=cached,
+                                                 pause=job if tried is None else tried.pause(job), on_entries=read)
                     for kind, payload in events:
                         if kind == "progress":
                             yield _frame({"type": "progress", **payload,
@@ -436,12 +460,21 @@ class _GenesJob(_Job):
                         with cost_limits.override(**self.limits):
                             est = gene_moments.estimate(self.plan, cover)
                             message = self._refused_frame(est)
-                        if est["tier"] == "refused" or (est["tier"] == "confirm" and not self.confirm):
+                        if self.force and tried is None and est["tier"] == "refused":
+                            # the exact figure is known now: Try anyway is honoured here, as it is before the stream when known
+                            tried = self.tried = compute_stream.tried_run_of(True, est["tier"], est)
+                            if tried is not None and not tried.claim():
+                                yield _frame({"type": "error", "reason": "try_busy",
+                                              "message": "Another tried run of yours is still going."})
+                                return
+                            if tried is not None:
+                                tried.begin()
+                        if (est["tier"] == "refused" and tried is None) or (est["tier"] == "confirm" and not (self.confirm or self.force)):
                             yield _frame(message)
                             return
                 base = entries[0]                          # what the resolve read; the genes' reads follow
-                for kind, payload in gene_moments.compute(self.plan, mask, pause=job, n_shown=self.n_shown,
-                                                          entries_total=cover["entries"]):
+                for kind, payload in gene_moments.compute(self.plan, mask, pause=job if tried is None else tried.pause(job),
+                                                          n_shown=self.n_shown, entries_total=cover["entries"]):
                     if kind == "progress":
                         yield _frame({"type": "progress", **payload, **compute_stream.progress_fields(
                             job, base + payload["done"], base + cover["entries"])})
@@ -453,6 +486,8 @@ class _GenesJob(_Job):
         except GeneratorExit:
             raise
         except gene_score.ScoreCancelled:
+            if tried is not None and tried.exceeded:
+                yield _frame(tried.error_frame())
             return
         except Exception as exc:
             yield _frame(_error_frame(exc))
@@ -464,9 +499,11 @@ class _GenesJob(_Job):
                 self.pinned = None
             if events is not None:
                 events.close()
+            if tried is not None:
+                tried.release()
 
 
-def _genes_response(app_, reader, dataset_path, body):
+def _genes_response(app_, reader, dataset_path, body, force=False):
     """``shape: "genes"``: the moments of every gene over one group (SO-8a, ``core/gene_moments.py``).
 
     The body: ``partitionings`` and ``group`` (a group's key), or ``sets`` and ``member`` (a table's cells), ``layer``,
@@ -510,12 +547,18 @@ def _genes_response(app_, reader, dataset_path, body):
         if parsed.estimate_only:
             failure = jsonify({"estimate": estimate, "missing": {}})
         elif mask is not None:
-            failure = _genes_refusal(estimate, parsed.confirm)
+            failure = _genes_refusal(estimate, parsed.confirm, force)
         if failure is not None:
             if unpin is not None:
                 unpin()
             return failure
-        job = _GenesJob(plan, rows, mask, cover, estimate, cached=cached)
+        job = _GenesJob(plan, rows, mask, cover, estimate, cached=cached, force=force)
+        if mask is not None:                          # the figure is known: a tried run takes its slot now (429 when taken)
+            job.tried = compute_stream.tried_run_of(force, estimate["tier"], estimate)
+            if job.tried is not None and not job.tried.claim():
+                if unpin is not None:
+                    unpin()
+                return compute_stream.tried_busy()
         full, keep = genes_reservation(plan, n_shown, cover["entries"], codes_held=cached is not None)
     except gene_score.ScoreError as exc:
         if unpin is not None:
@@ -532,18 +575,43 @@ def _genes_response(app_, reader, dataset_path, body):
         admitted = read_guard.admit(full)
         admitted.__enter__()
         return lambda: admitted.__exit__(None, None, None)
-    return compute_stream.respond(
-        job.lane, nbytes=full, keep_bytes=keep, what="this request", wait_s=QUEUE_WAIT_S, admit=admit,
-        admit_bytes=full if job.lane == "heavy" else 0, on_release=unpin,
-        work=job.frames, queued_frame=job.queued_frame, mimetype=MIMETYPE,
-        headers={"X-Annzarro-Groups-Version": str(cell_groups.ALGORITHM_VERSION)})
+    def release():
+        if unpin is not None:
+            unpin()
+        if job.tried is not None:
+            job.tried.release()
+    try:
+        return compute_stream.respond(
+            job.lane, nbytes=full, keep_bytes=keep, what="this request", wait_s=QUEUE_WAIT_S, admit=admit,
+            admit_bytes=full if job.lane == "heavy" else 0, on_release=release,
+            work=job.frames, queued_frame=job.queued_frame, mimetype=MIMETYPE,
+            headers={"X-Annzarro-Groups-Version": str(cell_groups.ALGORITHM_VERSION)})
+    except BaseException:
+        if job.tried is not None:
+            job.tried.release()
+        raise
 
 
-def _genes_refusal(estimate, confirm):
+def _respond(job, full, keep, admit, unpin, tried):
+    """The stream of a request past its refusals; a tried run gives its slot back with the other releases."""
+    release = unpin if tried is None else (lambda: (unpin() if unpin else None, tried.release()))
+    try:
+        return compute_stream.respond(
+            job.lane, nbytes=full, keep_bytes=keep, what="this request", wait_s=QUEUE_WAIT_S, admit=admit,
+            admit_bytes=full if job.lane == "heavy" else 0, on_release=release,
+            work=job.frames, queued_frame=job.queued_frame, mimetype=MIMETYPE,
+            headers={"X-Annzarro-Groups-Version": str(cell_groups.ALGORITHM_VERSION)})
+    except BaseException:
+        if tried is not None:
+            tried.release()
+        raise
+
+
+def _genes_refusal(estimate, confirm, forced=False):
     """The plain-HTTP answer to a known cost tier of a genes request that may not run now, or None."""
     seconds = estimate["seconds"]
     return compute_stream.tier_refusal(
-        estimate["tier"], confirm, estimate, too_expensive="groups_too_expensive",
+        estimate["tier"], confirm, estimate, too_expensive="groups_too_expensive", forced=forced,
         refused_message=f"This would take about {gene_score.duration(seconds)}; the limit is "
                         f"{gene_score.duration(estimate['max_s'])}. The group is spread over the matrix, and the matrix is "
                         f"read in whole chunks; use a subset.",
@@ -564,13 +632,14 @@ def register_cell_groups_routes(app_, api_version):
         body, refusal = compute_stream.read_body(_BODY_FIELDS, MAX_BODY_BYTES)
         if refusal:
             return _error(*refusal)
+        force = bool(body.pop("force", False))        # the route's, not the engine's: it reads no field of it
         count, most = _partitionings_in(body), cost_limits.get("request_partitionings")
         if count > most:
             return _error(422, "too_many_partitionings",
                           f"A request holds at most {most} partitionings, groupings used as sources "
                           f"included; this one holds {count} or more.", count=count, limit=most)
         if body.get("shape") == "genes":
-            return _genes_response(app_, reader, dataset_path, body)
+            return _genes_response(app_, reader, dataset_path, body, force)
         try:
             if body.get("shape") == "grid":
                 shape, parsed = "grid", cell_grid.parse_request(body)
@@ -589,9 +658,10 @@ def register_cell_groups_routes(app_, api_version):
 
         if parsed.estimate_only:
             return jsonify({"estimate": estimate, "missing": missing})
-        refusal = _refusal(job, body, estimate["layout"])
+        refusal = _refusal(job, {**body, "force": force}, estimate["layout"])
         if refusal is not None:
             return refusal
+        tried = compute_stream.tried_run_of(force, job.tier, estimate)
 
         rows = None
         if body.get("subset") is not None:
@@ -626,8 +696,10 @@ def register_cell_groups_routes(app_, api_version):
             admitted = read_guard.admit(full)
             admitted.__enter__()
             return lambda: admitted.__exit__(None, None, None)
-        return compute_stream.respond(
-            job.lane, nbytes=full, keep_bytes=keep, what="this request", wait_s=QUEUE_WAIT_S, admit=admit,
-            admit_bytes=full if job.lane == "heavy" else 0, on_release=unpin,
-            work=job.frames, queued_frame=job.queued_frame, mimetype=MIMETYPE,
-            headers={"X-Annzarro-Groups-Version": str(cell_groups.ALGORITHM_VERSION)})
+        if tried is not None:
+            if not tried.claim():
+                if unpin is not None:
+                    unpin()
+                return compute_stream.tried_busy()
+            job.tried = tried
+        return _respond(job, full, keep, admit, unpin, tried)

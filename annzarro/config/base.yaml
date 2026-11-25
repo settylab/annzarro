@@ -490,6 +490,7 @@ integrations:
 limits:
   ask_first_s: 60
   refuse_s: 600
+  try_max_s: 1800
   live_update_s: 5
   progress_bar_s: 10
   refresh_min_interval_large_s: 60

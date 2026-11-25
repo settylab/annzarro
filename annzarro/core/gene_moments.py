@@ -48,7 +48,7 @@ SHAPE = "genes"
 
 #: Every field the shape takes (the route's body reader refuses any other).
 BODY_FIELDS = ("shape", "partitionings", "small", "group", "sets", "member", "layer", "thresholds", "subset",
-               "estimate_only", "confirm", "transform", "clip")
+               "estimate_only", "confirm", "force", "transform", "clip")
 
 #: The moments, as a grouping's features have them.
 MOMENTS = gf.MOMENTS
@@ -237,7 +237,7 @@ def estimate(plan_: Plan, cover: Dict[str, Any], *, resolve: bool = False) -> Di
     whole = cover["entries"] >= plan_.layer_entries and plan_.layer_entries > 0
     live = seconds <= gs.live_max_s() and not whole
     light = live and (plan_.groups is None or not resolve or plan_.groups.lane == "light")
-    return {"seconds": round(seconds, 2), "tier": gs.tier_of(seconds), **gs.tier_limits(), "entries": cover["entries"], "layout": plan_.layout,
+    return {"seconds": round(seconds, 2), "tier": gs.tier_of(seconds), **gs.tier_limits(), "try": gs.try_info(seconds), "entries": cover["entries"], "layout": plan_.layout,
             "n_cells": plan_.n_cells, "lane": "light" if light else "heavy", "coverage": cover,
             "n_var": plan_.n_var}
 

@@ -26,8 +26,9 @@
  * A job's life
  *   idle -> estimating -> queued -> computing -> ready
  *                     \-> awaiting (the estimate asks for one click: `accept()`)
- *                     \-> refused  (the estimate's tier is `refused`: nothing is computed or sent)
- *   and, off the main road: refused, failed, noscore, cancelled.
+ *                     \-> refused  (the estimate's tier is `refused`: nothing is computed or sent, unless a tried run is
+ *                              allowed (`estimate.try.allowed`) and asked for: `accept()` on it, or the panel's tick)
+ *   and, off the main road: refused, failed, noscore, cancelled, stopped (a tried run the server ended at its deadline).
  *   (`noscore` is the state of a reply with nothing in it; the name is kept
  *   from the score store, which the page's code already reads.)
  * `queued` is a job waiting for one of the page's slots (the browser's
@@ -39,6 +40,7 @@
  * whose dependants is visible waits.
  */
 import { VOCABULARY } from './vocabulary.js';
+import { askPolicy } from './ask-policy.js';
 
 /** Bytes of values kept in the browser (design 6.2). */
 export const DEFAULT_BUDGET = 1024 ** 3;
@@ -47,7 +49,7 @@ export const DEFAULT_BUDGET = 1024 ** 3;
 export const DEFAULT_MAX_ACTIVE = 2;
 
 /** States a job rests in until something changes. */
-export const SETTLED = Object.freeze(['ready', 'awaiting', 'refused', 'failed', 'noscore', 'cancelled']);
+export const SETTLED = Object.freeze(['ready', 'awaiting', 'refused', 'failed', 'noscore', 'cancelled', 'stopped']);
 
 /** States in which a request is out or about to be. */
 export const WORKING = Object.freeze(['estimating', 'queued', 'computing']);
@@ -196,7 +198,7 @@ function isAbort(error) {
 }
 
 /** What a progress frame says besides its count (SHR-47, SHR-48), kept as the frame carries it. */
-const PROGRESS_FIELDS = Object.freeze(['stage', 'entries_done', 'entries_total', 'running_s', 'queue', 'items']);
+const PROGRESS_FIELDS = Object.freeze(['stage', 'entries_done', 'entries_total', 'running_s', 'queue', 'items', 'forced', 'deadline_s']);
 
 /** A job's progress: done and in all, and whichever of the frame's other fields it carries. */
 function progressOf(done, total, frame) {
@@ -231,6 +233,8 @@ const SIZE_REASONS = Object.freeze(['too_many_levels', 'too_many_bins', 'grid_to
  *   the server refused for its size: the state `refused`, never a reply with nothing in it
  * @param {ByteCache} [options.cache] - where values are kept, keyed by job key: anything with ByteCache's interface
  *   (a store whose values are put together from parts gives a view over them)
+ * @param {(owner: Object) => (string|null)} [options.autoLevel] - how far an owner's panel starts computations without
+ *   asking: 'confirm', 'try' or null (utils/ask-policy.js). The highest of a job's owners decides
  * @param {(job: Object) => ({recipe: Object, hash: string}|null)} [options.ask] - what a job asks the server now
  *   (estimate and compute); null when nothing is missing. By default its own recipe and hash
  * @param {(job: Object, out: {header: Object, values: *}, asked: Object) => void} [options.keep] - where a reply
@@ -240,7 +244,7 @@ export function createDerivedStore({
     api, budget = DEFAULT_BUDGET, maxActive = DEFAULT_MAX_ACTIVE, limiter = null,
     bytesOf: measure = (values) => bytesOf(values), isEmpty = (out) => !out.values, emptyMessage = 'Nothing could be made.',
     refusalReason = 'score_too_expensive', refusedOf = () => null, cache = new ByteCache(budget, measure),
-    ask = (job) => ({ recipe: job.recipe, hash: job.hash }),
+    ask = (job) => ({ recipe: job.recipe, hash: job.hash }), autoLevel = (owner) => askPolicy.get(owner && owner.panelId),
     keep = (job, out) => { cache.put(job.key, { values: out.values, header: out.header }); }
 }) {
     const slots = limiter || createLimiter(maxActive);
@@ -279,9 +283,26 @@ export function createDerivedStore({
             key: job.key, state: job.state, progress: job.progress, estimate: job.estimate,
             message: job.message, reason: job.reason, owners: job.owners.size,
             header: entry ? entry.header : job.header || null, values: entry ? entry.values : null,
-            confirmed: job.confirmed
+            confirmed: job.confirmed, forced: !!job.forced, unasked: !!job.unasked, limitS: job.limitS || null
         };
     }
+
+    /** The highest level the panels that read a job ask for: 'try' over 'confirm', or null. */
+    function levelOf(job) {
+        let level = null;
+        for (const owner of job.owners) {
+            const l = autoLevel(owner);
+            if (l === 'try') return 'try';
+            if (l === 'confirm') level = 'confirm';
+        }
+        return level;
+    }
+
+    /** A tried run is allowed for this estimate (the server says so in `estimate.try`). */
+    const tryAllowed = (estimate) => !!(estimate && estimate.try && estimate.try.allowed);
+
+    /** The tier of an estimate is refused for time and a tried run is allowed. */
+    const triable = (job) => !!job.estimate && job.estimate.tier === 'refused' && tryAllowed(job.estimate);
 
     /**
      * Ask for the cost of a recipe once. The estimate reads the matrix's index
@@ -329,14 +350,25 @@ export function createDerivedStore({
         if (job.state !== 'estimating') return;       // cancelled or left meanwhile
         const estimate = reply.estimate;
         job.estimate = estimate;
+        const level = levelOf(job);
         if (estimate.tier === 'confirm' && !job.confirmed) {
-            setState(job, 'awaiting');
-            return;
+            // the panel's tick skips the question (and a tried run, which is allowed above it, does too)
+            if (!level) { setState(job, 'awaiting'); return; }
+            job.confirmed = true;
+            job.unasked = true;
         }
         if (estimate.tier === 'refused') {
-            // decided by the estimate: nothing is asked of the server, whose 413 would only say the same
-            setState(job, 'refused', { message: refusalText(estimate, refusalReason), reason: refusalReason });
-            return;
+            if (job.forced || (level === 'try' && tryAllowed(estimate))) {
+                if (!tryAllowed(estimate)) { job.forced = false; setState(job, 'refused', { message: refusalText(estimate, refusalReason), reason: refusalReason }); return; }
+                job.autoTried = true;
+                job.forced = true;
+                job.confirmed = true;
+                job.unasked = job.unasked || !!level;
+            } else {
+                // decided by the estimate: nothing is asked of the server, whose 413 would only say the same
+                setState(job, 'refused', { message: refusalText(estimate, refusalReason), reason: refusalReason });
+                return;
+            }
         }
         setState(job, 'queued');
         pump();
@@ -363,6 +395,7 @@ export function createDerivedStore({
         try {
             const out = await api.compute({
                 recipe: asked.recipe, hash: asked.hash, dataset: job.dataset, subset: job.subset, confirm: job.confirmed,
+                force: !!job.forced,
                 signal: controller.signal,
                 onProgress: (done, total, frame) => {
                     if (job.abort !== controller) return;
@@ -385,12 +418,16 @@ export function createDerivedStore({
             if (job.abort !== controller) return;
             if (isAbort(error)) {
                 if (job.state === 'computing') setState(job, 'cancelled');
+            } else if (error && error.reason === 'try_time_exceeded') {
+                // the server's own deadline for a tried run: nothing partial was sent
+                setState(job, 'stopped', { message: errorText(error), reason: error.reason, limitS: error.limit_s });
             } else if (error && error.status === 409) {
                 job.estimate = error.estimate || job.estimate;
                 job.confirmed = false;
                 setState(job, 'awaiting');
             } else if (error && error.status === 413 && error.reason === refusalReason) {
                 job.estimate = error.estimate || job.estimate;
+                job.forced = false;
                 setState(job, 'refused', { message: error.message, reason: error.reason });
             } else if (error && error.status === 422 && SIZE_REASONS.includes(error.reason) && error.figures) {
                 // a size cap the page could not know (an input's levels were not counted yet) is a refusal, as the same cap
@@ -426,6 +463,18 @@ export function createDerivedStore({
      * so the passes end once a pass is not asked for again.
      */
     function pumpOnce() {
+        // a panel's tick set while a job waits for the question, or for a tried run: it goes on
+        for (const job of jobs.values()) {
+            if (!['awaiting', 'refused'].includes(job.state) || visibleOwners(job) === 0) continue;
+            const level = levelOf(job);
+            if (!level) continue;
+            if (job.state === 'awaiting') { job.confirmed = true; job.unasked = true; setState(job, 'queued'); }
+            else if (level === 'try' && !job.autoTried && job.reason === refusalReason && triable(job)) {
+                job.autoTried = true;
+                job.forced = true; job.confirmed = true; job.unasked = true;
+                setState(job, 'queued');
+            }
+        }
         const idle = [...jobs.values()].filter(j => j.state === 'idle' && visibleOwners(j) > 0)
             .sort((a, b) => a.seq - b.seq);
         for (const job of idle) estimateJob(job);
@@ -450,6 +499,8 @@ export function createDerivedStore({
     }
 
     slots.onFree(pump);
+    // the panel's tick changed: a job that waits for the question, or for a tried run, may go on
+    askPolicy.onChange(() => pump());
 
     return {
         cache,
@@ -511,6 +562,11 @@ export function createDerivedStore({
         accept(key) {
             const job = jobs.get(key);
             if (!job || ['ready', 'computing', 'queued', 'estimating'].includes(job.state)) return false;
+            // above the refuse limit "Compute" is Try anyway: only for an estimate the server says may be tried
+            if (job.estimate && job.estimate.tier === 'refused') {
+                if (!tryAllowed(job.estimate)) return false;
+                job.forced = true;
+            }
             job.confirmed = true;
             job.message = null;
             job.reason = null;

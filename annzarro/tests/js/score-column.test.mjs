@@ -192,5 +192,5 @@ test('a table column refused for its size says why, not "would take about 1 seco
     assert.match(size.text, /too many values/);
     assert.ok(size.actions.some(([a]) => a === 'score-remove'));
     const cost = describeColumn({ state: 'refused', title: 'T cell score', reason: 'score_too_expensive', estimate: { seconds: 1500, tier: 'refused', max_s: 600 }, message: 'x' });
-    assert.match(cost.headline, /would take about 25 minutes, so it was not run/);
+    assert.match(cost.headline, /was not run: it is estimated at about 25 minutes/);
 });

@@ -171,6 +171,12 @@ function namesHtml(names) {
         + `<ul class="ps-names-list">${names.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul></div>`;
 }
 
+/** The tick "Don't ask again for this panel" (utils/ask-policy.js): `level` is what it skips, `ticked` whether it is set. */
+function tickHtml(tick, ticked) {
+    return `<label class="ps-tick"><input type="checkbox" data-ps-tick="${escapeHtml(tick)}"${ticked ? ' checked' : ''}> `
+        + 'Don\'t ask again for this panel</label>';
+}
+
 function stripHtml(host, s) {
     const cov = coerce(s.coverage, s.unit);
     const b = breakdown(cov, { verb: s.verb });
@@ -207,7 +213,8 @@ function stripHtml(host, s) {
         : '';
     let tags = '';
     let tagPops = '';
-    for (const [kind, tag] of s.tags) {
+    // the panel's own tick "Runs without asking" sits first, beside the count
+    for (const [kind, tag] of [...s.tags].sort((a, b) => (b[0] === 'unasked') - (a[0] === 'unasked'))) {
         const sev = escapeHtml(tag.severity || 'notice');
         tags += `<button type="button" class="ps-tag ps-tag--${sev}" data-tag="${escapeHtml(kind)}"`
             + ` aria-expanded="${s.open === kind}" title="${escapeHtml(tag.title || tag.text)}">${escapeHtml(tag.text)}</button>`;
@@ -215,7 +222,8 @@ function stripHtml(host, s) {
             tagPops += `<div class="ps-pop ps-pop--tag" data-pop="${escapeHtml(kind)}" role="dialog"`
                 + ` aria-label="${escapeHtml(tag.text)}"${s.open === kind ? '' : ' hidden'}>`
                 + `<div class="ps-pop-text">${escapeHtml(tag.pop.text)}</div>`
-                + `<div class="ps-pop-do">${actionButtons(tag.pop.actions, host)}</div></div>`;
+                + `<div class="ps-pop-do">${actionButtons(tag.pop.actions, host)}</div>`
+                + `${tag.pop.tick ? tickHtml(tag.pop.tick, !!tag.pop.ticked) : ''}</div>`;
         }
     }
     const progress = s.progress ? progressHtml(s.progress) : '';
@@ -440,6 +448,15 @@ function wireStrips() {
     });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeAll();
+    });
+    // the tick "Don't ask again for this panel", in a strip's pop-over or on a notice over the plot
+    document.addEventListener('change', (e) => {
+        const box = e.target.closest && e.target.closest('[data-ps-tick]');
+        if (!box) return;
+        const strip = box.closest(`.${STRIP_CLASS}`);
+        const card = box.closest('.filter-notice');
+        const host = strip && strip._host ? strip._host : (card && card.parentNode) || null;
+        if (host) _actions.run(box.checked ? `ask-tick:${box.dataset.psTick}` : 'ask-again', host);
     });
     // the search of a long list of names (namesHtml)
     document.addEventListener('input', (e) => {
@@ -797,6 +814,7 @@ function putNotice(host, old, notice, extraClass) {
         + (notice.text ? `<div class="filter-notice__text">${escapeHtml(notice.text)}</div>` : '')
         + (notice.actions && notice.actions.length
             ? `<div class="coverage-placeholder__do">${actionButtons(notice.actions, host)}</div>` : '')
+        + (notice.tick ? tickHtml(notice.tick, !!notice.ticked) : '')
         + `</div>`;
     if (old && old._html === html && old.dataset.state === notice.state) return;
     const el = old || document.createElement('div');

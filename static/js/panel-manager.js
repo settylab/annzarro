@@ -14,6 +14,7 @@ import { Config } from './config.js';
 import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds, serializableConfig } from './utils/deeplink.js';
 import { setControlsVisible, controlsElementOf } from './utils/controls-visibility.js';
 import { notifyEach } from './utils/notify-panels.js';
+import { askPolicy } from './utils/ask-policy.js';
 import { createPlaceholderPanel } from './utils/placeholder-panel.js';
 import { Policy } from './policy.js';
 import * as LayoutMotion from './utils/layout-motion.js';
@@ -549,6 +550,7 @@ const PanelManager = (function() {
     function closePanel(id) {
         const panel = _panels.get(id);
         if (!panel) return;
+        askPolicy.clear(id);   // "Don't ask again for this panel" ends with the panel (14.4)
         
         // Remove from DOM
         const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
@@ -1276,6 +1278,7 @@ const PanelManager = (function() {
     function removePanel(id) {
         const panel = _panels.get(id);
         if (!panel) return;
+        askPolicy.clear(id);
         const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
         if (tile && _activePanels.has(panel)) {
             LayoutManager.closePanel(tile);

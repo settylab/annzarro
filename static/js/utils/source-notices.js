@@ -1,6 +1,7 @@
 import { setStatusTag, setScoreNotice, setStatusProgress } from './panel-surface.js';
 import { VOCABULARY } from './vocabulary.js';
 import { limit, limitDefault } from './limits.js';
+import { askPolicy, panelOfHost } from './ask-policy.js';
 
 /**
  * What a dependant of a derived source (a gene-signature score today, a cell grouping next) says in each state, and
@@ -73,6 +74,82 @@ export function isCostRefusal(snap) {
 }
 
 /**
+ * A length of time in whole units, for a limit: "10 minutes", "30 minutes", "2 hours", "45 seconds". Not the rounded
+ * "about" of durationText: a limit is exact.
+ * @param {number} seconds
+ */
+// export-unused-ok: a test holds the wording of a limit
+export function limitText(seconds) {
+    const s = Number(seconds);
+    if (!(s > 0) || !Number.isFinite(s)) return '';
+    const unit = (n, word) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
+    if (s % 3600 === 0) return unit(s / 3600, 'hour');
+    if (s % 60 === 0) return unit(s / 60, 'minute');
+    return unit(Math.round(s), 'second');
+}
+
+/** A tried run says it stops by itself: "Stops by itself after 30 minutes." (from the first frame's deadline, else the estimate's). */
+function triedNote(snap) {
+    if (!snap || !snap.forced) return '';
+    const limit = limitText((snap.progress && snap.progress.deadline_s) || (snap.estimate && snap.estimate.try && snap.estimate.try.max_s));
+    return limit ? `Stops by itself after ${limit}.` : '';
+}
+
+/** The run a refused-by-time snapshot may be tried as: {max_s}, or null (not a cost refusal, or the server says no). */
+function tryOf(snap) {
+    if (!isCostRefusal(snap)) return null;
+    const t = snap.estimate && snap.estimate.try;
+    return t && t.allowed ? { max_s: Number(t.max_s) } : null;
+}
+
+/** The same for a cancelled run whose estimate is still over the limit: its [Compute] is [Try anyway]. */
+function cancelledTry(snap) {
+    const est = snap && snap.estimate;
+    if (!est || est.tier !== 'refused' || !est.try || !est.try.allowed) return null;
+    return { max_s: Number(est.try.max_s) };
+}
+
+/** Why a time refusal has no way on, in words (estimate.try.why), or ''. */
+function noTryWhy(snap) {
+    const t = snap && snap.estimate && snap.estimate.try;
+    if (!t || t.allowed) return '';
+    const limit = limitText(t.max_s);
+    if (t.why === 'too_long') return limit ? `That is more than ten times the ${limit} a run may be given here.` : '';
+    if (t.why === 'off') return 'This server does not run jobs over the limit.';
+    return '';
+}
+
+/** "(runs over 10 minutes are not started by themselves)", or '' when the limit is not known. */
+export const startLimitText = (estimate) => {
+    const limit = limitText(estimate && estimate.max_s);
+    return limit ? ` (runs over ${limit} are not started by themselves)` : '';
+};
+
+/**
+ * What a notice gains from "Try anyway" and "Don't ask again for this panel" (aggregation-unify-080.md 14.3), whoever
+ * worded it: a refusal by cost that the server says may be tried gets [Try anyway] first and the tick of level
+ * 'try'; one it says may not says why, with no button; the question of the confirm tier gets the tick of level
+ * 'confirm'; a cancelled run that is still over the limit gets [Try anyway] for its [Compute]. The button is the
+ * provider's own 'score-compute' (accept, which sends `force` for a refused estimate). Returns the notice itself.
+ * @param {Object} snap
+ * @param {Object|null} notice
+ */
+export function withTry(snap, notice) {
+    if (!notice || !snap) return notice;
+    const retarget = (label) => notice.actions.map(a => (a[0] === 'score-compute' ? ['score-compute', label] : a));
+    if (notice.state === 'refused' && snap.state === 'refused' && isCostRefusal(snap)) {
+        if (tryOf(snap)) {
+            return { ...notice, actions: [['score-compute', 'Try anyway'], ...notice.actions.filter(a => a[0] !== 'score-compute')], tick: 'try' };
+        }
+        const why = noTryWhy(snap);
+        return why ? { ...notice, text: notice.text ? `${notice.text} ${why}` : why } : notice;
+    }
+    if (notice.state === 'awaiting') return { ...notice, tick: 'confirm' };
+    if (notice.state === 'cancelled' && cancelledTry(snap)) return { ...notice, actions: retarget('Try anyway'), tick: 'try' };
+    return notice;
+}
+
+/**
  * What a grouping's figures of a refusal for its size say ("has 19,000 groups: a grouping holds up to 2,000"), from the
  * route's `refused` ({reason, count, limit}); null without figures or for another reason.
  * @param {{reason?: string, count?: number, limit?: number}|null} refused
@@ -106,7 +183,7 @@ export function coverageKindOf(snap) {
 }
 
 /** Notice states, most urgent first: a plot with two sources states the worst. A state not listed is the least urgent. */
-export const PRIORITY = ['nolayer', 'nodown', 'notcells', 'unset', 'deleted', 'off', 'cycle', 'failed', 'refused', 'ask', 'awaiting', 'cancelled', 'noscore',
+export const PRIORITY = ['nolayer', 'nodown', 'notcells', 'unset', 'deleted', 'off', 'cycle', 'failed', 'refused', 'stopped', 'ask', 'awaiting', 'cancelled', 'noscore',
     'nogenes', 'nofactors', 'building', 'estimating', 'queued', 'computing', 'updating', 'held'];
 
 const RANK = new Map(PRIORITY.map((state, i) => [state, i]));
@@ -236,7 +313,7 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
             }
             if (isCostRefusal(snap)) {
                 return out('refused', 'warning', tagOf('refused', `${Result} refused`),
-                    `${t} would take ${durationText(snap.estimate.seconds)}, so it was not run.`, snap.message || '', [open, choose]);
+                    `${t} was not run: it is estimated at ${durationText(snap.estimate.seconds)}${startLimitText(snap.estimate)}.`, snap.message || '', [open, choose]);
             }
             // no seconds to quote (or not by cost): the sentence of before when nothing was estimated, else only that it was not run
             const estimated = snap.estimate && Number.isFinite(Number(snap.estimate.seconds)) && snap.estimate.seconds !== null;
@@ -247,6 +324,12 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
             const seconds = snap.estimate && snap.estimate.seconds;
             return out('awaiting', 'notice', tagOf('awaiting', `${Result} not computed`),
                 `${t} will take ${durationText(seconds)}.${none}`, '', [['score-compute', 'Compute'], choose]);
+        }
+        case 'stopped': {
+            const limit = limitText(snap.limitS || (snap.estimate && snap.estimate.try && snap.estimate.try.max_s));
+            return out('stopped', 'warning', tagOf('stopped', `${Result} stopped`),
+                `${t} was stopped${limit ? ` after ${limit}` : ''}, the server's limit for a tried run.`, 'Use fewer genes or groups, or a subset.',
+                [['score-compute', 'Try again'], open, choose]);
         }
         case 'cancelled':
             return out('cancelled', 'notice', tagOf('cancelled', `${Result} cancelled`), `${t} was cancelled.${none}`, '',
@@ -269,7 +352,8 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
             const left = timeLeftText(snap.progress);
             const sharing = queue && queue.sharing > 0 ? VOCABULARY.progress.sharing(queue.sharing) : '';
             return out(snap.state, 'notice', tagOf('computing', `${Result} computing`),
-                `${Computing} ${t}${prog ? `: ${prog}` : ''}${left ? ` · ${left}` : ''}.${none}`, sharing ? `${sharing}${note ? ` ${note}` : ''}` : '',
+                `${Computing} ${t}${prog ? `: ${prog}` : ''}${left ? ` · ${left}` : ''}.${none}`,
+                [sharing ? `${sharing}${note ? ` ${note}` : ''}` : '', triedNote(snap)].filter(Boolean).join(' '),
                 [['score-cancel', cancelLabel]]);
         }
         case 'building': {
@@ -360,7 +444,8 @@ export function progressBar(snap, elapsed, { byEstimate = true } = {}) {
     const estimate = snap.estimate ? Number(snap.estimate.seconds) : NaN;
     const ran = p ? Number(p.running_s) : NaN;
     const after = barAfterS();
-    const long = (byEstimate && Number.isFinite(estimate) && estimate > after) || elapsed >= after || (Number.isFinite(ran) && ran >= after);
+    // a run nobody was asked about (the panel's tick) or a tried one always shows its bar
+    const long = snap.unasked || snap.forced || (byEstimate && Number.isFinite(estimate) && estimate > after) || elapsed >= after || (Number.isFinite(ran) && ran >= after);
     if (!long) return null;
     const queue = queueOf(p);
     if (snap.state !== 'computing' && snap.state !== 'updating') return { determinate: false };
@@ -441,13 +526,31 @@ export function paintStripProgress(host, bar, notice = null, snap = null) {
  * @param {{overlay?: boolean}} [opts] - false when the host states the notice itself (an axis placeholder)
  */
 export function paintNotice(host, notice, { overlay = true } = {}) {
+    const ticked = !!(notice && notice.tick && askPolicy.covers(panelOfHost(host), notice.tick));
     setStatusTag(host, 'score', notice && { text: notice.tag.text, severity: notice.severity === 'error' ? 'error' : 'warning',
-        title: notice.tag.title, pop: { text: sentenceOf(notice), actions: notice.actions } });
-    setScoreNotice(host, notice && overlay ? { state: notice.state, headline: notice.headline, text: notice.text, actions: notice.actions } : null);
+        title: notice.tag.title, pop: { text: sentenceOf(notice), actions: notice.actions, tick: notice.tick, ticked } });
+    setScoreNotice(host, notice && overlay ? { state: notice.state, headline: notice.headline, text: notice.text, actions: notice.actions,
+        tick: notice.tick, ticked } : null);
     if (notice && overlay && host && typeof host.querySelector === 'function') {
         paintProgress(host.querySelector(':scope > .score-notice .filter-notice__card'), notice.progress || null, sentenceOf(notice));
     }
     if (host && host.dataset) {
         if (notice) host.dataset.sourceState = notice.state; else delete host.dataset.sourceState;
     }
+}
+
+/**
+ * The strip's tag of a panel that starts long computations without asking (aggregation-unify-080.md 14.5): shown while
+ * the panel's tick is on, first among the strip's tags; its pop-over has [Ask again]. Null takes it away.
+ * @param {HTMLElement} host
+ * @param {string|null} level - the panel's level ('confirm', 'try') or null
+ */
+export function paintUnasked(host, level) {
+    const after = limitText(limit('try_max_s')) || '30 minutes';
+    setStatusTag(host, 'unasked', level && {
+        text: 'Runs without asking', severity: 'notice',
+        title: `This panel starts long computations without asking (each stops after ${after}). Click to change.`,
+        pop: { text: `Long computations in this panel start without asking. Each can be cancelled and stops by itself after ${after}.`,
+            actions: [['ask-again', 'Ask again']] }
+    });
 }

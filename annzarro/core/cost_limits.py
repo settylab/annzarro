@@ -70,6 +70,10 @@ COST_LIMITS: Dict[str, CostLimit] = {c.name: c for c in (
            label="Refuse above (s)",
            help="Estimated seconds above which a gene score, a grouping or a Cell-Gene read is refused, "
                 "even when the user agrees. Bounds the time one request may hold a compute slot."),
+    _limit("try_max_s", 1800.0, 18000.0, minimum=0, integer=False, enforced="server", group="time",
+           label="Longest tried run (s)",
+           help="Seconds one run that was started with Try anyway, above refuse_s, may hold a compute slot before the "
+                "server stops it. 0 turns Try anyway off. An estimate above ten times this is not tried."),
     _limit("live_update_s", 5.0, 50.0, minimum=0, integer=False, enforced="both", group="time",
            label="Live update below (s)",
            help="Estimated seconds below which a computation updates live while it is edited and runs in the light "

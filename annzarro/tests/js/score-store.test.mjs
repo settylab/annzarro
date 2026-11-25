@@ -195,7 +195,7 @@ test('the tier comes from the estimate: auto computes, confirm asks once, refuse
     assert.equal(snap.message, 'The limit is 10 minutes. Use fewer genes.');
     assert.equal(f.calls.compute.length, 0);
     const notice = describeSource(snap, { role: 'colour' }, { thing: 'signature', source: 'source', result: 'score', Computing: 'Computing' });
-    assert.equal(notice.headline, 'The signature would take about 25 minutes, so it was not run.');
+    assert.equal(notice.headline, 'The signature was not run: it is estimated at about 25 minutes (runs over 10 minutes are not started by themselves).');
     assert.equal(notice.text, 'The limit is 10 minutes. Use fewer genes.');
 });
 

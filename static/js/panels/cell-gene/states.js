@@ -19,7 +19,7 @@
  * worded from counts the panel made once per plan or per drawing.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
-import { describeSource, durationText, timeLeftText, queueOf, isCostRefusal } from '../../utils/source-notices.js';
+import { describeSource, durationText, timeLeftText, queueOf, isCostRefusal, startLimitText } from '../../utils/source-notices.js';
 import { matrixLimits } from '../../utils/cell-gene-model.js';
 import { GROUPING_LIMITS } from '../../utils/cell-grouping.js';
 import { compactCount, exactCount } from '../../utils/coverage.js';
@@ -147,7 +147,7 @@ export function describePlot(snap, ctx, plot, words) {
                 return say('refused', 'warning', S.tags.refused,
                     S.refusedCsr(plot.layer, genes, plot.genes, durationText(est.seconds)), S.csrWayOut, []);
             }
-            return say('refused', 'warning', S.tags.refused, S.refusedCost(durationText(est.seconds)), S.costWayOut, []);
+            return say('refused', 'warning', S.tags.refused, S.refusedCost(durationText(est.seconds), startLimitText(est)), S.costWayOut, []);
         case 'failed':
             // a reason the page has its own sentence for is the generic notice's (a limit, a busy server)
             if (Object.hasOwn(VOCABULARY.reasons, snap.reason)) break;

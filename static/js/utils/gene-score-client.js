@@ -82,10 +82,11 @@ export function createScoreApi({ url, fetchImpl = (u, init) => csrfFetch(u, init
             if (!response.ok) throw await errorOf(response);
             return response.json();
         },
-        async compute({ recipe, dataset, subset, confirm, signal, onProgress }) {
+        async compute({ recipe, dataset, subset, confirm, force, signal, onProgress }) {
             const body = { recipe: serverRecipe(recipe) };
             if (subset) body.subset = subset;
             if (confirm) body.confirm = true;
+            if (force) body.force = true;
             const response = await post(dataset, body, signal);
             if (!response.ok) throw await errorOf(response);
             return readScoreStream(response, { onProgress });

@@ -301,7 +301,7 @@ const cellGene = Object.freeze({
         held: (edits, duration) => `Showing the previous plot. ${edits === 1 ? '1 change' : `${edits.toLocaleString('en-US')} changes`} not applied.` +
             `${duration ? ` ${duration.charAt(0).toUpperCase()}${duration.slice(1)}.` : ''}`,
         ask: (genes, cells, duration, values) => `Reading ${genes} over ${cells} cells: up to ${duration} (${values} stored values).`,
-        refusedCost: (duration) => `Would take ${duration}, so it was not run.`,
+        refusedCost: (duration, limit = '') => `Not run: it is estimated at ${duration}${limit}.`,
         costWayOut: 'Use fewer genes, a smaller subset, or a layer stored by gene (CSC).',
         refusedCsr: (layer, genes, n, duration) => `${layer} is stored by cell (CSR), so ${genes} ${n === 1 ? 'means' : 'mean'} reading the whole matrix: ${duration}.`,
         csrWayOut: 'A copy of the layer stored by gene (CSC) makes this fast; see the documentation.',

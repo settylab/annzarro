@@ -77,7 +77,7 @@ window.fetch = async (url, init) => {
     let body = {};
     try { body = JSON.parse(init.body); } catch (e) { body = {}; }
     const kind = body.estimate_only ? 'estimate' : 'compute';
-    window.__scoreCalls.push({ kind, genes: (body.recipe && body.recipe.genes) || [], method: (body.recipe && body.recipe.method) || null, input: (body.recipe && body.recipe.input) || null, confirm: !!body.confirm, subset: body.subset || null });
+    window.__scoreCalls.push({ kind, genes: (body.recipe && body.recipe.genes) || [], method: (body.recipe && body.recipe.method) || null, input: (body.recipe && body.recipe.input) || null, confirm: !!body.confirm, force: !!body.force, subset: body.subset || null });
     if (window.__scoreFake) {
       const out = window.__scoreFake(kind, body, () => real(url, init), init);
       if (out) return out;
@@ -97,7 +97,7 @@ window.__slow = (tier, seconds, opts) => {
   opts = opts || {};
   window.__scoreFake = (kind, body, real, init) => {
     if (kind === 'estimate') {
-      return new Response(JSON.stringify({ estimate: { seconds, tier, auto_max_s: 60, max_s: 600, live_max_s: 5, layout: 'csc', entries: 10 },
+      return new Response(JSON.stringify({ estimate: Object.assign({ seconds, tier, auto_max_s: 60, max_s: 600, live_max_s: 5, layout: 'csc', entries: 10 }, opts.tried ? { try: opts.tried } : {}),
         missing: [], duplicated: [], recipe: {} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (opts.refuse) {
@@ -410,7 +410,7 @@ def test_the_cost_tiers_are_read_from_the_estimate(page, served):
     _open(page, served, wait=False)
     page.wait_for_selector(f"{C} .score-notice[data-state='refused']", timeout=30000)
     note = _notice(page)
-    assert "'T cell score' would take about 25 minutes, so it was not run." in note["text"]
+    assert "'T cell score' was not run: it is estimated at about 25 minutes (runs over 10 minutes are not started by themselves)." in note["text"]
     assert "Use fewer genes." in note["text"], "the server's explanation"
     assert [a.split("|")[0] for a in note["actions"]] == ["score-open", "score-choose"]
     assert _tag(page) == "Score refused"

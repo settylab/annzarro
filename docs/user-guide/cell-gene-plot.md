@@ -289,12 +289,30 @@ stays.
 | Computing | "Reading 200 genes: 120 of 200", with **Cancel**; after 10% of the work and 5 s, the time left ("about 3 minutes left") |
 | Queued | "Waiting for Cell-Gene Plot 2 to finish." when the job ahead is one of this page's, else "Waiting for the server: 1 computation ahead.", or "Sharing the server with 1 other computation." while two long jobs take turns. "Groupings and counts keep working." |
 | Out of date | "Showing the previous plot. 2 changes not applied.", with **Update** |
-| Asks first | "Reading 200 genes over 95.6M cells: up to about 6 minutes (10.5 billion stored values).", with **Compute** and **Fewer genes** |
-| Refused, cost | "Would take about 25 minutes, so it was not run. Use fewer genes, a smaller subset, or a layer stored by gene (CSC)." |
+| Asks first | "Reading 200 genes over 95.6M cells: up to about 6 minutes (10.5 billion stored values).", with **Compute**, **Fewer genes** and the box "Don't ask again for this panel" |
+| Refused, cost | "Not run: it is estimated at about 25 minutes (runs over 10 minutes are not started by themselves). Use fewer genes, a smaller subset, or a layer stored by gene (CSC)." With **Try anyway** when the server allows it (see below) |
+| Stopped | "'T cell score' was stopped after 30 minutes, the server's limit for a tried run. Use fewer genes or groups, or a subset.", with **Try again** |
 | Refused, layout | "logged_counts is stored by cell (CSR), so 200 genes mean reading the whole matrix: …" A copy of the layer stored by gene (CSC) makes this fast: see {doc}`../data/preparing-a-store` |
 | Too large | "28 groups × 15,000 rows = 420,000 cells of the matrix; the limit is 400,000. Remove a section or use fewer groups." |
 | Too many values | "12 groups × 40,000 values per group = 480,000 values; the limit is 400,000. Color and Size read different layers, so each gene is read twice." |
 | One cell per group | "One cell per group: % expressing is 0 or 100.", with **Show as Heatmap** |
+
+### Try anyway, and not asking again
+
+The 10 minute refusal is about time, not about size, so you may still start the run. When the server allows it, the
+notice has **Try anyway**. The run goes through the same heavy lane as any other, shows its progress bar and **Cancel**
+at once, and says "Stops by itself after 30 minutes": the server ends a tried run at that limit (an administrator sets
+it, see {doc}`../deployment/resource-limits`), and then the plot says it was stopped, with **Try again**. Nothing
+partial is drawn. Only one tried run per user goes at a time. A run estimated at more than ten times the limit, or on a
+server where tried runs are off, keeps the refusal with the reason and no button. Refusals for size (too many values,
+groups, or grid cells) never have the button.
+
+**Don't ask again for this panel** (in the notice, and in the popover of the strip's tag) starts what the panel asks
+for without the question. Ticked on the question of a slow score, it skips that question. Ticked on a **Try anyway**
+notice, it also starts refused runs that the server allows. A panel with the box ticked shows the tag **Runs without
+asking** at the left of its status strip; its popover has **Ask again**, which clears the box. The setting belongs to
+the panel, for this page only: it is cleared by a reload, by opening another dataset, and by closing the panel, and it
+is never saved in a link, a session or a panel set, so a shared link cannot start long runs on your server unasked.
 
 When Color and Size read different layers, or one layer at two thresholds, each gene is read twice: the request
 still goes out once, the notices say so ("Reading 40 genes on 2 layers"), the estimate and the progress count both

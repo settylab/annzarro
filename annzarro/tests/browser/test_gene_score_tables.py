@@ -297,7 +297,7 @@ def test_a_refused_score_and_one_that_asks_first(page, served):
     _slow(page, "refused", 1500, refuse="This score would take about 25 minutes; the limit is 10. Use fewer genes.")
     _open(page, served)
     note = _wait_notice(page, "refused")
-    assert "'T cell score' would take about 25 minutes, so it was not run." in note["text"] and "Use fewer genes." in note["text"]
+    assert "'T cell score' was not run: it is estimated at about 25 minutes" in note["text"] and "Use fewer genes." in note["text"]
     assert [a.split("|")[0] for a in note["actions"]] == ["score-open", "score-remove"]
     assert _state(page)["header"] == "T cell score (no score)"
     page.goto("about:blank")

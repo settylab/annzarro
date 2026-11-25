@@ -2,6 +2,7 @@
   "_comment": "Generated from annzarro/core/cost_limits.py by `python -m annzarro.core.cost_limits`; do not edit.",
   "limits.ask_first_s": 60.0,
   "limits.refuse_s": 600.0,
+  "limits.try_max_s": 1800.0,
   "limits.live_update_s": 5.0,
   "limits.progress_bar_s": 10.0,
   "limits.refresh_min_interval_large_s": 60.0,

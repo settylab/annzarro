@@ -44,6 +44,7 @@ import numpy as np
 from flask import Response, jsonify, request
 
 from ...core import cost_limits, read_guard
+from ...core.gene_score import ScoreCancelled
 
 #: Bytes of a binary block written at once, so a closed connection is noticed between writes.
 WRITE_CHUNK = 1 << 20
@@ -80,7 +81,7 @@ def error_response(status: int, reason: str, message: str, **extra):
     return jsonify({"error": message, "reason": reason, **extra}), status
 
 
-def read_body(fields: Iterable[str], max_bytes: int, flags: Iterable[str] = ("estimate_only", "confirm")):
+def read_body(fields: Iterable[str], max_bytes: int, flags: Iterable[str] = ("estimate_only", "confirm", "force")):
     """The request body as an object, or ``(None, (status, reason, message))``.
 
     A body over ``max_bytes`` is refused before it is parsed, a field not in ``fields`` is refused (so fields can be
@@ -109,14 +110,111 @@ def read_body(fields: Iterable[str], max_bytes: int, flags: Iterable[str] = ("es
 
 
 def tier_refusal(tier: str, confirmed: bool, estimate: dict, *, too_expensive: str, refused_message: str,
-                 confirm_message: str):
+                 confirm_message: str, forced: bool = False):
     """The plain-HTTP answer to a cost tier that may not run now, or None: ``refused`` is a ``413`` with the route's
-    reason, ``confirm`` without ``confirm: true`` a ``409 confirmation_required``. Both carry the estimate."""
+    reason, ``confirm`` without ``confirm: true`` a ``409 confirmation_required``. Both carry the estimate.
+
+    ``forced`` (the body's ``force: true``, which implies ``confirm``): a ``refused`` tier whose estimate says a tried
+    run is allowed (``estimate["try"]["allowed"]``: ``limits.try_max_s`` above 0 and the estimate within ten times it)
+    runs, under a deadline (:class:`TriedRun`). Every size check has run before this: ``force`` never passes one."""
     if tier == "refused":
+        if forced and (estimate.get("try") or {}).get("allowed"):
+            return None
         return error_response(413, too_expensive, refused_message, estimate=estimate)
-    if tier == "confirm" and not confirmed:
+    if tier == "confirm" and not (confirmed or forced):
         return error_response(409, "confirmation_required", confirm_message, estimate=estimate)
     return None
+
+
+# ---------------------------------------------------------------------------
+# A tried run: the deadline and the one-per-user rule (aggregation-unify-080.md 14.6)
+# ---------------------------------------------------------------------------
+
+_clock = time.monotonic             # the deadline's clock (a test replaces it)
+_TRIED_LOCK = threading.Lock()
+_TRIED = set()                    # the requesters that have a tried run going (this worker)
+
+
+def tried_busy():
+    """The plain-HTTP answer when the requester already has a tried run going: ``429 try_busy``."""
+    return error_response(429, "try_busy", "Another tried run of yours is still going.")
+
+
+class TriedRun:
+    """One run started with Try anyway: the requester's single slot for it and its wall-clock deadline.
+
+    ``claim()`` takes the slot (False when the requester's other tried run is still going); ``release()`` gives it back
+    (once, however the stream ends). ``begin()`` starts the clock when the work starts (queue time is not counted);
+    ``stop()`` is true once ``max_s`` has passed. ``pause(job)`` is the job the engine is given in its place: the same
+    ``wanted()`` and ``wait()`` (and every other attribute), but ``wanted()`` raises ``ScoreCancelled`` at the deadline,
+    which every engine asks before each read, so a forced run stops by itself; ``exceeded`` then says why it ended.
+    """
+
+    def __init__(self, max_s: float, owner: Optional[str] = None, clock: Optional[Callable[[], float]] = None):
+        self.max_s, self.owner, self.clock = float(max_s), owner or "", clock or _clock
+        self.exceeded = False
+        self._start: Optional[float] = None
+        self._claimed = False
+
+    def claim(self) -> bool:
+        with _TRIED_LOCK:
+            if self.owner in _TRIED:
+                return False
+            _TRIED.add(self.owner)
+            self._claimed = True
+            return True
+
+    def release(self) -> None:
+        with _TRIED_LOCK:
+            if self._claimed:
+                _TRIED.discard(self.owner)
+                self._claimed = False
+
+    def begin(self) -> None:
+        if self._start is None:
+            self._start = self.clock()
+
+    def stop(self) -> bool:
+        if self._start is not None and self.clock() - self._start >= self.max_s:
+            self.exceeded = True
+        return self.exceeded
+
+    def fields(self) -> dict:
+        """What the first frame of a tried run carries."""
+        return {"forced": True, "deadline_s": self.max_s}
+
+    def error_frame(self) -> dict:
+        return {"type": "error", "reason": "try_time_exceeded", "limit_s": self.max_s,
+                "message": f"The run was stopped after {self.max_s:.0f} seconds, the server's limit for a tried run."}
+
+    def pause(self, job):
+        return _DeadlinePause(job, self)
+
+
+class _DeadlinePause:
+    """A job as the engine's ``pause``, ending at its tried run's deadline."""
+
+    def __init__(self, job, tried: "TriedRun"):
+        self._job, self._tried = job, tried
+
+    def wanted(self) -> bool:
+        if self._tried.stop():
+            raise ScoreCancelled()
+        return self._job.wanted()
+
+    def wait(self) -> None:
+        self._job.wait()
+
+    def __getattr__(self, name):
+        return getattr(self._job, name)
+
+
+def tried_run_of(body_force: bool, tier: str, estimate: dict):
+    """A :class:`TriedRun` for a request whose ``force`` is honoured (the tier is refused for time and a tried run is
+    allowed), else None."""
+    if not body_force or tier != "refused" or not (estimate.get("try") or {}).get("allowed"):
+        return None
+    return TriedRun(estimate["try"]["max_s"], read_guard.current_requester())
 
 
 def frame(obj) -> bytes:

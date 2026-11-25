@@ -415,10 +415,18 @@ store's index before any data is read:
 
 `live_max_s` (5 s) is where a client stops updating an open signature live and collects edits behind a button; the estimate is cheap (it reads the store's index, never a gene), so a client may ask on each edit. The `tier` follows `seconds`. `auto` (up to 60 s): compute without asking. `confirm` (60 s to 10 minutes):
 the request must carry `confirm: true`, else it is `409 confirmation_required`. `refused` (over 10 minutes):
-`413 score_too_expensive`, whatever `confirm` says; the message says what would help (fewer genes, or for a
+`413 score_too_expensive`, whatever `confirm` says, unless the request carries `force: true` (see below); the message says what would help (fewer genes, or for a
 matrix stored by cell, a copy stored by gene). The estimate is a bound from the entries to read and a
 conservative rate per layout; a matrix stored by cell (CSR) must be scanned whole to read a gene, so it
 costs far more than one stored by gene (CSC), and a remote store is estimated at a tenth of a local rate.
+
+**Try anyway (`force`).** A time refusal is soft. A request with `force: true` (it implies `confirm`) runs an estimate in the
+`refused` tier when the estimate's `try` says it may: `{"allowed", "max_s", "why"}`, where `max_s` is `limits.try_max_s` and `why`
+is `off` (it is 0) or `too_long` (the estimate is over ten times it). Every size check has run before this and `force` never passes one.
+A tried run has a wall-clock deadline of `try_max_s` from the start of its work (queue time is not counted): the stream ends with
+`{"type": "error", "reason": "try_time_exceeded", "limit_s": ...}` and nothing partial is sent. A user has one tried run at a time, and a
+second is `429 try_busy`. The first frame of a tried run carries `forced: true` and `deadline_s`. Its results are cached like any other's.
+`POST /data/cell_groups` takes `force` in every shape, with the same rules.
 
 **The stream.** Otherwise the reply is `application/x-annzarro-score-stream`: JSON frames, one per line, then
 raw bytes.
@@ -495,7 +503,7 @@ code per cell.
 | `want` | grouping | `{"codes": false, "histograms": []}`: whether to send one code per cell, and the indices of the binned partitionings whose distribution (a 100-bin count with its share of zeros) to send |
 | `mode` | grid | `1d` (x, then an optional split), `2d` (x, y, an optional split), `categorical` (x, y, and an optional factor whose most frequent level is wanted) or `sets` (2 to 16 binary partitionings) |
 | `density` | grid | `true` for the two passes of a density (`1d` and `2d` only): the first takes each density axis's `n`, SD and its 0.1st and 99.9th percentiles, the second bins the range those give, padded by 3 bandwidths. The smoothing is the browser's |
-| `estimate_only`, `confirm` | both | as on the score route |
+| `estimate_only`, `confirm`, `force` | both | as on the score route |
 
 A **partitioning** is `{source, binning?, levels?, rest?, member?}`:
 

@@ -164,7 +164,9 @@ The server estimates the time before it reads anything, and the plot follows wha
   shares it ("Cancel for 3 plots").
 - **From a minute to ten minutes**: the plot asks first ("'T cell score' will take about 2 minutes.") and
   you press **Compute**.
-- **Longer**: it is not run, and the plot says why and what to do ("Use fewer genes").
+- **Longer**: it is not started by itself, and the plot says why and what to do ("Use fewer genes"). Where the server
+  allows it the notice has **Try anyway**, which runs it with a time limit of its own; see
+  {doc}`cell-gene-plot` (Try anyway, and not asking again).
 
 The notice lies over the plot and a short tag appears in the status strip, so the plot never moves.
 On an axis, where nothing can be drawn without the score, the plot area shows the same sentence instead.

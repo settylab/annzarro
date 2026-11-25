@@ -298,6 +298,7 @@ and fails `annzarro config validate`. What each limit protects, its refusal and 
 |---|---|---|---|
 | `ask_first_s` | 60 | 0 to 600 | Estimated seconds above which a gene score, a grouping or a Cell-Gene read asks before it runs (it then runs once the user agrees). Never above refuse_s. |
 | `refuse_s` | 600 | 0 to 6000 | Estimated seconds above which a gene score, a grouping or a Cell-Gene read is refused, even when the user agrees. Bounds the time one request may hold a compute slot. |
+| `try_max_s` | 1800 | 0 to 18000 | Seconds one run that was started with Try anyway, above refuse_s, may hold a compute slot before the server stops it. 0 turns Try anyway off. An estimate above ten times this is not tried. |
 | `live_update_s` | 5 | 0 to 50 | Estimated seconds below which a computation updates live while it is edited and runs in the light lane; above it, edits wait for Update. Never above ask_first_s. |
 | `progress_bar_s` | 10 | 0 to 100 | Seconds (estimated, or waited so far) after which a computation shows a progress bar. |
 | `refresh_min_interval_large_s` | 60 | 0 to 600 | Seconds between two Refreshes of one dataset with more cells than refresh_large_cells, for a user who is not an admin on a shared server (an admin keeps server.refresh_min_interval_s). Every Refresh makes every user read the dataset again, so this bounds how often one user can do that to a large one. A Refresh inside it is scheduled for the end of the interval, not refused. |

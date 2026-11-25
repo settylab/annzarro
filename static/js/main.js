@@ -3,6 +3,7 @@
  */
 import { fontsReady } from './utils/fonts.js';
 import { copyText } from './utils/clipboard.js';
+import { askPolicy } from './utils/ask-policy.js';
 import { PanelManager } from './panel-manager.js';
 import { Config } from './config.js';
 import { Policy } from './policy.js';
@@ -2926,6 +2927,9 @@ const App = (function() {
                 return;
             }
             
+            // "Don't ask again for this panel" is for this dataset (a Refresh keeps it)
+            if (!refresh) askPolicy.clearAll();
+
             // Only notify panels if not in silent mode
             if (!silent) {
                 // Notify panels of dataset change - this can cause UI resets

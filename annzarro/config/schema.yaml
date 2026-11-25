@@ -853,6 +853,13 @@ limits:
       description: >-
         Estimated seconds above which a gene score, a grouping or a Cell-Gene read is refused, even when the user agrees. Bounds the time one request may hold a compute slot.
       default: 600
+    try_max_s:
+      type: number
+      minimum: 0
+      maximum: 18000
+      description: >-
+        Seconds one run that was started with Try anyway, above refuse_s, may hold a compute slot before the server stops it. 0 turns Try anyway off. An estimate above ten times this is not tried.
+      default: 1800
     live_update_s:
       type: number
       minimum: 0
