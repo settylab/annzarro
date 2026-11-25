@@ -100,7 +100,8 @@ export function createGroupTable({ sources, titleOf, groupingPanel, describe, op
     }
 
     return {
-        tab: VOCABULARY.sourceType.grouping,
+        tab: VOCABULARY.sourceType.groupStatTab,
+        tabOrder: 20,
         listsCategories: true,
 
         watch(column, { host, visible, onChange }) {

@@ -394,3 +394,9 @@ def test_add_row_survives_a_panels_changed_event_mid_pick(page, served):
     assert now["group"] == NK_KEY and now["layer"] == "counts" and "Sum" in now["agg"], now
     page.click(f"{_group_group()} .az-score-add-btn")
     assert page.locator("input[data-type='group-stat'][data-layer='counts']:checked").count() == 1
+
+
+def test_gene_table_tab_order(page, served):
+    _open(page, served)
+    tabs = page.evaluate("(t) => [...document.querySelectorAll(t + ' .nav-tabs .nav-link')].map(b => b.textContent.trim())", T)
+    assert tabs == ["var", "varm", "varp", "layers", "Cell groupings"], tabs

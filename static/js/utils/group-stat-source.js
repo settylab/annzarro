@@ -639,6 +639,7 @@ const groupMenuReply = (id) => menuReply(id);
 
 const groupTable = {
     tab: VOCABULARY.sourceType.groupStatTab,
+    tabOrder: 20,
     watch: (column, { host, visible, onChange }) => {
         const rec = openRecord(null, 'column', column, (raw) => onChange(columnSnapshot(raw, column)), {
             consumer: { kind: 'table', role: 'column', panelId: host, host: null }, visible });

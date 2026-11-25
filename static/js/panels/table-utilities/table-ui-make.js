@@ -271,13 +271,19 @@ export function populateColumnsGeneTable(dataSources, datasetStructure, id, sett
  * columns (utils/table-source.js), in registration order.
  * @returns {Array<{id: string, name: string, label: string}>}
  */
+/** The provider tabs after the built-in ones, by each provider's `table.tabOrder` (Gene score, then Cell groupings). */
+function inTabOrder(providers) {
+    const rank = (p) => (typeof p.table.tabOrder === 'number' ? p.table.tabOrder : 100);
+    return [...providers].sort((a, b) => rank(a) - rank(b));
+}
+
 export function cellTableSources() {
     return [
         { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
         { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
         { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
         { id: 'layer', name: 'layer', label: 'layers' }, // Expression Layers
-        ...tableProviders().map(p => ({ id: p.type, name: p.type, label: p.table.tab }))
+        ...inTabOrder(tableProviders()).map(p => ({ id: p.type, name: p.type, label: p.table.tab }))
     ];
 }
 

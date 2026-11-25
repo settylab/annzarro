@@ -22,33 +22,73 @@ log fold change above 0.05.
    Table controls of a gene table.
    ```
 
-3. **Available Columns** (1) has one tab per source: `var`, `varm`, `varp` and `layers` for a gene
-   table; `obs`, `obsm`, `obsp` and `layers` for a cell table. Each tab has a search field.
+3. **Available Columns** (1) has one tab per source. A gene table has `var`, `varm`, `varp`, `layers` and
+   **Cell groupings**; a cell table has `obs`, `obsm`, `obsp`, `layers`, **Gene score** and **Cell groupings**.
+   The `obs`, `obsm`, `var` and `varm` tabs list their columns and have a search field.
    On the `var` tab, tick `kompot_de_Young_to_Old_mean_lfc` and
-   `kompot_de_Young_to_Old_mahalanobis`. On the `varp` tab, tick
+   `kompot_de_Young_to_Old_mahalanobis`. On the `varp` tab, add
    `spearman_fold_change: H2-Q7 (focused)` (2): each gene's Spearman correlation with H2-Q7. The
    choices appear under **Selected Columns** (3); the red **×** removes one (hover over a
    shortened name to read it in full).
 4. Click **Apply Changes** (4). The table reloads with the new columns.
 5. **Show entries** sets the number of rows per page (25 by default).
 
-The `obsp`, `varp` and `layers` tabs list one choice per matrix and cell or gene, labelled
-"*matrix*: *name* (*where it comes from*)":
+There are three kinds of tab.
 
-| Label ends in | Meaning |
-|---|---|
-| `(focused)` | the focused cell or gene |
-| `(fixed in *plot title*)` | a cell or gene some plot is locked to ({doc}`focus-and-lock`) |
-| `(in this table)` | a column the table already holds, so it can be removed |
+- **Annotation and matrix tabs** (`obs`, `obsm`, `var`, `varm`) list every column, with a search field.
+- **Single-item tabs** (`layers`, `obsp`, `varp`) list the columns the table already holds, then one **add row**:
+  `[item ▾] [layer or matrix ▾] [Add column]`. The item select lists the focused cell or gene first, then those locked
+  in plots ({doc}`focus-and-lock`), then those already in the table, each once:
 
-A cell table offers obsp rows and layer columns (genes); a gene table offers varp rows and layer
-rows (cells). A column keeps the cell or gene it was added for: picking `H2-Q7 (focused)` and then
-focusing Cd74 leaves the column `spearman_fold_change: H2-Q7`, and the table is not rebuilt. To
-add Cd74's row, pick it on the tab while Cd74 is focused. A link, panel set or session that names
-a column only as "the focused gene" (or cell) instead of by name gets that column pinned when it
-opens: to the gene or cell the view itself focuses, with the filter conditions on it kept. If the
-view focuses none, the column is removed with its conditions and a notice says so. No table
-column follows the focus.
+  | Item ends in | Meaning |
+  |---|---|
+  | `(focused)` | the focused cell or gene |
+  | `(fixed in *plot title*)` | a cell or gene some plot is locked to |
+  | `(in this table)` | a column the table already holds, so it can be removed |
+
+  A cell table offers obsp rows and layer columns (genes); a gene table offers varp rows and layer rows (cells).
+  A column keeps the cell or gene it was added for: adding `H2-Q7 (focused)` and then focusing Cd74 leaves the column
+  `spearman_fold_change: H2-Q7`, and the table is not rebuilt. To add Cd74's row, choose it in the add row while Cd74 is
+  focused. A link, panel set or session that names a column only as "the focused gene" (or cell) instead of by name gets
+  that column pinned when it opens: to the gene or cell the view itself focuses, with the filter conditions on it kept.
+  If the view focuses none, the column is removed with its conditions and a notice says so. No table column follows the
+  focus.
+- **Source tabs** (**Gene score**, **Cell groupings**) list every signature, gene table or grouping, open or closed, by
+  its title. Under each are the table's columns from it, then an add row with a layer, an **aggregation button** and
+  **Add column**. The button shows the aggregation's symbol and opens the list of aggregations with their names; one that
+  cannot be computed on the layer is greyed out, and its tooltip says why. A column from these tabs is shown with its
+  symbol before its name.
+
+  | Symbol | Aggregation |
+  |---|---|
+  | z̄ | z-score mean |
+  | x̄ | mean |
+  | % | % expressing (a score: % of total) |
+  | x̄⁺ | mean of expressing cells |
+  | Σ | sum |
+  | σ | SD |
+  | Δ | control-adjusted |
+  | n/N | fraction detected |
+
+  The tabs for layers, obsp, varp, Gene score and Cell groupings have no search field: they list only what the table holds.
+  An add row keeps your choices when the chooser is rebuilt, for example when a panel is renamed.
+
+### Cell groupings in a gene table
+
+On a gene table, the **Cell groupings** tab adds a column holding one number per gene: a statistic over the cells of one
+group of a Cell Grouping ({doc}`cell-grouping`). The add row is `[group ▾] [layer ▾] [aggregation] [Add column]`. The
+group list shows the groups by the names you gave them. The statistics are those of a Gene Plot coloured by a cell group,
+and each gene gets the same number. A column is named *group*: *statistic* · *layer*, for example
+`B cell: mean · logged`, and an export names the grouping too (`Cell types › B cell: mean · logged`).
+
+- The column follows the cells shown, so a change of the cell subset recomputes it, and its header says `(computing)`
+  until the numbers arrive. It can be sorted and exported like any other.
+- A second statistic of the same group and layer is read from the numbers already held and asks the server for nothing.
+  Z-score mean is a request of its own. It is available when the layer is stored by columns (CSC) and greyed out, with the
+  reason, otherwise.
+- Renaming the grouping updates the heading and the export name. If the group has changed since you added the column it
+  still draws, and a notice offers **Keep**; if the group or the grouping is gone the notice offers **Remove column**.
+- A grouping that is built from the table can be shown in it but not filtered on, and its heading says so.
 
 ## Undo a change to the table
 
