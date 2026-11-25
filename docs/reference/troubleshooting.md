@@ -55,8 +55,22 @@ Troubleshooting table and validation notes. Step numbers refer to the paper's Pr
 | Each gene click takes seconds (Step 22) | The layer is CSR (whole-matrix load per gene), or dense and chunked wide in genes | Store it CSC, or rechunk by the aspect rule ({doc}`../data/chunking`) |
 | First click on a new cell in a cell-row plot takes over 20 s (Step 25) | Layer chunked as whole gene columns (all cells × a few genes), so one cell row decompresses the entire layer | Rechunk; repeat clicks are faster but still decompress the layer |
 | First search for a cell by name takes several seconds on tens of millions of cells (Step 35) | The server builds its index of cell names on the first search (6.3-6.8 s at 50 million cells in the paper's runs; 0.8 s once a local server has built it in the background) | Expected once per dataset and server; later searches are fast |
-| The table filter, 3D or the Hover list are greyed out in a Cell Plot; a notice above it reads Large-plot mode (Step 36) | More than 1 million points are drawn, for example with the subset switched off | Switch the subset back on (Step 32) and step through parts (Step 34) ({doc}`../user-guide/subsets`) |
+| The table filter, 3D or the Hover list are greyed out in a Cell Plot; the status line says **Large plot** (Step 36) | More than 1 million points are drawn, for example with the subset switched off | Switch the subset back on (Step 32) and step through parts (Step 34) ({doc}`../user-guide/subsets`) |
 | Cell rows of X are slow (215 ms here, more at scale) | X stored CSC: a cell row scans every chunk of the matrix (in bounded blocks, so memory stays small) | Expected trade-off; use a dense layer for cell-row views |
+
+## Scores, groups and counts (0.8.0)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| **Gene Signature**, **Cell Grouping**, **Cell-Gene Plot** or **Cell Count Plot** is missing from "Create New Panel" | The server sets `ui.enabled_panel_types` to a list from an older release; the chooser shows only the types on it | Add `gene-signature`, `cell-grouping`, `cell-gene` and `cell-count` to the list ({doc}`configuration`). The list only shapes the chooser; `panel.<type>.enabled` ({doc}`../deployment/admin`) is what turns a type off |
+| A score or a grouping says **Not computed** with a **Compute** button | Its estimate is over `limits.ask_first_s` (60 s): AnnZarro asks before it spends that | **Compute**, or make it cheaper: fewer genes, a subset, a layer stored by gene (CSC) ({doc}`../user-guide/cell-gene-plot`) |
+| A score or a grouping is refused with a **Try anyway** button | Its estimate is over `limits.refuse_s` (600 s). A time refusal is soft | **Try anyway** runs it for at most `limits.try_max_s`; a second tried run while one is going is `429 try_busy` ({doc}`../deployment/resource-limits`) |
+| A refusal that names a count and a limit (levels, groups, bins, cells of a grid) and has no **Try anyway** | A size limit protects the server or the tab and cannot be tried | Use the way out the notice offers (split by another column, fewer bins, one row), or an admin raises the limit ({doc}`../deployment/resource-limits`) |
+| **Z-score mean** of a cell group is greyed out | The layer is stored by cell (CSR); the statistic reads every gene's mean and SD over all cells | Store the layer CSC ({doc}`../data/preparing-a-store`) |
+| A score or a Cell-Gene Plot is slow on your own store | The layer it reads is stored by cell (CSR): a gene is read by scanning the whole matrix. (The demonstration store's `logged_counts` and counts layers are CSR too, but 8,090 cells read fast) | Write the layers you score or group by as CSC ({doc}`../data/preparing-a-store`) |
+| A plot filtered by a table shows no points and says the filter is not applied yet | The table is closed (restored from a link or a panel set) and has not built its filter | Reopen the table, or press **Build filter** on the plot's notice |
+| A shared link is cut off by a mail or chat program | Links over 8,000 characters (a large gene list); Share Link says so | Save a panel set instead ({doc}`../user-guide/panel-sets`) |
+| The first reads after **Refresh dataset** are slow | Refresh always makes every worker read the dataset again; a large dataset has cold caches | Expected; a user's refresh of a dataset above `limits.refresh_large_cells` waits for `limits.refresh_min_interval_large_s` ({doc}`../deployment/resource-limits`) |
 
 ## Sharing and hosting
 

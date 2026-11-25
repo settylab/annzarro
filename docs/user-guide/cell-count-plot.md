@@ -22,12 +22,12 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 |---|---|
 | **Mode** | The kind of plot (below) |
 | **X**, **Y** (**Slices** in a pie) | The inputs. A numeric input shows its bins on one line, "Bins: equal width · 50 · auto range", which opens the binning control in a pop-over; a categorical one offers **Choose levels**, also in a pop-over |
-| **Color by** | Divides each bar, curve or slice by a further input: **Stacked**, **Side by side** or **100%**; a histogram has **Overlaid** (each level's bars translucent, over the others) instead of **Side by side**, which is greyed out there because bins of a number cannot sit side by side (pointing at it says so) |
+| **Color by** | Divides each bar, curve or slice by a further input: **Stacked**, **Side by side** or **Filled** (each bar filled to 1, so the bars show fractions within each X); a histogram has **Overlaid** (each level's bars translucent, over the others) instead of **Side by side**, which is greyed out there because bins of a number cannot sit side by side (pointing at it says so) |
 | **Height** (bar, histogram), **Color** (2D histogram, heatmap, UpSet) | What the bars or rectangles show (below) |
-| **Labels** | Printed on bars, cells, slices and regions: **None**, **Count**, **Share** or **Statistic** |
+| **Labels** | Printed on bars, cells, slices and regions: **None**, **Count**, **Fraction** or **Statistic** |
 | **Sort by height**, **Reverse**, **Horizontal**, **Log count axis**, **Ring** | Order and orientation of bars, a logarithmic count axis (bar, histogram), and a pie drawn as a ring. Each is shown only in the modes that have it |
 | **Smoothing**, **Scale curves by level size**, and for a 2D density **Density as opacity**, **Isolines**, **Filled isolines** | The density modes' own row, with the bandwidth and range notes under it |
-| **Fade by its share** | Under the most frequent level's factor, in a 2D histogram or heatmap |
+| **Fade by its fraction** | Under the most frequent level's factor, in a 2D histogram or heatmap |
 | **Save as grouping** | On the toolbar: turns the plot's bars into a {doc}`cell-grouping` |
 | **3D** | On the toolbar, after **Save as grouping**: draws the plot as bars on a grid (below); shown only where the mode has bars to draw (hidden elsewhere), and greyed out with its reason above the bar limit |
 | **Display ▾** | On the toolbar, where the plot has a colour scale, colours levels, or is a 2D density (below) |
@@ -45,7 +45,7 @@ leaves the panel's layout as it is and closes with its button, its **×**, Escap
 | Axes | **Grid lines** (on by default), **Grid color**, **Grid line width**, **Axis lines**, **Axis color**, **Axis line width**, **Tick marks**, **Axis titles**, **Tick labels**, **Zero lines**, **Ticks per axis** (the count axis; a category axis keeps one tick per level) |
 | Legend | **Show legend**, **Title**, **Position** (right, bottom, top or left), **Space** (at most this share of the width for a legend beside the plot; longer labels are cut short, with the full name in hover), **Column gap**, **Columns**, **Entries, at most** (25) |
 | Margins | Room added on each side, in px |
-| Export | **PNG**, **SVG**, **JPEG**, **WEBP**; **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV**, the plotted table |
+| Export | **PNG**, **SVG**, **JPEG**, **WEBP**, **Copy** (the image to the clipboard); **Width** and **Height** (empty: the size on screen), **2x resolution**; **Download CSV**, the plotted table |
 | Apply | **Apply to other Cell Count plots**; **Make this the session default**, **Back to built-in** |
 
 A legend with more levels than **Entries, at most** lists the first ones and a last line "+ 3 more"; every level is still
@@ -57,12 +57,20 @@ the **×** closes them, and **Escape** puts the focus back on the button that op
 
 **Display.** **Display ▾** holds how the data is drawn: the colour scale and palette, the density range, and the Cell points'
 size and opacity. It shows when a colour scale or a palette applies: a 2D histogram, a 2D density, a heatmap's number, an UpSet
-coloured by Count, a share or a statistic, and any plot with a Color by. It holds the **Map** (Viridis by default), **Reverse**,
+coloured by Count, a fraction or a statistic, and any plot with a Color by. It holds the **Map** (Viridis by default), **Reverse**,
 **Min**, **Max** and **Center** of the scale (Center has no effect while both Min and Max are set), and the **Level palette**
 of a Color by's levels. **Reset** returns them all to the defaults. A box that is not set says "auto" with the value the plot
 draws, such as "auto (412)"; type a number to fix it, or clear the box. The **↺** button beside the boxes returns **Min**,
 **Max** and **Center** to auto in one undo step. A 2D histogram with a Color by has no scale, only the palette, and **Max**
 is then the cell count that gets the full colour of every level. For a 2D density the boxes are the **Density range** (below).
+
+```{figure} ../_static/screens/user-guide/count-display.png
+:class: screenshot
+:width: 35%
+:alt: The Display pop-over of a 2D histogram: a Color map section with Map Viridis and Reverse, and a Color range section with Min, Max and Center boxes that read the values drawn, and Reset.
+
+**Display ▾** of a 2D histogram: the colour map and its range. An unset box says what the plot draws.
+```
 
 **Colours.** The bars, slices and curves of a **Color by** input are in the colours of its levels: a column's stored
 colours when it has them, else the app's group colours; for a {doc}`cell-grouping`, the grouping's own colours of its
@@ -73,16 +81,23 @@ back, listed in one muted line, "Kept for other modes: Y obsm X_umap 1 · Sets: 
 
 ## Modes
 
+```{figure} ../_static/screens/user-guide/count-modes.png
+:class: screenshot
+:alt: The nine modes of the Cell Count Plot as a three by three grid, each on the bone marrow store: a stacked bar of cell types by age, a histogram of total counts by age, a pie of age, a 2D histogram of total counts against genes, a heatmap of cell type by age, a density of total counts by age, a 2D density, a Venn of three sets and an UpSet of four sets.
+
+The nine modes, left to right and top to bottom: **Bar**, **Histogram**, **Pie**, **2D histogram**, **Heatmap**, **Density**, **2D density**, **Venn** and **UpSet**.
+```
+
 | Mode | Inputs | Counts | Drawn as |
 |---|---|---|---|
 | **Bar** | X (categorical or binned), Color by | Cells per level, and per level of Color by | Bars, vertical or horizontal |
-| **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars at their bins' values (or evenly, for log and other bins), without gaps, in the number's order; stacked, overlaid or 100% |
+| **Histogram** | X numeric, Color by | As bar, 50 equal-width bins by default | Bars at their bins' values (or evenly, for log and other bins), without gaps, in the number's order; stacked, overlaid or filled |
 | **Pie** | Slices (categorical or binned) | Cells per level; the 12 largest are slices and the rest one more | A pie, or a ring. Printed numbers sit at one distance from the centre, the middle of a ring's band (three quarters of the radius, in a pie too), so **Ring** moves none of them; a slice under 3% of the cells shows its number in its hover only. **Names** prints each slice's category or bin name on it, above the number when both are shown (with **Labels** set to None, the names alone); a name longer than 18 characters is cut on the slice and whole in the hover. Slices that are categories take their level colours and are listed in the legend, which follows **Plot Options** (**Show legend**, position, columns and the entry cap). Slices that are bins of a number are coloured by the bin's value on the colour map of **Display ▾** (the bin's centre, or its order when the bins are drawn evenly: log, equal-count and manual bins), with a colour bar in place of the legend and **Min**, **Max** and **Center** boxes; **Slice colors** in **Display ▾** changes this to the level palette, which brings the legend back |
 | **2D histogram** | X and Y numeric, Color by up to 8 levels | Cells per pair of bins, 100 × 100 by default, per level of Color by | Rectangles; with Color by, one layer per level |
 | **Heatmap** | X and Y (categorical or binned) | Cells per pair of levels | Rectangles, with values printed if asked |
 | **Density** | X numeric, Color by | 512 bins per level of Color by, smoothed in the browser | Curves |
 | **2D density** | X and Y numeric, Color by up to 8 levels | 256 × 256 bins per level, smoothed | Filled isolines (the default), isolines, a density as opacity, or any mix |
-| **Venn** | 2 or 3 sets | Cells in every region | Circles with counts and shares, optionally with areas to scale |
+| **Venn** | 2 or 3 sets | Cells in every region | Circles with counts and fractions, optionally with areas to scale |
 | **UpSet** | 2 to 16 sets | Cells in every exclusive intersection, and each set's size | Intersection bars over a matrix of dots, with set-size bars |
 
 **Bar or Histogram follows X.** Choosing a number as **X** makes a Bar a **Histogram**; **Bar** stays in the list and
@@ -100,6 +115,14 @@ A numeric input is binned by the same control as a grouping's factor ({ref}`grou
 opens in place. In a count plot the defaults are 50 equal-width bins in a histogram and 100 × 100 in a 2D histogram,
 and the limits are 2,000 bins in one dimension and 512 per axis in two, checked where you type ("Enter a whole number
 from 2 to 2,000.").
+
+```{figure} ../_static/screens/user-guide/count-bins.png
+:class: screenshot
+:width: 80%
+:alt: The bins line of a histogram, "Bins: equal width · 50 · auto range" (1), and the binning pop-over it opens (2): the method, the number of bins, Zero as its own bin, Edges from, the Range, Bins drawn Evenly or At their values, and Freeze thresholds.
+
+The bins line (1) and the pop-over it opens (2): the binning control, as a grouping's factor has it, with the cell count's own **Bins drawn** switch.
+```
 
 **Values outside a range are left out and counted.** Set a **Range** on an equal-width input and the cells outside it
 are not counted, so the tails of a histogram are true; the strip below the plot says how many. (A grouping puts such
@@ -122,11 +145,13 @@ level or leaves them out.
 | Entry | Shows |
 |---|---|
 | **Count** | Cells in the bar or rectangle |
-| **Share of all cells shown**, **Share within each X**, **Share within each color** | As percent. In a heatmap: **Share of the row**, **Share of the column**, **Share of the total** |
-| **Mean of…**, **Sum of…**, **% above…**, **SD of…**, **z-score of…** | A statistic of a per-cell source over the cells of the bar, chosen with a Cell Plot's colour selects; a gene of a layer follows the focus and has the lock. **z-score of…** is the bar's mean against the mean and SD of all counted cells |
-| **Most frequent level of…** (2D histogram, heatmap) | Colours each rectangle by its commonest level of a further input, exactly, from the same count; **Fade by its share** fades rectangles where that level is a small majority |
+| **Fraction of all cells shown**, **Fraction within each X**, **Fraction within each color** | As a fraction, from 0 to 1 (axis ticks `0.25`, labels and hover `0.25`, never a percentage). In a heatmap: **Fraction of the row**, **Fraction of the column**, **Fraction of the total** |
+| **Statistic of…** | A statistic of a per-cell source over the cells of the bar. The source is chosen with a Cell Plot's colour selects (a gene of a layer follows the focus and has the lock); the statistic with the button after them, which lists what the Cell-Gene Plot and the Gene Plot list, in the same order and with the same symbols ({ref}`interface-symbols`): **x̄** Mean, **c⁺** Fraction of cells (those above the threshold, from 0 to 1, read as `% above` in earlier links), **x̄⁺** Mean of expressing cells, **Σ** Sum, **σ** SD and **%** % of total (the bar's share of the source's total over all counted cells, in percent). Z-score mean is greyed out: a Count Plot has no scale against the dataset yet. **Mean, as z-score against all counted cells** is the bar's mean against the mean and SD of all counted cells (it was *z-score of…*) |
+| **Most frequent level of…** (2D histogram, heatmap) | Colours each rectangle by its commonest level of a further input, exactly, from the same count; **Fade by its fraction** fades rectangles where that level is a small majority |
 
-Axis titles name the source and layer ("Mean of Mrpl15 · logged_counts", "% of cells shown").
+Axis titles name the source and layer ("Mean of Mrpl15 · logged_counts", "Fraction of cells shown").
+
+**Expressed above.** **Fraction of cells** and **Mean of expressing cells** count a cell when its value is above a threshold. When the bars are the groups of a Cell Grouping and the source is a gene of a layer, the threshold is the grouping's **Expressed above** (its **Methods ▾**): the box in the statistic's menu is empty and reads "auto (grouping: 1)", an edit of the grouping reaches the plot, and a value typed in the box overrides it for this plot only. For any other source (a column of numbers, a gene score) or any other axis, no grouping owns a threshold, so the box is the plot's own and empty means 0.
 
 ## 3D
 
@@ -139,21 +164,30 @@ and pressing **3D** again returns to the 2D plot. Turning it on or off is one st
   Colouring by the **Most frequent level** draws each bar in that level's colour and lists the levels in the legend.
 - **3D height** appears under **Color** while 3D is on. **Same as Color**, the default, draws the colour's numbers as
   heights; with the most frequent level, whose colour has no number, the height is the count. Any other choice is a count,
-  a share or a statistic, chosen from the same list as **Color**; a statistic reads the same source as the Color's. The
+  a fraction, or a statistic: the list has one entry for each statistic (**Mean**, **Fraction of cells**, **Mean of expressing cells**, **Sum**, **SD**,
+  **% of total**), not the symbol button; a statistic reads the same source as the Color's and its threshold. The
   choice is kept when 3D is off. The hover adds the height when it is not the colour.
 - **Bins** are always drawn at the same width in 3D, each at its place in the order, with the grid lines at the bin borders
   labelled by the edge values, as **Evenly** does in 2D.
-- **Left out.** 3D does not draw printed values, a log count axis, horizontal bars, arrangements or the fade by share, and
+- **Left out.** 3D does not draw printed values, a log count axis, horizontal bars, arrangements or the fade by fraction, and
   the status strip says so (**3D**). A rectangle with no cells, a bar of 0 and a missing value have no bar. Above 60
   categories on an axis their labels are hidden and the hover names each bar.
 - **Offered for** the 2D histogram without a **Color by** (with one it is drawn in layers), the heatmap, and a bar plot with
   a **Color by**. In other modes **3D** is not shown, as the other mode-specific controls are not.
 - **The camera.** Turn, zoom and pan with the mouse. The view is kept with the plot (in links and panel sets) without a
-  step of **Undo**; **Reset camera** in the plot's toolbar goes back to the default view.
+  step of **Undo**; **Reset camera** in the plot's modebar (the strip of buttons at the top right of the plot) goes back to the default view.
 - **Plot Options** has a **3D** section while 3D is on: the bar footprint (0.5 to 1 of its cell), lighting, the axis box
   and the height's title. **Export** greys out SVG in 3D ("3D exports as an image only."); PNG, JPEG and WEBP work.
 - **Limit.** 3D draws at most 40,000 bars, by default (the cost limit `limits.bars_3d_max`, shared with the Cell-Gene Plot). Above that **3D** is greyed out and says why ("Use fewer bins."); a plot saved
   in 3D that has grown past it is drawn in 2D, and the strip says **2D** with the reason.
+
+```{figure} ../_static/screens/user-guide/count-3d.png
+:class: screenshot
+:width: 70%
+:alt: A heatmap of phase by age drawn in 3D as bars on a grid, coloured by the cell count, with the phase and age names along the floor and a colour bar.
+
+**3D**: the same counts as bars on a grid, so a count can be read from its height as well as its colour.
+```
 
 ## Densities
 
@@ -204,7 +238,7 @@ that place, not a single cell, and the CSV stays the table of counts.
 
 A 2D histogram with a **Color by** draws the same kind of layers: one per level, from transparent to the level's color,
 with the count in each rectangle as the opacity on one scale (0 to the highest count of any level in any rectangle).
-This reads the Color by only while **Color** is *Count*; a share, a statistic or the most frequent level says something
+This reads the Color by only while **Color** is *Count*; a fraction, a statistic or the most frequent level says something
 else with the rectangle's color, so the Color by row goes away and is kept for when you return to *Count*. Up to 8
 levels: with more, the plot is refused with **Remove Color by**.
 
@@ -233,28 +267,35 @@ cell without a value (a NaN under a condition, a missing category) is out, and t
 line ("312 without a value, counted as out"), which also carries a set's state ("Group changed", "deleted"). Under the
 list: "Universe: the 8,090 cells shown. 3,402 are in no set."
 
+```{figure} ../_static/screens/user-guide/count-venn.png
+:class: screenshot
+:alt: A Cell Count Plot in Venn mode with three sets (Compartment is HSPC, Age is Old, n_genes_by_counts above 2500): the set list with each set's cells and share, the Labels control set to Count and fraction, and three overlapping circles with the count and the fraction in every region.
+
+A Venn of three sets, with the set list above it and each region's count and fraction.
+```
+
 **Venn** draws 2 or 3 sets as circles in the sets' colours, each labelled with its letter and name (cut short, in full when
-you point at it), with each region's count and share of the cells shown. Three controls sit in the row under the set list, where a
+you point at it), with each region's count and fraction of the cells shown. Three controls sit in the row under the set list, where a
 pie's **Labels** and **Names** are:
 
-- **Labels** chooses what each region prints: **Count and share** (the default), **Count**, **Share** or **None**.
+- **Labels** chooses what each region prints: **Count and fraction** (the default), **Count**, **Fraction** or **None**.
 - **Names** (on by default) prints each set's letter and name beside its circle; with it off, and **Labels** on None, the plot
-  shows the circles alone, and every region still names its sets, count and share when you point at it.
+  shows the circles alone, and every region still names its sets, count and fraction when you point at it.
 - **Area reflects counts** (off by default) draws the plot to scale, an Euler diagram: each circle's area is in proportion to
   its set's cells, and each overlap's area follows the cells in both. Two sets are exact. Three sets cannot always be drawn
   exactly with circles, so the layout is an approximation, found by moving the circles until the drawn overlaps are as close
   to the counted ones as they can be. When the largest difference between a region's share of the drawing and its share of
-  the cells in the sets is more than 5 percentage points, a note under the plot says so ("Areas are approximate: largest
-  error 12.4% of the cells in the sets"). A region with no cells may vanish, which is correct. A region too small to hold
+  the cells in the sets is more than 0.05, a note under the plot says so ("Areas are approximate: largest
+  error 0.25 of the cells in the sets"). A region with no cells may vanish, which is correct. A region too small to hold
   its label has none (the rule: the widest circle that fits inside the region is smaller than the label's height, or half its
-  width, at the size the plot is drawn); the hover still gives its count and share, and a larger panel shows more labels.
+  width, at the size the plot is drawn); the hover still gives its count and fraction, and a larger panel shows more labels.
 
 Each change is one **Undo** step, a setting is kept in the link only when it is not the default, and SVG and PNG export draw
 the labels as shown. A link made before these controls draws as it did, with equal circles. **UpSet**
 draws 2 to 16 sets: each bar is an exclusive intersection, so every cell is counted in exactly one bar. The bars are one
 neutral colour; **Color** offers **None** (the default, one colour for every bar) and **Count**, which colours each bar by
-its count on the colour scale and shows a colour bar, besides a share or a statistic. **Color ▾** sets the map and range. **Sort** (**By size** or **By degree**), **Show top** (40 by default) and **Minimum size** choose
-the bars, and the plot states the share of cells in the bars not shown. At 16 sets **Add set** is disabled: "UpSet
+its count on the colour scale and shows a colour bar, besides a fraction or a statistic. **Display ▾** sets the map and range. **Sort** (**By size** or **By degree**), **Show top** (40 by default) and **Minimum size** choose
+the bars, and the plot states the fraction of cells in the bars not shown. At 16 sets **Add set** is disabled: "UpSet
 shows up to 16 sets."
 
 (count-group-sets)=
@@ -280,17 +321,30 @@ is never a change. A key that is no longer a group says "'Cd3e ≥ 1.75' is no l
 Every mode is one request, checked against its limits before anything is read. A plot over a limit says so with the
 count and the limit, and offers the fix:
 
-| Mode | Limit | Way out |
+| Mode | Limit | What the notice says |
 |---|---|---|
-| Bar, Pie | 200 levels on X: "sample has 380 levels; Bar shows up to 200." | **Bin it**, **Choose levels** |
-| Heatmap | 200 × 200 levels | **Bin it**, **Choose levels** |
-| Histogram, Density | 2,000 bins; Color by up to 200 levels | **Remove Color by** |
-| 2D histogram, 2D density | 512 × 512 bins; Color by up to 8 levels | **Remove Color by** |
-| UpSet | 16 sets | |
+| Bar, Pie | 200 levels on X | "sample has 380 levels; Bar shows up to 200." |
+| Heatmap | 200 × 200 levels | The two counts and the limit |
+| Histogram, Density | 2,000 bins; Color by up to 200 levels | "Color by sample has 380 levels; a histogram colors up to 200." |
+| 2D histogram, 2D density | 512 × 512 bins; Color by up to 8 levels | "Color by Grouping 1 has 30 levels; 2D histogram colors up to 8." |
+| UpSet | 16 sets | "UpSet shows up to 16 sets." |
+
+A refusal for size names the input, its count and the cap, and never a duration ({ref}`long-computations`). Beside the sentence,
+the notice offers the ways out that would draw the plot, each one ordinary, undoable edit and never an automatic change:
+
+- **Bin it** (a number) or **Choose levels** (a category), for an axis with too many bins or levels;
+- **Remove Color by**, for a Color by over the cap;
+- **Split by another column ▾**, which opens the Color by's own picker, with the sources over the cap greyed out and
+  saying their count ("Cell types × sample: 46 levels, at most 8"), the route to a coarser grouping;
+- **Switch to <mode>**, for a view the same inputs do pass: a 2D histogram or 2D density split by too many levels can
+  become a **Heatmap** (categories on an axis, up to 200) or a **Bar** (a split of up to 200), whichever applies;
+- **Fewer bins**, which sets the bins to the cap.
+
+Only the ways that would draw are offered, at most three, the least destructive first.
 
 A set that is a cell table needs at most 1,000,000 cells shown, as a table does. Long counts follow the cost tiers
 of scores (Update, asking first, refusing past 10 minutes, with **Try anyway** where the server allows a longer run; see
-{doc}`cell-gene-plot`), with a progress bar after 10 seconds; the previous drawing stays while a new count runs.
+{doc}`long-computations`), with a progress bar after 10 seconds; the previous drawing stays while a new count runs.
 
 **The strip** below the plot says what was counted: "8,090 cells counted · 78 without a value for total_counts · 41
 outside the range".
@@ -305,5 +359,5 @@ cell)." A plot that would make more than 2,000 groups keeps the dialog with **Sa
 make 6,840 groups; a grouping holds up to 2,000. Use fewer bins first."). Densities and the sets modes have no Save as
 grouping.
 
-**Download CSV**, in Plot Options ▸ Export, saves the plotted numbers (levels, cells, share and the statistic). There is no
+**Download CSV**, in Plot Options ▸ Export, saves the plotted numbers (levels, cells, fraction and the statistic). There is no
 table of them in the panel; the CSV is the table.

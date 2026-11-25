@@ -1,6 +1,6 @@
 {
  "name": "Gene groups: filtered",
- "timestamp": "2026-10-06T22:35:24+00:00",
+ "timestamp": "2026-11-25T21:23:11+00:00",
  "dataset": "bm_aging_annzarro.zarr",
  "datasetName": "bm_aging_annzarro",
  "constants": {
@@ -47,7 +47,7 @@
        "condition": ">",
        "data": "spearman_fold_change: H2-Q7",
        "origData": "varp_spearman_fold_change_H2-Q7",
-       "type": "num",
+       "type": "az-num",
        "value": [
         "0.4"
        ]
@@ -56,7 +56,7 @@
        "condition": ">",
        "data": "kompot_de_Young_to_Old_fold_change: HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
        "origData": "layer_kompot_de_Young_to_Old_fold_change_HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
-       "type": "num",
+       "type": "az-num",
        "value": [
         "0.2"
        ]
@@ -65,7 +65,11 @@
      "logic": "AND"
     },
     "searchText": "",
-    "filteredGenes": null
+    "searchRegex": false,
+    "searchSmart": true,
+    "searchCaseInsensitive": true,
+    "filteredGenes": null,
+    "scoreOptions": null
    },
    "isSelectionTile": false
   },
@@ -129,30 +133,26 @@
     "subsettedGenes": null,
     "hideNonSubset": false,
     "showGrid": true,
+    "flipX": false,
+    "flipY": false,
     "lockColorRange": true,
     "highlightFocusedGene": true,
     "exportWidth": 1200,
     "exportHeight": 800,
     "tableFilter": "gene-table-g",
     "removeNonTableEntries": false,
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "hideNaN": false,
     "showAxisTitles": true,
     "showAxisLabels": true,
     "showAxisLines": true,
     "showZeroLines": false,
     "showLegend": true,
-    "bgColor": "#ffffff",
-    "gridColor": "#e6e6e6",
-    "axisColor": "#000000",
-    "textColor": "#000000",
-    "zeroLineColor": "#cccccc",
-    "backdropColor": "#f0f0f0",
     "axisLineWidth": 1,
     "gridLineWidth": 1,
     "zeroLineWidth": 1,
     "tickDensity": "auto",
     "fontSize": 12,
-    "fontFamily": "Arial, Helvetica, sans-serif",
     "margins": {
      "l": 80,
      "r": 80,
@@ -160,11 +160,29 @@
      "b": 60,
      "pad": 4
     },
-    "scaleExport": false,
+    "scaleExport": true,
     "legendPosition": "right",
     "enableZoom": true,
     "enablePan": true,
     "showHoverInfo": true,
+    "tickCount": null,
+    "marginsUnlinked": false,
+    "colorbarPosition": "legend",
+    "colorbarLength": 1,
+    "colorbarTicks": null,
+    "legendDotSize": null,
+    "legendColumns": null,
+    "legendColumnGap": null,
+    "legendTitleAlign": null,
+    "showLegendTitle": true,
+    "legendTitleSize": null,
+    "legendTitleGap": null,
+    "bare": false,
+    "showScaleBar": false,
+    "scaleBarCorner": "bottom-right",
+    "scaleBarSize": 1,
+    "scaleBarUnit": "",
+    "colourModel": 2,
     "centeringActive": false,
     "viewport2D": null,
     "colorRangeUnits": "data"
@@ -301,7 +319,7 @@
      "panes": [
       {
        "percentage": 40,
-       "controlsVisible": false
+       "controlsVisible": true
       },
       {
        "percentage": 60,
@@ -354,7 +372,7 @@
         "condition": ">",
         "data": "spearman_fold_change: H2-Q7",
         "origData": "varp_spearman_fold_change_H2-Q7",
-        "type": "num",
+        "type": "az-num",
         "value": [
          "0.4"
         ]
@@ -363,7 +381,7 @@
         "condition": ">",
         "data": "kompot_de_Young_to_Old_fold_change: HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
         "origData": "layer_kompot_de_Young_to_Old_fold_change_HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
-        "type": "num",
+        "type": "az-num",
         "value": [
          "0.2"
         ]
@@ -372,7 +390,11 @@
       "logic": "AND"
      },
      "searchText": "",
-     "filteredGenes": null
+     "searchRegex": false,
+     "searchSmart": true,
+     "searchCaseInsensitive": true,
+     "filteredGenes": null,
+     "scoreOptions": null
     },
     "gene-plot-g": {
      "id": "gene-plot-g",
@@ -430,30 +452,26 @@
      "subsettedGenes": null,
      "hideNonSubset": false,
      "showGrid": true,
+     "flipX": false,
+     "flipY": false,
      "lockColorRange": true,
      "highlightFocusedGene": true,
      "exportWidth": 1200,
      "exportHeight": 800,
      "tableFilter": "gene-table-g",
      "removeNonTableEntries": false,
+     "fontFamily": "Arial, Helvetica, sans-serif",
      "hideNaN": false,
      "showAxisTitles": true,
      "showAxisLabels": true,
      "showAxisLines": true,
      "showZeroLines": false,
      "showLegend": true,
-     "bgColor": "#ffffff",
-     "gridColor": "#e6e6e6",
-     "axisColor": "#000000",
-     "textColor": "#000000",
-     "zeroLineColor": "#cccccc",
-     "backdropColor": "#f0f0f0",
      "axisLineWidth": 1,
      "gridLineWidth": 1,
      "zeroLineWidth": 1,
      "tickDensity": "auto",
      "fontSize": 12,
-     "fontFamily": "Arial, Helvetica, sans-serif",
      "margins": {
       "l": 80,
       "r": 80,
@@ -461,11 +479,29 @@
       "b": 60,
       "pad": 4
      },
-     "scaleExport": false,
+     "scaleExport": true,
      "legendPosition": "right",
      "enableZoom": true,
      "enablePan": true,
      "showHoverInfo": true,
+     "tickCount": null,
+     "marginsUnlinked": false,
+     "colorbarPosition": "legend",
+     "colorbarLength": 1,
+     "colorbarTicks": null,
+     "legendDotSize": null,
+     "legendColumns": null,
+     "legendColumnGap": null,
+     "legendTitleAlign": null,
+     "showLegendTitle": true,
+     "legendTitleSize": null,
+     "legendTitleGap": null,
+     "bare": false,
+     "showScaleBar": false,
+     "scaleBarCorner": "bottom-right",
+     "scaleBarSize": 1,
+     "scaleBarUnit": "",
+     "colourModel": 2,
      "centeringActive": false,
      "viewport2D": null,
      "colorRangeUnits": "data"

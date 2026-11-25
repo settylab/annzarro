@@ -71,3 +71,23 @@ test('no other module of this step writes an interface word as a literal', () =>
         }
     }
 });
+
+test('every VOCABULARY.sourceType key is read somewhere (a label nothing shows is removed, G-SRC)', async () => {
+    const { readdirSync, readFileSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { VOCABULARY } = await import('../../../static/js/utils/vocabulary.js');
+    const root = new URL('../../../static/js/', import.meta.url).pathname;
+    const files = [];
+    const walk = (dir) => {
+        for (const name of readdirSync(dir)) {
+            if (name === 'vendor') continue;
+            const path = join(dir, name);
+            if (statSync(path).isDirectory()) walk(path); else if (name.endsWith('.js') && !path.endsWith('utils/vocabulary.js')) files.push(path);
+        }
+    };
+    walk(root);
+    const source = files.map((f) => readFileSync(f, 'utf8')).join('\n');
+    for (const key of Object.keys(VOCABULARY.sourceType)) {
+        assert.ok(new RegExp(`sourceType\\.${key}\\b`).test(source), `VOCABULARY.sourceType.${key} is read by no module`);
+    }
+});

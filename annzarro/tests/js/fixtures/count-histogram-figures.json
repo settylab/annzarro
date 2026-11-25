@@ -18,9 +18,9 @@
      "color": "#111111"
     },
     "hovertext": [
-     "depth 0 to 10<br>Cells: 5<br>Share: 33.3%",
-     "depth 10 to 20<br>Cells: 8<br>Share: 53.3%",
-     "depth 20 to 30<br>Cells: 2<br>Share: 13.3%"
+     "depth 0 to 10<br>Cells: 5<br>Share: 0.333",
+     "depth 10 to 20<br>Cells: 8<br>Share: 0.533",
+     "depth 20 to 30<br>Cells: 2<br>Share: 0.133"
     ],
     "hoverinfo": "text",
     "showlegend": false,
@@ -93,10 +93,10 @@
      "color": "#111111"
     },
     "hovertext": [
-     "depth = 0<br>Cells: 9<br>Share: 37.5%",
-     "depth 4 to 14<br>Cells: 5<br>Share: 20.8%",
-     "depth 14 to 24<br>Cells: 8<br>Share: 33.3%",
-     "depth 24 to 34<br>Cells: 2<br>Share: 8.33%"
+     "depth = 0<br>Cells: 9<br>Share: 0.375",
+     "depth 4 to 14<br>Cells: 5<br>Share: 0.208",
+     "depth 14 to 24<br>Cells: 8<br>Share: 0.333",
+     "depth 24 to 34<br>Cells: 2<br>Share: 0.083"
     ],
     "hoverinfo": "text",
     "showlegend": false,
@@ -168,9 +168,9 @@
      "color": "#1f77b4"
     },
     "hovertext": [
-     "depth 0 to 10 × p<br>Cells: 1<br>Share: 4.76%",
-     "depth 10 to 20 × p<br>Cells: 3<br>Share: 14.3%",
-     "depth 20 to 30 × p<br>Cells: 5<br>Share: 23.8%"
+     "depth 0 to 10 × p<br>Cells: 1<br>Share: 0.048",
+     "depth 10 to 20 × p<br>Cells: 3<br>Share: 0.143",
+     "depth 20 to 30 × p<br>Cells: 5<br>Share: 0.238"
     ],
     "hoverinfo": "text",
     "showlegend": true,
@@ -200,9 +200,9 @@
      "color": "#ff7f0e"
     },
     "hovertext": [
-     "depth 0 to 10 × q<br>Cells: 2<br>Share: 9.52%",
-     "depth 10 to 20 × q<br>Cells: 4<br>Share: 19%",
-     "depth 20 to 30 × q<br>Cells: 6<br>Share: 28.6%"
+     "depth 0 to 10 × q<br>Cells: 2<br>Share: 0.095",
+     "depth 10 to 20 × q<br>Cells: 4<br>Share: 0.19",
+     "depth 20 to 30 × q<br>Cells: 6<br>Share: 0.286"
     ],
     "hoverinfo": "text",
     "showlegend": true,
@@ -280,9 +280,9 @@
      "color": "#1f77b4"
     },
     "hovertext": [
-     "depth 0 to 10 × p<br>Cells: 1<br>Share: 4.76%",
-     "depth 10 to 20 × p<br>Cells: 3<br>Share: 14.3%",
-     "depth 20 to 30 × p<br>Cells: 5<br>Share: 23.8%"
+     "depth 0 to 10 × p<br>Cells: 1<br>Share: 0.048",
+     "depth 10 to 20 × p<br>Cells: 3<br>Share: 0.143",
+     "depth 20 to 30 × p<br>Cells: 5<br>Share: 0.238"
     ],
     "hoverinfo": "text",
     "showlegend": true,
@@ -311,9 +311,9 @@
      "color": "#ff7f0e"
     },
     "hovertext": [
-     "depth 0 to 10 × q<br>Cells: 2<br>Share: 9.52%",
-     "depth 10 to 20 × q<br>Cells: 4<br>Share: 19%",
-     "depth 20 to 30 × q<br>Cells: 6<br>Share: 28.6%"
+     "depth 0 to 10 × q<br>Cells: 2<br>Share: 0.095",
+     "depth 10 to 20 × q<br>Cells: 4<br>Share: 0.19",
+     "depth 20 to 30 × q<br>Cells: 6<br>Share: 0.286"
     ],
     "hoverinfo": "text",
     "showlegend": true,
@@ -390,9 +390,9 @@
      "color": "#1f77b4"
     },
     "hovertext": [
-     "depth 0 to 10 × p<br>Cells: 1<br>Share: 4.76%",
-     "depth 10 to 20 × p<br>Cells: 3<br>Share: 14.3%",
-     "depth 20 to 30 × p<br>Cells: 5<br>Share: 23.8%"
+     "depth 0 to 10 × p<br>Cells: 1<br>Share: 0.048",
+     "depth 10 to 20 × p<br>Cells: 3<br>Share: 0.143",
+     "depth 20 to 30 × p<br>Cells: 5<br>Share: 0.238"
     ],
     "hoverinfo": "text",
     "showlegend": true,
@@ -428,9 +428,9 @@
      "color": "#ff7f0e"
     },
     "hovertext": [
-     "depth 0 to 10 × q<br>Cells: 2<br>Share: 9.52%",
-     "depth 10 to 20 × q<br>Cells: 4<br>Share: 19%",
-     "depth 20 to 30 × q<br>Cells: 6<br>Share: 28.6%"
+     "depth 0 to 10 × q<br>Cells: 2<br>Share: 0.095",
+     "depth 10 to 20 × q<br>Cells: 4<br>Share: 0.19",
+     "depth 20 to 30 × q<br>Cells: 6<br>Share: 0.286"
     ],
     "hoverinfo": "text",
     "showlegend": true,
@@ -514,9 +514,9 @@
      "color": "#111111"
     },
     "hovertext": [
-     "depth 1 to 10<br>Cells: 1<br>Share: 16.7%",
-     "depth 10 to 100<br>Cells: 2<br>Share: 33.3%",
-     "depth 100 to 1000<br>Cells: 3<br>Share: 50%"
+     "depth 1 to 10<br>Cells: 1<br>Share: 0.167",
+     "depth 10 to 100<br>Cells: 2<br>Share: 0.333",
+     "depth 100 to 1000<br>Cells: 3<br>Share: 0.5"
     ],
     "hoverinfo": "text",
     "showlegend": false,
@@ -601,9 +601,9 @@
      "color": "#111111"
     },
     "hovertext": [
-     "depth 1 to 10<br>Cells: 1<br>Share: 16.7%",
-     "depth 10 to 100<br>Cells: 2<br>Share: 33.3%",
-     "depth 100 to 1000<br>Cells: 3<br>Share: 50%"
+     "depth 1 to 10<br>Cells: 1<br>Share: 0.167",
+     "depth 10 to 100<br>Cells: 2<br>Share: 0.333",
+     "depth 100 to 1000<br>Cells: 3<br>Share: 0.5"
     ],
     "hoverinfo": "text",
     "showlegend": false,
@@ -674,9 +674,9 @@
      "color": "#1f77b4"
     },
     "hovertext": [
-     "depth 0 to 10 × p<br>Cells: 1<br>Share: 33.3%",
-     "depth 10 to 20 × p<br>Cells: 3<br>Share: 42.9%",
-     "depth 20 to 30 × p<br>Cells: 5<br>Share: 45.5%"
+     "depth 0 to 10 × p<br>Cells: 1<br>Share: 0.333",
+     "depth 10 to 20 × p<br>Cells: 3<br>Share: 0.429",
+     "depth 20 to 30 × p<br>Cells: 5<br>Share: 0.455"
     ],
     "hoverinfo": "text",
     "showlegend": true,
@@ -705,9 +705,9 @@
      "color": "#ff7f0e"
     },
     "hovertext": [
-     "depth 0 to 10 × q<br>Cells: 2<br>Share: 66.7%",
-     "depth 10 to 20 × q<br>Cells: 4<br>Share: 57.1%",
-     "depth 20 to 30 × q<br>Cells: 6<br>Share: 54.5%"
+     "depth 0 to 10 × q<br>Cells: 2<br>Share: 0.667",
+     "depth 10 to 20 × q<br>Cells: 4<br>Share: 0.571",
+     "depth 20 to 30 × q<br>Cells: 6<br>Share: 0.545"
     ],
     "hoverinfo": "text",
     "showlegend": true,
@@ -762,7 +762,7 @@
      "text": "Share of x"
     },
     "rangemode": "tozero",
-    "tickformat": ".0%"
+    "tickformat": ".2~f"
    }
   }
  },
@@ -785,9 +785,9 @@
      "color": "#111111"
     },
     "hovertext": [
-     "1<br>Cells: 4<br>Share: 26.7%",
-     "2<br>Cells: 5<br>Share: 33.3%",
-     "3<br>Cells: 6<br>Share: 40%"
+     "1<br>Cells: 4<br>Share: 0.267",
+     "2<br>Cells: 5<br>Share: 0.333",
+     "3<br>Cells: 6<br>Share: 0.4"
     ],
     "hoverinfo": "text",
     "showlegend": false,

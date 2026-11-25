@@ -113,9 +113,10 @@ const cellGene = Object.freeze({
     /** What the Size and Gene Plot lists say of z-score mean (consumers that cannot show it). */
     zscoreCannot: Object.freeze({
         size: 'Z-score mean is signed; dot size cannot show a sign. Use it for Color.',
+        countPlot: 'Not available for a Count Plot statistic yet. "Mean, as z-score against all counted cells" is the bar\'s own.',
         genes: 'Z-score mean of a cell group is not available in the Gene Plot yet: it needs every gene\'s mean and SD over all cells.',
-        genesLayout: 'Z-score mean of a cell group needs a whole-layer read on this store\'s layout; coming with the moments cache.',
-        table: 'Z-score mean is for cell groups; a table\'s cells are not yet scaled against the whole layer.',
+        genesLayout: 'Z-score mean of a cell group needs this layer stored by gene (CSC).',
+        table: 'Z-score mean is not offered for a table\'s cells. Use it for a cell group (Color of a Cell-Gene Plot).',
         genesLayoutUnknown: 'Z-score mean of a cell group is offered once the layer\'s storage layout is known.'
     }),
     /** What a colour bar or a CSV header says of the scaling. */
@@ -330,7 +331,7 @@ const cellGene = Object.freeze({
      */
     sources: Object.freeze({
         of: 'of',
-        above: 'above',
+        above: 'Expressed above',
         threshold: 'expressed above',
         thresholdHelp: 'A cell counts as expressing above this value.',
         /**
@@ -360,30 +361,32 @@ const cellGene = Object.freeze({
  */
 const countPlot = Object.freeze({
     count: 'Cells',
-    fill: '% of cells in each bar',
+    fill: 'Fraction of cells in each bar',
     hoverCount: 'Cells',
-    hoverShare: 'Share',
+    hoverShare: 'Fraction',
     /** A value axis of shares, by its base (plan 1.6 share bases), with the inputs' names. */
     share: (base, names = {}) => {
         switch (base) {
-            case 'x': case 'column': return `% within each ${names.x || 'X'}`;
-            case 'split': return `% within each ${names.split || 'color'}`;
-            case 'row': return `% within each ${names.y || 'Y'}`;
-            default: return `% of ${word.cellsShown}`;
+            case 'x': case 'column': return `Fraction within each ${names.x || 'X'}`;
+            case 'split': return `Fraction within each ${names.split || 'color'}`;
+            case 'row': return `Fraction within each ${names.y || 'Y'}`;
+            default: return `Fraction of ${word.cellsShown}`;
         }
     },
     /** A value axis of a statistic of a source ("Mean of Mrpl15 · logged_counts"). */
     measure: (stat, source, above) => {
         switch (stat) {
             case 'sum': return `Sum of ${source}`;
-            case 'pct_above': return `% of cells with ${source} above ${above === undefined ? 0 : above}`;
+            case 'fraction_of_cells': return `Fraction of cells with ${source} above ${above === undefined ? 0 : above}`;
+            case 'mean_expressing': return `Mean of ${source} in cells above ${above === undefined ? 0 : above}`;
+            case 'fraction_of_total': return `% of total ${source}`;
             case 'sd': return `SD of ${source}`;
-            case 'zscore': return `z-score of ${source}`;
+            case 'zscore': return `Mean of ${source}, as z-score against all counted cells`;
             default: return `Mean of ${source}`;
         }
     },
     topLevel: (name) => `Most frequent ${word.level} of ${name}`,
-    csv: Object.freeze({ count: 'Cells', share: 'Share', measure: capital(word.statistic) }),
+    csv: Object.freeze({ count: 'Cells', share: 'Fraction', measure: capital(word.statistic) }),
     /** The Mode select: its groups in order, each with its modes (UX 4.1). */
     modeGroups: Object.freeze([
         Object.freeze({ label: 'Counts', modes: Object.freeze(['bar', 'histogram', 'pie']) }),
@@ -400,7 +403,7 @@ const countPlot = Object.freeze({
         mode: 'Mode', x: 'X', y: 'Y', split: 'Color by', slices: 'Slices', height: 'Height', color: 'Color', labels: 'Labels',
         sets: capital(plural.set), factor: 'Of', source: 'Of', above: 'Above'
     }),
-    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', overlay: 'Overlaid', fill: '100%' }),
+    arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', overlay: 'Overlaid', fill: 'Filled' }),
     /** Why an arrangement does not apply (its title, where it is disabled). */
     arrangementRefused: Object.freeze({
         dodgeBins: 'Bins of a number cannot sit side by side. Overlaid shows each level over the others.'
@@ -418,35 +421,38 @@ const countPlot = Object.freeze({
         none: 'None',
         count: 'Count',
         share: Object.freeze({
-            all: `Share of all ${word.cellsShown}`, x: 'Share within each X', split: 'Share within each color',
-            row: 'Share of the row', column: 'Share of the column', total: 'Share of the total'
+            all: `Fraction of all ${word.cellsShown}`, x: 'Fraction within each X', split: 'Fraction within each color',
+            row: 'Fraction of the row', column: 'Fraction of the column', total: 'Fraction of the total'
         }),
-        stat: Object.freeze({ mean: 'Mean of…', sum: 'Sum of…', pct_above: '% above…', sd: 'SD of…', zscore: 'z-score of…' }),
+        /** The statistic of the source below (the Value select's one entry), and the statistics a 3D height can read (the shared table's names). */
+        statistic: `${capital(word.statistic)} of…`,
+        stat: Object.freeze({ mean: 'Mean', fraction_of_cells: 'Fraction of cells', mean_expressing: 'Mean of expressing cells', sum: 'Sum', sd: 'SD',
+            fraction_of_total: '% of total', zscore: 'Mean, as z-score against all counted cells' }),
         topLevel: `Most frequent ${word.level} of…`,
-        groups: Object.freeze({ share: 'Share', stat: capital(word.statistic) })
+        groups: Object.freeze({ share: 'Fraction', stat: capital(word.statistic) })
     }),
     valueHelp: Object.freeze({
         none: 'One color for every bar.',
         countUpset: 'Each bar colored by its cells, on the color scale.',
         count: 'Cells in the bar.',
         countColor: 'Cells in the rectangle.',
-        share: 'As percent.',
-        heatmapShare: 'As percent: of the row, of the column, of the total.',
+        share: 'As a fraction, 0 to 1.',
+        heatmapShare: 'As a fraction, 0 to 1: of the row, of the column, of the total.',
         stat: 'A statistic of the source below, over the cells of the bar.',
-        zscore: "The bar's mean against all counted cells.",
+        zscore: "The bar's mean, as a z-score against all counted cells.",
         topLevel: `Colors each rectangle by its commonest ${word.level}.`
     }),
-    labels: Object.freeze({ none: 'None', count: 'Count', share: 'Share', measure: capital(word.statistic) }),
+    labels: Object.freeze({ none: 'None', count: 'Count', share: 'Fraction', measure: capital(word.statistic) }),
     /** A Venn's own controls (next to a pie's Labels and Names): what its regions print, the set names, and area by count. */
     venn: Object.freeze({
-        labels: Object.freeze({ both: 'Count and share', count: 'Count', share: 'Share', none: 'None' }),
+        labels: Object.freeze({ both: 'Count and fraction', count: 'Count', share: 'Fraction', none: 'None' }),
         names: 'Names', namesTitle: 'Print each set\'s letter and name beside its circle (the whole name is in its hover)',
         area: 'Area reflects counts',
         areaTitle: 'Draw each circle\'s area in proportion to its set and each overlap\'s in proportion to the cells in both (exact for two sets, approximate for three; a region with no cells may vanish)'
     }),
     /** A pie's slices: their names, and their colours (continuous for bins of a number, the level palette for categories). */
     slices: Object.freeze({
-        names: 'Names', namesTitle: 'Print each slice\'s name on it (a slice under 3% shows it in its hover only)',
+        names: 'Names', namesTitle: 'Print each slice\'s name on it (a slice under 0.03 shows it in its hover only)',
         colours: 'Slice colors', continuous: 'Continuous', levels: 'Level palette',
         refused: 'Slices that are categories have no order to color by; bins of a number do.',
         byCentre: 'Slices take the color of their bin\'s center. The bar shows the numbers.',
@@ -455,7 +461,7 @@ const countPlot = Object.freeze({
     }),
     buttons: Object.freeze({
         sort: 'Sort by height', reverse: 'Reverse', horizontal: 'Horizontal', options: 'Plot Options', ring: 'Ring', log: 'Log count axis',
-        fade: 'Fade by its share', csv: 'Download CSV', chooseLevels: `Choose ${plural.level}`, undo: 'Undo',
+        fade: 'Fade by its fraction', csv: 'Download CSV', chooseLevels: `Choose ${plural.level}`, undo: 'Undo',
         adjust: 'Smoothing', bySize: 'Scale curves by level size'
     }),
     /**
@@ -468,11 +474,11 @@ const countPlot = Object.freeze({
         buttonOnHelp: 'Back to the 2D plot.',
         heightRow: '3D height',
         sameAs: (what) => `Same as ${what}`,
-        heightHelp: 'Same as the color draws the color\'s numbers as heights. A count, a share or a statistic can be the height instead.',
+        heightHelp: 'Same as the color draws the color\'s numbers as heights. A count, a fraction or a statistic can be the height instead.',
         hoverHeight: 'Height',
         tag: '3D',
         offTag: '2D',
-        leftOut: '3D does not draw printed values, a log count axis, horizontal bars, arrangements or the fade by share.',
+        leftOut: '3D does not draw printed values, a log count axis, horizontal bars, arrangements or the fade by fraction.',
         resetCamera: 'Reset camera',
         svgOff: '3D exports as an image only.',
         refused: Object.freeze({
@@ -481,7 +487,7 @@ const countPlot = Object.freeze({
             layers: 'A 2D histogram with a Color by is drawn in layers. 3D draws it without the Color by.'
         }),
         options: Object.freeze({
-            section: '3D', footprint: 'Bar footprint (share of the cell)', lighting: 'Lighting', box: 'Axis box', zTitle: 'Height title'
+            section: '3D', footprint: 'Bar footprint (fraction of the cell)', lighting: 'Lighting', box: 'Axis box', zTitle: 'Height title'
         })
     }),
     /** The layers of a 2D density, each a box of Plot Options. */
@@ -617,7 +623,7 @@ const countSets = Object.freeze({
         definition: `Change what the ${word.set} is`, colour: (name) => `Color of ${name}`, saveName: 'Save the name', cancel: 'Cancel'
     }),
     setTitle: (letter) => `${capital(word.set)} ${letter}`,
-    shareTitle: `Share of the ${word.cellsShown}`,
+    shareTitle: `Fraction of the ${word.cellsShown}`,
     renameHint: 'Double-click to rename. Enter saves, Escape cancels, Tab saves and moves to the next set.',
     renameLabel: `Name of the ${word.set}`,
     /** An UpSet's own options (UX 4.2): Sort, Show top, Minimum size. */
@@ -721,7 +727,7 @@ const aggregation = Object.freeze({
     sections: Object.freeze({ genes: 'Genes', cells: 'Cells', signatures: 'Gene signatures', tables: 'Gene tables', groupings: 'Cell groupings', cellTables: 'Cell tables' })
 });
 
-const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping', groupStat: 'Cell group', tableStat: 'Cell table', groupStatTab: 'Cell groupings' });
+const sourceType = Object.freeze({ score: 'Gene score', grouping: 'Cell Grouping', groupStatTab: 'Cell groupings' });
 
 /** Show as table (UX 7): a plot's CSV rows as an HTML table, in every plot that offers it (count plot, Cell-Gene Plot). */
 const table = Object.freeze({

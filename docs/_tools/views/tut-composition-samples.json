@@ -1,0 +1,127 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "Apoe",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-count-comp",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-count-comp2",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-count-comp": true,
+   "cell-count-comp2": true,
+   "cell-grouping-age": false
+  },
+  "panelConfigs": {
+   "cell-count-comp": {
+    "id": "cell-count-comp",
+    "title": "Cells per sample",
+    "version": 1,
+    "mode": "bar",
+    "x": {
+     "source": {
+      "type": "obs",
+      "key": "Sample"
+     }
+    },
+    "split": {
+     "source": {
+      "type": "obs",
+      "key": "Compartment"
+     }
+    }
+   },
+   "cell-count-comp2": {
+    "id": "cell-count-comp2",
+    "title": "Cell types within each fraction and age",
+    "version": 1,
+    "mode": "bar",
+    "arrangement": "fill",
+    "x": {
+     "source": {
+      "type": "cell-group",
+      "key": "cell-grouping-age"
+     }
+    },
+    "split": {
+     "source": {
+      "type": "obs",
+      "key": "midres_celltype"
+     },
+     "levels": [
+      "c:HSC",
+      "c:LMPP",
+      "c:CLP",
+      "c:Mono P",
+      "c:MKP",
+      "c:Ery P",
+      "c:Myelo P",
+      "c:MBE",
+      "c:Pre-B cell",
+      "c:Immature B cell",
+      "c:Mature B cell",
+      "c:Neutrophil",
+      "c:Monocyte",
+      "c:pDC",
+      "c:cDC",
+      "c:ILC",
+      "c:T cell",
+      "c:Treg",
+      "c:NK"
+     ]
+    }
+   },
+   "cell-grouping-age": {
+    "id": "cell-grouping-age",
+    "title": "Fraction and age",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "Compartment"
+      }
+     },
+     {
+      "source": {
+       "type": "obs",
+       "key": "Age"
+      },
+      "levels": [
+       "c:Young",
+       "c:Mid",
+       "c:Old"
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

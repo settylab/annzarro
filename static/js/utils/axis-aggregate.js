@@ -12,7 +12,7 @@
  *
  * A provider's `aggregate` is: `sections()` [{heading, entries: [{entry, text, alt?}]}], `start(entry, layer)` the
  * setting of a set newly picked on a layer, `entryOf(setting)`, `layerOf(setting)`, `methods(setting)` {options:
- * [{value, name, symbol, disabled?, title?}], chosen}, `after(setting, 'method'|'layer', value)` the fields to write
+ * [{value, name, symbol, disabled?, title?}], chosen}, or null for a set that is no aggregate (a grouping: no button), `after(setting, 'method'|'layer', value)` the fields to write
  * (with `say`; `'member'` for a member chosen), `members(setting)` optional, a set's members in a select of their own
  * ({options, chosen}; a grouping's groups), `layers(setting)` {options: [{value, text, disabled?, title?}], chosen} the row's layer list graded for the
  * aggregation held, and `symbolOf(setting)`.
@@ -131,7 +131,9 @@ export function applyAfter(setting, kind, value) {
 export function aggregationOf(setting) {
     const provider = aggregateOf(setting);
     if (!provider) return null;
-    const { options, chosen } = provider.aggregate.methods(setting);
+    const menu = provider.aggregate.methods(setting);
+    if (!menu) return null;            // a set that is no aggregate (a grouping) has no aggregation
+    const { options, chosen } = menu;
     const held = options.find((o) => o.value === chosen) || options[0];
     return held ? { symbol: held.symbol, name: held.name } : null;
 }

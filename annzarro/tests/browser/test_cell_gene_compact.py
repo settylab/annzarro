@@ -95,6 +95,9 @@ def test_threshold_lives_in_the_popover_and_shows_on_the_button(page, served):
     assert page.locator(f"{TP} .cgene-controls input.cgene-size-above").count() == 0, "no box in the row"
     assert page.inner_text(f"{TP} button.cgene-size").replace(" ", "").endswith(">1")
     assert CC.above(page, TP, "size")["value"] == "1"
+    CC.open_menu(page, TP, "size")
+    assert page.locator(f"{CC.MENU} .az-pop-field__label").all_inner_texts() == ["Expressed above"], "one name for the threshold, as in the Methods pop-overs"
+    CC.close_menu(page)
     assert CC.above(page, TP, "color") is None, "a mean uses no threshold"
     CC.set_above(page, TP, "size", "2")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.detect_above === 2", P)

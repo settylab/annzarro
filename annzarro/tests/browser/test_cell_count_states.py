@@ -326,7 +326,7 @@ def test_there_is_no_show_as_table_and_the_csv_downloads_from_the_toolbar(page, 
         page.click(f"{S} .ccnt-toolbar .ccnt-options-btn")
         page.click("[data-popover='plot-options'] [data-section='export'] .ccnt-csv")
     lines = open(info.value.path(), encoding="utf-8").read().strip().splitlines()
-    assert lines[0].split(",")[:4] == ["cell_type", "condition", "Cells", "Share"]
+    assert lines[0].split(",")[:4] == ["cell_type", "condition", "Cells", "Fraction"]
     want = DATA.obs.groupby(["cell_type", "condition"], observed=True).size()
     got = {(r[0], r[1]): int(r[2]) for r in (line.split(",") for line in lines[1:])}
     assert {k: v for k, v in got.items() if v} == {k: int(v) for k, v in want.items() if v}

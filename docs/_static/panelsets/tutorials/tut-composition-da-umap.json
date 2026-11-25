@@ -1,0 +1,216 @@
+{
+ "name": "Tutorial: composition, da-umap",
+ "timestamp": "2026-11-25T22:35:16+00:00",
+ "dataset": "bm_aging_annzarro.zarr",
+ "datasetName": "bm_aging_annzarro",
+ "constants": {
+  "focusedGene": "Apoe",
+  "taxonomyId": "10090"
+ },
+ "panelConfigs": {
+  "cell-plot-da": {
+   "id": "cell-plot-da",
+   "type": "cell-plot",
+   "title": "Abundance change, Young to Old (log fold change)",
+   "config": {
+    "id": "cell-plot-da",
+    "title": "Abundance change, Young to Old (log fold change)",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "kompot_da_Young_to_Old_lfc",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "midres_celltype"
+     },
+     {
+      "type": "obs",
+      "key": "kompot_da_Young_to_Old_lfc"
+     }
+    ],
+    "colorScale": "RdBu",
+    "centeringActive": true
+   },
+   "isSelectionTile": false
+  },
+  "cell-plot-types": {
+   "id": "cell-plot-types",
+   "type": "cell-plot",
+   "title": "Cell types",
+   "config": {
+    "id": "cell-plot-types",
+    "title": "Cell types",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "midres_celltype",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "midres_celltype"
+     },
+     {
+      "type": "obs",
+      "key": "kompot_da_Young_to_Old_lfc"
+     }
+    ]
+   },
+   "isSelectionTile": false
+  }
+ },
+ "view": {
+  "v": 1,
+  "constants": {
+   "focusedGene": "Apoe",
+   "taxonomyId": "10090"
+  },
+  "layout": {
+   "v": 1,
+   "hierarchy": [
+    {
+     "type": "split",
+     "direction": "horizontal",
+     "panes": [
+      {
+       "percentage": 50,
+       "controlsVisible": false
+      },
+      {
+       "percentage": 50,
+       "controlsVisible": false
+      }
+     ],
+     "children": [
+      {
+       "type": "tile",
+       "id": "cell-plot-da",
+       "controlsVisible": false
+      },
+      {
+       "type": "tile",
+       "id": "cell-plot-types",
+       "controlsVisible": false
+      }
+     ]
+    }
+   ],
+   "controlState": {
+    "cell-plot-da": false,
+    "cell-plot-types": false
+   },
+   "panelConfigs": {
+    "cell-plot-da": {
+     "id": "cell-plot-da",
+     "title": "Abundance change, Young to Old (log fold change)",
+     "x": {
+      "type": "obsm",
+      "key": "X_umap",
+      "column": "0"
+     },
+     "y": {
+      "type": "obsm",
+      "key": "X_umap",
+      "column": "1"
+     },
+     "z": null,
+     "color": {
+      "type": "obs",
+      "key": "kompot_da_Young_to_Old_lfc",
+      "column": ""
+     },
+     "pointSize": 3,
+     "pointOpacity": 0.8,
+     "hoverInfo": [
+      {
+       "type": "obs",
+       "key": "_index"
+      },
+      {
+       "type": "obs",
+       "key": "midres_celltype"
+      },
+      {
+       "type": "obs",
+       "key": "kompot_da_Young_to_Old_lfc"
+      }
+     ],
+     "colorScale": "RdBu",
+     "centeringActive": true
+    },
+    "cell-plot-types": {
+     "id": "cell-plot-types",
+     "title": "Cell types",
+     "x": {
+      "type": "obsm",
+      "key": "X_umap",
+      "column": "0"
+     },
+     "y": {
+      "type": "obsm",
+      "key": "X_umap",
+      "column": "1"
+     },
+     "z": null,
+     "color": {
+      "type": "obs",
+      "key": "midres_celltype",
+      "column": ""
+     },
+     "pointSize": 3,
+     "pointOpacity": 0.8,
+     "hoverInfo": [
+      {
+       "type": "obs",
+       "key": "_index"
+      },
+      {
+       "type": "obs",
+       "key": "midres_celltype"
+      },
+      {
+       "type": "obs",
+       "key": "kompot_da_Young_to_Old_lfc"
+      }
+     ]
+    }
+   }
+  }
+ }
+}

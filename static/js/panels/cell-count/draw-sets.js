@@ -19,7 +19,7 @@
  * Both modes ship one trace that carries `customdata` = the region's index in `setPlot.regions`, so a click can
  * offer Save as grouping (CNT-21) without a lookup. Shapes and annotations export to PNG and SVG with the figure.
  */
-import { fmtPercent } from '../../utils/csv-format.js';
+import { fmtFraction } from '../../utils/csv-format.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { scaleKeys } from './colour.js';
 import { defaultSetColour } from '../../utils/set-colours.js';
@@ -51,7 +51,7 @@ const VENN = Object.freeze({
     }
 });
 
-/** A proportional Venn states its error under the plot from this fraction (5 percentage points of the cells in the sets). */
+/** A proportional Venn states its error under the plot from this fraction (0.05 of the cells in the sets). */
 const NOTE_AT = 0.05;
 /** Text height and width per character of a region's label, in pixels, for `labelFits`. */
 const LINE_PX = 16;
@@ -64,8 +64,8 @@ const text = Object.freeze({
     cells: 'Cells in region',
     setSize: 'Cells in set',
     noSet: (n) => `${plain(n)} cells in no ${VOCABULARY.word.set}`,
-    hidden: (h) => `${fmtPercent(h.share)} of cells are in ${h.regions.toLocaleString('en-US')} bars not shown`,
-    approximate: (pct) => `Areas are approximate: largest error ${pct} of the cells in the sets`,
+    hidden: (h) => `${fmtFraction(h.share)} of cells are in ${h.regions.toLocaleString('en-US')} bars not shown`,
+    approximate: (error) => `Areas are approximate: largest error ${error} of the cells in the sets`,
     changed: (name) => `${name} (group changed)`,
     deleted: (name) => `${name} (deleted)`
 });
@@ -73,7 +73,7 @@ const text = Object.freeze({
 function regionLabel(region, labels) {
     if (labels === 'none') return '';
     const count = plain(region.count);
-    const share = fmtPercent(region.share);
+    const share = fmtFraction(region.share);
     if (labels === 'count') return count;
     if (labels === 'share') return share;
     return `${count}<br>${share}`;
@@ -90,7 +90,7 @@ function regionHover(region, sets, universe) {
     const names = [];
     for (let s = 0; s < sets.length; s++) if (region.key[s]) names.push(sets[s].name);
     const who = names.join(' and ') + (names.length < sets.length ? ' only' : '');
-    return `${who}<br>${plain(region.count)} cells (${fmtPercent(region.share)} of ${plain(universe)} cells shown)`;
+    return `${who}<br>${plain(region.count)} cells (${fmtFraction(region.share)} of ${plain(universe)} cells shown)`;
 }
 
 const codeOf = (key) => key.reduce((a, v, s) => a + (v ? 1 << s : 0), 0);
@@ -189,7 +189,7 @@ function vennFigure(plot, theme, opts) {
     if (note) {
         annotations.push({
             x: 0, y: 0, xref: 'paper', yref: 'paper', xanchor: 'left', yanchor: 'top', yshift: -6, showarrow: false,
-            text: text.approximate(fmtPercent(g.error)), font: { size: 12, color: theme.textColor }
+            text: text.approximate(fmtFraction(g.error)), font: { size: 12, color: theme.textColor }
         });
     }
     return {
@@ -233,7 +233,7 @@ function upsetFigure(plot, theme, opts) {
         text: barLabels, textposition: 'outside', cliponaxis: false, hovertext: hover, hoverinfo: 'text', customdata: plot.shown,
         marker: colored
             ? { color: colourValues, ...scaleKeys(opts, 'marker', {}), showscale: true,
-                colorbar: { title: { text: plot.color.label, side: 'right' }, ...(plot.color.kind === 'share' ? { tickformat: '.0%' } : {}) } }
+                colorbar: { title: { text: plot.color.label, side: 'right' }, ...(plot.color.kind === 'share' ? { tickformat: '.2~f' } : {}) } }
             : { color: theme.noneColor }
     };
     const data = [bars];

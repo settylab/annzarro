@@ -17,7 +17,7 @@ log fold change above 0.05.
 
    ```{figure} ../_static/screens/user-guide/tables-columns.png
    :class: screenshot
-   :alt: Table controls on the varp tab (1) with "spearman_fold_change: H2-Q7 (focused)" ticked (2); Selected Columns (3) listing two var columns and the varp column; Apply Changes (4); Export CSV (5); Show entries.
+   :alt: Table controls of a gene table: the tabs var, varm, varp, layers and Cell groupings (1); on the varp tab the add row with "H2-Q7 (focused)", "spearman_fold_change" and Add column (2); Selected Columns (3) listing two var columns and the varp column; Apply Changes (4); Export CSV (5); Undo (6); Show entries; and the Gene score row with Score methods and Distribution.
 
    Table controls of a gene table.
    ```
@@ -27,7 +27,7 @@ log fold change above 0.05.
    The `obs`, `obsm`, `var` and `varm` tabs list their columns and have a search field.
    On the `var` tab, tick `kompot_de_Young_to_Old_mean_lfc` and
    `kompot_de_Young_to_Old_mahalanobis`. On the `varp` tab, add
-   `spearman_fold_change: H2-Q7 (focused)` (2): each gene's Spearman correlation with H2-Q7. The
+   In the add row (2) leave the item on `H2-Q7 (focused)`, choose the matrix `spearman_fold_change` and press **Add column**: each gene's Spearman correlation with H2-Q7. The
    choices appear under **Selected Columns** (3); the red **×** removes one (hover over a
    shortened name to read it in full).
 4. Click **Apply Changes** (4). The table reloads with the new columns.
@@ -57,19 +57,33 @@ There are three kinds of tab.
   its title. Under each are the table's columns from it, then an add row with a layer, an **aggregation button** and
   **Add column**. The button shows the aggregation's symbol and opens the list of aggregations with their names; one that
   cannot be computed on the layer is greyed out, and its tooltip says why. A column from these tabs is shown with its
-  symbol before its name.
+  symbol before its name. There is one exception: a **Cell Table's** **Cell groupings** tab is one tick box per grouping, with
+  no add row and no symbol, because the column holds each cell's group.
+
+  The symbols differ by what is aggregated. Scores (the **Gene score** tab), in the order of the list:
 
   | Symbol | Aggregation |
   |---|---|
   | z̄ | z-score mean |
   | x̄ | mean |
+  | Σ | sum |
+  | Δ | control-adjusted |
+  | g⁺ | fraction of genes |
+  | % | % of total |
+
+  Statistics of the cells of a group (the **Cell groupings** tab of a Gene Table, and a Gene Plot's colour or axis), in the
+  order of the list:
+
+  | Symbol | Statistic |
+  |---|---|
+  | z̄ | z-score mean |
+  | x̄ | mean |
   | c⁺ | fraction of cells |
-  | % | % of total (a score) |
   | x̄⁺ | mean of expressing cells |
   | Σ | sum |
   | σ | SD |
-  | Δ | control-adjusted |
-  | g⁺ | fraction of genes (a score) |
+
+  A short key to all of them is under {ref}`interface-symbols`.
 
   The tabs for layers, obsp, varp, Gene score and Cell groupings have no search field: they list only what the table holds.
   An add row keeps your choices when the chooser is rebuilt, for example when a panel is renamed.
@@ -93,9 +107,9 @@ and each gene gets the same number. A column is named *group*: *statistic* · *l
 
 ## Undo a change to the table
 
-**Undo** in the table's controls (beside **Methods ▾** and **Export CSV**) takes back the last change to the table's
+**Undo** in the table's controls takes back the last change to the table's
 settings: the columns, the filter, the search and its options, the rows per page, **Methods ▾** (a Cell Table), and **Score
-methods ▾** (a Gene Table). Its title says what it undoes ("Undo: change the filter"), and it is disabled when there is
+methods ▾** (a Gene Table). A Cell Table's controls read **Methods ▾**, **Undo**, **Export CSV**, **Apply Changes**; a Gene Table's read **Undo**, **Export CSV**, **Apply Changes**, then a row labelled **Gene score** with **Score methods ▾** and **Distribution**. Its title says what it undoes ("Undo: change the filter"), and it is disabled when there is
 nothing to undo. Changes of one kind made close together, such as typing in the search box, are one step, and a table keeps
 its last 50 steps. The table is built again from the settings it had, as a link would build it.
 
@@ -250,11 +264,13 @@ toggle, or a colour map without grey, when that matters ({doc}`colour-scales`).
 
 A Cell Table has **Methods ▾** beside **Export CSV**. It sets how statistics over the table's cells (the rows that pass
 its filter) are computed, on every layer, as a Cell Grouping's **Methods ▾** does for its groups
-({doc}`cell-grouping`): it lists **Mean**, **Fraction of cells**, **Mean of expressing cells**, **Sum** and **SD** with their
+({doc}`cell-grouping`): it lists **Z-score mean**, **Mean**, **Fraction of cells**, **Mean of expressing cells**, **Sum** and **SD** with their
 definitions, and **Expressed above** (0 by default), the value above which a cell counts as expressing. Plots choose the
 statistic and the layer; nothing here limits what they can pick. The setting is kept with the table in panel sets and
 share links (only when it is not the default), **Reset to defaults** puts it back, and a dot on the button shows that
-it is changed. A plot that reads a table's cells this way is a later addition; until then the setting changes no plot.
+it is changed. A Gene Plot reads a table's cells this way: it can colour or place genes by a statistic of the cells a Cell Table passes, with the
+table's **Expressed above** as the threshold ({doc}`cell-and-gene-plots`, "Colour or place a gene plot by a Cell Table's cells").
+Z-score mean is not offered for a table's cells.
 
 ## Export a table
 
@@ -281,6 +297,6 @@ matrix, read once when it is added.
 
 A gene table can also be the **source of a score** for every cell: the rows that pass its filter are the genes, and
 each cell gets one number from them, to colour a plot by or to rank cells in a Cell Table. The table's controls
-have **Score methods ▾**, the settings of each score method in a pop-over, and **Distribution**, which opens a Count
+have **Score methods ▾**, the settings of each score method in a pop-over, and **Distribution**, which opens a Cell Count
 Plot of the score. It works exactly as a Gene Signature
 does, with the filter in place of ticked genes: see {ref}`gene-table-score`.

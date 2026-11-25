@@ -167,7 +167,7 @@ function barBars(config, table, opts) {
     const keys = { ...scaleKeys(opts.options, 'marker', diverging ? { map: 'RdBu', reverse: true, center: 0 } : {}) };
     const reversescale = keys.reversescale === true;
     delete keys.reversescale;
-    keys.colorbar = { title: { text: esc(spec.title) }, tickformat: spec.percent ? '.0%' : undefined };
+    keys.colorbar = { title: { text: esc(spec.title) }, tickformat: spec.fraction ? '.2~f' : undefined };
     const levels = (a, order2) => axisSpec(order2.map((l) => labelAt(table.axes[a].levels[l], a)), order2.map((_, k) => k), order2.length);
     const splitOrder = Array.from({ length: splits }, (_, s) => s);
     return {

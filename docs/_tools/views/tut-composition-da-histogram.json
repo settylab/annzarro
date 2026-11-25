@@ -1,0 +1,47 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "Apoe",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "cell-count-comp",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "cell-count-comp": true
+  },
+  "panelConfigs": {
+   "cell-count-comp": {
+    "id": "cell-count-comp",
+    "title": "Abundance change in three cell types",
+    "version": 1,
+    "mode": "histogram",
+    "arrangement": "overlay",
+    "x": {
+     "source": {
+      "type": "obs",
+      "key": "kompot_da_Young_to_Old_lfc"
+     }
+    },
+    "split": {
+     "source": {
+      "type": "obs",
+      "key": "midres_celltype"
+     },
+     "levels": [
+      "c:HSC",
+      "c:T cell",
+      "c:Mature B cell"
+     ],
+     "rest": "exclude"
+    }
+   }
+  }
+ }
+}

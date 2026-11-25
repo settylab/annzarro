@@ -244,21 +244,26 @@ def shoot(sh, store: str) -> None:
         page.locator(f"{t} .nav-link", has_text=name).first.click()
         page.wait_for_timeout(400)
 
-    def tick(label):
-        loc = page.locator(f"{t} label:text-is('{label}')")
-        if loc.count() == 0:
-            fail(f"the column chooser offers no '{label}'; it offers "
-                 + json.dumps(page.evaluate(f"[...document.querySelectorAll('{t} .tab-pane.active label')]"
-                                            ".map(l => l.textContent.trim())")[:40]))
-        loc.first.click()
+    def add(item, key):
+        """The add row of the active tab (item, matrix or layer, Add column): the Layers, obsp and varp tabs
+        list only the ticked columns and one add row, so a column is added, not ticked."""
+        row = page.locator(f"{t} .tab-pane.active .az-score-add")
+        items = row.locator(".az-entity-item option")
+        if items.count() == 0 or row.locator(f".az-entity-item option[value='{item}']").count() == 0:
+            fail(f"the add row offers no '{item}'; it offers "
+                 + json.dumps(page.evaluate(f"[...document.querySelectorAll('{t} .tab-pane.active .az-entity-item option')]"
+                                            ".map(o => o.value)")[:40]))
+        row.locator(".az-entity-item").select_option(value=item)
+        row.locator(".az-entity-key").select_option(value=key)
+        row.locator(".az-entity-add-btn").click()
         page.wait_for_timeout(300)
 
     tab("varp")
-    tick(f"{RHO_LABEL} (focused)")
+    add(GENE, RHO)
     clean(page)
     page.locator(f"{t} .table-controls").first.screenshot(path=str(OUT / "gene-groups-chooser-varp.png"))
     tab("layers")
-    tick(f"{FC_LABEL} (focused)")
+    add(HSC, FC)
     clean(page)
     page.locator(f"{t} .table-controls").first.screenshot(path=str(OUT / "gene-groups-chooser-layer.png"))
     page.locator(f"{t} button", has_text="Apply Changes").click()
@@ -364,9 +369,13 @@ def shoot(sh, store: str) -> None:
     # the chooser now offers the monocyte as well, beside the HSC the table already holds
     toggle_controls(sh, page, TBL)
     tab("layers")
-    labels = page.evaluate(f"[...document.querySelectorAll('{t} .tab-pane.active label')]"
-                           f".map(l => l.textContent.trim()).filter(l => l.startsWith('{FC}:'))")
-    log(f"refocus: layer chooser {labels}")
+    ticked = page.evaluate(f"[...document.querySelectorAll('{t} .tab-pane.active .az-entity-group label')]"
+                           f".map(l => l.textContent.trim())")
+    offered = page.evaluate(f"[...document.querySelectorAll('{t} .tab-pane.active .az-entity-item option')]"
+                            f".map(o => o.value)")
+    log(f"refocus: layer chooser ticks {ticked}, add row offers {offered}")
+    if MONO not in offered or HSC not in ticked:
+        fail(f"after the refocus the add row should offer the monocyte {MONO} and keep the HSC column: {ticked} / {offered}")
     clean(page)
     page.locator(f"{t} .table-controls").first.screenshot(path=str(OUT / "gene-groups-chooser-after.png"))
     page.context.close()

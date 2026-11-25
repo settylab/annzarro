@@ -62,5 +62,5 @@ test('the table\'s statistic list is the Gene Plot\'s, in order, without cell co
     assert.equal(csc[0].disabled, false);
     const csr = menu('csr').methods[0];
     assert.equal(csr.disabled, true);
-    assert.match(csr.title, /whole-layer read/);
+    assert.match(csr.title, /stored by gene \(CSC\)/);
 });

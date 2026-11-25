@@ -67,8 +67,8 @@ setting or command that checks it. Background is in {doc}`lab-server` and {doc}`
 - **Health check.** `curl -fsS https://<host>/api/v1/health` returns `{"status": "ok"}` without
   logging in. Point the service manager, container and load balancer probes at it, not at
   `/api/v1/status`, which asks for a login ({doc}`lab-server`).
-- **Memory.** `gunicorn workers x cache_memory_mb` fits the host, with room for the chunks
-  being read.
+- **Memory.** `gunicorn workers x (cache_memory_mb + compute_budget_mb)` fits the host, with room for the
+  chunks being read ({ref}`compute-memory`).
 - **Long URLs.** nginx `large_client_header_buffers 4 32k;` is always needed: the web client
   sends about 12 KB request lines for 2,000 genes, over the default 8 KB (414). It bounds the line (414 above
   32 KB). The bundled gunicorn configuration sets no limit of its own (`server.limit_request_line:

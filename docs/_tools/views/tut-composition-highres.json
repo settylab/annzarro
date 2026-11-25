@@ -1,0 +1,86 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "Apoe",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "cell-count-comp",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "cell-count-comp": true
+  },
+  "panelConfigs": {
+   "cell-count-comp": {
+    "id": "cell-count-comp",
+    "title": "Direction of change per fine cell type",
+    "version": 1,
+    "mode": "bar",
+    "arrangement": "fill",
+    "x": {
+     "source": {
+      "type": "obs",
+      "key": "highres_celltype"
+     },
+     "levels": [
+      "c:HSC",
+      "c:LMPP",
+      "c:GMP",
+      "c:CLP",
+      "c:Mono P",
+      "c:MKP",
+      "c:Ery P",
+      "c:Myelo P",
+      "c:cMoP",
+      "c:MBEP",
+      "c:Basophil Progenitor",
+      "c:Pro-B cell",
+      "c:Pre-B cell",
+      "c:Pre-B II cell",
+      "c:Immature B cell",
+      "c:Mature Naive B cell",
+      "c:Memory B cell",
+      "c:Plasma cell",
+      "c:Basophil",
+      "c:Neutrophil",
+      "c:Monocyte",
+      "c:pDC",
+      "c:cDC",
+      "c:Non Classical Monocyte",
+      "c:ILC",
+      "c:Naive CD8 T cell",
+      "c:CD4 T cell",
+      "c:T cell",
+      "c:Treg",
+      "c:NK",
+      "c:CD8 TEM"
+     ]
+    },
+    "split": {
+     "source": {
+      "type": "obs",
+      "key": "kompot_da_Young_to_Old_lfc_direction"
+     },
+     "levels": [
+      "c:up",
+      "c:neutral",
+      "c:down"
+     ],
+     "colors": {
+      "overrides": {
+       "c:up": "#b2182b",
+       "c:neutral": "#d9d9d9",
+       "c:down": "#2166ac"
+      }
+     }
+    }
+   }
+  }
+ }
+}

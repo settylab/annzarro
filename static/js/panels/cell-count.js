@@ -30,6 +30,7 @@
  * It touches no DOM until init(): a closed count plot restored from a link or a panel set is constructed and never
  * initialised, and asks for nothing.
  */
+import { cellGroupType } from '../utils/cell-group-source.js';
 import { PanelManager } from '../panel-manager.js';
 import { DataManager } from '../data-manager.js';
 import { makeDom } from './gene-set-utilities/dom.js';
@@ -294,6 +295,12 @@ actions.register({
         const page = {
             isNumeric: (source) => isNumericSource(source, structureRead()),
             levelCount: (p) => levelCountOf(p, structureRead()),
+            /** A Cell Grouping's Expressed above (decision 34), for a gene measure over its groups; null when it has none (measureThreshold). */
+            groupingThreshold: (source) => {
+                const p = source && source.type === cellGroupType() ? panelOf(source.key) : null;
+                const r = p && typeof p.getRecipe === 'function' ? p.getRecipe() : null;
+                return r && typeof r.detect_above === 'number' && Number.isFinite(r.detect_above) ? r.detect_above : null;
+            },
             memberFor: (set) => {
                 if (PARTS.sets && PARTS.sets.memberFor) return PARTS.sets.memberFor(set);
                 throw new Error('A set\'s member on the wire comes with the sets (V1).');
@@ -711,7 +718,7 @@ actions.register({
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, levelCountOf: (source) => levelCountOf({ source }, structureRead()), levelCap: levelCapOf, drawable, viewNote: _viewNote, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
+                isNumeric: page.isNumeric, groupingThreshold: page.groupingThreshold, levelCountOf: (source) => levelCountOf({ source }, structureRead()), levelCap: levelCapOf, drawable, viewNote: _viewNote, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null),
                 view3d: view3dState()
             };

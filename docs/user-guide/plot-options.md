@@ -1,15 +1,15 @@
 # Plot Options
 
-**Plot Options** (the last button of a plot panel's toolbar, under its controls) sets how the plot
+**Plot Options** (the last button of a plot panel's toolbar row, under its controls) sets how the plot
 looks on screen and in an export. It never changes what the plot shows. Its settings belong to the
 panel: they are kept in panel sets and share links, and a link that lacks an option draws that
 option's default.
 
 It opens over the plot and leaves the panel's layout as it is. It closes with its button, its
 **×**, Escape (from anywhere on the page) or a click outside it; Escape and **×** put the focus
-back on the button. Every plot panel has the same pop-over and the same toolbar: the panel's own
-buttons first (**3D**, **Equal aspect**, **Refresh**), then **Undo** and **Plot Options** at the right
-end. **Undo** (also Ctrl+Z, Cmd+Z on a Mac) takes back the plot's last change; the zoom is not a change.
+back on the button. Every plot panel has the same pop-over and the same toolbar row: the panel's own
+buttons first (for a Cell Plot or a Gene Plot **3D**, **Equal aspect** and **Highlight Focused Cell** or **Highlight Focused Gene**), then **Undo**
+and **Plot Options** at the right end ({ref}`interface-toolbar`). **Undo** (also Ctrl+Z, Cmd+Z on a Mac) takes back the plot's last change; the zoom is not a change.
 
 The menu has ten groups, described below in the order the menu shows them, the same order as in
 the Cell-Gene and Cell Count Plots. A group opens and folds with a click, and the menu opens again
@@ -92,6 +92,11 @@ is in either theme, and its **Auto** button hands it back to the theme.
 
 A preset is a starting point: change anything afterwards.
 
+## Text
+
+**Font** (Open Sans, the default, which ships with the app and is in exported images too; Arial, Times New Roman, Courier, Georgia, Trebuchet MS or Verdana; the same list on every plot), **Font size (px)** (8 to
+24; 12 by default) and **Text color**, with **Auto**.
+
 (plot-colours-theme)=
 ## Plot colours and the app theme
 
@@ -118,43 +123,31 @@ An export uses the colours on screen. For a figure in a paper, switch to Light (
 
 What is drawn behind the data.
 
-- **Color** of the plot background, with **Auto**.
-- **3D backdrop** (3D plots only): the switch and the backdrop colour, with **Auto**.
+- **Background**, the colour of the plot background, with **Auto**.
+- **3D backdrop** (3D plots only): the switch, and **3D backdrop color**, with **Auto**.
 
 Both follow the app theme until you set them ({ref}`how plots follow the app theme <plot-colours-theme>`).
 
-## Axes and ticks
+## Axes
 
 ```{figure} ../_static/screens/user-guide/plot-options-axes.png
 :class: screenshot
 :width: 35%
-:alt: The Axes and ticks group open, from Show Grid down to the Scale bar switch, its Size slider at 100 % and the Unit box.
+:alt: The Axes group open, from Grid lines down to the Scale bar switch, its Scale bar size slider at 100 % and the Scale bar unit box.
 
-Axes and ticks, with the scale bar on.
+Axes, with the scale bar on.
 ```
 
-In the order of the menu:
+In the order of the pop-over:
 
-- **Show Grid** and **Grid Color**.
-- **Show Axis Titles**, **Show Tick Labels**, **Show Axis Lines** and **Show Zero Lines**.
-- **Line Widths** of the axis, the grid and the zero lines (0.1 to 10 px).
-- **Axis Color** and **Zero Line Color**, each with **Auto**.
-- **Show Tick Marks** is independent of **Show Tick Labels**. Until you set it, the marks follow
-  the labels.
+- **Grid lines** and **Grid color**, and **Grid line width (px)** (0.1 to 10).
+- **Axis lines**, **Axis color** and **Axis line width (px)**.
+- **Zero lines**, **Zero line color** and **Zero line width (px)**.
+- **Axis titles**, **Tick labels** and **Tick marks**. **Tick marks** is independent of **Tick labels**: until you set it, the marks follow
+  the labels. Each colour has **Auto**.
 - **Ticks per axis** asks for about that many ticks on each axis (2 to 30). Empty is automatic.
   Plotly treats it as a hint and picks round values near it.
-- **Scale bar** (off by default) draws a bar with a label such as `200` in a corner of the plot.
-  The length is the round number (1, 2 or 5 times a power of ten) of coordinate units nearest a
-  fifth of the width in view, so it gets shorter as you zoom in and is redrawn when the panel is
-  resized. The bar and its label take the text colour. **Size** (25 to 400 %, 100 % by default)
-  scales the bar's length together with its line and label. **Unit** is an optional text after
-  the number (up to 20 characters, for example `µm`) for when the coordinates are in known
-  units. The corner list offers bottom right (the default), bottom left, top right and top left.
-  A scale bar is only true when a unit is as long on y as on x, so it needs **Equal aspect** (the
-  panel's button) and a 2D plot; otherwise its controls are greyed out and say why. Turning Equal
-  aspect off switches the scale bar off, and turning it back on does not bring the bar back. The
-  bar is part of an export. See {doc}`spatial-coordinates`.
-- **Flip y (grows downwards)** and **Flip x (grows to the left)** run an axis the other way.
+- **Flip y** (y grows downwards) and **Flip x** (x grows to the left) run an axis the other way.
   Spatial coordinates are often read with y growing downwards, as in the image the cells were
   taken from: switch **Flip y** on and the plot matches it. The flip belongs to this plot. It
   stays through zoom, pan, **Reset axes** and a double click, works with Equal aspect and the
@@ -163,6 +156,17 @@ In the order of the menu:
   look: **Apply to other plots**, the presets and the session default do not copy or reset it.
   The switches are greyed out in a 3D plot. A line drawn with the table's Line filter
   ({doc}`tables-and-filters`) filters the side you see, so it works on a flipped plot.
+- **Scale bar** (off by default) draws a bar with a label such as `200` in a corner of the plot.
+  The length is the round number (1, 2 or 5 times a power of ten) of coordinate units nearest a
+  fifth of the width in view, so it gets shorter as you zoom in and is redrawn when the panel is
+  resized. The bar and its label take the text colour. **Scale bar size (%)** (25 to 400, 100 by default)
+  scales the bar's length together with its line and label. **Scale bar unit** is an optional text after
+  the number (up to 20 characters, for example `µm`) for when the coordinates are in known
+  units. **Scale bar corner** offers bottom right (the default), bottom left, top right and top left.
+  A scale bar is only true when a unit is as long on y as on x, so it needs **Equal aspect** (the
+  panel's button) and a 2D plot; otherwise its controls are greyed out and say why. Turning Equal
+  aspect off switches the scale bar off, and turning it back on does not bring the bar back. The
+  bar is part of an export. See {doc}`spatial-coordinates`.
 
 ## Points
 
@@ -171,10 +175,10 @@ in {doc}`cell-and-gene-plots`), which was in the panel's controls before, and ho
 of a table filter (**Not in table**) look. They get no legend entry. See {doc}`tables-and-filters`.
 The group's **Reset** puts the grey points back; the point size has its own **auto**.
 
-- **Size** is a multiple of the size they get automatically from their own count (0.1 to 20,
-  `x auto`; 1 by default).
-- **Opacity** (0.01 to 1). Empty is automatic.
-- **Color**, grey by default, with **Auto**.
+- **Point size (px)** is the size of the points: a slider, a number box and **auto**.
+- **Not in table: size (x auto)** is a multiple of the size they get automatically from their own count (0.1 to 20; 1 by default).
+- **Not in table: opacity** (0.05 to 1). Empty is automatic.
+- **Not in table: color**, grey by default, with **Auto**.
 
 ## Focused cell
 
@@ -183,12 +187,12 @@ cell looks while **Highlight Focused Cell** is on ({doc}`focus-and-lock`). Witho
 open circle five times the point size, drawn by a 2 px edge that is black in the light app theme
 and white in the dark one.
 
-- **Size** is a multiple of the point size (0.1 to 50, `x points`; 5 by default), so the marker
+- **Size (x points)** is a multiple of the point size (0.1 to 50; 5 by default), so the marker
   keeps its proportion when the point size changes, by hand or automatically.
-- **Opacity** (0.01 to 1). Empty is opaque.
-- **Edge width** in pixels (0 to 20; 2 by default). 0 draws no edge. A 3D plot draws only a hairline edge, whatever the
+- **Opacity** (0.05 to 1). Empty is opaque.
+- **Edge width (px)** (0 to 20; 2 by default). 0 draws no edge. A 3D plot draws only a hairline edge, whatever the
   width, because its renderer has no wider one.
-- **Fill** colour, red by default (shown once **No fill** is off), and **Edge** colour, black (light theme) or white (dark theme)
+- **Fill color**, red by default (shown once **No fill** is off), and **Edge color**, black (light theme) or white (dark theme)
   by default, each with **Auto**. A colour you choose stays as chosen in either theme; one you
   leave alone follows the theme.
 - **No fill** is on by default: the marker is an open circle, its edge alone, in the edge colour
@@ -202,37 +206,31 @@ size, the opacity and the fill colour as its line colour, with the edge width as
 (at least 1 px), with or without **No fill**. The marker is part of an export, PNG and SVG,
 and **Apply to other plots** copies it.
 
-## Legend and colour bar
+## Legend
 
-- **Show legend** and **Position** (right, left, top or bottom). A legend on top or at the
+- **Show legend** and **Position** (right, left, top or bottom; **Legend position** in a Cell Plot). A legend on top or at the
   bottom lies outside the axes, below the x-axis title at the bottom, and the margin grows to make room.
-- For the legend of a categorical colour: **Title** (on by default), **Dot size** (2 to 16 px;
-  empty draws the 12 px dots of the default legend, whatever the points' size) and **Columns** (2 to
-  8; 1 or empty is one column). The group's **Reset** puts them back. The entries read down the columns in order
+- For the legend of a categorical colour: **Title** (on by default; **Legend title** in a Cell Plot), **Dot size (px)** (2 to 16;
+  empty draws the 12 px dots of the default legend, whatever the points' size) and **Columns** (1 or empty is one column). The group's **Reset** puts them back. The entries read down the columns in order
   (the first column takes the first ceil(n / columns) of them), with the title above the first one.
   The columns sit side by side, never wrapping or stacking, each as wide as its longest label, with
-  a **Column gap** between them (0 to 80 px; empty is 24 px). They take at most 60 % of the width of the
+  a **Column gap (px)** between them (0 to 80; empty is 24). They take at most 60 % of the width of the
   graph (of the plot's width for a legend on top or at the bottom); labels that would need more are
   cut short with an ellipsis, so the plot keeps its room. A click on an entry hides that category
   alone, and a double click shows only that category, from any column. They work on 2D, 3D and large
-  plots, and with the legend at any position. **Title size** (6 to 48 px;
-  empty is 2 px above the text size) and **Title gap** (0 to 80 px, added to the 2 px Plotly leaves; empty is
+  plots, and with the legend at any position. **Title size (px)** (6 to 48;
+  empty is 2 px above the text size) and **Title gap (px)** (0 to 80, added to the 2 px Plotly leaves; empty is
   one blank line) set the title's size and its distance to the first entry in true pixels. **Title align** puts the title's left edge at the legend's markers (**Markers**) or at its labels (**Labels**), or centres it (**Centre**) or ends it at the right (**Right**) across all the columns; **Auto**, the default, is Centre for a legend above or below the plot and Markers beside it, and a choice you make stays whatever the position. In an empty
   number box the arrows step from the default the box shows.
 - A legend longer than the plot scrolls on screen; an exported image (SVG or PNG, as shown or full)
   always holds the whole legend, and is made taller when the legend needs it.
-- **Colour bar**, for a numerical colour, has its own **position** (right, left, top, bottom, or
-  **with the legend**, the default, which follows **Legend Position**), a **Length** from 10 to
-  100 % of the plot's height (or width when horizontal; 100 % by default) and **Ticks**, the
+- **Color bar**, for a numerical colour, has its own **Color bar position** (right, left, top, bottom, or
+  **With the legend**, the default, which follows the legend's position), a **Color bar length (%)** from 10 to
+  100 of the plot's height (or width when horizontal; 100 by default) and **Color bar ticks**, the
   tick count (2 to 30; empty is automatic). A colour bar on top or at the bottom lies outside the
   axes (below the x-axis title at the bottom), and the margin grows to make room for it.
-- The plot's toolbar sits in the top right corner of the plotting area, so a legend or colour bar
+- The plot's modebar sits in the top right corner of the plotting area, so a legend or colour bar
   placed beside the plot does not cover it.
-
-## Text
-
-**Font** (Open Sans, the default, which ships with the app and is in exported images too; Arial, Times New Roman, Courier, Georgia, Trebuchet MS or Verdana; the same list on every plot), **Size** (8 to
-24 px; 12 by default) and **Color**, with **Auto**.
 
 ## Margins
 
@@ -244,7 +242,7 @@ defaults.
 
 ## Export
 
-The **JPEG**, **SVG**, **WEBP** and **PNG** buttons, and **Width** and **Height** in pixels (100
+The **JPEG**, **SVG**, **WEBP** and **PNG** buttons, and **Width (px)** and **Height (px)** (100
 to 5000; 1200 by 800 by default), as in {doc}`export`. **2x resolution** is on by default: PNG, JPEG
 and WEBP files are drawn at twice the width and height set, 2400 by 1600 pixels by default, so a
 figure stays sharp in print. Switch it off for files of exactly the pixels set. An SVG is vector
@@ -269,8 +267,8 @@ The {doc}`cell-gene-plot` and the {doc}`cell-count-plot` have their own **Plot O
 Text, Background, Axes, Legend, Margins, Export and Apply, each with that plot's defaults (the Cell-Gene Plot draws
 no grid, the Cell Count Plot does), and the plot's own groups between them. Its legend groups also set the legend's
 **Space**, its **Columns** and **Entries, at most**, past which the legend ends in "+ 3 more". **Apply to other
-Cell-Gene plots** (or Cell Count plots) and the session default work as described above, within each kind. Cell Plot
-and Gene Plot move onto the same pop-over in a later release.
+Cell-Gene plots** (or Cell Count plots) and the session default work as described above, within each kind. The Cell Plot and
+the Gene Plot use the same pop-over, with their own groups (**Points** and **Focused cell**).
 
 ## Large plots
 

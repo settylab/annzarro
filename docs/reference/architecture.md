@@ -2,7 +2,10 @@
 
 AnnZarro is a Flask server that reads AnnData stores slice by slice and a browser client that
 asks for exactly the slices on screen. Nothing else is in between: no database, no
-precomputation step, no copy of the data.
+precomputation step, no copy of the data. Four panels added in 0.8.0 (Gene Signature, Cell Grouping,
+Cell-Gene Plot, Cell Count Plot) ask for more than a slice: scores, groups and counts over many cells. The server
+computes those on request, from the same arrays, within `limits` ({ref}`computed-on-request`), and keeps nothing
+of them in the store.
 
 ```{figure} ../_static/figures/architecture.svg
 :alt: Three columns. Browser: panels, layout and panel-set managers, data-manager with in-flight coalescing, cache-manager, wire decoder, browser HTTP cache. Server: login and path confinement, revalidation (ETag, 304), size guard (413), result cache, readers, encoding (binary or JSON), panel sets. Storage: zarr stores, h5ad files, remote zarr, and the sessions directory. Arrows: GET one slice from browser to server; one vector or a 304 back; compressed chunks from storage into the readers; panel sets read and written in the sessions directory.
@@ -55,6 +58,10 @@ Only step 6 touches the data, and only one chunk column of it.
 | `core/remote.py` | remote-store policy (allowlist, timeouts, credentials) and fsspec access |
 | `core/caching.py` | per-dataset result cache with LRU eviction under `cache_memory_mb` |
 | `core/array_response.py` | the wire format ({doc}`wire-format`) |
+| `server/routes/gene_score.py`, `cell_groups.py`, `compute_stream.py` | `POST /data/gene_score` and `POST /data/cell_groups`: the two compute routes and their streamed replies ({ref}`computed-on-request`) |
+| `core/gene_score.py`, `cell_groups.py`, `cell_grid.py`, `group_features.py` | the engines: gene scores, groupings, count grids, per-group statistics |
+| `core/cost_limits.py` | the `limits:` table: when a computation asks first, when it is refused, how large a group, matrix or grid may get |
+| `core/freshness.py`, `group_cache.py` | the dataset's generation (what Refresh starts), and the cache of group codes |
 
 The server is stateless per request apart from caches: any process can answer any request,
 which is what makes several gunicorn workers behind one proxy work
@@ -67,8 +74,9 @@ which is what makes several gunicorn workers behind one proxy work
 | decoded-slice cache | browser, `cache-manager.js` | request URL | 1,000 entries, 1 GB, 60 s each | expiry; dataset change |
 | in-flight table | browser, `data-manager.js` | request URL | requests currently running | completion |
 | HTTP cache | browser | URL + ETag | browser policy | ETag changes when the store is rewritten |
-| result cache | server, `core/caching.py` | dataset, method and arguments | `cache_memory_mb` (4,000 MB in the default production environment), `cache_dataset_limit` (20) datasets, LRU | `POST /api/v1/cache/reset`, restart |
+| result cache | server, `core/caching.py` | dataset, method and arguments | `cache_memory_mb` (4,000 MB in the default production environment), `cache_dataset_limit` (20) datasets, LRU | a new generation of the dataset (**Refresh dataset**, `POST /api/v1/data/refresh`, `POST /api/v1/cache/reset`), restart |
 | open stores and metadata | server, reader | dataset path | | the same |
+| group codes | server, `core/group_cache.py` | dataset, generation and the grouping | `group_code_cache_mb` (512), emptied first when a computation needs room | the same |
 | remote chunk cache | server, per remote store (zarr 3) | chunk key | `remote_chunk_cache_mb` (256) | restart |
 | page cache | operating system | file | free RAM | the OS |
 
@@ -78,9 +86,22 @@ added and exactly that is freed on eviction, so `memory_usage_mb` in `GET /api/v
 what the cache holds. `cache_memory_mb`, `cache_enabled` and `cache_dataset_limit` take effect
 when the app is configured, also for modules that imported the reader earlier.
 
-All server caches assume a store does not change while the server runs. After rewriting a
-store in place, call `POST /api/v1/cache/reset` or restart. On a shared server the reset is
-admins only, and under gunicorn it clears only the worker that answers, so restart there.
+A dataset has a **generation**: a small file under the state directory that every server process
+(each gunicorn worker) looks at on each request. Every cache above is keyed on it. **Refresh dataset**
+(`POST /api/v1/data/refresh`, open to every user) and `POST /api/v1/cache/reset` (admins only on a shared
+server) start a new generation, so all workers read the dataset again, whether or not its files look
+changed; a chunk overwritten in place changes nothing a check can see, which is why Refresh does not wait for
+a sign of change. A restart does the same.
+
+(computed-on-request)=
+### Computed on request
+
+A gene score, a grouping, a table of group statistics and a count are each one `POST` that streams
+progress frames and then a result. The server estimates the cost from the matrix layout before it starts
+(`limits.ask_first_s`, `refuse_s`), takes a place in the worker's compute lane, holds its memory on the worker's
+ledger (`compute_budget_mb`), stops when the connection closes, and keeps nothing afterwards but the
+group codes. A size limit (`matrix_values`, `groups`, the grid caps) always refuses; a time refusal may be run
+with **Try anyway** within `try_max_s` ({doc}`../deployment/resource-limits`, {doc}`http-api`).
 
 ### Memory
 
@@ -103,7 +124,8 @@ plotly.js for plots, DataTables (with SearchBuilder) for tables and chroma.js.
 | `panel-manager.js`, `layout-manager.js` | tiled panels, splits, drag handles; `saveLayout` / `restoreLayout` |
 | `session-manager.js` | panel sets: save, load, import, export; autosave |
 | `selection-tile.js` | the Welcome tile and "Create New Panel" |
-| `panels/cell-plot.js`, `gene-plot.js` | the two plot primitives (2D or 3D scatter); sources obs, obsm, obsp, layer and var, varm, varp, layer |
+| `panels/cell-plot.js`, `gene-plot.js` | the two scatter plots (2D or 3D); sources obs, obsm, obsp, layer and var, varm, varp, layer, a gene score, a cell group's statistic |
+| `panels/gene-signature.js`, `cell-grouping.js`, `cell-gene.js`, `cell-count.js` | the four panels of 0.8.0: a gene list with a score, factors and groups, the dot plot and heatmap of groups, and the count plot |
 | `panels/cell-table.js`, `gene-table.js` | DataTables with filters; a plot can mask to a table's rows |
 | `panels/plot-utilities/*`, `table-utilities/*` | controls, colour scales, aesthetics, listeners |
 | `data-manager.js` | every request, coalescing, focus state and history |
@@ -121,5 +143,5 @@ server, so a dataset of millions of cells never sends its full name list ({doc}`
 
 It never writes to a dataset and never runs user code. The only files it writes are panel sets
 in `<state_dir>/panel-sets/`, server logs, and (with login) the user file. That is what lets a lab
-host datasets for many users without granting write or compute access
+host datasets for many users without granting write access or letting anyone run code of their own
 ({doc}`../deployment/index`).

@@ -9,6 +9,7 @@ are usually enough. Many lines make an area ({ref}`further down <tut-ls-area>`).
 
 ## What you need
 
+- AnnZarro 0.8.0 or later (the steps use its control names).
 - AnnZarro running locally ({doc}`../getting-started/quickstart`) with `bm_aging_annzarro.zarr` in its
   data directory (8,090 cells).
 - A **Cell Table** with the columns `Age` and `highres_celltype`, and a **Cell Plot** of

@@ -3,7 +3,7 @@
 The store is the grouping fixture (tests/core/grouping_store.py): 1,200 cells, cell_type with 6 levels, condition,
 sample (30 levels), depth and score (numbers), is_doublet, layers X, logged and counts over 40 genes.
 
-1.  Job 1, "cells per cluster, split by condition, as shares": the counts, then Share within each X and 100% with no new
+1.  Job 1, "cells per cluster, split by condition, as shares": the counts, then Fraction within each X and Filled with no new
     request, each one undoable step (CNT-4, CNT-15).
 2.  Job 2, "the distribution of a number, per sample": a histogram by sample, the compact binning line, the shared control
     opened in place with "Values outside are left out and counted", a bin count and a range typed (CNT-3, CNT-9, UX 4.4).
@@ -183,14 +183,14 @@ def test_job1_cells_per_cluster_split_by_condition_as_shares(page, served):
     per_type = want.groupby(level=0, observed=True).sum()
     for (ct, cond), n in want.items():
         assert abs(shares[(ct, cond)] - n / per_type[ct]) < 1e-12
-    assert _plot(page)["layout"]["yaxis"]["title"]["text"] == "% within each cell_type"
-    assert page.inner_text(f"{S} .ccnt-value__help") == "As percent."
+    assert _plot(page)["layout"]["yaxis"]["title"]["text"] == "Fraction within each cell_type"
+    assert page.inner_text(f"{S} .ccnt-value__help") == "As a fraction, 0 to 1."
 
-    page.click(f"{S} .ccnt-arrangement__opt:has-text('100%')")
+    page.click(f"{S} .ccnt-arrangement__opt:has-text('Filled')")
     _drawn(page, "bar", "c.arrangement === 'fill'")
-    assert _plot(page)["layout"]["barnorm"] == "percent"
+    assert _plot(page)["layout"]["barnorm"] == "fraction"
     assert len(_requests(page)) == asked, "a share and an arrangement are drawn from the same counts"
-    assert _undo_label(page) == "Undo: 100% bars"
+    assert _undo_label(page) == "Undo: filled bars"
 
     page.click(f"{S} .ccnt-undo")
     _drawn(page, "bar", "!c.arrangement")
@@ -252,7 +252,7 @@ def test_job5_mean_of_the_focused_gene_per_cluster_follows_the_focus_until_locke
     _open(page, served, {CC: _count(mode="bar", x=CELL_TYPE)})
     _drawn(page, "bar")
     _focus_gene(page, gstore.gene(3))
-    page.select_option(f"{S} .ccnt-value", "stat:mean")
+    page.select_option(f"{S} .ccnt-value", "stat")
     _drawn(page, "bar", f"c.measure && c.measure.source.column === '{gstore.gene(3)}' && c.value && c.value.kind === 'measure'")
     assert _config(page)["measure"] == {"stat": "mean", "source": {"type": "layer", "key": "X", "column": gstore.gene(3)}}
     assert page.is_visible(f"{S} [data-row='measure']")
@@ -324,8 +324,8 @@ def test_a_2d_histogram_its_default_bins_and_the_most_frequent_level(page, serve
     assert len(z) == 100 and len(z[0]) == 100
     assert sum(v for r in z for v in r if v is not None) == N
     entries = page.evaluate("(s) => [...document.querySelectorAll(s + ' .ccnt-value option')].map(o => o.textContent)", S)
-    assert entries == ["Count", "Share of the row", "Share of the column", "Share of the total", "Mean of…", "Sum of…", "% above…",
-                       "SD of…", "z-score of…", "Most frequent level of…"]
+    assert entries == ["Count", "Fraction of the row", "Fraction of the column", "Fraction of the total", "Statistic of…",
+                       "Most frequent level of…"]
     page.select_option(f"{S} .ccnt-value", "top_level")
     _drawn(page, "hist2d", "c.value && c.value.kind === 'top_level'")
     assert _config(page)["value"] == {"kind": "top_level", "factor": CELL_TYPE}
