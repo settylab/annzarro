@@ -1,0 +1,298 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "Mrpl15",
+  "focusedCell": "HSPC_Young_1#AAAGAACGTGGAAGTC-1",
+  "cellRows": {
+   "HSPC_Young_1#AAAGAACGTGGAAGTC-1": 0
+  }
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 50,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "gene-table-1795643987120",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-gene-1795643997550",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "gene-table-1795643987120": false,
+   "cell-gene-1795643997550": false
+  },
+  "panelConfigs": {
+   "gene-table-1795643987120": {
+    "id": "gene-table-1795643987120",
+    "title": "Kompot DE genes",
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_is_de",
+      "column": ""
+     },
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mean_lfc",
+      "column": ""
+     }
+    ],
+    "searchBuilderEnabled": true,
+    "responsive": false,
+    "fixedHeader": true,
+    "searchBuilderConfig": {
+     "criteria": [
+      {
+       "condition": "=",
+       "data": "kompot_de_Young_to_Old_is_de",
+       "origData": "var_kompot_de_Young_to_Old_is_de_main",
+       "type": "string",
+       "value": [
+        "Yes"
+       ]
+      }
+     ],
+     "logic": "AND"
+    },
+    "searchText": "",
+    "searchRegex": false,
+    "searchSmart": true,
+    "searchCaseInsensitive": true,
+    "filteredGenes": null,
+    "scoreOptions": null
+   },
+   "cell-gene-1795643997550": {
+    "id": "cell-gene-1795643997550",
+    "title": "Cell-Gene Plot 2",
+    "styleDefault": true,
+    "fontModel": 2,
+    "version": 1,
+    "mode": "heatmap",
+    "color": {
+     "stat": "mean",
+     "layer": "kompot_de_Young_to_Old_fold_change"
+    },
+    "size": {
+     "stat": "fraction_of_cells",
+     "layer": "raw_counts"
+    },
+    "sections": [
+     {
+      "source": "gene-table-1795643987120",
+      "rows": "genes"
+     }
+    ],
+    "cellAxis": {
+     "type": "obs",
+     "key": "midres_celltype"
+    },
+    "colorScale": "RdBu",
+    "center": 0
+   }
+  }
+ },
+ "store": {
+  "path": "bm_aging_annzarro.zarr",
+  "name": "bm_aging_annzarro.zarr",
+  "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-5k04vx3a/bm_aging_annzarro.zarr",
+  "fp": {
+   "v": 1,
+   "n_obs": 8090,
+   "n_var": 16285,
+   "meta": "237ea33eaf6621e08554401b3f0fca10",
+   "groups": {
+    "/": "c9a188dc",
+    "X": "7e262c16",
+    "layers": "2e246320",
+    "obs": "35b4609d",
+    "obsm": "876326fa",
+    "obsp": "514d31f8",
+    "raw": "b4a50034",
+    "uns": "b653d7e9",
+    "var": "c663acf9",
+    "varm": "2887a812",
+    "varp": "009bf2a8"
+   },
+   "fields": {
+    "layers": [
+     "MAGIC_imputed_data",
+     "cc_counts",
+     "kompot_de_Old_smoothed",
+     "kompot_de_Young_smoothed",
+     "kompot_de_Young_to_Old_fold_change",
+     "kompot_de_Young_to_Old_fold_change_zscores",
+     "logged_counts",
+     "normalized_counts",
+     "raw_counts"
+    ],
+    "obs": [
+     "Age",
+     "Compartment",
+     "G2M_score",
+     "Info",
+     "Replicate",
+     "S_score",
+     "Sample",
+     "_index",
+     "batch",
+     "diffusion_dist_to_plasma",
+     "doublet_score",
+     "highres_celltype",
+     "kompot_da_Old_log_density",
+     "kompot_da_Young_log_density",
+     "kompot_da_Young_to_Old_lfc",
+     "kompot_da_Young_to_Old_lfc_direction",
+     "kompot_da_Young_to_Old_lfc_zscore",
+     "kompot_da_Young_to_Old_neg_log10_lfc_ptp",
+     "kompot_de_Old_std",
+     "kompot_de_Young_std",
+     "leiden",
+     "midres_celltype",
+     "n_genes_by_counts",
+     "pct_counts_hb",
+     "pct_counts_mt",
+     "phase",
+     "phenograph",
+     "plasma_focus",
+     "plasma_groups",
+     "total_counts",
+     "total_counts_hb",
+     "total_counts_mt",
+     "trajectory_focus_cells",
+     "trajectory_path_cell",
+     "trajectory_path_step",
+     "umap_dist_to_plasma"
+    ],
+    "obsm": [
+     "AbCapture",
+     "DM_EigenVectors",
+     "HTO",
+     "X_diffusion",
+     "X_draw_graph_fa",
+     "X_pca",
+     "X_pca_harmony",
+     "X_pca_noregression",
+     "X_umap",
+     "X_umap_3d"
+    ],
+    "obsp": [
+     "DM_Kernel",
+     "DM_Similarity",
+     "connectivities",
+     "diffusion_distance",
+     "diffusion_walk_t5",
+     "distances",
+     "umap_distance"
+    ],
+    "uns": [
+     "Age_colors",
+     "Compartment_colors",
+     "DMEigenValues",
+     "DM_EigenValues",
+     "Info_colors",
+     "README",
+     "Replicate_colors",
+     "Sample_colors",
+     "batch_colors",
+     "draw_graph",
+     "fraction_expressing_by_age_categories",
+     "fraction_expressing_by_celltype_categories",
+     "gene_module_k3_colors",
+     "h2q7_correlation_class_colors",
+     "highres_celltype_colors",
+     "hsc_vs_monocyte_direction_colors",
+     "hvg",
+     "kompot_da",
+     "kompot_da_Young_to_Old_lfc_direction_colors",
+     "kompot_de",
+     "leiden",
+     "leiden_colors",
+     "mean_by_age_categories",
+     "mean_by_celltype_categories",
+     "midres_celltype_colors",
+     "neighbors",
+     "pca",
+     "phase_colors",
+     "plasma_groups_colors",
+     "trajectory_focus_cells_colors",
+     "umap",
+     "umap_3d"
+    ],
+    "var": [
+     "_index",
+     "detection_rate",
+     "dispersions",
+     "dispersions_norm",
+     "feature_types",
+     "gene_ids",
+     "gene_module_k3",
+     "genome",
+     "h2q7_correlation_class",
+     "hb",
+     "highly_variable",
+     "highly_variable_intersection",
+     "highly_variable_nbatches",
+     "hsc_fold_change",
+     "hsc_fold_change_z",
+     "hsc_vs_monocyte_direction",
+     "kompot_de_Young_to_Old_is_de",
+     "kompot_de_Young_to_Old_mahalanobis",
+     "kompot_de_Young_to_Old_mahalanobis_local_fdr",
+     "kompot_de_Young_to_Old_mean_lfc",
+     "mean_counts",
+     "means",
+     "monocyte_fold_change",
+     "monocyte_fold_change_z",
+     "mt",
+     "n_cells_by_counts",
+     "pct_dropout_by_counts",
+     "rho_fc_H2-Aa",
+     "rho_fc_H2-Q7",
+     "rho_fc_S100a9",
+     "rho_rank_H2-Q7",
+     "rho_rank_S100a9",
+     "rho_smoothed_H2-Q7",
+     "total_counts",
+     "variance_logged"
+    ],
+    "varm": [
+     "PCs",
+     "fraction_expressing_by_age",
+     "fraction_expressing_by_celltype",
+     "mean_by_age",
+     "mean_by_celltype"
+    ],
+    "varp": [
+     "spearman_fold_change",
+     "spearman_smoothed"
+    ]
+   }
+  }
+ },
+ "annzarro": "0.7.6"
+}
