@@ -126,7 +126,7 @@ def test_the_limits_are_under_their_headings_in_order(admin_page):
     time_rows = limits.locator('.policy-subgroup[data-subgroup="When to ask and refuse"] .policy-row')
     assert time_rows.evaluate_all("rs => rs.map(r => r.dataset.key)") == [
         "limits.ask_first_s", "limits.live_update_s", "limits.progress_bar_s", "limits.refresh_large_cells",
-        "limits.refresh_min_interval_large_s", "limits.refuse_s"]
+        "limits.refresh_min_interval_large_s", "limits.refuse_s", "limits.try_max_s"]
     assert _row(admin_page, "limits.compute_budget_mb").locator("input").count() == 0      # read at start
     assert _row(admin_page, "limits.dataset_folder_max_entries").locator("input[type=number]").count() == 1
 
