@@ -155,7 +155,8 @@ The 20 called genes whose mean fold change in HSCs is below −0.5.
 
 The table keeps 20 genes. All 20 fall by more than half a log unit in HSCs and lie within 0.13 of zero in myelocyte
 progenitors and neutrophils. Among them are the granulocyte genes S100a8 (−1.16 in HSCs, −0.04 in Myelo P, +0.06 in
-neutrophils), S100a9, Camp, Lcn2 and Ngp. Their aggregate change over all cells is small for that reason: of 8,090
+neutrophils). Nine of the 20 (Camp, Cd52, Fcer1g, Hp, Lcn2, Ncf1, S100a8, S100a9 and Wfdc21) are among the 20
+granulocyte-associated genes of the paper's Figure 3H–J, which were chosen differently {cite:p}`otto2025kompot`. Their aggregate change over all cells is small for that reason: of 8,090
 cells, 319 are HSCs.
 
 (tut-gstat-opposite)=

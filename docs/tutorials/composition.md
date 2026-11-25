@@ -103,12 +103,20 @@ Set **X** to `highres_celltype` (31 levels).
 | CD8 TEM | 81 | 0.86 | 0 |
 | Mature Naive B cell | 423 | 0 | 0.91 |
 | Memory B cell | 117 | 0.86 | 0 |
+| Plasma cell | 12 | 0.75 | 0 |
+| CD4 T cell | 40 | 0.55 | 0 |
 | Non Classical Monocyte | 33 | 1 | 0 |
 | Monocyte | 355 | 0 | 0 |
 
 Inside the mature lineages the change is a loss of naive and a gain of memory states, as the paper reports
 {cite:p}`otto2025kompot`. The 33 `up` cells of the `Monocyte` cell type are all non-classical monocytes; no classical
 monocyte and no neutrophil is called either way. Their expression changes are the subject of {doc}`group-statistics`.
+
+Compare with the published Figure 6F, which uses this annotation {cite:p}`otto2025kompot`. Read off its bars, HSCs,
+naive and memory B cells, plasma cells, naive CD8 T cells and CD8 TEM agree with the store within a few hundredths. Four
+cell types do not: in the figure no ILC and no non-classical monocyte is called, CD4 T cells reach about 0.15 `up` and
+Tregs about 0.85, where the store's direction has 12 of 13 ILCs, all 33 non-classical monocytes, 0.55 of CD4 T cells
+and 0.96 of Tregs `up`. The tables here are the store's.
 
 (tut-comp-mean)=
 ## 5. A statistic instead of a count
