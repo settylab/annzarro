@@ -194,13 +194,18 @@ test('the legend cap on a Cell-Gene strip legend: the first N levels and "+ k mo
     assert.deepEqual(five.text, ['L0', 'L1', 'L2', 'L3', 'L4', '+ 25 more']);
     const under = named(cellGene({ look: { legendMax: 5 } }, { levels: 4 }).figure, 'strip legend')[0];
     assert.deepEqual(under.text, ['L0', 'L1', 'L2', 'L3'], 'no "more" line under the cap');
-    // the strip legend takes the whole legend column's height before it gives up an entry (operator 2026-11-24, 17 levels with a
-    // cap of 100 listed 7); only what the height and the width then cannot hold is counted in the last line, never dropped
+    // the rule (draw.js legendStack, stripLegendParts), for 30 levels, the default cap of 20, a 900 x 600 px figure: the one strip legend
+    // takes the whole legend column, 15 lines (14 levels and the "more" line) in one column; at 900 px the column is 21 characters wide,
+    // too narrow to wrap by itself (a label keeps 8 characters and 3 go to the swatch). A column list is as long as its room less the
+    // "more" line, unless the cap is the lesser: with two columns the room is 30 lines, the cap's 20 levels all fit and 10 are left.
     const short = named(cellGene({}, { levels: 30 }).figure, 'strip legend')[0];
     const shortTwo = named(cellGene({ look: { legendColumns: 2 } }, { levels: 30 }).figure, 'strip legend')[0];
-    assert.match(short.text[short.text.length - 1], /^\+ \d+ more$/);
-    assert.ok(short.text.length > 8, 'more than the 7 a 600 px slot used to hold');
-    assert.ok(shortTwo.text.length > short.text.length, 'two columns list more');
+    assert.equal(short.text.length, 15, '14 levels and the "more" line (the slot used to hold 7)');
+    assert.equal(short.text[14], '+ 16 more', '30 levels less the 14 listed');
+    assert.equal(new Set(short.x).size, 1, 'one column');
+    assert.equal(shortTwo.text.length, 21, 'the cap\'s 20 levels and the "more" line');
+    assert.equal(shortTwo.text[20], '+ 10 more', '30 levels less the cap\'s 20');
+    assert.equal(new Set(shortTwo.x).size, 2, 'two columns');
 });
 
 test('"Entries, at most" is what it says: 17 levels with a cap of 100 are all listed, wrapping into columns when one column of the slot is short', () => {
