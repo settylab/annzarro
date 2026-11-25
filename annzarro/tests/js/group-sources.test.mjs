@@ -270,6 +270,10 @@ test('a table above 1M cells shown cannot be a factor: refused with the way out,
     assert.equal(snap.state, 'refused');
     assert.equal(snap.reason, 'table_too_many_cells');
     assert.equal(snap.message, 'A cell table cannot list 12M cells. Use a subset of up to 1M cells, or divide by a column.');
+    const note = (await import('../../../static/js/utils/source-notices.js')).describeSource(snap, { role: 'colour' },
+        { thing: 'grouping', source: 'grouping', result: 'grouping', Computing: 'Computing' });
+    assert.doesNotMatch(note.headline, /too large|would take|second/i, note.headline);
+    assert.match(note.headline, /reads a cell table of 12,000,000 cells; a cell table lists up to 1,000,000, so it was not computed\.$/, note.headline);
     assert.equal(w.calls.estimate.length + w.calls.compute.length, 0);
 });
 
@@ -562,6 +566,12 @@ test('M2: six nested groupings are refused with a reason, never an exception', a
     assert.equal(snap.state, 'refused');
     assert.equal(snap.reason, 'nested_too_deep');
     assert.ok(snap.message);
+    // its notice names the nesting and its limit, not "too large to compute here"
+    const note = (await import('../../../static/js/utils/source-notices.js')).describeSource(snap, { role: 'colour' },
+        { thing: 'grouping', source: 'grouping', result: 'grouping', Computing: 'Computing' });
+    assert.doesNotMatch(note.headline, /too large|would take|second/i, note.headline);
+    assert.match(note.headline, /nests groupings 5 deep; a grouping can use groupings at most 4 deep, so it was not computed\.$/, note.headline);
+    assert.equal(note.text, 'Use a column of a deeper grouping instead.');
     await settle();
     assert.equal(w.calls.compute.length, asked);
 });

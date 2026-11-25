@@ -638,6 +638,23 @@ const progress = Object.freeze({
 });
 
 /**
+ * The refusals of a source's own gates, decided in the page before anything is asked (utils/group-sources.js): what refused it,
+ * with its figure and its limit, and the way out. A notice says these where it would otherwise say "too large to compute".
+ */
+const gateRefusal = Object.freeze({
+    nested_too_deep: Object.freeze({
+        head: (depth, limit) => `nests ${word.grouping}s ${depth.toLocaleString('en-US')} deep; a ${word.grouping} can use ${plural.grouping} at most ${limit.toLocaleString('en-US')} deep`,
+        headNoFigures: `nests ${plural.grouping} deeper than a ${word.grouping} can`,
+        wayOut: `Use a column of a deeper ${word.grouping} instead.`
+    }),
+    table_too_many_cells: Object.freeze({
+        head: (cells, limit) => `reads a cell table of ${cells.toLocaleString('en-US')} cells; a cell table lists up to ${limit.toLocaleString('en-US')}`,
+        headNoFigures: 'reads a cell table of more cells than a cell table lists',
+        wayOut: 'Use a subset, or divide by a column.'
+    })
+});
+
+/**
  * The sentence a notice says for a reason the server gives (the engine's limits, E6a's route, E6b's busy wait), and
  * whether trying again can help: a limit gives the same answer every time, so it offers no Retry.
  */
@@ -734,4 +751,4 @@ const plotPanel = Object.freeze({
     view3dOnHelp: 'The plot is in 3D; click to go back to 2D'
 });
 
-export const VOCABULARY = Object.freeze({ aggregation, plotPanel, range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, table, sourceType });
+export const VOCABULARY = Object.freeze({ aggregation, plotPanel, range, view3d, word, plural, never, phrase, count, cellGene, countPlot, countSets, cellExport, progress, reasons, gateRefusal, table, sourceType });

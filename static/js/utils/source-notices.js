@@ -227,6 +227,13 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
             if (said) {
                 return out('refused', 'warning', tagOf('refused', `${Result} refused`), `${t} was not computed.`, said.text, [open, choose]);
             }
+            // a gate of the page's own (nesting too deep, a table of too many cells): its figure and its limit, and the way out
+            const gate = Object.hasOwn(VOCABULARY.gateRefusal, snap.reason) ? VOCABULARY.gateRefusal[snap.reason] : null;
+            if (gate) {
+                const figure = Number(snap.reason === 'nested_too_deep' ? snap.depth : snap.cells);
+                const head = Number.isFinite(figure) && Number(snap.limit) > 0 ? gate.head(figure, Number(snap.limit)) : gate.headNoFigures;
+                return out('refused', 'warning', tagOf('refused', `${Result} refused`), `${t} ${head}, so it was not computed.`, gate.wayOut, [open, choose]);
+            }
             if (isCostRefusal(snap)) {
                 return out('refused', 'warning', tagOf('refused', `${Result} refused`),
                     `${t} would take ${durationText(snap.estimate.seconds)}, so it was not run.`, snap.message || '', [open, choose]);
