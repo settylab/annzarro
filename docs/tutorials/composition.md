@@ -1,7 +1,3 @@
----
-orphan: true
----
-
 (tut-composition)=
 # Which cell states gain and lose with age? Kompot's differential abundance, counted
 
