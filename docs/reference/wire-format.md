@@ -10,7 +10,9 @@ below was checked against both and observed on a running server.
 The client chooses per request with the query parameter `format=f32`. A query parameter rather
 than an `Accept` header keeps the two encodings at different URLs, so neither the browser cache
 nor the client cache can confuse them. The web client asks for `format=f32` on every numeric
-slice; JSON stays the default for everyone else.
+slice; JSON stays the default for everyone else. The two compute routes (`POST /data/gene_score`, `POST /data/cell_groups`)
+do not use this encoding: they answer with a stream of JSON frames followed by raw bytes
+(`application/x-annzarro-score-stream`, {ref}`http-cell-groups`).
 
 | Request | Slice is numeric (int or float, 1-D or 2-D) | One categorical obs/var column | Other slices (string, bool) |
 |---|---|---|---|

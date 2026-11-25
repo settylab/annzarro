@@ -87,7 +87,7 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `max_requests` | `20000` | gunicorn only: requests a worker serves before it is replaced. Memory that crept is returned and the worker's caches start empty (a 95-million-cell name index is rebuilt on its first search, about 30 s). `0` = never. |
 | `max_requests_jitter` | `2000` | gunicorn only: each worker's limit is `max_requests` plus a random number up to this, so workers do not restart together. |
 | `limit_request_line`, `limit_request_fields`, `limit_request_field_size` | `0`, `100`, `8190` | gunicorn only: longest request line (0 = unlimited) and header field in bytes, and most header fields; a longer field is answered `400` by gunicorn. The line is unlimited because the web client sends the cells or genes it asks for in the URL (2,000 genes are about 12 KB, over the 4,094 gunicorn allows by default and the 8,190 it allows at most); the reverse proxy bounds it. |
-| `max_request_mb` | `64` | Largest request body, in MB. Panel sets (saved, imported) are the only uploads; a larger body is refused with `413 {"reason": "request_too_large"}` before it is read. `0` turns the limit off. |
+| `max_request_mb` | `64` | Largest request body, in MB. Panel sets (saved, imported) are the only uploads; the two compute routes take JSON bodies of their own, up to 16 MB, whatever this is. A larger body is refused with `413 {"reason": "request_too_large"}` before it is read. `0` turns the limit off. |
 | `max_sessions_per_user` | `500` | Panel sets one user may keep (the owner is whoever first saved it; with login off every set is one user's). Saving, duplicating or importing a new set past it is refused with `409 {"reason": "session_quota_user"}`; overwriting a set you have is not. `0` turns it off. |
 | `max_sessions` | `5000` | Panel sets the whole server keeps (files in the panel-sets directory); past it `409 session_quota_total`. `0` turns it off. |
 | `max_sessions_mb` | `256` | MB all panel sets may take together, counted with the one being written; past it `409 session_quota_total`. `0` turns it off. |
@@ -150,7 +150,7 @@ Defaults sent to the browser through `/api/v1/config`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled_panel_types` | `cell-plot`, `gene-plot`, `cell-table`, `gene-table`, `gene-set`, `gene-signature`, `cell-grouping`, `cell-gene`, `cell-count` | Panel types offered in "Create New Panel". |
+| `enabled_panel_types` | `cell-plot`, `gene-plot`, `cell-table`, `gene-table`, `gene-set`, `gene-signature`, `cell-grouping`, `cell-gene`, `cell-count` | Panel types listed in the "Create New Panel" chooser. It only shapes the chooser: a type left out is still opened by a link, a panel set, or **New signature...** and **New grouping...** at the end of a menu. The switch that turns a type off is `panel.<type>.enabled` ({doc}`../deployment/admin`). A custom list must name `gene-signature`, `cell-grouping`, `cell-gene` and `cell-count` to offer the four panels new in 0.8.0. |
 | `defaults.point_size`, `defaults.point_opacity` | `5`, `1.0` | Marker size and opacity for a few thousand points; with more points per plot area a panel's automatic values shrink from these (see Cell and gene plots). |
 | `defaults.color_scale` | `Portland` | Initial continuous colour scale. |
 | `defaults.max_cells`, `defaults.max_genes` | `1000000` | Client-side limits on the number of cells and genes. |

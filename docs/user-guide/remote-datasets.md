@@ -100,7 +100,9 @@ stores are open to any URL.
   `write_zarr` writes it by default; add it to an existing store with
   `zarr.consolidate_metadata(path)`. S3 and GCS list natively.
 - **Caches assume the store does not change** while the server runs. After rewriting a remote
-  store, restart the server or send `POST /api/v1/cache/reset`.
+  store, press **Refresh dataset** (it starts a new generation, so every worker opens the store again), or
+  restart the server or send `POST /api/v1/cache/reset`. A rewrite inside a store that is already open is best
+  followed by a restart: a remote store's chunk cache is per open store.
 - **Not in the desktop app.** The desktop app ships without the remote readers; use
   `pip install 'annzarro[remote]'` and `annzarro start` instead.
 

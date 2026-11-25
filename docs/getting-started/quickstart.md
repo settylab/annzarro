@@ -75,13 +75,14 @@ this server (here the five protocol views of the demonstration data).
 2. The tile becomes "Cell Plot 1": a scatter plot of all cells on the first two UMAP
    coordinates (X `obsm` / `X_umap` / `0`, Y `obsm` / `X_umap` / `1`), coloured
    by the `obs` column `leiden`. The focused cell is drawn as a larger
-   point with a dark outline ("Highlight Focused Cell" is on).
+   point with a dark outline ("Highlight Focused Cell" is on). **Equal aspect** is on too (in the
+   toolbar row under the controls), so one unit on x is as long as one on y whatever the shape of the tile.
 
 ```{figure} ../_static/screens/getting-started/first-plot.png
 :class: screenshot
 :alt: A cell plot of the demonstration data coloured by leiden cluster
 
-The first Cell Plot on `bm_aging_annzarro.zarr`, with its controls open.
+The first Cell Plot on `bm_aging_annzarro.zarr`, with its controls open and, under them, its toolbar row: **3D**, **Equal aspect**, **Highlight Focused Cell**, **Undo** and **Plot Options**.
 ```
 
 3. Change the colour: in the **Color** row, set the first box to `layer` and the second to
@@ -93,7 +94,7 @@ The first Cell Plot on `bm_aging_annzarro.zarr`, with its controls open.
 5. Collapse the controls with **Toggle Controls** (the arrow at the top right of the tile) to
    give the plot the full tile.
 
-**Split Horizontally** and **Split Vertically** (the two icons next to the arrow) add a second
+**Split side by side** and **Split top and bottom** (the two icons next to the arrow) add a second
 panel beside or below this one, for
 example a **Gene Plot** of the differential expression results. The {doc}`../user-guide/index`
 explains every panel, and the {doc}`../paper/index` pages rebuild each paper figure step by
@@ -106,6 +107,21 @@ step.
   panels in their saved layout ({doc}`../user-guide/panel-sets`).
 - **Share Link** copies a URL that reopens this dataset with the same layout and focus
   ({doc}`../user-guide/share-links`).
+
+## What else can I open?
+
+The Welcome tile's "Create New Panel" lists nine panels. Besides the Cell, Gene, Cell Table, Gene Table and Gene Set Analysis panels
+of the paper, four were added in 0.8.0:
+
+- **Gene Signature**: a named list of genes that gives every cell a score; the score colours a Cell Plot or fills a
+  Cell Table column ({doc}`../user-guide/gene-signature`).
+- **Cell Grouping**: cells sorted into groups by columns or binned numbers ({doc}`../user-guide/cell-grouping`).
+- **Cell-Gene Plot**: a dot plot or heatmap of genes by group ({doc}`../user-guide/cell-gene-plot`).
+- **Cell Count Plot**: counts of cells by one or two inputs, as bars, histograms, pies, Venn diagrams and more
+  ({doc}`../user-guide/cell-count-plot`).
+
+A computation that would take long asks first, and one that cannot fit is refused with the reason
+and a way out.
 
 ## Next
 

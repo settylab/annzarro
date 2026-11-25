@@ -9,6 +9,13 @@ the {doc}`../tutorials/index`.
 The pages are named after what a figure shows, not after its number in the paper, so they
 stay valid when the paper's figures are renumbered.
 
+```{note}
+The screenshots on these pages and in the tutorials that borrow them show the interface of the version the
+paper cites (v0.4.1), so that each figure matches the paper. Names and positions of some controls have changed
+since; the steps in the text and in the tutorials use today's names, and the links open the same views in
+today's version.
+```
+
 ::::{grid} 2 3 3 3
 :gutter: 2
 

@@ -11,7 +11,10 @@ number of the right kind. Raise a limit only when the host has what it protects:
 time, disk or threads.
 
 These limits bound what one request can cost. They do not bound how many requests arrive: AnnZarro
-rate-limits only admin changes (`server.admin_rate_per_minute`) and failed sign-ins ({doc}`authentication`), and gunicorn's `gthread` worker keeps a thread on a client that sends its
+rate-limits only admin changes (`server.admin_rate_per_minute`) and failed sign-ins ({doc}`authentication`), plus two
+things that cost the server a lot per request: Refresh of one dataset (`server.refresh_min_interval_s`, and
+`limits.refresh_min_interval_large_s` for a large dataset) and the one run a user may try with **Try anyway**
+(`429 try_busy`). Gunicorn's `gthread` worker keeps a thread on a client that sends its
 request slowly. The reverse proxy in front ({doc}`lab-server`) is the defence for both; see
 "What the proxy must do" below.
 

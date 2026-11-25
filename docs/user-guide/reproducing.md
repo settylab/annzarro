@@ -86,7 +86,8 @@ that has it and the panel shows it again, as saved.
   export depend on the tile size, the screen's pixel ratio, the graphics card and the fonts of
   the browser. The full-size export (the **Export** buttons and `annzarro export`) depends on the
   panel's export width, height and scale, not on the window; across computers it can still differ
-  in fonts and in how the graphics card draws the points.
+  in how the graphics card draws the points. The default font, Open Sans, ships with the app and is
+  embedded in exports, so text no longer depends on the fonts of the computer unless you chose another one.
 
 ## Figures that carry their own recipe
 
@@ -121,7 +122,7 @@ $ annzarro export --from fig.png --store bm_aging_annzarro.zarr --out again.png
 - `--store` is the store to draw from. If its cells or genes differ from the store the view was
   saved on, the command stops; `--allow-other-store` exports anyway.
 - `--out` ends in `.png` or `.svg`. A view with several plots writes one file per plot,
-  `<name>-<panel id>.<ext>`; `--panel cell-plot-1` writes just that one.
+  `<name>-<panel id>.<ext>`; `--panel cell-plot-1` writes just that one (any plot panel works: a Cell Plot, a Cell-Gene Plot or a Cell Count Plot).
 - If the view was saved with another AnnZarro version, the command says which, and that the
   exact figure needs that version (`pip install annzarro==<version>`).
 

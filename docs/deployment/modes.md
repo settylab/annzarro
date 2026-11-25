@@ -24,7 +24,8 @@ chunks it needs, so the data never have to be copied to the viewer's machine.
   they are; only the vectors you look at cross the SSH connection.
 - **Several people should browse the same processed datasets.** Lab server. It is read-only by
   design: it never writes to datasets and never runs user code, so giving a colleague access to
-  a dataset does not give them write or compute access. The one thing users write is panel sets.
+  a dataset does not give them write access or let them run anything of their own. The computations the
+  panels ask for (scores, groups, counts) are a fixed set, bounded by `limits`. The one thing users write is panel sets.
 
 ## What decides "shared"
 

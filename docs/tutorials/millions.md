@@ -39,7 +39,7 @@ ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 (tut-millions-open)=
 ## 1. Open the dataset on its default subset
 
-1. Choose the store in **Dataset**. Add a **Cell Plot** with **X** `obsm` · `X_umap` · `0`,
+1. Choose the store with the dataset button (left of the bar under the header). Add a **Cell Plot** with **X** `obsm` · `X_umap` · `0`,
    **Y** `obsm` · `X_umap` · `1` and **Color** `obs` · `cell_line_id`.
 
 The dataset bar reads "Cells: 100,000 of 95,624,334" with the badge **Subset · seed 0**,
