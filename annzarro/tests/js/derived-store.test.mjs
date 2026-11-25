@@ -129,6 +129,29 @@ test('a refusal reason is the store\'s to name', async () => {
     assert.equal(store.snapshot('k').state, 'refused');
 });
 
+test('a size cap the route refused (422 with its figures) is a refusal that keeps them, not a failure with Retry', async () => {
+    const fake = fakeApi();
+    const store = D.createDerivedStore({ api: fake.api, refusalReason: 'groups_too_expensive' });
+    store.attach('k', spec('k'), owner());
+    await settle();
+    fake.fail(0, Object.assign(new Error('Partitioning 3 has 46 levels; a 2d grid takes 8 there.'),
+        { status: 422, reason: 'too_many_levels', figures: { count: 46, limit: 8, axis: 2, mode: '2d' } }));
+    await settle();
+    const snap = store.snapshot('k');
+    assert.equal(snap.state, 'refused');
+    assert.equal(snap.reason, 'too_many_levels');
+    assert.deepEqual(snap.header.refused, { reason: 'too_many_levels', count: 46, limit: 8, axis: 2, mode: '2d',
+        message: 'Partitioning 3 has 46 levels; a 2d grid takes 8 there.' });
+    // a 422 of another reason, or without figures, stays a failure
+    const other = fakeApi();
+    const s2 = D.createDerivedStore({ api: other.api, refusalReason: 'groups_too_expensive' });
+    s2.attach('k', spec('k'), owner());
+    await settle();
+    other.fail(0, Object.assign(new Error('bad'), { status: 422, reason: 'too_many_levels' }));
+    await settle();
+    assert.equal(s2.snapshot('k').state, 'failed');
+});
+
 test('an estimate in the refused tier is refused at once: the estimate is the only request, nothing is computed', async () => {
     const fake = fakeApi({ tier: 'refused' });
     const store = D.createDerivedStore({ api: fake.api, refusalReason: 'groups_too_expensive' });

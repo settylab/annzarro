@@ -214,6 +214,9 @@ function progressOf(done, total, frame) {
  *   Throws errors with `status`, `reason`, `message` and, for 409/413, `estimate`.
  */
 
+/** The 422 reasons of a size cap, with the count and the limit (a count plot's grid). */
+const SIZE_REASONS = Object.freeze(['too_many_levels', 'too_many_bins', 'grid_too_large']);
+
 /**
  * @param {Object} options
  * @param {DerivedApi} options.api
@@ -389,6 +392,11 @@ export function createDerivedStore({
             } else if (error && error.status === 413 && error.reason === refusalReason) {
                 job.estimate = error.estimate || job.estimate;
                 setState(job, 'refused', { message: error.message, reason: error.reason });
+            } else if (error && error.status === 422 && SIZE_REASONS.includes(error.reason) && error.figures) {
+                // a size cap the page could not know (an input's levels were not counted yet) is a refusal, as the same cap
+                // is when the page does know: its notice names the count and the limit and offers the ways out
+                setState(job, 'refused', { header: { refused: { reason: error.reason, ...error.figures, message: error.message } },
+                    message: error.message, reason: error.reason });
             } else {
                 setState(job, 'failed', { message: errorText(error), reason: (error && error.reason) || 'failed' });
             }

@@ -60,11 +60,7 @@ function axisWays(field, p, isNumeric) {
 /** The buttons of `waysOut` as this panel's actions: `<kind>:<field, mode or bins>` for `wayOut`, and their words. */
 function sizeWays(snap, config, plan) {
     if (!plan) return [];
-    return waysOut(config, snap, plan).map((w) => {
-        if (w.kind === 'picker') return [`picker:${w.field}`, C.wayOut.splitBy];
-        if (w.kind === 'mode') return [`mode:${w.mode}`, C.wayOut.switchTo(C.modes[w.mode])];
-        return [`fewer:${Object.entries(w.bins).map(([f, n]) => `${f}=${n}`).join(',')}`, C.wayOut.fewerBins];
-    });
+    return waysOut(config, snap, plan).map((w) => [wayAction(w), wayLabel(w)]);
 }
 
 /** The size ways first (each one draws), then the older ones, at most three. */
@@ -248,7 +244,31 @@ function sizeRefusal(snap, { out, tagOf, Result, open, choose }, facts) {
  */
 export function gridNotice(snap, ctx, cells, facts = null) {
     if (!snap || isPlanState(snap)) return null;
-    return describeSource(snap, ctx, noticeWords(cells, facts));
+    const notice = describeSource(snap, ctx, noticeWords(cells, facts));
+    // the ways out of a size cap the route refused (the page could not know it before): ahead of the notice's own
+    // buttons, which they do not replace; the sentence is the notice's
+    if (notice && notice.state === 'refused' && Array.isArray(snap.ways) && snap.ways.length) {
+        const own = snap.ways.map((w) => ROUTE_ACTIONS[w.kind] && [ROUTE_ACTIONS[w.kind], wayLabel(w)]).filter(Boolean);
+        return { ...notice, actions: [...own, ...notice.actions] };
+    }
+    return notice;
+}
+
+/** The registry's action of each kind of way out (utils/source-actions.js), for a refusal the route made. */
+const ROUTE_ACTIONS = Object.freeze({ picker: 'count-way-picker', mode: 'count-way-mode', bins: 'count-way-bins' });
+
+/** The words of a way out (`waysOut`'s entry). */
+function wayLabel(w) {
+    if (w.kind === 'picker') return C.wayOut.splitBy;
+    if (w.kind === 'mode') return C.wayOut.switchTo(C.modes[w.mode]);
+    return C.wayOut.fewerBins;
+}
+
+/** The action string `wayOut` takes for a way out. */
+export function wayAction(w) {
+    if (w.kind === 'picker') return `picker:${w.field}`;
+    if (w.kind === 'mode') return `mode:${w.mode}`;
+    return `fewer:${Object.entries(w.bins).map(([f, n]) => `${f}=${n}`).join(',')}`;
 }
 
 /**
