@@ -373,7 +373,7 @@ const SECTION_OPS = Object.freeze([
  * @param {Object} opts
  * @param {Object} opts.D
  * @param {() => {sections: Object[]}} opts.model - each section: {title, source (shown when it differs), line, note, rows,
- *   step: {step, pressed, name, label, reading, entries}|null}: the one-row section's gene step, whether it is off the
+ *   step: {step, name, label, reading, entries}|null}: the one-row section's gene step, whether it is off the
  *   default, the button's accessible name and tooltip, and the menu's entries (symbol, name, heading, reason)
  * @param {Object} opts.on - rows(i, rows), title(i, text), op(i, op), move(from, to), genes(i, step)
  */

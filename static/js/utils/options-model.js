@@ -21,6 +21,17 @@
  * find the pair it drew, and nothing writes them back. Every grading sentence is phrased by `REASON`.
  */
 
+/**
+ * What a Methods button says after its label while settings are not at their default (one "not default" signal, 0.8.0
+ * N1): the one changed setting in words ("clip ±5"), "2 changed" for several, '' for none. The title lists them all.
+ * @param {string[]} notes - one phrase per setting not at its default
+ * @returns {string}
+ */
+export function buttonNote(notes) {
+    const list = (notes || []).filter(Boolean);
+    return list.length === 0 ? '' : list.length === 1 ? list[0] : `${list.length} changed`;
+}
+
 // ---------------------------------------------------------------------------
 // What is typed into a parameter box: one sentence per kind of mistake, the same wherever the box is
 

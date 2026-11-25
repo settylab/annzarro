@@ -24,6 +24,7 @@
  */
 import { createPopover } from '../../ui/popover.js';
 import { parseThresholdText, figure } from '../../utils/options-model.js';
+import { buttonNote } from '../../utils/options-model.js';
 import { STATISTIC_INFO, METHOD_PARAMS, METHODS_TEXT, methodsSummary } from '../../utils/group-statistics.js';
 
 /**
@@ -41,9 +42,10 @@ export function createCellMethods({ D, id, intro = METHODS_TEXT.intro, definitio
     const { el } = D;
     const sid = (x) => `cmeth-${x}-${id}`;
 
-    const dot = el('span', { class: 'cmeth__dot', hidden: true, aria: { hidden: 'true' } });
+    const labelSpan = el('span', { text: METHODS_TEXT.label });
+    const caret = el('span', { class: 'cmeth__caret', aria: { hidden: 'true' }, text: '▾' });
     const button = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary cmeth__toggle', id: sid('toggle'), data: { methods: '' } },
-        el('span', { text: METHODS_TEXT.label }), ' ', el('span', { class: 'cmeth__caret', aria: { hidden: 'true' }, text: '▾' }), dot);
+        labelSpan, ' ', caret);
 
     // ------------------------------------------------------------ the parameter boxes
 
@@ -112,7 +114,10 @@ export function createCellMethods({ D, id, intro = METHODS_TEXT.intro, definitio
             if (read() !== param.default) changed = true;
         }
         const summary = methodsSummary(fields);
-        dot.hidden = !changed;
+        const said = buttonNote(summary ? [summary] : []);
+        // the note is absent at the default, not hidden
+        button.replaceChildren(...(said ? [labelSpan, ' ', el('span', { class: 'az-btn-note', text: `· ${said}` }), ' ', caret]
+            : [labelSpan, ' ', caret]));
         button.title = summary ? `${METHODS_TEXT.plainTitle}: ${summary}` : METHODS_TEXT.plainTitle;
         reset.disabled = !changed;
         const lines = usedBy();

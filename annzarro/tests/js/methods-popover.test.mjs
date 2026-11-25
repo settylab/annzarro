@@ -47,6 +47,7 @@ function recordingDocument() {
         addEventListener(type, fn) { this.listeners.set(type, [...(this.listeners.get(type) || []), fn]); }
         appendChild(n) { note('append'); if (n.parentNode) n.parentNode.removeChild(n); n.parentNode = this; this.childNodes.push(n); return n; }
         append(...ns) { for (const n of ns) this.appendChild(typeof n === 'string' ? new Text(n) : n); }
+        replaceChildren(...ns) { for (const c of this.childNodes.slice()) this.removeChild(c); this.append(...ns); }
         removeChild(n) { note('remove'); this.childNodes.splice(this.childNodes.indexOf(n), 1); n.parentNode = null; return n; }
         contains(n) { for (let p = n; p; p = p.parentNode) if (p === this) return true; return false; }
         focus() { this.ownerDocument.activeElement = this; }
@@ -108,17 +109,25 @@ test('the statement of a setting follows the setting: the clip line and the thre
     assert.equal(el.querySelector('[data-param="clip"]').value, '10', 'and keeps the last clip for when it is ticked again');
 });
 
-test('the button carries a dot and names each parameter not at its default; Reset per method only then', () => {
+test('the button says each parameter not at its default (one: the value, several: a count); Reset per method only then', () => {
     const { pop, state, el } = build();
     assert.equal(pop.button.dataset.nondefault, 'false');
     assert.equal(pop.button.title, 'The settings of each score method');
+    assert.equal(pop.button.textContent, 'Methods ▾', 'at the default: no note at all');
     assert.equal(el.queryAll(n => 'resetMethod' in n.dataset && !n.hidden).length, 0);
     state.recipe = { ...state.recipe, clip: null, seed: 3 };
     pop.paint();
     assert.equal(pop.button.dataset.nondefault, 'true');
+    assert.equal(pop.button.textContent, 'Methods · 2 changed ▾');
     assert.equal(pop.button.title, 'z-score mean: not clipped; control-adjusted: seed 3');
     assert.equal(pop.button.getAttribute('aria-label'), 'Methods: z-score mean: not clipped; control-adjusted: seed 3');
     assert.deepEqual(el.queryAll(n => 'resetMethod' in n.dataset && !n.hidden).map(n => n.dataset.resetMethod), ['zscore_mean', 'control_adjusted']);
+    state.recipe = { ...state.recipe, clip: 5, seed: undefined };
+    pop.paint();
+    assert.equal(pop.button.textContent, 'Methods · clip ±5 ▾', 'one change: the value in words');
+    state.recipe = { ...state.recipe, clip: 10 };
+    pop.paint();
+    assert.equal(pop.button.textContent, 'Methods ▾', 'back at the default: the note is gone');
 });
 
 test('a number is applied when valid and the last valid value comes back otherwise', () => {

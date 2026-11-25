@@ -202,8 +202,9 @@ when one is changed:
 A parameter holds for its method on every layer. The clip stops one rare gene dominating the average (its z-score can
 reach the hundreds when a gene is detected in a handful of cells). A number that is not valid is refused ("Enter a
 number above 0.") and the last good value stays. While a parameter is not at its default, the **Methods** button
-carries a dot and its tooltip names each one ("z-score mean: not clipped; control-adjusted: seed 3"), so a link opened
-with other settings hides nothing.
+says the changed value after its label ("Methods · clip ±5", or "Methods · 2 changed" for several) and its tooltip
+names each one ("z-score mean: not clipped; control-adjusted: seed 3"), so a link opened with other settings hides
+nothing.
 
 **Fraction detected** is a share, not a count, so it means the same when a gene is missing from the dataset and
 compares between signatures of different sizes. **% of total** divides by the cell's total over every gene of the

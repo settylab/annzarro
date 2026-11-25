@@ -50,6 +50,10 @@
 /* The range boxes (static/js/ui/range-boxes.js): the boxes of one scale and its reset; an auto box reads as a value */
 .az-range { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .az-range__box { display: flex; align-items: center; justify-content: space-between; gap: 4px 8px; margin: 0; }
+/* The one "not at its default" signal: the changed value, in words, after a button's label (Methods ▾, the aggregation
+   button's threshold). Never a dot or a fill: those mean "on". */
+.az-btn-note, .axis-agg-suffix { margin-left: 4px; font-size: 0.75rem; color: var(--az-muted); white-space: nowrap; max-width: 12rem;
+    overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: bottom; }
 .az-range__label { color: var(--az-muted); font-size: 0.75rem; }
 .az-range__field { width: 5.5rem; }
 .az-range__field--auto::placeholder { color: var(--az-muted); opacity: 1; font-style: italic; }

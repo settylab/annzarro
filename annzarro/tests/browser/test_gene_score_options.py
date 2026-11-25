@@ -242,10 +242,14 @@ def test_reset_to_defaults_asks_first_when_a_plot_shows_a_score_it_changes(page,
     assert _recipe(page)["clip"] == 10
 
 
-def test_the_button_names_every_parameter_not_at_its_default_with_a_dot(page, served):
+NOTE = f"{BUTTON} .az-btn-note"
+
+
+def test_the_button_names_every_parameter_not_at_its_default_in_its_title_and_counts_them(page, served):
     _sig_open(page, served, clip=None, seed=3)
     assert page.get_attribute(BUTTON, "data-nondefault") == "true"
-    assert page.is_visible(f"{BUTTON} .gsig-methods__dot")
+    assert page.inner_text(NOTE) == "· 2 changed"
+    assert " ".join(page.inner_text(BUTTON).split()) == "Methods · 2 changed ▾"
     assert page.get_attribute(BUTTON, "title") == "z-score mean: not clipped; control-adjusted: seed 3"
     assert page.get_attribute(BUTTON, "aria-label") == "Methods: z-score mean: not clipped; control-adjusted: seed 3"
 
@@ -516,3 +520,31 @@ def test_the_methods_pop_over_uses_the_az_pop_body(page, served):
     page.wait_for_selector(POP, state="visible")
     got = assert_body_standard(page, POP, help=True, sections=6, shot="signature-methods")
     assert [t["text"] for t in got["titles"]][:2] == ["Z-score mean", "Mean"], "a section per method, titled by its name"
+
+
+def test_methods_button_says_the_changed_parameter(page, served):
+    _sig_open(page, served, clip=5)
+    assert " ".join(page.inner_text(BUTTON).split()) == "Methods · clip ±5 ▾"
+    assert page.inner_text(NOTE) == "· clip ±5"
+    assert page.get_attribute(BUTTON, "data-nondefault") == "true"
+
+
+def test_two_changes_say_a_count_and_title_lists_both(page, served):
+    _sig_open(page, served, clip=5, seed=3)
+    assert page.inner_text(NOTE) == "· 2 changed"
+    assert page.get_attribute(BUTTON, "title") == "z-score mean: clip ±5; control-adjusted: seed 3"
+
+
+def test_reset_removes_the_note(page, served):
+    _sig_open(page, served, clip=5)
+    _methods(page)
+    page.click(f"{POP} [data-reset-all]")
+    page.wait_for_selector(NOTE, state="detached")
+    assert page.locator(NOTE).count() == 0 and " ".join(page.inner_text(BUTTON).split()) == "Methods ▾"
+    assert page.get_attribute(BUTTON, "data-nondefault") == "false"
+
+
+def test_no_dot_anywhere(page, served):
+    _sig_open(page, served, clip=5)
+    assert page.locator(".gsig-methods__dot, .cmeth__dot").count() == 0
+    assert page.get_attribute(BUTTON, "aria-pressed") is None

@@ -14,7 +14,7 @@
  *   Used by 2 plots, 1 table: z-score mean, mean · X, counts                     [Reset to defaults]
  *
  * The surface is the pop-over primitive (ui/popover.js): Escape and a click outside close it, and opening it moves no
- * box of the panel. The button carries a dot while a parameter is not at its default, and its title names each one, so
+ * box of the panel. The button says the changed value after its label while a parameter is not at its default, and its title names each one, so
  * no setting hides behind the closed pop-over.
  *
  * Every number is checked on Enter or on leaving the box: an invalid one keeps the last valid value and says what is
@@ -28,6 +28,7 @@ import {
     BINS_RANGE, CONTROLS_RANGE, DEFAULT_BINS, DEFAULT_CLIP, DEFAULT_CONTROLS, DEFAULT_DOWN_WEIGHT, DEFAULT_SEED,
     cleanDownWeight, directionFormula, downDefinition, parseClipText, parseSeedText, parseThresholdText, parseWholeText
 } from '../../utils/gene-signature.js';
+import { buttonNote } from '../../utils/options-model.js';
 import {
     DOWN_WEIGHT_WORDS, SIGNATURE_MODEL as model, WEIGHTED_METHODS, clipLine, methodNotes, thresholdLine, useText
 } from '../../utils/signature-options.js';
@@ -67,9 +68,10 @@ export function createMethodsPopover({ D, id, label = 'Methods', getRecipe, appl
 
     // ------------------------------------------------------------ the button
 
-    const dot = el('span', { class: 'gsig-methods__dot', hidden: true, aria: { hidden: 'true' } });
+    const labelSpan = el('span', { text: label });
+    const caret = el('span', { class: 'gsig-methods__caret', aria: { hidden: 'true' }, text: '▾' });
     const button = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-methods__toggle', id: sid('toggle'),
-        data: { methods: '' } }, el('span', { text: label }), ' ', el('span', { class: 'gsig-methods__caret', aria: { hidden: 'true' }, text: '▾' }), dot);
+        data: { methods: '' } }, labelSpan, ' ', caret);
 
     // ------------------------------------------------------------ numbers
 
@@ -233,7 +235,11 @@ export function createMethodsPopover({ D, id, label = 'Methods', getRecipe, appl
 
     function paintButton(recipe) {
         const notes = notesText(recipe);
-        dot.hidden = !notes;
+        const said = buttonNote([...methodNotes(recipe).flatMap(m => m.notes),
+            ...(directions && cleanDownWeight(recipe.down_weight) !== DEFAULT_DOWN_WEIGHT ? [`down genes: ${DOWN_WEIGHT_WORDS.side}`] : [])]);
+        // the note is absent at the default, not hidden
+        button.replaceChildren(...(said ? [labelSpan, ' ', el('span', { class: 'az-btn-note', text: `· ${said}` }), ' ', caret]
+            : [labelSpan, ' ', caret]));
         button.title = notes || METHODS_HELP.plainTitle;
         button.setAttribute('aria-label', notes ? `${label}: ${notes}` : label);
         button.dataset.nondefault = notes ? 'true' : 'false';

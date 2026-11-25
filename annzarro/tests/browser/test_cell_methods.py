@@ -114,7 +114,8 @@ def test_expressed_above_redraws_the_cell_gene_plot_and_undo_restores_it(page, s
     assert "detect_above" not in _config(page)["size"], "nothing is written into the plot"
     assert "Now: above 2." in page.inner_text(POP)
     toggle = page.locator(f"{TG} .cmeth__toggle")
-    assert toggle.locator(".cmeth__dot").is_visible(), "a non-default parameter marks the button"
+    assert toggle.locator(".az-btn-note").inner_text() == "· expressed above 2", "a non-default parameter is said on the button"
+    assert " ".join(toggle.inner_text().split()) == "Methods · expressed above 2 ▾"
     assert "expressed above 2" in toggle.get_attribute("title")
     page.keyboard.press("Escape")
     # (the plot's box is read after the grouping's pop-over is closed: opening Size's menu closes any other pop-over)
@@ -127,7 +128,8 @@ def test_expressed_above_redraws_the_cell_gene_plot_and_undo_restores_it(page, s
     until(page, "(s) => { const p = document.querySelector(s + ' .cgene-plot'); const t = JSON.stringify(p.data[0].hovertext || p.data[0].text);"
           " return t.includes('% expressing (> 0) · counts'); }", TP, timeout=60)
     assert CC.above(page, TP, "size")["placeholder"] == "auto (grouping: 0)"
-    assert page.locator(f"{TG} .cmeth__toggle .cmeth__dot").is_hidden()
+    assert page.locator(f"{TG} .cmeth__toggle .az-btn-note").count() == 0
+    assert " ".join(page.inner_text(f"{TG} .cmeth__toggle").split()) == "Methods ▾"
 
 
 def test_a_measure_with_its_own_threshold_is_unaffected(page, served):
@@ -184,7 +186,8 @@ def test_the_cell_tables_methods_round_trip_through_its_configuration(page, serv
     assert cfg["methods"] == {"detect_above": 2}
     _open_table(page, served, {"id": T, "title": "Table 1", "methods": {"detect_above": 2}})
     assert page.evaluate("(id) => window.PanelManager.getPanel(id).getMethods()", T) == {"detect_above": 2}
-    assert page.locator(f"{TT} .cmeth__toggle .cmeth__dot").is_visible()
+    assert page.locator(f"{TT} .cmeth__toggle .az-btn-note").inner_text() == "· expressed above 2"
+    assert page.locator(".cmeth__dot").count() == 0
     # Reset to defaults takes the field out
     page.click(f"{TT} .cmeth__toggle")
     page.locator(POP).wait_for(state="visible")
@@ -234,3 +237,29 @@ def test_the_grouping_methods_pop_over_uses_the_az_pop_body(page, served):
     page.click(f"{TG} .cmeth__toggle")
     page.wait_for_selector(POP, state="visible")
     assert_body_standard(page, POP, help=True, shot="grouping-methods")
+
+
+def test_grouping_methods_button_says_the_changed_parameter_and_reset_removes_it(page, served):
+    _plot_on_grouping(page, served)
+    toggle = page.locator(f"{TG} .cmeth__toggle")
+    assert toggle.locator(".az-btn-note").count() == 0 and " ".join(toggle.inner_text().split()) == "Methods ▾"
+    toggle.click()
+    page.locator(POP).wait_for(state="visible")
+    _set_threshold(page, 2)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().detect_above === 2", GA)
+    assert toggle.locator(".az-btn-note").inner_text() == "· expressed above 2"
+    assert toggle.get_attribute("title") == "The settings of each statistic: expressed above 2" or "expressed above 2" in toggle.get_attribute("title")
+    page.click(f"{POP} .cmeth__reset")
+    until(page, "(id) => !('detect_above' in window.PanelManager.getPanel(id).getConfig())", GA)
+    assert toggle.locator(".az-btn-note").count() == 0
+
+
+def test_no_dot_and_no_pressed_aggregation_button(page, served):
+    _plot_on_grouping(page, served)
+    page.click(f"{TG} .cmeth__toggle")
+    page.locator(POP).wait_for(state="visible")
+    _set_threshold(page, 2)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().detect_above === 2", GA)
+    assert page.locator(".gsig-methods__dot, .cmeth__dot").count() == 0
+    assert page.locator(".axis-agg-btn[aria-pressed]").count() == 0
+    assert page.locator(".axis-agg-btn").count() > 0

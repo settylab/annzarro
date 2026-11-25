@@ -98,7 +98,5 @@
 
 /* 6. Methods ▾ (decision 34): the statistics over a group's or a table's cells and their parameters; shared with the Cell Table */
 .cmeth__toggle { position: relative; }
-.cmeth__dot { display: inline-block; width: 6px; height: 6px; margin-left: 4px; border-radius: 50%; background: var(--az-link); vertical-align: middle; }
-.cmeth__dot[hidden] { display: none; }
 .cmeth .cmeth__foot { align-items: flex-end; justify-content: space-between; gap: 6px; padding-bottom: 8px; }
 .cmeth .cmeth__used { flex: 1 1 12rem; }

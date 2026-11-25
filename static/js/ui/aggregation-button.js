@@ -14,8 +14,7 @@
  * button (">1"), so a value in force never hides behind a closed pop-over. A caller that gives none gets what it had.
  *
  * Also optional: an entry may carry `heading` (drawn above it when it differs from the entry before: a one-row section's
- * "Combine the gene rows" and "Score each cell"), and `pressed()` marks the button as set away from its default (accent
- * fill, `aria-pressed`).
+ * "Combine the gene rows" and "Score each cell"). The button never marks "not default": its symbol is its state.
  */
 import { createPopover } from './popover.js';
 import { symbolSpan } from '../utils/aggregation-symbols.js';
@@ -58,10 +57,9 @@ function fieldRow(f, onField) {
  * @param {() => Array<{key: string, label: string, value: string, placeholder?: string, title?: string}>} [options.fields]
  * @param {(key: string, text: string) => void} [options.onField]
  * @param {() => string} [options.suffix]
- * @param {() => boolean} [options.pressed]
  * @returns {{button: HTMLButtonElement, update: () => void, destroy: () => void}}
  */
-export function createAggregationButton({ label, axis = '', methods, onPick, fields = null, onField = null, suffix = null, pressed = null }) {
+export function createAggregationButton({ label, axis = '', methods, onPick, fields = null, onField = null, suffix = null }) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn btn-sm btn-outline-secondary axis-agg-btn';
@@ -112,16 +110,11 @@ export function createAggregationButton({ label, axis = '', methods, onPick, fie
         button.replaceChildren(...(chosen ? [symbolSpan(chosen.symbol, 'axis-agg-sym axis-agg-sym--button')] : []));
         if (chosen && extra) {
             const tail = document.createElement('span');
-            tail.className = 'axis-agg-suffix';
+            tail.className = 'az-btn-note axis-agg-suffix';
             tail.textContent = extra;
             button.append(tail);
         }
         const text = chosen ? `${label}: ${chosen.name}${extra ? ` ${extra}` : ''}` : label;
-        if (pressed) {
-            const on = !!pressed();
-            button.classList.toggle('active', on);
-            button.setAttribute('aria-pressed', String(on));
-        }
         button.title = text;
         button.setAttribute('aria-label', text);
     }

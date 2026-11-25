@@ -1611,8 +1611,6 @@ button.dtsb-button.dtsb-clear:hover {
 /* The score's toolbar (Methods ▾ and Distribution) and Up/Down (panels/score-options/methods-popover.js) */
 .gsig-status__tools { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: auto; }
 .gsig-methods__toggle { position: relative; }
-.gsig-methods__dot { display: inline-block; width: 6px; height: 6px; margin-left: 4px; border-radius: 50%; background: var(--az-link); vertical-align: middle; }
-.gsig-methods__dot[hidden] { display: none; }
 .gsig-scoring__params[hidden], .gsig-scoring__help[hidden], .gsig-scoring__resetmethod[hidden] { display: none; }
 .gsig-updown.active { background: var(--az-surface-3); color: var(--az-text); border-color: var(--az-border-strong); font-weight: 600; }
 .gsig-dirask { margin: 0 8px 4px; }
@@ -4967,7 +4965,6 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .agg-over { display: inline-block; border-top: 1px solid currentColor; line-height: 1.05; padding: 0 1px; }
 .az-popover-menu .axis-agg-sym { flex: 0 0 2rem; text-align: center; font-variant-numeric: tabular-nums; }
 .axis-agg-sym--button { flex: none; }
-.axis-agg-suffix { margin-left: 4px; font-size: 0.75rem; white-space: nowrap; }
 .az-popover-menu .axis-agg-field { padding: 6px 8px 4px 22px; border-top: 1px solid var(--az-border); }
 .az-popover-menu .axis-agg-item[role="menuitem"] { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; width: 100%; padding: 4px 8px 4px 22px; position: relative;
     border: 0; background: none; color: var(--az-text); text-align: left; }
