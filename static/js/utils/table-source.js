@@ -5,6 +5,7 @@
  * A provider that accepts tables names 'cell-table' among its `consumers` and 'column' among its `axes`, and declares:
  *
  *   table.tab                 the label of its tab in the column chooser
+ *   table.tabOrder            optional: where its tab stands among the providers' (lower first; 100 when absent)
  *   table.watch(column, {host, visible, onChange})
  *                             a handle on the column's series: read() -> snapshot, release(), sharers(), compute(),
  *                             retry(), cancel() (each true when it did something). onChange(snapshot) on every change

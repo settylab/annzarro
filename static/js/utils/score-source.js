@@ -660,6 +660,7 @@ function scoreKeyEntries(list, setting) {
  */
 const scoreTable = {
     tab: VOCABULARY.sourceType.score,
+    tabOrder: 10,
     watch: (column, { host, visible, onChange }) => scores().sources.watch(column.key, {
         kind: 'table', sub: subKeyOf(column), layer: column.layer || '', host, role: 'column', visible, onChange
     }),

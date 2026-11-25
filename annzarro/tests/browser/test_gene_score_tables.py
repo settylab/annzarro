@@ -893,3 +893,10 @@ def test_add_row_survives_a_panels_changed_event_mid_pick(page, served):
     page.evaluate("(id) => { window.PanelManager.getPanel(id).setTitle('Renamed score'); document.dispatchEvent(new CustomEvent('annzarro:panels-changed')); }", SIG)
     now = page.evaluate(read, f"#gene-score-content-{TID} .az-score-group[data-entity='{SIG}']")
     assert now["same"] is False and now["layer"] == layers[-1] and "Mean" in now["agg"], now
+
+
+def test_cell_table_tab_order(page, served):
+    """obs, obsm, obsp, layers, then Gene score, then Cell groupings."""
+    _open(page, served, table=_table(columns=[OBS]))
+    tabs = page.evaluate("(t) => [...document.querySelectorAll(t + ' .nav-tabs .nav-link')].map(b => b.textContent.trim())", T)
+    assert tabs == ["obs", "obsm", "obsp", "layers", "Gene score", "Cell groupings"], tabs

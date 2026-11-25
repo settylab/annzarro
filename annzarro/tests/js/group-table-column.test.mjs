@@ -87,7 +87,7 @@ test('the cell-group provider gives Cell Tables a column (CAT-6)', () => {
     assert.ok(provider.consumers.includes('cell-table'));
     assert.ok(provider.axes.includes('column'));
     assert.ok(provider.table, 'a table half');
-    assert.equal(provider.table.tab, 'Cell Grouping', 'the tab names the source in words, never its type id');
+    assert.equal(provider.table.tab, 'Cell groupings', 'the tab names the source in words, never its type id');
     assert.equal(provider.label, 'Cell Grouping', 'and so does every menu of source types');
     assert.ok(sourcesFor('cell-table', ['column']).includes(provider));
     assert.ok(tableProviders().includes(provider), 'a tab in the column chooser');
@@ -96,7 +96,7 @@ test('the cell-group provider gives Cell Tables a column (CAT-6)', () => {
 
 test('the tab names the source in words, and a filter lists the groups', () => {
     const { half } = makeHalf();
-    assert.equal(half.tab, 'Cell Grouping');
+    assert.equal(half.tab, 'Cell groupings');
     assert.equal(half.listsCategories, true);
     assert.equal(half.chooser.layerOf(COLUMN), '');
 });
