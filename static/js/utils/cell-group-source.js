@@ -30,7 +30,7 @@
  */
 import { drawPlaceholder } from './panel-surface.js';
 import { Coverage, GAP } from './coverage.js';
-import { describeSource, paintProgress, sentenceOf, coverageKindOf } from './source-notices.js';
+import { describeSource, paintProgress, sentenceOf, coverageKindOf, sizeRefusalText } from './source-notices.js';
 import { actions } from './source-actions.js';
 import { createHostBinding, isHover, isVisible, panelIdOf, PENDING } from './host-binding.js';
 import { registerSource, SourceUnavailable } from './source-registry.js';
@@ -46,7 +46,6 @@ import { createGroupTable } from '../panels/cell-grouping/table-column.js';
 const W = VOCABULARY.word;
 const PL = VOCABULARY.plural;
 const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
-const fmt = (n) => Number(n).toLocaleString('en-US');
 
 /** The type of the source this module provides: what a consumer's setting names (see the module's note on the cycle). */
 export function cellGroupType() {
@@ -262,18 +261,6 @@ function refusedHandle(id, refusal) {
 /** The reason of a grouping the memory guard refused, before the request (CAT-4). */
 const MEMORY_REASON = 'browser_memory';
 
-/** What a grouping's figures of a refusal for its size say (the route's `refused`). */
-function sizeRefusal(refused) {
-    if (!refused || !Number.isFinite(Number(refused.count)) || !Number.isFinite(Number(refused.limit))) return null;
-    if (refused.reason === 'too_many_groups') {
-        return `has ${fmt(refused.count)} ${PL.group}: a ${W.grouping} holds up to ${fmt(refused.limit)}`;
-    }
-    if (refused.reason === 'too_many_levels') {
-        return `has a ${W.factor} with ${fmt(refused.count)} ${PL.level}: a ${W.factor} holds up to ${fmt(refused.limit)}`;
-    }
-    return null;
-}
-
 /** What a grouping calls things in a notice (utils/source-notices.js), with the states only a grouping has. */
 const VOCAB = Object.freeze({
     thing: W.grouping, source: W.grouping, result: W.grouping, Computing: 'Computing',
@@ -299,7 +286,7 @@ const VOCAB = Object.freeze({
                 return f.out('refused', 'warning', f.tagOf('refused', `${f.Result} not loaded`), `${f.t} was not loaded.`,
                     `${snap.refused.why}${f.none}`, [f.choose]);
             }
-            const said = sizeRefusal(snap.refused);
+            const said = sizeRefusalText(snap.refused);
             if (!said) return undefined;
             return f.out('refused', 'warning', f.tagOf('refused', `${f.Result} refused`), `${f.t} ${said}, so it was not computed.`, '', [f.open, f.choose]);
         }
