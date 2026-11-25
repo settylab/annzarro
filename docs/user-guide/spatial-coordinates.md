@@ -25,9 +25,10 @@ prepared by `docs/_tools/make_spatial_demo.py`. It holds
 2. Open its controls. Set **X** to `obsm` → `spatial_upright` → `0` and **Y** to `obsm`
    → `spatial_upright` → `1`.
 3. Set **Color** to `obs` → `leiden`.
-4. Click **Equal aspect** (next to **Hide NaN** for a categorical colour, in the colour toolbar
-   for a numerical one). One unit on x is now as long as one unit on y, so the section keeps its
-   shape whatever the tile's proportions.
+4. Leave **Equal aspect** on. It is in the toolbar row under the controls, after **3D**, and a new Cell
+   Plot opens with it on, so the section already keeps its shape whatever the tile's proportions (one
+   unit on x as long as one unit on y). Changing an axis does not switch it off; clicking it does, and then the
+   section is stretched to the tile, as in the left half of the figure below.
 
    ```{figure} ../_static/screens/user-guide/spatial-aspect.png
    :class: screenshot
@@ -81,12 +82,13 @@ Ttr panel did not change, because it depends on the focused gene.
 - **Any obsm can be the axes.** Use the raw `spatial` positions, a registered coordinate system,
   or a 3D stack (x, y and section depth as three columns with **3D**).
 - **Image orientation.** If the tissue appears upside down, store the positions with y negated
-  (as `spatial_upright` does here) when preparing the store; AnnZarro has no axis-flip control.
+  (as `spatial_upright` does here) when preparing the store, or turn on **Flip y** (or **Flip x**) in **Plot Options**
+  ▸ **Axes**. Flipping is a view of the plot: it is saved with the panel but is not part of a copied look.
 - **Aspect ratio.** A new Cell Plot on an embedding starts with **Equal aspect** on. Without it the axes fill the tile and stretch the section to
   the tile's shape. **Equal aspect** is saved with the panel (`equalAspect`), in panel sets and
   share links. For an export, set the export width and height in proportion to the tile
   ({doc}`export`).
-- **Scale bar.** With **Equal aspect** on, **Plot Options > Axes and ticks > Scale bar** draws a
+- **Scale bar.** With **Equal aspect** on, **Plot Options** ▸ **Axes** ▸ **Scale bar** draws a
   bar of a round length (about a fifth of the width in view, redrawn as you zoom) labelled in
   coordinate units, with an optional unit text such as `µm` ({doc}`plot-options`).
 - **Kernels and distances.** A dense obsp matrix of spot neighbourhoods, like `spatial_kernel`,

@@ -13,10 +13,16 @@ haematopoiesis, filters cells with a two-condition table, and saves and shares t
 Along the way you rebuild the focus model of the paper's overview figure as a live layout, and
 the screenshots of its interface figure ({doc}`../paper/overview`, {doc}`../paper/interface`).
 
+```{note}
+The screenshots that show the paper's figures show the interface of the version the paper cites; names and positions of
+some controls have changed since, and the steps in the text use today's names.
+```
+
 ## What you need
 
+- AnnZarro 0.8.0 or later (the steps use its control names).
 - AnnZarro with `bm_aging_annzarro.zarr` in its data directory ({doc}`../getting-started/quickstart`,
-  {doc}`../data/demo-data`). `bm_aging_annzarro.zarr` works too; it contains the same fields.
+  {doc}`../data/demo-data`). The base store `bm_aging.zarr` works too; it contains the same fields.
 - These fields:
 
 | Slot | Key | What it is | Selected by |
@@ -89,7 +95,7 @@ ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 
 To see where each click lands, put a cell-type map beside the walk.
 
-5. Click "Split Horizontally" (the first of the two split icons in the tile header). In the
+5. Click **Split side by side** (the first of the two split icons in the tile header). In the
    new "Add New Panel" tile choose **Cell Plot**: UMAP axes as before, **Color** `obs` ·
    `highres_celltype`, **Palette** "As stored in adata.uns". Close its
    controls.
@@ -163,16 +169,16 @@ grid whose left column holds cell scatters and right column gene scatters, with 
 driven by the focused cell and the bottom row by the focused gene.
 
 9. Close the cell-type panel (× in its header), then focus the HSC again (step 2).
-10. **Top right: the focused cell's row of a layer.** Click "Split Horizontally" on the walk
+10. **Top right: the focused cell's row of a layer.** Click **Split side by side** on the walk
     tile and choose **Gene Plot**. Set **X** `var` · `kompot_de_Young_to_Old_mean_lfc`
     and **Y** `var` · `kompot_de_Young_to_Old_mahalanobis` (a volcano), **Color**
     `layer` · `kompot_de_Young_to_Old_fold_change`. The third dropdown reads "Focused cell …".
     Choose **Map** `RdBu` and click **Center at 0**.
-11. **Bottom left: the focused gene's column of the same layer.** Click "Split Vertically"
+11. **Bottom left: the focused gene's column of the same layer.** Click **Split top and bottom**
     (the second split icon) on the walk tile, choose **Cell Plot**, UMAP axes, **Color**
     `layer` · `kompot_de_Young_to_Old_fold_change` (third dropdown "Focused gene H2-Q7"),
     **Map** `RdBu`, **Center at 0**.
-12. **Bottom right: the focused gene's row of varp.** Click "Split Vertically" on the gene
+12. **Bottom right: the focused gene's row of varp.** Click **Split top and bottom** on the gene
     plot, choose **Gene Plot**, volcano axes, **Color** `varp` · `spearman_fold_change` (third
     dropdown "Focused gene H2-Q7"). Choose **Map** `RdBu`, type `-1` in **Min** and `1`
     in **Max**, and click **Lock Range**, so that a colour means the same ρ for every gene you
@@ -291,7 +297,7 @@ table. From the grid of section 4:
     `spearman_fold_change` with **Map** `RdBu`, **Min** `-1`, **Max** `1` and **Lock
     Range**, as in step 12. Close the bottom-right volcano with × in its header; the top-right
     one now holds the same view.
-20. Click "Split Vertically" on the top-right volcano and choose **Cell Table**. In its
+20. Click **Split top and bottom** on the top-right volcano and choose **Cell Table**. In its
     controls, under "Available Columns" on the `obs` tab, tick `Age`, `highres_celltype` and
     `kompot_da_Young_to_Old_lfc_zscore` (type in "Search obs..." to find them) and click
     **Apply Changes**. In "Advanced Search" click **Add Condition** and set
@@ -341,7 +347,7 @@ needs no new data from the server, because the plot already holds every cell.
     The table with its controls open (column chooser at the top) and the two conditions.
     ```
 
-25. Click "Split Horizontally" on the table and add a **Cell Plot**: UMAP axes, **Color**
+25. Click **Split side by side** on the table and add a **Cell Plot**: UMAP axes, **Color**
     `obs` · `kompot_da_Young_to_Old_lfc_zscore`, **Map** `RdBu`, **Center at 0**.
 26. In the plot's controls set **Table** to the table (it is listed by its title).
     Cells the filter removes turn grey; the eye button beside it ("Toggle between colouring

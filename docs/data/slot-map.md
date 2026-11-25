@@ -1,9 +1,14 @@
 # Slot map: which stored array drives which view
 
-AnnZarro computes nothing. Every number on screen is a slice of an array that is already in
-the AnnData store, and every click fetches exactly one slice per panel: one **row** for the
-focused cell, one **column** for the focused gene. Deciding what to store is therefore the
+For the plots and tables of this page, AnnZarro computes nothing: every number on screen is a slice of
+an array that is already in the AnnData store, and every click fetches exactly one slice per panel: one
+**row** for the focused cell, one **column** for the focused gene. Deciding what to store is therefore the
 whole of the experimental design. This page maps each AnnData slot to the views it feeds.
+
+Four panels do compute, on the server and on request, from the same arrays: the **Gene Signature** (a
+gene score for every cell), the **Cell Grouping** (groups and their statistics), the **Cell-Gene Plot** and
+the **Cell Count Plot** (statistics and counts per group). Nothing they make is stored in the store: they
+read it, which is why the layout of a layer ({doc}`preparing-a-store`) matters for them too.
 
 ```{figure} ../_static/figures/slot-map.svg
 :alt: An AnnData object laid out around its cells x genes matrix. The focused cell is a blue horizontal band through obsp, obsm, obs and X/layers; the focused gene is an orange vertical band through X/layers, var, varm and varp. Their crossing in X/layers is one value.
@@ -62,7 +67,7 @@ the source menus.
 | colouring cells by a cell | a cells × cells matrix in `obsp` |
 | colouring genes by a gene | a genes × genes matrix in `varp` |
 | colouring genes by a cell | a cells × genes matrix in `layers` (read by row) |
-| fixed category colours | `uns['{col}_colors']`, one colour per category, in category order |
+| fixed category colours | `uns['{col}_colors']`, one colour per category, in category order; a grouping uses them when there are at least as many colours as categories |
 
 ## Data types
 

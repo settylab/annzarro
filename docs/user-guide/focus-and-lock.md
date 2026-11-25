@@ -113,9 +113,7 @@ crosshair.
 1. Open the left panel's controls with its **Toggle Controls** chevron.
 2. In the **Color** row, the third drop-down reads "Focused cell HSPC_Old_1#…". Click the open
    padlock (2) to the right of it. It turns blue and closed: the panel is now locked to that cell's
-   row. The drop-down then names the locked cell, "Locked cell HSPC_Old_1#…" (in this version the
-   new wording appears once the panel is rebuilt, for example when the view is reopened from a
-   panel set or share link; right after the click it still reads "Focused cell …").
+   row. The drop-down then names the locked cell, "Locked cell HSPC_Old_1#…", at once.
 
    ```{figure} ../_static/screens/user-guide/focus-lock-button.png
    :class: screenshot

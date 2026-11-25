@@ -86,7 +86,8 @@ that has it and the panel shows it again, as saved.
   export depend on the tile size, the screen's pixel ratio, the graphics card and the fonts of
   the browser. The full-size export (the **Export** buttons and `annzarro export`) depends on the
   panel's export width, height and scale, not on the window; across computers it can still differ
-  in fonts and in how the graphics card draws the points.
+  in how the graphics card draws the points. The default font, Open Sans, ships with the app and is
+  embedded in exports, so text no longer depends on the fonts of the computer unless you chose another one.
 
 ## Figures that carry their own recipe
 

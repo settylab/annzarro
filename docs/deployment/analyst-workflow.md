@@ -70,8 +70,8 @@ In the AnnZarro tab, click **Refresh dataset**, the icon right of the dataset bu
 ({doc}`../user-guide/interface`). (In the desktop app **Ctrl+R**, **Cmd+R** on a Mac, does the same;
 in a browser it reloads the page.) It:
 
-1. asks the server to check the store against the disk (`POST /api/v1/data/refresh`). If any file
-   changed, the server starts a new generation of the dataset: every server process (each
+1. asks the server to check the store against the disk (`POST /api/v1/data/refresh`). Whatever the
+   check finds, the server starts a new generation of the dataset: every server process (each
    gunicorn worker) reads it afresh, and every browser's cached replies stop matching;
 2. for an admin, also clears the server's cache for the dataset (`POST /api/v1/cache/reset`);
 3. reloads the dataset list and reopens the dataset in your tab. `mhc1_score` now appears in

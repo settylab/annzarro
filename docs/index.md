@@ -39,7 +39,7 @@ Install from PyPI or the desktop app and open your first dataset.
 :::{grid-item-card} User guide
 :link: user-guide/index
 :link-type: doc
-Focus, lock, panels, tables, panel sets, share links and export.
+Focus and lock, plots and tables, gene signatures and scores, cell groupings, dot plots and counts, panel sets, share links and export.
 :::
 
 :::{grid-item-card} Preparing data
@@ -51,7 +51,7 @@ Which slot drives which view, chunking, Kompot outputs and the demonstration dat
 :::{grid-item-card} Tutorials
 :link: tutorials/index
 :link-type: doc
-Cell similarity beyond the UMAP, gene programmes beyond clusters, and where a gene changes.
+From a first tour to cell similarity beyond the UMAP, gene programmes beyond clusters, where a gene changes, and 95 million cells.
 :::
 
 :::{grid-item-card} Deployment

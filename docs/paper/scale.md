@@ -42,9 +42,10 @@ the heap (0.03 GiB at 150 million cells), and the default subset stays flat. The
 
 - **Large-plot mode is not a link setting.** A link that shows every cell of a dataset above
   1 million points opens in large-plot mode, as in a and b, because the app switches by the
-  number of points. In that mode hover, click to focus, the focused-cell marker and table
-  filters are off; the panel's status strip says "Large plot: no hover/click". Switch the subset
-  back on to recover them.
+  number of points. In that mode a few controls are off (the table filter, 3D, the obsp axes and
+  the Hover list; they say so when you point at them), and the panel's status line says **Large plot**; hover, click to focus and the
+  focused-cell marker still work ({doc}`../user-guide/subsets`). Switch the subset back on to recover the
+  controls.
 - **Panel c is a crop of the linked zoom.** The link opens the box marked in a (0.33 × 0.35 UMAP
   units, x 14 to 14.33, y 7.8 to 8.15). The paper shows the centre 0.11 × 0.12 of it; zoom in once
   more with the mouse to match.

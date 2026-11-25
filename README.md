@@ -64,7 +64,7 @@ macOS: [Apple silicon](https://github.com/settylab/annzarro/releases/latest/down
 - Links cells and genes: one cell's values across genes, one gene's values across cells, in every layer.
 - Filters cell and gene tables with AND/OR conditions that mask the plots; saves layouts as panel sets and share links.
 - Reads only the chunks behind what is on screen, so cost follows the view, not the dataset size; locally or from S3, GCS and HTTP.
-- Never writes to your data and never runs code: a lab server can show datasets without giving write or compute access.
+- Never writes to your data and never runs code: a lab server can show datasets without giving write access or letting anyone run code of their own.
 
 ![Cell x cell, gene x gene, cells x genes and table filters](https://raw.githubusercontent.com/settylab/annzarro/main/docs/_static/readme/features.png)
 

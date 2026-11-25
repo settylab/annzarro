@@ -18,7 +18,8 @@ a worked example of the main idea behind AnnZarro: compute once in Python, then 
 | Format | Zarr v2, consolidated metadata, Blosc lz4, dense arrays float32 |
 | Size | 5,741,994,795 bytes in 4,243 files (5.3 GiB); 5.7 GB as one zip |
 
-AnnZarro never computes anything. It shows what is stored. Some panels of the paper figures
+At the version of the paper, AnnZarro computed nothing: it showed what is stored (the four panels
+added later compute scores, groups and counts on request, from the arrays below). Some panels of the paper figures
 depend on numbers that the figure scripts compute in Python: the distance from one cell to all
 others, gene modules, the classes in a scatter. To rebuild those panels inside AnnZarro, the
 numbers have to be in the store, so this one store holds them next to the data they come from.
@@ -61,7 +62,8 @@ runs the paper's Procedure, Steps 3 to 10:
    `kompot.cleanup()`, so the smoothed and fold-change layers that AnnZarro shows are kept. It
    writes `bm_aging_processed.h5ad` (5.6 GB).
 3. **The store**: a dense five-step diffusion walk in `obsp`; two gene × gene Spearman
-   correlations in `varp`; dense arrays as float32; X and `logged_counts` as CSC; zarr format 2;
+   correlations in `varp`; dense arrays as float32; X and `logged_counts` as CSC (the script; the deposited
+   store has `logged_counts` as CSR, see the note below); zarr format 2;
    chunks by the aspect rule ({doc}`chunking`), then the metadata consolidated again.
 
 {doc}`preparing-a-store` explains each step.
@@ -104,8 +106,8 @@ showcase store `bm_aging_annzarro.zarr` gives `a372502012ded8cd238e5eb83e408b89`
 
 ```{note}
 The checksum identifies one build, not the recipe. A rebuild of the base store with `bm_aging.py` differs from
-the published one in its chunk shapes (the store behind these docs has (1024, 1024) chunks and a CSR
-`logged_counts`; the script follows the current Procedure) and by about 1e-6 in Kompot's
+the published one in its chunk shapes and in its layout (the store behind these docs has (1024, 1024) chunks and a CSR
+`logged_counts` and counts layers; the script follows the current Procedure and writes `logged_counts` as CSC) and by about 1e-6 in Kompot's
 float outputs, so it hashes differently. The published showcase store was made from the published base store, so
 it contains its bytes unchanged. The numbers the docs quote do not change: the same 190
 DE genes, Mahalanobis threshold 5.82, and every value the views read agrees to within 2.2e-6.
@@ -347,9 +349,8 @@ the focused spot in the tissue fall in one region of the UMAP, but not all of th
 ```
 
 ```{note}
-Cell plots fill their tile and do not keep equal x and y scales. Spatial positions therefore
-stretch with the tile's shape. Make the tile roughly square, as in these screenshots, to keep
-the section's proportions.
+A new Cell Plot opens with **Equal aspect** on, so a spatial section keeps its proportions whatever
+the shape of the tile ({doc}`../user-guide/spatial-coordinates`).
 ```
 
 Build it (the download is 28 MB and is cached in the `--download-dir`):

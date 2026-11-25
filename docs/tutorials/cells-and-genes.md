@@ -17,11 +17,17 @@ repository): the HSC `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` and the monocyte
 `Mature_Young_2#TCAATTCAGTGAGGCT-1`. The results are the panels of the AnnZarro paper's cells-and-genes
 figure ({doc}`../paper/cells-and-genes`).
 
+```{note}
+The screenshots that show the paper's figures show the interface of the version the paper cites; names and positions of
+some controls have changed since, and the steps in the text use today's names.
+```
+
 ## What you need
 
+- AnnZarro 0.8.0 or later (the steps use its control names).
 - AnnZarro running locally ({doc}`../getting-started/quickstart`) with
   `bm_aging_annzarro.zarr` in its data directory ({doc}`../data/demo-data`). Steps 1 and 2 and
-  the axes of step 3 also work on `bm_aging_annzarro.zarr`.
+  the axes of step 3 also work on the base store `bm_aging.zarr`.
 - These fields:
 
 | Slot | Key | Used for |

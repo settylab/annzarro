@@ -231,6 +231,10 @@ types earlier parts already showed in full. View:
 - **The Focused Cell picker** finds every cell of the dataset. The subset's cells are listed
   first; the others follow, tagged **not shown**, and can be focused too
   ({ref}`focus-outside-subset`).
+- **The newer panels** work on the cells shown: a Cell Grouping's groups, a Cell-Gene Plot's rows and a Cell Count Plot's bars are
+  made from them (a grouping can keep its bin edges from all cells,
+  {ref}`grouping-subset-changes`). A gene score is one value per cell shown, with each gene scaled over all cells of the
+  dataset, so a subset changes which cells are listed and not what the score means.
 - **Share links, panel sets and the autosaved view** store the subset's description, so they
   reopen on the same cells (a link to the subset above is 1,351 characters). A view saved with
   every cell of a large dataset records that and reopens with every cell; a view without a subset
@@ -294,7 +298,7 @@ In large-plot mode:
   its z axis, the Hover list (extra hover columns) and the table filter. A table filter has
   nothing to filter by here: the cell table cannot list this many cells either.
 - **Still available:** pan and zoom; colour by a category (cell type, cluster, cell line), by a
-  numeric obs column or by a gene, with the colour palette, scale and range; point size and
+  numeric obs column, by a gene, by a gene score or by a Cell Grouping, with the colour palette, scale and range; point size and
   opacity. A gene's colour is drawn in 64 steps of the scale, the strongest values on top. Every
   change redraws the panel.
 - **Categories are drawn interleaved.** The regular plot draws each category whole, in the order of

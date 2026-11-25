@@ -14,6 +14,7 @@ focused cell keeps that cell, and its header names it.
 
 ## What you need
 
+- AnnZarro 0.8.0 or later (the steps use its control names).
 - AnnZarro running locally ({doc}`../getting-started/quickstart`) with `bm_aging_annzarro.zarr` in its
   data directory.
 - Network access for step 4: the Gene Set Analysis panel fetches its results from STRING,
@@ -129,8 +130,8 @@ to external services and shows what they return ({doc}`../user-guide/gene-set`;
    ```
 
 3. Each section fills in on its own. STRING's enrichment for the 56 genes leads with the MHC
-   class I protein complex (7 of its 11 genes, FDR 4.4e-10). Its network finds 141 interactions
-   among the 54 genes it knows, where 29 would be expected at random.
+   class I protein complex (7 of its 11 genes, FDR 4.7e-12). Its network finds 141 interactions
+   among the 54 genes it knows, where 24 would be expected at random.
 
 ```{figure} ../_static/screens/tutorials/gene-groups-geneset.png
 :class: screenshot

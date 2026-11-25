@@ -19,6 +19,7 @@ day.
 
 ## What you need
 
+- AnnZarro 0.8.0 or later (the steps use its control names).
 - AnnZarro running locally ({doc}`../getting-started/quickstart`) with `bm_aging_annzarro.zarr` in its
   data directory.
 - Network access from your browser to `mygene.info`, `version-12-5.string-db.org` and
@@ -124,20 +125,20 @@ Each section loads on its own and shows its time; the bar then reads "Results fo
 "Up in old, DE, rising in the HSC" · Mus musculus".
 
 **Enrichment, STRING.** STRING tests the 52 genes against the dataset's 16,285 genes (the
-background the consent bar named) and returns 382 enriched terms in 15 categories. Pick
-**GO Process** in the category list. Its top terms are antigen processing and presentation (11
-of the 90 genes in the term, FDR 3.0e-10), presentation of peptide antigen, and presentation of
-endogenous peptide antigen via MHC class I, followed by the response to type II interferon.
+background the consent bar named) and returns 395 enriched terms in 16 categories. Pick
+**GO Process** in the category list. Its top terms are presentation of peptide antigen (10
+of the 56 genes in the term, FDR 5.4e-11) and antigen processing and presentation (11 of 90, FDR 8.3e-11), followed by
+presentation of endogenous peptide antigen via MHC class I and the response to type II interferon.
 
 ```{figure} ../_static/screens/tutorials/gene-set-analysis-string.png
 :class: screenshot
-:alt: STRING's enrichment section filtered to GO Process (84 terms), led by antigen processing and presentation, with Genes and FDR (within category) columns.
+:alt: STRING's enrichment section filtered to GO Process (89 terms), led by antigen processing and presentation, with Genes and FDR (within category) columns.
 
 STRING's GO Process terms for the 52 genes.
 ```
 
 The FDR column is labelled "FDR (within category)" for a reason: STRING corrects its p-values
-within each category, not across them. With **All categories** the table pools 15 corrected
+within each category, not across them. With **All categories** the table pools 16 corrected
 lists, and the panel warns that the pooled list has more false positives than the column
 suggests. Pick one category to read a corrected list.
 
@@ -154,14 +155,14 @@ g:Profiler's answer for the same 52 genes.
 
 **Network, STRING.** STRING draws the 50 genes it knows (2 are not in STRING; **details** lists
 them) with their known and predicted interactions at a score of at least 0.40. It finds 120
-interactions where 18 would be expected among 50 random genes, a PPI enrichment p below 1e-16:
+interactions where 15 would be expected among 50 random genes, a PPI enrichment p below 1e-16:
 the set is far more connected than chance. The MHC genes (H2-Q7, H2-Q6, H2-Q4, H2-T22, H2-K1,
 H2-Aa, H2-Ab1, H2-Eb1) form the dense cluster with Cd74, Tap1 and Psmb9; Fos, Jun and Junb form a
 second one. **Open the interactive network on STRING** opens the same network on STRING's site.
 
 ```{figure} ../_static/screens/tutorials/gene-set-analysis-network.png
 :class: screenshot
-:alt: STRING's network of 50 genes, with 120 interactions, 18 expected at random and PPI enrichment p below 1e-16.
+:alt: STRING's network of 50 genes, with 120 interactions, 15 expected at random and PPI enrichment p below 1e-16.
 
 The set's protein network and its PPI enrichment.
 ```
@@ -218,8 +219,8 @@ The results for the new set.
 ```
 
 The category stays on **GO Process** after the rerun.
-Antigen processing and presentation stays at the top (9 of 90, FDR 3.1e-8), and the network has
-59 interactions among the 36 genes STRING knows, against 9 expected (p below 1e-16).
+Antigen processing and presentation stays at the top (9 of 90, FDR 6.9e-9, tied with presentation of peptide antigen), and the network has
+59 interactions among the 36 genes STRING knows, against 7 expected (p below 1e-16).
 
 ```{figure} ../_static/screens/tutorials/gene-set-analysis-string-rerun.png
 :class: screenshot

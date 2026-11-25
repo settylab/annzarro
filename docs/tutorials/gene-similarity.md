@@ -14,11 +14,17 @@ share an *expression pattern*.
 
 The results are panels of the AnnZarro paper's gene-by-gene figure ({doc}`../paper/gene-by-gene`).
 
+```{note}
+The screenshots that show the paper's figures show the interface of the version the paper cites; names and positions of
+some controls have changed since, and the steps in the text use today's names.
+```
+
 ## What you need
 
+- AnnZarro 0.8.0 or later (the steps use its control names).
 - AnnZarro running locally ({doc}`../getting-started/quickstart`), with
   `bm_aging_annzarro.zarr` in its data directory ({doc}`../data/demo-data`). Everything
-  except the module comparison also works on `bm_aging_annzarro.zarr`.
+  except the module comparison also works on the base store `bm_aging.zarr`.
 - These fields:
 
 | Slot | Key | Used for | Live or precomputed |

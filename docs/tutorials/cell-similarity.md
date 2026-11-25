@@ -15,10 +15,16 @@ diffusion distance, and find the cells where the two disagree.
 The results are the panels of the AnnZarro paper's cell-by-cell figure ({doc}`../paper/cell-by-cell`).
 If you have not used AnnZarro before, {doc}`tour` introduces the focus and the controls.
 
+```{note}
+The screenshots that show the paper's figures show the interface of the version the paper cites; names and positions of
+some controls have changed since, and the steps in the text use today's names.
+```
+
 ## What you need
 
+- AnnZarro 0.8.0 or later (the steps use its control names).
 - AnnZarro with `bm_aging_annzarro.zarr` in its data directory ({doc}`../data/demo-data`).
-  Section 1 also works on `bm_aging_annzarro.zarr` without the path table.
+  Section 1 also works on the base store `bm_aging.zarr` without the path table.
 - These fields:
 
 | Slot | Key | What it is | Live or precomputed |
@@ -58,7 +64,7 @@ along a trajectory shows how far each cell state reaches.
 2. In the Welcome tile click **Cell Plot**. **X** `obsm` · `X_umap` · `0`, **Y**
    `obsm` · `X_umap` · `1`, **Color** `obsp` · `diffusion_walk_t5`. The third dropdown reads
    "Focused cell HSPC_Old_1#…". **Map** `Blues`, **Reverse** on.
-3. Click "Split Horizontally" in the tile header and choose **Cell Table**. In its controls,
+3. Click **Split side by side** in the tile header and choose **Cell Table**. In its controls,
    under "Available Columns" on the `obs` tab, tick `trajectory_path_step`, `trajectory_focus_cells` and
    `highres_celltype`, and click **Apply Changes**.
 4. In "Advanced Search" click **Add Condition** and set `trajectory_focus_cells` · `Not` ·

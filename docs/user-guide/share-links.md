@@ -73,7 +73,12 @@ URL-encoded dataset path, 169 characters here; a shorter data directory path giv
 | Same, table without a filter (8,090 rows) | 1,741 characters |
 
 A link stores each table's filter conditions, not the rows that pass them, so its length does
-not depend on how many rows a table shows. Plots add a few hundred characters each.
+not depend on how many rows a table shows. Plots add a few hundred characters each. A Gene Signature
+adds its gene names: about 3,400 characters at 500 gene symbols and 12,000 at 2,000.
+
+Above 8,000 characters **Share Link** adds a note under the link: "This link is long (N characters) and
+chat or email programs may cut it. Save a panel set to share a large gene list reliably." The link is still
+copied, and still opens when it arrives whole; a panel set ({doc}`panel-sets`) holds any number of genes.
 
 ## Open a link
 
@@ -81,7 +86,12 @@ Paste the link into the address bar of a browser that can reach the server (and 
 asks). Links work the same when the server runs under a path prefix behind a proxy (for example
 `https://lab.example.org/annzarro/?dataset_path=…`). AnnZarro opens the dataset, applies the focus and rebuilds the layout. A link takes
 precedence over the panels autosaved in that browser. Opening a second link in the same tab
-reloads the page and applies the new view.
+reloads the page and applies the new view. While it opens, each tile is a named placeholder (the panel's
+title and what it will show) under the line "Opening link: <dataset>, N panels (k ready)", so you can see which
+panels are still being built.
+
+Closed panels of every type come back too, closed and ready to reopen with their settings. A plot filtered by a
+table that is still closed says its filter is not applied yet until the table is reopened and built.
 
 Once the view is open, the address bar follows it, as in a map: about half a second after you
 change something (open or close a panel, change a setting, change the focus) the `#view=` part
@@ -95,8 +105,9 @@ closed is back, the setting returns to its old value, the focused cell or gene i
 one. Forward goes the other way. Changes made in one go share an entry: dragging a slider, clicking
 a number box's arrows several times, typing, or an action that sets several things one after the
 other. Only the panels a step changes are rebuilt or redrawn; the others, large plots included, stay as they are, also when the step opens or closes a panel or moves a split. Switching to
-another dataset is an entry too, and Back returns to that dataset with the view it had. Panning and
-zooming a plot are not part of the address, so they are not undone. Back from the first view leaves
+another dataset is an entry too, and Back returns to that dataset with the view it had. The zoom and pan of a
+2D plot and the camera of a 3D plot are part of the view (`viewport2D`, `viewport3D`), so they are steps too: Back
+returns the plot to its earlier zoom; a plot that was zoomed and drawn from the same data is not redrawn. Back from the first view leaves
 AnnZarro for the page before it, and a reload keeps the entries. The browser keeps only the most
 recent entries of a tab (about fifty in Chrome).
 

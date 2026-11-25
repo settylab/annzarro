@@ -425,7 +425,7 @@ costs far more than one stored by gene (CSC), and a remote store is estimated at
 is `off` (it is 0) or `too_long` (the estimate is over ten times it). Every size check has run before this and `force` never passes one.
 A tried run has a wall-clock deadline of `try_max_s` from the start of its work (queue time is not counted): the stream ends with
 `{"type": "error", "reason": "try_time_exceeded", "limit_s": ...}` and nothing partial is sent. A user has one tried run at a time, and a
-second is `429 try_busy`. The first frame of a tried run carries `forced: true` and `deadline_s`. Its results are cached like any other's.
+second is `429 try_busy`. The first frame of a tried run carries `forced: true` and `deadline_s`. Nothing of it is kept after it ends, as for any score.
 `POST /data/cell_groups` takes `force` in every shape, with the same rules.
 
 **The stream.** Otherwise the reply is `application/x-annzarro-score-stream`: JSON frames, one per line, then
@@ -706,7 +706,7 @@ while another waits, so a long score delays a later one by one batch at most. A 
 not a 503). The memory a score holds (the running sum for the cells shown, and the entries read ahead, at most
 about 48 million entries) is held on the worker's compute ledger (4.5 GB by default) and counts against
 `server.read_budget_mb` while it runs.
-The request body is at most 1 MB (`413 request_too_large`). It only reads, but it is a POST, so the forgery
+The request body is at most 16 MB (`413 request_too_large`). It only reads, but it is a POST, so the forgery
 check of every other POST applies.
 
 ## Dataset discovery and structure
@@ -1023,7 +1023,9 @@ same; what differs for a restricted user:
 | 413 | `groups_too_expensive` | a `POST /data/cell_groups` request estimated over 10 minutes ({ref}`http-cell-groups`) |
 | 400 | `bad_request`, `unknown_field`, `bad_bins`, `bad_thresholds`, `set_length_mismatch`, `nested_too_deep` | `POST /data/cell_groups`: a request the server cannot use ({ref}`http-cell-groups`) |
 | 422 | `grid_too_large`, `too_many_bins`, `too_many_levels`, `too_many_sets`, `too_few_sets`, `too_many_partitionings`, `too_many_thresholds`, `obsp_too_large` | `POST /data/cell_groups`: a limit met before any read, with `count` and `limit` |
-| 413 | `request_too_large` | the request body is over `server.max_request_mb` (64 MB; panel-set saves and imports) |
+| 413 | `request_too_large` | the request body is over `server.max_request_mb` (64 MB; panel-set saves and imports), or, for `POST /data/gene_score` and `POST /data/cell_groups`, over their own 16 MB |
+| 429 | `try_busy` | a `force: true` request while the same user already has a tried run going ({ref}`http-cell-groups`) |
+| 200 | `try_time_exceeded` | not a status: the error frame that ends the stream of a tried run at `limits.try_max_s` (the status was already `200`) |
 | 413 | `response_too_large` | the slice exceeds `max_response_elements` (below) |
 | 431 | (none) | `annzarro start` only: the request line and headers together are over 262,144 bytes (waitress answers, not the app; under gunicorn a header field over `server.limit_request_field_size` is a `400`) |
 | 503 | `read_busy` | the `obsp`/`varp` reads in flight hold `server.read_budget_mb`, or this user already holds `server.read_user_share_percent` of it, or the cell subsets being computed hold `server.subset_budget_mb` for longer than `server.subset_wait_s`; `Retry-After` seconds and `retry_after_s` say when to ask again (the web client does once) |
@@ -1067,7 +1069,7 @@ HTTP 400
 | `server.read_budget_mb` | 2 × `max_read_mb` | pairwise reads in flight in one worker, each by its estimate; waits `server.read_wait_s` (5 s) | `503 read_busy` |
 | `server.name_search_max_regex_chars`, `server.name_search_timeout_s` | 200 characters, 10 s | a regex name search (`/data/names?mode=regex`): the pattern, then the scan | `400 regex_too_long`, `400 regex_too_complex`; after the time limit a `200` with `partial: true` and `timed_out: true` |
 | `server.dataset_scan_max_entries` | 200,000 | directory entries read by `GET /core/datasets` and the store count in `GET /status` | `200` with `truncated: true` |
-| `server.max_request_mb` | 64 | the request body (`POST /sessions/save`, `/sessions/import`, `/login`), from `Content-Length` and while reading | `413 request_too_large` |
+| `server.max_request_mb` | 64 | the request body (`POST /sessions/save`, `/sessions/import`, `/login`), from `Content-Length` and while reading; the two compute routes (`POST /data/gene_score`, `/data/cell_groups`) also keep their own bound of 16 MB | `413 request_too_large` |
 | `server.max_sessions_per_user`, `server.max_sessions`, `server.max_sessions_mb` | 500, 5,000, 256 MB | panel sets of the user, of the server, and their total size, when one is saved, duplicated or imported | `409 session_quota_user`, `409 session_quota_total` |
 | `server.dataset_folder_max_entries`, `dataset_search_max_depth`, `dataset_search_max_entries` | 500, 6, 20,000 (and 3 s) | the dataset browser's folder listing (`GET /datasets/folder`) and search (`GET /datasets/search`) | `200` with `more` / `truncated: true`; `400` `regex_too_long`, `regex_too_complex`, `invalid_regex`, `query_too_long` |
 | `server.dataset_details_check_budget_s` | 1.5 s | the store check inside `GET /datasets/details` | `200` with `store_check.budget_reached: true` |
