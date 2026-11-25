@@ -59,7 +59,7 @@ def _open_binned(page, served, partitionings, subset=None, expand=True):
 
 def _expand(page, i):
     """Open factor i's Edit pop-over (a factor just added has opened its own)."""
-    edit = f"{A} .cgrp-card[data-index='{i}'] .cgrp-card__edit"
+    edit = f"{A} .az-card[data-index='{i}'] .az-card__edit"
     try:
         page.wait_for_selector(f"{edit}[aria-expanded='true']", timeout=1500)       # a factor just added opens its own
     except Exception:  # noqa: BLE001 - playwright's TimeoutError: it is not open, so open it
@@ -135,14 +135,14 @@ def test_a_link_with_factory_binning_on_zero_heavy_data_is_never_changed_and_his
     _open_binned(page, served, [_binned("depth")], expand=False)
     _ready(page)
     assert _histogram_requests(page) == [], "a collapsed card asks for no histogram"
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.click(f"{A} .az-card[data-index='0'] .az-card__edit")
     _ctrl_ready(page)
     assert len(_histogram_requests(page)) == 1, "expanding asks for exactly one"
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.click(f"{A} .az-card[data-index='0'] .az-card__edit")
     waits.expect_stays(lambda: len(_histogram_requests(page)) == 1 and len(_requests_all(page)) == len(page.calls),
                        "collapsing a card must send no request", page=page)
     n = len(page.calls)
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.click(f"{A} .az-card[data-index='0'] .az-card__edit")
     _ctrl_ready(page)
     waits.expect_stays(lambda: len(page.calls) == n, "re-expanding keeps the histogram it has", page=page)
     # the user's factory binning from a link stays as it is, however many zeros
@@ -177,7 +177,7 @@ def test_the_bins_are_listed_with_their_cells_and_one_can_be_renamed(page, serve
     _ctrl_ready(page)
     card = BIN
     rows = page.evaluate("(s) => [...document.querySelectorAll(s + ' .cgrp-level')].map(e => [e.querySelector('.cgrp-level__label').textContent, e.querySelector('.cgrp-level__n').textContent])", card)
-    summary = page.inner_text(f"{A} .cgrp-card[data-index='0'] .cgrp-card__summary")
+    summary = page.inner_text(f"{A} .az-card[data-index='0'] .az-card__summary")
     assert len(rows) >= 2 and summary.endswith(f"{len(rows)} levels"), (rows, summary)
     assert all(n for _, n in rows)
     assert page.locator(f"{card} .cgrp-level__rename").count() == len(rows), "every bin row can be renamed"
@@ -205,8 +205,8 @@ def test_a_new_binned_factor_costs_at_most_two_computes_and_a_missing_factor_kee
     _open_binned(page, served, [_binned("nosuch"), _binned("depth", bins=3)], expand=False)
     _expand(page, 1)
     waits.expect_stays(lambda: not _histogram_requests(page), "nothing is computed while a factor is missing", page=page)
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__more")
-    page.click(f"{A} .cgrp-card[data-index='0'] [data-op='remove']")
+    page.click(f"{A} .az-card[data-index='0'] .az-card__more")
+    page.click("[data-popover='card-menu'] [data-op='remove']")
     _expand(page, 0)        # the click on the other card's menu was outside the pop-over: it closed
     _ctrl_ready(page, 0)
     assert _histogram_requests(page)[-1]["want"]["histograms"] == [0]

@@ -60,8 +60,8 @@ def test_remove_undo_and_heatmap_with_a_one_row_signature_section(page, served, 
     n = first["columns"]
     assert n == 7, f"six genes and the signature's row: {first}"
     # Remove the one-row section: the genes alone, as dots
-    page.locator(f"{TP} .cgene-section").nth(1).locator(".cgene-section__menu-btn").click()
-    page.locator("[data-popover='section-menu'] .cgene-section__menu-item[data-op='remove']").click()
+    page.locator(f"{TP} .cgene-section").nth(1).locator(".az-card__more").click()
+    page.locator("[data-popover='card-menu'] .az-card__op[data-op='remove']").click()
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 1", P)
     removed = _settled(page, f"(f) => f.columns === {n - 1}", "removed")
     assert removed["types"] == ["scatter"], removed
@@ -105,8 +105,8 @@ def test_a_draw_that_threw_does_not_leave_the_next_one_stale(page, served):
     shown = page.evaluate(ON_SCREEN, TP)
     assert shown["dots"] > 0 and shown["tiles"] == 0, shown
     page.evaluate(BREAK_DRAWS)
-    page.locator(f"{TP} .cgene-section").nth(1).locator(".cgene-section__menu-btn").click()
-    page.locator("[data-popover='section-menu'] .cgene-section__menu-item[data-op='remove']").click()
+    page.locator(f"{TP} .cgene-section").nth(1).locator(".az-card__more").click()
+    page.locator("[data-popover='card-menu'] .az-card__op[data-op='remove']").click()
     # the failed draw is said, not left as "drawing" for good
     until(page, "(s) => document.querySelector(s + ' .cgene-panel').dataset.state === 'failed'", TP, timeout=30)
     assert page.locator(f"{TP} .cgene-plot").evaluate("(p) => !p.data || !p.data.length"), "the half-drawn figure is cleared"

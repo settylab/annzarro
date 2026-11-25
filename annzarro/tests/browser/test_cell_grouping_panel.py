@@ -145,10 +145,10 @@ def _recipe(page, pid=GA):
 
 
 def _cards(page, sel=A):
-    return page.evaluate("""(s) => [...document.querySelectorAll(s + ' .cgrp-card')].map(c => ({
-        title: c.querySelector('.cgrp-card__title').textContent, summary: c.querySelector('.cgrp-card__summary').textContent,
-        preview: (c.querySelector('.cgrp-card__preview') || {}).textContent || '',
-        note: (c.querySelector('.cgrp-card__note:not([hidden])') || {}).textContent || '' }))""", sel)
+    return page.evaluate("""(s) => [...document.querySelectorAll(s + ' .az-card')].map(c => ({
+        title: c.querySelector('.az-card__title').textContent, summary: c.querySelector('.az-card__summary').textContent,
+        preview: (c.querySelector('.az-card__preview') || {}).textContent || '',
+        note: (c.querySelector('.az-card__note:not([hidden])') || {}).textContent || '' }))""", sel)
 
 
 def _add(page, entry, *, type_=None, key=None, column=None, gene=None, sel=A):
@@ -219,29 +219,29 @@ def test_a_card_moves_duplicates_removes_and_renames_with_no_request(page, serve
     _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE, CONDITION])})
     _ready(page)
     # Move down from the card's menu; Alt+Up on the header moves it back, announced
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__more")
-    page.click(f"{A} .cgrp-card[data-index='0'] [data-op='down']")
-    until(page, "(s) => document.querySelector(s + ' .cgrp-card .cgrp-card__title').textContent === 'condition'", A)
-    page.focus(f"{A} .cgrp-card[data-index='1'] .cgrp-card__head")
+    page.click(f"{A} .az-card[data-index='0'] .az-card__more")
+    page.click("[data-popover='card-menu'] [data-op='down']")
+    until(page, "(s) => document.querySelector(s + ' .az-card .az-card__title').textContent === 'condition'", A)
+    page.focus(f"{A} .az-card[data-index='1'] .az-card__head")
     page.keyboard.press("Alt+ArrowUp")
-    until(page, "(s) => document.querySelector(s + ' .cgrp-card .cgrp-card__title').textContent === 'cell_type'", A)
+    until(page, "(s) => document.querySelector(s + ' .az-card .az-card__title').textContent === 'cell_type'", A)
     assert page.inner_text(f"{A} .cgrp-message") == "cell_type moved to position 1 of 2"
     # Duplicate, then Remove with its Undo in the message
-    page.click(f"{A} .cgrp-card[data-index='1'] .cgrp-card__more")
-    page.click(f"{A} .cgrp-card[data-index='1'] [data-op='duplicate']")
-    until(page, "(s) => document.querySelectorAll(s + ' .cgrp-card').length === 3", A)
-    page.click(f"{A} .cgrp-card[data-index='2'] .cgrp-card__more")
-    page.click(f"{A} .cgrp-card[data-index='2'] [data-op='remove']")
-    until(page, "(s) => document.querySelectorAll(s + ' .cgrp-card').length === 2", A)
+    page.click(f"{A} .az-card[data-index='1'] .az-card__more")
+    page.click("[data-popover='card-menu'] [data-op='duplicate']")
+    until(page, "(s) => document.querySelectorAll(s + ' .az-card').length === 3", A)
+    page.click(f"{A} .az-card[data-index='2'] .az-card__more")
+    page.click("[data-popover='card-menu'] [data-op='remove']")
+    until(page, "(s) => document.querySelectorAll(s + ' .az-card').length === 2", A)
     assert page.inner_text(f"{A} .cgrp-message").startswith("Removed factor condition.")
     page.click(f"{A} .cgrp-message .cgrp-message__undo")
-    until(page, "(s) => document.querySelectorAll(s + ' .cgrp-card').length === 3", A)
+    until(page, "(s) => document.querySelectorAll(s + ' .az-card').length === 3", A)
     page.click(f"{A} .cgrp-undo")
-    until(page, "(s) => document.querySelectorAll(s + ' .cgrp-card').length === 2", A)
+    until(page, "(s) => document.querySelectorAll(s + ' .az-card').length === 2", A)
     _ready(page)
 
     # untick T cell and leave the rest out of every group: 300 cells in no group, and the button says why
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.click(f"{A} .az-card[data-index='0'] .az-card__edit")
     page.uncheck(f"{LEVELS} .cgrp-level[data-id='c:T cell'] input[type=checkbox]")
     page.check(f"{LEVELS} input.cgrp-rest[value='exclude']")
     st = _ready(page, text=f"{_groups_of('cell_type', 'condition') - 2} groups · {N - 300:,} of {N:,} cells in a group")
@@ -256,7 +256,7 @@ def test_a_card_moves_duplicates_removes_and_renames_with_no_request(page, serve
     # a rename recomputes nothing and keeps the key; the hover says what it was
     asked = len(_requests(page))
     estimates = len(page.calls)
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.click(f"{A} .az-card[data-index='0'] .az-card__edit")
     page.click(f"{LEVELS} .cgrp-level[data-id='c:B cell'] .cgrp-level__rename")
     page.fill(f"{LEVELS} .cgrp-level[data-id='c:B cell'] input.cgrp-level__name", "B lymphocyte")
     page.keyboard.press("Enter")
@@ -281,7 +281,7 @@ def test_job1_a_table_factor_follows_its_tables_filter(page, served):
     st = _ready(page, text=f"2 groups · {N:,} of {N:,} cells in a group")
     assert _cards(page)[0]["preview"] == "in Table 1 150 · not in Table 1 1,050"
     # keep only "in": the rest are in no group, and say so
-    page.click(f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.click(f"{A} .az-card[data-index='0'] .az-card__edit")
     page.uncheck(f"{LEVELS} input.cgrp-keepout")
     st = _ready(page, text=f"1 group · 150 of {N:,} cells in a group")
     page.click(f"{A} .cgrp-nogroup")
@@ -402,8 +402,8 @@ def test_close_and_reopen_with_the_same_id_and_a_dataset_switch_keeps_the_recipe
     waits.expect_stays(lambda: len(page.calls) == asked,
                        "nothing is asked while a factor is missing: past the live delay a request would have gone", page=page, seconds=0.8)
     # removing it computes again
-    page.click(f"{A} .cgrp-card[data-index='1'] .cgrp-card__more")
-    page.click(f"{A} .cgrp-card[data-index='1'] [data-op='remove']")
+    page.click(f"{A} .az-card[data-index='1'] .az-card__more")
+    page.click("[data-popover='card-menu'] [data-op='remove']")
     _ready(page, text=f"6 groups · {N:,} of {N:,} cells in a group")
 
 
@@ -494,7 +494,7 @@ def test_a_gene_and_a_score_in_bins(page, served):
     until(page, "(id) => !!window.PanelManager.getPanel(id).getRecipe().partitionings[0].binning.zero_bin", GA)
     assert _recipe(page)["partitionings"] == [{"source": {"type": "layer", "key": "logged", "column": gstore.gene(1)},
                                                "binning": {"method": "equal_count", "zero_bin": True}}]
-    until(page, "(s) => / levels$/.test(document.querySelector(s + ' .cgrp-card__summary').textContent)", A)
+    until(page, "(s) => / levels$/.test(document.querySelector(s + ' .az-card__summary').textContent)", A)
     _ready(page)
     assert _cards(page)[0]["title"] == gstore.gene(1)
     assert _cards(page)[0]["summary"].startswith("binned · Equal count · ")
@@ -507,7 +507,7 @@ def test_a_gene_and_a_score_in_bins(page, served):
     page.click(f"{A} .cgrp-addrow__cancel")
     # a closed signature's score, its recipe inline in the request
     _add(page, "score", key="gene-signature-S")
-    until(page, """(s) => { const c = document.querySelectorAll(s + ' .cgrp-card .cgrp-card__summary');
+    until(page, """(s) => { const c = document.querySelectorAll(s + ' .az-card .az-card__summary');
         return c.length === 2 && / levels$/.test(c[1].textContent); }""", A)
     _ready(page)
     score = _recipe(page)["partitionings"][1]
@@ -581,7 +581,7 @@ def test_too_many_groups_is_refused_with_the_count_and_the_way_out(page, served)
     assert st["actions"] == ["Choose levels of many"]
     page.click(f"{A} .cgrp-action[data-action='levels:1']")
     page.wait_for_selector(LEVELS, timeout=10000)
-    assert page.get_attribute(f"{A} .cgrp-card[data-index='1'] .cgrp-card__edit", "aria-expanded") == "true"
+    assert page.get_attribute(f"{A} .az-card[data-index='1'] .az-card__edit", "aria-expanded") == "true"
 
 
 # ------------------------------------------------------------------ 9. loops
@@ -651,12 +651,12 @@ def test_toggle_controls_hides_and_shows_the_grouping_bar_and_a_table_still_togg
     page.click(f"{A} .tile-toggle-controls")
     until(page, f"() => !({shown})('{A} .cgrp-controls')")
     assert not page.evaluate(drawn, f"{A} .cgrp-settings-btn"), "Settings hide with the controls (UX 2.1)"
-    assert not page.evaluate(drawn, f"{A} .cgrp-card__edit"), "so does Edit: the cards are one line each"
-    assert page.evaluate(shown, f"{A} .cgrp-status") and page.evaluate(shown, f"{A} .cgrp-card"), "the status and the cards stay"
+    assert not page.evaluate(drawn, f"{A} .az-card__edit"), "so does Edit: the cards are one line each"
+    assert page.evaluate(shown, f"{A} .cgrp-status") and page.evaluate(shown, f"{A} .az-card"), "the status and the cards stay"
     assert page.evaluate(f"() => window.PanelManager.getPanel('{GA}').getConfig().controlsVisible") is False
     page.click(f"{A} .tile-toggle-controls")
     until(page, f"() => ({shown})('{A} .cgrp-controls')")
-    assert page.evaluate(drawn, f"{A} .cgrp-settings-btn") and page.evaluate(drawn, f"{A} .cgrp-card__edit")
+    assert page.evaluate(drawn, f"{A} .cgrp-settings-btn") and page.evaluate(drawn, f"{A} .az-card__edit")
     # a table toggles as before
     page.click(f"{T} .tile-toggle-controls")
     until(page, f"() => !({shown})('{T} .table-controls')")
@@ -723,10 +723,10 @@ def test_a_panel_nothing_uses_is_deleted_on_the_first_press(page, served):
 def test_a_card_has_edit_as_its_own_named_control_that_opens_its_popover(page, served):
     _open(page, served, {GA: _grouping(partitionings=[CELL_TYPE])})
     _ready(page)
-    t = f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit"
+    t = f"{A} .az-card[data-index='0'] .az-card__edit"
     assert page.get_attribute(t, "aria-expanded") == "false" and page.get_attribute(t, "aria-label") == "Edit cell_type"
     assert page.get_attribute(t, "aria-haspopup") == "dialog"
     page.click(t)
     assert page.get_attribute(t, "aria-expanded") == "true" and page.get_attribute(t, "aria-label") == "Edit cell_type"
     assert page.locator(f"{LEVELS} .cgrp-levels").count() == 1
-    assert page.locator(f"{A} .cgrp-card[data-index='0'] .cgrp-card__body").count() == 0, "nothing expands in the card"
+    assert page.locator(f"{A} .az-card[data-index='0'] .az-card__body").count() == 0, "nothing expands in the card"

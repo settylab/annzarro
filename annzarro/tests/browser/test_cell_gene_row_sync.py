@@ -38,7 +38,7 @@ def _hovers(page):
 
 def test_one_row_section_has_no_aggregation_control(page, served):
     _one_row(page, served)
-    assert page.locator(f"{CR.section(TP, 0)} button").count() == 1, "only the ⋯ button"
+    assert page.locator(f"{CR.section(TP, 0)} button").count() == 2, "the card's head and ⋯ only"
     assert page.locator(f"{TP} [data-which], {TP} .cgene-section__step, {TP} .cgene-section__values-btn").count() == 0
     CR.show_as(page, TP, 0, "genes")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].rows === 'genes'", P)
@@ -54,7 +54,7 @@ def test_section_tooltip_states_the_rule(page, served):
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().color.stat === 'zscore_mean'", P)
     CC.pick_stat(page, TP, "size", "sum")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().size.stat === 'sum'", P)
-    until(page, "([s]) => /z-score mean score of the set/.test(document.querySelector(s + ' .cgene-section__head').title)", [TP])
+    until(page, "([s]) => /z-score mean score of the set/.test(document.querySelector(s + ' .az-card__head').title)", [TP])
     assert CR.rule(page, TP, 0) == "Color: the z-score mean score of the set. Size: the sum of the genes' sums."
 
 

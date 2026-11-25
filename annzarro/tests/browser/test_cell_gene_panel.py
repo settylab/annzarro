@@ -217,12 +217,12 @@ def test_job2_three_lists_side_by_side(page, served):
     rows = page.locator(f"{TP} .cgene-section")
     assert rows.count() == 3
     assert page.locator(f"{TP} .cgene-sections").get_attribute("role") == "list"
-    titles = [rows.nth(i).locator(".cgene-section__title").input_value() for i in range(3)]
+    titles = [rows.nth(i).locator(".az-card__title").inner_text() for i in range(3)]
     assert titles == ["B cell markers", "T cells", "Myeloid"]
-    assert rows.nth(1).locator(".cgene-section__source").inner_text() == "T cell markers"
-    assert rows.nth(0).locator(".cgene-section__source").count() == 0 or not rows.nth(0).locator(".cgene-section__source").is_visible()
-    assert rows.nth(1).locator(".cgene-section__count").inner_text() == "4 genes · 1 not in this dataset"
-    assert rows.nth(0).locator(".cgene-section__count").inner_text() == "3 genes"
+    # the card's summary: the source's kind (and its name when the title is the user's own), then the count
+    summary = [rows.nth(i).locator(".az-card__summary").inner_text() for i in range(3)]
+    assert summary == ["signature · 3 genes", "signature T cell markers · 4 genes · 1 not in this dataset", "signature · 2 genes"]
+    assert rows.nth(0).locator(".az-card__preview").inner_text() == ", ".join(GENES[0:3])
     feats = _features(page.calls)
     assert "NOT_A_GENE" not in [f["name"] for f in feats], "a gene not in the dataset is left out"
     # the drawing carries the sections, in order
@@ -239,7 +239,7 @@ def test_job3_one_row_per_pathway(page, served):
     st = _drawn(page)
     assert st["rows"] == 1
     # the set is one gene: no control of its own, only the rule in its tooltip (aggregation-unify-080.md 11)
-    assert page.locator(f"{TP} .cgene-section button, {TP} .cgene-section [data-popover]").count() == 1, "only the ⋯ button"
+    assert page.locator(f"{TP} .cgene-section button").count() == 2, "the card's head and ⋯ only"
     assert CR.rule(page, TP, 0) == "Color: the mean of the genes' means. Size: % of cells expressing at least one gene."
     # Color reads the gene rows; Size, the share of cells expressing any gene: one score feature (`detected`), on Size's layer
     feats = _features(page.calls)
@@ -263,8 +263,8 @@ def test_a_sections_genes_are_requested_once_and_one_gene_adds_one_feature(page,
     assert [f["column"] for f in feats if f["kind"] == "score"] == ["detected"]
     assert len(page.calls) == 1
     # a duplicate section asks for nothing
-    page.click(f"{TP} .cgene-section >> nth=0 >> .cgene-section__menu-btn")
-    page.click("[data-popover='section-menu'] .cgene-section__menu-item[data-op='duplicate']")
+    page.click(f"{TP} .cgene-section >> nth=0 >> .az-card__more")
+    page.click("[data-popover='card-menu'] .az-card__op[data-op='duplicate']")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 3", P)
     _settle(page, "a duplicate section reads genes that are held; no request should follow")
     assert len(page.calls) == 1
@@ -294,32 +294,34 @@ def test_the_section_list_edits_are_undoable_steps(page, served):
     page.locator(f"{TP} .cgene-add-menu [role='menuitem']").nth(1).click()
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 2", P)
     sec = page.locator(f"{TP} .cgene-section")
-    assert sec.nth(0).locator(".cgene-section__title").input_value() == "B cell markers"
+    assert sec.nth(0).locator(".az-card__title").inner_text() == "B cell markers"
     # Genes / One row is a select
     assert sec.nth(0).locator("select.cgene-section__rows").count() == 1
     CR.show_as(page, TP, 1, "set")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[1].rows === 'set'", P)
-    # the title, edited in place
-    title = sec.nth(0).locator(".cgene-section__title")
+    # the title, renamed in place from the ⋯ menu
+    sec.nth(0).locator(".az-card__more").click()
+    page.locator("[data-popover='card-menu'] .az-card__op[data-op='rename']").click()
+    title = sec.nth(0).locator(".az-card__rename-input")
     title.fill("B cells")
     title.press("Enter")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].title === 'B cells'", P)
-    assert sec.nth(0).locator(".cgene-section__source").inner_text() == "B cell markers"
+    assert sec.nth(0).locator(".az-card__summary").inner_text() == "signature B cell markers · 3 genes"
     # Move down from the ⋯ menu, announced; Alt+Up on the focused section moves it back
-    sec.nth(0).locator(".cgene-section__menu-btn").click()
-    labels = page.locator("[data-popover='section-menu'] .cgene-section__menu-item")
-    assert [labels.nth(i).inner_text() for i in range(labels.count())] == ["Duplicate", "Remove", "Open source", "Move up", "Move down"]
-    page.locator("[data-popover='section-menu'] .cgene-section__menu-item[data-op='down']").click()
+    sec.nth(0).locator(".az-card__more").click()
+    labels = page.locator("[data-popover='card-menu'] .az-card__op")
+    assert [labels.nth(i).inner_text() for i in range(labels.count())] == ["Rename", "Duplicate", "Remove", "Open source", "Move up", "Move down"]
+    page.locator("[data-popover='card-menu'] .az-card__op[data-op='down']").click()
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[1].title === 'B cells'", P)
     assert "moved to position 2 of 2" in page.locator(f"{TP} .cgene-message").inner_text()
     # the menu closes after its item ran and gives focus back to ⋯ (ui/popover.js): only then focus the section
-    page.wait_for_selector("[data-popover='section-menu']", state="detached", timeout=5000)
-    page.locator(f"{TP} .cgene-section").nth(1).focus()
+    page.wait_for_selector("[data-popover='card-menu']", state="detached", timeout=5000)
+    page.locator(f"{TP} .cgene-section").nth(1).locator(".az-card__head").focus()
     page.keyboard.press("Alt+ArrowUp")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].title === 'B cells'", P)
     # Remove, then Undo brings it back; every edit was one step
-    page.locator(f"{TP} .cgene-section").nth(1).locator(".cgene-section__menu-btn").click()
-    page.locator("[data-popover='section-menu'] .cgene-section__menu-item[data-op='remove']").click()
+    page.locator(f"{TP} .cgene-section").nth(1).locator(".az-card__more").click()
+    page.locator("[data-popover='card-menu'] .az-card__op[data-op='remove']").click()
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 1", P)
     assert _state(page)["undo"] == 7, "two adds, one row, a title, two moves, a removal"
     page.click(f"{TP} .cgene-undo")

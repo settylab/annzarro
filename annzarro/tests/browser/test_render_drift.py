@@ -707,8 +707,8 @@ def _cg_remove(index):
         sec = page.locator(f"{G_TILE} .cgene-section")
         if sec.count() <= index:
             return False
-        sec.nth(index).locator(".cgene-section__menu-btn").click()
-        page.locator("[data-popover='section-menu'] .cgene-section__menu-item[data-op='remove']").click()
+        sec.nth(index).locator(".az-card__more").click()
+        page.locator("[data-popover='card-menu'] .az-card__op[data-op='remove']").click()
     return act
 
 

@@ -34,8 +34,8 @@ def _figure(page):
 
 
 def _duplicate(page, i):
-    page.locator(f"{TP} .cgene-section").nth(i).locator(".cgene-section__menu-btn").click()
-    page.locator(".cgene-section__menu-item[data-op='duplicate']:visible").click()
+    page.locator(f"{TP} .cgene-section").nth(i).locator(".az-card__more").click()
+    page.locator(".az-card__op[data-op='duplicate']:visible").click()
 
 
 @pytest.mark.parametrize("rows", ["genes", "set"])

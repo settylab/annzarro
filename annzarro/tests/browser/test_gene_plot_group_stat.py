@@ -287,7 +287,7 @@ def test_a_group_removed_live_from_the_grouping_says_it_is_no_longer_a_group(pag
     _open(page, served, {G: _plot(color=_stat()), GA: _grouping()})
     _wait_colours(page, 40)
     asked = len(_genes(page))
-    page.click(f"{TG} .cgrp-card[data-index='0'] .cgrp-card__edit")
+    page.click(f"{TG} .az-card[data-index='0'] .az-card__edit")
     page.wait_for_selector(LEVELS, state="visible")
     page.uncheck(f"{LEVELS} .cgrp-level[data-id='c:B cell'] input[type=checkbox]")      # B cell joins the others: no such group now
     until(page, "(t) => { const n = document.querySelector(t + ' .score-notice'); return !!n && n.dataset.state === 'gone'; }", C, timeout=60)

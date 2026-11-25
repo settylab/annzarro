@@ -30,7 +30,7 @@ from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
 CC = "cell-count-A"
 SC = f'.tile[data-tile-id="{CC}"]'
-EDIT = f"{A} .cgrp-card[data-index='0'] .cgrp-card__edit"
+EDIT = f"{A} .az-card[data-index='0'] .az-card__edit"
 TICK_T = ".cgrp-level[data-id='c:T cell'] input[type=checkbox]"
 POP = "[data-popover='levels']"
 
@@ -74,7 +74,7 @@ def _open_three(page, served):
     page.goto(_url(served, [GA, P, CC], _configs()))
     page.wait_for_selector(f"{A} .cgrp-panel .cgrp-status[data-state]", timeout=30000)
     _ready(page)
-    page.wait_for_selector(f"{A} .cgrp-card[data-index='0']", timeout=30000)
+    page.wait_for_selector(f"{A} .az-card[data-index='0']", timeout=30000)
     page.wait_for_selector(f"{TP} .cgene-panel[data-state]", timeout=30000)      # the neighbours are there and have started
     page.wait_for_selector(f"{SC} .js-plotly-plot", timeout=60000)
     # no wait for the neighbours to finish drawing: a tile keeps its height while its plot works (test_cell_gene_tile_height),
@@ -94,7 +94,7 @@ def _layout(page):
 
 
 def _open_editor(page, i=0, popover=POP):
-    page.click(f"{A} .cgrp-card[data-index='{i}'] .cgrp-card__edit")
+    page.click(f"{A} .az-card[data-index='{i}'] .az-card__edit")
     page.wait_for_selector(popover, timeout=10000)
 
 
@@ -166,7 +166,7 @@ def test_each_form_is_its_own_popover(page, served):
     _ready(page)
     _open_editor(page, 0)
     assert page.locator(f"{POP} .cgrp-levels").count() == 1
-    assert page.locator(f"{A} .cgrp-card__body").count() == 0, "nothing expands in the panel"
+    assert page.locator(f"{A} .az-card__body").count() == 0, "nothing expands in the panel"
     page.keyboard.press("Escape")
     page.wait_for_selector(POP, state="detached", timeout=5000)
     _open_editor(page, 1, "[data-popover='binning']")

@@ -111,6 +111,8 @@ const PARTS = Object.freeze({ options: OPTIONS_PART, clicks: CLICKS_PART });
 const W = VOCABULARY.word;
 const STATES = VOCABULARY.cellGene.states;
 const W3 = VOCABULARY.cellGene.view3d;
+/** What a section's source is, in its card's summary. */
+const KIND_WORD = Object.freeze({ signature: 'signature', table: 'gene table' });
 const CGV = VOCABULARY.cellGene;
 
 /** What a notice calls things (utils/source-notices.js): the plot waits on its groups. */
@@ -274,7 +276,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             buildDom();
             listen(document, 'click', (e) => {
                 const tile = `.tile[data-tile-id="${CSS.escape(_id)}"]`;
-                if (!_dom || e.target.closest(`${tile} .cgene-section__more, ${tile} .cgene-add-wrap, ${tile} .cgene-checklist__go, [data-popover="section-menu"]`)) return;
+                if (!_dom || e.target.closest(`${tile} .az-card__more, ${tile} .cgene-add-wrap, ${tile} .cgene-checklist__go, [data-popover="card-menu"]`)) return;
                 _sections.closeMenus();
                 _addGenes.close();
             });
@@ -310,6 +312,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _resize = null;
             clearTimeout(_refit);
             for (const part of _parts.splice(0)) if (part && part.destroy) part.destroy();
+            if (_sections) _sections.destroy();
             if (_dom && window.Plotly) window.Plotly.purge(_dom.plot);
             _initialized = false;
             _dom = null;
@@ -958,8 +961,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     const r = resolveSource(section.source);
                     const title = sectionTitle(section, () => r.title);
                     return {
-                        title, source: title !== r.title ? r.title : null, rows: section.rows,
-                        line: r.kind ? sectionLine(r) : r.empty, note: r.kind && r.empty ? r.empty : null,
+                        title, rows: section.rows,
+                        // `signature · 8 genes`, or `signature Source · 8 genes` when the title is the user's own; the first genes after it
+                        summary: r.kind ? `${KIND_WORD[r.kind] || r.kind}${title !== r.title ? ` ${r.title}` : ''} · ${sectionLine(r)}` : r.empty,
+                        preview: r.genes && r.genes.length ? `${r.genes.slice(0, 6).join(', ')}${r.genes.length > 6 ? ', \u2026' : ''}` : '',
+                        note: r.kind && r.empty ? r.empty : null,
                         rule: section.rows === 'set' ? rowReading({ color: withGroupingThreshold(_config, baseThreshold()).color, size: _config.mode === 'dots' && sizeDrawn() ? withGroupingThreshold(_config, baseThreshold()).size : null }, r.down || 0) : null
                     };
                 })

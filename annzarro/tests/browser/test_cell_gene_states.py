@@ -195,7 +195,7 @@ def test_asks_first_with_an_upper_bound_compute_and_fewer_genes(page, served):
     _settle(page, "asks first: nothing is computed before Compute, so no request can be waited on")
     assert page.calls == []
     page.click(f"{NOTICE} .ps-action[data-ps-action='fewer-genes']")
-    until(page, "(s) => document.activeElement === document.querySelector(s + ' .cgene-section[data-index=\"0\"]')", TP)
+    until(page, "(s) => document.activeElement === document.querySelector(s + ' .cgene-section[data-index=\"0\"] .az-card__head')", TP)
     page.click(f"{NOTICE} .ps-action[data-ps-action='score-compute']")
     _drawn(page)
     assert len(page.calls) == 1 and page.calls[0].get("confirm") is True
