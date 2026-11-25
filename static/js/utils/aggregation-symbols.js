@@ -17,9 +17,9 @@ export const SCORE_SYMBOLS = Object.freeze({
     detected: sym('n/N'), fraction_of_total: sym('%')
 });
 
-/** The statistics over a group's cells. */
+/** The statistics over a group's cells. `%⁺` is the share of cells expressing, `%` alone the signature method's share of the total. */
 export const STAT_SYMBOLS = Object.freeze({
-    zscore_mean: sym('z', true), mean: sym('x', true), pct_expressing: sym('%'), mean_expressing: sym('x⁺', true), sum: sym('Σ'), sd: sym('σ')
+    zscore_mean: sym('z', true), mean: sym('x', true), pct_expressing: sym('%⁺'), mean_expressing: sym('x⁺', true), sum: sym('Σ'), sd: sym('σ')
 });
 
 /**

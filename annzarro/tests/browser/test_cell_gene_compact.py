@@ -82,7 +82,7 @@ def test_channel_menu_equals_statistic_info(page, served):
     CC.open_menu(page, TP, "color")
     syms = page.eval_on_selector_all(f"{CC.MENU} [data-agg] .axis-agg-sym", "os => os.map(o => o.textContent)")
     CC.close_menu(page)
-    assert syms == ["z", "x", "%", "x⁺", "Σ", "σ", "n"], syms
+    assert syms == ["z", "x", "%⁺", "x⁺", "Σ", "σ", "n"], syms
 
 
 def test_threshold_lives_in_the_popover_and_shows_on_the_button(page, served):
