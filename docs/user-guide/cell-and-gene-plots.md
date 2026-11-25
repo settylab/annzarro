@@ -135,8 +135,7 @@ expressing cells, Σ sum, σ SD), opening the statistics, each as a symbol and a
 its reason as the hint ("Fraction of cells cannot be computed on 'X': it has negative values"). The symbols are explained under
 {ref}`interface-symbols`. **Z-score mean** is offered only on a layer stored by gene (CSC), where each gene's mean and SD over
 all cells come from the pass that reads the group; on another layout it is greyed out with the reason ("Z-score mean of a cell
-group needs this layer stored by gene (CSC)."). It is always greyed out for a Cell Table's cells ("Z-score mean is for cell
-groups; a table's cells are not yet scaled against the whole layer."). The row is one line: source, layer, grouping, group,
+group needs this layer stored by gene (CSC)."). It is always greyed out for a Cell Table's cells ("Z-score mean is not offered for a table's cells. Use it for a cell group (Color of a Cell-Gene Plot)."). The row is one line: source, layer, grouping, group,
 aggregation; the grouping and the group share the width the item has on every other row. Nothing is asked of the server until a
 group is chosen; then one request returns the five moments of every gene over the group, and the plot is coloured from them.
 Choosing another layer asks again. Switching   to another statistic of the same layer, or back, asks for nothing. Another group or layer asks once, and
