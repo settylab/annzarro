@@ -567,7 +567,7 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 0.5rem;
-    background-color: var(--az-surface-2);
+    background-color: var(--az-panel-header-bg);
     border-bottom: 1px solid var(--az-border);
     /* a narrow tile compacts its header (below) */
     container: tile-header / inline-size;
@@ -2831,6 +2831,9 @@ button.dtsb-button.dtsb-clear:hover {
     text-align: center;
     margin-bottom: 2rem;
     position: relative;
+    background-color: var(--az-panel-header-bg);      /* the same grey as every panel's header */
+    border-radius: 6px;
+    padding: 0.75rem;
 }
 
 .tile-selection-header h2 {
