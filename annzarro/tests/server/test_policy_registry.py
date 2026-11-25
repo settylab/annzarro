@@ -111,7 +111,7 @@ ADMIN_EDITABLE_SERVER = {
     "text_index_readme_kb", "text_index_max_mb", "text_index_ttl_s",
 }
 ADMIN_EDITABLE_COSTS = {
-    "ask_first_s", "refuse_s", "live_update_s", "progress_bar_s", "refresh_min_interval_large_s",
+    "ask_first_s", "refuse_s", "try_max_s", "live_update_s", "progress_bar_s", "refresh_min_interval_large_s",
     "refresh_large_cells", "matrix_values", "genes_per_section", "groups",
     "partitionings", "request_partitionings", "measures", "thresholds", "grid_cells", "grid_2d_bins", "grid_2d_split",
     "grid_1d_bins", "grid_1d_split", "grid_categorical_levels", "grid_sets", "obsp_source_max_cells",
