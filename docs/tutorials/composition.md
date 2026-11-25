@@ -83,7 +83,6 @@ sections count them.
 |---|---|---|---|
 | HSC | 319 | 0.86 | 0 |
 | Treg | 55 | 0.96 | 0 |
-| ILC | 13 | 0.92 | 0 |
 | Mature B cell | 552 | 0.20 | 0.70 |
 | T cell | 308 | 0.30 | 0.33 |
 | Neutrophil | 2,221 | 0 | 0 |
@@ -104,19 +103,12 @@ Set **X** to `highres_celltype` (31 levels).
 | Mature Naive B cell | 423 | 0 | 0.91 |
 | Memory B cell | 117 | 0.86 | 0 |
 | Plasma cell | 12 | 0.75 | 0 |
-| CD4 T cell | 40 | 0.55 | 0 |
-| Non Classical Monocyte | 33 | 1 | 0 |
-| Monocyte | 355 | 0 | 0 |
 
 Inside the mature lineages the change is a loss of naive and a gain of memory states, as the paper reports
-{cite:p}`otto2025kompot`. The 33 `up` cells of the `Monocyte` cell type are all non-classical monocytes; no classical
-monocyte and no neutrophil is called either way. Their expression changes are the subject of {doc}`group-statistics`.
-
-Compare with the published Figure 6F, which uses this annotation {cite:p}`otto2025kompot`. Read off its bars, HSCs,
-naive and memory B cells, plasma cells, naive CD8 T cells and CD8 TEM agree with the store within a few hundredths. Four
-cell types do not: in the figure no ILC and no non-classical monocyte is called, CD4 T cells reach about 0.15 `up` and
-Tregs about 0.85, where the store's direction has 12 of 13 ILCs, all 33 non-classical monocytes, 0.55 of CD4 T cells
-and 0.96 of Tregs `up`. The tables here are the store's.
+{cite:p}`otto2025kompot`. No neutrophil is called either way; how their expression changes is the subject of
+{doc}`group-statistics`. The paper's Figure 6F draws these bars from its own analysis {cite:p}`otto2025kompot`; the
+fractions here are those of the call stored in `bm_aging_annzarro.zarr`, and the other cell types are in the table of
+section 8.
 
 (tut-comp-mean)=
 ## 5. A statistic instead of a count
@@ -170,7 +162,7 @@ bins with their cells.
 | −1 to 1 | 3,722 | 3,296 |
 | ≥ 1 | 0 | 580 |
 
-Every cell beyond ±1 also passes the tail probability, so in this comparison the log fold change alone decides the call;
+Every cell beyond ±1 also passes the tail probability, so in the stored comparison the log fold change alone decides the call;
 the probability matters only for the 3,296 cells that change less.
 
 4. Back in **List**, name the two called groups: double-click a name (or the ✎ beside it) and type "gained with age"
@@ -225,7 +217,7 @@ bins as the second, **Cross-table** gives the numbers behind sections 3 and 4, a
 
 ```{figure} ../_static/screens/tutorials/comp-by-type.png
 :class: screenshot
-:alt: Two Cell Groupings side by side, each in Cross-table view. Left, 19 cell types against lost, between and gained: HSC 0, 46, 273; Mature B cell 387, 55, 110; T cell 102, 114, 92. Right, the 31 fine types, with Non Classical Monocyte 0, 0, 33.
+:alt: Two Cell Groupings side by side, each in Cross-table view. Left, 19 cell types against lost, between and gained: HSC 0, 46, 273; Mature B cell 387, 55, 110; T cell 102, 114, 92. Right, the first of the 31 fine types, from HSC to Pre-B II cell; the rest scroll.
 
 Cell types (left) and fine cell types (right) against the call: the counts of the filled bars.
 ```
@@ -235,16 +227,18 @@ Cell types (left) and fine cell types (right) against the call: the counts of th
 
 % Count Plot steps and figure pending (comp-samples.png).
 
-1. **X** `midres_celltype`, **Color by** `Age`, **Filled**. By this count HSCs are almost all old (7 young, 71 mid,
-   241 old), and neutrophils look unchanged.
+1. **X** `midres_celltype`, **Color by** `Age`, **Filled**. By this count most HSCs come from old mice (241 of 319,
+   7 from young ones), and neutrophils look unchanged.
 2. **X** `Sample`, **Color by** `Compartment`. The 16 samples are two sorted fractions, HSPC and Mature, eight each,
    with 322 to 649 cells per sample. A cell type's share of the whole dataset is set by the sort, not by the mouse.
 3. A fairer count compares like with like. Make a second **Cell Grouping** of `Compartment` and `Age` and use it as
-   **X**, **Color by** `midres_celltype`. Within the HSPC fraction, the HSC fraction rises from 0.006 (Young) to 0.089
-   (Mid) and 0.185 (Old).
+   **X**, **Color by** `midres_celltype`. Within the HSPC fraction, the HSC fraction is 0.006 in young and 0.185 in old
+   mice.
 
-Here the raw count and Kompot agree for HSCs. What the density adds is that it needs no cell types to be defined
-first, and every cell carries its own uncertainty.
+For the young to old comparison the store holds, the raw count and Kompot agree for HSCs. A share of sorted cells is not
+a density over the cell-state space, though: the density needs no cell types to be defined first, every cell carries its
+own uncertainty, and the paper's timing of the HSC expansion (middle-aged to old) comes from comparisons not stored here
+{cite:p}`otto2025kompot`.
 
 (tut-comp-limit)=
 ## 10. A limit, on purpose

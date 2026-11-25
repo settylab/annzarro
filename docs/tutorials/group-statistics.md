@@ -29,7 +29,7 @@ cells that pass a cell table's filter.
 | `obs` | `Age` | the cell tables of section 6 |
 | `layers` | `kompot_de_Young_to_Old_fold_change` | the statistic: Old minus Young smoothed expression, per cell and gene |
 | `layers` | `logged_counts` | the measured expression, in sections 6 and 7 |
-| `var` | `kompot_de_Young_to_Old_is_de`, `kompot_de_Young_to_Old_mahalanobis` | Kompot's 190 called genes, and its significance |
+| `var` | `kompot_de_Young_to_Old_is_de`, `kompot_de_Young_to_Old_mahalanobis` | the genes the stored run calls (190), and its significance |
 | `var` | `hsc_fold_change` | one old HSC's row of the fold-change layer (section 2) |
 | `varm` | `mean_by_celltype` | per-cell-type means of `logged_counts`, computed in Python when the store was built |
 
@@ -37,8 +37,9 @@ The store holds no per-cell-type statistic of the fold-change layer. Every stati
 a panel asks for it: one request returns the mean, the fraction of cells and the other statistics of every gene over
 the group's cells. At 8,090 cells each takes a moment.
 
-`kompot_de_Young_to_Old_is_de` marks 190 genes. The paper's Figure 3D, at a local false discovery rate of 0.05, reports
-192 for the same comparison (55 up, 12 down and 125 subtle) {cite:p}`otto2025kompot`; the counts below are the store's.
+The counts of called genes below are those of the run stored in `bm_aging_annzarro.zarr`, whose
+`kompot_de_Young_to_Old_is_de` marks 190 genes. The paper's own classification of the comparison (up, down and subtle
+genes) is in its Figure 3D {cite:p}`otto2025kompot`.
 
 (tut-gstat-axes)=
 ## 1. Two cell types as the axes of a gene plot
@@ -58,7 +59,7 @@ The link is ready for a local server; {ref}`what to change for yours <tut-start-
    groupings**, choose "Cell types"; a list of its groups follows; choose `HSC`. The button at the end of the row shows
    **x̄**: the statistic is the mean. Each gene's x is now its mean fold change over the 319 HSCs.
 4. Set **Y** the same way, with the group `Monocyte`.
-5. Set **Color** to `var`, `kompot_de_Young_to_Old_is_de`: the 190 genes Kompot calls are one colour.
+5. Set **Color** to `var`, `kompot_de_Young_to_Old_is_de`: the 190 called genes of the stored run are one colour.
 
 ```{figure} ../_static/screens/tutorials/gstat-axis-row.png
 :class: screenshot
@@ -86,10 +87,9 @@ Of the 190 called genes, 125 change in the same direction in both cell types and
 In monocytes, the paper finds the genes that fall with age enriched for defence response, and those that rise enriched
 for antigen processing and presentation, driven by MHC class II genes; it recovers H2-Aa, H2-Ab1, H2-Eb1, Cd74 and
 AW112010, which an earlier study identified as the top dysregulated genes in ageing monocytes {cite:p}`otto2025kompot`.
-Here their mean fold change over all monocytes is positive and
-modest: AW112010 +0.35, H2-Ab1 +0.19, H2-Aa +0.13, H2-Eb1 +0.08, Cd74 +0.08. The same genes rise more in HSCs (H2-Aa
-+0.48, H2-Eb1 +0.42), in line with the paper's reading that the rise of MHC class II genes is a feature of ageing across
-cell types {cite:p}`otto2025kompot`.
+The paper reads the rise of MHC class II genes as a general feature of haematopoietic ageing {cite:p}`otto2025kompot`.
+In the stored all-cell run, the mean fold change of these genes over all monocytes is positive: AW112010 +0.35, H2-Ab1
++0.19, H2-Aa +0.13, H2-Eb1 +0.08, Cd74 +0.08; over the HSCs it is larger (H2-Aa +0.48, H2-Eb1 +0.42).
 
 (tut-gstat-diagonal)=
 ## 2. One cell or the whole cell type?
