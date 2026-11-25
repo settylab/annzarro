@@ -516,11 +516,41 @@ def test_largest_dot_slides_to_200_and_a_typed_share_goes_to_1000(page, served):
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotScale === 350", P)
     page.click(f"{TP} .cgene-undo")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotScale === 200", P)
-    # the link
-    _open(page, served, {P: cfg, S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, S1))
+    # the link, opened afresh (a change of the fragment alone would not load the page again)
+    page.goto("about:blank")
+    _open(page, served, {P: {**cfg, "id": P}, S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, S1))
     _drawn(page)
     assert _config(page)["dotScale"] == 350
     _redrawn(page, f"(p, a) => Math.abs(({_LARGEST})(p) - a) < 0.5", at350)
+
+
+# dots past their cell: every dot inside the plot area, the size legend drawn (scaled when its slot cannot hold the dots),
+# hover on a dot, and the SVG export
+OVERSIZED = """async (s) => { const p = document.querySelector(s + ' .cgene-plot'); const L = p._fullLayout; const t = p.data[0];
+  const inside = Array.from(t.x).every((x, i) => { const d = t.marker.size[i] / 2;
+    const px = L.xaxis.l2p(L.xaxis.d2l(x)), py = L.yaxis.l2p(L.yaxis.d2l(t.y[i]));
+    return px - d >= -0.5 && px + d <= L.xaxis._length + 0.5 && py - d >= -0.5 && py + d <= L.yaxis._length + 0.5; });
+  const legend = p.data.find((d) => d.name === 'size legend');
+  const scaled = (p.layout.annotations || []).find((a) => a.name === 'size legend scale');
+  Plotly.Fx.hover(p, [{ curveNumber: 0, pointNumber: 0 }]);
+  const hovered = (p._hoverdata || []).length;
+  const svg = decodeURIComponent((await Plotly.toImage(p, { format: 'svg', width: 900, height: 600 })).split(',').slice(1).join(','));
+  return { inside, legend: !!legend, scaled: scaled ? scaled.text : null, hovered, svg: svg.startsWith('<svg') && svg.length > 2000 }; }"""
+
+
+@pytest.mark.parametrize("pct", [150, 300])
+def test_dots_past_their_cell_stay_inside_the_plot_with_legend_hover_and_export(page, served, pct):
+    page.set_viewport_size({"width": 1100, "height": 800})
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=[{"source": S1, "rows": "genes"}], dotScale=pct),
+                         S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, S1))
+    _drawn(page)
+    _redrawn(page, f"(p, a) => Math.abs(({_LARGEST})(p) - a / 100 * (({_CELL})(p) - 2)) < 1.5", pct)
+    if SHOTS:
+        os.makedirs(SHOTS, exist_ok=True)
+        page.locator(f"{TP} .cgene-plot").screenshot(path=os.path.join(SHOTS, f"cell-gene-largest-dot-{pct}.png"))
+    got = page.evaluate(OVERSIZED, TP)
+    assert got["inside"], f"{pct} %: a dot is cut by the plot area"
+    assert got["legend"] and got["hovered"] >= 1 and got["svg"], got
 
 
 def test_other_range_fields_still_stop_at_their_max(page, served):
