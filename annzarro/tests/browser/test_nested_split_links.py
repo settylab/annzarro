@@ -195,18 +195,33 @@ def _drag_row(page, dy):
     page.mouse.up()
 
 
+# every plot of the page is drawn, and the panels' configs (the automatic point sizes among them) have stopped changing for a few frames
+DRAWN_AND_STEADY = """() => {
+    if (!window.PanelManager) return false;
+    const plots = [...document.querySelectorAll('.tile-container .tile[data-tile-id] .js-plotly-plot')];
+    if (!plots.every((p) => p._fullLayout && p.data && p.data.length)) return false;
+    if (document.querySelector('.tile-container .tile [data-state="loading"], .tile-container .tile [data-state="working"]')) return false;
+    const now = JSON.stringify(PanelManager.saveLayout().panelConfigs);
+    const w = window.__azSteady || (window.__azSteady = { last: null, frames: 0 });
+    if (w.last === now) w.frames += 1; else { w.last = now; w.frames = 0; }
+    return w.frames >= 20;
+}"""
+
+
 def _settle(page):
     page.wait_for_function("() => !!window.PanelManager")
-    page.wait_for_timeout(1500)
+    page.evaluate("() => { delete window.__azSteady; }")
+    page.wait_for_function(DRAWN_AND_STEADY, polling="raf", timeout=60000)
 
 
 def _share_link(page):
+    # the clipboard write is noted as it happens (a promise-returning predicate would pass at once), the dialog's field is the fallback
+    page.evaluate("""() => { window.__azCopied = null; const c = navigator.clipboard; if (!c || c.__azWrapped) return;
+        const w = c.writeText.bind(c); c.writeText = (t) => { window.__azCopied = t; return w(t); }; c.__azWrapped = true; }""")
     page.click("#btn-share-link")
-    page.wait_for_timeout(500)
-    try:
-        return page.evaluate("() => navigator.clipboard.readText()")
-    except playwright.Error:
-        return page.input_value("#share-link-field")
+    page.wait_for_function("""() => { const f = document.querySelector('#share-link-field');
+        return !!window.__azCopied || !!(f && f.value && f.value.includes('#view=')); }""", timeout=30000)
+    return page.evaluate("() => window.__azCopied || document.querySelector('#share-link-field').value")
 
 
 def _configs(page):
@@ -244,9 +259,9 @@ def _build(page, case):
         _split(page, c, "horizontal", "cell-plot")
         # let the plots finish drawing: Plotly 2.20 throws from a pending
         # auto-margin redraw when a plot is purged mid-draw (not this bug)
-        page.wait_for_timeout(1000)
+        _settle(page)
         page.locator(f".tile[data-tile-id='{c}'] .tile-close").first.click()
-    page.wait_for_timeout(300)
+    _settle(page)
 
 
 CASES = ["horizontal-then-vertical-left", "vertical-then-horizontal-right", "three-levels", "close-inside-nested"]
