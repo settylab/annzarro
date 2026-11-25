@@ -148,7 +148,7 @@ def test_tab_lists_groupings_open_and_closed_by_title(page, served):
     page.wait_for_selector(f"{PANE} .az-score-group", timeout=30000)
     titles = page.eval_on_selector_all(f"{PANE} .az-score-group-title", "els => els.map(e => e.textContent)")
     assert titles == ["Cell types", "Condition"], "both groupings are closed (only the table is open), listed by title"
-    assert page.get_attribute(f"{PANE} .column-search", "placeholder") == "Search cell groupings"
+    assert page.locator(f"{PANE} .column-search").count() == 0, "no search field on this tab"
 
 
 def test_add_row_is_group_layer_aggregation_then_add(page, served):
@@ -337,16 +337,12 @@ def test_changed_group_offers_keep_or_remove(page, served):
     until(page, "(box) => !document.querySelector(box + ' .score-notice')", BOX)
 
 
-def test_search_filters_group_select_by_name(page, served):
+def test_tab_has_no_search_field(page, served):
+    """Replaces the search tests: the tab lists ticked columns and one add row, so there is nothing to search."""
     _open(page, served)
     _open_tab(page)
-    search = f"{PANE} .column-search"
-    page.fill(search, "NK")
-    until(page, """(s) => { const shown = [...document.querySelector(s).options].filter(o => o.value && !o.hidden);
-        return shown.length === 1 && shown[0].textContent === 'NK cell' && document.querySelector(s).value === shown[0].value; }""",
-          f"{_group_group()} .az-score-add-group")
-    page.fill(search, "")
-    until(page, "(s) => [...document.querySelector(s).options].every(o => !o.hidden)", f"{_group_group()} .az-score-add-group")
+    assert page.locator(f"{PANE} input[type=text], {PANE} .column-search").count() == 0
+    assert page.locator(f"#var-content-{TID} .column-search").count() == 1, "var keeps its search"
 
 
 def test_grouping_rename_follows_in_the_tab_and_the_export_name(page, served):

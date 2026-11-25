@@ -1654,24 +1654,30 @@ export async function refreshColumnChooser(panelSettings, tableRows) {
     for (const source of sources) {
         const contentContainer = document.getElementById(`${source.id}-content-${panelSettings.id}`);
         if (contentContainer == null) return;
+        // the add row's choice goes with the rebuild (table-ui-make.js buildEntityTab puts it back)
+        const addState = contentContainer.querySelector('.az-entity-add');
+        contentContainer.__keptAdd = addState && addState.__state ? addState.__state() : null;
         contentContainer.innerHTML = '';
 
-        const searchContainer = document.createElement('div');
-        searchContainer.className = 'input-group input-group-sm mb-2';
-        
-        const searchIcon = document.createElement('span');
-        searchIcon.className = 'input-group-text';
-        searchIcon.innerHTML = '<i class="fas fa-search"></i>';
-        
-        const searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.className = 'form-control column-search';
-        searchInput.placeholder = `Search ${source.label.toLowerCase()}...`;
-        searchInput.setAttribute('data-tab', source.id);
-        
-        searchContainer.appendChild(searchIcon);
-        searchContainer.appendChild(searchInput);
-        contentContainer.appendChild(searchContainer);
+        // a search field only on the long column lists (see createDataTabs)
+        if (['obs', 'obsm', 'var', 'varm'].includes(source.id)) {
+            const searchContainer = document.createElement('div');
+            searchContainer.className = 'input-group input-group-sm mb-2';
+
+            const searchIcon = document.createElement('span');
+            searchIcon.className = 'input-group-text';
+            searchIcon.innerHTML = '<i class="fas fa-search"></i>';
+
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'form-control column-search';
+            searchInput.placeholder = `Search ${source.label.toLowerCase()}...`;
+            searchInput.setAttribute('data-tab', source.id);
+
+            searchContainer.appendChild(searchIcon);
+            searchContainer.appendChild(searchInput);
+            contentContainer.appendChild(searchContainer);
+        }
 
         //Add back the checkboxList element
         const checkboxList = document.createElement('div');

@@ -406,7 +406,6 @@ function buildEntityTab(source, choices, id, settings) {
         label.className = 'form-check-label';
         label.htmlFor = checkbox.id;
         label.textContent = placeholder ? `no ${word} (unresolved placeholder)` : entry.column;
-        div.dataset.search = `${entry.key} ${label.textContent}`.toLowerCase();
         div.appendChild(checkbox);
         div.appendChild(label);
         const note = !placeholder && notes.get(entry.column);
@@ -448,16 +447,15 @@ function buildEntityTab(source, choices, id, settings) {
     const note = document.createElement('div');
     note.className = 'form-text mt-0 az-score-add-note';
     note.setAttribute('role', 'status');
-    const fillItems = (text = '') => {
-        const held = item.value;
-        const shown = choices.entities.filter((e) => `${e.name} ${e.note}`.toLowerCase().includes(text));
-        item.innerHTML = '';
-        for (const e of shown) item.appendChild(optionOf(e.name, `${e.name} (${e.note})`));
-        if (shown.some((e) => e.name === held)) item.value = held;
-        button.disabled = !shown.length;
-    };
-    fillItems();
-    item.__refilter = fillItems;
+    for (const e of choices.entities) item.appendChild(optionOf(e.name, `${e.name} (${e.note})`));
+    button.disabled = !choices.entities.length;
+    // the add row's choice stays over a rebuild (the focus moving rebuilds the tab), where it can still be chosen
+    const kept = pane.__keptAdd;
+    pane.__keptAdd = null;
+    if (kept) {
+        if ([...item.options].some(o => o.value === kept.item)) item.value = kept.item;
+        if ([...layer.options].some(o => o.value === kept.layer)) layer.value = kept.layer;
+    }
     if (!choices.entities.length) note.textContent = `No ${word} is focused or fixed in a plot yet.`;
     button.addEventListener('click', () => {
         if (!item.value) return;
@@ -475,26 +473,7 @@ function buildEntityTab(source, choices, id, settings) {
     for (const part of [item, layer, button]) row.appendChild(part);
     addBox.appendChild(row);
     addBox.appendChild(note);
-
-    // the one search field (the pane's, full width): the ticked rows and the item list
-    const search = pane.querySelector('.column-search');
-    if (search && !search.dataset.scoreBound) {
-        search.dataset.scoreBound = '1';
-        search.addEventListener('input', (e) => {
-            const text = e.target.value.toLowerCase();
-            for (const group of pane.querySelectorAll('.az-entity-group')) {
-                let any = false;
-                for (const r of group.querySelectorAll('.form-check')) {
-                    const match = r.dataset.search.includes(text);
-                    r.style.display = match ? '' : 'none';
-                    any = any || match;
-                }
-                group.style.display = any ? '' : 'none';
-            }
-            const select = pane.querySelector('.az-entity-item');
-            if (select && select.__refilter) select.__refilter(text);
-        });
-    }
+    addBox.__state = () => ({ item: item.value, layer: layer.value });
 }
 
 /** The id of a column's checkbox in the chooser. */
@@ -537,7 +516,6 @@ function sourceOptionRow(item, sub, entity, id, settings) {
     label.className = 'form-check-label';
     label.htmlFor = checkbox.id;
     label.textContent = sub.text;
-    div.dataset.search = `${entity.title} ${sub.text}`.toLowerCase();
     div.append(checkbox);
     // the aggregation's symbol before the text, as the axis rows' button shows it (a provider without symbols has none);
     // beside the label, not in it, so the label stays the column's words; a click on it ticks as the label does
@@ -560,13 +538,12 @@ function sourceOptionRow(item, sub, entity, id, settings) {
     return { div, checkbox };
 }
 
-/** A group select's options from a provider's menu: the choose entry, then the groups, each found by its name and its generated name. */
+/** A group select's options from a provider's menu: the choose entry, then the groups. */
 function fillGroupSelect(select, menu) {
     select.innerHTML = '';
     for (const o of menu.options) {
         const opt = optionOf(o.value, o.text);
         if (o.disabled) opt.disabled = true;
-        opt.dataset.search = `${o.text} ${o.alt || ''}`.toLowerCase();
         select.appendChild(opt);
     }
     const first = [...select.options].find(o => o.value && !o.disabled);
@@ -672,7 +649,6 @@ export function buildSourceTab(provider, id, settings, structure = null) {
     if (!pane) return;
     const list = pane.querySelector('.checkbox-list');
     if (!list) return;
-    const search = pane.querySelector('.column-search');
     // a tab whose content would be the same is left alone: an open pop-over, a focused select and a half-made choice stay
     // exactly where they are (the page says "panels changed" for many reasons that change nothing here)
     const ticked0 = (settings.columns || []).filter(c => c.type === provider.type);
@@ -738,36 +714,6 @@ export function buildSourceTab(provider, id, settings, structure = null) {
         if (chooser.add) sourceAddRow(provider, entity, group, id, settings, kept.get(entity.id));
         list.appendChild(group);
     }
-    if (search && !search.dataset.scoreBound) {
-        search.dataset.scoreBound = '1';
-        search.addEventListener('input', (e) => {
-            const text = e.target.value.toLowerCase();
-            for (const group of pane.querySelectorAll('.az-score-group')) {
-                const heading = group.querySelector('.az-score-group-title');
-                const named = !!heading && heading.textContent.toLowerCase().includes(text);
-                let any = named;
-                for (const row of group.querySelectorAll('.form-check')) {
-                    const match = named || row.dataset.search.includes(text);
-                    row.style.display = match ? '' : 'none';
-                    any = any || match;
-                }
-                // the group select lists only the groups the text finds (by name or generated name); with one left it shows that one
-                const select = group.querySelector('.az-score-add-group');
-                if (select) {
-                    const shown = [];
-                    for (const o of select.options) {
-                        o.hidden = !!o.value && !!text && !named && !(o.dataset.search || '').includes(text);
-                        if (o.value && !o.hidden) shown.push(o);
-                    }
-                    if (text && shown.length && !shown.some(o => o.value === select.value)) select.value = shown[0].value;
-                    any = any || shown.length > 0;
-                }
-                group.style.display = any ? '' : 'none';
-            }
-        });
-    }
-    // the search text stays over a rebuild: its filter is applied to the new rows too
-    if (search && search.value) search.dispatchEvent(new Event('input'));
 }
 
 /**
@@ -918,6 +864,9 @@ function createTab(sourceId, panelId, label, index) {
  * @param {Array} dataSources - The data sources
  * @param {string} panelId - The panel ID
  */
+/** The tabs that have a search field: the long column lists. */
+const SEARCHED_TABS = Object.freeze(['obs', 'obsm', 'var', 'varm']);
+
 function createDataTabs(tabsContainer, tabContent, dataSources, panelId) {
     dataSources.forEach((source, index) => {
         // Create tab
@@ -927,24 +876,26 @@ function createDataTabs(tabsContainer, tabContent, dataSources, panelId) {
         //Create Content
         const content = createContent(source.id, panelId, index);
         
-        // Add search input
-        const searchContainer = document.createElement('div');
-        searchContainer.className = 'input-group input-group-sm mb-2';
-        
-        const searchIcon = document.createElement('span');
-        searchIcon.className = 'input-group-text';
-        searchIcon.innerHTML = '<i class="fas fa-search"></i>';
-        
-        const searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.className = 'form-control column-search';
-        // the tabs with an add row (a provider's, the layers, obsp and varp) read as a sentence; the other built-in tabs keep their ellipsis
-        searchInput.placeholder = (tableProviders().some(p => p.type === source.id) || tableProviders('gene-table').some(p => p.type === source.id) || ['layer', 'obsp', 'varp'].includes(source.id)) ? `Search ${source.label.toLowerCase()}` : `Search ${source.label.toLowerCase()}...`;
-        searchInput.setAttribute('data-tab', source.id);
-        
-        searchContainer.appendChild(searchIcon);
-        searchContainer.appendChild(searchInput);
-        content.appendChild(searchContainer);
+        // a search field only where a column list can be long (annotations and matrices); the tabs with an add row list
+        // their ticked columns only and have none
+        if (SEARCHED_TABS.includes(source.id)) {
+            const searchContainer = document.createElement('div');
+            searchContainer.className = 'input-group input-group-sm mb-2';
+
+            const searchIcon = document.createElement('span');
+            searchIcon.className = 'input-group-text';
+            searchIcon.innerHTML = '<i class="fas fa-search"></i>';
+
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'form-control column-search';
+            searchInput.placeholder = `Search ${source.label.toLowerCase()}...`;
+            searchInput.setAttribute('data-tab', source.id);
+
+            searchContainer.appendChild(searchIcon);
+            searchContainer.appendChild(searchInput);
+            content.appendChild(searchContainer);
+        }
 
         // Add checkbox list container
         const checkboxList = document.createElement('div');

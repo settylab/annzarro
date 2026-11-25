@@ -178,28 +178,25 @@ def test_item_listed_once_with_its_origin(page, served, kind):
 
 
 @BOTH
-def test_search_filters_rows_and_select_options(page, served, kind):
+def test_layers_tab_has_no_search_field(page, served, kind):
+    """The layers tab lists ticked columns and one add row: a search field has nothing to find (the operator dropped it).
+    obs and var, whose lists are long, keep theirs."""
     k = KINDS[kind]
-    a, b, c = k["items"]
-    _open(page, served, kind, [_layer("logged", a), _layer("counts", b)], focus=c)
-    search = f"#layer-content-{k['tid']} .column-search"
-    page.fill(search, b)
-    visible = page.evaluate("(p) => [...document.querySelectorAll(p + ' .form-check')].filter(e => e.style.display !== 'none').map(e => e.querySelector('label').textContent)", _pane(k))
-    assert visible == [b]
-    options = page.evaluate("(p) => [...document.querySelector(p + ' .az-entity-item').options].map(o => o.value)", _pane(k))
-    assert options == [b]
-    page.fill(search, "")
-    options = page.evaluate("(p) => [...document.querySelector(p + ' .az-entity-item').options].map(o => o.value)", _pane(k))
-    assert sorted(options) == sorted([a, b, c])
+    _open(page, served, kind, [_layer("logged", k["items"][0])], focus=k["items"][2])
+    assert page.locator(f"#layer-content-{k['tid']} .column-search").count() == 0
+    assert page.locator(f"#layer-content-{k['tid']} input[type=text], #layer-content-{k['tid']} input[type=search]").count() == 0
 
 
 @BOTH
-def test_search_field_spans_the_pane(page, served, kind):
-    """One full-width search field, no small filter beside the list: its width is the list's."""
+def test_layers_add_row_keeps_its_choice_when_the_chooser_is_rebuilt(page, served, kind):
+    """The focus moving rebuilds the tab; the item and layer picked in the add row stay."""
     k = KINDS[kind]
-    _open(page, served, kind, [_layer("logged", k["items"][0])], focus=k["items"][2])
-    widths = page.evaluate("""(p) => { const pane = document.querySelector(p);
-        return [pane.querySelector('.input-group').getBoundingClientRect().width, pane.querySelector('.checkbox-list').getBoundingClientRect().width,
-                pane.querySelectorAll('input[type=text], input[type=search]').length]; }""", _pane(k))
-    assert abs(widths[0] - widths[1]) <= 2, widths
-    assert widths[2] == 1, "no second filter field"
+    a, b, c = k["items"]
+    _open(page, served, kind, [_layer("logged", a), _layer("counts", b)], focus=c)
+    pane = _pane(k)
+    page.select_option(f"{pane} .az-entity-item", b)
+    page.select_option(f"{pane} .az-entity-key", "counts")
+    page.evaluate("""async ([id, rows]) => { const T = await import('/static/js/panels/table-utilities/table-data.js');
+        await T.refreshColumnChooser(window.PanelManager.getPanel(id).getConfig(), rows); }""", [k["tid"], "cells" if kind == "cell" else "genes"])
+    kept = page.evaluate("(p) => [document.querySelector(p + ' .az-entity-item').value, document.querySelector(p + ' .az-entity-key').value]", pane)
+    assert kept == [b, "counts"], kept
