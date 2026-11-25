@@ -346,7 +346,9 @@ def test_switching_the_grouping_keeps_the_group_of_the_same_name_or_takes_the_fi
     until(page, """async () => { const R = await import('/static/js/utils/source-registry.js');
         const m = R.getSource('group-stat').aggregate.members({ type: 'group-stat', key: 'cell-grouping-B', column: '' });
         return !!m && m.options.length > 1; }""")
+    _wait_colours(page, 40)              # the first draw has asked and landed: its request is not counted as the switch's
     n = len(_genes(page))
+    assert n == 1, "the plot's own first request"
     with page.expect_request(_computes_genes) as asked:
         page.select_option(axis_sets.sel(C, "color", "column"), _entry("cell-grouping-B"))
     assert json.loads(asked.value.post_data)["group"] == ["c:T cell"], "T cell is a group of both: it is kept"
