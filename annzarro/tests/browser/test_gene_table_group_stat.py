@@ -95,24 +95,13 @@ def _agg_entries(page, entity=GA):
 
 
 def _add(page, stat="mean", layer="logged", entity=GA, group=None):
-    """Choose the group, layer and statistic in the add row and press Add column. The tab is built again whenever panels
-    come or go (a grouping resolving its groups is one), which puts the row back to its start and detaches what was open; so
-    the choice is made again until the row holds the one asked for."""
+    """Choose the group, layer and statistic in the add row and press Add column."""
     g = _group_group(entity)
-    for _ in range(5):
-        try:
-            if group is not None:
-                page.select_option(f"{g} .az-score-add-group", group, timeout=5000)
-            page.select_option(f"{g} .az-score-add-layer", layer, timeout=5000)
-            page.click(f"{g} .az-score-add-agg", timeout=5000)
-            page.locator(AGG).wait_for(state="visible", timeout=5000)
-            page.click(f"{AGG} [data-agg='{stat}']", timeout=5000)
-            if page.input_value(f"{g} .az-score-add-layer", timeout=5000) == layer:
-                page.click(f"{g} .az-score-add-btn", timeout=5000)
-                return
-        except playwright.TimeoutError:
-            pass
-    raise AssertionError("the add row kept resetting")
+    if group is not None:
+        page.select_option(f"{g} .az-score-add-group", group)
+    page.select_option(f"{g} .az-score-add-layer", layer)
+    _pick_agg(page, entity, stat)
+    page.click(f"{g} .az-score-add-btn")
 
 
 def _apply(page):
@@ -159,7 +148,7 @@ def test_tab_lists_groupings_open_and_closed_by_title(page, served):
     page.wait_for_selector(f"{PANE} .az-score-group", timeout=30000)
     titles = page.eval_on_selector_all(f"{PANE} .az-score-group-title", "els => els.map(e => e.textContent)")
     assert titles == ["Cell types", "Condition"], "both groupings are closed (only the table is open), listed by title"
-    assert page.get_attribute(f"{PANE} .column-search", "placeholder") == "Search cell groupings"
+    assert page.locator(f"{PANE} .column-search").count() == 0, "no search field on this tab"
 
 
 def test_add_row_is_group_layer_aggregation_then_add(page, served):
@@ -348,16 +337,12 @@ def test_changed_group_offers_keep_or_remove(page, served):
     until(page, "(box) => !document.querySelector(box + ' .score-notice')", BOX)
 
 
-def test_search_filters_group_select_by_name(page, served):
+def test_tab_has_no_search_field(page, served):
+    """Replaces the search tests: the tab lists ticked columns and one add row, so there is nothing to search."""
     _open(page, served)
     _open_tab(page)
-    search = f"{PANE} .column-search"
-    page.fill(search, "NK")
-    until(page, """(s) => { const shown = [...document.querySelector(s).options].filter(o => o.value && !o.hidden);
-        return shown.length === 1 && shown[0].textContent === 'NK cell' && document.querySelector(s).value === shown[0].value; }""",
-          f"{_group_group()} .az-score-add-group")
-    page.fill(search, "")
-    until(page, "(s) => [...document.querySelector(s).options].every(o => !o.hidden)", f"{_group_group()} .az-score-add-group")
+    assert page.locator(f"{PANE} input[type=text], {PANE} .column-search").count() == 0
+    assert page.locator(f"#var-content-{TID} .column-search").count() == 1, "var keeps its search"
 
 
 def test_grouping_rename_follows_in_the_tab_and_the_export_name(page, served):
@@ -381,3 +366,31 @@ def test_loop_grouping_not_filterable_with_note(page, served):
     assert page.evaluate("""async ([a, b, t]) => { const R = await import('/static/js/utils/source-registry.js');
         const half = R.getSource('group-stat').table;
         return [half.filterable({ key: a }, t), half.filterable({ key: b }, t)]; }""", [GA, GB, TID]) == [True, False]
+
+
+NK_KEY = json.dumps(["c:NK cell"], separators=(",", ":"))
+
+
+def test_add_row_survives_a_panels_changed_event_mid_pick(page, served):
+    """The page says "panels changed" for many reasons. One that changes nothing here leaves the tab as it is; one that does
+    (a grouping renamed) builds it again with the group, layer and statistic chosen kept."""
+    _open(page, served)
+    _open_tab(page)
+    g = _group_group()
+    page.select_option(f"{g} .az-score-add-group", NK_KEY)
+    page.select_option(f"{g} .az-score-add-layer", "counts")
+    _pick_agg(page, GA, "sum")
+    read = """(g) => { const row = document.querySelector(g + ' .az-score-add');
+        window.__addRow = window.__addRow || row;
+        return { same: window.__addRow === row, group: row.querySelector('.az-score-add-group').value,
+            layer: row.querySelector('.az-score-add-layer').value, agg: row.querySelector('.az-score-add-agg').getAttribute('aria-label') }; }"""
+    page.evaluate(read, g)                                                          # remembers this row
+    page.evaluate("() => document.dispatchEvent(new CustomEvent('annzarro:panels-changed'))")
+    same = page.evaluate(read, g)
+    assert same["same"] is True, "nothing changed: the tab is left alone"
+    page.evaluate("(id) => { window.PanelManager.getPanel(id).setTitle('Renamed'); document.dispatchEvent(new CustomEvent('annzarro:panels-changed')); }", GA)
+    now = page.evaluate(read, f"{PANE} .az-score-group[data-entity='{GA}']")
+    assert now["same"] is False, "the grouping was renamed: the tab is built again"
+    assert now["group"] == NK_KEY and now["layer"] == "counts" and "Sum" in now["agg"], now
+    page.click(f"{_group_group()} .az-score-add-btn")
+    assert page.locator("input[data-type='group-stat'][data-layer='counts']:checked").count() == 1
