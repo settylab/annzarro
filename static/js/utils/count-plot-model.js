@@ -526,6 +526,104 @@ export function planGrid(config, ctx) {
     return { state: 'ready', request, inputs, key: gridKey(keyed, partitionings, members, ctx) };
 }
 
+// --- ways out of a hard cap (T-CAP, aggregation-unify-080.md 14.8) ---------------------------------------------------
+
+/**
+ * The views a plot over too many split levels may be shown as, in the order they are offered. Only a view that READS
+ * the split: a Heatmap has none, so it would draw by leaving the Color by out, which is not a way out of its cap.
+ */
+const SWITCH_TO = Object.freeze({ hist2d: ['bar'], density2d: ['bar'], histogram: ['bar'], density: ['bar'] });
+/** The most ways out a notice offers. */
+const MOST_WAYS = 3;
+
+/** Whether a config draws: its plan asks the engine for something. A plan that cannot be made (a context short of a
+ *  member, say) does not. */
+function draws(config, ctx) {
+    try {
+        return planGrid(config, ctx).state === 'ready';
+    } catch {
+        return false;
+    }
+}
+
+/** The config with `input` binned into `bins` (a manual binning has its own thresholds, so none), or null. */
+function withBins(config, field, bins) {
+    const p = config[field];
+    if (!p || (p.binning && p.binning.method === 'manual')) return null;
+    return { ...config, [field]: { ...p, binning: { ...(p.binning || { method: 'equal_width' }), bins } } };
+}
+
+/**
+ * The ways out of a refusal by a size cap, each one ordinary edit of the config, and only those that would draw
+ * (each is planned against the caps with the counts already known), the least destructive first, at most three:
+ *  - `{kind: 'picker', field}`: choose another column for the split (the picker greys the columns over the cap);
+ *  - `{kind: 'mode', mode}`: show it as a view whose caps the same inputs pass;
+ *  - `{kind: 'bins', bins: {x?: n, y?: n}}`: fewer bins, as many as the caps allow.
+ * No way out (a refusal by sets, or by a cap no edit of this config can lift): an empty list, and the notice says the
+ * limit and that an administrator sets it. Pure; the words are the caller's.
+ * @param {Object} config - the config that was refused
+ * @param {Object} refusal - its plan (`planGrid`): `{state: 'refused', reason, mode, inputs, counts, limits, over}`
+ * @param {Object} ctx - what `planGrid` was given (`isNumeric`, `levelCount`, ...)
+ * @returns {Array<{kind: string, field?: string, mode?: string, bins?: Object}>}
+ */
+export function waysOut(config, refusal, ctx) {
+    if (!refusal || refusal.state !== 'refused' || !Array.isArray(refusal.over)) return [];
+    const out = [];
+    const levelField = refusal.over.includes('split') ? 'split' : null;       // a Most frequent level has its own way out
+    if (refusal.reason === 'too_many_levels' && levelField) {
+        out.push({ kind: 'picker', field: levelField });
+        for (const mode of SWITCH_TO[config.mode] || []) {
+            // a Bar's split is the server's (limits.grid_1d_split), which the plan of a Bar does not check
+            const n = ctx.levelCount && config[levelField] ? ctx.levelCount(config[levelField]) : null;
+            const fits = !MODES[mode].split || n === null || n <= limit('grid_1d_split');
+            if (MODES[mode].split && fits && draws({ ...config, mode }, ctx)) out.push({ kind: 'mode', mode });
+        }
+    }
+    if (refusal.reason === 'too_many_bins') {
+        const bins = {};
+        let next = config;
+        refusal.over.forEach((field) => {
+            const cap = refusal.limits[refusal.inputs.indexOf(field)];
+            const made = withBins(next, field, cap);
+            if (made && Number.isInteger(cap) && cap >= 2) { next = made; bins[field] = cap; }
+        });
+        if (Object.keys(bins).length && draws(next, ctx)) out.push({ kind: 'bins', bins });
+    }
+    if (refusal.reason === 'grid_too_large') {
+        // every binned axis gets the same fewer bins: the most whose grid fits
+        const binned = ['x', 'y'].filter((f) => refusal.inputs.includes(f) && config[f] && isBinned(config[f], ctx));
+        const levels = (f) => {
+            const p = f === 'factor' ? config.value && config.value.factor : config[f];
+            const n = p && ctx.levelCount ? ctx.levelCount(p) : null;
+            return Number.isFinite(n) && n > 0 ? n : 1;
+        };
+        const others = refusal.inputs.filter((f) => !binned.includes(f)).reduce((prod, f) => prod * levels(f), 1);
+        const most = refusal.limits[0];
+        let b = binned.length ? Math.floor(Math.pow(most / others, 1 / binned.length)) : 0;
+        for (; b >= 2; b--) {
+            let next = config;
+            for (const f of binned) next = withBins(next, f, b) || next;
+            if (draws(next, ctx)) {
+                out.push({ kind: 'bins', bins: Object.fromEntries(binned.map((f) => [f, b])) });
+                break;
+            }
+        }
+    }
+    return out.slice(0, MOST_WAYS);
+}
+
+/**
+ * The config after "Fewer bins": each named input binned into its count.
+ * @param {Object} config
+ * @param {Object} bins - `{x?: n, y?: n}`
+ * @returns {Object}
+ */
+export function withFewerBins(config, bins) {
+    let next = config;
+    for (const [field, n] of Object.entries(bins || {})) next = withBins(next, field, n) || next;
+    return next;
+}
+
 /**
  * A measure's source as the request carries it: the fields the server reads, and a score's recipe inline (the score
  * route's, as a partitioning's carries it; the server refuses a field it does not take).

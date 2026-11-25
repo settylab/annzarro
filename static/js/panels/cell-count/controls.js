@@ -396,6 +396,34 @@ export function createControls({ D, id, model, on }) {
         setTimeout(() => { if (entry.btn.isConnected && !entry.pop.isOpen()) entry.pop.open(); }, 0);
     }
 
+    /**
+     * "Split by another column": the input's own select is focused and opened, and each column that is over the cap the
+     * refusal named is greyed with its count ("sample: 46 levels, at most 8"). Choosing one is the input's ordinary change.
+     */
+    function pickAnother(field) {
+        const row = rows.get(field);
+        const m = model();
+        if (!row) return;
+        const cap = m.levelCap ? m.levelCap(field) : null;
+        const select = row.setting && row.setting.type === 'obs' ? row.key : row.column;
+        if (cap !== null && m.levelCountOf && row.setting) {
+            for (const opt of select.options) {
+                if (opt.dataset.plain === undefined) opt.dataset.plain = opt.textContent;
+                if (!opt.value) continue;
+                const s = { ...row.setting, [select === row.key ? 'key' : 'column']: opt.value };
+                const n = m.levelCountOf(sourceFromSetting(s));
+                const over = Number.isFinite(n) && n > cap;
+                opt.disabled = over;
+                opt.textContent = over ? C.wayOut.overCap(opt.dataset.plain, n, cap) : opt.dataset.plain;
+            }
+        }
+        setTimeout(() => {
+            if (!select.isConnected) return;
+            select.focus();
+            try { select.showPicker(); } catch { /* a select that cannot open itself is focused */ }
+        }, 0);
+    }
+
     function levelChooser(field, p, info, m) {
         // the levels did not come (refused for their number, or failed): why, and the way out when there is one
         const said = !info && m.levelsSaid ? m.levelsSaid(field) : null;
@@ -972,9 +1000,11 @@ export function createControls({ D, id, model, on }) {
         /**
          * Open an input's Choose levels or binning pop-over and focus it: the way out of a refusal (UX 4.3).
          * @param {string} field - 'x' or 'y'
-         * @param {'levels'|'binning'} what
+         * @param {'levels'|'binning'|'picker'} what - `picker`: the input's own column select, with the columns over the
+         *   cap greyed and saying their number of levels (T-CAP)
          */
         reveal(field, what) {
+            if (what === 'picker') { pickAnother(field); return; }
             wanted = { field, what };
             flushReveal();
         },

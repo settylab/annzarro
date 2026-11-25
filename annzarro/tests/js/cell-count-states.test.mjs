@@ -352,3 +352,59 @@ test('a count that keeps its drawing shows a determinate strip bar from its prog
     b.paint(host);
     assert.equal(strips[strips.length - 1].bar, null, 'done: the bar goes');
 });
+
+// --- T-CAP: the ways out of a size cap (utils/count-plot-model.js waysOut), as buttons -----------------------------
+
+const withWays = (config) => {
+    const c = norm(config);
+    return S.describePlan(M.planGrid(c, page), { config: c, isNumeric: page.isNumeric, plan: page,
+        nameOf: (field) => { const p = field === 'factor' ? c.value.factor : c[field]; return p.source.key; } });
+};
+
+test('a Color by over the cap offers Split by another column, then a view that draws, at most three', () => {
+    const out = withWays({ mode: 'histogram', x: obs('depth'), split: obs('age', { }) });
+    // 12 levels is within a histogram's 200: nothing to say
+    assert.equal(out, null);
+    const over = withWays({ mode: 'hist2d', x: obs('depth'), y: obs('score'), split: obs('age') });
+    assert.match(over.text, /12 levels/);
+    assert.deepEqual(over.actions.map(([a]) => a), ['picker:split', 'mode:bar', 'remove:split']);
+    assert.deepEqual(over.actions.map(([, label]) => label), ['Split by another column ▾', 'Switch to Bar', 'Remove Color by']);
+    // a Most frequent level (factor) keeps its one way out
+    const factor = withWays({ mode: 'hist2d', x: obs('depth'), y: obs('score'), value: { kind: 'top_level', factor: obs('age') } });
+    assert.deepEqual(factor.actions.map(([a]) => a), ['remove:factor']);
+    assert.ok(over.actions.length <= 3);
+    assert.doesNotMatch(over.text, /second|seconds|minute/);
+});
+
+test('over 200 levels the Bar is not offered, and the picker leads', () => {
+    const out = withWays({ mode: 'hist2d', x: obs('depth'), y: obs('score'), split: obs('many') });
+    assert.deepEqual(out.actions.map(([a]) => a), ['picker:split', 'remove:split']);
+});
+
+test('Fewer bins is the way out of bins over the cap, and it is one edit that draws', () => {
+    const c = norm({ mode: 'hist2d', x: obs('depth', { binning: { method: 'equal_width', bins: 600 } }), y: obs('score') });
+    const out = withWays({ mode: 'hist2d', x: obs('depth', { binning: { method: 'equal_width', bins: 600 } }), y: obs('score') });
+    assert.equal(out.actions[0][0], 'fewer:x=512');
+    assert.equal(out.actions[0][1], 'Fewer bins');
+    assert.ok(out.actions.length <= 3);
+    const way = S.wayOut('fewer:x=512', c);
+    assert.equal(way.config.x.binning.bins, 512);
+    assert.equal(M.planGrid(way.config, page).state, 'ready');
+    assert.equal(way.said, 'Bins set to X 512.');
+    assert.match(way.label, /bins/);
+});
+
+test('the picker and a switch are ordinary ways: a mode edit, and a control opened in place', () => {
+    const c = norm({ mode: 'hist2d', x: obs('depth'), y: obs('score'), split: obs('age') });
+    assert.deepEqual(S.wayOut('picker:split', c), { reveal: { field: 'split', what: 'picker' } });
+    const to = S.wayOut('mode:bar', c);
+    assert.equal(to.config.mode, 'bar');
+    assert.equal(to.said, 'Switched to Bar.');
+    assert.equal(S.wayOut('fewer:z=3', c), null);
+});
+
+test('without the plan the notice is what it was', () => {
+    const c = norm({ mode: 'hist2d', x: obs('depth'), y: obs('score'), split: obs('age') });
+    const out = S.describePlan(M.planGrid(c, page), { config: c, isNumeric: page.isNumeric, nameOf: () => 'age' });
+    assert.deepEqual(out.actions.map(([a]) => a), ['remove:split']);
+});

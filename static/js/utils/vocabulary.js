@@ -531,7 +531,18 @@ const countPlot = Object.freeze({
         retry: 'Retry'
     }),
     /** The way out of a refusal or of an input the mode cannot use (UX 4.2, 4.3). */
-    wayOut: Object.freeze({ bin: 'Bin it', levels: `Choose ${plural.level}`, removeSplit: 'Remove Color by', showAs: (mode) => `Show as ${mode}` }),
+    wayOut: Object.freeze({
+        bin: 'Bin it', levels: `Choose ${plural.level}`, removeSplit: 'Remove Color by', showAs: (mode) => `Show as ${mode}`,
+        // the ways out of a size cap (T-CAP, utils/count-plot-model.js waysOut)
+        splitBy: 'Split by another column ▾', switchTo: (mode) => `Switch to ${mode}`, fewerBins: 'Fewer bins',
+        // what the status line says after each, so the step is never silent
+        did: Object.freeze({
+            switched: (mode) => `Switched to ${mode}.`,
+            fewerBins: (bins) => `Bins set to ${Object.entries(bins).map(([f, n]) => `${f.toUpperCase()} ${n}`).join(', ')}.`
+        }),
+        // a column in the picker that is over the cap, greyed with its count
+        overCap: (name, n, max) => `${name}: ${fmt(n)} ${plural.level}, at most ${fmt(max)}`
+    }),
     /** The status strip (CNT-22, UX 4.7), its parts joined by `join`. */
     strip: Object.freeze({
         counted: (n) => `${fmt(n)} cells counted`,

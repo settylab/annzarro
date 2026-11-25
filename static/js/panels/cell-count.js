@@ -682,13 +682,20 @@ actions.register({
             }
         }
 
+        /** The most levels the plot's refusal allows an input (the cap its notice names), or null when it is not refused for them. */
+        function levelCapOf(field) {
+            const s = _snap;
+            if (!s || s.state !== 'refused' || !Array.isArray(s.inputs) || !(s.over || []).includes(field)) return null;
+            return s.limits[s.inputs.indexOf(field)];
+        }
+
         function controlsModel() {
             const step = _undo.peek();
             return {
                 config: _config, structure: structureRead(), structureVersion: _structureVersion, titleOf: sourceTitleOf,
                 focusedGene: DataManager.getFocusedGene() || null, focusedCell: focusedCellName(),
                 infos: _infos, labelsOf: (field) => _labelMaps[field] || new Map(),
-                isNumeric: page.isNumeric, drawable, viewNote: _viewNote, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
+                isNumeric: page.isNumeric, levelCountOf: (source) => levelCountOf({ source }, structureRead()), levelCap: levelCapOf, drawable, viewNote: _viewNote, undo: step ? step.label : null, canExport: !!_drawing, canSave: saveOffered(_config), notes: _notes, colourData: _colourData, densityNote: densityNote(), levelsOf, levelsSaid,
                 valueDefaults: () => valueDefaults(_config, structureRead(), DataManager.getFocusedGene() || null),
                 view3d: view3dState()
             };
@@ -954,7 +961,7 @@ actions.register({
             let say = null;
             if (DataManager.isDatasetLoaded()) {
                 say = !drawable(_config.mode) ? { state: 'unavailable', text: C.notDrawn(C.modes[_config.mode]), actions: [] }
-                    : describePlan(snap, { config: shown(), nameOf: nameOfInput, isNumeric: page.isNumeric });
+                    : describePlan(snap, { config: shown(), nameOf: nameOfInput, isNumeric: page.isNumeric, plan: page });
             }
             box.hidden = _dom.stateBox.hidden = !say;
             box.dataset.state = say ? say.state : (snap ? snap.state : 'none');
@@ -1010,7 +1017,10 @@ actions.register({
             if (action.startsWith('levels-retry:')) { if (_levelHandle) _levelHandle.retry(); return; }
             const way = wayOut(action, _config);
             if (!way) return;
-            if (way.config) commit(way.config, way.label);
+            if (way.config) {
+                commit(way.config, way.label);
+                if (way.said) { _viewNote = way.said; paint(); }       // the status line says what the step did
+            }
             if (way.reveal && _controls) _controls.reveal(way.reveal.field, way.reveal.what);
         }
 
