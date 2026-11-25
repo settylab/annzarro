@@ -117,8 +117,8 @@ threshold below separates the two.
 
 1. Press the **c⁺** button of **Size**. It opens a list of statistics, each with its symbol: Z-score mean (greyed: "Z-score
    mean is signed; dot size cannot show a sign. Use it for Color."), Mean, Fraction of cells, Mean of expressing cells,
-   Sum, SD and Cell count. Under the list is the box **above**.
-2. Type `5` into **above** and press **Enter**. A cell now counts as expressing a gene only with more than five counts.
+   Sum, SD and Cell count. Under the list is the box **Expressed above**.
+2. Type `5` into **Expressed above** and press **Enter**. A cell now counts as expressing a gene only with more than five counts.
    Close the list with **Escape** (twice: the first leaves the box).
 
 ```{figure} ../_static/screens/tutorials/dotplot-size-button.png
@@ -144,7 +144,7 @@ The dot of `S100a8` shrinks in every type but Neutrophil, where nearly every cel
 The myeloid section at a threshold of 0 (left) and 5 (right). Only the Neutrophil dot stays large.
 ```
 
-Set **above** back to `0` when you have looked; the button keeps showing the value you typed as `>0`.
+Set **Expressed above** back to `0` when you have looked; the button keeps showing the value you typed as `>0`.
 
 ### 5. Scale, the z-score mean, and clustering
 

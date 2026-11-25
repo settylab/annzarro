@@ -1,6 +1,6 @@
 {
  "name": "Dot plot tutorial: the marker plot",
- "timestamp": "2026-11-25T21:59:19+00:00",
+ "timestamp": "2026-11-25T23:34:46+00:00",
  "dataset": "bm_aging_annzarro.zarr",
  "datasetName": "bm_aging_annzarro",
  "constants": {
@@ -11,12 +11,12 @@
   }
  },
  "panelConfigs": {
-  "cell-gene-1795643946574": {
-   "id": "cell-gene-1795643946574",
+  "cell-gene-1795649673767": {
+   "id": "cell-gene-1795649673767",
    "type": "cell-gene",
    "title": "Cell-Gene Plot 1",
    "config": {
-    "id": "cell-gene-1795643946574",
+    "id": "cell-gene-1795649673767",
     "title": "Cell-Gene Plot 1",
     "styleDefault": true,
     "fontModel": 2,
@@ -32,35 +32,35 @@
     },
     "sections": [
      {
-      "source": "gene-signature-1795643926938",
+      "source": "gene-signature-1795649654187",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795643929819",
+      "source": "gene-signature-1795649657036",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795643932203",
+      "source": "gene-signature-1795649659418",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795643934603",
+      "source": "gene-signature-1795649661807",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795643936987",
+      "source": "gene-signature-1795649664202",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795643939386",
+      "source": "gene-signature-1795649666608",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795643941788",
+      "source": "gene-signature-1795649669002",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795643944203",
+      "source": "gene-signature-1795649671388",
       "rows": "genes"
      }
     ],
@@ -71,12 +71,12 @@
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795643926938": {
-   "id": "gene-signature-1795643926938",
+  "gene-signature-1795649654187": {
+   "id": "gene-signature-1795649654187",
    "type": "gene-signature",
    "title": "Stem and progenitor",
    "config": {
-    "id": "gene-signature-1795643926938",
+    "id": "gene-signature-1795649654187",
     "title": "Stem and progenitor",
     "genes": [
      "Hlf",
@@ -96,12 +96,12 @@
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795643929819": {
-   "id": "gene-signature-1795643929819",
+  "gene-signature-1795649657036": {
+   "id": "gene-signature-1795649657036",
    "type": "gene-signature",
    "title": "Megakaryocyte",
    "config": {
-    "id": "gene-signature-1795643929819",
+    "id": "gene-signature-1795649657036",
     "title": "Megakaryocyte",
     "genes": [
      "Gp9",
@@ -120,12 +120,12 @@
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795643932203": {
-   "id": "gene-signature-1795643932203",
+  "gene-signature-1795649659418": {
+   "id": "gene-signature-1795649659418",
    "type": "gene-signature",
    "title": "Erythroid",
    "config": {
-    "id": "gene-signature-1795643932203",
+    "id": "gene-signature-1795649659418",
     "title": "Erythroid",
     "genes": [
      "Car1",
@@ -144,12 +144,12 @@
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795643934603": {
-   "id": "gene-signature-1795643934603",
+  "gene-signature-1795649661807": {
+   "id": "gene-signature-1795649661807",
    "type": "gene-signature",
    "title": "Myeloid",
    "config": {
-    "id": "gene-signature-1795643934603",
+    "id": "gene-signature-1795649661807",
     "title": "Myeloid",
     "genes": [
      "Elane",
@@ -170,12 +170,12 @@
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795643936987": {
-   "id": "gene-signature-1795643936987",
+  "gene-signature-1795649664202": {
+   "id": "gene-signature-1795649664202",
    "type": "gene-signature",
    "title": "Monocyte",
    "config": {
-    "id": "gene-signature-1795643936987",
+    "id": "gene-signature-1795649664202",
     "title": "Monocyte",
     "genes": [
      "Ccr2",
@@ -195,12 +195,12 @@
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795643939386": {
-   "id": "gene-signature-1795643939386",
+  "gene-signature-1795649666608": {
+   "id": "gene-signature-1795649666608",
    "type": "gene-signature",
    "title": "pDC",
    "config": {
-    "id": "gene-signature-1795643939386",
+    "id": "gene-signature-1795649666608",
     "title": "pDC",
     "genes": [
      "Siglech"
@@ -217,12 +217,12 @@
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795643941788": {
-   "id": "gene-signature-1795643941788",
+  "gene-signature-1795649669002": {
+   "id": "gene-signature-1795649669002",
    "type": "gene-signature",
    "title": "B cell",
    "config": {
-    "id": "gene-signature-1795643941788",
+    "id": "gene-signature-1795649669002",
     "title": "B cell",
     "genes": [
      "Cd19",
@@ -243,12 +243,12 @@
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795643944203": {
-   "id": "gene-signature-1795643944203",
+  "gene-signature-1795649671388": {
+   "id": "gene-signature-1795649671388",
    "type": "gene-signature",
    "title": "T cell",
    "config": {
-    "id": "gene-signature-1795643944203",
+    "id": "gene-signature-1795649671388",
     "title": "T cell",
     "genes": [
      "Cd3e",
@@ -282,24 +282,24 @@
    "hierarchy": [
     {
      "type": "tile",
-     "id": "cell-gene-1795643946574",
+     "id": "cell-gene-1795649673767",
      "controlsVisible": false
     }
    ],
    "controlState": {
-    "cell-gene-1795643946574": false,
-    "gene-signature-1795643926938": false,
-    "gene-signature-1795643929819": false,
-    "gene-signature-1795643932203": false,
-    "gene-signature-1795643934603": false,
-    "gene-signature-1795643936987": false,
-    "gene-signature-1795643939386": false,
-    "gene-signature-1795643941788": false,
-    "gene-signature-1795643944203": false
+    "cell-gene-1795649673767": false,
+    "gene-signature-1795649654187": false,
+    "gene-signature-1795649657036": false,
+    "gene-signature-1795649659418": false,
+    "gene-signature-1795649661807": false,
+    "gene-signature-1795649664202": false,
+    "gene-signature-1795649666608": false,
+    "gene-signature-1795649669002": false,
+    "gene-signature-1795649671388": false
    },
    "panelConfigs": {
-    "cell-gene-1795643946574": {
-     "id": "cell-gene-1795643946574",
+    "cell-gene-1795649673767": {
+     "id": "cell-gene-1795649673767",
      "title": "Cell-Gene Plot 1",
      "styleDefault": true,
      "fontModel": 2,
@@ -315,35 +315,35 @@
      },
      "sections": [
       {
-       "source": "gene-signature-1795643926938",
+       "source": "gene-signature-1795649654187",
        "rows": "genes"
       },
       {
-       "source": "gene-signature-1795643929819",
+       "source": "gene-signature-1795649657036",
        "rows": "genes"
       },
       {
-       "source": "gene-signature-1795643932203",
+       "source": "gene-signature-1795649659418",
        "rows": "genes"
       },
       {
-       "source": "gene-signature-1795643934603",
+       "source": "gene-signature-1795649661807",
        "rows": "genes"
       },
       {
-       "source": "gene-signature-1795643936987",
+       "source": "gene-signature-1795649664202",
        "rows": "genes"
       },
       {
-       "source": "gene-signature-1795643939386",
+       "source": "gene-signature-1795649666608",
        "rows": "genes"
       },
       {
-       "source": "gene-signature-1795643941788",
+       "source": "gene-signature-1795649669002",
        "rows": "genes"
       },
       {
-       "source": "gene-signature-1795643944203",
+       "source": "gene-signature-1795649671388",
        "rows": "genes"
       }
      ],
@@ -352,8 +352,8 @@
       "key": "midres_celltype"
      }
     },
-    "gene-signature-1795643926938": {
-     "id": "gene-signature-1795643926938",
+    "gene-signature-1795649654187": {
+     "id": "gene-signature-1795649654187",
      "title": "Stem and progenitor",
      "genes": [
       "Hlf",
@@ -371,8 +371,8 @@
      "detect_above": 0,
      "version": 1
     },
-    "gene-signature-1795643929819": {
-     "id": "gene-signature-1795643929819",
+    "gene-signature-1795649657036": {
+     "id": "gene-signature-1795649657036",
      "title": "Megakaryocyte",
      "genes": [
       "Gp9",
@@ -389,8 +389,8 @@
      "detect_above": 0,
      "version": 1
     },
-    "gene-signature-1795643932203": {
-     "id": "gene-signature-1795643932203",
+    "gene-signature-1795649659418": {
+     "id": "gene-signature-1795649659418",
      "title": "Erythroid",
      "genes": [
       "Car1",
@@ -407,8 +407,8 @@
      "detect_above": 0,
      "version": 1
     },
-    "gene-signature-1795643934603": {
-     "id": "gene-signature-1795643934603",
+    "gene-signature-1795649661807": {
+     "id": "gene-signature-1795649661807",
      "title": "Myeloid",
      "genes": [
       "Elane",
@@ -427,8 +427,8 @@
      "detect_above": 0,
      "version": 1
     },
-    "gene-signature-1795643936987": {
-     "id": "gene-signature-1795643936987",
+    "gene-signature-1795649664202": {
+     "id": "gene-signature-1795649664202",
      "title": "Monocyte",
      "genes": [
       "Ccr2",
@@ -446,8 +446,8 @@
      "detect_above": 0,
      "version": 1
     },
-    "gene-signature-1795643939386": {
-     "id": "gene-signature-1795643939386",
+    "gene-signature-1795649666608": {
+     "id": "gene-signature-1795649666608",
      "title": "pDC",
      "genes": [
       "Siglech"
@@ -462,8 +462,8 @@
      "detect_above": 0,
      "version": 1
     },
-    "gene-signature-1795643941788": {
-     "id": "gene-signature-1795643941788",
+    "gene-signature-1795649669002": {
+     "id": "gene-signature-1795649669002",
      "title": "B cell",
      "genes": [
       "Cd19",
@@ -482,8 +482,8 @@
      "detect_above": 0,
      "version": 1
     },
-    "gene-signature-1795643944203": {
-     "id": "gene-signature-1795643944203",
+    "gene-signature-1795649671388": {
+     "id": "gene-signature-1795649671388",
      "title": "T cell",
      "genes": [
       "Cd3e",
@@ -505,7 +505,7 @@
   "store": {
    "path": "bm_aging_annzarro.zarr",
    "name": "bm_aging_annzarro.zarr",
-   "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-5k04vx3a/bm_aging_annzarro.zarr",
+   "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-9wpsy84l/bm_aging_annzarro.zarr",
    "fp": {
     "v": 1,
     "n_obs": 8090,

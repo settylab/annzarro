@@ -12,19 +12,19 @@
   "hierarchy": [
    {
     "type": "tile",
-    "id": "cell-gene-1795649531243",
+    "id": "cell-gene-1795649917883",
     "controlsVisible": false
    }
   ],
   "controlState": {
-   "cell-gene-1795649531243": false,
-   "gene-signature-1795649421808": false,
-   "gene-signature-1795649529070": false,
-   "cell-grouping-1795649517069": false
+   "cell-gene-1795649917883": false,
+   "gene-signature-1795649808419": false,
+   "gene-signature-1795649915716": false,
+   "cell-grouping-1795649903731": false
   },
   "panelConfigs": {
-   "cell-gene-1795649531243": {
-    "id": "cell-gene-1795649531243",
+   "cell-gene-1795649917883": {
+    "id": "cell-gene-1795649917883",
     "title": "Cell-Gene Plot 3",
     "styleDefault": true,
     "fontModel": 2,
@@ -40,23 +40,23 @@
     },
     "sections": [
      {
-      "source": "gene-signature-1795649421808",
+      "source": "gene-signature-1795649808419",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795649529070",
+      "source": "gene-signature-1795649915716",
       "rows": "genes"
      }
     ],
     "cellAxis": {
      "type": "cell-group",
-     "key": "cell-grouping-1795649517069"
+     "key": "cell-grouping-1795649903731"
     },
     "colorScale": "RdBu",
     "center": 0
    },
-   "gene-signature-1795649421808": {
-    "id": "gene-signature-1795649421808",
+   "gene-signature-1795649808419": {
+    "id": "gene-signature-1795649808419",
     "title": "Granulocyte genes",
     "genes": [
      "Camp",
@@ -90,8 +90,8 @@
     "detect_above": 0,
     "version": 1
    },
-   "gene-signature-1795649529070": {
-    "id": "gene-signature-1795649529070",
+   "gene-signature-1795649915716": {
+    "id": "gene-signature-1795649915716",
     "title": "Selp",
     "genes": [
      "Selp"
@@ -106,8 +106,8 @@
     "detect_above": 0,
     "version": 1
    },
-   "cell-grouping-1795649517069": {
-    "id": "cell-grouping-1795649517069",
+   "cell-grouping-1795649903731": {
+    "id": "cell-grouping-1795649903731",
     "title": "Stage",
     "version": 1,
     "partitionings": [
@@ -132,7 +132,7 @@
  "store": {
   "path": "bm_aging_annzarro.zarr",
   "name": "bm_aging_annzarro.zarr",
-  "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-nbnv33pb/bm_aging_annzarro.zarr",
+  "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-_x41d6dm/bm_aging_annzarro.zarr",
   "fp": {
    "v": 1,
    "n_obs": 8090,
