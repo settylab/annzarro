@@ -209,7 +209,7 @@ headless browser ({doc}`../user-guide/reproducing`). Needs `pip install 'annzarr
 | `--from FIGURE` | Instead of `SOURCE`: an exported PNG or SVG, made again from the recipe it carries. |
 | `--store PATH` | The store to draw from (required). A store with other cells or genes than the view was saved on stops the command. |
 | `--out FILE` | `.png` or `.svg`. Several plots: one file per plot, `<stem>-<panel id>.<ext>`. |
-| `--panel ID` | Only this plot (its tile id, e.g. `cell-plot-1`). |
+| `--panel ID` | Only this plot (its tile id, e.g. `cell-plot-1`). Any plot panel works: a Cell Plot, a Cell-Gene Plot or a Cell Count Plot. |
 | `--allow-other-store` | Export even from a store with other cells or genes. |
 | `--timeout S` | Seconds to wait for the plots to be drawn (default 600). |
 | `--verbose` | Show the local server's log and page errors. |

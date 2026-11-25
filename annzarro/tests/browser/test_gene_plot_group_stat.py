@@ -548,10 +548,10 @@ def served_csr(tmp_path_factory):
 
 def test_zscore_mean_on_csr_disabled_with_reason(page, served_csr):
     _open(page, served_csr, {G: _plot(color=_stat()), GA: _grouping()})
-    axis_sets.until_methods(page, G, "color", "(o) => o.some((e) => e.value === 'zscore_mean' && e.disabled && e.title.includes('whole-layer read'))")
+    axis_sets.until_methods(page, G, "color", "(o) => o.some((e) => e.value === 'zscore_mean' && e.disabled && e.title.includes('stored by gene (CSC)'))")
     rows = {r["v"]: r for r in axis_sets.aggregations(page, C, "color")}
     assert rows["zscore_mean"]["off"] is True
-    assert rows["zscore_mean"]["title"] == "Z-score mean of a cell group needs a whole-layer read on this store's layout; coming with the moments cache."
+    assert rows["zscore_mean"]["title"] == "Z-score mean of a cell group needs this layer stored by gene (CSC)."
 
 
 # ------------------------------------------------------------------ a grouping picked before its groups are known
