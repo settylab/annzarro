@@ -260,6 +260,8 @@ const cellGene = Object.freeze({
         /** Plot Options ▸ Dots: the largest dot as a share of its cell, the smallest in px. */
         largestDotOfCell: 'Largest dot (% of cell)',
         smallestDotPx: 'Smallest dot (px)',
+        /** Largest dot's help: past the slider's end a share is typed, up to a ceiling. */
+        largestDotHelp: (slider, ceiling) => `Over ${slider}%, type the share; values over ${ceiling}% are set to ${ceiling}%.`,
         /** Largest dot of a link saved before the dots filled their cells: its px, until the slider is moved. */
         largestPx: (px) => `${fmt(px)} px (saved)`,
         rangeWhat: Object.freeze({ color: 'Color', size: 'Size', height: 'Height' }),

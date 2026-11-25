@@ -253,7 +253,8 @@ export function mountPlotOptions(ctx) {
                 const unscale = (v) => (v === null ? v : pc ? fromPercent(v) : v);
                 // with a domId the slider has it and the box `<domId>-input` (the margins' way); `live`: the plot follows the slider as it moves
                 const box = el('input', { type: 'number', id: field.domId ? `${field.domId}-input-${panelId}` : id, class: 'form-control form-control-sm az-pop-num',
-                    data: { option: `${field.id}Number` }, min: scale(field.min), max: scale(field.max), step: scale(field.step) ?? 'any', aria: { label: field.label } });
+                    data: { option: `${field.id}Number` }, min: scale(field.min), max: scale(typeof field.typedMax === 'number' ? field.typedMax : field.max),
+                    step: scale(field.step) ?? 'any', aria: { label: field.label } });
                 input = el('input', { type: 'range', id: field.domId ? id : null, class: 'form-range az-pop-range', data: { option: field.id }, min: scale(field.min), max: scale(field.max),
                     step: scale(field.step) ?? 'any', aria: { label: field.label },
                     on: { input: () => { box.value = input.value; if (field.live) set(field, unscale(Number(input.value))); }, change: () => set(field, unscale(Number(input.value))) } });

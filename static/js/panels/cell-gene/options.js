@@ -18,7 +18,7 @@
  *   over the bar cap (`view3dGate`); in 3D, Plot Options' Export greys SVG ("3D exports as an image only").
  *
  * STYLE FIELDS (plan 1.6: additive, default when absent, never frozen): `colorScale`, `reverse`, `limits: [min, max]`, `center`,
- * `printValues`, `heightLimits: [min, max]` (the 3D bars' range), `dotScale` (10 to 100: the % of its cell the largest dot fills; absent, 100), `dotSmallest` (px),
+ * `printValues`, `heightLimits: [min, max]` (the 3D bars' range), `dotScale` (10 to 1000: the % of its cell the largest dot fills, the slider to 200; absent, 100), `dotSmallest` (px),
  * `dotOpacity` (0.1 to 1; absent, 1), `dotSizes: [smallest, largest]` (px; written before the dots filled their cells, still read: a link that has it draws
  * those px until Largest dot is moved), `dotMin`, `dotMax` (% at the smallest and largest dot), `gap`
  * (0 to 3 cells), `sectionTitles`, `labels: {genes, groups}`, `titles: {plot, color, size}`, `legend: {colorBar,
@@ -64,7 +64,7 @@ const DEFAULT_GAP = 1;
 const GAP_MAX = 3;
 const DOT_PX = Object.freeze({ min: 1, max: 40, smallest: 3, largest: 20 });
 /** Largest dot, in % of its cell: the slider's ends and step; 100 (the default) fills the cell. */
-const DOT_SCALE = Object.freeze({ min: 10, max: 100, step: 5 });
+const DOT_SCALE = Object.freeze({ min: 10, max: 200, typedMax: 1000, full: 100, step: 5 });
 const DEFAULT_CLUSTER = Object.freeze({ genes: 'off', groups: 'off', linkage: 'complete', distance: 'correlation',
     dendrograms: Object.freeze({ genes: true, groups: true }) });
 const GENE_SCOPES = Object.freeze(['off', 'sections']);
@@ -131,7 +131,7 @@ function styleOf(config) {
         printValues: c.printValues === true,
         dotOpacity: isNumber(c.dotOpacity) ? Math.max(DOT_OPACITY.min, Math.min(DOT_OPACITY.max, c.dotOpacity)) : DOT_OPACITY.max,
         dotSizes: rangeOf(c.dotSizes, DOT_PX.min, DOT_PX.max),
-        dotScale: isNumber(c.dotScale) ? Math.max(DOT_SCALE.min, Math.min(DOT_SCALE.max, c.dotScale)) : null,
+        dotScale: isNumber(c.dotScale) ? Math.max(DOT_SCALE.min, Math.min(DOT_SCALE.typedMax, c.dotScale)) : null,
         dotSmallest: isNumber(c.dotSmallest) ? Math.max(DOT_PX.min, Math.min(DOT_PX.max, c.dotSmallest)) : null,
         dotMin: isNumber(c.dotMin) ? c.dotMin : null,
         dotMax: isNumber(c.dotMax) ? c.dotMax : null,
@@ -196,8 +196,11 @@ const PLOT_OPTION_FIELDS = Object.freeze([
     // stands at 100 and the empty box says what is drawn (placeholder): 100, or a link from before's largest dot in px,
     // which it keeps (`dotSizes`) until Largest dot is moved (panels/cell-gene.js commit)
     { id: 'dotScale', section: 'panel:dots', type: 'range', path: 'dotScale', label: WO.largestDotOfCell, dflt: null,
-        min: DOT_SCALE.min, max: DOT_SCALE.max, step: DOT_SCALE.step, when: dotsMode, stepFrom: DOT_SCALE.max,
-        placeholder: (c) => { const s = styleOf(c); return s.dotSizes && s.dotScale === null ? WO.largestPx(s.dotSizes[1]) : DOT_SCALE.max; } },
+        // the slider to 200 % (dots larger than their cell overlap their neighbours), a typed share to 1000 % (operator,
+        // 2026-11-25); the help says where typing stops
+        min: DOT_SCALE.min, max: DOT_SCALE.max, typedMax: DOT_SCALE.typedMax, step: DOT_SCALE.step, when: dotsMode, stepFrom: DOT_SCALE.full,
+        help: WO.largestDotHelp(DOT_SCALE.max, DOT_SCALE.typedMax),
+        placeholder: (c) => { const s = styleOf(c); return s.dotSizes && s.dotScale === null ? WO.largestPx(s.dotSizes[1]) : DOT_SCALE.full; } },
     { id: 'dotSmallest', section: 'panel:dots', type: 'range', path: 'dotSmallest', label: WO.smallestDotPx, dflt: DOT_PX.smallest,
         min: DOT_PX.min, max: DOT_PX.max, step: 1, when: dotsMode },
     { id: 'gap', section: 'panel:sections', type: 'number', path: 'gap', label: `${WO.gap} (${WO.gapUnit})`, dflt: DEFAULT_GAP, min: 0, max: GAP_MAX, step: 1 },

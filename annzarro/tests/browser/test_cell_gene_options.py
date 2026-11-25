@@ -475,6 +475,62 @@ def test_a_link_from_before_keeps_its_dot_px_until_largest_dot_is_moved(page, se
     _redrawn(page, f"(p) => Math.abs(({_LARGEST})(p) - 0.8 * (({_CELL})(p) - 2)) < 1")
 
 
+def _type_box(page, name, value):
+    page.fill(_option(f"{name}Number"), str(value))
+    page.press(_option(f"{name}Number"), "Enter")
+
+
+def _largest_now(page):
+    return page.evaluate(f"(s) => ({_LARGEST})(document.querySelector(s + ' .cgene-plot'))", TP)
+
+
+def test_largest_dot_slides_to_200_and_a_typed_share_goes_to_1000(page, served):
+    _one_plot(page, served)
+    _open_options(page)
+    slider, box = _option("dotScale"), _option("dotScaleNumber")
+    assert page.get_attribute(slider, "max") == "200" and page.get_attribute(box, "max") == "1000"
+    assert "1000" in page.locator(f"{_pop('plot-options')} [data-option='dotScale']").evaluate("(e) => e.closest('.az-pop-field').textContent")
+    _redrawn(page, f"(p) => Math.abs(({_LARGEST})(p) - (({_CELL})(p) - 2)) < 1.5")
+    _set_range(page, slider, 200)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotScale === 200", P)
+    _redrawn(page, f"(p) => Math.abs(({_LARGEST})(p) - 2 * (({_CELL})(p) - 2)) < 2")
+    at200 = _largest_now(page)
+    # a typed 350: kept, drawn larger than 200 %, the slider at its end
+    _type_box(page, "dotScale", 350)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotScale === 350", P)
+    _redrawn(page, f"(p, a) => ({_LARGEST})(p) > a && Math.abs(({_LARGEST})(p) - 3.5 * (({_CELL})(p) - 2)) < 3", at200)
+    assert page.locator(slider).input_value() == "200"
+    assert page.locator(box).input_value() == "350"
+    at350 = _largest_now(page)
+    # Refresh draws the same; a link made from the configuration opens with it
+    page.evaluate("(id) => window.PanelManager.getPanel(id).redraw()", P)
+    _redrawn(page, f"(p, a) => Math.abs(({_LARGEST})(p) - a) < 0.5", at350)
+    cfg = _config(page)
+    # past the ceiling: 1000, the box says so
+    _type_box(page, "dotScale", 5000)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotScale === 1000", P)
+    page.press(box, "Tab")   # a focused box keeps what is typed; once left, it shows what is stored
+    until(page, "(b) => document.querySelector(b).value === '1000'", box)
+    # Undo: back to 350, then 200
+    page.click(f"{TP} .cgene-undo")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotScale === 350", P)
+    page.click(f"{TP} .cgene-undo")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotScale === 200", P)
+    # the link
+    _open(page, served, {P: cfg, S1: _sig(S1, "Markers", GENES[:4])}, open_ids=(P, S1))
+    _drawn(page)
+    assert _config(page)["dotScale"] == 350
+    _redrawn(page, f"(p, a) => Math.abs(({_LARGEST})(p) - a) < 0.5", at350)
+
+
+def test_other_range_fields_still_stop_at_their_max(page, served):
+    _one_plot(page, served)
+    _open_options(page)
+    _type_box(page, "dotSmallest", 90)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotSmallest === 40", P)
+    assert page.get_attribute(_option("dotSmallestNumber"), "max") == "40"
+
+
 def test_dot_opacity_in_plot_options_redraws_and_undo_restores_it(page, served):
     _one_plot(page, served)
     _redrawn(page, "(p) => p.data[0].marker.opacity === 1")

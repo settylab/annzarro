@@ -27,6 +27,7 @@
  *    for, and its arrows step from it. `shown(config, env)`: the value a control shows when nothing is stored (the
  *    theme's colour in a swatch, tick marks following the tick labels). `disabled(config, env)`: a reason (text) when the
  *    control is off now, '' when it is on. `look: false`: a view, not a look (not reset, never takes a plot off Default).
+ *  - range: `typedMax`, what its number box takes past the slider's `max` (the slider rests at its end); `max` when absent.
  *  - select: a choice whose value is `null` writes absent (Auto). range: `percent: true` shows 100 times the stored
  *    fraction. `type: 'margins'`: the four sides in one field (`unlinkedPath` keeps the link switch).
  *  - `type: 'scaled'`: a slider on `scale` (utils/slider-scales.js) and a number box, `snap(v, config, fromTrack)` the values it takes,
@@ -195,7 +196,9 @@ function clean(field, v) {
     case 'number': {
         if (!isNumber(v)) return undefined;
         const step = isNumber(field.step) && field.step >= 1 ? 1 : null;
-        const n = Math.max(field.min ?? -Infinity, Math.min(field.max ?? Infinity, step ? Math.round(v) : v));
+        // a range's `typedMax` (optional): what its number box takes past the slider's end (Cell-Gene's Largest dot)
+        const top = field.type === 'range' && isNumber(field.typedMax) ? field.typedMax : field.max;
+        const n = Math.max(field.min ?? -Infinity, Math.min(top ?? Infinity, step ? Math.round(v) : v));
         return n;
     }
     case 'check': return typeof v === 'boolean' ? v : undefined;

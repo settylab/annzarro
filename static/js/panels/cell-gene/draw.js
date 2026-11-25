@@ -58,6 +58,8 @@ const LARGEST_DOT = 20;
 /** The largest dot fills its cell less DOT_GAP_PX, so neighbouring dots never touch, and is never under MIN_LARGEST_DOT. */
 const DOT_GAP_PX = 2;
 const MIN_LARGEST_DOT = 4;
+/** The largest share of its cell a dot is drawn at (1000 %, Largest dot's typed ceiling). */
+const MAX_DOT_SCALE = 10;
 const ONE_SIZE = 9;
 const REFERENCE_DOTS = 5;
 /** A reference dot of the size legend takes at least this many px, so its label never meets the next dot's. */
@@ -243,7 +245,8 @@ function cellPixels(model, P, th, right) {
 /**
  * The smallest and largest dot in px. By default the largest fills a cell of the matrix (cellPixels) less DOT_GAP_PX,
  * so the dots follow the plot's size and the number of rows and groups (operator, 2026-11-23); the size legend draws
- * them smaller when its slot cannot hold them, and says so. `size.scale` (0.1 to 1) takes that share of the cell; a
+ * them smaller when its slot cannot hold them, and says so. `size.scale` (0.1 to 10) takes that share of the cell (over
+ * 1 a dot is larger than its cell and overlaps its neighbours, operator 2026-11-25); a
  * `size.largest` in px (the px range of a link from before) is kept as it is. The smallest dot is never larger than the
  * largest.
  */
@@ -251,7 +254,7 @@ function dotRange(model, P, th, right) {
     const size = model.size;
     let largest = size.largest;
     if (!(largest > 0)) {
-        const scale = size.scale > 0 ? Math.min(1, size.scale) : 1;
+        const scale = size.scale > 0 ? Math.min(MAX_DOT_SCALE, size.scale) : 1;
         largest = Math.max(MIN_LARGEST_DOT, scale * (cellPixels(model, P, th, right) - DOT_GAP_PX));
     }
     return { smallest: Math.min(size.smallest > 0 ? size.smallest : SMALLEST_DOT, largest), largest };
@@ -591,20 +594,28 @@ function pendingHover(model) {
  * Every tick is given here; annotateFigure (draw-annotations.js) keeps the labels that fit the axis's pixels, so Plotly
  * measures tens of labels, not thousands. The hover still names every cell.
  */
-function axisOf(ticks, labels, extent, th, extra) {
+function axisOf(ticks, labels, extent, th, extra, pad = 0) {
     return {
-        tickvals: ticks, ticktext: labels, range: [-0.5, Math.max(extent, 1) - 0.5], zeroline: false, automargin: true,
+        tickvals: ticks, ticktext: labels, range: [-0.5 - pad, Math.max(extent, 1) - 0.5 + pad], zeroline: false, automargin: true,
         gridcolor: th.gridColor, linecolor: th.axisColor, tickcolor: th.axisColor, ...extra
     };
+}
+
+/** How far, in cells, the largest dot reaches past its cell on each side: 0 up to a full cell. */
+function overflowOf(model) {
+    const size = model.mode === 'dots' && model.size && !model.size.none ? model.size : null;
+    return size && size.scale > 1 ? (Math.min(MAX_DOT_SCALE, size.scale) - 1) / 2 : 0;
 }
 
 function layoutAxes(model, P, th, right) {
     const groupTicks = model.groups.map((_, g) => g);
     const groupLabels = model.groups.map((g) => esc(g.label));
     const rowLabels = model.rows.map((r) => (r.own ? `<i>${esc(r.label)}</i>` : esc(r.label)));
-    // no grid lines, in dots and in a heatmap (operator, 2026-11-23)
-    const group = axisOf(groupTicks, groupLabels, P.G, th, { showgrid: false });
-    const gene = axisOf(P.pos, rowLabels, P.span, th, { showgrid: false });
+    // no grid lines, in dots and in a heatmap (operator, 2026-11-23); dots larger than their cell (Largest dot over 100 %)
+    // get room at the matrix's edges, so the plot area does not cut the outer ones (half the overflow, in cells)
+    const pad = overflowOf(model);
+    const group = axisOf(groupTicks, groupLabels, P.G, th, { showgrid: false }, pad);
+    const gene = axisOf(P.pos, rowLabels, P.span, th, { showgrid: false }, pad);
     const flip = (axis) => ({ ...axis, range: [axis.range[1], axis.range[0]] });
     // the first group, or the first gene when swapped, is at the top; genes on x are read from above, at an angle
     return model.swap
