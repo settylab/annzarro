@@ -60,7 +60,7 @@ import {
 } from '../utils/group-statistics.js';
 import { withoutLegacy } from '../utils/options-model.js';
 import { parseThresholdText } from '../utils/options-model.js';
-import { geneReads, scalingGrade } from '../utils/cell-gene-model.js';
+import { geneReads, scalingGrade, matrixWaysOut, oneRowReadsNoGenes } from '../utils/cell-gene-model.js';
 import { createCellGeneOrder } from '../utils/cell-gene-order.js';
 import { buildFigure, colourBars, sceneLabels, labelEdges, DEFAULT_CAMERA } from './cell-gene/draw.js';
 import { roundCamera } from '../utils/view-rounding.js';
@@ -147,6 +147,13 @@ const binding = createHostBinding({
     visibilityChanged: () => groupSources().sources.visibilityChanged()
 });
 
+/** The way out of this kind that the plot's matrix limit offers now, or null. */
+function matrixWay(host, kind) {
+    const panel = panelOfHost(host);
+    const ways = panel && panel.matrixWays ? panel.matrixWays() : [];
+    return ways.find((w) => w.kind === kind) || null;
+}
+
 actions.register({
     id: PROVIDER,
     owns: (host) => !!(host && host.__azCellGene),
@@ -159,7 +166,10 @@ actions.register({
             run: (rec, host) => { openPanel(rec.axisId, host.__azPanelId); } },
         'score-choose': { target: (host) => (host.__azChooser ? host.__azChooser : null), run: (select) => { select.focus(); } },
         // Asks first (UX 3.5): Fewer genes opens the section list
-        'fewer-genes': { target: (host) => (binding.shownRecord(host) ? panelOfHost(host) : null), run: (panel) => { panel.fewerGenes(); } }
+        'fewer-genes': { target: (host) => (binding.shownRecord(host) ? panelOfHost(host) : null), run: (panel) => { panel.fewerGenes(); } },
+        // the ways out of a matrix over its limit: each one edit of the plot, offered only when it would draw (matrixWaysOut)
+        'cgene-way-one-row': { target: (host) => matrixWay(host, 'one_row'), run: (way, host) => { panelOfHost(host).takeMatrixWay(way); } },
+        'cgene-way-remove': { target: (host) => matrixWay(host, 'remove'), run: (way, host) => { panelOfHost(host).takeMatrixWay(way); } }
     }
 });
 
@@ -455,6 +465,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                     const over = tooManyGenesText(src.title, counted.total);
                     out = { key: JSON.stringify([recipe.genes, recipe.down, recipe.input, recipe.method]), kind: src.kind, title: src.title, recipe,
                         total: counted.total, missing: counted.missing, down: counted.down, genes: over ? [] : counted.genes, note: over,
+                        // over the cap, a section drawn gene by gene shows none; as one row it may read them all (oneRowFits)
+                        over: !!over, allGenes: counted.genes,
                         empty: over || (counted.genes.length ? null : `No gene of ${src.title} is in this dataset.`) };
                 }
             }
@@ -489,7 +501,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const dots = _config.mode === 'dots';
             const entries = _config.sections.map((section) => {
                 const r = resolveSource(section.source);
-                return { section, genes: r.genes, down: r.down || 0, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
+                const through = section.rows === 'set' && r.over && oneRowFits(r);
+                return { section, genes: through ? r.allGenes : r.genes, through, down: r.down || 0, title: sectionTitle(section, () => r.title), empty: r.empty, scoreRecipe: r.scoreRecipe };
             });
             const threshold = baseThreshold();
             const features = planFeatures({ sections: entries, color: _config.color, size: dots && sizeDrawn() ? _config.size : null,
@@ -500,9 +513,15 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _plan = { ...features, threshold, entries, reads: geneReads(wires), featureCount: wires.length, option: { features: features.features.map((f) => f.wire), statistics: features.statistics },
                 optionKey: features.features.map((f) => f.key).join('\u0003') + JSON.stringify(features.statistics),
                 // what the matrix limit and the notices read: each section's rows and genes, the genes read
-                shape: entries.map((e, i) => ({ rows: rowsOf[i], genes: e.genes.length })),
+                shape: entries.map((e, i) => ({ rows: rowsOf[i], genes: e.through ? 0 : e.genes.length })),
                 geneCount: new Set(features.features.filter((f) => f.wire.kind === 'gene').map((f) => f.wire.name)).size };
             return _plan;
+        }
+
+        /** Whether a section over `genes_per_section` can be shown as one row: the channels read it as a score, not gene by gene. */
+        function oneRowFits(r) {
+            const dots = _config.mode === 'dots';
+            return oneRowReadsNoGenes({ color: _config.color, size: dots && sizeDrawn() ? _config.size : null, height: heightOf(_config), down: r.down || 0 });
         }
 
         /** Whether Size can be read on its layer (SHR-27): a size the layer cannot give is drawn as one size, said so. */
@@ -545,9 +564,12 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
          * request computes (its groups are pending then, not unknown).
          */
         function gateFor(plan, id) {
-            if (_gate.planKey === plan.optionKey && _gate.axis === id && _gate.ask === 'all') return _gate;
+            // the rows count too: sections that share their genes share their features, so the key alone would let a plot with
+            // another number of rows through on the answer given for the one before (Undo of a removed section)
+            const shapeKey = JSON.stringify(plan.shape);
+            if (_gate.planKey === plan.optionKey && _gate.shapeKey === shapeKey && _gate.axis === id && _gate.ask === 'all') return _gate;
             const known = knownGroups(id);
-            _gate = { ...gateMatrix({ sections: plan.shape, groups: known ? known.count : null, features: plan.featureCount, reads: plan.reads }), planKey: plan.optionKey, axis: id,
+            _gate = { ...gateMatrix({ sections: plan.shape, groups: known ? known.count : null, features: plan.featureCount, reads: plan.reads }), planKey: plan.optionKey, shapeKey, axis: id,
                 groupsOf: known ? known.groupsOf : null };
             return _gate;
         }
@@ -966,6 +988,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                         summary: r.kind ? `${KIND_WORD[r.kind] || r.kind}${title !== r.title ? ` ${r.title}` : ''} · ${sectionLine(r)}` : r.empty,
                         preview: r.genes && r.genes.length ? `${r.genes.slice(0, 6).join(', ')}${r.genes.length > 6 ? ', \u2026' : ''}` : '',
                         note: r.kind && r.empty ? r.empty : null,
+                        // a section over the genes a section draws, whose channels need no gene one by one: one row is a way out
+                        way: r.over && section.rows !== 'set' && oneRowFits(r) ? { rows: 'set', label: 'Show as one row' } : null,
                         rule: section.rows === 'set' ? rowReading({ color: withGroupingThreshold(_config, baseThreshold()).color, size: _config.mode === 'dots' && sizeDrawn() ? withGroupingThreshold(_config, baseThreshold()).size : null }, r.down || 0) : null
                     };
                 })
@@ -997,10 +1021,30 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 cells: cells && Number.isFinite(Number(cells.length)) ? Number(cells.length) : null,
                 layer: (_config.color && _config.color.layer) || null,
                 tooLarge: _gate.tooLarge,
+                ways: matrixWays(),
                 ownJobAhead: () => ownJobAhead(PanelManager.getActivePanels()
                     .filter((p) => typeOf(p) === TYPE && p.getId() !== _id && typeof p.axisSnapshot === 'function')
                     .map((p) => ({ title: p.getTitle(), snap: p.axisSnapshot() })))
             };
+        }
+
+        /**
+         * The ways out of a matrix over `matrix_values` that would draw (cell-gene-model.js matrixWaysOut), each with its
+         * section's title for the button. Empty unless the plot is refused for the size of its matrix.
+         */
+        function matrixWays() {
+            const t = _gate.tooLarge;
+            if (!t || t.reason || !_plan) return [];
+            const sections = _plan.shape.map((s, i) => ({ ...s, oneRow: _config.sections[i] && _config.sections[i].rows === 'set' }));
+            return matrixWaysOut({ groups: t.groups, sections, features: _plan.featureCount })
+                .map((w) => ({ ...w, title: _plan.entries[w.section].title }));
+        }
+
+        /** A way out of the matrix limit: one undoable step (the section as one row, or removed). */
+        function takeMatrixWay(way) {
+            if (!way || !_config.sections[way.section]) return;
+            if (way.kind === 'one_row') commit(setSectionRows(_config, way.section, 'set'), `${way.title} as one row`, { said: `${way.title} is shown as one row.` });
+            else if (way.kind === 'remove') commit(removeSection(_config, way.section), `remove ${way.title}`, { said: `${way.title} was removed.` });
         }
 
         /** The controls, shown when Toggle Controls hid them: a notice's or the checklist's button goes to one. */
@@ -1467,6 +1511,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             axisSnapshot: () => { const rec = record(); return rec ? rec.handle.read() : null; },
             plotFacts,
             fewerGenes,
+            matrixWays,
+            takeMatrixWay,
             redraw,
             snapshotChanged,
             undo,

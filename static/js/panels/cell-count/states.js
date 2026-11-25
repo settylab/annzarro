@@ -172,6 +172,8 @@ export function wayOut(action, config) {
 
 /** The size refusals of the grouping route whose figures name a count and a limit. */
 const SIZE_REASONS = Object.freeze(['too_many_groups', 'too_many_levels']);
+/** The route's refusal of a grid over its cell cap: no one input to name, the mode's own sentence. */
+const GRID_CAP = 'grid_too_large';
 
 /**
  * What Choose levels says when an input's levels, asked for alone, did not come: refused for their number (the route's
@@ -223,14 +225,17 @@ function noticeWords(cells, facts = null) {
  */
 function sizeRefusal(snap, { out, tagOf, Result, open, choose }, facts) {
     const f = snap.refused || (snap.header && snap.header.refused) || null;
-    if (!f || !facts || !SIZE_REASONS.includes(f.reason) || !Number.isFinite(Number(f.count)) || !Number.isFinite(Number(f.limit))) return undefined;
+    const reasons = [...SIZE_REASONS, 'too_many_bins', GRID_CAP];
+    if (!f || !facts || !reasons.includes(f.reason) || !Number.isFinite(Number(f.count)) || !Number.isFinite(Number(f.limit))) return undefined;
+    const mode = C.modes[facts.mode] || facts.mode;
+    const [count, limit] = [Number(f.count), Number(f.limit)];
+    const head = (text) => out('refused', 'warning', tagOf('refused', `${Result} refused`), text, '', [open, choose]);
+    if (f.reason === GRID_CAP) return head(L.grid(mode, count, limit));
     const field = facts.inputs[f.axis];
     if (!field) return undefined;
     const name = facts.nameOf(field);
-    const mode = C.modes[facts.mode] || facts.mode;
-    const [count, limit] = [Number(f.count), Number(f.limit)];
-    const text = COLOR_BY.includes(field) ? L.colorBy(name, count, L.colorsAs[facts.mode] || mode, limit) : L.levels(name, count, mode, limit);
-    return out('refused', 'warning', tagOf('refused', `${Result} refused`), text, '', [open, choose]);
+    if (f.reason === 'too_many_bins') return head(L.bins(name, count, mode, limit));
+    return head(COLOR_BY.includes(field) ? L.colorBy(name, count, L.colorsAs[facts.mode] || mode, limit) : L.levels(name, count, mode, limit));
 }
 
 /**

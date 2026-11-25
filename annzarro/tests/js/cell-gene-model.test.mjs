@@ -406,3 +406,30 @@ test('rowRule: the rule of a statistic, with down genes where the rule names a s
     assert.deepEqual(M.rowRule('mean', { down: 2 }), { plan: 'score', method: 'mean', ownScale: false, downMean: true });
     for (const stat of ['zscore_mean', 'pct_expressing', 'sum', 'sd', 'mean_expressing', 'count']) assert.equal(M.rowRule(stat, { down: 2 }), M.ROW_RULE[stat], stat);
 });
+
+test('matrixWaysOut: a section as one row, then a section removed, each only when the matrix then fits', () => {
+    // 3 sections of 40 rows over 4,000 groups: 480,000 cells against 400,000
+    const sections = [{ rows: 40, genes: 40 }, { rows: 40, genes: 40 }, { rows: 40, genes: 40 }];
+    assert.deepEqual(M.matrixWaysOut({ groups: 4000, sections }), [{ kind: 'one_row', section: 0 }, { kind: 'remove', section: 0 }]);
+    // one section already one row is not offered it again; removing a bigger one frees more
+    const mixed = [{ rows: 1, genes: 40, oneRow: true }, { rows: 60, genes: 60 }, { rows: 50, genes: 50 }];
+    assert.deepEqual(M.matrixWaysOut({ groups: 4000, sections: mixed }), [{ kind: 'one_row', section: 1 }, { kind: 'remove', section: 2 }]);
+    // no single edit is enough: nothing is offered
+    assert.deepEqual(M.matrixWaysOut({ groups: 100000, sections }), []);
+    // a plot within its limits, or over another limit, has no ways
+    assert.deepEqual(M.matrixWaysOut({ groups: 10, sections }), []);
+    assert.deepEqual(M.matrixWaysOut({ groups: 3, sections: [{ rows: 1, genes: 2001 }] }), []);
+    assert.deepEqual(M.matrixWaysOut({ groups: 10, sections, features: 1e6 }), []);
+    // one section only: it cannot be removed as a way out
+    assert.deepEqual(M.matrixWaysOut({ groups: 100000, sections: [{ rows: 5, genes: 5 }] }), [{ kind: 'one_row', section: 0 }]);
+});
+
+test('oneRowReadsNoGenes: a score, the share expressing any gene and the cell count do not read genes one by one', () => {
+    assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'zscore_mean' }, size: { stat: 'pct_expressing' } }), true);
+    assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'count' } }), true);
+    assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'mean' } }), false, 'the mean of the genes\' means reads them');
+    assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'zscore_mean' }, size: { stat: 'mean_expressing' } }), false);
+    assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'zscore_mean' }, height: { stat: 'mean' } }), false, 'a height of its own reads them');
+    // with down genes the mean is the signature's score, which is one feature
+    assert.equal(M.oneRowReadsNoGenes({ color: { stat: 'mean' }, down: 2 }), true);
+});

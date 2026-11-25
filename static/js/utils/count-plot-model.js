@@ -597,7 +597,9 @@ export function waysOut(config, refusal, ctx) {
             const n = p && ctx.levelCount ? ctx.levelCount(p) : null;
             return Number.isFinite(n) && n > 0 ? n : 1;
         };
-        const others = refusal.inputs.filter((f) => !binned.includes(f)).reduce((prod, f) => prod * levels(f), 1);
+        // the route's own count of cells tells what the other inputs make, when the page could not count their levels
+        const others = Number.isFinite(refusal.others) && refusal.others >= 1 ? refusal.others
+            : refusal.inputs.filter((f) => !binned.includes(f)).reduce((prod, f) => prod * levels(f), 1);
         const most = refusal.limits[0];
         let b = binned.length ? Math.floor(Math.pow(most / others, 1 / binned.length)) : 0;
         for (; b >= 2; b--) {
@@ -610,6 +612,26 @@ export function waysOut(config, refusal, ctx) {
         }
     }
     return out.slice(0, MOST_WAYS);
+}
+
+/**
+ * The levels each input of a config will have, by input, as far as the page knows them: a binned number by its bins, a
+ * categorical one by `ctx.levelCount` (null when it is not known). The inputs a plan reads, in the plan's names.
+ * @param {Object} config
+ * @param {Object} ctx - what `planGrid` was given
+ * @returns {Object<string, number|null>}
+ */
+export function inputSizes(config, ctx) {
+    const mode = MODES[config.mode];
+    const out = {};
+    if (!mode || mode.sets || !config.x) return out;
+    const wanted = INPUTS.filter((input) => mode[input] && config[input] && !(input === 'split' && !splitUsed(config))).map((input) => [input, config[input]]);
+    if (config.value && config.value.kind === 'top_level' && TOP_LEVEL_MODES.includes(config.mode)) wanted.push(['factor', config.value.factor]);
+    for (const [input, p] of wanted) {
+        const numeric = isBinned(p, ctx);
+        out[input] = sizeOf(prepared(p, config.mode, input, numeric), numeric, ctx);
+    }
+    return out;
 }
 
 /**

@@ -36,7 +36,7 @@ import { makeDom } from './gene-set-utilities/dom.js';
 import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { UndoStack } from '../utils/gene-signature.js';
-import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLabelsOf, waysOut } from '../utils/count-plot-model.js';
+import { normalizeCountPlot, gridShape, planGrid, readGrid, countTable, levelLabelsOf, waysOut, inputSizes } from '../utils/count-plot-model.js';
 import { countFigure, countCsv, DRAWN_MODES } from './cell-count/draw.js';
 import { figure3d, view3dGate, sceneLabels, DEFAULT_CAMERA } from './cell-count/draw-3d.js';
 import { view3dOptions, COUNT_SECTIONS } from './cell-count/options.js';
@@ -1033,11 +1033,14 @@ actions.register({
          */
         function routeFigures(snap) {
             const fig = snap && snap.state === 'refused' ? (snap.refused || (snap.header && snap.header.refused)) : null;
-            if (!fig || !Number.isInteger(fig.axis) || !Number.isFinite(Number(fig.count)) || !Number.isFinite(Number(fig.limit))) return null;
+            if (!fig || !Number.isFinite(Number(fig.count)) || !Number.isFinite(Number(fig.limit))) return null;
+            // a grid over its cell cap has no one axis to blame: its ways are the bins' (routeWays)
+            if (!Number.isInteger(fig.axis) && fig.reason !== 'grid_too_large') return null;
             let plan;
             try { plan = planGrid(shown(), page); } catch { return null; }
             if (plan.state !== 'ready') return null;
             const inputs = plan.inputs.map((i) => i.input);
+            if (fig.reason === 'grid_too_large') return { fig, field: null, inputs, count: Number(fig.count), limit: Number(fig.limit) };
             return inputs[fig.axis] ? { fig, field: inputs[fig.axis], inputs, count: Number(fig.count), limit: Number(fig.limit) } : null;
         }
 
@@ -1050,6 +1053,16 @@ actions.register({
             if (!found) return [];
             const { fig, field, inputs } = found;
             const config = shown();
+            if (fig.reason === 'grid_too_large') {
+                // Fewer bins only when the bins can make it fit: the cells the route counted, over what the binned axes make
+                // of them, is what the other inputs make; the largest bins whose grid fits that is checked by the plan
+                const sizes = inputSizes(config, page);
+                const binned = ['x', 'y'].filter((f) => inputs.includes(f) && config[f] && page.isNumeric(config[f].source));
+                const product = binned.reduce((p, f) => p * (sizes[f] || 1), 1);
+                const refusal = { state: 'refused', reason: 'grid_too_large', mode: config.mode, inputs, counts: [Number(fig.count)],
+                    limits: [Number(fig.limit)], over: [], others: Math.max(1, Math.round(Number(fig.count) / product)) };
+                return waysOut(config, refusal, page);
+            }
             const over = config[field];
             const refusal = { state: 'refused', reason: fig.reason, mode: config.mode, inputs,
                 counts: inputs.map((f, i) => (i === fig.axis ? Number(fig.count) : null)),

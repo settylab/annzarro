@@ -404,6 +404,12 @@ export function createSectionList({ D, model, on }) {
             onOpen: () => on.op(i, 'open'), onMove: (from, to) => on.move(from, to),
             menu: { label: `More for ${s.title}`, onOp: (op) => on.op(i, op),
                 items: SECTION_OPS.map(({ op, label }) => ({ op, label, disabled: (op === 'up' && i === 0) || (op === 'down' && i === n - 1) })) } });
+        if (s.way) {
+            // the note's way out: one undoable edit (Genes / One row), shown only when the section would then draw
+            const note = made.element.querySelector('.az-card__note');
+            if (note) note.append(' ', el('button', { type: 'button', class: 'btn btn-sm btn-link cgene-section__way', data: { rows: s.way.rows },
+                on: { click: () => on.rows(i, s.way.rows) } }, s.way.label));
+        }
         cards.push(made);
         return made.element;
     }

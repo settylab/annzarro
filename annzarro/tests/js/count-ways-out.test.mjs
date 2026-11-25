@@ -109,3 +109,24 @@ test('the caps are the served ones: at grid_2d_split 64 the 46 levels draw and t
     assert.equal(r.plan.state, 'ready');
     assert.deepEqual(r.ways, []);
 });
+
+test('inputSizes: a binned number by its bins, a category by the count the page knows (null when it does not)', () => {
+    const cfg = config({ mode: 'hist2d', x: obs('depth'), y: obs('pseudotime', { binning: { method: 'equal_width', bins: 30 } }), split: obs('condition') });
+    assert.deepEqual(M.inputSizes(cfg, ctx), { x: 100, y: 30, split: 2 });
+    const unknown = M.inputSizes(cfg, { ...ctx, levelCount: () => null });
+    assert.equal(unknown.split, null);
+});
+
+test('a grid over grid_cells the route counted: the others are what its count says, and Fewer bins must make it fit', () => {
+    const cfg = config({ mode: 'hist2d', x: obs('depth'), y: obs('pseudotime'), split: obs('condition') });
+    const refusal = { state: 'refused', reason: 'grid_too_large', mode: 'hist2d', inputs: ['x', 'y', 'split'], counts: [20000], limits: [4000], over: [], others: 2 };
+    const unknownLevels = { ...ctx, levelCount: () => null };
+    // the page does not know the split's levels: the route's count (20,000 over 100 x 100) says they make 2
+    return (async () => {
+        await serve({ 'limits.grid_cells': 4000 });
+        assert.deepEqual(M.waysOut(cfg, refusal, unknownLevels), [{ kind: 'bins', bins: { x: 44, y: 44 } }]);
+        // nothing binned: no way out
+        const cat = config({ mode: 'bar', x: obs('cell_type'), split: obs('condition') });
+        assert.deepEqual(M.waysOut(cat, { ...refusal, mode: 'bar', inputs: ['x', 'split'], others: 9000 }, ctx), []);
+    })();
+});

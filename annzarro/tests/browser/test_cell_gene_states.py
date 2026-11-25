@@ -117,7 +117,8 @@ def test_too_large_with_the_groups_unknown_asks_for_the_groups_alone_and_never_f
                          S1: _sig(S1, "All genes", GENES)}, open_ids=(P, S1))
     _wait_state(page, "toolarge")
     assert _says(page, TOO_LARGE) == "Remove a section or use fewer groups."
-    assert _buttons(page) == []
+    # the ways out that would draw (T-CAP): one section as one row, or one removed; no Open grouping for an obs axis
+    assert _buttons(page) == ["Show All genes as one row", "Remove All genes"]
     assert page.calls, "the groups were asked for, to know how many there are"
     assert _features(page.calls) == [], "no gene was asked for above the limit"
     _settle(page, "above the limit nothing more is asked; a request that never goes out cannot be waited on")
@@ -310,3 +311,46 @@ def test_a_grouping_over_the_levels_limit_says_that_limit_and_never_quotes_secon
     headline = page.locator(f"{NOTICE} .coverage-placeholder__headline").inner_text()
     assert "would take" not in headline and "second" not in headline, headline
     assert "2,001 levels" in headline and "2,000" in headline, headline
+
+
+# ------------------------------------------------------------------ 2b. ways out of the matrix limit (T-CAP, 14.8)
+
+def _too_large_nine(page, served):
+    _open(page, served, {P: _plot(mode="heatmap", cellAxis={"type": "obs", "key": "many"}, sections=_sections(9)),
+                         S1: _sig(S1, "All genes", GENES)}, open_ids=(P, S1))
+    _wait_state(page, "toolarge")
+
+
+def _undo_label(page):
+    return page.get_attribute(f"{TP} .cgene-undo", "title") or page.get_attribute(f"{TP} .cgene-undo", "aria-label")
+
+
+def test_show_a_section_as_one_row_draws_in_one_undoable_step(page, served):
+    _too_large_nine(page, served)
+    page.click(f"{NOTICE} .ps-action:has-text('as one row')")
+    st = _drawn(page)
+    assert st["groups"] == 1200 and st["rows"] == 321, st            # 8 sections of 40 genes and one row
+    cfg = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig()", P)
+    assert [s["rows"] for s in cfg["sections"]].count("set") == 1 and cfg["sections"][0]["rows"] == "set"
+    page.click(f"{TP} .cgene-undo")
+    _wait_state(page, "toolarge")
+    assert [s["rows"] for s in page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig()", P)["sections"]] == ["genes"] * 9
+
+
+def test_remove_a_section_draws_in_one_undoable_step(page, served):
+    _too_large_nine(page, served)
+    page.click(f"{NOTICE} .ps-action:has-text('Remove All genes')")
+    st = _drawn(page)
+    assert st["groups"] == 1200 and st["rows"] == 320, st
+    page.click(f"{TP} .cgene-undo")
+    _wait_state(page, "toolarge")
+    assert len(page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig()", P)["sections"]) == 9
+
+
+def test_no_way_is_offered_when_no_single_edit_would_draw(page, served):
+    # 20 sections of 40 genes: 800 rows over 1,200 groups; removing or folding one section leaves 760 rows, still over the limit
+    _open(page, served, {P: _plot(mode="heatmap", cellAxis={"type": "obs", "key": "many"}, sections=_sections(20)),
+                         S1: _sig(S1, "All genes", GENES)}, open_ids=(P, S1))
+    _wait_state(page, "toolarge")
+    _says(page, "1,200 groups × 800 rows = 960,000 cells of the matrix; the limit is 400,000.")
+    assert _buttons(page) == []
