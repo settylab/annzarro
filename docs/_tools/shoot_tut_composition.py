@@ -124,7 +124,93 @@ def by_type():
         {BYTYPE: True, BYFINE: True})
 
 
-VIEWS_ALL = {"da-umap": da_umap, "call": call, "check": check, "by-type": by_type}
+# --------------------------------------------------------------------------- the Cell Count Plot views
+COUNT, COUNT2, AGE = "cell-count-comp", "cell-count-comp2", "cell-grouping-age"
+# progenitor to mature, as the paper's Figure 6F orders the cell types
+MID_ORDER = ["HSC", "LMPP", "CLP", "Mono P", "MKP", "Ery P", "Myelo P", "MBE", "Pre-B cell", "Immature B cell",
+             "Mature B cell", "Neutrophil", "Monocyte", "pDC", "cDC", "ILC", "T cell", "Treg", "NK"]
+HIGH_ORDER = ["HSC", "LMPP", "GMP", "CLP", "Mono P", "MKP", "Ery P", "Myelo P", "cMoP", "MBEP", "Basophil Progenitor",
+              "Pro-B cell", "Pre-B cell", "Pre-B II cell", "Immature B cell", "Mature Naive B cell", "Memory B cell",
+              "Plasma cell", "Basophil", "Neutrophil", "Monocyte", "pDC", "cDC", "Non Classical Monocyte", "ILC",
+              "Naive CD8 T cell", "CD4 T cell", "T cell", "Treg", "NK", "CD8 TEM"]
+DIRECTION_COLOURS = {"c:up": RED, "c:neutral": GREY, "c:down": BLUE}
+
+
+def factor(key, levels=None, rest=None, colours=None):
+    f = {"source": {"type": "obs", "key": key}}
+    if levels:
+        f["levels"] = [f"c:{v}" for v in levels]
+    if rest:
+        f["rest"] = rest
+    if colours:
+        f["colors"] = {"overrides": colours}
+    return f
+
+
+def count_plot(pid, title, **cfg):
+    return {"id": pid, "title": title, "version": 1, **cfg}
+
+
+def count_view(*plots, layout=None, extra=None):
+    cfgs = {p["id"]: p for p in plots}
+    cfgs.update(extra or {})
+    if layout is None:
+        layout = tile(plots[0]["id"]) if len(plots) == 1 else split("horizontal", tile(plots[0]["id"]), tile(plots[1]["id"]), 50)
+    return view(layout, cfgs, {p["id"]: True for p in plots})
+
+
+def direction_bars():
+    return count_view(count_plot(COUNT, "Cells by the stored direction", mode="bar",
+                                 x=factor(DIRECTION, ["up", "neutral", "down"]), split=factor("midres_celltype")))
+
+
+def celltype_filled():
+    return count_view(count_plot(COUNT, "Direction of change per cell type", mode="bar", arrangement="fill",
+                                 x=factor("midres_celltype", MID_ORDER),
+                                 split=factor(DIRECTION, ["up", "neutral", "down"], colours=DIRECTION_COLOURS)))
+
+
+def highres():
+    return count_view(count_plot(COUNT, "Direction of change per fine cell type", mode="bar", arrangement="fill",
+                                 x=factor("highres_celltype", HIGH_ORDER),
+                                 split=factor(DIRECTION, ["up", "neutral", "down"], colours=DIRECTION_COLOURS)))
+
+
+def mean_lfc():
+    return count_view(count_plot(COUNT, "Mean abundance change per fine cell type", mode="bar", x=factor("highres_celltype"),
+                                 value={"kind": "measure"}, measure={"source": {"type": "obs", "key": LFC}, "stat": "mean"},
+                                 sort="height", labels="measure"))
+
+
+def da_histogram():
+    return count_view(count_plot(COUNT, "Abundance change in three cell types", mode="histogram", arrangement="overlay",
+                                 x={"source": {"type": "obs", "key": LFC}},
+                                 split=factor("midres_celltype", ["HSC", "T cell", "Mature B cell"], rest="exclude")))
+
+
+def age_grouping():
+    return {"id": AGE, "title": "Fraction and age", "version": 1,
+            "partitionings": [factor("Compartment"), factor("Age", ["Young", "Mid", "Old"])]}
+
+
+def samples():
+    return count_view(
+        count_plot(COUNT, "Cells per sample", mode="bar", x=factor("Sample"), split=factor("Compartment")),
+        count_plot(COUNT2, "Cell types within each fraction and age", mode="bar", arrangement="fill",
+                   x={"source": {"type": "cell-group", "key": AGE}}, split=factor("midres_celltype", MID_ORDER)),
+        extra={AGE: age_grouping()})
+
+
+def ways_out(split_key="highres_celltype"):
+    return count_view(count_plot(COUNT, "Young against old density", mode="hist2d",
+                                 x={"source": {"type": "obs", "key": "kompot_da_Young_log_density"}, "binning": {"method": "equal_width", "bins": 40}},
+                                 y={"source": {"type": "obs", "key": "kompot_da_Old_log_density"}, "binning": {"method": "equal_width", "bins": 40}},
+                                 split=factor(split_key)))
+
+
+VIEWS_ALL = {"da-umap": da_umap, "call": call, "check": check, "by-type": by_type,
+             "direction-bars": direction_bars, "celltype-filled": celltype_filled, "highres": highres,
+             "mean-lfc": mean_lfc, "da-histogram": da_histogram, "samples": samples, "ways-out": ways_out}
 
 
 def write_views():
@@ -252,6 +338,100 @@ def shoot(s, only):
         page.context.close()
 
 
+BARS = """(pid) => { const gd = document.querySelector('.tile[data-tile-id="' + pid + '"] .js-plotly-plot');
+  if (!gd || !gd.data) return null;
+  const ax = gd.layout.xaxis || {}; const names = {};
+  (ax.tickvals || []).forEach((v, i) => { names[String(v)] = String((ax.ticktext || [])[i]); });
+  return gd.data.map(t => ({name: t.name, type: t.type, y: t.y, z: t.z ? t.z.length : null,
+     x: (t.x || []).map(v => names[String(v)] !== undefined ? names[String(v)] : v)})); }"""
+
+
+def wait_plot(page, pid, timeout=90000):
+    page.wait_for_function("""(pid) => { const gd = document.querySelector('.tile[data-tile-id="' + pid + '"] .js-plotly-plot');
+        return gd && gd.data && gd.data.length && (gd.data[0].x || gd.data[0].z || gd.data[0].values); }""", arg=pid, timeout=timeout)
+    page.wait_for_timeout(1500)
+
+
+def by_level(traces):
+    """{trace name: {x: y}} of a bar figure."""
+    return {t["name"]: dict(zip([str(v) for v in (t["x"] or [])], t["y"] or [])) for t in traces if t.get("x")}
+
+
+def count_shots(s, want):
+    if want("direction-bars"):
+        page = s.open(direction_bars())
+        wait_plot(page, COUNT)
+        bars = by_level(page.evaluate(BARS, COUNT))
+        totals = {}
+        for name, col in bars.items():
+            for x, y in col.items():
+                totals[x] = totals.get(x, 0) + (y or 0)
+        print("NUMBER direction bars:", totals)
+        for d in ["up", "down"]:
+            top = sorted(((col.get(d, 0) or 0, name) for name, col in bars.items()), reverse=True)[:3]
+            print(f"NUMBER {d} bar, largest cell types:", top)
+        crop(s, page, COUNT, "comp-direction-bars")
+        page.context.close()
+    for name, make in [("celltype-filled", celltype_filled), ("highres", highres)]:
+        if not want(name):
+            continue
+        page = s.open(make())
+        wait_plot(page, COUNT)
+        bars = by_level(page.evaluate(BARS, COUNT))
+        print(f"NUMBER {name} traces:", list(bars))
+        for label in (["HSC", "Treg", "Mature B cell", "T cell", "Neutrophil"] if name == "celltype-filled" else
+                      ["Mature Naive B cell", "Memory B cell", "Plasma cell", "Naive CD8 T cell", "CD8 TEM"]):
+            vals = {d: bars.get(d, {}).get(label) for d in bars}
+            print(f"NUMBER {name} {label}:", vals)
+        print(f"NUMBER {name} y axis:", page.evaluate("""(pid) => { const gd = document.querySelector('.tile[data-tile-id="' + pid + '"] .js-plotly-plot');
+            return [gd.layout.barnorm, gd.layout.yaxis && gd.layout.yaxis.title && gd.layout.yaxis.title.text]; }""", COUNT))
+        crop(s, page, COUNT, f"comp-{name}")
+        page.context.close()
+    if want("mean-lfc"):
+        page = s.open(mean_lfc())
+        wait_plot(page, COUNT)
+        tr = page.evaluate(BARS, COUNT)
+        for t in tr:
+            if t.get("x"):
+                print("NUMBER mean lfc bars:", [(x, round(y, 2)) for x, y in zip(t["x"], t["y"])])
+        crop(s, page, COUNT, "comp-mean-lfc")
+        page.context.close()
+    if want("da-histogram"):
+        page = s.open(da_histogram())
+        wait_plot(page, COUNT)
+        for t in page.evaluate(BARS, COUNT):
+            xs = [x for x, y in zip(t["x"] or [], t["y"] or []) if y]
+            if xs:
+                peak = max(zip(t["y"], t["x"]))
+                print(f"NUMBER histogram {t['name']}: from {min(xs)} to {max(xs)}, peak bin {peak[1]} ({peak[0]} cells)")
+        crop(s, page, COUNT, "comp-da-histogram")
+        page.context.close()
+    if want("samples"):
+        page = s.open(samples())
+        wait_plot(page, COUNT)
+        wait_plot(page, COUNT2)
+        bars = by_level(page.evaluate(BARS, COUNT2))
+        print("NUMBER samples right, HSC:", bars.get("HSC"))
+        totals = {}
+        for col in bars.values():
+            for x, y in col.items():
+                totals[x] = totals.get(x, 0) + (y or 0)
+        print("NUMBER samples right, totals:", totals)
+        s.shot(page, "comp-samples")
+        page.context.close()
+    if want("ways-out"):
+        page = s.open(ways_out())
+        page.wait_for_timeout(8000)
+        text = page.evaluate("(s) => document.querySelector(s + ' .tile-content').innerText", T(COUNT))
+        print("NUMBER ways out:", text.replace("\n", " | ")[:700])
+        crop(s, page, COUNT, "comp-ways-out", height=560)
+        page.context.close()
+        page = s.open(ways_out(DIRECTION))
+        wait_plot(page, COUNT)
+        crop(s, page, COUNT, "comp-ways-out-split")
+        page.context.close()
+
+
 def age_numbers(s):
     """The numbers of the counting-by-age section, read off cross-tables (no figure)."""
     G = "cell-grouping-age"
@@ -282,6 +462,7 @@ def main():
     write_views()
     with Session(port=args.port, out=OUT) as s:
         shoot(s, set(args.only or []))
+        count_shots(s, lambda name: not args.only or name in args.only)
         if not args.only or "age" in args.only:
             age_numbers(s)
 

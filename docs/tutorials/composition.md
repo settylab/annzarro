@@ -62,22 +62,47 @@ sections count them.
 (tut-comp-count)=
 ## 2. Count the called cells
 
-% Cell Count Plot figures follow once the Count Plot's fractions have landed (comp-direction-bars.png).
+::::{dropdown} Start here: the stored direction, split by cell type
+```{literalinclude} ../_static/panelsets/tutorials/tut-composition-direction-bars.url.txt
+:language: text
+```
+Panel set file: {download}`tut-composition-direction-bars.json <../_static/panelsets/tutorials/tut-composition-direction-bars.json>`.
+::::
 
 1. Add a **Cell Count Plot**. **X**: `obs` `kompot_da_Young_to_Old_lfc_direction`. Three bars: 580 cells `up`, 7,018
    `neutral`, 492 `down`.
-2. **Color by**: `obs` `midres_celltype`. The `up` bar is mostly HSCs; the `down` bar mostly mature B cells and T
-   cells.
+2. **Color by**: `obs` `midres_celltype`. Of the 580 `up` cells, 273 are HSCs, 110 mature B cells and 92 T cells; of
+   the 492 `down` cells, 387 are mature B cells and 102 T cells.
+
+```{figure} ../_static/screens/tutorials/comp-direction-bars.png
+:class: screenshot
+:alt: A Cell Count Plot with three stacked bars, up, neutral and down, coloured by 19 cell types. The neutral bar is by far the tallest; the up bar is mostly the HSC colour, the down bar mostly the mature B cell colour.
+
+The stored direction, each bar split by cell type.
+```
 
 (tut-comp-filled)=
-## 3. The paper's Figure 6F: each cell type filled by direction
+## 3. Each cell type, filled by direction
 
-% Figure pending: comp-celltype-filled.png.
+::::{dropdown} Start here: cell types filled by direction, progenitor to mature
+```{literalinclude} ../_static/panelsets/tutorials/tut-composition-celltype-filled.url.txt
+:language: text
+```
+Panel set file: {download}`tut-composition-celltype-filled.json <../_static/panelsets/tutorials/tut-composition-celltype-filled.json>`.
+::::
 
 1. Turn the plot round: **X** `midres_celltype`, **Color by** `kompot_da_Young_to_Old_lfc_direction`.
 2. Set the arrangement to **Filled**. Each bar now reaches 1, and its colours are the fractions of the cell type's
-   cells called `up`, `neutral` and `down`. Order the bars from progenitor to mature with **Choose levels**, as the
-   figure does.
+   cells called `up`, `neutral` and `down`; the axis reads "Fraction of cells in each bar". Order the bars from
+   progenitor to mature with **Choose levels**, as the paper's Figure 6F does {cite:p}`otto2025kompot`, and give the
+   three directions their colours there.
+
+```{figure} ../_static/screens/tutorials/comp-celltype-filled.png
+:class: screenshot
+:alt: A Cell Count Plot of 19 cell types from HSC to NK, each bar filled to 1 and split into up (red), neutral (grey) and down (blue). HSC is mostly red; Mature B cell mostly blue with some red; T cell about a third red, a third grey and a third blue; most other bars are grey.
+
+Each cell type's cells by direction, as fractions of the bar. Mature B cells and T cells hold both directions.
+```
 
 | Cell type | Cells | Fraction `up` | Fraction `down` |
 |---|---|---|---|
@@ -92,9 +117,21 @@ T cells are split: about a third called up and a third down.
 (tut-comp-fine)=
 ## 4. Resolve the split with the finer annotation
 
-% Figure pending: comp-highres.png.
+::::{dropdown} Start here: the fine cell types, filled by direction
+```{literalinclude} ../_static/panelsets/tutorials/tut-composition-highres.url.txt
+:language: text
+```
+Panel set file: {download}`tut-composition-highres.json <../_static/panelsets/tutorials/tut-composition-highres.json>`.
+::::
 
 Set **X** to `highres_celltype` (31 levels).
+
+```{figure} ../_static/screens/tutorials/comp-highres.png
+:class: screenshot
+:alt: The same filled bars for 31 fine cell types. Mature Naive B cell and Naive CD8 T cell are almost all blue; Memory B cell, Plasma cell and CD8 TEM mostly red.
+
+The fine cell types: the naive states are blue, the memory states red.
+```
 
 | Fine cell type | Cells | Fraction `up` | Fraction `down` |
 |---|---|---|---|
@@ -113,20 +150,52 @@ section 8.
 (tut-comp-mean)=
 ## 5. A statistic instead of a count
 
-% Steps and figure pending (comp-mean-lfc.png): the mean log fold change per cell type, sorted, read in the build.
+::::{dropdown} Start here: the mean log fold change per fine cell type, sorted
+```{literalinclude} ../_static/panelsets/tutorials/tut-composition-mean-lfc.url.txt
+:language: text
+```
+Panel set file: {download}`tut-composition-mean-lfc.json <../_static/panelsets/tutorials/tut-composition-mean-lfc.json>`.
+::::
 
-Set **X** back to `midres_celltype` and **Height** to the mean of `obs` `kompot_da_Young_to_Old_lfc`, then **Sort by
-height**. The bars order the cell types by their average change in abundance, with no threshold at all. Show the
-values with **Labels**.
+A count needs a threshold; a statistic does not.
+
+1. Remove **Color by** (**None (constant)**). Set **Height** to **Statistic of…**; in the **Of** row choose `obs`
+   `kompot_da_Young_to_Old_lfc`. The button at the end of the row shows **x̄**: each bar is the mean over its cells.
+2. Press **Sort by height**, and set **Labels** to **Statistic**.
+
+```{figure} ../_static/screens/tutorials/comp-mean-lfc.png
+:class: screenshot
+:alt: Bars of the mean log fold change for 31 fine cell types, sorted from Memory B cell at 1.784 down to Naive CD8 T cell at -2.317, each labelled with its value; Mature Naive B cell is second lowest at -1.465.
+
+The mean abundance change of each fine cell type, sorted, with no threshold.
+```
+
+The ends are the same states as before: Memory B cells highest (+1.78), then Tregs (+1.66); Mature Naive B cells
+(−1.47) and Naive CD8 T cells (−2.32) lowest. At the coarser annotation the split T cells average to −0.19, close to
+no change at all: a mean over a group hides changes that go both ways inside it.
 
 (tut-comp-hist)=
 ## 6. The continuum
 
-% Steps and figure pending (comp-da-histogram.png).
+::::{dropdown} Start here: the log fold change of three cell types, overlaid
+```{literalinclude} ../_static/panelsets/tutorials/tut-composition-da-histogram.url.txt
+:language: text
+```
+Panel set file: {download}`tut-composition-da-histogram.json <../_static/panelsets/tutorials/tut-composition-da-histogram.json>`.
+::::
 
 **Mode** **Histogram**, **X** `kompot_da_Young_to_Old_lfc`, **Color by** `midres_celltype` limited with **Choose
-levels** to HSC, T cell and Mature B cell, **Overlaid**. Each cell type's cells spread along the log fold change; the
-HSCs sit to the right.
+levels** to HSC, T cell and Mature B cell, and **Overlaid**. The footer counts the cells drawn: 1,179 of 8,090.
+
+```{figure} ../_static/screens/tutorials/comp-da-histogram.png
+:class: screenshot
+:alt: Overlaid histograms of the abundance log fold change for HSC (pink), T cell (orange) and Mature B cell (green). HSCs form one tall peak between about 1.5 and 1.8; Mature B cells a tall peak near -1.7 with a long tail up to about 2.6; T cells two groups, one near -2.6 and one between about 0.5 and 1.8.
+
+The cells of three cell types along the log fold change.
+```
+
+The HSCs form one peak, from −0.32 to 1.71 with most cells near 1.7. The T cells are two groups, one near −2.6 and one
+above 0.5: the naive and memory states of section 4. The mature B cells peak near −1.7 and spread up to 2.6.
 
 (tut-comp-call)=
 ## 7. Rebuild the call, then change it
@@ -195,8 +264,8 @@ is on the diagonal.
 ```
 
 Now change the call. Drag the handles to −0.5 and 0.5 and watch the groups follow: 1,137 cells gained and 534 lost now
-pass the tail probability as well (64 and 40 more do not). The UMAP follows the grouping. This is the paper's Figure
-6B to 6D with the thresholds in your hands.
+pass the tail probability as well (64 and 40 more do not). The UMAP follows the grouping: the call of the paper's
+Figure 6B to 6D, with the thresholds in your hands {cite:p}`otto2025kompot`.
 
 The store holds the young to old comparison only. The paper separates an early phase (young to middle-aged: the mature
 compartment, naive to memory) from a late one (middle-aged to old: the progenitors, most of all the HSCs) with two
@@ -225,15 +294,27 @@ Cell types (left) and fine cell types (right) against the call: the counts of th
 (tut-comp-age)=
 ## 9. Why not just count cells by age?
 
-% Count Plot steps and figure pending (comp-samples.png).
+::::{dropdown} Start here: cells per sample, and the cell types within each fraction and age
+```{literalinclude} ../_static/panelsets/tutorials/tut-composition-samples.url.txt
+:language: text
+```
+Panel set file: {download}`tut-composition-samples.json <../_static/panelsets/tutorials/tut-composition-samples.json>`.
+::::
 
 1. **X** `midres_celltype`, **Color by** `Age`, **Filled**. By this count most HSCs come from old mice (241 of 319,
    7 from young ones), and neutrophils look unchanged.
 2. **X** `Sample`, **Color by** `Compartment`. The 16 samples are two sorted fractions, HSPC and Mature, eight each,
    with 322 to 649 cells per sample. A cell type's share of the whole dataset is set by the sort, not by the mouse.
-3. A fairer count compares like with like. Make a second **Cell Grouping** of `Compartment` and `Age` and use it as
-   **X**, **Color by** `midres_celltype`. Within the HSPC fraction, the HSC fraction is 0.006 in young and 0.185 in old
-   mice.
+3. A fairer count compares like with like. Make a second **Cell Grouping** of `Compartment` and `Age`. In a Count
+   Plot set **X** to **Cell Grouping** and that grouping, **Color by** `midres_celltype`, **Filled**. Within the HSPC
+   fraction, the HSC fraction is 0.006 in young and 0.185 in old mice (6 of 1,086 cells, and 235 of 1,270).
+
+```{figure} ../_static/screens/tutorials/comp-samples.png
+:class: screenshot
+:alt: Left, cells per sample: eight HSPC samples of about 320 to 430 cells in blue, eight Mature samples of about 580 to 650 cells in orange. Right, six filled bars, HSPC and Mature for Young, Mid and Old, each split by cell type; the HSC share at the bottom of the HSPC bars is a sliver for Young and largest for Old.
+
+Left: every sample is one sorted fraction, with similar cell numbers. Right: the cell types within each fraction and age.
+```
 
 For the young to old comparison the store holds, the raw count and Kompot agree for HSCs. A share of sorted cells is not
 a density over the cell-state space, though: the density needs no cell types to be defined first, every cell carries its
@@ -243,11 +324,34 @@ own uncertainty, and the paper's timing of the HSC expansion (middle-aged to old
 (tut-comp-limit)=
 ## 10. A limit, on purpose
 
-% Steps and figure pending (comp-ways-out.png): the 2D histogram's refusal and Split by another column.
+::::{dropdown} Start here: the 2D histogram of the two densities, coloured by 31 fine cell types
+```{literalinclude} ../_static/panelsets/tutorials/tut-composition-ways-out.url.txt
+:language: text
+```
+Panel set file: {download}`tut-composition-ways-out.json <../_static/panelsets/tutorials/tut-composition-ways-out.json>`.
+::::
 
 **Mode** **2D histogram**, **X** `kompot_da_Young_log_density`, **Y** `kompot_da_Old_log_density`, **Color by**
-`highres_celltype`: AnnZarro refuses 31 levels and offers **Split by another column ▾** and **Switch to Bar**. Split by
-the direction instead (3 levels): the cells off the diagonal are the called ones. **Undo** steps back.
+`highres_celltype`. The plot is not drawn, and says why:
+
+```{figure} ../_static/screens/tutorials/comp-ways-out.png
+:class: screenshot
+:alt: A 2D histogram's controls with Color by highres_celltype; in place of the plot the sentence 'Color by highres_celltype has 31 levels; 2D histogram colors up to 8.' and three buttons, Split by another column, Switch to Bar and Remove Color by.
+
+Too many colours for a 2D histogram: the limit, and the ways out.
+```
+
+Take **Split by another column ▾** and choose `kompot_da_Young_to_Old_lfc_direction` (3 levels). For the X and Y
+bins to hold enough cells to see, set 40 bins on each in their **Bins** pop-overs.
+
+```{figure} ../_static/screens/tutorials/comp-ways-out-split.png
+:class: screenshot
+:alt: A 2D histogram of the young log density (x) against the old (y), 40 bins each, coloured by the direction: the grey neutral cells lie along the diagonal; a red block sits above it near x = -0.1, y = 1.5; a blue band lies below it near y = 0.6, x from 1.7 to 2.4.
+
+The two densities, coloured by the stored direction. Red cells are denser in old mice than in young ones, blue the reverse; the neutral cells lie near the diagonal.
+```
+
+**Undo** steps back to the refusal.
 
 ## 11. Keep the result
 
@@ -275,7 +379,14 @@ for another server or store location. As panel set files:
 {download}`da-umap <../_static/panelsets/tutorials/tut-composition-da-umap.json>`,
 {download}`call <../_static/panelsets/tutorials/tut-composition-call.json>`,
 {download}`check <../_static/panelsets/tutorials/tut-composition-check.json>`,
-{download}`by-type <../_static/panelsets/tutorials/tut-composition-by-type.json>`. **Load Panel Set**, upload, then
+{download}`by-type <../_static/panelsets/tutorials/tut-composition-by-type.json>`,
+{download}`direction-bars <../_static/panelsets/tutorials/tut-composition-direction-bars.json>`,
+{download}`celltype-filled <../_static/panelsets/tutorials/tut-composition-celltype-filled.json>`,
+{download}`highres <../_static/panelsets/tutorials/tut-composition-highres.json>`,
+{download}`mean-lfc <../_static/panelsets/tutorials/tut-composition-mean-lfc.json>`,
+{download}`da-histogram <../_static/panelsets/tutorials/tut-composition-da-histogram.json>`,
+{download}`samples <../_static/panelsets/tutorials/tut-composition-samples.json>`,
+{download}`ways-out <../_static/panelsets/tutorials/tut-composition-ways-out.json>`. **Load Panel Set**, upload, then
 **Load** opens one ({doc}`../user-guide/panel-sets`).
 
 ## What you learned

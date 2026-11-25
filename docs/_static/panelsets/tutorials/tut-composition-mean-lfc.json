@@ -1,0 +1,88 @@
+{
+ "name": "Tutorial: composition, mean-lfc",
+ "timestamp": "2026-11-25T22:35:16+00:00",
+ "dataset": "bm_aging_annzarro.zarr",
+ "datasetName": "bm_aging_annzarro",
+ "constants": {
+  "focusedGene": "Apoe",
+  "taxonomyId": "10090"
+ },
+ "panelConfigs": {
+  "cell-count-comp": {
+   "id": "cell-count-comp",
+   "type": "cell-count",
+   "title": "Mean abundance change per fine cell type",
+   "config": {
+    "id": "cell-count-comp",
+    "title": "Mean abundance change per fine cell type",
+    "version": 1,
+    "mode": "bar",
+    "x": {
+     "source": {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    },
+    "value": {
+     "kind": "measure"
+    },
+    "measure": {
+     "source": {
+      "type": "obs",
+      "key": "kompot_da_Young_to_Old_lfc"
+     },
+     "stat": "mean"
+    },
+    "sort": "height",
+    "labels": "measure"
+   },
+   "isSelectionTile": false
+  }
+ },
+ "view": {
+  "v": 1,
+  "constants": {
+   "focusedGene": "Apoe",
+   "taxonomyId": "10090"
+  },
+  "layout": {
+   "v": 1,
+   "hierarchy": [
+    {
+     "type": "tile",
+     "id": "cell-count-comp",
+     "controlsVisible": false
+    }
+   ],
+   "controlState": {
+    "cell-count-comp": true
+   },
+   "panelConfigs": {
+    "cell-count-comp": {
+     "id": "cell-count-comp",
+     "title": "Mean abundance change per fine cell type",
+     "version": 1,
+     "mode": "bar",
+     "x": {
+      "source": {
+       "type": "obs",
+       "key": "highres_celltype"
+      }
+     },
+     "value": {
+      "kind": "measure"
+     },
+     "measure": {
+      "source": {
+       "type": "obs",
+       "key": "kompot_da_Young_to_Old_lfc"
+      },
+      "stat": "mean"
+     },
+     "sort": "height",
+     "labels": "measure"
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,46 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "Apoe",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "cell-count-comp",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "cell-count-comp": true
+  },
+  "panelConfigs": {
+   "cell-count-comp": {
+    "id": "cell-count-comp",
+    "title": "Mean abundance change per fine cell type",
+    "version": 1,
+    "mode": "bar",
+    "x": {
+     "source": {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    },
+    "value": {
+     "kind": "measure"
+    },
+    "measure": {
+     "source": {
+      "type": "obs",
+      "key": "kompot_da_Young_to_Old_lfc"
+     },
+     "stat": "mean"
+    },
+    "sort": "height",
+    "labels": "measure"
+   }
+  }
+ }
+}
