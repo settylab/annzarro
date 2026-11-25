@@ -346,7 +346,9 @@ def test_switching_the_grouping_keeps_the_group_of_the_same_name_or_takes_the_fi
     until(page, """async () => { const R = await import('/static/js/utils/source-registry.js');
         const m = R.getSource('group-stat').aggregate.members({ type: 'group-stat', key: 'cell-grouping-B', column: '' });
         return !!m && m.options.length > 1; }""")
+    _wait_colours(page, 40)              # the first draw has asked and landed: its request is not counted as the switch's
     n = len(_genes(page))
+    assert n == 1, "the plot's own first request"
     with page.expect_request(_computes_genes) as asked:
         page.select_option(axis_sets.sel(C, "color", "column"), _entry("cell-grouping-B"))
     assert json.loads(asked.value.post_data)["group"] == ["c:T cell"], "T cell is a group of both: it is kept"
@@ -550,3 +552,42 @@ def test_zscore_mean_on_csr_disabled_with_reason(page, served_csr):
     rows = {r["v"]: r for r in axis_sets.aggregations(page, C, "color")}
     assert rows["zscore_mean"]["off"] is True
     assert rows["zscore_mean"]["title"] == "Z-score mean of a cell group needs a whole-layer read on this store's layout; coming with the moments cache."
+
+
+# ------------------------------------------------------------------ a grouping picked before its groups are known
+
+def test_a_grouping_picked_before_its_reply_lands_takes_its_first_group_with_one_request_and_no_undo_step(page, served):
+    """The grouping's reply is held. The pick leaves the group unset; when the reply lands the row takes the first group (the
+    rule of a grouping switch), asks once, and the change is the pick's one undo step, not a second."""
+    held = []
+
+    def hold(route):
+        request = route.request
+        body = json.loads(request.post_data or "{}")
+        if request.method == "POST" and body.get("shape") != "genes" and not body.get("estimate_only"):
+            held.append(route)
+            return
+        route.continue_()
+    page.route("**/api/v1/data/cell_groups**", hold)
+    _open(page, served, {G: _plot(), GA: _grouping()})
+    page.select_option(axis_sets.sel(C, "color", "type"), "layer")
+    until(page, "([s]) => document.querySelector(s).options.length > 1", [axis_sets.sel(C, "color", "key")])
+    page.select_option(axis_sets.sel(C, "color", "key"), "logged")
+    until(page, "([s, v]) => [...document.querySelector(s).options].some(o => o.value === v)", [axis_sets.sel(C, "color", "column"), _entry()])
+    page.select_option(axis_sets.sel(C, "color", "column"), _entry())
+    page.click(f"{C} .plot-controls", position={"x": 3, "y": 3})            # a click of the user's own: the pick is seen as its step
+    page.wait_for_selector(f"#plot-undo-{G}:not([disabled])")
+    assert held, "the grouping's reply is held"
+    assert not _genes(page) and not _config(page).get("column"), "nothing is asked and no group is set while its groups are unknown"
+    with page.expect_request(_computes_genes):
+        for route in held:
+            route.continue_()
+        page.unroute("**/api/v1/data/cell_groups**", hold)
+    until(page, "(g) => window.PanelManager.getPanel(g).getConfig().color.column", G, timeout=30)
+    _wait_colours(page, 40)
+    assert len(_genes(page)) == 1, "one request"
+    assert page.input_value(_member()) == _config(page)["column"], "the group select shows the group it took"
+    before = page.evaluate("(g) => window.PanelManager.getPanel(g).getConfig().color.type", G)
+    page.click(f"#plot-undo-{G}")
+    until(page, "(g) => window.PanelManager.getPanel(g).getConfig().color.type !== 'group-stat'", G)
+    assert _config(page).get("type") != "group-stat", f"one Undo returns to the colour before ({before})"
