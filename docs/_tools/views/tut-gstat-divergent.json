@@ -1,0 +1,148 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "Cd79a",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 64,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 36,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "cell-gene-gs",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "gene-table-gs",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-gene-gs": false,
+   "gene-table-gs": false,
+   "cell-grouping-fine": false
+  },
+  "panelConfigs": {
+   "cell-gene-gs": {
+    "id": "cell-gene-gs",
+    "title": "Opposing genes by fine cell type",
+    "version": 1,
+    "mode": "heatmap",
+    "sections": [
+     {
+      "source": "gene-table-gs",
+      "rows": "genes"
+     }
+    ],
+    "cellAxis": {
+     "type": "cell-group",
+     "key": "cell-grouping-fine"
+    },
+    "color": {
+     "stat": "mean",
+     "layer": "kompot_de_Young_to_Old_fold_change"
+    },
+    "colorScale": "RdBu",
+    "center": 0,
+    "swap": false
+   },
+   "gene-table-gs": {
+    "id": "gene-table-gs",
+    "title": "Opposite in naive and memory B cells",
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_is_de",
+      "column": ""
+     },
+     {
+      "type": "group-stat",
+      "key": "cell-grouping-fine",
+      "column": "[\"c:Mature Naive B cell\"]",
+      "stat": "mean",
+      "layer": "kompot_de_Young_to_Old_fold_change",
+      "groupWas": [
+       "Mature Naive B cell"
+      ],
+      "label": "Fine cell types"
+     },
+     {
+      "type": "group-stat",
+      "key": "cell-grouping-fine",
+      "column": "[\"c:Memory B cell\"]",
+      "stat": "mean",
+      "layer": "kompot_de_Young_to_Old_fold_change",
+      "groupWas": [
+       "Memory B cell"
+      ],
+      "label": "Fine cell types"
+     }
+    ],
+    "pageLength": 25,
+    "searchBuilderEnabled": true,
+    "searchBuilderConfig": {
+     "criteria": [
+      {
+       "condition": "=",
+       "data": "kompot_de_Young_to_Old_is_de",
+       "origData": "var_kompot_de_Young_to_Old_is_de_main",
+       "type": "string",
+       "value": [
+        "true"
+       ]
+      },
+      {
+       "condition": "<",
+       "data": "Mature Naive B cell: mean \u00b7 kompot_de_Young_to_Old_fold_change",
+       "origData": "group-stat_cell-grouping-fine_\u241e5b\u241e\"c:Mature_Naive_B_cell\"\u241e5d\u241e__of_kompot_de_Young_to_Old_fold_change__as_mean",
+       "type": "num",
+       "value": [
+        "-0.2"
+       ]
+      },
+      {
+       "condition": ">",
+       "data": "Memory B cell: mean \u00b7 kompot_de_Young_to_Old_fold_change",
+       "origData": "group-stat_cell-grouping-fine_\u241e5b\u241e\"c:Memory_B_cell\"\u241e5d\u241e__of_kompot_de_Young_to_Old_fold_change__as_mean",
+       "type": "num",
+       "value": [
+        "0.2"
+       ]
+      }
+     ],
+     "logic": "AND"
+    }
+   },
+   "cell-grouping-fine": {
+    "id": "cell-grouping-fine",
+    "title": "Fine cell types",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "highres_celltype"
+      }
+     }
+    ]
+   }
+  }
+ }
+}

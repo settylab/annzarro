@@ -1,0 +1,76 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "Cd79a",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "gene-plot-gs",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "gene-plot-gs": true
+  },
+  "panelConfigs": {
+   "gene-plot-gs": {
+    "id": "gene-plot-gs",
+    "title": "Mean fold change: naive (x) against memory B cells (y)",
+    "x": {
+     "type": "group-stat",
+     "key": "cell-grouping-fine",
+     "column": "[\"c:Mature Naive B cell\"]",
+     "stat": "mean",
+     "layer": "kompot_de_Young_to_Old_fold_change",
+     "groupWas": [
+      "Mature Naive B cell"
+     ]
+    },
+    "y": {
+     "type": "group-stat",
+     "key": "cell-grouping-fine",
+     "column": "[\"c:Memory B cell\"]",
+     "stat": "mean",
+     "layer": "kompot_de_Young_to_Old_fold_change",
+     "groupWas": [
+      "Memory B cell"
+     ]
+    },
+    "z": null,
+    "color": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_is_de",
+     "column": ""
+    },
+    "pointSize": 6,
+    "pointOpacity": 0.9,
+    "showZeroLines": true,
+    "highlightFocusedGene": true,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "tableFilter": "none"
+   },
+   "cell-grouping-fine": {
+    "id": "cell-grouping-fine",
+    "title": "Fine cell types",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "highres_celltype"
+      }
+     }
+    ]
+   }
+  }
+ }
+}
