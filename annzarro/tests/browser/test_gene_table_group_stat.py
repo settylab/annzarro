@@ -95,24 +95,13 @@ def _agg_entries(page, entity=GA):
 
 
 def _add(page, stat="mean", layer="logged", entity=GA, group=None):
-    """Choose the group, layer and statistic in the add row and press Add column. The tab is built again whenever panels
-    come or go (a grouping resolving its groups is one), which puts the row back to its start and detaches what was open; so
-    the choice is made again until the row holds the one asked for."""
+    """Choose the group, layer and statistic in the add row and press Add column."""
     g = _group_group(entity)
-    for _ in range(5):
-        try:
-            if group is not None:
-                page.select_option(f"{g} .az-score-add-group", group, timeout=5000)
-            page.select_option(f"{g} .az-score-add-layer", layer, timeout=5000)
-            page.click(f"{g} .az-score-add-agg", timeout=5000)
-            page.locator(AGG).wait_for(state="visible", timeout=5000)
-            page.click(f"{AGG} [data-agg='{stat}']", timeout=5000)
-            if page.input_value(f"{g} .az-score-add-layer", timeout=5000) == layer:
-                page.click(f"{g} .az-score-add-btn", timeout=5000)
-                return
-        except playwright.TimeoutError:
-            pass
-    raise AssertionError("the add row kept resetting")
+    if group is not None:
+        page.select_option(f"{g} .az-score-add-group", group)
+    page.select_option(f"{g} .az-score-add-layer", layer)
+    _pick_agg(page, entity, stat)
+    page.click(f"{g} .az-score-add-btn")
 
 
 def _apply(page):
@@ -381,3 +370,31 @@ def test_loop_grouping_not_filterable_with_note(page, served):
     assert page.evaluate("""async ([a, b, t]) => { const R = await import('/static/js/utils/source-registry.js');
         const half = R.getSource('group-stat').table;
         return [half.filterable({ key: a }, t), half.filterable({ key: b }, t)]; }""", [GA, GB, TID]) == [True, False]
+
+
+NK_KEY = json.dumps(["c:NK cell"], separators=(",", ":"))
+
+
+def test_add_row_survives_a_panels_changed_event_mid_pick(page, served):
+    """The page says "panels changed" for many reasons. One that changes nothing here leaves the tab as it is; one that does
+    (a grouping renamed) builds it again with the group, layer and statistic chosen kept."""
+    _open(page, served)
+    _open_tab(page)
+    g = _group_group()
+    page.select_option(f"{g} .az-score-add-group", NK_KEY)
+    page.select_option(f"{g} .az-score-add-layer", "counts")
+    _pick_agg(page, GA, "sum")
+    read = """(g) => { const row = document.querySelector(g + ' .az-score-add');
+        window.__addRow = window.__addRow || row;
+        return { same: window.__addRow === row, group: row.querySelector('.az-score-add-group').value,
+            layer: row.querySelector('.az-score-add-layer').value, agg: row.querySelector('.az-score-add-agg').getAttribute('aria-label') }; }"""
+    page.evaluate(read, g)                                                          # remembers this row
+    page.evaluate("() => document.dispatchEvent(new CustomEvent('annzarro:panels-changed'))")
+    same = page.evaluate(read, g)
+    assert same["same"] is True, "nothing changed: the tab is left alone"
+    page.evaluate("(id) => { window.PanelManager.getPanel(id).setTitle('Renamed'); document.dispatchEvent(new CustomEvent('annzarro:panels-changed')); }", GA)
+    now = page.evaluate(read, f"{PANE} .az-score-group[data-entity='{GA}']")
+    assert now["same"] is False, "the grouping was renamed: the tab is built again"
+    assert now["group"] == NK_KEY and now["layer"] == "counts" and "Sum" in now["agg"], now
+    page.click(f"{_group_group()} .az-score-add-btn")
+    assert page.locator("input[data-type='group-stat'][data-layer='counts']:checked").count() == 1

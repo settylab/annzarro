@@ -582,7 +582,7 @@ function fillGroupSelect(select, menu) {
  * @param {string} id - the table panel's id
  * @param {Object} settings
  */
-function sourceAddRow(provider, entity, group, id, settings) {
+function sourceAddRow(provider, entity, group, id, settings, restore = null) {
     const add = provider.table.chooser.add;
     const row = document.createElement('div');
     row.className = 'az-score-add ms-3';
@@ -623,6 +623,16 @@ function sourceAddRow(provider, entity, group, id, settings) {
         after: (changed, value, p) => add.after(entity, changed, value, p)
     });
     agg.update();       // the button's first paint came before the pair existed
+    row.__state = () => ({ group: groupSel ? groupSel.value : null, layer: pair.value().layer, method: pair.value().method, note: note.textContent });
+    // the tab is built again whenever panels come, go or are renamed: what the user had chosen in this row stays, where
+    // it can still be chosen (a group or layer that is gone, or a statistic that cannot be given now, falls back to the start)
+    if (restore) {
+        if (groupSel && restore.group && [...groupSel.options].some(o => o.value === restore.group && !o.disabled)) groupSel.value = restore.group;
+        const usable = (list, v) => list.some(o => o.value === v && !o.disabled);
+        if (restore.layer && restore.layer !== pair.value().layer && usable(add.menus(entity, pair.value()).layers, restore.layer)) pair.pick('layer', restore.layer);
+        if (restore.method && restore.method !== pair.value().method && usable(add.menus(entity, pair.value()).methods, restore.method)) pair.pick('method', restore.method);
+        note.textContent = restore.note || '';
+    }
     button.addEventListener('click', () => {
         const p = pair.value();
         let item = { type: provider.type, key: entity.id, column: p.method, layer: p.layer };
@@ -663,6 +673,22 @@ export function buildSourceTab(provider, id, settings, structure = null) {
     const list = pane.querySelector('.checkbox-list');
     if (!list) return;
     const search = pane.querySelector('.column-search');
+    // a tab whose content would be the same is left alone: an open pop-over, a focused select and a half-made choice stay
+    // exactly where they are (the page says "panels changed" for many reasons that change nothing here)
+    const ticked0 = (settings.columns || []).filter(c => c.type === provider.type);
+    const signature = JSON.stringify([provider.entities().map(e => [e.id, e.title, !!e.open]),
+        ticked0.map(c => chooser.identity ? chooser.identity(c) : [c.key, c.column, c.layer]),
+        chooser.add && chooser.add.group ? provider.entities().map(e => chooser.add.group.menu(e).options.map(o => [o.value, o.text, !!o.disabled])) : null,
+        provider.entities().map(e => chooser.entityNote ? chooser.entityNote(e, id) : ''),
+        provider.entities().map(e => chooser.options(e, ticked0, id).map(o => [o.column, o.layer, o.text, o.note || '']))]);
+    if (list.children.length && pane.__signature === signature) return;
+    pane.__signature = signature;
+    // each add row's choice, kept across the rebuild
+    const kept = new Map();
+    for (const old of list.querySelectorAll('.az-score-group')) {
+        const state = old.querySelector('.az-score-add') && old.querySelector('.az-score-add').__state;
+        if (state) kept.set(old.dataset.entity, state());
+    }
     list.innerHTML = '';
     const entities = provider.entities();
     if (!entities.length) {
@@ -709,7 +735,7 @@ export function buildSourceTab(provider, id, settings, structure = null) {
                 : c.key === entity.id && subOf(c) === sub.column && chooser.layerOf(c) === (sub.layer || '')));
             group.appendChild(div);
         }
-        if (chooser.add) sourceAddRow(provider, entity, group, id, settings);
+        if (chooser.add) sourceAddRow(provider, entity, group, id, settings, kept.get(entity.id));
         list.appendChild(group);
     }
     if (search && !search.dataset.scoreBound) {
@@ -740,6 +766,8 @@ export function buildSourceTab(provider, id, settings, structure = null) {
             }
         });
     }
+    // the search text stays over a rebuild: its filter is applied to the new rows too
+    if (search && search.value) search.dispatchEvent(new Event('input'));
 }
 
 /**
