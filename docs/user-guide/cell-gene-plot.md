@@ -99,14 +99,17 @@ pop-over is open at a time.
 
 ## Sections
 
-Each section is a row of the list: its title, the source and its gene count, **Genes** or **One row**, and **⋯**
-(**Duplicate**, **Remove**, **Open source**, **Move up**, **Move down**), which opens over the plot like the other
-menus. **Duplicate** adds an independent copy after the section, titled "<name> (copy)": it is drawn as a section of its
-own, and changing it leaves the original as it was. Drag a section by **≡**, or move it with **Alt+Up** and
-**Alt+Down**. Every change is one step of the panel's undo.
+Each section is a card of one line, the same card as a factor of the Cell Grouping: its position, its title, a summary
+(the source's kind and its gene count, "signature · 9 genes"; the source's name too when the title is your own), the
+first few genes, **Genes** or **One row**, and **⋯**. In a narrow plot the genes give way first, then the summary; the title
+is the last to be cut. Click the card to open its source. **⋯** offers **Rename**, **Duplicate**, **Remove**, **Open
+source**, **Move up** and **Move down**, and opens over the plot like the other menus. **Duplicate** adds an independent
+copy after the section, titled "<name> (copy)": it is drawn as a section of its own, and changing it leaves the original as it
+was. Drag a section by its card, or move the focused card with **Alt+Up** and **Alt+Down**. Every change is one step of
+the panel's undo.
 
-- The **title** is edited in place; by default it is the source's title. In the plot it is a bracket over the
-  section's rows.
+- The **title** is renamed from **⋯ ▸ Rename**, in place: **Enter** or **✓** saves, **Escape** or **✕** cancels, and an
+  empty name goes back to the source's title (the default). In the plot the title is a bracket over the section's rows.
 - Genes are in the source's order (a signature's list order, a table's current sort) unless clustering reorders them.
   The same source can appear in any number of sections, and a gene in two sections is drawn in both.
 - Genes the dataset does not have are left out and counted on the row: "48 genes · 3 not in this dataset". A section
