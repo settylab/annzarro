@@ -15,6 +15,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
+from annzarro.tests.browser import cgene_rows as CR  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401 (the fixtures)
     served, page, _open, _plot, _sig, _drawn, _config, _state, P, TP, S1, GENES)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
@@ -70,7 +71,7 @@ def test_the_copy_of_a_one_row_section_has_settings_of_its_own(page, served):
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 2", P)
     _drawn(page)
     # the copy shown as genes: the original stays one row
-    page.locator(f"{TP} .cgene-section").nth(1).locator(".cgene-section__rows input[value='genes']").check()
+    CR.show_as(page, TP, 1, "genes")
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[1].rows === 'genes'", P)
     assert _config(page)["sections"][0]["rows"] == "set"
     until(page, f"(s) => {{ const f = ({FIGURE})(s); return f.state === 'ready' && f.columns === 5; }}", TP, timeout=30)

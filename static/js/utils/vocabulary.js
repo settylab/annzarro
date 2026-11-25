@@ -127,44 +127,34 @@ const cellGene = Object.freeze({
         z_pooled: 'z-score per gene, against all grouped cells'
     }),
     /**
-     * A one-row section's Color or Size (decision 40, one-row-ux-080.md): the channel's statistic and layer are the cell
-     * step; the row chooses only the gene step, combining the gene rows or scoring each cell by a method of the source.
-     * Reasons are phrased by options-model.js REASON.cannotWith from `why`: [what, why].
+     * A one-row section's one choice (aggregation-unify-080.md 10): how its genes are combined, shared by Color and Size,
+     * the channels' statistic and layer being the plot's. Reasons are phrased by options-model.js REASON.cannotWith from
+     * `why`: [what, why].
      */
     rowStep: Object.freeze({
         heading: Object.freeze({ rows: 'Combine the gene rows', score: 'Score each cell' }),
-        name: Object.freeze({ rows_mean: 'Mean of the gene rows', rows_sum: 'Sum of the gene rows', rows_z: 'Mean of the gene rows, z-scored across groups' }),
+        name: Object.freeze({ rows_mean: 'Mean of the gene rows', rows_sum: 'Sum of the gene rows', rows_z: 'Mean, z-scored across groups' }),
+        /** The first entry's tooltip: the default is what Color and Size show of each gene. */
+        same: 'Same as Color and Size: their statistic of each gene, averaged over the genes.',
         /** Sum of the gene rows under % expressing (decision 40): the sum of the genes' fractions, on its own scale. */
         detectedPerCell: 'Genes detected per cell',
-        /** A score method where the step is named on its own (the summary button, the CSV): "z-score mean score". */
+        /** A score method where the step is named on its own (the button, the CSV): "z-score mean score". */
         score: (method) => `${method} score`,
-        genes: 'Genes',
-        cellsAbove: 'cells above',
-        from: (channel) => `from ${channel}`,
-        change: (channel) => `Change in ${channel}`,
-        changeHelp: (channel) => `One-row sections use the plot's ${channel} statistic and layer, so a set's row compares with its genes' rows. Change them in ${channel}.`,
+        /** A score row under % expressing: the share of cells expressing at least one gene of the set (10.1a). */
+        anyGeneName: '% expressing any gene',
+        anyGeneHow: 'any gene',
+        anyGene: (title, up, down, t, layer) => `% of cells expressing at least one of ${title}'s ${up} ${down > 0 && up > 0 ? 'up ' : ''}genes (> ${t}) \u00b7 ${layer}`,
         why: Object.freeze({
-            count: ['cell count', 'cell count does not depend on genes.'],
             down: ['down genes', 'it would count them as up genes. Score each cell instead.'],
             sum_sd: ['SD', 'a sum of spreads is not the spread of the set.'],
-            sum_mean_expressing: ['mean of expressing cells', "each gene's expressing cells differ, so the sum is the mean of no cells."]
+            sum_mean_expressing: ['mean of expressing cells', "each gene's expressing cells differ, so the sum is the mean of no cells."],
+            score_mean_expressing: ['mean of expressing cells', 'a score is one value per cell. % expressing shows the share of cells expressing any gene.']
         }),
-        /** Under a z-score mean Color every other gene step is disabled: a set's row is its z-score mean score (2.3). */
-        zscoreWhy: "Under z-score mean a set's row is its z-score mean score.",
-        /** The help line under the select: what one value of the row is. */
-        help: Object.freeze({
-            rows_mean: (stat, title, n) => `Each gene's ${stat} in the group, averaged over the ${n} genes of ${title}. Same scale as the gene rows.`,
-            rows_sum: (stat, title, n) => `Each gene's ${stat} in the group, added up over the ${n} genes of ${title}. Its own scale.`,
-            detected: (stat, title, n) => `The expected number of the ${n} genes of ${title} detected in a cell of the group: their ${stat} as fractions, added up. Its own scale.`,
-            rows_z: (stat, title, n) => `Each gene's ${stat} as a z-score across the groups, averaged over the ${n} genes of ${title}. Its own scale.`,
-            count: 'Each group\'s cell count: it does not depend on genes.',
-            score: (method, title, layer, cells) => `Each cell's ${method} score of ${title} on ${layer}, then the group's ${cells}. Its settings: ${title} ▸ Methods ▾.`
-        }),
-        /** The cell step of a score, in the help line and the legend. */
+        /** Under a z-score mean Color every other step is disabled: a set's row is its z-score mean score (2.3). */
+        zscoreWhy: "Color is z-score mean: a set's row is its z-score mean score.",
+        /** The cell step of a score, in the legend. */
         cells: Object.freeze({
-            zscore_mean: () => 'mean', mean: () => 'mean', sum: () => 'sum', sd: () => 'SD',
-            pct_expressing: (t) => `% of cells above ${t}`,
-            mean_expressing: (t) => `mean over its cells above ${t}`
+            zscore_mean: () => 'mean', mean: () => 'mean', sum: () => 'sum', sd: () => 'SD'
         }),
         /** The legend's and hover's name of a row's quantity: the two steps, in the order they are taken. */
         quantity: Object.freeze({
@@ -172,17 +162,8 @@ const cellGene = Object.freeze({
             score: (method, cells) => `genes: ${method}; cells: ${cells}`
         }),
         how: Object.freeze({ rows_mean: 'mean', rows_sum: 'sum', rows_z: 'mean, z-scored across groups' }),
-        /** A link stored before decision 40 that now draws other values: said once when it loads. */
-        legacy: Object.freeze({
-            mean_of_means: "the mean of the genes' means",
-            sum_of_means: "the sum of the genes' means",
-            mean_of_zscores: "the mean of the genes' z-scores against all grouped cells",
-            mean_of_pct_expressing: "the mean of the genes' % expressing",
-            score_mean: (option) => `${option}, averaged`,
-            score_pct_above: (option, t) => `% of cells with ${option} above ${t}`
-        }),
-        followed: (title, channel, now, was) => `${title}'s ${channel} row now follows ${channel} (${now}); it showed ${was}.`,
-        moved: (title, channel, now, reason) => `${title}'s ${channel} row changed to ${now}. ${reason}`
+        /** Said once when a channel's move sends a section's step back to the default. */
+        moved: (title, now, reason) => `${title}'s row changed to ${now}. ${reason}`
     }),
     noExpressingCells: 'no expressing cells',
     /** A size legend whose dots are drawn smaller than the plot's, to fit their slot: 1 to `n` (draw.js sizeLegendParts). */
