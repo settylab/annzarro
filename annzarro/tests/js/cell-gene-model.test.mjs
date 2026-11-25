@@ -400,3 +400,9 @@ test('the statistic, scaling and aggregation words of UX 3.2 and 3.3', () => {
 test('an unknown statistic is refused by the one list of the grouping', () => {
     assert.throws(() => M.statisticColumn('median', Float64Array.of(1, 1, 1, 1, 1), 1), /statistic/);
 });
+
+test('rowRule: the rule of a statistic, with down genes where the rule names a score to stand in', () => {
+    assert.deepEqual(M.rowRule('mean'), M.ROW_RULE.mean);
+    assert.deepEqual(M.rowRule('mean', { down: 2 }), { plan: 'score', method: 'mean', ownScale: false, downMean: true });
+    for (const stat of ['zscore_mean', 'pct_expressing', 'sum', 'sd', 'mean_expressing', 'count']) assert.equal(M.rowRule(stat, { down: 2 }), M.ROW_RULE[stat], stat);
+});

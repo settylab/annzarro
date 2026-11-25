@@ -24,7 +24,7 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import {
-    ROW_RULE, combineRows, SCALINGS, statisticColumn,
+    rowRule, combineRows, SCALINGS, statisticColumn,
     noExpressingCells, pooledReference, scale, scalingGrade
 } from '../../utils/cell-gene-model.js';
 import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
@@ -446,7 +446,7 @@ function stepName(genes) {
  */
 export function rowReading(channels, down = 0) {
     const part = (label, channel) => {
-        const text = down > 0 && ROW_RULE[channel.stat].downScore ? CG.rowStep.reading.downMean : CG.rowStep.reading[channel.stat];
+        const text = rowRule(channel.stat, { down }).downMean ? CG.rowStep.reading.downMean : CG.rowStep.reading[channel.stat];
         return `${label}: ${text}`;
     };
     return [part('Color', channels.color), channels.size ? part('Size', channels.size) : null].filter(Boolean).join('. ') + '.';
@@ -524,15 +524,13 @@ export function planFeatures({ sections, color, size, height = null, threshold =
     };
     // a one-row section under a channel: the set as one gene, by the statistic's rule (cell-gene-model.js ROW_RULE)
     const oneRow = (spec, entry) => {
-        const rule = ROW_RULE[spec.stat];
         const down = entry.down || 0;
+        const rule = rowRule(spec.stat, { down });
         if (rule.plan === 'count') return { step: { genes: 'count' } };
         // the channel's statistic is read on its layer whether by the gene rows or by a score: one request shape either way
         noteStatistic(spec.stat, spec.layer);
         if (rule.plan === 'score') return { step: { genes: rule.method }, key: score(rule.method, spec, entry) };
         if (rule.plan === 'any') return { step: { genes: 'any' }, key: anyGene(spec, entry), any: true };
-        // a source with down genes cannot be combined from its rows: its score stands in (up minus down, the signature's weighting)
-        if (down > 0 && rule.downScore) return { step: { genes: rule.downScore }, key: score(rule.downScore, spec, entry) };
         // the up genes (the down genes only when it has no up ones)
         const up = entry.genes.length > down ? entry.genes.slice(0, entry.genes.length - down) : entry.genes;
         return { step: { genes: rule.how }, keys: up.map((g) => gene(g, spec.stat, spec)) };

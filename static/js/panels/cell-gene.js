@@ -1051,6 +1051,10 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
                 }
             }
             if (snap.state === 'ready' && snap.values && (!_shown || _shown.key !== (snap.shownKey || snap.key))) { redraw(); return; }
+            // the plan changed to one whose features are all held in these values (the request key moved, nothing to fetch):
+            // the same values are drawn again under the new plan
+            if (snap.state === 'ready' && snap.values && _shown && _planOf.has(snap.values)
+                && _shown.inputs[1] !== heldPlan(_planOf.get(snap.values))) { redraw(); return; }
             // a color changed in the grouping: the strips and their legend are drawn again, with nothing asked of the server
             if (snap.state === 'ready' && snap.values && snap.values.reply && _shown && _shown.colours
                 && groupSources().sources.coloursOf(axisId(), snap.values.reply).factors !== _shown.colours) { redraw(); return; }
@@ -1086,6 +1090,17 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
         // ---------------------------------------------------------------- drawing
 
+        /**
+         * The plan to draw `asked`'s values under: the current plan when every feature it needs is one `asked` asked for (a
+         * switch that changes what the rows are, or the statistics listed, with nothing new to fetch), else `asked`. The values
+         * are read through `asked`'s features; only the rows come from the plan drawn.
+         */
+        function heldPlan(asked) {
+            if (!_plan || _plan === asked) return asked;
+            const keys = new Set(asked.features.map((f) => f.key));
+            return _plan.features.every((f) => keys.has(f.key)) ? _plan : asked;
+        }
+
         /** Draw what the store holds for the cell axis (the figure of panels/cell-gene/draw.js). Never asks for anything. */
         async function redraw() {
             if (!_dom) return;
@@ -1111,7 +1126,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const key = snap.shownKey || snap.key;
             // while other features compute, the drawing stays as it is (it was made with the settings of its own request),
             // except that a section added meanwhile is drawn with placeholder rows (CXG-18)
-            let shownPlan = plan;
+            let shownPlan = snap.state === 'ready' ? heldPlan(plan) : plan;
             let pending = null;
             if (snap.state !== 'ready') {
                 const now = currentPlan();

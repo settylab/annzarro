@@ -114,6 +114,20 @@ export const ROW_RULE = Object.freeze({
     count: Object.freeze({ plan: 'count', ownScale: false })
 });
 
+/**
+ * The rule a one-row section follows under a statistic: ROW_RULE's, with the set taken into account (a source with down genes
+ * cannot be combined from its rows, so where the rule names a `downScore` that score stands in). The planner and the tooltip
+ * ask here and never read ROW_RULE directly, so a setting that changes the rule (a panel-level one, later) changes it here.
+ * @param {string} stat - the channel's statistic
+ * @param {{down?: number}} [set] - the section's down genes in the dataset
+ * @returns {{plan: string, how?: string, method?: string, ownScale: boolean, downMean?: boolean}}
+ */
+export function rowRule(stat, { down = 0 } = {}) {
+    const rule = ROW_RULE[stat];
+    if (down > 0 && rule.downScore) return { plan: 'score', method: rule.downScore, ownScale: rule.ownScale, downMean: true };
+    return rule;
+}
+
 /** The statistics read at an expression threshold. */
 const THRESHOLDED = Object.freeze(['pct_expressing', 'mean_expressing']);
 
