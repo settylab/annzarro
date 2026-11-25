@@ -112,3 +112,15 @@ test("a range field takes a placeholder too: a value or a function of the config
   assert.equal(S.placeholderOf({ ...range, placeholder: undefined }, {}), null, "no placeholder: the range as before");
   assert.equal(S.readField({}, range, "cell-gene"), null, "unset: nothing stored, so the box is empty");
 });
+
+// --- a range field's typedMax (w27, Cell-Gene's Largest dot) ------------------------------------------------------
+
+test("typedMax lets a range's box hold more than its slider; a range without it still stops at max", () => {
+  const wide = { id: "share", section: "x", type: "range", path: "share", dflt: null, min: 10, max: 200, typedMax: 1000, step: 5 };
+  assert.equal(S.writeField({}, wide, 350, "cell-gene").share, 350);
+  assert.equal(S.writeField({}, wide, 5000, "cell-gene").share, 1000);
+  assert.equal(S.readField({ share: 5000 }, wide, "cell-gene"), 1000);
+  const plain = { ...wide, typedMax: undefined };
+  assert.equal(S.writeField({}, plain, 350, "cell-gene").share, 200);
+  assert.equal(S.writeField({}, { ...wide, type: "number" }, 350, "cell-gene").share, 200, "typedMax is a range's");
+});

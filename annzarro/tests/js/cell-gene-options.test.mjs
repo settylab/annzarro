@@ -778,7 +778,7 @@ test('Largest dot and Smallest dot are Plot Options ▸ Dots fields, and Apply a
     const smallest = S.fieldOf('cell-gene', 'dotSmallest');
     assert.ok(scale && smallest, 'both are fields of the schema');
     // Largest dot: a slider and a box, the box empty when the dot fills its cell and saying what is drawn (placeholder)
-    assert.deepEqual([scale.section, scale.type, scale.path, scale.min, scale.max, S.defaultOf(scale, 'cell-gene')], ['panel:dots', 'range', 'dotScale', 10, 100, null]);
+    assert.deepEqual([scale.section, scale.type, scale.path, scale.min, scale.max, S.defaultOf(scale, 'cell-gene')], ['panel:dots', 'range', 'dotScale', 10, 200, null]);
     assert.equal(scale.stepFrom, 100, 'unset, the slider stands at a full cell');
     assert.equal(S.placeholderOf(scale, normalizeCellGene({ version: 1, sections: [] }).config), 100);
     assert.equal(S.placeholderOf(scale, normalizeCellGene({ version: 1, sections: [], dotSizes: [5, 12] }).config), '12 px (saved)');
@@ -798,4 +798,36 @@ test('Largest dot and Smallest dot are Plot Options ▸ Dots fields, and Apply a
     // at the default they are written as absent
     assert.equal('dotScale' in S.writeField({}, scale, null, 'cell-gene'), false);
     assert.equal('dotSmallest' in S.writeField({}, smallest, 3, 'cell-gene'), false);
+});
+
+// --- Largest dot up to 200 % on the slider, typed up to 1000 % (operator, 2026-11-25) -------------------------------
+
+test('Largest dot: the slider runs 10 to 200, a typed share goes to 1000, and larger dots are drawn larger', async () => {
+    const S = await import('../../../static/js/panels/plot-utilities/options-schema.js');
+    const scale = S.fieldOf('cell-gene', 'dotScale');
+    assert.deepEqual([scale.min, scale.max, scale.typedMax, scale.stepFrom], [10, 200, 1000, 100]);
+    assert.equal(S.placeholderOf(scale, normalizeCellGene({ version: 1, sections: [] }).config), 100, 'unset: a full cell');
+    assert.equal(S.writeField({}, scale, 350, 'cell-gene').dotScale, 350, 'a typed 350 is kept');
+    assert.equal(S.writeField({}, scale, 5000, 'cell-gene').dotScale, 1000, 'past the ceiling: 1000');
+    assert.ok(/1000/.test(S.helpOf(scale, 'cell-gene')), 'the help says where typing stops');
+    // other ranges still stop at their max
+    assert.equal(S.writeField({}, S.fieldOf('cell-gene', 'dotSmallest'), 100, 'cell-gene').dotSmallest, 40);
+    assert.equal(S.writeField({}, S.fieldOf('cell-gene', 'dotOpacity'), 5, 'cell-gene').dotOpacity, undefined, '1 is the default, written as absent');
+    // drawn: the largest dot is the share of its cell (the cell as laid out), larger shares larger, and the matrix gets
+    // room at its edges for dots past their cell (half the overflow, in cells), so the plot area does not cut them
+    const at = (pct) => {
+        const { model } = compose(pct === null ? {} : { dotScale: pct }, { rows: 40, split: 3 });
+        const fig = D.buildFigure(model, LIGHT);
+        const largest = arrayMaxOf(matrixTraces(fig)[0].marker.size);
+        const span = Math.abs(fig.layout.yaxis.range[0] - fig.layout.yaxis.range[1]);
+        return { largest, cell: cellPitch(fig, model), pad: (span - model.groups.length) / 2 };
+    };
+    const largestAt = (pct) => at(pct).largest;
+    for (const pct of [100, 150, 200, 350]) {
+        const a = at(pct);
+        assert.ok(Math.abs(a.largest - (pct / 100) * (a.cell - 2)) < 1e-6, `${pct} %: ${a.largest} of a ${a.cell} px cell`);
+        assert.ok(Math.abs(a.pad - Math.max(0, (pct / 100 - 1) / 2)) < 1e-9, `${pct} %: ${a.pad} cells of room at the edge`);
+    }
+    assert.ok(largestAt(350) > largestAt(200) && largestAt(200) > largestAt(null));
+    assert.equal(largestAt(5000), largestAt(1000), 'a stored share past the ceiling draws at the ceiling');
 });
