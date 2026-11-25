@@ -100,7 +100,7 @@ STATE = """() => {
   return {
     drawn: !!sc && g._fullData.reduce((s, t) => s + ((t.x && t.x.length > 1) ? t.x.length : 0), 0) >= 150,
     busy,
-    size: document.getElementById('point-size-input-%s').value,
+    size: String(window.PanelManager.getPanel('%s').getConfig().pointSize),   // the size box is in Plot Options, drawn only while it is open
     opacity: document.getElementById('point-opacity-input-%s').value,
     // the point traces: not legend entries, the colour bar's point or the focus highlight
     sceneSizes: sc ? sc.markerOptions.map((o, i) => (points(g.data[i]) && o ? o.size : null)).filter(v => v !== null) : [],

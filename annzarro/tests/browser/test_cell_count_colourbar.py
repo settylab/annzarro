@@ -39,7 +39,7 @@ BAR = """(t) => { const gd = document.querySelector(t + ' .js-plotly-plot');
     ("hist2d", dict(mode="hist2d", x=DEPTH, y=SCORE, value={"kind": "measure"}, measure={"stat": "mean", "source": {"type": "obs", "key": "score"}})),
 ])
 def test_the_count_plot_colour_bar_matches_the_cell_plots(page, served, mode, config):
-    cell_plot = gp._plot(color={"type": "obs", "key": "depth", "column": ""})
+    cell_plot = gp._plot(color={"type": "obs", "key": "depth", "column": ""}, styleDefault=True)   # a plot made now (on Default) has the default font; one saved with none is Arial
     cc._open(page, served, {CC: cc._count(**config), P: cell_plot}, open_ids=(CC, P))
     cc._drawn(page, mode)
     page.wait_for_selector(f"{PT} .js-plotly-plot .colorbar")
