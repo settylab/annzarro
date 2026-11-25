@@ -86,8 +86,8 @@ def test_a_histogram_overlaid_and_100_percent_with_undo_and_side_by_side_says_wh
     page.click(f"{S} .ccnt-arrangement__opt:has(input[value='fill'])")
     _drawn(page, "histogram", "c.arrangement === 'fill'")
     drawn = page.evaluate(LAYOUT, S)
-    assert (drawn["barmode"], drawn["barnorm"]) == ("stack", "percent")
-    assert _undo_label(page) == "Undo: 100% bars"
+    assert (drawn["barmode"], drawn["barnorm"]) == ("stack", "fraction")
+    assert _undo_label(page) == "Undo: filled bars"
     _shot(page, "count-views-histogram-100.png")
     page.click(f"{S} .ccnt-undo")
     _drawn(page, "histogram", "c.arrangement === 'overlay'")

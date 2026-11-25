@@ -9,11 +9,13 @@ import { VOCABULARY } from '../../utils/vocabulary.js';
 import { sourceName } from '../../utils/cell-grouping.js';
 import { DEFAULT_BINS as GROUPING_DEFAULT_BINS, normalizeBinning } from '../../utils/binning.js';
 import {
-    modeReads, keptForOtherModes, densityLayers, binsRange, shareBasesFor, levelLabelsOf, MEASURE_STATS, splitUsed
+    modeReads, keptForOtherModes, densityLayers, binsRange, shareBasesFor, levelLabelsOf, MEASURE_STATS, canonicalMeasureStat, splitUsed
 } from '../../utils/count-plot-model.js';
 import { PANEL_SOURCES, TABLE_SOURCE } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
 import { setText } from '../../utils/set-plot-model.js';
+import { STATISTIC_INFO, statisticChoices } from '../../utils/group-statistics.js';
+import { STAT_SYMBOLS } from '../../utils/aggregation-symbols.js';
 
 const C = VOCABULARY.countPlot;
 const P = VOCABULARY.phrase;
@@ -239,9 +241,8 @@ export function valueChoices(config) {
     for (const base of shareBasesFor(config)) {
         out.push({ value: `share:${base}`, label: C.value.share[base], help: two ? C.valueHelp.heatmapShare : C.valueHelp.share, group: 'share' });
     }
-    for (const stat of MEASURE_STATS) {
-        out.push({ value: `stat:${stat}`, label: C.value.stat[stat], help: stat === 'zscore' ? C.valueHelp.zscore : C.valueHelp.stat, group: 'stat' });
-    }
+    // one entry: the statistic itself is chosen with the shared aggregation button under the source (measureStatChoices)
+    out.push({ value: 'stat', label: C.value.statistic, help: C.valueHelp.stat, group: 'stat' });
     if (two) out.push({ value: 'top_level', label: C.value.topLevel, help: C.valueHelp.topLevel });
     return out;
 }
@@ -252,8 +253,10 @@ export const SAME_HEIGHT = '__same__';
 /** The choices of the 3D height (UX 6b): Same as Color first, then those of Height or Color but the most frequent level (no number). */
 export function heightChoices(config) {
     const what = rowsOf(config.mode).value === 'color' ? C.rows.color : C.rows.height;
-    return [{ value: SAME_HEIGHT, label: C.view3d.sameAs(what), help: C.view3d.heightHelp },
-        ...valueChoices(config).filter((c) => c.value !== 'top_level')];
+    // a 3D height reads one statistic of the measure's moments: each is listed, by the shared table's names
+    const heights = valueChoices(config).filter((c) => c.value !== 'top_level').flatMap((c) => (c.value !== 'stat' ? [c]
+        : MEASURE_STATS.map((stat) => ({ value: `stat:${stat}`, label: C.value.stat[stat], help: stat === 'zscore' ? C.valueHelp.zscore : C.valueHelp.stat, group: 'stat' }))));
+    return [{ value: SAME_HEIGHT, label: C.view3d.sameAs(what), help: C.view3d.heightHelp }, ...heights];
 }
 
 /** The choice the 3D height shows: the stored one when this mode offers it, else Same as Color. */
@@ -295,7 +298,7 @@ export function valueChoiceOf(config) {
     const upset = config.mode === 'upset';
     let choice = upset && !(config.value && v.kind === 'count') ? 'none' : 'count';
     if (v.kind === 'share') choice = `share:${v.of || 'all'}`;
-    else if (v.kind === 'measure' && config.measure) choice = `stat:${config.measure.stat}`;
+    else if (v.kind === 'measure' && config.measure) choice = 'stat';
     else if (v.kind === 'top_level' && v.factor) choice = 'top_level';
     if (offered.includes(choice)) return choice;
     if (v.kind === 'share') return offered.find((c) => c.startsWith('share:')) || 'count';
@@ -335,7 +338,7 @@ function choiceValue(config, choice) {
         const of = choice.slice('share:'.length);
         return of === 'all' ? { kind: 'share' } : { kind: 'share', of };
     }
-    if (choice.startsWith('stat:')) return { kind: 'measure' };
+    if (choice === 'stat') return { kind: 'measure' };
     if (choice === 'top_level') return { kind: 'top_level', factor: config.value && config.value.factor };
     return { kind: 'count' };
 }
@@ -367,13 +370,10 @@ export function applyValueChoice(config, choice, defaults = {}) {
         out.value = choiceValue(config, choice);
         return out;
     }
-    if (choice.startsWith('stat:')) {
-        const stat = choice.slice('stat:'.length);
-        if (!MEASURE_STATS.includes(stat)) return null;
+    if (choice === 'stat') {
         const source = config.measure ? config.measure.source : defaults.measureSource;
         if (!source) return null;
-        out.measure = { ...(config.measure || {}), stat, source };
-        if (stat !== 'pct_above') delete out.measure.above;
+        out.measure = { stat: 'mean', ...(config.measure || {}), source };
         out.value = { kind: 'measure' };
         return out;
     }
@@ -711,4 +711,41 @@ export function levelTotals(grid, a) {
     const stride = grid.dims.slice(a + 1).reduce((p, d) => p * d, 1);
     for (let c = 0; c < grid.cells; c++) totals[Math.floor(c / stride) % grid.dims[a]] += grid.counts[c];
     return totals;
+}
+
+
+// --- the measure's statistic: the shared table, through the shared aggregation button (aggregation-unify-080.md 15.2) ----------
+
+/** The statistics that read a threshold (Expressed above): those the shared table says need `detect_above`. */
+const THRESHOLD_STATS = Object.freeze(STATISTIC_INFO.filter((s) => s.needs.includes('detect_above')).map((s) => s.value));
+
+/** Whether a measure's statistic reads Expressed above. */
+export const usesThreshold = (stat) => THRESHOLD_STATS.includes(canonicalMeasureStat(stat));
+
+/** The Count Plot's own two entries, after the shared table's: a share of the total (V2 moves it into the table) and today's z-score. */
+const OWN_STATISTICS = Object.freeze([
+    { value: 'fraction_of_total', label: C.value.stat.fraction_of_total, symbol: { text: '%', over: false }, title: '' },
+    { value: 'zscore', label: C.value.stat.zscore, symbol: { text: 'z', over: false }, title: C.valueHelp.zscore }
+]);
+
+/**
+ * The entries of the aggregation button of a measure: every statistic of the shared table in its order with its name and symbol
+ * (z-score mean greyed, with its reason: a Count Plot measure has no scale against the dataset yet), then the plot's own two.
+ * @param {string} held - the statistic in force
+ * @returns {{options: Object[], chosen: string}}
+ */
+export function measureStatChoices(held) {
+    const stat = canonicalMeasureStat(held);
+    const shared = statisticChoices({ consumer: 'count-plot', held: stat }).filter((e) => e.value !== 'count')
+        .map((e) => ({ value: e.value, name: e.label, symbol: STAT_SYMBOLS[e.value], disabled: !!e.disabled, ...(e.title ? { title: e.title } : {}) }));
+    const own = OWN_STATISTICS.map((e) => ({ value: e.value, name: e.label, symbol: e.symbol, disabled: false, ...(e.title ? { title: e.title } : {}) }));
+    return { options: [...shared, ...own], chosen: stat };
+}
+
+/** The config with the measure's statistic chosen; a threshold the statistic does not read is dropped. */
+export function applyMeasureStat(config, stat) {
+    if (!config.measure || !MEASURE_STATS.includes(stat)) return null;
+    const measure = { ...config.measure, stat };
+    if (!usesThreshold(stat)) delete measure.above;
+    return { ...config, measure };
 }

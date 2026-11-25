@@ -69,7 +69,7 @@ test('the Mode select groups the modes as UX 4.1 does, with their names', () => 
         ['Bar', 'Histogram', 'Pie', '2D histogram', 'Heatmap', 'Density', '2D density', 'Venn', 'UpSet']);
     assert.deepEqual([...M.COUNT_MODES].sort(), C.modeGroups.flatMap((g) => g.modes).sort());
     assert.deepEqual([C.rows.mode, C.rows.x, C.rows.split, C.rows.height, C.rows.labels], ['Mode', 'X', 'Color by', 'Height', 'Labels']);
-    assert.deepEqual([C.arrangement.stack, C.arrangement.dodge, C.arrangement.fill], ['Stacked', 'Side by side', '100%']);
+    assert.deepEqual([C.arrangement.stack, C.arrangement.dodge, C.arrangement.fill], ['Stacked', 'Side by side', 'Filled']);
 });
 
 // --- a mode change keeps every input (CNT-6) ---------------------------------------------------------------------
@@ -128,15 +128,17 @@ test('the binning control is given the count plot\'s bins, and what it gives bac
 test('Height offers the count, the shares the plot has bases for, and the statistics', () => {
     const labels = (config) => K.valueChoices(norm(config)).map((c) => c.label);
     assert.deepEqual(labels({ mode: 'bar', x: obs('cell_type') }),
-        ['Count', 'Share of all cells shown', 'Mean of…', 'Sum of…', '% above…', 'SD of…', 'z-score of…']);
+        ['Count', 'Fraction of all cells shown', 'Statistic of…']);
     assert.deepEqual(labels({ mode: 'bar', x: obs('cell_type'), split: obs('condition') }),
-        ['Count', 'Share of all cells shown', 'Share within each X', 'Share within each color', 'Mean of…', 'Sum of…', '% above…', 'SD of…', 'z-score of…']);
+        ['Count', 'Fraction of all cells shown', 'Fraction within each X', 'Fraction within each color', 'Statistic of…']);
     assert.deepEqual(labels({ mode: 'heatmap', x: obs('cell_type'), y: obs('condition') }),
-        ['Count', 'Share of the row', 'Share of the column', 'Share of the total', 'Mean of…', 'Sum of…', '% above…', 'SD of…', 'z-score of…',
-            'Most frequent level of…']);
+        ['Count', 'Fraction of the row', 'Fraction of the column', 'Fraction of the total', 'Statistic of…', 'Most frequent level of…']);
     assert.deepEqual(K.valueChoices(norm({ mode: 'pie', x: obs('cell_type') })), []);
-    const z = K.valueChoices(norm({ mode: 'bar', x: obs('cell_type') })).find((c) => c.value === 'stat:zscore');
-    assert.equal(z.help, "The bar's mean against all counted cells.");
+    // a 3D height reads one statistic of the measure's moments: each is listed, by the shared table's names
+    const heights = K.heightChoices(norm({ mode: 'bar', x: obs('cell_type') }));
+    assert.deepEqual(heights.filter((c) => c.value.startsWith('stat:')).map((c) => c.label),
+        ['Mean', 'Fraction of cells', 'Mean of expressing cells', 'Sum', 'SD', '% of total', 'Mean, as z-score against all counted cells']);
+    assert.equal(heights.find((c) => c.value === 'stat:zscore').help, "The bar's mean, as a z-score against all counted cells.");
 });
 
 test('job 1: shares within each cluster write the share base, and the arrangement is its own field', () => {
@@ -153,19 +155,21 @@ test('job 5: a statistic starts from the focused gene on X, keeps its source, an
     const config = norm({ mode: 'bar', x: obs('cell_type') });
     const defaults = K.valueDefaults(config, STRUCTURE, 'Mrpl15');
     assert.deepEqual(defaults.measureSource, { type: 'layer', key: 'X', column: 'Mrpl15' });
-    const mean = norm(K.applyValueChoice(config, 'stat:mean', defaults));
+    const mean = norm(K.applyValueChoice(config, 'stat', defaults));
     assert.deepEqual(mean.value, { kind: 'measure' });
     assert.deepEqual(mean.measure, { stat: 'mean', source: { type: 'layer', key: 'X', column: 'Mrpl15' } });
-    const pct = norm(K.applyValueChoice({ ...mean, measure: { ...mean.measure, above: 0.5 } }, 'stat:pct_above', defaults));
-    assert.deepEqual(pct.measure, { stat: 'pct_above', source: mean.measure.source, above: 0.5 });
-    const sd = norm(K.applyValueChoice(pct, 'stat:sd', defaults));
-    assert.equal(sd.measure.above, undefined, 'a threshold is of % above only');
+    // the statistic is then chosen with the shared aggregation button: a threshold stays with the statistics that read Expressed above
+    const frac = norm(K.applyMeasureStat({ ...mean, measure: { ...mean.measure, above: 0.5 } }, 'fraction_of_cells'));
+    assert.deepEqual(frac.measure, { stat: 'fraction_of_cells', source: mean.measure.source, above: 0.5 });
+    assert.equal(norm(K.applyMeasureStat(frac, 'mean_expressing')).measure.above, 0.5, 'mean of expressing cells reads it too');
+    const sd = norm(K.applyMeasureStat(frac, 'sd'));
+    assert.equal(sd.measure.above, undefined, 'a threshold is of the statistics that read Expressed above only');
     const counted = norm(K.applyValueChoice(mean, 'count'));
     assert.equal(counted.value, undefined);
     assert.deepEqual(counted.measure, mean.measure);
     // with no focus, the first numeric obs column; with neither, no statistic can be chosen
     assert.deepEqual(K.valueDefaults(config, STRUCTURE, null).measureSource, { type: 'obs', key: 'depth' });
-    assert.equal(K.applyValueChoice(config, 'stat:mean', {}), null);
+    assert.equal(K.applyValueChoice(config, 'stat', {}), null);
 });
 
 test('the most frequent level takes a categorical column that is not an axis, and keeps its factor', () => {
@@ -245,8 +249,8 @@ test('a source is named in a line and on a value axis as UX 4.5 writes it', () =
     assert.equal(K.inputText({ type: 'cell-group', key: 'cell-grouping-G' }, titleOf), 'Grouping 1');
     assert.equal(K.measureSourceName({ type: 'layer', key: 'logged_counts', column: 'Mrpl15' }), 'Mrpl15 · logged_counts');
     assert.equal(C.measure('mean', 'Mrpl15 · logged_counts'), 'Mean of Mrpl15 · logged_counts');
-    assert.equal(C.share('all', {}), '% of cells shown');
-    assert.equal(C.share('x', { x: 'cell_type' }), '% within each cell_type');
+    assert.equal(C.share('all', {}), 'Fraction of cells shown');
+    assert.equal(C.share('x', { x: 'cell_type' }), 'Fraction within each cell_type');
     assert.equal(C.topLevel('sample'), 'Most frequent level of sample');
 });
 
@@ -302,7 +306,7 @@ test('the golden count configs read unchanged, and an UpSet\'s style fields are 
     assert.equal(asBar.labels, 'none', "an UpSet's labels: true is no label kind");
     assert.equal(asBar.sort, undefined, "an UpSet's sort by size is not a bar's sort by height");
     const bar = norm(golden('cell_count_bar_split_measure'));
-    assert.deepEqual(K.valueChoiceOf(bar), 'stat:mean');
+    assert.deepEqual(K.valueChoiceOf(bar), 'stat');
 });
 
 // --- the options of the drawing and the labels -------------------------------------------------------------------
@@ -315,9 +319,9 @@ test('the drawing\'s options are the style fields the mode has', () => {
     assert.deepEqual(K.drawOptions(pie), { labels: 'count', sort: 'height', reverse: true, horizontal: false, log: false, ring: true, fade: false,
         adjust: 1, scale: 'level', layers: null, pointSize: 3, pointOpacity: 1, pointFade: false, colour: { reverse: false } });
     assert.equal(K.drawOptions({ ...bar, labels: 'measure' }).labels, 'none', 'no statistic to print');
-    assert.deepEqual(K.labelChoices(bar).map((c) => c.label), ['None', 'Count', 'Share']);
+    assert.deepEqual(K.labelChoices(bar).map((c) => c.label), ['None', 'Count', 'Fraction']);
     assert.deepEqual(K.labelChoices({ ...bar, measure: { stat: 'mean', source: { type: 'obs', key: 'depth' } } }).map((c) => c.label),
-        ['None', 'Count', 'Share', 'Statistic']);
+        ['None', 'Count', 'Fraction', 'Statistic']);
 });
 
 test('the labels shown are the defaults with the input\'s renames, the renames of the config now', () => {

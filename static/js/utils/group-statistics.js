@@ -185,7 +185,9 @@ export const { layerChoices: statisticLayerChoices, pairAfter: statisticPairAfte
  * the answer is flipped in one place. Color and Height can, so can a caller that names no consumer.
  */
 const CANNOT_FOR = Object.freeze({
-    size: Object.freeze({ zscore_mean: Z_CANNOT.size })
+    size: Object.freeze({ zscore_mean: Z_CANNOT.size }),
+    // a Count Plot's measure has the bar's mean against all counted cells (its own entry), not this statistic
+    'count-plot': Object.freeze({ zscore_mean: Z_CANNOT.countPlot })
 });
 
 /**

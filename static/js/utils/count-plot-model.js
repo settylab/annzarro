@@ -24,13 +24,23 @@ import { RESERVED } from './level-id.js';
 import { stableStringify } from './url-history.js';
 import { isColourString } from './uns-palette.js';
 import { limit } from './limits.js';
+import { STATISTIC_INFO } from './group-statistics.js';
+import { cellGroupType } from './cell-group-source.js';
 
 const VERSION = 1;
 
 // export-unused-ok: C2a lists the modes in the Mode select
 export const COUNT_MODES = Object.freeze(['bar', 'histogram', 'hist2d', 'density', 'density2d', 'pie', 'heatmap', 'venn', 'upset']);
 // export-unused-ok: C2a lists the statistics of the Height menu
-export const MEASURE_STATS = Object.freeze(['mean', 'sum', 'pct_above', 'sd', 'zscore']);
+export const MEASURE_STATS = Object.freeze([
+    ...STATISTIC_INFO.map((s) => s.value).filter((id) => id !== 'zscore_mean'), 'fraction_of_total', 'zscore']);
+/**
+ * Ids an old link, session or panel set may hold for a measure's statistic: read as the current id, never written
+ * (aggregation-unify-080.md 15.3). A colour range typed under the old id was in its old units (0 to 100) and is dropped.
+ */
+const MEASURE_ALIASES = Object.freeze({ pct_above: 'fraction_of_cells' });
+/** `stat` under its current id. */
+export const canonicalMeasureStat = (stat) => (typeof stat === 'string' && MEASURE_ALIASES[stat]) || stat;
 // export-unused-ok: C2a labels each share base
 export const SHARE_BASES = Object.freeze(['all', 'x', 'split', 'row', 'column', 'total']);
 /** How a Color by's bars sit: stacked, side by side, overlaid (translucent, over each other) or as shares of 100%. */
@@ -180,11 +190,12 @@ function normalizeValue(raw, bad, factorOf, keepCount = false) {
 
 function normalizeMeasure(raw, bad) {
     const source = isObject(raw) ? normalizePartitioning({ source: raw.source }).partitioning : null;
-    if (!source || !MEASURE_STATS.includes(raw.stat) || (raw.above !== undefined && !isNumber(raw.above))) {
+    const stat = canonicalMeasureStat(raw && raw.stat);
+    if (!source || !MEASURE_STATS.includes(stat) || (raw.above !== undefined && !isNumber(raw.above))) {
         bad('measure', 'bad_measure');
         return null;
     }
-    return { ...raw, source: source.source };
+    return { ...raw, stat, source: source.source };
 }
 
 /**
@@ -244,7 +255,15 @@ export function normalizeCountPlot(raw) {
         if (raw.view === '3d') out.view = '3d'; else bad('view', 'bad_view');
     }
     if (raw.height !== undefined) {
-        if (typeof raw.height === 'string' && HEIGHT_CHOICE.test(raw.height)) out.height = raw.height; else bad('height', 'bad_height');
+        if (typeof raw.height === 'string' && HEIGHT_CHOICE.test(raw.height)) out.height = raw.height.replace(/^stat:pct_above$/, 'stat:fraction_of_cells');
+        else bad('height', 'bad_height');
+    }
+    // a colour range typed while the colour was the old percentage (0 to 100) means nothing on 0 to 1: dropped, silently
+    const oldColour = (isObject(raw.measure) && raw.measure.stat === 'pct_above' && isObject(raw.value) && raw.value.kind === 'measure')
+        || raw.height === 'stat:pct_above';
+    if (oldColour && out.color) {
+        for (const field of ['min', 'max', 'center']) delete out.color[field];
+        if (!Object.keys(out.color).length) delete out.color;
     }
     if (raw.camera !== undefined) {
         const camera = normalizeCamera(raw.camera);
@@ -255,7 +274,7 @@ export function normalizeCountPlot(raw) {
 }
 
 /** The values of the 3D bars' height source (the entries of valueChoices, but for the most frequent level, which has no number). */
-const HEIGHT_CHOICE = /^(count|share:(all|x|split|row|column|total)|stat:(mean|sum|pct_above|sd|zscore))$/;
+const HEIGHT_CHOICE = new RegExp(`^(count|share:(all|x|split|row|column|total)|stat:(${[...MEASURE_STATS, ...Object.keys(MEASURE_ALIASES)].join('|')}))$`);
 
 /** A camera `{eye, center?, up?}` of finite points (x, y, z), or null: Plotly's own shape, kept as the user turned it. */
 function normalizeCamera(raw) {
@@ -518,12 +537,34 @@ export function planGrid(config, ctx) {
     const heightStat = config.view === '3d' && typeof config.height === 'string' && config.height.startsWith('stat:');
     if (((config.value && config.value.kind === 'measure') || heightStat) && config.measure) {
         const measure = { id: 'm0', source: wireSource(config.measure.source, ctx) };
-        if (config.measure.above !== undefined) measure.above = config.measure.above;
+        const above = measureThreshold(config, ctx).value;
+        if (above !== undefined) measure.above = above;
         request.measures = [measure];
     }
     // the key names a measure's source as the config does (a score by the hash of its recipe), not as it is sent
     const keyed = request.measures ? { ...request, measures: request.measures.map((m) => ({ ...m, source: config.measure.source })) } : request;
     return { state: 'ready', request, inputs, key: gridKey(keyed, partitionings, members, ctx) };
+}
+
+/**
+ * The threshold a measure counts cells above (Expressed above). The plot's own (`measure.above`) wins. Otherwise, when the
+ * measure is a gene on a layer and an axis is a Cell Grouping's groups, the grouping's own is used (decision 34: a grouping
+ * holds the parameters of the statistics), `ctx.groupingThreshold(source)` giving it (a number, or null for none). Any other
+ * measure (an obs column, a score) or axis (an obs column, bins) has no grouping that owns one: the plot's own, none meaning
+ * the server's 0.
+ * @returns {{value: (number|undefined), own: boolean, grouping: ({key: string, value: number}|null)}} `value` undefined: send none
+ */
+export function measureThreshold(config, ctx = {}) {
+    const m = config && config.measure;
+    if (!m) return { value: undefined, own: false, grouping: null };
+    if (m.above !== undefined) return { value: m.above, own: true, grouping: null };
+    const geneOnALayer = m.source && m.source.type === 'layer';
+    const axis = geneOnALayer && typeof ctx.groupingThreshold === 'function'
+        ? INPUTS.map((f) => config[f]).find((p) => p && p.source && p.source.type === cellGroupType()) : null;
+    const t = axis ? ctx.groupingThreshold(axis.source) : null;
+    if (!axis || !isNumber(t)) return { value: undefined, own: false, grouping: null };
+    // 0 is what the server reads when none is sent: the request (and its cached key) stay as they were
+    return { value: t === 0 ? undefined : t, own: false, grouping: { key: axis.source.key, value: t } };
 }
 
 // --- ways out of a hard cap (T-CAP, aggregation-unify-080.md 14.8) ---------------------------------------------------
@@ -721,7 +762,7 @@ export function gridShape(page) {
 // --- the reply -------------------------------------------------------------------------------------------------------
 
 const MOMENTS = 5;
-const [N, SUM, SUMSQ, N_ABOVE] = [0, 1, 2, 3];
+const [N, SUM, SUMSQ, N_ABOVE, SUM_ABOVE] = [0, 1, 2, 3, 4];
 
 /** A contract error: the reply is not what the request's shape promises. */
 function gridError(message) {
@@ -989,7 +1030,9 @@ export function measureValues(table, stat) {
         switch (stat) {
             case 'mean': values[r] = mean; break;
             case 'sum': values[r] = m[SUM]; break;
-            case 'pct_above': values[r] = (100 * m[N_ABOVE]) / n; break;
+            case 'fraction_of_cells': values[r] = m[N_ABOVE] / n; break;
+            case 'mean_expressing': values[r] = m[N_ABOVE] > 0 ? m[SUM_ABOVE] / m[N_ABOVE] : 0; break;
+            case 'fraction_of_total': values[r] = pooled && pooled.sum !== 0 && Number.isFinite(pooled.sum) ? (100 * m[SUM]) / pooled.sum : NaN; break;
             case 'sd': values[r] = Math.sqrt(Math.max(0, m[SUMSQ] / n - mean * mean)); break;
             case 'zscore': values[r] = poolSd > 0 ? (mean - poolMean) / poolSd : 0; break;
             default: throw new Error(`Unknown measure statistic: ${stat}`);

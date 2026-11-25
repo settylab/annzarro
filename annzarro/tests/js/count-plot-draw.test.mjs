@@ -19,7 +19,7 @@ const obs = (key) => ({ source: { type: 'obs', key } });
 const norm = (config) => M.normalizeCountPlot({ version: 1, ...config }).config;
 
 const words = {
-    count: 'Cell count', fill: '% of cells in each bar', hoverCount: 'Cells', hoverShare: 'Share',
+    count: 'Cell count', fill: 'Fraction of cells in each bar', hoverCount: 'Cells', hoverShare: 'Share',
     share: (base) => `Share of ${base}`, measure: (stat, source, above) => `${stat} of ${source}${above === undefined ? '' : ` above ${above}`}`,
     topLevel: (name) => `Most frequent level of ${name}`
 };
@@ -78,7 +78,7 @@ test('two levels with one label stay two bars, and a label cannot inject markup'
 test('a split makes one trace per level, colored by level, with the arrangement as the layout', () => {
     const { config, table } = fixture({ value: undefined, measure: undefined });
     const cts = table.dims[0];
-    for (const [arrangement, layout] of [['stack', { barmode: 'stack' }], ['dodge', { barmode: 'group' }], ['fill', { barmode: 'stack', barnorm: 'percent' }]]) {
+    for (const [arrangement, layout] of [['stack', { barmode: 'stack' }], ['dodge', { barmode: 'group' }], ['fill', { barmode: 'stack', barnorm: 'fraction' }]]) {
         const f = D.countFigure({ ...config, arrangement }, table, opts());
         assert.equal(f.data.length, table.dims[1]);
         for (const [k, v] of Object.entries(layout)) assert.equal(f.layout[k], v, `${arrangement} ${k}`);
@@ -100,12 +100,12 @@ test('a level\'s own color from the reply wins over the palette', () => {
     assert.equal(f.data[1].marker.color, LEVELS[1]);
 });
 
-test('a share is drawn as the model computes it, as a percent axis; stacked means are never added', () => {
+test('a share is drawn as the model computes it, as a fraction axis (ticks to two decimals, no % sign); stacked means are never added', () => {
     const { config, table } = fixture({ value: { kind: 'share', of: 'x' }, measure: undefined });
     const share = M.shareValues(table, 'x');
     const f = D.countFigure(config, table, opts());
     assert.equal(f.layout.yaxis.title.text, 'Share of x');
-    assert.equal(f.layout.yaxis.tickformat, '.0%');
+    assert.equal(f.layout.yaxis.tickformat, '.2~f');
     f.data.forEach((t, s) => t.y.forEach((y, l) => assert.equal(y, share[l * table.stride[0] + s * table.stride[1]])));
     const m = fixture({ value: { kind: 'measure' } });
     const g = D.countFigure(m.config, m.table, opts());
@@ -165,7 +165,7 @@ test('printed labels show the count, the share or the measure, and none shows no
     assert.equal(D.countFigure(config, table, opts()).data[0].text, undefined);
     assert.equal(D.countFigure(config, table, opts({ labels: 'none' })).data[0].text, undefined);
     assert.deepEqual(D.countFigure(config, table, opts({ labels: 'count' })).data[0].text, ['30', '10', '60']);
-    assert.deepEqual(D.countFigure(config, table, opts({ labels: 'share' })).data[0].text, ['30%', '10%', '60%']);
+    assert.deepEqual(D.countFigure(config, table, opts({ labels: 'share' })).data[0].text, ['0.3', '0.1', '0.6']);
     const m = fixture({ value: { kind: 'count' } });
     const means = M.measureValues(m.table, 'mean');
     const texts = D.countFigure(m.config, m.table, opts({ labels: 'measure' })).data[0].text;
@@ -289,7 +289,7 @@ test('a heatmap of shares by its row, column or total is the model\'s share', ()
         const share = M.shareValues(table, of);
         const rows = [0, 1].map((yl) => [0, 1, 2].map((xl) => share[xl * table.stride[0] + yl * table.stride[1]]));
         assert.deepEqual(f.data[0].z, rows.map((r) => r.map((v) => (Number.isNaN(v) ? null : v))), of);
-        assert.equal(f.data[0].colorbar.tickformat, '.0%');
+        assert.equal(f.data[0].colorbar.tickformat, '.2~f');
     }
 });
 
@@ -328,7 +328,7 @@ test('a rectangle is colored by its most frequent level; an empty one has no col
     assert.deepEqual(f.data.slice(1).map((s) => [s.type, s.name, s.marker.color]), [['scatter', 'A', LEVELS[0]], ['scatter', 'B', LEVELS[1]]]);
     assert.equal(f.layout.showlegend, true);
     assert.equal(f.layout.legend.title.text, 'sample');
-    assert.ok(t.hovertext[0][0].endsWith('A: 75%'), t.hovertext[0][0]);
+    assert.ok(t.hovertext[0][0].endsWith('A: 0.75'), t.hovertext[0][0]);
 });
 
 test('fading by the level\'s share steps each level through lighter colors', () => {
@@ -374,7 +374,7 @@ test('a ring is a pie with a hole, and its labels show the count or the share', 
     // the numbers are placed by the plot at one radius (count-pie-labels.test.mjs), not by Plotly's inside text
     const texts = (labels) => (D.countFigure(config, table, opts({ labels })).layout.annotations || []).map((a) => a.text);
     assert.deepEqual(texts('count'), ['30', '10', '60']);
-    assert.deepEqual(texts('share'), ['30%', '10%', '60%']);
+    assert.deepEqual(texts('share'), ['0.3', '0.1', '0.6']);
     assert.equal(D.countFigure(config, table, opts({ labels: 'count' })).data[0].textinfo, 'none');
 });
 

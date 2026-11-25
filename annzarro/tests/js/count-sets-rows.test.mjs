@@ -147,10 +147,10 @@ test('an UpSet offers None first (the default), then Count; an old config reads 
 
 test('the other modes offer the same Height and Color choices as before', () => {
     const values = (config) => K.valueChoices(config).map((c) => c.value);
-    const stats = ['stat:mean', 'stat:sum', 'stat:pct_above', 'stat:sd', 'stat:zscore'];
+    // the statistic is one entry, chosen with the shared aggregation button
     assert.deepEqual(values({ version: 1, mode: 'bar' }).slice(0, 2), ['count', 'share:all']);
     assert.ok(!values({ version: 1, mode: 'bar' }).includes('none'));
-    assert.ok(stats.every((s) => values({ version: 1, mode: 'bar' }).includes(s)));
+    assert.ok(values({ version: 1, mode: 'bar' }).includes('stat'));
     for (const mode of ['hist2d', 'heatmap']) {
         assert.equal(values({ version: 1, mode })[0], 'count');
         assert.ok(!values({ version: 1, mode }).includes('none'));

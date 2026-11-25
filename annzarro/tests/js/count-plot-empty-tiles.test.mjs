@@ -1,7 +1,7 @@
 /**
  * What a 2D histogram draws for a tile with no cells, by the statistic it is coloured by: where zero is a real value
  * (a count, a share, a sum) the tile is drawn at 0 in the colour scale's 0 colour, with a hover that says so; where the
- * statistic is undefined with no cells (mean, SD, % above, z-score) it stays empty.
+ * statistic is undefined with no cells (mean, SD, fraction of cells, z-score) it stays empty.
  *
  * Run:  node --test annzarro/tests/js/count-plot-empty-tiles.test.mjs
  */
@@ -52,7 +52,7 @@ for (const of of ['all', 'x', 'y']) {
         const t = empty(f);
         assert.equal(t.z, 0, 'zero is a real share');
         assert.match(t.hover, /Cells: 0/);
-        assert.match(t.hover, /Share: 0(\.0+)? ?%/);
+        assert.match(t.hover, /Share: 0$/);
     });
 }
 
@@ -102,5 +102,5 @@ test('a share within X of a column with no cell at all is 0 % too: it is the sha
     const f = figure({ value: { kind: 'share', of: 'x' } }, false, [1, 2, 0, 0, 4, 5]);
     assert.deepEqual([f.data[0].z[0][1], f.data[0].z[1][1]], [0, 0]);
     assert.match(f.data[0].hovertext[0][1], /Cells: 0/);
-    assert.match(f.data[0].hovertext[0][1], /Share: 0(\.0+)? ?%/);
+    assert.match(f.data[0].hovertext[0][1], /Share: 0$/);
 });

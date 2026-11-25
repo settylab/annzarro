@@ -137,7 +137,7 @@ test('the CSV holds the plotted rows, headers first, from one column specificati
     const opts = { inputNames: { x: 'cell_type', split: 'condition' }, headers: VOCABULARY.countPlot.csv };
     const rows = D.countRows(config, table, opts);
     assert.equal(M.tableCsv(rows), D.countCsv(config, table, opts), 'one column specification for the CSV and its rows');
-    assert.deepEqual(rows[0], ['cell_type', 'condition', 'Cells', 'Share']);
+    assert.deepEqual(rows[0], ['cell_type', 'condition', 'Cells', 'Fraction']);
     assert.equal(rows.length, 5);
     assert.deepEqual(rows[1].slice(0, 3), ['B', 'ctrl', 10]);
 });

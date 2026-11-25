@@ -96,7 +96,7 @@ test('a newer version is returned as it is and reported', () => {
 
 test('the ids are the frozen ones', () => {
     assert.deepEqual([...M.COUNT_MODES], ['bar', 'histogram', 'hist2d', 'density', 'density2d', 'pie', 'heatmap', 'venn', 'upset']);
-    assert.deepEqual([...M.MEASURE_STATS], ['mean', 'sum', 'pct_above', 'sd', 'zscore']);
+    assert.deepEqual([...M.MEASURE_STATS], ['mean', 'fraction_of_cells', 'mean_expressing', 'sum', 'sd', 'fraction_of_total', 'zscore']);
     assert.deepEqual([...M.SHARE_BASES], ['all', 'x', 'split', 'row', 'column', 'total']);
     assert.deepEqual([...M.ARRANGEMENTS], ['stack', 'dodge', 'overlay', 'fill']);
 });
@@ -253,7 +253,8 @@ const stats = (vs, above) => {
     const sum = vs.reduce((s, v) => s + v, 0);
     const mean = sum / n;
     const sd = Math.sqrt(vs.reduce((s, v) => s + (v - mean) ** 2, 0) / n);
-    return { n, sum, mean, sd, pct: (100 * vs.filter((v) => v > above).length) / n };
+    const hi = vs.filter((v) => v > above);
+    return { n, sum, mean, sd, frac: hi.length / n, meanAbove: hi.length ? hi.reduce((s, v) => s + v, 0) / hi.length : 0 };
 };
 
 const barConfig = { version: 1, mode: 'bar', x: obs('cell_type'), split: obs('condition'), value: { kind: 'measure' },
@@ -276,12 +277,14 @@ test('a bar table has one row per x and split level, in the engine order, with t
 test('every measure statistic equals the brute-force statistic of the cells', () => {
     const groups = byGroup();
     const { config, table } = barTable();
+    const total = stats(Array.from(scores), 5).sum;
     for (const stat of M.MEASURE_STATS.filter((s) => s !== 'zscore')) {
         const values = M.measureValues(table, stat);
         for (let r = 0; r < table.rows; r++) {
             const [type, cond] = M.levelsAt(table, r).map((id) => id.slice(2));
             const want = stats(groups.get(`${type}|${cond}`), 5);
-            const field = { mean: want.mean, sum: want.sum, sd: want.sd, pct_above: want.pct }[stat];
+            const field = { mean: want.mean, sum: want.sum, sd: want.sd, fraction_of_cells: want.frac, mean_expressing: want.meanAbove,
+                fraction_of_total: (100 * want.sum) / total }[stat];
             near(values[r], field, `${stat} ${type} ${cond}`);
         }
     }

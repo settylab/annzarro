@@ -99,7 +99,7 @@ test('three sets that cannot be drawn with circles report a large error, and the
     assert.ok(layout.error > 0.1, `error ${layout.error}`);
     const note = (fig) => fig.layout.annotations.find(a => a.text.startsWith('Areas are approximate'));
     const bad = D.buildFigure(plotOf(IMPOSSIBLE), LIGHT, { proportional: true });
-    assert.match(note(bad).text, /^Areas are approximate: largest error \d+\.\d% of the cells in the sets$/);
+    assert.match(note(bad).text, /^Areas are approximate: largest error [\d.]+ of the cells in the sets$/);
     assert.equal(note(bad).yref, 'paper');
     assert.equal(note(bad).yanchor, 'top', 'under the plot');
     for (const counts of Object.values(FIXTURES)) {
@@ -155,8 +155,8 @@ test('label modes: names off, and count, share, both or none in each region', ()
         const texts = (labels) => D.buildFigure(plot, LIGHT, { labels, proportional }).data[0].text;
         assert.ok(texts('none').every(t => t === ''));
         assert.ok(texts('count').filter(Boolean).every(t => /^[\d,]+$/.test(t)));
-        assert.ok(texts('share').filter(Boolean).every(t => /^[\d.<]+%$/.test(t)));
-        assert.ok(texts('both').filter(Boolean).every(t => /^[\d,]+<br>[\d.<]+%$/.test(t)));
+        assert.ok(texts('share').filter(Boolean).every(t => /^[\d.<]+$/.test(t)));
+        assert.ok(texts('both').filter(Boolean).every(t => /^[\d,]+<br>[\d.<]+$/.test(t)));
         assert.ok(texts('count').filter(Boolean).length >= 5);
     }
     // the cells in no set are still stated, whatever the labels

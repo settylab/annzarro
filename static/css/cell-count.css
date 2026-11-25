@@ -34,9 +34,9 @@
 .ccnt-row__extra { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .ccnt-bins, .ccnt-choose { padding: 0 2px; font-size: 0.75rem; text-decoration: none; }
 .ccnt-help { color: var(--az-muted); font-size: 0.75rem; }
-.ccnt-above { width: 5rem !important; }
-.ccnt-above-wrap[hidden] { display: none; }
-.ccnt-above-wrap, .ccnt-fade-wrap, .ccnt-opt { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+
+
+.ccnt-fade-wrap, .ccnt-opt { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
 
 /* Color by's arrangement: a radio group that reads as buttons */
 .ccnt-arrangement { display: inline-flex; flex-wrap: wrap; gap: 2px; margin-left: 4px; }

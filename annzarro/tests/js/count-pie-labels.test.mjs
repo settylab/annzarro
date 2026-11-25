@@ -65,5 +65,5 @@ test('each number is at its slice\'s middle angle, clockwise from 12 o\'clock as
 test('no numbers asked for: no layer', () => {
     assert.equal(labelsOf(pie({ labels: 'none' })), undefined);
     const share = labelsOf(pie({ labels: 'share' }));
-    assert.equal(share.text[0], '85%');
+    assert.equal(share.text[0], '0.85');
 });
