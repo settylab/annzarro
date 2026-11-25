@@ -293,3 +293,20 @@ def test_an_error_says_why_and_retry_computes_again(page, served):
     page.click(f"{NOTICE} .ps-action[data-ps-action='score-retry']")
     _drawn(page)
     assert len(page.calls) == 2
+
+
+# ------------------------------------------------------------------ 6. refused for its size is not a refusal by cost
+
+def test_a_grouping_over_the_levels_limit_says_that_limit_and_never_quotes_seconds(page, served):
+    """operator 2026-11-25: "would take about 1 second, so it was not run". The real server, a grouping kept by name over the
+    2,000-level limit: refused for its SIZE, after a cheap estimate in the auto tier. The notice names the levels and the limit."""
+    every = [f"c:m{i:04d}" for i in range(2001)]
+    grouping = {"id": GA, "title": "Grouping 1", "version": 1, "partitionings": [{"source": {"type": "obs", "key": "many"}, "levels": every}]}
+    _open(page, served, {P: _plot(cellAxis={"type": "cell-group", "key": GA}, sections=_sections(1)),
+                         S1: _sig(S1, "Markers", GENES[:5]), GA: grouping}, open_ids=(P, S1, GA))
+    _wait_state(page, "refused")
+    until(page, "(s) => { const h = document.querySelector(s + ' .coverage-placeholder__headline'); return !!h && /not (run|computed)/.test(h.textContent); }",
+          NOTICE, timeout=30)       # the painter paints the burst of state changes once, a moment later
+    headline = page.locator(f"{NOTICE} .coverage-placeholder__headline").inner_text()
+    assert "would take" not in headline and "second" not in headline, headline
+    assert "2,001 levels" in headline and "2,000" in headline, headline

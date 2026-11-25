@@ -215,6 +215,36 @@ def test_a_grouping_over_the_limit_is_a_result_that_says_so(client, layout):
     assert refused["limit"] == 2000
 
 
+def test_a_refusal_for_size_names_its_own_limit_and_is_never_a_cost_refusal(client, layout):
+    """A grouping over the groups limit is refused for its SIZE (operator 2026-11-25: the plot said "would take about 1 second,
+    so it was not run"). The estimate that came before it is cheap and in the auto tier; the refusal says the groups limit and its
+    figures, never a cost reason; and a cost refusal exists only above refuse_s."""
+    every = [f"c:m{i:04d}" for i in range(2001)]
+    body = grouping([{"source": {"type": "obs", "key": "many"}, "levels": every}])
+    estimate = post(client, layout, {**body, "estimate_only": True})
+    assert estimate.status_code == 200, estimate.get_data(as_text=True)
+    est = json.loads(estimate.get_data())["estimate"]
+    assert est["tier"] == "auto" and est["seconds"] <= est["auto_max_s"] < est["max_s"], est
+    frames, _ = run(client, layout, body)
+    refused = frames[-1]["refused"]
+    assert refused["reason"] == "too_many_levels" and refused["limit"] == 2000 and refused["count"] > refused["limit"], refused
+    assert refused["reason"] not in ("groups_too_expensive", "score_too_expensive", "confirmation_required")
+    assert "seconds" not in refused, "a size refusal carries no estimate of seconds"
+
+
+def test_a_seconds_refusal_happens_only_above_the_refuse_limit(client, layout, monkeypatch):
+    """The tier is a function of the seconds and the limit, in both directions: a cheap request is never `refused`, an
+    expensive one is, and the refusal's own figures show seconds over the limit (what the notice quotes)."""
+    body = grouping([{"source": GENE1}])
+    cheap = post(client, layout, {**body, "estimate_only": True}).get_json()["estimate"]
+    assert cheap["tier"] == "auto" and cheap["seconds"] <= cheap["auto_max_s"] <= cheap["max_s"], cheap
+    monkeypatch.setitem(gsc.RATES, "csc", cheap["entries"] / 3000.0)
+    dear = post(client, layout, {**body, "estimate_only": True}).get_json()["estimate"]
+    assert dear["tier"] == "refused" and dear["seconds"] > dear["max_s"], dear
+    out = post(client, layout, body).get_json()
+    assert out["reason"] == "groups_too_expensive" and out["estimate"]["seconds"] > out["estimate"]["max_s"], out
+
+
 def test_a_stream_that_fails_after_it_began_ends_in_an_error_frame(client, layout, monkeypatch):
     real = gf.compute
 

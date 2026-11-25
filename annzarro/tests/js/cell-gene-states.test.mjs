@@ -193,6 +193,43 @@ test('Too many groups: the grouping\'s own refusal, with Open grouping', () => {
     assert.match(n.text, /6,840 groups/);
 });
 
+// operator 2026-11-25: "would take about 1 second, so it was not run". A grouping refused for its SIZE (groups or levels over the
+// limit) is a refused state with the estimate that was made before it: cheap, in the auto tier. The notice must name the limit
+// that refused it, never the seconds.
+const CHEAP = { seconds: 1.2, tier: 'auto', lane: 'light', entries: 0, n_cells: 8090, layout: 'column', auto_max_s: 60, max_s: 600 };
+
+test('Refused for size with a cheap estimate: the limit and its figures, never "would take about 1 second"', () => {
+    for (const snap of [
+        { state: 'refused', reason: 'too_many_groups', title: 'Grouping 1', estimate: CHEAP, message: null, refused: { reason: 'too_many_groups', count: 19000, limit: 2000 } },
+        { state: 'refused', reason: 'too_many_groups', title: 'Grouping 1', estimate: CHEAP, message: null, header: { refused: { reason: 'too_many_groups', count: 19000, limit: 2000 } } }
+    ]) {
+        const n = say(snap);
+        const said = `${n.headline} ${n.text}`;
+        assert.doesNotMatch(said, /would take|second|so it was not run/i, said);
+        assert.match(said, /19,000 groups/, said);
+        assert.match(said, /2,000/, said);
+        assert.ok(n.actions.some(([id]) => id === 'score-open'), 'the way out: open the grouping');
+    }
+    const levels = say({ state: 'refused', reason: 'too_many_levels', title: 'Grouping 1', estimate: CHEAP, message: null, refused: { reason: 'too_many_levels', count: 2500, limit: 2000 } });
+    assert.match(`${levels.headline} ${levels.text}`, /2,500 levels/);
+    assert.doesNotMatch(`${levels.headline} ${levels.text}`, /would take|second/i);
+});
+
+test('Refused with no figures and no cost reason: it says it was refused and why it can, never a made-up duration', () => {
+    const n = say({ state: 'refused', reason: 'too_many_groups', title: 'Grouping 1', estimate: CHEAP, message: null });
+    assert.doesNotMatch(`${n.headline} ${n.text}`, /would take|second/i);
+    const other = say({ state: 'refused', reason: 'something_new', title: 'Grouping 1', estimate: CHEAP, message: 'The server said no.' });
+    assert.doesNotMatch(`${other.headline} ${other.text}`, /would take|second/i);
+    assert.match(`${other.headline} ${other.text}`, /The server said no/);
+});
+
+test('A cost refusal is quoted in seconds only when the seconds are over the limit the estimate reports', () => {
+    const over = say({ state: 'refused', reason: 'groups_too_expensive', estimate: { ...HEAVY, seconds: 1500, tier: 'refused', max_s: 600 } });
+    assert.equal(over.headline, 'Would take about 25 minutes, so it was not run.');
+    const under = say({ state: 'refused', reason: 'groups_too_expensive', estimate: { ...CHEAP, tier: 'refused' }, message: 'This would take about 1 seconds; the limit is 10 minutes.' });
+    assert.doesNotMatch(under.headline, /would take about 1 second/i, under.headline);
+});
+
 test('Error: what went wrong, and Retry', () => {
     const n = say({ state: 'failed', reason: 'failed', message: 'the server stopped responding' });
     assert.equal(n.headline, 'Could not be computed: the server stopped responding.');

@@ -280,8 +280,10 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
                 shownKey: previous.key, progress: snap.progress, estimate: snap.estimate, owners: snap.owners };
         }
         if (!working) setShown(handle, null);
+        // a refusal for its size keeps the route's figures (header.refused: count, limit), which its notice names
         return { ...base, held, state: snap.state === 'idle' ? 'estimating' : snap.state, progress: snap.progress,
-            estimate: snap.estimate, message: snap.message, reason: snap.reason, owners: snap.owners };
+            estimate: snap.estimate, message: snap.message, reason: snap.reason, owners: snap.owners,
+            ...(snap.state === 'refused' && snap.header ? { header: snap.header } : {}) };
     }
 
     // a store change: the handles on that key, then the status listeners of their sources

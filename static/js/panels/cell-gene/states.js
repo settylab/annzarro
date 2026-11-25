@@ -19,7 +19,7 @@
  * worded from counts the panel made once per plan or per drawing.
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
-import { describeSource, durationText, timeLeftText, queueOf } from '../../utils/source-notices.js';
+import { describeSource, durationText, timeLeftText, queueOf, isCostRefusal } from '../../utils/source-notices.js';
 import { matrixLimits } from '../../utils/cell-gene-model.js';
 import { GROUPING_LIMITS } from '../../utils/cell-grouping.js';
 import { compactCount, exactCount } from '../../utils/coverage.js';
@@ -141,7 +141,8 @@ export function describePlot(snap, ctx, plot, words) {
                 [['score-compute', S.buttons.compute], ['fewer-genes', S.buttons.fewer]]);
         }
         case 'refused':
-            if (snap.reason !== COST_REFUSAL) break;
+            // only a refusal by cost quotes seconds; any other limit is the generic notice's (utils/source-notices.js)
+            if (snap.reason !== COST_REFUSAL || !isCostRefusal(snap)) break;
             if (est.layout === 'csr' && plot && plot.layer) {
                 return say('refused', 'warning', S.tags.refused,
                     S.refusedCsr(plot.layer, genes, plot.genes, durationText(est.seconds)), S.csrWayOut, []);

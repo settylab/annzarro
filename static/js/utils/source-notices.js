@@ -54,6 +54,39 @@ export function durationText(seconds) {
     return `about ${Math.round(h)} hour${Math.round(h) === 1 ? '' : 's'}`;
 }
 
+/** The refusal reasons that are a cost: the estimate's seconds were over the refuse limit (the server's `tier` is `refused`). */
+const COST_REASONS = Object.freeze(['score_too_expensive', 'groups_too_expensive']);
+
+/**
+ * Whether a refused snapshot is a refusal by cost and says so with its seconds: its reason is a cost reason (or none is
+ * given), and the estimate's seconds are over the limit the estimate reports (`max_s`; no limit reported: taken as over).
+ * A refusal for any other limit never quotes the estimate, which was made before it and is usually small.
+ * @param {Object} snap
+ */
+export function isCostRefusal(snap) {
+    if (!snap || snap.state !== 'refused') return false;
+    if (snap.reason && !COST_REASONS.includes(snap.reason)) return false;
+    const est = snap.estimate || {};
+    const seconds = Number(est.seconds);
+    if (est.seconds === null || est.seconds === undefined || !Number.isFinite(seconds)) return false;
+    return !(Number(est.max_s) > 0) || seconds > Number(est.max_s);
+}
+
+/**
+ * What a grouping's figures of a refusal for its size say ("has 19,000 groups: a grouping holds up to 2,000"), from the
+ * route's `refused` ({reason, count, limit}); null without figures or for another reason.
+ * @param {{reason?: string, count?: number, limit?: number}|null} refused
+ */
+export function sizeRefusalText(refused) {
+    if (!refused || !Number.isFinite(Number(refused.count)) || !Number.isFinite(Number(refused.limit))) return null;
+    const W = VOCABULARY.word;
+    const PL = VOCABULARY.plural;
+    const fmt = (n) => Number(n).toLocaleString('en-US');
+    if (refused.reason === 'too_many_groups') return `has ${fmt(refused.count)} ${PL.group}: a ${W.grouping} holds up to ${fmt(refused.limit)}`;
+    if (refused.reason === 'too_many_levels') return `has a ${W.factor} with ${fmt(refused.count)} ${PL.level}: a ${W.factor} holds up to ${fmt(refused.limit)}`;
+    return null;
+}
+
 /** The states of a dependant whose value is still on its way. */
 const PENDING_STATES = Object.freeze(['idle', 'estimating', 'queued', 'computing', 'updating']);
 
@@ -183,9 +216,24 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
                 `${t} could not be computed${snap.message ? `: ${trimStop(snap.message)}` : ''}.`, '', [['score-retry', 'Retry'], open]);
         }
         case 'refused': {
-            const seconds = snap.estimate && snap.estimate.seconds;
-            const head = Number.isFinite(seconds) ? `${t} would take ${durationText(seconds)}, so it was not run.`
-                : `${t} is too large to compute here, so it was not run.`;
+            // Which limit refused it decides the sentence (operator 2026-11-25: a grouping over the groups limit said "would take
+            // about 1 second, so it was not run", the estimate that came before it). Seconds are quoted only for a refusal by cost.
+            const figures = snap.refused || (snap.header && snap.header.refused) || null;
+            const size = sizeRefusalText(figures);
+            if (size) {
+                return out('refused', 'warning', tagOf('refused', `${Result} refused`), `${t} ${size}, so it was not computed.`, '', [open, choose]);
+            }
+            const said = Object.hasOwn(VOCABULARY.reasons, snap.reason) ? VOCABULARY.reasons[snap.reason] : null;
+            if (said) {
+                return out('refused', 'warning', tagOf('refused', `${Result} refused`), `${t} was not computed.`, said.text, [open, choose]);
+            }
+            if (isCostRefusal(snap)) {
+                return out('refused', 'warning', tagOf('refused', `${Result} refused`),
+                    `${t} would take ${durationText(snap.estimate.seconds)}, so it was not run.`, snap.message || '', [open, choose]);
+            }
+            // no seconds to quote (or not by cost): the sentence of before when nothing was estimated, else only that it was not run
+            const estimated = snap.estimate && Number.isFinite(Number(snap.estimate.seconds)) && snap.estimate.seconds !== null;
+            const head = estimated ? `${t} was not run.` : `${t} is too large to compute here, so it was not run.`;
             return out('refused', 'warning', tagOf('refused', `${Result} refused`), head, snap.message || '', [open, choose]);
         }
         case 'awaiting': {

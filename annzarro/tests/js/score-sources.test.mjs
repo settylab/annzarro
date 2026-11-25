@@ -293,6 +293,15 @@ test('each state has its sentence, tag and actions (design 7.3)', () => {
     assert.equal(refused.headline, "'T cell score' would take about 25 minutes, so it was not run.");
     assert.match(refused.text, /Use fewer genes/);
     assert.deepEqual(refused.actions.map(a => a[0]), ['score-open', 'score-choose']);
+    // a refusal for something else than cost never quotes the estimate: a limit of the grouping, one the page has its words for
+    const cheap = { seconds: 1.2, tier: 'auto', max_s: 600 };
+    const size = t('refused', { reason: 'too_many_values', estimate: cheap });
+    assert.doesNotMatch(size.headline, /would take|second/i, size.headline);
+    assert.match(size.text, /too many values/);
+    const cost = t('refused', { reason: 'score_too_expensive', estimate: { seconds: 1500, tier: 'refused', max_s: 600 }, message: 'x' });
+    assert.equal(cost.headline, "'T cell score' would take about 25 minutes, so it was not run.");
+    const lie = t('refused', { reason: 'score_too_expensive', estimate: { seconds: 1.2, tier: 'refused', max_s: 600 }, message: 'x' });
+    assert.doesNotMatch(lie.headline, /second/i, 'a cost refusal under the limit does not claim a duration');
     const failed = t('failed', { message: 'The server stopped responding.' });
     assert.equal(failed.headline, "'T cell score' could not be computed: The server stopped responding.");
     assert.deepEqual(failed.actions[0], ['score-retry', 'Retry']);
