@@ -87,6 +87,9 @@ function keyEntries(list, setting) {
 
 // ---------------------------------------------------------------------------------------------- the groups of a grouping
 
+/** grouping id -> the group name a row had when it picked that grouping before its groups were known (applied when they are). */
+const PENDING_WAS = new Map();
+
 /** grouping id -> {handle, reply}: what the menus read of a grouping's groups (held while a menu may list them). */
 const MENUS = new Map();
 
@@ -505,6 +508,8 @@ const groupAggregate = {
         const { sources } = groupSources();
         let column = '';
         let groupWas;
+        if (!reply) PENDING_WAS.set(id, previous && previous.type === TYPE ? groupNameOf(previous) : '');
+        else PENDING_WAS.delete(id);
         if (reply && reply.groups.length) {
             const names = sources.namesOf(id, reply);
             const was = previous && previous.type === TYPE ? groupNameOf(previous) : '';
@@ -515,6 +520,20 @@ const groupAggregate = {
         const held = { type: TYPE, key: id, column, stat: previous && previous.type === TYPE ? M.statOf(previous) : M.DEFAULT_STAT, layer, ...(groupWas ? { groupWas } : {}) };
         const p = M.pairAfter(held, 'layer', layer, kindsNow(), layersNow());
         return { ...held, stat: p.stat, layer: p.layer, label: groupingTitle({ key: id }) };
+    },
+    /**
+     * A grouping picked before its groups were known has no group; once they are, the rule of a grouping switch gives it one
+     * (the group of the same name, else the first). Returns the fields to set, once, or null.
+     */
+    settle: (setting) => {
+        const id = setting.key;
+        if (setting.type !== TYPE || setting.column || !PENDING_WAS.has(id)) return null;
+        const reply = menuReply(id);
+        if (!reply || !reply.groups.length) return null;
+        const names = groupSources().sources.namesOf(id, reply);
+        const key = reply.groups[Math.max(0, names.indexOf(PENDING_WAS.get(id)))].key;
+        PENDING_WAS.delete(id);
+        return { column: M.columnOf(key), groupWas: referToGroup(groupSources().sources.labelsOf(id, reply), key).groupWas };
     },
     /** The groups of the row's grouping by their names, in the grouping's order; null when it has none to list (gone, no reply). */
     members: (setting) => {
