@@ -78,6 +78,19 @@ function undoOf(id) {
 }
 
 /**
+ * A change the plot makes on its own as the end of a step the user took (a grouping picked before its groups were known
+ * takes its group when they arrive): the step so far is recorded, `change` is made, and the result belongs to that step.
+ * @param {string} id - the panel id
+ * @param {Function} change
+ */
+export function settleQuietly(id, change) {
+    const undo = undoOf(id);
+    undo.observe();
+    change();
+    undo.absorb();
+}
+
+/**
  * Put Undo in the panel's toolbar and watch for the user's changes. Called by the panel each time it is built.
  * @param {string} id - the panel id
  * @param {HTMLElement} root - the panel's element (its controls and toolbar inside)

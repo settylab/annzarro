@@ -23,6 +23,7 @@
     --az-bg: #ffffff;
     --az-surface: #ffffff;
     --az-surface-2: #f8f9fa;
+    --az-panel-header-bg: #f8f9fa;      /* every panel's header, and the Add panel tile's: one grey */
     --az-surface-3: #e9ecef;
     --az-surface-rgb: 255, 255, 255;
     --az-surface-2-rgb: 248, 249, 250;
@@ -89,6 +90,7 @@
     --az-bg: #14171a;
     --az-surface: #1c2024;
     --az-surface-2: #23282d;
+    --az-panel-header-bg: #23282d;
     --az-surface-3: #2d333a;
     --az-surface-rgb: 28, 32, 36;
     --az-surface-2-rgb: 35, 40, 45;

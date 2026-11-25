@@ -1,4 +1,5 @@
 import { getSource, parseAlsoListed } from '../../utils/source-registry.js';
+import { settleQuietly } from './plot-undo.js';
 import { isAggregate, clearSetting, applyAfter, decodeSet, encodeSet, startSet, startItem } from '../../utils/axis-aggregate.js';
 import { updateColorSliderUI, setupAxisSelector, sayPair, takeSubKey, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
@@ -1314,6 +1315,23 @@ function setupAxisSelectorListeners(
   
   // Set up lock and refocus button handlers using event delegation
   setupSpecialButtonListeners(controlsContainer, settings, plotType, onFocusedCellChanged, onFocusedGeneChanged);
+
+  // a grouping picked before its groups were known takes its group when they are (the provider's `settle`), as one change
+  let settleSeen = false;
+  const settleHandler = () => {
+    const root = controlsContainer && controlsContainer.jquery ? controlsContainer[0] : controlsContainer;
+    const here = !!(root && root.isConnected);
+    if (here) settleSeen = true;
+    else if (settleSeen) { document.removeEventListener('annzarro:panels-changed', settleHandler); return; }       // the panel is gone
+    if (!here) return;
+    for (const axis of ['x', 'y', 'z', 'color']) {
+      const s = settings[axis];
+      const provider = s && isAggregate(s) ? getSource(s.type) : null;
+      const found = provider && provider.aggregate && provider.aggregate.settle ? provider.aggregate.settle(s) : null;
+      if (found) { settleQuietly(id, () => Object.assign(s, found)); refillRow(axis).then(() => handleAxisUpdate(axis, plotType)); }
+    }
+  };
+  document.addEventListener('annzarro:panels-changed', settleHandler);
 
   /** The row of an axis built again from its setting (the item picker, the layer list, the aggregation button). */
   async function refillRow(axis) {

@@ -132,6 +132,15 @@ export function createPanelUndo({ snapshot, restore, max = UNDO_MAX, coalesceMs 
             return true;
         },
 
+        /**
+         * A change the panel made on its own as part of the step before it (a default it fills in when what it waited for
+         * arrives): the config as it is now is the one known, so it is not a step of its own.
+         */
+        absorb() {
+            if (restoring) return;
+            base = snapshot();
+        },
+
         /** A config arrived from outside: the steps are forgotten and the config as it is now is the start. */
         rebase() {
             steps.length = 0;
