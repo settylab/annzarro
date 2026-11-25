@@ -1,0 +1,76 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "Apoe",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "gene-plot-gs",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "gene-plot-gs": true
+  },
+  "panelConfigs": {
+   "gene-plot-gs": {
+    "id": "gene-plot-gs",
+    "title": "Mean fold change: HSC (x) against Monocyte (y)",
+    "x": {
+     "type": "group-stat",
+     "key": "cell-grouping-ct",
+     "column": "[\"c:HSC\"]",
+     "stat": "mean",
+     "layer": "kompot_de_Young_to_Old_fold_change",
+     "groupWas": [
+      "HSC"
+     ]
+    },
+    "y": {
+     "type": "group-stat",
+     "key": "cell-grouping-ct",
+     "column": "[\"c:Monocyte\"]",
+     "stat": "mean",
+     "layer": "kompot_de_Young_to_Old_fold_change",
+     "groupWas": [
+      "Monocyte"
+     ]
+    },
+    "z": null,
+    "color": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_is_de",
+     "column": ""
+    },
+    "pointSize": 6,
+    "pointOpacity": 0.9,
+    "showZeroLines": true,
+    "highlightFocusedGene": true,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "tableFilter": "none"
+   },
+   "cell-grouping-ct": {
+    "id": "cell-grouping-ct",
+    "title": "Cell types",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "midres_celltype"
+      }
+     }
+    ]
+   }
+  }
+ }
+}

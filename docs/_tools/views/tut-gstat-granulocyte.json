@@ -1,0 +1,131 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "S100a8",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 75,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 25,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "gene-table-gs",
+      "controlsVisible": false
+     },
+     {
+      "type": "tile",
+      "id": "cell-grouping-ct",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "gene-table-gs": true,
+   "cell-grouping-ct": false
+  },
+  "panelConfigs": {
+   "gene-table-gs": {
+    "id": "gene-table-gs",
+    "title": "Called genes that fall in HSCs",
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_is_de",
+      "column": ""
+     },
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_mahalanobis",
+      "column": ""
+     },
+     {
+      "type": "group-stat",
+      "key": "cell-grouping-ct",
+      "column": "[\"c:HSC\"]",
+      "stat": "mean",
+      "layer": "kompot_de_Young_to_Old_fold_change",
+      "groupWas": [
+       "HSC"
+      ],
+      "label": "Cell types"
+     },
+     {
+      "type": "group-stat",
+      "key": "cell-grouping-ct",
+      "column": "[\"c:Myelo P\"]",
+      "stat": "mean",
+      "layer": "kompot_de_Young_to_Old_fold_change",
+      "groupWas": [
+       "Myelo P"
+      ],
+      "label": "Cell types"
+     },
+     {
+      "type": "group-stat",
+      "key": "cell-grouping-ct",
+      "column": "[\"c:Neutrophil\"]",
+      "stat": "mean",
+      "layer": "kompot_de_Young_to_Old_fold_change",
+      "groupWas": [
+       "Neutrophil"
+      ],
+      "label": "Cell types"
+     }
+    ],
+    "pageLength": 25,
+    "searchBuilderEnabled": true,
+    "searchBuilderConfig": {
+     "criteria": [
+      {
+       "condition": "=",
+       "data": "kompot_de_Young_to_Old_is_de",
+       "origData": "var_kompot_de_Young_to_Old_is_de_main",
+       "type": "string",
+       "value": [
+        "true"
+       ]
+      },
+      {
+       "condition": "<",
+       "data": "HSC: mean \u00b7 kompot_de_Young_to_Old_fold_change",
+       "origData": "group-stat_cell-grouping-ct_\u241e5b\u241e\"c:HSC\"\u241e5d\u241e__of_kompot_de_Young_to_Old_fold_change__as_mean",
+       "type": "num",
+       "value": [
+        "-0.5"
+       ]
+      }
+     ],
+     "logic": "AND"
+    }
+   },
+   "cell-grouping-ct": {
+    "id": "cell-grouping-ct",
+    "title": "Cell types",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "midres_celltype"
+      }
+     }
+    ]
+   }
+  }
+ }
+}
