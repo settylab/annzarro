@@ -103,9 +103,38 @@ def _open(page, served, configs, open_ids=(P,), wait=True):
         page.wait_for_selector(f"{C} .js-plotly-plot", timeout=30000)
 
 
+MARK = "\x01"
+
+
 def _menus(page, axis="color"):
-    until(page, """([t, a]) => { const s = document.querySelector(`${t} select.axis-type-select[data-axis="${a}"]`);
-        return !!s && [...s.options].some(o => o.value === 'cell-group'); }""", [C, axis])
+    """The axis row is built and the grouping provider is registered (a grouping is picked under layer, G-SRC)."""
+    until(page, """async ([t, a]) => { const s = document.querySelector(`${t} select.axis-type-select[data-axis="${a}"]`);
+        const R = await import('/static/js/utils/source-registry.js');
+        return !!s && [...s.options].some(o => o.value === 'layer') && !!R.getSource('cell-group'); }""", [C, axis])
+
+
+def _pick(page, axis, entry, tile=C):
+    """Choose a grouping the way a user does: type layer, then the grouping in the item list under Cell groupings."""
+    if page.input_value(f'{tile} select.axis-type-select[data-axis="{axis}"]') != "layer":
+        page.select_option(f'{tile} select.axis-type-select[data-axis="{axis}"]', "layer")
+    value = f"{MARK}cell-group{MARK}{entry}"
+    sel = f'{tile} select.axis-column-select[data-axis="{axis}"]'
+    until(page, "([s, v]) => [...document.querySelector(s).options].some(o => o.value === v)", [sel, value])
+    page.select_option(sel, value)
+
+
+def _items(page, axis):
+    """The item list of a layer row: [[section heading, [[value, text], ...]], ...]; loose entries under ''."""
+    return page.evaluate("""([t, a]) => { const s = document.querySelector(`${t} select.axis-column-select[data-axis="${a}"]`);
+        const out = []; const loose = [...s.children].filter(c => c.tagName === 'OPTION');
+        if (loose.length) out.push(['', loose.map(o => [o.value, o.textContent])]);
+        for (const g of s.querySelectorAll('optgroup')) out.push([g.label, [...g.children].map(o => [o.value, o.textContent])]);
+        return out; }""", [C, axis])
+
+
+def _layer_select(page, axis):
+    return page.evaluate("""([t, a]) => { const s = document.querySelector(`${t} select.axis-key-select[data-axis="${a}"]`);
+        return { value: s.value, disabled: s.disabled, title: s.title }; }""", [C, axis])
 
 
 def _options(page, kind, axis):
@@ -180,20 +209,19 @@ def test_colour_by_a_grouping_from_the_menus_in_group_order_with_its_colours(pag
     _menus(page)
     for axis in ("color", "x", "y", "z"):
         _menus(page, axis)
-        types = [v for v, _ in _options(page, "type", axis)]
-        assert "cell-group" in types and types.index("cell-group") > types.index("layer"), (axis, types)
-        assert "gene-score" not in types, "a signature is picked in the item picker of a layer, not as a source"
-        # what the menu shows is a word, never a provider's type id
-        shown = dict(_options(page, "type", axis))
-        assert shown["cell-group"] == "Cell Grouping", (axis, shown)
-    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "cell-group")
-    until(page, """(t) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="color"] option`)].some(o => o.value === 'cell-grouping-B')""", C)
-    keys = _options(page, "key", "color")
-    assert sorted(keys[:-1]) == [[GA, "Grouping 1"], [GB, "Grouping 2"]] and keys[-1] == ["__new_grouping__", "New grouping…"], \
-        "every grouping, open or closed, then New grouping…"
-    assert page.is_hidden(f'{C} select.axis-column-select[data-axis="color"]') or \
-        page.is_disabled(f'{C} select.axis-column-select[data-axis="color"]'), "no third select (CAT-1)"
-    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', GA)
+        shown = _options(page, "type", axis)
+        assert "cell-group" not in [v for v, _ in shown] and "Cell Grouping" not in [t for _, t in shown], (axis, shown)
+        assert "gene-score" not in [v for v, _ in shown], "a signature is picked in the item picker of a layer, not as a source"
+    # under layer, the item list ends with Cell groupings, and New grouping… ends that section
+    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "layer")
+    until(page, "(t) => [...document.querySelectorAll(t + ' select.axis-column-select[data-axis=\"color\"] optgroup')].some(g => g.label === 'Cell groupings')", C)
+    sections = _items(page, "color")
+    headings = [h for h, _ in sections if h]
+    assert headings == ["Genes", "Gene signatures", "Cell groupings"], headings   # Gene tables is listed between the last two once there is one
+    own = dict(sections)["Cell groupings"]
+    assert sorted(own[:-1]) == [[f"{MARK}cell-group{MARK}{GA}", "Grouping 1"], [f"{MARK}cell-group{MARK}{GB}", "Grouping 2 (closed)"]] \
+        and own[-1] == [f"{MARK}cell-group{MARK}__new_grouping__", "New grouping…"], "every grouping, open or closed, then New grouping…"
+    _pick(page, "color", GA)
     _wait_legend(page, TYPES)
     assert _legend(page) == "Grouping 1", "the legend is titled by the grouping (CAT-8)"
     traces = _traces(page)
@@ -203,6 +231,62 @@ def test_colour_by_a_grouping_from_the_menus_in_group_order_with_its_colours(pag
     assert _colour_cfg(page)["key"] == GA and _colour_cfg(page)["label"] == "Grouping 1"
     request = _computes(page)[-1]
     assert request["want"]["codes"] is True
+    # a grouping is no aggregate: no button; the layer select keeps its layer, disabled, and says why
+    assert page.locator(f'{C} button.axis-agg-btn[data-axis="color"]').count() == 0
+    layer = _layer_select(page, "color")
+    assert layer["disabled"] is True and layer["title"] == "A cell grouping reads no layer." and layer["value"] == "X", layer
+    assert page.input_value(f'{C} select.axis-type-select[data-axis="color"]') == "layer"
+
+
+def test_a_grouping_on_x_is_a_categorical_axis_in_group_order_with_no_button_and_a_disabled_layer(page, served):
+    _open(page, served, {P: _plot(), GA: _grouping()}, open_ids=(P, GA))
+    _menus(page, "x")
+    _pick(page, "x", GA)
+    until(page, """(t) => { const gd = document.querySelector(t + ' .js-plotly-plot');
+        return !!(gd && gd._fullLayout && gd._fullLayout.xaxis.type === 'category'); }""", C)
+    order = page.evaluate("""(t) => { const gd = document.querySelector(t + ' .js-plotly-plot');
+        return gd._fullLayout.xaxis._categories.map(String); }""", C)
+    assert [n for n in order if n != "Not in any group"] == TYPES, order
+    assert page.locator(f'{C} button.axis-agg-btn[data-axis="x"]').count() == 0
+    layer = _layer_select(page, "x")
+    assert layer["disabled"] is True and layer["title"] == "A cell grouping reads no layer.", layer
+    assert page.input_value(f'{C} select.axis-type-select[data-axis="x"]') == "layer"
+
+
+def test_picking_a_gene_after_a_grouping_enables_the_layer_again_on_the_same_layer_and_leaves_no_grouping_field(page, served):
+    _open(page, served, {P: _plot(), GA: _grouping()}, open_ids=(P, GA))
+    _menus(page)
+    # read the layer first, so the row has one to keep
+    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "layer")
+    until(page, "(t) => !!document.querySelector(t + ' select.axis-key-select[data-axis=\"color\"]') && !document.querySelector(t + ' select.axis-key-select[data-axis=\"color\"]').disabled", C)
+    layers = [v for v, _ in _options(page, "key", "color")]
+    layer = layers[-1]
+    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', layer)
+    _pick(page, "color", GA)
+    _wait_legend(page, TYPES)
+    held = _layer_select(page, "color")
+    assert held["disabled"] is True and held["value"] == layer, held
+    gene = [v for v, _ in dict(_items(page, "color")).get("Genes", [])][0]
+    page.select_option(f'{C} select.axis-column-select[data-axis="color"]', gene)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().color.type === 'layer'", P)
+    after = _layer_select(page, "color")
+    assert after["disabled"] is False and after["value"] == layer, after
+    cfg = _colour_cfg(page)
+    assert {k: v for k, v in cfg.items() if k not in ("history", "locked")} == {"type": "layer", "key": layer, "column": gene}, "no grouping field is left behind"
+
+
+def test_a_link_made_before_opens_to_the_same_plot_and_an_unrelated_edit_leaves_the_setting_as_it_was(page, served):
+    old = {"type": "cell-group", "key": GA, "column": ""}
+    _open(page, served, {P: _plot(color=dict(old)), GA: _grouping()}, open_ids=(P, GA))
+    _wait_legend(page, TYPES)
+    assert [t[0] for t in _traces(page)] == TYPES
+    assert page.input_value(f'{C} select.axis-type-select[data-axis="color"]') == "layer", "the row shows layer"
+    before = _colour_cfg(page)
+    assert before["type"] == "cell-group" and before["key"] == GA and before["column"] == ""
+    # an edit of another axis changes nothing of the colour setting
+    page.select_option(f'{C} select.axis-column-select[data-axis="y"]', "0")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().y.column === '0'", P)
+    assert _colour_cfg(page) == before, "the colour setting is as it was"
 
 
 def test_cells_in_no_group_are_drawn_as_missing_not_in_any_group(page, served):
@@ -344,8 +428,9 @@ def test_a_deleted_grouping_says_so_and_the_plot_keeps_its_setting(page, served)
     assert note["actions"] == ["score-choose|Choose another"]
     assert _tag(page) == "Grouping deleted"
     assert _colour_cfg(page)["key"] == GA, "nothing is silently reset (SHR-38)"
-    until(page, """(t) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="color"] option`)].some(o => o.textContent === 'Grouping 1 (deleted)')""", C)
-    assert _options(page, "key", "color") == [[GA, "Grouping 1 (deleted)"], ["__new_grouping__", "New grouping…"]]
+    until(page, """(t) => [...document.querySelectorAll(`${t} select.axis-column-select[data-axis="color"] option`)].some(o => o.textContent === 'Grouping 1 (deleted)')""", C)
+    assert _items(page, "color")[0] == ["", [[f"{MARK}cell-group{MARK}{GA}", "Grouping 1 (deleted)"]]] or \
+        [f"{MARK}cell-group{MARK}{GA}", "Grouping 1 (deleted)"] in dict(_items(page, "color")).get("", [])
 
 
 def test_a_loop_from_a_link_computes_nothing_and_names_the_panels(page, served):
@@ -375,7 +460,7 @@ def test_an_empty_grouping_asks_nothing_and_adding_a_factor_colours_the_plot(pag
 def test_new_grouping_opens_one_beside_the_plot_and_the_plot_takes_it(page, served):
     _open(page, served, {P: _plot(color=by(GA)), GA: _grouping()})
     _wait_legend(page, TYPES)
-    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', "__new_grouping__")
+    _pick(page, "color", "__new_grouping__")
     until(page, "() => document.querySelectorAll('.tile[data-tile-id^=\"cell-grouping-\"]').length === 1")
     made = page.evaluate("() => document.querySelector('.tile[data-tile-id^=\"cell-grouping-\"]').dataset.tileId")
     assert made != GA
@@ -523,9 +608,7 @@ def test_switching_the_colour_axis_while_the_grouping_loads_settles_with_no_runa
         for (const name of ['load', 'loadLarge']) { const orig = p[name]; p[name] = (...a) => { window.__loads++; return orig.apply(p, a); }; } }""", "cell-group")
     held = []
     page.route(ROUTE, lambda route: held.append(route))
-    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "cell-group")
-    until(page, """(t) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="color"] option`)].some(o => o.value === 'cell-grouping-A')""", C)
-    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', GA)
+    _pick(page, "color", GA)
     until(page, "() => window.__loads >= 1")
     # the grouping is still computing: the colour goes back to a column
     page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "obs")

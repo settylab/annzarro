@@ -24,7 +24,7 @@ else:
 from annzarro.tests.browser import test_focus_outside_subset as _focus  # noqa: E402
 from annzarro.tests.browser.test_cell_group_plots import (  # noqa: E402
     C, CELL_TYPE, CONDITION, GA, GB, N, NONE, P, TYPES, _grouping, _legend, _menus, _notice, _open, _plot, _traces,
-    _wait_legend, _wait_notice, by)
+    _pick, _wait_legend, _wait_notice, by)
 from annzarro.tests.browser.test_cell_grouping_panel import _make_store  # noqa: E402
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 from annzarro.tests.browser.test_names_dataset_scope import _serve  # noqa: E402
@@ -96,13 +96,20 @@ def test_cells_in_no_group_read_not_in_any_group_in_large_plot_mode(page, large_
 def test_a_grouping_is_not_an_axis_of_a_large_plot(page, large_served):
     _open(page, large_served, {P: _plot(color=by(GA)), GA: _grouping()})
     _wait_legend(page, TYPES)
-    _menus(page, "x")
-    state = page.evaluate("""(t) => { const o = document.querySelector(`${t} select.axis-type-select[data-axis="x"] option[value="cell-group"]`);
-        return { disabled: o.disabled, title: o.getAttribute('title') }; }""", C)
-    assert state["disabled"] is True and state["title"], state
-    colour = page.evaluate("""(t) => { const o = document.querySelector(`${t} select.axis-type-select[data-axis="color"] option[value="cell-group"]`);
-        return { disabled: o.disabled }; }""", C)
-    assert colour["disabled"] is False, "colour is the one axis a grouping has in large-plot mode"
+    for axis in ("x", "y"):
+        _menus(page, axis)
+        page.select_option(f'{C} select.axis-type-select[data-axis="{axis}"]', "layer")
+        sel = f'{C} select.axis-column-select[data-axis="{axis}"]'
+        until(page, "([s]) => !!document.querySelector(s) && [...document.querySelector(s).options].some(o => o.value.includes('cell-group'))", [sel])
+        state = page.evaluate("""(s) => [...document.querySelector(s).options].filter(o => o.value.includes('cell-group'))
+            .map(o => [o.disabled, o.getAttribute('title')])""", sel)
+        assert state and all(d and t == "A grouping can color a large plot, not be one of its axes." for d, t in state), (axis, state)
+    # colour is the one axis a grouping has in large-plot mode
+    _menus(page, "color")
+    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "layer")
+    sel = f'{C} select.axis-column-select[data-axis="color"]'
+    until(page, "([s]) => !!document.querySelector(s) && [...document.querySelector(s).options].some(o => o.value.includes('cell-group'))", [sel])
+    assert page.evaluate("""(s) => [...document.querySelector(s).options].filter(o => o.value.includes('cell-group')).every(o => !o.disabled)""", sel)
 
 
 # ------------------------------------------------------------------ 2. the memory guard
@@ -152,7 +159,7 @@ def test_codes_that_do_not_fit_are_refused_before_the_request_and_another_that_f
     assert page.evaluate(HELD) == before["held"], "nothing held on the ledger"
     # room for the codes of another grouping: the same guard lets them in, and the plot draws it
     page.evaluate(LIMIT, [P, "codes"])
-    page.select_option(f'{C2} select.axis-key-select[data-axis="color"]', GB)
+    _pick(page, "color", GB, C2)
     until(page, """([t, names]) => { const gd = document.querySelector(t + ' .js-plotly-plot');
         return !!(gd && gd.data && names.every(n => gd.data.some(d => d.name === n)) && !document.querySelector(t + ' .score-notice')); }""",
           [C2, gstore.CONDITIONS])

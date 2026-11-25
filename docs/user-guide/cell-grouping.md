@@ -220,7 +220,7 @@ a plot, and enter no statistic.
 
 | Where | How |
 |---|---|
-| **Cell Plot** colour, x, y, z and hover | Choose **Cell Grouping** in the type list (beside obs, obsm, obsp, layer and **Gene score**), or a grouping at the end of the obs column list, under **Groupings**; **New grouping…** ends the list. Colour draws one legend entry per group, in group order, with the grouping's colours, and every categorical legend option applies. The hover reads `Grouping 1: B cell \| Old` |
+| **Cell Plot** colour, x, y, z and hover | Choose **layer**, then pick the grouping in the item list under **Cell groupings**; **New grouping…** ends that section. (Hover has its own **Groupings** list.) Colour draws one legend entry per group, in group order, with the grouping's colours, and every categorical legend option applies. The hover reads `Grouping 1: B cell \| Old` |
 | **Cell Table** | The column chooser has a **Cell Grouping** tab. The column shows each cell's group, sorts in group order and filters with **Equals** like a categorical column |
 | **Cell-Gene Plot** | As **Groups** ({doc}`cell-gene-plot`) |
 | **Cell Count Plot** | As X, Y or **Color by**, and one group of it as a set ({doc}`cell-count-plot`) |

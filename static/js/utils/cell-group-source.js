@@ -39,6 +39,7 @@ import { groupSources } from './group-host.js';
 import { codeBytes } from './group-store.js';
 import { codesCheck, shortRefusalText } from './memory-guard-ui.js';
 import { DataManager } from '../data-manager.js';
+import { datasetLayersNow } from './score-source.js';
 import { GROUP_COLOURS, grouped, groupOf, groupLegendLabel } from './categories.js';
 import { VOCABULARY } from './vocabulary.js';
 import { createGroupTable } from '../panels/cell-grouping/table-column.js';
@@ -568,6 +569,42 @@ function groupHoverOptions(kept) {
     return out;
 }
 
+// ---------------------------------------------------------------------------------------------- the axis row
+
+/** Why a large plot lists the groupings greyed on an axis (the colour of a large plot is one). */
+const LARGE_AXIS_REASON = 'A grouping can color a large plot, not be one of its axes.';
+
+/** The title of the row's layer select while a grouping is chosen. */
+const NO_LAYER_REASON = 'A cell grouping reads no layer.';
+
+const SECTION_ENTRY = (g) => ({ entry: g.id, text: g.open ? g.title : `${g.title} (closed)` });
+
+/**
+ * The groupings in an axis's item picker (utils/axis-aggregate.js), under "Cell groupings", last: the cell-side set after
+ * the gene-side ones. A grouping is the group each cell is in, not an aggregate, so it has no aggregation button
+ * (`methods` is null), and the row's layer select stays on the layer it had, disabled (`layers`).
+ */
+const groupAggregate = {
+    sections: () => [{ heading: VOCABULARY.aggregation.sections.groupings,
+        entries: [...groupingList().map(SECTION_ENTRY), { entry: NEW_GROUPING, text: `New ${W.grouping}\u2026` }] }],
+    // the stored setting is the provider's own, as before: only the row that shows it changed. The layer the row was on is
+    // kept in the setting's history, where a layer source keeps it, so the row shows it again
+    start: (id, layer, previous = null) => {
+        const history = (previous && previous.history) || {};
+        return { type: GROUP_TYPE, key: id, column: '', history: { ...history, layer: { ...(history.layer || {}), key: layer } } };
+    },
+    entryOf: (setting) => setting.key,
+    layerOf: (setting) => (setting.history && setting.history.layer && setting.history.layer.key) || '',
+    methods: () => null,
+    layers: (setting) => {
+        const keys = datasetLayersNow() || ['X'];
+        const kept = (setting.history && setting.history.layer && setting.history.layer.key) || '';
+        return { options: keys.map((k) => ({ value: k, text: k })), chosen: keys.includes(kept) ? kept : keys[0], disabled: true, title: NO_LAYER_REASON };
+    },
+    after: () => ({ say: '' }),
+    symbolOf: () => ''
+};
+
 // ---------------------------------------------------------------------------------------------- the provider
 
 // a plot's colour, axes and hover entries of a grouping, and a table's columns, follow their panel in a remap (CAT-9)
@@ -582,6 +619,8 @@ registerSource({
     axes: ['x', 'y', 'z', 'color', 'hover', 'column'],
     // large-plot mode draws a grouping as colour, never as an axis (CAT-3)
     largeAxes: ['color'],
+    largeAxesReason: LARGE_AXIS_REASON,
+    aggregate: groupAggregate,
     defaultSub: '',
     // the obs key list ends with the groupings, under this heading (UX 5)
     alsoListedUnder: 'obs',
