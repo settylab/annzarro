@@ -11,6 +11,13 @@ A signature outlives its panel. Close the panel and the signature is still there
 panel chooser as **Closed**, and still usable wherever a gene table is: it can filter a Gene Plot and
 it can be the source of a Gene Set Analysis panel.
 
+```{figure} ../_static/screens/user-guide/signature-panel.png
+:class: screenshot
+:alt: The Gene Signature panel with eight genes selected: Methods and Distribution (1, 2) at the top right, the search box (3), the add row with Paste or upload, Add from and Up/Down (4 to 6), Undo (7), the list of ticked genes and the status banner "8 of 16,285 genes selected" at the foot.
+
+A Gene Signature panel. **Methods ▾** (1) and **Distribution** (2) in the status row; the search box (3); **Paste or upload** (4), **Add from ▾** (5) and **Up/Down** (6) in the add row; **Undo** (7) in the list bar. The status banner under the list counts the selected genes.
+```
+
 ## Build a list
 
 1. Add a **Gene Signature** panel (**Create New Panel** → **Gene Signature**, or split a tile).
@@ -102,6 +109,13 @@ A pasted list can be any length; the preview counts the genes that will be added
 
 **Add** adds the genes as one step: **Undo** (or Ctrl+Z, Cmd+Z on a Mac) takes the whole paste back.
 **Cancel**, **Esc** and **Add** return you to the list and put the cursor back on **Paste or upload**.
+
+```{figure} ../_static/screens/user-guide/signature-paste.png
+:class: screenshot
+:alt: The paste preview of a Gene Signature: a pasted two-column list with the gene column chosen, "7 will be added", "1 matched ignoring case (CD3E > Cd3e)", "1 not in this dataset" with its name listed, and the buttons Back and Add 7 genes.
+
+The preview of a pasted list, before anything is added: how many genes will be added, those matched ignoring case, and the names the dataset does not have.
+```
 
 ## Use a signature
 
@@ -227,6 +241,14 @@ that would take 5 seconds or more waits behind **Update score**. A clip edit ask
 plot shows a z-score mean, and a seed edit recomputes only control-adjusted scores. Links and panel sets keep every
 parameter. A link made before this release, which listed the methods and layers a signature offered, opens with
 every plot and table on the method and layer it showed.
+
+```{figure} ../_static/screens/user-guide/signature-methods.png
+:class: screenshot
+:width: 50%
+:alt: The Methods pop-over of a Gene Signature, one section for each score method: Z-score mean with its clip, Mean, Sum, Control-adjusted with Bins, Controls per bin and Seed, Fraction of genes with Expressed above, and % of total.
+
+The **Methods ▾** pop-over: one section for each method, with its definition and its parameters.
+```
 
 ### Up and down genes
 
@@ -379,6 +401,13 @@ The score stays in the browser as one list of numbers shared by every plot and t
 adds no property to the table's rows, so on a table of a million cells it costs about 34 bytes a cell of
 the browser's memory, against about 71 for an ordinary numeric column. The table's usual memory check
 still decides whether a table of that size opens.
+
+```{figure} ../_static/screens/user-guide/signature-table-score.png
+:class: screenshot
+:alt: The column chooser of a Cell Table on its Gene score tab: for each signature a row with a layer select, the aggregation button showing the z-score mean symbol and an Add column button.
+
+The **Gene score** tab of a Cell Table: for each signature, a layer, the aggregation button and **Add column**.
+```
 
 ## Close, reopen, share
 

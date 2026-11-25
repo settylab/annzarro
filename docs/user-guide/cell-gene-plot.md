@@ -10,6 +10,13 @@ The numbers are computed on the server over every cell of each group, at any dat
 sums per group and gene, and works out every statistic and scaling from them, so changing what the colour shows, the
 scaling, the order or the style asks the server for nothing.
 
+```{figure} ../_static/screens/user-guide/cellgene-overview.png
+:class: screenshot
+:alt: A Cell-Gene Plot of two gene signatures over 19 cell types, with numbered parts: Groups (1), Mode (2), Color (3), Size (4), Scale (5), Add genes (6), the section list (7), and the toolbar row with 3D (8), Swap axes (9), Cluster (10), Color (11), Undo (12) and Plot Options (13). The dots are coloured by the mean and sized by the fraction of cells.
+
+A Cell-Gene Plot. The control row: **Groups** (1), **Mode** (2), **Color** (3), **Size** (4), **Scale** (5) and **Add genes ▾** (6), then the sections (7). The toolbar row: **3D** (8), **Swap axes** (9), **Cluster ▾** (10), **Color ▾** (11), **Undo** (12) and **Plot Options** (13).
+```
+
 ## Draw a dot plot
 
 1. Add a **Cell-Gene Plot** panel. It shows what it still needs as a checklist, **Choose groups** and **Add genes**,
@@ -97,6 +104,14 @@ Groups with no value are skipped in every minimum, maximum, mean and SD, and a c
 "All grouped cells" means the cells that are in a group: cells left out of every group do not count. A one-row section
 has no cells of its own to pool, so under the last scaling it is z-scored across its own groups; **Color ▾** says so.
 
+```{figure} ../_static/screens/user-guide/cellgene-color-list.png
+:class: screenshot
+:width: 60%
+:alt: The list of the Size symbol button: Z-score mean, Mean, Fraction of cells (checked), Mean of expressing cells, Sum, SD and Cell count, each with its symbol.
+
+The list of a symbol button: each statistic as its symbol and its name. The check mark is the one in use.
+```
+
 Under a **Z-score mean** Color the two z-score scalings are greyed out ("Color is already a z-score."), and a link or a change of
 Color that holds both moves **Scale** to **None** and says so once ("Scale changed to None: Color is already a z-score, so … would
 draw the same picture again.").
@@ -155,6 +170,13 @@ down genes, or the cells expressing any gene), which is one request per layer.
 A link saved with a separate setting for a one-row section's Color or Size opens with the section on these rules, without
 a notice.
 
+```{figure} ../_static/screens/user-guide/cellgene-onerow.png
+:class: screenshot
+:alt: The same plot with both sections shown as one row each: one column of dots per signature, the colour the mean over its genes and the size the fraction of cells expressing any of them.
+
+Both sections shown as **One row**: each signature is one column, combined by the rule for the statistic.
+```
+
 ## Clustering and order
 
 **Cluster ▾** orders genes, groups or both by hierarchical clustering:
@@ -178,6 +200,21 @@ worked out again from the settings each time and is never stored. A dendrogram i
 unless its **Dendrograms** box is cleared.
 
 **Swap axes** puts the genes on the other axis; brackets, strips and dendrograms follow.
+
+```{figure} ../_static/screens/user-guide/cellgene-cluster.png
+:class: screenshot
+:width: 40%
+:alt: The Cluster pop-over: Cluster genes Off or Within sections, Cluster groups Off or All, Sort groups by size, Linkage complete, Distance Pearson correlation, and the Dendrograms Genes and Groups check boxes.
+
+The **Cluster ▾** pop-over.
+```
+
+```{figure} ../_static/screens/user-guide/cellgene-dendrogram.png
+:class: screenshot
+:alt: The plot with genes clustered within sections and groups clustered: a dendrogram beside the groups and above each section.
+
+With **Cluster genes** on **Within sections** and **Cluster groups** on **All**, a dendrogram is drawn for each clustered block.
+```
 
 ## 3D
 
@@ -216,6 +253,13 @@ are, and pressing **3D** again returns to the 2D plot. Turning it on or off is o
   reason.
 - **Export.** PNG, JPEG and WEBP work as in 2D. SVG is greyed out in 3D: a 3D scene can only be saved as an image.
   **Download CSV** gains a Height column when Height is not **Same as Color**.
+
+```{figure} ../_static/screens/user-guide/cellgene-3d.png
+:class: screenshot
+:alt: The plot in 3D: bars standing on a floor of genes by groups, coloured by the mean, with the gene and group names along the edges and a colour bar.
+
+**3D**: the same matrix as bars, so a value can be read from its height as well as its colour.
+```
 
 ## Color and Plot Options
 
@@ -297,6 +341,13 @@ The panel follows the cost tiers of every computation: under 5 seconds it draws 
 without asking, up to 10 minutes it asks first, and beyond it refuses with the reason, with **Try anyway** where the server
 allows it. While it waits, the previous drawing stays. What each notice says, **Try anyway**, **Don't ask again for this
 panel** and the buttons that fix a refusal are explained in {doc}`long-computations`. The sentences particular to this plot:
+
+```{figure} ../_static/screens/user-guide/cellgene-refused.png
+:class: screenshot
+:alt: The notice of a Cell-Gene Plot whose matrix is over its limit: "19 groups × 22,000 rows = 418,000 cells of the matrix; the limit is 400,000. Remove a section or use fewer groups." with the buttons Show First 2,000 genes as one row and Remove First 2,000 genes.
+
+A matrix over its limit: the notice names the cells of the matrix and the limit, and offers the ways out that would draw the plot.
+```
 
 | State | What the plot says |
 |---|---|

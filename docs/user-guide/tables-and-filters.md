@@ -17,7 +17,7 @@ log fold change above 0.05.
 
    ```{figure} ../_static/screens/user-guide/tables-columns.png
    :class: screenshot
-   :alt: Table controls on the varp tab (1) with "spearman_fold_change: H2-Q7 (focused)" ticked (2); Selected Columns (3) listing two var columns and the varp column; Apply Changes (4); Export CSV (5); Show entries.
+   :alt: Table controls of a gene table: the tabs var, varm, varp, layers and Cell groupings (1); on the varp tab the add row with "H2-Q7 (focused)", "spearman_fold_change" and Add column (2); Selected Columns (3) listing two var columns and the varp column; Apply Changes (4); Export CSV (5); Undo (6); Show entries; and the Gene score row with Score methods and Distribution.
 
    Table controls of a gene table.
    ```
@@ -27,7 +27,7 @@ log fold change above 0.05.
    The `obs`, `obsm`, `var` and `varm` tabs list their columns and have a search field.
    On the `var` tab, tick `kompot_de_Young_to_Old_mean_lfc` and
    `kompot_de_Young_to_Old_mahalanobis`. On the `varp` tab, add
-   `spearman_fold_change: H2-Q7 (focused)` (2): each gene's Spearman correlation with H2-Q7. The
+   In the add row (2) leave the item on `H2-Q7 (focused)`, choose the matrix `spearman_fold_change` and press **Add column**: each gene's Spearman correlation with H2-Q7. The
    choices appear under **Selected Columns** (3); the red **×** removes one (hover over a
    shortened name to read it in full).
 4. Click **Apply Changes** (4). The table reloads with the new columns.

@@ -23,6 +23,13 @@ Everything is computed on the server, over every cell shown, at any size: groupi
 factors takes a few seconds. The browser holds the group of each cell only while a plot or a table shows it cell by
 cell.
 
+```{figure} ../_static/screens/user-guide/grouping-overview.png
+:class: screenshot
+:alt: A Cell Grouping panel with the toolbar Add factor, Methods, Settings (1 to 3) and Undo, two factor cards midres_celltype and Age (4, with Edit 5), and the list of 57 groups with their colours, cells and shares and the word small on the groups under 10 cells (6).
+
+A Cell Grouping of cell type by age. The toolbar (1 to 3), a card for each factor (4) with its **Edit ▾** (5), and the group list (6) with colour, cells and share; a group under the small-group threshold is marked **small**.
+```
+
 ## Make a grouping
 
 1. Add a **Cell Grouping** panel (**Create New Panel** → **Cell Grouping**, or **New grouping…** at the end of any
@@ -110,6 +117,14 @@ all 8,090 cells of the dataset.", and says what happened to the data:
 - "All cells share one value." The factor then has one level, named for that value, and no edge is invented.
 - "41 cells outside the range are in the end bins."
 
+```{figure} ../_static/screens/user-guide/grouping-bins.png
+:class: screenshot
+:width: 50%
+:alt: The Edit pop-over of a binned factor, titled Bins of total_counts: the method Equal count, six bins, the distribution with its thresholds, the six bins with their cell counts and colours, Freeze thresholds, and the Colors section with a palette.
+
+The **Edit ▾** pop-over of a numeric factor: the binning control with the distribution and its thresholds, the bins as levels, and the **Colors** section.
+```
+
 (grouping-subset-changes)=
 ### When the subset changes
 
@@ -180,6 +195,13 @@ panel.
 Names are made in the browser from the levels and their renames; two groups that end up with the same name get
 `(2)`, `(3)`.
 
+```{figure} ../_static/screens/user-guide/grouping-crosstable.png
+:class: screenshot
+:alt: The group list switched to Cross-table: cell types in rows, Mid, Old and Young in columns, with the cell count in each cell.
+
+**Cross-table** shows two factors as a table of cell counts.
+```
+
 ### Colours
 
 One grouping has the same colours in every panel: the group list, a Cell Plot coloured by it (large plots too), the
@@ -207,6 +229,14 @@ Plot's level palette (under its **Display ▾** button) and a Cell Plot's own pa
 The settings are stored in the recipe (`colors` for palettes, `groupOverrides` for single groups, only what is not at
 its default), so a link or a panel set carries them and a link made before colours existed opens unchanged. They are no
 part of what is computed.
+
+```{figure} ../_static/screens/user-guide/grouping-settings.png
+:class: screenshot
+:width: 40%
+:alt: The Settings pop-over of a Cell Grouping, with a Groups section (separator, small groups under, keep, collect or hide) and a Colors section (color groups by, palette and two Reset links).
+
+**Settings**: the separator and the small-group rule, and the group colours.
+```
 
 ### Cells in no group
 

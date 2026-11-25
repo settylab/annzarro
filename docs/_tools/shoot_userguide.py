@@ -431,13 +431,15 @@ def shoot_plots(sh, data_dir):
     toggle_controls(sh, page, "cell-plot-C")
     page.evaluate("window.scrollTo(0, 0)")
     c = T("cell-plot-C")
-    capture(sh, page, "plots-cell-controls", c + " .plot-controls", marks=[
+    # the controls and, under them, the toolbar row (3D, Equal aspect, Highlight, then Undo and Plot Options at the right)
+    capture_union(sh, page, "plots-cell-controls", [c + " .plot-controls", c + " .az-plot-toolbar"], marks=[
         (1, f"{c} .axis-type-select[data-axis=x]"), (2, f"{c} .axis-key-select[data-axis=x]"),
         (3, f"{c} .axis-column-select[data-axis=x]"), (4, f"{c} .color-selector-container .axis-selector"),
-        (5, f"{c} [id^=z-axis-toggle]"), (6, f"{c} [id^=equal-aspect]"),
-        (7, f"{c} [id^=highlight-focused-cell]"), (8, f"{c} [id^=category-palette]"),
-        (9, f"{c} [id^=hide-nan]"), (10, f"{c} .point-controls"),
-        (11, f"{c} .table-filter-controls"), (12, f"{c} [id^=aesthetics-menu-btn]")])
+        (5, f"{c} [id^=category-palette]"), (6, f"{c} [id^=hide-nan]"),
+        (7, f"{c} [id^=point-opacity-input]"), (8, f"{c} .table-filter-select"),
+        (9, f"{c} .hover-columns-select"), (10, f"{c} [id^=z-axis-toggle]"),
+        (11, f"{c} [id^=equal-aspect]"), (12, f"{c} [id^=highlight-focused-cell]"),
+        (13, f"{c} [id^=plot-undo]"), (14, f"{c} [id^=aesthetics-menu-btn]")])
     toggle_controls(sh, page, "cell-plot-C")      # hide the controls: the plot fills the tile again
     capture(sh, page, "plots-categorical", c + " .tile-content")
     page.context.close()
@@ -589,15 +591,18 @@ def shoot_tables(sh, data_dir):
     check("var", "kompot_de_Young_to_Old_mahalanobis")
     page.locator(f"{t} .nav-link", has_text="varp").first.click()
     time.sleep(0.4)
-    sh.log.append("tables: varp tab = " + json.dumps(page.evaluate(
-        f"[...document.querySelectorAll('{t} .tab-pane.active label')].map(l => l.textContent.trim())")))
-    varp_label = "spearman_fold_change: H2-Q7 (focused)"
-    page.locator(f"{t} label:text-is('{varp_label}')").first.click()
-    time.sleep(0.3)
+    # the varp tab is an add row (item, matrix, Add column), not a tick list (table-ui-make.js)
+    pane = f"{t} .tab-pane.active"
+    sh.log.append("tables: varp item = " + page.eval_on_selector(f"{pane} .az-entity-item", "e => e.selectedOptions[0].text"))
+    page.locator(f"{pane} .az-entity-key").select_option("spearman_fold_change")
+    page.locator(f"{pane} .az-entity-add-btn").click()
+    time.sleep(0.5)
+    add_row = f"{pane} .az-entity-add-btn"
     capture(sh, page, "tables-columns", t + " .table-controls", marks=[
-        (1, f"{t} .nav-tabs, {t} .nav"), (2, f"{t} label:text-is('{varp_label}')"),
+        (1, f"{t} .nav-tabs, {t} .nav"), (2, add_row),
         (3, f"{t} .table-controls h6:text-is('Selected Columns')"),
-        (4, f"{t} button:has-text('Apply Changes')"), (5, f"{t} button:has-text('Export CSV')")])
+        (4, f"{t} button:has-text('Apply Changes')"), (5, f"{t} button:has-text('Export CSV')"),
+        (6, f"{t} button:has-text('Undo')")])
     page.locator(f"{t} button", has_text="Apply Changes").click()
     sh.ready(page)
     sh.log.append("tables: headers = " + json.dumps(page.evaluate(
@@ -752,11 +757,11 @@ def shoot_export(sh, data_dir):
     toggle_controls(sh, page, "cell-plot-W")
     page.evaluate("(w) => document.querySelector(w + ' [id^=equal-aspect-]').click()", w); time.sleep(1.0)
     page.locator(f"{w} [id^=aesthetics-menu-btn]").click(); time.sleep(1.2)
-    # the menu as it opens (groups folded except Export; user-guide/plot-options.md), then Axes and ticks
-    capture(sh, page, "plot-options-menu", ".popover .popover-body")
+    # the pop-over as it opens (user-guide/plot-options.md), then Axes with the scale bar on
+    capture(sh, page, "plot-options-menu", "[data-popover='plot-options']")
     page.locator("details[data-section=axes] > summary").click(); time.sleep(0.4)
     page.locator("[id^=show-scale-bar-]").check(); time.sleep(0.4)
-    capture(sh, page, "plot-options-axes", ".popover .popover-body")
+    capture(sh, page, "plot-options-axes", "[data-popover='plot-options']")
     page.locator("details[data-section=axes] > summary").click(); time.sleep(0.4)
     page.locator("[id^=download-png-cell-plot-W]").scroll_into_view_if_needed(); time.sleep(0.4)
     page.context.close()

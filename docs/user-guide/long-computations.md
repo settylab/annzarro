@@ -50,6 +50,24 @@ an axis, where nothing can be drawn without the value, the plot area shows the s
 | Failed | "Could not be computed: the server stopped responding." | **Retry** |
 | Refused for size | The limit, the count and the cap (next section) | Ways out (below) |
 
+The pictures on this page were taken with the limits lowered on a scratch server (`ask_first_s` 0.4 s, `refuse_s` 0.9 s, `try_max_s` 120 s), so that the notices appear on a store of 8,090 cells. A real store reaches them at the sizes in the table above.
+
+```{figure} ../_static/screens/user-guide/longcomp-asks.png
+:class: screenshot
+:width: 60%
+:alt: The notice of a Cell-Gene Plot that asks first: "Reading 16 genes over 8,090 cells: up to about 1 second (25.8 million stored values)." with the buttons Compute and Fewer genes and the box Don't ask again for this panel.
+
+A panel that asks first, with **Compute**, **Fewer genes** and **Don't ask again for this panel**.
+```
+
+```{figure} ../_static/screens/user-guide/longcomp-refused.png
+:class: screenshot
+:width: 60%
+:alt: The notice of a Cell-Gene Plot refused for time: "logged_counts is stored by cell (CSR), so 16 genes on 2 layers mean reading the whole matrix: about 1 second." with the way out, the button Try anyway and the box Don't ask again for this panel.
+
+Refused for time, with **Try anyway**.
+```
+
 ## A refusal for time and a refusal for size
 
 A refusal always names the limit that refused it. There are two kinds, and they are different in what you can do:
@@ -97,6 +115,13 @@ asking** at the left of its status strip; its pop-over has **Ask again**, which 
 The setting belongs to the panel, for this page only: it is cleared by a reload, by opening another dataset, and by closing
 the panel, and it is never saved in a link, a session or a panel set. A shared link therefore cannot start long runs on your
 server unasked.
+
+```{figure} ../_static/screens/user-guide/longcomp-runs-without-asking.png
+:class: screenshot
+:alt: The status strip of a Cell-Gene Plot with the tag Runs without asking and its pop-over: "Long computations in this panel start without asking. Each can be cancelled and stops by itself after 2 minutes." with the link Ask again.
+
+A panel with the box ticked: the tag **Runs without asking**, and its pop-over with **Ask again**.
+```
 
 ## Ways out, panel by panel
 
