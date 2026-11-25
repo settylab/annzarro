@@ -264,13 +264,15 @@ export function createGroupSources({ store, host, context, genesStore = null, li
         if (src.shape === GROUPING && !src.shape.sources(recipeOf(src)).length) {
             return { gate: { state: 'nofactors', reason: 'no_factors' }, actions: null };
         }
-        if (depthOf(id, new Set([id]), true) > MAX_NESTING + 1) {
-            return { gate: { state: 'refused', reason: 'nested_too_deep', message: TOO_DEEP }, actions: null };
+        const depth = depthOf(id, new Set([id]), true);
+        if (depth > MAX_NESTING + 1) {
+            // `depth` counts the grouping itself: the groupings below it are depth - 1 (its notice names them and the limit)
+            return { gate: { state: 'refused', reason: 'nested_too_deep', depth: depth - 1, limit: MAX_NESTING, message: TOO_DEEP }, actions: null };
         }
         const sources = src.shape.sources(recipeOf(src));
         const cells = context().cells;
         if (typeof cells === 'number' && cells > TABLE_LIMITS.ASK_ROWS && sources.some((s) => s.type === 'table')) {
-            return { gate: { state: 'refused', reason: 'table_too_many_cells', cells, message: tooManyCells(cells) }, actions: null };
+            return { gate: { state: 'refused', reason: 'table_too_many_cells', cells, limit: TABLE_LIMITS.ASK_ROWS, message: tooManyCells(cells) }, actions: null };
         }
         const named = new Set();
         let found = null;
