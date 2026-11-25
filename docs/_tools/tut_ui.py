@@ -153,3 +153,80 @@ def make_gene_table(page, title: str, columns: list[tuple[str, str]], conditions
     n = page.evaluate("(i) => window.PanelManager.getPanel(i).getConfig().currentEntries.length", pid)
     log(f"{title}: {n} genes pass")
     return pid
+
+
+MARK = "\x01"
+
+
+def axis_sel(tile: str, axis: str, kind: str) -> str:
+    """A select of a Cell or Gene Plot's axis row: kind is type, key or column (the item picker)."""
+    return f"{tile} select.axis-{kind}-select[data-axis='{axis}']"
+
+
+def agg_button(tile: str, axis: str) -> str:
+    return f"{tile} button.axis-agg-btn[data-axis='{axis}']"
+
+
+def pick_set(page, tile: str, axis: str, entry: str, provider: str = "gene-score", layer: str | None = None) -> None:
+    """Axis row: type `layer`, the layer, then the set in the item picker (the entry is the signature's or grouping's panel id)."""
+    if page.input_value(axis_sel(tile, axis, "type")) != "layer":
+        page.select_option(axis_sel(tile, axis, "type"), "layer")
+    value = f"{MARK}{provider}{MARK}{entry}"
+    until(page, "([s, v]) => [...document.querySelector(s).options].some(o => o.value === v)", "the set in the item picker", [axis_sel(tile, axis, "column"), value])
+    if layer and page.input_value(axis_sel(tile, axis, "key")) != layer:
+        page.select_option(axis_sel(tile, axis, "key"), layer)
+        until(page, "([s, v]) => [...document.querySelector(s).options].some(o => o.value === v)", "the set after the layer", [axis_sel(tile, axis, "column"), value])
+    page.select_option(axis_sel(tile, axis, "column"), value)
+    page.wait_for_selector(agg_button(tile, axis))
+
+
+def agg_menu(page, tile: str, axis: str, keep_open: bool = False):
+    """What the aggregation button's list offers: [{v, off, title, on, sym, name}]."""
+    page.click(agg_button(tile, axis))
+    page.locator("[data-popover='aggregation']").wait_for(state="visible")
+    rows = page.evaluate("""() => [...document.querySelectorAll("[data-popover='aggregation'] [data-agg]")].map(r => ({ v: r.dataset.agg, off: r.disabled,
+        title: r.title, on: r.getAttribute('aria-checked') === 'true', sym: r.querySelector('.axis-agg-sym').textContent, name: r.querySelector('.axis-agg-name').textContent,
+        why: (r.querySelector('.axis-agg-why') || {}).textContent || '' }))""")
+    if not keep_open:
+        page.keyboard.press("Escape")
+        page.locator("[data-popover='aggregation']").wait_for(state="hidden")
+    return rows
+
+
+def choose_agg(page, tile: str, axis: str, value: str) -> None:
+    page.click(agg_button(tile, axis))
+    page.locator("[data-popover='aggregation']").wait_for(state="visible")
+    page.click(f"[data-popover='aggregation'] [data-agg='{value}']")
+    page.wait_for_timeout(1200)
+
+
+def plot_colors(page, pid: str):
+    """The colour values of a Cell or Gene Plot's markers (numbers only), all traces."""
+    return page.evaluate("""(t) => { const gd = document.querySelector(t + ' .js-plotly-plot'); if (!gd || !gd.data) return [];
+        return gd.data.flatMap(d => Array.from((d.marker && d.marker.color) || [])).filter(v => typeof v === 'number' && v === v); }""", T(pid))
+
+
+def hover_table(page, pid: str) -> dict:
+    """{(group, gene): [lines of its hover]} of every dot of a Cell-Gene Plot, from the figure."""
+    out = {}
+    for tr in plot_data(page, pid):
+        for h in (tr.get("text") or []):
+            if not isinstance(h, str) or "<br>" not in h or " · Cells:" not in h:
+                continue
+            parts = h.split("<br>")
+            out[(parts[0].split(" · Cells:")[0], parts[1])] = parts[2:]
+    return out
+
+
+def csv_of(page, pid: str, where: str, button: str = "cgene-options-btn"):
+    """The plot's Download CSV (Plot Options ▸ Export) as a DataFrame, also saved at `where`."""
+    import pandas as pd
+    t = T(pid)
+    page.locator(f"{t} button.{button}").first.click()
+    page.wait_for_timeout(500)
+    with page.expect_download() as dl:
+        page.locator("[data-popover]").get_by_text("Download CSV", exact=True).first.click()
+    Path(where).write_text(Path(dl.value.path()).read_text())
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    return pd.read_csv(where)
