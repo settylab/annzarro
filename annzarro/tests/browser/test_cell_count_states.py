@@ -330,3 +330,19 @@ def test_there_is_no_show_as_table_and_the_csv_downloads_from_the_toolbar(page, 
     want = DATA.obs.groupby(["cell_type", "condition"], observed=True).size()
     got = {(r[0], r[1]): int(r[2]) for r in (line.split(",") for line in lines[1:])}
     assert {k: v for k, v in got.items() if v} == {k: int(v) for k, v in want.items() if v}
+
+
+# ------------------------------------------------------------------ 6. the category cap is said as the plan says it
+
+@pytest.mark.parametrize("mode, as_what", [("hist2d", "2D histogram"), ("density2d", "2D density")])
+def test_a_grouping_with_too_many_groups_for_a_2d_plot_names_the_input_and_the_cap(page, served, mode, as_what):
+    """operator 2026-11-25: Color by a large Cell Grouping in a 2D histogram or 2D density. The refusal is right (these modes colour up
+    to 8 levels); its reason was first the estimate ("would take about 1 second"), then "'Count 1' has a factor with 30 levels: a
+    factor holds up to 8". It now says what the plan says: the input, its count and the mode's cap."""
+    grouping = {"id": cc.GA, "title": "Grouping 1", "version": 1, "partitionings": [obs("sample")]}       # 30 groups
+    config = _count(mode=mode, x=obs("depth"), y=obs("score"), split={"source": {"type": "cell-group", "key": cc.GA}})
+    _open(page, served, {CC: config, cc.GA: grouping}, open_ids=(CC, cc.GA))
+    head = f"{S} .score-notice .coverage-placeholder__headline"
+    until(page, "(h) => !!document.querySelector(h) && /levels|not (run|computed)|would take/.test(document.querySelector(h).textContent)", head, timeout=60)
+    text = page.inner_text(head)
+    assert text == f"Color by Grouping 1 has 30 levels; {as_what} colors up to 8.", text

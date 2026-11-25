@@ -183,3 +183,14 @@ test('remapPanelReferences renames a table\'s score columns with everything else
     assert.equal(plot.tableFilter, 'cell-table-3');
     assert.equal(plot.color.key, 'gene-signature-7');
 });
+
+// operator 2026-11-25: a refusal for something other than cost never quotes the estimate made before it, in a table column either
+test('a table column refused for its size says why, not "would take about 1 second"', () => {
+    const cheap = { seconds: 1.2, tier: 'auto', max_s: 600 };
+    const size = describeColumn({ state: 'refused', title: 'T cell score', reason: 'too_many_values', estimate: cheap, message: null });
+    assert.doesNotMatch(`${size.headline} ${size.text}`, /would take|second/i);
+    assert.match(size.text, /too many values/);
+    assert.ok(size.actions.some(([a]) => a === 'score-remove'));
+    const cost = describeColumn({ state: 'refused', title: 'T cell score', reason: 'score_too_expensive', estimate: { seconds: 1500, tier: 'refused', max_s: 600 }, message: 'x' });
+    assert.match(cost.headline, /would take about 25 minutes, so it was not run/);
+});
