@@ -15,16 +15,17 @@
  * own row and by a one-row section, or by Color and Size on one layer, is one feature, asked for once. A statistic that
  * uses no threshold reads the features of one that does on the same layer, so mean and % expressing share them.
  *
- * **One row (decision 40, one-row-ux-080.md).** A one-row section's Color or Size takes its statistic and layer from
- * the plot's Color or Size (the cell step) and chooses only how its genes are combined (the gene step): the mean, sum or
- * mean of z-scores of its gene rows, which reads the gene rows' own features and asks for nothing more, or a score method
- * of its source on the channel's layer, which adds one score feature and takes the channel's statistic over the cells.
+ * **One row (aggregation-unify-080.md 10).** A one-row section holds ONE choice, `genes`, shared by every channel: how its
+ * gene rows are combined (the mean, sum or mean of z-scores of the rows, which reads the gene rows' own features and
+ * asks for nothing more) or a score method of its source, which adds one score feature per channel. Each channel takes
+ * its statistic and layer from the plot's Color or Size: a value statistic is taken over the per-cell score; a % expressing
+ * channel shows the share of cells expressing ANY gene of the set (the source's `detected` score on the channel's threshold).
  *
  * Words the user reads come from utils/vocabulary.js where it has them (statistics, aggregations, headings, help).
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import {
-    ROW_STEPS, DEFAULT_ROW_STEP, LEGACY_ROW_AGGREGATIONS, combinesRows, rowStepGrade, combineRows, SCALINGS, statisticColumn,
+    ROW_STEPS, DEFAULT_ROW_STEP, combinesRows, rowStepGrade, combineRows, SCALINGS, statisticColumn,
     noExpressingCells, pooledReference, scale, scalingGrade
 } from '../../utils/cell-gene-model.js';
 import { STATISTIC_IDS } from '../../utils/cell-grouping.js';
@@ -34,6 +35,7 @@ import { cellGroupType } from '../../utils/cell-group-source.js';
 import { limit } from '../../utils/limits.js';
 import { DEFAULT_METHOD, METHODS, methodShort } from '../../utils/signature-options.js';
 import { REASON } from '../../utils/options-model.js';
+import { ROW_SYMBOLS, SCORE_SYMBOLS, plainSymbol } from '../../utils/aggregation-symbols.js';
 
 const CG = VOCABULARY.cellGene;
 
@@ -159,65 +161,10 @@ function cleanLabels3d(raw, problems) {
 const GENE_STEPS = Object.freeze([...ROW_STEPS, ...METHODS]);
 
 /**
- * A one-row section's Color or Size as stored (decision 40): `{genes, above?}`, the gene step and, for a score, the
- * share's own threshold in score units. No layer and no cell statistic: those are the channel's. Null when unreadable.
+ * One section of a link, cleaned. A one-row section's `genes` (aggregation-unify-080.md 10.4) is kept when it is a gene
+ * step other than the default; the per-channel `color` and `size` steps of an earlier build are not read and are dropped.
  */
-function cleanRowStep(raw) {
-    if (!isObject(raw) || !GENE_STEPS.includes(raw.genes)) return null;
-    const out = { ...raw };
-    if ('above' in out && (!isNumber(out.above) || combinesRows(out.genes))) delete out.above;
-    return out;
-}
-
-/** "z-score mean · logged": a score method on a layer, as a stored link named it. */
-const scoreOption = (column, layer) => `${methodShort(column)} · ${layer || DEFAULT_LAYER}`;
-
-/** The gene step each summary kind of before decision 40 reads as. */
-const LEGACY_STEP = Object.freeze({ mean_of_means: 'rows_mean', sum_of_means: 'rows_sum', mean_of_zscores: 'rows_z', mean_of_pct_expressing: 'rows_mean' });
-
-/**
- * A row kind stored before decision 40 (`{agg, column?, layer?, above?}`), read into a gene step under the channel it
- * is drawn in. `changed` is true exactly when the values drawn differ from what the old kind drew: a summary whose
- * statistic is not the channel's, a score on another layer or under another statistic, the old z-scores (against all
- * grouped cells, now across groups), and anything under Cell count (now the groups' sizes).
- * @returns {?{step: ?Object, changed: boolean, was: string}} null when the kind is not known; `step` null is the default
- */
-function legacyRowStep(raw, channel) {
-    if (!LEGACY_ROW_AGGREGATIONS.includes(raw.agg)) return null;
-    const words = CG.rowStep.legacy;
-    const stat = channel.stat;
-    const layer = channel.layer || DEFAULT_LAYER;
-    let step;
-    let same;
-    let was;
-    if (raw.agg === 'score_mean' || raw.agg === 'score_pct_above') {
-        if (!METHODS.includes(raw.column)) return null;
-        const onLayer = (isText(raw.layer) ? raw.layer : DEFAULT_LAYER) === layer;
-        const above = isNumber(raw.above) ? raw.above : 0;
-        step = { genes: raw.column };
-        if (raw.agg === 'score_pct_above') {
-            if (above !== 0) step.above = above;
-            same = stat === 'pct_expressing' && onLayer;
-            was = words.score_pct_above(scoreOption(raw.column, raw.layer), above);
-        } else {
-            same = stat === 'mean' && onLayer;
-            was = words.score_mean(scoreOption(raw.column, raw.layer));
-        }
-    } else {
-        step = { genes: LEGACY_STEP[raw.agg] };
-        same = raw.agg === 'mean_of_pct_expressing' ? stat === 'pct_expressing' : raw.agg !== 'mean_of_zscores' && stat === 'mean';
-        was = words[raw.agg];
-    }
-    if (stat === 'count') same = false;
-    else if (!rowStepGrade(step.genes, stat).ok) step = { genes: DEFAULT_ROW_STEP };
-    return { step: step.genes === DEFAULT_ROW_STEP ? null : step, changed: !same, was };
-}
-
-/**
- * One section of a link, cleaned. Its Color and Size are read under the plot's channels (`channels`); a notice for a
- * changed value names the section by its place in the cleaned list (`at`).
- */
-function cleanSection(raw, i, problems, channels, notices, at) {
+function cleanSection(raw, i, problems) {
     if (!isObject(raw) || !isText(raw.source)) {
         problems.push(`section ${i + 1}: no source, left out`);
         return null;
@@ -228,29 +175,9 @@ function cleanSection(raw, i, problems, channels, notices, at) {
         out.rows = 'genes';
     }
     if ('title' in raw && !isText(raw.title)) delete out.title;
-    for (const which of ['color', 'size']) {
-        if (!(which in raw)) continue;
-        const stored = raw[which];
-        if (isObject(stored) && 'agg' in stored && !('genes' in stored)) {
-            // a link from before decision 40: read into a gene step, said once where the values change
-            const read = legacyRowStep(stored, channels[which]);
-            if (!read) {
-                problems.push(`section ${i + 1}: ${which} aggregation not known, the default used`);
-                delete out[which];
-                continue;
-            }
-            if (read.step) out[which] = read.step; else delete out[which];
-            if (read.changed && out.rows === 'set') notices.push({ section: at, which, was: read.was });
-            continue;
-        }
-        const step = cleanRowStep(stored);
-        if (step) {
-            out[which] = step;
-        } else {
-            problems.push(`section ${i + 1}: ${which} gene step not known, the default used`);
-            delete out[which];
-        }
-    }
+    delete out.color;
+    delete out.size;
+    if (!GENE_STEPS.includes(raw.genes) || raw.genes === DEFAULT_ROW_STEP) delete out.genes;
     return out;
 }
 
@@ -263,10 +190,10 @@ function cleanSection(raw, i, problems, channels, notices, at) {
  * (UX 6b, WP-12): `view: '3d'` (absent is 2D), `height` (the bars' own measure; absent is "Same as Color", and a stored
  * one is kept while 3D is off), `camera` (the 3D camera, stored without an undo step), `labels3d` (its labels' Side and
  * Justify, Rotation and Padding, Plot Options ▸ Axes in 3D, defaults absent).
- * A one-row section's Color and Size (decision 40) are `{genes, above?}`; a kind stored before it (`{agg, ...}`) is read
- * into one, and where that changes the values drawn, `notices` says so (`{section, which, was}`, the panel words it).
+ * A one-row section's one gene step is `genes` (absent: the default); the per-channel `color` and `size` of an earlier
+ * build are dropped, with no problem and no notice. `notices` holds only the Scale that moved (`{scale: true, was}`).
  * @param {Object} raw
- * @returns {{config: Object, problems: string[], notices: Array<{section: number, which: string, was: string}>}}
+ * @returns {{config: Object, problems: string[], notices: Array<{scale: true, was: string}>}}
  */
 export function normalizeCellGene(raw) {
     const src = isObject(raw) ? raw : {};
@@ -289,11 +216,10 @@ export function normalizeCellGene(raw) {
     delete config.offer;
     config.color = cleanStatistic(src.color, DEFAULT_COLOR, 'color', problems);
     config.size = cleanStatistic(src.size, DEFAULT_SIZE, 'size', problems);
-    // a one-row section's steps are read under the channels they are drawn in (decision 40)
     const notices = [];
     config.sections = [];
     sections.forEach((s, i) => {
-        const out = cleanSection(s, i, problems, { color: config.color, size: config.size }, notices, config.sections.length);
+        const out = cleanSection(s, i, problems);
         if (out) config.sections.push(out);
     });
     if ('height' in src) {
@@ -375,31 +301,38 @@ export function withGroupingThreshold(config, threshold) {
 }
 
 /**
- * The gene step a one-row section's Color or Size draws (decision 40): the stored one, else the default, which is the
- * mean of the gene rows (the same as the channel), or the source's default score method when it has down genes. A
- * stored step the channel's statistic or the down genes rule out draws as the default, and `moved` says why (a grade
- * reason of cell-gene-model.js rowStepGrade). Under Cell count the step is kept: that row is the groups' sizes.
+ * The gene step a one-row section draws (aggregation-unify-080.md 10.1): the stored `genes`, else the default, which is the
+ * mean of the gene rows, or the source's z-score mean score when it has down genes. A stored step that Color or Size
+ * rules out (under z-score mean Color only the default stands; a sum under SD; a score under mean of expressing cells; down
+ * genes) draws as the default, and `moved` says which channel and why (a grade reason of cell-gene-model.js rowStepGrade).
  * @param {Object} section
- * @param {'color'|'size'} which
- * @param {{stat: string}} channel - the plot's Color or Size
+ * @param {{color?: ?{stat: string}, size?: ?{stat: string}}} channels - the plot's Color and Size (Size null when not drawn)
  * @param {number} [down] - the section's down genes in the dataset
- * @returns {{genes: string, above?: number, moved: ?string}} under z-score mean always `zscore_mean` (2.3)
+ * @returns {{genes: string, moved: ?{reason: string, which: 'color'|'size'}}}
  */
-export function effectiveRowStep(section, which, channel, down = 0) {
-    const stored = section ? cleanRowStep(section[which]) : null;
-    // under z-score mean a set's row is always its z-score mean score; a stored other step follows the channel, said once
-    if (channel && channel.stat === ZSCORE) {
-        const contradicts = stored && stored.genes !== DEFAULT_ROW_STEP && stored.genes !== ZSCORE;
-        return { genes: ZSCORE, moved: contradicts ? 'zscore' : null };
-    }
+export function effectiveRowStep(section, channels, down = 0) {
     const fallback = down > 0 ? DEFAULT_METHOD : DEFAULT_ROW_STEP;
-    const genes = stored ? stored.genes : fallback;
-    const grade = rowStepGrade(genes, channel ? channel.stat : 'mean', { down });
-    if (!grade.ok && grade.reason !== 'count') return { genes: fallback, moved: grade.reason };
-    const out = { genes, moved: null };
-    if (stored && isNumber(stored.above)) out.above = stored.above;
-    return out;
+    const stored = section && GENE_STEPS.includes(section.genes) ? section.genes : null;
+    if (stored && stored !== fallback) {
+        for (const which of ['color', 'size']) {
+            const channel = channels && channels[which];
+            if (!channel) continue;
+            const grade = rowStepGrade(stored, channel.stat, { down });
+            if (!grade.ok) return { genes: fallback, moved: { reason: grade.reason, which } };
+        }
+    }
+    return { genes: stored || fallback, moved: null };
 }
+
+/**
+ * What a channel reads of a section's step: the step itself, except under z-score mean, where a set's row is its z-score
+ * mean score whatever else the other channel shows (aggregation-unify-080.md 2.3).
+ */
+// export-unused-ok: the one-step Node tests read what a channel takes of a section's step
+export const stepFor = (genes, channel) => (channel && channel.stat === ZSCORE ? ZSCORE : genes);
+
+/** The symbol a gene step is drawn with: the way the rows combine, or the score method's (utils/aggregation-symbols.js). */
+const symbolOfStep = (genes) => ROW_SYMBOLS[genes] || SCORE_SYMBOLS[genes] || null;
 
 /** A section's title: its own, or its source's (CXG-6). */
 export function sectionTitle(section, titleOf) {
@@ -492,32 +425,30 @@ export function setSectionTitle(config, i, title) {
     });
 }
 
-/** A one-row section's Color or Size gene step `{genes, above?}` (decision 40); the default is not written. */
-export function setRowStep(config, i, which, step) {
-    const clean = cleanRowStep(step);
+/** A one-row section's gene step (aggregation-unify-080.md 10); the default is not written. */
+export function setRowStep(config, i, genes) {
     return editSection(config, i, (s) => {
-        if (!clean || (clean.genes === DEFAULT_ROW_STEP && Object.keys(clean).length === 1)) delete s[which];
-        else s[which] = clean;
+        if (!GENE_STEPS.includes(genes) || genes === DEFAULT_ROW_STEP) delete s.genes;
+        else s.genes = genes;
         return s;
     });
 }
 
 /**
- * After the plot's Color or Size changed: a one-row section whose stored gene step the new statistic rules out goes
- * back to the default, in the same edit (decision 40: re-graded, said once). Down genes are not looked at here: they
- * are the source's, and `effectiveRowStep` follows them.
- * @returns {{config: Object, moved: Array<{section: number, from: string, reason: string}>}}
+ * After the plot's Color or Size changed: a one-row section whose stored gene step the channels now rule out goes back to
+ * the default, in the same edit (re-graded, said once). Down genes are not looked at here: they are the source's, and
+ * `effectiveRowStep` follows them.
+ * @returns {{config: Object, moved: Array<{section: number, from: string, reason: string, which: 'color'|'size'}>}}
  */
-export function regradeRows(config, which) {
-    const channel = config[which];
+export function regradeRows(config) {
     const moved = [];
     const sections = config.sections.map((s, i) => {
-        const stored = s.rows === 'set' ? cleanRowStep(s[which]) : null;
-        const grade = stored ? rowStepGrade(stored.genes, channel.stat) : { ok: true };
-        if (grade.ok || grade.reason === 'count') return s;
-        moved.push({ section: i, from: stored.genes, reason: grade.reason });
+        if (s.rows !== 'set' || !GENE_STEPS.includes(s.genes)) return s;
+        const kept = effectiveRowStep(s, { color: config.color, size: config.size }, 0);
+        if (!kept.moved) return s;
+        moved.push({ section: i, from: s.genes, ...kept.moved });
         const out = { ...s };
-        delete out[which];
+        delete out.genes;
         return out;
     });
     return { config: moved.length ? { ...config, sections } : config, moved };
@@ -574,86 +505,66 @@ function statisticName({ stat, layer, detect_above: t }) {
  * The name of a gene step under a statistic: Sum under % expressing is "Genes detected per cell" (decision 40). A score
  * method is "z-score mean" in the select, under "Score each cell"; named on its own (`alone`) it is "z-score mean score".
  */
-export function rowStepName(step, stat, { alone = false } = {}) {
+function rowStepName(step, stat, { alone = false } = {}) {
     if (step === 'rows_sum' && stat === 'pct_expressing') return CG.rowStep.detectedPerCell;
     if (combinesRows(step)) return CG.rowStep.name[step];
     return alone ? CG.rowStep.score(methodShort(step)) : methodShort(step);
 }
 
-/** Why a gene step is greyed out: "Sum of the gene rows cannot be computed with SD: ..." (options-model.js REASON). */
-export function rowStepReason(step, stat, reason) {
+/** Why a gene step is greyed out, naming the channel: "Sum of the gene rows cannot be computed with SD (Size): ..." (options-model.js REASON). */
+export function rowStepReason(step, stat, reason, which = null) {
+    const channel = which === 'size' ? 'Size' : which === 'color' ? 'Color' : '';
     if (reason === 'zscore') return CG.rowStep.zscoreWhy;
     const [what, why] = CG.rowStep.why[reason];
-    return REASON.cannotWith(rowStepName(step, stat), what, why);
+    return REASON.cannotWith(rowStepName(step, stat), channel ? `${what} (${channel})` : what, why);
 }
 
 /**
- * The gene step select of a one-row section's Color or Size (decision 40): "Combine the gene rows", then "Score each
- * cell" with the source's methods, graded for the channel's layer by the caller (score-source.js scoreChoices). An
- * entry the channel's statistic or the down genes rule out is disabled with its reason; under Cell count all are.
- * @param {{stat: string, down?: number, methods?: Array<{value: string, label?: string, disabled?: boolean, title?: string}>}} o
- * @returns {Array<{heading: string, entries: Array<{value: string, label: string, disabled?: boolean, title?: string}>}>}
+ * The entries of a one-row section's one menu (aggregation-unify-080.md 10.2): the ways to combine the gene rows, then
+ * "Score each cell" with the source's methods (graded for the channel's layer by the caller, score-source.js scoreChoices),
+ * each with its symbol. An entry that Color or Size rules out is disabled with its reason, naming that channel.
+ * @param {{channels: {color: ?{stat: string}, size: ?{stat: string}}, down?: number, methods?: Array<{value: string, label?: string, disabled?: boolean, title?: string}>}} o
+ * @returns {Array<{heading: string, value: string, name: string, symbol: Object, disabled?: boolean, title?: string}>}
  */
-export function rowStepEntries({ stat, down = 0, methods = METHODS.map((value) => ({ value })) }) {
-    const graded = (value, base = {}) => {
-        const grade = rowStepGrade(value, stat, { down });
-        const label = base.label || rowStepName(value, stat);
-        if (!grade.ok) return { value, label, disabled: true, title: rowStepReason(value, stat, grade.reason) };
-        return { value, label, ...(base.disabled ? { disabled: true } : {}), ...(base.title ? { title: base.title } : {}) };
+export function rowStepEntries({ channels, down = 0, methods = METHODS.map((value) => ({ value })) }) {
+    const graded = (value, heading, base = {}) => {
+        const name = base.label || rowStepName(value, 'mean');
+        const out = { heading, value, name, symbol: symbolOfStep(value) };
+        for (const which of ['color', 'size']) {
+            const channel = channels[which];
+            if (!channel) continue;
+            const grade = rowStepGrade(value, channel.stat, { down });
+            if (!grade.ok) return { ...out, disabled: true, title: rowStepReason(value, channel.stat, grade.reason, which) };
+        }
+        return { ...out, ...(base.disabled ? { disabled: true } : {}), ...(base.title ? { title: base.title } : {}) };
     };
     return [
-        { heading: CG.rowStep.heading.rows, entries: ROW_STEPS.map((step) => graded(step)) },
-        { heading: CG.rowStep.heading.score,
-            entries: methods.map((m) => graded(m.value, { label: m.label || methodShort(m.value), disabled: m.disabled, title: m.title })) }
+        ...ROW_STEPS.map((step) => graded(step, CG.rowStep.heading.rows, step === DEFAULT_ROW_STEP ? { title: CG.rowStep.same } : {})),
+        ...methods.map((m) => graded(m.value, CG.rowStep.heading.score, { label: m.label || methodShort(m.value), disabled: m.disabled, title: m.title }))
     ];
 }
 
-/** Whether a gene step under a statistic has a threshold box of its own (a score's share, in score units). */
-export const rowStepHasAbove = (step, stat) => !combinesRows(step) && THRESHOLD_STATS.includes(stat);
-
 /**
- * A one-row section's stored step after the user touched its select (`genes`) or its threshold box (`above`, a
- * number): the threshold stays across score methods; a combining step has none.
- * @param {{genes: string, above?: number}} held - effectiveRowStep
- * @returns {?Object} the step to store; null when the edit means nothing
+ * What one value of a one-row section is under each channel, in a sentence (the button's tooltip): "Color: z-score mean
+ * score, then Mean · logged. Size: % expressing any gene (> 0) · counts."
+ * @param {string} genes - effectiveRowStep's step
+ * @param {{color: Object, size: ?Object}} channels - with the threshold in force
  */
-export function rowStepAfter(held, part, value) {
-    if (part === 'genes') {
-        if (!GENE_STEPS.includes(value)) return null;
-        const out = { genes: value };
-        if (!combinesRows(value) && held && isNumber(held.above)) out.above = held.above;
-        return out;
-    }
-    if (part === 'above') {
-        if (!held || combinesRows(held.genes) || !isNumber(value)) return null;
-        const out = { genes: held.genes };
-        if (value !== 0) out.above = value;
-        return out;
-    }
-    return null;
+export function rowReading(genes, channels) {
+    const part = (label, channel) => {
+        if (channel.stat === 'count') return `${label}: ${CG.statistic.count}`;
+        const step = stepFor(genes, channel);
+        const layer = channel.layer || DEFAULT_LAYER;
+        if (combinesRows(step)) {
+            if (step === 'rows_sum' && channel.stat === 'pct_expressing') return `${label}: ${CG.rowStep.detectedPerCell} (> ${fmtValue(channel.detect_above || 0)}) · ${layer}`;
+            return `${label}: ${statisticName(channel)}, ${CG.rowStep.how[step] === 'mean' ? 'averaged over the genes' : CG.rowStep.how[step]}`;
+        }
+        if (channel.stat === 'pct_expressing') return `${label}: ${CG.rowStep.anyGeneName} (> ${fmtValue(channel.detect_above || 0)}) · ${layer}`;
+        return `${label}: ${CG.rowStep.score(methodShort(step))}, then ${statisticName(channel)}`;
+    };
+    return [part('Color', channels.color), channels.size ? part('Size', channels.size) : null].filter(Boolean).join('. ') + '.';
 }
 
-/**
- * The help line under a one-row section's step: what one value of the row is, with its genes and the scale it is on.
- * @param {{genes: string, above?: number}} step - effectiveRowStep
- * @param {{stat: string, layer?: string, detect_above?: number}} channel - with the threshold in force
- * @param {string} title - the section's title
- * @param {number} n - its genes in the dataset
- */
-export function rowStepHelp(step, channel, title, n) {
-    const h = CG.rowStep.help;
-    if (channel.stat === 'count') return h.count;
-    if (combinesRows(step.genes)) {
-        const name = statisticName(channel);
-        if (step.genes === 'rows_sum' && channel.stat === 'pct_expressing') return h.detected(name, title, n);
-        return h[step.genes](name, title, n);
-    }
-    const cells = CG.rowStep.cells[channel.stat](fmtValue(step.above || 0));
-    return h.score(methodShort(step.genes), title, channel.layer || DEFAULT_LAYER, cells);
-}
-
-/** What the inherited part of a one-row section's Color or Size reads: "Mean · logged", "% expressing (> 0) · counts". */
-export const channelName = (channel) => statisticName(channel);
 
 /** Whether a statistic reads an expression threshold (`detect_above`, CXG-9). */
 export const needsThreshold = (stat) => THRESHOLD_STATS.includes(stat);
@@ -663,8 +574,10 @@ export const needsThreshold = (stat) => THRESHOLD_STATS.includes(stat);
  * @param {Object} input
  * @param {Array<{section: Object, genes: string[], down?: number, title: string, empty?: string,
  *   scoreRecipe: (column: string, layer: string) => (Object|null)}>} input.sections - each configured section with its
- *   usable genes now (`down` of them down genes); `empty` says why it has none; `scoreRecipe` gives the score route's
- *   recipe of the source read by that method on that layer (null when it cannot be read now)
+ *   usable genes now (`down` of them down genes); `empty` says why it has none; `scoreRecipe(method, layer, extra?)` gives
+ *   the score route's recipe of the source read by that method on that layer (null when it cannot be read now); `extra`
+ *   `{detect_above, anyGene: true}` asks for the "any gene" recipe: the up genes (the down genes when it has no up
+ *   ones) on `detected` at that threshold
  * @param {{stat: string, layer?: string, detect_above?: number}} input.color
  * @param {{stat: string, layer?: string, detect_above?: number}|null} input.size - null when the plot draws no size
  * @param {{stat: string, layer?: string, detect_above?: number}|null} [input.height] - the 3D bars' own measure
@@ -701,36 +614,35 @@ export function planFeatures({ sections, color, size, height = null, threshold =
         if (!features.has(key)) features.set(key, wire);
         return key;
     };
-    // per section and score method on a layer, the threshold a share above reads: a mean of the same score reads it
-    // too, so the two channels share one score feature (decision 40: the score is on the channel's layer)
-    const scoreAbove = (entry, step, spec) => {
-        if (needsThreshold(spec.stat)) return isNumber(step.above) ? step.above : 0;
-        for (const [which, channel] of [['color', color], ['size', size]]) {
-            if (!channel || channel === spec || !needsThreshold(channel.stat) || (channel.layer || DEFAULT_LAYER) !== (spec.layer || DEFAULT_LAYER)) continue;
-            const other = effectiveRowStep(entry.section, which, channel, entry.down);
-            if (other.genes === step.genes) return isNumber(other.above) ? other.above : 0;
-        }
-        return 0;
-    };
-    const score = (step, spec, entry) => {
-        const layer = spec.layer || DEFAULT_LAYER;
-        const recipe = entry.scoreRecipe(step.genes, layer);
+    const scoreWire = (recipe, column, layer) => {
         if (!recipe) return null;
-        const wire = { kind: 'score', recipe, column: step.genes, layer, above: scoreAbove(entry, step, spec) };
+        const wire = { kind: 'score', recipe, column, layer, above: 0 };
         const key = stableStringify(wire);
         if (!features.has(key)) features.set(key, wire);
         return key;
+    };
+    // the channel's statistic of the section's score on the channel's layer
+    const score = (genes, spec, entry) => {
+        const layer = spec.layer || DEFAULT_LAYER;
+        return scoreWire(entry.scoreRecipe(genes, layer), genes, layer);
+    };
+    // % expressing of a score row: the share of cells expressing any gene, `detected` above 0 at the channel's threshold (10.1a)
+    const anyGene = (spec, entry) => {
+        const layer = spec.layer || DEFAULT_LAYER;
+        return scoreWire(entry.scoreRecipe('detected', layer, { detect_above: thresholdFor('pct_expressing', spec), anyGene: true }), 'detected', layer);
     };
     const stat = (spec, genes) => {
         if (!spec) return null;
         noteStatistic(spec.stat, spec.layer);
         return spec.stat === 'count' ? genes.map(() => null) : genes.map((g) => gene(g, spec.stat, spec));
     };
-    // a one-row section's Color or Size (decision 40): the channel's statistic and layer, the row's gene step
-    const oneRow = (which, spec, entry) => {
-        const step = effectiveRowStep(entry.section, which, spec, entry.down);
+    // a one-row section's Color or Size: the channel's statistic and layer, the section's one gene step
+    const oneRow = (genes, spec, entry) => {
+        const step = { genes: stepFor(genes, spec) };
         if (spec.stat === 'count') return { step };
-        if (!combinesRows(step.genes)) return { step, key: score(step, spec, entry) };
+        if (!combinesRows(step.genes)) {
+            return spec.stat === 'pct_expressing' ? { step, key: anyGene(spec, entry), any: true } : { step, key: score(step.genes, spec, entry) };
+        }
         noteStatistic(spec.stat, spec.layer);
         return { step, keys: entry.genes.map((g) => gene(g, spec.stat, spec)) };
     };
@@ -743,9 +655,10 @@ export function planFeatures({ sections, color, size, height = null, threshold =
             return;
         }
         if (section.rows === 'set') {
-            const row = { kind: 'set', section: index, label: entry.title,
-                color: oneRow('color', color, entry),
-                size: size ? oneRow('size', size, entry) : null };
+            const eff = effectiveRowStep(section, { color, size }, entry.down);
+            const row = { kind: 'set', section: index, label: entry.title, genes: eff.genes, up: genes.length - (entry.down || 0), down: entry.down || 0,
+                color: oneRow(eff.genes, color, entry),
+                size: size ? oneRow(eff.genes, size, entry) : null };
             // a one-row section's own height: the height statistic's mean over the section's genes
             if (height) row.height = { keys: stat(height, genes) };
             rows.push(row);
@@ -769,14 +682,16 @@ export function planFeatures({ sections, color, size, height = null, threshold =
 const quantityId = (stat, layer, t) => `${stat}|${stat === 'count' ? '' : layer}|${needsThreshold(stat) ? t : ''}`;
 
 /**
- * A one-row section's quantity under a channel (decision 40): `id` equal to the gene rows' when the row is on their
- * scale (the mean of the gene rows, and any row under Cell count), so it shares their colour bar or size legend; else
- * its own. `label` names the two steps in the order they are taken, for the legend's second line, the hover and the CSV.
- * @param {{genes: string, above?: number}} step - effectiveRowStep
+ * A one-row section's quantity under a channel: `id` equal to the gene rows' when the row is on their scale (the mean of
+ * the gene rows, a score row's share of cells expressing any gene, and any row under Cell count), so it shares their colour
+ * bar or size legend; else its own. `label` names the two steps in the order they are taken, for the legend's second
+ * line, the hover and the CSV.
+ * @param {{genes: string}} step - what the channel reads of the section's step (stepFor)
  * @param {{stat: string, layer?: string, detect_above?: number}} channel - with the threshold in force
+ * @param {{title: string, up: number, down: number}} [row] - the section, for the "any gene" wording
  */
 // export-unused-ok: the one-row Node tests read a row's legend name and id through it
-export function rowQuantity(step, channel) {
+export function rowQuantity(step, channel, row = { title: '', up: 0, down: 0 }) {
     const t = channel.detect_above || 0;
     const q = CG.rowStep.quantity;
     const layer = channel.layer || DEFAULT_LAYER;
@@ -794,10 +709,16 @@ export function rowQuantity(step, channel) {
         if (step.genes === 'rows_sum' && channel.stat === 'pct_expressing') return { id, label: `${CG.rowStep.detectedPerCell} (> ${fmtValue(t)}) · ${layer}` };
         return { id, label: q.rows(statisticName(channel), CG.rowStep.how[step.genes]) };
     }
-    const above = step.above || 0;
-    const cells = needsThreshold(channel.stat) ? CG.rowStep.cells[channel.stat](fmtValue(above)) : CG.statistic[channel.stat];
-    return { id: `score|${step.genes}|${channel.stat}|${layer}|${needsThreshold(channel.stat) ? above : ''}`,
-        label: q.score(methodShort(step.genes), `${cells} · ${layer}`) };
+    // a score row under % expressing: the share of cells expressing any gene, on the gene rows' size legend (0 to 100)
+    if (channel.stat === 'pct_expressing') return { id: shared, label: CG.rowStep.anyGene(row.title, row.up, row.down, fmtValue(t), layer) };
+    return { id: `score|${step.genes}|${channel.stat}|${layer}|`, label: q.score(methodShort(step.genes), `${CG.rowStep.cells[channel.stat]()} · ${layer}`) };
+}
+
+/** A channel's gene step by name for the CSV ("Color: genes combined by"): "any gene" for a score row's share of cells expressing any. */
+function stepHow(step, channel) {
+    if (channel.stat === 'count') return '';
+    if (!combinesRows(step.genes) && channel.stat === 'pct_expressing') return CG.rowStep.anyGeneHow;
+    return rowStepName(step.genes, channel.stat, { alone: true });
 }
 
 const NO_GENE_MOMENTS = null;
@@ -881,14 +802,15 @@ export function buildMatrix(plan, momentsOf, groups, config, names = {}) {
             if (c.values) raw.set(c.values, at);
             references.push(c.moments ? pooledReference(c.moments, G) : null);
             // each channel's quantity (a legend of its own unless it is the gene rows'), and its gene step by name for the CSV
-            const own = { color: { ...rowQuantity(row.color.step, color), how: color.stat === 'count' ? '' : rowStepName(row.color.step.genes, color.stat, { alone: true }) } };
+            const ctx = { title: section.title, up: row.up, down: row.down };
+            const own = { color: { ...rowQuantity(row.color.step, color, ctx), how: stepHow(row.color.step, color) } };
             if (size && row.size) {
                 const z = oneRow(row.size, size);
                 if (z.values) sizeValues.set(z.values, at);
-                own.size = { ...rowQuantity(row.size.step, size), how: size.stat === 'count' ? '' : rowStepName(row.size.step.genes, size.stat, { alone: true }) };
+                own.size = { ...rowQuantity(row.size.step, size, ctx), how: stepHow(row.size.step, size) };
             }
             if (height && row.height) heightValues.set(meanOver(row.height.keys), at);
-            rows.push({ kind: 'set', label: row.label, section, own });
+            rows.push({ kind: 'set', label: row.label, section, own, symbol: row.genes === DEFAULT_ROW_STEP || (row.down > 0 && row.genes === DEFAULT_METHOD) ? '' : plainSymbol(symbolOfStep(row.genes)) });
         } else {
             references.push(null);
             rows.push({ kind: 'empty', label: row.label, section });

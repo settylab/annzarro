@@ -77,8 +77,8 @@ import { currentTheme, THEME_EVENT } from '../utils/theme.js';
 import { VOCABULARY } from '../utils/vocabulary.js';
 import {
     normalizeCellGene, cellGeneReferences, addSection, duplicateSection, removeSection, moveSection, setSectionRows,
-    setSectionTitle, setRowStep, effectiveRowStep, regradeRows, rowStepAfter, rowStepEntries, rowStepName, rowStepReason,
-    rowStepHelp, rowStepHasAbove, channelName, sectionTitle, sectionGenes, sectionLine, tooManyGenesText,
+    setSectionTitle, setRowStep, effectiveRowStep, regradeRows, rowStepEntries, rowStepReason, rowReading,
+    sectionTitle, sectionGenes, sectionLine, tooManyGenesText,
     planFeatures, buildMatrix, heightOf, withGroupingThreshold, SAME_AS_COLOR, GROUP_AXIS
 } from './cell-gene/sections.js';
 import {
@@ -260,17 +260,9 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             return read.config;
         }
 
-        /**
-         * What a link from before decision 40 changed, in words, once: "Pathway's Color row now follows Color (SD · logged);
-         * it showed the mean of the genes' means." Empty when nothing did. Clears what it said.
-         */
+        /** What a link changed in the Scale, in words, once (a z Scale under z-score mean). Empty when nothing did. Clears what it said. */
         function takeLoadNotices() {
-            const said = _loadNotices.map((n) => {
-                if (n.scale) return CGV.scaleMoved(CGV.scaling[n.was] || n.was);
-                const section = _config.sections[n.section];
-                const channel = n.which === 'color' ? 'Color' : 'Size';
-                return section ? CGV.rowStep.followed(sectionTitle(section, titleOfPanel), channel, channelName(_config[n.which]), n.was) : '';
-            }).filter(Boolean);
+            const said = _loadNotices.map((n) => (n.scale ? CGV.scaleMoved(CGV.scaling[n.was] || n.was) : '')).filter(Boolean);
             _loadNotices = [];
             return said.join(' ');
         }
@@ -468,10 +460,18 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             // a score parameter (clip, bins, …) changes what a score aggregation reads; the retired offer does not
             out.optionsKey = out.recipe ? JSON.stringify(withoutLegacy(out.recipe)) : '';
             const scored = new Map();
-            out.scoreRecipe = (column, layer) => {
+            out.scoreRecipe = (column, layer, extra = null) => {
                 if (!out.recipe) return null;
-                const k = `${column}\u0001${layer}`;
-                if (!scored.has(k)) scored.set(k, serverRecipe({ ...out.recipe, method: column, input: layer }));
+                const k = `${column}\u0001${layer}\u0001${extra ? JSON.stringify(extra) : ''}`;
+                if (!scored.has(k)) {
+                    const base = { ...out.recipe, method: column, input: layer };
+                    // "any gene" (aggregation-unify-080.md 10.1a): the up genes only (the down genes when it has no up ones), the channel's threshold
+                    if (extra && extra.anyGene) {
+                        const up = out.recipe.genes || [];
+                        Object.assign(base, { genes: up.length ? [...up] : [...(out.recipe.down || [])], down: [], detect_above: extra.detect_above });
+                    }
+                    scored.set(k, serverRecipe(base));
+                }
                 return scored.get(k);
             };
             _resolved.set(id, out);
@@ -723,34 +723,11 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             _sections.focus(to);
         }
 
-        /** A one-row section's Color or Size gene step as drawn now (decision 40). */
-        function rowStepNow(i, which) {
+        /** A one-row section's one gene step (aggregation-unify-080.md 10): Color and Size read it, each with its own statistic. */
+        function setRowGenes(i, value) {
             const section = _config.sections[i];
-            return section ? effectiveRowStep(section, which, _config[which], resolveSource(section.source).down || 0) : null;
-        }
-
-        /** A one-row section's gene step (decision 40): the channel's statistic and layer stay the plot's. */
-        function setRowGenes(i, which, value) {
-            const held = rowStepNow(i, which);
-            const next = held && rowStepAfter(held, 'genes', value);
-            if (!next) { paint(); return; }
-            commit(setRowStep(_config, i, which, next), `${which === 'color' ? 'color' : 'size'} of ${sectionName(i)}`);
-        }
-
-        /** A score row's own threshold, in score units (decision 35 Q14): "cells above [t]". */
-        function setRowAbove(i, which, text) {
-            const held = rowStepNow(i, which);
-            const v = Number(text);
-            const next = held && text !== '' && Number.isFinite(v) ? rowStepAfter(held, 'above', v) : null;
-            if (!next) { paint(); return; }
-            commit(setRowStep(_config, i, which, next), `threshold of ${sectionName(i)}`);
-        }
-
-        /** "Change in Color": the plot's own aggregation button of that channel, where the one-row sections take it from, opened. */
-        function focusChannel(which) {
-            revealControls();
-            const button = _dom && _dom.controls.querySelector(`.cgene-${which}`);
-            if (button) { button.focus(); button.click(); }
+            if (!section) { paint(); return; }
+            commit(setRowStep(_config, i, value), `gene step of ${sectionName(i)}`);
         }
 
         // ---------------------------------------------------------------- DOM
@@ -760,10 +737,10 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const root = el('div', { class: 'cgene-panel', data: { panelId: _id, state: 'empty' } });
             root.insertAdjacentHTML('afterbegin', noDatasetScreenHtml(_id));
             _addGenes = createAddGenes({ D, id: _id, sources: addSources, on: { add: addGenesFrom, newSignature } });
-            _sections = createSectionList({ D, id: _id, model: sectionsModel, on: {
+            _sections = createSectionList({ D, model: sectionsModel, on: {
                 rows: (i, rows) => commit(setSectionRows(_config, i, rows), `${sectionName(i)} as ${rows === 'set' ? 'one row' : 'genes'}`),
                 title: (i, text) => commit(setSectionTitle(_config, i, text), `rename ${sectionName(i)}`),
-                op: sectionOp, move, genes: setRowGenes, above: setRowAbove, channel: focusChannel
+                op: sectionOp, move, genes: setRowGenes
             } });
             _controls = createControls({ D, model: controlsModel, sections: _sections.element, addGenes: _addGenes.element, on: {
                 axis: setAxis, newGrouping,
@@ -832,14 +809,15 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             }
             const { layer, say } = pickLayer({ datasetLayers: datasetLayers(), kinds: _kinds, stat, preferred: spec.layer });
             // a one-row section whose gene step the new statistic rules out goes back to the default, in this step, said once
-            const regraded = regradeRows({ ..._config, [which]: { ...withThreshold(spec), stat, layer } }, which);
+            const regraded = regradeRows({ ..._config, [which]: { ...withThreshold(spec), stat, layer } });
             const { moved } = regraded;
             let config = regraded.config;
-            const channel = which === 'color' ? 'Color' : 'Size';
-            // a row that must follow the channel reads as the z-score mean score under z-score mean (design 2.3)
-            const now = stat === 'zscore_mean' ? CGV.rowStep.score(SIGNATURE_MODEL.methodShort('zscore_mean')) : CGV.rowStep.name.rows_mean;
-            const said = [say, ...moved.map((m) => CGV.rowStep.moved(sectionName(m.section), channel, now,
-                rowStepReason(m.from, stat, m.reason)))].filter(Boolean).join(' ');
+            // a section whose one step the channels now rule out goes back to the default (the mean of the gene rows; the
+            // z-score mean score when Color is z-score mean), said once
+            const colorStat = which === 'color' ? stat : _config.color.stat;
+            const now = colorStat === 'zscore_mean' ? CGV.rowStep.score(SIGNATURE_MODEL.methodShort('zscore_mean')) : CGV.rowStep.name.rows_mean;
+            const said = [say, ...moved.map((m) => CGV.rowStep.moved(sectionName(m.section), now,
+                rowStepReason(m.from, m.which === which ? stat : (_config[m.which] || {}).stat, m.reason, m.which)))].filter(Boolean).join(' ');
             // under z-score mean the colour is a z-score already: a z Scale moves to None in this same step, said once (2.2)
             let scaleSaid = '';
             if (config.scale && !scalingGrade(config.scale, config.color.stat).ok) {
@@ -991,39 +969,47 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         }
 
         /**
-         * What a one-row section's Color or Size shows (decision 40): the channel it follows (statistic and layer, read
-         * only), the gene step select (the rows family, then the source's methods graded for the channel's layer by
-         * score-source.js scoreChoices), the score's own threshold when it has one, and the help line.
+         * What a one-row section's one button shows (aggregation-unify-080.md 10.2): the step it draws (Color and Size read
+         * it), its symbol, whether it is off the default, and the menu: the ways to combine the gene rows, then the source's
+         * methods graded on the layer each channel reads, so one a channel's layer cannot give is greyed naming that channel.
          */
-        function sectionPart(section, which, r) {
-            const channel = withGroupingThreshold(_config, baseThreshold())[which];
+        function sectionPart(section, r) {
+            const view = withGroupingThreshold(_config, baseThreshold());
+            const channels = { color: view.color, size: _config.mode === 'dots' && sizeDrawn() ? view.size : null };
             const down = r.down || 0;
-            const step = effectiveRowStep(section, which, channel, down);
-            const c = channel.stat === 'count' ? null
-                : scoreChoices(section.source, { method: combinesRows(step.genes) ? undefined : step.genes, layer: channel.layer }, { datasetLayers: datasetLayers() });
-            const methods = c ? c.methods.map((e) => ({ value: e.value, label: SIGNATURE_MODEL.methodShort(e.value), disabled: e.disabled, title: e.title })) : undefined;
+            const eff = effectiveRowStep(section, channels, down);
+            const fallback = down > 0 ? 'zscore_mean' : 'rows_mean';
+            const choices = ['color', 'size'].map((which) => {
+                const channel = channels[which];
+                if (!channel || channel.stat === 'count') return null;
+                return { which, c: scoreChoices(section.source, { method: combinesRows(eff.genes) ? undefined : eff.genes, layer: channel.layer }, { datasetLayers: datasetLayers() }) };
+            }).filter((x) => x && x.c);
+            const methods = choices.length ? choices[0].c.methods.map((e) => {
+                const out = { value: e.value, label: SIGNATURE_MODEL.methodShort(e.value) };
+                for (const { which, c } of choices) {
+                    const g = c.methods.find((m) => m.value === e.value);
+                    if (g && g.disabled && !out.disabled) Object.assign(out, { disabled: true, title: `${g.title} (${which === 'color' ? 'Color' : 'Size'})` });
+                }
+                return out;
+            }) : undefined;
             const title = sectionTitle(section, () => r.title);
+            const name = combinesRows(eff.genes) ? CGV.rowStep.name[eff.genes] : CGV.rowStep.score(SIGNATURE_MODEL.methodShort(eff.genes));
             return {
-                which, step: step.genes, above: rowStepHasAbove(step.genes, channel.stat) ? (step.above || 0) : null,
-                channel: channelName(channel), label: rowStepName(step.genes, channel.stat, { alone: true }),
-                entries: rowStepEntries({ stat: channel.stat, down, methods }),
-                help: rowStepHelp(step, channel, title, r.genes.length)
+                step: eff.genes, pressed: eff.genes !== fallback, name,
+                label: `${title}, one row: ${name}`, reading: rowReading(eff.genes, channels),
+                entries: rowStepEntries({ channels, down, methods })
             };
         }
 
         function sectionsModel() {
-            const dots = _config.mode === 'dots';
             return {
-                dots,
                 sections: _config.sections.map((section) => {
                     const r = resolveSource(section.source);
                     const title = sectionTitle(section, () => r.title);
-                    const part = (which) => sectionPart(section, which, r);
                     return {
                         title, source: title !== r.title ? r.title : null, rows: section.rows,
                         line: r.kind ? sectionLine(r) : r.empty, note: r.kind && r.empty ? r.empty : null,
-                        color: part('color'),
-                        size: dots ? part('size') : null
+                        step: section.rows === 'set' ? sectionPart(section, r) : null
                     };
                 })
             };
@@ -1363,7 +1349,7 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
                 const prev = k > 0 ? matrix.rows[order.rows[k - 1]] : null;
-                return { kind: row.kind, label: row.label, section: row.section, own: row.own, pending: !!(pending && pending[r]),
+                return { kind: row.kind, label: row.label, symbol: row.symbol, section: row.section, own: row.own, pending: !!(pending && pending[r]),
                     gapBefore: prev && prev.section.index !== row.section.index ? extras.gap : 0 };
             });
             const sizeNone = sizeProblem();

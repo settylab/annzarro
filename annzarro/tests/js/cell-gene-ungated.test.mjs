@@ -86,21 +86,11 @@ test('pickLayer: the layer stays when it can give the statistic; else the first 
 
 // ------------------------------------------------------------------ one-row sections (item 7)
 
-test('rowStepEntries: the rows family, then every method of the source, nothing offered (decision 40)', () => {
-    const groups = S.rowStepEntries({ stat: 'mean' });
-    assert.equal(groups.length, 2);
-    assert.deepEqual(values(groups[0].entries), ['rows_mean', 'rows_sum', 'rows_z']);
-    assert.deepEqual(values(groups[1].entries), METHODS);
-    assert.ok(!groups.flatMap((g) => g.entries).some((e) => /offer/i.test(e.label)));
-});
-
-test('rowStepAfter: a score method keeps its threshold, a combining step has none', () => {
-    assert.deepEqual(S.rowStepAfter({ genes: 'rows_mean' }, 'genes', 'zscore_mean'), { genes: 'zscore_mean' });
-    assert.deepEqual(S.rowStepAfter({ genes: 'mean', above: 2 }, 'genes', 'sum'), { genes: 'sum', above: 2 });
-    assert.deepEqual(S.rowStepAfter({ genes: 'mean', above: 2 }, 'genes', 'rows_z'), { genes: 'rows_z' });
-    assert.deepEqual(S.rowStepAfter({ genes: 'mean', above: 2 }, 'above', 0), { genes: 'mean' });
-    assert.equal(S.rowStepAfter({ genes: 'rows_mean' }, 'above', 1), null, 'a combining step has no threshold');
-    assert.equal(S.rowStepAfter({ genes: 'rows_mean' }, 'genes', 'median'), null);
+test('rowStepEntries: the rows family, then every method of the source, nothing offered', () => {
+    const entries = S.rowStepEntries({ channels: { color: { stat: 'mean' }, size: null } });
+    assert.deepEqual(values(entries.filter((e) => e.heading === 'Combine the gene rows')), ['rows_mean', 'rows_sum', 'rows_z']);
+    assert.deepEqual(values(entries.filter((e) => e.heading === 'Score each cell')), METHODS);
+    assert.ok(!entries.some((e) => /offer/i.test(e.name)));
 });
 
 // ------------------------------------------------------------------ old links (section 6)

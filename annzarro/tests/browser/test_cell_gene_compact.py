@@ -9,9 +9,10 @@ The control area (`.cgene-controls`, the toolbar line included) for that example
 
     before C1 (19f21a8e):   313 px at 1500 wide, 420 px at 700 wide
     after C1:               280 px at 1500 wide, 317 px at 700 wide
+    after C2 (one line a one-row section):   214 px at 1500 wide, 251 px at 700 wide
 
-The design's target (at most 200 and 240) also needs the one-line section of 5.1.5 (the "Color: ... Size: ..." button
-line of each one-row section goes, package C2); until then the bounds below are what C1 alone delivers.
+The design computed 200 and 240 from the CSS; the measured control rows are a little taller than its 36 px a line
+(about 14 and 11 px over). The bounds below are what the build delivers, kept as a ratchet.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -45,12 +46,12 @@ def _controls_height(page, width):
 
 
 def test_control_area_height(page, served):
-    """The 3-section example: the control area is no taller than C1 alone makes it (the design's 200 and 240 are C2's)."""
+    """The 3-section example: the control area is no taller than C2 makes it (the design's 200 and 240 are 14 and 11 px short)."""
     _example(page, served)
     wide = _controls_height(page, 1500)
     narrow = _controls_height(page, 700)
-    assert wide <= 290, wide
-    assert narrow <= 330, narrow
+    assert wide <= 220, wide
+    assert narrow <= 260, narrow
 
 
 def test_first_line_holds_groups_mode_color_size_scale_and_add_genes(page, served):

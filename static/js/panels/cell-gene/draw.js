@@ -601,7 +601,9 @@ function axisOf(ticks, labels, extent, th, extra) {
 function layoutAxes(model, P, th, right) {
     const groupTicks = model.groups.map((_, g) => g);
     const groupLabels = model.groups.map((g) => esc(g.label));
-    const rowLabels = model.rows.map((r) => (r.own ? `<i>${esc(r.label)}</i>` : esc(r.label)));
+    // a row whose gene step is not the default carries its symbol: `Pathway \u2039\u0394\u203a`
+    const named = (r) => (r.symbol ? `${r.label} \u2039${r.symbol}\u203a` : r.label);
+    const rowLabels = model.rows.map((r) => (r.own ? `<i>${esc(named(r))}</i>` : esc(named(r))));
     // no grid lines, in dots and in a heatmap (operator, 2026-11-23)
     const group = axisOf(groupTicks, groupLabels, P.G, th, { showgrid: false });
     const gene = axisOf(P.pos, rowLabels, P.span, th, { showgrid: false });

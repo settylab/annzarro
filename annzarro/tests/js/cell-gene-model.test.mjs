@@ -224,8 +224,7 @@ test('the gene steps of a one-row section (decision 40): three that combine the 
     assert.deepEqual(M.ROW_STEPS, ['rows_mean', 'rows_sum', 'rows_z']);
     assert.equal(M.DEFAULT_ROW_STEP, 'rows_mean');
     assert.ok(M.combinesRows('rows_sum') && !M.combinesRows('zscore_mean'));
-    assert.deepEqual(M.LEGACY_ROW_AGGREGATIONS,
-        ['mean_of_means', 'sum_of_means', 'mean_of_zscores', 'mean_of_pct_expressing', 'score_mean', 'score_pct_above']);
+    assert.equal(M.LEGACY_ROW_AGGREGATIONS, undefined, 'the legacy readers are gone (aggregation-unify-080.md 10.4)');
 });
 
 test('mean and sum of the gene rows skip a gene with no value in that group', () => {
@@ -273,7 +272,8 @@ test('combineRows takes the genes\' moments and a combining step only', () => {
 
 test('rowStepGrade: Cell count, down genes, and the two sums with no honest name', () => {
     assert.deepEqual(M.rowStepGrade('rows_mean', 'mean'), { ok: true });
-    assert.deepEqual(M.rowStepGrade('zscore_mean', 'count'), { ok: false, reason: 'count' });
+    assert.deepEqual(M.rowStepGrade('zscore_mean', 'count'), { ok: true }, 'Cell count ignores genes: nothing to grade');
+    assert.deepEqual(M.rowStepGrade('mean', 'mean_expressing'), { ok: false, reason: 'score_mean_expressing' });
     assert.deepEqual(M.rowStepGrade('rows_mean', 'mean', { down: 2 }), { ok: false, reason: 'down' });
     assert.deepEqual(M.rowStepGrade('zscore_mean', 'mean', { down: 2 }), { ok: true });
     assert.deepEqual(M.rowStepGrade('rows_sum', 'sd'), { ok: false, reason: 'sum_sd' });
@@ -381,10 +381,9 @@ test('the statistic, scaling and aggregation words of UX 3.2 and 3.3', () => {
     assert.deepEqual(W.rowStep.heading, { rows: 'Combine the gene rows', score: 'Score each cell' });
     for (const step of M.ROW_STEPS) {
         assert.ok(W.rowStep.name[step], step);
-        assert.ok(W.rowStep.help[step], step);
         assert.ok(W.rowStep.how[step], step);
     }
-    for (const kind of M.LEGACY_ROW_AGGREGATIONS) assert.ok(W.rowStep.legacy[kind], kind);
+    assert.equal(W.rowStep.legacy, undefined);
     assert.equal(W.rowStep.detectedPerCell, 'Genes detected per cell');
     assert.deepEqual(W.rowStep.why.sum_sd, ['SD', 'a sum of spreads is not the spread of the set.']);
     assert.equal(W.noExpressingCells, 'no expressing cells');
