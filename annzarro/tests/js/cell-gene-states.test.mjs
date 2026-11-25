@@ -57,10 +57,18 @@ test('Refused, too large: the sentence of UX 3.5, no button, the plot area cover
     const n = say({ state: 'ready', values: {} }, { ...PLOT, tooLarge: { groups: 28, rows: 15000, count: 420000, limit: 400000 } });
     assert.equal(n.headline, '28 groups × 15,000 rows = 420,000 cells of the matrix; the limit is 400,000.');
     assert.equal(n.text, 'Remove a section or use fewer groups.');
-    assert.deepEqual(n.actions, []);
+    assert.deepEqual(n.actions, [], 'no way out the page found would draw: no button');
     assert.equal(n.state, 'refused');
     assert.equal(n.blocksAxis, true);
     assert.equal(plotState({ state: 'ready' }, { tooLarge: true, drawn: true }), 'toolarge');
+});
+
+test('Refused, too large: the ways out that would draw are buttons, then Open grouping; none when none draws', () => {
+    const tooLarge = { groups: 28, rows: 15000, count: 420000, limit: 400000 };
+    const ways = [{ kind: 'one_row', section: 1, title: 'T cells' }, { kind: 'remove', section: 0, title: 'B cells' }];
+    const n = say({ state: 'ready', values: {} }, { ...PLOT, tooLarge, ways });
+    assert.deepEqual(n.actions, [['cgene-way-one-row', 'Show T cells as one row'], ['cgene-way-remove', 'Remove B cells'], ['score-open', 'Open grouping']]);
+    assert.deepEqual(say({ state: 'ready', values: {} }, { ...PLOT, tooLarge, ways: [] }).actions, []);
 });
 
 // ------------------------------------------------------------------ queued (SHR-47)

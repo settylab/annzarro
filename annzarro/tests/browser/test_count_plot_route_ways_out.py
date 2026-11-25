@@ -71,3 +71,45 @@ def test_split_by_another_column_from_the_routes_refusal_opens_the_picker(page, 
     options = page.evaluate("""(s) => Object.fromEntries([...document.querySelectorAll(s + ' [data-input=split] select option')]
         .map(o => [o.value, o.disabled]))""", S)
     assert options["many"] is True and options["sample"] is True and options["condition"] is False
+
+
+# --- a grid over its cell cap: Fewer bins only when the bins can make it fit ---------------------------------------------
+
+def _refuse_cap(page, body_mode, count=20000, limit=4000):
+    state = {"n": 0}
+
+    def handle(route):
+        body = json.loads(route.request.post_data or "{}") if route.request.method == "POST" else {}
+        if route.request.method == "POST" and body.get("shape") == "grid" and not body.get("estimate_only") \
+                and body.get("mode") == body_mode and state["n"] == 0:
+            state["n"] += 1
+            route.fulfill(status=422, content_type="application/json", body=json.dumps(
+                {"error": f"The grid would have {count:,} cells; the most is {limit:,}.", "reason": "grid_too_large",
+                 "count": count, "limit": limit, "mode": body_mode}))
+        else:
+            route.continue_()
+    page.route("**/data/cell_groups*", handle)
+
+
+def test_a_grid_over_its_cell_cap_offers_fewer_bins_when_the_bins_make_it_fit(page, served):
+    _refuse_cap(page, "2d")
+    # 100 x 100 bins make 10,000 cells; the route counted 20,000, so the other input makes 2: 44 x 44 x 2 = 3,872 fit 4,000
+    _open(page, served, {CC: _count(mode="hist2d", x=obs("depth"), y=obs("score"), split=obs("condition"))})
+    page.wait_for_selector(f"{NOTICE}[data-state='refused']", timeout=30000)
+    text = page.inner_text(NOTICE)
+    assert "2D histogram would count 20,000 cells of a grid; it counts up to 4,000." in text, text
+    assert "second" not in text and "Retry" not in text
+    assert page.eval_on_selector_all(f"{NOTICE} button", "bs => bs.map(b => b.textContent)")[0] == "Fewer bins"
+    page.click(f"{NOTICE} button:has-text('Fewer bins')")
+    _drawn(page, "hist2d", "c.x.binning && c.x.binning.bins === 44 && c.y.binning.bins === 44")
+    assert _undo_label(page) == "Undo: bins set to x 44, y 44"
+    assert page.inner_text(f"{S} .ccnt-view-note") == "Bins set to X 44, Y 44."
+
+
+def test_a_grid_over_its_cell_cap_that_no_bins_cause_says_so_with_no_way_out_buttons(page, served):
+    _refuse_cap(page, "categorical", count=9000, limit=4000)
+    _open(page, served, {CC: _count(mode="bar", x=obs("cell_type"), split=obs("condition"))})
+    page.wait_for_selector(f"{NOTICE}[data-state='refused']", timeout=30000)
+    assert "Bar would count 9,000 cells of a grid; it counts up to 4,000." in page.inner_text(NOTICE)
+    labels = page.eval_on_selector_all(f"{NOTICE} button", "bs => bs.map(b => b.textContent)")
+    assert "Fewer bins" not in labels and "Retry" not in labels, labels

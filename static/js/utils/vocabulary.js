@@ -314,6 +314,7 @@ const cellGene = Object.freeze({
         noValue: (n) => `${n.toLocaleString('en-US')} ${n === 1 ? 'cell of the matrix has' : 'cells of the matrix have'} ${word.noValue}`,
         buttons: Object.freeze({
             compute: 'Compute', fewer: 'Fewer genes', update: 'Update', retry: 'Retry', heatmap: 'Show as Heatmap',
+            oneRow: (title) => `Show ${title} as one row`, removeSection: (title) => `Remove ${title}`, openGrouping: 'Open grouping',
             cancel: (sharers) => (sharers > 1 ? `Cancel for ${sharers} plots` : 'Cancel')
         }),
         tags: Object.freeze({

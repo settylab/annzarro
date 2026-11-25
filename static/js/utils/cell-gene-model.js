@@ -128,6 +128,19 @@ export function rowRule(stat, { down = 0 } = {}) {
     return rule;
 }
 
+/**
+ * Whether a one-row section reads no gene one by one under these channels (T-CAP, the way out of `genes_per_section`): each
+ * channel's rule for the set is a score, the share expressing any gene, or the cell count, so the section's cost is one
+ * feature whatever its number of genes, and the cap on the genes a section DRAWS does not apply. A height of its own reads
+ * the genes (its mean over them), and a channel whose rule takes the genes' own statistics does too.
+ * @param {{color: ?{stat: string}, size?: ?{stat: string}, height?: ?Object, down?: number}} channels
+ * @returns {boolean}
+ */
+export function oneRowReadsNoGenes({ color, size = null, height = null, down = 0 }) {
+    if (height) return false;
+    return [color, size].filter(Boolean).every((spec) => ['count', 'score', 'any'].includes(rowRule(spec.stat, { down }).plan));
+}
+
 /** The statistics read at an expression threshold. */
 const THRESHOLDED = Object.freeze(['pct_expressing', 'mean_expressing']);
 
@@ -384,6 +397,32 @@ export function matrixLimits({ groups, sections, features = 0 }) {
     if (rows * groups > values) return { ok: false, reason: 'matrix_too_large', count: rows * groups, limit: values };
     if (features * groups > values) return { ok: false, reason: 'too_many_values', count: features * groups, limit: values };
     return { ok: true };
+}
+
+/**
+ * The ways out of a matrix over `matrix_values` (T-CAP, aggregation-unify-080.md 14.8), each one ordinary edit of the plot,
+ * and only those after which the matrix would be within its limits (checked with `matrixLimits`, on the counts known):
+ *  - `{kind: 'one_row', section}`: show a section as one row (its genes combined), the one that frees the most rows;
+ *  - `{kind: 'remove', section}`: remove a section, the smallest whose removal is enough.
+ * Empty for a plot over another limit (a time, the values the server accumulates, a gene count) or where no single edit is
+ * enough: the notice then says the limit and leaves the choice to the user.
+ * @param {{groups: number, features?: number, sections: Array<{rows: number, genes: number, oneRow?: boolean}>}} shape
+ * @returns {Array<{kind: 'one_row'|'remove', section: number}>}
+ */
+export function matrixWaysOut({ groups, sections, features = 0 }) {
+    const now = matrixLimits({ groups, sections, features });
+    if (now.ok || now.reason !== 'matrix_too_large') return [];
+    const fits = (edited) => matrixLimits({ groups, sections: edited, features }).ok;
+    const ways = [];
+    const folded = sections.map((s, i) => ({ i, freed: s.rows - 1, ok: !s.oneRow && s.rows > 1
+        && fits(sections.map((t, k) => (k === i ? { ...t, rows: 1 } : t))) })).filter((c) => c.ok).sort((a, b) => b.freed - a.freed || a.i - b.i);
+    if (folded.length) ways.push({ kind: 'one_row', section: folded[0].i });
+    if (sections.length > 1) {
+        const removable = sections.map((s, i) => ({ i, rows: s.rows, ok: fits(sections.filter((_, k) => k !== i)) }))
+            .filter((c) => c.ok).sort((a, b) => a.rows - b.rows || a.i - b.i);
+        if (removable.length) ways.push({ kind: 'remove', section: removable[0].i });
+    }
+    return ways;
 }
 
 /**

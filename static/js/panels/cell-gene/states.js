@@ -97,6 +97,15 @@ export function ownJobAhead(others) {
     return running.length === 1 ? running[0].title : null;
 }
 
+/** The registry's action of each kind of way out of a matrix over its limit (utils/source-actions.js). */
+const WAY_ACTIONS = Object.freeze({ one_row: 'cgene-way-one-row', remove: 'cgene-way-remove' });
+
+/** The buttons of the ways out of a matrix over its limit (`matrixWaysOut`, with the section's title), then Open grouping. */
+function wayButtons(ways) {
+    const own = (ways || []).map((w) => [WAY_ACTIONS[w.kind], w.kind === 'one_row' ? S.buttons.oneRow(w.title) : S.buttons.removeSection(w.title)]);
+    return own.length ? [...own, ['score-open', S.buttons.openGrouping]] : [];
+}
+
 /** Whether a frame of the server has arrived for the job (the first, `start`, carries its place): SHR-47. */
 const framed = (progress) => !!(progress && progress.queue && typeof progress.queue === 'object');
 
@@ -130,7 +139,8 @@ export function describePlot(snap, ctx, plot, words) {
                 `${why}${SRC.tooManyValuesWayOut}`, []);
         }
         return say('refused', 'warning', S.tags.tooLarge,
-            S.tooLarge(VOCABULARY.count(t.groups, 'group'), S.rows(t.rows), exactCount(t.count), exactCount(t.limit)), S.tooLargeWayOut, []);
+            S.tooLarge(VOCABULARY.count(t.groups, 'group'), S.rows(t.rows), exactCount(t.count), exactCount(t.limit)), S.tooLargeWayOut,
+            wayButtons(plot.ways));
     }
 
     switch (snap.state) {

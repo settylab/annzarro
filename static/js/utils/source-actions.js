@@ -17,7 +17,9 @@ import { askPolicy, panelOfHost } from './ask-policy.js';
 /** Every action a notice may offer. A provider may declare only some of them. */
 const ACTIONS = Object.freeze(['score-compute', 'score-cancel', 'score-retry', 'score-update', 'score-open', 'score-choose',
     'score-remove', 'score-unfilter', 'fewer-genes', 'group-keep',
-    'count-way-picker', 'count-way-mode', 'count-way-bins']);
+    'count-way-picker', 'count-way-mode', 'count-way-bins',
+    'cgene-way-one-row',
+    'cgene-way-remove']);
 
 /** The panel-level actions of the tick "Don't ask again for this panel" (utils/ask-policy.js), which no provider owns. */
 const ASK_ACTIONS = Object.freeze(['ask-tick:confirm', 'ask-tick:try', 'ask-again']);
