@@ -16,7 +16,8 @@
  */
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { sourceName } from '../../utils/cell-grouping.js';
-import { arrangementShown, binsRange, binSpacingOf, splitUsed } from '../../utils/count-plot-model.js';
+import { arrangementShown, binsRange, binSpacingOf, splitUsed, measureThreshold } from '../../utils/count-plot-model.js';
+import { createAggregationButton } from '../../ui/aggregation-button.js';
 import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
 import { createPopover } from '../../ui/popover.js';
@@ -29,7 +30,7 @@ import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
 import {
     popoverUse, sliceColourUse, parseColourLimit, rowsOf, modeRefusal, arrangementChoices, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
     setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, VENN_LABEL_KINDS, parseAdjust,
-    SAME_HEIGHT, heightChoices, heightChoiceOf, applyHeightChoice
+    SAME_HEIGHT, heightChoices, heightChoiceOf, applyHeightChoice, measureStatChoices, applyMeasureStat, usesThreshold
 } from './controls-model.js';
 
 const C = VOCABULARY.countPlot;
@@ -498,10 +499,31 @@ export function createControls({ D, id, model, on }) {
     const valueRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--value' }, valueLabel, valueSelect, valueHelp);
     const measureRow = selectsRow('measure', 'measure', C.rows.source);
     measureRow.roles = ['x'];
-    const above = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-above', inputmode: 'decimal', placeholder: '0',
-        autocomplete: 'off', aria: { label: C.rows.above }, title: 'The threshold of % above: a cell counts when its value is above it.' });
-    const aboveWrap = el('label', { class: 'ccnt-above-wrap' }, `${C.rows.above} `, above);
-    measureRow.extra.appendChild(aboveWrap);
+    // the statistic of the measure is the shared aggregation button (the Cell-Gene Plot's): the shared table's names and symbols;
+    // its threshold box is Expressed above, empty while it follows the grouping's (aggregation-unify-080.md 15.2)
+    const CGS = VOCABULARY.cellGene.sources;
+    const thresholdOf = () => { const c = model().config; return measureThreshold(c, { groupingThreshold: model().groupingThreshold }); };
+    const agg = createAggregationButton({
+        label: `${C.rows.source}: statistic`, axis: 'measure',
+        methods: () => { const c = model().config; return c.measure ? measureStatChoices(c.measure.stat) : null; },
+        onPick: (stat) => {
+            const c = model().config;
+            const next = applyMeasureStat(c, stat);
+            if (next) commit(next, `statistic ${measureStatChoices(stat).options.find((o) => o.value === stat).name.toLowerCase()}`);
+        },
+        suffix: () => { const c = model().config; return c.measure && usesThreshold(c.measure.stat) && c.measure.above !== undefined ? `>${c.measure.above}` : ''; },
+        fields: () => {
+            const c = model().config;
+            if (!c.measure || !usesThreshold(c.measure.stat)) return [];
+            const t = thresholdOf();
+            return [{ key: 'above', label: C.rows.above, value: c.measure.above === undefined ? '' : String(c.measure.above),
+                placeholder: t.grouping ? CGS.thresholdAuto(t.grouping.value) : '0',
+                title: t.grouping && !t.own ? CGS.thresholdFollows(t.grouping.key, t.grouping.value) : CGS.thresholdHelp }];
+        },
+        onField: (key, text) => commitAbove(text)
+    });
+    agg.button.classList.add('ccnt-measure-stat');
+    measureRow.extra.appendChild(agg.button);
     wireSelects(measureRow, () => inputOf('measure'), (source) => commitInput('measure', source));
     rows.set('measure', measureRow);
     const factorRow = selectsRow('factor', 'factor', C.rows.factor);
@@ -552,24 +574,21 @@ export function createControls({ D, id, model, on }) {
             measureRow.element.hidden = false;
             measureRow.sync();
             dropCategorical(measureRow);
-            aboveWrap.hidden = choice !== 'stat:pct_above';
-            if (document.activeElement !== above) above.value = m.config.measure.above === undefined ? '' : String(m.config.measure.above);
+            agg.update();
         }
     }
 
-    function commitAbove() {
+    function commitAbove(raw) {
         const c = model().config;
         if (!c.measure) return;
-        const text = above.value.trim();
+        const text = String(raw).trim();
         const value = text === '' ? undefined : Number(text);
-        if (value !== undefined && !Number.isFinite(value)) { above.value = c.measure.above === undefined ? '' : String(c.measure.above); return; }
+        if (value !== undefined && !Number.isFinite(value)) { agg.update(); return; }
         if (value === c.measure.above) return;
         const measure = { ...c.measure };
         if (value === undefined) delete measure.above; else measure.above = value;
         commit({ ...c, measure }, `above ${value === undefined ? 0 : value}`);
     }
-    above.addEventListener('change', commitAbove);
-    above.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitAbove(); } });
 
     function chooseValue(choice) {
         const m = model();
@@ -602,12 +621,11 @@ export function createControls({ D, id, model, on }) {
         valueSelect.value = choice;
         const entry = valueChoices(m.config).find((c) => c.value === choice);
         valueHelp.textContent = entry ? entry.help : '';
-        if (choice.startsWith('stat:')) {
+        if (choice === 'stat') {
             measureRow.element.hidden = false;
             measureRow.sync();
             dropCategorical(measureRow);
-            aboveWrap.hidden = choice !== 'stat:pct_above';
-            if (document.activeElement !== above) above.value = m.config.measure.above === undefined ? '' : String(m.config.measure.above);
+            agg.update();
         }
         if (choice === 'top_level') {
             factorRow.element.hidden = false;

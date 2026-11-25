@@ -176,7 +176,7 @@ test('UpSet bars colored by share of cells shown or by a statistic over the regi
     const base = { version: 1, mode: 'upset', sets: setsOf(k) };
     const words = { ...VOCABULARY.countPlot, measureSource: 'Mrpl15 · logged_counts' };
     const share = S.setPlotModel({ ...base, value: { kind: 'share', of: 'all' } }, tableOf(base, grid), { names: ['a', 'b', 'c'], words });
-    assert.deepEqual(share.color, { kind: 'share', label: '% of cells shown' });
+    assert.deepEqual(share.color, { kind: 'share', label: 'Fraction of cells shown' });
     for (const r of share.regions) assert.ok(Math.abs(r.color - r.count / cells.length) < 1e-12);
     const mean = S.setPlotModel({ ...base, value: { kind: 'measure' }, measure: { stat: 'mean', source: { type: 'layer', key: 'logged_counts', column: 'Mrpl15' } } },
         tableOf(base, grid), { names: ['a', 'b', 'c'], words });

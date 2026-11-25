@@ -15,6 +15,7 @@ import {
     arrangementShown, axisOrder, binSpacingOf, heightValues, shareValues, measureValues, levelLabelsOf, levelsAt, tableRows, tableCsv
 } from '../../utils/count-plot-model.js';
 import { defaultLabelMaps } from '../../utils/cell-grouping.js';
+import { formatFraction } from '../../utils/cell-gene-model.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
 import { asHex, factorColours, tableLevelColour, plotPaletteOf } from '../../utils/grouping-colours.js';
 import { scaleKeys, scaleColours } from './colour.js';
@@ -29,7 +30,13 @@ const FADE_FROM = 0.3;
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const num = (v) => (Number.isInteger(v) ? v.toLocaleString('en-US') : String(Number(v.toPrecision(4))));
-const pct = (f) => `${Number((f * 100).toPrecision(3))}%`;
+/** The measure statistics that are fractions (0 to 1). */
+const FRACTION_STATS = Object.freeze(['fraction_of_cells']);
+/** A fraction (0 to 1) as text: hover and labels read `0.25`, `0.342` (utils/cell-gene-model.js formatFraction). */
+const frac = (f) => formatFraction(f, 3);
+const measureShow = (stat) => (FRACTION_STATS.includes(stat) ? frac : num);
+/** The tick format of an axis or a colour bar of fractions: two decimals, no trailing zeros, no % sign. */
+const FRACTION_TICKS = '.2~f';
 export const axisOf = (table, input) => table.axes.findIndex((a) => a.input === input);
 
 // --- what is drawn: the value and its words --------------------------------------------------------------------------
@@ -42,30 +49,31 @@ function valueOf(config) {
 
 /**
  * The numbers a bar's height or a rectangle's color shows, with the axis title and the format that go with them.
- * @returns {{kind: string, values: ArrayLike<number>|null, title: string, show: (v: number) => string, percent: boolean}}
+ * @returns {{kind: string, values: ArrayLike<number>|null, title: string, show: (v: number) => string, fraction: boolean}}
  */
 export function valueSpec(config, table, opts) {
     const { kind, base } = valueOf(config);
     const { words, inputNames } = opts;
-    if (kind === 'share') return { kind, values: heightValues(config, table), title: words.share(base, inputNames), show: pct, percent: true };
+    if (kind === 'share') return { kind, values: heightValues(config, table), title: words.share(base, inputNames), show: frac, fraction: true };
     if (kind === 'measure') {
         const values = heightValues(config, table);
         if (!values) throw new Error('A measure height needs the grid\'s measure block and the config\'s measure.');
-        return { kind, values, title: words.measure(config.measure.stat, opts.measureSource, config.measure.above), show: num, percent: false };
+        return { kind, values, title: words.measure(config.measure.stat, opts.measureSource, config.measure.above),
+            show: measureShow(config.measure.stat), fraction: FRACTION_STATS.includes(config.measure.stat) };
     }
-    if (kind === 'top_level') return { kind, values: null, title: words.topLevel(inputNames.factor), show: num, percent: false };
-    return { kind: 'count', values: heightValues(config, table), title: words.count, show: num, percent: false };
+    if (kind === 'top_level') return { kind, values: null, title: words.topLevel(inputNames.factor), show: num, fraction: false };
+    return { kind: 'count', values: heightValues(config, table), title: words.count, show: num, fraction: false };
 }
 
 /**
  * Whether a tile without cells is a real 0 of the colour's statistic (a count, a share, a sum) and so is drawn in the
- * scale's 0 colour; the others (mean, SD, % above, z-score) are undefined with no cells and the tile stays empty.
+ * scale's 0 colour; the others (mean, SD, fraction of cells, z-score) are undefined with no cells and the tile stays empty.
  */
 function zeroIsValue(config, spec) {
     return spec.kind === 'count' || spec.kind === 'share' || (spec.kind === 'measure' && config.measure.stat === 'sum');
 }
 
-/** The hover line of a zero tile whose statistic the table has no number for: "Share: 0%", "sum of score: 0". */
+/** The hover line of a zero tile whose statistic the table has no number for: "Fraction: 0", "sum of score: 0". */
 function zeroLine(config, spec, opts) {
     return `${spec.kind === 'share' ? opts.words.hoverShare : spec.title}: ${spec.show(0)}`;
 }
@@ -75,10 +83,10 @@ function labelSpec(config, table, opts) {
     const kind = opts.options.labels;
     if (!kind || kind === 'none') return null;
     if (kind === 'count') return { values: table.count, show: num };
-    if (kind === 'share') return { values: shareValues(table, valueOf(config).kind === 'share' ? valueOf(config).base : 'all'), show: pct };
+    if (kind === 'share') return { values: shareValues(table, valueOf(config).kind === 'share' ? valueOf(config).base : 'all'), show: frac };
     if (kind === 'measure') {
         const values = config.measure ? measureValues(table, config.measure.stat) : null;
-        return values ? { values, show: num } : null;
+        return values ? { values, show: measureShow(config.measure.stat) } : null;
     }
     throw new Error(`Unknown label kind: ${kind}`);
 }
@@ -90,10 +98,10 @@ export function hoverOf(config, table, opts, r, labelAt) {
     const { words } = opts;
     const share = shareValues(table, valueOf(config).kind === 'share' ? valueOf(config).base : 'all');
     const lines = [levelsAt(table, r).map(labelAt).map(esc).join(' × '), `${esc(words.hoverCount)}: ${num(table.count[r])}`];
-    if (Number.isFinite(share[r])) lines.push(`${esc(words.hoverShare)}: ${pct(share[r])}`);
+    if (Number.isFinite(share[r])) lines.push(`${esc(words.hoverShare)}: ${frac(share[r])}`);
     const measure = config.measure ? measureValues(table, config.measure.stat) : null;
     if (measure && Number.isFinite(measure[r])) {
-        lines.push(`${esc(words.measure(config.measure.stat, opts.measureSource, config.measure.above))}: ${num(measure[r])}`);
+        lines.push(`${esc(words.measure(config.measure.stat, opts.measureSource, config.measure.above))}: ${measureShow(config.measure.stat)(measure[r])}`);
     }
     return lines.join('<br>');
 }
@@ -224,7 +232,7 @@ function barMode(config, spec) {
     const arrangement = arrangementShown(config);
     if (arrangement === 'overlay') return { barmode: 'overlay' };
     if (arrangement === 'dodge') return { barmode: 'group' };
-    if (arrangement === 'fill') return { barmode: 'stack', barnorm: 'percent' };
+    if (arrangement === 'fill') return { barmode: 'stack', barnorm: 'fraction' };
     return { barmode: 'stack' };
 }
 
@@ -266,7 +274,7 @@ function barFigure(config, table, opts) {
     const value = {
         title: { text: esc(mode.barnorm ? opts.words.fill : spec.title) },
         ...(log && spec.kind === 'count' ? { type: 'log' } : { rangemode: spec.kind === 'measure' ? 'normal' : 'tozero' }),
-        ...(spec.percent && !mode.barnorm ? { tickformat: '.0%' } : {}), ...(mode.barnorm ? { ticksuffix: '%' } : {})
+        ...(spec.fraction || mode.barnorm ? { tickformat: FRACTION_TICKS } : {})
     };
     const level = even ? { title: { text: esc(xTitle) }, tickmode: 'array', tickvals: even.tickvals, ticktext: even.ticktext, zeroline: false, ...(reverse ? { autorange: 'reversed' } : {}) }
         : bins ? { title: { text: esc(xTitle) }, ...(reverse ? { autorange: 'reversed' } : {}) }
@@ -347,7 +355,7 @@ function rectFigure(config, table, opts) {
             }
             zr.push(v);
             hr.push(hoverOf(config, table, opts, r, labelAt) + (top && top.level[r] >= 0
-                ? `<br>${esc(names.get(top.levels[top.level[r]]) || top.levels[top.level[r]])}: ${pct(top.share[r])}` : '')
+                ? `<br>${esc(names.get(top.levels[top.level[r]]) || top.levels[top.level[r]])}: ${frac(top.share[r])}` : '')
                 + (zeroed && spec.kind !== 'count' ? `<br>${esc(zeroLine(config, spec, opts))}` : ''));
             tr.push(textOf(labelsOn, r));
         }
@@ -376,7 +384,7 @@ function rectFigure(config, table, opts) {
         const diverging = config.value && config.value.kind === 'measure' && config.measure.stat === 'zscore';
         Object.assign(trace, {
             ...scaleKeys(opts.options, 'z', diverging ? { map: 'RdBu', reverse: true, center: 0 } : {}),
-            colorbar: { title: { text: esc(spec.title) }, tickformat: spec.percent ? '.0%' : undefined }
+            colorbar: { title: { text: esc(spec.title) }, tickformat: spec.fraction ? FRACTION_TICKS : undefined }
         });
     }
     const axisFor = (a, positions, order, title, extra2, even) => (even

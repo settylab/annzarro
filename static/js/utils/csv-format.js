@@ -3,13 +3,12 @@
  * no page state). The Count Plot, the Cell-Gene Plot and the Cell Grouping write their CSV files with `csvField`.
  */
 
-/** A share (0 to 1) as a percentage: "41.2%", "0.4%", "<0.1%". */
-export function fmtPercent(fraction) {
+/** A fraction (0 to 1) as text, three decimals at most: "0.412", "0.4", "<0.001"; 0 and 1 plain, never a % sign. */
+export function fmtFraction(fraction) {
     if (fraction === null || fraction === undefined || !Number.isFinite(fraction)) return '';
-    if (fraction === 0) return '0%';
-    const p = fraction * 100;
-    if (p < 0.1) return '<0.1%';
-    return `${p.toFixed(1)}%`;
+    if (fraction === 0 || fraction === 1) return String(fraction);
+    if (fraction < 0.001) return '<0.001';
+    return fraction.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 /**

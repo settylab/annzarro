@@ -2,7 +2,7 @@
  * The Count Plot's views follow the X axis type (operator, 0.8.0): with a number the engine bins, Histogram is the default
  * and Bar stays (bins as categories); with categories, Histogram is disabled with "Histogram needs a numeric axis.", and
  * a stored Histogram of categories falls back to Bar with a one-time note. Histogram keeps its numeric drawing and gains
- * 100%; its arrangements are graded, side by side disabled with its reason.
+ * Filled (each bar to 1); its arrangements are graded, side by side disabled with its reason.
  *
  * Run:  node --test annzarro/tests/js/count-views.test.mjs
  */
@@ -68,7 +68,7 @@ test('Histogram\'s arrangements match Bar\'s where they apply: Overlaid and 100%
     assert.deepEqual([...M.ARRANGEMENTS], ['stack', 'dodge', 'overlay', 'fill']);
     const hist = K.arrangementChoices(norm({ mode: 'histogram', x: obs('depth'), split: obs('condition') }));
     assert.deepEqual(hist.map((c) => [c.value, c.label, c.disabled]),
-        [['stack', 'Stacked', false], ['dodge', 'Side by side', true], ['overlay', 'Overlaid', false], ['fill', '100%', false]]);
+        [['stack', 'Stacked', false], ['dodge', 'Side by side', true], ['overlay', 'Overlaid', false], ['fill', 'Filled', false]]);
     assert.match(hist[1].title, /bins/i);
     const bar = K.arrangementChoices(norm({ mode: 'bar', x: obs('cell_type'), split: obs('condition') }));
     assert.deepEqual(bar.map((c) => [c.value, c.disabled]), [['stack', false], ['dodge', false], ['fill', false]]);
@@ -91,15 +91,15 @@ test('every figure a histogram link drew, it still draws', () => {
     }
 });
 
-test('a 100% histogram stacks each bin to 100, at the bins\' widths', () => {
+test('a filled histogram stacks each bin to 1, at the bins\' widths', () => {
     const config = norm({ mode: 'histogram', x: obs('depth', { binning: { method: 'equal_width', bins: 3 } }), split: obs('condition'), arrangement: 'fill' });
     const reply = { reply: { n_counted: 21, n_shown: 21, axes: [{ levels: ['bin:0', 'bin:1', 'bin:2'], edges: [0, 10, 20, 30], bins_made: 3, degenerate: false, n_outside: [0, 0] },
         { levels: ['c:p', 'c:q'], n_outside: [0, 0] }] }, counts: [1, 2, 3, 4, 5, 6], measures: null };
     const table = M.countTable(config, M.readGrid(reply), [{ input: 'x' }, { input: 'split' }]);
-    const f = D.countFigure(config, table, { options: K.drawOptions(config), words: { count: 'Cells', fill: '% of cells in each bar', hoverCount: 'Cells', hoverShare: 'Share', share: () => '' },
+    const f = D.countFigure(config, table, { options: K.drawOptions(config), words: { count: 'Cells', fill: 'Fraction of cells in each bar', hoverCount: 'Cells', hoverShare: 'Share', share: () => '' },
         inputNames: { x: 'depth', split: 'condition' }, palette: ['#111111'], theme: PLOT_PALETTES.light });
     assert.equal(f.layout.barmode, 'stack');
-    assert.equal(f.layout.barnorm, 'percent');
+    assert.equal(f.layout.barnorm, 'fraction');
     assert.deepEqual(f.data[0].width, [10, 10, 10]);
     assert.equal(f.layout.bargap, 0.02, 'touching bins');
     assert.ok(f.data.every((t) => t.opacity === undefined));

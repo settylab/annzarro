@@ -50,7 +50,7 @@ test('a Venn of three sets draws three circles, lettered, with the count and sha
     assert.equal(labels.x.length, 7);
     assert.ok(labels.text.every(t => /\d/.test(t)));
     assert.ok(labels.text[0].includes('100'), 'count of region A only');
-    assert.ok(labels.text[0].includes('%'), 'and its share');
+    assert.match(labels.text[0], /<br>[\d.<]+$/, 'and its share, a fraction');
     const labels2 = fig.layout.annotations.map(a => a.text);
     for (const l of ['A', 'B', 'C']) assert.ok(labels2.some(t => t.startsWith(`${l} · `)), `letter ${l} and its set's name`);
     assert.ok(labels2.some(t => t.includes('in Table 1')), 'each circle names its set');
@@ -88,9 +88,9 @@ test('Venn labels option: none, count or share', () => {
     const plot = fakePlot(2);
     assert.deepEqual(traceOf(D.buildFigure(plot, LIGHT, { labels: 'none' }), 'regions').text, ['', '', '']);
     const c = traceOf(D.buildFigure(plot, LIGHT, { labels: 'count' }), 'regions').text;
-    assert.ok(c.every(t => !t.includes('%')));
+    assert.ok(c.every(t => /^[\d,]+$/.test(t)));
     const s = traceOf(D.buildFigure(plot, LIGHT, { labels: 'share' }), 'regions').text;
-    assert.ok(s.every(t => t.includes('%')));
+    assert.ok(s.every(t => /^[\d.<]+$/.test(t)));
 });
 
 test('hover names the sets, the count and the share; customdata carries the region for Save as grouping', () => {
@@ -155,7 +155,7 @@ test('the share of cells in bars not shown is stated only when something is hidd
     const some = D.buildFigure(upsetPlot(3, 4), LIGHT);
     const note = some.layout.annotations.find(a => a.text.includes('not shown'));
     assert.ok(note, 'a note when bars are hidden');
-    assert.match(note.text, /\d+(\.\d)?%/);
+    assert.match(note.text, /^[\d.<]+ of cells are in \d+ bars not shown$/);
     assert.ok(note.text.includes(some.layout.annotations.length ? 'cells' : ''));
 });
 
@@ -212,7 +212,7 @@ test('bar labels thin out when the bars are too narrow to carry them', () => {
     assert.equal(tight.text.filter(Boolean).length, 0, 'none rather than overlapping');
     assert.equal(traceOf(D.buildFigure(plot, LIGHT, { width: 2400, labels: 'none' }), 'intersections').text.filter(Boolean).length, 0);
     const share = traceOf(D.buildFigure(plot, LIGHT, { width: 2400, labels: 'share' }), 'intersections').text;
-    assert.ok(share.every(t => t.includes('%')));
+    assert.ok(share.every(t => /^[\d.<]+$/.test(t)));
 });
 
 test('the figure follows the theme: dark and light differ in paper, text and the unused dots', () => {

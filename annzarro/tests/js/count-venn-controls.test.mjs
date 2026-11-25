@@ -32,5 +32,5 @@ test('only a Venn has the options, so no other mode\'s options change', () => {
 });
 
 test('a Venn\'s Labels select offers count and share, count, share and none', () => {
-    assert.deepEqual(K.VENN_LABEL_KINDS.map(k => VOCABULARY.countPlot.venn.labels[k]), ['Count and share', 'Count', 'Share', 'None']);
+    assert.deepEqual(K.VENN_LABEL_KINDS.map(k => VOCABULARY.countPlot.venn.labels[k]), ['Count and fraction', 'Count', 'Fraction', 'None']);
 });
