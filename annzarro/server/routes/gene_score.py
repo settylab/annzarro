@@ -57,7 +57,7 @@ REMOTE_COMPUTE_S = 1800.0
 #: Seconds a remote store may be sampled for the kind of an input.
 REMOTE_KIND_S = 30.0
 MIMETYPE = "application/x-annzarro-score-stream"
-_BODY_FIELDS = ("recipe", "subset", "estimate_only", "confirm", "dataset_path")
+_BODY_FIELDS = ("recipe", "subset", "estimate_only", "confirm", "force", "dataset_path")
 
 #: The heavy lane held like a semaphore (compute_stream.Holder), by what is not a score: a test keeps the lane busy
 #: through it.
@@ -142,27 +142,37 @@ def _progress(job, plan, done, total, entries_done):
             **compute_stream.progress_fields(job, entries_done, plan.entries)}
 
 
-def _work(plan, shown_rows):
-    """The frames and the vector of one score, given its job (the pause of ``compute``)."""
+def _work(plan, shown_rows, tried=None):
+    """The frames and the vector of one score, given its job (the pause of ``compute``). ``tried``: the run was started
+    with Try anyway: its deadline, and the first frame says so (aggregation-unify-080.md 14.6)."""
     def frames(job):
         events = None
+        pause = job if tried is None else tried.pause(job)
+        extra = {} if tried is None else tried.fields()
+        if tried is not None:
+            tried.begin()
         entries = [0]                                  # stored entries read so far (compute's on_entries)
 
         def read(n):
             entries[0] += n
         try:
             with remote.deadline(REMOTE_COMPUTE_S if plan.remote else None):
-                events = gene_score.compute(plan, shown_rows, pause=job, on_entries=read)
+                events = gene_score.compute(plan, shown_rows, pause=pause, on_entries=read)
                 for kind, payload in events:
                     if kind == "progress":
                         done, total = payload
-                        yield _frame(_progress(job, plan, done, total, entries[0]))
+                        yield _frame({**_progress(job, plan, done, total, entries[0]), **extra})
                     else:
                         yield _frame(_result_frame(plan, payload))
                         if payload.values is not None:
                             yield from compute_stream.block_bytes([payload.values.astype("<f4", copy=False)])
         except GeneratorExit:
             raise
+        except gene_score.ScoreCancelled:
+            if tried is not None and tried.exceeded:
+                logger.info("tried score stopped at its deadline: dataset=%s estimate=%.0fs limit=%.0fs",
+                            plan.dataset_path, plan.seconds, tried.max_s)
+                yield _frame(tried.error_frame())
         except Exception as exc:
             yield _frame(_error_frame(exc))
         finally:
@@ -204,14 +214,16 @@ def register_gene_score_routes(app_, api_version):
                             "recipe": recipe.describe()})
         hint = (" The matrix is stored by cell (CSR), which is slow to read by gene; a copy stored by gene "
                 "(CSC) would be far faster." if plan.layout == "csr" else "")
+        forced = bool(body.get("force", False))
         refusal = compute_stream.tier_refusal(
-            plan.tier, body.get("confirm", False), estimate, too_expensive="score_too_expensive",
+            plan.tier, body.get("confirm", False), estimate, too_expensive="score_too_expensive", forced=forced,
             refused_message=f"This score would take about {gene_score.duration(plan.seconds)}; the limit is "
                             f"{gene_score.duration(gene_score.confirm_max_s())}. Use fewer genes.{hint}",
             confirm_message=f"This score would take about {plan.seconds:.0f} seconds. "
                             "Send confirm: true to compute it.")
         if refusal is not None:
             return refusal
+        tried = compute_stream.tried_run_of(forced, plan.tier, estimate)
 
         shown_rows = None
         if body.get("subset") is not None:
@@ -234,11 +246,19 @@ def register_gene_score_routes(app_, api_version):
             admitted = read_guard.admit(need)
             admitted.__enter__()
             return lambda: admitted.__exit__(None, None, None)
-        return compute_stream.respond(
-            "heavy", nbytes=need, keep_bytes=accumulators, what="this score", wait_s=QUEUE_WAIT_S, admit=admit,
-            work=_work(plan, shown_rows),
-            queued_frame=lambda job: _progress(job, plan, 0, len(plan.columns), 0), mimetype=MIMETYPE,
-            headers={"X-Annzarro-Score-Version": str(gene_score.ALGORITHM_VERSION)})
+        if tried is not None and not tried.claim():
+            return compute_stream.tried_busy()
+        extra = {} if tried is None else tried.fields()
+        try:
+            return compute_stream.respond(
+                "heavy", nbytes=need, keep_bytes=accumulators, what="this score", wait_s=QUEUE_WAIT_S, admit=admit,
+                work=_work(plan, shown_rows, tried), on_release=None if tried is None else tried.release,
+                queued_frame=lambda job: {**_progress(job, plan, 0, len(plan.columns), 0), **extra}, mimetype=MIMETYPE,
+                headers={"X-Annzarro-Score-Version": str(gene_score.ALGORITHM_VERSION)})
+        except BaseException:
+            if tried is not None:
+                tried.release()
+            raise
 
 
 def register_matrix_kind_route(app_, api_version):

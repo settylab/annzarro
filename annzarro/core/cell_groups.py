@@ -498,7 +498,7 @@ class Plan:
 
     def estimate(self) -> Dict[str, Any]:
         return {"seconds": round(self.seconds, 2), "tier": self.tier,
-                **gs.tier_limits(),
+                **gs.tier_limits(), "try": gs.try_info(self.seconds),
                 "entries": self.entries, "layout": self.layout, "n_cells": self.n_cells, "lane": self.lane,
                 "parts": [{"type": p.spec.source["type"], "seconds": round(p.seconds, 3), "entries": p.entries,
                            "layout": p.layout} for p in self.top.parts]}

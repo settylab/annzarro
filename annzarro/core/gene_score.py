@@ -144,6 +144,19 @@ def duration(seconds: float) -> str:
     return f"{seconds:.0f} seconds" if seconds < 90 else f"{seconds / 60:.0f} minutes"
 
 
+#: A tried run is offered for an estimate up to this many times ``limits.try_max_s`` (a guess may be that far off).
+TRY_RATIO = 10
+
+
+def try_info(seconds: float) -> Dict[str, Any]:
+    """What an estimate says of "Try anyway" (aggregation-unify-080.md 14.6): ``allowed``, the wall-clock ``max_s`` a tried
+    run may hold its slot (``limits.try_max_s``), and ``why`` it is not offered: ``off`` (max_s is 0) or ``too_long``
+    (the estimate is over ``TRY_RATIO`` times it)."""
+    max_s = cost_limits.get("try_max_s")
+    why = "off" if max_s <= 0 else "too_long" if seconds > TRY_RATIO * max_s else None
+    return {"allowed": why is None, "max_s": max_s, "why": why}
+
+
 def tier_limits() -> Dict[str, float]:
     """The tiers as an estimate reports them."""
     return {"live_max_s": live_max_s(), "auto_max_s": auto_max_s(), "max_s": confirm_max_s()}
@@ -1286,7 +1299,7 @@ class Plan:
 
     def estimate(self) -> Dict[str, Any]:
         return {"entries": self.entries, "seconds": round(self.seconds, 2), "tier": self.tier,
-                **tier_limits(), "layout": self.layout,
+                **tier_limits(), "try": try_info(self.seconds), "layout": self.layout,
                 "n_cells": self.n_obs, "genes": len(self.columns), "genes_requested": len(self.recipe.genes) + len(self.recipe.down),
                 "genes_missing": len(self.missing), "down_requested": len(self.recipe.down),
                 **({"controls": (len(self.controls) + len(self.down_controls or ()))
