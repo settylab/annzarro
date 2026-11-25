@@ -12,7 +12,7 @@ Open a panel's controls with the chevron in its tile header.
 
 ```{figure} ../_static/screens/user-guide/plots-cell-controls.png
 :class: screenshot
-:alt: Cell plot controls with twelve numbered parts: X type, key and column drop-downs; the Color row; 3D; Equal aspect; Highlight Focused Cell; Palette; Hide NaN; Size and Opacity sliders; Table filter; Plot Options.
+:alt: Cell plot controls with numbered parts: the X, Y and Color rows with their type, key and column drop-downs; Palette; Hide NaN; Opacity; Table; Hover; and, in the toolbar row under them, 3D, Equal aspect, Highlight Focused Cell, Undo and Plot Options.
 
 Cell plot controls, coloured by a categorical obs column.
 ```
@@ -22,64 +22,73 @@ Cell plot controls, coloured by a categorical obs column.
 3. **Column**: which column of the matrix, or which focused row or column (see the tables below).
    obs and var columns have none, and the drop-down is not shown.
 4. **Color**: the same three drop-downs for the colour, plus **None (constant)**.
-5. **3D** adds a **Z** row and draws the plot in 3D. Click it again for 2D.
-6. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
+5. **Palette** (categorical colour) or **Map** and range controls (numerical colour, {doc}`colour-scales`).
+6. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
+   points of the **NA** legend entry). Numerical colours have more buttons next to it
+   ({doc}`colour-scales`).
+7. **Opacity** (0 to 1) of the points: a slider, a number box and an **auto** button.
+8. **Table** links the plot to a table ({doc}`tables-and-filters`); the button beside it removes the points that are not in
+   the table (**Remove non-table entries**).
+9. **Hover** chooses the columns the tooltip shows, in a list: **No hover**, or any number of obs columns, scores and groupings.
+
+The **toolbar row** under the controls holds the plot's actions at the left, and **Undo** and **Plot Options** at the right
+({ref}`interface-toolbar`):
+
+10. **3D** adds a **Z** row and draws the plot in 3D. Click it again for 2D.
+11. **Equal aspect** draws one unit on x as long as one unit on y, for spatial coordinates
    ({doc}`spatial-coordinates`). A new Cell Plot starts with it on when both axes are the
    default, taken from one embedding (UMAP, PCA, spatial); it stays as you set it, and changing
    the axes does not switch it.
-7. **Highlight Focused Cell** (in gene plots, **Highlight Focused Gene**) draws the focused point
+12. **Highlight Focused Cell** (in gene plots, **Highlight Focused Gene**) draws the focused point
    as a red dot with a black ring. On by default.
-8. **Palette** (categorical colour) or **Map** and range controls (numerical colour,
-   {doc}`colour-scales`).
-9. **Hide NaN** removes the points whose colour value is missing (for a categorical colour, the
-   points of the **NA** legend entry). Numerical colours have more buttons next to it
-   ({doc}`colour-scales`).
-10. **Size** (in px, in **Plot Options** ▸ **Points**) and **Opacity** (0 to 1, in the controls) of the points: a slider and a number box each.
-    The sliders move on a log scale, so their left half is the small sizes and faint opacities a
-    plot of millions of cells needs: size 0.39 to 2.8 and opacity 0.002 to 0.045. WebGL draws 2D
-    markers in steps of 100/255 = 0.39 px, so sizes snap to those steps (5 is shown as 5.1, the
-    size it is drawn at); the size slider starts at one step and opacity at 0.002, below which a
-    point is not drawn at all (8-bit alpha). The boxes take any value, also outside the sliders'
-    range.
+13. **Undo** takes back the last change to the plot's settings (colour, axes, options), one step at a time. Its title says
+   what it undoes ("Undo: change the colour"), and it is disabled when there is nothing to undo.
+14. **Plot Options** opens appearance and export settings ({doc}`plot-options`, {doc}`export`). A plot has no
+   Refresh of its own: whatever you change, it draws what a plot opened with the same settings
+   draws. To read values written to the store since, use **Refresh dataset** ({doc}`interface`),
+   which keeps each plot's zoom and 3D camera.
 
-    Until you set them, both are **automatic**: they follow how densely the points fill the
-    plot, the number of points drawn per plot area (the area inside the axes). The number is
-    the cells of the subset less the points the plot hides itself:
-    those a table link removes (**Remove non-table entries**), **Hide NaN** and **Hide outliers**,
-    and less the points a table link greys out: only the points shown in full count, so a table
-    search that picks a few rows gives them the larger size of a small plot. The grey points,
-    drawn behind, keep the automatic style of all the points drawn (or the size and opacity you
-    set), so they stay a quiet backdrop. In a plot area of 660 × 332 px (one panel in a
-    900 × 700 browser window, with a legend), from the default
-    5.1 px and opaque at a few thousand points, the size falls by about half with every tenfold
-    in points: 3.5 px / 0.87 at 10,000, 1.96 px / 0.64 at 100,000, 1.18 px / 0.43 at a million,
-    and 0.39 px (one step, the smallest WebGL draws) from about 10 million, with opacity 0.28
-    there and 0.19 at 95.6 million.
-    A larger plot draws what fewer points would get in that area, a smaller one what more points
-    would: twice the area draws as half the points do. A single panel filling a 2560 × 1440
-    window (about 8 times that area) draws a million points at 1.96 px / 0.62 rather than
-    1.18 px / 0.43; the effect stops at 8 times larger and 8 times smaller. The size never
-    exceeds the default.
-    The curve was set on screenshots of Tahoe-100M UMAPs and checked on 1, 2 and 5 million cells
-    at cell-line colours; sizes above 5 million points were not looked at again. An
-    automatic value is shown in grey italics and changes when the number of points does, for
-    example when you turn the subset off, and when the plot area does: resizing the window,
-    dragging a split, showing or hiding the controls, maximising the panel. An image export at
-    its own **Width** and **Height** ({doc}`export`) gets the automatic values for its own plot
-    area, so it looks as dense as the screen. In a 2D plot it also follows the zoom: once a zoom or
-    pan has settled, the count is the points inside the view, so a close view of a dense
-    region gets larger, more opaque points; Reset axes (or a double click) goes back to the
-    value for every point drawn. In a 3D plot the automatic size follows the area as in 2D, and the automatic opacity is always 1: below 1,
-    Plotly draws 3D points out of depth order (far points over near ones). An opacity you choose is
-    kept in 3D as well; its tooltip warns about the drawing order. Moving a slider or typing a value
-    sets it; it then stays
-    as set, in saved panel sets and links too. The **auto** button beside each box is highlighted
-    while its value is automatic; click it to make that value automatic again.
-11. **Table** links the plot to a table ({doc}`tables-and-filters`).
-12. **Plot Options** opens appearance and export settings ({doc}`plot-options`, {doc}`export`). A plot has no
-    Refresh of its own: whatever you change, it draws what a plot opened with the same settings
-    draws. To read values written to the store since, use **Refresh dataset** ({doc}`interface`),
-    which keeps each plot's zoom and 3D camera.
+**Point size and opacity.** The point size (in px) is **Point size (px)** in **Plot Options** ▸ **Points**; the opacity is **Opacity** in the controls. Each has a slider and a number box.
+The sliders move on a log scale, so their left half is the small sizes and faint opacities a
+plot of millions of cells needs: size 0.39 to 2.8 and opacity 0.002 to 0.045. WebGL draws 2D
+markers in steps of 100/255 = 0.39 px, so sizes snap to those steps (5 is shown as 5.1, the
+size it is drawn at); the size slider starts at one step and opacity at 0.002, below which a
+point is not drawn at all (8-bit alpha). The boxes take any value, also outside the sliders'
+range.
+
+Until you set them, both are **automatic**: they follow how densely the points fill the
+plot, the number of points drawn per plot area (the area inside the axes). The number is
+the cells of the subset less the points the plot hides itself:
+those a table link removes (**Remove non-table entries**), **Hide NaN** and **Hide outliers**,
+and less the points a table link greys out: only the points shown in full count, so a table
+search that picks a few rows gives them the larger size of a small plot. The grey points,
+drawn behind, keep the automatic style of all the points drawn (or the size and opacity you
+set), so they stay a quiet backdrop. In a plot area of 660 × 332 px (one panel in a
+900 × 700 browser window, with a legend), from the default
+5.1 px and opaque at a few thousand points, the size falls by about half with every tenfold
+in points: 3.5 px / 0.87 at 10,000, 1.96 px / 0.64 at 100,000, 1.18 px / 0.43 at a million,
+and 0.39 px (one step, the smallest WebGL draws) from about 10 million, with opacity 0.28
+there and 0.19 at 95.6 million.
+A larger plot draws what fewer points would get in that area, a smaller one what more points
+would: twice the area draws as half the points do. A single panel filling a 2560 × 1440
+window (about 8 times that area) draws a million points at 1.96 px / 0.62 rather than
+1.18 px / 0.43; the effect stops at 8 times larger and 8 times smaller. The size never
+exceeds the default.
+The curve was set on screenshots of Tahoe-100M UMAPs and checked on 1, 2 and 5 million cells
+at cell-line colours; sizes above 5 million points were not looked at again. An
+automatic value is shown in grey italics and changes when the number of points does, for
+example when you turn the subset off, and when the plot area does: resizing the window,
+dragging a split, showing or hiding the controls, maximising the panel. An image export at
+its own **Width** and **Height** ({doc}`export`) gets the automatic values for its own plot
+area, so it looks as dense as the screen. In a 2D plot it also follows the zoom: once a zoom or
+pan has settled, the count is the points inside the view, so a close view of a dense
+region gets larger, more opaque points; Reset axes (or a double click) goes back to the
+value for every point drawn. In a 3D plot the automatic size follows the area as in 2D, and the automatic opacity is always 1: below 1,
+Plotly draws 3D points out of depth order (far points over near ones). An opacity you choose is
+kept in 3D as well; its tooltip warns about the drawing order. Moving a slider or typing a value
+sets it; it then stays
+as set, in saved panel sets and links too. The **auto** button beside each box is highlighted
+while its value is automatic; click it to make that value automatic again.
 
 A toggle that is on is filled blue and starts with a check mark. The controls rearrange with the
 panel's width: side by side in a wide panel, stacked in a narrow one.
@@ -129,9 +138,12 @@ list that follows. The list has the focused cell first and then **Cell groupings
 closed. A select of that grouping's groups follows it, by their names (a label you gave a group shows), in the grouping's order, all
 of them; the first group is chosen. Changing the grouping keeps the group if the new one has a group of the same name, else takes
 its first. Each gene's value is then one statistic of that gene over the cells of that group of a Cell Grouping
-({doc}`cell-grouping`). After the selects a button holds the **aggregation**: its symbol (x̄ mean, fraction of cells, Σ sum,
-σ SD), opening the statistics, each as a symbol and a name, with one the layer cannot give disabled and its reason as the hint
-("Fraction of cells cannot be computed on 'X': it has negative values"). The row is one line: source, layer, grouping, group,
+({doc}`cell-grouping`). After the selects a button holds the **aggregation**: its symbol (z̄ Z-score mean, x̄ mean, c⁺ fraction of cells, x̄⁺ mean of
+expressing cells, Σ sum, σ SD), opening the statistics, each as a symbol and a name, with one the layer cannot give disabled and
+its reason as the hint ("Fraction of cells cannot be computed on 'X': it has negative values"). The symbols are explained under
+{ref}`interface-symbols`. **Z-score mean** is offered only on a layer stored by gene (CSC), where each gene's mean and SD over
+all cells come from the pass that reads the group; on another layout it is greyed out with the reason ("Z-score mean of a cell
+group needs this layer stored by gene (CSC)."). It is always greyed out for a Cell Table's cells ("Z-score mean is not offered for a table's cells. Use it for a cell group (Color of a Cell-Gene Plot)."). The row is one line: source, layer, grouping, group,
 aggregation; the grouping and the group share the width the item has on every other row. Nothing is asked of the server until a
 group is chosen; then one request returns the five moments of every gene over the group, and the plot is coloured from them.
 Choosing another layer asks again. Switching   to another statistic of the same layer, or back, asks for nothing. Another group or layer asks once, and
@@ -156,7 +168,7 @@ grouping's levels change what the group is made of, the plot keeps colouring by 
 with **Keep** (follow the new labels) and **Choose another**; when the key is no longer a group the plot says "No longer
 a group", asks for nothing, and offers **Choose another**. A group of a large dataset that is stored in scattered
 places can cost a read of the whole matrix: the plot then asks first, or says it was refused with the reason (the server's
-limits, {ref}`http-cell-groups-genes`). Two axes on the same group, layer and threshold share one request. A Cell Plot does not offer Cell groups.
+limits, {ref}`http-cell-groups-genes`). Two axes on the same group, layer and threshold share one request. A Cell Plot does not offer Cell groupings as a layer's items: it takes a grouping as a colour, axis or hover source ({doc}`cell-grouping`).
 
 If a panel names a source the open dataset does not have (a view made for another dataset, or a
 column that was removed), the drop-down keeps the name and marks it "(not in this dataset)", and
@@ -367,7 +379,8 @@ not part of the page address, so it is not a step of Back and Forward.
 
 ## Zoom, pan and click
 
-The toolbar in the top right corner of a plot's axes (it appears when the pointer is over the plot)
+The modebar in the top right corner of a plot's axes (the strip of buttons that appears when the pointer is over the plot; the
+**toolbar row** is the one under the controls)
 has, from left to right: zoom, pan, zoom in, zoom out, reset axes and download as PNG
 ({doc}`export`). 3D plots have orbit and turntable rotation instead of pan. It sits inside the
 plotting area, so a legend placed beside the plot never covers it. Drag in a 2D plot to zoom into a

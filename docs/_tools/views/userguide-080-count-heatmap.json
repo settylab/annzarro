@@ -1,0 +1,125 @@
+{
+ "v": 1,
+ "constants": {},
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "tile",
+    "id": "cell-count-1",
+    "controlsVisible": false
+   }
+  ],
+  "controlState": {
+   "cell-count-1": false
+  },
+  "panelConfigs": {
+   "gene-signature-1": {
+    "id": "gene-signature-1",
+    "title": "Stem cell markers",
+    "genes": [
+     "Cd34",
+     "Kit",
+     "Procr",
+     "Hlf",
+     "Mecom",
+     "Ly6a",
+     "Cebpa",
+     "Irf8"
+    ]
+   },
+   "gene-signature-2": {
+    "id": "gene-signature-2",
+    "title": "Lineage markers",
+    "genes": [
+     "Cd3e",
+     "Cd79a",
+     "Ms4a1",
+     "Cebpa",
+     "Gata1",
+     "Irf8",
+     "Klf1",
+     "Lyz2",
+     "Pf4",
+     "S100a8"
+    ]
+   },
+   "cell-grouping-1": {
+    "id": "cell-grouping-1",
+    "title": "Cell types by age",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "midres_celltype"
+      }
+     },
+     {
+      "source": {
+       "type": "obs",
+       "key": "Age"
+      }
+     }
+    ]
+   },
+   "cell-gene-1": {
+    "id": "cell-gene-1",
+    "title": "Cell-Gene Plot 1",
+    "version": 1,
+    "mode": "dots",
+    "cellAxis": {
+     "type": "obs",
+     "key": "midres_celltype"
+    },
+    "sections": [
+     {
+      "source": "gene-signature-1",
+      "rows": "genes"
+     },
+     {
+      "source": "gene-signature-2",
+      "rows": "genes"
+     }
+    ],
+    "color": {
+     "stat": "mean",
+     "layer": "logged_counts"
+    },
+    "size": {
+     "stat": "fraction_of_cells",
+     "layer": "raw_counts"
+    }
+   },
+   "cell-table-1": {
+    "id": "cell-table-1",
+    "title": "Cell table",
+    "columns": [
+     {
+      "type": "obs",
+      "key": "midres_celltype",
+      "column": ""
+     }
+    ]
+   },
+   "cell-count-1": {
+    "id": "cell-count-1",
+    "title": "Cell Count Plot 1",
+    "version": 1,
+    "mode": "heatmap",
+    "x": {
+     "source": {
+      "type": "obs",
+      "key": "midres_celltype"
+     }
+    },
+    "y": {
+     "source": {
+      "type": "obs",
+      "key": "Age"
+     }
+    }
+   }
+  }
+ }
+}

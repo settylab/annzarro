@@ -11,6 +11,13 @@ A signature outlives its panel. Close the panel and the signature is still there
 panel chooser as **Closed**, and still usable wherever a gene table is: it can filter a Gene Plot and
 it can be the source of a Gene Set Analysis panel.
 
+```{figure} ../_static/screens/user-guide/signature-panel.png
+:class: screenshot
+:alt: The Gene Signature panel with eight genes selected: Methods and Distribution (1, 2) at the top right, the search box (3), the add row with Paste or upload, Add from and Up/Down (4 to 6), Undo (7), the list of ticked genes and the status banner "8 of 16,285 genes selected" at the foot.
+
+A Gene Signature panel. **Methods ▾** (1) and **Distribution** (2) in the status row; the search box (3); **Paste or upload** (4), **Add from ▾** (5) and **Up/Down** (6) in the add row; **Undo** (7) in the list bar. The status banner under the list counts the selected genes.
+```
+
 ## Build a list
 
 1. Add a **Gene Signature** panel (**Create New Panel** → **Gene Signature**, or split a tile).
@@ -103,6 +110,13 @@ A pasted list can be any length; the preview counts the genes that will be added
 **Add** adds the genes as one step: **Undo** (or Ctrl+Z, Cmd+Z on a Mac) takes the whole paste back.
 **Cancel**, **Esc** and **Add** return you to the list and put the cursor back on **Paste or upload**.
 
+```{figure} ../_static/screens/user-guide/signature-paste.png
+:class: screenshot
+:alt: The paste preview of a Gene Signature: a pasted two-column list with the gene column chosen, "7 will be added", "1 matched ignoring case (CD3E > Cd3e)", "1 not in this dataset" with its name listed, and the buttons Back and Add 7 genes.
+
+The preview of a pasted list, before anything is added: how many genes will be added, those matched ignoring case, and the names the dataset does not have.
+```
+
 ## Use a signature
 
 There is no menu in the signature's panel for this. A signature is chosen from the place that uses it:
@@ -166,7 +180,7 @@ The server estimates the time before it reads anything, and the plot follows wha
   you press **Compute**.
 - **Longer**: it is not started by itself, and the plot says why and what to do ("Use fewer genes"). Where the server
   allows it the notice has **Try anyway**, which runs it with a time limit of its own; see
-  {doc}`cell-gene-plot` (Try anyway, and not asking again).
+  {doc}`long-computations` (Try anyway, and not asking again).
 
 The notice lies over the plot and a short tag appears in the status strip, so the plot never moves.
 On an axis, where nothing can be drawn without the score, the plot area shows the same sentence instead.
@@ -228,6 +242,14 @@ plot shows a z-score mean, and a seed edit recomputes only control-adjusted scor
 parameter. A link made before this release, which listed the methods and layers a signature offered, opens with
 every plot and table on the method and layer it showed.
 
+```{figure} ../_static/screens/user-guide/signature-methods.png
+:class: screenshot
+:width: 50%
+:alt: The Methods pop-over of a Gene Signature, one section for each score method: Z-score mean with its clip, Mean, Sum, Control-adjusted with Bins, Controls per bin and Seed, Fraction of genes with Expressed above, and % of total.
+
+The **Methods ▾** pop-over: one section for each method, with its definition and its parameters.
+```
+
 ### Up and down genes
 
 Some signatures have genes that should count against the score, such as an exhaustion marker in an activation
@@ -285,8 +307,8 @@ is kept in the browser (up to 1 GiB, least recently used first) so it is not ask
 
 ## See a score's distribution
 
-**Distribution**, beside **Methods ▾** in the panel's toolbar, opens a Count Plot beside the panel with a histogram of
-the score (the z-score mean of X) over the cells shown. Everything a Count Plot does applies: change the method or the
+**Distribution**, beside **Methods ▾** in the panel's toolbar, opens a Cell Count Plot beside the panel with a histogram of
+the score (the z-score mean of X) over the cells shown. Everything a Cell Count Plot does applies: change the method or the
 layer on its x axis, split it by a grouping, and read the cells with no score (every gene missing there) in its count
 of cells left out. Genes left out of the score (absent from the dataset, constant, or without a value) are named in
 the panel's status line.
@@ -333,9 +355,9 @@ Analysis and Gene Plot filters read the table as before.
 A Cell Table can show a signature's score as a column, so you can sort the cells by it, filter on it and
 export it. Open the table's
 column chooser and choose the **Gene score** tab. Under each signature are the score columns the table has
-("mean · counts"), each with its tick box, then one row: **[method] on [layer] Add column**. Choose a method and a
-layer, graded as a plot's selects are, and press **Add column**: the column is ticked, and **Apply Changes** puts it
-in the table. The tab never lists every combination of method and layer. Add as many as you like: several
+("mean · counts"), each with its tick box, then one row: **[layer ▾] [aggregation button] [Add column]**. Choose a layer and, with the symbol button, a method
+(the symbols are explained under {ref}`interface-symbols`), graded as a plot's selects are, and press **Add column**: the column is ticked, and **Apply Changes** puts it
+in the table (the row says "Added …. Apply Changes to show it in the table."). The tab never lists every combination of method and layer. Add as many as you like: several
 signatures, and several methods or layers of one, are several columns, and each is computed once however many plots
 and tables use it.
 
@@ -379,6 +401,13 @@ The score stays in the browser as one list of numbers shared by every plot and t
 adds no property to the table's rows, so on a table of a million cells it costs about 34 bytes a cell of
 the browser's memory, against about 71 for an ordinary numeric column. The table's usual memory check
 still decides whether a table of that size opens.
+
+```{figure} ../_static/screens/user-guide/signature-table-score.png
+:class: screenshot
+:alt: The column chooser of a Cell Table on its Gene score tab: for each signature a row with a layer select, the aggregation button showing the z-score mean symbol and an Add column button.
+
+The **Gene score** tab of a Cell Table: for each signature, a layer, the aggregation button and **Add column**.
+```
 
 ## Close, reopen, share
 
