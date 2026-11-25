@@ -72,3 +72,33 @@ def shoot(page, selector, name):
             page.locator(selector).screenshot(path=os.path.join(folder, f"{name}-{theme}.png"))
     finally:
         page.evaluate("(t) => t ? document.documentElement.setAttribute('data-theme', t) : document.documentElement.removeAttribute('data-theme')", was)
+
+
+FIT = """(sel) => {
+    const root = document.querySelector(sel);
+    const probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;left:-9999px';
+    document.body.appendChild(probe);
+    const out = [];
+    for (const e of root.querySelectorAll('input')) {
+        if (e.offsetParent === null || e.value !== '' || !e.placeholder || !['number', 'text'].includes(e.type)) continue;
+        const cs = getComputedStyle(e);
+        const ph = getComputedStyle(e, '::placeholder');     // the placeholder's own font (italic for an automatic value)
+        probe.style.font = ph.font;
+        probe.style.letterSpacing = ph.letterSpacing;
+        probe.textContent = e.placeholder;
+        const room = e.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        const need = probe.getBoundingClientRect().width;
+        // a few px of slack: Chrome cuts a placeholder with an ellipsis a little before the text reaches the padding
+        if (need + 6 > room) out.push({ option: e.dataset.option || e.className, placeholder: e.placeholder, need: Math.round(need), room: Math.round(room), font: ph.font });
+    }
+    probe.remove();
+    return out;
+}"""
+
+
+def assert_placeholders_fit(page, selector):
+    """Every empty number or text box of the pop-over shows its whole placeholder (the text measured in the box's own font fits
+    its width), so a box that follows the data never reads cut off."""
+    clipped = page.evaluate(FIT, selector)
+    assert not clipped, f"{selector}: placeholders that do not fit their box: {clipped}"

@@ -168,7 +168,7 @@ def test_screenshots_of_the_toolbar_and_each_popover(page, served):
     ("count-display", dict(mode="hist2d", x=obs("depth"), y=obs("score")), ".ccnt-toolbar .ccnt-color-btn", "color"),
 ])
 def test_the_count_pop_overs_use_the_az_pop_body(page, served, name, config, button, popover):
-    from annzarro.tests.browser.popover_standard import assert_body_standard
+    from annzarro.tests.browser.popover_standard import assert_body_standard, assert_placeholders_fit
     _open(page, served, {CC: _count(**config)})
     _drawn(page, config["mode"])
     page.click(f"{S} {button}")
@@ -176,3 +176,4 @@ def test_the_count_pop_overs_use_the_az_pop_body(page, served, name, config, but
     if popover == "binning":
         page.wait_for_selector("[data-popover='binning'] .pbc")
     assert_body_standard(page, f"[data-popover='{popover}']", sections=1 if popover != "color" else 2, help=False, shot=name)
+    assert_placeholders_fit(page, f"[data-popover='{popover}']")

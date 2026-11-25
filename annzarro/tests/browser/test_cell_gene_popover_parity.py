@@ -17,7 +17,7 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
-from annzarro.tests.browser.popover_standard import assert_body_standard  # noqa: E402
+from annzarro.tests.browser.popover_standard import assert_body_standard, assert_placeholders_fit  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_options import (  # noqa: E402,F401
     GENES, P, S1, TP, _drawn, _open, _plot, _sig, page, served)
 
@@ -110,6 +110,7 @@ def test_cluster_and_color_look_like_plot_options(page, served, theme):
         page.wait_for_selector(f"[data-popover='{name}']")
         assert_body_standard(page, f"[data-popover='{name}']", sections=2 if name == "cluster" else 1,
                              shot=f"cgene-{name}" if theme == "light" else None)
+        assert_placeholders_fit(page, f"[data-popover='{name}']")
         got = _read(page, name, 1)
         page.keyboard.press("Escape")
         page.wait_for_selector(f"[data-popover='{name}']", state="detached")

@@ -1,5 +1,5 @@
 """The range boxes in the Cell-Gene and Count Plots' Color pop-overs, in a real browser: Min and Max (and Center) of each
-scale in one box style. An unset box reads "auto (value drawn)", never empty; a set box shows its number; the scale's
+scale in one box style. An unset box reads the value drawn, never empty; a set box shows its number; the scale's
 reset (the arrow) returns it to auto in one undo step.
 
 1.  Cell-Gene colour: Min, Max and Center boxes reach cmin, cmax; auto with the drawn value; reset, then Undo.
@@ -55,6 +55,15 @@ def _placeholder(page, option):
     return page.eval_on_selector(_box(page, option), "e => e.placeholder")
 
 
+def _is_drawn(text):
+    """A placeholder that is the drawn value alone (a number), not the word auto."""
+    try:
+        float(text)
+    except ValueError:
+        return False
+    return True
+
+
 def _cfg(page, field):
     return page.evaluate("([id, f]) => window.PanelManager.getPanel(id).getConfig()[f]", [P, field])
 
@@ -63,11 +72,12 @@ def test_an_unset_scale_reads_auto_with_the_drawn_value_and_never_empty(page, se
     _gene(page, served)
     for option in ("min", "max", "dotMin", "dotMax"):
         text = _placeholder(page, option)
-        assert text.startswith("auto (") and text.endswith(")"), (option, text)
+        float(text)       # the drawn value alone: it fits the box, and the title says it is automatic
+        assert "follows" in page.get_attribute(_box(page, option), "title").lower(), option
         assert page.input_value(_box(page, option)) == ""
     assert _placeholder(page, "center") == "auto"
     drawn = page.evaluate("(s) => { const m = document.querySelector(s).data[0].marker; return [m.cmin, m.cmax]; }", PLOT)
-    assert float(_placeholder(page, "max")[6:-1]) == pytest.approx(drawn[1], rel=0.01, abs=0.01)
+    assert float(_placeholder(page, "max")) == pytest.approx(drawn[1], rel=0.01, abs=0.01)
 
 
 def test_cell_gene_colour_boxes_reach_the_figure_and_reset_to_auto_with_undo(page, served):
@@ -79,7 +89,7 @@ def test_cell_gene_colour_boxes_reach_the_figure_and_reset_to_auto_with_undo(pag
     assert page.is_enabled(_box(page, "colorRange"))
     page.click(_box(page, "colorRange"))
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().limits === undefined", P)
-    assert page.input_value(_box(page, "max")) == "" and _placeholder(page, "max").startswith("auto (")
+    assert page.input_value(_box(page, "max")) == "" and _is_drawn(_placeholder(page, "max"))
     page.click(f"{TP} .cgene-undo")
     until(page, "(id) => JSON.stringify(window.PanelManager.getPanel(id).getConfig().limits) === '[null,2]'", P)
     page.click(f"{TP} .cgene-color-btn")      # a press outside closed the pop-over
@@ -101,7 +111,7 @@ def test_the_size_boxes_are_named_by_the_statistic_and_keep_the_stored_fields(pa
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().dotMin === 5", P)
     page.click(_box(page, "sizeRange"))
     until(page, "(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return c.dotMin === undefined && c.dotMax === undefined; }", P)
-    assert _placeholder(page, "dotMax").startswith("auto (")
+    assert _is_drawn(_placeholder(page, "dotMax"))
     page.click(f"{TP} .cgene-undo")
     until(page, "(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return c.dotMin === 5 && c.dotMax === 20; }", P)
 
@@ -111,7 +121,7 @@ def test_cell_gene_3d_height_boxes_limit_the_bars_and_reset_with_undo(page, serv
     _redrawn(page, "(p) => p.data[0].type === 'mesh3d'")
     top = "(s) => { const m = document.querySelector(s).data[0]; let t = 0; for (let k = 0; k < m.z.length; k++) if (m.z[k] > t) t = m.z[k]; return t; }"
     drawn = page.evaluate(top, PLOT)
-    assert _placeholder(page, "heightMax").startswith("auto (")
+    assert _is_drawn(_placeholder(page, "heightMax"))
     limit = round(drawn / 2, 3)
     _type(page, _box(page, "heightMax"), str(limit))
     until(page, "([id, v]) => { const l = window.PanelManager.getPanel(id).getConfig().heightLimits; return Array.isArray(l) && l[1] === v; }", [P, limit])
@@ -145,7 +155,7 @@ def test_count_colour_boxes_read_auto_reach_the_trace_and_reset_with_undo(page, 
     cc._drawn(page, "hist2d")
     page.click(f"{CS} .ccnt-color-btn")
     page.wait_for_selector(POP)
-    assert _placeholder(page, "max").startswith("auto (") and _placeholder(page, "min").startswith("auto (")
+    assert _is_drawn(_placeholder(page, "max")) and _is_drawn(_placeholder(page, "min"))
     assert _placeholder(page, "center") == "auto"
     assert page.input_value(_box(page, "max")) == ""
     _type(page, f"{POP} .ccnt-color-max", "3")
@@ -154,7 +164,7 @@ def test_count_colour_boxes_read_auto_reach_the_trace_and_reset_with_undo(page, 
     until(page, "(s) => { const t = document.querySelector(s + ' .ccnt-plot').data[0]; return t.zmax === 3 && t.zmin === 1; }", CS, timeout=30)
     page.click(_box(page, "colorRange"))
     cc._drawn(page, "hist2d", "c.color === undefined")
-    assert page.input_value(_box(page, "max")) == "" and _placeholder(page, "max").startswith("auto (")
+    assert page.input_value(_box(page, "max")) == "" and _is_drawn(_placeholder(page, "max"))
     page.click(f"{CS} .ccnt-undo")
     cc._drawn(page, "hist2d", "c.color.max === 3 && c.color.min === 1")
     page.click(f"{CS} .ccnt-color-btn")
