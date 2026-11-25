@@ -161,10 +161,13 @@ const binding = createHostBinding({
             visible: () => isVisible(host),
             onChange: (snap) => { onChange(snap); const p = panelOfHost(host); if (p) p.snapshotChanged(snap); }
         });
-        return { id: setting.id, handle, host };
+        return { id: setting.id, handle, host, consumer: { panelId: setting.id } };
     },
     matches: (rec, setting) => rec.id === setting.id,
-    describe: (snap, ctx) => gridNotice(snap, ctx, cellsShown()),
+    describe: (snap, ctx) => {
+        const p = ctx && ctx.consumer ? panelOf(ctx.consumer.panelId) : null;
+        return gridNotice(snap, ctx, cellsShown(), p && typeof p.refusalFacts === 'function' ? p.refusalFacts() : null);
+    },
     visibilityChanged: () => groupSources().sources.visibilityChanged()
 });
 
@@ -1090,6 +1093,8 @@ actions.register({
             groupSource,
             axisSource,
             snapshotChanged,
+            /** What a notice of a size refusal needs of the plan: the mode, the inputs in the order of the request's axes, their names. */
+            refusalFacts: () => ({ mode: shown().mode, inputs: (inputsOf(shown()) || []).map((e) => e.input), nameOf: nameOfInput }),
             // for the steps after this one, and the tests
             undo,
             _debugState

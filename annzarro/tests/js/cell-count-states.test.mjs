@@ -269,6 +269,30 @@ test('each input of each mode takes the bins its limit allows, so a valid typed 
     }
 });
 
+// operator 2026-11-25: Color by a large Cell Grouping in a 2D histogram or 2D density. The route refuses the grid for the size of that
+// input (figures in header.refused, `axis` the input's place in the request); the notice names the input, its count and the mode's cap.
+test('a grid refused for the size of an input says that input, its count and the mode\'s cap, never the estimate', () => {
+    const facts = (mode) => ({ mode, inputs: ['x', 'y', 'split'], nameOf: (f) => ({ x: 'depth', y: 'score', split: 'Grouping 1' }[f]) });
+    const refused = (axis, count, limit, reason = 'too_many_levels') => ({
+        state: 'refused', title: 'Count 1', reason, message: null, estimate: { seconds: 1.2, tier: 'auto', max_s: 600 },
+        header: { refused: { reason, count, limit, axis } }
+    });
+    for (const [mode, as] of [['hist2d', '2D histogram'], ['density2d', '2D density']]) {
+        const n = S.gridNotice(refused(2, 30, 8), { role: 'grid' }, 8090, facts(mode));
+        assert.equal(n.state, 'refused');
+        assert.equal(n.headline, `Color by Grouping 1 has 30 levels; ${as} colors up to 8.`);
+        assert.doesNotMatch(`${n.headline} ${n.text}`, /would take|second/i);
+        assert.deepEqual(n.actions.map((a) => a[0]), ['score-open', 'score-choose'], 'the buttons are the generic notice\'s');
+    }
+    // an axis (x) over the levels cap: the levels sentence
+    const axis = S.gridNotice(refused(0, 3000, 200, 'too_many_groups'), { role: 'grid' }, 8090, facts('hist2d'));
+    assert.equal(axis.headline, 'depth has 3,000 levels; 2D histogram shows up to 200.');
+    // without the panel's facts, or figures: the generic sentence, still no seconds
+    for (const n of [S.gridNotice(refused(2, 30, 8), { role: 'grid' }, 8090), S.gridNotice({ ...refused(2, 30, 8), header: null }, { role: 'grid' }, 8090, facts('hist2d'))]) {
+        assert.doesNotMatch(`${n.headline} ${n.text}`, /would take|second/i);
+    }
+});
+
 // --- Choose levels when the levels cannot be listed (follow-up to C2b) ----------------------------------------------
 
 test('levels refused for their number: Choose levels says how many and the limit, never "follow once counted"', () => {

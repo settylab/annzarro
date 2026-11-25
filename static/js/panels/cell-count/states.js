@@ -168,7 +168,7 @@ export function levelsNote(snap, { field, name, numeric = false }) {
 }
 
 /** What a notice calls a count plot's grid (utils/source-notices.js), and how it says that it computes. */
-function noticeWords(cells) {
+function noticeWords(cells, facts = null) {
     const N = C.notice;
     const counting = (snap, { out, cancelLabel, tagOf }) => {
         const q = snap.progress && snap.progress.queue;
@@ -182,9 +182,30 @@ function noticeWords(cells) {
             // "Counting 8,090 cells…" (UX 4.7) from the moment it is asked; a place in the server's line keeps the shared
             // sentence
             estimating: counting,
-            computing: counting
+            computing: counting,
+            // refused for the size of an input the route counted (too many groups or levels for the mode): the plan's own sentence,
+            // naming the input and the mode's cap (operator 2026-11-25: it said "would take about 1 second", then "'Count 1' has a
+            // factor with 30 levels"). The buttons are the generic notice's: only the sentence is this one's.
+            refused: (snap, f) => sizeRefusal(snap, f, facts)
         }
     };
+}
+
+/**
+ * The sentence of a grid the route refused for the size of one input: "Color by Grouping 1 has 30 levels; 2D histogram colors up
+ * to 8." (the plan's own, `refusal`). Undefined when the figures or the panel's facts are missing: the generic notice then says
+ * what it can.
+ */
+function sizeRefusal(snap, { out, tagOf, Result, open, choose }, facts) {
+    const f = snap.refused || (snap.header && snap.header.refused) || null;
+    if (!f || !facts || !SIZE_REASONS.includes(f.reason) || !Number.isFinite(Number(f.count)) || !Number.isFinite(Number(f.limit))) return undefined;
+    const field = facts.inputs[f.axis];
+    if (!field) return undefined;
+    const name = facts.nameOf(field);
+    const mode = C.modes[facts.mode] || facts.mode;
+    const [count, limit] = [Number(f.count), Number(f.limit)];
+    const text = COLOR_BY.includes(field) ? L.colorBy(name, count, L.colorsAs[facts.mode] || mode, limit) : L.levels(name, count, mode, limit);
+    return out('refused', 'warning', tagOf('refused', `${Result} refused`), text, '', [open, choose]);
 }
 
 /**
@@ -193,10 +214,12 @@ function noticeWords(cells) {
  * @param {Object} snap - the handle's snapshot, with the plot's `title`
  * @param {{role?: string, sharers?: number}} ctx
  * @param {number} cells - the cells shown, which the count counts
+ * @param {{mode: string, inputs: string[], nameOf: Function}|null} [facts] - what the panel knows of the plan (refusalFacts), to
+ *   name the input a size refusal is of
  */
-export function gridNotice(snap, ctx, cells) {
+export function gridNotice(snap, ctx, cells, facts = null) {
     if (!snap || isPlanState(snap)) return null;
-    return describeSource(snap, ctx, noticeWords(cells));
+    return describeSource(snap, ctx, noticeWords(cells, facts));
 }
 
 /**
