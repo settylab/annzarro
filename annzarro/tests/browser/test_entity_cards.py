@@ -130,3 +130,79 @@ def test_a_twelve_character_title_shows_in_full_at_700px(page, served):
     got = page.evaluate("""(s) => [...document.querySelectorAll(s + ' .az-card .az-card__title')].map(t => [t.textContent, t.scrollWidth, t.clientWidth])""", TP)
     assert [g[0] for g in got] == ["Twelve Chars", "Twelve Words"]
     assert all(sw <= cw for _, sw, cw in got), got
+
+
+def _start_rename(page, index=0):
+    card = f"{TP} .cgene-section[data-index='{index}']"
+    page.click(f"{card} .az-card__more")
+    page.click(f"{MENU} .az-card__op[data-op='rename']")
+    return card, page.locator(f"{card} .az-card__rename-input")
+
+
+def test_the_rename_editor_stays_open_and_keeps_the_focus_until_it_is_left(page, served):
+    """Operator: 'renaming only makes the title editable briefly.' Choosing Rename closes the menu, which gives the focus
+    back to ⋯; the editor must start after that, or the focus leaving it counts as a click away and saves and closes it."""
+    _both(page, served)
+    card, box = _start_rename(page)
+    box.wait_for(state="visible")
+    # nothing is typed: a click-away timer (350 ms) would have closed the editor by now
+    page.wait_for_function("(c) => new Promise(r => setTimeout(() => r(true), 700))", arg=card)
+    assert box.count() == 1, "the editor is still open"
+    assert page.evaluate("(c) => document.activeElement === document.querySelector(c + ' .az-card__rename-input')", card), "and has the focus"
+    box.type("Typed after a pause")
+    box.press("Enter")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].title === 'Typed after a pause'", P)
+
+
+def test_a_rename_in_progress_survives_a_redraw_of_the_list(page, served):
+    """A signature that changes while the title is being edited (a gene added: its count changes, the list is drawn again)
+    must not take the editor, or the text typed so far, away."""
+    _both(page, served)
+    card, box = _start_rename(page)
+    box.fill("Half a na")
+    page.evaluate("(id) => window.PanelManager.getPanel(id).addGenes(['GENE020'])", S1)
+    until(page, "(s) => /4 genes/.test(document.querySelector(s + ' .az-card .az-card__summary').textContent)", TP)
+    assert page.locator(f"{card} .az-card__rename-input").input_value() == "Half a na"
+    page.locator(f"{card} .az-card__rename-input").press("Enter")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].title === 'Half a na'", P)
+
+
+def test_double_click_on_the_title_renames_without_the_menu(page, served):
+    _both(page, served)
+    card = f"{TP} .cgene-section[data-index='1']"
+    page.dblclick(f"{card} .az-card__title")
+    box = page.locator(f"{card} .az-card__rename-input")
+    box.wait_for(state="visible")
+    assert box.input_value() == "Pathway"
+    box.fill("Renamed")
+    box.press("Enter")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[1].title === 'Renamed'", P)
+    assert page.locator(f'.tile[data-tile-id="{S2}"]').count() == 0, "a double click does not also open the source"
+
+
+def test_every_action_of_a_section_card_works_from_its_menu(page, served):
+    """What the section rows had before they were restyled: rename, duplicate, remove, open source, move up and down, and
+    Genes / One row; each one undo step."""
+    _both(page, served)
+
+    def op(index, name):
+        page.click(f"{TP} .cgene-section[data-index='{index}'] .az-card__more")
+        page.click(f"{MENU} .az-card__op[data-op='{name}']")
+
+    n = lambda: page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().sections.length", P)
+    titles = lambda: page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().sections.map(s => s.source)", P)
+    first = titles()
+    op(1, "up")
+    until(page, "([id, s]) => window.PanelManager.getPanel(id).getConfig().sections[0].source === s", [P, first[1]])
+    op(0, "down")
+    until(page, "([id, s]) => window.PanelManager.getPanel(id).getConfig().sections[0].source === s", [P, first[0]])
+    op(0, "duplicate")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 3", P)
+    op(1, "remove")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections.length === 2", P)
+    assert page.locator(f'.tile[data-tile-id="{S1}"]').count() == 0
+    op(0, "open")
+    page.wait_for_selector(f'.tile[data-tile-id="{S1}"]', timeout=15000)
+    page.select_option(f"{TP} .cgene-section[data-index='0'] select.cgene-section__rows", "set")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[0].rows === 'set'", P)
+    assert n() == 2

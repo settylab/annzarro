@@ -381,6 +381,7 @@ export function createSectionList({ D, model, on }) {
     const { el } = D;
     const list = el('ul', { class: 'cgene-sections az-cards', role: 'list', aria: { label: 'Gene sections' } });
     let drawnKey = null;
+    let renaming = null;          // {index, draft}: the title being renamed, kept across the list's redraws
     const cards = [];             // the entity cards on the page now: their menus are destroyed when the list is drawn again
 
     function rowsSelect(i, rows) {
@@ -397,7 +398,9 @@ export function createSectionList({ D, model, on }) {
             title: s.title, summary: s.summary, preview: s.preview, note: s.note,
             headLabel: `Open ${s.title}`, headTitle: s.rule || undefined,
             controls: [rowsSelect(i, s.rows)],
-            rename: { label: 'Section title', onSave: (text) => on.title(i, text) },
+            rename: { label: 'Section title', onSave: (text) => on.title(i, text),
+                active: renaming && renaming.index === i ? renaming.draft : null,
+                onDraft: (text) => { renaming = text === null ? null : { index: i, draft: text }; } },
             onOpen: () => on.op(i, 'open'), onMove: (from, to) => on.move(from, to),
             menu: { label: `More for ${s.title}`, onOp: (op) => on.op(i, op),
                 items: SECTION_OPS.map(({ op, label }) => ({ op, label, disabled: (op === 'up' && i === 0) || (op === 'down' && i === n - 1) })) } });
