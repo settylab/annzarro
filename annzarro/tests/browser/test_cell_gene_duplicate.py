@@ -75,3 +75,19 @@ def test_the_copy_of_a_one_row_section_has_settings_of_its_own(page, served):
     until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[1].rows === 'genes'", P)
     assert _config(page)["sections"][0]["rows"] == "set"
     until(page, f"(s) => {{ const f = ({FIGURE})(s); return f.state === 'ready' && f.columns === 5; }}", TP, timeout=30)
+
+
+def test_a_change_that_needs_nothing_fetched_still_redraws(page, served):
+    """Under Size cell count a one-row section asks for the statistics [mean]; the same genes as rows ask for [mean, count].
+    Switching the copy to genes changes the request's key but every feature is held: the plot must redraw from what is held,
+    not stay as it was (a request key that changes with nothing to fetch used to leave the old drawing)."""
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, size={"stat": "count"},
+                                   sections=[{"source": S1, "rows": "set"}, {"source": S1, "rows": "set"}]),
+                         S1: _sig(S1, "Pathway", GENES[:4])}, open_ids=(P, S1))
+    _drawn(page)
+    assert _figure(page)["columns"] == 2
+    n = len(page.calls)
+    page.locator(f"{TP} .cgene-section").nth(1).locator("select.cgene-section__rows").select_option("genes")
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().sections[1].rows === 'genes'", P)
+    until(page, f"(s) => {{ const f = ({FIGURE})(s); return f.state === 'ready' && f.columns === 5; }}", TP, timeout=30)
+    assert len(page.calls) == n, "nothing was fetched: every feature was held"

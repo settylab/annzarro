@@ -26,7 +26,6 @@ import {
 } from '../../../static/js/utils/panel-references.js';
 import { normalizeGrouping } from '../../../static/js/utils/cell-grouping.js';
 import { statisticColumn, combineRows, MOMENT_STRIDE } from '../../../static/js/utils/cell-gene-model.js';
-import { VOCABULARY } from '../../../static/js/utils/vocabulary.js';
 import { stableStringify } from '../../../static/js/utils/url-history.js';
 import {
     normalizeCellGene, cellGeneReferences, addSection, duplicateSection, removeSection, moveSection, setSectionRows,
