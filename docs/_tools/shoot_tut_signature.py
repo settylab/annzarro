@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -21,7 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from shots import Session, panelset_file, split, start_link, tile  # noqa: E402
-from tut_ui import (T, add_panel, agg_button, agg_menu, axis_sel, choose_agg, controls_dump, data_dir_with, fail, make_gene_table,  # noqa: E402
+from tut_ui import (T, add_panel, make_signature, agg_button, agg_menu, axis_sel, choose_agg, controls_dump, data_dir_with, fail, make_gene_table,  # noqa: E402
                     csv_of, hover_table, open_plain, pick_set, plot_colors, plot_data, rename, until)
 
 DOCS = HERE.parent
@@ -75,6 +76,11 @@ def side_by_side(a, b, out):
     (OUT / f"{b}.png").unlink()
 
 
+def page_genes(page, sig):
+    """The genes of a signature panel as the panel holds them."""
+    return page.evaluate("(i) => { const c = window.PanelManager.getPanel(i).getConfig(); return (c.genes || c.selected || c.recipe && c.recipe.genes || []).map(g => (typeof g === 'string' ? g : g.gene || g.name)); }", sig)
+
+
 def store_numbers(genes):
     """What the stored var columns say of the signature's genes, for the page's volcano step."""
     import numpy as np
@@ -112,170 +118,254 @@ def finish(prefix="sig-"):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8862)
-    ap.add_argument("--signature", default=str(DOCS / "_static" / "downloads" / "hsc-ageing-signature.csv"))
     args = ap.parse_args()
     d = data_dir_with(STORE)
     OUT.mkdir(parents=True, exist_ok=True)
     with Session(port=args.port, out=OUT, data_dir=d) as sh:
         log = sh.log.append
-        log(f"date of the shots: {date.today().isoformat()}; signature file {args.signature}")
+        log(f"date of the shots: {date.today().isoformat()}")
         page = open_plain(sh, d / STORE, viewport={"width": 1600, "height": 1400})
-        shoot(sh, page, log, args.signature)
+        shoot(sh, page, log, None)
     finish()
 
 
-def shoot(sh, page, log, sigfile):
-    # ---- 1. the published signature, from a file with a sign column
-    sig = add_panel(page, "gene-signature")
-    st = T(sig)
-    rename(page, sig, "HSC ageing (published)")
-    page.locator(f"{st} button", has_text="Up/Down").first.click()
-    page.wait_for_timeout(500)
-    page.locator(f"{st} button", has_text="Paste or upload").first.click()
-    page.locator(f"{st} input[type=file]").set_input_files(sigfile)
-    page.wait_for_timeout(1500)
-    page.locator(f"{st} select:has(option:text-is('None'))").first.select_option(label="direction_log2fc")
-    page.wait_for_timeout(600)
-    add = page.locator(f"{st} button.btn-primary", has_text="Add ")
-    log("the Add button reads: " + add.first.inner_text())
-    shot_tile(page, sig, "sig-paste-sign")
-    add.first.click()
-    page.wait_for_timeout(1500)
-    log("status: " + page.inner_text(f"{st} .tile-content").replace("\n", " | ")[:400])
-    shot_tile(page, sig, "sig-panel")
-    # ---- 2. a Cell Plot coloured by the score
-    cp = add_panel(page, "cell-plot")
-    ct = T(cp)
-    log("a new Cell Plot: " + json.dumps(page.evaluate("(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return [c.x, c.y, c.color]; }", cp))[:400])
-    pick_set(page, ct, "color", sig, layer="X")
-    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!g && (g.data || []).some(d => d.marker && d.marker.color && d.marker.color.length > 1000); }", "the coloured UMAP", ct, timeout=120)
-    page.wait_for_timeout(1500)
-    log(f"button reads: {page.get_attribute(agg_button(ct, 'color'), 'aria-label')}")
-    rows = agg_menu(page, ct, "color")
-    log("aggregation list on X: " + json.dumps([(r["v"], r["sym"], r["name"], r["off"], r["why"] or r["title"], r["on"]) for r in rows]))
-    page.select_option(axis_sel(ct, "color", "key"), "logged_counts")
-    page.wait_for_timeout(3000)
-    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!g && (g.data || []).some(d => d.marker && d.marker.color && d.marker.color.length > 1000); }", "the UMAP on logged_counts", ct, timeout=120)
-    rows = agg_menu(page, ct, "color")
-    log("aggregation list on logged_counts: " + json.dumps([(r["v"], r["off"], r["why"] or r["title"]) for r in rows]))
-    cols = plot_colors(page, cp)
-    log(f"UMAP colours: n {len(cols)}, min {min(cols):.2f}, max {max(cols):.2f}, mean {sum(cols)/len(cols):.3f}")
-    choose_agg(page, ct, "color", "zscore_mean")
-    page.wait_for_timeout(1500)
-    agg_menu(page, ct, "color", keep_open=True)
-    shot_tile(page, cp, "sig-agg-button")
-    page.keyboard.press("Escape")
-    page.wait_for_timeout(500)
-    shot_tile(page, cp, "sig-umap")
-    # ---- 3. the methods of the signature
-    page.locator(f"{st} button.gsig-methods-toggle, {st} button", has_text="Methods").first.click()
-    page.wait_for_timeout(600)
-    log("Methods pop-over: " + str(page.evaluate("() => [...document.querySelectorAll('[data-popover]')].filter(e => e.getBoundingClientRect().width).map(e => e.innerText.slice(0, 1500))")))
-    shot_tile(page, sig, "sig-methods")
-    page.keyboard.press("Escape")
-    # ---- 4. the distribution
-    nplots = len(page.evaluate("() => window.PanelManager.getPanelsByType('cell-count')"))
-    page.locator(f"{st} button", has_text="Distribution").first.click()
-    until(page, "() => window.PanelManager.getPanelsByType('cell-count').length > 0", "a Cell Count Plot", timeout=60)
-    cc = page.evaluate("() => window.PanelManager.getPanelsByType('cell-count').map(p => p.getId()).slice(-1)[0]")
-    page.wait_for_timeout(4000)
-    log("count plot config: " + json.dumps(page.evaluate("(i) => window.PanelManager.getPanel(i).getConfig()", cc))[:700])
-    log("count plot controls: " + controls_dump(page, T(cc))[:1800])
-    cct = T(cc)
-    page.locator(f"{cct} select.axis-layer-select").first.select_option("logged_counts")
-    page.wait_for_timeout(3000)
-    # Color by: the second axis row
-    page.locator(f"{cct} select.axis-type-select[data-axis='split']").select_option("obs")
-    page.wait_for_timeout(600)
-    page.locator(f"{cct} select.axis-key-select[data-axis='split']").select_option("Age")
-    page.wait_for_timeout(3000)
-    log("count plot config: " + json.dumps(page.evaluate("(i) => window.PanelManager.getPanel(i).getConfig()", cc))[:900])
-    log("arrangements: " + json.dumps(page.evaluate("(t) => [...document.querySelectorAll(t + ' .ccnt-arrangement__input')].map(e => [e.value, e.checked, (e.closest('label') || {}).textContent])", cct)))
-    page.locator(f"{cct} label", has_text="Overlaid").first.click()
-    page.wait_for_timeout(2500)
-    shot_tile(page, cc, "sig-distribution")
-    cnt = page.evaluate("""(t) => { const gd = document.querySelector(t + ' .js-plotly-plot'); return gd.data.map(d => [d.name, d.type, (d.y || []).reduce((a, b) => a + b, 0)]); }""", cct)
-    log(f"histogram traces (name, type, cells): {cnt}")
-    # ---- 5. per group: a Cell Grouping of cell type and age
+def add_grouping(page, title, columns):
+    """A Cell Grouping with one factor per obs column."""
     cg = add_panel(page, "cell-grouping")
     gt = T(cg)
-    log("a new Cell Grouping: " + controls_dump(page, gt)[:1600])
-    page.locator(f"{gt} button", has_text="Add factor").first.click()
-    page.wait_for_timeout(600)
-    log("Add factor menu: " + str(page.evaluate("() => [...document.querySelectorAll('button.cgrp-add-item')].map(e => e.textContent.trim())")))
-    page.locator("button.cgrp-add-item").filter(has_text="Column").first.click()
-    page.wait_for_timeout(800)
-    def add_factor(column):
+    for i, column in enumerate(columns):
+        page.locator(f"{gt} button.cgrp-add").first.click()
+        page.wait_for_timeout(500)
+        page.locator("button.cgrp-add-item:visible").filter(has_text="Column").first.click()
+        page.wait_for_timeout(600)
         sels = page.locator(f"{gt} select[class*='cgrp-addrow']")
         sels.nth(0).select_option("obs")
         page.wait_for_timeout(300)
         sels.nth(1).select_option(column)
         page.locator(f"{gt} button.btn-primary", has_text="Add").first.click()
         page.wait_for_timeout(2500)
-
-    add_factor("midres_celltype")
-    page.locator("button.cgrp-add").first.click()
-    page.locator("button.cgrp-add-item").filter(has_text="Column").first.click()
-    page.wait_for_timeout(600)
-    add_factor("Age")
-    rename(page, cg, "Cell type by age")
-    page.wait_for_timeout(1500)
-    log("grouping panel text: " + page.inner_text(gt).replace("\n", " | ")[:1800])
-    log("grouping config: " + json.dumps(page.evaluate("(i) => window.PanelManager.getPanel(i).getConfig()", cg))[:900])
-    shot_tile(page, cg, "sig-grouping")
-    # ---- 6. a Cell-Gene Plot of the genes of the signature over the groups
-    cgp = add_panel(page, "cell-gene")
-    gp = T(cgp)
-    page.locator(f"{gp} select.cgene-axis-type").select_option(label="Cell Grouping")
-    page.wait_for_timeout(500)
-    page.locator(f"{gp} select.cgene-axis-key").select_option(index=1)
-    page.wait_for_timeout(1500)
-    page.locator(f"{gp} select.cgene-color-layer").select_option("logged_counts")
-    page.locator(f"{gp} button.cgene-add").first.click()
-    page.wait_for_timeout(300)
-    page.locator("button.cgene-add-item:visible").filter(has_text="HSC ageing").first.click()
-    page.wait_for_timeout(1500)
-    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!g && (g.data || []).some(d => d.marker && d.marker.color && d.marker.color.length > 100); }", "the dot plot", gp, timeout=120)
-    page.wait_for_timeout(2000)
-    shot_tile(page, cgp, "sig-dotplot-genes")
-    page.locator(f"{gp} button.az-card__more").first.click()
-    page.wait_for_timeout(500)
-    log("card menu: " + str(page.evaluate("() => [...document.querySelectorAll('[data-popover] button, [role=menuitem]')].filter(e => e.getBoundingClientRect().width).map(e => e.textContent.trim())")))
-    page.locator("[data-popover]").get_by_text("Duplicate", exact=True).first.click()
-    page.wait_for_timeout(2000)
-    until(page, "(t) => document.querySelectorAll(t + ' select.form-select').length >= 8", "the copy of the section", gp, timeout=30)
-    sections = page.locator(f"{gp} select[class*='cgene-section']")
-    log(f"sections now: {sections.count()}")
-    sections.nth(1).select_option("One row")
-    page.wait_for_timeout(2500)
-    choose_agg_cg = lambda which, value: (page.locator(f"{gp} button.cgene-{which}").first.click(), page.wait_for_timeout(400), page.locator(f".axis-agg-item[data-agg='{value}']").click(), page.wait_for_timeout(2500))
-    choose_agg_cg("color", "zscore_mean")
-    page.wait_for_timeout(2000)
-    shot_tile(page, cgp, "sig-dotplot")
-    df = csv_of(page, cgp, "/tmp/sig-dotplot.csv")
-    log("CSV columns: " + str(list(df.columns)) + f"; sections {df['Section'].unique().tolist()}")
-    col = [c for c in df.columns if c.startswith("Z-score") or c.startswith("Mean")][0]
-    one = df[df["Section"].str.contains("copy")]
-    log(f"one-row section rows: {len(one)}; sample: {one[['Row', 'Group', col]].head(3).values.tolist()}")
-    for grp in ("HSC | Young", "HSC | Mid", "HSC | Old", "LMPP | Old", "MKP | Old", "MKP | Young", "Neutrophil | Old", "T cell | Old"):
-        r = one[one["Group"] == grp]
-        if len(r):
-            log(f"  {grp}: {float(r[col].iloc[0]):.3f}")
-    save_view(page, "score", [cp, cgp], [sig, cg], "Signature tutorial: the score and its groups")
-    # ---- 7. Kompot's view of the same genes: a second plot, mean of the fold-change layer
-    cgf = add_panel(page, "cell-gene")
-    ft = T(cgf)
-    page.locator(f"{ft} select.cgene-axis-type").select_option("obs")
-    page.locator(f"{ft} select.cgene-axis-key").select_option("midres_celltype")
-    page.locator(f"{ft} button.cgene-add").first.click()
-    page.wait_for_timeout(800)
-    page.locator("button.cgene-add-item:visible").filter(has_text="HSC ageing").first.click()
+    rename(page, cg, title)
     page.wait_for_timeout(1000)
-    page.locator(f"{ft} select.cgene-color-layer").select_option(FC)
+    return cg
+
+
+def hsc_table(page, grouping_title, title, op, value, log):
+    """A Gene Table of the called genes (`is_de`) with the mean fold change in HSC as a column (the Cell groupings tab), filtered on it."""
+    pid = add_panel(page, "gene-table")
+    t = T(pid)
+    page.wait_for_selector(f"{t} .nav-link", timeout=30000)
+    page.locator(f"{t} .nav-link", has_text="var").first.click()
+    page.wait_for_timeout(400)
+    page.locator(f"{t} label:text-is('kompot_de_Young_to_Old_is_de')").first.click()
+    page.locator(f"{t} .nav-link", has_text="Cell groupings").first.click()
+    page.wait_for_timeout(800)
+    row = page.locator(f"{t} .az-score-group:has(.az-score-group-title[title='{grouping_title}'])").first
+    row.locator("select").nth(0).select_option("HSC")
+    page.wait_for_timeout(400)
+    row.locator("select").nth(1).select_option(FC)
+    page.wait_for_timeout(600)
+    row.locator("button.az-score-add-btn").click()
+    page.wait_for_timeout(1000)
+    page.locator(f"{t} button", has_text="Apply Changes").click()
+    page.wait_for_timeout(5000)
+    heads = page.evaluate("(t) => [...document.querySelectorAll(t + ' .dataTables_scrollHead th')].map(e => e.textContent.trim())", t)
+    log(f"{title}: headers {heads}")
+    rename(page, pid, title)
+    hsc_col = [h for h in heads if h.startswith("HSC")][0]
+    for i, (col, cond, val) in enumerate([("kompot_de_Young_to_Old_is_de", "Equals", "Yes"), (hsc_col, op, value)]):
+        page.locator(f"{t} button", has_text="Add Condition").first.click()
+        page.wait_for_timeout(800)
+        c = page.locator(f"{t} .dtsb-criteria").nth(i)
+        c.locator(".dtsb-data").select_option(label=col)
+        page.wait_for_timeout(600)
+        c.locator(".dtsb-condition").select_option(label=cond)
+        page.wait_for_timeout(600)
+        sel = c.locator("select.dtsb-value")
+        if sel.count():
+            sel.first.select_option(label=str(val))
+        else:
+            c.locator("input.dtsb-value").first.fill(str(val))
+            c.locator("input.dtsb-value").first.press("Tab")
+        page.wait_for_timeout(1500)
+    n = page.evaluate("(i) => window.PanelManager.getPanel(i).getConfig().currentEntries.length", pid)
+    log(f"{title}: {n} genes pass")
+    return pid
+
+
+def add_from(page, sig_tile, table_title, side=None):
+    """Add from the genes of a gene table (Add as Up or Down when the signature has directions)."""
+    if side:
+        page.locator(f"{sig_tile} button.gsig-segopt", has_text=side).first.click()
+        page.wait_for_timeout(300)
+    page.locator(f"{sig_tile} button", has_text="Add from").first.click()
+    page.wait_for_timeout(500)
+    page.locator("button.gs-menu__item:visible").filter(has_text=table_title).first.click()
     page.wait_for_timeout(2000)
-    page.locator(f"{ft} select.cgene-mode").select_option(label="Heatmap")
+
+
+def one_row(page, plot_tile, index):
+    page.locator(f"{plot_tile} select[class*='cgene-section']").nth(index).select_option("One row")
+    page.wait_for_timeout(1500)
+
+
+def add_section(page, plot_tile, name):
+    page.locator(f"{plot_tile} button.cgene-add").first.click()
+    page.wait_for_timeout(600)
+    page.locator("button.cgene-add-item:visible").filter(has_text=name).first.click()
+    page.wait_for_timeout(1500)
+
+
+def cell_gene(page, groups, layer="logged_counts", by_grouping=None):
+    pid = add_panel(page, "cell-gene")
+    t = T(pid)
+    if by_grouping is not None:
+        page.locator(f"{t} select.cgene-axis-type").select_option(label="Cell Grouping")
+        page.wait_for_timeout(500)
+        page.locator(f"{t} select.cgene-axis-key").select_option(label=by_grouping)
+    else:
+        page.locator(f"{t} select.cgene-axis-type").select_option("obs")
+        page.locator(f"{t} select.cgene-axis-key").select_option(groups)
+    page.wait_for_timeout(1500)
+    page.locator(f"{t} select.cgene-color-layer").select_option(layer)
+    return pid
+
+
+GRANULOCYTE = ["Cd52", "Ncf1", "Vim", "Ltf", "Lcn2", "S100a8", "Wfdc21", "Hmgb2", "Pygl", "Hp", "Lilrb4a", "Fcer1g", "Lyz2", "Slpi", "Camp", "Plac8", "S100a9", "Mgst1", "Syk", "Ncf2"]
+UP = ["H2-Q7", "AW112010", "H2-Q6", "Cirbp", "Gm47283", "H2-K1", "Ifi27", "Fosb", "Psmb9", "Fos"]
+DOWN = ["Dynll1", "Banp", "Fkbp5", "Gm43305", "Macf1", "Fam111a", "Lgals1", "Crispld2", "9930111J21Rik2", "Lyn"]
+
+
+def paste(page, sig_tile, genes, side=None, log=None, name=""):
+    """Paste a gene list into a signature panel (Add as `side` when it has directions); returns the preview's text."""
+    page.locator(f"{sig_tile} button", has_text="Paste or upload").first.click()
+    page.locator(f"{sig_tile} textarea").first.fill(", ".join(genes))
+    page.locator(f"{sig_tile} button", has_text="Preview").first.click()
+    page.wait_for_timeout(800)
+    if side:
+        page.locator(f"{sig_tile} select.gp-addas").select_option(label=side)
+        page.wait_for_timeout(300)
+    text = page.inner_text(sig_tile).replace("\n", " | ")
+    if log:
+        log(f"paste preview {name}: " + text[:600])
+    return text
+
+
+def shoot(sh, page, log, sigfile=None):
+    # ---- 1. the 20 granulocyte genes of the paper's Fig. 3H, pasted
+    sigG = add_panel(page, "gene-signature")
+    gt_ = T(sigG)
+    rename(page, sigG, "Granulocyte genes")
+    paste(page, gt_, GRANULOCYTE, log=log, name="granulocyte")
+    shot_tile(page, sigG, "sig-paste-preview")
+    page.locator(f"{gt_} button.btn-primary", has_text="Add ").first.click()
+    page.wait_for_timeout(1500)
+    log("status: " + page.inner_text(gt_).replace("\n", " | ")[:200])
+    cp = add_panel(page, "cell-plot")
+    ct = T(cp)
+    pick_set(page, ct, "color", sigG, layer="logged_counts")
+    until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!g && (g.data || []).some(d => d.marker && d.marker.color && d.marker.color.length > 1000); }", "the coloured UMAP", ct, timeout=120)
+    page.wait_for_timeout(1500)
+    rows = agg_menu(page, ct, "color")
+    log("aggregation list: " + json.dumps([(r["v"], r["sym"], r["name"], r["off"], r["why"] or r["title"]) for r in rows]))
+    agg_menu(page, ct, "color", keep_open=True)
+    shot_tile(page, cp, "sig-agg-button")
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(500)
+    shot_tile(page, cp, "sig-umap")
+    colors = plot_colors(page, cp)
+    log(f"granulocyte z-score mean on the UMAP: min {min(colors):.2f}, max {max(colors):.2f}")
+    # per cell type
+    g_type = add_grouping(page, "Cell type", ["midres_celltype"])
+    cgt = cell_gene(page, None, by_grouping="Cell type")
+    add_section(page, T(cgt), "Granulocyte genes")
+    one_row(page, T(cgt), 0)
+    page.locator(f"{T(cgt)} button.cgene-color").first.click()
+    page.wait_for_timeout(400)
+    page.locator(".axis-agg-item[data-agg='zscore_mean']").click()
+    page.wait_for_timeout(3000)
+    d1 = csv_of(page, cgt, "/tmp/sig-gran-type.csv")
+    c1 = [c for c in d1.columns if c.startswith("Z-score")][0]
+    v1 = d1.set_index("Group")[c1].sort_values(ascending=False)
+    log("granulocyte z-score mean by cell type: " + ", ".join(f"{k} {float(x):.2f}" for k, x in list(v1.items())[:6]) + f"; HSC {float(v1['HSC']):.2f}; T cell {float(v1['T cell']):.2f}")
+    # ---- 2. a signature with two sides from the genes the paper labels up and down in Fig. 3D and 3E
+    sigUD = add_panel(page, "gene-signature")
+    ut = T(sigUD)
+    rename(page, sigUD, "Up and down in Fig. 3E")
+    page.locator(f"{ut} button", has_text="Up/Down").first.click()
+    page.wait_for_timeout(500)
+    for genes, side in ((UP, "Up"), (DOWN, "Down")):
+        paste(page, ut, genes, side=side, log=log, name=side)
+        page.locator(f"{ut} button.btn-primary", has_text="Add ").first.click()
+        page.wait_for_timeout(1500)
+    log("up/down status: " + page.inner_text(ut).replace("\n", " | ")[:300])
+    shot_tile(page, sigUD, "sig-panel")
+    pick_set(page, ct, "color", sigUD, layer="logged_counts")
+    page.wait_for_timeout(3500)
+    rows = agg_menu(page, ct, "color")
+    log("aggregation list with down genes: " + json.dumps([(r["v"], r["off"], r["why"] or r["title"]) for r in rows]))
+    page.locator(f"{ut} button", has_text="Methods").first.click()
+    page.wait_for_timeout(600)
+    shot_tile(page, sigUD, "sig-methods")
+    page.keyboard.press("Escape")
+    # ---- 3. cell type by age
+    g_age = add_grouping(page, "Cell type by age", ["midres_celltype", "Age"])
+    log("Cell type by age: " + page.inner_text(T(g_age)).replace("\n", " | ")[:200])
+    shot_tile(page, g_age, "sig-grouping")
+    cga = cell_gene(page, None, by_grouping="Cell type by age")
+    for name in ("Granulocyte genes", "Up and down"):
+        add_section(page, T(cga), name)
+    until(page, "(t) => document.querySelectorAll(t + ' select.form-select').length >= 8", "two sections", T(cga), timeout=30)
+    for i in (0, 1):
+        one_row(page, T(cga), i)
+    page.locator(f"{T(cga)} button.cgene-color").first.click()
+    page.wait_for_timeout(400)
+    page.locator(".axis-agg-item[data-agg='zscore_mean']").click()
+    page.wait_for_timeout(3000)
+    page.locator(f"{T(cga)} select.cgene-mode").select_option(label="Heatmap")
+    page.wait_for_timeout(2000)
+    page.locator(f"{T(cga)} button.cgene-swap").first.click()
     page.wait_for_timeout(2500)
-    page.locator(f"{ft} button.cgene-color-btn").first.click()
+    shot_tile(page, cga, "sig-age-rows")
+    d2 = csv_of(page, cga, "/tmp/sig-age.csv")
+    c2 = [c for c in d2.columns if c.startswith("Z-score")][0]
+    for sec, part in d2.groupby("Section"):
+        vals = part.set_index("Group")[c2]
+        log(f"  {sec}: " + "; ".join(f"{k} {float(vals[k]):.2f}" for k in ("HSC | Young", "HSC | Mid", "HSC | Old", "LMPP | Young", "LMPP | Old", "Neutrophil | Young", "Neutrophil | Old", "Monocyte | Young", "Monocyte | Old", "T cell | Young", "T cell | Old", "Mature B cell | Young", "Mature B cell | Old") if k in vals.index))
+        ages = {a: round(float(np_mean([v for k, v in vals.items() if k.endswith("| " + a)])), 3) for a in ("Young", "Mid", "Old")}
+        log(f"  {sec}: mean over the cell types by age {ages}")
+    # ---- 4. how many of the paper's genes a column of your own finds: HSC fold change below -0.3
+    lo_t = hsc_table(page, "Cell type", "HSC fold change below -0.3", "Less Than", "-0.3", log)
+    shot_tile(page, lo_t, "sig-table-lo")
+    sigC = add_panel(page, "gene-signature")
+    rename(page, sigC, "Check")
+    paste(page, T(sigC), GRANULOCYTE)
+    page.locator(f"{T(sigC)} button.btn-primary", has_text="Add ").first.click()
+    page.wait_for_timeout(1500)
+    add_from(page, T(sigC), "HSC fold change below")
+    log("Add from message: " + page.inner_text(T(sigC)).replace("\n", " | ")[:420])
+    shot_tile(page, sigC, "sig-add-from")
+    # ---- 5. the lineage
+    g_stage = add_grouping(page, "Stage", ["highres_celltype"])
+    page.locator(f"{T(g_stage)} button", has_text="Edit").first.click()
+    page.wait_for_timeout(700)
+    pop = page.locator("[data-popover]").filter(has_text="Levels of highres_celltype").first
+    pop.get_by_text("Tick none", exact=True).click()
+    page.wait_for_timeout(500)
+    for stage in ("HSC", "LMPP", "GMP", "Myelo P", "Neutrophil"):
+        pop.locator(f"input[type=checkbox][aria-label='{stage}']").check()
+        page.wait_for_timeout(250)
+    pop.get_by_text("Leave out of all groups", exact=True).click()
+    page.wait_for_timeout(1500)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(1000)
+    log("Stage grouping: " + page.inner_text(T(g_stage)).replace("\n", " | ")[:420])
+    sigS = make_signature(page, "Selp", ["Selp"], paste=False)
+    cgs = cell_gene(page, None, layer=FC, by_grouping="Stage")
+    for name in ("Granulocyte genes", "Selp"):
+        add_section(page, T(cgs), name)
+    until(page, "(t) => document.querySelectorAll(t + ' select.form-select').length >= 8", "two sections", T(cgs), timeout=30)
+    page.wait_for_timeout(3000)
+    page.locator(f"{T(cgs)} button.cgene-color-btn").first.click()
     page.wait_for_timeout(500)
     page.locator('[data-popover] select[data-option="colorScale"]').select_option("RdBu")
     page.locator('[data-popover] input[data-option="center"]').fill("0")
@@ -284,21 +374,20 @@ def shoot(sh, page, log, sigfile):
     page.keyboard.press("Escape")
     page.keyboard.press("Escape")
     page.wait_for_timeout(1500)
-    shot_tile(page, cgf, "sig-fc-heatmap")
-    fc = csv_of(page, cgf, "/tmp/sig-fc.csv")
-    fcol = [c for c in fc.columns if c.startswith("Mean")][0]
-    g = fc.pivot_table(index="Row", columns="Group", values=fcol)
-    down = ("Cd34", "Satb1", "Usp6nl", "Fgd5", "Flt3")
-    up = [x for x in g.index if x not in down]
-    log(f"fold change in HSC: {int((g.loc[up, 'HSC'] > 0).sum())} of {len(up)} up genes positive; mean {g.loc[up, 'HSC'].mean():.2f}; in Monocyte {g.loc[up, 'Monocyte'].mean():.2f}; Neutrophil {g.loc[up, 'Neutrophil'].mean():.2f}")
-    log("  down genes in HSC: " + str({x: round(float(g.loc[x, 'HSC']), 2) for x in g.index if x in down}))
-    log("  top HSC: " + str(g['HSC'].sort_values(ascending=False).head(6).round(2).to_dict()))
-    # ---- 8. did Kompot call them? a gene table, and a Gene Plot of the volcano with the signature as its Table
-    gt2 = make_gene_table(page, "Kompot", [("var", "kompot_de_Young_to_Old_is_de"), ("var", "kompot_de_Young_to_Old_mahalanobis"), ("var", "hsc_fold_change")], None, log)
+    shot_tile(page, cgs, "sig-lineage-dots")
+    d4 = csv_of(page, cgs, "/tmp/sig-lineage.csv")
+    c4 = [c for c in d4.columns if c.startswith("Mean")][0]
+    for sec, part in d4.groupby("Section"):
+        by = part.groupby("Group")[c4].mean()
+        log(f"  {sec}: mean fold change over its genes by stage: " + ", ".join(f"{k} {float(by[k]):.3f}" for k in by.index))
+        if sec.startswith("Granulocyte"):
+            g = part.pivot_table(index="Row", columns="Group", values=c4)
+            log("  lowest in HSC: " + str(g["HSC"].sort_values().head(4).round(2).to_dict()) + "; LMPP lowest " + str(g["LMPP"].min().round(2)) + "; Neutrophil highest " + str(g["Neutrophil"].max().round(2)))
+    save_view(page, "lineage", [cgs], [sigG, sigS, g_stage], "Signature tutorial: the fold change along the neutrophil lineage")
+    # ---- 6. the volcano
     gpl = add_panel(page, "gene-plot")
     gpt = T(gpl)
-    log("a new Gene Plot: " + json.dumps(page.evaluate("(id) => { const c = window.PanelManager.getPanel(id).getConfig(); return [c.x, c.y, c.color, c.tableFilter]; }", gpl))[:500])
-    page.locator(f"{gpt} button", has_text="3D").first.click()          # a new Gene Plot on the principal components opens in 3D
+    page.locator(f"{gpt} button", has_text="3D").first.click()
     page.wait_for_timeout(1500)
     page.select_option(axis_sel(gpt, "color", "type"), "none")
     page.wait_for_timeout(800)
@@ -307,101 +396,9 @@ def shoot(sh, page, log, sigfile):
         page.wait_for_timeout(500)
         page.select_option(axis_sel(gpt, axis, "key"), col)
         page.wait_for_timeout(800)
-    page.wait_for_timeout(2500)
-    sig_genes = [r.split(",")[0] for r in Path(sigfile).read_text().splitlines()[1:] if r.strip()]
-    log(store_numbers(sig_genes))
-    page.select_option(f"{gpt} select[class*=table-filter]", sig)
-    page.wait_for_timeout(2500)
-    shot_tile(page, gpl, "sig-volcano-lfc")
-    page.select_option(axis_sel(gpt, "x", "key"), "hsc_fold_change")
+    page.select_option(f"{gpt} select[class*=table-filter]", sigG)
     page.wait_for_timeout(3000)
-    shot_tile(page, gpl, "sig-volcano-hsc")
-    side_by_side("sig-volcano-lfc", "sig-volcano-hsc", "sig-volcano")
-    # ---- 9. the reverse direction: a signature of Kompot's called genes, up and down
-    up_t = make_gene_table(page, "Kompot up", [("var", "kompot_de_Young_to_Old_is_de"), ("var", "kompot_de_Young_to_Old_mean_lfc")],
-                           [("kompot_de_Young_to_Old_is_de", "Equals", "Yes"), ("kompot_de_Young_to_Old_mean_lfc", "Greater Than", "0")], log)
-    dn_t = make_gene_table(page, "Kompot down", [("var", "kompot_de_Young_to_Old_is_de"), ("var", "kompot_de_Young_to_Old_mean_lfc")],
-                           [("kompot_de_Young_to_Old_is_de", "Equals", "Yes"), ("kompot_de_Young_to_Old_mean_lfc", "Less Than", "0")], log)
-    sig2 = add_panel(page, "gene-signature")
-    s2 = T(sig2)
-    rename(page, sig2, "Kompot DE")
-    page.locator(f"{s2} button", has_text="Up/Down").first.click()
-    page.wait_for_timeout(500)
-    for side, table in (("Up", "Kompot up"), ("Down", "Kompot down")):
-        page.locator(f"{s2} button.gsig-segopt", has_text=side).first.click()
-        page.wait_for_timeout(300)
-        page.locator(f"{s2} button", has_text="Add from").first.click()
-        page.wait_for_timeout(500)
-        page.locator("button.gs-menu__item").filter(has_text=table).first.click()
-        page.wait_for_timeout(2000)
-    log("Kompot DE status: " + page.inner_text(s2).replace("\n", " | ")[:300])
-    shot_tile(page, sig2, "sig-kompot-signature")
-    # ---- 10. both signatures as one-row sections of one plot over cell type by age
-    two = add_panel(page, "cell-gene")
-    tt = T(two)
-    page.locator(f"{tt} select.cgene-axis-type").select_option(label="Cell Grouping")
-    page.wait_for_timeout(500)
-    page.locator(f"{tt} select.cgene-axis-key").select_option(index=1)
-    page.wait_for_timeout(1500)
-    page.locator(f"{tt} select.cgene-color-layer").select_option("logged_counts")
-    for name in ("HSC ageing", "Kompot DE"):
-        page.locator(f"{tt} button.cgene-add").first.click()
-        page.wait_for_timeout(600)
-        page.locator("button.cgene-add-item:visible").filter(has_text=name).first.click()
-        page.wait_for_timeout(1500)
-    until(page, "(t) => document.querySelectorAll(t + ' select.form-select').length >= 8", "the two sections", tt, timeout=30)
-    for i in (0, 1):
-        page.locator(f"{tt} select[class*='cgene-section']").nth(i).select_option("One row")
-        page.wait_for_timeout(1500)
-    page.locator(f"{tt} button.cgene-color").first.click()
-    page.wait_for_timeout(400)
-    page.locator(".axis-agg-item[data-agg='zscore_mean']").click()
-    page.wait_for_timeout(3000)
-    shot_tile(page, two, "sig-two-rows")
-    d2 = csv_of(page, two, "/tmp/sig-two.csv")
-    c2 = [c for c in d2.columns if c.startswith("Z-score")][0]
-    log("two-row CSV sections: " + str(d2["Section"].unique().tolist()))
-    for sec, part in d2.groupby("Section"):
-        vals = part.set_index("Group")[c2]
-        log(f"  {sec}: HSC {vals['HSC | Young']:.2f} / {vals['HSC | Mid']:.2f} / {vals['HSC | Old']:.2f}; MKP {vals['MKP | Young']:.2f} / {vals['MKP | Mid']:.2f} / {vals['MKP | Old']:.2f}; Neutrophil {vals['Neutrophil | Young']:.2f} / {vals['Neutrophil | Mid']:.2f} / {vals['Neutrophil | Old']:.2f}; T cell {vals['T cell | Young']:.2f} / {vals['T cell | Mid']:.2f} / {vals['T cell | Old']:.2f}")
-        ages = {a: float(np_mean([v for k, v in vals.items() if k.endswith("| " + a)])) for a in ("Young", "Mid", "Old")}
-        log(f"  {sec}: mean over cell types by age {ages}")
-    # ---- 11. rank cells: a Cell Table with the score as a column
-    ctab = add_panel(page, "cell-table")
-    cts = T(ctab)
-    page.wait_for_selector(f"{cts} .nav-link", timeout=30000)
-    log("Cell Table tabs: " + str(page.evaluate("(t) => [...document.querySelectorAll(t + ' .nav-link')].map(e => e.textContent.trim())", cts)))
-    page.locator(f"{cts} .nav-link", has_text="Gene score").first.click()
-    page.wait_for_timeout(800)
-    for label in ("HSC ageing (published)", "Kompot DE"):
-        grp = page.locator(f"{cts} .az-score-group").filter(has_text=label).first
-        grp.locator("select.az-score-add-layer").select_option("logged_counts")
-        page.wait_for_timeout(500)
-        grp.locator("button.az-score-add-btn").click()
-        page.wait_for_timeout(1200)
-    page.locator(f"{cts} .nav-link", has_text="obs").first.click()
-    page.wait_for_timeout(500)
-    page.locator(f"{cts} label:text-is('kompot_da_Young_to_Old_lfc')").first.click()
-    page.wait_for_timeout(400)
-    page.locator(f"{cts} button", has_text="Apply Changes").click()
-    page.wait_for_timeout(5000)
-    heads = page.evaluate("(t) => [...document.querySelectorAll(t + ' .dataTables_scrollHead th')].map(e => e.textContent.trim())", cts)
-    log("table headers: " + str(heads))
-    # sort by the published score, descending: click its header until the first rows are the highest
-    hd = [i for i, h in enumerate(heads) if "HSC ageing" in h][0]
-    for _ in range(2):
-        page.locator(f"{cts} .dataTables_scrollHead th").nth(hd).click()
-        page.wait_for_timeout(1500)
-    rows = page.evaluate("(t) => [...document.querySelectorAll(t + ' .dataTables_scrollBody tbody tr')].slice(0, 6).map(r => [...r.querySelectorAll('td')].map(c => c.textContent.trim()))", cts)
-    log("top rows by the published score: " + json.dumps(rows))
-    shot_tile(page, ctab, "sig-cell-table")
-    save_view(page, "compare", [two, gpl], [sig, sig2, cg, gt2, up_t, dn_t], "Signature tutorial: the published and Kompot signatures")
-    # ---- 12. the scoring itself against the stored S score, with the published S phase list (docs/_static/downloads/s-phase-genes.txt)
-    sphase = DOCS / "_static" / "downloads" / "s-phase-genes.txt"
-    if not sphase.exists():
-        log("TODO(paper): step 12 skipped, docs/_static/downloads/s-phase-genes.txt (the S phase genes of Tirosh et al.) is not in the repository yet")
-    else:
-        log("step 12: the S phase file is there, the check is still to be written")
+    shot_tile(page, gpl, "sig-volcano")
     sys.stdout.flush()
 
 

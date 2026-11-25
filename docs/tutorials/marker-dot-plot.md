@@ -13,8 +13,12 @@ same kind of plot for Kompot's fold change, genes by cell types.
 The panel is the **Cell-Gene Plot**: the dot plot and the group heatmap of scanpy, computed on the server over every cell
 of each group ({doc}`../user-guide/cell-gene-plot`).
 
-% TODO(paper): once the Kompot paper's full text is at hand, name here, with the figure number, the genes the paper
-% highlights for the stem cell and monocyte findings, and check them against the HSC and monocyte rows of step 9.
+The paper shows this result as a dot plot in its Fig. 3E: "Young-to-Old mean log fold change per cell type for genes
+selected from (D). Dot size encodes the fraction of cells expressing the gene." Part 2 builds that plot for every gene the
+store marks as called, 190 of them, from the stored layer. The paper reports that "genes ranked highly by Mahalanobis
+distance but with subtle fold change exhibited divergent expression patterns across cell types, with upregulation in
+some and downregulation in others", and that for many genes the change was "confined to HSCs such that the aggregate
+change across the full population of cells remained subtle". Both patterns are visible in step 9.
 
 ## What you need
 
@@ -231,8 +235,10 @@ A gene table is a gene list, and every panel that takes genes takes it.
 On a signed layer the statistics that count cells above zero are greyed, each with its reason.
 ```
 
-4. Set **Mode** to **Heatmap**. In **Color ▾** choose the colour scale **RdBu** and type `0` into **Center**, so that
-   zero is the pale middle and gains are red.
+4. **Mode** **Dots**, the default, is the paper's Fig. 3E: colour is the mean fold change, dot size the fraction of cells
+   with a count above zero (the **Size** layer stays `raw_counts`). For 190 genes the dots are small; set **Mode** to
+   **Heatmap**. In **Color ▾** choose the colour scale **RdBu** and type `0` into **Center**, so that zero is the pale
+   middle and gains are red.
 
 (tut-dotplot-fc-read)=
 ### 9. Read it
@@ -257,10 +263,12 @@ Three genes show what a summary over all cells misses (the last column is the ge
 | `S100a9` | -1.20 | -0.04 | +0.05 | -0.051 |
 | `Apoe` | +0.81 | -0.32 | -0.05 | -0.039 |
 
-`H2-Q7` is red in nearly every cell type: a response everywhere. `S100a9` and `S100a8` (-1.16 in HSC) are deep blue in
+`H2-Q7` is red in nearly every cell type: a response everywhere (the paper's Fig. 3E lists it first among the
+up-regulated genes). `S100a9` and `S100a8` (-1.16 in HSC) are deep blue in
 HSC and white elsewhere, so over all cells their mean is close to zero (-0.051), though they are among the strongest
 changes in stem cells. `Apoe` is red in HSC and blue in Monocyte: the same gene changes in opposite directions in two
-cell types, and the all-cell mean (-0.039) hides both. The most positive HSC value is `Ifitm1` (+0.99), the most
+cell types, and the all-cell mean (-0.039) hides both. `Apoe`, `S100a9` and `S100a8` are among the genes the paper's
+Fig. 3E labels as subtle. The most positive HSC value is `Ifitm1` (+0.99), the most
 negative `S100a9`.
 
 ### 10. Cluster the genes: modules
