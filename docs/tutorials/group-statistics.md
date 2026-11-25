@@ -1,7 +1,3 @@
----
-orphan: true
----
-
 (tut-group-statistics)=
 # Do cell types respond to age in the same way? Gene statistics over groups of cells
 
