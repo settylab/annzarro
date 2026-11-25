@@ -871,3 +871,25 @@ def test_ticked_row_shows_symbol(page, served):
     rows = page.evaluate("(g) => [...document.querySelectorAll(g + ' .form-check')].map(d => [d.querySelector('.az-score-sym').textContent, d.querySelector('label').textContent.trim()])", ADD_ROW)
     assert [r[0] for r in rows] == ["x", "z"], rows
     assert page.locator(f"{ADD_ROW} .form-check .az-score-sym.agg-sym--over").count() == 2, "x and z carry their bar"
+
+
+def test_add_row_survives_a_panels_changed_event_mid_pick(page, served):
+    """A "panels changed" that changes nothing here leaves the tab as it is; one that does (the signature renamed) builds it
+    again with the layer and aggregation chosen kept."""
+    _open(page, served, table=_table(columns=[OBS]))
+    page.click(f"#gene-score-tab-{TID}")
+    page.wait_for_selector(f"{ADD_ROW} .az-score-add-agg", timeout=10000)
+    layers = page.eval_on_selector_all(f"{ADD_ROW} .az-score-add-layer option", "os => os.filter(o => !o.disabled).map(o => o.value)")
+    assert len(layers) > 1, layers
+    page.select_option(f"{ADD_ROW} .az-score-add-layer", layers[-1])
+    pick_add_method(page, ADD_ROW, "mean")
+    read = """(g) => { const row = document.querySelector(g + ' .az-score-add');
+        window.__addRow = window.__addRow || row;
+        return { same: window.__addRow === row, layer: row.querySelector('.az-score-add-layer').value,
+            agg: row.querySelector('.az-score-add-agg').getAttribute('aria-label') }; }"""
+    page.evaluate(read, ADD_ROW)
+    page.evaluate("() => document.dispatchEvent(new CustomEvent('annzarro:panels-changed'))")
+    assert page.evaluate(read, ADD_ROW)["same"] is True
+    page.evaluate("(id) => { window.PanelManager.getPanel(id).setTitle('Renamed score'); document.dispatchEvent(new CustomEvent('annzarro:panels-changed')); }", SIG)
+    now = page.evaluate(read, f"#gene-score-content-{TID} .az-score-group[data-entity='{SIG}']")
+    assert now["same"] is False and now["layer"] == layers[-1] and "Mean" in now["agg"], now
