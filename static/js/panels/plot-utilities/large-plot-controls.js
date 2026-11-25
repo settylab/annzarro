@@ -17,7 +17,8 @@
  * What the mode draws on each axis is the source registry's to say (largeAccepts: the built-in sources it reads,
  * and each provider's `largeAxes`). DOM only otherwise, so it can be tested without a browser.
  */
-import { largeAccepts } from '../../utils/source-registry.js';
+import { largeAccepts, getSource } from '../../utils/source-registry.js';
+import { decodeSet } from '../../utils/axis-aggregate.js';
 
 /** Points above which a Cell Plot uses large-plot mode; `defaults` is Config.DEFAULTS. */
 export function largeThreshold(defaults) {
@@ -106,6 +107,24 @@ export function limitTextAxisOptions(keySelect, active, blocked) {
   }
 }
 
+/**
+ * Grey out (or restore) the sets an axis's item picker lists that large-plot mode cannot draw on that axis: they stay
+ * listed, with the provider's reason as the title (a grouping can color a large plot, not be one of its axes).
+ * @param {HTMLSelectElement} columnSelect
+ * @param {boolean} active  large-plot mode is on
+ * @param {string} axis
+ */
+export function limitSetOptions(columnSelect, active, axis) {
+  if (!columnSelect) return;
+  for (const option of Array.from(columnSelect.options || [])) {
+    const set = decodeSet(option.value);
+    const provider = set ? getSource(set.type) : null;
+    const reason = provider && provider.largeAxesReason;
+    if (active && reason && !largeAccepts(set.type, axis)) _off(option, reason);
+    else if (option.dataset.largeOff === '1') _on(option);
+  }
+}
+
 export function updateLargePlotControls(root, active, threshold, structure = null) {
   if (!root || typeof root.querySelectorAll !== 'function') return;
   const tip = largePlotTooltip(threshold);
@@ -116,6 +135,9 @@ export function updateLargePlotControls(root, active, threshold, structure = nul
         if (!largeAccepts(option.value, axis) && option.value !== '') set(option);
       }
     }
+  }
+  for (const axis of ['x', 'y', 'z']) {
+    for (const select of root.querySelectorAll(`select.axis-column-select[data-axis="${axis}"]`)) limitSetOptions(select, active, axis);
   }
   if (structure) {
     const blocked = textObsColumns(structure);

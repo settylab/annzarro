@@ -702,7 +702,6 @@ const groupTable = {
 
 registerSource({
     type: TYPE,
-    label: VOCABULARY.sourceType.groupStat,
     valueType: 'numerical',
     entity: 'genes',
     consumers: ['gene-plot', 'gene-table'],

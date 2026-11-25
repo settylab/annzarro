@@ -95,6 +95,14 @@ Every change redraws the panel straight away.
 | `obsp` | any obsp matrix | "Focused cell *name*" | the focused cell's row: its value to every cell |
 | `layer` | `X` or any layer | "Focused gene *name*" | the focused gene's column of `X` or the layer |
 
+A set is picked under **layer**, in the item list that follows the layer: **Genes** (the focused gene), **Gene signatures**, **Gene tables**, then
+**Cell groupings**, each by its name, open or closed ("(closed)"). A signature or a gene table is read on the layer and
+shows an aggregation button; a **Cell Grouping** is the group each cell is in, so it has no button, and the layer select
+stays on the layer it had, disabled ("A cell grouping reads no layer."), until you pick a gene or a signature again.
+**New signature…** and **New grouping…** end their sections and open the panel beside the plot. Above the large-plot threshold the groupings
+are listed greyed on x, y and z ("A grouping can color a large plot, not be one of its axes."); the colour works.
+An older link that stores a grouping reads the same: the row shows **layer** and the grouping.
+
 ## Sources for a gene plot
 
 | Type | Key | Column | One value per gene is |

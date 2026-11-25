@@ -18,7 +18,8 @@ const TYPE = 'group-stat';
 test('a Cell group is offered for x, y, z and the colour of a Gene Plot, and as a column of a Gene Table, and for nothing else', () => {
     for (const axis of ['x', 'y', 'z', 'color']) {
         assert.ok(R.sourcesFor('gene-plot', [axis]).some((p) => p.type === TYPE), `${axis} of a Gene Plot lists it`);
-        assert.ok(typeChoices('genes', 'gene-plot', [axis]).some((c) => c.value === TYPE && c.text === 'Cell group'), `${axis}'s type menu`);
+        // a Gene Plot's row picks it under layer (the type select has no "Cell group": the label went with G-SRC)
+        assert.ok(!typeChoices('genes', 'gene-plot', [axis], true).some((c) => c.value === TYPE), `${axis}'s type menu`);
         assert.ok(!R.sourcesFor('cell-plot', [axis]).some((p) => p.type === TYPE), `${axis} of a Cell Plot does not`);
     }
     const provider = R.getSource(TYPE);

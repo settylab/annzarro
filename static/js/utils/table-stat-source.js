@@ -320,7 +320,6 @@ registerPanelSourceType(TYPE);
 
 registerSource({
     type: TYPE,
-    label: VOCABULARY.sourceType.tableStat,
     valueType: 'numerical',
     entity: 'genes',
     consumers: ['gene-plot'],

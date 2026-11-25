@@ -94,8 +94,15 @@ test('a Gene Plot lists cell groupings and cell tables, each section with a line
     assert.deepEqual(sections.map((g) => g.entries.map((e) => [e.text, e.disabled === true])), [[['No cell groupings yet', true]], [['No cell tables yet', true]]]);
     // the line is no choice: its value stands for no set
     for (const g of sections) assert.equal(A.decodeSet(g.entries[0].value), null);
-    // a Cell Plot lists signatures and gene tables, never these
-    assert.ok(!A.setSections('cell-plot', ['x']).some((g) => /Cell (groupings|tables)/.test(g.heading)));
+    // a Cell Plot lists signatures and gene tables, then its own cell groupings last (G-SRC); never the Gene Plot's cell tables
+    const headings = A.setSections('cell-plot', ['x']).map((g) => g.heading);
+    assert.equal(headings[headings.length - 1], 'Cell groupings');
+    assert.ok(!headings.includes('Cell tables'));
+    const own = A.setSections('cell-plot', ['x']).pop().entries.map((e) => e.text);
+    assert.equal(own[own.length - 1], 'New grouping\u2026', 'the way to make one ends the section');
+    const g = A.aggregateOf({ type: 'cell-group', key: 'cell-grouping-A' });
+    assert.equal(g.aggregate.methods({ type: 'cell-group', key: 'cell-grouping-A' }), null, 'a grouping has no aggregation button');
+    assert.equal(A.displayType({ type: 'cell-group', key: 'cell-grouping-A' }), 'layer');
 });
 
 test('a table is a set of its own with no members, read on a layer with the group statistics and the table\'s own default', () => {

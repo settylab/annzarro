@@ -13,7 +13,7 @@ import { VOCABULARY } from '../../utils/vocabulary.js';
 import { createAggregationButton } from '../../ui/aggregation-button.js';
 import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
-import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
+import { largeThreshold, textObsColumns, limitTextAxisOptions, limitSetOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
 import { scaleDirection, scaleGradient } from '../../utils/color-scales.js';
 
@@ -135,12 +135,16 @@ export function populateKeySelector(settings, keySelect, datasetStructure, use =
     let keyOptions = [];
     const $keySelect = jQuery(keySelect);
     $keySelect.prop('disabled', false);
+    delete keySelect.dataset.reason;
 
     // a set (a signature, a group) is read on a layer: its row lists the layers, the one it is read on chosen
     if (use && use.aggregate && isAggregate(settings)) {
       // every layer, graded for the aggregation the set holds: one it cannot be computed on is disabled, its reason the title
       const menu = aggregateOf(settings).aggregate.layers(settings);
       fillChoiceSelect(keySelect, menu.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '' })), menu.chosen);
+      // a set that reads no layer (a cell grouping) keeps the one the row had, and the select says why it cannot change
+      $keySelect.prop('disabled', !!menu.disabled);
+      if (menu.disabled && menu.title) { keySelect.dataset.reason = menu.title; keySelect.title = menu.title; }
       return;
     }
   
@@ -167,9 +171,10 @@ export function populateKeySelector(settings, keySelect, datasetStructure, use =
           columns = [...columns].sort((a, b) => a.localeCompare(b));
         }
         keyOptions = columns.map(col => ({ value: col, text: col }));
-        // a provider listed under obs too (a grouping): its entities in their own group after the columns
-        if (use) keyOptions.push(...alsoListedEntries('obs', use.consumer, use.roles));
-        keySelect.__alsoListedUse = use;
+        // a provider listed under obs too (a grouping): its entities in their own group after the columns. Not on a row that
+        // picks sets in its item picker (a Cell Plot's axes): a grouping is chosen there, under layer, and one way is enough
+        if (use && !use.aggregate) keyOptions.push(...alsoListedEntries('obs', use.consumer, use.roles));
+        keySelect.__alsoListedUse = use && !use.aggregate ? use : null;
         break;
       }
       case 'obsm': {
@@ -674,7 +679,9 @@ function ensureMemberSelect(columnSelect, settings) {
  */
 function ensureAggregationButton(columnSelect, settings) {
   let made = columnSelect.__agg || null;
-  if (!settings || !isAggregate(settings)) {
+  // no button for a set that is not an aggregate either: a grouping is the group each cell is in
+  const provider = settings && isAggregate(settings) ? aggregateOf(settings) : null;
+  if (!provider || !provider.aggregate.methods(settings)) {
     if (made) { made.destroy(); columnSelect.__agg = null; }
     return;
   }
@@ -782,6 +789,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     populateKeySelector(settings, $keySelect[0], datasetStructure, use);
     limitTextAxisOptions($keySelect[0], large, textObsColumns(datasetStructure));
     populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure, use);
+    limitSetOptions($columnSelect[0], large || (plotType === 'cells' && axis === 'z' && (DataManager.getCells() || []).length > largeThreshold(Config.DEFAULTS)), axis);
     setTimeout(() => syncSelectTitles(), 60);
     
     // Add or update the refocus and lock buttons for layer, obsp, and varp types
@@ -1538,6 +1546,8 @@ export function takeSubKey(settings, select) {
 function syncSelectTitles(root = document) {
   for (const select of root.querySelectorAll('.axis-selector select')) {
     const text = select.selectedOptions && select.selectedOptions[0] ? select.selectedOptions[0].textContent : '';
+    // a select that says why it cannot change keeps that (a cell grouping reads no layer)
+    if (select.dataset.reason) { if (select.title !== select.dataset.reason) select.title = select.dataset.reason; continue; }
     if (text && select.title !== text) select.title = text;
   }
 }
