@@ -194,11 +194,35 @@ test('the legend cap on a Cell-Gene strip legend: the first N levels and "+ k mo
     assert.deepEqual(five.text, ['L0', 'L1', 'L2', 'L3', 'L4', '+ 25 more']);
     const under = named(cellGene({ look: { legendMax: 5 } }, { levels: 4 }).figure, 'strip legend')[0];
     assert.deepEqual(under.text, ['L0', 'L1', 'L2', 'L3'], 'no "more" line under the cap');
-    // a slot too short for the cap still cuts at what fits, and two columns hold twice that
+    // the rule (draw.js legendStack, stripLegendParts), for 30 levels, the default cap of 20, a 900 x 600 px figure: the one strip legend
+    // takes the whole legend column, 15 lines (14 levels and the "more" line) in one column; at 900 px the column is 21 characters wide,
+    // too narrow to wrap by itself (a label keeps 8 characters and 3 go to the swatch). A column list is as long as its room less the
+    // "more" line, unless the cap is the lesser: with two columns the room is 30 lines, the cap's 20 levels all fit and 10 are left.
     const short = named(cellGene({}, { levels: 30 }).figure, 'strip legend')[0];
     const shortTwo = named(cellGene({ look: { legendColumns: 2 } }, { levels: 30 }).figure, 'strip legend')[0];
-    assert.match(short.text[short.text.length - 1], /^\+ \d+ more$/);
-    assert.equal(shortTwo.text.length, 2 * short.text.length);
+    assert.equal(short.text.length, 15, '14 levels and the "more" line (the slot used to hold 7)');
+    assert.equal(short.text[14], '+ 16 more', '30 levels less the 14 listed');
+    assert.equal(new Set(short.x).size, 1, 'one column');
+    assert.equal(shortTwo.text.length, 21, 'the cap\'s 20 levels and the "more" line');
+    assert.equal(shortTwo.text[20], '+ 10 more', '30 levels less the cap\'s 20');
+    assert.equal(new Set(shortTwo.x).size, 2, 'two columns');
+});
+
+test('"Entries, at most" is what it says: 17 levels with a cap of 100 are all listed, wrapping into columns when one column of the slot is short', () => {
+    // operator 2026-11-24: a 17-level category showed 7 entries and "+ 10 more" although the cap was 100
+    for (const [label, height] of [['a tile of 600 px', 600], ['a short tile', 420]]) {
+        const legend = named(cellGene({ look: { legendMax: 100 } }, { levels: 17, pixels: { width: 1100, height: height } }).figure, 'strip legend')[0];
+        assert.equal(legend.text.length, 17, `${label}: every level, no "+ n more" line`);
+        assert.ok(!legend.text.some((t) => /more$/.test(t)), label);
+        assert.ok(new Set(legend.x).size >= 1);
+    }
+    // the cap is still the cap, and the line says how many are left
+    const below = named(cellGene({ look: { legendMax: 5 } }, { levels: 17, pixels: { width: 1100, height: 600 } }).figure, 'strip legend')[0];
+    assert.equal(below.text[below.text.length - 1], '+ 12 more');
+    assert.equal(below.text.length, 6);
+    // the colour bar and size legend keep a slot of their own while a long strip legend grows
+    const figure = cellGene({ look: { legendMax: 100 } }, { levels: 17, pixels: { width: 1100, height: 600 } }).figure;
+    assert.ok(figure.layout.annotations.some((a) => a.name === 'strip legend title'));
 });
 
 test('Cell-Gene legend columns fill top to bottom; the space moves the legend column', () => {
