@@ -55,8 +55,8 @@ cells. **Edit ▾** (or a click on the card) opens the factor's levels or bins i
 the panel grows, moves or scrolls while you edit. The pop-over stays open while you work: every change applies at once
 and is one undo step. **Escape**, the **×** in its header, **Edit ▾** again, or a click outside closes it; Escape and
 the button put the focus back on **Edit ▾**. Only one pop-over is open at a time. **⋯** offers **Move up**, **Move
-down**, **Duplicate**, **Rename levels…** and **Remove**. Drag a card by **≡**, or move the focused card with **Alt+Up**
-and **Alt+Down**. The order of the factors is the order of the names and of the groups: the first factor varies slowest.
+down**, **Duplicate**, **Rename levels…** and **Remove**. Drag a card, or move the focused card with **Alt+Up**
+and **Alt+Down**. The sections of a Cell-Gene Plot are the same card, so the two lists look and behave alike. The order of the factors is the order of the names and of the groups: the first factor varies slowest.
 
 The toolbar above the cards holds **Add factor ▾**, **Methods ▾**, **Settings** and **Undo**. The list of groups takes
 the rest of the panel and is the only part that grows with it.

@@ -119,3 +119,14 @@ def test_reorder_by_drag_and_alt_arrows(page, served, panel):
     page.locator(f"{root} .az-card[data-index='0']").drag_to(page.locator(f"{root} .az-card[data-index='1']"))
     until(page, "([r, t]) => document.querySelector(r + ' .az-card .az-card__title').textContent === t", [root, first[0]])
     assert _titles(page, root) == first
+
+
+def test_a_twelve_character_title_shows_in_full_at_700px(page, served):
+    """The title is the last thing to give way: the summary and the preview shrink first, so a 12-character title is whole
+    in a tile of a 700 px page with another tile beside it (it used to show as `Pathw…`)."""
+    _both(page, served, sections=[{"source": S1, "rows": "genes", "title": "Twelve Chars"}, {"source": S2, "rows": "set", "title": "Twelve Words"}])
+    page.set_viewport_size({"width": 700, "height": 1000})
+    page.wait_for_function("() => window.innerWidth === 700")
+    got = page.evaluate("""(s) => [...document.querySelectorAll(s + ' .az-card .az-card__title')].map(t => [t.textContent, t.scrollWidth, t.clientWidth])""", TP)
+    assert [g[0] for g in got] == ["Twelve Chars", "Twelve Words"]
+    assert all(sw <= cw for _, sw, cw in got), got

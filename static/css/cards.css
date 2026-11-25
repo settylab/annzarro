@@ -13,12 +13,12 @@
 .az-card__head:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
 .az-card__grip { cursor: grab; color: var(--az-muted); }
 .az-card__pos { color: var(--az-muted); font-variant-numeric: tabular-nums; }
-.az-card__title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 3rem; }
-.az-card__summary { color: var(--az-muted); white-space: nowrap; flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.az-card__preview { color: var(--az-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1000 auto; }
+.az-card__title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; max-width: 100%; min-width: 0; }
+.az-card__summary { color: var(--az-muted); white-space: nowrap; flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.az-card__preview { color: var(--az-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 100000 auto; }
 .az-card__edit, .az-card__select { flex: 0 0 auto; margin: 0 2px; }
 .az-card__edit { padding: 0 8px; font-size: 0.75rem; }
-.az-card .form-select.az-card__select { width: auto; padding-top: 0; padding-bottom: 0; min-height: 0; height: 1.5rem; font-size: 0.75rem; }
+.az-card .form-select.az-card__select { width: auto; padding-top: 0; padding-bottom: 0; min-height: 0; height: 1.5rem; font-size: 0.75rem; padding-left: 0.4rem; padding-right: 1.4rem; background-size: 12px 9px; background-position: right 0.35rem center; }
 .az-card__menu-wrap { position: relative; }
 .az-card__more { padding: 0 6px; text-decoration: none; }
 .az-card__note { padding: 0 8px 4px; color: var(--az-danger-text); font-size: 0.75rem; }
