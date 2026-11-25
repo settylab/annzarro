@@ -75,6 +75,12 @@ const PLOT_RIGHT = 0.78;
 /** The legend column is at least this wide in px, so a narrow figure's legends stay readable (the plot gives way). */
 const LEGEND_MIN_PX = 120;
 const LEGEND_SLOT_MAX = 0.3;
+/** The share of a legend slot its content fills (the rest is the gap to the next), and the least a colour bar or size legend is shrunk to for a long strip legend. */
+const LEGEND_SLOT_FILL = 0.82;
+const LEGEND_SLOT_FLOOR = 0.18;
+/** Most columns a strip legend wraps into by itself, and the fewest characters a label keeps in one. */
+const LEGEND_AUTO_COLUMNS = 4;
+const LEGEND_MIN_LABEL_CHARS = 8;
 const DEFAULT_HEIGHT = 600;
 const MAIN = 'main';
 /** A character's width in em, on average (as draw-annotations.js measures labels), and the most lines a title wraps to. */
@@ -452,10 +458,32 @@ function legendStack(model, P, dots, th, keepMin = true) {
     if (wanted('strips')) strips.forEach((strip, i) => { if (strip.legend && strip.legend.length) items.push({ kind: 'strip', index: i }); });
     const plotPx = Math.max(((model.pixels && model.pixels.height) || DEFAULT_HEIGHT) - 20, 1);
     const reserve = MODEBAR_PX / plotPx;
-    const slot = Math.min(LEGEND_SLOT_MAX, (0.96 - reserve) / Math.max(items.length, 1));
+    const total = 0.96 - reserve;
+    const base = Math.min(LEGEND_SLOT_MAX, total / Math.max(items.length, 1));
+    // a strip legend that lists more levels than its slot holds takes room from the colour bar and size legend (which draw
+    // in a short slot) before it wraps into columns, so "Entries, at most" is not cut by the slot alone
+    const slots = items.map(() => base);
+    const cap = Math.max(1, (model.legendLayout && model.legendLayout.max) || Infinity);
+    const wants = items.map((it) => {
+        if (it.kind !== 'strip') return 0;
+        const lines = Math.min(strips[it.index].legend.length, cap);
+        return Math.min(total, (lines * LEGEND_LINE_PX + TITLE_LINES * LEGEND_LINE_PX + 4) / plotPx / LEGEND_SLOT_FILL);
+    });
+    const needy = items.map((it, i) => wants[i] > base);
+    if (needy.some(Boolean)) {
+        const floor = Math.min(base, LEGEND_SLOT_FLOOR);
+        const others = items.filter((_, i) => !needy[i]).length;
+        const fits = others * base + wants.reduce((a, w, i) => a + (needy[i] ? w : 0), 0) <= total;
+        const otherSlot = fits ? base : floor;
+        const left = total - others * otherSlot;
+        const sumWant = wants.reduce((a, w, i) => a + (needy[i] ? w : 0), 0);
+        items.forEach((_, i) => { slots[i] = needy[i] ? Math.max(base, fits ? wants[i] : (left * wants[i]) / sumWant) : otherSlot; });
+    }
+    let top = 1 - reserve;
     items.forEach((it, i) => {
-        it.top = 1 - reserve - i * slot;
-        it.height = slot * 0.82;
+        it.top = top;
+        top -= slots[i];
+        it.height = slots[i] * LEGEND_SLOT_FILL;
         it.chars = chars;
         it.x = x;
         it.px = it.height * plotPx;
@@ -547,8 +575,16 @@ function stripLegendParts(model, strip, entry, n, th) {
     const fit = Math.max(1, Math.floor(((entry.height - titleRoom) * plotPx) / LEGEND_LINE_PX));
     // Plot Options' columns and cap (WP-5a, model.legendLayout): the levels fill the columns top to bottom, at most
     // `max` of them, and the last line says how many more there are
-    const { columns = 1, max = Infinity } = model.legendLayout || {};
+    const { columns: set = 1, max = Infinity } = model.legendLayout || {};
     const all = strip.legend;
+    // what the cap allows that one column cannot hold wraps into more columns (as far as a label keeps a few characters),
+    // so the levels the setting allows are drawn; only past that does the last line say how many more there are
+    let columns = set;
+    const wanted = Math.min(all.length, max);
+    if (wanted > fit * columns) {
+        const widest = Number.isFinite(entry.chars) ? Math.max(1, Math.floor(entry.chars / (LEGEND_MIN_LABEL_CHARS + 3))) : LEGEND_AUTO_COLUMNS;
+        columns = Math.max(columns, Math.min(LEGEND_AUTO_COLUMNS, widest, Math.ceil(wanted / fit)));
+    }
     const room = fit * columns;
     const keep = Math.min(all.length, max);
     const shown = keep === all.length && keep <= room ? all : all.slice(0, Math.min(keep, room - 1));
@@ -558,9 +594,11 @@ function stripLegendParts(model, strip, entry, n, th) {
     const step = 6.6 / columns;
     const chars = Number.isFinite(entry.chars) && columns > 1 ? Math.max(3, Math.floor(entry.chars / columns) - 3) : Infinity;
     const cut = (label) => (label.length > chars ? `${label.slice(0, chars - 1)}…` : label);
+    const cutAny = shown.some((e) => String(e.label).length > chars);
     const axisId = n + 2;
     const trace = {
-        type: 'scatter', mode: 'markers+text', name: 'strip legend', hoverinfo: 'skip', showlegend: false,
+        type: 'scatter', mode: 'markers+text', name: 'strip legend', hoverinfo: cutAny ? 'text' : 'skip',
+        ...(cutAny ? { hovertext: [...shown.map((e) => esc(String(e.label))), ...(more ? [''] : [])] } : {}), showlegend: false,
         xaxis: `x${axisId}`, yaxis: `y${axisId}`,
         x: Array.from({ length: lines }, (_, j) => Math.floor(j / perColumn) * step), y: Array.from({ length: lines }, (_, j) => j % perColumn),
         text: [...shown.map((e) => esc(cut(String(e.label)))), ...(more ? [esc(W.options.more(more))] : [])], textposition: 'middle right', cliponaxis: false,
