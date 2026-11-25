@@ -259,5 +259,4 @@ changes "confined to HSCs".
   step, with a count of what was new.
 - A statistic over all cells (the volcano) and a statistic by cell type can tell different stories about the same gene.
 
-Next: {doc}`group-statistics` takes the per-group statistics further, as plot axes and table
-columns.
+Next: {doc}`group-statistics` takes the per-group statistics further, as plot axes and table columns.
