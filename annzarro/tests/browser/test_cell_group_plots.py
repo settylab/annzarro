@@ -394,29 +394,16 @@ def test_open_grouping_reopens_a_closed_grouping_beside_the_plot(page, served):
     assert page.query_selector(C), "the plot stays open beside it"
 
 
-def test_groupings_are_listed_under_obs_and_choosing_one_switches_the_type(page, served):
+def test_the_obs_column_list_has_no_groupings_group(page, served):
+    """A grouping is chosen under layer (G-SRC); a second way to the same setting at the end of the obs list is gone."""
     _open(page, served, {P: _plot(color={"type": "obs", "key": "condition", "column": ""}), GA: _grouping()})
     _menus(page)
-    until(page, """(t) => !!document.querySelector(`${t} select.axis-key-select[data-axis="color"] optgroup[label="Groupings"] option`)""", C)
-    listed = page.evaluate("""(t) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="color"] optgroup[label="Groupings"] option`)]
-        .map(o => [o.value, o.textContent])""", C)
-    assert [text for _, text in listed] == ["Grouping 1"]
-    page.select_option(f'{C} select.axis-key-select[data-axis="color"]', listed[0][0])
-    until(page, "(t) => document.querySelector(`${t} select.axis-type-select[data-axis=\"color\"]`).value === 'cell-group'", C)
-    _wait_legend(page, TYPES)
-    cfg = _colour_cfg(page)
-    assert cfg["type"] == "cell-group" and cfg["key"] == GA, "the setting stores cell-group, never obs"
-    # the entry's value is a way to choose: no link, panel set or history holds it
-    view = page.evaluate("() => window.sessionManager.captureView()")
-    saved = view["layout"]["panelConfigs"][P]["color"]
-    assert saved["type"] == "cell-group" and saved["key"] == GA
-    assert saved["history"]["obs"]["key"] == "condition", "the obs column it had is remembered as it was"
-    assert "\u0001" not in json.dumps(view), "the entry's value is stored nowhere"
-    # and the obs column choice behaves as before
-    page.select_option(f'{C} select.axis-type-select[data-axis="color"]', "obs")
-    until(page, "(t) => document.querySelector(`${t} select.axis-key-select[data-axis=\"color\"]`).value === 'condition'", C)
-    _wait_legend(page, gstore.CONDITIONS)
-    assert "\u0001" not in json.dumps(page.evaluate("() => window.sessionManager.captureView()"))
+    for axis in ("color", "x", "y"):
+        if axis != "color":
+            page.select_option(f'{C} select.axis-type-select[data-axis="{axis}"]', "obs")
+        until(page, """([t, a]) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="${a}"] option`)].some(o => o.value === 'condition')""", [C, axis])
+        groups = page.evaluate("""([t, a]) => [...document.querySelectorAll(`${t} select.axis-key-select[data-axis="${a}"] optgroup`)].map(g => g.label)""", [C, axis])
+        assert "Groupings" not in groups, (axis, groups)
 
 
 # ------------------------------------------------------------------ 6. the codes under the memory guard

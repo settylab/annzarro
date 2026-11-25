@@ -167,9 +167,10 @@ export function populateKeySelector(settings, keySelect, datasetStructure, use =
           columns = [...columns].sort((a, b) => a.localeCompare(b));
         }
         keyOptions = columns.map(col => ({ value: col, text: col }));
-        // a provider listed under obs too (a grouping): its entities in their own group after the columns
-        if (use) keyOptions.push(...alsoListedEntries('obs', use.consumer, use.roles));
-        keySelect.__alsoListedUse = use;
+        // a provider listed under obs too (a grouping): its entities in their own group after the columns. Not on a row that
+        // picks sets in its item picker (a Cell Plot's axes): a grouping is chosen there, under layer, and one way is enough
+        if (use && !use.aggregate) keyOptions.push(...alsoListedEntries('obs', use.consumer, use.roles));
+        keySelect.__alsoListedUse = use && !use.aggregate ? use : null;
         break;
       }
       case 'obsm': {
