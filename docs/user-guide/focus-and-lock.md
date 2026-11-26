@@ -11,7 +11,7 @@ model in a first analysis.
 This page uses two cell plots on `bm_aging_annzarro.zarr`: on the left, colour = the focused cell's row of
 `obsp/diffusion_walk_t5` (where a 5-step diffusion walk from that cell lands); on the right,
 colour = the focused gene's column of `layers/kompot_de_Young_to_Old_fold_change`.
-The view is {download}`userguide-focus.json <../_tools/views/userguide-focus.json>`.
+The view is {download}`userguide-focus.json <../_tools/views/userguide-focus.json>`; the tour builds both panels step by step ({ref}`tut-tour-cell-row`, {ref}`tut-tour-four-arrows`).
 
 ```{figure} ../_static/screens/user-guide/focus-start.png
 :class: screenshot

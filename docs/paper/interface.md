@@ -67,6 +67,6 @@ Panel sets: {download}`interface-overview.json <../_static/panelsets/paper/inter
 View JSON: {download}`interface-overview.view.json <../_tools/views/interface-overview.json>`,
 {download}`interface-focus-sequence.view.json <../_tools/views/interface-focus-sequence.json>`,
 {download}`interface-table-filter.view.json <../_tools/views/interface-table-filter.json>`.
-Loading one restores the dataset, the focus and the split layout, like the links ({ref}`tut-tour-load-file`).
+Loading one restores the dataset, the focus and the split layout, like the links ({ref}`tut-tour-load-file`). The tour builds each of them step by step: {ref}`tut-tour-overview` (a), {ref}`tut-tour-clicks` (b) and {ref}`tut-tour-filter` (c).
 
 Screenshots and views are made by `docs/_tools/shoot_figs13.py`.

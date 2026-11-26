@@ -89,7 +89,7 @@ Panel sets: {download}`cells-and-genes-abc.json <../_static/panelsets/paper/cell
 {download}`cells-and-genes-a-cells.json <../_static/panelsets/paper/cells-and-genes-a-cells.json>`,
 {download}`cells-and-genes-d.json <../_static/panelsets/paper/cells-and-genes-d.json>`,
 {download}`cells-and-genes-d-noise.json <../_static/panelsets/paper/cells-and-genes-d-noise.json>`. Loading one restores the dataset, the focus and the split layout, like the links
-({doc}`../user-guide/panel-sets`).
+({doc}`../user-guide/panel-sets`). Each view is built step by step in the tutorial section named for its panel in the table at the top of this page.
 
 Screenshots and views are made by `docs/_tools/shoot_figs45.py`; the paper's numbers are in
 {repro}`figures/numbers/fig4.json` in the {ref}`companion repository <paper-companion>`.

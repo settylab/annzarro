@@ -67,7 +67,7 @@ The paper's protocol views of `bm_aging_annzarro.zarr` are complete examples wit
 colour scales, a lock and a table filter (`*.view.json` in {repro-tree}`data_prep/demo_panelsets` of the
 {ref}`companion repository <paper-companion>`; the panel set files below are all you need). Each link is ready for a local server with `bm_aging_annzarro.zarr` in
 its data directory ({ref}`tut-start-links` says what to change otherwise); the panel set file loads
-the same view with **Load Panel Set** > **Upload file**.
+the same view with **Load Panel Set** > **Upload file**. Each of the five is built step by step in the tutorial named for it on {doc}`../paper/procedure`.
 
 ::::{dropdown} A: five-step diffusion walk and the kernel row of the focused cell
 ```{literalinclude} ../_static/panelsets/protocol/protocol-A-kernel-walk.url.txt

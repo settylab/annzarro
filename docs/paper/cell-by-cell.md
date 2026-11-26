@@ -68,7 +68,7 @@ Panel sets: {download}`cell-by-cell-walk.json <../_static/panelsets/paper/cell-b
 {download}`cell-by-cell-umap-vs-diffusion.json <../_static/panelsets/paper/cell-by-cell-umap-vs-diffusion.json>`.
 View JSON: {download}`cell-by-cell-walk.view.json <../_tools/views/cell-by-cell-walk.json>`,
 {download}`cell-by-cell-umap-vs-diffusion.view.json <../_tools/views/cell-by-cell-umap-vs-diffusion.json>`.
-Loading one restores the dataset, the focus and the split layout, like the links ({ref}`tut-tour-load-file`).
+Loading one restores the dataset, the focus and the split layout, like the links ({ref}`tut-tour-load-file`). To build these views yourself, follow the tutorial sections named in the table at the top of this page: {ref}`tut-cell-walk` for panel a, {ref}`tut-cell-distance-axes` and {ref}`tut-cell-groups-umap` for b and c.
 
 Screenshots and views are made by `docs/_tools/shoot_figs13.py`; the paper's numbers are in
 {repro}`figures/numbers/fig2.json` in the {ref}`companion repository <paper-companion>`.

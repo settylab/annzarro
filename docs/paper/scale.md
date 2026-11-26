@@ -108,7 +108,7 @@ Panel sets: {download}`scale-every-cell-by-cell-line.json <../_static/panelsets/
 {download}`scale-next-part.json <../_static/panelsets/paper/scale-next-part.json>`,
 {download}`scale-balanced-subset.json <../_static/panelsets/paper/scale-balanced-subset.json>`.
 Loading one restores the dataset, the subset, the focus and the layout, like the links
-({doc}`../user-guide/panel-sets`).
+({doc}`../user-guide/panel-sets`). {doc}`../tutorials/millions` builds these views step by step: the default subset in {ref}`tut-millions-open`, a balanced subset in {ref}`tut-millions-dialog`, the next part in {ref}`tut-millions-parts` and every cell in {ref}`tut-millions-every`.
 
 The views are written by `docs/_tools/start_links.py scale` from the view files of the paper's
 v0.4.1 screenshots (`*.view.json` in {repro-tree}`figures/scale` of the paper's
