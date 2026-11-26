@@ -376,4 +376,10 @@ def test_the_strip_does_not_keep_the_count_of_a_drawing_that_is_gone(page, serve
     _set(page, {"sections": _sections(1, S2)})     # other genes: a new estimate, which is refused
     _wait_state(page, "refused")
     until(page, "(s) => document.querySelector(s + ' .cgene-plot .js-plotly-plot') === null || !document.querySelector(s + ' .cgene-plot .js-plotly-plot').data", TP)
-    assert page.inner_text(strip) == "0 cells", "nothing is drawn: the strip says none, not the old drawing's count"
+    assert page.inner_text(strip) == "", "nothing is drawn: no count in the strip (not the old drawing's, not \"0 cells\")"
+    until(page, "(s) => { const t = document.querySelector(s + ' .plot-status .ps-tag[data-tag=\"score\"]'); return !!t && t.textContent.trim() === 'Plot refused'; }", TP)   # the state tag speaks
+    # a drawing arrives again: its count is back
+    refuse["on"] = False
+    _set(page, {"sections": _sections(1)})
+    _drawn(page)
+    until(page, "(s) => document.querySelector(s + ' .plot-status .ps-headline').textContent === '1,200 cells'", TP)

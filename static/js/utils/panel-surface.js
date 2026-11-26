@@ -125,7 +125,7 @@ const _state = new WeakMap();
 function stateOf(host) {
     let s = _state.get(host);
     if (!s) {
-        s = { coverage: null, unit: 'values', persistent: false, verb: 'shown', tags: new Map(), open: null, progress: null };
+        s = { coverage: null, unit: 'values', persistent: false, verb: 'shown', tags: new Map(), open: null, progress: null, noCount: false };
         _state.set(host, s);
     }
     return s;
@@ -177,9 +177,12 @@ function tickHtml(tick, ticked) {
         + 'Don\'t ask again for this panel</label>';
 }
 
+/** What a strip with no count shows: nothing in the summary (its tags and progress still say the state). */
+const NO_COUNT = Object.freeze({ unit: '', headline: '', headlineExact: '', rows: [], notes: [], hidden: 0, total: 0 });
+
 function stripHtml(host, s) {
     const cov = coerce(s.coverage, s.unit);
-    const b = breakdown(cov, { verb: s.verb });
+    const b = s.noCount ? NO_COUNT : breakdown(cov, { verb: s.verb });
     const unitWord = escapeHtml(b.unit);
     const verb = escapeHtml(s.verb);
     const headline = escapeHtml(b.headline).replace(` ${unitWord} ${verb}`, ` <span class="ps-unit">${unitWord} </span>${verb}`);
@@ -314,10 +317,24 @@ function paint(host) {
 export function renderCoverageNotice(host, coverage, unit, { persistent, verb } = {}) {
     if (!stripAnchor(host)) return null;
     const s = stateOf(host);
+    s.noCount = false;
     s.coverage = coerce(coverage, unit);
     s.unit = unit || s.coverage.unit;
     if (persistent !== undefined) s.persistent = persistent;
     if (verb) s.verb = verb;
+    return paint(host);
+}
+
+/**
+ * A strip with no drawing to count (a plot whose drawing was replaced by a notice or a read in progress) says no count:
+ * the summary is blank and only its tags (Computing…, Refused, …) speak, until `renderCoverageNotice` states a drawing's.
+ * Not "0 cells", which reads as a plot that found none.
+ * @param {HTMLElement} host
+ */
+export function clearCoverageNotice(host) {
+    if (!stripAnchor(host)) return null;
+    const s = stateOf(host);
+    s.noCount = true;
     return paint(host);
 }
 
