@@ -1,0 +1,283 @@
+{
+ "name": "Tutorial: compare cell states, table",
+ "timestamp": "2026-11-26T09:13:46+00:00",
+ "dataset": "bm_aging_annzarro.zarr",
+ "datasetName": "bm_aging_annzarro",
+ "constants": {
+  "focusedGene": "Cd74",
+  "focusedCell": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+  "taxonomyId": "10090"
+ },
+ "panelConfigs": {
+  "cell-plot-types": {
+   "id": "cell-plot-types",
+   "type": "cell-plot",
+   "title": "Click a cell",
+   "config": {
+    "id": "cell-plot-types",
+    "title": "Click a cell",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "midres_celltype",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    ]
+   },
+   "isSelectionTile": false
+  },
+  "gene-table-cmp": {
+   "id": "gene-table-cmp",
+   "type": "gene-table",
+   "title": "Partners of Cd74",
+   "config": {
+    "id": "gene-table-cmp",
+    "title": "Partners of Cd74",
+    "pageLength": 25,
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_is_de",
+      "column": ""
+     },
+     {
+      "type": "varp",
+      "key": "spearman_fold_change",
+      "column": "Cd74"
+     }
+    ],
+    "searchBuilderEnabled": true,
+    "searchBuilderConfig": {
+     "logic": "AND",
+     "criteria": [
+      {
+       "condition": ">",
+       "data": "spearman_fold_change \u00b7 Cd74",
+       "origData": "varp_spearman_fold_change_Cd74",
+       "type": "num",
+       "value": [
+        "0.6"
+       ]
+      }
+     ]
+    }
+   },
+   "isSelectionTile": false
+  },
+  "gene-plot-cmp": {
+   "id": "gene-plot-cmp",
+   "type": "gene-plot",
+   "title": "Fold change: locked HSC (x) against the focused cell (y)",
+   "config": {
+    "id": "gene-plot-cmp",
+    "title": "Fold change: locked HSC (x) against the focused cell (y)",
+    "x": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": true
+    },
+    "y": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+     "locked": false
+    },
+    "z": null,
+    "pointSize": 6,
+    "pointOpacity": 0.9,
+    "highlightFocusedGene": true,
+    "showZeroLines": true,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "color": {
+     "type": "varp",
+     "key": "spearman_fold_change",
+     "column": "Cd74",
+     "locked": false
+    },
+    "colorScale": "Blues",
+    "colorReversed": true,
+    "colorMin": 0.5,
+    "colorMax": 1,
+    "lockColorRange": true
+   },
+   "isSelectionTile": false
+  }
+ },
+ "view": {
+  "v": 1,
+  "constants": {
+   "focusedGene": "Cd74",
+   "focusedCell": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+   "taxonomyId": "10090"
+  },
+  "layout": {
+   "v": 1,
+   "hierarchy": [
+    {
+     "type": "split",
+     "direction": "horizontal",
+     "panes": [
+      {
+       "percentage": 45,
+       "controlsVisible": false
+      },
+      {
+       "percentage": 55,
+       "controlsVisible": false
+      }
+     ],
+     "children": [
+      {
+       "type": "tile",
+       "id": "gene-table-cmp",
+       "controlsVisible": false
+      },
+      {
+       "type": "tile",
+       "id": "gene-plot-cmp",
+       "controlsVisible": false
+      }
+     ]
+    }
+   ],
+   "controlState": {
+    "cell-plot-types": false,
+    "gene-table-cmp": true,
+    "gene-plot-cmp": false
+   },
+   "panelConfigs": {
+    "cell-plot-types": {
+     "id": "cell-plot-types",
+     "title": "Click a cell",
+     "x": {
+      "type": "obsm",
+      "key": "X_umap",
+      "column": "0"
+     },
+     "y": {
+      "type": "obsm",
+      "key": "X_umap",
+      "column": "1"
+     },
+     "z": null,
+     "color": {
+      "type": "obs",
+      "key": "midres_celltype",
+      "column": ""
+     },
+     "pointSize": 3,
+     "pointOpacity": 0.8,
+     "highlightFocusedCell": true,
+     "hoverInfo": [
+      {
+       "type": "obs",
+       "key": "_index"
+      },
+      {
+       "type": "obs",
+       "key": "highres_celltype"
+      }
+     ]
+    },
+    "gene-table-cmp": {
+     "id": "gene-table-cmp",
+     "title": "Partners of Cd74",
+     "pageLength": 25,
+     "columns": [
+      {
+       "type": "var",
+       "key": "kompot_de_Young_to_Old_is_de",
+       "column": ""
+      },
+      {
+       "type": "varp",
+       "key": "spearman_fold_change",
+       "column": "Cd74"
+      }
+     ],
+     "searchBuilderEnabled": true,
+     "searchBuilderConfig": {
+      "logic": "AND",
+      "criteria": [
+       {
+        "condition": ">",
+        "data": "spearman_fold_change \u00b7 Cd74",
+        "origData": "varp_spearman_fold_change_Cd74",
+        "type": "num",
+        "value": [
+         "0.6"
+        ]
+       }
+      ]
+     }
+    },
+    "gene-plot-cmp": {
+     "id": "gene-plot-cmp",
+     "title": "Fold change: locked HSC (x) against the focused cell (y)",
+     "x": {
+      "type": "layer",
+      "key": "kompot_de_Young_to_Old_fold_change",
+      "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+      "locked": true
+     },
+     "y": {
+      "type": "layer",
+      "key": "kompot_de_Young_to_Old_fold_change",
+      "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+      "locked": false
+     },
+     "z": null,
+     "pointSize": 6,
+     "pointOpacity": 0.9,
+     "highlightFocusedGene": true,
+     "showZeroLines": true,
+     "hoverInfo": [
+      {
+       "type": "var",
+       "key": "_index"
+      }
+     ],
+     "color": {
+      "type": "varp",
+      "key": "spearman_fold_change",
+      "column": "Cd74",
+      "locked": false
+     },
+     "colorScale": "Blues",
+     "colorReversed": true,
+     "colorMin": 0.5,
+     "colorMax": 1,
+     "lockColorRange": true
+    }
+   }
+  }
+ }
+}

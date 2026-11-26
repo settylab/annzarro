@@ -219,7 +219,8 @@ cells (warm) sit mostly where the HSC's change is negative, like S100a9's own.
 
 Now each gene's colour says how it co-varies with the focused gene, while its position says how
 it changes in the two cells. Click a gene, or pick one in **Focused Gene**: the colour follows,
-the axes do not.
+the axes do not. On a fixed narrow colour range this becomes a search for genes that respond together:
+{doc}`compare-cell-states`.
 
 (tut-cg-andor)=
 ### Count the directions with AND/OR

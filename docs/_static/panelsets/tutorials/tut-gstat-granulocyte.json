@@ -1,6 +1,6 @@
 {
  "name": "Tutorial: group statistics, granulocyte",
- "timestamp": "2026-11-25T21:52:01+00:00",
+ "timestamp": "2026-11-26T09:09:39+00:00",
  "dataset": "bm_aging_annzarro.zarr",
  "datasetName": "bm_aging_annzarro",
  "constants": {
@@ -11,10 +11,10 @@
   "gene-table-gs": {
    "id": "gene-table-gs",
    "type": "gene-table",
-   "title": "Called genes that fall in HSCs",
+   "title": "Falls in HSCs",
    "config": {
     "id": "gene-table-gs",
-    "title": "Called genes that fall in HSCs",
+    "title": "Falls in HSCs",
     "columns": [
      {
       "type": "var",
@@ -151,7 +151,7 @@
    "panelConfigs": {
     "gene-table-gs": {
      "id": "gene-table-gs",
-     "title": "Called genes that fall in HSCs",
+     "title": "Falls in HSCs",
      "columns": [
       {
        "type": "var",

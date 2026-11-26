@@ -29,6 +29,7 @@ group-statistics
 cell-similarity
 gene-similarity
 cells-and-genes
+compare-cell-states
 ```
 
 ```{toctree}

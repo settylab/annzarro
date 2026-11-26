@@ -1,12 +1,9 @@
 (tut-group-statistics)=
 # Do cell types respond to age in the same way? Gene statistics over groups of cells
 
-Kompot {cite:p}`otto2025kompot` estimates, for every cell and every gene, how expression changes from young to old mice.
-Its paper reports that most age-altered genes in this bone marrow show only a subtle change in aggregate, of two kinds:
-the direction of the change varies across cell types, or the change is confined to haematopoietic stem cells (HSCs)
-{cite:p}`otto2025kompot`. This tutorial checks both kinds in the stored result, for whole cell types at once: each
-gene's mean fold change over the cells of a cell type, as the axis of a gene plot, a column of a gene table and the
-colour of a heatmap, computed by AnnZarro on request.
+The store holds Kompot's estimate {cite:p}`otto2025kompot`, for every cell and gene, of how expression changes from
+young to old mice. This tutorial summarises it over whole cell types: each gene's mean fold change over the cells of a
+group, as the axis of a gene plot, a column of a gene table and the colour of a heatmap, computed on request.
 
 The tutorial {doc}`cells-and-genes` compares the same fold changes for **two single cells**, an old HSC and a monocyte.
 Here the comparison is between groups of cells, and any group can take part: a cell type, a finer cell state, or the
@@ -34,8 +31,7 @@ a panel asks for it: one request returns the mean, the fraction of cells and the
 the group's cells. At 8,090 cells each takes a moment.
 
 The counts of called genes below are those of the run stored in `bm_aging_annzarro.zarr`, whose
-`kompot_de_Young_to_Old_is_de` marks 190 genes. The paper's own classification of the comparison (up, down and subtle
-genes) is in its Figure 3D {cite:p}`otto2025kompot`.
+`kompot_de_Young_to_Old_is_de` marks 190 genes.
 
 (tut-gstat-axes)=
 ## 1. Two cell types as the axes of a gene plot
@@ -80,12 +76,35 @@ Read the quadrants. Hover a point for its gene and both values.
 
 Of the 190 called genes, 125 change in the same direction in both cell types and 65 in opposite directions.
 
-In monocytes, the paper finds the genes that fall with age enriched for defence response, and those that rise enriched
-for antigen processing and presentation, driven by MHC class II genes; it recovers H2-Aa, H2-Ab1, H2-Eb1, Cd74 and
-AW112010, which an earlier study identified as the top dysregulated genes in ageing monocytes {cite:p}`otto2025kompot`.
-The paper reads the rise of MHC class II genes as a general feature of haematopoietic ageing {cite:p}`otto2025kompot`.
-In the stored all-cell run, the mean fold change of these genes over all monocytes is positive: AW112010 +0.35, H2-Ab1
-+0.19, H2-Aa +0.13, H2-Eb1 +0.08, Cd74 +0.08; over the HSCs it is larger (H2-Aa +0.48, H2-Eb1 +0.42).
+Which called genes move most in monocytes? A cut-off on a gene table answers it, and the table can mark its genes in
+the plot.
+
+::::{dropdown} Start here: the genes that move in monocytes, highlighted
+```{literalinclude} ../_static/panelsets/tutorials/tut-gstat-monocytes.url.txt
+:language: text
+```
+Panel set file: {download}`tut-gstat-monocytes.json <../_static/panelsets/tutorials/tut-gstat-monocytes.json>`.
+::::
+
+6. Add a **Gene Table** with `kompot_de_Young_to_Old_is_de` from the `var` tab and, from the **Cell groupings** tab, the
+   columns `HSC` and `Monocyte` on `kompot_de_Young_to_Old_fold_change` with **x̄** (section 3 shows the tab). Press
+   **Apply Changes** and rename the table "Moves in monocytes".
+7. **Advanced Search**: `kompot_de_Young_to_Old_is_de` **Equals** **Yes**, and a group of two conditions joined by
+   **OR**: `Monocyte: mean · kompot_de_Young_to_Old_fold_change` **Greater Than** `0.25`, or the same **Less Than**
+   `-0.25`. The table keeps 9 genes.
+8. In the plot, set **Table** to "Moves in monocytes": the 9 genes keep their colour and the others turn grey.
+
+```{figure} ../_static/screens/tutorials/gstat-monocytes-plot.png
+:class: screenshot
+:alt: The HSC against Monocyte plot with all genes grey but nine cyan ones: six at the top, with a monocyte mean between 0.25 and 0.37 and an HSC mean between 0.5 and 0.8; three at the bottom, near -0.32, one of them at an HSC mean of 0.81. AW112010 is circled at the top.
+
+The 9 called genes whose mean fold change in monocytes is beyond ±0.25, highlighted by the table.
+```
+
+Six rise in monocytes: Fosb (+0.37), AW112010 (+0.35), Prtn3 (+0.31), H2-Q7 (+0.30), Pim1 (+0.26) and Pbx1
+(+0.25); all six rise in HSCs as well, by 0.51 to 0.76. Three fall: Fkbp5 (−0.33), Apoe (−0.32) and Chil3 (−0.31).
+Apoe is the one gene of the nine that moves the other way in HSCs (+0.81). The cut-off is yours to move. To find the genes that change together with one of these, gene by gene, see
+{doc}`compare-cell-states`, where focusing Cd74 lights up the MHC class II genes by their correlation.
 
 (tut-gstat-diagonal)=
 ## 2. One cell or the whole cell type?
@@ -110,6 +129,7 @@ One old HSC (x) against the mean of all 319 HSCs (y): the points lie on the diag
 The two agree closely (over the 16,285 genes, r = 0.999), because the fold change is smooth across similar cells. The
 single cell is a little more extreme: Apoe +0.94 for the cell against +0.81 for the cell type, S100a9 −1.35 against
 −1.20. So the two-cell comparison of {doc}`cells-and-genes` holds for the cell types; now it can be made for any pair.
+To compare any two single cells by clicking, one of them locked, see {doc}`compare-cell-states`.
 
 (tut-gstat-stem)=
 ## 3. Changes confined to stem cells
@@ -121,12 +141,10 @@ single cell is a little more extreme: Apoe +0.94 for the cell against +0.81 for 
 Panel set file: {download}`tut-gstat-granulocyte.json <../_static/panelsets/tutorials/tut-gstat-granulocyte.json>`.
 ::::
 
-The paper finds that genes associated with granulocyte function lose expression in old HSCs, and that along the
-neutrophil lineage their expression is back near young levels as soon as cells leave the stem cell state (its
-Fig. 3H–J) {cite:p}`otto2025kompot`. A gene table can show this for every called gene at once.
+Which called genes change mostly in stem cells? A gene table can show it for every called gene at once.
 
 1. Add a **Gene Table**. In its column chooser, on the `var` tab, tick `kompot_de_Young_to_Old_is_de` and
-   `kompot_de_Young_to_Old_mahalanobis`.
+   `kompot_de_Young_to_Old_mahalanobis`. Rename the table "Falls in HSCs".
 2. Open the **Cell groupings** tab. Its add row reads `[group ▾] [layer ▾] [x̄]` and **Add column**. Choose `HSC`, the
    layer `kompot_de_Young_to_Old_fold_change`, keep **x̄**, and press **Add column**. Do the same for `Myelo P` (myelocyte
    progenitors, the next stage of the lineage) and `Neutrophil`. Press **Apply Changes**. Each new column fills in once
@@ -150,10 +168,9 @@ The 20 called genes whose mean fold change in HSCs is below −0.5.
 ```
 
 The table keeps 20 genes. All 20 fall by more than half a log unit in HSCs and lie within 0.13 of zero in myelocyte
-progenitors and neutrophils. Among them are the granulocyte genes S100a8 (−1.16 in HSCs, −0.04 in Myelo P, +0.06 in
-neutrophils). Nine of the 20 (Camp, Cd52, Fcer1g, Hp, Lcn2, Ncf1, S100a8, S100a9 and Wfdc21) are among the 20
-granulocyte-associated genes of the paper's Figure 3H–J, which were chosen differently {cite:p}`otto2025kompot`. Their aggregate change over all cells is small for that reason: of 8,090
-cells, 319 are HSCs.
+progenitors and neutrophils. Among them are S100a8 (−1.16 in HSCs, −0.04 in Myelo P, +0.06 in neutrophils),
+S100a9, Camp, Lcn2 and Ngp. Their change over all cells is small for that reason: of 8,090 cells, 319 are HSCs. The
+cut-off (−0.5) is yours to move; {doc}`signature-score` uses the same list, **Falls in HSCs**, as a signature.
 
 (tut-gstat-opposite)=
 ## 4. Opposite directions in related cell states
@@ -165,8 +182,8 @@ cells, 319 are HSCs.
 Panel set file: {download}`tut-gstat-naive-memory.json <../_static/panelsets/tutorials/tut-gstat-naive-memory.json>`.
 ::::
 
-The paper reports genes involved in B cell differentiation that change in opposite directions in naive and memory B
-cells, so that their change largely cancels in aggregate {cite:p}`otto2025kompot`. `midres_celltype` has one group for
+A gene can change in opposite directions in two related cell states, so that its change over all cells is near zero.
+`midres_celltype` has one group for
 mature B cells; `highres_celltype` separates the naive and the memory state.
 
 1. Go back to the gene plot of section 1. In the **Cell Grouping**, add the factor `highres_celltype` (**Add factor ▾**,
@@ -237,8 +254,8 @@ Options**) gives the cell state by gene table of mean fold changes, which the st
 Panel set file: {download}`tut-gstat-cell-tables.json <../_static/panelsets/tutorials/tut-gstat-cell-tables.json>`.
 ::::
 
-A cell table's filtered rows are a group as well. The paper compares mid-aged with old HSCs, because the young mice
-have few of them {cite:p}`otto2025kompot`. Do the same on the measured expression.
+A cell table's filtered rows are a group as well. Young HSCs are few here (7 cells), so
+compare Mid with Old, on the measured expression.
 
 1. Add a **Cell Table** with the `obs` columns `midres_celltype` and `Age`. **Advanced Search**: `midres_celltype`
    **Equals** `HSC`, `Age` **Equals** `Mid`. It keeps 71 cells. Rename it "Mid HSCs".
@@ -283,6 +300,7 @@ by gene (CSC), such as `X` in this store, it is offered. {doc}`../data/preparing
 |---|---|---|
 | H2-Q7 +0.76 in HSCs, +0.30 in monocytes | hover H2-Q7 in the plot of section 1 | +0.76, +0.30 |
 | 125 called genes the same direction, 65 opposite | colour by `is_de`; or a gene table with the two group columns, filtered by sign | 125, 65 |
+| 9 called genes move by more than 0.25 in monocytes | the table "Moves in monocytes" of section 1 | 9 entries |
 | one HSC against all HSCs | section 2: the points lie on the diagonal; hover Apoe | +0.94, +0.81 |
 | 20 called genes below −0.5 in HSCs | the filtered table of section 3 | 20 entries |
 | 32 opposing genes in naive and memory B cells | the filtered table of section 5 | 32 entries |
@@ -305,6 +323,7 @@ Panel set file: {download}`tut-gstat-stored-check.json <../_static/panelsets/tut
 Each view is also in the **Start here** box of its section. They are ready for a local server with
 `bm_aging_annzarro.zarr` in its data directory; {ref}`tut-start-links` says which part to change for another server or
 store location. As panel set files: {download}`hsc-monocyte <../_static/panelsets/tutorials/tut-gstat-hsc-monocyte.json>`,
+{download}`monocytes <../_static/panelsets/tutorials/tut-gstat-monocytes.json>`,
 {download}`diagonal <../_static/panelsets/tutorials/tut-gstat-diagonal.json>`,
 {download}`granulocyte <../_static/panelsets/tutorials/tut-gstat-granulocyte.json>`,
 {download}`naive-memory <../_static/panelsets/tutorials/tut-gstat-naive-memory.json>`,
