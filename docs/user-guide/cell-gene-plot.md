@@ -311,7 +311,7 @@ defaults and sections:
 Presets, Text, Legend, Export and the plot's own sections start open; the others unfold with a click, and each keeps its state
 while the page is open. **Reset** under a section puts its fields back to their defaults. A strip legend with more
 levels than **Entries, at most** lists the first ones and a last line "+ 12 more"; one that does not fit its slot is
-cut the same way, and two columns hold twice as many. **Apply to other Cell-Gene plots** gives every other Cell-Gene
+cut the same way, and two columns hold twice as many. In a short tile the colour bar keeps a readable minimum height (64 px), and a group legend that does not fit lists the entries that do, then "+ N more". **Apply to other Cell-Gene plots** gives every other Cell-Gene
 Plot this plot's look (not its titles), after a question. A plot made from the panel chooser starts on the session
 default and follows it until you change its look; see {doc}`plot-options`.
 
