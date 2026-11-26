@@ -290,6 +290,11 @@ def shoot(sh, page, log):
         one_row(page, T(cgt), i)
     one_row_color(page, T(cgt), cgt)
     shot_tile(page, cgt, "sig-three-rows")
+    page.locator(f"{T(cgt)} button.cgene-options-btn").first.click()
+    page.wait_for_timeout(600)
+    log("Plot Options, gap lines: " + str(page.evaluate("() => [...document.querySelectorAll('[data-popover]')].filter(e => e.getBoundingClientRect().width).flatMap(e => e.innerText.split('\\n')).filter(l => /Gap|SECTIONS|Sections/.test(l))")))
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(400)
     d1 = csv_of(page, cgt, "/tmp/sig-type.csv")
     c1 = [c for c in d1.columns if c.startswith("Z-score")][0]
     for sec, part in d1.groupby("Section"):
