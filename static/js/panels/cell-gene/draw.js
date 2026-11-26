@@ -97,6 +97,12 @@ const TITLE_LINES = 3;
 /** A color bar: the px a line of its title takes, the least length left to the bar itself, and its padding (Plotly's ypad). */
 const TITLE_LINE_PX = 17;
 const BAR_MIN_PX = 20;
+/** A colour bar is kept at least this tall (px, without its title) when the legend column is crowded: readable, with three ticks. */
+const BAR_READABLE_PX = 64;
+/** The least px between two ticks of a colour bar (nticks is set so no two are closer). */
+const TICK_GAP_PX = 20;
+/** The most of the column one colour bar may take to keep that height. */
+const BAR_SLOT_MAX = 0.4;
 const BAR_PAD_PX = 4;
 /** A line of a strip's legend, in px: its levels are listed while they fit, then "+ N more". */
 const LEGEND_LINE_PX = 15;
@@ -486,12 +492,17 @@ function legendStack(model, P, dots, th, keepMin = true) {
     const needy = items.map((it, i) => wants[i] > base);
     if (needy.some(Boolean)) {
         const floor = Math.min(base, LEGEND_SLOT_FLOOR);
+        // a colour bar is not crushed to make room for a long legend: it keeps a readable height (BAR_READABLE_PX and its title), and the
+        // legend that wants more takes what is left (and wraps into columns or says "+ N more")
+        const barMin = Math.min(BAR_SLOT_MAX, (BAR_READABLE_PX + TITLE_LINE_PX + 2 * BAR_PAD_PX) / plotPx / LEGEND_SLOT_FILL);
+        const squeezed = (it) => (it.kind === 'bar' ? Math.max(floor, barMin) : floor);
         const others = items.filter((_, i) => !needy[i]).length;
         const fits = others * base + wants.reduce((a, w, i) => a + (needy[i] ? w : 0), 0) <= total;
-        const otherSlot = fits ? base : floor;
-        const left = total - others * otherSlot;
+        const otherSlot = (it) => (fits ? base : squeezed(it));
+        const othersTotal = items.reduce((a, it, i) => a + (needy[i] ? 0 : otherSlot(it)), 0);
+        const left = Math.max(total - othersTotal, floor);
         const sumWant = wants.reduce((a, w, i) => a + (needy[i] ? w : 0), 0);
-        items.forEach((_, i) => { slots[i] = needy[i] ? Math.max(base, fits ? wants[i] : (left * wants[i]) / sumWant) : otherSlot; });
+        items.forEach((it, i) => { slots[i] = needy[i] ? Math.max(fits ? base : floor, fits ? wants[i] : (left * wants[i]) / sumWant) : otherSlot(it); });
     }
     let top = 1 - reserve;
     items.forEach((it, i) => {
@@ -519,9 +530,14 @@ function barTitle(entry, lines) {
 
 /** A Plotly color bar for one key, placed in its slot of the legend column. */
 function colourBar(entry, lines, th) {
-    const title = barTitle(entry, lines).text;
+    const fitted = barTitle(entry, lines);
+    const title = fitted.text;
+    // the bar's own length, and a tick count that keeps every two ticks TICK_GAP_PX apart (Plotly's own count crowds a short bar)
+    const titleLines = title ? title.split('<br>').length : 0;
+    const barPx = entry.px - 2 * BAR_PAD_PX - titleLines * TITLE_LINE_PX;
     return {
         ...(title ? { title: { text: title, side: 'top', font: { color: th.textColor } } } : {}),
+        nticks: Math.max(2, Math.floor(barPx / TICK_GAP_PX)),
         tickfont: { color: th.textColor },
         x: entry.x, xanchor: 'left', y: entry.top, yanchor: 'top', len: entry.height, lenmode: 'fraction', thickness: 12,
         ypad: BAR_PAD_PX, outlinewidth: 0

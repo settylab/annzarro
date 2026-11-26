@@ -431,3 +431,19 @@ def test_many_columns_keep_the_legend_clear_of_the_plot(page, served):
     _drawn(page)
     got = page.evaluate(XPOS, TP)
     assert got["bar"] >= got["domain"][1] + 0.02, got
+
+
+# ------------------------------------------------------------------ the colour bar of a crowded legend column
+
+def test_the_colour_bar_of_a_small_tile_is_readable_and_its_ticks_do_not_touch(page, served):
+    page.set_viewport_size({"width": 1500, "height": 800})
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
+                                  sections=[{"source": S1, "rows": "set"}, {"source": S2, "rows": "set"}]),
+                         S1: _sig(S1, "Falls", GENES[:5]), S2: _sig(S2, "Rises", GENES[5:12])}, open_ids=(P, S1))
+    _drawn(page)
+    got = page.evaluate("""(t) => { const gd = document.querySelector(t + ' .cgene-plot');
+        const fills = gd.querySelector('.colorbar .cbfills'); const bar = fills ? fills.getBoundingClientRect().height : 0;
+        const tops = [...gd.querySelectorAll('.colorbar .cbaxis text')].map(e => e.getBoundingClientRect().top).sort((a, b) => a - b);
+        return { bar, tops, gap: tops.length > 1 ? Math.min(...tops.slice(1).map((v, i) => v - tops[i])) : null }; }""", TP)
+    assert got["bar"] >= 60, f"the colour bar is a sliver: {got}"
+    assert len(got["tops"]) >= 2 and got["gap"] >= 14, f"tick labels overlap: {got}"

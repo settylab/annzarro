@@ -210,11 +210,17 @@ test('the legend cap on a Cell-Gene strip legend: the first N levels and "+ k mo
 
 test('"Entries, at most" is what it says: 17 levels with a cap of 100 are all listed, wrapping into columns when one column of the slot is short', () => {
     // operator 2026-11-24: a 17-level category showed 7 entries and "+ 10 more" although the cap was 100
-    for (const [label, height] of [['a tile of 600 px', 600], ['a short tile', 420]]) {
-        const legend = named(cellGene({ look: { legendMax: 100 } }, { levels: 17, pixels: { width: 1100, height: height } }).figure, 'strip legend')[0];
-        assert.equal(legend.text.length, 17, `${label}: every level, no "+ n more" line`);
-        assert.ok(!legend.text.some((t) => /more$/.test(t)), label);
-        assert.ok(new Set(legend.x).size >= 1);
+    {
+        const legend = named(cellGene({ look: { legendMax: 100 } }, { levels: 17, pixels: { width: 1100, height: 600 } }).figure, 'strip legend')[0];
+        assert.equal(legend.text.length, 17, 'a tile of 600 px: every level, no "+ n more" line');
+        assert.ok(!legend.text.some((t) => /more$/.test(t)));
+    }
+    // a short tile (420 px): the colour bar keeps a readable height (draw.js BAR_READABLE_PX) and a long legend takes what is left, in the
+    // two columns the legend column's width allows: it was every level when the colour bar was crushed to a sliver
+    {
+        const legend = named(cellGene({ look: { legendMax: 100 } }, { levels: 17, pixels: { width: 1100, height: 420 } }).figure, 'strip legend')[0];
+        assert.equal(legend.text.length, 14, 'a short tile: 13 levels and the "more" line');
+        assert.equal(legend.text[13], '+ 4 more');
     }
     // the cap is still the cap, and the line says how many are left
     const below = named(cellGene({ look: { legendMax: 5 } }, { levels: 17, pixels: { width: 1100, height: 600 } }).figure, 'strip legend')[0];
@@ -338,4 +344,18 @@ test('a declared kind (WP-5b) brings its own order, defaults and the fields it t
     assert.equal(S.resolveStyle({}, 'test-kind').fontSize, 14);
     assert.ok(S.fieldOf('test-kind', 'zeroLines'));
     assert.equal(S.fieldOf('test-kind', 'legendPosition'), null);
+});
+
+
+test('the colour bar of a crowded legend column keeps a readable height and ticks that do not touch', () => {
+    // a small tile (about 750 x 690, its plot area about 410 px tall), a group legend of six levels beside the colour bar and the size legend
+    for (const height of [420, 520, 700]) {
+        const fig = cellGene({}, { levels: 6, pixels: { width: 750, height } }).figure;
+        const bar = fig.data.find((t) => t.marker && t.marker.colorbar).marker.colorbar;
+        const plotPx = height - 20;
+        const titleLines = bar.title && bar.title.text ? bar.title.text.split('<br>').length : 0;
+        const barPx = bar.len * plotPx - 2 * 4 - titleLines * 17;
+        assert.ok(barPx >= 60, `the bar is ${Math.round(barPx)} px tall at ${height} px`);
+        assert.ok(bar.nticks >= 2 && barPx / bar.nticks >= 19, `${bar.nticks} ticks on ${Math.round(barPx)} px: no two closer than a line`);
+    }
 });
