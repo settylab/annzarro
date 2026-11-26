@@ -1,6 +1,6 @@
 {
  "name": "Gene set analysis: the set and its panel",
- "timestamp": "2026-11-25T21:24:45+00:00",
+ "timestamp": "2026-11-26T04:00:33+00:00",
  "dataset": "bm_aging_annzarro.zarr",
  "datasetName": "bm_aging_annzarro",
  "constants": {
@@ -174,7 +174,7 @@
     "margins": {
      "l": 80,
      "r": 80,
-     "t": 80,
+     "t": 30,
      "b": 60,
      "pad": 4
     },
@@ -206,12 +206,12 @@
    },
    "isSelectionTile": false
   },
-  "gene-set-1795641860562": {
-   "id": "gene-set-1795641860562",
+  "gene-set-1795665608215": {
+   "id": "gene-set-1795665608215",
    "type": "gene-set",
    "title": "Gene Set Analysis 1",
    "config": {
-    "id": "gene-set-1795641860562",
+    "id": "gene-set-1795665608215",
     "title": "Gene Set Analysis 1",
     "tableFilter": "gene-table-s",
     "idColumn": "auto",
@@ -325,7 +325,7 @@
     },
     {
      "type": "tile",
-     "id": "gene-set-1795641860562",
+     "id": "gene-set-1795665608215",
      "controlsVisible": true,
      "height": 890
     },
@@ -336,7 +336,7 @@
    "controlState": {
     "gene-table-s": false,
     "gene-plot-s": false,
-    "gene-set-1795641860562": true
+    "gene-set-1795665608215": true
    },
    "panelConfigs": {
     "gene-table-s": {
@@ -495,7 +495,7 @@
      "margins": {
       "l": 80,
       "r": 80,
-      "t": 80,
+      "t": 30,
       "b": 60,
       "pad": 4
      },
@@ -525,8 +525,8 @@
      "viewport2D": null,
      "colorRangeUnits": "data"
     },
-    "gene-set-1795641860562": {
-     "id": "gene-set-1795641860562",
+    "gene-set-1795665608215": {
+     "id": "gene-set-1795665608215",
      "title": "Gene Set Analysis 1",
      "tableFilter": "gene-table-s",
      "idColumn": "auto",

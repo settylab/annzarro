@@ -12,20 +12,20 @@
   "hierarchy": [
    {
     "type": "tile",
-    "id": "cell-gene-1795649770519",
+    "id": "cell-gene-1795665834036",
     "controlsVisible": false
    }
   ],
   "controlState": {
-   "cell-gene-1795649770519": false,
-   "gene-table-1795649745116": false,
-   "gene-table-1795649753538": false,
-   "gene-table-1795649762001": false,
-   "gene-table-1795649714587": false
+   "cell-gene-1795665834036": false,
+   "gene-table-1795665808565": false,
+   "gene-table-1795665816999": false,
+   "gene-table-1795665825518": false,
+   "gene-table-1795665778001": false
   },
   "panelConfigs": {
-   "cell-gene-1795649770519": {
-    "id": "cell-gene-1795649770519",
+   "cell-gene-1795665834036": {
+    "id": "cell-gene-1795665834036",
     "title": "Cell-Gene Plot 3",
     "styleDefault": true,
     "fontModel": 2,
@@ -41,15 +41,15 @@
     },
     "sections": [
      {
-      "source": "gene-table-1795649745116",
+      "source": "gene-table-1795665808565",
       "rows": "genes"
      },
      {
-      "source": "gene-table-1795649753538",
+      "source": "gene-table-1795665816999",
       "rows": "genes"
      },
      {
-      "source": "gene-table-1795649762001",
+      "source": "gene-table-1795665825518",
       "rows": "genes"
      }
     ],
@@ -70,8 +70,8 @@
      }
     }
    },
-   "gene-table-1795649745116": {
-    "id": "gene-table-1795649745116",
+   "gene-table-1795665808565": {
+    "id": "gene-table-1795665808565",
     "title": "Module 1",
     "columns": [
      {
@@ -104,8 +104,8 @@
     "filteredGenes": null,
     "scoreOptions": null
    },
-   "gene-table-1795649753538": {
-    "id": "gene-table-1795649753538",
+   "gene-table-1795665816999": {
+    "id": "gene-table-1795665816999",
     "title": "Module 2",
     "columns": [
      {
@@ -138,8 +138,8 @@
     "filteredGenes": null,
     "scoreOptions": null
    },
-   "gene-table-1795649762001": {
-    "id": "gene-table-1795649762001",
+   "gene-table-1795665825518": {
+    "id": "gene-table-1795665825518",
     "title": "Module 3",
     "columns": [
      {
@@ -172,8 +172,8 @@
     "filteredGenes": null,
     "scoreOptions": null
    },
-   "gene-table-1795649714587": {
-    "id": "gene-table-1795649714587",
+   "gene-table-1795665778001": {
+    "id": "gene-table-1795665778001",
     "title": "Kompot DE genes",
     "columns": [
      {
@@ -221,11 +221,14 @@
  "store": {
   "path": "bm_aging_annzarro.zarr",
   "name": "bm_aging_annzarro.zarr",
-  "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-9wpsy84l/bm_aging_annzarro.zarr",
+  "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-pl6nx8zv/bm_aging_annzarro.zarr",
   "fp": {
    "v": 1,
    "n_obs": 8090,
    "n_var": 16285,
+   "cells": "f88f73b20c8c660c7323c862c7127f4e",
+   "genes": "6ac1afec89bcee6b090c32d2cc9f43bf",
+   "data": "8d65a13a9f79eb8a48a02f2502885515",
    "meta": "237ea33eaf6621e08554401b3f0fca10",
    "groups": {
     "/": "c9a188dc",

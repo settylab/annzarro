@@ -73,7 +73,7 @@ def finish(path: Path):
 
 
 def crop(page, name, selectors, pad=8):
-    page.add_style_tag(content="#notification-container, .notification, .hoverlayer { display: none !important; }")
+    page.add_style_tag(content="#notification-container, .notification, .hoverlayer, .modebar-container { display: none !important; }")
     page.mouse.move(2, 2)
     time.sleep(0.3)
     path = OUT / f"{name}.png"
