@@ -181,9 +181,10 @@ def test_a_top_or_bottom_legend_clears_the_axes_and_their_text(page, server, sid
     got = _settled(page, A, LEGEND, [A])
     assert got["nXText"] and not got["onAxes"] and not got["onXAxisText"] and got["inFigure"], (side, height, got)
     got = _boxes(page, A, ".legend")
-    # a top legend takes the strip above the axes, so the toolbar is inside the corner; a bottom one leaves it free, so the
-    # toolbar sits in that strip (above the axes): either way it is at the right edge and clear of the legend
-    assert (_in_corner(got) or _above(got)) and not got["hit"], (side, height, got)
+    # a top legend takes the strip above the axes, so the toolbar is inside the corner; a bottom one leaves the strip free, so
+    # the toolbar is above the axes: each exactly, never either
+    placed = _in_corner(got) if side == "top" else _above(got)
+    assert placed and not got["hit"], (side, height, got)
 
 
 def test_a_bottom_legend_stays_clear_after_a_resize(page, server):
