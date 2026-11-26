@@ -263,6 +263,10 @@ export function attachLargeInteraction(gd, settings, index, colourAt = null) {
   listen(gd, 'mousemove', (e) => {
     const s = gd.__largeState;
     last = { x: e.clientX, y: e.clientY, target: e.target, buttons: e.buttons };
+    // a pointer that left the axes (onto the toolbar, a legend or a colour bar, or into a margin) hovers no point NOW: the tip
+    // and the hovered point go at once, not after the coalescing timer, so a key pressed at that moment (C copies the hover) acts on
+    // what is under the pointer
+    if (s && s.hovered !== -1 && !queryAt(gd, e.clientX, e.clientY, e.target)) hideTip(gd, s);
     if (frame) return;
     // a short timer, not requestAnimationFrame: frames are not run for an idle or hidden page
     frame = setTimeout(() => {
