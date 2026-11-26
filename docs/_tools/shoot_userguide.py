@@ -174,11 +174,12 @@ def capture(sh, page, name, region=None, marks=(), hide_modebar=True, hover=Fals
     sh.log.append(f"wrote {name}.png")
 
 
-def capture_union(sh, page, name, selectors, marks=(), pad=8):
+def capture_union(sh, page, name, selectors, marks=(), pad=8, hide_modebar=False):
     """Screenshot the viewport and crop to the union of `selectors` (plus `pad` px), so a
     row wider than its tile (or partly scrolled) is still captured whole."""
     clean(page)
-    st = page.add_style_tag(content=".hoverlayer { display: none !important; }")
+    st = page.add_style_tag(content=".hoverlayer { display: none !important; }"
+                            + (" .modebar-container { display: none !important; }" if hide_modebar else ""))
     path = OUT / f"{name}.png"
     page.screenshot(path=str(path))
     boxes = [page.locator(s_).first.bounding_box() for s_ in selectors]
@@ -993,7 +994,7 @@ def shoot_focus_outside(sh, data_dir):
     page.wait_for_function("document.querySelector('.name-picker-option.outside') !== null", timeout=60000)
     time.sleep(0.5)
     capture_union(sh, page, "focus-outside-picker", ["#focused-cell", ".name-picker:has(#focused-cell) .name-picker-menu"],
-                  pad=6)
+                  pad=6, hide_modebar=True)
     sh.log.append("focus-outside: picker = " + " | ".join(page.evaluate(
         "[...document.querySelectorAll('.name-picker-option')].slice(0, 8).map(li => li.textContent)")))
     page.context.close()
