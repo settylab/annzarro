@@ -85,7 +85,7 @@ server address or a store elsewhere, see {ref}`tut-start-links`.
 Panel sets: {download}`gene-by-gene-ab.json <../_static/panelsets/paper/gene-by-gene-ab.json>`,
 {download}`gene-by-gene-c.json <../_static/panelsets/paper/gene-by-gene-c.json>`,
 {download}`gene-by-gene-d.json <../_static/panelsets/paper/gene-by-gene-d.json>`. Loading one restores the dataset, the
-focus and the split layout, like the links ({doc}`../user-guide/panel-sets`).
+focus and the split layout, like the links ({doc}`../user-guide/panel-sets`). Each view is built step by step in the tutorial section named for its panel in the table at the top of this page.
 
 Screenshots and views are made by `docs/_tools/shoot_figs45.py`; the paper's numbers are in
 {repro}`figures/numbers/fig3.json` in the {ref}`companion repository <paper-companion>`.

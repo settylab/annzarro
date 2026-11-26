@@ -24,7 +24,8 @@ panel sets and access.
 
 Four linked panels on the demonstration data: a diffusion walk from the focused cell, a
 differential expression volcano coloured by correlation with the focused gene, the gene's
-fold change on the UMAP, and a filtered cell table.
+fold change on the UMAP, and a filtered cell table. The tour builds this layout step by step
+({ref}`tut-tour-overview`).
 ```
 
 ::::{grid} 2

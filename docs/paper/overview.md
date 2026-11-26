@@ -54,7 +54,7 @@ server address or a store elsewhere, see {ref}`tut-start-links`.
 Panel set: {download}`overview-focus-model.json <../_static/panelsets/paper/overview-focus-model.json>`;
 view JSON: {download}`overview-focus-model.view.json <../_tools/views/overview-focus-model.json>`.
 Loading it restores the dataset, the focus and the split layout, like the link
-({ref}`tut-tour-load-file`).
+({ref}`tut-tour-load-file`). The tour builds this layout step by step, one panel per section ({ref}`tut-tour-cell-row` to {ref}`tut-tour-overview`).
 
 (overview-slot-map)=
 ## b · The slot map
