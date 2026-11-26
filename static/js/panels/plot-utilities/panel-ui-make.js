@@ -60,9 +60,9 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
  *   the panel type, and the roles the row's source fills (['x'], ['color'])
  * @param {string} [attrs]
  */
-function axisRow(axis, label, id, { plotType, consumer, roles }, attrs = 'class="axis-selector-container ctl-row"') {
+function axisRow(axis, label, id, { plotType, roles }, attrs = 'class="axis-selector-container ctl-row"') {
   const rowAttrs = attrs.startsWith('class=') ? attrs : `class="axis-selector-container ctl-row" ${attrs}`;
-  const types = typeChoices(plotType, consumer, roles, true)
+  const types = typeChoices(plotType, roles)
     .map(c => `<option value="${escapeHtml(c.value)}">${escapeHtml(c.text)}</option>`).join('');
   return `
             <div ${rowAttrs}>

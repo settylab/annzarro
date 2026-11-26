@@ -652,7 +652,7 @@ actions.register({
                     const structure = structureRead();
                     if (structure) setupAxisSelector(rowEl, axis, setting, 'cells', structure, { consumer: MENU_CONSUMER, roles, aggregate: true, ...extra });
                 },
-                typeChoices: (roles) => typeChoices('cells', MENU_CONSUMER, roles, true)
+                typeChoices: (roles) => typeChoices('cells', roles)
             } });
             const plot = el('div', { class: 'ccnt-plot', id: `ccnt-plot-${_id}` });
             // what the plot area says for a plan that asks nothing: the sentence (the live region) and its way out beside it

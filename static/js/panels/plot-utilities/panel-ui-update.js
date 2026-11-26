@@ -11,7 +11,7 @@ import { fillSections } from '../../utils/group-picker.js';
 import { aggregateProviders, setSections, isAggregate, displayType, heldSet, aggregateOf, membersOf } from '../../utils/axis-aggregate.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { createAggregationButton } from '../../ui/aggregation-button.js';
-import { getSource, sourcesFor, paletteLabelOf } from '../../utils/source-registry.js';
+import { getSource, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions, limitSetOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
@@ -690,12 +690,11 @@ const BUILT_IN_TYPES = Object.freeze({ cells: ['obs', 'obsm', 'obsp', 'layer'], 
  * @param {string[]} roles - e.g. ['x'], ['color']
  * @returns {Array<{value: string, text: string}>}
  */
-export function typeChoices(plotType, consumer, roles, aggregate = false) {
+export function typeChoices(plotType, roles) {
   return [
     ...(roles.includes('color') ? [{ value: 'none', text: 'None (constant)' }] : []),
-    ...BUILT_IN_TYPES[plotType === 'genes' ? 'genes' : 'cells'].map(type => ({ value: type, text: type })),
-    // a set is no source of its own on an axis row: it is picked in the item picker of a layer
-    ...sourcesFor(consumer, roles).filter(p => !(aggregate && p.aggregate)).map(p => ({ value: p.type, text: p.label }))
+    // a set (a signature, a gene table, a grouping) is no source of its own on a row: it is picked in the item list of a layer
+    ...BUILT_IN_TYPES[plotType === 'genes' ? 'genes' : 'cells'].map(type => ({ value: type, text: type }))
   ];
 }
 
@@ -734,7 +733,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     $keySelect[0].__aggregate = sets;
     $columnSelect[0].__aggregate = sets;
     $columnSelect[0].__row = { settings, axis, plotType, use, structure: datasetStructure };
-    fillTypeSelect($typeSelect[0], typeChoices(plotType, consumer, roles, sets));
+    fillTypeSelect($typeSelect[0], typeChoices(plotType, roles));
     
     // Show loading indicators while initializing
     showDropdownLoading($keySelect);

@@ -14,7 +14,7 @@
  *
  * The plots' menus, loads, titles, view copy, Hover picker and large-plot mode ask the provider; none of them names a type.
  * A provider declares:
- *   type, label
+ *   type
  *   valueType         'numerical' | 'categorical': what its series is (the memory guard prices a colour by it)
  *   entity            'cells' | 'genes': what one value belongs to (a grouping gives cells)
  *   consumers         the panel types that accept it, e.g. ['cell-plot']
