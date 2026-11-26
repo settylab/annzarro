@@ -687,7 +687,8 @@ def shoot_panelsets(sh, data_dir):
     page.context.close()
 
     # A second set that names a store this server does not have (older, so it is listed last)
-    sessions = Path(data_dir) / "sessions"
+    # panel sets live in the server's state directory (ANNZARRO_HOME/panel-sets), no longer in <data>/sessions
+    sessions = Path(os.environ.get("ANNZARRO_HOME") or Path.home() / ".annzarro") / "panel-sets"
     for _ in range(40):
         saved = sorted(sessions.glob("HSC_walk*.json")) if sessions.exists() else []
         if saved:
@@ -807,6 +808,8 @@ def shoot_spatial(sh, data_dir):
     capture(sh, page, "spatial-aspect", "#tile-container")
     page.context.close()
     page = sh.open(v, dataset=D)
+    page.wait_for_selector(".tile[data-tile-id='cell-plot-SL'] .js-plotly-plot", timeout=60000)
+    sh.ready(page)
     x, y = point_xy(page, "cell-plot-SL", page.evaluate(
         "(() => { const d = document.querySelector('.tile[data-tile-id=\"cell-plot-SL\"] .js-plotly-plot')._fullData;"
         " const t = d.reduce((a, b) => ((b.customdata || []).length > (a.customdata || []).length ? b : a));"
@@ -937,13 +940,13 @@ def shoot_subsets(sh, data_dir):
     part2_first = page.locator(f"{T('cell-table-ST')} tbody tr td").first.inner_text()
     sh.log.append(f"subsets: first table cell part 1 = {rows1!r}, part 2 = "
                   f"{part2_first!r}")
-    sh.log.append("subsets: filter widget part 2 = " + page.locator(f"{T('cell-plot-SA')} .datapoint-filter-widget").inner_text().replace("\n", " "))
+    sh.log.append("subsets: plot status strip part 2 = " + page.locator(f"{T('cell-plot-SA')} .plot-status").inner_text().replace("\n", " "))
     page.click("#subset-part-prev")
     page.wait_for_function("document.getElementById('subset-part-input').value === '1'", timeout=60000)
     time.sleep(2)
     sh.ready(page)
     sh.log.append("subsets: table info = " + page.locator(f"{T('cell-table-ST')} .dataTables_info").inner_text())
-    sh.log.append("subsets: filter widget = " + page.locator(f"{T('cell-plot-SA')} .datapoint-filter-widget").inner_text().replace("\n", " "))
+    sh.log.append("subsets: plot status strip = " + page.locator(f"{T('cell-plot-SA')} .plot-status").inner_text().replace("\n", " "))
     # Share link carries the subset
     page.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=sh.base)
     page.click("#btn-share-link"); time.sleep(1)
