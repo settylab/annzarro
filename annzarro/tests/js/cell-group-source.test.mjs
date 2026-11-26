@@ -200,8 +200,8 @@ test('the provider is registered as a categorical cell source of a Cell Plot, af
     assert.equal(p.subKeyMenu, undefined, 'no third select');
     assert.deepEqual(p.subKeys('cell-grouping-1'), []);
     assert.equal(p.defaultSub, '');
-    assert.equal(p.alsoListedUnder, 'obs', 'listed under obs too (UX 5)');
-    assert.equal(p.alsoListedGroup, 'Groupings');
+    assert.equal(p.alsoListedUnder, undefined, 'a grouping is picked under layer only (G-SRC2/G-SRC3)');
+    assert.equal(p.alsoListedGroup, undefined);
     const types = R.sourcesFor('cell-plot', ['color']).map((s) => s.type);
     assert.ok(types.indexOf('gene-score') >= 0 && types.indexOf(TYPE) > types.indexOf('gene-score'), types.join(','));
     assert.deepEqual(R.sourcesFor('gene-plot', ['color']).filter((s) => s.type === TYPE), [], 'not a Gene Plot source');
@@ -474,19 +474,9 @@ test('the legend names the cells in no group "Not in any group"; every other sou
     assert.equal(R.plotSeries({ type: 'numerical', values: [1], coverage: null }).missingLabel, null);
 });
 
-test('the obs key list lists the groupings under "Groupings"; the entry is a way to choose, never a key', () => {
-    const entries = R.alsoListedEntries('obs', 'cell-plot', ['color']);
-    assert.deepEqual(entries.slice(0, 2).map((e) => [e.text, e.group]), [['Cell type', 'Groupings'], ['Closed one', 'Groupings']]);
-    for (const e of entries) {
-        assert.ok(e.value.startsWith('\u0001'), 'no stored key or column name can look like it');
-        const parsed = R.parseAlsoListed(e.value);
-        assert.equal(parsed.type, TYPE);
-        assert.ok(all.some((p) => p.getId() === parsed.key));
-    }
-    assert.equal(R.parseAlsoListed('cell_type'), null);
-    assert.equal(R.parseAlsoListed('\u0001no-such-type\u0001x'), null);
-    assert.deepEqual(R.alsoListedEntries('obs', 'gene-plot', ['color']), [], 'not a Gene Plot source');
-    assert.deepEqual(R.alsoListedEntries('obsm', 'cell-plot', ['color']), []);
+test('the obs key list lists no grouping: the registry has no also-listed entries', () => {
+    assert.equal(R.alsoListedEntries, undefined);
+    assert.equal(R.parseAlsoListed, undefined);
 });
 
 test('a plot is no panel\'s dependency, so no choice of a grouping in a plot can close a loop (operator decision 15)', () => {

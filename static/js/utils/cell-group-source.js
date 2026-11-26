@@ -624,9 +624,6 @@ registerSource({
     largeAxesReason: LARGE_AXIS_REASON,
     aggregate: groupAggregate,
     defaultSub: '',
-    // the obs key list ends with the groupings, under this heading (UX 5)
-    alsoListedUnder: 'obs',
-    alsoListedGroup: GROUPINGS,
     // a grouping's colours are its own (SHR-11): the first palette option says so, not the dataset's uns
     paletteLabel: VOCABULARY.phrase.ownColors(W.grouping),
     entities: groupingList,
