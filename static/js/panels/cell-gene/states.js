@@ -157,7 +157,9 @@ export function describePlot(snap, ctx, plot, words) {
                 return say('refused', 'warning', S.tags.refused,
                     S.refusedCsr(plot.layer, genes, plot.genes, durationText(est.seconds)), S.csrWayOut, []);
             }
-            return say('refused', 'warning', S.tags.refused, S.refusedCost(durationText(est.seconds), startLimitText(est)), S.costWayOut, []);
+            return say('refused', 'warning', S.tags.refused, S.refusedCost(durationText(est.seconds), startLimitText(est)),
+                // a layer already stored by gene (CSC) has no faster layout to offer: only the ways that apply
+                est.layout === 'csc' ? S.costWayOutCsc : S.costWayOut, []);
         case 'failed':
             // a reason the page has its own sentence for is the generic notice's (a limit, a busy server)
             if (Object.hasOwn(VOCABULARY.reasons, snap.reason)) break;
