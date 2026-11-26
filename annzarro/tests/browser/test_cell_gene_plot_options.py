@@ -279,7 +279,7 @@ def test_the_whole_body_is_the_one_standard_with_one_reset_per_group(page, serve
     page.press(f"{POP} #margin-all-input-{pid}", "Tab")
     until(page, "(id) => { const m = window.PanelManager.getPanel(id).getConfig().margins; return m.t === 30 && m.l === 30; }", pid)
     page.click(f"{POP} #reset-section-margins-{pid}")
-    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().margins.t === 80", pid)
+    until(page, "(id) => window.PanelManager.getPanel(id).getConfig().margins.t === 30", pid)
 
 
 # ------------------------------------------------------------------ 5. a link keeps it all

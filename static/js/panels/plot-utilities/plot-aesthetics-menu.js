@@ -255,7 +255,7 @@ export function initializeAestheticsSettings(settings) {
         FONT_FAMILY: DEFAULT_FONT,
         
         // Margins
-        MARGINS: { l: 80, r: 80, t: 80, b: 60, pad: 4 },
+        MARGINS: { l: 80, r: 80, t: 30, b: 60, pad: 4 },
         
         // Legend settings
         SHOW_LEGEND: true,
