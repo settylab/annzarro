@@ -35,10 +35,10 @@ if __name__ == "__main__":
     a = ap.parse_args()
     with Session(a.port, OUT) as s:
         page = s.open(view("showcase-spatial"), dataset="spatial_demo.zarr",
-                      viewport={"width": 1500, "height": 560})
+                      viewport={"width": 1500, "height": 760})
         s.shot(page, "spatial-demo")
         page = s.open(view("showcase-spatial-kernel-umap"), dataset="spatial_demo.zarr",
-                      viewport={"width": 1100, "height": 560})
+                      viewport={"width": 1100, "height": 760})
         s.shot(page, "spatial-kernel-umap")
         page = s.open(view("showcase-plasma"), dataset="bm_aging_annzarro.zarr",
                       viewport={"width": 1200, "height": 600})
