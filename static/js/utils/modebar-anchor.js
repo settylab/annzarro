@@ -54,16 +54,39 @@ export function modebarAnchor(fullLayout, vertical = TOOLBAR_VERTICAL) {
     return { top: Math.max(0, Math.round(top)), width: Math.max(0, Math.round(right)) };
 }
 
-/** Put the graph's toolbar container at its plot area's top right corner. */
+/** Whether the toolbar (the `.modebar` inside `gd`) now lies over a legend or a colour bar. */
+function overLegend(gd) {
+    if (typeof gd.querySelectorAll !== 'function') return false;
+    const bar = gd.querySelector('.modebar');
+    if (!bar || typeof bar.getBoundingClientRect !== 'function') return false;
+    const m = bar.getBoundingClientRect();
+    return [...gd.querySelectorAll('.legend, .colorbar')].some((e) => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && m.left < r.right && r.left < m.right && m.top < r.bottom && r.top < m.bottom;
+    });
+}
+
+/**
+ * Put the graph's toolbar container at its plot area's top right corner: just ABOVE the axes, in the top margin, when the
+ * margin has room for it (the default 30 px does), so it never covers data; INSIDE the corner when the margin is thinner than
+ * the toolbar, or when the strip above the axes is taken (a legend or a colour bar placed on top reaches it).
+ */
 export function syncModebarAnchor(gd) {
     const box = gd && gd.querySelector && gd.querySelector('.modebar-container');
     if (!box || !box.style) return;
-    const a = modebarAnchor(gd._fullLayout);
-    if (!a) return;
-    box.style.top = `${a.top}px`;
-    box.style.left = '0px';
-    box.style.right = 'auto';
-    box.style.width = `${a.width}px`;
+    const size = gd._fullLayout && gd._fullLayout._size;
+    const room = !!size && size.t >= TOOLBAR_HEIGHT;
+    const put = (vertical) => {
+        const a = modebarAnchor(gd._fullLayout, vertical);
+        if (!a) return false;
+        box.style.top = `${a.top}px`;
+        box.style.left = '0px';
+        box.style.right = 'auto';
+        box.style.width = `${a.width}px`;
+        return true;
+    };
+    if (!put(room ? 'above' : 'inside')) return;
+    if (room && overLegend(gd)) put('inside');
 }
 
 /** Per graph, its redraw listener (Plotly.purge drops listeners, so each draw sets it afresh). */

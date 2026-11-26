@@ -181,7 +181,9 @@ def test_a_top_or_bottom_legend_clears_the_axes_and_their_text(page, server, sid
     got = _settled(page, A, LEGEND, [A])
     assert got["nXText"] and not got["onAxes"] and not got["onXAxisText"] and got["inFigure"], (side, height, got)
     got = _boxes(page, A, ".legend")
-    assert _in_corner(got) and not got["hit"], (side, height, got)
+    # a top legend takes the strip above the axes, so the toolbar is inside the corner; a bottom one leaves it free, so the
+    # toolbar sits in that strip (above the axes): either way it is at the right edge and clear of the legend
+    assert (_in_corner(got) or _above(got)) and not got["hit"], (side, height, got)
 
 
 def test_a_bottom_legend_stays_clear_after_a_resize(page, server):
@@ -261,3 +263,27 @@ def test_large_plot_legend_clears_the_axes_and_their_text(page, large, side):
     page.wait_for_timeout(1500)
     got = _settled(page, A, LEGEND, [A])
     assert got["nXText"] and not got["onAxes"] and not got["onXAxisText"] and got["inFigure"], (side, got)
+
+
+# ------------------------------------------------------------------ the default margins: above the axes, never over the data
+
+def _above(got):
+    """Directly above the plot area, against its right edge: in the top margin, over no data."""
+    bar, area = got["bar"], got["area"]
+    return (bar["b"] - bar["t"] < 40 and bar["b"] <= area["t"] + 1 and abs(bar["r"] - area["r"]) <= 6 and bar["t"] >= 0)
+
+
+def test_with_the_default_margins_the_toolbar_sits_above_the_axes_not_over_the_data(page, server):
+    _open(page, server, _cfgs({}, {}))
+    for pid, what in ((A, ".legend"), (B, ".colorbar")):
+        got = _boxes(page, pid, what)
+        assert got["other"] and _above(got) and not got["hit"], (pid, got)
+
+
+def test_a_legend_on_top_takes_the_strip_so_the_toolbar_goes_inside_the_corner(page, server):
+    _open(page, server, _cfgs({}, {}))
+    _open_legend_section(page, A)
+    page.select_option(f"#legend-position-{A}", "top")
+    page.wait_for_function("(id) => { const l = (%s)(id).layout.legend; return !!l && l.orientation === 'h' && l.y >= 1; }" % GD, arg=A)
+    got = _boxes(page, A, ".legend")                      # settles: a placement change redraws a moment later
+    assert got["other"] and _in_corner(got) and not got["hit"], got
