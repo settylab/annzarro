@@ -110,29 +110,6 @@ export function rowCoordinates(rows) {
     return { pos, extent: rows.length === 0 ? 1 : at + 1 };
 }
 
-/** The widest a column counts for in the gap between sections (px): a gap is `gap` columns, but never wider than this per column. */
-// export-unused-ok: the Node test holds the px a gap keeps
-export const GAP_COLUMN_PX = 60;
-
-/**
- * The gap between two sections in column positions. The setting is a number of columns; with many genes a column is a few
- * dozen px, so a column is a fair gap, but a plot of few columns (two one-row sections) stretches each column across the
- * plot and a whole column of gap would be a band wider than the dots. So a column counts for at most GAP_COLUMN_PX in
- * a gap: the gap is `gap` x min(column px, GAP_COLUMN_PX), in positions. Plots whose columns are under that wide are
- * unchanged.
- * @param {number} gap - the setting (columns)
- * @param {number} columns - the rows (columns of the matrix) drawn
- * @param {number} gaps - how many gaps there are (sections after the first)
- * @param {number} plotPx - the matrix's extent along the gene axis, px
- * @returns {number} positions
- */
-export function sectionGap(gap, columns, gaps, plotPx) {
-    if (!(gap > 0) || !(gaps > 0) || !(columns > 0) || !(plotPx > 0)) return gap;
-    if (plotPx / (columns + gaps * gap) <= GAP_COLUMN_PX) return gap;
-    const pitch = Math.max(GAP_COLUMN_PX, (plotPx - gaps * gap * GAP_COLUMN_PX) / columns);
-    return (gap * GAP_COLUMN_PX) / pitch;
-}
-
 /** The room in px a set of labels needs along their own length, at most `cap`; 0 when they are not shown. */
 function labelRoom(labels, fontPx, cap) {
     let longest = 0;

@@ -103,10 +103,12 @@ test('5.3 var_names as a mapping, var_group_labels: each section a titled bracke
     const off = compose({ sectionTitles: false }).figure;
     assert.equal(off.layout.annotations.filter((a) => a.name === 'section title').length, 0);
     one(off, 'section brackets');
-    // the gap between sections, 0 to 3 cells (CXG-6), is the panel's gapBefore; a gap of 0 draws no blank column
+    // the gap between sections, 0 to 3 cells and any fraction of one (CXG-6), is the panel's gapBefore; none by default (0.8.0)
     assert.equal(O.figureExtras(normalizeCellGene({ gap: 7 }).config, {}).gap, 3);
     assert.equal(O.figureExtras(normalizeCellGene({ gap: 0 }).config, {}).gap, 0);
-    assert.equal(O.figureExtras(normalizeCellGene({}).config, {}).gap, 1);
+    assert.equal(O.figureExtras(normalizeCellGene({ gap: 0.5 }).config, {}).gap, 0.5);
+    assert.equal(O.figureExtras(normalizeCellGene({ gap: 1.234 }).config, {}).gap, 1.23);
+    assert.equal(O.figureExtras(normalizeCellGene({}).config, {}).gap, 0);
 });
 
 test('5.3 groupby, several keys: one strip per factor, colored by its levels, in the drawn group order', () => {

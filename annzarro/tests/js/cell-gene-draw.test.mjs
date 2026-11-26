@@ -333,12 +333,15 @@ test('a gap before a row leaves that many empty positions on the gene axis', () 
     const fig = D.buildFigure(m, LIGHT);
     assert.deepEqual(fig.layout.xaxis.tickvals, [0, 1, 4]);
     assert.deepEqual(fig.layout.xaxis.range, [-0.5, 4.5]);
-    const hm = traces(D.buildFigure({ ...m, mode: 'heatmap' }, LIGHT), 'heatmap')[0];
-    assert.equal(hm.z[0].length, 5);
-    assert.ok(Number.isNaN(hm.z[0][2]) && Number.isNaN(hm.z[0][3]), 'the gap is empty');
-    assert.equal(hm.z[0][4], 2);
+    // a heatmap draws one trace per run of rows a position apart: the gap is the space between two traces (it can be any fraction)
+    const hms = traces(D.buildFigure({ ...m, mode: 'heatmap' }, LIGHT), 'heatmap');
+    assert.equal(hms.length, 2, 'two runs: the rows before the gap and the row after it');
+    assert.deepEqual([[...hms[0].x], [...hms[1].x]], [[0, 1], [4]]);
+    assert.equal(hms[0].z[0].length, 2);
+    assert.equal(hms[1].z[0][0], 2);
     const gapRows = D.buildFigure({ ...m, mode: 'heatmap', color: { ...m.color, values: Float64Array.from(m.color.values).fill(NaN) } }, LIGHT);
-    assert.ok(!traces(gapRows, 'heatmap')[1].z.some((r) => r[2] === 1 || r[3] === 1), 'a gap is not a missing value');
+    // a gap is not a missing value: the missing-value layers cover the rows, not the empty space between the runs
+    assert.deepEqual(traces(gapRows, 'heatmap').filter((t) => t.colorscale[0] && t.colorscale[0][1] === GAP_COLOUR).map((t) => [...t.x]), [[0, 1], [4]]);
 });
 
 test('a one-row section label is italic, and a gene label is not', () => {
@@ -507,7 +510,8 @@ test('the legend column starts below the modebar, at any figure height', () => {
         const fig = D.buildFigure(model({ pixels: { width: 900, height } }), LIGHT);
         const bar = bars(fig)[0].marker.colorbar;
         assert.ok((1 - bar.y) * (height - 20) >= 36 - 1e-6, `colour bar top ${bar.y} at ${height}px`);
-        const title = fig.layout.annotations.find((a) => a.text && a.xref === 'paper' && a.x === 0.83);
+        // the legend column follows the plot, which a few columns narrow: the title is where the colour bar is
+        const title = fig.layout.annotations.find((a) => a.text && a.xref === 'paper' && a.x === bar.x);
         assert.ok((1 - title.y) * (height - 20) >= 36 - 1e-6);
     }
 });

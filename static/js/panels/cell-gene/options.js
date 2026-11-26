@@ -60,8 +60,10 @@ const OUTLINE_MAX = 3;
 const COLOR_STRIPS = Object.freeze(['factors', 'group', 'none']);
 /** Dot opacity: the slider's ends and step; 1 (the default) is opaque. */
 const DOT_OPACITY = Object.freeze({ min: 0.1, max: 1, step: 0.05 });
-const DEFAULT_GAP = 1;
+/** The gap between sections, in columns (rows when swapped): none by default; a fraction of a column is fine (0 to GAP_MAX, 0.25 steps in Plot Options). */
+const DEFAULT_GAP = 0;
 const GAP_MAX = 3;
+const GAP_STEP = 0.25;
 const DOT_PX = Object.freeze({ min: 1, max: 40, smallest: 3, largest: 20 });
 /** Largest dot, in % of its cell: the slider's ends and step; 100 (the default) fills the cell. */
 const DOT_SCALE = Object.freeze({ min: 10, max: 200, typedMax: 1000, full: 100, step: 5 });
@@ -114,7 +116,7 @@ function styleOf(config) {
     const legend = isObject(c.legend) ? c.legend : {};
     const labels = isObject(c.labels) ? c.labels : {};
     const titles = isObject(c.titles) ? c.titles : {};
-    const gap = isNumber(c.gap) ? Math.round(Math.max(0, Math.min(GAP_MAX, c.gap))) : DEFAULT_GAP;
+    const gap = isNumber(c.gap) ? Math.round(Math.max(0, Math.min(GAP_MAX, c.gap)) * 100) / 100 : DEFAULT_GAP;
     // A stored map is the user's pick and is kept; with none stored the default follows the scaling (Reds, RdBu under a z-score)
     const picked = SCALES.includes(c.colorScale);
     const zScored = isZColour(c);
@@ -203,7 +205,7 @@ const PLOT_OPTION_FIELDS = Object.freeze([
         placeholder: (c) => { const s = styleOf(c); return s.dotSizes && s.dotScale === null ? WO.largestPx(s.dotSizes[1]) : DOT_SCALE.full; } },
     { id: 'dotSmallest', section: 'panel:dots', type: 'range', path: 'dotSmallest', label: WO.smallestDotPx, dflt: DOT_PX.smallest,
         min: DOT_PX.min, max: DOT_PX.max, step: 1, when: dotsMode },
-    { id: 'gap', section: 'panel:sections', type: 'number', path: 'gap', label: `${WO.gap} (${WO.gapUnit})`, dflt: DEFAULT_GAP, min: 0, max: GAP_MAX, step: 1 },
+    { id: 'gap', section: 'panel:sections', type: 'number', path: 'gap', label: `${WO.gap} (${WO.gapUnit})`, dflt: DEFAULT_GAP, min: 0, max: GAP_MAX, step: GAP_STEP, help: WO.gapHelp },
     { id: 'sectionTitles', section: 'panel:sections', type: 'check', path: 'sectionTitles', label: WO.sectionTitles, dflt: true },
     { id: 'geneLabels', section: 'axes', type: 'check', path: 'labels.genes', label: WO.geneLabels, dflt: true },
     { id: 'groupLabels', section: 'axes', type: 'check', path: 'labels.groups', label: WO.groupLabels, dflt: true },
