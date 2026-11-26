@@ -1,0 +1,174 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "S100a9",
+  "focusedCell": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "horizontal",
+    "panes": [
+     {
+      "percentage": 38,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 62,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "split",
+      "direction": "vertical",
+      "panes": [
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       },
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       }
+      ],
+      "children": [
+       {
+        "type": "tile",
+        "id": "cell-plot-types",
+        "controlsVisible": false
+       },
+       {
+        "type": "tile",
+        "id": "cell-plot-where",
+        "controlsVisible": false
+       }
+      ]
+     },
+     {
+      "type": "tile",
+      "id": "gene-plot-cmp",
+      "controlsVisible": false
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "cell-plot-types": false,
+   "cell-plot-where": false,
+   "gene-plot-cmp": true
+  },
+  "panelConfigs": {
+   "cell-plot-types": {
+    "id": "cell-plot-types",
+    "title": "Click a cell",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "obs",
+     "key": "midres_celltype",
+     "column": ""
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    ]
+   },
+   "cell-plot-where": {
+    "id": "cell-plot-where",
+    "title": "Where the focused gene changes",
+    "x": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "0"
+    },
+    "y": {
+     "type": "obsm",
+     "key": "X_umap",
+     "column": "1"
+    },
+    "z": null,
+    "color": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "S100a9",
+     "locked": false
+    },
+    "pointSize": 3,
+    "pointOpacity": 0.8,
+    "highlightFocusedCell": true,
+    "hoverInfo": [
+     {
+      "type": "obs",
+      "key": "_index"
+     },
+     {
+      "type": "obs",
+      "key": "highres_celltype"
+     }
+    ],
+    "colorScale": "RdBu",
+    "centeringActive": true
+   },
+   "gene-plot-cmp": {
+    "id": "gene-plot-cmp",
+    "title": "Fold change: locked HSC (x) against the focused cell (y)",
+    "x": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "HSPC_Old_1#GAAGCCCGTGGCTCTG-1",
+     "locked": true
+    },
+    "y": {
+     "type": "layer",
+     "key": "kompot_de_Young_to_Old_fold_change",
+     "column": "Mature_Young_2#TCAATTCAGTGAGGCT-1",
+     "locked": false
+    },
+    "z": null,
+    "pointSize": 6,
+    "pointOpacity": 0.9,
+    "highlightFocusedGene": true,
+    "showZeroLines": true,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "color": {
+     "type": "varp",
+     "key": "spearman_fold_change",
+     "column": "S100a9",
+     "locked": false
+    },
+    "colorScale": "Blues",
+    "colorReversed": true,
+    "colorMin": 0.5,
+    "colorMax": 1,
+    "lockColorRange": true
+   }
+  }
+ }
+}

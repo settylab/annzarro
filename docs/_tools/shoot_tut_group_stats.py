@@ -158,7 +158,7 @@ DIAGONAL = lambda: plot_and(PLOT, gene_plot(PLOT, "One old HSC (x) against all H
 GRAN_COLUMNS = [IS_DE, MAHAL, column("HSC"), column("Myelo P"), column("Neutrophil")]
 GRANULOCYTE = lambda: view(  # noqa: E731
     split("horizontal", tile(TABLE), tile(MID), 75),
-    {TABLE: gene_table(TABLE, "Called genes that fall in HSCs", GRAN_COLUMNS,
+    {TABLE: gene_table(TABLE, "Falls in HSCs", GRAN_COLUMNS,
                        [is_true(IS_DE), num(column("HSC"), "<", -0.5)]),
      MID: grouping(MID, "midres_celltype")}, {TABLE: True}, focus="S100a8")
 B_NAIVE, B_MEMORY = column("Mature Naive B cell", gid=HIGH), column("Memory B cell", gid=HIGH)
@@ -193,7 +193,20 @@ VARM_CHECK = lambda: plot_and(PLOT, gene_plot(PLOT, "Stored HSC mean (x) against
                                               {"type": "varm", "key": "mean_by_celltype", "column": "HSC"}, stat("HSC", layer=LOG)),
                               grouping(MID, "midres_celltype"))
 
-VIEWS_ALL = {"hsc-monocyte": HSC_MONO, "diagonal": DIAGONAL, "granulocyte": GRANULOCYTE, "naive-memory": NAIVE_MEMORY,
+MONO = column("Monocyte")
+
+
+def monocyte_table():
+    """Moves in monocytes: called genes whose mean fold change over the monocytes is beyond 0.25 either way."""
+    either = {"criteria": [num(MONO, ">", 0.25), num(MONO, "<", -0.25)], "logic": "OR"}
+    return gene_table(TABLE, "Moves in monocytes", [IS_DE, column("HSC"), MONO], [is_true(IS_DE), either])
+
+
+MONOCYTES = lambda: plot_and(PLOT, gene_plot(PLOT, "Mean fold change: HSC (x) against Monocyte (y)",  # noqa: E731
+                                             stat("HSC"), stat("Monocyte"), table=TABLE),
+                             monocyte_table(), grouping(MID, "midres_celltype"), focus="AW112010", below=True)
+
+VIEWS_ALL = {"hsc-monocyte": HSC_MONO, "monocytes": MONOCYTES, "diagonal": DIAGONAL, "granulocyte": GRANULOCYTE, "naive-memory": NAIVE_MEMORY,
              "divergent": divergent, "cell-tables": CELL_TABLES, "stored-check": VARM_CHECK}
 
 
@@ -277,6 +290,16 @@ def shoot(s, only):
         crop(s, page, PLOT, "gstat-hsc-monocyte-plot")
         # the X row of the controls: the layer, the grouping, the group and the aggregation button
         page.locator(f"{T(PLOT)} .plot-controls").screenshot(path=str(OUT / "gstat-axis-row.png"))
+        page.context.close()
+
+    if want("monocytes"):
+        page = s.open(MONOCYTES())
+        wait_rows(page, TABLE)
+        print("NUMBER monocyte table:", info(page, TABLE))
+        print("NUMBER monocyte rows:", page.evaluate("""(s) => [...document.querySelectorAll(s + ' tbody tr')]
+            .map(r => [...r.children].map(c => c.textContent.trim()).join(' | ')).filter(t => t.includes('|')).slice(0, 25)""", T(TABLE)))
+        page.wait_for_timeout(3000)
+        crop(s, page, PLOT, "gstat-monocytes-plot")
         page.context.close()
 
     if want("diagonal"):

@@ -1,17 +1,14 @@
 (tut-composition)=
-# Which cell states gain and lose with age? Kompot's differential abundance, counted
+# Which cell states gain and lose with age? Differential abundance, counted
 
-Kompot tests differential abundance without clusters: it estimates, for each age, how densely cells occupy each cell
-state, and the log ratio of the two densities gives every cell a log fold change of abundance, with a posterior tail
-probability as its significance {cite:p}`otto2025kompot`. The paper calls a cell state significant at an absolute log
-fold change above 1 and a posterior tail probability below 0.05, and its Figure 6F shows, for each annotated cell type,
-the fraction of significantly changing cells by direction {cite:p}`otto2025kompot`. Its reading of the young to old
-comparison: B and T cells move from naive to memory states, and haematopoietic stem cells (HSCs) accumulate
-{cite:p}`otto2025kompot`.
+The store holds, for every cell, a log fold change of abundance between young and old mice with a posterior tail
+probability, from Kompot {cite:p}`otto2025kompot`: how much more or less densely cells of that state occur in old mice.
+`kompot_da_Young_to_Old_lfc_direction` marks a cell `up` or `down` at an absolute log fold change above 1 and a tail
+probability below 0.05 {cite:p}`otto2025kompot`.
 
-The store holds that comparison per cell. This tutorial finds which annotated states the called cells are, how many,
-how the answer depends on the resolution of the annotation, how the call itself depends on its thresholds, and why a
-plain count of cells by age is not the same result.
+This tutorial finds which annotated states the called cells are, how many, how the answer depends on the resolution
+of the annotation, how the call itself depends on its thresholds, and why a plain count of cells by age is not the
+same result.
 
 ## What you need
 
@@ -90,8 +87,7 @@ Panel set file: {download}`tut-composition-celltype-filled.json <../_static/pane
 1. Turn the plot round: **X** `midres_celltype`, **Color by** `kompot_da_Young_to_Old_lfc_direction`.
 2. Set the arrangement to **Filled**. Each bar now reaches 1, and its colours are the fractions of the cell type's
    cells called `up`, `neutral` and `down`; the axis reads "Fraction of cells in each bar". Order the bars from
-   progenitor to mature with **Choose levels**, as the paper's Figure 6F does {cite:p}`otto2025kompot`, and give the
-   three directions their colours there.
+   progenitor to mature with **Choose levels**, and give the three directions their colours there.
 
 ```{figure} ../_static/screens/tutorials/comp-celltype-filled.png
 :class: screenshot
@@ -137,10 +133,8 @@ The fine cell types: the naive states are blue, the memory states red.
 | Memory B cell | 117 | 0.86 | 0 |
 | Plasma cell | 12 | 0.75 | 0 |
 
-Inside the mature lineages the change is a loss of naive and a gain of memory states, as the paper reports
-{cite:p}`otto2025kompot`. No neutrophil is called either way; how their expression changes is the subject of
-{doc}`group-statistics`. The paper's Figure 6F draws these bars from its own analysis {cite:p}`otto2025kompot`; the
-fractions here are those of the call stored in `bm_aging_annzarro.zarr`, and the other cell types are in the table of
+Inside the mature lineages the change is a loss of naive and a gain of memory states. No neutrophil is called either
+way; how their expression changes is the subject of {doc}`group-statistics`. The other cell types are in the table of
 section 8.
 
 (tut-comp-mean)=
@@ -242,7 +236,7 @@ The rebuilt call and the cells it picks. The groups are named and coloured in th
 shows them the same way.
 ```
 
-Is it the paper's call, cell for cell? A grouping of the stored direction against the log fold change bins answers it:
+Is it the stored call, cell for cell? A grouping of the stored direction against the log fold change bins answers it:
 
 ::::{dropdown} Start here: your call against the stored one
 ```{literalinclude} ../_static/panelsets/tutorials/tut-composition-check.url.txt
@@ -260,12 +254,8 @@ is on the diagonal.
 ```
 
 Now change the call. Drag the handles to −0.5 and 0.5 and watch the groups follow: 1,137 cells gained and 534 lost now
-pass the tail probability as well (64 and 40 more do not). The UMAP follows the grouping: the call of the paper's
-Figure 6B to 6D, with the thresholds in your hands {cite:p}`otto2025kompot`.
-
-The store holds the young to old comparison only. The paper separates an early phase (young to middle-aged: the mature
-compartment, naive to memory) from a late one (middle-aged to old: the progenitors, most of all the HSCs) with two
-more comparisons that are not stored {cite:p}`otto2025kompot`.
+pass the tail probability as well (64 and 40 more do not). The UMAP follows the grouping: the call, with the thresholds in your
+hands.
 
 (tut-comp-table)=
 ## 8. The call by cell type, as a table
@@ -312,10 +302,9 @@ Panel set file: {download}`tut-composition-samples.json <../_static/panelsets/tu
 Left: every sample is one sorted fraction, with similar cell numbers. Right: the cell types within each fraction and age.
 ```
 
-For the young to old comparison the store holds, the raw count and Kompot agree for HSCs. A share of sorted cells is not
-a density over the cell-state space, though: the density needs no cell types to be defined first, every cell carries its
-own uncertainty, and the paper's timing of the HSC expansion (middle-aged to old) comes from comparisons not stored here
-{cite:p}`otto2025kompot`.
+For HSCs, young against old, the raw count and the stored abundance change agree. A share of sorted cells is not a
+density over the cell-state space, though: the density needs no cell types to be defined first, and every cell
+carries its own uncertainty.
 
 (tut-comp-limit)=
 ## 10. A limit, on purpose
@@ -364,8 +353,6 @@ The two densities, coloured by the stored direction. Red cells are denser in old
 | it is the stored call, cell for cell | the cross-table of section 7 | the diagonal only |
 | T cells split | the cross-table of section 8, row T cell | 102 lost, 114 between, 92 gained of 308 |
 | HSCs by age | a grouping of `midres_celltype` and `Age`, row HSC | 7 Young, 71 Mid, 241 Old |
-
-Do not read the paper's two phases off these counts: they come from comparisons the store does not hold.
 
 (tut-comp-views)=
 ## Open the views
