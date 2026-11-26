@@ -48,3 +48,11 @@ test('a grouping has no aggregation button and a score has one', () => {
     assert.equal(getSource('cell-group').aggregate.methods({ type: 'cell-group', key: 'g' }), null);
     assert.ok(getSource('gene-score').aggregate.methods({ type: 'gene-score', key: 's', column: 'mean' }).options.length === 6);
 });
+
+test('a type menu lists only the dataset\'s own sources: no provider is a first-select entry any more', async () => {
+    const { typeChoices } = await import('../../../static/js/panels/plot-utilities/panel-ui-update.js');
+    assert.deepEqual(typeChoices('cells', ['x']).map((c) => c.value), ['obs', 'obsm', 'obsp', 'layer']);
+    assert.deepEqual(typeChoices('cells', ['color']).map((c) => c.value), ['none', 'obs', 'obsm', 'obsp', 'layer']);
+    assert.deepEqual(typeChoices('genes', ['x']).map((c) => c.value), ['var', 'varm', 'varp', 'layer']);
+    for (const type of ['gene-score', 'cell-group']) assert.equal(getSource(type).label, undefined, `${type} has no first-select label`);
+});

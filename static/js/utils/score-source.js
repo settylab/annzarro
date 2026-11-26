@@ -727,7 +727,6 @@ const scoreAggregate = {
 
 registerSource({
     type: SCORE_TYPE,
-    label: VOCABULARY.sourceType.score,
     valueType: 'numerical',
     entity: 'cells',
     consumers: ['cell-plot', 'cell-table'],
