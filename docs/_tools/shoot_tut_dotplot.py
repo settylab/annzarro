@@ -81,7 +81,7 @@ def save_view(page, name, tiles, closed, title):
     (PANELSETS / f"tut-dotplot-{name}.url.txt").write_text(start_link(STORE, view) + "\n")
 
 
-def side_by_side(a, b, out, names=(0.02, 0.085), body=(0.34, 0.445), rows=(0.46, 0.97)):
+def side_by_side(a, b, out, names=(0.0, 0.085), body=(0.33, 0.46), rows=(0.46, 0.97)):
     """The group names and the myeloid section of two tile shots next to each other, the two pieces removed."""
     from PIL import Image
 

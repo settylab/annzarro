@@ -99,6 +99,9 @@ Falls in HSCs (left, -1.02 to 1.37) and Rises in HSCs (right, -0.68 to 2.18) on 
 One dot per cell type for each signature.
 ```
 
+The two sections sit side by side; to leave empty space between sections, set **Gap between sections (cells)** in **Plot
+Options** ▸ **Sections**.
+
 The score per cell type:
 
 | Cell type | Falls in HSCs | Rises in HSCs |
