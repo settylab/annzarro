@@ -194,3 +194,10 @@ test('a table column refused for its size says why, not "would take about 1 seco
     const cost = describeColumn({ state: 'refused', title: 'T cell score', reason: 'score_too_expensive', estimate: { seconds: 1500, tier: 'refused', max_s: 600 }, message: 'x' });
     assert.match(cost.headline, /was not run: it is estimated at about 25 minutes/);
 });
+
+test('a column a filter reads that has no values says what it is, not always "the score"', async () => {
+    const { notReadyText } = await import('../../../static/js/utils/score-column.js');
+    assert.equal(notReadyText({ label: 'T cell score' }), "the score 'T cell score' is not ready");
+    assert.equal(notReadyText({ label: 'B cell: mean' }, { words: { the: 'the group statistic' } }), "the group statistic 'B cell: mean' is not ready");
+    assert.equal(notReadyText({ key: 'k' }, null), "the score 'k' is not ready");
+});

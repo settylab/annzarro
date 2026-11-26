@@ -88,6 +88,18 @@ export function usedScoreColumns(columns, searchBuilderConfig, keyOf) {
     return scores.filter(column => used.has(keyOf(column)));
 }
 
+/**
+ * The sentence for a derived column a filter reads that has no values yet, naming what it is: "the score 'T cell score' is
+ * not ready", "the group statistic 'B cell: mean · logged' is not ready" (the column's provider's own word, `snap.words.the`),
+ * never "the score" for a statistic of a grouping.
+ * @param {{label?: string, key?: string}} column
+ * @param {{words?: {the?: string}}|null} [snap] - the column's last snapshot, when it has one
+ */
+export function notReadyText(column, snap = null) {
+    const the = snap && snap.words && snap.words.the ? snap.words.the : SCORE_WORDS.the;
+    return `${the} '${(column && (column.label || column.key)) || ''}' is not ready`;
+}
+
 /** The words of a score that is not ready, in a column header and in its cells. */
 const PENDING = new Set(['estimating', 'queued', 'computing', 'idle', 'building']);
 

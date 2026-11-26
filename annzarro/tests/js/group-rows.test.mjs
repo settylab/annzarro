@@ -109,3 +109,12 @@ test('the reasons a cell is in no group are rows of their own', () => {
     assert.equal(rows.length, 2);
 });
 
+
+test('a cross-table column is as wide as its longest name needs, between the number width and a cap', async () => {
+    const { crossColumnWidth } = await import('../../../static/js/panels/cell-grouping/group-rows.js');
+    assert.equal(crossColumnWidth([{ label: 'B' }, { label: 'T' }]), 84, 'short names keep the number width');
+    assert.equal(crossColumnWidth([]), 84);
+    const long = crossColumnWidth([{ label: 'kompot_da_Young_to_Old_lfc < -1' }, { label: 'kompot_da_Young_to_Old_lfc >= 1' }]);
+    assert.ok(long > 200 && long <= 280, `a default bin name fits: ${long}`);
+    assert.equal(crossColumnWidth([{ label: 'x'.repeat(200) }]), 280, 'capped: a longer name is cut and its title says it');
+});

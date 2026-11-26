@@ -20,13 +20,12 @@ import { toHex, withGroupColor, withGroupLabel, withoutGroupOverride, withoutIna
 import { groupOverrideState } from '../../utils/grouping-colours.js';
 import { noGroupReasons } from './status.js';
 import { smallOf } from './settings.js';
-import { groupRows, shareText, filterRows, reasonRows, crossTable, listColumns, listCsv, crossCsv } from './group-rows.js';
+import { groupRows, shareText, filterRows, reasonRows, crossTable, crossColumnWidth, listColumns, listCsv, crossCsv } from './group-rows.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
 const ROW_HEIGHT = 28;
-/** The cross-table's first column and each further column, in px. */
+/** The cross-table's first column, in px; each further column is as wide as its longest name needs (crossColumnWidth). */
 const LABEL_WIDTH = 160;
-const COLUMN_WIDTH = 84;
 /** The list's columns: name, cells, share. */
 const LIST_COLUMNS = 'minmax(9rem, 1fr) 4.5rem 4rem';
 const SMALL_TITLE = 'Under 10 cells: statistics are unreliable';
@@ -379,9 +378,20 @@ function mount(host, ctx) {
 
     // ---------------------------------------------------------------------------------- the cross-table
 
+    let widthOf = null;
+    let widthIs = 0;
+
+    /** One width for every column of the cross-table now shown: the longest column name decides. */
+    function colWidth() {
+        const cols = model.cross && model.cross.cols;
+        if (!cols) return crossColumnWidth([]);
+        if (widthOf !== cols) { widthOf = cols; widthIs = crossColumnWidth(cols); }
+        return widthIs;
+    }
+
     function buildCrossRow(row) {
         row.classList.add('cgg-row', 'cgg-row--cross');
-        row.style.width = `${LABEL_WIDTH + model.cross.cols.length * COLUMN_WIDTH}px`;
+        row.style.width = `${LABEL_WIDTH + model.cross.cols.length * colWidth()}px`;
         const label = el('div', { class: 'cgg-cell cgg-label', role: 'gridcell', style: `width:${LABEL_WIDTH}px` });
         row.appendChild(label);
         parts.set(row, { label, cells: [] });
@@ -389,7 +399,7 @@ function mount(host, ctx) {
 
     function visibleColumns() {
         const g = grid.element;
-        return columnRange(g.scrollLeft, (g.clientWidth || 400) - LABEL_WIDTH, COLUMN_WIDTH, model.cross.cols.length);
+        return columnRange(g.scrollLeft, (g.clientWidth || 400) - LABEL_WIDTH, colWidth(), model.cross.cols.length);
     }
 
     function fillCrossRow(row, i) {
@@ -403,7 +413,7 @@ function mount(host, ctx) {
         for (let c = start; c < end; c++) {
             const n = cross.count(i, c);
             const cell = el('div', { class: `cgg-cell cgg-num cgg-count${n ? '' : ' cgg-zero'}`, role: 'gridcell',
-                style: `left:${LABEL_WIDTH + c * COLUMN_WIDTH}px;width:${COLUMN_WIDTH}px`, text: fmt(n) });
+                style: `left:${LABEL_WIDTH + c * colWidth()}px;width:${colWidth()}px`, text: fmt(n) });
             row.appendChild(cell);
             p.cells.push(cell);
         }
@@ -416,7 +426,7 @@ function mount(host, ctx) {
         const { start, end } = visibleColumns();
         for (let c = start; c < end; c++) {
             head.append(el('div', { class: 'cgg-headcell cgg-num', role: 'columnheader',
-                style: `left:${LABEL_WIDTH + c * COLUMN_WIDTH}px;width:${COLUMN_WIDTH}px`, title: cross.cols[c].label, text: cross.cols[c].label }));
+                style: `left:${LABEL_WIDTH + c * colWidth()}px;width:${colWidth()}px`, title: cross.cols[c].label, text: cross.cols[c].label }));
         }
     }
 
@@ -439,7 +449,7 @@ function mount(host, ctx) {
         gridHost.appendChild(grid.element);
         if (cross) {
             head.classList.add('cgg-head--cross');
-            grid.setWidth(LABEL_WIDTH + model.cross.cols.length * COLUMN_WIDTH);
+            grid.setWidth(LABEL_WIDTH + model.cross.cols.length * colWidth());
         } else if (kind === 'reasons') {
             D.clear(head);
             head.append(el('div', { class: 'cgg-headcell', role: 'columnheader' }, 'Cells in no group'));

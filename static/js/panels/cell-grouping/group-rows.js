@@ -51,6 +51,23 @@ export function reasonRows(reasons) {
 
 // ================================================================================================ the cross-table
 
+/** The width of a cross-table column that holds no long name, and the longest one is given: a name past it is cut (its title says it). */
+const CROSS_COLUMN_MIN = 84;
+const CROSS_COLUMN_MAX = 280;
+
+/**
+ * The width in px of every column of a cross-table: wide enough for the longest column name (a default bin name is long,
+ * "kompot_da_Young_to_Old_lfc < -1"), so the columns can be told apart, but no wider than a screenful of a column
+ * (CROSS_COLUMN_MAX) and no narrower than a number needs.
+ * @param {{label: string}[]} cols
+ */
+export function crossColumnWidth(cols) {
+    let longest = 0;
+    for (const c of cols || []) longest = Math.max(longest, String(c.label || '').length);
+    const px = Math.ceil(longest * 7) + 20;           // 0.8125rem text, 8 px of padding on each side
+    return Math.min(CROSS_COLUMN_MAX, Math.max(CROSS_COLUMN_MIN, px));
+}
+
 /**
  * The cross-table of a grouping of exactly two factors (UX 2.5): the first factor's levels down, the second's
  * across, the cells of each combination. A combination with no cell is not a group (SHR-7): it reads 0, muted.

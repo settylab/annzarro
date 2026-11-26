@@ -879,6 +879,16 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             }
             const p = parseThresholdText(text);
             if (!p.ok) { paint(); return; }
+            // on an obs axis there is no grouping to follow: 0 is the default, so the box says what the plot does and the button
+            // has no `>0` suffix; a grouping axis keeps 0 as an override of the grouping's own threshold
+            if (!axisGrouping() && p.value === baseThreshold() && spec && isNumber(spec.detect_above)) {
+                if (which !== 'height') _fresh = false;
+                const next = { ...spec };
+                delete next.detect_above;
+                commit({ ..._config, [which]: next }, `${measureName(which)} threshold`);
+                return;
+            }
+            if (!axisGrouping() && p.value === baseThreshold() && !(spec && isNumber(spec.detect_above))) { paint(); return; }
             if (spec && spec.detect_above === p.value) { paint(); return; }
             if (which !== 'height') _fresh = false;
             commit({ ..._config, [which]: { ...spec, detect_above: p.value } }, `${measureName(which)} threshold`);
