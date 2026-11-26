@@ -3259,7 +3259,7 @@ button.dtsb-button.dtsb-clear:hover {
 
 @container plot-controls (min-width: 560px) {
     .ctl-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
         grid-template-areas: "axes points" "colour colour" "bar bar";
     }
     .ctl-grid.ctl-no-colour { grid-template-areas: "axes points" "bar bar"; }
@@ -3289,7 +3289,8 @@ button.dtsb-button.dtsb-clear:hover {
 
 @container plot-controls (min-width: 960px) {
     .ctl-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        /* the axes column is the widest: its rows (layer, item, group, button) must keep each select readable */
+        grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
         grid-template-rows: auto auto;
         grid-template-areas: "axes colour points" "bar bar bar";
     }
@@ -3298,7 +3299,7 @@ button.dtsb-button.dtsb-clear:hover {
        colour that arrives (a score) or is picked does not move the plot. */
     .ctl-points { padding-bottom: calc(2 * var(--ctl-h) + 2 * var(--ctl-u)); }
     .ctl-grid.ctl-no-colour {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
         grid-template-areas: "axes points" "bar bar";
     }
     .ctl-colour {
@@ -4983,3 +4984,8 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .plot-controls .axis-selector:has(> .axis-type-select option[value="layer"]:checked) > .axis-key-select { flex: 0 0 6rem; min-width: 0; }
 .plot-controls .axis-selector:has(> .axis-type-select option[value="layer"]:checked) > .axis-column-select,
 .plot-controls .axis-selector > .axis-member-select { flex: 1 1 0; min-width: 0; text-overflow: ellipsis; }
+/* A row with a group select (a grouping's, a Gene Plot's) wraps in a narrow control column instead of squeezing the item and the group
+   to their arrows: each keeps a width it can be read at, and the group and the button go to a second line. */
+.plot-controls .axis-selector:has(> .axis-member-select) { flex-wrap: wrap; }
+.plot-controls .axis-selector:has(> .axis-type-select option[value="layer"]:checked):has(> .axis-member-select) > .axis-column-select,
+.plot-controls .axis-selector > .axis-member-select { flex: 1 1 4rem; min-width: 4rem; }

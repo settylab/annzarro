@@ -18,7 +18,7 @@ import { freezeSelection } from '../../utils/closed-table.js';
 import { tableCheck, refusalPanel } from '../../utils/memory-guard-ui.js';
 import { loadTableData, initializeDataTable, releaseTable, getColumnKey } from './table-data.js';
 import { TableScores, tileOnScreen } from './table-scores.js';
-import { usedScoreColumns } from '../../utils/score-column.js';
+import { usedScoreColumns, notReadyText } from '../../utils/score-column.js';
 import { dependsOn, usersOf, setReferenceHost } from '../../utils/panel-references.js';
 
 const TABLE_KINDS = new Set(['cell-table', 'gene-table']);
@@ -63,7 +63,7 @@ export async function buildSelection({ id, kind, config, signal, check, enter })
     // a score the filter reads must be there: the resolver builds only when every one is ready
     for (const column of usedScoreColumns(settings.columns, settings.searchBuilderConfig, getColumnKey)) {
         const entry = TableScores.entry(id, column);
-        if (!entry || !entry.reader.vec) throw new Error(`the score '${column.label || column.key}' is not ready`);
+        if (!entry || !entry.reader.vec) throw new Error(notReadyText(column, entry && entry.snap));
     }
     // the step below cannot be interrupted: last look at whether anyone still wants it
     // the last step cannot be interrupted: the resolver says so first and lets the page paint it

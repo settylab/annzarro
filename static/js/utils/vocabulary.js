@@ -116,7 +116,7 @@ const cellGene = Object.freeze({
         countPlot: 'Not available for a Count Plot statistic yet. "Mean, as z-score against all counted cells" is the bar\'s own.',
         genes: 'Z-score mean of a cell group is not available in the Gene Plot yet: it needs every gene\'s mean and SD over all cells.',
         genesLayout: 'Z-score mean of a cell group needs this layer stored by gene (CSC).',
-        table: 'Z-score mean is not offered for a table\'s cells. Use it for a cell group (Color of a Cell-Gene Plot).',
+        table: 'Z-score mean is not offered for a table\'s cells. Use it for cell groups (Color of a Cell-Gene Plot).',
         genesLayoutUnknown: 'Z-score mean of a cell group is offered once the layer\'s storage layout is known.'
     }),
     /** What a colour bar or a CSV header says of the scaling. */
