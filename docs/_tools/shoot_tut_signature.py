@@ -1,14 +1,15 @@
-"""Screenshots and numbers for the tutorial "Do stem cells carry the published signature of ageing?"
+"""Screenshots and numbers for the tutorial "Is the stem cell ageing response kept as cells differentiate?"
 (docs/tutorials/signature-score.md).
 
-It drives the real interface the way the page tells a reader to and stops with "STEP FAILED" when the application does
-not do what the page says. Every number the page quotes is printed in the log.
+It drives the real interface the way the page tells a reader to: gene lists from cut-offs on the stored fold change (a Gene Table
+filter, then Add from in a Gene Signature), the six scores, a signature with two sides, one-row sections per cell type and
+age, and the lineage. It stops with "STEP FAILED" when the application does not do what the page says. Every number the
+page quotes is printed in the log.
 
 Run (it starts its own server on --port):
-  python docs/_tools/shoot_tut_signature.py [--port 8862] [--signature PATH]
+  python docs/_tools/shoot_tut_signature.py [--port 8862]
 
-Data: bm_aging_annzarro.zarr in ANNZARRO_DOCS_DATA (default ~/annzarro-data). The signature file is
-docs/_static/downloads/hsc-ageing-signature.csv unless --signature names another.
+Data: bm_aging_annzarro.zarr in ANNZARRO_DOCS_DATA (default ~/annzarro-data).
 """
 from __future__ import annotations
 
@@ -76,35 +77,6 @@ def side_by_side(a, b, out):
     (OUT / f"{b}.png").unlink()
 
 
-def page_genes(page, sig):
-    """The genes of a signature panel as the panel holds them."""
-    return page.evaluate("(i) => { const c = window.PanelManager.getPanel(i).getConfig(); return (c.genes || c.selected || c.recipe && c.recipe.genes || []).map(g => (typeof g === 'string' ? g : g.gene || g.name)); }", sig)
-
-
-def store_numbers(genes):
-    """What the stored var columns say of the signature's genes, for the page's volcano step."""
-    import numpy as np
-    import zarr
-    from shots import DATA_DIR
-    st = zarr.open(str(DATA_DIR / STORE), mode="r")
-    names = np.array([g.decode() if isinstance(g, bytes) else g for g in st["var/_index"][:]])
-    de = st["var/kompot_de_Young_to_Old_is_de"][:].astype(bool)
-    mah = st["var/kompot_de_Young_to_Old_mahalanobis"][:]
-    lfc = st["var/kompot_de_Young_to_Old_mean_lfc"][:]
-    hsc = st["var/hsc_fold_change"][:]
-    rank = (-mah).argsort().argsort() + 1
-    idx = [int(np.where(names == g)[0][0]) for g in genes if g in names]
-    called = [genes[i] for i, k in enumerate([int(np.where(names == g)[0][0]) for g in genes if g in names]) if de[k]]
-    out = [f"signature genes in the store: {len(idx)} of {len(genes)}; called by Kompot: {len(called)} {called}"]
-    out.append("Mahalanobis rank (of %d): %s" % (len(names), {names[k]: int(rank[k]) for k in idx}))
-    out.append(f"mean_lfc of the signature genes: median {float(np.median(lfc[idx])):.3f}, range {float(lfc[idx].min()):.3f} to {float(lfc[idx].max()):.3f}; hsc_fold_change median {float(np.median(hsc[idx])):.3f}, range {float(hsc[idx].min()):.3f} to {float(hsc[idx].max()):.3f}")
-    return " | ".join(out)
-
-
-def np_mean(v):
-    return sum(v) / len(v)
-
-
 def finish(prefix="sig-"):
     """Re-save this page's shots; a large one as 256 colours (as shoot_we_steps.py does)."""
     from PIL import Image
@@ -113,6 +85,10 @@ def finish(prefix="sig-"):
         im.save(path, optimize=True)
         if path.stat().st_size > 400_000:
             im.quantize(colors=256, method=Image.Quantize.MEDIANCUT).save(path, optimize=True)
+
+
+def np_mean(v):
+    return sum(v) / len(v)
 
 
 def main():
@@ -125,7 +101,7 @@ def main():
         log = sh.log.append
         log(f"date of the shots: {date.today().isoformat()}")
         page = open_plain(sh, d / STORE, viewport={"width": 1600, "height": 1400})
-        shoot(sh, page, log, None)
+        shoot(sh, page, log)
     finish()
 
 
@@ -230,11 +206,6 @@ def cell_gene(page, groups, layer="logged_counts", by_grouping=None):
     return pid
 
 
-GRANULOCYTE = ["Cd52", "Ncf1", "Vim", "Ltf", "Lcn2", "S100a8", "Wfdc21", "Hmgb2", "Pygl", "Hp", "Lilrb4a", "Fcer1g", "Lyz2", "Slpi", "Camp", "Plac8", "S100a9", "Mgst1", "Syk", "Ncf2"]
-UP = ["H2-Q7", "AW112010", "H2-Q6", "Cirbp", "Gm47283", "H2-K1", "Ifi27", "Fosb", "Psmb9", "Fos"]
-DOWN = ["Dynll1", "Banp", "Fkbp5", "Gm43305", "Macf1", "Fam111a", "Lgals1", "Crispld2", "9930111J21Rik2", "Lyn"]
-
-
 def paste(page, sig_tile, genes, side=None, log=None, name=""):
     """Paste a gene list into a signature panel (Add as `side` when it has directions); returns the preview's text."""
     page.locator(f"{sig_tile} button", has_text="Paste or upload").first.click()
@@ -250,19 +221,50 @@ def paste(page, sig_tile, genes, side=None, log=None, name=""):
     return text
 
 
-def shoot(sh, page, log, sigfile=None):
-    # ---- 1. the 20 granulocyte genes of the paper's Fig. 3H, pasted
-    sigG = add_panel(page, "gene-signature")
-    gt_ = T(sigG)
-    rename(page, sigG, "Granulocyte genes")
-    paste(page, gt_, GRANULOCYTE, log=log, name="granulocyte")
-    shot_tile(page, sigG, "sig-paste-preview")
-    page.locator(f"{gt_} button.btn-primary", has_text="Add ").first.click()
+def exact(name):
+    return re.compile(rf"^\s*{re.escape(name)}\s*$")
+
+
+def add_section_exact(page, plot_tile, name):
+    page.locator(f"{plot_tile} button.cgene-add").first.click()
+    page.wait_for_timeout(600)
+    page.locator("button.cgene-add-item:visible").filter(has_text=exact(name)).first.click()
     page.wait_for_timeout(1500)
-    log("status: " + page.inner_text(gt_).replace("\n", " | ")[:200])
+
+
+def signature_from(page, title, tables, log, sides=None):
+    """A Gene Signature filled with Add from, one table at a time (`sides` gives Up or Down for each, for a signature with two sides)."""
+    sig = add_panel(page, "gene-signature")
+    st = T(sig)
+    rename(page, sig, title)
+    if sides:
+        page.locator(f"{st} button", has_text="Up/Down").first.click()
+        page.wait_for_timeout(500)
+    for i, table in enumerate(tables):
+        add_from(page, st, table, sides[i] if sides else None)
+        log(f"{title} after Add from {table}: " + page.inner_text(st).replace("\n", " | ")[:360])
+    return sig
+
+
+def one_row_color(page, tile_, pid):
+    page.locator(f"{tile_} button.cgene-color").first.click()
+    page.wait_for_timeout(400)
+    page.locator(".axis-agg-item[data-agg='zscore_mean']").click()
+    page.wait_for_timeout(3000)
+
+
+def shoot(sh, page, log):
+    # ---- 1. a gene list from a cut-off: the called genes whose mean fold change in HSCs is below -0.5
+    g_type = add_grouping(page, "Cell type", ["midres_celltype"])
+    t_fall = hsc_table(page, "Cell type", "Falls in HSCs table", "Less Than", "-0.5", log)
+    shot_tile(page, t_fall, "sig-table-lo")
+    t_rise = hsc_table(page, "Cell type", "Rises in HSCs table", "Greater Than", "0.5", log)
+    sigF = signature_from(page, "Falls in HSCs", ["Falls in HSCs table"], log)
+    shot_tile(page, sigF, "sig-add-from")
+    sigR = signature_from(page, "Rises in HSCs", ["Rises in HSCs table"], log)
     cp = add_panel(page, "cell-plot")
     ct = T(cp)
-    pick_set(page, ct, "color", sigG, layer="logged_counts")
+    pick_set(page, ct, "color", sigF, layer="logged_counts")
     until(page, "(t) => { const g = document.querySelector(t + ' .js-plotly-plot'); return !!g && (g.data || []).some(d => d.marker && d.marker.color && d.marker.color.length > 1000); }", "the coloured UMAP", ct, timeout=120)
     page.wait_for_timeout(1500)
     rows = agg_menu(page, ct, "color")
@@ -271,56 +273,53 @@ def shoot(sh, page, log, sigfile=None):
     shot_tile(page, cp, "sig-agg-button")
     page.keyboard.press("Escape")
     page.wait_for_timeout(500)
-    shot_tile(page, cp, "sig-umap")
+    shot_tile(page, cp, "sig-umap-lo")
     colors = plot_colors(page, cp)
-    log(f"granulocyte z-score mean on the UMAP: min {min(colors):.2f}, max {max(colors):.2f}")
-    # per cell type
-    g_type = add_grouping(page, "Cell type", ["midres_celltype"])
+    log(f"Falls in HSCs z-score mean on the UMAP: min {min(colors):.2f}, max {max(colors):.2f}")
+    pick_set(page, ct, "color", sigR, layer="logged_counts")
+    page.wait_for_timeout(3500)
+    shot_tile(page, cp, "sig-umap-hi")
+    colors = plot_colors(page, cp)
+    log(f"Rises in HSCs z-score mean on the UMAP: min {min(colors):.2f}, max {max(colors):.2f}")
+    side_by_side("sig-umap-lo", "sig-umap-hi", "sig-umap")
     cgt = cell_gene(page, None, by_grouping="Cell type")
-    add_section(page, T(cgt), "Granulocyte genes")
-    one_row(page, T(cgt), 0)
-    page.locator(f"{T(cgt)} button.cgene-color").first.click()
-    page.wait_for_timeout(400)
-    page.locator(".axis-agg-item[data-agg='zscore_mean']").click()
-    page.wait_for_timeout(3000)
-    d1 = csv_of(page, cgt, "/tmp/sig-gran-type.csv")
+    for name in ("Falls in HSCs", "Rises in HSCs"):
+        add_section_exact(page, T(cgt), name)
+    until(page, "(t) => document.querySelectorAll(t + ' select.form-select').length >= 8", "two sections", T(cgt), timeout=30)
+    for i in (0, 1):
+        one_row(page, T(cgt), i)
+    one_row_color(page, T(cgt), cgt)
+    shot_tile(page, cgt, "sig-three-rows")
+    d1 = csv_of(page, cgt, "/tmp/sig-type.csv")
     c1 = [c for c in d1.columns if c.startswith("Z-score")][0]
-    v1 = d1.set_index("Group")[c1].sort_values(ascending=False)
-    log("granulocyte z-score mean by cell type: " + ", ".join(f"{k} {float(x):.2f}" for k, x in list(v1.items())[:6]) + f"; HSC {float(v1['HSC']):.2f}; T cell {float(v1['T cell']):.2f}")
-    # ---- 2. a signature with two sides from the genes the paper labels up and down in Fig. 3D and 3E
-    sigUD = add_panel(page, "gene-signature")
-    ut = T(sigUD)
-    rename(page, sigUD, "Up and down in Fig. 3E")
-    page.locator(f"{ut} button", has_text="Up/Down").first.click()
-    page.wait_for_timeout(500)
-    for genes, side in ((UP, "Up"), (DOWN, "Down")):
-        paste(page, ut, genes, side=side, log=log, name=side)
-        page.locator(f"{ut} button.btn-primary", has_text="Add ").first.click()
-        page.wait_for_timeout(1500)
-    log("up/down status: " + page.inner_text(ut).replace("\n", " | ")[:300])
+    for sec, part in d1.groupby("Section"):
+        v1 = part.set_index("Group")[c1].sort_values(ascending=False)
+        log(f"  {sec} by cell type: highest " + ", ".join(f"{k} {float(x):.2f}" for k, x in list(v1.items())[:5]) + f"; HSC {float(v1['HSC']):.2f}; Neutrophil {float(v1['Neutrophil']):.2f}; Monocyte {float(v1['Monocyte']):.2f}; T cell {float(v1['T cell']):.2f}")
+    # ---- 2. a signature with two sides: what rises and falls over all cells
+    t_up = make_gene_table(page, "Rises over all cells table", [("var", "kompot_de_Young_to_Old_is_de"), ("var", "kompot_de_Young_to_Old_mean_lfc")],
+                           [("kompot_de_Young_to_Old_is_de", "Equals", "Yes"), ("kompot_de_Young_to_Old_mean_lfc", "Greater Than", "0.05")], log)
+    t_dn = make_gene_table(page, "Falls over all cells table", [("var", "kompot_de_Young_to_Old_is_de"), ("var", "kompot_de_Young_to_Old_mean_lfc")],
+                           [("kompot_de_Young_to_Old_is_de", "Equals", "Yes"), ("kompot_de_Young_to_Old_mean_lfc", "Less Than", "-0.05")], log)
+    sigUD = signature_from(page, "Response over all cells", ["Rises over all cells table", "Falls over all cells table"], log, sides=["Up", "Down"])
     shot_tile(page, sigUD, "sig-panel")
     pick_set(page, ct, "color", sigUD, layer="logged_counts")
     page.wait_for_timeout(3500)
     rows = agg_menu(page, ct, "color")
     log("aggregation list with down genes: " + json.dumps([(r["v"], r["off"], r["why"] or r["title"]) for r in rows]))
-    page.locator(f"{ut} button", has_text="Methods").first.click()
+    page.locator(f"{T(sigUD)} button", has_text="Methods").first.click()
     page.wait_for_timeout(600)
     shot_tile(page, sigUD, "sig-methods")
     page.keyboard.press("Escape")
-    # ---- 3. cell type by age
     g_age = add_grouping(page, "Cell type by age", ["midres_celltype", "Age"])
     log("Cell type by age: " + page.inner_text(T(g_age)).replace("\n", " | ")[:200])
     shot_tile(page, g_age, "sig-grouping")
     cga = cell_gene(page, None, by_grouping="Cell type by age")
-    for name in ("Granulocyte genes", "Up and down"):
-        add_section(page, T(cga), name)
+    for name in ("Falls in HSCs", "Response over all cells"):
+        add_section_exact(page, T(cga), name)
     until(page, "(t) => document.querySelectorAll(t + ' select.form-select').length >= 8", "two sections", T(cga), timeout=30)
     for i in (0, 1):
         one_row(page, T(cga), i)
-    page.locator(f"{T(cga)} button.cgene-color").first.click()
-    page.wait_for_timeout(400)
-    page.locator(".axis-agg-item[data-agg='zscore_mean']").click()
-    page.wait_for_timeout(3000)
+    one_row_color(page, T(cga), cga)
     page.locator(f"{T(cga)} select.cgene-mode").select_option(label="Heatmap")
     page.wait_for_timeout(2000)
     page.locator(f"{T(cga)} button.cgene-swap").first.click()
@@ -333,18 +332,7 @@ def shoot(sh, page, log, sigfile=None):
         log(f"  {sec}: " + "; ".join(f"{k} {float(vals[k]):.2f}" for k in ("HSC | Young", "HSC | Mid", "HSC | Old", "LMPP | Young", "LMPP | Old", "Neutrophil | Young", "Neutrophil | Old", "Monocyte | Young", "Monocyte | Old", "T cell | Young", "T cell | Old", "Mature B cell | Young", "Mature B cell | Old") if k in vals.index))
         ages = {a: round(float(np_mean([v for k, v in vals.items() if k.endswith("| " + a)])), 3) for a in ("Young", "Mid", "Old")}
         log(f"  {sec}: mean over the cell types by age {ages}")
-    # ---- 4. how many of the paper's genes a column of your own finds: HSC fold change below -0.3
-    lo_t = hsc_table(page, "Cell type", "HSC fold change below -0.3", "Less Than", "-0.3", log)
-    shot_tile(page, lo_t, "sig-table-lo")
-    sigC = add_panel(page, "gene-signature")
-    rename(page, sigC, "Check")
-    paste(page, T(sigC), GRANULOCYTE)
-    page.locator(f"{T(sigC)} button.btn-primary", has_text="Add ").first.click()
-    page.wait_for_timeout(1500)
-    add_from(page, T(sigC), "HSC fold change below")
-    log("Add from message: " + page.inner_text(T(sigC)).replace("\n", " | ")[:420])
-    shot_tile(page, sigC, "sig-add-from")
-    # ---- 5. the lineage
+    # ---- 3. the lineage
     g_stage = add_grouping(page, "Stage", ["highres_celltype"])
     page.locator(f"{T(g_stage)} button", has_text="Edit").first.click()
     page.wait_for_timeout(700)
@@ -359,10 +347,9 @@ def shoot(sh, page, log, sigfile=None):
     page.keyboard.press("Escape")
     page.wait_for_timeout(1000)
     log("Stage grouping: " + page.inner_text(T(g_stage)).replace("\n", " | ")[:420])
-    sigS = make_signature(page, "Selp", ["Selp"], paste=False)
     cgs = cell_gene(page, None, layer=FC, by_grouping="Stage")
-    for name in ("Granulocyte genes", "Selp"):
-        add_section(page, T(cgs), name)
+    for name in ("Falls in HSCs", "Rises in HSCs"):
+        add_section_exact(page, T(cgs), name)
     until(page, "(t) => document.querySelectorAll(t + ' select.form-select').length >= 8", "two sections", T(cgs), timeout=30)
     page.wait_for_timeout(3000)
     page.locator(f"{T(cgs)} button.cgene-color-btn").first.click()
@@ -380,11 +367,8 @@ def shoot(sh, page, log, sigfile=None):
     for sec, part in d4.groupby("Section"):
         by = part.groupby("Group")[c4].mean()
         log(f"  {sec}: mean fold change over its genes by stage: " + ", ".join(f"{k} {float(by[k]):.3f}" for k in by.index))
-        if sec.startswith("Granulocyte"):
-            g = part.pivot_table(index="Row", columns="Group", values=c4)
-            log("  lowest in HSC: " + str(g["HSC"].sort_values().head(4).round(2).to_dict()) + "; LMPP lowest " + str(g["LMPP"].min().round(2)) + "; Neutrophil highest " + str(g["Neutrophil"].max().round(2)))
-    save_view(page, "lineage", [cgs], [sigG, sigS, g_stage], "Signature tutorial: the fold change along the neutrophil lineage")
-    # ---- 6. the volcano
+    save_view(page, "lineage", [cgs], [sigF, sigR, g_stage], "Signature tutorial: the fold change along the neutrophil lineage")
+    # ---- 4. the volcano
     gpl = add_panel(page, "gene-plot")
     gpt = T(gpl)
     page.locator(f"{gpt} button", has_text="3D").first.click()
@@ -396,7 +380,7 @@ def shoot(sh, page, log, sigfile=None):
         page.wait_for_timeout(500)
         page.select_option(axis_sel(gpt, axis, "key"), col)
         page.wait_for_timeout(800)
-    page.select_option(f"{gpt} select[class*=table-filter]", sigG)
+    page.select_option(f"{gpt} select[class*=table-filter]", sigF)
     page.wait_for_timeout(3000)
     shot_tile(page, gpl, "sig-volcano")
     sys.stdout.flush()

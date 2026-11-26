@@ -1,20 +1,13 @@
 (tut-dotplot)=
-# Where does each gene change with age? Kompot's result as a cell type by gene plot
+# Where does each gene change with age? A cell type by gene plot
 
 Kompot scores how each gene responds to age in every single cell, and stores that as a layer
 {cite:p}`otto2025kompot`. The tutorial {doc}`cells-and-genes` reads that layer one gene or one cell at a time. Here you
 read all of it at once: first a marker dot plot of expression, to learn the panel and to check the annotation, then the
-same kind of plot for Kompot's fold change, genes by cell types.
+same kind of plot for the stored fold change, genes by cell types.
 
 The panel is the **Cell-Gene Plot**: the dot plot and the group heatmap of scanpy, computed on the server over every cell
 of each group ({doc}`../user-guide/cell-gene-plot`).
-
-The paper shows this result as a dot plot in its Fig. 3E: "Young-to-Old mean log fold change per cell type for genes
-selected from (D). Dot size encodes the fraction of cells expressing the gene." Part 2 builds that plot for every gene the
-store marks as called, 190 of them, from the stored layer. The paper reports that "genes ranked highly by Mahalanobis
-distance but with subtle fold change exhibited divergent expression patterns across cell types, with upregulation in
-some and downregulation in others", and that for many genes the change was "confined to HSCs such that the aggregate
-change across the full population of cells remained subtle". Both patterns are visible in step 9.
 
 ## What you need
 
@@ -67,9 +60,8 @@ A new Cell-Gene Plot asks for two things.
 
 2. **Groups**: choose **obs**, then `midres_celltype`. The first item is ticked.
 3. **Add genes ▾**: choose **Stem and progenitor**. It becomes a section of the plot, and the plot draws.
-4. A new plot starts with **Color** on the layer `cc_counts` and **Size** on `raw_counts`. For the usual dot plot set the
-   **Color** layer to `logged_counts`: the colour is then the mean of the log-normalised values, and the dot size the
-   fraction of cells with a count above zero.
+4. Set the **Color** layer to `logged_counts`: the colour is then the mean of the log-normalised values, and the dot size
+   the fraction of cells with a count above zero.
 
 The control row has one line per measure: `Color [layer ▾] [x̄]` and `Size [layer ▾] [c⁺]`. The symbol button holds the
 statistic; step 4 opens it.
@@ -189,7 +181,7 @@ sc.pl.DotPlot(raw, genes, groupby="midres_celltype", use_raw=False).dot_size_df 
 with `genes` the 28 genes of the table above. The two agree with the CSV to 3e-7 for the colour and to rounding for the
 size (checked here with scanpy 1.11.5).
 
-## Part 2. The same plot for Kompot's fold change
+## Part 2. The same plot for the stored fold change
 
 ::::{dropdown} Start here: the gene table of the 190 called genes and the fold-change heatmap
 ```{literalinclude} ../_static/panelsets/tutorials/tut-dotplot-fold-change.url.txt
@@ -199,7 +191,7 @@ Panel set file: {download}`tut-dotplot-fold-change.json <../_static/panelsets/tu
 ::::
 
 (tut-dotplot-fc)=
-### 7. The genes Kompot calls, as a table
+### 7. The called genes, as a table
 
 1. Add a **Gene Table**. On its `var` tab tick `kompot_de_Young_to_Old_is_de`,
    `kompot_de_Young_to_Old_mahalanobis` and `kompot_de_Young_to_Old_mean_lfc`, then press **Apply Changes**.
@@ -208,9 +200,9 @@ Panel set file: {download}`tut-dotplot-fold-change.json <../_static/panelsets/tu
 
 ```{figure} ../_static/screens/tutorials/dotplot-de-table.png
 :class: screenshot
-:alt: A gene table filtered to the 190 genes Kompot calls, with the three var columns and the strip with the count.
+:alt: A gene table filtered to the 190 called genes, with the three var columns and the strip with the count.
 
-The 190 genes Kompot calls, as a gene table.
+The 190 called genes, as a gene table.
 ```
 
 A gene table is a gene list, and every panel that takes genes takes it.
@@ -231,8 +223,8 @@ A gene table is a gene list, and every panel that takes genes takes it.
 On a signed layer the statistics that count cells above zero are greyed, each with its reason.
 ```
 
-4. **Mode** **Dots**, the default, is the paper's Fig. 3E: colour is the mean fold change, dot size the fraction of cells
-   with a count above zero (the **Size** layer stays `raw_counts`). For 190 genes the dots are small; set **Mode** to
+4. In **Mode** **Dots**, the default, colour is the mean fold change and dot size the fraction of cells with a count
+   above zero (the **Size** layer stays `raw_counts`). For 190 genes the dots are small; set **Mode** to
    **Heatmap**. In **Color ▾** choose the colour scale **RdBu** and type `0` into **Center**, so that zero is the pale
    middle and gains are red.
 
@@ -243,7 +235,7 @@ On a signed layer the statistics that count cells above zero are greyed, each wi
 :class: screenshot
 :alt: A heatmap of 190 genes by 19 cell types in a red and blue diverging scale centred on zero. The HSC row carries the strongest colours.
 
-Kompot's mean fold change, 190 genes by 19 cell types.
+The stored mean fold change, 190 genes by 19 cell types.
 ```
 
 HSC carries the most colour. Of the 190 genes, 126 have a mean fold change beyond 0.25 in absolute value in HSC, against
@@ -259,13 +251,14 @@ Three genes show what a summary over all cells misses (the last column is the ge
 | `S100a9` | -1.20 | -0.04 | +0.05 | -0.051 |
 | `Apoe` | +0.81 | -0.32 | -0.05 | -0.039 |
 
-`H2-Q7` is red in nearly every cell type: a response everywhere (the paper's Fig. 3E lists it first among the
-up-regulated genes). `S100a9` and `S100a8` (-1.16 in HSC) are deep blue in
+`H2-Q7` is red in nearly every cell type: a response everywhere. `S100a9` and `S100a8` (-1.16 in HSC) are deep blue in
 HSC and white elsewhere, so over all cells their mean is close to zero (-0.051), though they are among the strongest
 changes in stem cells. `Apoe` is red in HSC and blue in Monocyte: the same gene changes in opposite directions in two
-cell types, and the all-cell mean (-0.039) hides both. `Apoe`, `S100a9` and `S100a8` are among the genes the paper's
-Fig. 3E labels as subtle. The most positive HSC value is `Ifitm1` (+0.99), the most
+cell types, and the all-cell mean (-0.039) hides both. The most positive HSC value is `Ifitm1` (+0.99), the most
 negative `S100a9`.
+
+Reading one cell type against another, cell by cell, is the subject of the tutorial on comparing cell states
+(`compare-cell-states`).
 
 ### 10. Cluster the genes: modules
 
@@ -313,7 +306,7 @@ rows.
 The same plot over 31 cell types.
 ```
 
-Use **Plot Options** for the paper figure: the preset **Publication**, the format **SVG**, and **Download CSV** for the
+Use **Plot Options** to export the figure: the preset **Publication**, the format **SVG**, and **Download CSV** for the
 cell type by gene table of mean fold changes, which the store does not hold. Each change of the plot is a step of
 **Undo**.
 
@@ -336,4 +329,4 @@ cell type by gene table of mean fold changes, which the store does not hold. Eac
   with a diverging scale centred on zero.
 - A gene table is a gene list, and a statistic over all cells can hide a change that happens in one cell type.
 
-Next: {doc}`signature-score` scores a published signature on these cells and compares it with Kompot's genes.
+Next: {doc}`signature-score` turns cut-offs on the stored result into gene signatures and scores them.

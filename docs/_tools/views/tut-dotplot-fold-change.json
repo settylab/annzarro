@@ -26,24 +26,24 @@
     "children": [
      {
       "type": "tile",
-      "id": "gene-table-1795665778001",
+      "id": "gene-table-1795684763128",
       "controlsVisible": false
      },
      {
       "type": "tile",
-      "id": "cell-gene-1795665788448",
+      "id": "cell-gene-1795684773393",
       "controlsVisible": false
      }
     ]
    }
   ],
   "controlState": {
-   "gene-table-1795665778001": false,
-   "cell-gene-1795665788448": false
+   "gene-table-1795684763128": false,
+   "cell-gene-1795684773393": false
   },
   "panelConfigs": {
-   "gene-table-1795665778001": {
-    "id": "gene-table-1795665778001",
+   "gene-table-1795684763128": {
+    "id": "gene-table-1795684763128",
     "title": "Kompot DE genes",
     "columns": [
      {
@@ -86,8 +86,8 @@
     "filteredGenes": null,
     "scoreOptions": null
    },
-   "cell-gene-1795665788448": {
-    "id": "cell-gene-1795665788448",
+   "cell-gene-1795684773393": {
+    "id": "cell-gene-1795684773393",
     "title": "Cell-Gene Plot 2",
     "styleDefault": true,
     "fontModel": 2,
@@ -103,7 +103,7 @@
     },
     "sections": [
      {
-      "source": "gene-table-1795665778001",
+      "source": "gene-table-1795684763128",
       "rows": "genes"
      }
     ],
@@ -119,14 +119,11 @@
  "store": {
   "path": "bm_aging_annzarro.zarr",
   "name": "bm_aging_annzarro.zarr",
-  "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-pl6nx8zv/bm_aging_annzarro.zarr",
+  "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-lhnjgzdq/bm_aging_annzarro.zarr",
   "fp": {
    "v": 1,
    "n_obs": 8090,
    "n_var": 16285,
-   "cells": "f88f73b20c8c660c7323c862c7127f4e",
-   "genes": "6ac1afec89bcee6b090c32d2cc9f43bf",
-   "data": "8d65a13a9f79eb8a48a02f2502885515",
    "meta": "237ea33eaf6621e08554401b3f0fca10",
    "groups": {
     "/": "c9a188dc",
