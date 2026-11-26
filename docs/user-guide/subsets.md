@@ -120,7 +120,8 @@ show the dialog. On a large dataset the steps are the same.
 :alt: The app with the subset applied: "Cells: 3,000 of 8,090" and the badge "Subset · seed 0" in the dataset bar, a UMAP with fewer points coloured by cell type and a status line under it "3,000 of 8,090 cells shown · 5,090 not in part 1 of 3", and a cell table "Showing 1 to 25 of 3,000 entries".
 
 After **Apply**: the UMAP and the cell table show the same 3,000 cells. View before the subset:
-{download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`.
+{download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`. The same **Cell subset** dialog
+is built step by step, on a dataset of 95 million cells, in {ref}`tut-millions-dialog`.
 ```
 
 (subset-size-carried)=
@@ -217,7 +218,8 @@ types that still have cells left: LMPP, Neutrophil and Ery P. The badge's toolti
 Part 7 of 9, balanced across cell type. The tooltip (drawn into the screenshot, because a
 headless browser does not capture native tooltips; the text is the badge's own) lists the cell
 types earlier parts already showed in full. View:
-{download}`userguide-subset-balanced-part.json <../_tools/views/userguide-subset-balanced-part.json>`.
+{download}`userguide-subset-balanced-part.json <../_tools/views/userguide-subset-balanced-part.json>`. The same balanced
+sampling (there across cell lines) is built step by step in {ref}`tut-millions-dialog`.
 ```
 
 ## What a subset changes

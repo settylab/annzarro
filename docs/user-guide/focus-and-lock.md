@@ -166,7 +166,8 @@ over the cells shown. A focus is replaced only when the dataset does not have th
 
 Here `bm_aging_annzarro.zarr` is shown in parts of 3,000 cells ({download}`userguide-focus-outside.json
 <../_tools/views/userguide-focus-outside.json>`). The HSC is in part 2; one click on **›** shows
-part 3, which does not hold it:
+part 3, which does not hold it (the same focus on a cell outside the shown part is built step by step, on a dataset of
+95 million cells, in {ref}`tut-millions-outside`):
 
 ```{figure} ../_static/screens/user-guide/focus-outside.png
 :class: screenshot
@@ -227,7 +228,8 @@ Lock and a fixed colour range together give a side-by-side comparison. The view
 {download}`userguide-compare-genes.json <../_tools/views/userguide-compare-genes.json>` has two
 copies of the fold-change plot. The left one is locked to H2-Q7; the right one follows the focused
 gene, here S100a9. Both use the colour range −1 to 1 with **Lock Range** on, so equal colours mean
-equal fold changes ({doc}`colour-scales`).
+equal fold changes ({doc}`colour-scales`). The same lock (there on a cell, here on a gene) is built step by step in
+the tour ({ref}`tut-tour-lock`).
 
 ```{figure} ../_static/screens/user-guide/focus-compare-genes.png
 :class: screenshot

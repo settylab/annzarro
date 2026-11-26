@@ -282,7 +282,9 @@ written at full precision (`15.22166232974675`), not as displayed (`15.2217`). W
 
 The whole filtered view, including the nested conditions, is kept in panel sets and share links;
 the view file is
-{download}`userguide-gene-table-filtered.json <../_tools/views/userguide-gene-table-filtered.json>`.
+{download}`userguide-gene-table-filtered.json <../_tools/views/userguide-gene-table-filtered.json>`. A gene table filtered
+the same way, with columns added and conditions in **Advanced Search**, is built step by step in
+{ref}`tut-gg-columns` and {ref}`tut-gg-filter`.
 
 ```{admonition} What happens on the server
 :class: note
