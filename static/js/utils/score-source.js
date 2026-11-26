@@ -748,6 +748,8 @@ registerSource({
     loadLarge: loadLargeForPlot,
     table: scoreTable,
     titleOf: (setting) => `gene score ${scoreTitle(setting)}`,
+    // a Count Plot's axis names the score by its method and layer when they are not the default (the Cell Plot's name for it)
+    axisLabel: scoreLabel,
     placeholder: drawScorePlaceholder,
     releaseHost,
     vocabulary: { result: 'score' }

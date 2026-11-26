@@ -596,6 +596,8 @@ const groupAggregate = {
     entryOf: (setting) => setting.key,
     layerOf: (setting) => (setting.history && setting.history.layer && setting.history.layer.key) || '',
     methods: () => null,
+    // the groups of a grouping, once it has been read (a picker greys the ones over a plot's cap with their count)
+    levelCount: (id) => (KNOWN_GROUPS.has(id) ? KNOWN_GROUPS.get(id) : null),
     layers: (setting) => {
         const keys = datasetLayersNow() || ['X'];
         const kept = (setting.history && setting.history.layer && setting.history.layer.key) || '';

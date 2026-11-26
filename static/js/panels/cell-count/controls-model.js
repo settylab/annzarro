@@ -13,6 +13,9 @@ import {
 } from '../../utils/count-plot-model.js';
 import { PANEL_SOURCES, TABLE_SOURCE } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
+import { startSet, encodeSet } from '../../utils/axis-aggregate.js';
+import { SCORE_TYPE, sourceInput } from '../../utils/score-source.js';
+import { DEFAULT_INPUT } from '../../utils/signature-options.js';
 import { setText } from '../../utils/set-plot-model.js';
 import { STATISTIC_INFO, statisticChoices } from '../../utils/group-statistics.js';
 import { STAT_SYMBOLS } from '../../utils/aggregation-symbols.js';
@@ -422,6 +425,17 @@ export function sourceFromSetting(setting) {
     return out;
 }
 
+/**
+ * The source of a Count Plot's X that Distribution (a signature's or a gene table's toolbar) opens: the score on the
+ * signature's own input layer (X when it has none), its default method. Made by the row's own `startSet` and stored by
+ * the row's own `sourceFromSetting`, so it cannot differ from what picking the same set in the row writes.
+ * @param {string} id - the signature's or table's panel id
+ */
+export function distributionSource(id) {
+    const set = startSet({}, encodeSet(SCORE_TYPE, id), sourceInput(id) || DEFAULT_INPUT);
+    return sourceFromSetting(set);
+}
+
 /** The setting an axis select starts from for a stored input: its source, its lock and what the row remembers. */
 export function settingOf(p, history) {
     const s = p && p.source ? p.source : null;
@@ -620,7 +634,12 @@ export function labelChoices(config) {
 
 /** The title of each input of the drawing (draw.js `inputNames`): the source's short name. */
 export function inputNames(config, titleOf) {
-    const name = (p) => (p && p.source ? sourceName(p.source, titleOf) : '');
+    // a score names its method and layer when they are not the default, as a Cell Plot's axis does (the score method button changes the title)
+    const name = (p) => {
+        if (!p || !p.source) return '';
+        const provider = getSource(p.source.type);
+        return provider && provider.axisLabel && p.source.column ? provider.axisLabel(p.source) : sourceName(p.source, titleOf);
+    };
     return { x: name(config.x), y: name(config.y), split: name(config.split), factor: name(config.value && config.value.factor) };
 }
 

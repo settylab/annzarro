@@ -13,9 +13,11 @@ works at 100 thousand and at 100 million cells, with no large-plot mode of its o
 1. Add a **Cell Count Plot** panel. It says "Choose X to count cells."
 2. **Mode**: what to draw. The list groups the modes: *Counts* (**Bar**, **Histogram**, **Pie**), *Two inputs* (**2D
    histogram**, **Heatmap**), *Smoothed* (**Density**, **2D density**) and *Sets* (**Venn**, **UpSet**).
-3. **X** (and **Y** in the two-input modes): any per-cell source a Cell Plot takes, with the same selects: an obs or
-   obsm column, a gene of a layer (following the focus, with the lock), a score, a row of an obsp matrix, or a
-   {doc}`cell-grouping`.
+3. **X** (and **Y** in the two-input modes): any per-cell source a Cell Plot takes, with the same selects. The first
+   select lists **obs**, **obsm**, **obsp** and **layer**. Under **layer** the item list has the focused gene (following
+   the focus, with the lock), then **Gene signatures**, **Gene tables** and **Cell groupings**, each ending with its
+   **New …** entry. A signature or gene table shows one aggregation button after it, its score method (the z-score
+   mean unless you change it); a gene and a grouping have none, and the layer select of a grouping is disabled.
 4. Optionally **Color by**, a further input that divides each bar, curve or slice.
 
 | Control | What it does |
@@ -146,7 +148,7 @@ level or leaves them out.
 |---|---|
 | **Count** | Cells in the bar or rectangle |
 | **Fraction of all cells shown**, **Fraction within each X**, **Fraction within each color** | As a fraction, from 0 to 1 (axis ticks `0.25`, labels and hover `0.25`, never a percentage). In a heatmap: **Fraction of the row**, **Fraction of the column**, **Fraction of the total** |
-| **Statistic of…** | A statistic of a per-cell source over the cells of the bar. The source is chosen with a Cell Plot's colour selects (a gene of a layer follows the focus and has the lock); the statistic with the button after them, which lists what the Cell-Gene Plot and the Gene Plot list, in the same order and with the same symbols ({ref}`interface-symbols`): **x̄** Mean, **c⁺** Fraction of cells (those above the threshold, from 0 to 1, read as `% above` in earlier links), **x̄⁺** Mean of expressing cells, **Σ** Sum, **σ** SD and **%** % of total (the bar's share of the source's total over all counted cells, in percent). Z-score mean is greyed out: a Count Plot has no scale against the dataset yet. **Mean, as z-score against all counted cells** is the bar's mean against the mean and SD of all counted cells (it was *z-score of…*) |
+| **Statistic of…** | A statistic of a per-cell source over the cells of the bar. The source is chosen with the selects under **layer** (a gene of a layer follows the focus and has the lock; a signature or gene table, but never a cell grouping, which is not a number); the statistic with the button at the start of the line, titled "Statistic over each bar's cells", and, when the source is a signature or gene table, the score method with its own button after the source, titled "Aggregation over the signature's genes". The statistic's menu lists what the Cell-Gene Plot and the Gene Plot list, in the same order and with the same symbols ({ref}`interface-symbols`): **x̄** Mean, **c⁺** Fraction of cells (those above the threshold, from 0 to 1, read as `% above` in earlier links), **x̄⁺** Mean of expressing cells, **Σ** Sum, **σ** SD and **%** % of total (the bar's share of the source's total over all counted cells, in percent). Z-score mean is greyed out: a Count Plot has no scale against the dataset yet. **Mean, as z-score against all counted cells** is the bar's mean against the mean and SD of all counted cells (it was *z-score of…*) |
 | **Most frequent level of…** (2D histogram, heatmap) | Colours each rectangle by its commonest level of a further input, exactly, from the same count; **Fade by its fraction** fades rectangles where that level is a small majority |
 
 Axis titles name the source and layer ("Mean of Mrpl15 · logged_counts", "Fraction of cells shown").

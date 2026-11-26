@@ -20,6 +20,7 @@ import { arrangementShown, binsRange, binSpacingOf, splitUsed, measureThreshold 
 import { createAggregationButton } from '../../ui/aggregation-button.js';
 import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
 import { getSource } from '../../utils/source-registry.js';
+import { isAggregate, displayType, clearSetting, applyAfter, decodeSet, encodeSet, startSet, startItem } from '../../utils/axis-aggregate.js';
 import { createPopover } from '../../ui/popover.js';
 import { createPlotToolbar } from '../../ui/plot-toolbar.js';
 import { Config } from '../../config.js';
@@ -162,11 +163,12 @@ export function createControls({ D, id, model, on }) {
 
     /**
      * The three selects of a row, as a cell plot's: a type change keeps what the row last had of the new type, a key
-     * change keeps the row's column, a provider entity listed under obs switches the type, and a provider's "New …"
-     * entry makes one beside this panel.
+     * change keeps the row's column. A gene signature, a gene table or a cell grouping is picked in the item list under
+     * layer (utils/axis-aggregate.js), with the aggregation button after it where something is aggregated, and its
+     * "New …" entry makes one beside this panel; leaving it clears its method and layer completely.
      */
     function wireSelects(row, stored, apply) {
-        const setup = () => on.setupAxis(row.element, row.axis, row.setting, row.roles);
+        const setup = () => on.setupAxis(row.element, row.axis, row.setting, row.roles, { numeric: !!row.numeric, aggLabel: row.aggLabel || null });
         const remember = (type, key, column) => {
             const h = row.setting.history;
             h[type] = { ...(h[type] || {}), key, columns: { ...((h[type] && h[type].columns) || {}), [key]: column } };
@@ -174,30 +176,28 @@ export function createControls({ D, id, model, on }) {
         row.type.addEventListener('change', () => {
             const s = row.setting;
             const now = row.type.value;
-            if (s.type === now) return;
-            remember(s.type, s.key, s.column);
+            if (displayType(s) === now) return;
+            // a set is a way to read a layer: leaving the layer source clears it entirely, so no method or layer outlives it
+            const was = { type: s.type, key: s.key, column: s.column };
+            if (isAggregate(s)) clearSetting(s);
+            remember(was.type, was.key, was.column);
             s.type = now;
             s.key = getSource(now) ? ((s.history[now] && s.history[now].key) || '') : s.key;
             if (now === 'none') { apply(null); return; }
             setup();
+            // a layer with no item to read yet (no gene is focused): nothing is drawn from it until a gene or a set is picked
+            if (now === 'layer' && row.column.__aggregate && !s.column) return;
             apply(sourceFromSetting(s));
         });
         row.key.addEventListener('change', () => {
             const s = row.setting;
-            let value = row.key.value;
-            const listed = parseListed(value);
-            if (listed) {
-                s.history[listed.type] = { ...(s.history[listed.type] || {}), key: listed.key };
-                row.type.value = listed.type;
-                row.type.dispatchEvent(new Event('change'));
+            const value = row.key.value;
+            // a set is read on the layer this select lists: another layer is another reading of the same set
+            if (row.column.__aggregate && isAggregate(s)) {
+                applyAfter(s, 'layer', value);
+                setup();
+                apply(sourceFromSetting(s));
                 return;
-            }
-            const provider = getSource(s.type);
-            if (provider && provider.newEntity && value === provider.newEntity.value) {
-                const made = provider.newEntity.run(id);
-                if (!made) { row.key.value = s.key || ''; return; }
-                value = made.getId();
-                s.column = '';
             }
             remember(s.type, s.key, s.column);
             s.key = value;
@@ -206,10 +206,30 @@ export function createControls({ D, id, model, on }) {
         });
         row.column.addEventListener('change', () => {
             const s = row.setting;
-            const provider = getSource(s.type);
-            if (provider) {
-                if (on.takeSubKey(s, row.column)) apply(sourceFromSetting(s));
-                return;
+            if (row.column.__aggregate) {
+                // the item list of a layer: a set, a single item, or (the button's menu) another aggregation of the set held
+                const touched = row.column.__touched;
+                row.column.__touched = null;
+                const picked = row.column.value;
+                if (touched === 'agg' || isAggregate(s) || decodeSet(picked)) {
+                    const layer = row.key.value;
+                    if (touched === 'agg') applyAfter(s, 'method', row.column.__aggValue);
+                    else if (decodeSet(picked)) {
+                        // the provider's way to make a set ("New signature…" or "New grouping…"): it opens beside this plot and the row takes it
+                        const d = decodeSet(picked);
+                        const maker = getSource(d.type).newEntity;
+                        let value = picked;
+                        if (maker && d.entry === maker.value) {
+                            const made = maker.run(id);
+                            value = made ? encodeSet(d.type, made.getId()) : '';
+                        }
+                        if (!value) { setup(); return; }
+                        startSet(s, value, layer);
+                    } else startItem(s, layer, picked);
+                    setup();
+                    apply(sourceFromSetting(s));
+                    return;
+                }
             }
             s.column = row.column.value;
             apply(sourceFromSetting(s));
@@ -284,8 +304,6 @@ export function createControls({ D, id, model, on }) {
         else next[field] = flip(c[field]);
         commit(next, `${locked ? 'lock' : 'unlock'} ${C.rows[field] || field}`);
     }
-
-    const parseListed = (value) => (on.parseListed ? on.parseListed(value) : null);
 
     // ---------------------------------------------------------------- binning and levels of an input (pop-overs)
     /**
@@ -406,13 +424,23 @@ export function createControls({ D, id, model, on }) {
         const m = model();
         if (!row) return;
         const cap = m.levelCap ? m.levelCap(field) : null;
-        const select = row.setting && row.setting.type === 'obs' ? row.key : row.column;
+        // a row on a layer picks in its item list (a grouping under Cell groupings); any other row, in its key list or its columns
+        const onList = !!(row.setting && row.column.__aggregate && (row.setting.type === 'layer' || isAggregate(row.setting)));
+        const select = onList ? row.column : (row.setting && row.setting.type === 'obs' ? row.key : row.column);
         if (cap !== null && m.levelCountOf && row.setting) {
             for (const opt of select.options) {
                 if (opt.dataset.plain === undefined) opt.dataset.plain = opt.textContent;
                 if (!opt.value) continue;
-                const s = { ...row.setting, [select === row.key ? 'key' : 'column']: opt.value };
-                const n = m.levelCountOf(sourceFromSetting(s));
+                let n = null;
+                if (onList) {
+                    // a grouping's groups are known once it has been read (its provider says); a gene or a signature has none to count
+                    const set = decodeSet(opt.value);
+                    const levelCount = set && getSource(set.type).aggregate.levelCount;
+                    if (levelCount) n = levelCount(set.entry);
+                } else {
+                    const s = { ...row.setting, [select === row.key ? 'key' : 'column']: opt.value };
+                    n = m.levelCountOf(sourceFromSetting(s));
+                }
                 const over = Number.isFinite(n) && n > cap;
                 opt.disabled = over;
                 opt.textContent = over ? C.wayOut.overCap(opt.dataset.plain, n, cap) : opt.dataset.plain;
@@ -499,12 +527,19 @@ export function createControls({ D, id, model, on }) {
     const valueRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--value' }, valueLabel, valueSelect, valueHelp);
     const measureRow = selectsRow('measure', 'measure', C.rows.source);
     measureRow.roles = ['x'];
+    // a number per cell: no grouping under layer; a signature or gene table as the source has its own button (the score method) after it
+    measureRow.numeric = true;
+    measureRow.aggLabel = (setting) => {
+        const source = sourceFromSetting(setting);
+        const title = source ? model().titleOf(source) : '';
+        return title ? C.measureStat.aggregationOver(title) : '';
+    };
     // the statistic of the measure is the shared aggregation button (the Cell-Gene Plot's): the shared table's names and symbols;
     // its threshold box is Expressed above, empty while it follows the grouping's (aggregation-unify-080.md 15.2)
     const CGS = VOCABULARY.cellGene.sources;
     const thresholdOf = () => { const c = model().config; return measureThreshold(c, { groupingThreshold: model().groupingThreshold }); };
     const agg = createAggregationButton({
-        label: `${C.rows.source}: statistic`, axis: 'measure',
+        label: C.measureStat.label, axis: 'measure',
         methods: () => { const c = model().config; return c.measure ? measureStatChoices(c.measure.stat) : null; },
         onPick: (stat) => {
             const c = model().config;
@@ -523,7 +558,10 @@ export function createControls({ D, id, model, on }) {
         onField: (key, text) => commitAbove(text)
     });
     agg.button.classList.add('ccnt-measure-stat');
-    measureRow.extra.appendChild(agg.button);
+    // the statistic (cells to bar) is the first step of the line, before the source it reads; the score method, where the source has one, is after it
+    const lead = el('span', { class: 'ccnt-measure-lead' }, agg.button);
+    measureRow.element.insertBefore(lead, measureRow.labelEl);
+    lead.appendChild(measureRow.labelEl);
     wireSelects(measureRow, () => inputOf('measure'), (source) => commitInput('measure', source));
     rows.set('measure', measureRow);
     const factorRow = selectsRow('factor', 'factor', C.rows.factor);

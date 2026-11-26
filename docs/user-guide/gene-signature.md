@@ -308,8 +308,9 @@ is kept in the browser (up to 1 GiB, least recently used first) so it is not ask
 ## See a score's distribution
 
 **Distribution**, beside **Methods ▾** in the panel's toolbar, opens a Cell Count Plot beside the panel with a histogram of
-the score (the z-score mean of X) over the cells shown. Everything a Cell Count Plot does applies: change the method or the
-layer on its x axis, split it by a grouping, and read the cells with no score (every gene missing there) in its count
+the score (the z-score mean on the signature's own input layer, X unless you chose another) over the cells shown. Its X row
+reads like any signature picked there: **layer**, the layer, **the signature** and the score method's button, which you
+change in place. Everything a Cell Count Plot does applies: change the method or the layer on its x axis, split it by a grouping, and read the cells with no score (every gene missing there) in its count
 of cells left out. Genes left out of the score (absent from the dataset, constant, or without a value) are named in
 the panel's status line.
 

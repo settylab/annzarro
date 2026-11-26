@@ -26,8 +26,9 @@ import './table-utilities/table-background.js';
 import { createTableUndo, changesTableState, giveBack } from './table-utilities/table-undo.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { createScoreOptions } from './score-options/score-options.js';
+import { distributionSource } from './cell-count/controls-model.js';
 import { DEFAULT_INPUT, DEFAULT_METHOD, isDefaultParams, writableOptions } from '../utils/signature-options.js';
-import { SCORE_TYPE, sourceChanged, sourceRenamed, pinConsumersOf } from '../utils/score-source.js';
+import { sourceChanged, sourceRenamed, pinConsumersOf } from '../utils/score-source.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -603,8 +604,7 @@ const GeneTablePanel = (function() {
 
         /** Distribution: a Count Plot of the table's gene score beside it, on z-score mean of X. */
         function openDistribution() {
-            const source = { type: SCORE_TYPE, key: _id, column: DEFAULT_METHOD, layer: 'X' };
-            return PanelManager.createPanelNextTo('cell-count', _id, { mode: 'histogram', x: { source } });
+            return PanelManager.createPanelNextTo('cell-count', _id, { mode: 'histogram', x: { source: distributionSource(_id) } });
         }
         
         /**

@@ -225,8 +225,8 @@ def test_renaming_the_table_renames_its_score(page, served):
     page.evaluate("(id) => PanelManager.getPanel(id).setTitle('Marker genes')", TAB)
     page.wait_for_function("() => PanelManager.getPanel('cell-plot-C').getConfig().color.label === 'Marker genes'", timeout=20000)
     labels = page.eval_on_selector_all(f"{C} select.axis-column-select[data-axis='color'] option", "els => els.map(e => e.textContent)")
-    # the item picker of the layer row (w43): the focused gene, the way to make a signature, then the renamed table
-    assert labels == ["Focused gene ACTB", "New signature…", "Marker genes"], labels
+    # the item picker of the layer row (w43): the focused gene, the way to make a signature, then the renamed table, then the way to make a grouping
+    assert labels == ["Focused gene ACTB", "New signature…", "Marker genes", "New grouping…"], labels
 
 
 # ------------------------------------------------------------------ 4. a cycle
@@ -357,9 +357,9 @@ def test_the_source_menu_tells_tables_from_signatures_and_the_label_names_the_ta
     _wait_coloured(page)
     groups = page.eval_on_selector_all(f"{C} select.axis-column-select[data-axis='color'] optgroup",
                                        "els => els.map(g => [g.label, [...g.querySelectorAll('option')].map(o => o.textContent)])")
-    # the item picker's headings: the focused gene; signatures (and the way to make one); tables
+    # the item picker's headings: the focused gene; signatures (and the way to make one); tables; cell groupings (G-SRC)
     assert groups == [["Genes", ["Focused gene ACTB"]], ["Gene signatures", ["T cell score", "New signature…"]],
-                      ["Gene tables", ["Gene Table 1"]]], groups
+                      ["Gene tables", ["Gene Table 1"]], ["Cell groupings", ["New grouping…"]]], groups
 
 
 # ------------------------------------------------------------------ 7. no gene limit
