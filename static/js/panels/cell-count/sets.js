@@ -35,7 +35,9 @@ import { canonKey } from '../../utils/level-id.js';
 import { GROUPING_LIMITS } from '../../utils/cell-grouping.js';
 import { buildFigure } from './draw-sets.js';
 import { settingOf, sourceFromSetting, isNumericSource } from './controls-model.js';
-import { setupAxisSelector, takeSubKey } from '../plot-utilities/panel-ui-update.js';
+import { getSource } from '../../utils/source-registry.js';
+import { isAggregate, displayType, clearSetting, applyAfter, decodeSet, encodeSet, startSet, startItem } from '../../utils/axis-aggregate.js';
+import { setupAxisSelector } from '../plot-utilities/panel-ui-update.js';
 import { groupSources, panelOf, typeOf, structureRead, sourceTitleOf, titleOfPanel } from '../../utils/group-host.js';
 import { TABLE_SOURCE, GROUP_SOURCE } from '../cell-grouping/factors.js';
 import { shareText } from '../cell-grouping/group-rows.js';
@@ -477,7 +479,7 @@ function mount(host, ctx) {
             ...OPS.map((o) => option(o, W.ops[o], { selected: (holder.member ? holder.member.op : '>') === o })));
         const value = el('input', { type: 'text', inputmode: 'decimal', class: 'form-control form-control-sm ccnt-sets__number', data: { field: 'value' },
             value: holder.member && Number.isFinite(holder.member.value) ? String(holder.member.value) : '' });
-        const setup = () => { if (structure) setupAxisSelector(selector, axis, s, 'cells', structure, { consumer: MENU_CONSUMER, roles: ['x'] }); };
+        const setup = () => { if (structure) setupAxisSelector(selector, axis, s, 'cells', structure, { consumer: MENU_CONSUMER, roles: ['x'], aggregate: true, numeric: true }); };
         const take = () => {
             const source = sourceFromSetting(s);
             const v = Number(String(value.value).trim());
@@ -487,9 +489,35 @@ function mount(host, ctx) {
             holder.problem = '';
             apply(at, { source, member: { op: op.value, value: v } });
         };
-        type.addEventListener('change', () => { s.type = type.value; s.key = ''; s.column = ''; setup(); });
-        key.addEventListener('change', () => { s.key = key.value; setup(); });
-        column.addEventListener('change', () => { if (s.type && takeSubKey(s, column, id)) return; s.column = column.value; });
+        // a condition is a number: a signature or gene table is picked under layer (a grouping is no number: its own set kind says "in a group")
+        type.addEventListener('change', () => {
+            if (displayType(s) === type.value) return;
+            if (isAggregate(s)) clearSetting(s);
+            s.type = type.value; s.key = ''; s.column = ''; setup();
+        });
+        key.addEventListener('change', () => {
+            if (column.__aggregate && isAggregate(s)) applyAfter(s, 'layer', key.value); else s.key = key.value;
+            setup();
+        });
+        column.addEventListener('change', () => {
+            const touched = column.__touched;
+            column.__touched = null;
+            const picked = column.value;
+            if (column.__aggregate && (touched === 'agg' || isAggregate(s) || decodeSet(picked))) {
+                const layer = key.value;
+                if (touched === 'agg') applyAfter(s, 'method', column.__aggValue);
+                else if (decodeSet(picked)) {
+                    const d = decodeSet(picked);
+                    const maker = getSource(d.type).newEntity;
+                    let made = picked;
+                    if (maker && d.entry === maker.value) { const m = maker.run(id); made = m ? encodeSet(d.type, m.getId()) : ''; }
+                    if (made) startSet(s, made, layer);
+                } else startItem(s, layer, picked);
+                setup();
+                return;
+            }
+            s.column = column.value;
+        });
         op.addEventListener('change', () => { if (value.value.trim() !== '') take(); });
         value.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); take(); } });
         value.addEventListener('change', take);

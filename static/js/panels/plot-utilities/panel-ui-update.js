@@ -11,7 +11,7 @@ import { fillSections } from '../../utils/group-picker.js';
 import { aggregateProviders, setSections, isAggregate, displayType, heldSet, aggregateOf, membersOf } from '../../utils/axis-aggregate.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { createAggregationButton } from '../../ui/aggregation-button.js';
-import { getSource, sourcesFor, alsoListedEntries, parseAlsoListed, paletteLabelOf } from '../../utils/source-registry.js';
+import { getSource, sourcesFor, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
 import { largeThreshold, textObsColumns, limitTextAxisOptions, limitSetOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
@@ -171,10 +171,6 @@ export function populateKeySelector(settings, keySelect, datasetStructure, use =
           columns = [...columns].sort((a, b) => a.localeCompare(b));
         }
         keyOptions = columns.map(col => ({ value: col, text: col }));
-        // a provider listed under obs too (a grouping): its entities in their own group after the columns. Not on a row that
-        // picks sets in its item picker (a Cell Plot's axes): a grouping is chosen there, under layer, and one way is enough
-        if (use && !use.aggregate) keyOptions.push(...alsoListedEntries('obs', use.consumer, use.roles));
-        keySelect.__alsoListedUse = use && !use.aggregate ? use : null;
         break;
       }
       case 'obsm': {
@@ -239,10 +235,9 @@ export function populateKeySelector(settings, keySelect, datasetStructure, use =
       $.createSelect([{ value: '', text: 'No options available' }], $keySelect);
     }
   
-    // an entry that switches the type (alsoListedEntries) is a way to choose, never a key the setting holds
     const keyValues = $keySelect.find('option').map(function() {
       return jQuery(this).val();
-    }).get().filter(v => !parseAlsoListed(v));
+    }).get();
     
     // First check if current selection is valid
     if (keyValues.includes(settings.key)) {
@@ -278,27 +273,6 @@ export function populateKeySelector(settings, keySelect, datasetStructure, use =
     if (getSource(type)) $keySelect.find('option[value=""]').prop('disabled', true);
 }
 
-/** An obs key list's entries of providers listed under obs, rebuilt; its columns and its choice stay. */
-function refreshAlsoListed(keySelect) {
-  const use = keySelect.__alsoListedUse;
-  const wanted = alsoListedEntries('obs', use.consumer, use.roles);
-  const now = [...keySelect.options].filter(o => parseAlsoListed(o.value));
-  if (wanted.length === now.length && wanted.every((o, i) => now[i].value === o.value && now[i].textContent === o.text)) return;
-  for (const group of [...keySelect.querySelectorAll('optgroup')]) {
-    if ([...group.children].every(o => parseAlsoListed(o.value))) group.remove();
-  }
-  const current = keySelect.value;
-  for (const entry of wanted) {
-    let group = [...keySelect.children].find(c => c.tagName === 'OPTGROUP' && c.label === entry.group);
-    if (!group) { group = document.createElement('optgroup'); group.label = entry.group; keySelect.appendChild(group); }
-    const option = document.createElement('option');
-    option.value = entry.value;
-    option.textContent = entry.text;
-    group.appendChild(option);
-  }
-  keySelect.value = current;
-}
-
 /**
  * The menus of every plot that read a provider's source, up to date: sources were added, removed or renamed, or what
  * one offers changed. Each key list, third menu and Hover picker keeps its choice and has its options rebuilt.
@@ -324,8 +298,6 @@ function refreshSourceMenus() {
     return { provider, setting: held && held.type === provider.type ? held : null };
   };
   for (const keySelect of document.querySelectorAll('select.axis-key-select')) {
-    // an obs list's entries of providers listed under it (groupings) follow theirs
-    if (keySelect.__alsoListedUse && keySelect.dataset.keyType === 'obs') refreshAlsoListed(keySelect);
     const axis = axisOf(keySelect);
     if (!axis) continue;
     const current = keySelect.value;

@@ -1,4 +1,4 @@
-import { getSource, parseAlsoListed } from '../../utils/source-registry.js';
+import { getSource } from '../../utils/source-registry.js';
 import { settleQuietly } from './plot-undo.js';
 import { isAggregate, clearSetting, applyAfter, decodeSet, encodeSet, startSet, startItem } from '../../utils/axis-aggregate.js';
 import { updateColorSliderUI, setupAxisSelector, sayPair, takeSubKey, showDropdownLoading, defaultAxisType, focusedOptionLabel,
@@ -1192,17 +1192,6 @@ function setupAxisSelectorListeners(
     const axis = jQuery(this).data('axis');
     let newKey = jQuery(this).val();
     const $columnSelect = $container.find(`.axis-column-select[data-axis="${axis}"]`);
-
-    // a provider's entity listed under obs (a grouping, UX 5): the axis switches to that type and takes it. The entry's
-    // value is a way to choose and is never stored: the type select's change reads the key from the history
-    const listed = parseAlsoListed(newKey);
-    if (listed) {
-      settings[axis].history = settings[axis].history || {};
-      settings[axis].history[listed.type] = { ...(settings[axis].history[listed.type] || {}), key: listed.key };
-      jQuery(this).val(settings[axis].key || '');
-      $container.find(`.axis-type-select[data-axis="${axis}"]`).val(listed.type).trigger('change');
-      return;
-    }
 
     // a set is read on the layer this select lists: another layer is another reading of the same set
     if ($columnSelect[0] && $columnSelect[0].__aggregate && isAggregate(settings[axis])) {
