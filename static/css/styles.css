@@ -3259,8 +3259,9 @@ button.dtsb-button.dtsb-clear:hover {
 
 @container plot-controls (min-width: 560px) {
     .ctl-grid {
-        /* equal: the points column holds the opacity row (label, slider, number, auto) and must not be narrowed below it */
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        /* the axes column is the wider (its rows hold a layer, an item, a group and a button), but the points column never
+           goes under what its opacity row needs (label, slider, number, auto): 17rem */
+        grid-template-columns: minmax(0, 1.4fr) minmax(17rem, 1fr);
         grid-template-areas: "axes points" "colour colour" "bar bar";
     }
     .ctl-grid.ctl-no-colour { grid-template-areas: "axes points" "bar bar"; }
