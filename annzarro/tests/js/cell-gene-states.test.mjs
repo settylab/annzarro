@@ -179,10 +179,17 @@ test('Asks first: an upper bound from the estimate, the stored values, Compute a
     assert.equal(n.tag.text, 'Not computed');
 });
 
-test('Refused by cost: how long it would take and the ways out', () => {
+test('Refused by cost: how long it would take and only the ways out that apply', () => {
+    // a layer already stored by gene (CSC, HEAVY's layout) has no faster layout to offer
     const n = say({ state: 'refused', reason: 'groups_too_expensive', estimate: { ...HEAVY, seconds: 1500, tier: 'refused' } });
     assert.equal(n.headline, 'Not run: it is estimated at about 25 minutes.');
-    assert.equal(n.text, 'Use fewer genes, a smaller subset, or a layer stored by gene (CSC).');
+    assert.equal(n.text, 'Use fewer genes or a smaller subset.');
+    assert.doesNotMatch(n.text, /CSC|stored by gene/);
+    // a layer whose layout is dense or not known yet may still be copied to CSC
+    for (const layout of ['dense', undefined]) {
+        const m = say({ state: 'refused', reason: 'groups_too_expensive', estimate: { ...HEAVY, seconds: 1500, tier: 'refused', layout } });
+        assert.equal(m.text, 'Use fewer genes, a smaller subset, or a layer stored by gene (CSC).', String(layout));
+    }
 });
 
 test('Refused for a CSR layer: the layout named, the way out that exists, and no command', () => {

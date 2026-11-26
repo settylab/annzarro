@@ -31,7 +31,7 @@ else:
 
 from annzarro.tests.browser import cgene_controls as CC  # noqa: E402
 from annzarro.tests.browser.test_cell_gene_panel import (  # noqa: E402,F401 (the fixtures)
-    served, page, _open, _plot, _sig, _state, _drawn, _features, _settle, P, TP, S1, GA, GENES)
+    served, page, _open, _plot, _sig, _state, _drawn, _features, _settle, P, TP, S1, S2, GA, GENES)
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
 NOTICE = f"{TP} .cgene-plot > .score-notice"
@@ -355,3 +355,31 @@ def test_no_way_is_offered_when_no_single_edit_would_draw(page, served):
     _wait_state(page, "toolarge")
     _says(page, "1,200 groups × 800 rows = 960,000 cells of the matrix; the limit is 400,000.")
     assert _buttons(page) == []
+
+
+# ------------------------------------------------------------------ the strip follows the drawing
+
+def test_the_strip_does_not_keep_the_count_of_a_drawing_that_is_gone(page, served):
+    """A plot that was drawn and is then replaced by a notice (a refusal that clears the drawing) must not leave the strip
+    below it saying how many cells the old drawing showed."""
+    refuse = {"on": False}
+
+    def estimate(e):
+        return {**e, "seconds": 2400, "tier": "refused", "layout": "csc", "lane": "heavy"} if refuse["on"] else e
+    _rewrite(page, estimate=estimate)
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=_sections(1)), S1: _sig(S1, "Markers", GENES[:5]), S2: _sig(S2, "Others", GENES[5:10])}, open_ids=(P, S1))
+    _drawn(page)
+    strip = f"{TP} .plot-status .ps-headline"
+    drawn = page.inner_text(strip)
+    assert "cells" in drawn and not drawn.startswith("0 "), drawn
+    refuse["on"] = True
+    _set(page, {"sections": _sections(1, S2)})     # other genes: a new estimate, which is refused
+    _wait_state(page, "refused")
+    until(page, "(s) => document.querySelector(s + ' .cgene-plot .js-plotly-plot') === null || !document.querySelector(s + ' .cgene-plot .js-plotly-plot').data", TP)
+    assert page.inner_text(strip) == "", "nothing is drawn: no count in the strip (not the old drawing's, not \"0 cells\")"
+    until(page, "(s) => { const t = document.querySelector(s + ' .plot-status .ps-tag[data-tag=\"score\"]'); return !!t && t.textContent.trim() === 'Plot refused'; }", TP)   # the state tag speaks
+    # a drawing arrives again: its count is back
+    refuse["on"] = False
+    _set(page, {"sections": _sections(1)})
+    _drawn(page)
+    until(page, "(s) => document.querySelector(s + ' .plot-status .ps-headline').textContent === '1,200 cells'", TP)

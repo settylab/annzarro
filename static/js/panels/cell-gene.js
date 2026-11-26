@@ -43,7 +43,7 @@ import { DataManager } from '../data-manager.js';
 import { makeDom } from './gene-set-utilities/dom.js';
 import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
-import { setStatusTag } from '../utils/panel-surface.js';
+import { setStatusTag, clearCoverageNotice } from '../utils/panel-surface.js';
 import { UndoStack, serverRecipe } from '../utils/gene-signature.js';
 import { AXIS_PREFIX, groupSources, panelOf, typeOf, isOpen, titleOfPanel, hasGene, loadStructure, structureRead, resetStructure, sourceTitleOf } from '../utils/group-host.js';
 import { registerReferences, wouldLoop, dependsOn } from '../utils/panel-references.js';
@@ -1271,6 +1271,8 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
         function clearPlot() {
             if (_shown && _dom && window.Plotly) window.Plotly.purge(_dom.plot);
             if (_dom) { setStatusTag(_dom.plot, 'cgene-matrix', null); setStatusTag(_dom.plot, 'cgene-narrow', null); setStatusTag(_dom.plot, 'cgene-3d', null); }
+            // the strip counts what the plot DRAWS: with the drawing gone it says no count (its tags speak), not the old drawing's cells
+            if (_shown && _dom) clearCoverageNotice(_dom.plot);
             _shown = null;
         }
 
