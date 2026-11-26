@@ -209,6 +209,11 @@ def fade(sh, data):
 def rows(sh, data):
     v, ds = view_of("cells-and-genes-d")
     page = sh.open(v, dataset=str(data / ds))
+    # The view's table carries a five-condition filter. Tiles grow with their content (the page scrolls), so its open
+    # Advanced Search makes the split taller than the window and stretches the plot beside it: this shot is of the plot,
+    # so the table's filter builder is folded away for the capture only.
+    page.add_style_tag(content=".tile[data-tile-id^='gene-table'] .dtsb-searchBuilder { display: none !important; }")
+    sh.ready(page)
     G = next(k for k in v["layout"]["panelConfigs"] if k.startswith("gene-plot"))
     toggle_controls(sh, page, G)
     c = T(G)
