@@ -88,6 +88,7 @@ import {
 } from './cell-gene/states.js';
 import { OPTIONS_PART, figureExtras, barSettings, view3dGate } from './cell-gene/options.js';
 import { CLICKS_PART } from './cell-gene/clicks.js';
+import { sectionGap } from './cell-gene/draw-annotations.js';
 import { effectiveSmall } from '../utils/cell-grouping.js';
 import { RESERVED } from '../utils/level-id.js';
 
@@ -1374,11 +1375,18 @@ const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
             const extras = figureExtras(_config, { reply, recipe: shownRecipe(), order, titleOf: sourceTitleOf, colors: colours,
                 groups: { colours: coloured.groups, names } });
             const look = resolveStyle(_config, TYPE);
+            // the gap between sections: `gap` columns, a column counting for at most GAP_COLUMN_PX of it (two one-row sections do
+            // not sit a stretched column apart)
+            const sectionsChange = (k) => k > 0 && matrix.rows[order.rows[k - 1]].section.index !== matrix.rows[order.rows[k]].section.index;
+            let changes = 0;
+            for (let k = 0; k < order.rows.length; k++) if (sectionsChange(k)) changes++;
+            const alongPx = _config.swap ? (_dom.plot.clientHeight || 600) * 0.8 : (_dom.plot.clientWidth || 900) * 0.78 - 20;
+            // dots sit at positions on a continuous axis; a heatmap's cells are on the integer grid, so its gap stays whole columns
+            const gapAt = _config.mode === 'dots' ? sectionGap(extras.gap, order.rows.length, changes, alongPx) : extras.gap;
             const rows = Array.from(order.rows, (r, k) => {
                 const row = matrix.rows[r];
-                const prev = k > 0 ? matrix.rows[order.rows[k - 1]] : null;
                 return { kind: row.kind, label: row.label, section: row.section, own: row.own, pending: !!(pending && pending[r]),
-                    gapBefore: prev && prev.section.index !== row.section.index ? extras.gap : 0 };
+                    gapBefore: sectionsChange(k) ? gapAt : 0 };
             });
             const sizeNone = sizeProblem();
             // a small group kept as it is gets "small" after its label (CXG-14, SHR-12); the collected one is named so already
