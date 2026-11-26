@@ -1,6 +1,6 @@
 {
  "name": "Signature tutorial: the fold change along the neutrophil lineage",
- "timestamp": "2026-11-25T23:38:52+00:00",
+ "timestamp": "2026-11-26T04:06:27+00:00",
  "dataset": "bm_aging_annzarro.zarr",
  "datasetName": "bm_aging_annzarro",
  "constants": {
@@ -11,12 +11,12 @@
   }
  },
  "panelConfigs": {
-  "cell-gene-1795649917883": {
-   "id": "cell-gene-1795649917883",
+  "cell-gene-1795665972847": {
+   "id": "cell-gene-1795665972847",
    "type": "cell-gene",
    "title": "Cell-Gene Plot 3",
    "config": {
-    "id": "cell-gene-1795649917883",
+    "id": "cell-gene-1795665972847",
     "title": "Cell-Gene Plot 3",
     "styleDefault": true,
     "fontModel": 2,
@@ -32,29 +32,29 @@
     },
     "sections": [
      {
-      "source": "gene-signature-1795649808419",
+      "source": "gene-signature-1795665863543",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795649915716",
+      "source": "gene-signature-1795665970658",
       "rows": "genes"
      }
     ],
     "cellAxis": {
      "type": "cell-group",
-     "key": "cell-grouping-1795649903731"
+     "key": "cell-grouping-1795665958753"
     },
     "colorScale": "RdBu",
     "center": 0
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795649808419": {
-   "id": "gene-signature-1795649808419",
+  "gene-signature-1795665863543": {
+   "id": "gene-signature-1795665863543",
    "type": "gene-signature",
    "title": "Granulocyte genes",
    "config": {
-    "id": "gene-signature-1795649808419",
+    "id": "gene-signature-1795665863543",
     "title": "Granulocyte genes",
     "genes": [
      "Camp",
@@ -90,12 +90,12 @@
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795649915716": {
-   "id": "gene-signature-1795649915716",
+  "gene-signature-1795665970658": {
+   "id": "gene-signature-1795665970658",
    "type": "gene-signature",
    "title": "Selp",
    "config": {
-    "id": "gene-signature-1795649915716",
+    "id": "gene-signature-1795665970658",
     "title": "Selp",
     "genes": [
      "Selp"
@@ -112,12 +112,12 @@
    },
    "isSelectionTile": false
   },
-  "cell-grouping-1795649903731": {
-   "id": "cell-grouping-1795649903731",
+  "cell-grouping-1795665958753": {
+   "id": "cell-grouping-1795665958753",
    "type": "cell-grouping",
    "title": "Stage",
    "config": {
-    "id": "cell-grouping-1795649903731",
+    "id": "cell-grouping-1795665958753",
     "title": "Stage",
     "version": 1,
     "partitionings": [
@@ -154,19 +154,19 @@
    "hierarchy": [
     {
      "type": "tile",
-     "id": "cell-gene-1795649917883",
+     "id": "cell-gene-1795665972847",
      "controlsVisible": false
     }
    ],
    "controlState": {
-    "cell-gene-1795649917883": false,
-    "gene-signature-1795649808419": false,
-    "gene-signature-1795649915716": false,
-    "cell-grouping-1795649903731": false
+    "cell-gene-1795665972847": false,
+    "gene-signature-1795665863543": false,
+    "gene-signature-1795665970658": false,
+    "cell-grouping-1795665958753": false
    },
    "panelConfigs": {
-    "cell-gene-1795649917883": {
-     "id": "cell-gene-1795649917883",
+    "cell-gene-1795665972847": {
+     "id": "cell-gene-1795665972847",
      "title": "Cell-Gene Plot 3",
      "styleDefault": true,
      "fontModel": 2,
@@ -182,23 +182,23 @@
      },
      "sections": [
       {
-       "source": "gene-signature-1795649808419",
+       "source": "gene-signature-1795665863543",
        "rows": "genes"
       },
       {
-       "source": "gene-signature-1795649915716",
+       "source": "gene-signature-1795665970658",
        "rows": "genes"
       }
      ],
      "cellAxis": {
       "type": "cell-group",
-      "key": "cell-grouping-1795649903731"
+      "key": "cell-grouping-1795665958753"
      },
      "colorScale": "RdBu",
      "center": 0
     },
-    "gene-signature-1795649808419": {
-     "id": "gene-signature-1795649808419",
+    "gene-signature-1795665863543": {
+     "id": "gene-signature-1795665863543",
      "title": "Granulocyte genes",
      "genes": [
       "Camp",
@@ -232,8 +232,8 @@
      "detect_above": 0,
      "version": 1
     },
-    "gene-signature-1795649915716": {
-     "id": "gene-signature-1795649915716",
+    "gene-signature-1795665970658": {
+     "id": "gene-signature-1795665970658",
      "title": "Selp",
      "genes": [
       "Selp"
@@ -248,8 +248,8 @@
      "detect_above": 0,
      "version": 1
     },
-    "cell-grouping-1795649903731": {
-     "id": "cell-grouping-1795649903731",
+    "cell-grouping-1795665958753": {
+     "id": "cell-grouping-1795665958753",
      "title": "Stage",
      "version": 1,
      "partitionings": [
@@ -274,11 +274,14 @@
   "store": {
    "path": "bm_aging_annzarro.zarr",
    "name": "bm_aging_annzarro.zarr",
-   "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-_x41d6dm/bm_aging_annzarro.zarr",
+   "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-1ih1w9jr/bm_aging_annzarro.zarr",
    "fp": {
     "v": 1,
     "n_obs": 8090,
     "n_var": 16285,
+    "cells": "f88f73b20c8c660c7323c862c7127f4e",
+    "genes": "6ac1afec89bcee6b090c32d2cc9f43bf",
+    "data": "8d65a13a9f79eb8a48a02f2502885515",
     "meta": "237ea33eaf6621e08554401b3f0fca10",
     "groups": {
      "/": "c9a188dc",
