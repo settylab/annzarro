@@ -1,6 +1,6 @@
 {
  "name": "Signature tutorial: the fold change along the neutrophil lineage",
- "timestamp": "2026-11-26T04:06:27+00:00",
+ "timestamp": "2026-11-26T09:16:44+00:00",
  "dataset": "bm_aging_annzarro.zarr",
  "datasetName": "bm_aging_annzarro",
  "constants": {
@@ -11,12 +11,12 @@
   }
  },
  "panelConfigs": {
-  "cell-gene-1795665972847": {
-   "id": "cell-gene-1795665972847",
+  "cell-gene-1795684589727": {
+   "id": "cell-gene-1795684589727",
    "type": "cell-gene",
    "title": "Cell-Gene Plot 3",
    "config": {
-    "id": "cell-gene-1795665972847",
+    "id": "cell-gene-1795684589727",
     "title": "Cell-Gene Plot 3",
     "styleDefault": true,
     "fontModel": 2,
@@ -32,50 +32,50 @@
     },
     "sections": [
      {
-      "source": "gene-signature-1795665863543",
+      "source": "gene-signature-1795684475745",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795665970658",
+      "source": "gene-signature-1795684480126",
       "rows": "genes"
      }
     ],
     "cellAxis": {
      "type": "cell-group",
-     "key": "cell-grouping-1795665958753"
+     "key": "cell-grouping-1795684577775"
     },
     "colorScale": "RdBu",
     "center": 0
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795665863543": {
-   "id": "gene-signature-1795665863543",
+  "gene-signature-1795684475745": {
+   "id": "gene-signature-1795684475745",
    "type": "gene-signature",
-   "title": "Granulocyte genes",
+   "title": "Falls in HSCs",
    "config": {
-    "id": "gene-signature-1795665863543",
-    "title": "Granulocyte genes",
+    "id": "gene-signature-1795684475745",
+    "title": "Falls in HSCs",
     "genes": [
+     "Anxa2",
      "Camp",
+     "Cd37",
      "Cd52",
+     "Cybb",
      "Fcer1g",
-     "Hmgb2",
      "Hp",
+     "Ighm",
      "Lcn2",
-     "Lilrb4a",
-     "Ltf",
-     "Lyz2",
-     "Mgst1",
+     "Ly6c2",
+     "Msrb1",
      "Ncf1",
-     "Ncf2",
-     "Plac8",
-     "Pygl",
+     "Ngp",
+     "Retnlg",
      "S100a8",
      "S100a9",
-     "Slpi",
-     "Syk",
-     "Vim",
+     "Sell",
+     "Sorl1",
+     "Tyrobp",
      "Wfdc21"
     ],
     "down": [],
@@ -90,15 +90,56 @@
    },
    "isSelectionTile": false
   },
-  "gene-signature-1795665970658": {
-   "id": "gene-signature-1795665970658",
+  "gene-signature-1795684480126": {
+   "id": "gene-signature-1795684480126",
    "type": "gene-signature",
-   "title": "Selp",
+   "title": "Rises in HSCs",
    "config": {
-    "id": "gene-signature-1795665970658",
-    "title": "Selp",
+    "id": "gene-signature-1795684480126",
+    "title": "Rises in HSCs",
     "genes": [
-     "Selp"
+     "AW112010",
+     "Adgrg1",
+     "Aldh1a1",
+     "Angpt1",
+     "Apoe",
+     "Car2",
+     "Cavin2",
+     "Ccnd2",
+     "Cd63",
+     "Cd81",
+     "Cirbp",
+     "Clec1a",
+     "Ctla2a",
+     "Fosb",
+     "Gimap1",
+     "Gimap5",
+     "Gimap6",
+     "Gng11",
+     "H2-Q7",
+     "Hlf",
+     "Ifitm1",
+     "Ifitm3",
+     "Iigp1",
+     "Jun",
+     "Kcnq1ot1",
+     "Lmo2",
+     "Ly6a",
+     "Mllt3",
+     "Mmrn1",
+     "Mt1",
+     "Nedd4",
+     "Nrgn",
+     "Nupr1",
+     "Pbx1",
+     "Pim1",
+     "Prtn3",
+     "Sult1a1",
+     "Tmem176a",
+     "Tmem176b",
+     "Trim47",
+     "Txnip",
+     "Zbtb20"
     ],
     "down": [],
     "input": "X",
@@ -112,12 +153,12 @@
    },
    "isSelectionTile": false
   },
-  "cell-grouping-1795665958753": {
-   "id": "cell-grouping-1795665958753",
+  "cell-grouping-1795684577775": {
+   "id": "cell-grouping-1795684577775",
    "type": "cell-grouping",
    "title": "Stage",
    "config": {
-    "id": "cell-grouping-1795665958753",
+    "id": "cell-grouping-1795684577775",
     "title": "Stage",
     "version": 1,
     "partitionings": [
@@ -154,19 +195,19 @@
    "hierarchy": [
     {
      "type": "tile",
-     "id": "cell-gene-1795665972847",
+     "id": "cell-gene-1795684589727",
      "controlsVisible": false
     }
    ],
    "controlState": {
-    "cell-gene-1795665972847": false,
-    "gene-signature-1795665863543": false,
-    "gene-signature-1795665970658": false,
-    "cell-grouping-1795665958753": false
+    "cell-gene-1795684589727": false,
+    "gene-signature-1795684475745": false,
+    "gene-signature-1795684480126": false,
+    "cell-grouping-1795684577775": false
    },
    "panelConfigs": {
-    "cell-gene-1795665972847": {
-     "id": "cell-gene-1795665972847",
+    "cell-gene-1795684589727": {
+     "id": "cell-gene-1795684589727",
      "title": "Cell-Gene Plot 3",
      "styleDefault": true,
      "fontModel": 2,
@@ -182,44 +223,44 @@
      },
      "sections": [
       {
-       "source": "gene-signature-1795665863543",
+       "source": "gene-signature-1795684475745",
        "rows": "genes"
       },
       {
-       "source": "gene-signature-1795665970658",
+       "source": "gene-signature-1795684480126",
        "rows": "genes"
       }
      ],
      "cellAxis": {
       "type": "cell-group",
-      "key": "cell-grouping-1795665958753"
+      "key": "cell-grouping-1795684577775"
      },
      "colorScale": "RdBu",
      "center": 0
     },
-    "gene-signature-1795665863543": {
-     "id": "gene-signature-1795665863543",
-     "title": "Granulocyte genes",
+    "gene-signature-1795684475745": {
+     "id": "gene-signature-1795684475745",
+     "title": "Falls in HSCs",
      "genes": [
+      "Anxa2",
       "Camp",
+      "Cd37",
       "Cd52",
+      "Cybb",
       "Fcer1g",
-      "Hmgb2",
       "Hp",
+      "Ighm",
       "Lcn2",
-      "Lilrb4a",
-      "Ltf",
-      "Lyz2",
-      "Mgst1",
+      "Ly6c2",
+      "Msrb1",
       "Ncf1",
-      "Ncf2",
-      "Plac8",
-      "Pygl",
+      "Ngp",
+      "Retnlg",
       "S100a8",
       "S100a9",
-      "Slpi",
-      "Syk",
-      "Vim",
+      "Sell",
+      "Sorl1",
+      "Tyrobp",
       "Wfdc21"
      ],
      "down": [],
@@ -232,11 +273,52 @@
      "detect_above": 0,
      "version": 1
     },
-    "gene-signature-1795665970658": {
-     "id": "gene-signature-1795665970658",
-     "title": "Selp",
+    "gene-signature-1795684480126": {
+     "id": "gene-signature-1795684480126",
+     "title": "Rises in HSCs",
      "genes": [
-      "Selp"
+      "AW112010",
+      "Adgrg1",
+      "Aldh1a1",
+      "Angpt1",
+      "Apoe",
+      "Car2",
+      "Cavin2",
+      "Ccnd2",
+      "Cd63",
+      "Cd81",
+      "Cirbp",
+      "Clec1a",
+      "Ctla2a",
+      "Fosb",
+      "Gimap1",
+      "Gimap5",
+      "Gimap6",
+      "Gng11",
+      "H2-Q7",
+      "Hlf",
+      "Ifitm1",
+      "Ifitm3",
+      "Iigp1",
+      "Jun",
+      "Kcnq1ot1",
+      "Lmo2",
+      "Ly6a",
+      "Mllt3",
+      "Mmrn1",
+      "Mt1",
+      "Nedd4",
+      "Nrgn",
+      "Nupr1",
+      "Pbx1",
+      "Pim1",
+      "Prtn3",
+      "Sult1a1",
+      "Tmem176a",
+      "Tmem176b",
+      "Trim47",
+      "Txnip",
+      "Zbtb20"
      ],
      "down": [],
      "input": "X",
@@ -248,8 +330,8 @@
      "detect_above": 0,
      "version": 1
     },
-    "cell-grouping-1795665958753": {
-     "id": "cell-grouping-1795665958753",
+    "cell-grouping-1795684577775": {
+     "id": "cell-grouping-1795684577775",
      "title": "Stage",
      "version": 1,
      "partitionings": [
@@ -274,14 +356,11 @@
   "store": {
    "path": "bm_aging_annzarro.zarr",
    "name": "bm_aging_annzarro.zarr",
-   "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-1ih1w9jr/bm_aging_annzarro.zarr",
+   "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-zi0dpudk/bm_aging_annzarro.zarr",
    "fp": {
     "v": 1,
     "n_obs": 8090,
     "n_var": 16285,
-    "cells": "f88f73b20c8c660c7323c862c7127f4e",
-    "genes": "6ac1afec89bcee6b090c32d2cc9f43bf",
-    "data": "8d65a13a9f79eb8a48a02f2502885515",
     "meta": "237ea33eaf6621e08554401b3f0fca10",
     "groups": {
      "/": "c9a188dc",

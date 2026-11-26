@@ -12,24 +12,24 @@
   "hierarchy": [
    {
     "type": "tile",
-    "id": "cell-gene-1795665737273",
+    "id": "cell-gene-1795684722966",
     "controlsVisible": false
    }
   ],
   "controlState": {
-   "cell-gene-1795665737273": false,
-   "gene-signature-1795665717470": false,
-   "gene-signature-1795665720354": false,
-   "gene-signature-1795665722755": false,
-   "gene-signature-1795665725171": false,
-   "gene-signature-1795665727600": false,
-   "gene-signature-1795665730040": false,
-   "gene-signature-1795665732456": false,
-   "gene-signature-1795665734883": false
+   "cell-gene-1795684722966": false,
+   "gene-signature-1795684703568": false,
+   "gene-signature-1795684706412": false,
+   "gene-signature-1795684708761": false,
+   "gene-signature-1795684711110": false,
+   "gene-signature-1795684713459": false,
+   "gene-signature-1795684715843": false,
+   "gene-signature-1795684718211": false,
+   "gene-signature-1795684720580": false
   },
   "panelConfigs": {
-   "cell-gene-1795665737273": {
-    "id": "cell-gene-1795665737273",
+   "cell-gene-1795684722966": {
+    "id": "cell-gene-1795684722966",
     "title": "Cell-Gene Plot 1",
     "styleDefault": true,
     "fontModel": 2,
@@ -45,35 +45,35 @@
     },
     "sections": [
      {
-      "source": "gene-signature-1795665717470",
+      "source": "gene-signature-1795684703568",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795665720354",
+      "source": "gene-signature-1795684706412",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795665722755",
+      "source": "gene-signature-1795684708761",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795665725171",
+      "source": "gene-signature-1795684711110",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795665727600",
+      "source": "gene-signature-1795684713459",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795665730040",
+      "source": "gene-signature-1795684715843",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795665732456",
+      "source": "gene-signature-1795684718211",
       "rows": "genes"
      },
      {
-      "source": "gene-signature-1795665734883",
+      "source": "gene-signature-1795684720580",
       "rows": "genes"
      }
     ],
@@ -82,8 +82,8 @@
      "key": "midres_celltype"
     }
    },
-   "gene-signature-1795665717470": {
-    "id": "gene-signature-1795665717470",
+   "gene-signature-1795684703568": {
+    "id": "gene-signature-1795684703568",
     "title": "Stem and progenitor",
     "genes": [
      "Hlf",
@@ -101,8 +101,8 @@
     "detect_above": 0,
     "version": 1
    },
-   "gene-signature-1795665720354": {
-    "id": "gene-signature-1795665720354",
+   "gene-signature-1795684706412": {
+    "id": "gene-signature-1795684706412",
     "title": "Megakaryocyte",
     "genes": [
      "Gp9",
@@ -119,8 +119,8 @@
     "detect_above": 0,
     "version": 1
    },
-   "gene-signature-1795665722755": {
-    "id": "gene-signature-1795665722755",
+   "gene-signature-1795684708761": {
+    "id": "gene-signature-1795684708761",
     "title": "Erythroid",
     "genes": [
      "Car1",
@@ -137,8 +137,8 @@
     "detect_above": 0,
     "version": 1
    },
-   "gene-signature-1795665725171": {
-    "id": "gene-signature-1795665725171",
+   "gene-signature-1795684711110": {
+    "id": "gene-signature-1795684711110",
     "title": "Myeloid",
     "genes": [
      "Elane",
@@ -157,8 +157,8 @@
     "detect_above": 0,
     "version": 1
    },
-   "gene-signature-1795665727600": {
-    "id": "gene-signature-1795665727600",
+   "gene-signature-1795684713459": {
+    "id": "gene-signature-1795684713459",
     "title": "Monocyte",
     "genes": [
      "Ccr2",
@@ -176,8 +176,8 @@
     "detect_above": 0,
     "version": 1
    },
-   "gene-signature-1795665730040": {
-    "id": "gene-signature-1795665730040",
+   "gene-signature-1795684715843": {
+    "id": "gene-signature-1795684715843",
     "title": "pDC",
     "genes": [
      "Siglech"
@@ -192,8 +192,8 @@
     "detect_above": 0,
     "version": 1
    },
-   "gene-signature-1795665732456": {
-    "id": "gene-signature-1795665732456",
+   "gene-signature-1795684718211": {
+    "id": "gene-signature-1795684718211",
     "title": "B cell",
     "genes": [
      "Cd19",
@@ -212,8 +212,8 @@
     "detect_above": 0,
     "version": 1
    },
-   "gene-signature-1795665734883": {
-    "id": "gene-signature-1795665734883",
+   "gene-signature-1795684720580": {
+    "id": "gene-signature-1795684720580",
     "title": "T cell",
     "genes": [
      "Cd3e",
@@ -235,14 +235,11 @@
  "store": {
   "path": "bm_aging_annzarro.zarr",
   "name": "bm_aging_annzarro.zarr",
-  "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-pl6nx8zv/bm_aging_annzarro.zarr",
+  "abs": "/var/folders/h_/5f32jgps7yq4np44vpfbx4300000gn/T/tutorial-data-lhnjgzdq/bm_aging_annzarro.zarr",
   "fp": {
    "v": 1,
    "n_obs": 8090,
    "n_var": 16285,
-   "cells": "f88f73b20c8c660c7323c862c7127f4e",
-   "genes": "6ac1afec89bcee6b090c32d2cc9f43bf",
-   "data": "8d65a13a9f79eb8a48a02f2502885515",
    "meta": "237ea33eaf6621e08554401b3f0fca10",
    "groups": {
     "/": "c9a188dc",
