@@ -41,7 +41,7 @@ and the layer is the stored fold change, so the column says how much each gene m
    `kompot_de_Young_to_Old_fold_change`; the button holds `x̄`. Press **Add column**, then **Apply Changes**. The column
    is named "HSC: mean · kompot_de_Young_to_Old_fold_change".
 4. In **Advanced Search** add `kompot_de_Young_to_Old_is_de` **Equals** `Yes`, and the new column **Less Than** `-0.5`. The
-   strip reads "Showing 1 to 20 of 20 entries". Rename the table **Falls in HSCs table**.
+   strip reads "Showing 1 to 20 of 20 entries (filtered from 16,285 total entries)". Rename the table **Falls in HSCs table**.
 
 ```{figure} ../_static/screens/tutorials/sig-table-lo.png
 :class: screenshot
