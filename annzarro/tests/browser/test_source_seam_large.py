@@ -23,10 +23,11 @@ if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
 else:
     playwright = pytest.importorskip("playwright.sync_api")
 
-from annzarro.tests.browser.test_large_plot_mode import STORE, TOOLTIP, server  # noqa: E402,F401
+from annzarro.tests.browser.test_large_plot_mode import STORE, server  # noqa: E402,F401
 from annzarro.tests.browser.test_memory_guard import until  # noqa: E402
 
 N = 200
+MARK = "\x01"
 LEVELS = 100
 L = '.tile[data-tile-id="cell-plot-L"]'
 
@@ -43,15 +44,26 @@ window.__fakeReady = Promise.all([import('/static/js/utils/source-registry.js'),
   const codesOf = (n) => { const codes = new Uint16Array(n);
     for (let i = 0; i < n; i++) codes[i] = i === 2 * LEVELS - 1 ? MISSING : i %% LEVELS; return codes; };
   const named = (setting) => { setting.label = setting.key === 'grp-1' ? 'Grouping A' : setting.key; };
-  const base = (type, label) => ({
-    type, label, valueType: 'categorical', entity: 'cells', consumers: ['cell-plot'], axes: ['x', 'y', 'color', 'hover'],
-    largeAxes: ['color'], defaultSub: '',
+  const base = (type) => ({
+    type, valueType: 'categorical', entity: 'cells', consumers: ['cell-plot'], axes: ['x', 'y', 'color', 'hover'],
+    largeAxes: ['color'], largeAxesReason: 'A fake grouping can colour a large plot, not be one of its axes.', defaultSub: '',
+    // a set is picked under layer (G-SRC): its own section of the item list, no aggregation, a disabled layer
+    aggregate: {
+      sections: () => [{ heading: 'Fake groups', entries: [{ entry: 'grp-1', text: 'Grouping A' }] }],
+      start: (id, layer, previous) => ({ type, key: id, column: '', history: { ...((previous && previous.history) || {}), layer: { key: layer } } }),
+      entryOf: (setting) => setting.key,
+      layerOf: (setting) => (setting.history && setting.history.layer && setting.history.layer.key) || '',
+      methods: () => null,
+      layers: () => ({ options: [{ value: 'X', text: 'X' }], chosen: 'X', disabled: true, title: 'A fake grouping reads no layer.' }),
+      after: () => ({ say: '' }),
+      symbolOf: () => ''
+    },
     entities: () => [{ id: 'grp-1', title: 'Grouping A', open: true }],
     keyEntries: (list) => list.map(e => ({ value: e.id, text: e.title })),
     subKeys: () => [],
     titleOf: (setting) => `grouping ${setting.label || setting.key}`
   });
-  R.registerSource({ ...base('fake-many', 'fake many'),
+  R.registerSource({ ...base('fake-many'),
     load: async (setting, opts) => {
       window.__fakeLoads.push({ fn: 'load', type: 'fake-many', role: opts.role });
       named(setting);
@@ -73,7 +85,7 @@ window.__fakeReady = Promise.all([import('/static/js/utils/source-registry.js'),
     }
   });
   const groupNames = Array.from({ length: 64 }, (_, g) => `Group ${g}`);
-  R.registerSource({ ...base('fake-ranked', 'fake ranked'),
+  R.registerSource({ ...base('fake-ranked'),
     load: async (setting, opts) => {
       window.__fakeLoads.push({ fn: 'load', type: 'fake-ranked', role: opts.role });
       named(setting);
@@ -91,7 +103,7 @@ window.__fakeReady = Promise.all([import('/static/js/utils/source-registry.js'),
     return { type: 'categorical', codes, MISSING: 255, categories: FEW, colours: FEW_COLOURS,
       coverage: C.Coverage.complete(opts.expected || 0, 'cells') };
   };
-  R.registerSource({ ...base('fake-few', 'fake few'), load: few('load'), loadLarge: few('loadLarge') });
+  R.registerSource({ ...base('fake-few'), load: few('load'), loadLarge: few('loadLarge') });
 });
 // every uns key the plots ask for (DataManager.loadUns answers a key the store lacks without a request)
 window.__unsKeys = [];
@@ -269,12 +281,19 @@ def test_a_grouping_is_refused_as_a_large_plot_axis(browser, server):
         return p && /not available/.test(p.textContent) ? p.textContent.replace(/\\s+/g, ' ').trim() : null; }""", L)
     assert ("An x axis from fake-many is not available for 200 points: turn on a subset, or choose an embedding (obsm), "
             "an obs column or a gene") in text
-    page.wait_for_function("""(tile) => { const o = document.querySelector(tile + ' select.axis-type-select[data-axis="x"] option[value="fake-many"]');
-        return !!o && o.disabled; }""", arg=L, timeout=30000)
-    state = page.evaluate("""(tile) => ['x', 'y', 'color'].map(axis => {
-        const o = document.querySelector(`${tile} select.axis-type-select[data-axis="${axis}"] option[value="fake-many"]`);
-        return [axis, o.disabled, o.getAttribute('title')]; })""", L)
-    assert state == [["x", True, TOOLTIP], ["y", True, TOOLTIP], ["color", False, None]]
+    # the item lists (a grouping is picked under layer): the x row, which holds it, and the y and colour rows once on layer
+    value = MARK + "fake-many" + MARK + "grp-1"
+    page.wait_for_function("""([tile, v]) => { const o = [...document.querySelectorAll(tile + ' select.axis-column-select[data-axis="x"] option')].find(o => o.value === v);
+        return !!o && o.disabled; }""", arg=[L, value], timeout=30000)
+    for axis in ("y", "color"):
+        page.select_option(f'{L} select.axis-type-select[data-axis="{axis}"]', "layer")
+        page.wait_for_function("""([tile, axis, v]) => [...document.querySelectorAll(`${tile} select.axis-column-select[data-axis="${axis}"] option`)].some(o => o.value === v)""",
+                               arg=[L, axis, value], timeout=30000)
+    state = page.evaluate("""([tile, v]) => ['x', 'y', 'color'].map(axis => {
+        const o = [...document.querySelectorAll(`${tile} select.axis-column-select[data-axis="${axis}"] option`)].find(o => o.value === v);
+        return [axis, o.disabled, o.getAttribute('title')]; })""", [L, value])
+    reason = "A fake grouping can colour a large plot, not be one of its axes."
+    assert state == [["x", True, reason], ["y", True, reason], ["color", False, None]], state
     assert not page.__errors, page.__errors
 
 
@@ -291,6 +310,7 @@ CELL_TYPE = {"type": "obs", "key": "cell_type", "column": ""}
 
 
 def _recolour(page, kind, value):
+    """Choose in a colour row's `type`, `key` or `column` select."""
     page.select_option(f'{L} select.axis-{kind}-select[data-axis="color"]', value)
 
 
@@ -316,9 +336,14 @@ def test_recolour_takes_a_providers_colours_and_a_columns_back(browser, server):
     page = _page(browser)
     page.goto(_link(server, colour=CELL_TYPE, subset=SUBSET, categoryPalette="uns"))
     assert until(page, TRACE_COLOURS, L) == want
+    # the provider is picked under layer: layer in the first select, then its entry in the item list
     page.wait_for_function("""(tile) => [...document.querySelectorAll(`${tile} select.axis-type-select[data-axis="color"] option`)]
-        .some(o => o.value === 'fake-few')""", arg=L, timeout=30000)
-    _recolour(page, "type", "fake-few")
+        .some(o => o.value === 'layer')""", arg=L, timeout=30000)
+    _recolour(page, "type", "layer")
+    entry = MARK + "fake-few" + MARK + "grp-1"
+    page.wait_for_function("""([tile, v]) => [...document.querySelectorAll(`${tile} select.axis-column-select[data-axis="color"] option`)].some(o => o.value === v)""",
+                           arg=[L, entry], timeout=30000)
+    _recolour(page, "column", entry)
     assert _wait_colours(page, list(FEW_COLOURS)) == FEW_COLOURS, "the provider's own colours"
     assert not [k for k in page.evaluate("() => window.__unsKeys") if k and k.startswith("grp-1")], "no uns lookup under a panel id"
     asked = len(page.evaluate("() => window.__unsKeys"))
