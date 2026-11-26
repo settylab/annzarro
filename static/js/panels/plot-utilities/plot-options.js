@@ -40,7 +40,16 @@ export const OPTION_DEFAULTS = Object.freeze({
   scaleBarUnit: ''                 // optional suffix after the number, e.g. 'µm'
 });
 
-export const DEFAULT_MARGINS = Object.freeze({ l: 80, r: 80, t: 80, b: 60, pad: 4 });
+/**
+ * The default margins (px). The top is 30: it was 80 as room for the modebar, which now sits over the plot area
+ * (utils/modebar-anchor.js), so a plot's box starts close under its tile header; a title, a top legend and the coverage
+ * annotation of an export add the room they need themselves.
+ */
+export const DEFAULT_MARGINS = Object.freeze({ l: 80, r: 80, t: 30, b: 60, pad: 4 });
+
+/** The default before the top was reclaimed: a plot saved with exactly these has never had its margins chosen, so it follows the default. */
+const LEGACY_MARGINS = Object.freeze({ l: 80, r: 80, t: 80, b: 60, pad: 4 });
+const isLegacyMargins = (m) => !!m && Object.keys(LEGACY_MARGINS).every((k) => m[k] === LEGACY_MARGINS[k]);
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -53,7 +62,7 @@ export function normalizePlotOptions(settings) {
   const s = settings;
   s.tickCount = isNum(s.tickCount) && s.tickCount >= 2 ? Math.min(Math.round(s.tickCount), 30) : null;
   s.marginsUnlinked = s.marginsUnlinked === true;
-  s.margins = { ...DEFAULT_MARGINS, ...(s.margins || {}) };      // a copy: panels must not share one object
+  s.margins = { ...DEFAULT_MARGINS, ...(isLegacyMargins(s.margins) ? {} : (s.margins || {})) };      // a copy: panels must not share one object
   s.colorbarPosition = COLORBAR_POSITIONS.includes(s.colorbarPosition) ? s.colorbarPosition : OPTION_DEFAULTS.colorbarPosition;
   s.colorbarLength = isNum(s.colorbarLength) && s.colorbarLength >= 0.1 && s.colorbarLength <= 1
     ? s.colorbarLength : OPTION_DEFAULTS.colorbarLength;

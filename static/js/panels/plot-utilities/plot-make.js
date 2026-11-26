@@ -2523,7 +2523,7 @@ export function buildPlotLayout(settings, data) {
   
   // Margins with fallbacks
   if (!settings.margins) {
-    settings.margins = defaults.MARGINS || { l: 80, r: 80, t: 80, b: 60, pad: 4 };
+    settings.margins = defaults.MARGINS || { l: 80, r: 80, t: 30, b: 60, pad: 4 };
   }
   
   // Export options
