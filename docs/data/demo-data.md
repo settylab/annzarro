@@ -176,6 +176,8 @@ Where to see these fields in use:
   {doc}`../tutorials/gene-similarity` (paper figure: {doc}`../paper/gene-by-gene`).
 - The fold-change and smoothed layers: {doc}`../tutorials/cells-and-genes`
   (paper figure: {doc}`../paper/cells-and-genes`).
+- The fold-change layer of one cell against another, coloured by `varp/spearman_fold_change`:
+  {doc}`../tutorials/compare-cell-states`.
 - All of them together: {doc}`../tutorials/tour`.
 
 ### Added by `make_annzarro_store.py`

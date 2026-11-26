@@ -257,8 +257,7 @@ changes in stem cells. `Apoe` is red in HSC and blue in Monocyte: the same gene 
 cell types, and the all-cell mean (-0.039) hides both. The most positive HSC value is `Ifitm1` (+0.99), the most
 negative `S100a9`.
 
-Reading one cell type against another, cell by cell, is the subject of the tutorial on comparing cell states
-(`compare-cell-states`).
+Reading one cell type against another, cell by cell, is the subject of {doc}`compare-cell-states`.
 
 ### 10. Cluster the genes: modules
 
