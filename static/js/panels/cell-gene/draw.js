@@ -72,6 +72,8 @@ const MARGIN = Object.freeze({ l: 10, r: 10, t: 10, b: 10 });
  * at a narrow width the bands give way first (fitMatrix).
  */
 const MIN_COLUMN_PX = Object.freeze({ dots: 10, heatmap: 4 });
+/** The widest a column of dots is drawn (px): fewer columns than the plot has room for keep this pitch, not stretch across it. */
+const MAX_DOT_COLUMN_PX = 140;
 /** The plot takes the left of the figure and the legends stack in the column on its right, in paper units. */
 const LEGEND_X = 0.83;
 const PLOT_RIGHT = 0.78;
@@ -657,6 +659,13 @@ function layoutAxes(model, P, th, right) {
     const pad = overflowOf(model);
     const group = axisOf(groupTicks, groupLabels, P.G, th, { showgrid: false }, pad);
     const gene = axisOf(P.pos, rowLabels, P.span, th, { showgrid: false }, pad);
+    // few columns of dots (two one-row sections) are not stretched across the whole plot: a column is at most MAX_DOT_COLUMN_PX
+    // wide, and the matrix keeps its place, with the room that is left empty at its far end
+    if (model.mode === 'dots' && model.pixels && model.pixels.width > 0) {
+        const along = matrixPixels(model, { right, fontPx: th.fontSize || 12, margin: MARGIN });
+        const cells = gene.range[1] - gene.range[0];
+        if (along / cells > MAX_DOT_COLUMN_PX) gene.range = [gene.range[0], gene.range[0] + along / MAX_DOT_COLUMN_PX];
+    }
     const flip = (axis) => ({ ...axis, range: [axis.range[1], axis.range[0]] });
     // the first group, or the first gene when swapped, is at the top; genes on x are read from above, at an angle
     return model.swap

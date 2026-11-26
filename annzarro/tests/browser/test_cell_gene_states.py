@@ -383,3 +383,48 @@ def test_the_strip_does_not_keep_the_count_of_a_drawing_that_is_gone(page, serve
     _set(page, {"sections": _sections(1)})
     _drawn(page)
     until(page, "(s) => document.querySelector(s + ' .plot-status .ps-headline').textContent === '1,200 cells'", TP)
+
+
+# ------------------------------------------------------------------ the gap between sections of few columns
+
+XPOS = """(t) => { const gd = document.querySelector(t + ' .cgene-plot .js-plotly-plot') || document.querySelector(t + ' .js-plotly-plot');
+    const xs = [...new Set(gd.data.filter(d => d.x && d.x.length).flatMap(d => Array.from(d.x)).filter(v => v !== null))].sort((a, b) => a - b);
+    return { ticks: gd._fullLayout.xaxis.tickvals, range: gd._fullLayout.xaxis.range, xs }; }"""
+
+
+def test_two_one_row_sections_sit_side_by_side_not_a_stretched_column_apart(page, served):
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
+                                  sections=[{"source": S1, "rows": "set"}, {"source": S2, "rows": "set"}]),
+                         S1: _sig(S1, "Falls", GENES[:5]), S2: _sig(S2, "Rises", GENES[5:12])}, open_ids=(P, S1))
+    _drawn(page)
+    got = page.evaluate(XPOS, TP)
+    first, second = got["ticks"]
+    assert first == 0 and 1 < second < 1.5, f"two columns, a fraction of a column of gap between them, not a whole one: {got}"
+    # the columns are not stretched across the plot: the axis shows room for a few more columns of the same width, at its far end
+    assert got["range"][0] == -0.5 and got["range"][1] > 2.5, got
+
+
+def test_gene_columns_keep_the_gap_they_had_and_a_mixed_plot_stays_correct(page, served):
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
+                                  sections=[{"source": S1, "rows": "genes"}, {"source": S2, "rows": "genes"}]),
+                         S1: _sig(S1, "Falls", GENES[:5]), S2: _sig(S2, "Rises", GENES[5:12])}, open_ids=(P, S1))
+    _drawn(page)
+    ticks = page.evaluate(XPOS, TP)["ticks"]
+    assert ticks[:5] == [0, 1, 2, 3, 4] and ticks[5] == 6, f"one empty column between 5 genes and 7 genes: {ticks}"
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
+                                  sections=[{"source": S1, "rows": "set"}, {"source": S2, "rows": "genes"}]),
+                         S1: _sig(S1, "Falls", GENES[:5]), S2: _sig(S2, "Rises", GENES[5:12])}, open_ids=(P, S1))
+    _drawn(page)
+    mixed = page.evaluate(XPOS, TP)["ticks"]
+    assert len(mixed) == 8 and mixed[0] == 0 and all(b > a for a, b in zip(mixed, mixed[1:])), mixed
+    assert all(abs((b - a) - 1) < 1e-9 for a, b in zip(mixed[1:], mixed[2:])), "the gene columns are a column apart"
+    assert 1 < mixed[1] < 2, "a gap of less than a column between the one-row section and the genes"
+
+
+def test_a_heatmap_keeps_whole_columns_for_the_gap(page, served):
+    """Heatmap cells are on the integer grid: the gap between sections stays whole columns, so the figure draws."""
+    _open(page, served, {P: _plot(mode="heatmap", cellAxis={"type": "obs", "key": "cell_type"},
+                                  sections=[{"source": S1, "rows": "set"}, {"source": S2, "rows": "set"}]),
+                         S1: _sig(S1, "Falls", GENES[:5]), S2: _sig(S2, "Rises", GENES[5:12])}, open_ids=(P, S1))
+    _drawn(page)
+    assert page.evaluate(XPOS, TP)["ticks"] == [0, 2]
