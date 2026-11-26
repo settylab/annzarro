@@ -248,15 +248,19 @@ def test_a_cell_grouping_score_factor_is_chosen_with_method_and_layer_selects(pa
 
 
 
-def test_a_count_plot_measure_on_a_score_has_the_layer_select_beside_the_method(page, served):
+def test_a_count_plot_measure_on_a_score_has_the_layer_select_and_the_method_button(page, served):
     tile = f'.tile[data-tile-id="{COUNT}"]'
     count = {"id": COUNT, "title": "Count 1", "version": 1, "mode": "bar", "x": {"source": {"type": "obs", "key": "cell_type"}},
              "value": {"kind": "measure"}, "measure": {"stat": "mean", "source": {"type": "gene-score", "key": SIG, "column": "mean", "layer": "X"}}}
     page.goto(_url(served, [COUNT], {COUNT: count, SIG: _sig()}))
     row = f"{tile} [data-row='measure']"
-    page.wait_for_selector(f"{row} select.axis-layer-select", timeout=30000)
-    assert page.evaluate("(s) => [...document.querySelector(s).options].map(o => o.value)", f"{row} select.axis-layer-select") == ["X", "counts", "logged"]
-    assert len(page.evaluate("(s) => [...document.querySelector(s).options].map(o => o.value)", f"{row} select.axis-column-select")) == 6
-    page.select_option(f"{row} select.axis-layer-select", "logged")
+    # a score is picked under layer (G-SRC2): the layer select lists the layers, the method is the score's aggregation button
+    page.wait_for_selector(f"{row} .axis-selector .axis-agg-btn", timeout=30000)
+    assert page.evaluate("(s) => [...document.querySelector(s).options].map(o => o.value)", f"{row} select.axis-key-select") == ["X", "counts", "logged"]
+    page.click(f"{row} .axis-selector .axis-agg-btn")
+    page.wait_for_selector("[data-popover='aggregation']")
+    assert page.locator("[data-popover='aggregation'] [role=menuitem]").count() == 6
+    page.keyboard.press("Escape")
+    page.select_option(f"{row} select.axis-key-select", "logged")
     until(page, "(id) => { const s = window.PanelManager.getPanel(id).getConfig().measure.source; return s.layer === 'logged' && s.column === 'mean'; }", COUNT)
     _shot(page.locator(row), "count-plot-measure-row.png")

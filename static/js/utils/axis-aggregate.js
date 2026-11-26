@@ -45,15 +45,18 @@ export const isAggregate = (setting) => !!aggregateOf(setting);
 /** The source an axis row shows for a setting: a set is read on a layer. */
 export const displayType = (setting) => (isAggregate(setting) ? 'layer' : setting.type);
 
-/** The providers whose sets a consumer's axes list, in registration order. */
-export function aggregateProviders(consumer, roles) {
-    return sourcesFor(consumer, roles).filter((p) => p.aggregate);
+/**
+ * The providers whose sets a consumer's axes list, in registration order. `numeric` is a row that takes a number per
+ * cell (a Count Plot's measure): a set whose value is a group label (a grouping) is not listed there.
+ */
+export function aggregateProviders(consumer, roles, numeric = false) {
+    return sourcesFor(consumer, roles).filter((p) => p.aggregate && (!numeric || p.valueType === 'numerical'));
 }
 
 /** The sets a consumer lists, in sections: [{heading, entries: [{value, text, alt?}]}], empty sections left out. */
-export function setSections(consumer, roles) {
+export function setSections(consumer, roles, numeric = false) {
     const out = [];
-    for (const provider of aggregateProviders(consumer, roles)) {
+    for (const provider of aggregateProviders(consumer, roles, numeric)) {
         for (const section of provider.aggregate.sections()) {
             if (!section.entries.length) {
                 // a section that can be empty says so, in a line that is no choice, as the signatures' "New signature…" is one

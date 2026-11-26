@@ -51,7 +51,7 @@ function fieldRow(f, onField) {
 
 /**
  * @param {Object} options
- * @param {string} options.label - what is chosen: "Aggregation"
+ * @param {string|(() => string)} options.label - what is chosen: "Aggregation" (a function when a set's name is in it)
  * @param {string} [options.axis] - copied to `data-axis` (a test hook)
  * @param {() => ({options: Array<Object>, chosen: string}|null)} options.methods
  * @param {(value: string) => void} options.onPick
@@ -62,12 +62,14 @@ function fieldRow(f, onField) {
  * @returns {{button: HTMLButtonElement, update: () => void, destroy: () => void}}
  */
 export function createAggregationButton({ label, axis = '', methods, onPick, fields = null, onField = null, suffix = null, pressed = null }) {
+    // a label may be a function: a set's name in it can change while the button stays
+    const nameOf = () => (typeof label === 'function' ? label() : label);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn btn-sm btn-outline-secondary axis-agg-btn';
     button.dataset.axis = axis;
     const popover = createPopover({
-        anchor: button, name: 'aggregation', title: label, menu: true,
+        anchor: button, name: 'aggregation', title: nameOf(), menu: true,
         render: (body) => {
             const held = methods();
             if (!held) return;
@@ -116,7 +118,7 @@ export function createAggregationButton({ label, axis = '', methods, onPick, fie
             tail.textContent = extra;
             button.append(tail);
         }
-        const text = chosen ? `${label}: ${chosen.name}${extra ? ` ${extra}` : ''}` : label;
+        const text = chosen ? `${nameOf()}: ${chosen.name}${extra ? ` ${extra}` : ''}` : nameOf();
         if (pressed) {
             const on = !!pressed();
             button.classList.toggle('active', on);

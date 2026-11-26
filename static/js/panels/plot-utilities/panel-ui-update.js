@@ -631,7 +631,7 @@ function populateLayerItems(settings, columnSelect, plotType, use) {
   const sections = [];
   if (focused) sections.push({ heading: plotType === 'cells' ? VOCABULARY.aggregation.sections.genes : VOCABULARY.aggregation.sections.cells,
     entries: [{ value: focused, text: focusedOptionLabel(entity, focused, locked) }] });
-  sections.push(...setSections(use.consumer, use.roles));
+  sections.push(...setSections(use.consumer, use.roles, !!use.numeric));
   const loose = focused ? [] : [{ value: '', text: `Select a focused ${plotType === 'cells' ? 'gene' : 'cell'} first` }];
   // a set that is gone stays where it was chosen, marked, so the plot keeps its setting and says why (the notice over it)
   const held = asSet ? heldSet(settings) : '';
@@ -687,7 +687,8 @@ function ensureAggregationButton(columnSelect, settings) {
   }
   if (!made) {
     made = createAggregationButton({
-      label: VOCABULARY.aggregation.label, axis: columnSelect.dataset.axis || '',
+      label: () => { const row = columnSelect.__row; return (row && row.use.aggLabel && row.use.aggLabel(row.settings)) || VOCABULARY.aggregation.label; },
+      axis: columnSelect.dataset.axis || '',
       methods: () => {
         const row = columnSelect.__row;
         const provider = row && aggregateOf(row.settings);
@@ -741,10 +742,10 @@ function fillTypeSelect(select, choices) {
  * @param {Object} settings - Axis settings (will be updated)
  * @param {string} plotType - Either 'cells' or 'genes'
  * @param {Object} datasetStructure - Dataset structure as returned from DataManager
- * @param {{consumer: string, roles: string[]}} use - the panel type the selects belong to and the roles the source
- *   fills (['x'], ['color']): the type menu lists what that consumer accepts for them
+ * @param {{consumer: string, roles: string[], aggregate?: boolean, numeric?: boolean, aggLabel?: Function}} use - the panel type the
+ *   selects belong to and the roles the source fills (['x'], ['color']): the type menu lists what that consumer accepts for them
  */
-export function setupAxisSelector(container, axis, settings, plotType, datasetStructure, { consumer, roles, aggregate = false }) {
+export function setupAxisSelector(container, axis, settings, plotType, datasetStructure, { consumer, roles, aggregate = false, numeric = false, aggLabel = null }) {
     const $container = jQuery(container);
     const $typeSelect = $container.find(`.axis-type-select[data-axis="${axis}"]`);
     const $keySelect = $container.find(`.axis-key-select[data-axis="${axis}"]`);
@@ -755,8 +756,9 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
       return;
     }
     // an axis row of a plot picks sets in its item picker (utils/axis-aggregate.js): only where the consumer has some
-    const sets = aggregate && aggregateProviders(consumer, roles).length > 0;
-    const use = { consumer, roles, aggregate: sets };
+    const sets = aggregate && aggregateProviders(consumer, roles, numeric).length > 0;
+    // `numeric`: a row that takes a number per cell lists no grouping; `aggLabel(setting)`: what the aggregation button of the row's set is called
+    const use = { consumer, roles, aggregate: sets, numeric, aggLabel };
     $keySelect[0].__aggregate = sets;
     $columnSelect[0].__aggregate = sets;
     $columnSelect[0].__row = { settings, axis, plotType, use, structure: datasetStructure };

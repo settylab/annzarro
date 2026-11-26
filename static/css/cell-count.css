@@ -28,6 +28,8 @@
 .ccnt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0; }
 .ccnt-row[hidden], .ccnt-input[hidden] { display: none; }
 .ccnt-row > .ctl-label, .ccnt-row > .axis-selector-label { flex: 0 0 4.75rem; margin: 0; color: var(--az-text); font-weight: 600; }
+.ccnt-row > .ccnt-measure-lead { flex: 0 0 4.75rem; display: flex; align-items: center; gap: 4px; }
+.ccnt-measure-lead > .ctl-label, .ccnt-measure-lead > .axis-selector-label { margin: 0; color: var(--az-text); font-weight: 600; }
 .ccnt-row .axis-selector { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
 .ccnt-row .form-select, .ccnt-row .form-control { width: auto; max-width: 13rem; }
 .ccnt-row .form-select:disabled { opacity: 0.6; }
@@ -152,7 +154,7 @@
 .ccnt-save__do { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 /* narrow: the label goes above its selects (UX 4.7) */
 @container ccnt (max-width: 420px) {
-    .ccnt-row > .ctl-label, .ccnt-row > .axis-selector-label { flex-basis: 100%; }
+    .ccnt-row > .ctl-label, .ccnt-row > .axis-selector-label, .ccnt-row > .ccnt-measure-lead { flex-basis: 100%; }
     .ccnt-density-notes { margin-left: 0; }
     .ccnt-arrangement { margin-left: 0; }
 }

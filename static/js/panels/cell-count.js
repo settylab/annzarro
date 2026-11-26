@@ -61,8 +61,7 @@ import { createHostBinding, isVisible, PENDING } from '../utils/host-binding.js'
 import { actions } from '../utils/source-actions.js';
 import { isPlanState, describePlan, wayOut, wayAction, gridNotice, levelsNote } from './cell-count/states.js';
 import { saveOffered, savePlan, openSaveDialog } from './cell-count/save-grouping.js';
-import { setupAxisSelector, typeChoices, takeSubKey } from './plot-utilities/panel-ui-update.js';
-import { parseAlsoListed } from '../utils/source-registry.js';
+import { setupAxisSelector, typeChoices } from './plot-utilities/panel-ui-update.js';
 import { PLOT_PALETTES, modebarOf, MODEBAR_REMOVE } from '../utils/plot-theme.js';
 import { resolveStyle } from './plot-utilities/options-schema.js';
 import { applyPlotStyle, styleTheme } from './plot-utilities/plot-style.js';
@@ -647,13 +646,13 @@ actions.register({
             root.insertAdjacentHTML('afterbegin', noDatasetScreenHtml(_id));
             _controls = createControls({ D, id: _id, model: controlsModel, on: {
                 commit, undo: () => undo(), csv: downloadCsv, saveAsGrouping, wayOut: takeWayOut,
-                setupAxis: (rowEl, axis, setting, roles) => {
+                // a row picks a gene signature, a gene table or a cell grouping in its item list under layer, as a Cell Plot's axis does
+                // (utils/axis-aggregate.js); `numeric` is a row that takes a number per cell (the measure): no grouping there
+                setupAxis: (rowEl, axis, setting, roles, extra = {}) => {
                     const structure = structureRead();
-                    if (structure) setupAxisSelector(rowEl, axis, setting, 'cells', structure, { consumer: MENU_CONSUMER, roles });
+                    if (structure) setupAxisSelector(rowEl, axis, setting, 'cells', structure, { consumer: MENU_CONSUMER, roles, aggregate: true, ...extra });
                 },
-                typeChoices: (roles) => typeChoices('cells', MENU_CONSUMER, roles),
-                takeSubKey: (setting, select) => takeSubKey(setting, select, _id),
-                parseListed: parseAlsoListed
+                typeChoices: (roles) => typeChoices('cells', MENU_CONSUMER, roles, true)
             } });
             const plot = el('div', { class: 'ccnt-plot', id: `ccnt-plot-${_id}` });
             // what the plot area says for a plan that asks nothing: the sentence (the live region) and its way out beside it

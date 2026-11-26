@@ -403,6 +403,11 @@ const countPlot = Object.freeze({
         mode: 'Mode', x: 'X', y: 'Y', split: 'Color by', slices: 'Slices', height: 'Height', color: 'Color', labels: 'Labels',
         sets: capital(plural.set), factor: 'Of', source: 'Of', above: 'Above'
     }),
+    /** The two buttons of a measure line, each titled with the step it takes: cells to a bar, then a set's genes to a cell. */
+    measureStat: Object.freeze({
+        label: "Statistic over each bar's cells",
+        aggregationOver: (name) => `Aggregation over ${name}'s genes`
+    }),
     arrangement: Object.freeze({ stack: 'Stacked', dodge: 'Side by side', overlay: 'Overlaid', fill: 'Filled' }),
     /** Why an arrangement does not apply (its title, where it is disabled). */
     arrangementRefused: Object.freeze({

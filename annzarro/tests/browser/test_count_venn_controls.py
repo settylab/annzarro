@@ -4,7 +4,7 @@ the area of the sections reflects the amount in them".
 Served as test_count_sets.py serves it (the grouping fixture, 1,200 cells). Three sets (levels of a column, a condition
 on a number, a boolean column) draw a Venn; then, each on the drawn page:
 
-1.  Labels (Count and share, Count, Share, None) and Names: each draws what it says and is one Undo step; a value is
+1.  Labels (Count and fraction, Count, Fraction, None) and Names: each draws what it says and is one Undo step; a value is
     stored only when it differs from its default, and going back to the default removes the field.
 2.  Area reflects counts: each circle's area is in proportion to its set's cells (measured from the shapes Plotly drew),
     the label of each region is still the brute-force count, one Undo returns equal circles, and an old link (none of the
@@ -16,6 +16,7 @@ Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWS
 """
 import math
 import os
+import re
 
 import pytest
 
@@ -84,12 +85,12 @@ def test_venn_controls_sit_in_the_labels_row_and_default_to_what_old_links_drew(
                  value: r.querySelector('.ccnt-labels').value, names: r.querySelector('.ccnt-names').checked,
                  area: r.querySelector('.ccnt-venn-area').checked, areaShown: r.querySelector('.ccnt-venn-area').offsetParent !== null,
                  areaLabel: r.querySelector('.ccnt-venn-area').parentElement.textContent.trim() }; }""", S)
-    assert row == {"shown": True, "select": ["Count and share", "Count", "Share", "None"], "value": "both", "names": True,
+    assert row == {"shown": True, "select": ["Count and fraction", "Count", "Fraction", "None"], "value": "both", "names": True,
                    "area": False, "areaShown": True, "areaLabel": "Area reflects counts"}, row
     brute = _regions(SETS)
     fig = _figure(page)
     assert [t.split("<br>")[0] for t in fig["text"]] == [f"{brute.get(c, 0):,}" for c in range(1, 8)]
-    assert all("%" in t for t in fig["text"]) and len(fig["names"]) == 3
+    assert all(re.search(r"<br>[\d.<]+$", t) for t in fig["text"]) and len(fig["names"]) == 3
     assert fig["radii"] == [1, 1, 1] and _fixed(fig), "the fixed layout"
     config = _config(page)
     assert not any(k in config for k in ("vennLabels", "vennNames", "vennArea")), config
@@ -105,10 +106,10 @@ def test_each_label_mode_and_names_is_one_undo_step_and_stored_only_off_its_defa
     counts = [f"{brute.get(c, 0):,}" for c in range(1, 8)]
     steps = _undo_steps(page)
 
-    for value, check in (("count", lambda t: t in counts), ("share", lambda t: t.endswith("%")), ("none", lambda t: t == "")):
+    for value, check in (("count", lambda t: t in counts), ("share", lambda t: re.fullmatch(r"[\d.<]+", t) is not None), ("none", lambda t: t == "")):
         page.select_option(f"{S} .ccnt-labels", value)
         _drawn(page, "venn", f"c.vennLabels === '{value}'")
-        _wait_text(page, "f.text.every(t => " + {"count": "/^[\\d,]+$/.test(t)", "share": "/^[\\d.<]+%$/.test(t)", "none": "t === ''"}[value] + ")")
+        _wait_text(page, "f.text.every(t => " + {"count": "/^[\\d,]+$/.test(t)", "share": "/^[\\d.<]+$/.test(t)", "none": "t === ''"}[value] + ")")
         fig = _figure(page)
         assert all(check(t) for t in fig["text"]), (value, fig["text"])
         if value == "count":
@@ -171,7 +172,7 @@ def test_area_reflects_counts_draws_circles_in_proportion_to_their_sets_and_is_o
     for value in ("count", "share", "none"):
         page.select_option(f"{S} .ccnt-labels", value)
         _drawn(page, "venn", f"c.vennLabels === '{value}' && c.vennArea === true")
-        _wait_text(page, "f.text.every(t => " + {"count": "!t.includes('%') && !t.includes('<br>')", "share": "t === '' || t.endsWith('%')", "none": "t === ''"}[value] + ")")
+        _wait_text(page, "f.text.every(t => " + {"count": "!t.includes('%') && !t.includes('<br>')", "share": "t === '' || /^[\\d.<]+$/.test(t)", "none": "t === ''"}[value] + ")")
         _shot(page, f"venn-proportional-{value}.png")
     page.select_option(f"{S} .ccnt-labels", "both")
     _drawn(page, "venn", "c.vennLabels === undefined && c.vennArea === true")
@@ -224,17 +225,17 @@ def test_export_carries_the_labels_the_plot_shows(page, served):
     assert "A · " in svg and "B · " in svg and "C · " in svg
     page.select_option(f"{S} .ccnt-labels", "share")
     _drawn(page, "venn", "c.vennLabels === 'share'")
-    _wait_text(page, "f.text.every(t => t.endsWith('%'))")
+    _wait_text(page, "f.text.every(t => /^[\\d.<]+$/.test(t))")
     page.uncheck(f"{S} .ccnt-names")
     _drawn(page, "venn", "c.vennNames === false")
     _wait_text(page, "f.names.length === 0")
     svg = _svg(page)
-    assert "A · " not in svg and "%" in svg
+    assert "A · " not in svg and re.search(r">0\.\d+<", svg)
     page.check(f"{S} .ccnt-venn-area")
     _drawn(page, "venn", "c.vennArea === true")
     _wait_text(page, "!f.centres.every(([x, y], i) => Math.abs(x - [-0.55, 0.55, 0][i]) < 1e-9 && Math.abs(y - [0.32, 0.32, -0.62][i]) < 1e-9)")
     svg = _svg(page)
-    assert svg.count("<circle") + svg.count("<path") >= 3 and "%" in svg and "A · " not in svg
+    assert svg.count("<circle") + svg.count("<path") >= 3 and re.search(r">0\.\d+<", svg) and "A · " not in svg
 
 
 PIXELS = """(s) => [...document.querySelectorAll(s + ' .ccnt-plot .shapelayer path')].map(p => { const r = p.getBoundingClientRect();
@@ -249,7 +250,7 @@ def test_circles_of_an_edited_plot_are_where_a_fresh_plot_puts_them(page, served
         step()
         _drawn(page, "venn")
     _drawn(page, "venn", "c.vennArea === true && c.vennNames === false && c.vennLabels === 'share'")
-    _wait_text(page, "f.names.length === 0 && f.text.every(t => t === '' || t.endsWith('%'))")
+    _wait_text(page, "f.names.length === 0 && f.text.every(t => t === '' || /^[\\d.<]+$/.test(t))")
     config = _config(page)
     edited = page.evaluate(PIXELS, S)
     # the same page, loaded again from a link of the final config: a fresh drawing

@@ -253,7 +253,7 @@ a plot, and enter no statistic.
 | **Cell Plot** colour, x, y, z and hover | Choose **layer**, then pick the grouping in the item list under **Cell groupings**; **New grouping…** ends that section. (Hover has its own **Groupings** list.) Colour draws one legend entry per group, in group order, with the grouping's colours, and every categorical legend option applies. The hover reads `Grouping 1: B cell \| Old` |
 | **Cell Table** | The column chooser has a **Cell groupings** tab. The column shows each cell's group, sorts in group order and filters with **Equals** like a categorical column |
 | **Cell-Gene Plot** | As **Groups** ({doc}`cell-gene-plot`) |
-| **Cell Count Plot** | As X, Y or **Color by**, and one group of it as a set ({doc}`cell-count-plot`) |
+| **Cell Count Plot** | As X, Y or **Color by**: choose **layer**, then the grouping in the item list under **Cell groupings**; there is no aggregation button and the layer select is disabled. One group of it is also a set ({doc}`cell-count-plot`) |
 | **Another grouping** | As a factor: its groups become the levels |
 
 A grouping chooses no statistics for the plots built on it: each plot lists every statistic and every layer itself
