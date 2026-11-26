@@ -385,46 +385,49 @@ def test_the_strip_does_not_keep_the_count_of_a_drawing_that_is_gone(page, serve
     until(page, "(s) => document.querySelector(s + ' .plot-status .ps-headline').textContent === '1,200 cells'", TP)
 
 
-# ------------------------------------------------------------------ the gap between sections of few columns
+# ------------------------------------------------------------------ the gap between sections (none by default, any fraction)
 
 XPOS = """(t) => { const gd = document.querySelector(t + ' .cgene-plot .js-plotly-plot') || document.querySelector(t + ' .js-plotly-plot');
-    const xs = [...new Set(gd.data.filter(d => d.x && d.x.length).flatMap(d => Array.from(d.x)).filter(v => v !== null))].sort((a, b) => a - b);
-    return { ticks: gd._fullLayout.xaxis.tickvals, range: gd._fullLayout.xaxis.range, xs }; }"""
+    const f = gd._fullLayout;
+    const cell = (tr) => Array.from(tr.x || []).filter(v => v !== null);
+    return { ticks: f.xaxis.tickvals, range: f.xaxis.range, domain: f.xaxis.domain, width: gd.clientWidth,
+             heat: gd.data.filter(d => d.type === 'heatmap').map(d => cell(d)),
+             bar: (() => { const m = gd.data.find(d => d.type === 'scatter' && d.marker && d.marker.colorbar); const b = m && m.marker.colorbar;
+                           return b ? b.x : null; })() }; }"""
 
 
-def test_two_one_row_sections_sit_side_by_side_not_a_stretched_column_apart(page, served):
-    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
-                                  sections=[{"source": S1, "rows": "set"}, {"source": S2, "rows": "set"}]),
+def _two_one_row(page, served, mode="dots", **extra):
+    _open(page, served, {P: _plot(mode=mode, cellAxis={"type": "obs", "key": "cell_type"},
+                                  sections=[{"source": S1, "rows": "set"}, {"source": S2, "rows": "set"}], **extra),
                          S1: _sig(S1, "Falls", GENES[:5]), S2: _sig(S2, "Rises", GENES[5:12])}, open_ids=(P, S1))
+    _drawn(page)
+    return page.evaluate(XPOS, TP)
+
+
+def test_the_gap_between_sections_is_none_by_default_in_dots_and_in_a_heatmap(page, served):
+    assert _two_one_row(page, served)["ticks"] == [0, 1]
+    assert _two_one_row(page, served, "heatmap")["heat"] == [[0, 1]], "one run of cells, side by side"
+
+
+def test_a_gap_of_half_a_column_is_half_a_column_in_dots_and_in_a_heatmap(page, served):
+    assert _two_one_row(page, served, gap=0.5)["ticks"] == [0, 1.5]
+    heat = _two_one_row(page, served, "heatmap", gap=0.5)["heat"]
+    assert heat == [[0], [1.5]], f"two runs of cells half a column apart: {heat}"
+
+
+def test_two_one_row_sections_are_not_stretched_and_the_legend_follows_the_plot(page, served):
+    got = _two_one_row(page, served)
+    plot_px = (got["domain"][1] - got["domain"][0]) * (got["width"] - 20)       # paper units are of the area inside the 10 px margins
+    assert plot_px / (got["range"][1] - got["range"][0]) <= 141, f"a column of dots is at most 140 px wide: {got}"
+    # the colour bar starts just after the plot's right edge, not at the tile's
+    assert 0 <= (got["bar"] - got["domain"][1]) * (got["width"] - 20) < 80, got
+    swapped = _two_one_row(page, served, swap=True)
+    assert swapped["bar"] is not None and swapped["bar"] >= swapped["domain"][1], "swapped axes: the legend does not overlap the plot"
+
+
+def test_many_columns_keep_the_legend_clear_of_the_plot(page, served):
+    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"}, sections=_sections(1)),
+                         S1: _sig(S1, "Markers", GENES[:30])}, open_ids=(P, S1))
     _drawn(page)
     got = page.evaluate(XPOS, TP)
-    first, second = got["ticks"]
-    assert first == 0 and 1 < second < 1.5, f"two columns, a fraction of a column of gap between them, not a whole one: {got}"
-    # the columns are not stretched across the plot: the axis shows room for a few more columns of the same width, at its far end
-    assert got["range"][0] == -0.5 and got["range"][1] > 2.5, got
-
-
-def test_gene_columns_keep_the_gap_they_had_and_a_mixed_plot_stays_correct(page, served):
-    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
-                                  sections=[{"source": S1, "rows": "genes"}, {"source": S2, "rows": "genes"}]),
-                         S1: _sig(S1, "Falls", GENES[:5]), S2: _sig(S2, "Rises", GENES[5:12])}, open_ids=(P, S1))
-    _drawn(page)
-    ticks = page.evaluate(XPOS, TP)["ticks"]
-    assert ticks[:5] == [0, 1, 2, 3, 4] and ticks[5] == 6, f"one empty column between 5 genes and 7 genes: {ticks}"
-    _open(page, served, {P: _plot(cellAxis={"type": "obs", "key": "cell_type"},
-                                  sections=[{"source": S1, "rows": "set"}, {"source": S2, "rows": "genes"}]),
-                         S1: _sig(S1, "Falls", GENES[:5]), S2: _sig(S2, "Rises", GENES[5:12])}, open_ids=(P, S1))
-    _drawn(page)
-    mixed = page.evaluate(XPOS, TP)["ticks"]
-    assert len(mixed) == 8 and mixed[0] == 0 and all(b > a for a, b in zip(mixed, mixed[1:])), mixed
-    assert all(abs((b - a) - 1) < 1e-9 for a, b in zip(mixed[1:], mixed[2:])), "the gene columns are a column apart"
-    assert 1 < mixed[1] < 2, "a gap of less than a column between the one-row section and the genes"
-
-
-def test_a_heatmap_keeps_whole_columns_for_the_gap(page, served):
-    """Heatmap cells are on the integer grid: the gap between sections stays whole columns, so the figure draws."""
-    _open(page, served, {P: _plot(mode="heatmap", cellAxis={"type": "obs", "key": "cell_type"},
-                                  sections=[{"source": S1, "rows": "set"}, {"source": S2, "rows": "set"}]),
-                         S1: _sig(S1, "Falls", GENES[:5]), S2: _sig(S2, "Rises", GENES[5:12])}, open_ids=(P, S1))
-    _drawn(page)
-    assert page.evaluate(XPOS, TP)["ticks"] == [0, 2]
+    assert got["bar"] >= got["domain"][1] + 0.02, got

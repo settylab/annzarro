@@ -74,6 +74,9 @@ const MARGIN = Object.freeze({ l: 10, r: 10, t: 10, b: 10 });
 const MIN_COLUMN_PX = Object.freeze({ dots: 10, heatmap: 4 });
 /** The widest a column of dots is drawn (px): fewer columns than the plot has room for keep this pitch, not stretch across it. */
 const MAX_DOT_COLUMN_PX = 140;
+/** Up to this many columns, every label is kept (a column is at least a label line high); a label line is this many em. */
+const LABELLED_COLUMNS_MAX = 20;
+const LABEL_LINE_EM = 1.25;
 /** The plot takes the left of the figure and the legends stack in the column on its right, in paper units. */
 const LEGEND_X = 0.83;
 const PLOT_RIGHT = 0.78;
@@ -422,8 +425,11 @@ function titleHover(fitted, x, y, th) {
  */
 function fitMatrix(model, P, dots, th) {
     if (!model.pixels || !(model.pixels.width > 0)) return { model, hidden: [], keepMin: true };
-    const need = P.span * MIN_COLUMN_PX[dots ? 'dots' : 'heatmap'];
     const fontPx = th.fontSize || 12;
+    // a plot of few columns keeps every gene's label: a column is at least a label's height (a plot of many columns thins its
+    // labels by pixels instead, annotateFigure), so the bands and the legend's minimum width give way first
+    const labelled = P.span <= LABELLED_COLUMNS_MAX ? fontPx * LABEL_LINE_EM : 0;
+    const need = P.span * Math.max(MIN_COLUMN_PX[dots ? 'dots' : 'heatmap'], labelled);
     const legend = legendStack(model, P, dots, th).length > 0;
     let m = model;
     let keepMin = true;
@@ -650,6 +656,20 @@ function overflowOf(model) {
     return size && size.scale > 1 ? (Math.min(MAX_DOT_SCALE, size.scale) - 1) / 2 : 0;
 }
 
+/**
+ * Where the matrix's right edge is (paper units) when its columns would be wider than MAX_DOT_COLUMN_PX: a few columns of dots
+ * (two one-row sections) are not stretched across the plot, the plot is as wide as they need, and the legend follows it
+ * (`buildFigure`). A heatmap's cells fill the plot, and swapped axes (genes down the side) keep the full height.
+ */
+function cappedRight(model, P, th, right) {
+    if (model.mode !== 'dots' || model.swap || !model.pixels || !(model.pixels.width > 0)) return right;
+    const along = matrixPixels(model, { right, fontPx: th.fontSize || 12, margin: MARGIN });
+    const cells = Math.max(P.span, 1) + 2 * overflowOf(model);
+    const cap = cells * MAX_DOT_COLUMN_PX;
+    if (!(along > cap)) return right;
+    return right - (along - cap) / Math.max(model.pixels.width - MARGIN.l - MARGIN.r, 1);
+}
+
 function layoutAxes(model, P, th, right) {
     const groupTicks = model.groups.map((_, g) => g);
     const groupLabels = model.groups.map((g) => esc(g.label));
@@ -659,13 +679,6 @@ function layoutAxes(model, P, th, right) {
     const pad = overflowOf(model);
     const group = axisOf(groupTicks, groupLabels, P.G, th, { showgrid: false }, pad);
     const gene = axisOf(P.pos, rowLabels, P.span, th, { showgrid: false }, pad);
-    // few columns of dots (two one-row sections) are not stretched across the whole plot: a column is at most MAX_DOT_COLUMN_PX
-    // wide, and the matrix keeps its place, with the room that is left empty at its far end
-    if (model.mode === 'dots' && model.pixels && model.pixels.width > 0) {
-        const along = matrixPixels(model, { right, fontPx: th.fontSize || 12, margin: MARGIN });
-        const cells = gene.range[1] - gene.range[0];
-        if (along / cells > MAX_DOT_COLUMN_PX) gene.range = [gene.range[0], gene.range[0] + along / MAX_DOT_COLUMN_PX];
-    }
     const flip = (axis) => ({ ...axis, range: [axis.range[1], axis.range[0]] });
     // the first group, or the first gene when swapped, is at the top; genes on x are read from above, at an angle
     return model.swap
@@ -754,73 +767,87 @@ function blank(rows, cols) {
     return Array.from({ length: rows }, () => new Array(cols).fill(NaN));
 }
 
+/**
+ * The heatmap's traces. Each colour layer is drawn as one trace per RUN of rows that sit a position apart (a section, or
+ * sections with no gap between them): Plotly draws a heatmap's cells contiguous, so a gap between sections is the empty
+ * space between two traces, and it can be any fraction of a column (the Gap setting).
+ */
 function heatmapTraces(model, P, stack, th) {
     const { color, swap } = model;
     const G = P.G;
-    const Y = swap ? P.span : G;
-    const X = swap ? G : P.span;
-    const xs = Array.from({ length: X }, (_, k) => k);
-    const ys = Array.from({ length: Y }, (_, k) => k);
+    const groupAt = Array.from({ length: G }, (_, k) => k);
     const describe = describer(model, P, false);
     const noValue = [];
     const pending = new Set(pendingRows(model));
 
-    const layers = P.colour.map((k) => {
+    /** Runs of the rows `list` (ascending): [{rows: [...], at: [...positions]}], a new run where the next row is not one position on. */
+    const runsOf = (list) => {
+        const runs = [];
+        for (const r of [...list].sort((a, b) => a - b)) {
+            const last = runs[runs.length - 1];
+            if (last && Math.abs(P.pos[r] - last.at[last.at.length - 1] - 1) < 1e-9) { last.rows.push(r); last.at.push(P.pos[r]); }
+            else runs.push({ rows: [r], at: [P.pos[r]] });
+        }
+        return runs;
+    };
+    /** A trace over one run: cell (row r, group g) is `fill(r, g)`'s [value, text] or nothing. */
+    const over = (run, fill, extra) => {
+        const n = run.rows.length;
+        const Y = swap ? n : G;
+        const X = swap ? G : n;
         const z = blank(Y, X);
         const text = Array.from({ length: Y }, () => new Array(X));
-        for (const r of k.rows) {
+        run.rows.forEach((r, c) => {
             for (let g = 0; g < G; g++) {
-                const i = r * G + g;
-                const yy = swap ? P.pos[r] : g;
-                const xx = swap ? g : P.pos[r];
-                const v = color.values[i];
-                if (Number.isFinite(v)) {
-                    z[yy][xx] = v;
-                    text[yy][xx] = describe(r, g, i);
-                } else if (!pending.has(r)) {
-                    noValue.push(yy, xx, describe(r, g, i));
-                }
+                const cell = fill(r, g);
+                if (!cell) continue;
+                const yy = swap ? c : g;
+                const xx = swap ? g : c;
+                z[yy][xx] = cell[0];
+                text[yy][xx] = cell[1];
             }
-        }
+        });
+        return { type: 'heatmap', x: swap ? groupAt : run.at, y: swap ? run.at : groupAt, z, text, hoverinfo: 'text', hoverongaps: false, ...extra };
+    };
+
+    // every layer spans every run of the matrix (its cells are empty where it holds none): a gap between sections is the space
+    // between two runs
+    const runs = runsOf(Array.from(P.pos, (_, r) => r));
+    const layers = [];
+    P.colour.forEach((k) => {
         const entry = barOf(stack, k.key);
-        const trace = {
-            type: 'heatmap', x: xs, y: ys, z, text, hoverinfo: 'text', hoverongaps: false,
-            colorscale: color.colorscale, zmin: k.lo, zmax: k.hi, showscale: Boolean(entry)
-        };
-        if (color.reversescale) trace.reversescale = true;
-        if (entry) trace.colorbar = colourBar(entry, k.lines, th);
-        if (color.printValues) trace.texttemplate = '%{z:.2~f}';
-        return trace;
+        const mine = new Set(k.rows);
+        runs.forEach((run, n) => {
+            const trace = over(run, (r, g) => {
+                if (!mine.has(r)) return null;
+                const i = r * G + g;
+                const v = color.values[i];
+                if (Number.isFinite(v)) return [v, describe(r, g, i)];
+                if (!pending.has(r)) noValue.push(r, g, describe(r, g, i));
+                return null;
+            }, { colorscale: color.colorscale, zmin: k.lo, zmax: k.hi, showscale: Boolean(entry) && n === 0 });
+            if (color.reversescale) trace.reversescale = true;
+            if (entry && n === 0) trace.colorbar = colourBar(entry, k.lines, th);
+            if (color.printValues) trace.texttemplate = '%{z:.2~f}';
+            layers.push(trace);
+        });
     });
 
     if (noValue.length) {
-        const z = blank(Y, X);
-        const text = Array.from({ length: Y }, () => new Array(X));
-        for (let j = 0; j < noValue.length; j += 3) {
-            z[noValue[j]][noValue[j + 1]] = 1;
-            text[noValue[j]][noValue[j + 1]] = noValue[j + 2];
+        const cells = new Map();
+        for (let j = 0; j < noValue.length; j += 3) cells.set(noValue[j] * G + noValue[j + 1], noValue[j + 2]);
+        const missingRows = new Set(noValue.filter((_, j) => j % 3 === 0));
+        for (const run of runs.filter((u) => u.rows.some((r) => missingRows.has(r)))) {
+            layers.push(over(run, (r, g) => (cells.has(r * G + g) ? [1, cells.get(r * G + g)] : null),
+                { showscale: false, colorscale: [[0, GAP_COLOUR], [1, GAP_COLOUR]], zmin: 0, zmax: 1 }));
         }
-        layers.push({
-            type: 'heatmap', x: xs, y: ys, z, text, hoverinfo: 'text', hoverongaps: false, showscale: false,
-            colorscale: [[0, GAP_COLOUR], [1, GAP_COLOUR]], zmin: 0, zmax: 1
-        });
     }
     if (pending.size) {
         const hover = pendingHover(model);
-        const z = blank(Y, X);
-        const text = Array.from({ length: Y }, () => new Array(X));
-        for (const r of pending) {
-            for (let g = 0; g < G; g++) {
-                const yy = swap ? P.pos[r] : g;
-                const xx = swap ? g : P.pos[r];
-                z[yy][xx] = 1;
-                text[yy][xx] = hover(r, g);
-            }
+        for (const run of runs.filter((u) => u.rows.some((r) => pending.has(r)))) {
+            layers.push(over(run, (r, g) => (pending.has(r) ? [1, hover(r, g)] : null),
+                { name: 'rows being read', showscale: false, colorscale: [[0, th.gridColor], [1, th.gridColor]], zmin: 0, zmax: 1, opacity: 0.6 }));
         }
-        layers.push({
-            type: 'heatmap', name: 'rows being read', x: xs, y: ys, z, text, hoverinfo: 'text', hoverongaps: false, showscale: false,
-            colorscale: [[0, th.gridColor], [1, th.gridColor]], zmin: 0, zmax: 1, opacity: 0.6
-        });
     }
     return layers;
 }
@@ -1251,7 +1278,10 @@ export function buildFigure(given, theme) {
     const fitted = fitMatrix(given, P, dots, th);
     const { hidden, keepMin } = fitted;
     const stack = legendStack(fitted.model, P, dots, th, keepMin);
-    const right = stack.length ? stack[0].x - (LEGEND_X - PLOT_RIGHT) : 1;
+    const full = stack.length ? stack[0].x - (LEGEND_X - PLOT_RIGHT) : 1;
+    const right = cappedRight(fitted.model, P, th, full);
+    // the legend column follows a plot that was narrowed (unless Plot Options set the space for it)
+    if (right < full && !(fitted.model.legendLayout && fitted.model.legendLayout.space > 0)) for (const entry of stack) entry.x -= full - right;
     const model = dots && !fitted.model.size.none
         ? { ...fitted.model, size: { ...fitted.model.size, ...dotRange(fitted.model, P, th, right) } } : fitted.model;
 
