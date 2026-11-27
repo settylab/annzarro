@@ -3,7 +3,7 @@
 The grouping fixture plus two categorical obs columns: ``f32`` (float32 categories 0.1, 0.2, 0.3) and ``big`` (int64
 categories 2**53+1, 2**53+3, 2**53+5). A set picks its levels by id: the ids are the server's (the obs route sends
 them beside the labels), so each box names exactly one level and the Venn counts the cells of the ticked categories.
-A link stored before the fix, with the float64 digits of a float32, still opens on the same level.
+The engine's ids are those of 0.8.0 (a float32 level is its float64 widening), so links stored earlier are untouched.
 
 Needs Playwright with Chromium; skipped otherwise, unless ANNZARRO_REQUIRE_BROWSER=1.
 """
@@ -26,7 +26,7 @@ F32 = np.array([0.1, 0.2, 0.3], dtype=np.float32)
 BIG = np.array([2 ** 53 + 1, 2 ** 53 + 3, 2 ** 53 + 5], dtype=np.int64)
 CODES = (np.arange(N) % 3).astype(np.int8)
 CODES[::7] = 2
-TRUE = {"f32": ["c:0.1", "c:0.2", "c:0.3"], "big": [f"c:{2 ** 53 + k}" for k in (1, 3, 5)]}
+TRUE = {"f32": ["c:0.10000000149011612", "c:0.20000000298023224", "c:0.30000001192092896"], "big": [f"c:{2 ** 53 + k}" for k in (1, 3, 5)]}
 OTHER = {"source": {"type": "obs", "key": "is_doublet"}, "member": {"levels": ["c:true"]}}
 
 
@@ -90,10 +90,3 @@ def test_ticking_levels_of_a_numeric_column_names_each_level_and_counts_its_cell
         assert text.startswith(f"{brute.get(code + 1, 0):,}"), (code, text)
     row = _rows(page)[1]
     assert row["cells"] == f"{int(np.isin(CODES, [0, 1]).sum()):,} cells" and row["state"] != "problem"
-
-
-def test_a_link_stored_with_the_float64_digits_of_a_float32_still_counts_its_level(page, served):
-    old = {"source": {"type": "obs", "key": "f32"}, "member": {"levels": ["c:0.10000000149011612", "c:0.20000000298023224"]}}
-    _open(page, served, {CC: _count(mode="venn", sets=[OTHER, old])})
-    _drawn(page, "venn")
-    assert _rows(page)[1]["cells"] == f"{int(np.isin(CODES, [0, 1]).sum()):,} cells"

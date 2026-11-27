@@ -312,28 +312,6 @@ def _direct_obs(reader, dataset_path: str, key: str):
     return None, None
 
 
-def category_values(reader, dataset_path: str, key: str, categories: list) -> list:
-    """The categories of an obs column as the store holds them. A reader lists them as Python values, which widens a
-    float32 category to a float64 (0.1 becomes 0.10000000149011612); the level id is made from the stored number
-    (``cell_groups.canonical_label``), so a column of a float type narrower than 64 bits gets numpy scalars of its own
-    dtype back. Any other column is returned as it came."""
-    try:
-        with root(reader, dataset_path) as store:
-            node = store["obs"][key]
-            if is_group(node):
-                member = node["categories"]
-            else:                                       # an older h5ad: the categories are a referenced dataset
-                import h5py
-                ref = node.attrs.get("categories")
-                member = store[ref] if isinstance(ref, h5py.Reference) else None
-            dtype = np.dtype(member.dtype) if member is not None else None
-    except (KeyError, TypeError, ValueError, AttributeError):
-        return categories
-    if dtype is None or dtype.kind != "f" or dtype.itemsize >= 8:
-        return categories
-    return [None if v is None else dtype.type(v) for v in categories]
-
-
 def _text_node(reader, node) -> bool:
     """A plain array of strings (not a categorical or nullable group)."""
     if is_group(node) or getattr(node, "shape", None) is None or len(node.shape) != 1:

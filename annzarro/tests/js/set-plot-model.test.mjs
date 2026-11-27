@@ -294,13 +294,13 @@ test('levels of a column whose categories are numbers or booleans: the ids are t
     assert.deepEqual(plot.regions.map((r) => r.count), [1, 2, 3].map((code) => brute.get(code) || 0));
 });
 
-test('levels of a column: the ids the route sends are used as they are, so a float32 or a 2**53+1 category keeps its level', () => {
-    // JSON gives JavaScript 0.10000000149011612 for a float32 0.1 and 9007199254740992 for 2**53+1: no id made from them is the engine's
+test('levels of a column: the ids the route sends are used as they are, so a 2**53+1 category keeps its level', () => {
+    // JSON gives JavaScript 9007199254740992 for 2**53+1 (and for 2**53): an id made from it is not the engine's
     const labels = [0.10000000149011612, 9007199254740992, 'x', null];
-    const serverIds = ['c:0.1', 'c:9007199254740993', 'c:x', '@na'];
+    const serverIds = ['c:0.10000000149011612', 'c:9007199254740993', 'c:x', '@na'];
     const got = S.categoryChoices(labels, serverIds);
-    assert.deepEqual(got.ids, ['c:0.1', 'c:9007199254740993', 'c:x'], 'the server\'s ids; a missing category is no choice');
-    assert.deepEqual(got.labels, ['0.1', '9007199254740993', 'x'], 'the label is the id\'s text');
+    assert.deepEqual(got.ids, ['c:0.10000000149011612', 'c:9007199254740993', 'c:x'], 'the server\'s ids; a missing category is no choice');
+    assert.deepEqual(got.labels, ['0.10000000149011612', '9007199254740993', 'x'], 'the label is the id\'s text');
     // without ids (an old server) the id is made from the value, as before
     assert.deepEqual(S.categoryChoices([3, 'x']).ids, ['c:3', 'c:x']);
 });

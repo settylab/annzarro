@@ -701,9 +701,6 @@ class _Levels:
         self.bounds: Dict[int, Tuple[Optional[float], Optional[float]]] = {}
         self.categories: Optional[List[str]] = None
         self.absent: List[str] = []
-        #: Level ids a link stored before 0.8.1, when a float32 category's id was made from its float64 widening
-        #: (``c:0.10000000149011612``), by the id they name now (``c:0.1``): a stored id still finds its level.
-        self.legacy_ids: Dict[str, str] = {}
         #: The level limit the stored categories are compared with before any cell is read (a count plot's axis
         #: sets its own); past it, the categories that hold a cell shown are counted instead (SHR-6, SHR-7).
         self.level_limit: Optional[int] = None
@@ -941,21 +938,16 @@ class _Levels:
             want = set(member.get("levels") or ()) | ({"g:" + group_key_json(member["group"])}
                                                        if "group" in member else set())
             have = set(ids)
-            found = {cid: (cid if cid in have else self.legacy_ids.get(cid)) for cid in want}
-            self.absent = [cid for cid in sorted(want) if found[cid] is None]
-            inside = {c for c in found.values() if c is not None}
             lut[:] = 1
             for i, cid in enumerate(ids):
-                if cid in inside:
+                if cid in want:
                     lut[i] = 0
+            self.absent = [cid for cid in sorted(want) if cid not in have]
             self.categories = ids
             return lut
         if part.spec.levels is not None:
             kept = list(part.spec.levels)
             have = {cid: i for i, cid in enumerate(ids)}
-            for old, new in self.legacy_ids.items():
-                if old not in have and new in have:
-                    have[old] = have[new]
             self.absent = [cid for cid in kept if cid not in have]
             self.slots = kept + ([] if exclude else ["@other", "@na"])
             other = NONE16 if exclude else len(kept)
@@ -1091,12 +1083,7 @@ class _Levels:
             yield first
             yield from slabs
         if first.kind == "category":
-            stored = cs.category_values(self.ctx.reader, self.ctx.dataset_path, self.part.spec.source["key"],
-                                        first.categories)
-            ids = [canonical_label(v) for v in stored]
-            if stored is not first.categories:
-                legacy = [canonical_label(v) for v in first.categories]
-                self.legacy_ids = {old: new for old, new in zip(legacy, ids) if old != new and old not in set(ids)}
+            ids = [canonical_label(v) for v in first.categories]
             levels = grouping_limits()["levels"]
             limit = levels if self.level_limit is None else min(self.level_limit, levels)
             if len(ids) > limit and self.part.member is None and self.part.spec.levels is None:

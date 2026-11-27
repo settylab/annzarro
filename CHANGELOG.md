@@ -9,7 +9,7 @@ with the release after it. Older releases are listed on
 ## Unreleased
 
 ### Fixed
-- **Venn and UpSet sets on numeric categories.** A "Levels of a column" set on a column whose categories are float32 numbers (0.1, 0.2) or integers past 2^53 now picks and counts the right level; before, the level the page named could match another level or none. Links saved earlier with the long float digits (`0.10000000149011612`) still open on the same level.
+- **Venn and UpSet sets on numeric categories.** A "Levels of a column" set on a column whose categories are integers past 2^53 now picks and counts the right level; before, the level the page named could match another level or none.
 
 ## 0.8.0 (2026-11-26)
 
