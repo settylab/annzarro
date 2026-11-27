@@ -154,9 +154,12 @@ async function timed(n) {
     const { names, codes } = synthetic(n, GROUP_NAMES.length);
     let best = Infinity;
     for (let k = 0; k < 3; k++) {
-        const t = performance.now();
+        // CPU time of the process, not the wall clock: a machine under load descheduled the run for most of a wall-clock
+        // sample, which says nothing about how much work the build is (the 2 s and 15x bounds are on that work)
+        const t = process.cpuUsage();
         const parts = await csvOf({ names, codes, groupNames: GROUP_NAMES });
-        best = Math.min(best, performance.now() - t);
+        const used = process.cpuUsage(t);
+        best = Math.min(best, (used.user + used.system) / 1000);
         assert.equal(parts.join('').split('\n').length, n + 2);
     }
     return best;

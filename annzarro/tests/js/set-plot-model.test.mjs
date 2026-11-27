@@ -368,12 +368,16 @@ test('scaling: the model of a 16-set grid is one pass, at most 15x a 10x smaller
         const names = setsOf(k).map((_, s) => `s${s}`);
         const table = tableOf(config, grid);
         S.setPlotModel(config, table, { names });
-        const t0 = process.hrtime.bigint();
+        // CPU time, not the wall clock: under machine load a run is descheduled for most of a wall-clock sample (25.97 ms
+        // against 1.50 ms for the same work), which is not the work the 15x bound is about
+        const t0 = process.cpuUsage();
         for (let i = 0; i < reps; i++) S.setPlotModel(config, table, { names });
-        return Number(process.hrtime.bigint() - t0) / reps;
+        const used = process.cpuUsage(t0);
+        return ((used.user + used.system) * 1000) / reps;
     };
     // 2^16 grid cells against 2^13 (8x) and 2^12.7 ~ 10x: the model is linear in the grid cells
-    const small = Math.min(time(13, 20), time(13, 20));
-    const big = Math.min(time(16, 5), time(16, 5));
+    const best = (k, reps) => Math.min(...Array.from({ length: 5 }, () => time(k, reps)));
+    const small = best(13, 20);
+    const big = best(16, 5);
     assert.ok(big <= 15 * small, `16 sets ${big} ns vs 13 sets ${small} ns`);
 });
