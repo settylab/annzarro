@@ -285,7 +285,8 @@ def test_two_group_sets_changed_at_once_are_one_line_and_a_key_that_is_gone_says
     until(page, "(s) => document.querySelector(s + ' .ccnt-set[data-set-index=\"2\"]').dataset.state === 'gone'", S, timeout=60)
     row = _rows(page)[2]
     assert row["tag"] == "No longer a group"
-    assert row["note"] == f"'{labels['[\"bin:2\"]'][0]}' is no longer a group of 'Grouping 1'."
+    key = '["bin:2"]'
+    assert row["note"] == f"'{labels[key][0]}' is no longer a group of 'Grouping 1'."
     assert len(_config(page)["sets"]) == 3, "nothing is silently reset"
 
 
