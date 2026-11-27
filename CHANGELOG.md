@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+
+- **A new Gene Plot opens in 2D.** It draws the first two components of its embedding (for example PC1 against PC2); press **3D** to add the third component as the z axis. Saved views, panel sets and links that stored a 3D Gene Plot still open in 3D. The Cell Plot is unchanged.
+
 ## 0.8.0 (2026-11-26)
 
 ### Added

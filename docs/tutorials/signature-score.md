@@ -209,7 +209,7 @@ Both changes are large in HSC and near zero from LMPP on: the HSC row is the onl
 
 ## 4. The list on the volcano
 
-Add a **Gene Plot** (it opens in 3D: press **3D** to turn that off, and set **Color** to **None (constant)**). **X** `var`
+Add a **Gene Plot** (it opens in 2D; set **Color** to **None (constant)**). **X** `var`
 `kompot_de_Young_to_Old_mean_lfc`, **Y** `var` `kompot_de_Young_to_Old_mahalanobis`, and in **Table** choose **Falls in
 HSCs**: its genes are drawn in colour.
 

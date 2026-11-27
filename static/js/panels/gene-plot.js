@@ -46,7 +46,10 @@ const GenePlotPanel = (function() {
         const _settings = {
             x: undefined,
             y: undefined,
-            z: undefined, // undefined will try to set this, null will force 2d
+            // A new panel (options name no axis at all) opens in 2D: the 3D button picks the third component.
+            // Stored options that say nothing about z (undefined) keep the old meaning: the init picks a
+            // third axis, 3D. null forces 2D.
+            z: (options.x === undefined && options.z === undefined) ? null : undefined,
             color: { type: 'none', key: '', column: '' }, // Start with no coloring
             pointSize: (Config && Config.DEFAULTS && Config.DEFAULTS.POINT_SIZE) || 5,
             pointOpacity: (Config && Config.DEFAULTS && Config.DEFAULTS.POINT_OPACITY) || 0.7,

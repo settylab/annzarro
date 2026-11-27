@@ -398,11 +398,11 @@ The keys for these buttons are in {ref}`keyboard-shortcuts`.
    ```
 
 2. In the right pane, click **Gene Plot**. A gene plot opens there: genes at `varm/PCs`
-   columns 0, 1 and 2 in 3D, coloured by `var/highly_variable`.
+   columns 0 and 1 in 2D (press **3D** to add column 2), coloured by `var/highly_variable`.
 
    ```{figure} ../_static/screens/user-guide/ui-two-panels.png
    :class: screenshot
-   :alt: Two tiles side by side, a cell UMAP coloured by leiden on the left and a 3D gene plot of varm PCs coloured by highly_variable on the right.
+   :alt: Two tiles side by side, a cell UMAP coloured by leiden on the left and a gene plot of varm PCs coloured by highly_variable on the right.
 
    A cell plot and a gene plot side by side, controls hidden.
    ```
