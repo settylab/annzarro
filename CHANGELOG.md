@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Changed
+- **A new Gene Plot opens in 2D.** It draws the first two components of its embedding (for example PC1 against PC2); press **3D** to add the third component as the z axis. Saved views, panel sets and links that stored a 3D Gene Plot still open in 3D. The Cell Plot is unchanged.
+
 ### Fixed
 - **The Gene Signature panel's search stays when you hide its controls.** The tile's **Hide Controls** chevron used to hide the search box (with its `.*` and `Aa` toggles) together with Add from, Paste and Up/Down, so the panel seemed to have no search. The search now sits in a band of its own and stays, as a gene table's does; the chevron hides only the add controls.
 
