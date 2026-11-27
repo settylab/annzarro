@@ -8,6 +8,10 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixed
+- **A plot whose input the open dataset lacks no longer says it is "too large to compute".** After switching to a dataset without a column a grouping or Cell Count Plot reads, the notice said "'Grouping 1' is too large to compute here, so it was not run". It now says "'Grouping 1' was not computed." and names the missing input ("midres_celltype is not in this dataset").
+- **Cancel works on a score that has not started.** A gene-signature score read by a table or plot that is off screen is only computed once it comes into view, but its notice already said "Computing" with a Cancel button that did nothing. Cancel now ends the wait (the notice then offers Compute).
+
 ## 0.8.0 (2026-11-26)
 
 ### Added

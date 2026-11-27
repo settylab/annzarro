@@ -130,3 +130,11 @@ test('plots and tables paint a notice through one painter, which mirrors the sta
         delete globalThis.document;
     }
 });
+
+test('an input the dataset lacks is not "too large to compute here"', () => {
+    const note = SN.describeSource({ state: 'refused', reason: 'not_in_dataset', title: 'Grouping 1',
+        message: 'midres_celltype is not in this dataset' }, {}, GROUPING);
+    assert.ok(!/too large/.test(note.headline + note.text), `${note.headline} ${note.text}`);
+    assert.equal(note.headline, "'Grouping 1' was not computed.");
+    assert.match(note.text, /midres_celltype is not in this dataset/);
+});

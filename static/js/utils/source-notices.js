@@ -311,6 +311,11 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
                 const head = Number.isFinite(figure) && Number(snap.limit) > 0 ? gate.head(figure, Number(snap.limit)) : gate.headNoFigures;
                 return out('refused', 'warning', tagOf('refused', `${Result} refused`), `${t} ${head}, so it was not computed.`, gate.wayOut, [open, choose]);
             }
+            // an input the open dataset lacks is no question of size (it was said to be "too large to compute here")
+            if (snap.reason === 'not_in_dataset') {
+                return out('refused', 'warning', tagOf('refused', `${Result} refused`),
+                    `${t} was not computed.`, snap.message || 'An input is not in this dataset.', [open, choose]);
+            }
             if (isCostRefusal(snap)) {
                 return out('refused', 'warning', tagOf('refused', `${Result} refused`),
                     `${t} was not run: it is estimated at ${durationText(snap.estimate.seconds)}${startLimitText(snap.estimate)}.`, snap.message || '', [open, choose]);
