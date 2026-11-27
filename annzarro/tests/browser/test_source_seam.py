@@ -294,17 +294,12 @@ def test_an_axis_cannot_be_changed_during_the_first_draw_and_the_choice_made_aft
     """The first draw is held (its data request waits): the axis rows are inert and say they are loading, so a click on the
     colour type does nothing and the select cannot show a choice the panel ignores. Released, the rows are ready and the
     choice made then is the panel's setting."""
-    held = []
-    page.route("**/api/v1/data/obsm/**", lambda route: held.append(route))
-    page.goto(_link(served, {"cell-plot-C": _cell()}, ["cell-plot-C"]))
+    page.route("**/api/v1/data/obsm/**", lambda route: None)   # a request this handler takes is held until the unroute below
+    with page.expect_request("**/api/v1/data/obsm/**"):
+        page.goto(_link(served, {"cell-plot-C": _cell()}, ["cell-plot-C"]), wait_until="commit")
     type_select = f'{C} select.axis-type-select[data-axis="color"]'
     page.wait_for_function("""(s) => { const e = document.querySelector(s); return !!e && [...e.options].some(o => o.value === 'layer'); }""",
                            arg=type_select, timeout=30000)
-    for _ in range(100):
-        if held:
-            break
-        page.wait_for_timeout(100)
-    assert held, "the first draw asked for its data"
     state = page.evaluate("""(tile) => ({ controls: document.querySelector(tile + ' .plot-controls').dataset.axisControls,
         inert: [...document.querySelectorAll(tile + ' .axis-selector')]
         .map(r => r.inert) })""", C)
@@ -315,9 +310,8 @@ def test_an_axis_cannot_be_changed_during_the_first_draw_and_the_choice_made_aft
         return { select: hit === e, focused: document.activeElement === e }; }""", type_select)
     assert reaches == {"select": False, "focused": False}, reaches
     assert page.input_value(type_select) != "layer"
-    for route in held:
-        route.continue_()
-    page.route("**/api/v1/data/obsm/**", lambda route: route.continue_())
+    # released: unrouting lets the request the handler holds go on (and any it has not seen yet is no longer routed)
+    page.unroute("**/api/v1/data/obsm/**")
     _wait_menus(page, C)
     page.select_option(type_select, "layer")
     page.wait_for_function("""() => { const v = (window.SessionManager || window.sessionManager).captureView();
