@@ -76,12 +76,15 @@ export function setGlMarkers(gd, styleOf) {
     const style = styles[i];
     if (!style) return {};                                   // {}: this group unchanged
     const change = {};
+    // how far (px) an axis end could move: plot-update.js refitAfterResize fits the axes again only for a pixel or more
+    if (style.size !== undefined) gd.__azPadMoved = Math.max(gd.__azPadMoved || 0, rescalePads(gd._fullData[i], opts.size, style.size));
     for (const key of ['size', 'opacity']) {
       if (style[key] === undefined) continue;
       change[key] = style[key];
       opts[key] = style[key];
       for (const t of [trace, gd._fullData[i]]) if (t && t.marker) t.marker[key] = style[key];
     }
+    if (style.opacity !== undefined) selectionOpacity(scene, gd.data[i], gd._fullData[i], i, style.opacity);
     return change;
   });
   scene.scatter2d.update(update);
@@ -90,6 +93,53 @@ export function setGlMarkers(gd, styleOf) {
   gd._fullLayout._glcanvas.each((c) => { if (c && c.regl) c.regl.clear({ color: [0, 0, 0, 0], depth: 1 }); });
   scene.draw();
   return true;
+}
+
+/** Plotly's own threshold (scattergl TOO_MANY_POINTS): from it on, a trace's axis padding is its marker size. */
+const TOO_MANY_POINTS = 1e5;
+
+/**
+ * The axis padding Plotly's calc gave a trace (its `_extremes`, in px) follows a new marker size, so that the next
+ * autorange fits the axes as a fresh draw of that size does: a large trace's padding is max(size, 3) (scattergl
+ * calc), a smaller one's scales with the size (calcMarkerSize, for one size for every point). Kept as it was, the
+ * axes stayed fitted for the old size (render drift, decision 39).
+ */
+function rescalePads(full, from, to) {
+  const ext = full && full._extremes;
+  let moved = 0;
+  if (!ext || typeof to !== 'number' || !(to > 0)) return moved;
+  const big = (full._length || 0) >= TOO_MANY_POINTS;
+  const ratio = typeof from === 'number' && from > 0 ? to / from : null;
+  for (const axis of Object.values(ext)) {
+    for (const side of ['min', 'max']) {
+      for (const e of (axis && axis[side]) || []) {
+        if (!e || typeof e.pad !== 'number') continue;
+        const was = e.pad;
+        if (big) e.pad = Math.max(to, 3);
+        else if (ratio !== null) e.pad *= ratio;
+        moved = Math.max(moved, Math.abs(e.pad - was));
+      }
+    }
+  }
+  return moved;
+}
+
+/**
+ * Plotly derives a trace's selected and unselected point opacity from its marker opacity (the marker's own, and 0.2 of
+ * it: coerceSelectionMarkerOpacity) unless the trace sets them. A new opacity set here carries them along, in the full
+ * trace and in the scene's selection options, as a restyle would: a selection then dims the points as on a fresh draw.
+ */
+const DESELECTED_SHARE = 0.2;
+function selectionOpacity(scene, trace, full, i, opacity) {
+  if (!full || (trace && (trace.selected || trace.unselected)) || typeof opacity !== 'number') return;
+  const want = { selected: opacity, unselected: DESELECTED_SHARE * opacity };
+  for (const side of ['selected', 'unselected']) {
+    if (full[side] && full[side].marker && full[side].marker.opacity !== undefined) full[side].marker.opacity = want[side];
+  }
+  const sel = scene.markerSelectedOptions && scene.markerSelectedOptions[i];
+  const unsel = scene.markerUnselectedOptions && scene.markerUnselectedOptions[i];
+  if (sel && sel.opacity !== undefined) sel.opacity = want.selected;
+  if (unsel && unsel.opacity !== undefined) unsel.opacity = want.unselected;
 }
 
 /** For tests: warn again on the next fallback. */

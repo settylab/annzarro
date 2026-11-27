@@ -1,0 +1,1887 @@
+"""Gene signature scores: one number per cell for a list of genes.
+
+A signature is a *recipe*: genes plus how to score them. This module turns a
+recipe and a store into a vector, over **all cells of the dataset** for the
+reference statistics, and returns the values of the cells the caller shows.
+
+Recipe (``version`` 1), a JSON object::
+
+    {"genes": ["CD3E", "CD8A"],   # up genes, the signature; any number of names (the cost estimate is the guard)
+     "down": [],                  # down genes: the score is the up side minus the down side (methods zscore_mean, mean,
+                                  # control_adjusted only); a gene named on both sides counts as up
+     "input": "X",                # "X" or the name of a layer
+     "method": "zscore_mean",     # "zscore_mean" (default), "mean", "sum", "fraction_of_genes", "fraction_of_total", "control_adjusted"
+     "clip": 10,                  # z-scores are clipped at +-clip: a number above 0, or null for no clipping
+     "seed": null,                # control_adjusted only: the seed of the control genes (null is 0)
+     "bins": 25,                  # control_adjusted only: gene bins, 2 to 200
+     "controls": 50,              # control_adjusted only: control genes drawn per bin, 1 to 1,000
+     "detect_above": 0,           # fraction_of_genes only: a gene is expressed in a cell when its value is above this (Expressed above, 0 or more)
+     "version": 1}                # the algorithm version
+
+Every field but ``genes`` is optional.
+
+Up and down genes. With ``down`` non-empty the score has a sign. For the z-score mean and the mean ``down_weight``
+says how: ``gene`` (the default) flips the sign of the down genes and averages every usable gene, (sum up - sum down) /
+(n up + n down); ``side`` is ``side(up) - side(down)``, each side averaged on its own (the scanpy practice of two
+``score_genes`` calls). With one side empty both are the same score. Each side is scored with the method: the mean of the z-scores (``zscore_mean``), the mean of the values (``mean``), or the
+control-adjusted mean (``control_adjusted``: each side subtracts the mean of ITS OWN controls, drawn outside that
+side's genes, as two calls of scanpy's ``score_genes`` would; a down gene may serve as an up gene's control).
+``sum``, ``fraction_of_genes`` and ``fraction_of_total`` have no signed version that means anything: a signed sum depends on
+how many genes each side has, a difference of two fractions is not a fraction, a difference of two shares is not a
+share of anything. The engine refuses them with ``method_no_down``.
+Edge cases: a side with no usable gene (absent, constant for the z-score mean, no values) is left out and the score
+is the other side, negated when it is the down side; neither side usable gives no score; a gene in both lists
+counts as up (reported as ``overlap``); a cell with no finite value on a side that has usable genes is NaN under
+``side`` and, under ``gene``, simply has fewer genes in its average (a missing value is left out of n). Control-adjusted
+ignores ``down_weight``: each side always subtracts its own controls.
+
+Methods
+    zscore_mean  mean over genes of clip((x - mu) / sd, +-clip); mu and sd over all cells, zeros included
+    mean         mean over genes of x
+    sum          sum over genes of x; a gene with no value in a cell adds nothing, a cell with no value for any gene is NaN
+    fraction_of_genes
+                 the FRACTION of the signature's genes expressed in the cell, 0 to 1 (was ``detected``, still read as an alias,
+                 with the same values): the mean of the indicator
+                 "x > detect_above" (the default 0: a non-zero value, for the non-negative matrices counts and
+                 normalised values are). A fraction rather than a count, so it means the same when a gene is missing from
+                 the dataset or has no value in a cell, and compares between signatures of different sizes.
+    fraction_of_total
+                 the signature's summed expression over the sum of the cell's values over ALL genes, in PERCENT (0 to
+                 100), as percent mitochondrial is reported. The denominator is every gene of the matrix, the signature's
+                 own included, and not a subset: that is what the percentage of a cell's counts means. Meaningful for counts and for linear normalised values; on log-transformed
+                 or scaled input the result carries a warning. Needs the total of every cell: one pass over the matrix.
+    control_adjusted
+                 mean over genes of x, minus the mean over control genes of x (Tirosh et al. 2016; scanpy's
+                 ``score_genes``). Genes are cut into ``N_BINS`` bins by detection rate; for each bin that
+                 holds a signature gene, ``CTRL_SIZE`` genes of that bin outside the signature are drawn as
+                 controls. The draw ranks the genes of the bin by ``subset.rank_keys(n_genes, seed)`` and takes
+                 the smallest, so a stored seed gives the same controls on every machine.
+
+Edge cases (see ``compute``): a gene that is not in the dataset is listed and
+excluded; a constant gene is excluded from the z-score mean and listed; the
+first of duplicate names in ``var`` is used; non-finite values (NaN, inf) are
+missing: ignored per gene, and a cell's score averages its other genes (NaN
+when it has none); no usable gene gives no score, never zeros.
+
+The sparse algorithm reads each gene's stored entries once. With z0 the z-score of
+a zero, every cell starts at z0 and a stored entry adds ``z(x) - z0``, so a gene
+costs its stored entries, not the number of cells. Reads run ahead of the
+arithmetic by at most ``READ_AHEAD_ENTRIES`` entries, in gene order, so a result
+does not depend on the number of threads.
+"""
+from __future__ import annotations
+
+import contextvars
+import dataclasses
+import logging
+import math
+import time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, Iterator, List, NamedTuple, Optional, Sequence, Tuple
+
+import numpy as np
+
+from . import cost_limits, matrix_kind
+
+logger = logging.getLogger(__name__)
+
+#: Bumped when a change makes the same recipe give different numbers. Part of every cache key.
+ALGORITHM_VERSION = 1
+
+#: Longest gene name accepted (names longer than any real one are a sign of a hostile request).
+MAX_NAME_CHARS = 1000
+
+DEFAULT_CLIP = 10.0
+DEFAULT_METHOD = "zscore_mean"
+METHODS = ("zscore_mean", "mean", "sum", "control_adjusted", "fraction_of_genes", "fraction_of_total")
+# ids an older recipe may hold (a link, a saved panel, a client from before the rename): read as the current id, answered with it
+METHOD_ALIASES = {"detected": "fraction_of_genes"}
+#: Methods that can score a signature with down genes (see the module docstring).
+DOWN_METHODS = ("zscore_mean", "mean", "control_adjusted")
+#: How down genes weigh in the z-score mean and the mean: ``gene`` (each gene weighs equally: the signs of the down
+#: genes are flipped and every usable gene is averaged) or ``side`` (each side weighs equally: mean(up) - mean(down)).
+DOWN_WEIGHTS = ("gene", "side")
+DEFAULT_DOWN_WEIGHT = "gene"
+
+#: Control-adjusted scoring: gene bins and controls drawn per bin (scanpy's defaults).
+N_BINS = 25
+CTRL_SIZE = 50
+BINS_RANGE = (2, 200)
+CONTROLS_RANGE = (1, 1000)
+#: The seed a control-adjusted recipe without one means.
+DEFAULT_SEED = 0
+#: What genes are binned by: ``detection`` (the share of cells with a stored value, free in a CSC store) or
+#: ``mean`` (scanpy's, which reads every stored value). The algorithm version stands for ``detection``.
+BINNINGS = ("detection", "mean")
+#: Stored entries read at a time when counting or summing every gene.
+STAT_CHUNK = 1 << 22
+
+#: The defaults of the cost tiers (limits.ask_first_s, limits.live_update_s, limits.refuse_s): estimated seconds up to
+#: which a score is computed without asking, and up to which it may be asked for with one confirmation (above it is
+#: refused); below LIVE_MAX_S an open signature may update live, and from there edits wait for "Update score". The
+#: values in force are the request's (``cost_limits.get``, read by the functions below), reported with every estimate
+#: so a client does not hard-code them.
+AUTO_MAX_S = cost_limits.COST_LIMITS["ask_first_s"].default
+LIVE_MAX_S = cost_limits.COST_LIMITS["live_update_s"].default
+CONFIRM_MAX_S = cost_limits.COST_LIMITS["refuse_s"].default
+
+
+def auto_max_s() -> float:
+    """Estimated seconds up to which a computation runs without asking (limits.ask_first_s)."""
+    return cost_limits.get("ask_first_s")
+
+
+def live_max_s() -> float:
+    """Estimated seconds below which a computation updates live and runs in the light lane (limits.live_update_s)."""
+    return cost_limits.get("live_update_s")
+
+
+def confirm_max_s() -> float:
+    """Estimated seconds above which a computation is refused (limits.refuse_s)."""
+    return cost_limits.get("refuse_s")
+
+
+def duration(seconds: float) -> str:
+    """``seconds`` in words for a refusal: "45 seconds", "10 minutes"."""
+    return f"{seconds:.0f} seconds" if seconds < 90 else f"{seconds / 60:.0f} minutes"
+
+
+#: A tried run is offered for an estimate up to this many times ``limits.try_max_s`` (a guess may be that far off).
+TRY_RATIO = 10
+
+
+def try_info(seconds: float) -> Dict[str, Any]:
+    """What an estimate says of "Try anyway" (aggregation-unify-080.md 14.6): ``allowed``, the wall-clock ``max_s`` a tried
+    run may hold its slot (``limits.try_max_s``), and ``why`` it is not offered: ``off`` (max_s is 0) or ``too_long``
+    (the estimate is over ``TRY_RATIO`` times it)."""
+    max_s = cost_limits.get("try_max_s")
+    why = "off" if max_s <= 0 else "too_long" if seconds > TRY_RATIO * max_s else None
+    return {"allowed": why is None, "max_s": max_s, "why": why}
+
+
+def tier_limits() -> Dict[str, float]:
+    """The tiers as an estimate reports them."""
+    return {"live_max_s": live_max_s(), "auto_max_s": auto_max_s(), "max_s": confirm_max_s()}
+
+#: Stored entries (or matrix elements) read per second, by layout. Set conservatively below
+#: what ``annzarro/tests/server/test_gene_score_bench.py`` measures, so an estimate is rarely low.
+#: ``csr`` counts every stored entry of the matrix once per scan.
+RATES = {
+    "csc": 30e6,
+    "csr": 60e6,
+    "dense": 200e6,
+}
+#: Remote stores are read at this fraction of a local store's rate.
+REMOTE_RATE_FACTOR = 0.1
+#: Fixed cost of opening the store and reading its names, seconds.
+BASE_SECONDS = 0.2
+
+#: Entries read ahead of the arithmetic. Bounds memory: 12 bytes an entry.
+READ_AHEAD_ENTRIES = 48_000_000
+#: Neighbouring genes whose entries lie within this many entries of each other are read in one go
+#: (zarr and HDF5 decode whole chunks), up to ``MAX_GROUP_ENTRIES``.
+GROUP_GAP_ENTRIES = 1 << 16
+MAX_GROUP_ENTRIES = 1 << 22
+#: Rows of a CSR matrix whose pointers are held at once when the rows of a group are looked up (8 B a row), and the
+#: rows of a mask looked through at once.
+ROW_BLOCK = 1 << 21
+#: Entries a group's moments read ahead of the arithmetic (12 B an entry).
+MOMENT_READ_AHEAD_ENTRIES = 12_000_000
+#: Reader threads. HDF5 reads are serialised by h5py, so it uses one.
+READ_THREADS = 6
+#: A CSR matrix or a dense array is read this many genes (and at most BATCH_ENTRIES stored hits) at a time.
+MAX_BATCH_GENES = 256
+BATCH_ENTRIES = 24_000_000
+#: Stored entries of one gene worked through at a time (float64 temporaries are this long).
+SEGMENT_ENTRIES = 1 << 22
+#: Cells up to which the running sum is float64; above it float32 saves memory.
+FLOAT64_CELLS = 20_000_000
+
+
+class ScoreError(Exception):
+    """A request the engine refuses, with the HTTP status, reason code and extra fields the route sends."""
+
+    def __init__(self, status: int, reason: str, message: str, **extra):
+        super().__init__(message)
+        self.status, self.reason, self.message, self.extra = status, reason, message, extra
+
+
+# ---------------------------------------------------------------------------
+# The recipe
+# ---------------------------------------------------------------------------
+
+_FIELDS = ("genes", "down", "down_weight", "input", "method", "clip", "seed", "bins", "controls", "detect_above", "version", "title")
+
+
+@dataclass(frozen=True)
+class Recipe:
+    genes: Tuple[str, ...]
+    down: Tuple[str, ...] = ()
+    down_weight: str = DEFAULT_DOWN_WEIGHT
+    overlap: Tuple[str, ...] = ()          # named on both sides in the request; counted as up, dropped from ``down``
+    input: str = "X"
+    method: str = DEFAULT_METHOD
+    clip: Optional[float] = DEFAULT_CLIP
+    seed: Optional[int] = None
+    version: int = ALGORITHM_VERSION
+    bins: int = N_BINS
+    controls: int = CTRL_SIZE
+    detect_above: float = 0.0
+
+    @property
+    def effective_down_weight(self) -> Optional[str]:
+        """The weighting that changes the numbers: only the two means with down genes have one (control-adjusted is per
+        side by construction, and without down genes both weightings are the plain mean)."""
+        return self.down_weight if self.down and self.method in ("zscore_mean", "mean") else None
+
+    @property
+    def effective_clip(self) -> Optional[float]:
+        """The clip that changes the numbers: only the z-score mean clips."""
+        return self.clip if self.method == "zscore_mean" else None
+
+    @property
+    def effective_seed(self) -> Optional[int]:
+        """The seed that changes the numbers: only the control-adjusted score draws controls."""
+        if self.method != "control_adjusted":
+            return None
+        return DEFAULT_SEED if self.seed is None else self.seed
+
+    @property
+    def effective_detect_above(self) -> Optional[float]:
+        return self.detect_above if self.method == "fraction_of_genes" else None
+
+    @property
+    def effective_bins(self) -> Optional[int]:
+        return self.bins if self.method == "control_adjusted" else None
+
+    @property
+    def effective_controls(self) -> Optional[int]:
+        return self.controls if self.method == "control_adjusted" else None
+
+    def describe(self) -> Dict[str, Any]:
+        return {"method": self.method, "input": self.input, "clip": self.effective_clip,
+                "seed": self.effective_seed, "bins": self.effective_bins, "controls": self.effective_controls,
+                "detect_above": self.effective_detect_above, "version": self.version, "genes": len(self.genes),
+                "down": len(self.down), "down_weight": self.effective_down_weight}
+
+
+def _names(value, field_name: str) -> Tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ScoreError(400, "bad_recipe", f"'{field_name}' must be a list of gene names.")
+    seen, out = set(), []
+    for name in value:
+        if not isinstance(name, str):
+            raise ScoreError(400, "bad_recipe", f"'{field_name}' must hold only text; got {type(name).__name__}.")
+        if len(name) > MAX_NAME_CHARS:
+            raise ScoreError(400, "bad_recipe", f"A gene name is over {MAX_NAME_CHARS} characters.")
+        if name not in seen:
+            seen.add(name)
+            out.append(name)
+    return tuple(out)
+
+
+def parse_clip(value) -> Optional[float]:
+    """A clip: a positive finite number, or None for no clipping."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        raise ScoreError(400, "bad_clip", "Clip must be a number above 0, or null to turn clipping off.")
+    return float(value)
+
+
+def _whole(value, name: str, lo: int, hi: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
+        raise ScoreError(400, f"bad_{name}", f"{name} must be a whole number from {lo} to {hi:,}.")
+    return value
+
+
+def parse_recipe(raw) -> Recipe:
+    """The recipe a request names, validated; ScoreError (400/413) otherwise."""
+    if not isinstance(raw, dict):
+        raise ScoreError(400, "bad_recipe", "recipe must be an object.")
+    unknown = sorted(set(raw) - set(_FIELDS))
+    if unknown:
+        raise ScoreError(400, "bad_recipe", f"Unknown recipe field(s): {', '.join(map(str, unknown))}.")
+    if "genes" not in raw:
+        raise ScoreError(400, "bad_recipe", "recipe.genes is required (a list of gene names, possibly empty).")
+    genes = _names(raw["genes"], "genes")
+    down = _names(raw.get("down", []), "down")
+    # No gene limit: a score takes no more memory than a gene table, which has none. What bounds a request is its
+    # size (the route's MAX_BODY_BYTES) and the cost estimate's tiers, which refuse what is too expensive.
+    down_weight = raw.get("down_weight", DEFAULT_DOWN_WEIGHT)
+    if down_weight not in DOWN_WEIGHTS:
+        raise ScoreError(400, "bad_down_weight", f"down_weight must be one of {', '.join(DOWN_WEIGHTS)}.")
+    method = raw.get("method", DEFAULT_METHOD)
+    method = METHOD_ALIASES.get(method, method) if isinstance(method, str) else method
+    if method not in METHODS:
+        raise ScoreError(400, "bad_method", f"Unknown method {method!r}; use one of {', '.join(METHODS)}.")
+    if down and method not in DOWN_METHODS:
+        raise ScoreError(400, "method_no_down",
+                         f"Down genes can be scored with {', '.join(DOWN_METHODS)}; {method} has no meaningful signed version.")
+    up_set = set(genes)
+    overlap = tuple(n for n in down if n in up_set)
+    if overlap:
+        down = tuple(n for n in down if n not in up_set)
+    clip = parse_clip(raw["clip"]) if "clip" in raw else DEFAULT_CLIP
+    seed = raw.get("seed")
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2 ** 63):
+        raise ScoreError(400, "bad_seed", "seed must be a whole number from 0 up, or null.")
+    bins = _whole(raw.get("bins", N_BINS), "bins", *BINS_RANGE)
+    controls = _whole(raw.get("controls", CTRL_SIZE), "controls", *CONTROLS_RANGE)
+    detect_above = raw.get("detect_above", 0)
+    if isinstance(detect_above, bool) or not isinstance(detect_above, (int, float)) or not math.isfinite(detect_above) \
+            or detect_above < 0:
+        raise ScoreError(400, "bad_detect_above", "detect_above must be a number from 0 up.")
+    source = raw.get("input", "X")
+    if not isinstance(source, str) or not source or len(source) > MAX_NAME_CHARS:
+        raise ScoreError(400, "bad_recipe", "input must be 'X' or the name of a layer.")
+    version = raw.get("version", ALGORITHM_VERSION)
+    if isinstance(version, bool) or version != ALGORITHM_VERSION:
+        raise ScoreError(400, "unsupported_version",
+                         f"This server computes scores with algorithm version {ALGORITHM_VERSION}; "
+                         f"the recipe asks for {version!r}.", supported=ALGORITHM_VERSION)
+    return Recipe(genes=genes, down=down, down_weight=down_weight, overlap=overlap, input=source, method=method, clip=clip, seed=seed, version=ALGORITHM_VERSION,
+                  bins=bins, controls=controls, detect_above=float(detect_above))
+
+
+# ---------------------------------------------------------------------------
+# Moments of values per bin
+# ---------------------------------------------------------------------------
+
+class MomentSums:
+    """Running per-bin sums of values for several thresholds; ``seen`` counts the values given (finite or not),
+    which a negative threshold needs: a sparse gene's implicit zeros are above it.
+
+    A bin is a group (``core/group_features.py``) or a gene (``_Source.row_moments``)."""
+
+    def __init__(self, n_bins: int, thresholds: Sequence[float]):
+        self.thresholds = list(thresholds)
+        self.count_seen = any(t < 0 for t in self.thresholds)       # implicit zeros matter only below 0
+        z = lambda: np.zeros(n_bins, dtype=np.float64)                    # noqa: E731
+        self.seen, self.bad, self.sum, self.sumsq = z(), z(), z(), z()
+        self.n_above = [z() for _ in self.thresholds]
+        self.sum_above = [z() for _ in self.thresholds]
+
+    def add(self, b: np.ndarray, values: np.ndarray) -> None:
+        n = self.seen.size
+        v = values.astype(np.float64)
+        finite = np.isfinite(v)
+        if finite.all():
+            finite = None
+        else:
+            self.bad += np.bincount(b[~finite], minlength=n)
+            v[~finite] = 0.0
+        seen = np.bincount(b, minlength=n) if self.count_seen else None
+        if seen is not None:
+            self.seen += seen
+        total = np.bincount(b, weights=v, minlength=n)
+        self.sum += total
+        self.sumsq += np.bincount(b, weights=v * v, minlength=n)
+        for i, t in enumerate(self.thresholds):
+            above = v > t
+            if finite is not None and t < 0:
+                above &= finite
+            if t >= 0 and 2 * np.count_nonzero(above) > above.size:
+                # most values are above (an expressed gene's stored entries): count the few that are not. A
+                # non-finite value, held as 0, is among them; the sums lose nothing to cancellation, as the part
+                # taken away is the smaller one
+                below = ~above
+                b_below = b[below]
+                seen = np.bincount(b, minlength=n) if seen is None else seen
+                self.n_above[i] += seen - np.bincount(b_below, minlength=n)
+                self.sum_above[i] += total - np.bincount(b_below, weights=v[below], minlength=n)
+            else:
+                b_above = b[above]
+                self.n_above[i] += np.bincount(b_above, minlength=n)
+                self.sum_above[i] += np.bincount(b_above, weights=v[above], minlength=n)
+
+    def write(self, sizes: np.ndarray, outs: Sequence[Sequence[np.ndarray]]) -> None:
+        """The moments at threshold ``i`` into each ``[k, 5]`` array of ``outs[i]``; ``sizes`` are the cells per
+        bin. A cell given no value (a sparse gene's implicit zero) is a finite zero."""
+        k = sizes.size
+        for i, t in enumerate(self.thresholds):
+            if not outs[i]:
+                continue
+            m = outs[i][0]
+            m[:, 0] = sizes - self.bad[:k]
+            m[:, 1] = self.sum[:k]
+            m[:, 2] = self.sumsq[:k]
+            m[:, 3] = self.n_above[i][:k]
+            if 0.0 > t:
+                m[:, 3] += sizes - self.seen[:k]
+            m[:, 4] = self.sum_above[i][:k]
+            for other in outs[i][1:]:
+                other[...] = m
+
+
+# ---------------------------------------------------------------------------
+# Reading genes: one source per backing store
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _Task:
+    """A read of one or more genes; ``read`` returns ``[(column, rows | None, values)]``.
+    ``rows`` None means ``values`` is the whole column, one value per cell."""
+    cols: List[int]
+    entries: int
+    read: Callable[[], List[Tuple[int, Optional[np.ndarray], np.ndarray]]]
+
+
+class _Source:
+    layout = ""          # "csc", "csr" or "dense"
+    backend = ""         # "zarr" or "h5ad"
+    threads = READ_THREADS
+
+    def __init__(self, n_obs: int, n_var: int, remote: bool):
+        self.n_obs, self.n_var, self.remote = n_obs, n_var, remote
+
+    def entries(self, cols: Sequence[int]) -> int:
+        raise NotImplementedError
+
+    def tasks(self, cols: Sequence[int]) -> List[_Task]:
+        raise NotImplementedError
+
+    def stat_entries(self, kind: str) -> int:
+        """Stored entries (matrix elements) ``column_stat(kind)`` reads."""
+        raise NotImplementedError
+
+    def row_totals(self, should_stop: Optional[Callable[[], bool]] = None, pause=None) -> np.ndarray:
+        """The sum of the finite values of every cell over all genes; float64, length ``n_obs``."""
+        raise NotImplementedError
+
+    def sample(self) -> np.ndarray:
+        """A few thousand stored values spread over the whole matrix (``core/matrix_kind.py`` classifies them)."""
+        raise NotImplementedError
+
+    def stored_fraction(self) -> float:
+        """The share of the matrix's elements that are stored (1 for a dense array, whose sample holds its zeros)."""
+        return 1.0
+
+    def column_stat(self, kind: str, should_stop: Optional[Callable[[], bool]] = None, pause=None) -> np.ndarray:
+        """One figure per gene, for every gene: ``detection`` (stored non-zero values over cells) or ``mean``
+        (over the finite values, zeros included; NaN for a gene with none). Float64, length ``n_var``."""
+        raise NotImplementedError
+
+    def row_coverage(self, mask: np.ndarray) -> int:
+        """Stored entries (matrix elements for a dense array) of the data chunks that the rows of ``mask`` (a bool per
+        cell of the matrix) touch: what ``row_moments`` reads. Reads nothing but a CSR matrix's row pointers."""
+        raise NotImplementedError
+
+    def row_moments(self, mask: np.ndarray, thresholds: Sequence[float],
+                    should_stop: Optional[Callable[[], bool]] = None, pause=None,
+                    budget: int = MOMENT_READ_AHEAD_ENTRIES) -> Iterator[int]:
+        """The moments of every gene over the cells of ``mask``: yields the entries read after each read and returns a
+        float64 array ``[n_var, len(thresholds), 5]`` of ``n, sum, sumsq, n_above, sum_above`` (``MomentSums``'
+        definitions: a non-finite value is in none of the five, an unstored entry is a finite zero). ``should_stop`` is
+        asked and ``pause`` honoured between reads; at most ``budget`` entries are read ahead."""
+        raise NotImplementedError
+
+    def row_zscore_moments(self, mask: np.ndarray, clip: Optional[float],
+                           should_stop: Optional[Callable[[], bool]] = None, pause=None,
+                           budget: int = MOMENT_READ_AHEAD_ENTRIES) -> Iterator[int]:
+        """The moments of every gene's z-score over the cells of ``mask``, the mean and SD of each gene taken over ALL
+        cells of the matrix (``gene_reference``'s definition), the z-score clipped at ``clip`` (None: not clipped). Yields
+        the entries read and returns float64 ``[n_var, 5]``: ``n`` (cells of the group with a finite value; 0 for a
+        gene with no spread), ``sum`` and ``sumsq`` of the z-scores; ``n_above`` and ``sum_above`` are 0. Only a
+        compressed-sparse-column matrix has the reference in the pass it reads anyway; other layouts refuse."""
+        raise ZscoreNeedsPass(self.layout)
+
+    def close(self) -> None:
+        pass
+
+
+class ZscoreNeedsPass(ScoreError):
+    """A z-score of a group needs each gene's mean and SD over all cells: a whole-layer read this layout has no cheap
+    way to share with the group's read (coming with the moments cache)."""
+
+    def __init__(self, layout: str):
+        super().__init__(422, "zscore_needs_csc", "Z-score mean of a group needs a whole-layer read on this store's "
+                         "layout; coming with the moments cache.", layout=layout)
+
+
+def _chan(n_a, mean_a, m2_a, n_b, mean_b, m2_b):
+    """Chan's pairwise merge of ``(n, mean, M2)`` partials, elementwise (n_b may be 0 where a part is empty)."""
+    n = n_a + n_b
+    with np.errstate(invalid="ignore", divide="ignore"):
+        delta = mean_b - mean_a
+        share = np.where(n > 0, n_b / np.maximum(n, 1), 0.0)
+        mean = mean_a + delta * share
+        m2 = m2_a + m2_b + delta * delta * n_a * share
+    return n, np.where(n > 0, mean, 0.0), m2
+
+
+def _moments_out(sums: "MomentSums", n_var: int, thresholds: Sequence[float], size: int) -> np.ndarray:
+    out = np.zeros((n_var, len(thresholds), 5), dtype=np.float64)
+    sums.write(np.full(n_var, float(size), dtype=np.float64), [[out[:, i, :]] for i in range(len(thresholds))])
+    return out
+
+
+def _check_mask(mask: np.ndarray, n_obs: int) -> np.ndarray:
+    mask = np.asarray(mask, dtype=bool)
+    if mask.shape != (n_obs,):
+        raise ValueError(f"The mask has {mask.shape} cells; the matrix has {n_obs}.")
+    return mask
+
+
+def _read_spans(starts: np.ndarray, ends: np.ndarray, chunk: int, cap: int) -> List[Tuple[int, int]]:
+    """``(i, j)``: the ranges ``i`` to ``j - 1`` (sorted, non-empty) to read in one go. Neighbours join when no stored
+    chunk lies between them (``chunk`` entries; 0 for a store that is not chunked: when they are within
+    ``GROUP_GAP_ENTRIES``), so a chunk is decoded by one read; a read is cut at a range's end past ``cap`` entries."""
+    if starts.size == 0:
+        return []
+    if chunk:
+        apart = starts[1:] // chunk - (ends[:-1] - 1) // chunk > 1
+    else:
+        apart = starts[1:] - ends[:-1] > GROUP_GAP_ENTRIES
+    bounds = [0] + (np.flatnonzero(apart) + 1).tolist() + [int(starts.size)]
+    out: List[Tuple[int, int]] = []
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        i = a
+        while i < b:
+            j = int(np.searchsorted(ends[i:b], starts[i] + cap, side="right")) + i
+            j = min(max(j, i + 1), b)
+            out.append((i, j))
+            i = j
+    return out
+
+
+def _sample_stored(data) -> np.ndarray:
+    """Pieces of a stored ``data`` array, evenly spread."""
+    total = int(data.shape[0])
+    pieces = [np.asarray(data[s:s + matrix_kind.SAMPLE_PIECE]) for s in matrix_kind.piece_starts(total)]
+    return np.concatenate(pieces) if pieces else np.empty(0)
+
+
+def _checkpoint(should_stop, pause) -> None:
+    """Between the chunks of a whole-matrix pass: stop when asked, and wait while a pause is wanted. Nothing is read
+    ahead in these passes, so nothing is in flight when ``pause.wait()`` is called."""
+    if should_stop is not None and should_stop():
+        raise ScoreCancelled()
+    if pause is not None and pause.wanted():
+        pause.wait()
+
+
+def _sparse_stat(kind: str, n_obs: int, n_var: int, chunks, should_stop, pause=None) -> np.ndarray:
+    """``chunks`` yields ``(gene_of_each_entry, values or None)``; ``values`` only when the mean is asked for."""
+    counts = np.zeros(n_var, dtype=np.float64)
+    sums = np.zeros(n_var, dtype=np.float64)
+    missing = np.zeros(n_var, dtype=np.float64)
+    for genes, values in chunks:
+        _checkpoint(should_stop, pause)
+        if values is None:
+            counts += np.bincount(genes, minlength=n_var)
+            continue
+        v = np.asarray(values, dtype=np.float64)
+        finite = np.isfinite(v)
+        sums += np.bincount(genes[finite], weights=v[finite], minlength=n_var)
+        missing += np.bincount(genes[~finite], minlength=n_var)
+    if kind == "detection":
+        return counts / max(n_obs, 1)
+    denom = n_obs - missing
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(denom > 0, sums / np.maximum(denom, 1), np.nan)
+
+
+def _batch_size(n_obs: int, nnz: int, n_var: int) -> int:
+    """Genes per read of a CSR matrix or a dense array: bound the entries one batch may hold."""
+    average = max(nnz / max(n_var, 1), 1.0)
+    return int(max(1, min(MAX_BATCH_GENES, BATCH_ENTRIES // (3 * average), BATCH_ENTRIES // max(n_obs, 1))))
+
+
+def _groups(cols: np.ndarray, starts: np.ndarray, ends: np.ndarray) -> List[List[int]]:
+    """Positions (into ``cols``) of the genes to read together: close neighbours in the file, capped."""
+    out: List[List[int]] = []
+    cur: List[int] = []
+    for i in range(len(cols)):
+        if cur:
+            gap = int(starts[i] - ends[cur[-1]])
+            span = int(ends[i] - starts[cur[0]])
+            if gap > GROUP_GAP_ENTRIES or span > MAX_GROUP_ENTRIES:
+                out.append(cur)
+                cur = []
+        cur.append(i)
+    if cur:
+        out.append(cur)
+    return out
+
+
+class _CscSource(_Source):
+    """A compressed-sparse-column group (zarr or HDF5): a gene is one contiguous range."""
+    layout = "csc"
+
+    def __init__(self, group, n_obs, n_var, remote, backend):
+        super().__init__(n_obs, n_var, remote)
+        self.backend = backend
+        self.data, self.indices = group["data"], group["indices"]
+        self.indptr = np.asarray(group["indptr"][:], dtype=np.int64)
+        if backend == "h5ad":
+            self.threads = 1
+
+    def entries(self, cols):
+        cols = np.asarray(cols, dtype=np.int64)
+        return int((self.indptr[cols + 1] - self.indptr[cols]).sum())
+
+    def stat_entries(self, kind):
+        return 0 if kind == "detection" else int(self.indptr[-1])
+
+    def sample(self):
+        return _sample_stored(self.data)
+
+    def stored_fraction(self):
+        return float(self.indptr[-1]) / max(self.n_obs * self.n_var, 1)
+
+    def row_totals(self, should_stop=None, pause=None):
+        total = int(self.indptr[-1])
+        step = int(min(max(STAT_CHUNK, 2 * self.n_obs), 1 << 26))
+        out = np.zeros(self.n_obs, dtype=np.float64)
+        for lo in range(0, total, step):
+            _checkpoint(should_stop, pause)
+            hi = min(lo + step, total)
+            v = np.asarray(self.data[lo:hi], dtype=np.float64)
+            ok = np.isfinite(v)
+            out += np.bincount(np.asarray(self.indices[lo:hi], dtype=np.int64)[ok], weights=v[ok], minlength=self.n_obs)
+        return out
+
+    def column_stat(self, kind, should_stop=None, pause=None):
+        if kind == "detection":                      # the length of each gene's range: nothing is read
+            return np.diff(self.indptr).astype(np.float64) / max(self.n_obs, 1)
+        total = int(self.indptr[-1])
+
+        def chunks():
+            for lo in range(0, total, STAT_CHUNK):
+                hi = min(lo + STAT_CHUNK, total)
+                genes = np.searchsorted(self.indptr, np.arange(lo, hi, dtype=np.int64), side="right") - 1
+                yield genes, np.asarray(self.data[lo:hi])
+        return _sparse_stat(kind, self.n_obs, self.n_var, chunks(), should_stop, pause)
+
+    def row_coverage(self, mask):
+        mask = _check_mask(mask, self.n_obs)
+        return int(self.indptr[-1]) if mask.any() else 0           # every gene's range is read
+
+    def row_moments(self, mask, thresholds, should_stop=None, pause=None, budget=MOMENT_READ_AHEAD_ENTRIES):
+        mask = _check_mask(mask, self.n_obs)
+        sums = MomentSums(self.n_var, thresholds)
+        total = int(self.indptr[-1]) if mask.any() else 0
+
+        def read(lo, hi):
+            genes = np.searchsorted(self.indptr, np.arange(lo, hi, dtype=np.int64), side="right") - 1
+            keep = mask[np.asarray(self.indices[lo:hi], dtype=np.int64)]
+            return [(0, genes[keep], np.asarray(self.data[lo:hi])[keep])]
+        tasks = [_Task([], min(STAT_CHUNK, total - lo), lambda lo=lo: read(lo, min(lo + STAT_CHUNK, total)))
+                 for lo in range(0, total, STAT_CHUNK)]
+        for task, result, _ in pipeline(tasks, self.threads, budget, pause):
+            _checkpoint(should_stop, None)
+            for _, genes, values in result:
+                if genes.size:
+                    sums.add(genes, values)
+            yield task.entries
+        return _moments_out(sums, self.n_var, thresholds, int(np.count_nonzero(mask)))
+
+    def row_zscore_moments(self, mask, clip, should_stop=None, pause=None, budget=MOMENT_READ_AHEAD_ENTRIES):
+        """See ``_Source``. One pass over every stored entry gives each gene's all-cell reference (Chan's merge of
+        per-chunk ``(n, mean, M2)``, centred, so a shifted gene keeps its precision) and the group's partials; a gene
+        whose z-scores reach the clip then has its range read again and is summed directly. A gene that cannot clip
+        is ``n (mean_G - mu) / sd`` from the partials."""
+        mask = _check_mask(mask, self.n_obs)
+        n_var, n_obs = self.n_var, self.n_obs
+        out = np.zeros((n_var, 5), dtype=np.float64)
+        total = int(self.indptr[-1])
+        n_group = int(np.count_nonzero(mask))
+        if n_group == 0:
+            return out
+        z = lambda: np.zeros(n_var, dtype=np.float64)                    # noqa: E731
+        a_n, a_mean, a_m2 = z(), z(), z()                                  # all cells, stored finite entries
+        g_n, g_mean, g_m2, g_stored = z(), z(), z(), z()                   # the group's
+        lo, hi = np.full(n_var, np.inf), np.full(n_var, -np.inf)
+
+        def read(a, b):
+            genes = np.searchsorted(self.indptr, np.arange(a, b, dtype=np.int64), side="right") - 1
+            return [(0, genes, np.asarray(self.indices[a:b], dtype=np.int64), np.asarray(self.data[a:b]))]
+
+        def merge(n, mean, m2, genes, weight, values):
+            """Chan-merge the entries (``weight`` 1 for an entry that counts) into the per-gene partials."""
+            g0, g1 = int(genes[0]), int(genes[-1]) + 1
+            local = genes - g0
+            cnt = np.bincount(local, weights=weight, minlength=g1 - g0)
+            s = np.bincount(local, weights=weight * values, minlength=g1 - g0)
+            mean_b = np.where(cnt > 0, s / np.maximum(cnt, 1), 0.0)
+            dev = (values - mean_b[local]) * weight
+            m2_b = np.bincount(local, weights=dev * dev, minlength=g1 - g0)
+            sl = slice(g0, g1)
+            n[sl], mean[sl], m2[sl] = _chan(n[sl], mean[sl], m2[sl], cnt, mean_b, m2_b)
+
+        tasks = [_Task([], min(STAT_CHUNK, total - a), lambda a=a: read(a, min(a + STAT_CHUNK, total)))
+                 for a in range(0, total, STAT_CHUNK)]
+        for task, result, _ in pipeline(tasks, self.threads, budget, pause):
+            _checkpoint(should_stop, None)
+            for _, genes, rows, values in result:
+                if genes.size:
+                    v = values.astype(np.float64)
+                    finite = np.isfinite(v)
+                    v = np.where(finite, v, 0.0)
+                    weight = finite.astype(np.float64)
+                    merge(a_n, a_mean, a_m2, genes, weight, v)
+                    at = np.flatnonzero(np.r_[True, genes[1:] != genes[:-1]])           # one segment per gene
+                    first = genes[at]
+                    lo[first] = np.minimum(lo[first], np.minimum.reduceat(np.where(finite, v, np.inf), at))
+                    hi[first] = np.maximum(hi[first], np.maximum.reduceat(np.where(finite, v, -np.inf), at))
+                    kept = mask[rows]
+                    if kept.any():
+                        merge(g_n, g_mean, g_m2, genes[kept], weight[kept], v[kept])
+                        g_stored += np.bincount(genes[kept], minlength=n_var)
+            yield task.entries
+        stored = np.diff(self.indptr).astype(np.float64)
+        # the cells with no stored entry hold zero: one more partial (n0, mean 0, M2 0) per side
+        n0 = n_obs - stored
+        a_n, a_mean, a_m2 = _chan(a_n, a_mean, a_m2, n0, z(), z())
+        has0 = n0 > 0
+        lo, hi = np.where(has0, np.minimum(lo, 0.0), lo), np.where(has0, np.maximum(hi, 0.0), hi)
+        n0g = n_group - g_stored
+        g_n, g_mean, g_m2 = _chan(g_n, g_mean, g_m2, n0g, z(), z())
+        with np.errstate(invalid="ignore", divide="ignore"):
+            sd = np.sqrt(a_m2 / np.maximum(a_n, 1))
+            usable = (a_n > 0) & (sd > 0) & np.isfinite(sd) & (lo < hi) & (g_n > 0)
+            mu = a_mean
+            out[:, 0] = np.where(usable, g_n, 0.0)
+            out[:, 1] = np.where(usable, g_n * (g_mean - mu) / sd, 0.0)
+            out[:, 2] = np.where(usable, (g_m2 + g_n * (g_mean - mu) ** 2) / (sd * sd), 0.0)
+            reaches = usable if clip is None else usable & (((hi - mu) / sd > clip) | ((lo - mu) / sd < -clip))
+        if clip is None:
+            return out
+        # genes that clip: z-scores summed directly over the group's stored entries and its unstored cells
+        cols = np.flatnonzero(reaches)
+        if cols.size:
+            out[cols, 1:3] = 0.0
+            sums, squares = np.zeros(n_var), np.zeros(n_var)
+            for task, result, _ in pipeline(self.tasks(cols), self.threads, budget, pause):
+                _checkpoint(should_stop, None)
+                for col, rows, values in result:
+                    v = np.asarray(values, dtype=np.float64)
+                    keep = mask[np.asarray(rows, dtype=np.int64)] & np.isfinite(v)
+                    zv = np.clip((v[keep] - mu[col]) / sd[col], -clip, clip)
+                    sums[col] += float(zv.sum())
+                    squares[col] += float((zv * zv).sum())
+                yield 0
+            z0 = np.clip(-mu[cols] / sd[cols], -clip, clip)
+            out[cols, 1] = sums[cols] + n0g[cols] * z0
+            out[cols, 2] = squares[cols] + n0g[cols] * z0 * z0
+        return out
+
+    def tasks(self, cols):
+        cols = np.sort(np.asarray(cols, dtype=np.int64))
+        starts, ends = self.indptr[cols], self.indptr[cols + 1]
+        out = []
+        for members in _groups(cols, starts, ends):
+            lo, hi = int(starts[members[0]]), int(ends[members[-1]])
+            spans = [(int(cols[i]), int(starts[i]) - lo, int(ends[i]) - lo) for i in members]
+            out.append(_Task([c for c, _, _ in spans], sum(b - a for _, a, b in spans),
+                             lambda lo=lo, hi=hi, spans=spans: self._read(lo, hi, spans)))
+        return out
+
+    def _read(self, lo, hi, spans):
+        if hi > lo:
+            idx, val = np.asarray(self.indices[lo:hi]), np.asarray(self.data[lo:hi])
+        else:
+            idx, val = np.empty(0, np.int64), np.empty(0, np.float32)
+        return [(col, idx[a:b], val[a:b]) for col, a, b in spans]
+
+
+class _CsrSource(_Source):
+    """A compressed-sparse-row group: a gene sits anywhere, so reading genes scans every stored index."""
+    layout = "csr"
+
+    def __init__(self, group, n_obs, n_var, remote, backend, scan):
+        super().__init__(n_obs, n_var, remote)
+        self.backend, self.group, self._scan = backend, group, scan
+        self.nnz = int(group["indptr"][n_obs])
+        # one scan at a time: a scan is already a whole pass over the file
+        self.threads = 1
+
+    def _batch(self):
+        return _batch_size(self.n_obs, self.nnz, self.n_var)
+
+    def entries(self, cols):
+        scans = math.ceil(len(cols) / self._batch()) if len(cols) else 0
+        return self.nnz * scans
+
+    def stat_entries(self, kind):
+        return self.nnz
+
+    def sample(self):
+        return _sample_stored(self.group["data"])
+
+    def stored_fraction(self):
+        return float(self.nnz) / max(self.n_obs * self.n_var, 1)
+
+    def row_totals(self, should_stop=None, pause=None):
+        ptr = np.asarray(self.group["indptr"][:], dtype=np.int64)
+        data = self.group["data"]
+        out = np.zeros(self.n_obs, dtype=np.float64)
+        r0 = 0
+        while r0 < self.n_obs:
+            _checkpoint(should_stop, pause)
+            r1 = int(np.searchsorted(ptr, ptr[r0] + STAT_CHUNK, side="right")) - 1
+            r1 = min(max(r1, r0 + 1), self.n_obs)
+            lo, hi = int(ptr[r0]), int(ptr[r1])
+            if hi > lo:
+                v = np.asarray(data[lo:hi], dtype=np.float64)
+                v[~np.isfinite(v)] = 0.0
+                csum = np.concatenate(([0.0], np.cumsum(v)))
+                out[r0:r1] = csum[ptr[r0 + 1:r1 + 1] - lo] - csum[ptr[r0:r1] - lo]
+            r0 = r1
+        return out
+
+    def column_stat(self, kind, should_stop=None, pause=None):
+        indices, data = self.group["indices"], self.group["data"]
+
+        def chunks():
+            for lo in range(0, self.nnz, STAT_CHUNK):
+                hi = min(lo + STAT_CHUNK, self.nnz)
+                yield (np.asarray(indices[lo:hi], dtype=np.int64),
+                       np.asarray(data[lo:hi]) if kind == "mean" else None)
+        return _sparse_stat(kind, self.n_obs, self.n_var, chunks(), should_stop, pause)
+
+    def _chunk(self) -> int:
+        """Entries a stored chunk of ``data`` holds; 0 for an array that is not chunked."""
+        chunks = getattr(self.group["data"], "chunks", None)
+        return int(chunks[0]) if chunks else 0
+
+    def _row_ranges(self, mask, r0: int, r1: int):
+        """``(starts, ends)`` of the stored entries of the rows of ``mask`` in ``r0 <= row < r1`` that have any."""
+        sel = np.flatnonzero(mask[r0:r1])
+        if not sel.size:
+            return None
+        ptr = np.asarray(self.group["indptr"][r0:r1 + 1], dtype=np.int64)
+        starts, ends = ptr[sel], ptr[sel + 1]
+        keep = ends > starts
+        return (starts[keep], ends[keep]) if keep.any() else None
+
+    def row_coverage(self, mask):
+        mask = _check_mask(mask, self.n_obs)
+        c = self._chunk() or 1
+        touched, prev_hi, last_touched = 0, -1, False
+        last = (self.nnz - 1) // c
+        for r0 in range(0, self.n_obs, ROW_BLOCK):
+            ranges = self._row_ranges(mask, r0, min(r0 + ROW_BLOCK, self.n_obs))
+            if ranges is None:
+                continue
+            lo, hi = ranges[0] // c, (ranges[1] - 1) // c               # both never decrease from row to row
+            counted = np.concatenate(([prev_hi], hi[:-1]))
+            touched += int(np.maximum(hi - np.maximum(lo, counted + 1) + 1, 0).sum())
+            prev_hi = int(hi[-1])
+            last_touched = last_touched or prev_hi == last
+        return touched * c - (((last + 1) * c - self.nnz) if last_touched else 0)
+
+    def row_moments(self, mask, thresholds, should_stop=None, pause=None, budget=MOMENT_READ_AHEAD_ENTRIES):
+        mask = _check_mask(mask, self.n_obs)
+        sums = MomentSums(self.n_var, thresholds)
+        indices, data, chunk = self.group["indices"], self.group["data"], self._chunk()
+
+        def read(lo, hi, s, e):
+            genes, values = np.asarray(indices[lo:hi], dtype=np.int64), np.asarray(data[lo:hi])
+            if s.size > 1 and not np.array_equal(s[1:], e[:-1]):        # entries of rows that are not in the group
+                delta = np.bincount(s - lo, minlength=hi - lo + 1) - np.bincount(e - lo, minlength=hi - lo + 1)
+                keep = np.cumsum(delta[:-1]) > 0
+                genes, values = genes[keep], values[keep]
+            return [(0, genes, values)]
+        for r0 in range(0, self.n_obs, ROW_BLOCK):
+            _checkpoint(should_stop, pause)
+            ranges = self._row_ranges(mask, r0, min(r0 + ROW_BLOCK, self.n_obs))
+            if ranges is None:
+                continue
+            starts, ends = ranges
+            tasks = []
+            for i, j in _read_spans(starts, ends, chunk, max(MAX_GROUP_ENTRIES, chunk)):
+                lo, hi = int(starts[i]), int(ends[j - 1])
+                tasks.append(_Task([], hi - lo, lambda lo=lo, hi=hi, s=starts[i:j], e=ends[i:j]: read(lo, hi, s, e)))
+            for task, result, _ in pipeline(tasks, self.threads, budget, pause):
+                _checkpoint(should_stop, None)
+                for _, genes, values in result:
+                    if genes.size:
+                        sums.add(genes, values)
+                yield task.entries
+        return _moments_out(sums, self.n_var, thresholds, int(np.count_nonzero(mask)))
+
+    def tasks(self, cols):
+        cols = [int(c) for c in np.sort(np.asarray(cols, dtype=np.int64))]
+        size = self._batch()
+        out = []
+        for i in range(0, len(cols), size):
+            batch = cols[i:i + size]
+            out.append(_Task(batch, min(self.n_obs * len(batch), BATCH_ENTRIES), lambda b=batch: self._read(b)))
+        return out
+
+    def _read(self, batch):
+        m = self._scan(batch).tocsc()
+        out = []
+        for k, col in enumerate(batch):
+            s, e = m.indptr[k], m.indptr[k + 1]
+            out.append((col, m.indices[s:e], m.data[s:e]))
+        return out
+
+
+class _DenseSource(_Source):
+    """A dense array of cells x genes."""
+    layout = "dense"
+
+    def __init__(self, array, n_obs, n_var, remote, backend, take):
+        super().__init__(n_obs, n_var, remote)
+        self.backend, self.array, self._take = backend, array, take
+        if backend == "h5ad":
+            self.threads = 1
+        self.itemsize = int(getattr(array.dtype, "itemsize", 4))
+
+    def _batches(self, cols):
+        cols = [int(c) for c in np.sort(np.asarray(cols, dtype=np.int64))]
+        size = int(max(1, min(MAX_BATCH_GENES, BATCH_ENTRIES // max(self.n_obs, 1))))
+        return [cols[i:i + size] for i in range(0, len(cols), size)]
+
+    def entries(self, cols):
+        """Matrix elements decoded: every batch decodes whole stored chunks, so the columns of the
+        chunk blocks it touches count, once per batch."""
+        chunks = getattr(self.array, "chunks", None)
+        width = int(chunks[1]) if chunks and len(chunks) == 2 else self.n_var
+        total = 0
+        for batch in self._batches(cols):
+            blocks = len({c // width for c in batch})
+            total += self.n_obs * min(blocks * width, self.n_var)
+        return total
+
+    def _height(self) -> int:
+        """Rows a stored chunk holds; 1 for an array that is not chunked (a row is then read as it is)."""
+        chunks = getattr(self.array, "chunks", None)
+        return int(chunks[0]) if chunks and len(chunks) == 2 else 1
+
+    def _blocks(self, mask) -> np.ndarray:
+        """The row chunks (ascending) that hold a cell of ``mask``."""
+        h, found = self._height(), []
+        for r0 in range(0, self.n_obs, ROW_BLOCK):
+            sel = np.flatnonzero(mask[r0:r0 + ROW_BLOCK]) + r0
+            if sel.size:
+                found.append(np.unique(sel // h))
+        return np.unique(np.concatenate(found)) if found else np.empty(0, dtype=np.int64)
+
+    def row_coverage(self, mask):
+        mask = _check_mask(mask, self.n_obs)
+        h, blocks = self._height(), self._blocks(mask)
+        if not blocks.size:
+            return 0
+        rows = blocks.size * h
+        if blocks[-1] == (self.n_obs - 1) // h:                  # the last chunk holds what is left
+            rows -= -(-self.n_obs // h) * h - self.n_obs
+        return int(rows) * self.n_var
+
+    def row_moments(self, mask, thresholds, should_stop=None, pause=None, budget=MOMENT_READ_AHEAD_ENTRIES):
+        mask = _check_mask(mask, self.n_obs)
+        sums = MomentSums(self.n_var, thresholds)
+        h, blocks = self._height(), self._blocks(mask)
+        per_read = max(h, max(SEGMENT_ENTRIES // max(self.n_var, 1), 1) // h * h)        # rows, whole chunks
+        reads, i = [], 0
+        while i < blocks.size:                                  # runs of neighbouring chunks, cut at per_read rows
+            j = i + 1
+            while j < blocks.size and blocks[j] == blocks[j - 1] + 1 and (blocks[j] - blocks[i] + 1) * h <= per_read:
+                j += 1
+            reads.append((int(blocks[i]) * h, min((int(blocks[j - 1]) + 1) * h, self.n_obs)))
+            i = j
+
+        def read(r0, r1):
+            return [(0, None, np.asarray(self.array[r0:r1])[mask[r0:r1]])]
+        tasks = [_Task([], (r1 - r0) * self.n_var, lambda r0=r0, r1=r1: read(r0, r1)) for r0, r1 in reads]
+        genes_of = np.arange(self.n_var, dtype=np.int64)
+        step = max(SEGMENT_ENTRIES // max(self.n_var, 1), 1)
+        for task, result, _ in pipeline(tasks, self.threads, budget, pause):
+            _checkpoint(should_stop, None)
+            for _, _, block in result:
+                for a in range(0, block.shape[0], step):
+                    part = block[a:a + step]
+                    sums.add(np.tile(genes_of, part.shape[0]), part.reshape(-1))
+            yield task.entries
+        return _moments_out(sums, self.n_var, thresholds, int(np.count_nonzero(mask)))
+
+    def tasks(self, cols):
+        return [_Task(batch, self.n_obs * len(batch), lambda b=batch: self._read(b))
+                for batch in self._batches(cols)]
+
+    def stat_entries(self, kind):
+        return self.entries(range(self.n_var))
+
+    def row_totals(self, should_stop=None, pause=None):
+        out = np.zeros(self.n_obs, dtype=np.float64)
+        rows = int(max(1, min(self.n_obs, BATCH_ENTRIES // max(self.n_var, 1))))
+        for r0 in range(0, self.n_obs, rows):
+            _checkpoint(should_stop, pause)
+            block = np.asarray(self.array[r0:r0 + rows], dtype=np.float64)
+            block[~np.isfinite(block)] = 0.0
+            out[r0:r0 + block.shape[0]] = block.sum(axis=1)
+        return out
+
+    def sample(self):
+        """A few blocks of whole rows, evenly spread; the zeros are left to the classifier to drop."""
+        rows_per_piece = max(1, matrix_kind.SAMPLE_PIECE // max(self.n_var, 1))
+        out = []
+        for start in matrix_kind.piece_starts(self.n_obs, size=rows_per_piece):
+            out.append(np.asarray(self.array[start:start + rows_per_piece]).ravel())
+        return np.concatenate(out) if out else np.empty(0)
+
+    def column_stat(self, kind, should_stop=None, pause=None):
+        out = np.full(self.n_var, np.nan, dtype=np.float64)
+        for batch in self._batches(range(self.n_var)):
+            _checkpoint(should_stop, pause)
+            block = np.asarray(self._take(batch))
+            if block.ndim == 1:
+                block = block.reshape(-1, 1)
+            if kind == "detection":
+                out[batch] = np.count_nonzero(block, axis=0) / max(self.n_obs, 1)
+            else:
+                v = block.astype(np.float64)
+                finite = np.isfinite(v)
+                n = finite.sum(axis=0)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    out[batch] = np.where(n > 0, np.where(finite, v, 0.0).sum(axis=0) / np.maximum(n, 1), np.nan)
+        return out
+
+    def _read(self, batch):
+        block = np.asarray(self._take(batch))
+        if block.ndim == 1:
+            block = block.reshape(-1, 1)
+        return [(col, None, block[:, k]) for k, col in enumerate(batch)]
+
+
+class _OpenSource:
+    """A source and what must be closed with it."""
+
+    def __init__(self, source: _Source, closer: Optional[Callable[[], None]] = None):
+        self.source, self._closer = source, closer
+
+    def __enter__(self):
+        return self.source
+
+    def __exit__(self, *exc):
+        if self._closer:
+            self._closer()
+
+
+def _unsupported(node_name: str, encoding):
+    from .zarr_reader import UnsupportedEncodingError
+    return UnsupportedEncodingError(f"{node_name} is stored as {encoding!r}; scores read dense, csr_matrix and "
+                                    f"csc_matrix matrices.")
+
+
+def input_node(root, input_name: str):
+    """The node of the matrix ``input_name`` in an open store (zarr group or HDF5 file) and what to call it in a
+    message: ``X``, or a layer. ScoreError 404 ``key_not_found`` when the store has no such matrix."""
+    layers = root["layers"] if "layers" in root else None
+    if input_name == "X" and "X" in root and (layers is None or "X" not in layers):
+        return root["X"], "X"
+    if layers is not None and input_name in layers:
+        return layers[input_name], f"layer '{input_name}'"
+    what = "X matrix" if input_name == "X" else f"layer '{input_name}'"
+    raise ScoreError(404, "key_not_found", f"This dataset has no {what}.")
+
+
+def _listed_inputs(root) -> List[str]:
+    """``X`` (when the store has one), then its layers by name."""
+    layers = sorted(root["layers"].keys()) if "layers" in root else []
+    return (["X"] if "X" in root else []) + [n for n in layers if n != "X"]
+
+
+def _open_zarr(reader, dataset_path: str, input_name: str) -> _OpenSource:
+    from .remote import is_remote_path
+    root = reader._get_root(dataset_path=dataset_path)
+    if root is None:
+        raise FileNotFoundError(f"Dataset path does not exist: {dataset_path}")
+    node, label = input_node(root, input_name)
+    remote = is_remote_path(dataset_path)
+    is_sparse, fmt = reader._is_sparse_matrix(node)
+    if is_sparse:
+        n_obs, n_var = (int(v) for v in node.attrs["shape"])
+        if fmt == "csc_matrix":
+            return _OpenSource(_CscSource(node, n_obs, n_var, remote, "zarr"))
+        if fmt == "csr_matrix":
+            def scan(batch):
+                return reader._minor_axis_slice(node, (n_obs, n_var), batch, "col")
+            return _OpenSource(_CsrSource(node, n_obs, n_var, remote, "zarr", scan))
+        raise _unsupported(label, fmt)
+    shape = getattr(node, "shape", None)
+    if shape is None or len(shape) != 2:
+        raise _unsupported(label, node.attrs.get("encoding-type") if hasattr(node, "attrs") else None)
+
+    height = int(node.chunks[0]) if getattr(node, "chunks", None) else int(shape[0])
+    n_rows = int(shape[0])
+
+    def take(batch):
+        # one block of stored rows at a time: zarr would decode every chunk of the columns together
+        out = np.empty((n_rows, len(batch)), dtype=node.dtype)
+        for r0 in range(0, n_rows, max(height, 1)):
+            r1 = min(r0 + height, n_rows)
+            out[r0:r1] = node[r0:r1, batch] if len(batch) > 1 else node[r0:r1, batch[0]:batch[0] + 1]
+        return out
+    return _OpenSource(_DenseSource(node, int(shape[0]), int(shape[1]), remote, "zarr", take))
+
+
+def _open_h5ad(dataset_path: str, input_name: str) -> _OpenSource:
+    import h5py
+    from . import h5ad_reader as h5
+    f = h5._open(dataset_path)
+    try:
+        node, label = input_node(f, input_name)
+        if isinstance(node, h5py.Group):
+            fmt, shape = h5._encoding(node), h5._sparse_group_shape(node)
+            if fmt not in ("csr_matrix", "csc_matrix") or shape is None:
+                raise _unsupported(label, fmt)
+            n_obs, n_var = shape
+            if fmt == "csc_matrix":
+                source = _CscSource(node, n_obs, n_var, False, "h5ad")
+            else:
+                indptr = node["indptr"][()].astype(np.int64)
+
+                def scan(batch):
+                    return h5._minor_scan(node, indptr, batch, n_obs, n_var)
+                source = _CsrSource(node, n_obs, n_var, False, "h5ad", scan)
+        else:
+            if len(node.shape) != 2:
+                raise _unsupported(label, None)
+            n_obs, n_var = (int(v) for v in node.shape)
+
+            def take(batch):
+                return h5._dense(node, None, batch)
+            source = _DenseSource(node, n_obs, n_var, False, "h5ad", take)
+    except BaseException:
+        f.close()
+        raise
+    return _OpenSource(source, f.close)
+
+
+def open_source(reader, dataset_path: str, input_name: str) -> _OpenSource:
+    from .h5ad_reader import h5adReader
+    if isinstance(reader, h5adReader):
+        return _open_h5ad(dataset_path, input_name)
+    return _open_zarr(reader, dataset_path, input_name)
+
+
+def input_names(reader, dataset_path: str) -> List[str]:
+    """The matrices a score can read: ``X`` (when the store has one), then its layers."""
+    from .h5ad_reader import h5adReader
+    if isinstance(reader, h5adReader):
+        from . import h5ad_reader as h5
+        f = h5._open(dataset_path)
+        try:
+            return _listed_inputs(f)
+        finally:
+            f.close()
+    root = reader._get_root(dataset_path=dataset_path)
+    if root is None:
+        raise FileNotFoundError(f"Dataset path does not exist: {dataset_path}")
+    return _listed_inputs(root)
+
+
+#: Matrices looked at when the one asked about looks like raw counts, to name one that does not.
+MAX_ALTERNATIVES = 12
+
+
+def kind_of(reader, dataset_path: str, name: str) -> Dict[str, Any]:
+    """``matrix_kind.classify`` of a sample of the matrix ``name`` (``X`` or a layer)."""
+    with open_source(reader, dataset_path, name) as source:
+        sample = source.sample()
+        stats = matrix_kind.classify(sample)
+        stats.update(matrix_kind.distribution(sample, source.stored_fraction()))
+        return stats
+
+
+def matrix_kinds(reader, dataset_path: str, name: str, suggest: bool = True) -> Dict[str, Any]:
+    """What the input ``name`` looks like and, when that is something scores are not meant for, which other
+    matrix of the dataset looks log-normalised: ``{"input", "kind", "stats", "suggest", "checked"}``."""
+    stats = kind_of(reader, dataset_path, name)
+    with open_source(reader, dataset_path, name) as source:
+        layout = source.layout                       # csc, csr or dense: what a Gene Plot's z-score of a group needs
+    out = {"input": name, "kind": stats["kind"], "layout": layout, "stats": stats, "suggest": None, "checked": {}}
+    if suggest and stats["kind"] in (*matrix_kind.WARN_KINDS, "signed"):
+        others = [n for n in input_names(reader, dataset_path) if n != name][:MAX_ALTERNATIVES]
+        for other in others:
+            try:
+                out["checked"][other] = kind_of(reader, dataset_path, other)["kind"]
+            except Exception as exc:                         # a layer this reader cannot read is not a candidate
+                logger.info("Matrix kind of %s skipped: %s", other, exc)
+        out["suggest"] = matrix_kind.suggest(out["checked"])
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Control genes (control-adjusted score)
+# ---------------------------------------------------------------------------
+
+def gene_bins(stat: np.ndarray, n_bins: int = N_BINS) -> np.ndarray:
+    """The bin of each gene, as scanpy's ``score_genes`` cuts them: ``rank(method="min") // round(n / (n_bins - 1))``
+    over the genes with a finite figure. Genes without one get -1. Equal figures share a bin."""
+    stat = np.asarray(stat, dtype=np.float64)
+    bins = np.full(stat.size, -1, dtype=np.int64)
+    pool = np.flatnonzero(np.isfinite(stat))
+    if pool.size == 0:
+        return bins
+    values = stat[pool]
+    ranks = np.searchsorted(np.sort(values), values, side="left") + 1        # rank "min", from 1
+    per_bin = max(int(np.round(pool.size / (n_bins - 1))), 1)
+    bins[pool] = ranks // per_bin
+    return bins
+
+
+def choose_controls(stat: np.ndarray, signature_cols: Sequence[int], seed: int,
+                    n_bins: int = N_BINS, ctrl_size: int = CTRL_SIZE) -> np.ndarray:
+    """The control genes (columns, ascending): for each bin holding a signature gene, the ``ctrl_size``
+    genes of that bin outside the signature with the smallest ``subset.rank_keys`` for ``seed``
+    (all of them when the bin holds fewer). The same inputs give the same controls on every machine."""
+    from .subset import rank_keys
+    bins = gene_bins(stat, n_bins)
+    sig = np.unique(np.asarray(signature_cols, dtype=np.int64))
+    cuts = np.unique(bins[sig][bins[sig] >= 0])
+    if cuts.size == 0:
+        return np.empty(0, dtype=np.int64)
+    keys = rank_keys(bins.size, seed)
+    is_signature = np.zeros(bins.size, dtype=bool)
+    is_signature[sig] = True
+    candidates = np.flatnonzero((bins >= 0) & ~is_signature & np.isin(bins, cuts))
+    out = []
+    for cut in cuts:
+        members = candidates[bins[candidates] == cut]
+        if members.size > ctrl_size:
+            members = members[np.argsort(keys[members], kind="stable")[:ctrl_size]]
+        out.append(members)
+    return np.sort(np.concatenate(out)) if out else np.empty(0, dtype=np.int64)
+
+
+def _side_controls(stat: np.ndarray, recipe: "Recipe", up_columns: Sequence[int],
+                   down_columns: Sequence[int]) -> Tuple[List[int], List[int]]:
+    """The controls of each side of a control-adjusted recipe, drawn outside that side's own genes: (up, down).
+    A side with no gene has none."""
+    def draw(columns):
+        if not columns:
+            return []
+        return [int(c) for c in choose_controls(stat, columns, recipe.effective_seed, recipe.bins, recipe.controls)]
+    return draw(up_columns), draw(down_columns)
+
+
+# ---------------------------------------------------------------------------
+# Plan and estimate
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Plan:
+    """What a recipe means for one store, before any gene is read."""
+    dataset_path: str
+    reader: Any
+    recipe: Recipe
+    n_obs: int
+    n_var: int
+    layout: str
+    backend: str
+    remote: bool
+    columns: List[int]                     # distinct signature columns (up and down) to read, ascending
+    names: Dict[int, str]                  # column -> the requested name
+    missing: List[str]                     # requested (up or down), not in the dataset
+    duplicated: List[str]                  # requested, more than once in var (the first is used)
+    entries: int
+    seconds: float
+    tier: str                              # "auto", "confirm" or "refused"
+    binning: str = "detection"             # control_adjusted: what genes are binned by
+    controls: Optional[List[int]] = None   # control_adjusted: the control columns, when known before reading
+    down_columns: List[int] = field(default_factory=list)       # the columns of the down genes (a subset of columns)
+    down_controls: Optional[List[int]] = None                   # control_adjusted: the down side's own controls
+    missing_down: List[str] = field(default_factory=list)       # the down genes not in the dataset
+    stat_entries: int = 0                  # control_adjusted: entries read to bin the genes (0 on a CSC store)
+
+    @property
+    def vectors(self) -> int:
+        """Running sums of one value per cell shown that the score holds at once."""
+        per_side = 2 if self.recipe.method in ("control_adjusted", "fraction_of_total") else 1
+        return per_side * (2 if self.down_columns else 1)
+
+    @property
+    def up_columns(self) -> List[int]:
+        down = set(self.down_columns)
+        return [c for c in self.columns if c not in down]
+
+    def estimate(self) -> Dict[str, Any]:
+        return {"entries": self.entries, "seconds": round(self.seconds, 2), "tier": self.tier,
+                **tier_limits(), "try": try_info(self.seconds), "layout": self.layout,
+                "n_cells": self.n_obs, "genes": len(self.columns), "genes_requested": len(self.recipe.genes) + len(self.recipe.down),
+                "genes_missing": len(self.missing), "down_requested": len(self.recipe.down),
+                **({"controls": (len(self.controls) + len(self.down_controls or ()))
+                                 if self.controls is not None else None,
+                    "binning": self.binning} if self.recipe.method == "control_adjusted" else {})}
+
+
+def tier_of(seconds: float) -> str:
+    if seconds <= auto_max_s():
+        return "auto"
+    return "confirm" if seconds <= confirm_max_s() else "refused"
+
+
+def estimate_seconds(layout: str, entries: int, remote: bool) -> float:
+    rate = RATES[layout] * (REMOTE_RATE_FACTOR if remote else 1.0)
+    return BASE_SECONDS + entries / rate
+
+
+def _resolve_names(var_names: Sequence[str], wanted: Sequence[str]):
+    """Column of each requested name (the first when ``var`` repeats it), what is missing, what repeats."""
+    want = set(wanted)
+    first: Dict[str, int] = {}
+    repeated = set()
+    for col, name in enumerate(var_names):
+        if name in want:
+            if name in first:
+                repeated.add(name)
+            else:
+                first[name] = col
+    columns = {name: first[name] for name in wanted if name in first}
+    missing = [name for name in wanted if name not in first]
+    return columns, missing, [name for name in wanted if name in repeated]
+
+
+def plan(reader, dataset_path: str, recipe: Recipe, binning: str = "detection") -> Plan:
+    """Open the store, resolve the genes and estimate the read. Reads no gene.
+
+    A control-adjusted score also reads its control genes. They are known now when the figure that bins
+    the genes costs nothing (detection on a CSC store); otherwise the estimate counts the pass that
+    bins them and the most controls there can be (``N_BINS`` times ``CTRL_SIZE``), and they are drawn in ``compute``.
+    """
+    if binning not in BINNINGS:
+        raise ValueError(f"binning must be one of {', '.join(BINNINGS)}")
+    up_names, down_names = list(recipe.genes), list(recipe.down)
+    genes = up_names + down_names
+    var_names = reader.get_cell_gene_names(dataset_path, "genes") if genes else []
+    with open_source(reader, dataset_path, recipe.input) as source:
+        if genes and len(var_names) != source.n_var:
+            raise ScoreError(500, "read_failed", f"The gene names ({len(var_names)}) do not match "
+                                                 f"the matrix ({source.n_var} columns).")
+        by_name, missing, duplicated = _resolve_names(var_names, genes)
+        columns = sorted(set(by_name.values()))
+        down_columns = sorted({by_name[n] for n in down_names if n in by_name})
+        up_columns = sorted({by_name[n] for n in up_names if n in by_name})
+        down_set = set(down_names)
+        missing_down = [n for n in missing if n in down_set]
+        controls, down_controls, stat_entries = None, None, 0
+        if recipe.method == "control_adjusted" and columns:
+            stat_entries = source.stat_entries(binning)
+            if stat_entries == 0:
+                stat = source.column_stat(binning)
+                controls, down_controls = _side_controls(stat, recipe, up_columns, down_columns)
+                reads = sorted(set(columns) | set(controls) | set(down_controls))
+            else:
+                taken = set(columns)
+                most = recipe.bins * recipe.controls * (2 if down_columns and up_columns else 1)
+                reads = columns + [c for c in range(min(source.n_var, len(columns) + most)) if c not in taken][:most]
+        elif recipe.method == "fraction_of_total" and columns:
+            stat_entries = source.stat_entries("total")           # the total of every cell: one pass over the matrix
+            reads = columns
+        else:
+            reads = columns
+        entries = source.entries(reads) + stat_entries
+        seconds = estimate_seconds(source.layout, entries, source.remote) if columns else 0.0
+        return Plan(dataset_path=dataset_path, reader=reader, recipe=recipe, n_obs=source.n_obs, n_var=source.n_var,
+                    layout=source.layout, backend=source.backend, remote=source.remote, columns=columns,
+                    names={col: name for name, col in by_name.items()}, missing=missing, duplicated=duplicated,
+                    entries=entries, seconds=seconds, tier=tier_of(seconds), binning=binning, controls=controls,
+                    stat_entries=stat_entries, down_columns=down_columns, down_controls=down_controls,
+                    missing_down=missing_down)
+
+
+# ---------------------------------------------------------------------------
+# The score
+# ---------------------------------------------------------------------------
+
+@dataclass
+class GeneStat:
+    name: str
+    column: int
+    status: str                  # "used", "constant" (not in a z-score mean), "no_values" (every value missing)
+    mean: Optional[float] = None
+    sd: Optional[float] = None
+    detected: Optional[float] = None     # fraction of cells with a non-zero value
+    clipped: Optional[float] = None      # fraction of cells beyond the clip (z-score mean)
+    direction: str = "up"                # "up" or "down"
+
+    def to_json(self) -> Dict[str, Any]:
+        return {"name": self.name, "column": self.column, "status": self.status, "mean": self.mean,
+                "sd": self.sd, "detected": self.detected, "clipped": self.clipped, "direction": self.direction}
+
+
+@dataclass
+class ScoreResult:
+    values: Optional[np.ndarray]           # float32, one per cell shown; None when there is no score
+    reason: Optional[str]                  # why there is none
+    genes: List[GeneStat] = field(default_factory=list)
+    n_used: int = 0
+    n_cells: int = 0                       # cells in the dataset (the reference population)
+    n_shown: int = 0
+    entries_read: int = 0                  # stored values delivered by the gene reads
+    entries_done: int = 0                  # what ``on_entries`` was told: the reads' entries plus each whole-matrix pass
+    max_in_flight_entries: int = 0
+    seconds: float = 0.0
+    controls: Optional[List[int]] = None   # control_adjusted: the control columns used
+    n_controls_used: int = 0               # control_adjusted: controls that held a value
+    n_used_up: int = 0                     # genes that entered the up side
+    n_used_down: int = 0                   # genes that entered the down side (0 without down genes)
+    input_kind: Optional[str] = None       # fraction_of_total: what the input looks like (core/matrix_kind.py)
+
+
+NO_SCORE_MESSAGES = {
+    "empty_signature": "The signature has no genes.",
+    "no_gene_present": "None of the signature's genes is in this dataset.",
+    "no_usable_gene": "Every gene of the signature is constant or has no values, so no score can be made.",
+    "no_control_genes": "No control genes could be drawn: the genes of the signature fill every bin they fall in.",
+}
+
+
+def _canonical(rows: np.ndarray, vals: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Rows strictly increasing, repeated entries summed (as scipy reads them)."""
+    if rows.size < 2 or bool(np.all(rows[1:] > rows[:-1])):
+        return rows, vals
+    order = np.argsort(rows, kind="stable")
+    rows, vals = rows[order], vals[order]
+    keep = np.concatenate(([True], rows[1:] != rows[:-1]))
+    if keep.all():
+        return rows, vals
+    return rows[keep], np.add.reduceat(vals, np.flatnonzero(keep))
+
+
+class GeneReference(NamedTuple):
+    """What a gene's z-score is taken against: its mean and SD over ALL cells of the dataset, a non-finite cell left
+    out and a sparse gene's implicit zeros in (population SD, ddof 0)."""
+    n_finite: int
+    mean: float
+    sd: float
+    lo: float
+    hi: float
+    nonzero: int
+    constant: bool          # no spread: no z-score
+
+
+def _plain_segment(values: np.ndarray):
+    def segment(i, j):
+        v = values[i:j].astype(np.float64)
+        finite = np.isfinite(v)
+        return (v, None, v) if finite.all() else (v, finite, v[finite])
+    return segment
+
+
+def gene_reference(values: Optional[np.ndarray], n_obs: int, segment=None,
+                   totals: Optional[Tuple[int, float, float]] = None) -> GeneReference:
+    """The mean and SD a gene's z-score uses, from its stored entries (``values``; fewer than ``n_obs`` for a sparse
+    gene, whose other cells hold zero) or its whole column. One definition for the signature (``_Accumulator``)
+    and for a z-scored gene feature of ``group_features``, so the two cannot drift. ``segment(i, j)`` gives
+    ``(float64 values, finite mask or None, the finite values)`` of ``values[i:j]``; a caller that keeps them for
+    a later pass passes its own. Worked ``SEGMENT_ENTRIES`` at a time.
+
+    ``totals`` is ``(n, sum x, sum x^2)`` over the cells with a finite value, unstored zeros included, when a caller
+    has them already (a pass over the layer, a moments cache): ``values`` is then not read (None is fine) and the
+    result has ``lo``/``hi`` NaN and ``nonzero`` 0. A variance within rounding of zero (1e-12 of the mean square)
+    is no spread, as ``FLAT`` is for the group statistics."""
+    if totals is not None:
+        n_finite, total, squares = int(totals[0]), float(totals[1]), float(totals[2])
+        if n_finite <= 0:
+            return GeneReference(0, math.nan, math.nan, math.nan, math.nan, 0, True)
+        mean = total / n_finite
+        var = squares / n_finite - mean * mean
+        constant = not (var > 1e-12 * (squares / n_finite) and math.isfinite(var))
+        return GeneReference(n_finite, mean, 0.0 if constant else math.sqrt(var), math.nan, math.nan, 0, constant)
+    n = int(n_obs)
+    segment = segment or _plain_segment(values)
+    bounds = [(i, min(i + SEGMENT_ENTRIES, values.size)) for i in range(0, values.size, SEGMENT_ENTRIES)]
+    total, n_nan, nonzero = 0.0, 0, 0
+    lo, hi = math.inf, -math.inf
+    for i, j in bounds:                                           # pass 1: sum, range, count
+        v, _, vf = segment(i, j)
+        n_nan += int(v.size - vf.size)
+        if vf.size:
+            total += float(vf.sum())
+            lo, hi = min(lo, float(vf.min())), max(hi, float(vf.max()))
+            nonzero += int(np.count_nonzero(vf))
+    n_finite = n - n_nan
+    if n_finite <= 0:
+        return GeneReference(0, math.nan, math.nan, math.nan, math.nan, 0, True)
+    implicit = n - int(values.size)                              # cells with no stored entry hold zero
+    if implicit:
+        lo, hi = min(lo, 0.0), max(hi, 0.0)
+    mean = total / n_finite
+    squares = implicit * mean * mean
+    for i, j in bounds:                                           # pass 2: spread
+        d = segment(i, j)[2] - mean
+        squares += float((d * d).sum())
+    sd = math.sqrt(squares / n_finite)
+    constant = lo == hi or not (sd > 0 and math.isfinite(sd))
+    return GeneReference(n_finite, mean, sd, lo, hi, nonzero, constant)
+
+
+class _Accumulator:
+    """The running sum for the cells shown, and what each gene tells about itself."""
+
+    def __init__(self, recipe: Recipe, n_obs: int, shown: Optional[np.ndarray]):
+        self.recipe, self.n_obs, self.shown = recipe, n_obs, shown
+        self.n_shown = n_obs if shown is None else int(shown.size)
+        self.zscore = recipe.method == "zscore_mean"
+        self.indicator = recipe.method == "fraction_of_genes"          # a gene adds 1 where its value is above detect_above
+        self.detect_above = recipe.detect_above
+        self.divide = recipe.method in ("zscore_mean", "mean", "fraction_of_genes")   # sum and the share of the total are not averages
+        self.clip = recipe.effective_clip
+        self.acc = np.zeros(self.n_shown, dtype=np.float64 if self.n_shown <= FLOAT64_CELLS else np.float32)
+        self.baseline = 0.0               # sum over sparse genes of the score of a cell holding zero
+        self.missing_count: Optional[np.ndarray] = None   # per cell shown: genes whose value is missing
+        self.n_used = 0
+        self.stats: List[GeneStat] = []
+
+    # -- helpers ----------------------------------------------------------
+    def _clip(self, z):
+        return z if self.clip is None else np.clip(z, -self.clip, self.clip)
+
+    def _mark_missing(self, positions: Optional[np.ndarray]):
+        """Count a missing value for each position (None: every cell shown is missing it)."""
+        if self.missing_count is None:
+            self.missing_count = np.zeros(self.n_shown, dtype=np.uint16)
+        if positions is None:
+            self.missing_count += 1
+        else:
+            self.missing_count[positions] += 1
+
+    def _positions(self, rows: np.ndarray):
+        """(positions among the cells shown, mask over ``rows`` of those shown)."""
+        if self.shown is None:
+            return rows, None
+        pos = np.searchsorted(self.shown, rows)
+        pos[pos == self.shown.size] = max(self.shown.size - 1, 0)
+        hit = self.shown[pos] == rows if self.shown.size else np.zeros(rows.size, dtype=bool)
+        return pos[hit], hit
+
+    # -- one gene ---------------------------------------------------------
+    def add(self, name: str, col: int, rows: Optional[np.ndarray], values: np.ndarray) -> None:
+        """Take in one gene: its stored entries (``rows`` given) or its whole column (``rows`` None)."""
+        if rows is None:
+            self._add_column(name, col, np.asarray(values, dtype=np.float64))
+        else:
+            self._add_sparse(name, col, *_canonical(np.asarray(rows), np.asarray(values)))
+
+    def _gene(self, name, col, ref: GeneReference) -> Optional["GeneStat"]:
+        """Record a gene's figures; the stat when it enters the score, None when it does not."""
+        constant = ref.constant
+        stat = GeneStat(name, col, "constant" if constant else "used", ref.mean, 0.0 if constant else ref.sd,
+                        ref.nonzero / self.n_obs, None)
+        self.stats.append(stat)
+        if constant and self.zscore:
+            return None                                     # no spread, no z-score
+        self.n_used += 1
+        return stat
+
+    def _add_column(self, name, col, v) -> None:
+        """A whole column (dense store), one value per cell."""
+        finite = np.isfinite(v)
+        ref = gene_reference(v, self.n_obs)
+        if ref.n_finite == 0:
+            self.stats.append(GeneStat(name, col, "no_values"))
+            return
+        vf = v[finite]
+        stat = self._gene(name, col, ref)
+        if stat is None:
+            return
+        if self.zscore:
+            z = (vf - ref.mean) / ref.sd
+            if self.clip is not None:
+                stat.clipped = int((np.abs(z) > self.clip).sum()) / self.n_obs
+            transformed = self._clip(z)
+        elif self.indicator:
+            transformed = (vf > self.detect_above).astype(np.float64)
+        else:
+            transformed = vf
+        column = np.zeros(self.n_obs, dtype=np.float64)
+        column[finite] = transformed
+        if self.shown is not None:
+            column, finite = column[self.shown], finite[self.shown]
+        self.acc += column
+        if not finite.all():
+            self._mark_missing(np.flatnonzero(~finite))
+
+    def _add_sparse(self, name, col, rows, values) -> None:
+        """A gene's stored entries, worked through ``SEGMENT_ENTRIES`` at a time so a gene held by a
+        large share of 100 million cells needs no array of its own size in float64."""
+        n = self.n_obs
+        seg = SEGMENT_ENTRIES
+        bounds = [(i, min(i + seg, values.size)) for i in range(0, values.size, seg)]
+        kept: Dict[Tuple[int, int], tuple] = {}
+
+        def segment(i, j):
+            """(float64 values, finite mask or None when every value is finite, the finite values) of a segment.
+            A gene of one segment, which is nearly every gene, is converted and masked once for the three passes."""
+            if (i, j) in kept:
+                return kept[(i, j)]
+            v = values[i:j].astype(np.float64)
+            finite = np.isfinite(v)
+            out = (v, None, v) if finite.all() else (v, finite, v[finite])
+            if len(bounds) == 1:
+                kept[(i, j)] = out
+            return out
+
+        ref = gene_reference(values, n, segment)
+        if ref.n_finite == 0:
+            self.stats.append(GeneStat(name, col, "no_values"))
+            return
+        mean, sd = ref.mean, ref.sd
+        implicit = n - int(values.size)
+        stat = self._gene(name, col, ref)
+        if stat is None:
+            return
+        # every cell holds z0; a stored entry adds what it differs by, a missing one cancels z0
+        if self.zscore:
+            z0 = float(self._clip(np.float64(-mean / sd)))
+            over = implicit if self.clip is not None and abs(mean / sd) > self.clip else 0
+        else:
+            z0, over = 0.0, 0
+        self.baseline += z0
+        for i, j in bounds:                                       # pass 3: the cells' share
+            v, finite, vf = segment(i, j)
+            if self.zscore:
+                z = (vf - mean) / sd
+                if self.clip is not None:
+                    over += int((np.abs(z) > self.clip).sum())
+                share = self._clip(z) - z0
+            elif self.indicator:
+                share = (vf > self.detect_above).astype(np.float64)
+            else:
+                share = vf
+            if finite is None:
+                correction = share
+            else:
+                correction = np.full(v.size, -z0, dtype=np.float64)
+                correction[finite] = share
+            pos, hit = self._positions(rows[i:j].astype(np.int64))
+            self.acc[pos] += correction if hit is None else correction[hit]
+            if finite is not None:
+                bad = ~finite if hit is None else ~finite[hit]
+                if bad.any():
+                    self._mark_missing(pos[bad])
+        if self.zscore and self.clip is not None:
+            stat.clipped = over / n
+
+    def raw(self):
+        """(sum over the genes in each cell, genes with a value in each cell) in float64, for a combination of sides."""
+        total = (self.acc + self.baseline).astype(np.float64)
+        count = np.full(self.n_shown, self.n_used, dtype=np.int64)
+        if self.missing_count is not None:
+            count -= self.missing_count.astype(np.int64)
+        return total, count
+
+    def result(self) -> Optional[np.ndarray]:
+        if self.n_used == 0:
+            return None
+        total = self.acc + self.baseline if self.acc.dtype == np.float64 else self.acc + np.float32(self.baseline)
+        if self.missing_count is None:
+            out = total / self.n_used if self.divide else total
+        else:
+            denom = self.n_used - self.missing_count.astype(np.int64)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                out = np.where(denom > 0, total / np.maximum(denom, 1) if self.divide else total, np.nan)
+        return np.ascontiguousarray(out, dtype=np.float32)
+
+
+def pipeline(tasks: List[_Task], threads: int, budget: int, pause=None) -> Iterator[Tuple[_Task, list, int]]:
+    """Yield each task with its result, in order, reading ahead by at most ``budget`` entries.
+
+    Memory is bounded by the budget plus the task being worked on, however many genes there
+    are; order is fixed, so the arithmetic does not depend on the number of threads.
+    The third item is the peak entries in flight so far. A read runs in a copy of the caller's
+    context, so a remote store's request deadline reaches the reader threads.
+
+    ``pause`` (None: never) has ``wanted()``, asked before each read is started, and ``wait()``. While a pause is wanted
+    no new read is started; the reads already in flight are handed out in order, and only then, with nothing in flight,
+    is ``wait()`` called. The read-ahead is therefore free for as long as the job waits (a heavy job giving way,
+    SHR-41). Afterwards reading resumes with the next task: none is read twice and the order is the same.
+    """
+    pending: deque = deque()
+    in_flight = peak = 0
+    queue = deque(tasks)
+    window = max(2 * threads, 2)
+    draining = False
+    with ThreadPoolExecutor(max_workers=max(threads, 1), thread_name_prefix="gene-score") as pool:
+        try:
+            while pending or queue:
+                if pause is not None and (draining or pause.wanted()):
+                    draining = True                      # a wanted pause stands until the reads in flight are handed out
+                    if not pending:
+                        draining = False
+                        pause.wait()
+                        continue
+                else:
+                    while queue and len(pending) < window and (not pending or in_flight + queue[0].entries <= budget):
+                        task = queue.popleft()
+                        pending.append((task, pool.submit(contextvars.copy_context().run, task.read)))
+                        in_flight += task.entries
+                        peak = max(peak, in_flight)
+                task, future = pending.popleft()
+                result = future.result()
+                in_flight -= task.entries
+                yield task, result, peak
+        finally:
+            for _, future in pending:
+                future.cancel()
+
+
+def compute(plan_: Plan, shown_rows: Optional[np.ndarray] = None,
+            should_stop: Optional[Callable[[], bool]] = None, pause=None,
+            on_entries: Optional[Callable[[int], None]] = None,
+            on_read: Optional[Callable[[list], None]] = None) -> Iterator[Tuple[str, Any]]:
+    """Score the cells ``shown_rows`` (sorted dataset rows; None: all cells).
+
+    A generator of ``("progress", (genes_done, genes_total))`` events and a final
+    ``("result", ScoreResult)``. Closing it stops the work after the read in progress.
+    ``should_stop`` is asked between reads; true raises ``ScoreCancelled``. ``pause`` is passed to ``pipeline``:
+    the gene reads stop and drain while it is wanted (the passes over the whole matrix that bin or total the genes
+    do not read through it). None keeps the behaviour of every other caller.
+
+    ``pause`` also stops the whole-matrix passes (the cells' totals, the genes' means) between their chunks; those
+    read nothing ahead, so nothing is in flight while they wait.
+
+    ``on_entries(n)`` (None: never called) reports progress in stored entries: ``task.entries`` for each gene read,
+    just before the progress event that counts that read, and ``plan.stat_entries`` once each whole-matrix pass ends.
+    The calls add up to ``result.entries_done``, and to ``plan.entries`` less what the plan estimated and
+    ``compute`` did not need to read.
+
+    ``on_read(rows_values)`` (None: never called) is handed each gene read once the score has taken it: the read's
+    ``[(column, rows | None, values)]`` as stored, every column of it (controls included), before ``on_entries`` and
+    the progress event of that read. It lets another consumer of the same genes (``core/group_features.py``) ride on
+    this read instead of reading them again; it must not change the arrays. It runs in this generator, between the
+    pipeline's hand-outs, so the read-ahead, a pause and ``on_entries`` are as without it.
+    """
+    started = time.perf_counter()
+    recipe = plan_.recipe
+    shown = None if shown_rows is None else np.asarray(shown_rows, dtype=np.int64)
+    n_shown = plan_.n_obs if shown is None else int(shown.size)
+    result = ScoreResult(values=None, reason=None, n_cells=plan_.n_obs, n_shown=n_shown)
+    if not recipe.genes and not recipe.down:
+        result.reason = "empty_signature"
+    elif not plan_.columns:
+        result.reason = "no_gene_present"
+    if result.reason:
+        yield "result", result
+        return
+    adjusted = recipe.method == "control_adjusted"
+    share = recipe.method == "fraction_of_total"
+    # the control-adjusted score is two plain means (of the signature, and of its controls); the share of the total
+    # is a plain sum divided by the cell's total
+    own = dataclasses.replace(recipe, method="mean") if adjusted else (
+        dataclasses.replace(recipe, method="sum") if share else recipe)
+    up_cols, down_cols = plan_.up_columns, list(plan_.down_columns)
+    acc = _Accumulator(own, plan_.n_obs, shown)
+    down_acc = _Accumulator(own, plan_.n_obs, shown) if down_cols else None
+    control_acc = _Accumulator(own, plan_.n_obs, shown) if adjusted and up_cols else None
+    down_control_acc = _Accumulator(own, plan_.n_obs, shown) if adjusted and down_cols else None
+    total = len(plan_.columns)
+    done = 0
+    yield "progress", (0, total)
+    with open_source(plan_.reader, plan_.dataset_path, recipe.input) as source:
+        controls, down_controls = plan_.controls, plan_.down_controls
+        totals = None
+        if share:
+            totals = source.row_totals(should_stop, pause)
+            if on_entries is not None:
+                on_entries(plan_.stat_entries)
+            result.entries_done += plan_.stat_entries
+            result.input_kind = matrix_kind.classify(source.sample())["kind"]
+        if adjusted and controls is None:
+            stat = source.column_stat(plan_.binning, should_stop, pause)
+            if on_entries is not None:
+                on_entries(plan_.stat_entries)
+            result.entries_done += plan_.stat_entries
+            controls, down_controls = _side_controls(stat, recipe, up_cols, down_cols)
+        if adjusted:
+            down_controls = down_controls or []
+            result.controls = sorted(set(controls) | set(down_controls))
+            if (up_cols and not controls) or (down_cols and not down_controls):
+                result.reason = "no_control_genes"
+                result.seconds = time.perf_counter() - started
+                yield "result", result
+                return
+            total += len(result.controls)
+            yield "progress", (0, total)
+        up_set, down_set = set(up_cols), set(down_cols)
+        up_ctrl, down_ctrl = set(controls or ()), set(down_controls or ())
+        tasks = source.tasks(sorted(up_set | down_set | up_ctrl | down_ctrl))
+        for task, rows_values, peak in pipeline(tasks, source.threads, READ_AHEAD_ENTRIES, pause):
+            if should_stop is not None and should_stop():
+                raise ScoreCancelled()
+            for col, rows, values in rows_values:
+                # one read feeds every sum that wants the gene (a gene may be one side's control and the other's gene)
+                if col in up_set:
+                    acc.add(plan_.names[col], col, rows, values)
+                if col in down_set:
+                    down_acc.add(plan_.names[col], col, rows, values)
+                if col in up_ctrl:
+                    control_acc.add(f"#{col}", col, rows, values)
+                if col in down_ctrl:
+                    down_control_acc.add(f"#{col}", col, rows, values)
+                result.entries_read += int(values.size)
+            if on_read is not None:
+                on_read(rows_values)
+            result.max_in_flight_entries = max(result.max_in_flight_entries, peak)
+            if on_entries is not None:
+                on_entries(task.entries)
+            result.entries_done += task.entries
+            done += len(task.cols)
+            yield "progress", (done, total)
+    for g in acc.stats:
+        g.direction = "up"
+    stats = list(acc.stats)
+    if down_acc is not None:
+        for g in down_acc.stats:
+            g.direction = "down"
+        stats += down_acc.stats
+    result.genes = sorted(stats, key=lambda g: g.column)
+    result.n_used_up = acc.n_used
+    result.n_used_down = down_acc.n_used if down_acc is not None else 0
+    result.n_used = result.n_used_up + result.n_used_down
+    up_values = acc.result()
+    down_values = down_acc.result() if down_acc is not None else None
+    if up_values is None and down_values is None:
+        result.reason = "no_usable_gene"
+    elif share:
+        t = totals if shown is None else totals[shown]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = up_values.astype(np.float64) / t
+        result.values = np.ascontiguousarray(np.where(t > 0, 100.0 * ratio, np.nan), dtype=np.float32)
+    else:
+        if adjusted:
+            result.n_controls_used = (control_acc.n_used if control_acc else 0) + \
+                (down_control_acc.n_used if down_control_acc else 0)
+            for side, ctrl in (("up", control_acc), ("down", down_control_acc)):
+                values = up_values if side == "up" else down_values
+                if values is None:
+                    continue
+                base = ctrl.result()
+                if base is None:
+                    up_values, down_values = None, None
+                    result.reason = "no_control_genes"
+                    break
+                adjusted_values = values.astype(np.float64) - base.astype(np.float64)
+                if side == "up":
+                    up_values = adjusted_values
+                else:
+                    down_values = adjusted_values
+        if result.reason is None:
+            # the signed combination; a side with no usable gene is left out
+            if recipe.effective_down_weight == "gene" and up_values is not None and down_values is not None:
+                # each gene weighs equally: (sum of up - sum of down) over the genes that have a value in the cell
+                (su, nu), (sd_, nd) = acc.raw(), down_acc.raw()
+                n = nu + nd
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    combined = np.where(n > 0, (su - sd_) / np.maximum(n, 1), np.nan)
+            elif up_values is not None and down_values is not None:
+                combined = up_values.astype(np.float64) - down_values.astype(np.float64)
+            elif up_values is not None:
+                combined = up_values.astype(np.float64)
+            else:
+                combined = -down_values.astype(np.float64)
+            result.values = np.ascontiguousarray(combined, dtype=np.float32)
+    result.seconds = time.perf_counter() - started
+    yield "result", result
+
+
+class ScoreCancelled(Exception):
+    pass

@@ -57,7 +57,10 @@ stale listing from then on, so the new element still shows, and says so in a not
 > obs/mhc1_score is on disk but not in it. AnnZarro now reads the store without it, which is
 > slower to open. Run zarr.consolidate_metadata(path) on the store, then Refresh dataset.
 
-Run `zarr.consolidate_metadata(path)` and refresh again to clear it. A request for an array that
+AnnZarro only reads your store here: it never rewrites `.zmetadata` or any other file, and the server
+log says when it read around a stale listing. Gene and cell names, and every other element, are served as
+before. Reading without the listing is slower to open, so run `zarr.consolidate_metadata(path)` and
+refresh again to clear the notice. A request for an array that
 was rewritten with another shape or dtype while `.zmetadata` still describes the old one answers
 `500 stale_metadata` until then ({doc}`../reference/http-api`).
 
@@ -67,8 +70,8 @@ In the AnnZarro tab, click **Refresh dataset**, the icon right of the dataset bu
 ({doc}`../user-guide/interface`). (In the desktop app **Ctrl+R**, **Cmd+R** on a Mac, does the same;
 in a browser it reloads the page.) It:
 
-1. asks the server to check the store against the disk (`POST /api/v1/data/refresh`). If any file
-   changed, the server starts a new generation of the dataset: every server process (each
+1. asks the server to check the store against the disk (`POST /api/v1/data/refresh`). Whatever the
+   check finds, the server starts a new generation of the dataset: every server process (each
    gunicorn worker) reads it afresh, and every browser's cached replies stop matching;
 2. for an admin, also clears the server's cache for the dataset (`POST /api/v1/cache/reset`);
 3. reloads the dataset list and reopens the dataset in your tab. `mhc1_score` now appears in
@@ -98,16 +101,17 @@ the store keeps the column.
   ({ref}`revalidation`). Writing an element with `write_elem` changes the store's directory
   times, which changes those tags; overwriting chunk files in place
   (`g["obs/x"][:] = values`) does not, and both the browser and the server keep serving the old
-  values until a **Refresh dataset** finds the change. Use **Refresh dataset** after every write.
-- **A non-admin's refresh re-checks the disk but does not clear the shared cache.** On a hosted
-  server, clearing the server's cache is for admins (`POST /api/v1/cache/reset` answers
-  `403 admin_only` otherwise); the button's tooltip says so. A non-admin's refresh still starts a
-  new generation when files changed, which is enough for a store of normal size. It is not
-  enough for a store too large to check within 3 s (the 95.6-million-cell Tahoe-100M store): there
-  the check answers `status: "partial"` and changes nothing, and an in-place chunk write needs an
-  admin's refresh (or a server restart). The app tells a user whose refresh got this answer
-  ("Refresh may not show every change"), once per press, and an admin's **Refresh dataset**
-  says the server's cache was cleared instead.
+  values until a **Refresh dataset**. Use **Refresh dataset** after every write.
+- **Every refresh reads the dataset again, for every user.** **Refresh dataset** starts a new
+  generation whatever its walk of the files finds: nothing a file walk can see tells an in-place
+  chunk write on a large store or on a network file system, so the server does not wait for a
+  sign of change. It drops what it remembered of the dataset (values, scores, group results, name
+  search) in every worker. Clearing the server's whole cache stays for admins
+  (`POST /api/v1/cache/reset` answers `403 admin_only` otherwise). A store too large to walk
+  within 3 s (the 95.6-million-cell Tahoe-100M store) answers `status: "partial"`; the app then
+  says "Large dataset refreshed: AnnZarro cannot tell whether it changed, so it read it again".
+  The first request after a refresh of a store that large is a cold read: expect the time of a
+  first open, not of a cached read.
 - **With login off, anyone who can reach the server can refresh.** A server without login
   treats every visitor alike, so any of them can ask for the re-check (and, on your own machine,
   the cache clear). That is harmless: a refresh only reads the store, and it is rate-limited as

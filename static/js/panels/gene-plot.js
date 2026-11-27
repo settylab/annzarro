@@ -1,10 +1,13 @@
+import { legacyFont } from '../utils/fonts.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
 import { focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
+import { attachPlotUndo } from './plot-utilities/plot-undo.js';
 import { createPanelStructure, initializeUIState, checkDatasetLoadingStatus } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
 import { highlightFocusedEntity, updatePlotOnTableChange, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
 import { followSessionDefault } from './plot-utilities/plot-aesthetics-menu.js';
 import { PanelManager } from '../panel-manager.js';
+import { releaseSourceHost } from '../utils/source-registry.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { setupPlotEventListeners } from './plot-utilities/listeners.js';
@@ -33,6 +36,8 @@ const GenePlotPanel = (function() {
         const _plotType = 'genes'; 
         const _container = container;
         let _plotContainer = null;
+        /** Undo in the toolbar (plot-utilities/plot-undo.js, WP-5b). */
+        let _undo = null;
         let _controlsContainer = null;
         let _resizeObserver = null;
         let _isFirstLoad = true;
@@ -68,6 +73,8 @@ const GenePlotPanel = (function() {
         // Override with provided options, if any (colour bounds stored in
         // data units go back to drawn units: array-stats.js restoreColorRange)
         Object.assign(_settings, restoreColorRange(options));
+        // a plot saved when Arial was the default has no font of its own: it keeps drawing in Arial (utils/fonts.js)
+        legacyFont(_settings);
         // On Default (made from the chooser, or saved on Default): the look is the session's default, whichever
         // session this opens in (utils/session-style.js)
         if (_settings.styleDefault === true) followSessionDefault(_settings, 'gene-plot');
@@ -88,11 +95,14 @@ const GenePlotPanel = (function() {
         async function init() {
             try {
                 // Create panel structure
-                const { plotContainer, controlsContainer, loadingScreen } = createPanelStructure(_container, _id, _settings);
+                const { plotContainer, controlsContainer, loadingScreen } = createPanelStructure(_container, _id, _settings, { plotType: _plotType, consumer: 'gene-plot' });
     
                 // Store references for later use
                 _plotContainer = plotContainer;
                 _controlsContainer = controlsContainer;
+                // Undo: the same as the new panels', in the toolbar's Undo slot (WP-5b); before the first draw, so the
+                // toolbar's row never changes height after it
+                _undo = attachPlotUndo(_id, _container);
                 
                 console.log('Panel structure created: ', 
                     'plotContainer=', _plotContainer ? 'defined' : 'undefined',
@@ -106,6 +116,7 @@ const GenePlotPanel = (function() {
                 
                 // Set up event listeners (these work even when no dataset is loaded)
                 _setupEventListeners();
+                if (_undo) _undo.settled();
             } catch (error) {
                 console.error('Error initializing panel:', error);
                 console.error(error.stack);
@@ -134,7 +145,7 @@ const GenePlotPanel = (function() {
                 }
                 
                 // Initialize UI state with the dataset
-                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer, 'gene-plot');
                 
                 // Load data and create plot
                 await refreshPlot();
@@ -167,6 +178,7 @@ const GenePlotPanel = (function() {
                 controlsContainer: _controlsContainer,
                 settings: _settings,
                 plotType: _plotType,
+                consumer: 'gene-plot',
                 data: _data,
                 id: _id,
                 loadDataAndCreatePlot: refreshPlot,
@@ -398,6 +410,10 @@ const GenePlotPanel = (function() {
          * Clean up resources
          */
         function cleanup() {
+            // what this plot shows from a provider (a group's statistic) is no longer needed by it: each provider lets go
+            if (_plotContainer) releaseSourceHost(_plotContainer);
+
+            if (_undo) { _undo.destroy(); _undo = null; }
             // Remove document event listeners
             if (handleFocusedCellChanged.eventHandler) {
                 document.removeEventListener('focusedCellChanged', handleFocusedCellChanged.eventHandler);
@@ -535,14 +551,19 @@ const GenePlotPanel = (function() {
                     const datasetPath = updateData["dataset"];
                     const datasetStructure = await DataManager.getDatasetStructure(datasetPath);
 
-                    await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                    await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer, 'gene-plot');
 
                     // Another dataset's coordinates: the zoom and camera chosen
                     // on the previous one do not apply (the plot is drawn into
                     // the same graph, under the new dataset's uirevision)
-                    _settings.viewport2D = null;
-                    _settings.viewport3D = null;
+                    // A Refresh of the same dataset (the header's) re-reads it: the same coordinates, so the view stays
+                    if (!(updateData && updateData.refresh)) {
+                        _settings.viewport2D = null;
+                        _settings.viewport3D = null;
+                    }
                     await refreshPlot(signal);
+                    // a dataset that arrived is not a change of the user's: Undo starts here (plot-undo.js)
+                    if (_undo) _undo.settled();
                     
                     // If we get here, the operation completed successfully
                     return;
@@ -644,6 +665,8 @@ const GenePlotPanel = (function() {
             setConfig,
             updateConfig,
             onDataUpdate,
+            // a subset change it does not read: the series it holds stay current (plot-update.js isPlotDataCurrent)
+            subsetUnread: () => { if (_data && _data.generation !== null && _data.generation !== undefined) _data.generation = DataManager.getDatasetGeneration(); },
             // whether other cells change what it draws (utils/subset-reads.js)
             readsCellSubset: () => readsCellSubset('genes', [_settings.x, _settings.y, _settings.z, _settings.color, ...(_settings.hoverInfo || [])], _settings.tableFilter)
         };

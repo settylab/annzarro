@@ -1,8 +1,9 @@
 # Export
 
-There are three ways to get a figure or numbers out of AnnZarro: the camera button of a plot
+There are four ways to get a figure or numbers out of AnnZarro: the camera button of a plot
 (a quick PNG), the **Export** section of **Plot Options** (PNG, JPEG, WEBP or SVG at a size you
-choose) and **Export CSV** of a table. Because AnnZarro is read-only and keeps no state of its
+choose, or **Copy** to the clipboard), **Export CSV** of a table, and the **Download CSV** or
+**Export** buttons of the newer panels ({ref}`export-new-panels`). Because AnnZarro is read-only and keeps no state of its
 own, every exported plot can also be rebuilt later from its panel set or share link, or
 recomputed from the store in Python.
 
@@ -25,13 +26,14 @@ default, whatever the size of the tile.
 
 ## Choose format and size in Plot Options
 
-1. Open the panel's controls and click **Plot Options**. A menu of folded groups opens next to
-   the button.
-2. The **Export** group is open when the menu first opens (open it if you folded it; {doc}`plot-options`).
+1. Open the panel's controls and click **Plot Options**. A pop-over opens over the plot, with its groups
+   as sections.
+2. The **Export** group is open when the pop-over first opens, with Presets, Text, Legend and the panel's own
+   sections (fold it if you do not need it; {doc}`plot-options`).
 
 3. Set **Width** and **Height** in pixels (defaults 1200 and 800). **Export at 2x** (on by
    default) doubles both in a PNG, JPEG or WEBP file, so it stays sharp in print.
-4. Click **JPEG**, **SVG**, **WEBP** or **PNG**. The file is called `plot_<date and time>`
+4. Click **JPEG**, **SVG**, **WEBP** or **PNG** (or **Copy**, which puts the image on the clipboard instead of in a file). The file is called `plot_<date and time>`
    with that extension. A PNG, JPEG or WEBP has twice the width and height you set (2000 × 2000
    pixels for 1000 and 1000), or exactly that size with **Export at 2x** off; an SVG keeps the
    size you set. Automatic point size and opacity are worked out for the export's own plot
@@ -52,6 +54,20 @@ points. In an **SVG** export the axes, labels, legend and colour bar are vector 
 points are embedded as a bitmap (an `<image>` in the SVG). For vector points, export the data and
 draw the figure in Python (below).
 ```
+
+(export-new-panels)=
+## Exports of the newer panels
+
+The Gene Signature, Cell Grouping, Cell-Gene Plot and Cell Count Plot have their own export buttons:
+
+- **Cell-Gene Plot** and **Cell Count Plot**: **Plot Options** has the same **Export** section, with **2x resolution** as the
+  switch (Cell and Gene Plots call it **Export at 2x**), and **Download CSV** writes the numbers behind the picture:
+  one row per gene and group for a Cell-Gene Plot, the counts or shares for a Cell Count Plot ({doc}`cell-gene-plot`,
+  {doc}`cell-count-plot`).
+- **Cell Grouping**: **Export CSV** saves the groups (name, cells, share) and **Export cells** saves every cell with its group
+  ({doc}`cell-grouping`).
+- **Gene Signature**: the genes are copied or exported from its list; the score per cell is exported by a **Cell Table**
+  with a score column ({doc}`gene-signature`, {doc}`tables-and-filters`).
 
 ## When a full-resolution export does not fit
 

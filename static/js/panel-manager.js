@@ -14,11 +14,14 @@ import { Config } from './config.js';
 import { VIEW_SCHEMA_VERSION, panelTypeFromTileId, collectTileIds, serializableConfig } from './utils/deeplink.js';
 import { setControlsVisible, controlsElementOf } from './utils/controls-visibility.js';
 import { notifyEach } from './utils/notify-panels.js';
+import { askPolicy } from './utils/ask-policy.js';
 import { createPlaceholderPanel } from './utils/placeholder-panel.js';
 import { Policy } from './policy.js';
 import * as LayoutMotion from './utils/layout-motion.js';
 import { viewOf } from './utils/url-history.js';
+import { dropSkeleton, panelReady } from './utils/load-progress.js';
 import { orientRange, isFlipped, autorangeValue } from './panels/plot-utilities/plot-make-helper.js';
+import { TableResolver } from './utils/table-resolver.js';
 
 const PanelManager = (function() {
     // Private variables
@@ -158,7 +161,9 @@ const PanelManager = (function() {
      */
     function _generateUniqueName(baseName, type = null) {
         if (!baseName) {
-            baseName = (type ? `${_formatPanelType(type)} 1` : 'Panel 1');
+            // a new panel's title: the type's own word for one ("Grouping 1") where it has one, else its label
+            const info = type ? Config.panelTypeInfo(type) : null;
+            baseName = type ? `${(info && info.title) || _formatPanelType(type)} 1` : 'Panel 1';
         }
         const existingNames = new Set();
         _panels.forEach(panel => {
@@ -199,7 +204,7 @@ const PanelManager = (function() {
      */
     function createPanel(type, config = {}, targetContainer = null) {
         if (!_panelTypes.has(type)) {
-            console.error(`Unknown panel type: ${type}`);
+            if (!Config.isReservedPanelType(type)) console.error(`Unknown panel type: ${type}`);
             return null;
         }
         
@@ -251,7 +256,7 @@ const PanelManager = (function() {
         const Constructor = _panelTypes.get(type);
         const panelConfig = {
             id,
-            title: config.title || _generateUniqueName(`${_formatPanelType(type)} 1`),
+            title: config.title || _generateUniqueName(null, type),
             ...config
         };
         // a type the administrator disabled stands as a placeholder that keeps its settings
@@ -273,10 +278,12 @@ const PanelManager = (function() {
         _setupTileEventHandlers(tileElement, id);
         
         // Initialize the panel; a history step waits on initDone
+        // aria-busy from now until it is drawn (or failed): a screen reader hears "busy", then the panel
+        tileElement.setAttribute('aria-busy', 'true');
         const initial = panel.init();
         panel.initDone = Promise.resolve(initial).then(() => {}, error => {
             console.error(`Error initializing panel ${id}:`, error);
-        });
+        }).then(() => { tileElement.removeAttribute('aria-busy'); panelReady(id); });
         
         // Apply control panel visibility if specified
         if (Object.prototype.hasOwnProperty.call(config, 'controlsVisible')) {
@@ -316,7 +323,7 @@ const PanelManager = (function() {
      */
     function createPanelInLayout(type, config = {}) {
         if (!_panelTypes.has(type)) {
-            console.error(`Unknown panel type: ${type}`);
+            if (!Config.isReservedPanelType(type)) console.error(`Unknown panel type: ${type}`);
             return null;
         }
 
@@ -413,6 +420,9 @@ const PanelManager = (function() {
             console.error('Error updating table filter dropdowns:', error);
         }
 
+        // Gene-score key lists and the plots that show a signature follow the signatures that exist
+        document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
+
         // Panels that follow another panel (a gene set panel's source
         // table) hear that one was added, closed, reopened or renamed
         _activePanels.forEach(panel => {
@@ -438,7 +448,7 @@ const PanelManager = (function() {
      */
     function _formatPanelType(type) {
         // Use the label from centralized panel type definitions
-        const panelType = Config.PANEL_TYPES.find(pt => pt.type === type);
+        const panelType = Config.panelTypeInfo(type);
         if (panelType && panelType.label) {
             return panelType.label;
         }
@@ -540,6 +550,7 @@ const PanelManager = (function() {
     function closePanel(id) {
         const panel = _panels.get(id);
         if (!panel) return;
+        askPolicy.clear(id);   // "Don't ask again for this panel" ends with the panel (14.4)
         
         // Remove from DOM
         const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
@@ -563,6 +574,8 @@ const PanelManager = (function() {
 
         // Its locked cells/genes are no longer offered as table columns
         document.dispatchEvent(new CustomEvent('fixedEntitiesChanged', { detail: { closed: id } }));
+        // a build that only this panel wanted ends
+        TableResolver.reassess();
     }
     
     /**
@@ -600,6 +613,12 @@ const PanelManager = (function() {
      * @returns {Promise<void>} - Promise that resolves when all panels are updated
      */
     async function notifyPanels(updateType, data) {
+        // other cells (or another dataset): builds of closed tables for the old ones end
+        if (_WHOLE_VIEW_UPDATES.has(updateType)) TableResolver.cellsChanged();
+        // A table's rows changed: a gene table that is a source of a gene score has new genes (utils/score-source.js)
+        if (updateType === 'tableFiltered' && data && data.id) {
+            document.dispatchEvent(new CustomEvent('annzarro:table-filtered', { detail: { id: data.id } }));
+        }
         // A table notice waits for the whole-view update that is running; it
         // is told the table's rows as they are by then
         while (_wholeViewUpdate && !_WHOLE_VIEW_UPDATES.has(updateType)) {
@@ -777,6 +796,9 @@ const PanelManager = (function() {
             }
         }
         
+        // the named skeleton of the view gives way to the real tiles, built next
+        dropSkeleton();
+
         // Clear the active panels set - we'll repopulate it
         _activePanels.clear();
         
@@ -849,6 +871,10 @@ const PanelManager = (function() {
                 }
             }
 
+            // The closed panels a view restored are offered by the chooser from here on: the notice
+            // of a plot filtered by a closed table (second pass) offers "Open table" through it
+            updateSourcePanelSelection();
+
             // Set up all the handle resizing
             document.querySelectorAll('.split-handle').forEach(handle => {
                 const container = handle.parentElement;
@@ -894,7 +920,7 @@ const PanelManager = (function() {
                 
                 // Check if panel type is registered
                 if (!_panelTypes.has(type)) {
-                    console.error(`Unknown panel type: ${type} for panel id: ${id}`);
+                    if (!Config.isReservedPanelType(type)) console.error(`Unknown panel type: ${type} for panel id: ${id}`);
                     continue;
                 }
                 
@@ -951,7 +977,9 @@ const PanelManager = (function() {
                 const savedVisible = layout.controlState && layout.controlState[id] !== undefined
                     ? layout.controlState[id]
                     : panelConfig.controlsVisible;
+                tileElement.setAttribute('aria-busy', 'true');
                 promise = new Promise(resolve => {
+                    const settle = () => { tileElement.removeAttribute('aria-busy'); panelReady(id); resolve(); };
                     Promise.resolve().then(() => {
                         try {
                             const pending = panel.init();
@@ -960,9 +988,9 @@ const PanelManager = (function() {
                         } catch (error) {
                             console.error(`Error initializing restored panel ${id}:`, error);
                         }
-                    }).then(resolve, error => {
+                    }).then(settle, error => {
                         console.error(`Error initializing restored panel ${id}:`, error);
-                        resolve();
+                        settle();
                     });
                 });
                 
@@ -1088,17 +1116,7 @@ const PanelManager = (function() {
         const type = panelTypeFromTileId(id);
         const Constructor = _panelTypes.get(type);
         if (!old || !content || !Constructor || old.isPlaceholder || !_activePanels.has(old)) return false;
-        // An open Plot Options menu is hidden first, to the end of its transition: disposed in the middle
-        // of it, Bootstrap throws when the hide ends
-        const menuButton = document.getElementById(`aesthetics-menu-btn-${id}`);
-        const menu = menuButton && window.bootstrap && window.bootstrap.Popover.getInstance(menuButton);
-        if (menu && document.querySelector('.aesthetics-popover')) {
-            await new Promise(resolve => {
-                menuButton.addEventListener('hidden.bs.popover', resolve, { once: true });
-                setTimeout(resolve, 600);
-                menu.hide();
-            });
-        }
+        // An open Plot Options pop-over (ui/popover.js since WP-5b) closes with the panel's cleanup, at once
         _activePanels.delete(old);
         try {
             if (typeof old.destroy === 'function') old.destroy();
@@ -1260,6 +1278,7 @@ const PanelManager = (function() {
     function removePanel(id) {
         const panel = _panels.get(id);
         if (!panel) return;
+        askPolicy.clear(id);
         const tile = document.querySelector(`.tile[data-tile-id="${id}"]`);
         if (tile && _activePanels.has(panel)) {
             LayoutManager.closePanel(tile);
@@ -1272,9 +1291,14 @@ const PanelManager = (function() {
             console.warn(`removePanel: cleanup of ${id} failed:`, error);
         }
         _panels.delete(id);
+        // a table that is gone for good: its background build ends, and a plot reading it has nothing to wait for
+        TableResolver.drop(id);
+        TableResolver.reassess();
         const byType = _panelsByType.get(panelTypeFromTileId(id));
         if (byType) byType.delete(panel);
         _panelsByType.forEach(set => set.delete(panel));
+        // what showed a score of a signature that is gone says so
+        document.dispatchEvent(new CustomEvent('annzarro:panels-changed'));
     }
 
     /**
@@ -1286,7 +1310,7 @@ const PanelManager = (function() {
      */
     function registerClosedPanel(type, config, { keepTitle = false } = {}) {
         if (!_panelTypes.has(type)) {
-            console.error(`Unknown panel type: ${type}`);
+            if (!Config.isReservedPanelType(type)) console.error(`Unknown panel type: ${type}`);
             return null;
         }
         
@@ -1315,6 +1339,119 @@ const PanelManager = (function() {
         return panel;
     }
     
+    /**
+     * Whether a closed panel of this type can be restored: registered, and not
+     * switched off by the administrator (utils/closed-restore.js).
+     * @param {string} type
+     * @returns {boolean}
+     */
+    function canRestoreClosed(type) {
+        return _panelTypes.has(type) && Policy.panelEnabled(type);
+    }
+
+    /**
+     * Register the closed panels a view lists, from their saved configuration
+     * only (utils/closed-restore.js). Called BEFORE the open panels are built,
+     * so a plot filtered by a closed table finds it. A panel of the same id
+     * that is closed is replaced by the saved one; an OPEN one is left alone.
+     * @param {Array<{id: string, type: string, config: Object}>} entries
+     * @returns {string[]} the ids registered
+     */
+    function restoreClosedPanels(entries) {
+        const done = [];
+        for (const { id, type, config } of entries || []) {
+            if (!canRestoreClosed(type)) continue;
+            const have = _panels.get(id);
+            if (have && _activePanels.has(have)) continue;
+            if (have) removePanel(id);
+            const panel = registerClosedPanel(type, JSON.parse(JSON.stringify(config)), { keepTitle: true });
+            if (panel) done.push(panel.getId());
+        }
+        if (done.length) updateSourcePanelSelection();
+        return done;
+    }
+
+    /**
+     * Open a closed panel again with the same id, so everything that names it
+     * (a plot's table filter, a Gene Set Analysis source) keeps meaning it.
+     * It needs no chooser tile in the page, which `reopen-table` (main.js)
+     * does: with `nextTo` the tile of that panel is split and the panel opens
+     * in the new half; without it the panel opens where a new one would.
+     * @param {string} id - a closed panel
+     * @param {{nextTo?: string, direction?: 'horizontal'|'vertical'}} [opts]
+     * @returns {Object|null} the open panel, or null when there is no such closed panel
+     */
+    function reopenClosedPanel(id, { nextTo = null, direction = 'horizontal' } = {}) {
+        const closed = _panels.get(id);
+        if (!closed || _activePanels.has(closed)) return null;
+        const type = closed.getType();
+        const config = JSON.parse(JSON.stringify(closed.getConfig()));
+        config.id = id;
+        delete config._closed;
+        delete config.active;
+        const byType = _panelsByType.get(type);
+
+        // the closed panel steps aside while the open one takes its id; put back if opening fails
+        if (byType) byType.delete(closed);
+        _panels.delete(id);
+        let opened = null;
+        try {
+            const anchor = nextTo ? document.querySelector(`.tile[data-tile-id="${CSS.escape(nextTo)}"]`) : null;
+            if (anchor && anchor.parentElement) {
+                const split = LayoutManager.createSplit(anchor.parentElement, anchor, direction);
+                opened = createPanel(type, config, split.secondPane);
+            } else {
+                opened = createPanelInLayout(type, config);
+            }
+        } catch (error) {
+            console.error(`Could not reopen ${id}:`, error);
+        }
+        if (!opened) {
+            _panels.set(id, closed);
+            if (byType) byType.add(closed);
+            return null;
+        }
+        updateSourcePanelSelection();
+        return opened;
+    }
+
+    /**
+     * Open a new panel beside an open one: the tile of `nextTo` splits and the panel opens in the new half.
+     * @param {string} type
+     * @param {string} nextTo - the id of an open panel
+     * @param {Object} [config]
+     * @param {'horizontal'|'vertical'} [direction]
+     * @returns {Object|null} the open panel, or null
+     */
+    function createPanelNextTo(type, nextTo, config = {}, direction = 'horizontal') {
+        const anchor = nextTo ? document.querySelector(`.tile[data-tile-id="${CSS.escape(nextTo)}"]`) : null;
+        try {
+            if (anchor && anchor.parentElement) {
+                const split = LayoutManager.createSplit(anchor.parentElement, anchor, direction);
+                return createPanel(type, config, split.secondPane);
+            }
+            return createPanelInLayout(type, config);
+        } catch (error) {
+            console.error(`Could not open a ${type} next to ${nextTo}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * The panels on the page by id: whether each is open, and its settings
+     * (what a history step compares closed panels by).
+     * @returns {Map<string, {open: boolean, config: Object}>}
+     */
+    function panelStates() {
+        const out = new Map();
+        _panels.forEach((panel, id) => {
+            let config = {};
+            try { config = panel.getConfig ? panel.getConfig() : {}; } catch { /* a panel mid-teardown */ }
+            out.set(id, { open: _activePanels.has(panel), config });
+        });
+        return out;
+    }
+
     /**
      * Get all panels (both active and closed)
      * @returns {Array} - Array of all panel instances
@@ -1353,6 +1490,7 @@ const PanelManager = (function() {
         registerPanelType,
         createPanel,
         createPanelInLayout,
+        createPanelNextTo,
         ensureWelcomeFallback,
         closePanel,
         getPanel,
@@ -1368,6 +1506,10 @@ const PanelManager = (function() {
         applyLayoutStep,
         applyViewport,
         registerClosedPanel,
+        canRestoreClosed,
+        restoreClosedPanels,
+        reopenClosedPanel,
+        panelStates,
         removePanel,
         replacePanel,
         showControls,

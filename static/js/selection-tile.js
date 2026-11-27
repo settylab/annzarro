@@ -8,6 +8,8 @@ import { lastSessionElement } from './utils/last-session-card.js';
 import { createLoadActions, createDatasetBadge, createStyleBadge } from './panelset-load-ui.js';
 import { notify } from './utils/notify.js';
 import { onDefault } from './utils/session-style.js';
+import { keptInUse, usersOf } from './utils/panel-references.js';
+import { deleteInUseText } from './utils/panel-users.js';
 
 export class SelectionTile {
     /**
@@ -375,6 +377,15 @@ export class SelectionTile {
     }
   
     /**
+     * The title of a new panel of a type: the type's own word for one where it has one ("Grouping 1"), else its
+     * label ("Cell Plot 1"), made unique.
+     */
+    _newTitle(panelType) {
+      const info = Config.panelTypeInfo(panelType);
+      return this.generateUniqueName(`${(info && info.title) || this._formatPanelType(panelType)} 1`);
+    }
+
+    /**
      * Create a panel based on the type.
      * For "welcome", use the layoutManager; for "pane", call createPanel directly and remove the tile.
      */
@@ -411,7 +422,7 @@ export class SelectionTile {
         // a new plot is on Default: it follows the session's default look (utils/session-style.js)
         const config = onDefault(panelType, {
           id: newId,
-          title: this.generateUniqueName(`${this._formatPanelType(panelType)} 1`)
+          title: this._newTitle(panelType)
         });
         const parentPane = this.tileSelector.closest('.split-pane') || this.container;
         this.createPanel(panelType, config, parentPane);
@@ -538,11 +549,57 @@ export class SelectionTile {
       return option;
     }
   
+    /**
+     * The × of a closed panel. A panel in use (another panel's configuration names it: panel-references.js) is deleted
+     * on a second press: the first turns the button into the question, "Delete 'T cell score'? 2 plots and 1 table use
+     * it." (design-gene-signature 7.1, GRP-13), as Clear closed panels does. Escape, a focus move or a few seconds
+     * put it back. A panel nothing uses is deleted at once, as before.
+     * @private
+     */
+    _armDelete(button, panelId) {
+      const users = usersOf(panelId);
+      if (!users.length || button.dataset.armed === '1') return false;
+      const panel = this.panels.get(panelId);
+      const question = deleteInUseText(panel ? panel.getTitle() : panelId, users);
+      const was = { text: button.textContent, title: button.title };
+      button.dataset.armed = '1';
+      button.textContent = 'Delete?';
+      button.setAttribute('aria-label', question);
+      button.title = question;
+      button.classList.add('tile-delete-armed');
+      const line = document.createElement('div');
+      line.className = 'delete-panel-question';
+      line.setAttribute('role', 'status');
+      line.textContent = question;
+      line.addEventListener('click', (e) => e.stopPropagation());
+      const option = button.closest('.source-panel-option');
+      if (option) { option.appendChild(line); option.classList.add('is-delete-armed'); }
+      const disarm = () => {
+        clearTimeout(timer);
+        button.removeEventListener('blur', disarm);
+        button.removeEventListener('keydown', onKey);
+        line.remove();
+        if (option) option.classList.remove('is-delete-armed');
+        if (button.dataset.armed !== '1') return;
+        delete button.dataset.armed;
+        button.textContent = was.text;
+        button.title = was.title;
+        button.removeAttribute('aria-label');
+        button.classList.remove('tile-delete-armed');
+      };
+      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); disarm(); } };
+      const timer = setTimeout(disarm, 6000);
+      button.addEventListener('blur', disarm);
+      button.addEventListener('keydown', onKey);
+      return true;
+    }
+
     _attachDeleteHandlers(grid) {
       grid.querySelectorAll('.delete-panel-btn').forEach(button => {
         button.addEventListener('click', (e) => {
           e.stopPropagation();
           const panelId = button.dataset.id;
+          if (panelId && this._armDelete(button, panelId)) return;
           if (panelId) {
             const panelInstance = this.panels.get(panelId);
             if (panelInstance) {
@@ -643,12 +700,33 @@ export class SelectionTile {
       if (paneClearButton) {
         paneClearButton.style.display = hasClosedPanels ? 'block' : 'none';
       }
+
+      // with every closed panel in use there is nothing to clear
+      const closed = this._closedPanelIds();
+      const allInUse = closed.length > 0 && keptInUse(closed).size === closed.length;
+      for (const button of [welcomeClearButton, paneClearButton]) {
+        if (!button) continue;
+        button.disabled = allInUse;
+        if (allInUse) button.title = 'All closed panels are in use.';
+        else button.removeAttribute('title');
+      }
     }
     
+    /** The ids of the closed panels. @private */
+    _closedPanelIds() {
+      const ids = [];
+      this.panels.forEach((panel, id) => {
+        if (!this.activePanels.has(panel)) ids.push(id);
+      });
+      return ids;
+    }
+
     /**
-     * Clear all closed panels after confirmation: the first press turns the
+     * Clear the closed panels after confirmation: the first press turns the
      * button into the question, the second (within a few seconds) deletes.
-     * In place, with no dialog.
+     * In place, with no dialog. A closed panel in use (an open panel, or a
+     * kept one, refers to it: utils/panel-references.js) stays, and a notice
+     * says how many did.
      * @param {HTMLElement} [button] - the Clear button that was pressed
      * @private
      */
@@ -665,11 +743,17 @@ export class SelectionTile {
       if (closedPanels.length === 0) {
         return;
       }
+      // asked again on the second press: a use may have come or gone in between
+      const kept = keptInUse(closedPanels.map(({ id }) => id));
+      const doomed = closedPanels.length - kept.size;
+      if (!doomed) return;
       
       if (button && button.dataset.armed !== '1') {
         const label = button.innerHTML;
         button.dataset.armed = '1';
-        button.textContent = `Delete all ${closedPanels.length} closed panels?`;
+        button.textContent = kept.size
+          ? `Delete ${doomed} closed panel${doomed === 1 ? '' : 's'}? ${kept.size} in use stay${kept.size === 1 ? 's' : ''}.`
+          : `Delete all ${closedPanels.length} closed panels?`;
         const disarm = () => {
           clearTimeout(timer);
           button.removeEventListener('blur', disarm);
@@ -686,8 +770,9 @@ export class SelectionTile {
         button.innerHTML = '<i class="fas fa-trash-alt"></i> Clear closed panels';
       }
 
-        // Delete all closed panels
+        // Delete the closed panels nothing that stays uses
         closedPanels.forEach(({ panel, id }) => {
+          if (kept.has(id)) return;
           const type = panel.getType();
           if (this.panelsByType.has(type)) {
             this.panelsByType.get(type).delete(panel);
@@ -704,6 +789,9 @@ export class SelectionTile {
         // Update all selection tiles globally
         if (window.PanelManager && typeof window.PanelManager.updateSourcePanelSelection === 'function') {
           window.PanelManager.updateSourcePanelSelection();
+        }
+        if (kept.size) {
+          notify('Closed panels cleared', kept.size === 1 ? 'Kept 1 closed panel in use.' : `Kept ${kept.size} closed panels in use.`, 'info');
         }
     }
   
@@ -845,6 +933,8 @@ export class SelectionTile {
           compact: true,
           getCurrent: () => (sessionManager && sessionManager.getCurrentDatasetInfo
             ? sessionManager.getCurrentDatasetInfo() : {}),
+          pageReady: () => (sessionManager && sessionManager.isReady && !sessionManager.isReady()
+            ? sessionManager.whenReady() : null),
           onLoad: async (mode) => {
             if (!sessionManager) { console.error('SessionManager not available, cannot load session'); return; }
             actions.setBusy(true);

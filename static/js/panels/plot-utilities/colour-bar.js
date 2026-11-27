@@ -4,6 +4,7 @@
  * count. Every site that draws or redraws a colour bar uses it (a first draw,
  * a change of colour, large-plot mode), so none drops an option.
  */
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { getPositioningByLocation } from './plot-aesthetics-menu.js';
 import { colorbarPosition, colorbarExtras } from './plot-options.js';
 import { plotColour } from '../../utils/plot-theme.js';
@@ -12,7 +13,7 @@ import { plotColour } from '../../utils/plot-theme.js';
 function barFont(settings, extra) {
   return {
     size: settings.fontSize ? settings.fontSize + extra : 12 + extra,
-    family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+    family: settings.fontFamily || DEFAULT_FONT,
     color: plotColour(settings, 'textColor')
   };
 }
@@ -25,11 +26,13 @@ function barFont(settings, extra) {
 export function colourBar(settings, title) {
   const pos = getPositioningByLocation(colorbarPosition(settings));
   return {
-    title: { text: title, side: 'right', font: barFont(settings, 2) },
+    // the title's side is the position's (beside a vertical bar, above or below a horizontal one), given once: the
+    // deprecated `titleside` beside a `title.side` made a first draw keep one and a restyle take the other
+    title: { text: title, side: pos.titleside, font: barFont(settings, 2) },
     tickfont: barFont(settings, 0),
     ...colorbarExtras(settings),
     x: pos.x, xanchor: pos.xanchor, y: pos.y, yanchor: pos.yanchor,
     ypad: pos.ypad, ticklabelposition: pos.ticklabelposition,
-    titleside: pos.titleside, orientation: pos.orientation
+    orientation: pos.orientation
   };
 }

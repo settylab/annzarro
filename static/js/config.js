@@ -1,6 +1,7 @@
 /**
  * Configuration module for AnnZarro
  */
+import { DEFAULT_FONT } from './utils/fonts.js';
 import { appUrl } from './utils/app-url.js';
 import { PLOT_PALETTES } from './utils/plot-theme.js';
 // the panel registry: the server declares panel.<type>.enabled for each entry (policy.js)
@@ -109,6 +110,9 @@ const Config = (function() {
         VARP: `${API_BASE}/data/varp`,
         LAYER: `${API_BASE}/data/layer`,
         X: `${API_BASE}/data/X`,
+        GENE_SCORE: `${API_BASE}/data/gene_score`,
+        CELL_GROUPS: `${API_BASE}/data/cell_groups`,   // E6a: POST /api/v1/data/cell_groups (SHR-29)
+        MATRIX_KIND: `${API_BASE}/data/matrix_kind`,
         BY_PATH: `${API_BASE}/data/by_path`,
         UNS: `${API_BASE}/data/uns`,
         CACHE_RESET: `${API_BASE}/cache/reset`,
@@ -122,8 +126,13 @@ const Config = (function() {
         AUTH_ME: `${API_BASE}/auth/me`
     };
     
-    // Panel types definition: panels/panel-types.json
-    const PANEL_TYPES = panelTypes;
+    // Panel types definition: panels/panel-types.json. PANEL_TYPES is what a user can open: the chooser and the
+    // icons read it. A type with "released": false is registered (a link that names it keeps its settings) but
+    // not offered; a "reserved" id is only kept free, and a link that names it is skipped without an error.
+    const PANEL_TYPES = panelTypes.filter(entry => !entry.reserved && entry.released !== false);
+    /** The registry entry of a panel type, released or not (its label and icon); undefined for a reserved or unknown id. */
+    const panelTypeInfo = (type) => panelTypes.find(entry => entry.type === type && !entry.reserved);
+    const isReservedPanelType = (type) => panelTypes.some(entry => entry.type === type && entry.reserved === true);
     
     // Configure Plotly.js defaults if available
     if (typeof Plotly !== 'undefined') {
@@ -150,6 +159,8 @@ const Config = (function() {
         // keeps several regular plots open at once. Server key
         // ui.defaults.large_plot_points.
         LARGE_PLOT_POINTS: 1000000,
+        // The Cell Count Plot's "Cell points" caps are the server's limits.density_points_draw and _load
+        // (utils/limits.js); a browser test may set DENSITY_POINTS_DRAW or DENSITY_POINTS_LOAD here to lower one.
         // A dataset with more cells than this does not download the names of
         // the cells it shows, whatever the subset: a part or subset of cells
         // spread over such a dataset touches nearly every chunk of its name
@@ -192,7 +203,7 @@ const Config = (function() {
             '9031': 'Gallus gallus'
         },
         // Enable/disable specific panel types in the selection tile
-        ENABLED_PANEL_TYPES: ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set'],
+        ENABLED_PANEL_TYPES: PANEL_TYPES.map(entry => entry.type),
         
         // Plot aesthetics defaults
         PLOT_AESTHETICS: {
@@ -235,10 +246,10 @@ const Config = (function() {
             
             // Fonts
             FONT_SIZE: 12,
-            FONT_FAMILY: 'Arial, Helvetica, sans-serif',
+            FONT_FAMILY: DEFAULT_FONT,
             
             // Margins
-            MARGINS: { l: 80, r: 80, t: 80, b: 60, pad: 4 },
+            MARGINS: { l: 80, r: 80, t: 30, b: 60, pad: 4 },
             
             // Legend settings
             SHOW_LEGEND: true,
@@ -452,6 +463,8 @@ const Config = (function() {
         STRING_DB,
         INTEGRATIONS,
         PANEL_TYPES,
+        panelTypeInfo,
+        isReservedPanelType,
         KEYBOARD_SHORTCUTS,
         SERVER_CONFIG,
         ready,

@@ -1,0 +1,326 @@
+{
+ "name": "Tutorial: group statistics, cell-tables",
+ "timestamp": "2026-11-26T09:09:39+00:00",
+ "dataset": "bm_aging_annzarro.zarr",
+ "datasetName": "bm_aging_annzarro",
+ "constants": {
+  "focusedGene": "Cd74",
+  "taxonomyId": "10090"
+ },
+ "panelConfigs": {
+  "gene-plot-gs": {
+   "id": "gene-plot-gs",
+   "type": "gene-plot",
+   "title": "Mean of logged_counts: Mid HSCs (x) against Old HSCs (y)",
+   "config": {
+    "id": "gene-plot-gs",
+    "title": "Mean of logged_counts: Mid HSCs (x) against Old HSCs (y)",
+    "x": {
+     "type": "table-stat",
+     "key": "cell-table-mid",
+     "stat": "mean",
+     "layer": "logged_counts"
+    },
+    "y": {
+     "type": "table-stat",
+     "key": "cell-table-old",
+     "stat": "mean",
+     "layer": "logged_counts"
+    },
+    "z": null,
+    "color": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_is_de",
+     "column": ""
+    },
+    "pointSize": 6,
+    "pointOpacity": 0.9,
+    "showZeroLines": true,
+    "highlightFocusedGene": true,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "tableFilter": "none"
+   },
+   "isSelectionTile": false
+  },
+  "cell-table-mid": {
+   "id": "cell-table-mid",
+   "type": "cell-table",
+   "title": "Mid HSCs",
+   "config": {
+    "id": "cell-table-mid",
+    "title": "Mid HSCs",
+    "pageLength": 5,
+    "columns": [
+     {
+      "type": "obs",
+      "key": "midres_celltype",
+      "column": ""
+     },
+     {
+      "type": "obs",
+      "key": "Age",
+      "column": ""
+     }
+    ],
+    "searchBuilderEnabled": true,
+    "searchBuilderConfig": {
+     "criteria": [
+      {
+       "condition": "=",
+       "data": "midres_celltype",
+       "origData": "obs_midres_celltype_main",
+       "type": "string",
+       "value": [
+        "HSC"
+       ]
+      },
+      {
+       "condition": "=",
+       "data": "Age",
+       "origData": "obs_Age_main",
+       "type": "string",
+       "value": [
+        "Mid"
+       ]
+      }
+     ],
+     "logic": "AND"
+    }
+   },
+   "isSelectionTile": false
+  },
+  "cell-table-old": {
+   "id": "cell-table-old",
+   "type": "cell-table",
+   "title": "Old HSCs",
+   "config": {
+    "id": "cell-table-old",
+    "title": "Old HSCs",
+    "pageLength": 5,
+    "columns": [
+     {
+      "type": "obs",
+      "key": "midres_celltype",
+      "column": ""
+     },
+     {
+      "type": "obs",
+      "key": "Age",
+      "column": ""
+     }
+    ],
+    "searchBuilderEnabled": true,
+    "searchBuilderConfig": {
+     "criteria": [
+      {
+       "condition": "=",
+       "data": "midres_celltype",
+       "origData": "obs_midres_celltype_main",
+       "type": "string",
+       "value": [
+        "HSC"
+       ]
+      },
+      {
+       "condition": "=",
+       "data": "Age",
+       "origData": "obs_Age_main",
+       "type": "string",
+       "value": [
+        "Old"
+       ]
+      }
+     ],
+     "logic": "AND"
+    }
+   },
+   "isSelectionTile": false
+  }
+ },
+ "view": {
+  "v": 1,
+  "constants": {
+   "focusedGene": "Cd74",
+   "taxonomyId": "10090"
+  },
+  "layout": {
+   "v": 1,
+   "hierarchy": [
+    {
+     "type": "split",
+     "direction": "vertical",
+     "panes": [
+      {
+       "percentage": 78,
+       "controlsVisible": false
+      },
+      {
+       "percentage": 22,
+       "controlsVisible": false
+      }
+     ],
+     "children": [
+      {
+       "type": "tile",
+       "id": "gene-plot-gs",
+       "controlsVisible": false
+      },
+      {
+       "type": "split",
+       "direction": "horizontal",
+       "panes": [
+        {
+         "percentage": 50,
+         "controlsVisible": false
+        },
+        {
+         "percentage": 50,
+         "controlsVisible": false
+        }
+       ],
+       "children": [
+        {
+         "type": "tile",
+         "id": "cell-table-mid",
+         "controlsVisible": false
+        },
+        {
+         "type": "tile",
+         "id": "cell-table-old",
+         "controlsVisible": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "controlState": {
+    "gene-plot-gs": true,
+    "cell-table-mid": false,
+    "cell-table-old": false
+   },
+   "panelConfigs": {
+    "gene-plot-gs": {
+     "id": "gene-plot-gs",
+     "title": "Mean of logged_counts: Mid HSCs (x) against Old HSCs (y)",
+     "x": {
+      "type": "table-stat",
+      "key": "cell-table-mid",
+      "stat": "mean",
+      "layer": "logged_counts"
+     },
+     "y": {
+      "type": "table-stat",
+      "key": "cell-table-old",
+      "stat": "mean",
+      "layer": "logged_counts"
+     },
+     "z": null,
+     "color": {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_is_de",
+      "column": ""
+     },
+     "pointSize": 6,
+     "pointOpacity": 0.9,
+     "showZeroLines": true,
+     "highlightFocusedGene": true,
+     "hoverInfo": [
+      {
+       "type": "var",
+       "key": "_index"
+      }
+     ],
+     "tableFilter": "none"
+    },
+    "cell-table-mid": {
+     "id": "cell-table-mid",
+     "title": "Mid HSCs",
+     "pageLength": 5,
+     "columns": [
+      {
+       "type": "obs",
+       "key": "midres_celltype",
+       "column": ""
+      },
+      {
+       "type": "obs",
+       "key": "Age",
+       "column": ""
+      }
+     ],
+     "searchBuilderEnabled": true,
+     "searchBuilderConfig": {
+      "criteria": [
+       {
+        "condition": "=",
+        "data": "midres_celltype",
+        "origData": "obs_midres_celltype_main",
+        "type": "string",
+        "value": [
+         "HSC"
+        ]
+       },
+       {
+        "condition": "=",
+        "data": "Age",
+        "origData": "obs_Age_main",
+        "type": "string",
+        "value": [
+         "Mid"
+        ]
+       }
+      ],
+      "logic": "AND"
+     }
+    },
+    "cell-table-old": {
+     "id": "cell-table-old",
+     "title": "Old HSCs",
+     "pageLength": 5,
+     "columns": [
+      {
+       "type": "obs",
+       "key": "midres_celltype",
+       "column": ""
+      },
+      {
+       "type": "obs",
+       "key": "Age",
+       "column": ""
+      }
+     ],
+     "searchBuilderEnabled": true,
+     "searchBuilderConfig": {
+      "criteria": [
+       {
+        "condition": "=",
+        "data": "midres_celltype",
+        "origData": "obs_midres_celltype_main",
+        "type": "string",
+        "value": [
+         "HSC"
+        ]
+       },
+       {
+        "condition": "=",
+        "data": "Age",
+        "origData": "obs_Age_main",
+        "type": "string",
+        "value": [
+         "Old"
+        ]
+       }
+      ],
+      "logic": "AND"
+     }
+    }
+   }
+  }
+ }
+}

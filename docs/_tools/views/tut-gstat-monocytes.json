@@ -1,0 +1,192 @@
+{
+ "v": 1,
+ "constants": {
+  "focusedGene": "AW112010",
+  "taxonomyId": "10090"
+ },
+ "layout": {
+  "v": 1,
+  "hierarchy": [
+   {
+    "type": "split",
+    "direction": "vertical",
+    "panes": [
+     {
+      "percentage": 78,
+      "controlsVisible": false
+     },
+     {
+      "percentage": 22,
+      "controlsVisible": false
+     }
+    ],
+    "children": [
+     {
+      "type": "tile",
+      "id": "gene-plot-gs",
+      "controlsVisible": false
+     },
+     {
+      "type": "split",
+      "direction": "horizontal",
+      "panes": [
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       },
+       {
+        "percentage": 50,
+        "controlsVisible": false
+       }
+      ],
+      "children": [
+       {
+        "type": "tile",
+        "id": "gene-table-gs",
+        "controlsVisible": false
+       },
+       {
+        "type": "tile",
+        "id": "cell-grouping-ct",
+        "controlsVisible": false
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "controlState": {
+   "gene-plot-gs": true,
+   "gene-table-gs": false,
+   "cell-grouping-ct": false
+  },
+  "panelConfigs": {
+   "gene-plot-gs": {
+    "id": "gene-plot-gs",
+    "title": "Mean fold change: HSC (x) against Monocyte (y)",
+    "x": {
+     "type": "group-stat",
+     "key": "cell-grouping-ct",
+     "column": "[\"c:HSC\"]",
+     "stat": "mean",
+     "layer": "kompot_de_Young_to_Old_fold_change",
+     "groupWas": [
+      "HSC"
+     ]
+    },
+    "y": {
+     "type": "group-stat",
+     "key": "cell-grouping-ct",
+     "column": "[\"c:Monocyte\"]",
+     "stat": "mean",
+     "layer": "kompot_de_Young_to_Old_fold_change",
+     "groupWas": [
+      "Monocyte"
+     ]
+    },
+    "z": null,
+    "color": {
+     "type": "var",
+     "key": "kompot_de_Young_to_Old_is_de",
+     "column": ""
+    },
+    "pointSize": 6,
+    "pointOpacity": 0.9,
+    "showZeroLines": true,
+    "highlightFocusedGene": true,
+    "hoverInfo": [
+     {
+      "type": "var",
+      "key": "_index"
+     }
+    ],
+    "tableFilter": "gene-table-gs"
+   },
+   "gene-table-gs": {
+    "id": "gene-table-gs",
+    "title": "Moves in monocytes",
+    "columns": [
+     {
+      "type": "var",
+      "key": "kompot_de_Young_to_Old_is_de",
+      "column": ""
+     },
+     {
+      "type": "group-stat",
+      "key": "cell-grouping-ct",
+      "column": "[\"c:HSC\"]",
+      "stat": "mean",
+      "layer": "kompot_de_Young_to_Old_fold_change",
+      "groupWas": [
+       "HSC"
+      ],
+      "label": "Cell types"
+     },
+     {
+      "type": "group-stat",
+      "key": "cell-grouping-ct",
+      "column": "[\"c:Monocyte\"]",
+      "stat": "mean",
+      "layer": "kompot_de_Young_to_Old_fold_change",
+      "groupWas": [
+       "Monocyte"
+      ],
+      "label": "Cell types"
+     }
+    ],
+    "pageLength": 25,
+    "searchBuilderEnabled": true,
+    "searchBuilderConfig": {
+     "criteria": [
+      {
+       "condition": "=",
+       "data": "kompot_de_Young_to_Old_is_de",
+       "origData": "var_kompot_de_Young_to_Old_is_de_main",
+       "type": "string",
+       "value": [
+        "true"
+       ]
+      },
+      {
+       "criteria": [
+        {
+         "condition": ">",
+         "data": "Monocyte: mean \u00b7 kompot_de_Young_to_Old_fold_change",
+         "origData": "group-stat_cell-grouping-ct_\u241e5b\u241e\"c:Monocyte\"\u241e5d\u241e__of_kompot_de_Young_to_Old_fold_change__as_mean",
+         "type": "num",
+         "value": [
+          "0.25"
+         ]
+        },
+        {
+         "condition": "<",
+         "data": "Monocyte: mean \u00b7 kompot_de_Young_to_Old_fold_change",
+         "origData": "group-stat_cell-grouping-ct_\u241e5b\u241e\"c:Monocyte\"\u241e5d\u241e__of_kompot_de_Young_to_Old_fold_change__as_mean",
+         "type": "num",
+         "value": [
+          "-0.25"
+         ]
+        }
+       ],
+       "logic": "OR"
+      }
+     ],
+     "logic": "AND"
+    }
+   },
+   "cell-grouping-ct": {
+    "id": "cell-grouping-ct",
+    "title": "Cell types",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "midres_celltype"
+      }
+     }
+    ]
+   }
+  }
+ }
+}

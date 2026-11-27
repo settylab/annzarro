@@ -1,0 +1,11 @@
+{
+ "group": [
+  "c:B cell",
+  "bin:2"
+ ],
+ "groupWas": [
+  "B cell",
+  "CD3E 0.5 to 1.75"
+ ],
+ "follow": true
+}

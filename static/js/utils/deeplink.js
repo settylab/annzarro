@@ -83,6 +83,7 @@
  */
 
 import { normalizeViewSubset } from './subset.js';
+import { remapReferences } from './panel-references.js';
 
 /** Current deep-link `view` schema version. Bump on a breaking change. */
 export const VIEW_SCHEMA_VERSION = 1;
@@ -507,20 +508,16 @@ export function panelsToAdd(plan, isTaken, freshId) {
 }
 
 /**
- * Rewrite references between panels after ids changed: a plot's
- * `tableFilter` holds the id of the table it is filtered by.
+ * Rewrite references between panels after ids changed: every reference a panel type declares
+ * (utils/panel-references.js) follows its panel, so a plot's `tableFilter`, its axis, colour and hover
+ * sources, a table's score columns with the filter conditions that name them, and the references of
+ * every panel type added later stay inside the set they came with.
  * @param {Object[]} configs - panel configs, rewritten in place
  * @param {Map<string,string>|Object} idMap - old id -> new id
  * @returns {Object[]} the same configs
  */
 export function remapPanelReferences(configs, idMap) {
-    const map = idMap instanceof Map ? idMap : new Map(Object.entries(idMap || {}));
-    configs.forEach(cfg => {
-        if (cfg && typeof cfg.tableFilter === 'string' && map.has(cfg.tableFilter)) {
-            cfg.tableFilter = map.get(cfg.tableFilter);
-        }
-    });
-    return configs;
+    return remapReferences(configs, idMap);
 }
 
 /**

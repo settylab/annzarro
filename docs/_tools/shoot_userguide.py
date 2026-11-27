@@ -174,11 +174,12 @@ def capture(sh, page, name, region=None, marks=(), hide_modebar=True, hover=Fals
     sh.log.append(f"wrote {name}.png")
 
 
-def capture_union(sh, page, name, selectors, marks=(), pad=8):
+def capture_union(sh, page, name, selectors, marks=(), pad=8, hide_modebar=False):
     """Screenshot the viewport and crop to the union of `selectors` (plus `pad` px), so a
     row wider than its tile (or partly scrolled) is still captured whole."""
     clean(page)
-    st = page.add_style_tag(content=".hoverlayer { display: none !important; }")
+    st = page.add_style_tag(content=".hoverlayer { display: none !important; }"
+                            + (" .modebar-container { display: none !important; }" if hide_modebar else ""))
     path = OUT / f"{name}.png"
     page.screenshot(path=str(path))
     boxes = [page.locator(s_).first.bounding_box() for s_ in selectors]
@@ -431,13 +432,15 @@ def shoot_plots(sh, data_dir):
     toggle_controls(sh, page, "cell-plot-C")
     page.evaluate("window.scrollTo(0, 0)")
     c = T("cell-plot-C")
-    capture(sh, page, "plots-cell-controls", c + " .plot-controls", marks=[
+    # the controls and, under them, the toolbar row (3D, Equal aspect, Highlight, then Undo and Plot Options at the right)
+    capture_union(sh, page, "plots-cell-controls", [c + " .plot-controls", c + " .az-plot-toolbar"], marks=[
         (1, f"{c} .axis-type-select[data-axis=x]"), (2, f"{c} .axis-key-select[data-axis=x]"),
         (3, f"{c} .axis-column-select[data-axis=x]"), (4, f"{c} .color-selector-container .axis-selector"),
-        (5, f"{c} [id^=z-axis-toggle]"), (6, f"{c} [id^=equal-aspect]"),
-        (7, f"{c} [id^=highlight-focused-cell]"), (8, f"{c} [id^=category-palette]"),
-        (9, f"{c} [id^=hide-nan]"), (10, f"{c} .point-controls"),
-        (11, f"{c} .table-filter-controls"), (12, f"{c} [id^=aesthetics-menu-btn]")])
+        (5, f"{c} [id^=category-palette]"), (6, f"{c} [id^=hide-nan]"),
+        (7, f"{c} [id^=point-opacity-input]"), (8, f"{c} .table-filter-select"),
+        (9, f"{c} .hover-columns-select"), (10, f"{c} [id^=z-axis-toggle]"),
+        (11, f"{c} [id^=equal-aspect]"), (12, f"{c} [id^=highlight-focused-cell]"),
+        (13, f"{c} [id^=plot-undo]"), (14, f"{c} [id^=aesthetics-menu-btn]")])
     toggle_controls(sh, page, "cell-plot-C")      # hide the controls: the plot fills the tile again
     capture(sh, page, "plots-categorical", c + " .tile-content")
     page.context.close()
@@ -589,15 +592,18 @@ def shoot_tables(sh, data_dir):
     check("var", "kompot_de_Young_to_Old_mahalanobis")
     page.locator(f"{t} .nav-link", has_text="varp").first.click()
     time.sleep(0.4)
-    sh.log.append("tables: varp tab = " + json.dumps(page.evaluate(
-        f"[...document.querySelectorAll('{t} .tab-pane.active label')].map(l => l.textContent.trim())")))
-    varp_label = "spearman_fold_change: H2-Q7 (focused)"
-    page.locator(f"{t} label:text-is('{varp_label}')").first.click()
-    time.sleep(0.3)
+    # the varp tab is an add row (item, matrix, Add column), not a tick list (table-ui-make.js)
+    pane = f"{t} .tab-pane.active"
+    sh.log.append("tables: varp item = " + page.eval_on_selector(f"{pane} .az-entity-item", "e => e.selectedOptions[0].text"))
+    page.locator(f"{pane} .az-entity-key").select_option("spearman_fold_change")
+    page.locator(f"{pane} .az-entity-add-btn").click()
+    time.sleep(0.5)
+    add_row = f"{pane} .az-entity-add-btn"
     capture(sh, page, "tables-columns", t + " .table-controls", marks=[
-        (1, f"{t} .nav-tabs, {t} .nav"), (2, f"{t} label:text-is('{varp_label}')"),
+        (1, f"{t} .nav-tabs, {t} .nav"), (2, add_row),
         (3, f"{t} .table-controls h6:text-is('Selected Columns')"),
-        (4, f"{t} button:has-text('Apply Changes')"), (5, f"{t} button:has-text('Export CSV')")])
+        (4, f"{t} button:has-text('Apply Changes')"), (5, f"{t} button:has-text('Export CSV')"),
+        (6, f"{t} button:has-text('Undo')")])
     page.locator(f"{t} button", has_text="Apply Changes").click()
     sh.ready(page)
     sh.log.append("tables: headers = " + json.dumps(page.evaluate(
@@ -682,7 +688,8 @@ def shoot_panelsets(sh, data_dir):
     page.context.close()
 
     # A second set that names a store this server does not have (older, so it is listed last)
-    sessions = Path(data_dir) / "sessions"
+    # panel sets live in the server's state directory (ANNZARRO_HOME/panel-sets), no longer in <data>/sessions
+    sessions = Path(os.environ.get("ANNZARRO_HOME") or Path.home() / ".annzarro") / "panel-sets"
     for _ in range(40):
         saved = sorted(sessions.glob("HSC_walk*.json")) if sessions.exists() else []
         if saved:
@@ -752,11 +759,11 @@ def shoot_export(sh, data_dir):
     toggle_controls(sh, page, "cell-plot-W")
     page.evaluate("(w) => document.querySelector(w + ' [id^=equal-aspect-]').click()", w); time.sleep(1.0)
     page.locator(f"{w} [id^=aesthetics-menu-btn]").click(); time.sleep(1.2)
-    # the menu as it opens (groups folded except Export; user-guide/plot-options.md), then Axes and ticks
-    capture(sh, page, "plot-options-menu", ".popover .popover-body")
+    # the pop-over as it opens (user-guide/plot-options.md), then Axes with the scale bar on
+    capture(sh, page, "plot-options-menu", "[data-popover='plot-options']")
     page.locator("details[data-section=axes] > summary").click(); time.sleep(0.4)
     page.locator("[id^=show-scale-bar-]").check(); time.sleep(0.4)
-    capture(sh, page, "plot-options-axes", ".popover .popover-body")
+    capture(sh, page, "plot-options-axes", "[data-popover='plot-options']")
     page.locator("details[data-section=axes] > summary").click(); time.sleep(0.4)
     page.locator("[id^=download-png-cell-plot-W]").scroll_into_view_if_needed(); time.sleep(0.4)
     page.context.close()
@@ -802,6 +809,8 @@ def shoot_spatial(sh, data_dir):
     capture(sh, page, "spatial-aspect", "#tile-container")
     page.context.close()
     page = sh.open(v, dataset=D)
+    page.wait_for_selector(".tile[data-tile-id='cell-plot-SL'] .js-plotly-plot", timeout=60000)
+    sh.ready(page)
     x, y = point_xy(page, "cell-plot-SL", page.evaluate(
         "(() => { const d = document.querySelector('.tile[data-tile-id=\"cell-plot-SL\"] .js-plotly-plot')._fullData;"
         " const t = d.reduce((a, b) => ((b.customdata || []).length > (a.customdata || []).length ? b : a));"
@@ -932,13 +941,13 @@ def shoot_subsets(sh, data_dir):
     part2_first = page.locator(f"{T('cell-table-ST')} tbody tr td").first.inner_text()
     sh.log.append(f"subsets: first table cell part 1 = {rows1!r}, part 2 = "
                   f"{part2_first!r}")
-    sh.log.append("subsets: filter widget part 2 = " + page.locator(f"{T('cell-plot-SA')} .datapoint-filter-widget").inner_text().replace("\n", " "))
+    sh.log.append("subsets: plot status strip part 2 = " + page.locator(f"{T('cell-plot-SA')} .plot-status").inner_text().replace("\n", " "))
     page.click("#subset-part-prev")
     page.wait_for_function("document.getElementById('subset-part-input').value === '1'", timeout=60000)
     time.sleep(2)
     sh.ready(page)
     sh.log.append("subsets: table info = " + page.locator(f"{T('cell-table-ST')} .dataTables_info").inner_text())
-    sh.log.append("subsets: filter widget = " + page.locator(f"{T('cell-plot-SA')} .datapoint-filter-widget").inner_text().replace("\n", " "))
+    sh.log.append("subsets: plot status strip = " + page.locator(f"{T('cell-plot-SA')} .plot-status").inner_text().replace("\n", " "))
     # Share link carries the subset
     page.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=sh.base)
     page.click("#btn-share-link"); time.sleep(1)
@@ -985,7 +994,7 @@ def shoot_focus_outside(sh, data_dir):
     page.wait_for_function("document.querySelector('.name-picker-option.outside') !== null", timeout=60000)
     time.sleep(0.5)
     capture_union(sh, page, "focus-outside-picker", ["#focused-cell", ".name-picker:has(#focused-cell) .name-picker-menu"],
-                  pad=6)
+                  pad=6, hide_modebar=True)
     sh.log.append("focus-outside: picker = " + " | ".join(page.evaluate(
         "[...document.querySelectorAll('.name-picker-option')].slice(0, 8).map(li => li.textContent)")))
     page.context.close()

@@ -1,0 +1,90 @@
+/* The group grid of a Cell Grouping (panels/cell-grouping/group-grid.js): its styles only.
+   Colours are the theme's tokens (theme.css), so light and dark follow. The grid draws only the rows in view; a row is
+   placed by a transform and every row has the same height, so the sizer's height is the list's. */
+
+.cgrp-groups:has(.cgg:not([hidden])) { flex: 1 1 0; min-height: 12rem; display: flex; flex-direction: column; }
+.cgg { padding: 6px 8px 8px; border-top: 1px solid var(--az-border); flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.cgg[hidden] { display: none; }
+.cgg__bar { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-bottom: 6px; }
+.cgg__title { font-weight: 600; margin-right: auto; }
+.cgg__search { width: 11rem; max-width: 100%; }
+.cgg__view { display: inline-flex; border: 1px solid var(--az-border-strong); border-radius: 4px; overflow: hidden; }
+.cgg__viewbtn { border: 0; border-radius: 0; background: var(--az-surface); padding: 2px 10px; font-size: 0.8125rem; color: inherit; }
+.cgg__viewbtn + .cgg__viewbtn { border-left: 1px solid var(--az-border-strong); }
+.cgg__viewbtn[aria-checked="true"] { background: var(--az-muted); color: var(--az-surface); }
+.cgg__viewbtn:disabled { color: var(--az-muted); opacity: 0.6; }
+.cgg__viewbtn:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
+.cgg__gridhost { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.cgg__foot { flex: 0 0 auto; padding-top: 4px; color: var(--az-muted); font-size: 0.75rem; }
+
+.cgg-grid {
+    position: relative;
+    flex: 1 1 0;
+    min-height: 8rem;
+    overflow: auto;
+    border: 1px solid var(--az-border);
+    background: var(--az-surface);
+    --cgg-cols: minmax(9rem, 1fr) 4.5rem 4rem;
+}
+.cgg-grid:focus-within { outline: 1px solid var(--az-link); outline-offset: -1px; }
+.cgg-grid__sizer { position: relative; width: 100%; }
+.cgg-grid__rows { position: absolute; inset: 0 0 auto 0; }
+.cgg-row { position: absolute; left: 0; right: 0; top: 0; display: grid; grid-template-columns: var(--cgg-cols); align-items: center; }
+.cgg-row:hover { background: var(--az-surface-3); }
+.cgg-row:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
+.cgg-head {
+    position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: var(--cgg-cols); align-items: center;
+    height: 28px; background: var(--az-surface-2); border-bottom: 1px solid var(--az-border); font-weight: 600; font-size: 0.75rem;
+}
+.cgg-headcell, .cgg-cell { padding: 0 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cgg-num { text-align: right; font-variant-numeric: tabular-nums; }
+.cgg-cell--name { display: flex; align-items: center; gap: 6px; }
+.cgg-swatch { flex: 0 0 auto; position: relative; width: 0.75rem; height: 0.75rem; border-radius: 2px; border: 1px solid var(--az-border-strong); }
+/* the picker sits over the swatch, unseen: a click on the swatch opens the browser's color picker */
+.cgg-swatch-input { position: absolute; inset: -1px; width: calc(100% + 2px); height: calc(100% + 2px); margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.cgg-swatch-input:focus-visible { opacity: 1; outline: 2px solid var(--az-focus-border); }
+.cgg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cgg-small {
+    flex: 0 0 auto; padding: 0 6px; border-radius: 8px; font-size: 0.6875rem; line-height: 1.5;
+    background: var(--az-warn-bg); color: var(--az-warn-text); border: 1px solid var(--az-warn-border);
+}
+.cgg-row--reason .cgg-cell--name { color: var(--az-text-2); }
+
+/* the cross-table: the first column stays, the others scroll sideways and only those in view are made */
+.cgg-grid[data-view="cross"] .cgg-row { display: block; height: 28px; }
+.cgg-head--cross { display: block; }
+.cgg-head--cross .cgg-headcell:not(.cgg-label) { position: absolute; top: 0; line-height: 28px; }
+.cgg-label { position: sticky; left: 0; z-index: 1; background: inherit; }
+.cgg-row--cross .cgg-label { background: var(--az-surface); line-height: 28px; }
+.cgg-head--cross .cgg-label { background: var(--az-surface-2); line-height: 28px; display: block; }
+.cgg-row:hover .cgg-label { background: var(--az-surface-3); }
+.cgg-count { position: absolute; top: 0; line-height: 28px; }
+.cgg-zero { color: var(--az-faint); }
+
+/* narrow (about 360 px): colour, name and cells stay; the share and the gene's columns move into the row's hover text */
+@container cgrp (max-width: 360px) {
+    .cgg-grid { --cgg-cols: minmax(0, 1fr) 4rem !important; }
+    .cgg-narrow-hide:not(.cgg-cells) { display: none; }
+    .cgg__search { width: 100%; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .cgg-row { transition: background-color 0.1s; }
+}
+
+/* naming a group (decision 38): ✎ and Reset on hover and focus, the editor with its color, ✓ and ✕, and the overrides no group has now */
+.cgg-rowbtn { padding: 0 4px; font-size: 0.75rem; line-height: 1.4; text-decoration: none; opacity: 0; flex: 0 0 auto; }
+.cgg-row:hover .cgg-rowbtn, .cgg-row:focus-within .cgg-rowbtn, .cgg-rowbtn:focus-visible { opacity: 1; }
+.cgg-rename::before { content: '\270E'; }
+.cgg-reset::before { content: 'Reset'; }
+.cgg-reset { color: var(--az-muted); }
+.cgg-cell--name.is-editing { background: var(--az-accent-bg); box-shadow: inset 3px 0 0 var(--az-link); }
+.cgg-edit { display: inline-flex; align-items: center; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.cgg-edit__name { flex: 1 1 auto; min-width: 4rem; height: 1.6rem; padding: 0 4px; border-color: var(--az-link); }
+.cgg-edit__color { width: 1.6rem; height: 1.4rem; padding: 0; border: 1px solid var(--az-border-strong); background: none; flex: 0 0 auto; }
+.cgg-edit__ok, .cgg-edit__cancel { padding: 0 6px; line-height: 1.4; flex: 0 0 auto; }
+.cgg__inactive { flex: 0 0 auto; max-height: 8rem; overflow: auto; padding: 4px 0 0; color: var(--az-muted); font-size: 0.75rem; }
+.cgg__inactive-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
+.cgg-inactive-row { display: flex; align-items: center; gap: 6px; }
+.cgg-inactive-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cgg-drop, .cgg-drop-all { padding: 0 4px; font-size: 0.75rem; }

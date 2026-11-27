@@ -111,6 +111,28 @@ def register_zarr_routes(app, api_version):
                 "message": f"Failed to clear cache: {str(e)}"
             }), 500
     
+    def _refresh_interval(dataset_path):
+        """``(seconds, large)``: the interval between two walks of the dataset for this requester, and
+        ``(limit, cells)`` when the large-dataset interval applies (a non-admin on a shared server, a dataset over
+        ``limits.refresh_large_cells``), else None. An admin, and any user of a local server, keep
+        ``server.refresh_min_interval_s``."""
+        from ... import core
+        from ...core import cost_limits
+        from ..confinement import is_hosted
+        from .. import permissions
+        base = float(app.config.get("refresh_min_interval_s", 10))
+        if not is_hosted(app.config) or permissions.current_user()[1]:
+            return base, None
+        try:
+            cells = int((core.get_reader(dataset_path).get_metadata(dataset_path) or {}).get("shape", (0,))[0])
+        except Exception as exc:                     # an unreadable store: the plain interval, the walk reports it
+            logger.debug(f"Refresh: cell count of {dataset_path} unknown: {exc}")
+            return base, None
+        most = cost_limits.get("refresh_large_cells")
+        if cells <= most:
+            return base, None
+        return max(base, float(cost_limits.get("refresh_min_interval_large_s"))), (most, cells)
+
     @app.route(f"/api/{api_version}/data/refresh", methods=["POST"])
     @access.gate("dataset")
     def refresh_dataset():
@@ -127,10 +149,12 @@ def register_zarr_routes(app, api_version):
         ``after`` and ``retry_after_s``; the client asks again with ``after``.
 
         Open to every user who may read the dataset, unlike cache/reset: it
-        walks the store's files (core/freshness.py ``revalidate``) and starts
-        a new generation only when they changed, so every server process
-        then reads the changed store afresh, while an unchanged store keeps
-        what every user has cached. A hosted server's non-admins could not
+        walks the store's files (core/freshness.py ``revalidate``) and always
+        starts a new generation, whether or not the walk saw a change, so
+        every server process then reads the store afresh (a store whose
+        chunks were overwritten in place looks unchanged to the walk). The
+        interval limit is what keeps one user from making every other user
+        read again at will. A hosted server's non-admins could not
         see a change until a restart, and an admin's reset reached one
         gunicorn worker.
         """
@@ -149,10 +173,18 @@ def register_zarr_routes(app, api_version):
             after = float(after) if after not in (None, "") else None
         except ValueError:
             return jsonify({"error": f"after must be a number, got {after!r}", "reason": "bad_after"}), 400
+        interval, large = _refresh_interval(dataset_path)
         result = freshness.revalidate(
-            dataset_path, min_interval_s=float(app.config.get("refresh_min_interval_s", 10)),
+            dataset_path, min_interval_s=interval,
             inspect=lambda: {"consolidated_stale": consolidated_staleness(dataset_path)}, after=after)
+        if large and result.get("status") == "scheduled":
+            result["message"] = (f"This dataset has more than {large[0]:,} cells, so a Refresh of it is limited to "
+                                 f"once every {interval:g} s for each dataset. It runs in "
+                                 f"{result['retry_after_s']:g} s.")
         stale = result.pop("consolidated_stale", None)
+        if stale and result.get("changed"):
+            logger.warning(f"Refresh of {dataset_path}: the consolidated metadata (.zmetadata / zarr.json listing) "
+                           f"is out of date ({stale}); reading the store from its own metadata files instead.")
         return jsonify({**result, "result": "success", "dataset_path": dataset_path,
                         "consolidated_metadata": consolidated_notice(stale)})
 

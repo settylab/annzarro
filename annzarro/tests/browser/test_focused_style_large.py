@@ -78,12 +78,13 @@ def test_the_focused_shape_takes_every_option(page, server):
     assert _spied(page)["relayout"] == 0
     # the point size moving keeps the factor
     before = _shape(page)["pointSize"]
+    _menu(page, A, "points")           # the point size is in Plot Options' Points group since WP-5b
     page.fill(f"#point-size-input-{A}", "8")
     page.press(f"#point-size-input-{A}", "Tab")
     page.wait_for_function("([id, ps]) => { const s = (%s)(id); return s && s.pointSize !== ps && s.r === Math.max(2, s.pointSize * 7 / 2); }"
                            % SHAPE, arg=[A, before], timeout=10000)
     # a set colour stays across a theme switch; the shape is still drawn
-    page.click(f"#reset-focused-color-{A}")
+    page.click("[data-popover='plot-options'] [data-auto='focusedColor']")
     _wait(page, "fill", "#ff0000")
     page.click('#theme-toggle button[data-theme-mode="dark"]')
     page.wait_for_function("() => document.documentElement.getAttribute('data-theme') === 'dark'")

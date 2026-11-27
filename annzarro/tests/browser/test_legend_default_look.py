@@ -33,14 +33,18 @@ GEOMETRY = """(id) => { const gd = (%s)(id); const L = gd._fullLayout, lg = L.le
              box: r(gd.querySelector('.legend .bg')), symbol: r(gd.querySelector('.legend .scatterpts')),
              entries: items.length, entryH: Math.round(items[0].height),
              pitch: items.length > 1 ? Math.round((items[1].y - items[0].y) * 10) / 10 : null,
-             firstX: Math.round(items[0].x - g.x), firstY: Math.round(items[0].y - g.y) }; }""" % GD
+             firstX: Math.round(items[0].x - g.x), firstY: Math.round(items[0].y - g.y), plotH: Math.round(g.height) }; }""" % GD
 
-# v0.6.0, the fixture's 200 cells coloured by cell type (3 categories), a 1500 x 1000 window
+# v0.6.0, the fixture's 200 cells coloured by cell type (3 categories), a 1500 x 1000 window. Measured again for WP-5b
+# (0.8.0), whose toolbar row ends the controls and whose point size moved into Plot Options: the plot area is taller,
+# so a legend centred beside it starts lower (firstY) and one below sits at its new fraction; nothing else moved. Measured again
+# when the top margin went from 80 to 30 (the modebar no longer needs the band): the plot box is 50 px taller, so a legend centred
+# beside it starts 25 px higher, one below sits at a smaller fraction of the taller box (the same pixels), the bottom margin 133 (it was 141: the legend's room is worked out against the taller box), and the top margin is 30
 EXPECTED = {
-    "right": {"layout": {"orientation": "v", "x": 1.05, "y": 0.5, "xanchor": "left", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 80, "r": 144, "t": 80, "b": 60}, "box": {"w": 106, "h": 124}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 628, "firstY": 232},
-    "left": {"layout": {"orientation": "v", "x": -0.05, "y": 0.5, "xanchor": "right", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 144, "r": 80, "t": 80, "b": 60}, "box": {"w": 106, "h": 124}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 12, "firstY": 232},
-    "top": {"layout": {"orientation": "h", "x": 0.5, "y": 1, "xanchor": "center", "yanchor": "bottom", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top center", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 80, "b": 60}, "box": {"w": 294, "h": 66}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 226, "firstY": 55},
-    "bottom": {"layout": {"orientation": "h", "x": 0.5, "y": -0.236, "xanchor": "center", "yanchor": "top", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top center", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 80, "b": 141}, "box": {"w": 294, "h": 66}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 226, "firstY": 449},
+    "right": {"layout": {"orientation": "v", "x": 1.05, "y": 0.5, "xanchor": "left", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 80, "r": 144, "t": 30, "b": 60}, "box": {"w": 106, "h": 124}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 628, "firstY": 221, "plotH": 514},
+    "left": {"layout": {"orientation": "v", "x": -0.05, "y": 0.5, "xanchor": "right", "yanchor": "middle", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top", "itemwidth": 30}, "margins": {"l": 144, "r": 80, "t": 30, "b": 60}, "box": {"w": 106, "h": 124}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 29, "firstX": 12, "firstY": 221, "plotH": 514},
+    "top": {"layout": {"orientation": "h", "x": 0.5, "y": 1, "xanchor": "center", "yanchor": "bottom", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top center", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 80, "b": 60}, "box": {"w": 294, "h": 66}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 226, "firstY": 55, "plotH": 514},
+    "bottom": {"layout": {"orientation": "h", "x": 0.5, "y": -0.157, "xanchor": "center", "yanchor": "top", "itemsizing": "constant", "tracegroupgap": 10, "entrywidth": None, "traceorder": "grouped", "titleSide": "top center", "itemwidth": 30}, "margins": {"l": 80, "r": 80, "t": 30, "b": 133}, "box": {"w": 294, "h": 66}, "symbol": {"w": 12, "h": 12}, "entries": 3, "entryH": 19, "pitch": 0, "firstX": 226, "firstY": 477, "plotH": 514},
 }
 
 
@@ -77,10 +81,15 @@ def test_the_default_legend_looks_as_in_v060(page, server, position):
         assert got[key] == want[key], (key, got[key], want[key])        # constant legend symbol, the entries drawn
     for key in ("entryH", "pitch"):
         assert got[key] == pytest.approx(want[key], abs=2), (key, got[key], want[key])
-    # the first entry's place adds the margin's and the box's font differences (each up to 2 px):
-    # CI's Linux fonts put a bottom legend's first entry 3 px lower than this Mac
-    for key in ("firstX", "firstY"):
-        assert got[key] == pytest.approx(want[key], abs=4), (key, got[key], want[key])
+    # the first entry's place adds the margin's and the box's font differences (each up to 2 px), within 4 px:
+    # The plot box's height is the window's less the control bar's, and the bar's form controls are set in the system font:
+    # CI's Linux puts them a few px taller (a plot 7 px shorter, measured on CI: a bottom legend 7 px higher). The legend's
+    # place follows the box it is laid out against, so the first entry is compared where the Mac's box height would put it:
+    # a bottom legend moves with the box's bottom edge, a centred one with its middle, a top one not at all.
+    follows = {"right": 0.5, "left": 0.5, "top": 0, "bottom": 1}[position]
+    shift = follows * (got["plotH"] - want["plotH"])
+    assert got["firstX"] == pytest.approx(want["firstX"], abs=4), ("firstX", got["firstX"], want["firstX"])
+    assert got["firstY"] - shift == pytest.approx(want["firstY"], abs=4), ("firstY", got["firstY"], want["firstY"], "plot height", got["plotH"], want["plotH"])
     for key in ("w", "h"):
         assert got["box"][key] == pytest.approx(want["box"][key], abs=2), ("box", got["box"], want["box"])
 

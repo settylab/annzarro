@@ -1,0 +1,13 @@
+{
+ "source": {
+  "type": "layer",
+  "key": "logged",
+  "column": "Cd3e"
+ },
+ "binning": {
+  "method": "equal_count",
+  "bins": 6,
+  "zero_bin": true,
+  "edges_from": "all"
+ }
+}

@@ -3,5 +3,11 @@
     { "type": "gene-plot", "label": "Gene Plot", "icon": "fas fa-dna" },
     { "type": "cell-table", "label": "Cell Table", "icon": "fas fa-solid fa-list-ul" },
     { "type": "gene-table", "label": "Gene Table", "icon": "fas fa-th-list" },
-    { "type": "gene-set", "label": "Gene Set Analysis", "icon": "fas fa-project-diagram" }
+    { "type": "gene-set", "label": "Gene Set Analysis", "icon": "fas fa-project-diagram" },
+    { "type": "gene-signature", "label": "Gene Signature", "icon": "fas fa-list-check" },
+    { "type": "cell-grouping", "label": "Cell Grouping", "title": "Grouping", "icon": "fas fa-object-group" },
+    { "type": "cell-gene", "label": "Cell-Gene Plot", "icon": "fas fa-braille" },
+    { "type": "cell-count", "label": "Cell Count Plot", "icon": "fas fa-chart-column" },
+    { "type": "gene-count", "reserved": true },
+    { "type": "group-stat", "reserved": true }
 ]

@@ -67,7 +67,7 @@ The paper's protocol views of `bm_aging_annzarro.zarr` are complete examples wit
 colour scales, a lock and a table filter (`*.view.json` in {repro-tree}`data_prep/demo_panelsets` of the
 {ref}`companion repository <paper-companion>`; the panel set files below are all you need). Each link is ready for a local server with `bm_aging_annzarro.zarr` in
 its data directory ({ref}`tut-start-links` says what to change otherwise); the panel set file loads
-the same view with **Load Panel Set** > **Upload file**.
+the same view with **Load Panel Set** > **Upload file**. Each of the five is built step by step in the tutorial named for it on {doc}`../paper/procedure`.
 
 ::::{dropdown} A: five-step diffusion walk and the kernel row of the focused cell
 ```{literalinclude} ../_static/panelsets/protocol/protocol-A-kernel-walk.url.txt
@@ -130,7 +130,7 @@ docs from its panel set file, and opens each one in a headless browser.
   "subset": { "n": 100000, "seed": 0 },  // null: every cell; absent: server default; optional "part"
 
   // the session's default plot style, optional: only the keys that differ from the built-in look
-  "sessionStyles": { "cell-plot": { "fontSize": 16, "showGrid": false } },   // and/or "gene-plot"
+  "sessionStyles": { "cell-plot": { "fontSize": 16, "showGrid": false } },   // and/or "gene-plot", "cell-gene", "cell-count", "cell-gene", "cell-count"
 
   // PREFERRED: a full layout tree
   "layout": {                      // exactly what PanelManager.saveLayout() emits
@@ -230,7 +230,13 @@ A tile's **panel type is encoded in its id prefix**: `cell-plot-1718…` is type
 with `restoreLayout`. To pre-register a cell plot in a split, give its tile node
 `id: "cell-plot-<anything-unique>"` and put its settings under
 `panelConfigs["cell-plot-<…>"]`. Registered panel types live in `Config.PANEL_TYPES`
-(`cell-plot`, `gene-plot`, `cell-table`, `gene-table`, `gene-set`).
+(`cell-plot`, `gene-plot`, `cell-table`, `gene-table`, `gene-set`, `gene-signature`,
+`cell-grouping`, `cell-gene`, `cell-count`; `gene-count` and `group-stat` are reserved names).
+
+**Closed panels.** A `panelConfigs` entry whose id is not in the `hierarchy` has no tile: it
+is restored as a closed panel, listed under the dataset bar's closed panels and ready to reopen with its
+settings. Links and panel sets save every panel that was open or closed when they were made, whatever its type. A plot
+filtered by a closed table says "Filter not applied yet" until the table is reopened.
 
 ### Panel configuration
 
@@ -243,6 +249,11 @@ with `restoreLayout`. To pre-register a cell plot in a split, give its tile node
 | `key` | the key in that slot, e.g. `X_umap`, `diffusion_walk_t5`, `kompot_de_Young_to_Old_fold_change` |
 | `column` | for obsm/varm the column; for obsp, varp and layer the row or column name, which follows the focused cell or gene |
 | `locked` | `true` pins `column`: the axis keeps that cell or gene instead of following the focus |
+
+Cell and Gene Plots also store `viewport2D` and `viewport3D` (the zoom and pan of a 2D plot,
+the camera of a 3D one: Back and Forward steps restore them), `equalAspect` (a new Cell Plot opens with it on) and
+`heightLimits` (the 3D bars' range, Cell-Gene Plot). A table's search box stores its toggles as `searchText`,
+`searchRegex`, `searchSmart` and `searchCaseInsensitive`.
 
 Other fields (`pointSize`, `pointOpacity`, `colorScale`, `colorReversed`, `hoverInfo`,
 `highlightFocusedCell`, `tableFilter`, ...) are whatever the panel saved; copy them from a link
@@ -269,12 +280,70 @@ Section ids: `mygene-card`, `string-enrichment`, `gprofiler-gost`, `string-netwo
 `mygene-mapping`, `string-partners`, `hpa`, `enrichr`, `reactome`, `links`. The species is
 not a panel field: it is `constants.taxonomyId`.
 
+### The four panels new in 0.8.0
+
+Each stores exactly what its normaliser keeps (a field at its default is left out, an unknown
+field is kept, an invalid one is replaced by its default so that a hand-edited link still opens). Every one also
+has `title` and, when the controls were hidden, `controlsVisible`. Copy a link the app made rather than writing
+these from scratch.
+
+**Gene Signature** (`gene-signature-…`): the recipe the score route takes.
+
+| Field | Meaning |
+|---|---|
+| `genes`, `down` | the up and the down genes, sorted by code point, no duplicates; a gene in both lists counts as an up gene |
+| `method` | `zscore_mean` (default), `mean`, `sum`, `control_adjusted`, `detected` (shown as **Fraction of genes**) or `fraction_of_total` |
+| `input` | the layer the score is read from (`X` by default) |
+| `clip`, `seed`, `bins`, `controls`, `detect_above` | the method's parameters (**Methods ▾**); `clip` is `null` for no clip |
+| `down_weight` | `gene` (default, left out) or `side` |
+| `directions` | `true` while the panel's **Up/Down** switch is on (absent when off) |
+| `version` | the recipe version, `1` |
+
+**Cell Grouping** (`cell-grouping-…`): the factors and how they are cut.
+
+| Field | Meaning |
+|---|---|
+| `partitionings` | the factors: each `{source, levels?, rest?, labels?, binning?, colors?}`, a source being `{type, key, column?, layer?}` |
+| `separator`, `small` | the separator of a combined group's name; `{threshold, mode}` for the small-groups rule |
+| `detect_above` | the **Expressed above** value of **Methods ▾**, in data units (absent at 0) |
+| `colors`, `groupOverrides` | a palette for the groups, and per-group `{name, label, color}` overrides |
+| `version` | `1` |
+
+**Cell-Gene Plot** (`cell-gene-…`).
+
+| Field | Meaning |
+|---|---|
+| `mode` | `dots` (default) or `heatmap` |
+| `cellAxis` | the groups on the other axis: `{type: "obs", key}` or `{type: "cell-group", key: <grouping panel id>}` |
+| `sections` | the blocks of rows, each `{source: <signature or gene table id>, rows: "genes" or "set", title?}`; `set` is **One row** |
+| `color`, `size`, `height` | each a statistic `{stat, layer?, detect_above?}`; `height` (the 3D bars) absent means **Same as Color** |
+| `scale`, `swap` | **Scale** (`var`, `group`, `z_groups`, `z_pooled`) and **Swap axes**, left out at their defaults |
+| `view`, `camera`, `labels3d` | `"3d"` and the 3D camera and label placement |
+| `cluster` | the clustering settings, with `cluster.dendrograms` `{genes, groups}` |
+| style fields | `colorScale`, `reverse`, `limits`, `center`, `printValues`, `heightLimits`, `dotScale`, `dotSmallest`, `dotOpacity`, `gap`, `sectionTitles`, `labels`, `titles`, `legend`, `totals`, `sortGroups` |
+
+**Cell Count Plot** (`cell-count-…`).
+
+| Field | Meaning |
+|---|---|
+| `mode` | `bar` (default), `histogram`, `hist2d`, `density`, `density2d`, `pie`, `heatmap`, `venn` or `upset` |
+| `x`, `y`, `split` | the inputs, each a factor as in a grouping: `{source, binning?, levels?, ...}` |
+| `sets` | the sets of a Venn or an UpSet |
+| `value`, `measure` | what a bar shows (`{kind: "count" or "share" or "measure" or "top_level"}`) and the measure of a Height |
+| `arrangement`, `binSpacing`, `color` | stacked, side by side, overlaid or filled; the spacing of bins; the colouring |
+| `view`, `height`, `camera` | `"3d"`, the bars' height, and the 3D camera |
+
+A saved panel set or link of a newer version than the build reads is kept as it is and reported, not rewritten.
+
 ## Why the fragment, and why compressed
 
 In the query string the view is part of the HTTP request line, which gunicorn caps at 4,094
 bytes by default; a link with two fully configured panels (about 4.7 KB) failed with "Request Line is too
-large". The fragment is never sent to the server, so there is no size limit and the view does not
-land in access logs; the server only needs `dataset_path`. Deflate shrinks a typical two-panel
+large". The fragment is never sent to the server, so there is no size limit on it and the view does not
+land in access logs; the server only needs `dataset_path`. Share Link notes a link over 8,000 characters ("This link is long
+(N characters) and chat or email programs may cut it"), since mail and chat programs cut long lines: a large gene list is shared
+reliably as a saved panel set. The page notes a link over 8,000 characters ("This link is long
+(N characters) and chat or email programs may cut it"): a large gene list is shared reliably as a saved panel set. Deflate shrinks a typical two-panel
 view 4-6× (e.g. 4.5 KB to 1.2 KB), which keeps links pasteable. A runtime without
 `CompressionStream('deflate-raw')` (Node < 21.2, very old browsers) emits the uncompressed form
 instead, which every build can read.

@@ -17,11 +17,17 @@ repository): the HSC `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` and the monocyte
 `Mature_Young_2#TCAATTCAGTGAGGCT-1`. The results are the panels of the AnnZarro paper's cells-and-genes
 figure ({doc}`../paper/cells-and-genes`).
 
+```{note}
+The screenshots that show the paper's figures show the interface of the version the paper cites; names and positions of
+some controls have changed since, and the steps in the text use today's names.
+```
+
 ## What you need
 
+- AnnZarro 0.8.0 or later (the steps use its control names).
 - AnnZarro running locally ({doc}`../getting-started/quickstart`) with
   `bm_aging_annzarro.zarr` in its data directory ({doc}`../data/demo-data`). Steps 1 and 2 and
-  the axes of step 3 also work on `bm_aging_annzarro.zarr`.
+  the axes of step 3 also work on the base store `bm_aging.zarr`.
 - These fields:
 
 | Slot | Key | Used for |
@@ -50,7 +56,7 @@ Panel set file: {download}`cells-and-genes-a-cells.json <../_static/panelsets/pa
 ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 ::::
 
-1. Open `bm_aging_annzarro.zarr` from **Dataset** and set **Focused Gene** to `S100a9`.
+1. Open `bm_aging_annzarro.zarr` with the dataset button (left of the bar under the header) and set **Focused Gene** to `S100a9`.
 2. Set **Focused Cell** to `HSPC_Old_1#GAAGCCCGTGGCTCTG-1` (type `GAAGCCCGTGGCTCTG` and pick it).
    This is the HSC you will lock in step 3.
 3. Add a cell plot. Open its controls. Set **X** and **Y** to `obsm`, `X_umap`, columns
@@ -70,8 +76,8 @@ the focused HSC (fold change −1.35).
 The mean log2 fold change of S100a9 is −0.05 (a volcano puts it near zero), but per cell it
 ranges from −1.46 to +0.31. A cell table shows where the loss is:
 
-1. Add a cell table with the columns `highres_celltype` (tab `obs`) and the `layer`
-   `kompot_de_Young_to_Old_fold_change` column for the focused gene.
+1. Add a cell table with the column `highres_celltype` (tab `obs`) and, from the `layers` tab's add row, the
+   column of the focused gene on `kompot_de_Young_to_Old_fold_change` (choose `S100a9 (focused)` and the layer, then **Add column**).
 2. **Add Condition**: the fold-change column, **Less Than**, `-0.5`. The table keeps 317 of
    8,090 cells.
 3. In the cell plot, set **Table** to this table. Cells outside the table turn grey.
@@ -213,7 +219,8 @@ cells (warm) sit mostly where the HSC's change is negative, like S100a9's own.
 
 Now each gene's colour says how it co-varies with the focused gene, while its position says how
 it changes in the two cells. Click a gene, or pick one in **Focused Gene**: the colour follows,
-the axes do not.
+the axes do not. On a fixed narrow colour range this becomes a search for genes that respond together:
+{doc}`compare-cell-states`.
 
 (tut-cg-andor)=
 ### Count the directions with AND/OR
@@ -221,8 +228,8 @@ the axes do not.
 `hsc_vs_monocyte_direction` is precomputed for these two cells. A gene table recounts it from the two rows
 themselves, so the count also works for any other pair of cells:
 
-1. Add a gene table with the columns `kompot_de_Young_to_Old_mahalanobis` (tab `var`) and, from
-   tab `layer`, the fold-change columns for the locked HSC and for the focused cell.
+1. Add a gene table with the column `kompot_de_Young_to_Old_mahalanobis` (tab `var`) and, from the
+   `layers` tab's add row, the fold-change columns for the locked HSC and for the focused cell (**Add column** once for each).
 2. Build this filter in **Advanced Search**: `kompot_de_Young_to_Old_mahalanobis` **Greater
    Than** `5.82` AND a group joined by OR, which holds two AND groups:
    (HSC column **Greater Than** `0` AND focused-cell column **Less Than** `0`) and

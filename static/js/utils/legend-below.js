@@ -52,7 +52,7 @@ function axisTextDepth(gd, size) {
 let _setting = new WeakSet();
 
 /** Passes after one relayout until the legend stops moving (each pass moves the axes, which moves the fraction). */
-const MAX_PASSES = 6;
+const MAX_PASSES = 10;
 
 /**
  * Put a bottom legend below the axis text, as drawn. Relayouts only when the fraction changes, and looks
@@ -63,7 +63,9 @@ export function syncBelowLegend(gd, pass = 0) {
     const L = gd && gd._fullLayout;
     if (!L || !L._size || !isBelowLegend(gd.layout) || _setting.has(gd) || typeof Plotly === 'undefined') return;
     const want = belowLegendY(axisTextDepth(gd, L._size) + GAP, L._size.h);
-    if (want === null || Math.abs(want - gd.layout.legend.y) < 0.002) return;
+    // to the fixed point itself (want is rounded to 1e-4): stopping within 0.002 left the legend, and with it the
+    // automargin and an Equal aspect range, where the path of edits had brought it, not where a fresh draw puts it
+    if (want === null || Math.abs(want - gd.layout.legend.y) < 1e-6) return;
     _setting.add(gd);
     Promise.resolve(Plotly.relayout(gd, { 'legend.y': want })).catch(() => {}).finally(() => {
         _setting.delete(gd);

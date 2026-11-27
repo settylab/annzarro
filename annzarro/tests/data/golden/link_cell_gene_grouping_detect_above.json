@@ -1,0 +1,54 @@
+{
+ "grouping": {
+  "version": 1,
+  "partitionings": [
+   {
+    "source": {
+     "type": "obs",
+     "key": "cell_type"
+    }
+   }
+  ],
+  "offered": [
+   "mean",
+   "pct_expressing",
+   "sd"
+  ],
+  "layers": [
+   "logged"
+  ],
+  "detect_above": 1
+ },
+ "plot": {
+  "version": 1,
+  "cellAxis": {
+   "type": "cell-group",
+   "key": "cell-grouping-1718000000001"
+  },
+  "mode": "dots",
+  "sections": [
+   {
+    "source": "signature-1718000000010",
+    "rows": "genes"
+   }
+  ],
+  "color": {
+   "stat": "mean",
+   "layer": "logged"
+  },
+  "size": {
+   "stat": "pct_expressing",
+   "layer": "logged"
+  },
+  "offer": {
+   "offered": [
+    "mean",
+    "sd"
+   ],
+   "layers": [
+    "X",
+    "logged"
+   ]
+  }
+ }
+}

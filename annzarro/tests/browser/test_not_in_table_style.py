@@ -28,6 +28,7 @@ import urllib.parse
 from annzarro.tests.browser.test_auto_point_size import (  # noqa: F401  (fixtures)
     AUTO, PLOTS, STATE, TABLE, _link, _settled, page, server)
 from annzarro.tests.browser.test_memory_guard import STORE  # noqa: E402
+from annzarro.tests.browser.test_plot_options import _menu as _po_menu  # noqa: E402
 
 A, B = PLOTS
 SEARCH = f'.tile[data-tile-id="{TABLE}"] input[type="search"]'
@@ -62,6 +63,7 @@ def _grey_is_curve(page, pid, scale=1):
 
 
 def _set_size(page, pid, value):
+    _po_menu(page, pid, "points")      # the point size is in Plot Options' Points group since WP-5b
     page.fill(f"#point-size-input-{pid}", str(value))
     page.press(f"#point-size-input-{pid}", "Tab")
     page.wait_for_timeout(500)
@@ -91,6 +93,11 @@ def test_switching_the_table_on_equals_a_link_that_names_it(page, server):
     page.fill(SEARCH, "cell_01")
     page.wait_for_function("(id) => document.querySelector(`.tile[data-tile-id=\"${id}\"] .js-plotly-plot`)"
                            ".data.some(t => t.name === 'Not in table' && t.x && t.x.length)", arg=A, timeout=30000)
+    # settled, as the linked plot is (_settled): the switch changes what the strip above the plot says, the plot area
+    # grows, and the automatic style follows the new area once the resize has settled (plot-make.js __azFollowView).
+    # Compared before that, the grey points still had the opacity for the old area (0.99 against 1)
+    page.wait_for_function("""(id) => { const gd = document.querySelector(`.tile[data-tile-id="${id}"] .js-plotly-plot`);
+        const f = gd.__azFollowView; return !!f && !f.pending() && !gd.__azRestyling; }""", arg=A, timeout=30000)
     switched = _grey_is_curve(page, A)
     assert switched == linked
 
@@ -139,8 +146,12 @@ def test_controls_style_the_grey_points_and_travel_with_the_panel(page, server):
     assert (cfg["notInTableScale"], cfg["notInTableOpacity"], cfg["notInTableColor"]) == (2, 0.25, "#ff0000")
     assert "notInTableScale" not in layout["panelConfigs"][B]            # B keeps the defaults
     enc = base64.urlsafe_b64encode(json.dumps({"v": 1, "subset": None, "layout": layout}).encode()).decode().rstrip("=")
-    page.goto(f"{server}/?dataset_path={urllib.parse.quote(STORE, safe='/')}#view={enc}")
-    page.reload()
+    # Only the fragment changes, so the page reloads itself (main.js hashchange); a second reload of ours
+    # raced it and, while the first was still drawing this view, hit the guard that never redraws a view
+    # that did not finish loading ("The view in the address did not finish loading last time"). Wait for
+    # the page's own reload instead.
+    with page.expect_event("load", timeout=30000):
+        page.goto(f"{server}/?dataset_path={urllib.parse.quote(STORE, safe='/')}#view={enc}")
     page.wait_for_selector(f'.tile[data-tile-id="{TABLE}"] .dataTables_scrollBody tbody tr', timeout=30000)
     page.fill(SEARCH, "cell_01")
     page.wait_for_function("""(id) => { const g = document.querySelector(`.tile[data-tile-id="${id}"] .js-plotly-plot`)

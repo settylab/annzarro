@@ -502,14 +502,19 @@ def test_a_closed_source_uses_its_frozen_selection(env):
     page.click(f"{GS} .gs-consent button:has-text('Send')")
     _all_ok(page)
     assert state(page)["snapshot"]["count"] == 10
-    # a table restored closed from a panel set has no selection: said so, nothing sent
-    page.evaluate("""() => {
-        window.PanelManager.registerClosedPanel('gene-table', {id: 'gene-table-Z', title: 'Restored closed'});
+    # a table restored closed from a panel set has no selection: the panel asks the resolver for it, as a
+    # plot does (utils/table-resolver.js). Held at "Build filter" here so the state stays put.
+    page.evaluate("""async () => {
+        const { TableResolver } = await import('/static/js/utils/table-resolver.js');
+        TableResolver.setLimits({ AUTO_ROWS: 0, ASK_ROWS: 1000000000 });
+        window.PanelManager.registerClosedPanel('gene-table', {id: 'gene-table-Z', title: 'Restored closed',
+            columns: [{type: 'var', key: 'gene_name', column: ''}], searchText: 'GENE01'});
         window.PanelManager.updateSourcePanelSelection();
     }""")
     page.select_option(f"{GS} #gs-source-gene-set-G", "gene-table-Z")
-    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().gate === 'closed-unknown'")
-    assert 'Source table "Restored closed" is closed and its selection is not known; reopen it.' in bar(page)
+    until(page, "() => window.PanelManager.getPanel('gene-set-G')._debugState().gate === 'resolver'")
+    assert "Building 'Restored closed' will pause the page for a few seconds." in bar(page)
+    assert page.locator(f'{GS} .gs-bar__actions button:has-text("Build filter")').count() == 1
 
 
 @pytest.fixture(scope="module")

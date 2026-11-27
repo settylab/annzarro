@@ -157,7 +157,7 @@ export const LEGEND_POSITIONS = Object.freeze({
 });
 
 /** Width of a space, in em, by font family (the families Plot Options offers); Arial's for any other. */
-const SPACE_EM = [[/courier|mono/i, 0.6], [/times/i, 0.25], [/georgia/i, 0.241], [/trebuchet/i, 0.301], [/verdana/i, 0.352]];
+const SPACE_EM = [[/open sans/i, 0.26], [/courier|mono/i, 0.6], [/times/i, 0.25], [/georgia/i, 0.241], [/trebuchet/i, 0.301], [/verdana/i, 0.352]];
 
 /** Px from the legend's left edge to where an entry's label starts: the symbol (`itemwidth`, 30) and its padding. */
 export const LABEL_INDENT = 38;
@@ -642,7 +642,10 @@ export function planLegendColumns(gd) {
 
     const slack = titleSlack(gd, used);
     const over = Math.max(0, Math.ceil(2 - slack));
-    if (used < 2 && pos === 'right' && slack < SLACK_NEEDED && FL.legend && FL._size && FL.legend._width > 0) {
+    // a share of the width set for a legend beside the plot (the shared Plot Options' Space, plot-style.js): even one
+    // column is placed and has its labels cut to it, as columns are
+    const share = (pos === 'left' || pos === 'right') && Number(meta.azLegendShare) > 0 ? Math.min(1, Number(meta.azLegendShare)) : null;
+    if (used < 2 && share === null && pos === 'right' && slack < SLACK_NEEDED && FL.legend && FL._size && FL.legend._width > 0) {
         // one legend whose shifted title is wider than its entries: the legend at the plot's right edge (x = 1, which
         // does not move when the plot is resized) and a margin of its width, the title's overhang and a little more
         for (let k = 2; L[`legend${k}`]; k++) relayout[`legend${k}`] = null;
@@ -659,7 +662,7 @@ export function planLegendColumns(gd) {
         titleNote(gd, relayout, false, false);
         return finish(relayout, margin, meta, legendIdx, legendVal, nameIdx, nameVal);
     }
-    if (used < 2) {
+    if (used < 2 && share === null) {
         for (let k = 2; L[`legend${k}`]; k++) relayout[`legend${k}`] = null;
         setMargin('l'); setMargin('r');
         titleNote(gd, relayout, false, false);
@@ -688,7 +691,7 @@ export function planLegendColumns(gd) {
     for (const t of proxies) { const c = columnOf(t); if (c >= 0) groups[c].push(t); }
     const measure = legendMeasure(gd);
     const needs = groups.map(g => Math.max(0, ...g.map(t => measure(t.azName ?? t.name))) + ENTRY_EXTRA);
-    const fit = fitColumns(needs, gap, side ? W * COLUMNS_SHARE : Math.max(plot.w, 200));
+    const fit = fitColumns(needs, gap, side ? W * (share ?? COLUMNS_SHARE) : Math.max(plot.w, 200));
     const allLabels = proxies.map(t => t.azName ?? t.name);
     groups.forEach((g, c) => {
         for (const t of g) {

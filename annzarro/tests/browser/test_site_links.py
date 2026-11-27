@@ -298,7 +298,9 @@ def test_a_url_link_opens_a_new_tab_at_that_address(browser, sited):
     page = _page(browser)
     page.goto(sited)
     _wait_app(page)
-    page.route("https://example.org/**", lambda route: route.fulfill(status=200, body="<title>stub</title>", content_type="text/html"))
+    # on the context, not the page: the new tab is a separate page, and a page route does not cover it (the tab then
+    # went to the real example.org, and showed chrome-error when that was not reachable)
+    page.context.route("https://example.org/**", lambda route: route.fulfill(status=200, body="<title>stub</title>", content_type="text/html"))
     with page.context.expect_page() as opened:
         page.click("#site-footer a:has-text('Datenschutz')")
     assert opened.value.url.startswith("https://example.org/datenschutz")

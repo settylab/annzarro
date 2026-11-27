@@ -140,7 +140,8 @@ directory, remote stores only from `remote_allowlist`. Do not point gunicorn at
 login, no confinement).
 
 **Workers and memory.** Each gunicorn worker is a separate process with its own result cache,
-so memory grows with `workers x cache_memory_mb`. The production default for
+so memory grows with `workers x cache_memory_mb`, plus `workers x compute_budget_mb` (4,608 MB each by
+default) for the scores, groupings and counts a worker computes ({ref}`compute-memory`). The production default for
 `cache_memory_mb` is 4,000 MB; with four workers that allows 16 GB of cache, which is why the
 example sets 1,000. `server.workers` also sets the count; `ANNZARRO_SERVER_WORKERS` overrides it. Logins work across workers because
 the session cookie is signed with one key stored beside the users file.
@@ -432,7 +433,8 @@ legacy links need them as well, or people must re-share with the current **Share
 ## Updating datasets
 
 **Refresh dataset** (the button right of the Dataset menu) asks the server to check the store
-against the disk; when files changed, every worker serves the change from then on. For an admin
+against the disk and always makes every worker read the dataset again, whether or not its files
+look changed (a chunk overwritten in place changes nothing a check can see). Each plot keeps its zoom. For an admin
 it also clears the server's cache for the dataset. Use it after adding or rewriting elements of
 a store; {doc}`analyst-workflow` walks through one round. After replacing a whole store (a new
 directory behind the same link), restart the service (`sudo systemctl restart annzarro`) to be

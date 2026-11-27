@@ -1,0 +1,12 @@
+{
+ "type": "group-stat",
+ "key": "cell-grouping-1718000000001",
+ "column": "[\"c:B cell\",\"bin:2\"]",
+ "stat": "mean_expressing",
+ "layer": "logged",
+ "groupWas": [
+  "B cell",
+  "CD3E 0.5 to 1.75"
+ ],
+ "follow": true
+}

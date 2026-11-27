@@ -27,6 +27,7 @@
  * run maxima of the benchmark, not from a fit of that action; the
  * measurement plan replaces them (see the docs, Browser memory).
  */
+import { getSource } from './source-registry.js';
 
 /** GB here are 10^9 bytes, as in the benchmark notes and Chrome's jsHeapSizeLimit (4,395,630,592 = 4.40 GB). */
 export const GB = 1e9;
@@ -253,12 +254,21 @@ export const DEFAULT_MODEL = {
      * character per label; the blob adds 3 B + 1 B per character per label.
      */
     hoverLabels: { perPoint: 34, perLabel: 62, perChar: 2 },
-    /** A cell table row (DataTables with deferRender): its data array and row object. Provisional. */
-    tableRow: { heap: 300 },
+    /**
+     * A cell table row (DataTables with deferRender): its data array and row object.
+     * Measured (Chromium, JS heap after GC, table shown minus before, 100,000 rows, step 0a):
+     * 388 B a row with 1 column, 460 B with 2, 652 B with 6, so about 330 B plus 54 B a
+     * column. The guard does not know the column count, so it takes the six-column
+     * figure (the default table is 6 or fewer columns). The peak while loading, read
+     * with uncollected garbage, was 969, 1,143 and 1,960 B a row; the heap is
+     * collected before it can run out, so the resident figure is the model. It
+     * was 300 before: a table of six columns was 2.2 times what the guard thought.
+     */
+    tableRow: { heap: 650 },
     /** Numbers still to be measured (listed by the docs and the report). */
     provisional: [
         'large.off split from the client cache', 'regular resident (all colours)', 'regular categorical/none peak',
-        'regular 3D factor', 'export transient (both paths)', 'recolour transient (both paths)', 'table row'
+        'regular 3D factor', 'export transient (both paths)', 'recolour transient (both paths)', 'table row peak'
     ]
 };
 
@@ -365,6 +375,9 @@ export function readLimits(env = {}, settings = DEFAULT_SETTINGS) {
 export function colourKind(settings, structure) {
     const c = settings && settings.color;
     if (!c || !c.type || c.type === 'none') return 'none';
+    // a provider's series (utils/source-registry.js) says what it is
+    const provider = getSource(c.type);
+    if (provider) return provider.valueType === 'categorical' ? 'categorical' : 'numeric';
     if (c.type === 'obs') {
         const info = structure && structure.obs && structure.obs.columns_info && structure.obs.columns_info[c.key];
         if (info && /categor|bool|str|object/i.test(String(info.type))) return 'categorical';
@@ -544,6 +557,7 @@ export class Ledger {
         this._drawing = new Map();    // token -> entry, every draw not yet settled
         this._seq = 0;
         this.cacheBytes = 0;
+        this.holdings = new Map();    // name -> {bytes, pinned, evict}: held outside the panels (a grouping's codes, CAT-4)
         this.observed = null;         // {bytes, at, source}: a measured total, when the browser gives one
         this._listeners = new Set();
     }
@@ -609,6 +623,68 @@ export class Ledger {
         if (b !== this.cacheBytes) { this.cacheBytes = b; this._changed(); }
     }
 
+    /**
+     * Bytes held outside the panels under a name (a grouping's codes, CAT-4), counted outside the heap and as
+     * buffers. A PINNED holding stays until it is released; an unpinned one may be evicted (`evict`), and its
+     * `evict` is then called, after it has left the ledger. Holding a name again replaces it.
+     * @param {string} name
+     * @param {number} bytes
+     * @param {{pinned?: boolean, evict?: (() => void)|null}} [opts]
+     */
+    hold(name, bytes, { pinned = true, evict = null } = {}) {
+        this.holdings.delete(name);
+        this.holdings.set(name, { bytes: Math.max(0, Number(bytes) || 0), pinned: !!pinned, evict });
+        this._changed();
+    }
+
+    /** Pin a holding (a consumer on screen holds it), or unpin it (only hidden ones do). */
+    pin(name, pinned) {
+        const h = this.holdings.get(name);
+        if (!h || h.pinned === !!pinned) return;
+        h.pinned = !!pinned;
+        this._changed();
+    }
+
+    release(name) {
+        if (this.holdings.delete(name)) this._changed();
+    }
+
+    /** Bytes of every holding, pinned or not. */
+    heldBytes() {
+        let b = 0;
+        for (const h of this.holdings.values()) b += h.bytes;
+        return b;
+    }
+
+    /** Bytes that evict() could free. */
+    evictable() {
+        let b = 0;
+        for (const h of this.holdings.values()) if (!h.pinned) b += h.bytes;
+        return b;
+    }
+
+    /**
+     * Evict unpinned holdings, oldest first, until at least `bytes` are free (all of them by default); each owner is
+     * told. Returns the bytes freed.
+     */
+    evict(bytes = Infinity) {
+        let freed = 0;
+        const gone = [];
+        for (const [name, h] of [...this.holdings]) {
+            if (freed >= bytes) break;
+            if (h.pinned) continue;
+            this.holdings.delete(name);
+            freed += h.bytes;
+            gone.push(h);
+        }
+        if (!gone.length) return 0;
+        this._changed();
+        for (const h of gone) {
+            try { if (h.evict) h.evict(); } catch (error) { console.error('Ledger eviction:', error); }
+        }
+        return freed;
+    }
+
     /** A measured total (bytes of the page, heap and ArrayBuffers), e.g. measureUserAgentSpecificMemory. */
     observe(bytes, source) {
         if (!(bytes > 0)) return;
@@ -632,7 +708,7 @@ export class Ledger {
      */
     totals({ exclude = [] } = {}) {
         const skip = new Set(exclude);
-        let t = { heap: this.model.app.heap, off: this.model.app.off + this.cacheBytes, gpu: 0, contexts: 0 };
+        let t = { heap: this.model.app.heap, off: this.model.app.off + this.cacheBytes + this.heldBytes(), gpu: 0, contexts: 0 };
         for (const [id, e] of this.entries) if (!skip.has(id)) t = addCost(t, e.resident);
         for (const [id, e] of this.pending) if (!skip.has(id)) t = addCost(t, e.peak);
         return t;
@@ -644,7 +720,7 @@ export class Ledger {
      */
     buffers({ exclude = [] } = {}) {
         const skip = new Set(exclude);
-        let b = this.cacheBytes;
+        let b = this.cacheBytes + this.heldBytes();
         for (const [id, e] of this.entries) if (!skip.has(id)) b += e.buffers ? e.buffers.resident : 0;
         for (const [id, e] of this.pending) if (!skip.has(id)) b += e.buffers ? e.buffers.peak : 0;
         return b;

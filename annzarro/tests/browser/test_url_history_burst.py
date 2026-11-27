@@ -45,6 +45,8 @@ def _burst(page, server):
     seen = [_sig(page)]
     _close(page, D)
     seen.append(_sig(page))
+    # closing a tile resizes the others, which closes an open pop-over (ui/popover.js, WP-5b): open the menu again
+    _menu(page, A, "text")
     page.focus(f"#font-size-{A}")
     for _ in range(2):
         page.keyboard.press("ArrowUp")

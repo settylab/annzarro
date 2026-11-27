@@ -1,3 +1,8 @@
+import { legacyFont } from '../utils/fonts.js';
+import { pinLayers } from '../utils/score-source.js';
+import { shownHoverInfo } from './plot-utilities/hover-columns.js';
+import { attachPlotUndo } from './plot-utilities/plot-undo.js';
+import { releaseSourceHost } from '../utils/source-registry.js';
 import { cancelIndexBuild } from './plot-utilities/large-plot.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
 import { createPanelStructure, initializeUIState, checkDatasetLoadingStatus } from './plot-utilities/panel-ui-make.js';
@@ -33,6 +38,8 @@ const CellPlotPanel = (function() {
         const _plotType = 'cells'; 
         const _container = container;
         let _plotContainer = null;
+        /** Undo in the toolbar (plot-utilities/plot-undo.js, WP-5b). */
+        let _undo = null;
         let _controlsContainer = null;
         let _resizeObserver = null;
         let _isFirstLoad = true;
@@ -68,6 +75,10 @@ const CellPlotPanel = (function() {
         // Override with provided options, if any (colour bounds stored in
         // data units go back to drawn units: array-stats.js restoreColorRange)
         Object.assign(_settings, restoreColorRange(options));
+        // a plot saved when Arial was the default has no font of its own: it keeps drawing in Arial (utils/fonts.js)
+        legacyFont(_settings);
+        // a hover entry no picker lists any more (a gene score, decision 32) goes quietly
+        _settings.hoverInfo = shownHoverInfo(_settings.hoverInfo, 'cells');
         // On Default (made from the chooser, or saved on Default): the look is the session's default, whichever
         // session this opens in (utils/session-style.js)
         if (_settings.styleDefault === true) followSessionDefault(_settings, 'cell-plot');
@@ -87,11 +98,14 @@ const CellPlotPanel = (function() {
         async function init() {
             try {
                 // Create panel structure
-                const { plotContainer, controlsContainer, loadingScreen } = createPanelStructure(_container, _id, _settings);
+                const { plotContainer, controlsContainer, loadingScreen } = createPanelStructure(_container, _id, _settings, { plotType: _plotType, consumer: 'cell-plot' });
     
                 // Store references for later use
                 _plotContainer = plotContainer;
                 _controlsContainer = controlsContainer;
+                // Undo: the same as the new panels', in the toolbar's Undo slot (WP-5b); before the first draw, so the
+                // toolbar's row never changes height after it
+                _undo = attachPlotUndo(_id, _container);
                 
                 console.log('Panel structure created: ', 
                     'plotContainer=', _plotContainer ? 'defined' : 'undefined',
@@ -106,6 +120,7 @@ const CellPlotPanel = (function() {
                 
                 // Set up event listeners (these work even when no dataset is loaded)
                 _setupEventListeners();
+                if (_undo) _undo.settled();
             } catch (error) {
                 console.error('Error initializing panel:', error);
                 console.error(error.stack);
@@ -134,7 +149,7 @@ const CellPlotPanel = (function() {
                 }
                 
                 // Initialize UI state with the dataset
-                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer, 'cell-plot');
                 
                 // Load data and create plot
                 await refreshPlot();
@@ -164,6 +179,7 @@ const CellPlotPanel = (function() {
                 controlsContainer: _controlsContainer,
                 settings: _settings,
                 plotType: _plotType,
+                consumer: 'cell-plot',
                 data: _data,
                 id: _id,
                 loadDataAndCreatePlot: refreshPlot,
@@ -418,6 +434,11 @@ const CellPlotPanel = (function() {
          * Clean up resources
          */
         function cleanup() {
+            if (_undo) { _undo.destroy(); _undo = null; }
+            // what this plot shows from a provider (a score, a grouping) is no longer needed by it: each provider lets go
+            // at once, and a value nothing else needs stops computing and leaves the memory guard's ledger
+            if (_plotContainer) releaseSourceHost(_plotContainer);
+
             // Remove document event listeners
             if (handleFocusedCellChanged.eventHandler) {
                 document.removeEventListener('focusedCellChanged', handleFocusedCellChanged.eventHandler);
@@ -553,18 +574,22 @@ const CellPlotPanel = (function() {
 
                 // For dataset changes, fully reinitialize the plot with abort signal
                 try {
-                    //setupAxisSelector(_controlsContainer, 'x', );
                     const datasetPath = updateData["dataset"];
                     const datasetStructure = await DataManager.getDatasetStructure(datasetPath);
 
-                    await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                    await initializeUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer, 'cell-plot');
 
                     // Another dataset's coordinates: the zoom and camera chosen
                     // on the previous one do not apply (the plot is drawn into
                     // the same graph, under the new dataset's uirevision)
-                    _settings.viewport2D = null;
-                    _settings.viewport3D = null;
+                    // A Refresh of the same dataset (the header's) re-reads it: the same coordinates, so the view stays
+                    if (!(updateData && updateData.refresh)) {
+                        _settings.viewport2D = null;
+                        _settings.viewport3D = null;
+                    }
                     await refreshPlot(signal);
+                    // a dataset that arrived is not a change of the user's: Undo starts here (plot-undo.js)
+                    if (_undo) _undo.settled();
                     
                     // If we get here, the operation completed successfully
                     return;
@@ -629,6 +654,7 @@ const CellPlotPanel = (function() {
             Object.keys(config).forEach(key => {
                 _settings[key] = config[key];
             });
+            if ('hoverInfo' in config) _settings.hoverInfo = shownHoverInfo(_settings.hoverInfo, 'cells');
         }
 
         /**
@@ -650,6 +676,7 @@ const CellPlotPanel = (function() {
                     _settings[key] = config[key];
                 }
             });
+            if ('hoverInfo' in config) _settings.hoverInfo = shownHoverInfo(_settings.hoverInfo, 'cells');
         }
         
         // Public API
@@ -665,6 +692,8 @@ const CellPlotPanel = (function() {
             getConfig,
             setConfig,
             updateConfig,
+            // gene-score sources with no layer take the signature's input as it is now (utils/score-column.js)
+            pinScoreLayers: () => pinLayers(_settings, () => ''),
             onDataUpdate
         };
     }

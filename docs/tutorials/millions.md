@@ -39,7 +39,7 @@ ready for a local server; {ref}`what to change for yours <tut-start-links>`.
 (tut-millions-open)=
 ## 1. Open the dataset on its default subset
 
-1. Choose the store in **Dataset**. Add a **Cell Plot** with **X** `obsm` · `X_umap` · `0`,
+1. Choose the store with the dataset button (left of the bar under the header). Add a **Cell Plot** with **X** `obsm` · `X_umap` · `0`,
    **Y** `obsm` · `X_umap` · `1` and **Color** `obs` · `cell_line_id`.
 
 The dataset bar reads "Cells: 100,000 of 95,624,334" with the badge **Subset · seed 0**,
@@ -184,9 +184,117 @@ the tab then used 9.2 GiB of memory, against 0.5 GiB with the default subset
 10. To get hover and focus back, switch **Show a subset of the cells** on again in the badge
     dialog and step through parts (section 3).
 
+(tut-millions-080)=
+## 6. Groups, counts and a dot plot over every cell
+
+Counting, grouping and summarising need no points in the browser, so these panels work on **every cell** of the store
+while the cell plots stay in large-plot mode or on a subset. This section asks the questions you will meet at a
+hundred million cells: what does it cost, and what does the app do when the answer would take too long? Keep the subset
+switched off (step 9). {doc}`../user-guide/long-computations` is the reference for the limits and the wording.
+
+The numbers below are what the app showed on the Tahoe-100M store; the seconds are estimates the server makes from the
+values stored, not measurements. The store's `X` holds values for the **200 genes** of its panel only (the other 4,800
+columns are empty), so a request for more genes costs no more than 200.
+
+11. Add a **Cell Count Plot** with **Bar** mode and **X** `cell_line_id`. The status line under the plot reads
+    "95.6M cells": the 50 bars count every cell, and appear within a second or two.
+
+```{figure} ../_static/screens/tutorials/millions-080-count.png
+:class: screenshot
+:alt: A Cell Count Plot of Tahoe-100M with 50 bars, one for each cell line, heights from under a hundred thousand to over six million cells; the dataset bar reads Cells 95,624,334 with an All cells badge and the status line reads 95.6M cells.
+:width: 100%
+
+Cells of each cell line, over all 95,624,334 cells.
+```
+
+12. Add a **Cell Grouping**, add the factor `cell_line_id` with **Add factor**, then the factor `plate`. The panel reads
+    "700 groups · 95,624,334 of 95,624,334 cells in a group": 50 cell lines by 14 plates, each with its cell count and
+    share. A factor holds up to 2,000 levels (a column with more is refused, with its count); **Cross-table** shows the same counts as a grid.
+    A grouping is the unit the dot plots below summarise over.
+
+```{figure} ../_static/screens/tutorials/millions-080-grouping.png
+:class: screenshot
+:alt: A Cell Grouping panel of Tahoe-100M with two partitionings, cell_line_id with 50 levels and plate with 14 levels, the summary 700 groups, 95,624,334 of 95,624,334 cells in a group, and the first rows of the group list, each a cell line and a plate with its cell count and share.
+:width: 100%
+
+Cell lines by plates: 700 groups over every cell.
+```
+
+13. Add a **Cell-Gene Plot** with **Groups** `cell_line_id` (one column for each cell line) and, as rows, a signature of genes (for
+    this picture, the first 20 of the panel). Colour is the **Mean** and size the **Fraction of cells**, both read from
+    `X`. Reading the genes over 95.6 million cells takes seconds, so the plot shows a bar with the time left and a
+    **Cancel** button instead of a blank tile. Five genes are read in about two seconds, too fast for the bar to be worth
+    a picture; twenty show it for about ten.
+
+```{figure} ../_static/screens/tutorials/millions-080-progress.png
+:class: screenshot
+:alt: The progress notice of a Cell-Gene Plot: "Reading 20 genes: 10 of 20 · about 6 seconds left", a half-filled bar, and a Cancel button.
+:width: 55%
+
+A read in progress: genes done, the time left (an estimate) and **Cancel**.
+```
+
+14. Make the signature the whole panel of 200 genes. Before reading anything the app asks, because the estimate is
+    over a minute: "Reading 200 genes over 95.6M cells: up to about 6 minutes (10.5 billion stored values)." It adds
+    "Groupings and counts keep working", and offers **Compute**, **Fewer genes** and the box **Don't ask again for this
+    panel**. Nothing is read until you choose. The counts and groupings of steps 11 and 12 stay usable meanwhile.
+
+```{figure} ../_static/screens/tutorials/millions-080-asks-first.png
+:class: screenshot
+:alt: A notice reading "Reading 200 genes over 95.6M cells: up to about 6 minutes (10.5 billion stored values). Groupings and counts keep working." with the links Compute and Fewer genes and the box Don't ask again for this panel.
+:width: 55%
+
+The question asked before a long read.
+```
+
+    On this store the 200-gene read, run on a laptop with a local disk, finished in under two minutes: the estimate is an
+    upper bound for planning, and your time depends on the disk.
+
+15. The server refuses what it estimates at over ten minutes (`limits.refuse_s`, 600 s): "Not run: it is estimated at
+    about N minutes (runs over 10 minutes are not started by themselves)." with the way out and **Try anyway**, which
+    starts the run that the server allows (it stops by itself after 30 minutes, `limits.try_max_s`). No request this
+    store can answer is estimated over ten minutes, because only 200 genes hold values. **The picture below was taken
+    with the limit lowered to 300 s** in a scratch site configuration, so that the same 200 genes, estimated at about 6
+    minutes, are over it. The sentence is the app's, with "5 minutes" where your server says 10.
+
+```{figure} ../_static/screens/tutorials/millions-080-refused.png
+:class: screenshot
+:alt: A notice reading "Not run: it is estimated at about 6 minutes (runs over 5 minutes are not started by themselves). Use fewer genes, a smaller subset, or a layer stored by gene (CSC)." with the link Try anyway and the box Don't ask again for this panel.
+:width: 55%
+
+A time refusal, with the limit lowered to 300 s for the picture.
+```
+
+    The last way out ("a layer stored by gene (CSC)") is for stores kept by cell; `X` here is already stored by gene, so only
+    the first two apply. Ticking **Don't ask again for this panel** starts the read, and the strip under the plot then
+    carries the tag **Runs without asking**. Its pop-over says "Long computations in this panel start without asking. Each can
+    be cancelled and stops by itself after 30 minutes." and has **Ask again**, which brings the question back.
+
+```{figure} ../_static/screens/tutorials/millions-080-runs-without-asking.png
+:class: screenshot
+:alt: The strip under a Cell-Gene Plot with the tags Runs without asking and 50 groups × 200 rows, and the pop-over of the first tag: "Long computations in this panel start without asking. Each can be cancelled and stops by itself after 30 minutes." with the link Ask again.
+:width: 60%
+
+The panel that runs without asking, and the way back.
+```
+
+16. A size refusal is a different thing from a time refusal: the plot would be too large to draw, whatever the time.
+    Build a matrix of 50 groups and 8,100 rows (for the picture, 40 sections of the 200 genes and one of 100). The notice reads
+    "50 groups × 8,100 rows = 405,000 cells of the matrix; the limit is 400,000." and offers no **Try anyway**, since no
+    time would help. It offers the edits that would make the plot draw: **Show Panel block 0 as one row** and
+    **Remove Panel tail** (your sections' titles go there). Each is one click, and each can be undone with **Undo**.
+
+```{figure} ../_static/screens/tutorials/millions-080-too-large.png
+:class: screenshot
+:alt: A notice reading "50 groups × 8,100 rows = 405,000 cells of the matrix; the limit is 400,000. Remove a section or use fewer groups." with the buttons Show Panel block 0 as one row and Remove Panel tail.
+:width: 55%
+
+A size refusal: the limit, and the edits that would fit it.
+```
+
 ## Check the numbers
 
-Each statement was read from the app (v0.4.0) on the Tahoe-100M store.
+Each statement was read from the app on the Tahoe-100M store (the rows for steps 11 to 16 from v0.8.0).
 
 | Statement | Where it shows |
 |---|---|
@@ -196,6 +304,12 @@ Each statement was read from the app (v0.4.0) on the Tahoe-100M store.
 | 95.5M cells not in part 250 | status line, step 6 |
 | the typed cell is not in part 250 | the badge beside **Focused Cell**, step 8 |
 | every cell switches to large-plot mode | status line, step 9 |
+| 95.6M cells counted in 50 bars | status line, step 11 |
+| 700 groups · 95,624,334 of 95,624,334 cells in a group | grouping panel, step 12 |
+| Reading 20 genes: 10 of 20 · about 6 seconds left | progress notice, step 13 |
+| Reading 200 genes over 95.6M cells: up to about 6 minutes (10.5 billion stored values) | question, step 14 |
+| Not run: it is estimated at about 6 minutes (runs over 5 minutes are not started by themselves) | time refusal with the limit lowered to 300 s, step 15 |
+| 50 groups × 8,100 rows = 405,000 cells of the matrix; the limit is 400,000 | size refusal, step 16 |
 
 The times are the paper's benchmark (median of cold runs on an Apple M3 Max laptop,
 {doc}`../reference/performance`); the screenshots here were not timed, and on your machine the
@@ -216,6 +330,7 @@ reopens the same cells.
 - A balanced subset gives each group an equal share; a filter restricts the cells first.
 - The focused cell can lie outside the part, and stays focused across parts.
 - Every cell can be drawn in large-plot mode, with hover and click to focus, but without table filters or 3D.
+- Counts, groupings and gene summaries work over every cell without drawing a point. A long read shows its progress and time left, is asked first above a minute, and is refused above ten, with **Try anyway** where the server allows it; a plot too large to draw is refused with the edits that fit it.
 
-The screenshots are made by `docs/_tools/shoot_millions.py`, which does each step through the
+The screenshots are made by `docs/_tools/shoot_millions.py` (sections 1 to 5) and `docs/_tools/shoot_millions_080.py` (section 6), which do each step through the
 app's controls.

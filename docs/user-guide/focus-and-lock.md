@@ -11,7 +11,7 @@ model in a first analysis.
 This page uses two cell plots on `bm_aging_annzarro.zarr`: on the left, colour = the focused cell's row of
 `obsp/diffusion_walk_t5` (where a 5-step diffusion walk from that cell lands); on the right,
 colour = the focused gene's column of `layers/kompot_de_Young_to_Old_fold_change`.
-The view is {download}`userguide-focus.json <../_tools/views/userguide-focus.json>`.
+The view is {download}`userguide-focus.json <../_tools/views/userguide-focus.json>`; the tour builds both panels step by step ({ref}`tut-tour-cell-row`, {ref}`tut-tour-four-arrows`).
 
 ```{figure} ../_static/screens/user-guide/focus-start.png
 :class: screenshot
@@ -113,9 +113,7 @@ crosshair.
 1. Open the left panel's controls with its **Toggle Controls** chevron.
 2. In the **Color** row, the third drop-down reads "Focused cell HSPC_Old_1#…". Click the open
    padlock (2) to the right of it. It turns blue and closed: the panel is now locked to that cell's
-   row. The drop-down then names the locked cell, "Locked cell HSPC_Old_1#…" (in this version the
-   new wording appears once the panel is rebuilt, for example when the view is reopened from a
-   panel set or share link; right after the click it still reads "Focused cell …").
+   row. The drop-down then names the locked cell, "Locked cell HSPC_Old_1#…", at once.
 
    ```{figure} ../_static/screens/user-guide/focus-lock-button.png
    :class: screenshot
@@ -168,7 +166,8 @@ over the cells shown. A focus is replaced only when the dataset does not have th
 
 Here `bm_aging_annzarro.zarr` is shown in parts of 3,000 cells ({download}`userguide-focus-outside.json
 <../_tools/views/userguide-focus-outside.json>`). The HSC is in part 2; one click on **›** shows
-part 3, which does not hold it:
+part 3, which does not hold it (the same focus on a cell outside the shown part is built step by step, on a dataset of
+95 million cells, in {ref}`tut-millions-outside`):
 
 ```{figure} ../_static/screens/user-guide/focus-outside.png
 :class: screenshot
@@ -229,7 +228,8 @@ Lock and a fixed colour range together give a side-by-side comparison. The view
 {download}`userguide-compare-genes.json <../_tools/views/userguide-compare-genes.json>` has two
 copies of the fold-change plot. The left one is locked to H2-Q7; the right one follows the focused
 gene, here S100a9. Both use the colour range −1 to 1 with **Lock Range** on, so equal colours mean
-equal fold changes ({doc}`colour-scales`).
+equal fold changes ({doc}`colour-scales`). The same lock (there on a cell, here on a gene) is built step by step in
+the tour ({ref}`tut-tour-lock`).
 
 ```{figure} ../_static/screens/user-guide/focus-compare-genes.png
 :class: screenshot

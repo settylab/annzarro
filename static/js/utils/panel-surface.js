@@ -119,13 +119,13 @@ function findStrip(anchor) {
     return null;
 }
 
-/** What each host's strip states: {coverage, unit, persistent, tags, open}. */
+/** What each host's strip states: {coverage, unit, persistent, tags, open, progress}. */
 const _state = new WeakMap();
 
 function stateOf(host) {
     let s = _state.get(host);
     if (!s) {
-        s = { coverage: null, unit: 'values', persistent: false, tags: new Map(), open: null };
+        s = { coverage: null, unit: 'values', persistent: false, verb: 'shown', tags: new Map(), open: null, progress: null, noCount: false };
         _state.set(host, s);
     }
     return s;
@@ -171,11 +171,21 @@ function namesHtml(names) {
         + `<ul class="ps-names-list">${names.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul></div>`;
 }
 
+/** The tick "Don't ask again for this panel" (utils/ask-policy.js): `level` is what it skips, `ticked` whether it is set. */
+function tickHtml(tick, ticked) {
+    return `<label class="ps-tick"><input type="checkbox" data-ps-tick="${escapeHtml(tick)}"${ticked ? ' checked' : ''}> `
+        + 'Don\'t ask again for this panel</label>';
+}
+
+/** What a strip with no count shows: nothing in the summary (its tags and progress still say the state). */
+const NO_COUNT = Object.freeze({ unit: '', headline: '', headlineExact: '', rows: [], notes: [], hidden: 0, total: 0 });
+
 function stripHtml(host, s) {
     const cov = coerce(s.coverage, s.unit);
-    const b = breakdown(cov);
+    const b = s.noCount ? NO_COUNT : breakdown(cov, { verb: s.verb });
     const unitWord = escapeHtml(b.unit);
-    const headline = escapeHtml(b.headline).replace(` ${unitWord} shown`, ` <span class="ps-unit">${unitWord} </span>shown`);
+    const verb = escapeHtml(s.verb);
+    const headline = escapeHtml(b.headline).replace(` ${unitWord} ${verb}`, ` <span class="ps-unit">${unitWord} </span>${verb}`);
     const chips = [
         ...b.rows.map(r => `${compactCount(r.count)} ${r.chip}`),
         ...b.notes.map(n => n.label.split(' -- ')[0])
@@ -188,12 +198,12 @@ function stripHtml(host, s) {
         + `<td class="ps-do">${actionButtons(KIND_ACTIONS[r.kind], host)}</td></tr>`
         + (r.names && r.names.length ? `<tr class="ps-names-row"><td colspan="3">${namesHtml(r.names)}</td></tr>` : '')).join('');
     const total = b.rows.length
-        ? `<tr class="ps-total"><td>Not shown</td><td class="ps-n">${exactCount(b.hidden)}</td><td></td></tr>` : '';
+        ? `<tr class="ps-total"><td>Not ${verb}</td><td class="ps-n">${exactCount(b.hidden)}</td><td></td></tr>` : '';
     const notes = b.notes.length
         ? `<ul class="ps-notes">${b.notes.map(n => `<li data-reason="${escapeHtml(n.reason)}">${escapeHtml(n.label)}`
             + `${n.kind === 'memory' ? ` <span class="ps-do">${actionButtons(KIND_ACTIONS.memory, host)}</span>` : ''}</li>`).join('')}</ul>` : '';
     const title = b.hidden
-        ? `Why ${exactCount(b.hidden)} of ${exactCount(b.total)} ${b.unit} are not shown`
+        ? `Why ${exactCount(b.hidden)} of ${exactCount(b.total)} ${b.unit} are not ${s.verb}`
         : b.headlineExact;
     const hasDetail = b.rows.length || b.notes.length;
     const mainPop = hasDetail
@@ -206,7 +216,8 @@ function stripHtml(host, s) {
         : '';
     let tags = '';
     let tagPops = '';
-    for (const [kind, tag] of s.tags) {
+    // the panel's own tick "Runs without asking" sits first, beside the count
+    for (const [kind, tag] of [...s.tags].sort((a, b) => (b[0] === 'unasked') - (a[0] === 'unasked'))) {
         const sev = escapeHtml(tag.severity || 'notice');
         tags += `<button type="button" class="ps-tag ps-tag--${sev}" data-tag="${escapeHtml(kind)}"`
             + ` aria-expanded="${s.open === kind}" title="${escapeHtml(tag.title || tag.text)}">${escapeHtml(tag.text)}</button>`;
@@ -214,17 +225,33 @@ function stripHtml(host, s) {
             tagPops += `<div class="ps-pop ps-pop--tag" data-pop="${escapeHtml(kind)}" role="dialog"`
                 + ` aria-label="${escapeHtml(tag.text)}"${s.open === kind ? '' : ' hidden'}>`
                 + `<div class="ps-pop-text">${escapeHtml(tag.pop.text)}</div>`
-                + `<div class="ps-pop-do">${actionButtons(tag.pop.actions, host)}</div></div>`;
+                + `<div class="ps-pop-do">${actionButtons(tag.pop.actions, host)}</div>`
+                + `${tag.pop.tick ? tickHtml(tag.pop.tick, !!tag.pop.ticked) : ''}</div>`;
         }
     }
+    const progress = s.progress ? progressHtml(s.progress) : '';
     return `<button type="button" class="ps-summary" aria-haspopup="dialog" aria-expanded="${s.open === 'main'}"`
         + `${hasDetail ? '' : ' disabled'}>`
         + `<span class="ps-text"><b class="ps-headline">${headline}</b>`
         + `<span class="ps-chips">${chipHtml}</span></span>`
         + (hasDetail ? '<span class="ps-details">details</span>' : '')
         + '</button>'
-        + `<span class="ps-tags">${tags}</span>`
+        + `<span class="ps-tags">${progress}${tags}</span>`
         + mainPop + tagPops;
+}
+
+/** A slim progress bar in the strip (setStatusProgress), its fill's width set by `fillProgress` after it is written. */
+function progressHtml(p) {
+    const mode = p.determinate ? 'determinate' : 'indeterminate';
+    return `<span class="ps-progress"><span class="source-progress source-progress--strip" role="progressbar" data-mode="${mode}"`
+        + ` aria-valuemin="0" aria-valuemax="100"${p.determinate ? ` aria-valuenow="${p.pct}"` : ''}`
+        + ` aria-valuetext="${escapeHtml(p.sentence)}"><span class="source-progress__fill"></span></span>`
+        + (p.text ? `<span class="ps-progress-text">${escapeHtml(p.text)}</span>` : '') + '</span>';
+}
+
+function fillProgress(el, p) {
+    const fill = p && p.determinate && el.querySelector('.ps-progress .source-progress__fill');
+    if (fill) fill.style.width = `${p.pct}%`;
 }
 
 /** Draw (or remove) the strip of `host` from its state. */
@@ -238,7 +265,7 @@ function paint(host) {
         if (el) el.remove();
         return null;
     }
-    if (!s.persistent && cov.isComplete && s.tags.size === 0) {
+    if (!s.persistent && cov.isComplete && s.tags.size === 0 && !s.progress) {
         if (el) el.remove();
         return null;
     }
@@ -263,10 +290,11 @@ function paint(host) {
     if (el._html !== html) {
         el.innerHTML = html;
         el._html = html;
+        fillProgress(el, s.progress);
     }
     // the whole statement as text, one reason per line (for tests, logs and
     // copy); not a title: nothing about the strip pops up on hover
-    el.setAttribute('data-summary', [cov.headline(), ...cov.lines()].filter(Boolean).join('\n'));
+    el.setAttribute('data-summary', [cov.headline().replace(/ shown$/, ` ${s.verb}`), ...cov.lines()].filter(Boolean).join('\n'));
     return el;
 }
 
@@ -282,15 +310,46 @@ function paint(host) {
  * @param {HTMLElement} host  The plot or table container.
  * @param {Coverage} coverage
  * @param {string} [unit]  Fallback unit when coverage is absent.
- * @param {{persistent?: boolean}} [opts]
+ * @param {{persistent?: boolean, verb?: string}} [opts] - `verb`: the word after the count, 'shown' unless a panel
+ *   counts something else (a gene signature: "5 of 3,000 genes selected")
  * @returns {HTMLElement|null} The strip, or null when there is none.
  */
-export function renderCoverageNotice(host, coverage, unit, { persistent } = {}) {
+export function renderCoverageNotice(host, coverage, unit, { persistent, verb } = {}) {
     if (!stripAnchor(host)) return null;
     const s = stateOf(host);
+    s.noCount = false;
     s.coverage = coerce(coverage, unit);
     s.unit = unit || s.coverage.unit;
     if (persistent !== undefined) s.persistent = persistent;
+    if (verb) s.verb = verb;
+    return paint(host);
+}
+
+/**
+ * A strip with no drawing to count (a plot whose drawing was replaced by a notice or a read in progress) says no count:
+ * the summary is blank and only its tags (Computing…, Refused, …) speak, until `renderCoverageNotice` states a drawing's.
+ * Not "0 cells", which reads as a plot that found none.
+ * @param {HTMLElement} host
+ */
+export function clearCoverageNotice(host) {
+    if (!stripAnchor(host)) return null;
+    const s = stateOf(host);
+    s.noCount = true;
+    return paint(host);
+}
+
+/**
+ * Put (or with null take away) a slim progress bar at the right of the strip, before the tags: a long wait of a plot
+ * that keeps its drawing meanwhile (utils/host-binding.js), so the plot is not covered. `pct` is 0 to 100 while
+ * determinate; `sentence` is the notice's whole sentence (aria-valuetext), `text` what is written beside the bar.
+ * @param {HTMLElement} host
+ * @param {{determinate: boolean, pct?: number, sentence: string, text?: string}|null} progress
+ */
+export function setStatusProgress(host, progress) {
+    if (!stripAnchor(host)) return null;
+    const s = stateOf(host);
+    if (!progress && !s.progress) return findStrip(stripAnchor(host));
+    s.progress = progress || null;
     return paint(host);
 }
 
@@ -374,7 +433,7 @@ function wireStrips() {
     }, true);
     document.addEventListener('click', (e) => {
         // an action offered by a placeholder (drawPlaceholder's actions)
-        const placeholder = e.target.closest && e.target.closest('.coverage-placeholder');
+        const placeholder = e.target.closest && (e.target.closest('.filter-notice') || e.target.closest('.coverage-placeholder'));
         const placed = placeholder && e.target.closest('[data-ps-action]');
         if (placed && placeholder.parentNode) {
             _actions.run(placed.dataset.psAction, placeholder.parentNode);
@@ -406,6 +465,15 @@ function wireStrips() {
     });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeAll();
+    });
+    // the tick "Don't ask again for this panel", in a strip's pop-over or on a notice over the plot
+    document.addEventListener('change', (e) => {
+        const box = e.target.closest && e.target.closest('[data-ps-tick]');
+        if (!box) return;
+        const strip = box.closest(`.${STRIP_CLASS}`);
+        const card = box.closest('.filter-notice');
+        const host = strip && strip._host ? strip._host : (card && card.parentNode) || null;
+        if (host) _actions.run(box.checked ? `ask-tick:${box.dataset.psTick}` : 'ask-again', host);
     });
     // the search of a long list of names (namesHtml)
     document.addEventListener('input', (e) => {
@@ -687,6 +755,9 @@ export function fitToContainer(gd) {
     const style = window.getComputedStyle(gd);
     const w = parseFloat(style.width), h = parseFloat(style.height);
     if (Math.abs(w - fl.width) > 1 || Math.abs(h - fl.height) > 1) {
+        // a plot's automatic point style for the new size first, so this resize is the one fit
+        // (plot-make.js __azPreFit)
+        if (typeof gd.__azPreFit === 'function') { gd.__azPreFit(w, h); gd.__azPadMoved = 0; }
         Plotly.Plots.resize(gd).catch(() => {});
     }
 }
@@ -703,13 +774,76 @@ export function clearForDraw(plotContainer) {
     const live = plotContainer._fullLayout && plotContainer.querySelector(':scope > .plot-container');
     if (live) {
         for (const child of Array.from(plotContainer.children)) {
-            if (!child.classList.contains('plot-container') && !child.classList.contains('loading-overlay')) child.remove();
+            if (!child.classList.contains('plot-container') && !child.classList.contains('loading-overlay')
+                && !child.classList.contains('filter-notice')) child.remove();
         }
         return;
     }
     // the WebGL side too: Plotly.purge leaves it to the garbage collector
     if (plotContainer._fullLayout) releasePlot(plotContainer);
+    // the notice over the plot (setFilterNotice) outlives the drawing under it
+    const notice = Array.from(plotContainer.children).find(c => c.classList && c.classList.contains('filter-notice'));
     plotContainer.innerHTML = '';
+    if (notice) plotContainer.appendChild(notice);
+}
+
+/**
+ * A notice laid OVER the plot area, with the actions that end it (a table
+ * filter that is not applied yet). It is a layer inside `host`, so the plot
+ * beneath keeps its size and its place: nothing moves when the notice comes
+ * or goes. Idempotent: the same notice again changes nothing; `null` takes it
+ * away. The actions are the strip's ([action, label] pairs, registerStatusActions).
+ * @param {HTMLElement} host - the plot container
+ * @param {{state: string, headline: string, text?: string, actions?: Array}|null} notice
+ */
+export function setFilterNotice(host, notice) {
+    if (!host || typeof host.querySelector !== 'function') return;
+    const old = Array.from(host.children).find(c => c.classList && c.classList.contains('filter-notice')
+        && !c.classList.contains('score-notice')) || null;
+    if (!notice) {
+        if (old) old.remove();
+        return;
+    }
+    putNotice(host, old, notice, '');
+}
+
+/**
+ * The notice of a gene-signature score (computing, asks first, refused,
+ * failed, out of date, deleted): the same layer as setFilterNotice, in a
+ * slot of its own so the two never remove each other. It lies over the plot
+ * area; the plot keeps its size.
+ * @param {HTMLElement} host - the plot container
+ * @param {{state: string, headline: string, text?: string, actions?: Array}|null} notice
+ */
+export function setScoreNotice(host, notice) {
+    if (!host || typeof host.querySelector !== 'function') return;
+    const old = Array.from(host.children).find(c => c.classList && c.classList.contains('score-notice')) || null;
+    if (!notice) {
+        if (old) old.remove();
+        return;
+    }
+    putNotice(host, old, notice, ' score-notice');
+}
+
+function putNotice(host, old, notice, extraClass) {
+    const html = `<div class="filter-notice__card coverage-placeholder coverage-placeholder--warning">`
+        + `<div class="coverage-placeholder__headline">${escapeHtml(notice.headline)}</div>`
+        + (notice.text ? `<div class="filter-notice__text">${escapeHtml(notice.text)}</div>` : '')
+        + (notice.actions && notice.actions.length
+            ? `<div class="coverage-placeholder__do">${actionButtons(notice.actions, host)}</div>` : '')
+        + (notice.tick ? tickHtml(notice.tick, !!notice.ticked) : '')
+        + `</div>`;
+    if (old && old._html === html && old.dataset.state === notice.state) return;
+    const el = old || document.createElement('div');
+    el.className = `filter-notice${extraClass}`;
+    el.dataset.state = notice.state;
+    el.setAttribute('role', 'status');
+    el._html = html;
+    el.innerHTML = html;
+    if (!old) {
+        if (typeof getComputedStyle === 'function' && getComputedStyle(host).position === 'static') host.style.position = 'relative';
+        host.appendChild(el);
+    }
 }
 
 /** A trace uid that is a valid CSS id fragment (legend-entries.js, where the uids are given). */

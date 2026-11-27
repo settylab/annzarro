@@ -431,6 +431,8 @@ def cached_method(func):
         # Skip caching if disabled
         if not hasattr(self, 'cache') or not self.cache.enable_caching:
             logger.debug(f"CACHE[{method_name}]: Skipping cache (caching disabled)")
+            if 'disable_caching' in kwargs and 'disable_caching' not in signature.parameters:
+                kwargs = {k: v for k, v in kwargs.items() if k != 'disable_caching'}
             return func(self, *args, **kwargs)
         
         # Skip caching if explicitly disabled for this call

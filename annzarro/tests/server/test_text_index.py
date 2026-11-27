@@ -70,6 +70,51 @@ def world(tmp_path):
     return app
 
 
+class StoreClock:
+    """The crawl's monotonic clock, moved only by the test, so that a read is late when the test says so.
+
+    A real timeout is wall-clock luck: on a loaded machine a quick read outlasts it. Here the clock stands
+    still until the test moves it. Only the reads of the ``doomed`` stores can ever be late: any other read
+    gets a start time far in the future, so no jump of the clock can catch it. The test calls ``hold()``
+    from inside the doomed read, ``advance_when_held`` then moves the clock once, and ``advanced`` is set.
+    """
+
+    def __init__(self, monkeypatch, doomed=None):
+        self.now = time.monotonic()                # other modules the crawl calls still read the real clock
+        self.doomed = doomed
+        self.lock = threading.Lock()
+        self.held = threading.Event()
+        self.advanced = threading.Event()
+        owner = self
+
+        class Time:
+            def __getattr__(self, name):
+                return getattr(time, name)
+
+            def monotonic(self):
+                frame = sys._getframe(1)
+                store = frame.f_locals.get("store") if frame.f_code.co_name == "job" else None
+                with owner.lock:
+                    if store is not None and owner.doomed and not store["real"].endswith(owner.doomed):
+                        return owner.now + 1e6     # the start time of a read that can never be late
+                    return owner.now
+        monkeypatch.setattr(text_index, "time", Time())
+
+    def hold(self):
+        self.held.set()
+
+    def tick(self, by):
+        with self.lock:
+            self.now += by
+
+    def advance_when_held(self, by):
+        def run():
+            if self.held.wait(30):
+                self.tick(by)
+                self.advanced.set()
+        threading.Thread(target=run, daemon=True).start()
+
+
 def crawl(app):
     with app.test_request_context("/"):
         return text_index.crawl(app.config)
@@ -244,14 +289,17 @@ def test_a_vanished_store_is_dropped(world):
 
 def test_a_store_that_sleeps_past_the_timeout_is_marked_and_the_crawl_finishes(world, monkeypatch):
     world.config["text_index_store_timeout_s"] = 0.3
+    clock = StoreClock(monkeypatch, doomed="heart.zarr")
     release = threading.Event()
     real = text_index.read_text
 
     def slow(path, n):
         if path.endswith("heart.zarr"):
+            clock.hold()
             release.wait(10)
         return real(path, n)
     monkeypatch.setattr(text_index, "read_text", slow)
+    clock.advance_when_held(by=1.0)              # the clock passes the timeout once heart.zarr is being read
     try:
         started = time.monotonic()
         status = crawl(world)
@@ -282,18 +330,24 @@ def test_the_crawl_stops_as_partial_when_every_thread_is_stuck(world, monkeypatc
 
 def test_a_late_store_that_answers_before_the_crawl_ends_is_indexed(world, monkeypatch):
     world.config.update(text_index_store_timeout_s=2.0, text_index_workers=2)
+    monkeypatch.setattr(text_index, "_late_reads", set())
+    clock = StoreClock(monkeypatch, doomed="liver.zarr")
     real = text_index.read_text
     answered = threading.Event()
 
     def read(path, n):
         if path.endswith("liver.zarr"):
+            clock.hold()
             result = real(path, n)
-            time.sleep(3.0)                  # past the timeout, but it does answer
+            # it answers only once the crawl has called it late: past the timeout, but it does answer
+            assert wait_for(lambda: len(text_index._late_reads) > 0)
             answered.set()
             return result
-        answered.wait(1.2)                   # the others stay well inside the timeout and keep the crawl going
+        assert answered.wait(10)             # the others keep the crawl going until the late store has answered
+        assert wait_for(lambda: all(f.done() for f in text_index._late_reads))
         return real(path, n)
     monkeypatch.setattr(text_index, "read_text", read)
+    clock.advance_when_held(by=3.0)
     status = crawl(world)
     assert answered.is_set() and status["state"] == "done"
     assert entries(world)["liver.zarr"]["error"] is None and entries(world)["liver.zarr"]["about"]["title"] == "Liver atlas"
@@ -302,22 +356,28 @@ def test_a_late_store_that_answers_before_the_crawl_ends_is_indexed(world, monke
 
 def test_a_late_store_does_not_take_a_reading_thread_away(world, monkeypatch):
     world.config.update(text_index_store_timeout_s=1.0, text_index_workers=2)
+    clock = StoreClock(monkeypatch, doomed="liver.zarr")
     release = threading.Event()
+    two = threading.Event()
     real = text_index.read_text
     lock, active, most = threading.Lock(), [0], [0]
 
     def read(path, n):
         if path.endswith("liver.zarr"):
+            clock.hold()
             release.wait(10)
             return real(path, n)
         with lock:
             active[0] += 1
             most[0] = max(most[0], active[0])
-        time.sleep(0.6)
+            if active[0] == 2:
+                two.set()
+        two.wait(10)                             # each stays until a second one is in with it
         with lock:
             active[0] -= 1
         return real(path, n)
     monkeypatch.setattr(text_index, "read_text", read)
+    clock.advance_when_held(by=2.0)
     try:
         status = crawl(world)
     finally:
@@ -414,14 +474,21 @@ def test_the_size_cap_is_a_flag_never_an_error(world):
 
 def test_a_crawl_cut_by_its_time_is_kept_and_the_next_one_continues_from_it(world, monkeypatch):
     reads = []
+    reading = [0]
     real = text_index.read_text
-    clock = {"slow": True}
+    state = {"slow": True}
+    clock = StoreClock(monkeypatch)
+    monkeypatch.setattr(text_index, "_late_reads", set())
 
     def read(path, n):
+        reading[0] += 1
         reads.append(os.path.basename(path))
-        if clock["slow"]:
-            time.sleep(0.4)
-        return real(path, n)
+        if state["slow"]:
+            clock.tick(0.4)                  # every read takes 0.4 s of the crawl's time, however busy the machine is
+        try:
+            return real(path, n)
+        finally:
+            reading[0] -= 1
     monkeypatch.setattr(text_index, "read_text", read)
     world.config.update(text_index_workers=1)
     monkeypatch.setattr(text_index, "CRAWL_SECONDS", 1.0)
@@ -431,7 +498,8 @@ def test_a_crawl_cut_by_its_time_is_kept_and_the_next_one_continues_from_it(worl
     assert 0 < done < 5
     loaded = text_index.load(world.config)
     assert loaded.partial is True and text_index.describe(world.config)["stale"] is True      # a search continues it
-    clock["slow"] = False
+    state["slow"] = False
+    assert wait_for(lambda: reading[0] == 0 and all(f.done() for f in text_index._late_reads))   # the cut crawl's last read has ended
     reads.clear()
     second = crawl(world)
     assert second["state"] == "done" and second["reused"] == done and len(reads) == 5 - done
@@ -525,7 +593,7 @@ def test_the_index_file_is_gzipped_json_and_leaves_no_temporary_file(world):
     with gzip.open(directory / "index.json.gz", "rt", encoding="utf-8") as fh:
         lines = [json.loads(line) for line in fh]
     header, records = lines[0], lines[1:]
-    assert header["version"] == 3 and header["complete"] is True and header["count"] == len(records) == 5
+    assert header["version"] == text_index.INDEX_VERSION == 4 and header["complete"] is True and header["count"] == len(records) == 5
     assert any(r["readme"] for r in records) and all(r.get("real", r["path"]) == r["path"] for r in records)
     assert sorted(p.name for p in directory.iterdir() if p.name.endswith(".tmp")) == []
     from annzarro.utils import paths
@@ -882,11 +950,20 @@ def test_a_store_with_nothing_to_index_costs_only_its_signature_and_so_does_a_re
     second = {name: calls.of(path) for name, path in stores.items()}
     assert status["read"] == 0 and status["reused"] == 5
     print(f"filesystem calls per store, first crawl: {first}; re-check of unchanged stores: {second}")
-    # a store with no README and no attribution: stat calls only, nothing listed or opened
-    assert first["plain.zarr"]["list"] == 0 and first["plain.zarr"]["open"] == 0
+    # a store with no README and no attribution: its text is not read, but since 0.8.0 (SCH-5) its field names
+    # are: that costs exactly 8 stats and 4 opens of metadata files, and lists nothing (measured); the re-check
+    # below still costs the signature's 22 stats and opens nothing
+    # (zarr 2 reads the names through its own hierarchy, which lists and opens more: measured 124 stats, 7 listings
+    # and 23 opens, so each major has its own pin)
+    from annzarro.tests.zarr_compat import ZARR_V3
+    names_cost = {"stat": 8, "list": 0, "open": 4} if ZARR_V3 else {"stat": 124, "list": 7, "open": 23}
+    assert first["plain.zarr"]["list"] == names_cost["list"] and first["plain.zarr"]["open"] == names_cost["open"]
     # re-checking an unchanged store costs the same signature stats whether it has text or not, and opens nothing
     assert second["plain.zarr"] == second["liver.zarr"]
     assert second["liver.zarr"]["list"] == 0 and second["liver.zarr"]["open"] == 0
     # reading a store with a README does cost more: it is opened
     assert first["liver.zarr"]["total"] > first["plain.zarr"]["total"] and first["liver.zarr"]["open"] > 0
-    assert first["plain.zarr"]["total"] == second["plain.zarr"]["total"]
+    # the re-check costs what it cost before names (22 signature stats), the first crawl that plus the names read
+    assert second["plain.zarr"]["total"] == 22
+    assert first["plain.zarr"]["total"] == 22 + sum(names_cost.values())
+    assert first["plain.zarr"]["stat"] == 22 + names_cost["stat"]

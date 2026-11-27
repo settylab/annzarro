@@ -1,0 +1,160 @@
+/* Cell Count Plot panel (panels/cell-count.js): its styles only (the shared ones are in styles.css).
+   Top to bottom (UX 4.1): the control bar, the plot with its state over it, the strip. Colours are the theme's tokens
+   (theme.css), so light and dark follow. Narrow (UX 4.7): the rows stack, and the arrangement wraps under Color by. */
+
+.tile-content > .ccnt-panel { flex: 1 1 auto; min-height: 0; }
+.ccnt-panel {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    height: 100%;
+    min-height: 0;
+    font-size: 0.8125rem;
+    container: ccnt / inline-size;
+}
+
+/* the control bar */
+.ccnt-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--az-border);
+    background-color: var(--az-surface-2);
+    max-height: 55%;
+    overflow: auto;
+    flex: 0 0 auto;
+}
+.ccnt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0; }
+.ccnt-row[hidden], .ccnt-input[hidden] { display: none; }
+.ccnt-row > .ctl-label, .ccnt-row > .axis-selector-label { flex: 0 0 4.75rem; margin: 0; color: var(--az-text); font-weight: 600; }
+.ccnt-row > .ccnt-measure-lead { flex: 0 0 4.75rem; display: flex; align-items: center; gap: 4px; }
+.ccnt-measure-lead > .ctl-label, .ccnt-measure-lead > .axis-selector-label { margin: 0; color: var(--az-text); font-weight: 600; }
+.ccnt-row .axis-selector { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+.ccnt-row .form-select, .ccnt-row .form-control { width: auto; max-width: 13rem; }
+.ccnt-row .form-select:disabled { opacity: 0.6; }
+.ccnt-row__extra { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.ccnt-bins, .ccnt-choose { padding: 0 2px; font-size: 0.75rem; text-decoration: none; }
+.ccnt-help { color: var(--az-muted); font-size: 0.75rem; }
+
+
+.ccnt-fade-wrap, .ccnt-opt { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+
+/* Color by's arrangement: a radio group that reads as buttons */
+.ccnt-arrangement { display: inline-flex; flex-wrap: wrap; gap: 2px; margin-left: 4px; }
+.ccnt-arrangement[hidden] { display: none; }
+.ccnt-arrangement__opt {
+    display: inline-flex; align-items: center; margin: 0; padding: 1px 8px; border: 1px solid var(--az-border-strong);
+    border-radius: 3px; background: var(--az-surface); color: var(--az-text); cursor: pointer; font-size: 0.75rem;
+}
+.ccnt-arrangement__input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.ccnt-arrangement__opt:has(.ccnt-arrangement__input:checked) { background: var(--az-surface-3); border-color: var(--az-link); font-weight: 600; }
+.ccnt-arrangement__opt:has(.ccnt-arrangement__input:focus-visible) { outline: 2px solid var(--az-link); outline-offset: 1px; }
+/* an arrangement that does not apply (side by side of a histogram's bins): greyed, its title says why */
+.ccnt-arrangement__opt:has(.ccnt-arrangement__input:disabled) { opacity: 0.5; cursor: not-allowed; }
+/* a switch of view by the X axis type, said once beside the Mode select */
+.ccnt-view-note { margin-left: 6px; }
+.ccnt-view-note[hidden] { display: none; }
+
+/* an input's binning control and its level list live in pop-overs (ui/popover.js, WP-6a): they never change the panel's size */
+.ccnt-binning, .ccnt-levels { margin: 0; }
+.ccnt-levels__list { list-style: none; margin: 0; padding: 0; max-height: 12rem; overflow: auto; }
+.ccnt-level { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+.ccnt-level__tick { display: inline-flex; align-items: center; gap: 4px; margin: 0; flex: 1 1 auto; min-width: 0; }
+.ccnt-level__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ccnt-level__n { margin-left: auto; color: var(--az-muted); font-variant-numeric: tabular-nums; }
+
+.ccnt-row--labels .btn.active { background: var(--az-surface-3); border-color: var(--az-link); color: var(--az-text); }
+.ccnt-row[hidden] { display: none; }
+.ccnt-opt[hidden] { display: none; }
+.ccnt-density-notes { flex: 1 1 100%; margin-left: 4.75rem; }
+.ccnt-density-notes[hidden] { display: none; }
+.ccnt-kept { color: var(--az-muted); font-size: 0.75rem; }
+.ccnt-kept[hidden] { display: none; }
+.ccnt-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.ccnt-toolbar > .btn[hidden] { display: none; }
+.ccnt-toolbar__gap { flex: 1 1 auto; }
+
+/* the Color pop-over's lines (its surface is the shared one, popover.css) */
+.ccnt-sets[hidden] { display: none; }
+
+/* The set list of a Venn and an UpSet: one compact line per set, as the Cell Grouping panel lists its groups. Every row is
+   the same height (a rename changes none), and the name takes what the fixed columns leave, cut with an ellipsis. */
+.ccnt-sets__list { list-style: none; margin: 0; padding: 0; }
+.ccnt-set { padding: 1px 0; border-radius: 3px; }
+.ccnt-set__line { display: grid; grid-template-columns: 1.4rem 1.5rem minmax(0, 1fr) 4.4rem 2.9rem 1.35rem; align-items: center; gap: 4px; height: 28px; }
+.ccnt-set--draft .ccnt-set__line { grid-template-columns: 1.4rem 1.5rem minmax(0, 1fr) 1.35rem; }
+.ccnt-set--editing { background: var(--az-accent-bg); box-shadow: inset 3px 0 0 var(--az-link); }
+.ccnt-set--editing .ccnt-set__line { grid-template-columns: 1.4rem 1.5rem minmax(0, 1fr) 1.35rem; padding-left: 4px; }
+.ccnt-set--editing .ccnt-set__count, .ccnt-set--editing .ccnt-set__share { display: none; }
+.ccnt-set--editing .ccnt-set__remove { grid-column: 4; }
+.ccnt-set__swatch { width: 1.25rem; height: 1rem; padding: 0; border: 1px solid var(--az-border-strong); border-radius: 2px; background: none; cursor: pointer; }
+.ccnt-set__swatch-gap { display: block; }
+.ccnt-set__letter {
+    width: 1.5rem; height: 1.3rem; padding: 0; font-weight: 600; font-size: 0.75rem; line-height: 1; color: var(--az-text);
+    background: var(--az-surface-3); border: 1px solid var(--az-border-strong); border-radius: 4px; cursor: pointer;
+}
+.ccnt-set__letter:hover, .ccnt-set__letter.az-popover-anchor-open { border-color: var(--az-link); }
+.ccnt-set__namecell { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.ccnt-set__namecell > .ccnt-set__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ccnt-set__namecell > input.ccnt-set__name { height: 22px; padding: 0 0.3rem; font-size: 0.8rem; border-color: var(--az-link); }
+.ccnt-set__count, .ccnt-set__share { text-align: right; font-variant-numeric: tabular-nums; font-size: 0.8rem; white-space: nowrap; }
+.ccnt-set__share { color: var(--az-muted); }
+.ccnt-set__kind { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--az-muted); }
+.ccnt-set__btn {
+    flex: 0 0 auto; width: 1.3rem; height: 1.3rem; padding: 0; line-height: 1; font-size: 0.8rem; color: var(--az-muted);
+    background: none; border: 1px solid transparent; border-radius: 3px; cursor: pointer;
+}
+.ccnt-set__btn:hover, .ccnt-set__btn:focus-visible { color: var(--az-text); border-color: var(--az-border-strong); }
+.ccnt-set__remove:hover { color: var(--az-danger-text); }
+.ccnt-set__sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 0 0 1px 3.1rem; font-size: 0.75rem; color: var(--az-muted); }
+.ccnt-set__sub[hidden] { display: none; }
+.ccnt-set__tag:empty, .ccnt-set__novalue:empty { display: none; }
+.ccnt-set__action { padding: 0 6px; line-height: 1.4; font-size: 0.75rem; }
+.ccnt-set__note { margin: 0 0 2px 3.1rem; font-size: 0.75rem; }
+.ccnt-set__note[hidden] { display: none; }
+.ccnt-set__note p { margin: 0 0 2px; }
+.ccnt-set__problem[hidden] { display: none; }
+.ccnt-set__pop .ccnt-set__editor { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin: 0; }
+.ccnt-set__pop .ccnt-set__levels { max-height: 14rem; overflow-y: auto; }
+
+/* the plot, and what it says when there is nothing to draw (never resizes the plot) */
+/* The plot, then the coverage banner under it (the status strip panel-surface.js inserts after the plot, as in the Cell and
+   Gene Plots); the state box covers both while there is nothing to draw. */
+.ccnt-plot-area { position: relative; flex: 1 1 auto; min-height: 160px; display: flex; flex-direction: column; }
+.ccnt-plot { position: relative; flex: 1 1 auto; min-height: 0; }
+.ccnt-state-box {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 12px; text-align: center; color: var(--az-text); background: var(--az-surface); z-index: 2;
+}
+.ccnt-state-box[hidden], .ccnt-state[hidden] { display: none; }
+.ccnt-state__text { margin: 0; max-width: 32rem; }
+.ccnt-state[data-state="failed"] .ccnt-state__text,
+.ccnt-state[data-state="refused"] .ccnt-state__text,
+.ccnt-state[data-state="cycle"] .ccnt-state__text { color: var(--az-danger-text); }
+.ccnt-state[data-state="empty"] .ccnt-state__text, .ccnt-state[data-state="unavailable"] .ccnt-state__text { color: var(--az-muted); }
+.ccnt-state__actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+/* what the plot is doing, in the top-left corner of the plot: clear of the modebar (top right), the legend and the centred
+   placeholder's spinner; muted on the plot's own background; gone when the plot is ready */
+.ccnt-working {
+    position: absolute; top: 6px; left: 8px; z-index: 3; max-width: calc(100% - 240px); padding: 1px 6px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; color: var(--az-muted); background: var(--az-surface-2);
+    border: 1px solid var(--az-border); border-radius: 3px; font-size: 0.75rem; pointer-events: none;
+}
+.ccnt-working[hidden] { display: none; }
+
+/* Save as grouping (CNT-7): a dialog over the plot area, which stays as it is */
+.ccnt-save {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 3; width: min(30rem, calc(100% - 16px));
+    padding: 10px 12px; color: var(--az-text); background: var(--az-surface); border: 1px solid var(--az-border); border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+.ccnt-save__title { font-weight: 600; margin-bottom: 4px; }
+.ccnt-save__line { margin: 0 0 4px; }
+.ccnt-save__do { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+/* narrow: the label goes above its selects (UX 4.7) */
+@container ccnt (max-width: 420px) {
+    .ccnt-row > .ctl-label, .ccnt-row > .axis-selector-label, .ccnt-row > .ccnt-measure-lead { flex-basis: 100%; }
+    .ccnt-density-notes { margin-left: 0; }
+    .ccnt-arrangement { margin-left: 0; }
+}

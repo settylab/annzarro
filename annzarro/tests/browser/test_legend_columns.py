@@ -366,7 +366,13 @@ def test_markers_alignment_puts_the_title_on_the_markers(page, server):
 @pytest.mark.parametrize("position", ["right", "top"])
 @pytest.mark.parametrize("columns", [None, 2, 3])
 def test_centre_alignment_centres_the_title_across_all_columns(page, server, columns, position):
+    # a legend that fits beside the plot: one taller than the plot area gets a scrollbar inside its box, which moves its
+    # centre by the bar's width. The plot is 44 px shorter since the toolbar row of WP-5b, so the window is 100 px taller.
+    size = page.viewport_size
+    page.set_viewport_size({"width": size["width"], "height": size["height"] + 100})
     _open(page, server, columns, legendTitleAlign="centre", legendPosition=position)
+    assert page.evaluate("(sel) => { const L = document.querySelector(sel)._fullLayout; return L.legend._height <= L._size.h; }", TILE), \
+        "the legend fits beside the plot"
     r = page.evaluate(ALIGN, TILE)
     assert r["annotated"] == (columns is not None), r
     if columns:
@@ -406,11 +412,11 @@ def test_the_menu_sets_and_resets_the_alignment(page, server):
     _open(page, server, 2)
     page.click("#aesthetics-menu-btn-cell-plot-M")
     page.click("details[data-panel='cell-plot-M'][data-section='legend'] summary")
-    assert page.is_disabled("#reset-legend-title-align-cell-plot-M")
+    assert page.input_value("#legend-title-align-cell-plot-M") == ""            # Auto
     page.select_option("#legend-title-align-cell-plot-M", "centre")
     page.wait_for_function("(sel) => [...document.querySelector(sel).querySelectorAll('g.infolayer g.annotation text')].some(t => t.textContent.trim() === 'lineage')", arg=TILE, timeout=15000)
-    assert not page.is_disabled("#reset-legend-title-align-cell-plot-M")
-    page.click("#reset-legend-title-align-cell-plot-M")
+    page.select_option("#legend-title-align-cell-plot-M", "")                   # back to Auto: the choice that writes absent
+    assert page.evaluate("() => window.PanelManager.saveLayout().panelConfigs['cell-plot-M'].legendTitleAlign ?? null") is None
     page.wait_for_function("(sel) => ![...document.querySelector(sel).querySelectorAll('g.infolayer g.annotation text')].some(t => t.textContent.trim() === 'lineage')", arg=TILE, timeout=15000)
     page.wait_for_timeout(500)
     r = page.evaluate(ALIGN, TILE)

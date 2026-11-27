@@ -1,0 +1,1077 @@
+/**
+ * The controls of the Cell Count Plot (UX 4.1, 4.2, 4.4, 4.5; CNT-1 to CNT-4, CNT-6, CNT-17, CNT-21): the DOM side.
+ *
+ * Top to bottom: Mode; X (Slices for a pie); Y; Color by with its arrangement; Height or Color, with the source of a
+ * statistic or the factor of the most frequent level under it; Labels, Sort by height, Reverse, Horizontal, Log axis and
+ * Ring; the density row (Smoothing, Scale by level size, Image); and the toolbar: Save as grouping, Color, Undo and
+ * Plot Options (the shared pop-over, WP-5a, with Download CSV in its Export). A row the mode does not read is hidden, and what it holds stays stored: one muted line lists it ("Kept for
+ * other modes"). A numeric input carries the compact binning line, which opens the shared binning control in a pop-over;
+ * a categorical one offers Choose levels in a pop-over; Color opens the colour map, its range and the level palette in
+ * one. A pop-over never changes the size or flow of the panel (ui/popover.js, WP-6a). What each choice writes is controls-model.js's; panels/cell-count.js commits
+ * every change as one undoable step. Interface words come from utils/vocabulary.js.
+ *
+ * The x, y, Color by, statistic and factor selects are the cell plot's (CNT-2): the same markup, filled by
+ * plot-utilities `setupAxisSelector`, with the same focus following and lock for `layer` and `obsp` (CNT-17), and the
+ * providers a cell plot lists (a gene score, a grouping).
+ */
+import { VOCABULARY } from '../../utils/vocabulary.js';
+import { sourceName } from '../../utils/cell-grouping.js';
+import { arrangementShown, binsRange, binSpacingOf, splitUsed, measureThreshold } from '../../utils/count-plot-model.js';
+import { createAggregationButton } from '../../ui/aggregation-button.js';
+import { levelRows, tickLevel, tickAll, tickNone, setRest, BINNING_SLOT } from '../cell-grouping/factors.js';
+import { getSource } from '../../utils/source-registry.js';
+import { isAggregate, displayType, clearSetting, applyAfter, decodeSet, encodeSet, startSet, startItem } from '../../utils/axis-aggregate.js';
+import { createPopover } from '../../ui/popover.js';
+import { createPlotToolbar } from '../../ui/plot-toolbar.js';
+import { Config } from '../../config.js';
+import { scaleOptionLabel } from '../../utils/color-scales.js';
+import { listAvailableColormaps } from '../plot-utilities/colors.js';
+import { DEFAULT_COLORSCALE } from './colour.js';
+import { createRangeBoxes, drawnRange } from '../../ui/range-boxes.js';
+import {
+    popoverUse, sliceColourUse, parseColourLimit, rowsOf, modeRefusal, arrangementChoices, inputText, measureSourceName, keptLine, binningLine, forControl, fromControl, valueChoices, valueChoiceOf, applyValueChoice,
+    setMode, shownConfig, inputFromSource, sourceFromSetting, settingOf, drawOptions, labelChoices, VENN_LABEL_KINDS, parseAdjust,
+    SAME_HEIGHT, heightChoices, heightChoiceOf, applyHeightChoice, measureStatChoices, applyMeasureStat, usesThreshold
+} from './controls-model.js';
+
+const C = VOCABULARY.countPlot;
+const V3 = C.view3d;
+const P = VOCABULARY.phrase;
+const CL = C.colour;
+const CL_SLICES = C.slices;
+const COLOR_MAPS = Object.freeze((Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || [DEFAULT_COLORSCALE]);
+
+// ================================================================================================ the view
+
+
+/** The input rows of the bar: `field` in the config, the select's axis name and the roles its type menu lists. */
+const INPUT_ROWS = Object.freeze([
+    { field: 'x', axis: 'count-x', roles: ['x'] },
+    { field: 'y', axis: 'count-y', roles: ['x'] },
+    { field: 'split', axis: 'split', roles: ['color'] }
+]);
+
+/**
+ * The control bar of a count plot.
+ * @param {Object} opts
+ * @param {Object} opts.D - the DOM builder (gene-set-utilities/dom.js)
+ * @param {string} opts.id - the panel id
+ * @param {() => Object} opts.model - what to draw: {config, structure, titleOf, focusedGene, focusedCell, infos: {x?, y?,
+ *   split?} (each input's axis of the reply shown, with `counts`), levelsOf(field) (an input's levels when no reply
+ *   shows them: a refused plan's, asked for alone; null meanwhile), levelsSaid(field) (why they did not come, with its way
+ *   out, or null), undo: ?string (the label of the step), drawable(mode)}
+ * @param {Object} opts.on - what the user did: commit(config, label), silent(config) (focus following, no step),
+ *   undo(), csv(), setupAxis(rowEl, axis, setting, roles) (fills a row's selects), wayOut(action) (a way out's button, states.js)
+ * @returns {{element: HTMLElement, paint: Function, destroy: Function}}
+ */
+export function createControls({ D, id, model, on }) {
+    const { el } = D;
+    const histories = new Map();          // a row's remembered sources by type, as a cell plot keeps them
+    const rows = new Map();               // field -> row
+    const editors = new Map();            // `${field}` -> {row, kind, btn, pop, body, ctl, mounts}: the levels or binning pop-over of an input
+
+    const option = (value, text, extra = {}) => {
+        const o = el('option', { value, text });
+        if (extra.disabled) { o.disabled = true; o.title = extra.title || ''; }
+        return o;
+    };
+
+    // ---------------------------------------------------------------- Mode
+    const modeSelect = el('select', { class: 'form-select form-select-sm ccnt-mode', id: `ccnt-mode-${id}`,
+        on: { change: () => commit({ ...setMode(model().config, modeSelect.value) }, `mode ${C.modes[modeSelect.value]}`) } });
+    const modeRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--mode' },
+        el('label', { class: 'ctl-label', for: `ccnt-mode-${id}`, text: C.rows.mode }), modeSelect);
+
+    function fillModes() {
+        D.clear(modeSelect);
+        const m = model();
+        for (const g of C.modeGroups) {
+            const og = el('optgroup', { label: g.label });
+            for (const mode of g.modes) {
+                const drawable = m.drawable(mode);
+                og.appendChild(option(mode, C.modes[mode], { disabled: !drawable, title: drawable ? '' : C.notDrawn(C.modes[mode]) }));
+            }
+            modeSelect.appendChild(og);
+        }
+        modeSelect.value = m.config.mode;
+    }
+
+    /** The Mode select graded by the X now: a view that cannot draw it (Histogram of categories) disabled with why. */
+    function gradeModes(m) {
+        for (const o of modeSelect.options) {
+            const drawable = m.drawable(o.value);
+            const why = drawable ? modeRefusal(m.config, o.value, m.isNumeric) : C.notDrawn(C.modes[o.value]);
+            o.disabled = !!why && o.value !== m.config.mode;
+            o.title = why;
+        }
+    }
+    // a switch of view by the X axis type, said once under the Mode select (viewForX, histogramFallback)
+    const viewNote = el('div', { class: 'ccnt-help ccnt-view-note', role: 'status', hidden: true });
+    modeRow.appendChild(viewNote);
+
+    // ---------------------------------------------------------------- an input row (the cell plot's selects)
+    function selectsRow(field, axis, label) {
+        const typeId = `${axis}-type-select-ccnt-${id}`;
+        const labelEl = el('label', { class: 'axis-selector-label ctl-label', for: typeId, text: label });
+        const type = el('select', { class: 'form-select form-select-sm axis-type-select', data: { axis }, id: typeId });
+        const key = el('select', { class: 'form-select form-select-sm axis-key-select', data: { axis }, disabled: true, aria: { label: `${label} key` } });
+        const column = el('select', { class: 'form-select form-select-sm axis-column-select', data: { axis }, disabled: true, aria: { label: `${label} column` } });
+        const selector = el('div', { class: 'axis-selector' }, type, key, column);
+        const extra = el('span', { class: 'ccnt-row__extra' });
+        const element = el('div', { class: 'axis-selector-container ctl-row ccnt-row', data: { row: field } }, labelEl, selector, extra);
+        return { field, axis, element, labelEl, type, key, column, selector, extra, setting: null, sig: null };
+    }
+
+    function inputRow(spec) {
+        const row = selectsRow(spec.field, spec.axis, C.rows[spec.field]);
+        row.roles = spec.roles;
+        row.wrap = el('div', { class: 'ccnt-input', data: { input: spec.field } }, row.element);
+        wireSelects(row, () => inputOf(row.field), (source) => commitInput(row.field, source));
+        rows.set(spec.field, row);
+        return row;
+    }
+
+    /** What a row's field holds in the config now. */
+    function inputOf(field) {
+        const c = model().config;
+        if (field === 'measure') return c.measure || null;
+        if (field === 'factor') return c.value && c.value.kind === 'top_level' ? c.value.factor || null : null;
+        return c[field] || null;
+    }
+
+    function commitInput(field, source) {
+        const c = model().config;
+        const next = { ...c };
+        const was = inputOf(field);
+        const p = inputFromSource(was, source);
+        if (field === 'measure') {
+            if (!p) return;
+            next.measure = { ...(c.measure || {}), source: p.source };
+            if (p.locked) next.measure.locked = true;
+            commit(next, `${C.rows.source.toLowerCase()} ${measureSourceName(p.source, model().titleOf)}`);
+            return;
+        }
+        if (field === 'factor') {
+            if (!p) return;
+            next.value = { kind: 'top_level', factor: p };
+            commit(next, `${C.value.topLevel.replace('…', '')} ${sourceName(p.source, model().titleOf)}`);
+            return;
+        }
+        if (p) next[field] = p; else delete next[field];
+        commit(next, p ? `${C.rows[field]} ${inputText(p.source, model().titleOf)}` : `no ${C.rows[field]}`);
+    }
+
+    /**
+     * The three selects of a row, as a cell plot's: a type change keeps what the row last had of the new type, a key
+     * change keeps the row's column. A gene signature, a gene table or a cell grouping is picked in the item list under
+     * layer (utils/axis-aggregate.js), with the aggregation button after it where something is aggregated, and its
+     * "New …" entry makes one beside this panel; leaving it clears its method and layer completely.
+     */
+    function wireSelects(row, stored, apply) {
+        const setup = () => on.setupAxis(row.element, row.axis, row.setting, row.roles, { numeric: !!row.numeric, aggLabel: row.aggLabel || null });
+        const remember = (type, key, column) => {
+            const h = row.setting.history;
+            h[type] = { ...(h[type] || {}), key, columns: { ...((h[type] && h[type].columns) || {}), [key]: column } };
+        };
+        row.type.addEventListener('change', () => {
+            const s = row.setting;
+            const now = row.type.value;
+            if (displayType(s) === now) return;
+            // a set is a way to read a layer: leaving the layer source clears it entirely, so no method or layer outlives it
+            const was = { type: s.type, key: s.key, column: s.column };
+            if (isAggregate(s)) clearSetting(s);
+            remember(was.type, was.key, was.column);
+            s.type = now;
+            s.key = getSource(now) ? ((s.history[now] && s.history[now].key) || '') : s.key;
+            if (now === 'none') { apply(null); return; }
+            setup();
+            // a layer with no item to read yet (no gene is focused): nothing is drawn from it until a gene or a set is picked
+            if (now === 'layer' && row.column.__aggregate && !s.column) return;
+            apply(sourceFromSetting(s));
+        });
+        row.key.addEventListener('change', () => {
+            const s = row.setting;
+            const value = row.key.value;
+            // a set is read on the layer this select lists: another layer is another reading of the same set
+            if (row.column.__aggregate && isAggregate(s)) {
+                applyAfter(s, 'layer', value);
+                setup();
+                apply(sourceFromSetting(s));
+                return;
+            }
+            remember(s.type, s.key, s.column);
+            s.key = value;
+            setup();
+            apply(sourceFromSetting(s));
+        });
+        row.column.addEventListener('change', () => {
+            const s = row.setting;
+            if (row.column.__aggregate) {
+                // the item list of a layer: a set, a single item, or (the button's menu) another aggregation of the set held
+                const touched = row.column.__touched;
+                row.column.__touched = null;
+                const picked = row.column.value;
+                if (touched === 'agg' || isAggregate(s) || decodeSet(picked)) {
+                    const layer = row.key.value;
+                    if (touched === 'agg') applyAfter(s, 'method', row.column.__aggValue);
+                    else if (decodeSet(picked)) {
+                        // the provider's way to make a set ("New signature…" or "New grouping…"): it opens beside this plot and the row takes it
+                        const d = decodeSet(picked);
+                        const maker = getSource(d.type).newEntity;
+                        let value = picked;
+                        if (maker && d.entry === maker.value) {
+                            const made = maker.run(id);
+                            value = made ? encodeSet(d.type, made.getId()) : '';
+                        }
+                        if (!value) { setup(); return; }
+                        startSet(s, value, layer);
+                    } else startItem(s, layer, picked);
+                    setup();
+                    apply(sourceFromSetting(s));
+                    return;
+                }
+            }
+            s.column = row.column.value;
+            apply(sourceFromSetting(s));
+        });
+        // the cell plot's lock and refocus buttons, appended by setupAxisSelector for layer and obsp
+        row.selector.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            const s = row.setting;
+            if (btn.classList.contains('axis-lock-btn')) {
+                const holder = stored();
+                if (!holder) return;
+                lockInput(row.field, !holder.locked);
+            } else if (btn.classList.contains('axis-refocus-btn')) {
+                const m = model();
+                const want = s.type === 'obsp' ? m.focusedCell : m.focusedGene;
+                if (!want) return;
+                s.column = want;
+                apply(sourceFromSetting(s));
+            }
+        });
+        row.sync = () => {
+            const holder = stored();
+            const source = holder ? holder.source : null;
+            const sig = JSON.stringify([source, !!(holder && holder.locked), model().structureVersion]);
+            if (row.sig === sig) return;
+            row.sig = sig;
+            if (!histories.has(row.field)) histories.set(row.field, {});
+            row.setting = settingOf(holder, histories.get(row.field));
+            if (!holder && row.field !== 'split') {
+                // nothing chosen yet: the type menu with a blank first entry, and nothing in the other two
+                row.setting.type = '';
+                D.clear(row.type);
+                row.type.appendChild(option('', '—'));
+                for (const c of on.typeChoices(row.roles)) row.type.appendChild(option(c.value, c.text));
+                row.type.value = '';
+                row.type.disabled = false;
+                for (const select of [row.key, row.column]) { D.clear(select); select.disabled = true; }
+                return;
+            }
+            setup();
+            keepStoredColumn(row, source);
+        };
+    }
+
+    /**
+     * A layer or obsp source restored from a link keeps its gene or cell while there is no focus to follow; with a
+     * focus, an unlocked one follows it (CNT-17) as a cell plot's does, with no step of its own.
+     */
+    function keepStoredColumn(row, source) {
+        const s = row.setting;
+        if (!source || !(source.type === 'layer' || source.type === 'obsp') || !source.column || s.column === source.column) return;
+        const m = model();
+        const focus = source.type === 'layer' ? m.focusedGene : m.focusedCell;
+        if (focus && !s.locked) return;
+        s.column = source.column;
+        D.clear(row.column);
+        row.column.appendChild(option(source.column, source.column));
+        row.column.value = source.column;
+    }
+
+    function lockInput(field, locked) {
+        const c = model().config;
+        const next = { ...c };
+        const flip = (holder) => {
+            const out = { ...holder };
+            if (locked) out.locked = true; else delete out.locked;
+            return out;
+        };
+        if (field === 'measure') next.measure = flip(c.measure);
+        else if (field === 'factor') next.value = { ...c.value, factor: flip(c.value.factor) };
+        else next[field] = flip(c[field]);
+        commit(next, `${locked ? 'lock' : 'unlock'} ${C.rows[field] || field}`);
+    }
+
+    // ---------------------------------------------------------------- binning and levels of an input (pop-overs)
+    /**
+     * The button of an input's levels or binning editor and its pop-over, made once and kept while the input's kind stays:
+     * a repaint draws the same button again, so an open pop-over keeps its anchor.
+     */
+    function editorOf(row, kind, name) {
+        let entry = editors.get(row.field);
+        if (entry && entry.kind !== kind) { destroyEditor(row.field); entry = null; }
+        if (entry) { entry.name = name; return entry; }
+        const btn = el('button', { type: 'button', class: `btn btn-sm btn-link ${kind === 'binning' ? 'ccnt-bins' : 'ccnt-choose'}`, data: { input: row.field } });
+        entry = { row, kind, name, btn, body: null, ctl: null, mounts: [], pop: null };
+        entry.pop = createPopover({
+            anchor: btn, name: kind, wide: true, title: '',
+            render: (body, ctl) => {
+                entry.body = body;
+                entry.ctl = ctl;
+                const title = body.parentElement && body.parentElement.querySelector('.az-popover-title');
+                if (title) title.textContent = `${kind === 'binning' ? 'Bins of' : 'Levels of'} ${entry.name}`;
+                fillEditor(entry);
+                return () => {
+                    for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
+                    entry.body = entry.ctl = null;
+                };
+            }
+        });
+        editors.set(row.field, entry);
+        return entry;
+    }
+
+    function destroyEditor(field) {
+        const entry = editors.get(field);
+        if (!entry) return;
+        entry.pop.destroy();
+        editors.delete(field);
+    }
+
+    /** A titled section of a pop-over body (the standard of popover.css) around `content`. */
+    const sectionOf = (title, content) => el('details', { class: 'az-pop-section', open: true },
+        el('summary', { class: 'az-pop-section__title', text: title }), el('div', { class: 'az-pop-section__body' }, content));
+
+    /** The editor's body drawn from the model now; the focused control stays focused. */
+    function fillEditor(entry) {
+        if (!entry.body) return;
+        const m = model();
+        const { row, body } = entry;
+        const p = m.config[row.field] || null;
+        if (!p) { entry.ctl.close(); return; }
+        const focusables = () => [...body.querySelectorAll('input, button, select')].filter((e) => !e.disabled);
+        const at = focusables().indexOf(document.activeElement);
+        for (const mounted of entry.mounts.splice(0)) if (mounted && mounted.destroy) mounted.destroy();
+        D.clear(body);
+        if (entry.kind === 'binning') {
+            const host = el('div', { class: 'ccnt-binning' });
+            body.appendChild(el('div', { class: 'az-pop-options' }, sectionOf('Bins', host)));
+            if (BINNING_SLOT.mount) {
+                const max = binsRange(m.config.mode, row.field).max;
+                entry.mounts.push(BINNING_SLOT.mount(host, {
+                    partitioning: forControl(p, m.config.mode), info: m.infos[row.field] || null, kind: 'count', max, titleOf: m.titleOf,
+                    commit: (next, label) => {
+                        const c = model().config;
+                        commit({ ...c, [row.field]: fromControl(next, c.mode) }, label);
+                    },
+                    // how the bins are drawn: a 2D histogram and a histogram only; a density is smoothed on a linear grid
+                    ...(['hist2d', 'histogram'].includes(m.config.mode) && ['x', 'y'].includes(row.field) ? { spacing: {
+                        value: binSpacingOf(m.config, row.field),
+                        set: (value) => {
+                            const c = model().config;
+                            commit({ ...c, binSpacing: { ...c.binSpacing, [row.field]: value } }, `${value === 'even' ? 'even' : 'value-placed'} bins of ${C.rows[row.field] || row.field}`);
+                        }
+                    } } : {}),
+                    close: () => entry.pop.close('button')
+                }));
+            }
+        } else {
+            body.appendChild(el('div', { class: 'az-pop-options' }, sectionOf('Levels', el('div', { class: 'ccnt-levels' }, ...levelChooser(row.field, p, m.infos[row.field] || (m.levelsOf ? m.levelsOf(row.field) : null), m)))));
+        }
+        if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
+        entry.ctl.update();
+    }
+
+    function paintInputExtras(row, p, m, shownRows) {
+        const numeric = !!p && m.isNumeric(p.source);
+        const binned = numeric && shownRows.binned.includes(row.field);
+        const kind = !p || (numeric && !binned) ? null : binned ? 'binning' : 'levels';
+        if (!kind) {
+            destroyEditor(row.field);
+            D.clear(row.extra);
+            return;
+        }
+        const entry = editorOf(row, kind, sourceName(p.source, m.titleOf));
+        const text = kind === 'binning' ? binningLine(p, m.config.mode) : C.buttons.chooseLevels;
+        entry.btn.textContent = `${text} ▾`;
+        if (row.extra.firstChild !== entry.btn) row.extra.replaceChildren(entry.btn);
+        if (entry.pop.isOpen()) fillEditor(entry);
+        flushReveal();
+    }
+
+    /**
+     * A way out asked for an editor (reveal): open it once its button exists in the kind asked. The opening waits a
+     * turn, so the click that asked is not read as a press outside the pop-over it opens.
+     */
+    let wanted = null;
+    function flushReveal() {
+        if (!wanted) return;
+        const entry = editors.get(wanted.field);
+        if (!entry || entry.kind !== wanted.what) return;
+        wanted = null;
+        setTimeout(() => { if (entry.btn.isConnected && !entry.pop.isOpen()) entry.pop.open(); }, 0);
+    }
+
+    /**
+     * "Split by another column": the input's own select is focused and opened, and each column that is over the cap the
+     * refusal named is greyed with its count ("sample: 46 levels, at most 8"). Choosing one is the input's ordinary change.
+     */
+    function pickAnother(field) {
+        const row = rows.get(field);
+        const m = model();
+        if (!row) return;
+        const cap = m.levelCap ? m.levelCap(field) : null;
+        // a row on a layer picks in its item list (a grouping under Cell groupings); any other row, in its key list or its columns
+        const onList = !!(row.setting && row.column.__aggregate && (row.setting.type === 'layer' || isAggregate(row.setting)));
+        const select = onList ? row.column : (row.setting && row.setting.type === 'obs' ? row.key : row.column);
+        if (cap !== null && m.levelCountOf && row.setting) {
+            for (const opt of select.options) {
+                if (opt.dataset.plain === undefined) opt.dataset.plain = opt.textContent;
+                if (!opt.value) continue;
+                let n = null;
+                if (onList) {
+                    // a grouping's groups are known once it has been read (its provider says); a gene or a signature has none to count
+                    const set = decodeSet(opt.value);
+                    const levelCount = set && getSource(set.type).aggregate.levelCount;
+                    if (levelCount) n = levelCount(set.entry);
+                } else {
+                    const s = { ...row.setting, [select === row.key ? 'key' : 'column']: opt.value };
+                    n = m.levelCountOf(sourceFromSetting(s));
+                }
+                const over = Number.isFinite(n) && n > cap;
+                opt.disabled = over;
+                opt.textContent = over ? C.wayOut.overCap(opt.dataset.plain, n, cap) : opt.dataset.plain;
+            }
+        }
+        setTimeout(() => {
+            if (!select.isConnected) return;
+            select.focus();
+            try { select.showPicker(); } catch { /* a select that cannot open itself is focused */ }
+        }, 0);
+    }
+
+    function levelChooser(field, p, info, m) {
+        // the levels did not come (refused for their number, or failed): why, and the way out when there is one
+        const said = !info && m.levelsSaid ? m.levelsSaid(field) : null;
+        if (said) {
+            return [el('div', { class: 'ccnt-levels__note az-pop-buttons', role: 'status', data: { state: said.state } },
+                el('small', { class: 'ccnt-levels__said az-pop-help', text: said.text }),
+                ...said.actions.map(([action, label]) => el('button', { type: 'button', class: 'btn btn-sm btn-outline-primary', data: { action },
+                    on: { click: () => on.wayOut(action) } }, label)))];
+        }
+        if (!info) return [el('small', { class: 'ccnt-levels__wait az-pop-help', text: `${VOCABULARY.plural.level[0].toUpperCase()}${VOCABULARY.plural.level.slice(1)} follow once the cells are counted.` })];
+        const set = (next, label) => commit({ ...model().config, [field]: next }, label);
+        const rowsOfLevels = levelRows(p, info, m.labelsOf(field));
+        const name = sourceName(p.source, m.titleOf);
+        const list = el('ul', { class: 'ccnt-levels__list', role: 'list', aria: { label: VOCABULARY.plural.level } }, rowsOfLevels.map((r) => {
+            const li = el('li', { class: 'ccnt-level', data: { id: r.id } });
+            const label = el('span', { class: 'ccnt-level__label', text: r.label });
+            const n = el('span', { class: 'ccnt-level__n', text: r.n === null ? '' : Number(r.n).toLocaleString('en-US') });
+            if (r.tickable) {
+                const box = el('input', { type: 'checkbox', checked: r.ticked, aria: { label: r.label } });
+                box.addEventListener('change', () => set(tickLevel(p, info, r.id, box.checked), `${box.checked ? 'tick' : 'untick'} ${r.label}`));
+                li.append(el('label', { class: 'ccnt-level__tick' }, box, label), n);
+            } else {
+                li.append(label, n);
+            }
+            return li;
+        }));
+        const restName = `ccnt-rest-${id}-${field}`;
+        const rest = (value, text) => el('label', { class: 'ccnt-rest-opt az-pop-check' },
+            el('input', { type: 'radio', class: 'ccnt-rest', name: restName, value, checked: (p.rest === 'exclude') === (value === 'exclude'),
+                on: { change: () => set(setRest(p, value), value === 'exclude' ? 'leave unticked levels out' : 'group unticked levels') } }), ` ${text}`);
+        return [
+            list,
+            el('div', { class: 'ccnt-rest-row az-pop-field az-pop-field--block', role: 'radiogroup', aria: { label: 'Unticked levels' } },
+                el('span', { class: 'az-pop-field__label', text: 'Unticked levels' }),
+                el('span', { class: 'az-pop-field__control az-pop-field__control--stack' }, rest('other', `Count as '${P.other(name)}'`), rest('exclude', 'Leave out'))),
+            el('div', { class: 'ccnt-levels__actions az-pop-buttons' },
+                el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', on: { click: () => set(tickAll(p), 'tick all levels') } }, 'Tick all'),
+                el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary', on: { click: () => set(tickNone(p), 'tick no level') } }, 'Tick none'))
+        ];
+    }
+
+    // ---------------------------------------------------------------- Color by's arrangement
+    const arrangement = el('span', { class: 'ccnt-arrangement', role: 'radiogroup', aria: { label: 'Arrangement' } });
+    function paintArrangement(m, shownRows) {
+        D.clear(arrangement);
+        const ids = shownRows.arrangement;
+        // means are never added or shared out of 100%, so a statistic is always drawn side by side: no choice to offer
+        arrangement.hidden = !ids.length || !m.config.split || (m.config.value && m.config.value.kind === 'measure');
+        if (!ids.length) return;
+        // graded like every choice: one that does not apply is disabled with why; the one checked is the one drawn
+        const now = arrangementShown(m.config);
+        const group = `ccnt-arr-${id}`;
+        for (const choice of arrangementChoices(m.config)) {
+            const a = choice.value;
+            const input = el('input', { type: 'radio', name: group, value: a, checked: a === now, disabled: choice.disabled,
+                class: 'ccnt-arrangement__input', on: { change: () => {
+                    const next = { ...model().config };
+                    if (a === 'stack') delete next.arrangement; else next.arrangement = a;
+                    commit(next, `${choice.label.toLowerCase()} bars`);
+                } } });
+            const opt = el('label', { class: 'ccnt-arrangement__opt' }, input, ` ${choice.label}`);
+            if (choice.title) opt.title = choice.title;
+            arrangement.appendChild(opt);
+        }
+    }
+
+    // ---------------------------------------------------------------- Height / Color, with its source or its factor
+    const valueSelect = el('select', { class: 'form-select form-select-sm ccnt-value', id: `ccnt-value-${id}`,
+        on: { change: () => chooseValue(valueSelect.value) } });
+    const valueLabel = el('label', { class: 'ctl-label', for: `ccnt-value-${id}` });
+    const valueHelp = el('span', { class: 'ccnt-help ccnt-value__help' });
+    const valueRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--value' }, valueLabel, valueSelect, valueHelp);
+    const measureRow = selectsRow('measure', 'measure', C.rows.source);
+    measureRow.roles = ['x'];
+    // a number per cell: no grouping under layer; a signature or gene table as the source has its own button (the score method) after it
+    measureRow.numeric = true;
+    measureRow.aggLabel = (setting) => {
+        const source = sourceFromSetting(setting);
+        const title = source ? model().titleOf(source) : '';
+        return title ? C.measureStat.aggregationOver(title) : '';
+    };
+    // the statistic of the measure is the shared aggregation button (the Cell-Gene Plot's): the shared table's names and symbols;
+    // its threshold box is Expressed above, empty while it follows the grouping's (aggregation-unify-080.md 15.2)
+    const CGS = VOCABULARY.cellGene.sources;
+    const thresholdOf = () => { const c = model().config; return measureThreshold(c, { groupingThreshold: model().groupingThreshold }); };
+    const agg = createAggregationButton({
+        label: C.measureStat.label, axis: 'measure',
+        methods: () => { const c = model().config; return c.measure ? measureStatChoices(c.measure.stat) : null; },
+        onPick: (stat) => {
+            const c = model().config;
+            const next = applyMeasureStat(c, stat);
+            if (next) commit(next, `statistic ${measureStatChoices(stat).options.find((o) => o.value === stat).name.toLowerCase()}`);
+        },
+        suffix: () => { const c = model().config; return c.measure && usesThreshold(c.measure.stat) && c.measure.above !== undefined ? `>${c.measure.above}` : ''; },
+        fields: () => {
+            const c = model().config;
+            if (!c.measure || !usesThreshold(c.measure.stat)) return [];
+            const t = thresholdOf();
+            return [{ key: 'above', label: C.rows.above, value: c.measure.above === undefined ? '' : String(c.measure.above),
+                placeholder: t.grouping ? CGS.thresholdAuto(t.grouping.value) : '0',
+                title: t.grouping && !t.own ? CGS.thresholdFollows(t.grouping.key, t.grouping.value) : CGS.thresholdHelp }];
+        },
+        onField: (key, text) => commitAbove(text)
+    });
+    agg.button.classList.add('ccnt-measure-stat');
+    // the statistic (cells to bar) is the first step of the line, before the source it reads; the score method, where the source has one, is after it
+    const lead = el('span', { class: 'ccnt-measure-lead' }, agg.button);
+    measureRow.element.insertBefore(lead, measureRow.labelEl);
+    lead.appendChild(measureRow.labelEl);
+    wireSelects(measureRow, () => inputOf('measure'), (source) => commitInput('measure', source));
+    rows.set('measure', measureRow);
+    const factorRow = selectsRow('factor', 'factor', C.rows.factor);
+    factorRow.roles = ['x'];
+    const fade = el('input', { type: 'checkbox', class: 'ccnt-fade',
+        on: { change: () => { const next = { ...model().config }; if (fade.checked) next.fade = true; else delete next.fade; commit(next, fade.checked ? 'fade by share' : 'no fade'); } } });
+    factorRow.extra.appendChild(el('label', { class: 'ccnt-fade-wrap' }, fade, ` ${C.buttons.fade}`));
+    wireSelects(factorRow, () => inputOf('factor'), (source) => commitInput('factor', source));
+    rows.set('factor', factorRow);
+
+    // the 3D height (UX 6b): its own source, Same as Color first; shown only in 3D
+    const heightSelect = el('select', { class: 'form-select form-select-sm ccnt-height3d', id: `ccnt-height3d-${id}`,
+        on: { change: () => chooseHeight(heightSelect.value) } });
+    const heightHelp = el('span', { class: 'ccnt-help ccnt-height3d__help' });
+    const heightRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--height3d', hidden: true },
+        el('label', { class: 'ctl-label', for: `ccnt-height3d-${id}`, text: V3.heightRow }), heightSelect, heightHelp);
+
+    function chooseHeight(choice) {
+        const m = model();
+        const next = applyHeightChoice(m.config, choice, m.valueDefaults());
+        const entry = heightChoices(m.config).find((c) => c.value === choice);
+        if (!next) { heightSelect.value = heightChoiceOf(m.config); return; }
+        commit(next, `${V3.heightRow} ${entry ? entry.label.replace('…', '') : choice}`);
+    }
+
+    function paintHeight(m) {
+        const shownNow = !!m.view3d && m.view3d.shown;
+        heightRow.hidden = !shownNow;
+        if (!shownNow) return;
+        D.clear(heightSelect);
+        const groups = new Map();
+        for (const c of heightChoices(m.config)) {
+            const o = option(c.value, c.label);
+            o.title = c.help;
+            if (!c.group) { heightSelect.appendChild(o); continue; }
+            if (!groups.has(c.group)) {
+                groups.set(c.group, el('optgroup', { label: C.value.groups[c.group] }));
+                heightSelect.appendChild(groups.get(c.group));
+            }
+            groups.get(c.group).appendChild(o);
+        }
+        const choice = heightChoiceOf(m.config);
+        heightSelect.value = choice;
+        const entry = heightChoices(m.config).find((c) => c.value === choice);
+        heightHelp.textContent = choice === SAME_HEIGHT ? V3.heightHelp : (entry ? entry.help : '');
+        // a statistic as the height reads the measure beside the Color's: its source and threshold are the row above's
+        if (choice.startsWith('stat:') && measureRow.element.hidden && m.config.measure) {
+            measureRow.element.hidden = false;
+            measureRow.sync();
+            dropCategorical(measureRow);
+            agg.update();
+        }
+    }
+
+    function commitAbove(raw) {
+        const c = model().config;
+        if (!c.measure) return;
+        const text = String(raw).trim();
+        const value = text === '' ? undefined : Number(text);
+        if (value !== undefined && !Number.isFinite(value)) { agg.update(); return; }
+        if (value === c.measure.above) return;
+        const measure = { ...c.measure };
+        if (value === undefined) delete measure.above; else measure.above = value;
+        commit({ ...c, measure }, `above ${value === undefined ? 0 : value}`);
+    }
+
+    function chooseValue(choice) {
+        const m = model();
+        const next = applyValueChoice(m.config, choice, m.valueDefaults());
+        const entry = valueChoices(m.config).find((c) => c.value === choice);
+        if (!next) { valueSelect.value = valueChoiceOf(m.config); return; }
+        commit(next, `${rowsOf(m.config.mode).value === 'color' ? C.rows.color : C.rows.height} ${entry ? entry.label.replace('…', '') : choice}`);
+    }
+
+    function paintValue(m, shownRows) {
+        const kind = shownRows.value;
+        valueRow.hidden = !kind;
+        measureRow.element.hidden = true;
+        factorRow.element.hidden = true;
+        if (!kind) return;
+        valueLabel.textContent = kind === 'color' ? C.rows.color : C.rows.height;
+        D.clear(valueSelect);
+        const groups = new Map();
+        for (const c of valueChoices(m.config)) {
+            const o = option(c.value, c.label);
+            o.title = c.help;
+            if (!c.group) { valueSelect.appendChild(o); continue; }
+            if (!groups.has(c.group)) {
+                groups.set(c.group, el('optgroup', { label: C.value.groups[c.group] }));
+                valueSelect.appendChild(groups.get(c.group));
+            }
+            groups.get(c.group).appendChild(o);
+        }
+        const choice = valueChoiceOf(m.config);
+        valueSelect.value = choice;
+        const entry = valueChoices(m.config).find((c) => c.value === choice);
+        valueHelp.textContent = entry ? entry.help : '';
+        if (choice === 'stat') {
+            measureRow.element.hidden = false;
+            measureRow.sync();
+            dropCategorical(measureRow);
+            agg.update();
+        }
+        if (choice === 'top_level') {
+            factorRow.element.hidden = false;
+            factorRow.sync();
+            fade.checked = m.config.fade === true;
+        }
+    }
+
+    /** A statistic needs numbers: a categorical provider (a grouping) is not listed in its type menu. */
+    function dropCategorical(row) {
+        for (const o of [...row.type.options]) {
+            const provider = getSource(o.value);
+            if (provider && provider.valueType === 'categorical' && o.value !== row.setting.type) o.remove();
+        }
+    }
+
+    // ---------------------------------------------------------------- Labels, sort, reverse, horizontal, log axis, ring
+    const labelsSelect = el('select', { class: 'form-select form-select-sm ccnt-labels', id: `ccnt-labels-${id}`,
+        on: { change: () => {
+            const next = { ...model().config };
+            if (next.mode === 'venn') {
+                // a Venn's own field, stored only when it is not the default (count and share)
+                if (labelsSelect.value === 'both') delete next.vennLabels; else next.vennLabels = labelsSelect.value;
+                commit(next, `labels ${C.venn.labels[labelsSelect.value].toLowerCase()}`);
+                return;
+            }
+            if (labelsSelect.value === 'none') delete next.labels; else next.labels = labelsSelect.value;
+            commit(next, `labels ${C.labels[labelsSelect.value].toLowerCase()}`);
+        } } });
+    const pressed = (cls, text, field, value) => {
+        const btn = el('button', { type: 'button', class: `btn btn-sm btn-outline-secondary ${cls}`, aria: { pressed: 'false' },
+            on: { click: () => {
+                const next = { ...model().config };
+                const on2 = btn.getAttribute('aria-pressed') !== 'true';
+                if (on2) next[field] = value; else delete next[field];
+                commit(next, `${on2 ? '' : 'no '}${text.toLowerCase()}`.trim());
+            } } }, text);
+        return btn;
+    };
+    const sortBtn = pressed('ccnt-sort', C.buttons.sort, 'sort', 'height');
+    const reverseBtn = pressed('ccnt-reverse', C.buttons.reverse, 'reverse', true);
+    const horizontalBtn = pressed('ccnt-horizontal', C.buttons.horizontal, 'horizontal', true);
+    const logBox = el('input', { type: 'checkbox', class: 'ccnt-log',
+        on: { change: () => { const next = { ...model().config }; if (logBox.checked) next.log = true; else delete next.log; commit(next, logBox.checked ? 'log count axis' : 'linear count axis'); } } });
+    const ringBox = el('input', { type: 'checkbox', class: 'ccnt-ring',
+        on: { change: () => { const next = { ...model().config }; if (ringBox.checked) next.ring = true; else delete next.ring; commit(next, ringBox.checked ? 'ring' : 'pie'); } } });
+    // a pie's slice names (with Labels' numbers, or alone when Labels is None)
+    const namesBox = el('input', { type: 'checkbox', class: 'ccnt-names',
+        on: { change: () => {
+            const next = { ...model().config };
+            if (next.mode === 'venn') {
+                // the set names are on unless the field says false
+                if (namesBox.checked) delete next.vennNames; else next.vennNames = false;
+                commit(next, namesBox.checked ? 'set names' : 'no set names');
+                return;
+            }
+            if (namesBox.checked) next.names = true; else delete next.names;
+            commit(next, namesBox.checked ? 'slice names' : 'no slice names');
+        } } });
+    const areaBox = el('input', { type: 'checkbox', class: 'ccnt-venn-area',
+        on: { change: () => { const next = { ...model().config }; if (areaBox.checked) next.vennArea = true; else delete next.vennArea; commit(next, areaBox.checked ? 'area reflects counts' : 'equal circles'); } } });
+    const areaWrap = el('label', { class: 'ccnt-opt', title: C.venn.areaTitle }, areaBox, ` ${C.venn.area}`);
+    const namesWrap = el('label', { class: 'ccnt-opt', title: C.slices.namesTitle }, namesBox, ` ${C.slices.names}`);
+    const logWrap = el('label', { class: 'ccnt-opt' }, logBox, ` ${C.buttons.log}`);
+    const ringWrap = el('label', { class: 'ccnt-opt' }, ringBox, ` ${C.buttons.ring}`);
+    const labelsRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--labels' },
+        el('label', { class: 'ctl-label', for: `ccnt-labels-${id}`, text: C.rows.labels }), labelsSelect, sortBtn, reverseBtn, horizontalBtn, logWrap, ringWrap, namesWrap, areaWrap);
+
+    // the density row: Smoothing, Scale by level size, Image, and what the bandwidth and the floor were
+    const adjust = el('input', { type: 'text', class: 'form-control form-control-sm ccnt-adjust', inputmode: 'decimal', placeholder: '1',
+        autocomplete: 'off', id: `ccnt-adjust-${id}`, aria: { label: C.buttons.adjust } });
+    const adjustNote = el('span', { class: 'ccnt-help ccnt-adjust__problem', role: 'alert' });
+    const commitAdjust = () => {
+        const c = model().config;
+        const r = parseAdjust(adjust.value);
+        adjustNote.textContent = r.ok ? '' : r.message;
+        if (!r.ok) { adjust.value = c.adjust === undefined ? '' : String(c.adjust); return; }
+        if (r.value === (c.adjust === undefined ? 1 : c.adjust)) return;
+        const next = { ...c };
+        if (r.value === 1) delete next.adjust; else next.adjust = r.value;
+        commit(next, `bandwidth adjust ${r.value}`);
+    };
+    adjust.addEventListener('change', commitAdjust);
+    adjust.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitAdjust(); } });
+    const toggleField = (cls, field, value, text) => {
+        const box = el('input', { type: 'checkbox', class: cls,
+            on: { change: () => { const next = { ...model().config }; if (box.checked) next[field] = value; else delete next[field]; commit(next, `${box.checked ? '' : 'no '}${text.toLowerCase()}`.trim()); } } });
+        return { box, wrap: el('label', { class: 'ccnt-opt' }, box, ` ${text}`) };
+    };
+    const bySize = toggleField('ccnt-bysize', 'scale', 'size', C.buttons.bySize);
+    // a 2D density's layers: any combination, never none. Cell points counts, so with it on the density layers can all go; the
+    // last one left stays and the status line says why
+    let layerNote = null;
+    const layerBox = (key) => {
+        const box = el('input', { type: 'checkbox', class: `ccnt-layer ccnt-layer--${key}`, data: { layer: key },
+            on: { change: () => {
+                const c = model().config;
+                const now = drawOptions(c).layers;
+                const next = { ...now, [key]: box.checked };
+                if (!next.image && !next.lines && !next.fill && !next.points) {
+                    box.checked = true;
+                    layerNote = { text: C.layers.last, config: c };
+                    paintLabels(model(), rowsOf(c.mode));
+                    return;
+                }
+                const out = { ...c, layers: Object.fromEntries(Object.entries(next).filter(([, on2]) => on2)) };
+                delete out.style;
+                commit(out, `${box.checked ? '' : 'no '}${layerWord(key, !!c.split).toLowerCase()}`.trim());
+            } } });
+        const text = document.createTextNode('');
+        return { key, box, text, wrap: el('label', { class: 'ccnt-opt ccnt-layer-opt' }, box, text) };
+    };
+    // the density image is opacity where each group has its color, and a color scale where there is one group
+    const layerWord = (key, split) => (key === 'image' && !split ? C.layers.imageOne : C.layers[key]);
+    const layerBoxes = ['image', 'lines', 'fill', 'points'].map(layerBox);
+    const densityNotes = el('div', { class: 'ccnt-help ccnt-density-notes' });
+    const densityRow = el('div', { class: 'ctl-row ccnt-row ccnt-row--density' },
+        el('label', { class: 'ctl-label', for: `ccnt-adjust-${id}`, text: C.buttons.adjust }), adjust, adjustNote, bySize.wrap, ...layerBoxes.map((l) => l.wrap), densityNotes);
+
+    function paintLabels(m, shownRows) {
+        const o = drawOptions(m.config);
+        D.clear(labelsSelect);
+        const venn = shownRows.venn;
+        const choices = venn ? VENN_LABEL_KINDS.map((k) => ({ value: k, label: C.venn.labels[k] })) : labelChoices(m.config);
+        for (const c of choices) labelsSelect.appendChild(option(c.value, c.label));
+        labelsSelect.value = venn ? o.venn.labels : o.labels;
+        labelsSelect.hidden = !(shownRows.labels || venn);
+        labelsRow.querySelector('label.ctl-label').hidden = !(shownRows.labels || venn);
+        const show = (btn, visible, isOn) => { btn.hidden = !visible; btn.setAttribute('aria-pressed', String(!!isOn)); btn.classList.toggle('active', !!isOn); };
+        show(sortBtn, shownRows.sort, o.sort === 'height');
+        show(reverseBtn, shownRows.reverse, o.reverse);
+        show(horizontalBtn, shownRows.horizontal, o.horizontal);
+        logWrap.hidden = !shownRows.log;
+        logBox.checked = o.log;
+        ringWrap.hidden = !shownRows.ring;
+        ringBox.checked = o.ring;
+        namesWrap.hidden = !(shownRows.names || venn);
+        namesWrap.title = venn ? C.venn.namesTitle : C.slices.namesTitle;
+        namesBox.checked = venn ? o.venn.names : o.names;
+        areaWrap.hidden = !venn;
+        areaBox.checked = !!venn && o.venn.proportional;
+        // a row with nothing in it is not drawn (a density's modes have no Labels, a pie has no Log axis)
+        labelsRow.hidden = !(shownRows.labels || shownRows.sort || shownRows.reverse || shownRows.horizontal || shownRows.log || shownRows.ring || shownRows.names || shownRows.venn);
+        densityRow.hidden = !shownRows.density;
+        if (document.activeElement !== adjust) adjust.value = m.config.adjust === undefined ? '' : String(m.config.adjust);
+        bySize.wrap.hidden = !(shownRows.density && m.config.split);
+        bySize.box.checked = o.scale === 'size';
+        for (const l of layerBoxes) {
+            l.wrap.hidden = shownRows.density !== 2;
+            l.box.checked = !!(o.layers && o.layers[l.key]);
+            l.text.textContent = ` ${layerWord(l.key, !!m.config.split)}`;
+        }
+        if (layerNote && layerNote.config !== m.config) layerNote = null;
+        densityNotes.textContent = shownRows.density ? (layerNote ? layerNote.text : m.densityNote || '') : '';
+        densityNotes.hidden = !densityNotes.textContent;
+    }
+
+    // ---------------------------------------------------------------- the toolbar: Save as grouping, Color, Undo, Plot Options
+    const saveBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-save-btn', on: { click: () => on.saveAsGrouping() } },
+        C.saveGrouping.button);
+    const colorBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-color-btn' }, `${CL.button} ▾`);
+    // Plot Options: the shared pop-over (WP-5a, plot-utilities/options-popover.js), mounted by the panel on this button;
+    // Download CSV is in its Export section
+    const optionsBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-options-btn' }, C.buttons.options);
+    const undoBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-undo', disabled: true, on: { click: () => on.undo() } }, C.buttons.undo);
+    // 3D (UX 6b, WP-11): a view, one undoable step; disabled with its reason where it has no bars or over the bar cap
+    const view3dBtn = el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary ccnt-3d-btn', aria: { pressed: 'false' }, on: { click: () => {
+        const c = model().config;
+        const was = c.view === '3d';
+        const next = { ...c };
+        if (was) delete next.view; else next.view = '3d';
+        commit(next, was ? 'show in 2D' : 'show in 3D');
+    } } }, V3.button);
+    // the shared plot toolbar (ui/plot-toolbar.js): the same order, styles and places in every plot panel
+    const toolbar = createPlotToolbar({ className: 'ccnt-toolbar', actions: [saveBtn, view3dBtn], menus: [colorBtn], undo: undoBtn, options: optionsBtn }).element;
+
+    // Color: the colour map, Reverse, the range, the level palette. Every edit applies live as one undoable step.
+    const colorPop = createPopover({
+        anchor: colorBtn, name: 'color', title: CL.title,
+        render: (body, ctl) => {
+            colorState.body = body;
+            colorState.ctl = ctl;
+            fillColor();
+            return () => { colorState.body = colorState.ctl = null; };
+        }
+    });
+    const colorState = { body: null, ctl: null };
+
+    const withColor = (change, label) => {
+        const c = model().config;
+        const color = { ...(c.color || {}) };
+        change(color);
+        const next = { ...c };
+        if (Object.keys(color).length) next.color = color; else delete next.color;
+        commit(next, label);
+    };
+
+    function fillColor() {
+        if (!colorState.body) return;
+        const m = model();
+        const use = popoverUse(m.config, m.isNumeric);
+        const c = m.config.color || {};
+        const body = colorState.body;
+        const focusables = () => [...body.querySelectorAll('input, button, select')].filter((e) => !e.disabled);
+        const at = focusables().indexOf(document.activeElement);
+        D.clear(body);
+        const root = el('div', { class: 'az-pop-options ccnt-color-body' });
+        body.append(root);
+        // one titled section per group of controls (the body standard, popover.css); `cur` is the body of the open one
+        let cur = null;
+        const section = (title) => {
+            cur = el('div', { class: 'az-pop-section__body' });
+            root.append(el('details', { class: 'az-pop-section', open: true }, el('summary', { class: 'az-pop-section__title', text: title }), cur));
+        };
+        // a row: its label left, its control right; a lone checkbox label is a check row
+        const line = (label, ...controls) => {
+            if (!controls.length) {
+                label.classList.add('az-pop-check');
+                return el('div', { class: 'az-pop-field az-pop-field--check' }, label);
+            }
+            label.classList.add('az-pop-field__label');
+            return el('div', { class: 'az-pop-field' }, label, el('span', { class: 'az-pop-field__control' }, ...controls));
+        };
+        const idOf = (k) => `ccnt-color-${k}-${id}`;
+        const slices = sliceColourUse(m.config, m.isNumeric);
+        if (slices.offered) {
+            // a pie's slices: a continuous scale for bins of a number (the default), the level palette for categories
+            const group = `ccnt-slices-${id}`;
+            const radio = (value, text, disabled, title) => {
+                const input = el('input', { type: 'radio', name: group, value, class: `ccnt-slices-${value}`, disabled,
+                    checked: value === (use.map ? 'continuous' : 'levels'),
+                    on: { change: () => withColor((o) => { if (value === 'levels') o.slices = 'levels'; else delete o.slices; }, `slice colors ${text.toLowerCase()}`) } });
+                return el('label', { class: 'ccnt-opt az-pop-check', ...(title ? { title } : {}) }, input, ` ${text}`);
+            };
+            const bins = binSpacingOf(m.config, 'x') === 'even';
+            section(CL_SLICES.colours);
+            cur.append(el('div', { class: 'ccnt-slices az-pop-field az-pop-field--check', role: 'radiogroup', aria: { label: CL_SLICES.colours } },
+                el('span', { class: 'az-pop-field__control az-pop-field__control--stack' },
+                    radio('continuous', CL_SLICES.continuous, !slices.continuous, slices.refusal),
+                    radio('levels', CL_SLICES.levels, false, '')),
+                el('small', { class: 'ccnt-slices__note az-pop-help', text: slices.refusal || (use.map ? (bins ? CL_SLICES.byOrder : CL_SLICES.byCentre) : '') })));
+        }
+        if (use.map) {
+            const map = el('select', { class: 'form-select form-select-sm ccnt-color-map', id: idOf('map'),
+                on: { change: () => withColor((o) => { if (map.value === DEFAULT_COLORSCALE) delete o.map; else o.map = map.value; }, `color map ${map.value}`) } });
+            for (const scale of COLOR_MAPS) map.appendChild(option(scale, scaleOptionLabel(scale)));
+            map.value = COLOR_MAPS.includes(c.map) ? c.map : DEFAULT_COLORSCALE;
+            const reverse = el('input', { type: 'checkbox', class: 'ccnt-color-reverse', checked: c.reverse === true,
+                on: { change: () => withColor((o) => { if (reverse.checked) o.reverse = true; else delete o.reverse; }, reverse.checked ? 'reverse color map' : 'color map as is') } });
+            section('Color map');
+            cur.append(line(el('label', { for: idOf('map'), text: CL.map }), map),
+                line(el('label', { class: 'ccnt-opt' }, reverse, ` ${CL.reverse}`)));
+        }
+        if (use.map || use.range) {
+            section(use.map ? 'Color range' : CL.densityRange);
+            const problem = el('small', { class: 'ccnt-color__problem az-pop-error', role: 'alert' });
+            // Min, Max and Center: boxes saying "auto" with the drawn value, and ↺ back to auto (ui/range-boxes.js). With a map
+            // they are the colour scale's; for a density they are the density's, mapping its opacity and isoline levels alike
+            const setLimit = (key, text, value) => withColor((o) => { if (value === null) delete o[key]; else o[key] = value; },
+                `${use.map ? 'color' : 'density'} ${text.toLowerCase()} ${value === null ? 'auto' : value}`);
+            const ENDS = [{ label: CL.min, key: 'min', className: 'ccnt-color-min' }, { label: CL.max, key: 'max', className: 'ccnt-color-max' }];
+            if (use.map) ENDS.push({ label: CL.center, key: 'center', className: 'ccnt-color-center', hint: false });
+            const range = createRangeBoxes({ el, what: use.map ? CL.button : CL.densityRange, group: 'colorRange', inputType: 'text', onProblem: (msg) => { problem.textContent = msg; },
+                parse: parseColourLimit,
+                ends: ENDS.map((e) => ({ label: e.label, option: e.key, className: e.className, id: idOf(e.key), ...(e.hint === false ? { hint: false } : {}) })),
+                onCommit: (k, v) => setLimit(ENDS[k].key, ENDS[k].label, v),
+                onReset: () => withColor((o) => { delete o.min; delete o.max; delete o.center; }, `${use.map ? 'color' : 'density'} range to auto`) });
+            range.set({ limits: ENDS.map((e) => c[e.key]), drawn: drawnRange(m.colourData) });
+            cur.append(range.element, problem);
+            if (use.map && Number.isFinite(c.center) && Number.isFinite(c.min) && Number.isFinite(c.max)) cur.append(el('small', { class: 'az-pop-help', text: CL.centerNote }));
+        }
+        if (use.palette) {
+            const palette = el('select', { class: 'form-select form-select-sm ccnt-color-palette', id: idOf('palette'),
+                on: { change: () => withColor((o) => { if (palette.value) o.palette = palette.value; else delete o.palette; }, `level palette ${palette.value || 'default'}`) } });
+            palette.appendChild(option('', CL.paletteDefault));
+            for (const name of listAvailableColormaps()['Discrete Palettes']) palette.appendChild(option(name, name));
+            palette.value = c.palette || '';
+            if (palette.value !== (c.palette || '')) palette.value = '';
+            section(CL.palette);
+            cur.append(line(el('label', { for: idOf('palette'), text: CL.palette }), palette));
+        }
+        if (use.points) {
+            // the Cell points layer: its size and opacity live here, so no control outside a pop-over moves the panel
+            const o = drawOptions(m.config);
+            section(CL.points);
+            const stored = (key, value, dflt, label, make) => {
+                const next = { ...model().config };
+                if (value === undefined || value === dflt) delete next[key]; else next[key] = value;
+                if (JSON.stringify(next) !== JSON.stringify(model().config)) commit(next, make(value === undefined ? dflt : value));
+            };
+            const size = el('input', { type: 'number', class: 'form-control form-control-sm az-pop-num ccnt-point-size', id: idOf('size'), min: '1', max: '12', step: '1',
+                placeholder: '3', autocomplete: 'off', value: m.config.pointSize === undefined ? '' : String(m.config.pointSize) });
+            size.addEventListener('change', () => {
+                const v = Number(size.value);
+                stored('pointSize', size.value === '' || !Number.isFinite(v) ? undefined : Math.min(12, Math.max(1, Math.round(v))), 3, CL.pointSize, (x) => `point size ${x}`);
+            });
+            const opacity = el('input', { type: 'number', class: 'form-control form-control-sm az-pop-num ccnt-point-opacity', id: idOf('opacity'), min: '0.05', max: '1', step: '0.05',
+                placeholder: '1', autocomplete: 'off', value: m.config.pointOpacity === undefined ? '' : String(m.config.pointOpacity) });
+            opacity.addEventListener('change', () => {
+                const v = Number(opacity.value);
+                stored('pointOpacity', opacity.value === '' || !Number.isFinite(v) ? undefined : Math.min(1, Math.max(0.05, v)), 1, CL.pointOpacity, (x) => `point opacity ${x}`);
+            });
+            cur.append(line(el('label', { for: idOf('size'), text: CL.pointSize }), size), line(el('label', { for: idOf('opacity'), text: CL.pointOpacity }), opacity));
+            if (use.fade) {
+                const fade = el('input', { type: 'checkbox', class: 'ccnt-point-fade', checked: o.pointFade,
+                    on: { change: () => stored('pointFade', fade.checked ? true : undefined, undefined, CL.pointFade, () => `${fade.checked ? '' : 'no '}${CL.pointFade.toLowerCase()}`) } });
+                cur.append(line(el('label', { class: 'ccnt-opt' }, fade, ` ${CL.pointFade}`)));
+            }
+        }
+        root.append(el('div', { class: 'az-pop-section__foot' }, el('button', { type: 'button', class: 'btn btn-sm btn-link az-pop-reset ccnt-color-reset', disabled: !(m.config.color || m.config.pointSize !== undefined || m.config.pointOpacity !== undefined || m.config.pointFade),
+            on: { click: () => { const next = { ...model().config }; for (const k of ['color', 'pointSize', 'pointOpacity', 'pointFade']) delete next[k]; commit(next, 'reset display'); } } }, CL.reset)));
+        if (at >= 0) { const again = focusables()[at]; if (again) again.focus({ preventScroll: true }); }
+        colorState.ctl.update();
+    }
+
+    function paintToolbar(m) {
+        const use = popoverUse(m.config, m.isNumeric);
+        colorBtn.hidden = !(use.map || use.palette || use.range || use.points);
+        if (colorBtn.hidden && colorPop.isOpen()) colorPop.close('api');
+        else if (colorPop.isOpen()) fillColor();
+        saveBtn.hidden = !m.canSave;
+        saveBtn.disabled = !m.canExport;
+        // 3D: pressed while it is drawn or stored over the cap; refused with its reason elsewhere (a stored 3D over the cap can always be turned off)
+        const v = m.view3d || { on: false, gate: { ok: true, why: '', text: '' } };
+        const pressed = v.on && (v.gate.ok || v.gate.why === 'cap');
+        view3dBtn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+        view3dBtn.classList.toggle('active', pressed);
+        // shown only where 3D is an option for the mode, as the mode's other controls are (hidden, not disabled); over the cap it is
+        // an option and stays, disabled, with its reason
+        view3dBtn.hidden = !v.gate.ok && v.gate.why === 'mode';
+        view3dBtn.disabled = !v.gate.ok && !pressed;
+        view3dBtn.title = !v.gate.ok ? v.gate.text : v.on ? V3.buttonOnHelp : V3.buttonHelp;
+    }
+
+    // ---------------------------------------------------------------- the bar
+    const xRow = inputRow(INPUT_ROWS[0]);
+    const yRow = inputRow(INPUT_ROWS[1]);
+    const splitRow = inputRow(INPUT_ROWS[2]);
+    splitRow.extra.after(arrangement);
+    const setsSlot = el('div', { class: 'ccnt-sets', hidden: true });
+    const kept = el('div', { class: 'ccnt-kept', role: 'note' });
+    const element = el('div', { class: 'ccnt-controls', 'data-panel-controls': '' },
+        modeRow, xRow.wrap, yRow.wrap, splitRow.wrap, setsSlot, valueRow, measureRow.element, factorRow.element, heightRow, labelsRow, densityRow, kept, toolbar);
+
+    function commit(next, label) {
+        on.commit(next, label);
+    }
+
+    let modesFilled = false;
+    function paint() {
+        const m = model();
+        const shownRows = rowsOf(m.config.mode);
+        if (!modesFilled) { fillModes(); modesFilled = true; }
+        modeSelect.value = m.config.mode;
+        gradeModes(m);
+        viewNote.textContent = m.viewNote || '';
+        viewNote.hidden = !m.viewNote;
+        xRow.labelEl.textContent = shownRows.slices ? C.rows.slices : C.rows.x;
+        xRow.wrap.hidden = !shownRows.x;
+        yRow.wrap.hidden = !shownRows.y;
+        splitRow.wrap.hidden = !shownRows.split || !splitUsed(shownConfig(m.config));
+        setsSlot.hidden = !shownRows.sets;
+        if (m.structure) {
+            for (const row of [xRow, yRow, splitRow]) {
+                if (row.wrap.hidden) { destroyEditor(row.field); continue; }
+                row.sync();
+                paintInputExtras(row, m.config[row.field] || null, m, shownRows);
+            }
+        }
+        wanted = null;       // a reveal not met by this paint is stale
+        paintArrangement(m, shownRows);
+        if (m.structure) paintValue(m, shownRows); else valueRow.hidden = true;
+        if (m.structure) paintHeight(m); else heightRow.hidden = true;
+        paintLabels(m, shownRows);
+        paintToolbar(m);
+        kept.textContent = keptLine(m.config, m.titleOf);
+        kept.hidden = !kept.textContent;
+        undoBtn.disabled = !m.undo;
+        undoBtn.title = m.undo ? `Undo: ${m.undo}` : 'Nothing to undo';
+        undoBtn.setAttribute('aria-label', m.undo ? `Undo: ${m.undo}` : C.buttons.undo);
+    }
+
+    return {
+        element,
+        /** Where the sets of Venn and UpSet are drawn (V1). */
+        setsElement: setsSlot,
+        /** The Plot Options button: the panel mounts the shared pop-over on it (WP-5a). */
+        optionsButton: optionsBtn,
+        paint,
+        /**
+         * Open an input's Choose levels or binning pop-over and focus it: the way out of a refusal (UX 4.3).
+         * @param {string} field - 'x' or 'y'
+         * @param {'levels'|'binning'|'picker'} what - `picker`: the input's own column select, with the columns over the
+         *   cap greyed and saying their number of levels (T-CAP)
+         */
+        reveal(field, what) {
+            if (what === 'picker') { pickAnother(field); return; }
+            wanted = { field, what };
+            flushReveal();
+        },
+        /** The selects are filled again: the dataset or the panels changed (a provider's entities, the structure). */
+        refill() {
+            for (const row of rows.values()) row.sig = null;
+            modesFilled = false;
+        },
+        destroy() {
+            for (const field of [...editors.keys()]) destroyEditor(field);
+            colorPop.destroy();
+        }
+    };
+}

@@ -101,8 +101,15 @@ def test_csv_export_uses_data_not_display():
     after: '10.210302257599338'. The button must ask for orthogonal data."""
     src = open(os.path.join(os.path.dirname(os.path.dirname(CSS)), "js", "panels", "table-utilities",
                             "table-data.js"), encoding="utf-8").read()
-    block = src[src.index("extend: 'csv'"):src.index("extend: 'csv'") + 600]
-    assert "exportOptions: { orthogonal: 'export' }" in block
+    block = src[src.index("extend: 'csv'"):src.index("extend: 'csv'") + 900]
+    # The export asks for the data, and for nothing else: exportOptions is exactly orthogonal 'export' plus a formatter
+    # of the HEADER (a score column names its method and layer there). No formatter of the body or the footer, no
+    # column picker, no modifier: any of them could put the display back. What the file then holds is checked in the
+    # browser by test_gene_score_tables.py::test_export_writes_the_score_column_when_it_is_ready.
+    options = re.search(r"exportOptions:\s*\{(.*?)\}\s*\},?\s*\n", block, re.S)
+    assert options, "exportOptions not found"
+    assert re.fullmatch(r"\s*orthogonal:\s*'export',\s*format:\s*\{\s*header:\s*\(data, idx, node\) => [^{}]*", options.group(1)), options.group(1)
+    assert not re.search(r"\b(body|footer)\s*:", options.group(1)), options.group(1)
 
 
 def test_plot_area_keeps_a_drawable_height():

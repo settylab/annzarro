@@ -120,7 +120,8 @@ show the dialog. On a large dataset the steps are the same.
 :alt: The app with the subset applied: "Cells: 3,000 of 8,090" and the badge "Subset · seed 0" in the dataset bar, a UMAP with fewer points coloured by cell type and a status line under it "3,000 of 8,090 cells shown · 5,090 not in part 1 of 3", and a cell table "Showing 1 to 25 of 3,000 entries".
 
 After **Apply**: the UMAP and the cell table show the same 3,000 cells. View before the subset:
-{download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`.
+{download}`userguide-subset-start.json <../_tools/views/userguide-subset-start.json>`. The same **Cell subset** dialog
+is built step by step, on a dataset of 95 million cells, in {ref}`tut-millions-dialog`.
 ```
 
 (subset-size-carried)=
@@ -217,7 +218,8 @@ types that still have cells left: LMPP, Neutrophil and Ery P. The badge's toolti
 Part 7 of 9, balanced across cell type. The tooltip (drawn into the screenshot, because a
 headless browser does not capture native tooltips; the text is the badge's own) lists the cell
 types earlier parts already showed in full. View:
-{download}`userguide-subset-balanced-part.json <../_tools/views/userguide-subset-balanced-part.json>`.
+{download}`userguide-subset-balanced-part.json <../_tools/views/userguide-subset-balanced-part.json>`. The same balanced
+sampling (there across cell lines) is built step by step in {ref}`tut-millions-dialog`.
 ```
 
 ## What a subset changes
@@ -231,6 +233,10 @@ types earlier parts already showed in full. View:
 - **The Focused Cell picker** finds every cell of the dataset. The subset's cells are listed
   first; the others follow, tagged **not shown**, and can be focused too
   ({ref}`focus-outside-subset`).
+- **The newer panels** work on the cells shown: a Cell Grouping's groups, a Cell-Gene Plot's rows and a Cell Count Plot's bars are
+  made from them (a grouping can keep its bin edges from all cells,
+  {ref}`grouping-subset-changes`). A gene score is one value per cell shown, with each gene scaled over all cells of the
+  dataset, so a subset changes which cells are listed and not what the score means.
 - **Share links, panel sets and the autosaved view** store the subset's description, so they
   reopen on the same cells (a link to the subset above is 1,351 characters). A view saved with
   every cell of a large dataset records that and reopens with every cell; a view without a subset
@@ -263,7 +269,7 @@ largest size that is drawn the regular way already chosen. A plot that has a tab
 
 ```{figure} ../_static/screens/user-guide/large-plot-all.png
 :class: screenshot
-:alt: A Cell Plot with every cell, in large-plot mode. The status line under the plot carries the tag Large plot. The 3D Plot button, the Hover list and the table filter are greyed out.
+:alt: A Cell Plot with every cell, in large-plot mode. The status line under the plot carries the tag Large plot. The 3D button, the Hover list and the table filter are greyed out.
 
 Every cell: large-plot mode. (Regenerated on the 8,090-cell demonstration store with the limit
 lowered to 5,000; `docs/_tools/shoot_large_plot.py`.)
@@ -294,7 +300,7 @@ In large-plot mode:
   its z axis, the Hover list (extra hover columns) and the table filter. A table filter has
   nothing to filter by here: the cell table cannot list this many cells either.
 - **Still available:** pan and zoom; colour by a category (cell type, cluster, cell line), by a
-  numeric obs column or by a gene, with the colour palette, scale and range; point size and
+  numeric obs column, by a gene, by a gene score or by a Cell Grouping, with the colour palette, scale and range; point size and
   opacity. A gene's colour is drawn in 64 steps of the scale, the strongest values on top. Every
   change redraws the panel.
 - **Categories are drawn interleaved.** The regular plot draws each category whole, in the order of

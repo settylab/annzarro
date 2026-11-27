@@ -1,0 +1,848 @@
+{
+ "plain": {
+  "data": [
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     5,
+     15,
+     25
+    ],
+    "y": [
+     5,
+     8,
+     2
+    ],
+    "marker": {
+     "color": "#111111"
+    },
+    "hovertext": [
+     "depth 0 to 10<br>Cells: 5<br>Share: 0.333",
+     "depth 10 to 20<br>Cells: 8<br>Share: 0.533",
+     "depth 20 to 30<br>Cells: 2<br>Share: 0.133"
+    ],
+    "hoverinfo": "text",
+    "showlegend": false,
+    "cliponaxis": false,
+    "width": [
+     10,
+     10,
+     10
+    ]
+   }
+  ],
+  "layout": {
+   "paper_bgcolor": "rgba(0,0,0,0)",
+   "plot_bgcolor": "#ffffff",
+   "font": {
+    "color": "#000000"
+   },
+   "uniformtext": {
+    "mode": "hide",
+    "minsize": 8
+   },
+   "margin": {
+    "l": 60,
+    "r": 20,
+    "t": 20,
+    "b": 50
+   },
+   "barmode": "stack",
+   "bargap": 0.02,
+   "showlegend": false,
+   "xaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "depth"
+    }
+   },
+   "yaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "Cell count"
+    },
+    "rangemode": "tozero"
+   }
+  }
+ },
+ "zero bin": {
+  "data": [
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     0,
+     9,
+     19,
+     29
+    ],
+    "y": [
+     9,
+     5,
+     8,
+     2
+    ],
+    "marker": {
+     "color": "#111111"
+    },
+    "hovertext": [
+     "depth = 0<br>Cells: 9<br>Share: 0.375",
+     "depth 4 to 14<br>Cells: 5<br>Share: 0.208",
+     "depth 14 to 24<br>Cells: 8<br>Share: 0.333",
+     "depth 24 to 34<br>Cells: 2<br>Share: 0.083"
+    ],
+    "hoverinfo": "text",
+    "showlegend": false,
+    "cliponaxis": false,
+    "width": [
+     8,
+     10,
+     10,
+     10
+    ]
+   }
+  ],
+  "layout": {
+   "paper_bgcolor": "rgba(0,0,0,0)",
+   "plot_bgcolor": "#ffffff",
+   "font": {
+    "color": "#000000"
+   },
+   "uniformtext": {
+    "mode": "hide",
+    "minsize": 8
+   },
+   "margin": {
+    "l": 60,
+    "r": 20,
+    "t": 20,
+    "b": 50
+   },
+   "barmode": "stack",
+   "bargap": 0.02,
+   "showlegend": false,
+   "xaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "depth"
+    }
+   },
+   "yaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "Cell count"
+    },
+    "rangemode": "tozero"
+   }
+  }
+ },
+ "overlaid by a Color by": {
+  "data": [
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     5,
+     15,
+     25
+    ],
+    "y": [
+     1,
+     3,
+     5
+    ],
+    "marker": {
+     "color": "#1f77b4"
+    },
+    "hovertext": [
+     "depth 0 to 10 × p<br>Cells: 1<br>Share: 0.048",
+     "depth 10 to 20 × p<br>Cells: 3<br>Share: 0.143",
+     "depth 20 to 30 × p<br>Cells: 5<br>Share: 0.238"
+    ],
+    "hoverinfo": "text",
+    "showlegend": true,
+    "cliponaxis": false,
+    "width": [
+     10,
+     10,
+     10
+    ],
+    "name": "p",
+    "opacity": 0.6
+   },
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     5,
+     15,
+     25
+    ],
+    "y": [
+     2,
+     4,
+     6
+    ],
+    "marker": {
+     "color": "#ff7f0e"
+    },
+    "hovertext": [
+     "depth 0 to 10 × q<br>Cells: 2<br>Share: 0.095",
+     "depth 10 to 20 × q<br>Cells: 4<br>Share: 0.19",
+     "depth 20 to 30 × q<br>Cells: 6<br>Share: 0.286"
+    ],
+    "hoverinfo": "text",
+    "showlegend": true,
+    "cliponaxis": false,
+    "width": [
+     10,
+     10,
+     10
+    ],
+    "name": "q",
+    "opacity": 0.6
+   }
+  ],
+  "layout": {
+   "paper_bgcolor": "rgba(0,0,0,0)",
+   "plot_bgcolor": "#ffffff",
+   "font": {
+    "color": "#000000"
+   },
+   "uniformtext": {
+    "mode": "hide",
+    "minsize": 8
+   },
+   "margin": {
+    "l": 60,
+    "r": 20,
+    "t": 20,
+    "b": 50
+   },
+   "barmode": "overlay",
+   "bargap": 0.02,
+   "showlegend": true,
+   "legend": {
+    "title": {
+     "text": "condition"
+    }
+   },
+   "xaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "depth"
+    }
+   },
+   "yaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "Cell count"
+    },
+    "rangemode": "tozero"
+   }
+  }
+ },
+ "stacked by a Color by": {
+  "data": [
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     5,
+     15,
+     25
+    ],
+    "y": [
+     1,
+     3,
+     5
+    ],
+    "marker": {
+     "color": "#1f77b4"
+    },
+    "hovertext": [
+     "depth 0 to 10 × p<br>Cells: 1<br>Share: 0.048",
+     "depth 10 to 20 × p<br>Cells: 3<br>Share: 0.143",
+     "depth 20 to 30 × p<br>Cells: 5<br>Share: 0.238"
+    ],
+    "hoverinfo": "text",
+    "showlegend": true,
+    "cliponaxis": false,
+    "width": [
+     10,
+     10,
+     10
+    ],
+    "name": "p"
+   },
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     5,
+     15,
+     25
+    ],
+    "y": [
+     2,
+     4,
+     6
+    ],
+    "marker": {
+     "color": "#ff7f0e"
+    },
+    "hovertext": [
+     "depth 0 to 10 × q<br>Cells: 2<br>Share: 0.095",
+     "depth 10 to 20 × q<br>Cells: 4<br>Share: 0.19",
+     "depth 20 to 30 × q<br>Cells: 6<br>Share: 0.286"
+    ],
+    "hoverinfo": "text",
+    "showlegend": true,
+    "cliponaxis": false,
+    "width": [
+     10,
+     10,
+     10
+    ],
+    "name": "q"
+   }
+  ],
+  "layout": {
+   "paper_bgcolor": "rgba(0,0,0,0)",
+   "plot_bgcolor": "#ffffff",
+   "font": {
+    "color": "#000000"
+   },
+   "uniformtext": {
+    "mode": "hide",
+    "minsize": 8
+   },
+   "margin": {
+    "l": 60,
+    "r": 20,
+    "t": 20,
+    "b": 50
+   },
+   "barmode": "stack",
+   "bargap": 0.02,
+   "showlegend": true,
+   "legend": {
+    "title": {
+     "text": "condition"
+    }
+   },
+   "xaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "depth"
+    }
+   },
+   "yaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "Cell count"
+    },
+    "rangemode": "tozero"
+   }
+  }
+ },
+ "overlaid, horizontal, log, labels": {
+  "data": [
+   {
+    "type": "bar",
+    "orientation": "h",
+    "y": [
+     5,
+     15,
+     25
+    ],
+    "x": [
+     1,
+     3,
+     5
+    ],
+    "marker": {
+     "color": "#1f77b4"
+    },
+    "hovertext": [
+     "depth 0 to 10 × p<br>Cells: 1<br>Share: 0.048",
+     "depth 10 to 20 × p<br>Cells: 3<br>Share: 0.143",
+     "depth 20 to 30 × p<br>Cells: 5<br>Share: 0.238"
+    ],
+    "hoverinfo": "text",
+    "showlegend": true,
+    "cliponaxis": false,
+    "width": [
+     10,
+     10,
+     10
+    ],
+    "name": "p",
+    "text": [
+     "1",
+     "3",
+     "5"
+    ],
+    "textposition": "auto",
+    "opacity": 0.6
+   },
+   {
+    "type": "bar",
+    "orientation": "h",
+    "y": [
+     5,
+     15,
+     25
+    ],
+    "x": [
+     2,
+     4,
+     6
+    ],
+    "marker": {
+     "color": "#ff7f0e"
+    },
+    "hovertext": [
+     "depth 0 to 10 × q<br>Cells: 2<br>Share: 0.095",
+     "depth 10 to 20 × q<br>Cells: 4<br>Share: 0.19",
+     "depth 20 to 30 × q<br>Cells: 6<br>Share: 0.286"
+    ],
+    "hoverinfo": "text",
+    "showlegend": true,
+    "cliponaxis": false,
+    "width": [
+     10,
+     10,
+     10
+    ],
+    "name": "q",
+    "text": [
+     "2",
+     "4",
+     "6"
+    ],
+    "textposition": "auto",
+    "opacity": 0.6
+   }
+  ],
+  "layout": {
+   "paper_bgcolor": "rgba(0,0,0,0)",
+   "plot_bgcolor": "#ffffff",
+   "font": {
+    "color": "#000000"
+   },
+   "uniformtext": {
+    "mode": "hide",
+    "minsize": 8
+   },
+   "margin": {
+    "l": 60,
+    "r": 20,
+    "t": 20,
+    "b": 50
+   },
+   "barmode": "overlay",
+   "bargap": 0.02,
+   "showlegend": true,
+   "legend": {
+    "title": {
+     "text": "condition"
+    }
+   },
+   "yaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "depth"
+    }
+   },
+   "xaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "Cell count"
+    },
+    "type": "log"
+   }
+  }
+ },
+ "log bins, even": {
+  "data": [
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     0,
+     1,
+     2
+    ],
+    "y": [
+     1,
+     2,
+     3
+    ],
+    "marker": {
+     "color": "#111111"
+    },
+    "hovertext": [
+     "depth 1 to 10<br>Cells: 1<br>Share: 0.167",
+     "depth 10 to 100<br>Cells: 2<br>Share: 0.333",
+     "depth 100 to 1000<br>Cells: 3<br>Share: 0.5"
+    ],
+    "hoverinfo": "text",
+    "showlegend": false,
+    "cliponaxis": false,
+    "width": [
+     1,
+     1,
+     1
+    ]
+   }
+  ],
+  "layout": {
+   "paper_bgcolor": "rgba(0,0,0,0)",
+   "plot_bgcolor": "#ffffff",
+   "font": {
+    "color": "#000000"
+   },
+   "uniformtext": {
+    "mode": "hide",
+    "minsize": 8
+   },
+   "margin": {
+    "l": 60,
+    "r": 20,
+    "t": 20,
+    "b": 50
+   },
+   "barmode": "stack",
+   "bargap": 0.02,
+   "showlegend": false,
+   "xaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "depth"
+    },
+    "tickmode": "array",
+    "tickvals": [
+     -0.5,
+     0.5,
+     1.5,
+     2.5
+    ],
+    "ticktext": [
+     "1",
+     "10",
+     "100",
+     "1000"
+    ],
+    "zeroline": false
+   },
+   "yaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "Cell count"
+    },
+    "rangemode": "tozero"
+   }
+  }
+ },
+ "log bins, by value": {
+  "data": [
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     5.5,
+     55,
+     550
+    ],
+    "y": [
+     1,
+     2,
+     3
+    ],
+    "marker": {
+     "color": "#111111"
+    },
+    "hovertext": [
+     "depth 1 to 10<br>Cells: 1<br>Share: 0.167",
+     "depth 10 to 100<br>Cells: 2<br>Share: 0.333",
+     "depth 100 to 1000<br>Cells: 3<br>Share: 0.5"
+    ],
+    "hoverinfo": "text",
+    "showlegend": false,
+    "cliponaxis": false,
+    "width": [
+     9,
+     90,
+     900
+    ]
+   }
+  ],
+  "layout": {
+   "paper_bgcolor": "rgba(0,0,0,0)",
+   "plot_bgcolor": "#ffffff",
+   "font": {
+    "color": "#000000"
+   },
+   "uniformtext": {
+    "mode": "hide",
+    "minsize": 8
+   },
+   "margin": {
+    "l": 60,
+    "r": 20,
+    "t": 20,
+    "b": 50
+   },
+   "barmode": "stack",
+   "bargap": 0.02,
+   "showlegend": false,
+   "xaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "depth"
+    }
+   },
+   "yaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "Cell count"
+    },
+    "rangemode": "tozero"
+   }
+  }
+ },
+ "share within each X": {
+  "data": [
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     5,
+     15,
+     25
+    ],
+    "y": [
+     0.3333333333333333,
+     0.42857142857142855,
+     0.45454545454545453
+    ],
+    "marker": {
+     "color": "#1f77b4"
+    },
+    "hovertext": [
+     "depth 0 to 10 × p<br>Cells: 1<br>Share: 0.333",
+     "depth 10 to 20 × p<br>Cells: 3<br>Share: 0.429",
+     "depth 20 to 30 × p<br>Cells: 5<br>Share: 0.455"
+    ],
+    "hoverinfo": "text",
+    "showlegend": true,
+    "cliponaxis": false,
+    "width": [
+     10,
+     10,
+     10
+    ],
+    "name": "p"
+   },
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     5,
+     15,
+     25
+    ],
+    "y": [
+     0.6666666666666666,
+     0.5714285714285714,
+     0.5454545454545454
+    ],
+    "marker": {
+     "color": "#ff7f0e"
+    },
+    "hovertext": [
+     "depth 0 to 10 × q<br>Cells: 2<br>Share: 0.667",
+     "depth 10 to 20 × q<br>Cells: 4<br>Share: 0.571",
+     "depth 20 to 30 × q<br>Cells: 6<br>Share: 0.545"
+    ],
+    "hoverinfo": "text",
+    "showlegend": true,
+    "cliponaxis": false,
+    "width": [
+     10,
+     10,
+     10
+    ],
+    "name": "q"
+   }
+  ],
+  "layout": {
+   "paper_bgcolor": "rgba(0,0,0,0)",
+   "plot_bgcolor": "#ffffff",
+   "font": {
+    "color": "#000000"
+   },
+   "uniformtext": {
+    "mode": "hide",
+    "minsize": 8
+   },
+   "margin": {
+    "l": 60,
+    "r": 20,
+    "t": 20,
+    "b": 50
+   },
+   "barmode": "stack",
+   "bargap": 0.02,
+   "showlegend": true,
+   "legend": {
+    "title": {
+     "text": "condition"
+    }
+   },
+   "xaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "depth"
+    }
+   },
+   "yaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "Share of x"
+    },
+    "rangemode": "tozero",
+    "tickformat": ".2~f"
+   }
+  }
+ },
+ "integer by its values": {
+  "data": [
+   {
+    "type": "bar",
+    "orientation": "v",
+    "x": [
+     0,
+     1,
+     2
+    ],
+    "y": [
+     4,
+     5,
+     6
+    ],
+    "marker": {
+     "color": "#111111"
+    },
+    "hovertext": [
+     "1<br>Cells: 4<br>Share: 0.267",
+     "2<br>Cells: 5<br>Share: 0.333",
+     "3<br>Cells: 6<br>Share: 0.4"
+    ],
+    "hoverinfo": "text",
+    "showlegend": false,
+    "cliponaxis": false
+   }
+  ],
+  "layout": {
+   "paper_bgcolor": "rgba(0,0,0,0)",
+   "plot_bgcolor": "#ffffff",
+   "font": {
+    "color": "#000000"
+   },
+   "uniformtext": {
+    "mode": "hide",
+    "minsize": 8
+   },
+   "margin": {
+    "l": 60,
+    "r": 20,
+    "t": 20,
+    "b": 50
+   },
+   "barmode": "stack",
+   "bargap": 0.02,
+   "showlegend": false,
+   "xaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "depth"
+    },
+    "tickmode": "array",
+    "tickvals": [
+     0,
+     1,
+     2
+    ],
+    "ticktext": [
+     "1",
+     "2",
+     "3"
+    ]
+   },
+   "yaxis": {
+    "color": "#000000",
+    "gridcolor": "#e6e6e6",
+    "zerolinecolor": "#cccccc",
+    "automargin": true,
+    "title": {
+     "text": "Cell count"
+    },
+    "rangemode": "tozero"
+   }
+  }
+ }
+}

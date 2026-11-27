@@ -108,6 +108,18 @@ test('a refresh the server scheduled is asked again with after, waiting in the b
     assert.equal(last.status, 'scheduled');
 });
 
+test('a refresh scheduled for a large dataset tells the user once, with the server\'s sentence', async () => {
+    const replies = [
+        { status: 'scheduled', after: 5, retry_after_s: 58, message: 'It runs in 58 s.' },
+        { status: 'full', changed: false, checked: true },
+    ];
+    globalThis.fetch = async () => new Response(JSON.stringify(replies.shift()), { status: 200 });
+    const told = [];
+    const r = await DataManager.revalidateDataset('/big.zarr', { wait: async () => {}, onScheduled: a => told.push(a.message) });
+    assert.equal(r.status, 'full');
+    assert.deepEqual(told, ['It runs in 58 s.']);
+});
+
 test('a panel Refresh re-checks the dataset and reads past the cached replies', async () => {
     // Refresh used to redraw from CacheManager: within 60 s of a load it sent
     // no request at all, though the docs say it reloads the panel's data.

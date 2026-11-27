@@ -1,0 +1,104 @@
+/* Cell Grouping panel (panels/cell-grouping.js): its styles only (the shared ones are in styles.css).
+   Zones top to bottom (UX 2.1): status, the toolbar (Add factor, Statistics, Settings, Undo), the factor cards, the groups
+   (G9c). Nothing here expands: a factor's levels or binning, Statistics offered and Settings are pop-overs (popover.css),
+   so the cards are one line each and the group list is the only zone that grows. Colours are the theme's tokens
+   (theme.css), so light and dark follow. */
+
+.tile-content > .cgrp-panel { flex: 1 1 auto; min-height: 0; }
+.cgrp-panel {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    height: 100%;
+    min-height: 0;
+    overflow: auto;
+    font-size: 0.8125rem;
+    container: cgrp / inline-size;
+}
+
+/* 1. status */
+.cgrp-status {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--az-border);
+    background-color: var(--az-surface-2);
+}
+.cgrp-status__row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.cgrp-status__text { font-weight: 600; }
+.cgrp-status[data-state="failed"] .cgrp-status__text,
+.cgrp-status[data-state="refused"] .cgrp-status__text,
+.cgrp-status[data-state="cycle"] .cgrp-status__text,
+.cgrp-status[data-state="missing"] .cgrp-status__text { color: var(--az-danger-text); }
+.cgrp-status[data-state="empty"] .cgrp-status__text { display: none; }
+.cgrp-status__actions { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.cgrp-usedby { margin-left: auto; color: var(--az-muted); font-size: 0.75rem; }
+.cgrp-small { color: var(--az-muted); font-size: 0.75rem; }
+.cgrp-nogroup { padding: 0 2px; font-size: inherit; vertical-align: baseline; }
+.cgrp-reasons { margin: 4px 0 0; padding-left: 1.2rem; color: var(--az-muted); font-size: 0.75rem; }
+
+/* the empty state (UX 2.6, GRP-2) */
+.cgrp-empty { padding: 10px 8px 4px; }
+.cgrp-empty__lead { margin: 0 0 4px; font-weight: 600; }
+.cgrp-empty__help { margin: 0; color: var(--az-muted); }
+
+/* 2. Add factor and its inline row */
+.cgrp-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; }
+/* the add zone's two children are items of the toolbar: Add factor on the row, its inline row under the whole toolbar */
+.cgrp-addzone { display: contents; }
+.cgrp-addrow { flex: 0 0 100%; order: 5; min-width: 0; }
+.cgrp-add-wrap { position: relative; display: inline-block; }
+.cgrp-add-menu {
+    position: absolute; z-index: 30; top: calc(100% + 2px); left: 0; min-width: 14rem; padding: 4px 0;
+    background: var(--az-surface); border: 1px solid var(--az-border-strong); border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.cgrp-add-item {
+    display: block; width: 100%; padding: 3px 10px; border: 0; background: none; text-align: left;
+    font-size: 0.8125rem; color: var(--az-text);
+}
+.cgrp-add-item:hover, .cgrp-add-item:focus { background: var(--az-surface-3); outline: none; }
+.cgrp-addrow__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.cgrp-addrow__controls .form-select, .cgrp-addrow__controls .form-control { width: auto; max-width: 14rem; }
+.cgrp-addrow__note { color: var(--az-danger-text); font-size: 0.75rem; min-height: 0; }
+.cgrp-addrow__note:empty { display: none; }
+.cgrp-addrow__fixed { color: var(--az-muted); }
+.cgrp-undo { margin-left: auto; }
+.cgrp-message { padding: 0 8px; color: var(--az-muted); font-size: 0.75rem; min-height: 1.1em; }
+.cgrp-message__undo { padding: 0 4px; font-size: inherit; vertical-align: baseline; }
+
+/* the factor cards are the shared entity cards (css/cards.css) */
+.az-card__wait, .az-card__follows { color: var(--az-muted); }
+.cgrp-levels__head { display: flex; justify-content: space-between; }
+.cgrp-levels { list-style: none; margin: 0; padding: 0; }
+.cgrp-level { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+.cgrp-level__tick { display: inline-flex; align-items: center; gap: 4px; margin: 0; flex: 1 1 auto; min-width: 0; }
+.cgrp-level__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cgrp-level__label[title] { text-decoration: underline dotted; text-underline-offset: 2px; }
+.cgrp-level > .cgrp-level__label { flex: 1 1 auto; color: var(--az-muted); }
+.cgrp-level__n { margin-left: auto; font-variant-numeric: tabular-nums; }
+.cgrp-bins.is-stale .cgrp-level__label { color: var(--az-muted); }
+.cgrp-level__n.is-stale { color: var(--az-muted); font-style: italic; }
+.cgrp-level__rename { padding: 0 4px; text-decoration: none; }
+.cgrp-level__name { max-width: 14rem; }
+/* a level's color: a small swatch that opens the browser's color picker */
+.cgrp-level-color { flex: 0 0 auto; width: 1.25rem; height: 1rem; padding: 0; border: 1px solid var(--az-border-strong); border-radius: 2px; background: none; cursor: pointer; }
+/* the row being renamed: a field, a tinted row and a bar at its edge; every other row is plain */
+.cgrp-level--editing { background: var(--az-accent-bg); box-shadow: inset 3px 0 0 var(--az-link); padding-left: 4px; border-radius: 3px; }
+.cgrp-level--editing .cgrp-level__name { border-color: var(--az-link); flex: 1 1 auto; min-width: 5rem; }
+.cgrp-level__ok, .cgrp-level__cancel { padding: 0 6px; line-height: 1.4; }
+
+/* 5. Settings: the pop-over's form */
+
+/* Toggle Controls: the cards lose their Edit button (UX 2.1) */
+.cgrp-compact .az-card__edit { display: none; }
+
+/* Narrow (about 360 px): cards show source and kind only (UX 2.6) */
+@container cgrp (max-width: 420px) {
+    .cgrp-usedby { margin-left: 0; }
+}
+
+/* 6. Methods ▾ (decision 34): the statistics over a group's or a table's cells and their parameters; shared with the Cell Table */
+.cmeth__toggle { position: relative; }
+.cmeth__dot { display: inline-block; width: 6px; height: 6px; margin-left: 4px; border-radius: 50%; background: var(--az-link); vertical-align: middle; }
+.cmeth__dot[hidden] { display: none; }
+.cmeth .cmeth__foot { align-items: flex-end; justify-content: space-between; gap: 6px; padding-bottom: 8px; }
+.cmeth .cmeth__used { flex: 1 1 12rem; }

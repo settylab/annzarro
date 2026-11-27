@@ -1,0 +1,142 @@
+/**
+ * The aggregates of an axis (axis-aggregate-picker-080): a Cell or Gene Plot axis that reads a SET (a gene signature or
+ * gene table, a group of a cell grouping) shows as one row, `[layer] [layer name] [item] [aggregation]`. The item picker
+ * lists the focused gene or cell and then the sets, in separate sections; picking a set shows a button with the
+ * aggregation's symbol after it.
+ *
+ * What an axis stores is unchanged: a plain item is `{type: 'layer', key: <layer>, column: <item>}` and a set is its
+ * provider's own setting (`{type, key, column, layer, ...}`, utils/score-source.js, utils/group-stat-source.js), so
+ * links, panel sets and presets made before this row load as they were. This module says which providers are sets
+ * (their `aggregate` object), turns a picker value into a setting and back, and clears an axis completely when it
+ * leaves the layer source or picks a single item, so no method or layer outlives its set.
+ *
+ * A provider's `aggregate` is: `sections()` [{heading, entries: [{entry, text, alt?}]}], `start(entry, layer)` the
+ * setting of a set newly picked on a layer, `entryOf(setting)`, `layerOf(setting)`, `methods(setting)` {options:
+ * [{value, name, symbol, disabled?, title?}], chosen}, or null for a set that is no aggregate (a grouping: no button), `after(setting, 'method'|'layer', value)` the fields to write
+ * (with `say`; `'member'` for a member chosen), `members(setting)` optional, a set's members in a select of their own
+ * ({options, chosen}; a grouping's groups), `layers(setting)` {options: [{value, text, disabled?, title?}], chosen} the row's layer list graded for the
+ * aggregation held, and `symbolOf(setting)`.
+ *
+ * Pure apart from the registry; Node tests hold it.
+ */
+import { getSource, sourcesFor } from './source-registry.js';
+
+const MARK = '\u0001';
+
+/** The picker value of a set: its provider's type and the entry the provider names it by. */
+export const encodeSet = (type, entry) => `${MARK}${type}${MARK}${entry}`;
+
+/** The provider and entry a picker value stands for, or null for a plain item. */
+export function decodeSet(value) {
+    if (typeof value !== 'string' || !value.startsWith(MARK)) return null;
+    const [type, entry] = value.slice(1).split(MARK);
+    return getSource(type) && getSource(type).aggregate ? { type, entry } : null;
+}
+
+/** The provider of a setting that is a set, or null. */
+export function aggregateOf(setting) {
+    const provider = setting && setting.type ? getSource(setting.type) : null;
+    return provider && provider.aggregate ? provider : null;
+}
+
+/** Whether a setting is a set. */
+export const isAggregate = (setting) => !!aggregateOf(setting);
+
+/** The source an axis row shows for a setting: a set is read on a layer. */
+export const displayType = (setting) => (isAggregate(setting) ? 'layer' : setting.type);
+
+/**
+ * The providers whose sets a consumer's axes list, in registration order. `numeric` is a row that takes a number per
+ * cell (a Count Plot's measure): a set whose value is a group label (a grouping) is not listed there.
+ */
+export function aggregateProviders(consumer, roles, numeric = false) {
+    return sourcesFor(consumer, roles).filter((p) => p.aggregate && (!numeric || p.valueType === 'numerical'));
+}
+
+/** The sets a consumer lists, in sections: [{heading, entries: [{value, text, alt?}]}], empty sections left out. */
+export function setSections(consumer, roles, numeric = false) {
+    const out = [];
+    for (const provider of aggregateProviders(consumer, roles, numeric)) {
+        for (const section of provider.aggregate.sections()) {
+            if (!section.entries.length) {
+                // a section that can be empty says so, in a line that is no choice, as the signatures' "New signature…" is one
+                if (section.empty) out.push({ heading: section.heading, entries: [{ value: '\u0001none', text: section.empty, alt: '', disabled: true }] });
+                continue;
+            }
+            out.push({ heading: section.heading, entries: section.entries.map((e) => ({ value: encodeSet(provider.type, e.entry), text: e.text, alt: e.alt || '' })) });
+        }
+    }
+    return out;
+}
+
+/** The picker value of the set a setting holds, or '' for a plain item. */
+export function heldSet(setting) {
+    const provider = aggregateOf(setting);
+    return provider ? encodeSet(provider.type, provider.aggregate.entryOf(setting)) : '';
+}
+
+/** The layer a setting is read on. */
+// export-unused-ok: Node tests hold it; the layer lists read it through the provider's `layers`
+export function layerOfSetting(setting) {
+    const provider = aggregateOf(setting);
+    return provider ? provider.aggregate.layerOf(setting) : (setting && setting.key) || '';
+}
+
+/**
+ * Take every field off a setting but its history, so nothing of what it was can outlive it: a method, a layer, a
+ * label, a group's reference.
+ */
+export function clearSetting(setting) {
+    for (const field of Object.keys(setting)) if (field !== 'history') delete setting[field];
+    return setting;
+}
+
+/** The setting is now a plain item of a layer (a gene or a cell). */
+export function startItem(setting, layer, column) {
+    clearSetting(setting);
+    Object.assign(setting, { type: 'layer', key: layer, column });
+    return setting;
+}
+
+/** The setting is now the set a picker value names, read on `layer`, with the provider's own default aggregation. */
+export function startSet(setting, value, layer) {
+    const picked = decodeSet(value);
+    if (!picked) return null;
+    const previous = { ...setting };            // what the row read: a grouping chosen after another keeps the group's name
+    clearSetting(setting);
+    Object.assign(setting, getSource(picked.type).aggregate.start(picked.entry, layer, previous));
+    return setting;
+}
+
+/** The members of a set the row lists in a select of their own (a grouping's groups), or null when the set has none. */
+export function membersOf(setting) {
+    const provider = aggregateOf(setting);
+    return provider && typeof provider.aggregate.members === 'function' ? provider.aggregate.members(setting) : null;
+}
+
+/**
+ * The aggregation a user chose, or the layer they moved to: the provider writes what follows; the other moves only when
+ * it became impossible, said once.
+ * @returns {string} what was said of a move ('' when none)
+ */
+export function applyAfter(setting, kind, value) {
+    const provider = aggregateOf(setting);
+    if (!provider) return '';
+    const { say, ...fields } = provider.aggregate.after(setting, kind, value);
+    for (const [field, to] of Object.entries(fields)) {
+        if (to === undefined || to === null) delete setting[field]; else setting[field] = to;
+    }
+    return say || '';
+}
+
+/** The symbol and name of the aggregation a set setting holds. */
+// export-unused-ok: Node tests hold it; the button reads the provider's `methods` through its own factory
+export function aggregationOf(setting) {
+    const provider = aggregateOf(setting);
+    if (!provider) return null;
+    const menu = provider.aggregate.methods(setting);
+    if (!menu) return null;            // a set that is no aggregate (a grouping) has no aggregation
+    const { options, chosen } = menu;
+    const held = options.find((o) => o.value === chosen) || options[0];
+    return held ? { symbol: held.symbol, name: held.name } : null;
+}

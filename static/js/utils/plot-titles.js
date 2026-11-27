@@ -10,6 +10,8 @@
  * text, so exports and deep links are unchanged.
  */
 
+import { isProviderType, settingTitle } from './source-registry.js';
+
 /**
  * Shorten `text` in the middle with an ellipsis until `fits(candidate)`.
  * @param {string} text
@@ -44,6 +46,9 @@ export function middleEllipsis(text, fits) {
 export function colourTitle(color) {
     if (!color || !color.key) return '';
     const { type, key, column } = color;
+    // a provider's source is named by its entity's title (its load keeps it in the setting); a score's in two
+    // lines, the signature, then the method and layer (a title that leaves the app names both)
+    if (isProviderType(type)) return settingTitle(color, '<br>');
     if (!column) return key;
     return type === 'obsp' || type === 'varp' ? `${key} · row ${column}` : `${key} · ${column}`;
 }
@@ -52,6 +57,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function _fit(textEl, available) {
     if (!textEl || !(available > 0) || typeof textEl.getComputedTextLength !== 'function') return;
+    // a title Plotly drew in lines (<br>) whose every line fits is left as drawn: its figure fitted it (Cell-Gene legends)
+    const lines = textEl.textContent !== textEl.__shownTitle ? textEl.querySelectorAll('tspan.line') : [];
+    if (lines.length > 1 && [...lines].every((l) => l.getComputedTextLength() <= available)) return;
     const oldTip = textEl.querySelector('title');
     if (oldTip) oldTip.remove();
     // Still our shortened text: fit the full one again. Otherwise Plotly has
@@ -88,8 +96,13 @@ export function fitPlotTitles(gd) {
         const title = cb.querySelector('.cbtitle text');
         const bar = cb.querySelector('.cbbg') || cb.querySelector('.cbfills');
         const len = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect().height : 0;
-        // vertical bars carry a rotated title along their length
-        _fit(title, len || size.h);
+        // a rotated title runs along a vertical bar's length; a level one (a title on top) runs to the figure's edge
+        const rotated = !!title && /rotate/.test(title.getAttribute('transform') || '');
+        if (title && !rotated && gd.getBoundingClientRect && title.getBoundingClientRect) {
+            _fit(title, gd.getBoundingClientRect().right - title.getBoundingClientRect().left - 4);
+        } else {
+            _fit(title, len || size.h);
+        }
     });
 }
 

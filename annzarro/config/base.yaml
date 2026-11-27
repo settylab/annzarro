@@ -146,6 +146,16 @@ server:
   read_user_share_percent: 50
   subset_budget_mb: null
   subset_wait_s: 30
+  # Memory one worker lets its compute jobs hold at once, in MB (gene scores and
+  # cell groupings: the read-ahead of the job running, the resolves in progress,
+  # and the group code cache below). A job that does not fit waits for others to
+  # finish, after the cache has been emptied. 4608 = 4.5 GB per worker, so 18 GB
+  # for the 4 workers a server may run; at 100M cells one job needs up to 2.3 GB.
+  # group_code_cache_mb is the part of it kept as a cache of group codes (one
+  # small integer per cell per grouping) so a plot re-reads nothing when its
+  # grouping has not changed; it is the first thing given back.
+  compute_budget_mb: 4608
+  group_code_cache_mb: 512
   # gunicorn (annzarro/server/gunicorn_config.py; `annzarro start` is not
   # gunicorn and ignores these): a worker is replaced after max_requests
   # requests (+ up to max_requests_jitter, so they do not restart together),
@@ -367,6 +377,10 @@ ui:
     - cell-table
     - gene-table
     - gene-set
+    - gene-signature
+    - cell-grouping
+    - cell-gene
+    - cell-count
   
   # Default visualization settings
   defaults:
@@ -467,6 +481,40 @@ integrations:
     # a versioned host, so results can be reproduced
     base_url: "https://version-12-5.string-db.org/api"
     version: "12.5"
+
+# Cost limits (docs/deployment/resource-limits.md, "Cost limits"). When a computation (a gene score, a grouping, a
+# Cell-Gene or Cell Count Plot) asks before it runs and when it is refused, by its estimated seconds; how large a
+# grouping, matrix or grid may get; and what the browser draws or exports at most. An admin can change each on the
+# Settings page without a restart; a value set here is a ceiling there (the admin can lower it, not raise it).
+# live_update_s <= ask_first_s <= refuse_s, or the server does not start.
+limits:
+  ask_first_s: 60
+  refuse_s: 600
+  try_max_s: 1800
+  live_update_s: 5
+  progress_bar_s: 10
+  refresh_min_interval_large_s: 60
+  refresh_large_cells: 10000000
+  matrix_values: 400000
+  genes_per_section: 2000
+  groups: 2000
+  partitionings: 8
+  request_partitionings: 64
+  measures: 16
+  thresholds: 4
+  grid_cells: 2097152
+  grid_2d_bins: 512
+  grid_2d_split: 8
+  grid_1d_bins: 2000
+  grid_1d_split: 200
+  grid_categorical_levels: 200
+  grid_sets: 16
+  obsp_source_max_cells: 1000000
+  cell_export_max: 1000000
+  bars_3d_max: 40000
+  density_points_draw: 1000000
+  density_points_load: 25000000
+  dendrogram_rows: 2000
 
 # Policy registry: settings an administrator may change at run time
 policy:

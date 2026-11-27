@@ -137,3 +137,40 @@ export function mountDatasetInfo({ url, state, doc = document, loader = createIn
     }
     return { update, loader };
 }
+
+/** Resolve with `read()` once it gives something, or null after `timeout` ms (watching `target` for changes). */
+function waitFor(target, read, timeout) {
+    return new Promise((resolve) => {
+        const now = read();
+        if (now) { resolve(now); return; }
+        const doc = target.ownerDocument;
+        const finish = (value) => { observer.disconnect(); clearTimeout(timer); resolve(value); };
+        const observer = new doc.defaultView.MutationObserver(() => { const got = read(); if (got) finish(got); });
+        observer.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+        const timer = setTimeout(() => finish(read() || null), timeout);
+    });
+}
+
+/**
+ * Open the information dialog of the open dataset on its Structure tab with `term` in the tab's filter, so the user
+ * sees the field in place (SCH-8). Waits for the dataset to be open (the button shows then) and for the tab to be
+ * drawn. Resolves with whether the filter was filled.
+ * @param {string} term
+ * @param {{doc?: Document, bs?: Object, timeout?: number}} [options]
+ */
+export async function showStructureSearch(term, { doc = document, bs = (doc.defaultView || window).bootstrap, timeout = 30000 } = {}) {
+    const button = doc.getElementById('dataset-info');
+    const modal = doc.getElementById('dataset-info-modal');
+    const tab = modal && modal.querySelector('[data-dsi-part="structure"]');
+    if (!button || !modal || !tab || !bs) return false;
+    const pane = doc.querySelector(tab.dataset.bsTarget);
+    if (!await waitFor(button, () => !button.hidden, timeout)) return false;
+    bs.Tab.getOrCreateInstance(tab).show();          // before the dialog: its first draw then loads Structure, not About
+    if (!modal.classList.contains('show')) bs.Modal.getOrCreateInstance(modal).show();
+    const input = await waitFor(pane, () => pane.querySelector('.dsi-search-input'), timeout);
+    if (!input) return false;
+    input.value = term;
+    input.dispatchEvent(new (doc.defaultView.Event)('input', { bubbles: true }));
+    input.focus();
+    return true;
+}

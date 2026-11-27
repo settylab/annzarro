@@ -25,7 +25,7 @@ from ...core.read_guard import ReadTooLargeError, ReadBusyError
 from ...core import subset as cell_subset
 from .. import access, atomic_store, confinement, panel_sets, permissions, session_quota, session_store
 from .. import http_cache
-from . import dataset_folders, dataset_lookup
+from . import compute_stream, dataset_folders, dataset_lookup
 from ...core.array_response import wants_binary, wants_codes
 from ...core import categories as category_rules
 from ...core import remote
@@ -576,6 +576,7 @@ def register_data_routes(app, api_version):
                          app.config.get("name_search_max_regex_chars"), app.config.get("name_search_timeout_s"))
     read_guard.configure(app.config.get("max_read_mb"), app.config.get("read_budget_mb"),
                          app.config.get("read_wait_s", 5), app.config.get("read_user_share_percent"))
+    compute_stream.configure(app.config.get("compute_budget_mb"), app.config.get("group_code_cache_mb"))
     # Sharing and the subset places exist for a server other people use. On a
     # single-user server (the desktop app, `annzarro start` on loopback without
     # login) its one user is everyone: they get the whole budget and every thread.
@@ -604,6 +605,11 @@ def register_data_routes(app, api_version):
         remote.request_deadline(None)
     dataset_folders.register_dataset_folder_routes(app, api_version)
     dataset_lookup.register_dataset_lookup_routes(app, api_version)
+    from . import gene_score as gene_score_routes
+    gene_score_routes.register_gene_score_routes(app, api_version)
+    gene_score_routes.register_matrix_kind_route(app, api_version)
+    from . import cell_groups as cell_groups_routes
+    cell_groups_routes.register_cell_groups_routes(app, api_version)
 
     http_cache.install_gzip(app)
 

@@ -123,32 +123,39 @@ function tabPane(sourceId, id) {
 function chooser(id, settings) {
     const panes = { obsm: tabPane('obsm', id), obsp: tabPane('obsp', id) };
     populateColumnsCellTable([{ id: 'obsm' }, { id: 'obsp' }], structure, id, settings);
+    // the ticked columns (T3: an obsp tab lists those, then one add row) and the add row's item list
     const items = (pane) => pane.querySelectorAll('.column-checkbox').map(cb => ({
         column: cb.getAttribute('data-column'), source: cb.getAttribute('data-source'),
         label: cb.parentNode.children[1].textContent, checked: cb.checked
     }));
-    return { panes, items };
+    const offered = (pane) => pane.querySelectorAll('option').filter(o => o.parentNode.className.includes('az-entity-item'))
+        .map(o => ({ column: o.value, label: o.textContent }));
+    return { panes, items, offered };
 }
 
 test('the focused cell is offered by NAME, beside every locked cell (#9)', () => {
     focusedCell = 'cell_X';
-    const { panes, items } = chooser('t1', { columns: [] });
-    const got = items(panes.obsp);
+    const { panes, offered, items } = chooser('t1', { columns: [] });
+    const got = offered(panes.obsp);
     assert.deepEqual(got.map(i => i.column).sort(), ['cell_A', 'cell_B', 'cell_X']);
-    assert.equal(got.find(i => i.column === 'cell_X').label, 'connectivities: cell_X (focused)');
-    assert.equal(got.find(i => i.column === 'cell_B').label, 'connectivities: cell_B (fixed in Plot B)');
+    assert.equal(got.find(i => i.column === 'cell_X').label, 'cell_X (focused)');
+    assert.equal(got.find(i => i.column === 'cell_B').label, 'cell_B (fixed in Plot B)');
     assert.ok(!got.some(i => i.column === 'cell_C'), 'an unlocked axis follows the focus; it is not a fixed cell');
     assert.ok(!got.some(i => /focused_cell/.test(i.column)));
+    assert.equal(items(panes.obsp).length, 0, 'nothing is ticked: no matrix x cell row is listed');
 });
 
 test('a column added from an earlier focus stays listed and ticked (#9)', () => {
     focusedCell = 'cell_Y';
-    const { panes, items } = chooser('t2', { columns: [{ type: 'obsp', key: 'connectivities', column: 'cell_X' }] });
+    const { panes, items, offered } = chooser('t2', { columns: [{ type: 'obsp', key: 'connectivities', column: 'cell_X' }] });
     const got = items(panes.obsp);
     const kept = got.find(i => i.column === 'cell_X');
     assert.ok(kept && kept.checked);
-    assert.equal(kept.label, 'connectivities: cell_X (in this table)');
-    assert.ok(got.some(i => i.column === 'cell_Y' && i.source === 'focused' && !i.checked));
+    assert.equal(kept.label, 'cell_X');
+    const choices = offered(panes.obsp);
+    assert.equal(choices.find(i => i.column === 'cell_X').label, 'cell_X (in this table)');
+    assert.ok(choices.some(i => i.column === 'cell_Y' && i.label === 'cell_Y (focused)'));
+    assert.ok(!got.some(i => i.column === 'cell_Y'), 'the focused cell is offered, not ticked');
 });
 
 test('the obsm search box filters the accordion lists below it (#27)', () => {

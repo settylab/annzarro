@@ -16,8 +16,8 @@ stores goes into one small directory. Where the two disagree, the rule depends o
 - A **restrict** key (panels, outbound hosts, remote datasets) can only be narrowed: the most
   restrictive of the YAML, the admin and the user wins, so an admin never widens what the YAML
   forbids ({ref}`admin-policy`).
-- A setting that only the YAML owns, such as the resource limits, is shown read-only. An
-  environment variable that names a setting beats both the YAML and the admin.
+- A setting that only the YAML owns, such as a resource limit read when the server starts, is shown
+  read-only. An environment variable that names a setting beats both the YAML and the admin.
 - Data directories an admin adds are added to the YAML's; the YAML's cannot be removed on the page.
 
 ## Setup
@@ -316,8 +316,26 @@ policy:
   locked: [outbound.allow_external, panel.gene-set.services]
 ```
 
-Settings the YAML owns, like the resource limits (`limits.*`), are listed read-only with their
-effective values. Names in a stored layer that this version does not declare are kept, listed as
+(admin-limits)=
+#### Limits
+
+The **Limits** area lists every limit under four headings: **When to ask and refuse** (the seconds a
+computation may be estimated to take before it asks first, and before it is refused), **Groupings,
+matrices and grids**, **Drawn and exported in the browser**, and **Server resources** (the `server.*`
+limits of {doc}`resource-limits`). Every cost limit and every server limit read per request can be
+changed here without a restart; the server applies it at the next request, every worker
+alike, and an open page at its next request to the server. A limit that is not at its default says its default under the value.
+A limit set in the YAML (`limits:`, {ref}`config-limits`) is a ceiling (for `refresh_min_interval_large_s`, where a higher value is stricter, a floor: the page refuses a lower one): the page refuses a higher
+value with `409 config_ceiling`. The time tiers keep their order (live update ≤ ask first ≤ refuse):
+a change that breaks it is refused on its row, naming the other limit, with `400 out_of_order`, and
+nothing is stored. **Reset all** clears every limit set here in one change; each returns to the
+YAML's value or its default.
+
+The limits read when the server starts (the memory ledger, the read and subset budgets with their
+waits and shares, gunicorn's request bounds) are listed read-only with their effective values;
+change them in the YAML and restart. So is the longest name-search pattern
+(`name_search_max_regex_chars`), a bound on what a search parses rather than a cost: only the YAML
+sets it. Names in a stored layer that this version does not declare are kept, listed as
 unknown and can be removed one by one; a stored value the registry cannot use (wrong type, a layer
 its scope does not allow) is ignored, flagged and kept, never deleted by an unrelated write. If a
 stored file does not parse, the page shows a red banner and refuses writes with `503
@@ -334,27 +352,32 @@ store_unreadable` until it is repaired.
 | [`panel.cell-table.enabled`]{#policy-panel-cell-table-enabled} | Cell Table |
 | [`panel.gene-table.enabled`]{#policy-panel-gene-table-enabled} | Gene Table |
 | [`panel.gene-set.enabled`]{#policy-panel-gene-set-enabled} | Gene Set Analysis |
+| [`panel.gene-signature.enabled`]{#policy-panel-gene-signature-enabled} | Gene Signature |
+| [`panel.cell-grouping.enabled`]{#policy-panel-cell-grouping-enabled} | Cell Grouping |
+| [`panel.cell-gene.enabled`]{#policy-panel-cell-gene-enabled} | Cell-Gene Plot |
+| [`panel.cell-count.enabled`]{#policy-panel-cell-count-enabled} | Cell Count Plot |
 
 A disabled type is missing from the panel menu. A saved panel set or
 `#view=` link that holds one opens with a placeholder, "Disabled by the administrator", and keeps
 the panel's saved JSON, so saving the layout again loses nothing and enabling the panel restores
 it.
 
+(admin-text-search)=
 ### Searching descriptions
 
 [`datasets.text-search.enabled`]{#policy-datasets-text-search-enabled} is on by default. It governs the
-search over the attribution and READMEs of the datasets (`GET /api/v1/datasets/text-search`: {doc}`../reference/http-api`). Off for a user, the route answers
+search over the attribution, the READMEs and the field names (columns, layers, embeddings and `uns` paths: {doc}`../user-guide/search`) of the datasets (`GET /api/v1/datasets/text-search`: {doc}`../reference/http-api`). Off for a user, the route answers
 `403 disabled_by_policy` to them; off in the config file (`server.text_index_enabled: false`) or for
 everyone, no crawl runs either. It is a restrict key like the others: the narrowest value of config, admin
 and user applies.
 
-The server reads the attribution and the first 64 KB of the README of every local store it can list, one crawl at a
+The server reads the attribution, the first 64 KB of the README and the names of the fields of every local store it can list, one crawl at a
 time for the whole server, into a gzipped index in the cache directory (`server.cache_dir`, shared by all
 workers). It needs no setup: each server process runs a keeper that starts the first crawl a few seconds after it
 starts (15 s), continues a crawl that stopped partway, and reads the datasets again for changes once the index is older than
 `server.text_index_ttl_s` (30 minutes). A search never starts a crawl. A dataset with neither a README nor an
-attribution is not opened: its signature (a few `stat` calls) already says there is nothing to read, and it is found by
-name only; a dataset that has not changed costs the same few `stat` calls on every later round. Remote datasets are
+attribution has only its names read, from its consolidated listing (a metadata read, without checking the listing against the files, so a store whose files were
+edited without rewriting the listing keeps its old names until it is consolidated again); a dataset that has not changed costs a few `stat` calls on every later round. The names are capped at 500 per kind and 16 KB for a dataset, and the index says which datasets were cut. The index version rose with field names, so the first crawl after an upgrade reads every dataset once more, and the dataset browser says field names are still being indexed meanwhile. Remote datasets are
 not indexed. A search shows a user only the stores they can open, and a restricted user is told the path of what they
 may open (as in their listings), nothing above a grant, and not how many stores the server holds. **Clear cache**
 marks the index stale, so the keeper refreshes it on its next round; it does not delete it. Each crawl logs a line at INFO

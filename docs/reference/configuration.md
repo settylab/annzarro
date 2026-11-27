@@ -82,10 +82,12 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `read_user_share_percent` | `50` | On a shared server (login on, or a network address) the percentage of `read_budget_mb` one user may hold of the pairwise reads in flight, so one user's reads cannot make everyone else's `503 read_busy`, and of the `subset_budget_mb` while another user waits for it. With login off the unit is the client address (the proxy's address, unless `proxy_count` is set; an IPv6 /64 is one address). Never below one `max_read_mb` read or one subset. `0` = no share (any user may hold the whole budgets). See {doc}`../deployment/resource-limits`. |
 | `subset_budget_mb` | auto | Memory the cell subsets one worker process computes at once may hold together, in MB. Each subset (`GET /api/v1/data/subset`, a pass over a column of every cell) is charged 55 bytes per cell of its dataset, a figure measured on the 95.6-million-cell store for the worst way a column is read (a Python list: 5 GB for one subset, 30 GB for six at once). A numeric filter on a numeric column holds about 19 bytes per cell (six at once: 10.8 GB), so the charge is conservative for it. Unset: 15% of the machine's RAM per worker, which is two or three filters of that dataset and about a hundred of a 1-million-cell one. A subset waits `subset_wait_s` for the budget, then `503 read_busy` with `Retry-After`. One larger than the whole budget is not refused: it runs alone, when nothing else is held, and the log says so. Sharing between users follows `read_user_share_percent`. Not applied to a server only one person uses. |
 | `subset_wait_s` | `30` | Seconds a subset waits for `subset_budget_mb` before the `503`. Waiting holds one of the worker's threads, so keep it near the time one subset takes (3.6 s for a numeric filter at 95.6 million cells). |
+| `compute_budget_mb` | `4608` | Memory the compute jobs of one worker process (gene scores and cell groupings, with the reads behind them) may hold at once, in MB. Each job is charged its estimate; one that does not fit waits for the others, after the group code cache has been emptied. 4.5 GB a worker is 18 GB for the 4 workers a server may run, at 100 million cells; a lower value is valid down to the largest single job, and jobs then wait for each other instead of running side by side. |
+| `group_code_cache_mb` | `512` | Memory one worker keeps of group codes (one small integer per cell for each grouping it resolved), so a plot coloured or counted by a grouping does not read its data again while the grouping is unchanged. It is part of `compute_budget_mb` and is the first thing given back when a job needs room. |
 | `max_requests` | `20000` | gunicorn only: requests a worker serves before it is replaced. Memory that crept is returned and the worker's caches start empty (a 95-million-cell name index is rebuilt on its first search, about 30 s). `0` = never. |
 | `max_requests_jitter` | `2000` | gunicorn only: each worker's limit is `max_requests` plus a random number up to this, so workers do not restart together. |
 | `limit_request_line`, `limit_request_fields`, `limit_request_field_size` | `0`, `100`, `8190` | gunicorn only: longest request line (0 = unlimited) and header field in bytes, and most header fields; a longer field is answered `400` by gunicorn. The line is unlimited because the web client sends the cells or genes it asks for in the URL (2,000 genes are about 12 KB, over the 4,094 gunicorn allows by default and the 8,190 it allows at most); the reverse proxy bounds it. |
-| `max_request_mb` | `64` | Largest request body, in MB. Panel sets (saved, imported) are the only uploads; a larger body is refused with `413 {"reason": "request_too_large"}` before it is read. `0` turns the limit off. |
+| `max_request_mb` | `64` | Largest request body, in MB. Panel sets (saved, imported) are the only uploads; the two compute routes take JSON bodies of their own, up to 16 MB, whatever this is. A larger body is refused with `413 {"reason": "request_too_large"}` before it is read. `0` turns the limit off. |
 | `max_sessions_per_user` | `500` | Panel sets one user may keep (the owner is whoever first saved it; with login off every set is one user's). Saving, duplicating or importing a new set past it is refused with `409 {"reason": "session_quota_user"}`; overwriting a set you have is not. `0` turns it off. |
 | `max_sessions` | `5000` | Panel sets the whole server keeps (files in the panel-sets directory); past it `409 session_quota_total`. `0` turns it off. |
 | `max_sessions_mb` | `256` | MB all panel sets may take together, counted with the one being written; past it `409 session_quota_total`. `0` turns it off. |
@@ -106,7 +108,7 @@ Keys marked * are not in the built-in files; set them in your own file.
 | `admin_rate_per_minute` | `30` | Admin changes per minute per admin and gunicorn worker; reads get eight times as many. Over it `429 admin_rate_limited`. At least 1. |
 | `admin_audit_max_mb` | `50` | Size at which the audit log (`annzarro_admin/audit.jsonl` beside the users file) rotates; five rotations are kept. `0`: never. |
 | `dataset_scan_max_entries` | `200000` | Directory entries the legacy dataset listing (`GET /api/v1/core/datasets`), a directory listing (`GET /api/v1/directories/list`) and the store count in `GET /api/v1/status` read before they stop. A store's own chunk files are never walked (a 95-million-cell store has hundreds of thousands). A listing then answers `"truncated": true` with a `note`; `/status` says `zarr_file_count_truncated`. `/status` reuses its count for 30 s. |
-| `refresh_min_interval_s` | `10` | `POST /api/v1/data/refresh` (Refresh dataset, open to every user) walks a dataset's files at most this often, in all workers together. A refresh sooner does not wait in the server: it schedules one walk for the end of the interval, shared by everyone, and answers at once `status: "scheduled"`; the browser asks again after `retry_after_s` with `after=`, and gets that walk's result. A refresh is never answered by a walk older than itself. Each walk stops after 3 s: a store with more files than that (the 95.6M-cell Tahoe store) answers `status: "partial"`, and an in-place chunk write to it needs an admin's `POST /api/v1/cache/reset`. |
+| `refresh_min_interval_s` | `10` | `POST /api/v1/data/refresh` (Refresh dataset, open to every user) walks a dataset's files at most this often, in all workers together. A refresh sooner does not wait in the server: it schedules one walk for the end of the interval, shared by everyone, and answers at once `status: "scheduled"`; the browser asks again after `retry_after_s` with `after=`, and gets that walk's result. A refresh is never answered by a walk older than itself. Each walk stops after 3 s: a store with more files than that (the 95.6M-cell Tahoe store) answers `status: "partial"`; every walk starts a new generation, so that store's in-place chunk writes are served after a refresh too, at the cost of one cold read of what is asked next. A refresh is therefore also the limit on how often one user can make every user's cached reads of a dataset new. |
 | `remote_stores` | `auto` | `auto`, `allow` or `deny` for `s3://`, `gs://`, `gcs://`, `http(s)://` stores (no other scheme is remote); see {doc}`../deployment/authentication`. An admin can narrow this in the browser (Admin > Data sources > Remote datasets); the file is the upper limit ({ref}`admin-remote-datasets`). |
 | `remote_allowlist` | `[]` | URL prefixes remote stores must start with, e.g. `["s3://lab-bucket/atlases/"]`. An admin can narrow the list, not add to it. |
 | `remote_credentials` | `anonymous` | `anonymous` (unsigned requests) or `environment` (the AWS and Google standard credential chains of the server account). |
@@ -148,7 +150,7 @@ Defaults sent to the browser through `/api/v1/config`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled_panel_types` | `cell-plot`, `gene-plot`, `cell-table`, `gene-table`, `gene-set` | Panel types offered in "Create New Panel". |
+| `enabled_panel_types` | `cell-plot`, `gene-plot`, `cell-table`, `gene-table`, `gene-set`, `gene-signature`, `cell-grouping`, `cell-gene`, `cell-count` | Panel types listed in the "Create New Panel" chooser. It only shapes the chooser: a type left out is still opened by a link, a panel set, or **New signature...** and **New grouping...** at the end of a menu. The switch that turns a type off is `panel.<type>.enabled` ({doc}`../deployment/admin`). A custom list must name `gene-signature`, `cell-grouping`, `cell-gene` and `cell-count` to offer the four panels new in 0.8.0. |
 | `defaults.point_size`, `defaults.point_opacity` | `5`, `1.0` | Marker size and opacity for a few thousand points; with more points per plot area a panel's automatic values shrink from these (see Cell and gene plots). |
 | `defaults.color_scale` | `Portland` | Initial continuous colour scale. |
 | `defaults.max_cells`, `defaults.max_genes` | `1000000` | Client-side limits on the number of cells and genes. |
@@ -274,6 +276,59 @@ integrations:
   external_requests: "on"      # users agreed out of band; no question asked
   gene_set:
     services: [string, gprofiler, mygene]
+```
+
+(config-limits)=
+## `limits`
+
+The cost limits of a computation (a gene score, a grouping, a Cell-Gene or Cell Count Plot) and of what the browser
+draws or exports: when a request asks before it runs and when it is refused, by its estimated seconds, and how large a
+grouping, a matrix or a grid may get. Public: the web client reads them from `GET /api/v1/policy/effective` and keeps
+to the same numbers before it asks. Each is also a policy key `limits.<key>` that an admin can change on the
+**Settings** page without a restart ({doc}`../deployment/admin`). A value set here is a ceiling there (for `refresh_min_interval_large_s`, where higher is stricter, a floor): the admin may
+lower it, not raise it; leave a key out and the admin may set anything within its bounds, or name it in
+`policy.locked` to keep it to this file.
+
+The time tiers keep their order, `live_update_s` ≤ `ask_first_s` ≤ `refuse_s`, as must `partitionings` ≤
+`request_partitionings`: a file that breaks the order, or sets a value outside its bounds, stops the server at start
+and fails `annzarro config validate`. What each limit protects, its refusal and when to raise it are in
+{ref}`cost-limits`. The upper bounds are ten times the defaults for now, until each is measured at its maximum.
+
+| Key | Default | Bounds | Meaning |
+|---|---|---|---|
+| `ask_first_s` | 60 | 0 to 600 | Estimated seconds above which a gene score, a grouping or a Cell-Gene read asks before it runs (it then runs once the user agrees). Never above refuse_s. |
+| `refuse_s` | 600 | 0 to 6000 | Estimated seconds above which a gene score, a grouping or a Cell-Gene read is refused, even when the user agrees. Bounds the time one request may hold a compute slot. |
+| `try_max_s` | 1800 | 0 to 18000 | Seconds one run that was started with Try anyway, above refuse_s, may hold a compute slot before the server stops it. 0 turns Try anyway off. An estimate above ten times this is not tried. |
+| `live_update_s` | 5 | 0 to 50 | Estimated seconds below which a computation updates live while it is edited and runs in the light lane; above it, edits wait for Update. Never above ask_first_s. |
+| `progress_bar_s` | 10 | 0 to 100 | Seconds (estimated, or waited so far) after which a computation shows a progress bar. |
+| `refresh_min_interval_large_s` | 60 | 0 to 600 | Seconds between two Refreshes of one dataset with more cells than refresh_large_cells, for a user who is not an admin on a shared server (an admin keeps server.refresh_min_interval_s). Every Refresh makes every user read the dataset again, so this bounds how often one user can do that to a large one. A Refresh inside it is scheduled for the end of the interval, not refused. |
+| `refresh_large_cells` | 10,000,000 | 1 to 100,000,000 | Cells above which a dataset counts as large for refresh_min_interval_large_s. |
+| `matrix_values` | 400,000 | 1 to 4,000,000 | Most values one Cell-Gene matrix or grouping request may hold: groups x genes and measures on the server, groups x drawn rows in the browser. |
+| `genes_per_section` | 2,000 | 1 to 20,000 | Most genes one section of a Cell-Gene Plot draws. |
+| `groups` | 2,000 | 2 to 20,000 | Most levels one partitioning may make and most groups one grouping may have; a larger one is refused with too_many_groups or too_many_levels. |
+| `partitionings` | 8 | 1 to 64 | Most partitionings one grouping combines. Never above request_partitionings. |
+| `request_partitionings` | 64 | 1 to 640 | Most partitionings one grouping request holds, groupings used as sources included. |
+| `measures` | 16 | 1 to 160 | Most measures (numeric summaries) one grouping request computes. |
+| `thresholds` | 4 | 1 to 40 | Most detection thresholds one gene or source is compared with in one request. |
+| `grid_cells` | 2,097,152 | 1 to 20,971,520 | Most cells of a count plot grid (and values a grid measure accumulates: 40 bytes each). |
+| `grid_2d_bins` | 512 | 2 to 5,120 | Most bins on the x and on the y axis of a 2D count plot. |
+| `grid_2d_split` | 8 | 1 to 80 | Most levels of the third (split) axis of a 2D count plot. |
+| `grid_1d_bins` | 2,000 | 2 to 20,000 | Most bins on the x axis of a 1D count plot. |
+| `grid_1d_split` | 200 | 1 to 2,000 | Most levels of the split axis of a 1D count plot. |
+| `grid_categorical_levels` | 200 | 1 to 2,000 | Most levels on the x and on the y axis of a categorical count plot. |
+| `grid_sets` | 16 | 2 to 16 | Most sets one set count plot compares. 16 is also the most there can be (a cell's sets are a 16-bit mask), so this can only be lowered. |
+| `obsp_source_max_cells` | 1,000,000 | 1 to 10,000,000 | Most cells a dataset may have for one of its obsp rows to be used as a per-cell source. |
+| `cell_export_max` | 1,000,000 | 1 to 10,000,000 | Most cells a grouping's cell export (CSV) writes; it is built in the browser tab. |
+| `bars_3d_max` | 40,000 | 1 to 400,000 | Most bars a 3D bar view draws (provisional: WebGL memory of the tab). |
+| `density_points_draw` | 1,000,000 | 1 to 10,000,000 | Most cells the Cell points layer of a Cell Count Plot's 2D density draws; above it a seeded uniform sample of this many is drawn. |
+| `density_points_load` | 25,000,000 | 1 to 250,000,000 | Most cells whose positions the Cell points layer of a 2D density loads into the browser tab (about 9 bytes a cell); above it the layer is refused. |
+| `dendrogram_rows` | 2,000 | 2 to 20,000 | Most rows (or columns) clustered in the browser for a dendrogram; clustering costs memory and time in proportion to the square of the rows. |
+
+```yaml
+limits:
+  ask_first_s: 30          # ask before anything estimated over 30 s
+  refuse_s: 300            # and refuse over 5 minutes
+  groups: 1000             # a lab server with less memory per worker
 ```
 
 ## `policy`

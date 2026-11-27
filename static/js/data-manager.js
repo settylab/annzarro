@@ -342,8 +342,11 @@ const DataManager = (function() {
         }
         clearDatasetCache(datasetPath);
         _cellRows = { datasetPath: null, rows: new Map(), hints: new Map() };
-        // Optionally re-fetch structure/cells/genes
-        return setCurrentDataset(datasetPath);
+        // The caches only: the header's Refresh then opens the dataset once (main.js _loadDataset), which reads the
+        // structure and the names and tells the panels when they are there. Reading them here as well ran a second
+        // load beside that one, and a Gene Plot drawn between the two found no gene names ("this dataset reported no
+        // gene names") until the next Refresh.
+        return undefined;
     }
 
     /**
@@ -354,7 +357,7 @@ const DataManager = (function() {
      * and reported, not thrown: the refresh in this browser still goes ahead.
      * @returns {Promise<Object|null>} `{changed, checked}` or null
      */
-    async function revalidateDataset(datasetPath = _currentDataset, { wait = ms => new Promise(r => setTimeout(r, ms)), maxPolls = 6 } = {}) {
+    async function revalidateDataset(datasetPath = _currentDataset, { wait = ms => new Promise(r => setTimeout(r, ms)), maxPolls = 6, onScheduled = null } = {}) {
         if (!datasetPath) return null;
         try {
             // Inside the server's refresh interval the server schedules one
@@ -368,6 +371,7 @@ const DataManager = (function() {
                 if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
                 const result = await response.json();
                 if (result.status !== 'scheduled' || poll >= maxPolls) return result;
+                if (poll === 0 && result.message && onScheduled) onScheduled(result);
                 params.after = String(result.after);
                 await wait(Math.max(200, (Number(result.retry_after_s) || 1) * 1000));
             }
@@ -1624,7 +1628,7 @@ const DataManager = (function() {
             
             return data;
         } catch (error) {
-            console.error(`Error loading obsm.${obsmKey} data:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading obsm.${obsmKey} data:`, error);
             throw error;
         }
     }
@@ -1754,7 +1758,7 @@ const DataManager = (function() {
                 params.column_name !== undefined, null, signal);
             return data;
         } catch (error) {
-            console.error(`Error loading varm.${varmKey} data:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading varm.${varmKey} data:`, error);
             throw error;
         }
     }
@@ -1832,7 +1836,7 @@ const DataManager = (function() {
             
             return data;
         } catch (error) {
-            console.error(`Error loading obsp.${obspKey} data:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading obsp.${obspKey} data:`, error);
             throw error;
         }
     }
@@ -1867,7 +1871,7 @@ const DataManager = (function() {
                 { varp_key: varpKey, dataset_path: params.dataset_path }, false, null, signal);
             return data;
         } catch (error) {
-            console.error(`Error loading varp.${varpKey} data:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading varp.${varpKey} data:`, error);
             throw error;
         }
     }
@@ -2023,7 +2027,7 @@ const DataManager = (function() {
                 return data;
             }
         } catch (error) {
-            console.error(`Error loading layer.${layerName} data:`, error);
+            if (!error || error.name !== 'AbortError') console.error(`Error loading layer.${layerName} data:`, error);
             throw error;
         }
     }

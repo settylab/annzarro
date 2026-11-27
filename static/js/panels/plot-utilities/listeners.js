@@ -1,34 +1,35 @@
-import { updateColorSliderUI, setupAxisSelector, showDropdownLoading, defaultAxisType, focusedOptionLabel,
+import { getSource } from '../../utils/source-registry.js';
+import { settleQuietly } from './plot-undo.js';
+import { isAggregate, clearSetting, applyAfter, decodeSet, encodeSet, startSet, startItem } from '../../utils/axis-aggregate.js';
+import { updateColorSliderUI, setupAxisSelector, sayPair, takeSubKey, showDropdownLoading, defaultAxisType, focusedOptionLabel,
     colorSliderValue, showColorBound, showPointStyle, showScalePreview, colorBoundText, showCenterButton } from './panel-ui-update.js';
 import { applyAutoPointStyle } from '../../utils/point-style.js';
 import { autoPointCount, plotArea } from '../../utils/view-point-style.js';
-import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, loadingIndicator, hoverPickFits, showHoverChoice } from './plot-make.js';
-import { hoverInfoFromSelection, hoverOffFromSelection, NO_HOVER } from './hover-columns.js';
+import { loadAxisData, updateTableEntities, applyLogColor, loadHoverColumns, applyHoverInfo, pointStyleBase, hoverPickFits, showHoverChoice } from './plot-make.js';
+import { hoverInfoFromSelection, hoverOffFromSelection, pickerValue, NO_HOVER } from './hover-columns.js';
 import { updatePlotElements, loadColorDataAndUpdatePlot, highlightFocusedEntity, removeHighlight, restyleMarkers } from './plot-update.js';
 import { beginLoad, endLoad, wasCancelled } from '../../utils/load-scope.js';
 import { showCancelled } from '../../utils/panel-surface.js';
 import { afterMotion } from '../../utils/layout-motion.js';
 import { DataManager } from '../../data-manager.js';
 import { 
-  setupAestheticsMenuListeners, 
   createAestheticsMenu,
   applyAllAestheticSettings,
-  initializeAestheticsSettings,
-  createPopoverContent
+  initializeAestheticsSettings
 } from './plot-aesthetics-menu.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { aspectUpdate, autorangeValue, keepsOwnMarker, refreshScaleBar } from './plot-make-helper.js';
 import { colorBoundFromData, colorBoundToData } from '../../utils/array-stats.js';
-import { notify } from '../../utils/notify.js';
-import { partialRefreshNotice } from '../../utils/session-permissions.js';
-import { SLIDER_STEPS, pointSizeScale, opacityScale, valueAt, roundSig, snapPointSize } from '../../utils/slider-scales.js';
+import { SLIDER_STEPS, opacityScale, valueAt, roundSig } from '../../utils/slider-scales.js';
 import { coalesce } from '../../utils/render-queue.js';
+import { VOCABULARY } from '../../utils/vocabulary.js';
 
 export function setupPlotEventListeners({
     plotContainer,
     controlsContainer,
     settings,
     plotType,
+    consumer,
     data,
     id,
     loadDataAndCreatePlot,
@@ -44,6 +45,7 @@ export function setupPlotEventListeners({
         plotContainer,
         settings,
         plotType,
+        consumer,
         data,
         id,
         loadDataAndCreatePlot,
@@ -58,7 +60,8 @@ export function setupPlotEventListeners({
         data,
         id,
         loadDataAndCreatePlot,
-        updatePlotElements
+        updatePlotElements,
+        consumer
     );
     
     setupColorControls(
@@ -97,6 +100,22 @@ export function sizeChanged(gd) {
 
 
 /**
+ * The graph's automatic point style for the size it is about to be fitted to, before the fit
+ * (plot-make.js __azPreFit): one fit per resize. The padding the new sizes gave needs no fit of its own then.
+ * @param {HTMLElement} gd
+ */
+export function preFit(gd) {
+    if (!gd || typeof gd.__azPreFit !== 'function') return;
+    const style = window.getComputedStyle ? window.getComputedStyle(gd) : null;
+    const width = (style && parseFloat(style.width)) || gd.clientWidth || 0;
+    const height = (style && parseFloat(style.height)) || gd.clientHeight || 0;
+    if (!(width > 0 && height > 0)) return;
+    gd.__azPreFit(width, height);
+    gd.__azPadMoved = 0;
+}
+
+
+/**
  * Sets up a ResizeObserver to autosize a Plotly plot when its container resizes.
  * @param {HTMLElement} plotContainer - The DOM element containing the plot.
  * @returns {ResizeObserver|null} - The created ResizeObserver instance or null if not supported.
@@ -119,6 +138,7 @@ export function setupResizeObserver(plotContainer) {
         // Check if a Plotly plot exists by verifying the presence of plot data
         if (plotContainer.data && plotContainer.data.length > 0
             && sizeChanged(plotContainer)) {
+          preFit(plotContainer);
           Plotly.relayout(plotContainer, { autosize: true });
         }
       } catch (error) {
@@ -154,6 +174,7 @@ export function setupResizeObserver(plotContainer) {
  * @param {string|number} id - Unique identifier to build element selectors.
  * @param {Function} loadDataAndCreatePlot - Function to recreate the entire plot.
  * @param {Function} updatePlotElements - Function to update plot properties.
+ * @param {string} consumer - the panel type ('cell-plot', 'gene-plot'): what the z axis's type menu lists
  */
 export function setupPlotControlListeners(
     controlsContainer,
@@ -163,12 +184,13 @@ export function setupPlotControlListeners(
     data,
     id,
     loadDataAndCreatePlot,
-    updatePlotElements
+    updatePlotElements,
+    consumer
   ) {
     // Use jQuery for element selection and event binding
     const $controlsContainer = jQuery(controlsContainer);
     
-    // --- 3D Plot Toggle ---
+    // --- 3D toggle ---
     const $zAxisToggle = $controlsContainer.find(`#z-axis-toggle-${id}`);
     const $zAxisContainer = $controlsContainer.find(`#z-axis-container-${id}`);
     
@@ -177,14 +199,14 @@ export function setupPlotControlListeners(
       if (is3D) {
         // Disable 3D: reset classes, hide 3D controls, update settings
         $.updateButtonState($zAxisToggle, false);
-        $zAxisToggle.attr('title', 'Enable 3D plot');
+        $zAxisToggle.attr('title', VOCABULARY.plotPanel.view3dHelp);
         $zAxisContainer.hide();
         settings.z = null;
         loadDataAndCreatePlot();
       } else {
         // Enable 3D: change button appearance, show controls
         $.updateButtonState($zAxisToggle, true);
-        $zAxisToggle.attr('title', '3rd dimension active - click to disable');
+        $zAxisToggle.attr('title', VOCABULARY.plotPanel.view3dOnHelp);
         $zAxisContainer.show();
         
         if (!settings.z) {
@@ -209,7 +231,7 @@ export function setupPlotControlListeners(
             // No matrix source: let the selector pick an annotation column.
             : { type: zType, key: '', column: '' };
           // Call the axis selector setup helper from the controls object.
-          setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure);
+          setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure, { consumer, roles: ['z'], aggregate: true });
         }
         loadDataAndCreatePlot();
       }
@@ -233,8 +255,6 @@ export function setupPlotControlListeners(
     // takes any value as typed (in px / alpha), also off the track's range.
     // Setting either one ends its automatic value (utils/point-style.js);
     // its auto button brings it back.
-    // Sizes snap to the steps scattergl draws (2D); 3D markers take any size.
-    const sizeSnap = (v, other) => (settings.z ? other(v) : snapPointSize(v));
     const pointStyle = (name, key, autoKey, scale, valid, snap) => {
       const $slider = $controlsContainer.find(`#${name}-${id}`);
       const $input = $controlsContainer.find(`#${name}-input-${id}`);
@@ -260,7 +280,14 @@ export function setupPlotControlListeners(
         redrawStyling();
       });
     };
-    pointStyle('point-size', 'pointSize', 'autoPointSize', pointSizeScale, (v) => v > 0, sizeSnap);
+    // The point size is Plot Options' (Points; options-popover.js, aesthetics-kinds.js): it writes the settings and calls this, which
+    // works the automatic size out when Auto is on, then redraws as the sliders always did.
+    plotContainer.__pointSizeChanged = (s) => {
+      if (s.autoPointSize === true) {
+        applyAutoPointStyle(s, autoPointCount(plotContainer, s, keepsOwnMarker), pointStyleBase(), plotArea(plotContainer, s));
+      }
+      redrawStyling();
+    };
     pointStyle('point-opacity', 'pointOpacity', 'autoPointOpacity', opacityScale, (v) => v > 0 && v <= 1,
       (v, other) => other(v));
     
@@ -279,7 +306,7 @@ export function setupPlotControlListeners(
       if (!off && !(await hoverPickFits(settings, plotType, plotContainer, !!data.colorRanked))) {
         Object.assign(settings, before);
         if (before.hoverOff === undefined) delete settings.hoverOff;
-        const prior = new Set((before.hoverInfo || []).map(h => h && h.key));
+        const prior = new Set((before.hoverInfo || []).map(h => h && pickerValue(h)));
         for (const o of e.target.options) o.selected = o.value !== NO_HOVER && prior.has(o.value);
         showHoverChoice(plotContainer, settings);
         return;
@@ -334,23 +361,9 @@ export function setupPlotControlListeners(
       });
     }
   
-    // --- Refresh Plot Button ---
-    const $refreshPlotButton = $controlsContainer.find(`#refresh-plot-${id}`);
-    // reloads the panel's data: re-checked on the server, past this browser's copies
-    // (the server may wait for its next walk of the dataset, up to
-    // server.refresh_min_interval_s: the panel shows it is busy meanwhile)
-    $refreshPlotButton.on('click', async () => {
-      loadingIndicator.show(plotContainer, 'refresh');
-      try {
-        const checked = await DataManager.reloadDatasetData();
-        const partial = partialRefreshNotice(checked);
-        if (partial) notify(partial.title, partial.message, 'info');
-      } finally {
-        loadingIndicator.hide(plotContainer, 'refresh');
-      }
-      loadDataAndCreatePlot();
-    });
-    
+    // No Refresh of its own (decision 39): every edit draws what a fresh draw of the settings draws
+    // (tests/browser/test_render_drift.py), and the header's Refresh re-reads the dataset keeping the view.
+
     // --- Table Filter Controls ---
     // Add event listeners for table filter dropdown
     // Try different selector strategies to find the table filter dropdown
@@ -416,6 +429,12 @@ export function setupPlotControlListeners(
         $removeNonTableEntriesBtn.attr('title',
           `Remove non-table entries (${settings.removeNonTableEntries ? 'active' : 'inactive'})`);
         
+        // A table that passes no cell: greyed is every cell grey, removed is the placeholder.
+        // That is a different drawing, not a restyle of the points drawn
+        if (data.tableFilterEmpty != null && settings.tableFilter && settings.tableFilter !== 'none') {
+          loadDataAndCreatePlot();
+          return;
+        }
         // We don't need to rebuild the tableEntities set, just apply the new filter setting
         // Now all filtering is separated - just update filter and colors
         updatePlotElements(plotContainer, data, settings, loadDataAndCreatePlot, { 
@@ -727,7 +746,24 @@ export function setupColorControls(
         // units' range (103..9950 against log10 colours) until a Refresh.
         updateColorSliderUI(controlsContainer, data, settings, id);
         _updatePlotElements({ colors: true, colorRange: true });
+        _scoreLogHint();
     };
+    // A provider's values (a z-score) may be mostly negative, and a log colour scale cannot show a value of zero
+    // or below: those cells are not dropped, they share the lowest colour (the floor). Say how many, in plain words.
+    function _scoreLogHint() {
+        const provider = settings.color && getSource(settings.color.type);
+        if (!provider || !settings.color.log || !data.colorLog || !(Array.isArray(data.colorRaw) || ArrayBuffer.isView(data.colorRaw))) return;
+        const floor = data.colorLog.floor;
+        let low = 0, finite = 0;
+        for (const v of data.colorRaw) {
+            if (typeof v !== 'number' || Number.isNaN(v)) continue;
+            finite++;
+            if (!(v > floor)) low++;
+        }
+        if (!low) return;
+        _logHint(`Log colour scale: ${low.toLocaleString('en-US')} of ${finite.toLocaleString('en-US')} cells have a ${provider.vocabulary.result} at or below ${Number(floor.toPrecision(3))} `
+            + 'and are all drawn in the lowest colour. A log scale cannot tell them apart.');
+    }
     $logColorButton.on('click', () => {
         if (!settings.color) return;
         _logHint('');
@@ -1024,6 +1060,7 @@ function setupAxisSelectorListeners(
     plotContainer,
     settings,
     plotType,
+    consumer,
     data,
     id,
     loadDataAndCreatePlot,
@@ -1058,9 +1095,19 @@ function setupAxisSelectorListeners(
     const oldKey = settings[axis].key;
     const oldColumn = settings[axis].column;
     
+    // a set (a signature, a group) is a way to read a layer: leaving the layer source clears it entirely, so no method or
+    // layer of it outlives it (axis-aggregate-picker-080)
+    if (isAggregate(settings[axis])) clearSetting(settings[axis]);
+
     // Now change the type
     delete settings[axis].auto;   // a colour the user changed is theirs
     settings[axis].type = newType;
+    // a provider's keys are its entities: the old type's key is none of them (nor one that is gone), so the axis
+    // takes the one it last had of this type, else the provider's first
+    if (getSource(newType)) {
+      const was = settings[axis].history && settings[axis].history[newType];
+      settings[axis].key = (was && was.key) || '';
+    }
     
     // Show loading indicators for key and column selects
     showDropdownLoading($keySelect[0]);
@@ -1072,7 +1119,7 @@ function setupAxisSelectorListeners(
       return;
     }
     
-    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
+    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure, { consumer, roles: [axis], aggregate: true });
 
     // Initialize history storage if needed
     if (!settings[axis].history) {
@@ -1103,6 +1150,17 @@ function setupAxisSelectorListeners(
       return;
     }
 
+    if (getSource(newType)) {
+      // the provider's third menu was built and its first entry adopted (a score's method in `column`, its layer
+      // beside it), or it has none: its values are not columns to fall back on
+      handleAxisUpdate(axis, plotType);
+      return;
+    }
+
+    // a layer with no item to read yet (no gene or cell is focused): nothing is drawn from it, and the plot stays as it was
+    // until a gene, a cell or a set is picked
+    if (newType === 'layer' && $columnSelect[0].__aggregate && !settings[axis].column) return;
+
     const cols = $.findAll('option', $columnSelect).map(o => o.value);
     const current = settings[axis].column;
     if (!cols.includes(current)) {
@@ -1132,8 +1190,28 @@ function setupAxisSelectorListeners(
   // Key selectors
   $container.find('.axis-key-select').on('change', async function() {
     const axis = jQuery(this).data('axis');
-    const newKey = jQuery(this).val();
+    let newKey = jQuery(this).val();
     const $columnSelect = $container.find(`.axis-column-select[data-axis="${axis}"]`);
+
+    // a set is read on the layer this select lists: another layer is another reading of the same set
+    if ($columnSelect[0] && $columnSelect[0].__aggregate && isAggregate(settings[axis])) {
+      delete settings[axis].auto;
+      const said = applyAfter(settings[axis], 'layer', newKey);
+      await refillRow(axis);
+      sayPair($columnSelect[0], said);
+      handleAxisUpdate(axis, plotType);
+      return;
+    }
+
+    // a provider's way to make an entity ("New signature…"): it opens beside this plot and this axis takes it
+    const provider = getSource(settings[axis].type);
+    if (provider && provider.newEntity && newKey === provider.newEntity.value) {
+      const made = provider.newEntity.run(id);
+      if (!made) { jQuery(this).val(settings[axis].key || ''); return; }
+      newKey = made.getId();
+      settings[axis].label = made.getTitle();
+      settings[axis].column = '';
+    }
 
     if (!$columnSelect.length) {
       console.error(`Missing column select for ${axis}`);
@@ -1158,7 +1236,7 @@ function setupAxisSelectorListeners(
       return;
     }
 
-    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure);
+    setupAxisSelector(controlsContainer, axis, settings[axis], plotType, datasetStructure, { consumer, roles: [axis], aggregate: true });
 
     // Initialize history storage if needed
     if (!settings[axis].history) {
@@ -1183,12 +1261,72 @@ function setupAxisSelectorListeners(
   $container.find('.axis-column-select').on('change', function() {
     const axis = jQuery(this).data('axis');
     delete settings[axis].auto;
-    settings[axis].column = jQuery(this).val();
+    if (this.__aggregate) {
+      // the item picker of a layer: a set, a single item, or (the button's menu) another aggregation of the set held
+      const s = settings[axis];
+      const touched = this.__touched;
+      this.__touched = null;
+      const picked = jQuery(this).val();
+      if (touched === 'agg' || touched === 'member' || isAggregate(s) || decodeSet(picked)) {
+        let said = '';
+        const layer = $container.find(`.axis-key-select[data-axis="${axis}"]`).val();
+        if (touched === 'agg') said = applyAfter(s, 'method', this.__aggValue);
+        else if (touched === 'member') said = applyAfter(s, 'member', this.__memberValue);
+        else if (decodeSet(picked)) {
+          // the provider's way to make a set ("New signature…"): it opens beside this plot and this axis takes it
+          const d = decodeSet(picked);
+          const maker = getSource(d.type).newEntity;
+          let value = picked;
+          if (maker && d.entry === maker.value) {
+            const made = maker.run(id);
+            value = made ? encodeSet(d.type, made.getId()) : '';
+          }
+          if (value) startSet(s, value, layer);
+        }
+        else startItem(s, layer, picked);
+        refillRow(axis).then(() => { sayPair(this, said); handleAxisUpdate(axis, plotType); });
+        return;
+      }
+    }
+    if (getSource(settings[axis].type)) {
+      // the provider's method select (a score's method in `column`), or its layer select, which hands its change here
+      if (takeSubKey(settings[axis], this, id)) handleAxisUpdate(axis, plotType);
+      return;
+    }
+    const s = settings[axis];
+    s.column = jQuery(this).val();
+    // the column chosen is the one this key remembers: the axis setup prefers the remembered one, so the column a
+    // link or a panel set reopens on was the one chosen before the last switch away (render drift, decision 39)
+    const h = s.history && s.history[s.type];
+    if (h && h.columns && s.key in h.columns) h.columns[s.key] = s.column;
     handleAxisUpdate(axis, plotType);
   });
   
   // Set up lock and refocus button handlers using event delegation
   setupSpecialButtonListeners(controlsContainer, settings, plotType, onFocusedCellChanged, onFocusedGeneChanged);
+
+  // a grouping picked before its groups were known takes its group when they are (the provider's `settle`), as one change
+  let settleSeen = false;
+  const settleHandler = () => {
+    const root = controlsContainer && controlsContainer.jquery ? controlsContainer[0] : controlsContainer;
+    const here = !!(root && root.isConnected);
+    if (here) settleSeen = true;
+    else if (settleSeen) { document.removeEventListener('annzarro:panels-changed', settleHandler); return; }       // the panel is gone
+    if (!here) return;
+    for (const axis of ['x', 'y', 'z', 'color']) {
+      const s = settings[axis];
+      const provider = s && isAggregate(s) ? getSource(s.type) : null;
+      const found = provider && provider.aggregate && provider.aggregate.settle ? provider.aggregate.settle(s) : null;
+      if (found) { settleQuietly(id, () => Object.assign(s, found)); refillRow(axis).then(() => handleAxisUpdate(axis, plotType)); }
+    }
+  };
+  document.addEventListener('annzarro:panels-changed', settleHandler);
+
+  /** The row of an axis built again from its setting (the item picker, the layer list, the aggregation button). */
+  async function refillRow(axis) {
+    const structure = await DataManager.getDatasetStructure();
+    if (structure) setupAxisSelector(controlsContainer, axis, settings[axis], plotType, structure, { consumer, roles: [axis], aggregate: true });
+  }
 
   /**
    * 
@@ -1211,7 +1349,7 @@ function setupAxisSelectorListeners(
       if (data && data.generation === null) { loadDataAndCreatePlot(); return; }
       // one load per axis: a newer change of it aborts this one
       const signal = beginLoad(plotContainer, `axis:${axis}`);
-      loadAxisData(settings[axis], plotType, plotContainer, { signal }).then(axisData => {
+      loadAxisData(settings[axis], plotType, plotContainer, { signal, axis }).then(axisData => {
         if (signal.aborted) throw new DOMException('Axis load aborted', 'AbortError');
         if (axisData?.values) {
           data[axis] = axisData;

@@ -185,10 +185,20 @@ def shoot(sh, store: str) -> None:
         loc.first.click()
         page.wait_for_timeout(300)
 
+    def add(item, key):
+        """The Layers tab lists only ticked columns and one add row (cell, layer, Add column)."""
+        row = page.locator(f"{t} .tab-pane.active .az-score-add")
+        if row.locator(f".az-entity-item option[value='{item}']").count() == 0:
+            fail(f"the add row offers no '{item}'")
+        row.locator(".az-entity-item").select_option(value=item)
+        row.locator(".az-entity-key").select_option(value=key)
+        row.locator(".az-entity-add-btn").click()
+        page.wait_for_timeout(300)
+
     tab("var")
     tick(ISDE)
     tab("layers")
-    tick(f"{FC_LABEL} (focused)")
+    add(HSC, FC)
     page.locator(f"{t} button", has_text="Apply Changes").click()
     sh.ready(page)
     toggle_controls(sh, page, TBL)

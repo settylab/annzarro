@@ -88,7 +88,11 @@ What each step buys:
   `logged_counts` layer takes 72 ms, a gene column of a dense layer 12 ms, and a cell row of the
   CSC `X` 215 ms against 12 ms for its gene column ({doc}`../reference/performance`). A Cell Plot
   coloured by a layer reads gene columns; a Gene Plot coloured by a layer reads cell rows. Pick
-  the direction you use most, or store the layer dense if it fits.
+  the direction you use most, or store the layer dense if it fits. Since 0.8.0 the direction matters more:
+  gene scores, the Cell-Gene Plot and **Z-score mean** of a cell group read gene columns, so on a CSR layer
+  they are estimated far slower and may ask first or be refused ({doc}`../user-guide/cell-gene-plot`), and
+  **Z-score mean** of a cell group is greyed out on a layer stored by cell. Store the layers you score or
+  group by as CSC.
 
 **Format 2 or 3.**
 : See {ref}`zarr-format` below.
@@ -172,8 +176,10 @@ X-Annzarro-Nnz: 9
 
 ```{note}
 The server caches what it read and assumes stores do not change while it runs. After
-rewriting a store in place, restart the server or call `POST /api/v1/cache/reset` (admins only
-on a shared server).
+rewriting a store in place, press **Refresh dataset** in the header (any user may; it always
+makes every worker read the dataset again, even when its files look unchanged), or call
+`POST /api/v1/data/refresh`. `POST /api/v1/cache/reset` (admins only on a shared server) and a
+restart do the same.
 ```
 
 (zarr-format)=
@@ -424,7 +430,8 @@ of the 5.6 GB processed h5ad; plan for 32 GB at this size.
 
 ```{note}
 The published `bm_aging.zarr` was made before the Procedure text settled on the aspect rule,
-so its dense arrays have (1024, 1024) chunks and `logged_counts` is still CSR. Both are fine at
-8,090 cells ({doc}`chunking`). The current Procedure text gives (512, 1024) for these layers and
+so its dense arrays have (1024, 1024) chunks and `logged_counts` and the counts layers are CSR. Both are fine at
+8,090 cells ({doc}`chunking`), but CSR is the slow layout for the 0.8.0 scores and Cell-Gene reads (a deposit with
+CSC layers is planned). The current Procedure text gives (512, 1024) for these layers and
 converts `logged_counts` to CSC, as `bm_aging.py` does.
 ```

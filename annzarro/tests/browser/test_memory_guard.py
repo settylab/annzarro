@@ -418,9 +418,14 @@ def test_full_export_with_room(server, page):
         page.click("#download-png-cell-plot-a")
     w, h = _png_size(dl.value.path())
     assert (w, h) in ((1200, 800), (2400, 1600)), (w, h)
+    # The download arrives before the export has finished with the page: the button stays busy and the menu is
+    # drawn again when it ends, and a click on a busy export is ignored. The next export goes when none is.
+    page.wait_for_function("() => !document.querySelector('.export-btn[aria-busy=\"true\"]')", timeout=30000)
+    playwright.expect(page.locator("#download-svg-cell-plot-a")).to_be_enabled()
     with page.expect_download() as dl:
-        page.click("#download-svg-cell-plot-a")
+        page.locator("#download-svg-cell-plot-a").click()
     assert open(dl.value.path(), encoding="utf-8").read().startswith("<svg")
+    page.wait_for_function("() => !document.querySelector('.export-btn[aria-busy=\"true\"]')", timeout=30000)
     after = page.evaluate("""() => { const gd = document.querySelector('.tile[data-tile-id="cell-plot-a"] .js-plotly-plot');
         return JSON.stringify({ n: gd.data.length, x: Array.from(gd.data[0].x.slice(0, 5)), range: gd.layout.xaxis.range,
                                 uid: gd.data.map(t => t.uid) }); }""")
@@ -731,7 +736,7 @@ def test_table_too_big_for_an_empty_page_offers_the_subset_that_fits(server, pag
     page.evaluate("() => window.PanelManager.getPanel('cell-table-t').refreshTable()")
     text, actions = _placeholder(page, "cell-table-t")
     assert text.startswith("Too many rows for this browser"), text
-    assert re.search(r"5M rows need ~1\.8 GB; this browser gives a page at most 900 MB of JS memory\.", text), text
+    assert re.search(r"5M rows need ~3\.9 GB; this browser gives a page at most 1\.7 GB of JS memory\.", text), text
     assert "free with" not in text, text
     # nothing else is open and closing would not help; half the cells would not fit either
     assert "close-others" not in actions and "subset-half" not in actions, actions

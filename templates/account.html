@@ -9,12 +9,12 @@
     <meta name="annzarro-csrf" content="{{ session.get('csrf', '') }}">
     <title>{{ app_name|default('AnnZarro') }} account</title>
 
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
-    <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/bootstrap.min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+    <link rel="icon" href="{{ static_url('favicon.ico') }}" type="image/x-icon">
+    <link rel="icon" type="image/png" href="{{ static_url('favicon.png') }}">
+    <script src="{{ static_url('js/theme-init.js') }}"></script>
+    <link rel="stylesheet" href="{{ static_url('vendor/css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/theme.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/admin.css') }}">
 </head>
 <body class="admin-page{# site:begin #}{% if site.footer %} has-site-footer{% endif %}{# site:end #}">
     {# No inline script: the page's Content-Security-Policy allows script-src 'self' only. #}

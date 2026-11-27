@@ -1,0 +1,192 @@
+{
+ "name": "Tutorial: composition, by-type",
+ "timestamp": "2026-11-25T22:35:16+00:00",
+ "dataset": "bm_aging_annzarro.zarr",
+ "datasetName": "bm_aging_annzarro",
+ "constants": {
+  "focusedGene": "Apoe",
+  "taxonomyId": "10090"
+ },
+ "panelConfigs": {
+  "cell-grouping-types": {
+   "id": "cell-grouping-types",
+   "type": "cell-grouping",
+   "title": "Cell types by the call",
+   "config": {
+    "id": "cell-grouping-types",
+    "title": "Cell types by the call",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "midres_celltype"
+      }
+     },
+     {
+      "source": {
+       "type": "obs",
+       "key": "kompot_da_Young_to_Old_lfc"
+      },
+      "binning": {
+       "method": "manual",
+       "thresholds": [
+        -1,
+        1
+       ]
+      },
+      "labels": {
+       "bin:0": "lost",
+       "bin:1": "between",
+       "bin:2": "gained"
+      }
+     }
+    ]
+   },
+   "isSelectionTile": false
+  },
+  "cell-grouping-fine": {
+   "id": "cell-grouping-fine",
+   "type": "cell-grouping",
+   "title": "Fine cell types by the call",
+   "config": {
+    "id": "cell-grouping-fine",
+    "title": "Fine cell types by the call",
+    "version": 1,
+    "partitionings": [
+     {
+      "source": {
+       "type": "obs",
+       "key": "highres_celltype"
+      }
+     },
+     {
+      "source": {
+       "type": "obs",
+       "key": "kompot_da_Young_to_Old_lfc"
+      },
+      "binning": {
+       "method": "manual",
+       "thresholds": [
+        -1,
+        1
+       ]
+      },
+      "labels": {
+       "bin:0": "lost",
+       "bin:1": "between",
+       "bin:2": "gained"
+      }
+     }
+    ]
+   },
+   "isSelectionTile": false
+  }
+ },
+ "view": {
+  "v": 1,
+  "constants": {
+   "focusedGene": "Apoe",
+   "taxonomyId": "10090"
+  },
+  "layout": {
+   "v": 1,
+   "hierarchy": [
+    {
+     "type": "split",
+     "direction": "horizontal",
+     "panes": [
+      {
+       "percentage": 50,
+       "controlsVisible": false
+      },
+      {
+       "percentage": 50,
+       "controlsVisible": false
+      }
+     ],
+     "children": [
+      {
+       "type": "tile",
+       "id": "cell-grouping-types",
+       "controlsVisible": false
+      },
+      {
+       "type": "tile",
+       "id": "cell-grouping-fine",
+       "controlsVisible": false
+      }
+     ]
+    }
+   ],
+   "controlState": {
+    "cell-grouping-types": true,
+    "cell-grouping-fine": true
+   },
+   "panelConfigs": {
+    "cell-grouping-types": {
+     "id": "cell-grouping-types",
+     "title": "Cell types by the call",
+     "version": 1,
+     "partitionings": [
+      {
+       "source": {
+        "type": "obs",
+        "key": "midres_celltype"
+       }
+      },
+      {
+       "source": {
+        "type": "obs",
+        "key": "kompot_da_Young_to_Old_lfc"
+       },
+       "binning": {
+        "method": "manual",
+        "thresholds": [
+         -1,
+         1
+        ]
+       },
+       "labels": {
+        "bin:0": "lost",
+        "bin:1": "between",
+        "bin:2": "gained"
+       }
+      }
+     ]
+    },
+    "cell-grouping-fine": {
+     "id": "cell-grouping-fine",
+     "title": "Fine cell types by the call",
+     "version": 1,
+     "partitionings": [
+      {
+       "source": {
+        "type": "obs",
+        "key": "highres_celltype"
+       }
+      },
+      {
+       "source": {
+        "type": "obs",
+        "key": "kompot_da_Young_to_Old_lfc"
+       },
+       "binning": {
+        "method": "manual",
+        "thresholds": [
+         -1,
+         1
+        ]
+       },
+       "labels": {
+        "bin:0": "lost",
+        "bin:1": "between",
+        "bin:2": "gained"
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

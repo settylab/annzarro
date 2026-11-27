@@ -9,6 +9,7 @@ import { plotArea } from '../../utils/view-point-style.js';
 import { scaleBar, replaceScaleBar, SCALE_BAR } from './plot-options.js';
 import { usableUnsPalette } from '../../utils/uns-palette.js';
 import { proxyMarkerSize } from '../../utils/legend-options.js';
+import { isProviderType, settingTitle } from '../../utils/source-registry.js';
 import { GROUP_COLOURS, grouped, frequencyRanks, groupOf, groupLegendName, colourGroupKey } from '../../utils/categories.js';
 
 /**
@@ -103,6 +104,8 @@ export function axisTitle(settings, axis) {
   const custom = settings[`${axis}axisTitle`];
   if (custom) return custom;
   const a = settings[axis];
+  // a provider's source (a gene score) is named by its entity's title, not by the panel id it is stored under
+  if (isProviderType(a.type)) return settingTitle(a, ' · ');
   return `${a.type}.${a.key}` + (a.column ? `.${a.column}` : '');
 }
 
@@ -732,6 +735,22 @@ export function refreshScaleBar(gd, settings) {
   }).catch(() => {});
 }
 
+/**
+ * Give the ranges Hide NaN / outliers pinned (plot-make.js notePinned) again when Plotly has widened both: it widens
+ * one of them for Equal aspect, and widened the other at the next change of the plot area, so a plot showed more
+ * margin the more often its area changed (render drift, decision 39). One axis as pinned is as drawn fresh.
+ * @param {HTMLElement} gd
+ * @param {Object} settings
+ */
+export function repinIfWidened(gd, settings) {
+  const p = gd && gd.__azPinned;
+  const fl = gd && gd._fullLayout;
+  if (!p || settings.z || !fl || !fl.xaxis || !fl.yaxis || typeof Plotly === 'undefined') return;
+  const off = (ax, want) => !Array.isArray(ax.range) || Math.abs(ax.range[0] - want[0]) + Math.abs(ax.range[1] - want[1])
+    > 1e-9 * (Math.abs(want[1] - want[0]) || 1);
+  if (off(fl.xaxis, p['xaxis.range']) && off(fl.yaxis, p['yaxis.range'])) Plotly.relayout(gd, p).catch(() => {});
+}
+
 export function attachViewportTracking(plotContainer, settings) {
   if (typeof plotContainer.on !== 'function') return;
   // what C copies and a paste applies: which coordinates are on the axes (utils/view-copy.js)
@@ -750,16 +769,28 @@ export function attachViewportTracking(plotContainer, settings) {
   const noteZoom = () => {
     plotContainer.__azZoom = settings.viewport2D && !settings.z ? equalAspectZoom(plotContainer._fullLayout) : null;
   };
+  // the pinned ranges given again (below): not a view the user chose
+  const isPin = (eventData) => {
+    const p = plotContainer.__azPinned;
+    const same = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === 2 && a[0] === b[0] && a[1] === b[1];
+    return !!p && same(eventData['xaxis.range'], p['xaxis.range']) && same(eventData['yaxis.range'], p['yaxis.range']);
+  };
   const onRelayout = (eventData) => {
-    if (!eventData) return;
+    if (!eventData || isPin(eventData)) return;
     // the scale bar follows the x range on screen and the plot's size
     if (Object.keys(eventData).some(k => /^xaxis\.(range|autorange)/.test(k) || k === 'autosize' || k === 'width')) {
       refreshScaleBar(plotContainer, settings);
     }
     // The plot was resized (its pane opened, closed or moved): Plotly widens one
     // axis of a zoom to keep the aspect, and never narrows it back
+    // A margin set after the draw (the legend's room) changes the plot area as well
+    const margin = Object.keys(eventData).some(k => /^margin(\.|$)/.test(k));
+    // Hide NaN / outliers pin the axes; Plotly widened one for Equal aspect at the old area, and would widen
+    // that again: the pinned ranges once more, as a fresh draw at this area has them
+    if (margin) repinIfWidened(plotContainer, settings);
     if (eventData.autosize !== undefined || eventData.width !== undefined || eventData.height !== undefined) {
-      const kept = rangesForSize(plotContainer.__azZoom, plotContainer._fullLayout);
+      const kept = rangesForSize(plotContainer.__azZoom, plotContainer._fullLayout)
+        || (plotContainer.__azPinned && !settings.z ? plotContainer.__azPinned : null);
       if (kept) Plotly.relayout(plotContainer, kept).catch(() => {});
       // automatic point size and opacity for the new plot area (plot-make.js)
       followView();
@@ -810,6 +841,7 @@ export function attachViewportTracking(plotContainer, settings) {
   plotContainer.__azAreaHandler = onAfterPlot;
   plotContainer.on('plotly_afterplot', onAfterPlot);
   noteZoom();
+  repinIfWidened(plotContainer, settings);
   refreshScaleBar(plotContainer, settings);
   // the graph drawn: its plot area is known now (the legend's width with
   // it), and a redraw that keeps a zoomed view was drawn with the style for
@@ -1048,7 +1080,9 @@ export function keptViewRanges(settings) {
 
     // Points with no value, under the categories and last in the legend.
     if (blankIndices.length > 0) {
-      const naTrace = makeTrace(blankIndices, NO_VALUE_CATEGORY, 'rgba(200, 200, 200, 1.)', 'no value');
+      // a provider may name them ('Not in any group' for a grouping); a column's are 'NA' and 'no value'
+      const missing = data.colorMissingLabel || null;
+      const naTrace = makeTrace(blankIndices, missing || NO_VALUE_CATEGORY, 'rgba(200, 200, 200, 1.)', missing || 'no value');
       naTrace.legendrank = 1001;
       traces.push(naTrace);
     }
@@ -1127,6 +1161,8 @@ export function keptViewRanges(settings) {
 
   /** The trace of the points a table link greys out: behind the rest, in a style of its own (greyMarker). */
   export const NOT_IN_TABLE = 'Not in table';
+  /** The points in the table, beside the greyed-out rest: one name for the first draw and an update. */
+  export const IN_TABLE = 'In table';
 
   /** The one trace of a plot coloured by a scale or by nothing: named, and never a legend entry. */
   export const POINTS = 'Points';

@@ -13,10 +13,11 @@
 # scripts/plotly_licences.py).
 #
 # The traces are the ones static/js creates: scatter (the colour-scale probe), scattergl (every
-# 2D plot) and scatter3d (3D plots). No transforms. plotly.js's tool always adds the calendars
+# 2D plot), scatter3d (3D plots), mesh3d (the 3D bars of utils/bars-3d.js: Cell-Gene and Cell
+# Count in 3D), and heatmap, bar, pie and contour (the Cell-Gene and Cell Count plots). No transforms. plotly.js's tool always adds the calendars
 # component and the core, which carry the layout features AnnZarro uses (legend, colour bar,
 # shapes, annotations, modebar, image export). Update the list below together with any new trace
-# type in static/js; the browser test tests_browser/test_plotly_traces.py fails when a trace type
+# type in static/js; the browser test annzarro/tests/browser/test_plotly_traces.py fails when a trace type
 # AnnZarro creates is missing.
 #
 # The source is patched first by scripts/plotly/patch-source.js (the focus layer's WebGL context is not
@@ -28,12 +29,12 @@
 # those ids, a few dozen bytes; the same directory rebuilds identically), and plotly.js writes the
 # build year into the banner. The committed file is therefore the source of truth, pinned by the
 # sha256 in scripts/vendor-assets.json. --check compares the rebuild with it after dropping every
-# digit, which catches a changed trace list, tag or dependency but not the ids.
+# digit (and the exponent form of a large id), which catches a changed trace list, tag or dependency but not the ids.
 set -eu
 
 TAG=v2.35.3
 COMMIT=0c13c691e257045d7903c62d9c234a6cdbc0be53
-TRACES=scatter,scattergl,scatter3d
+TRACES=scatter,scattergl,scatter3d,mesh3d,heatmap,bar,pie,contour
 OUT_NAME=plotly-2.35.3-annzarro.min.js
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -58,7 +59,8 @@ node tasks/custom_bundle.js --out annzarro --traces "$TRACES" --transforms none 
 built=$src/dist/plotly-annzarro.min.js
 
 # Ids and the banner year depend on where and when it was built; the code does not.
-norm() { tr -d '0-9' < "$1" | shasum -a 256 | cut -d' ' -f1; }
+# A module id of 1000 or more is written 1e3 and so on, which leaves a stray "e" once the digits go.
+norm() { sed -E 's/[0-9]+e[0-9]+//g' "$1" | tr -d '0-9' | shasum -a 256 | cut -d' ' -f1; }
 if [ "$(norm "$built")" != "$(norm "$dest")" ]; then
   echo "rebuilt bundle differs from $dest" >&2
   [ "$check" = 1 ] && exit 1

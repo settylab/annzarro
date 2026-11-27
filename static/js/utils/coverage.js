@@ -148,7 +148,13 @@ const KIND_LABEL = Object.freeze({
     unsupported: 'not covered by the service',
     'over-limit': "over the service's limit",
     disabled: 'external services are turned off',
-    declined: 'not sent: declined for this service'
+    declined: 'not sent: declined for this service',
+    // a derived source (a gene score, a grouping) whose value is not there: still on its way, or stopped (refused,
+    // failed, cancelled, deleted, asks first); its notice says which. One the dataset truly lacks keeps UNAVAILABLE's.
+    pending: 'not ready yet',
+    stopped: 'not available',
+    // a gene signature's banner: the dataset's genes that are not ticked ("5 of 3,000 genes selected")
+    unselected: 'not selected'
 });
 
 /**
@@ -298,12 +304,13 @@ export class Coverage {
      *
      * @param {string} reason  One of `GAP.*`.
      * @param {string} detail  Why, in the user's terms.
-     * @param {Object} [opts]  `{ source, unit, total }`.
+     * @param {Object} [opts]  `{ source, unit, total, role, kind }`; `kind` names the gap more exactly than its
+     *   reason (KIND_LABEL): a derived source still on its way ('pending') or stopped ('stopped')
      */
-    static missing(reason, detail, { source = '', unit = 'values', total = null, role = ROLE.RESTRICTS } = {}) {
+    static missing(reason, detail, { source = '', unit = 'values', total = null, role = ROLE.RESTRICTS, kind = '' } = {}) {
         return new Coverage({
             shown: 0, total, unit, role,
-            gaps: [{ reason, detail, source, count: total }]
+            gaps: [{ reason, detail, source, count: total, kind }]
         });
     }
 
@@ -988,20 +995,20 @@ export function classifyFilterStats(filterStats, unit = 'values', { axisCoverage
             add(only.table, 'table filter', 'points not in the linked table', 'table');
         }
         if (filterStats.hideNaNActive) {
-            add(only.nan, 'colour', 'points with no colour value (Hide NaN is on)', 'nan');
+            add(only.nan, 'color', 'points with no color value (Hide NaN is on)', 'nan');
         }
         if (filterStats.hideOutliersActive) {
-            add(only.outliers, 'colour', 'points outside the colour range (Hide Outliers is on)', 'outliers');
+            add(only.outliers, 'color', 'points outside the color range (Hide Outliers is on)', 'outliers');
         }
     } else {
         addAxis(filterStats.xNaN, 'x-axis', 'points with no x value', axisCoverage && axisCoverage.x);
         addAxis(filterStats.yNaN, 'y-axis', 'points with no y value', axisCoverage && axisCoverage.y);
         addAxis(filterStats.zNaN, 'z-axis', 'points with no z value', axisCoverage && axisCoverage.z);
         if (filterStats.hideNaNActive) {
-            add(filterStats.colorNaN, 'colour', 'points with no colour value (Hide NaN is on)');
+            add(filterStats.colorNaN, 'color', 'points with no color value (Hide NaN is on)');
         }
         if (filterStats.hideOutliersActive) {
-            add(filterStats.colorOutliers, 'colour', 'points outside the colour range (Hide Outliers is on)');
+            add(filterStats.colorOutliers, 'color', 'points outside the color range (Hide Outliers is on)');
         }
         if (filterStats.tableFilterActive) {
             add(filterStats.tableFiltered, 'table filter', 'points not in the linked table');
@@ -1041,7 +1048,7 @@ export function exactCount(n) {
 
 /** Short chip text per kind of hidden point (or a function of the gap); see `breakdown`. */
 const KIND_CHIP = Object.freeze({
-    coords: 'no coordinates', table: 'table filter', nan: 'NaN hidden', outliers: 'outliers hidden',
+    coords: 'no coordinates', table: 'table filter', nan: 'NaN hidden', outliers: 'outliers hidden', unselected: 'not selected',
     unmapped: (g) => `not found in ${g.source || 'the service'}`
 });
 
@@ -1060,13 +1067,15 @@ const KIND_ORDER = Object.freeze({ outside: 0, coords: 1, '': 2, table: 3, nan: 
  * carry no count.
  *
  * @param {Coverage} coverage
+ * @param {{verb?: string}} [opts] - the word after the count: 'shown' (a plot, a table), or 'selected' (a gene
+ *   signature's banner, "5 of 3,000 genes selected")
  * @returns {{shown: ?number, total: ?number, hidden: ?number, unit: string,
  *   severity: string, headline: string, headlineExact: string,
  *   rows: Array<{kind: string, reason: string, chip: string, label: string,
  *   count: number}>, notes: Array<{reason: string, label: string}>,
  *   unattributed: number}}
  */
-export function breakdown(coverage) {
+export function breakdown(coverage, { verb = 'shown' } = {}) {
     const cov = coverage instanceof Coverage ? coverage : Coverage.unreported();
     const { shown, total, unit } = cov;
     const counted = typeof shown === 'number' && typeof total === 'number';
@@ -1093,7 +1102,7 @@ export function breakdown(coverage) {
     const unattributed = counted ? Math.max(0, hidden - sum) : 0;
     if (unattributed > 0) {
         rows.push({ kind: 'unattributed', reason: GAP.UNREPORTED, chip: 'no reason given',
-            label: GAP_LABEL[GAP.UNREPORTED] + ' -- nothing says why these are not shown', count: unattributed });
+            label: `${GAP_LABEL[GAP.UNREPORTED]} -- nothing says why these are not ${verb}`, count: unattributed });
     }
     let headline;
     let headlineExact;
@@ -1102,13 +1111,15 @@ export function breakdown(coverage) {
     } else if (hidden === 0) {
         headline = countNoun(total, unit, compactCount);
         headlineExact = countNoun(total, unit, exactCount);
+        // a count of something other than what is drawn says so: "All 3,000 genes selected"
+        if (verb !== 'shown') { headline = `All ${headline} ${verb}`; headlineExact = `All ${headlineExact} ${verb}`; }
     } else {
         let a = compactCount(shown);
         const b = compactCount(total);
         // "95.6M of 95.6M" would say nothing is missing
         if (a === b) a = exactCount(shown);
-        headline = `${a} of ${b} ${unit} shown`;
-        headlineExact = `${exactCount(shown)} of ${exactCount(total)} ${unit} shown`;
+        headline = `${a} of ${b} ${unit} ${verb}`;
+        headlineExact = `${exactCount(shown)} of ${exactCount(total)} ${unit} ${verb}`;
     }
     return { shown, total, hidden, unit, severity: cov.isComplete ? 'ok' : cov.severity,
         headline, headlineExact, rows, notes, unattributed };

@@ -37,6 +37,7 @@ const { createPlaceholderPanel } = await import('../../../static/js/utils/placeh
 const { serializableConfig } = await import('../../../static/js/utils/deeplink.js');
 
 const REGISTRY = JSON.parse(readFileSync(join(STATIC_JS, 'panels', 'panel-types.json'), 'utf8'));
+const RELEASED = REGISTRY.filter(e => !e.reserved && e.released !== false); // the types a user can open
 
 function sources(dir) {
     return readdirSync(dir).flatMap((name) => {
@@ -53,19 +54,20 @@ test('every registerPanelType has an entry in panel-types.json', () => {
         for (const m of text.matchAll(/\bregisterPanelType\(\s*['"]([^'"]+)['"]/g)) registered.push(m[1]);
     }
     assert.ok(registered.length >= 5, `found ${registered.length} registerPanelType calls`);
-    const known = new Set(REGISTRY.map(e => e.type));
+    const known = new Set(REGISTRY.filter(e => !e.reserved).map(e => e.type)); // a reserved id is kept free, never registered
     for (const type of registered) assert.ok(known.has(type), `panel type "${type}" has no entry in panels/panel-types.json`);
     for (const type of known) assert.ok(registered.includes(type), `panel-types.json lists "${type}" but nothing registers it`);
 });
 
 test('panel-types.json entries are complete, and config.js serves them', () => {
     for (const e of REGISTRY) {
-        for (const field of ['type', 'label', 'icon']) assert.equal(typeof e[field], 'string', `${e.type}.${field}`);
         assert.match(e.type, /^[a-z]+(-[a-z]+)*$/);
+        if (e.reserved) continue;
+        for (const field of ['type', 'label', 'icon']) assert.equal(typeof e[field], 'string', `${e.type}.${field}`);
     }
     assert.equal(new Set(REGISTRY.map(e => e.type)).size, REGISTRY.length);
-    assert.deepEqual(Config.PANEL_TYPES, REGISTRY);
-    assert.deepEqual(Config.PANEL_TYPES.map(p => p.type), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set']);
+    assert.deepEqual(Config.PANEL_TYPES, RELEASED);
+    assert.deepEqual(Config.PANEL_TYPES.map(p => p.type), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-set', 'gene-signature', 'cell-grouping', 'cell-gene', 'cell-count']);
 });
 
 const menu = () => Object.getOwnPropertyDescriptor(SelectionTile.prototype, 'panelTypes').get.call({}).map(p => p.type);
@@ -73,13 +75,13 @@ const menu = () => Object.getOwnPropertyDescriptor(SelectionTile.prototype, 'pan
 test('the panel menu offers every type when the server has no policy', async () => {
     policyReply = { status: 404 };
     await Policy.load();
-    assert.deepEqual(menu(), REGISTRY.map(e => e.type));
+    assert.deepEqual(menu(), RELEASED.map(e => e.type));
 });
 
 test('the panel menu leaves out the types the policy disables', async () => {
     policyReply = { status: 200, body: { version: 'v1', values: { 'panel.gene-set.enabled': false, 'panel.cell-plot.enabled': true } } };
     await Policy.load();
-    assert.deepEqual(menu(), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table']);
+    assert.deepEqual(menu(), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-signature', 'cell-grouping', 'cell-gene', 'cell-count']);
     // the config's own list still applies on top
     const saved = Config.DEFAULTS.ENABLED_PANEL_TYPES;
     Config.DEFAULTS.ENABLED_PANEL_TYPES = ['cell-plot', 'gene-set'];
@@ -173,21 +175,21 @@ test('an open panel menu is rebuilt when the policy changes, and stops listening
     const types = () => grid.children.map(c => c.dataset.type);
 
     SelectionTile.prototype._initPanelTypeGrid.call(self);
-    assert.deepEqual(types(), REGISTRY.map(e => e.type));
+    assert.deepEqual(types(), RELEASED.map(e => e.type));
 
     policyReply = { status: 200, body: { version: 'v1', values: { 'panel.gene-set.enabled': false } } };
     await Policy.load();
-    assert.deepEqual(types(), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table']);
+    assert.deepEqual(types(), ['cell-plot', 'gene-plot', 'cell-table', 'gene-table', 'gene-signature', 'cell-grouping', 'cell-gene', 'cell-count']);
 
     policyReply = { status: 200, body: { version: 'v2', values: { 'panel.gene-set.enabled': true, 'panel.cell-plot.enabled': false } } };
     await Policy.load();
-    assert.deepEqual(types(), ['gene-plot', 'cell-table', 'gene-table', 'gene-set']);
+    assert.deepEqual(types(), ['gene-plot', 'cell-table', 'gene-table', 'gene-set', 'gene-signature', 'cell-grouping', 'cell-gene', 'cell-count']);
 
     // a removed tile is left alone
     tile.isConnected = false;
     policyReply = { status: 200, body: { version: 'v3', values: {} } };
     await Policy.load();
-    assert.deepEqual(types(), ['gene-plot', 'cell-table', 'gene-table', 'gene-set']);
+    assert.deepEqual(types(), ['gene-plot', 'cell-table', 'gene-table', 'gene-set', 'gene-signature', 'cell-grouping', 'cell-gene', 'cell-count']);
     policyReply = { status: 404 };
     await Policy.load();
 });

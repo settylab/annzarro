@@ -68,3 +68,28 @@ test('the panel builds the picker and the listener writes hoverInfo', () => {
     assert.match(listeners, /settings\.hoverInfo = hoverInfoFromSelection\(/);
     assert.match(listeners, /data\.hoverExtra = extra;\s*await applyHoverInfo\(plotContainer, data, settings\)/);
 });
+
+test('decision 32: a Cell Plot\'s Hover picker lists no gene score, and a stored one goes quietly', async () => {
+    const { hoverColumnOptions: options, hoverInfoFromSelection: info, shownHoverInfo } =
+        await import('../../../static/js/panels/plot-utilities/hover-columns.js');
+    // the score's provider is registered (as on the page) and still a source of axes, colour and table columns
+    await import('../../../static/js/utils/score-source.js');
+    const R = await import('../../../static/js/utils/source-registry.js');
+    const score = R.getSource('gene-score');
+    assert.ok(score, 'the gene-score provider is registered');
+    assert.equal(score.axes.includes('hover'), false, 'a score fills no hover line');
+    assert.equal(R.hoverSources('cell-plot').includes(score), false);
+    const stored = [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' },
+        { type: 'gene-score', key: 'gene-signature-1', column: 'mean', layer: 'counts', label: 'T cell score' },
+        { type: 'not-loaded-here', key: 'x' }];
+    // the picker shows no Gene scores group, whatever is stored
+    const cells = options('cells', structure, stored, false);
+    assert.equal(cells.some(o => o.group === 'Gene scores' || String(o.value).startsWith('gene-score:')), false);
+    // an old link's score entry is dropped when the plot is made; a provider this page has not loaded is kept
+    assert.deepEqual(shownHoverInfo(stored, 'cells'), [{ type: 'obs', key: '_index' }, { type: 'obs', key: 'Age' }, { type: 'not-loaded-here', key: 'x' }]);
+    const clean = [{ type: 'obs', key: '_index' }];
+    assert.equal(shownHoverInfo(clean, 'cells'), clean, 'nothing to drop: the same array');
+    assert.equal(shownHoverInfo(undefined, 'cells'), undefined);
+    // and a pick in the picker does not carry it on
+    assert.deepEqual(info('cells', ['Age'], stored), [{ type: 'obs', key: '_index' }, { type: 'not-loaded-here', key: 'x' }, { type: 'obs', key: 'Age' }]);
+});

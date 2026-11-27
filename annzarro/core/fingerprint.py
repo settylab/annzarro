@@ -489,6 +489,9 @@ def start(reader, dataset_path: str):
         running = _pending.get(dataset_path)
         if running and running[0] == key and not running[1].done():
             return running[1]
+        hit = _memory.get(dataset_path)
+        if hit and hit[0] == key:       # a hash that ended since the look above has left _pending for the cache
+            return None
         if _executor is None:
             # one at a time: a second large store waits rather than
             # competing for disk and CPU with the first

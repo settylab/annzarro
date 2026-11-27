@@ -10,7 +10,9 @@ below was checked against both and observed on a running server.
 The client chooses per request with the query parameter `format=f32`. A query parameter rather
 than an `Accept` header keeps the two encodings at different URLs, so neither the browser cache
 nor the client cache can confuse them. The web client asks for `format=f32` on every numeric
-slice; JSON stays the default for everyone else.
+slice; JSON stays the default for everyone else. The two compute routes (`POST /data/gene_score`, `POST /data/cell_groups`)
+do not use this encoding: they answer with a stream of JSON frames followed by raw bytes
+(`application/x-annzarro-score-stream`, {ref}`http-cell-groups`).
 
 | Request | Slice is numeric (int or float, 1-D or 2-D) | One categorical obs/var column | Other slices (string, bool) |
 |---|---|---|---|
@@ -225,8 +227,8 @@ first time and 300 bytes (headers only) for each repeat. Rewriting a store moves
 modification times, so old tags stop matching. Overwriting chunk files in place
 (`g["obs/x"][:] = v`) moves none of them, so the tag also holds the dataset's **generation**: a
 small file per dataset under `~/.annzarro/freshness` (`ANNZARRO_HOME`), replaced by
-`POST /api/v1/cache/reset` and by `POST /api/v1/data/refresh` when that finds the store's files
-changed (Refresh dataset; any user may). After either every tag of that dataset changes, in every server
+`POST /api/v1/cache/reset` and by every `POST /api/v1/data/refresh` (Refresh dataset; any user
+may), whether or not its walk found a change. After either every tag of that dataset changes, in every server
 process on the machine (each gunicorn worker stats the same file), and the server's own result
 cache, keyed by the same token, is read afresh. Remote stores get no ETag.
 

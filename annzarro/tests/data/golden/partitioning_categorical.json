@@ -1,0 +1,16 @@
+{
+ "source": {
+  "type": "obs",
+  "key": "cell_type"
+ },
+ "levels": [
+  "c:B cell",
+  "c:T cell",
+  "c:other"
+ ],
+ "rest": "exclude",
+ "labels": {
+  "c:B cell": "B",
+  "c:T cell": "T"
+ }
+}

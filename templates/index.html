@@ -10,27 +10,28 @@
     <title>{{ app_name|default('AnnZarro') }} - {{ project_description|default('Zarr-based AnnData Visualization') }}</title>
     
     <!-- Favicons -->
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <link rel="icon" href="{{ static_url('favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ static_url('favicon.ico') }}" type="image/x-icon">
+    <link rel="icon" type="image/png" href="{{ static_url('favicon.png') }}">
     
     <!-- Theme (System, Light or Dark) before anything paints: sets <html data-theme>; see static/js/theme-init.js -->
-    <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
+    <script src="{{ static_url('js/theme-init.js') }}"></script>
     <!-- Which bundled libraries fail to load, for the message if they do; see static/js/vendor-watch.js -->
-    <script src="{{ url_for('static', filename='js/vendor-watch.js') }}"></script>
+    <script src="{{ static_url('js/vendor-watch.js') }}"></script>
 
+    <link rel="stylesheet" href="{{ static_url('css/fonts.css') }}">
     <!-- External Dependencies (local for offline use) -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ static_url('vendor/css/bootstrap.min.css') }}">
     
     <!-- DataTables CSS Files (Bootstrap 5 styling) -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/dataTables.bootstrap5.min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/buttons.bootstrap5.min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/searchBuilder.bootstrap5.min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/select.bootstrap5.min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/fixedHeader.bootstrap5.min.css') }}">
+    <link rel="stylesheet" href="{{ static_url('vendor/css/dataTables.bootstrap5.min.css') }}">
+    <link rel="stylesheet" href="{{ static_url('vendor/css/buttons.bootstrap5.min.css') }}">
+    <link rel="stylesheet" href="{{ static_url('vendor/css/searchBuilder.bootstrap5.min.css') }}">
+    <link rel="stylesheet" href="{{ static_url('vendor/css/select.bootstrap5.min.css') }}">
+    <link rel="stylesheet" href="{{ static_url('vendor/css/fixedHeader.bootstrap5.min.css') }}">
     
     <!-- Font Awesome -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/css/all.min.css') }}">
+    <link rel="stylesheet" href="{{ static_url('vendor/css/all.min.css') }}">
 
     <!-- FontAwesome webfont paths -->
     <style>
@@ -39,36 +40,44 @@
             font-style: normal;
             font-weight: 900;
             font-display: block;
-            src: url("{{ url_for('static', filename='vendor/webfonts/fa-solid-900.woff2') }}") format("woff2");
+            src: url("{{ static_url('vendor/webfonts/fa-solid-900.woff2') }}") format("woff2");
         }
         @font-face {
             font-family: 'Font Awesome 6 Free';
             font-style: normal;
             font-weight: 400;
             font-display: block;
-            src: url("{{ url_for('static', filename='vendor/webfonts/fa-regular-400.woff2') }}") format("woff2");
+            src: url("{{ static_url('vendor/webfonts/fa-regular-400.woff2') }}") format("woff2");
         }
         @font-face {
             font-family: 'Font Awesome 6 Brands';
             font-style: normal;
             font-weight: 400;
             font-display: block;
-            src: url("{{ url_for('static', filename='vendor/webfonts/fa-brands-400.woff2') }}") format("woff2");
+            src: url("{{ static_url('vendor/webfonts/fa-brands-400.woff2') }}") format("woff2");
         }
         @font-face {
             font-family: 'Font Awesome 6 Free';
             font-style: normal;
             font-weight: 900;
             font-display: block;
-            src: url("{{ url_for('static', filename='vendor/webfonts/fa-v4compatibility.woff2') }}") format("woff2");
+            src: url("{{ static_url('vendor/webfonts/fa-v4compatibility.woff2') }}") format("woff2");
         }
     </style>
     
     <!-- Custom Styles: the theme's colours (light and dark) first, then the app's own -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/theme.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/styles.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/cards.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/cell-grouping.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/partition-options.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/group-grid.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/cell-gene.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/cell-count.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/popover.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/plot-options.css') }}">
     <!-- The desktop app has no native title bar on macOS and Windows; applies only with <html data-desktop-frame> (set by its preload) -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/desktop-frame.css') }}">
+    <link rel="stylesheet" href="{{ static_url('css/desktop-frame.css') }}">
 </head>
 <body>
     <!-- Toasts (main.js _showNotification): in the page from the start, so that the first one is announced -->
@@ -126,6 +135,11 @@
                                     <input id="share-link-field" type="text" class="form-control" readonly aria-label="Shareable link">
                                     <button id="share-link-close" class="btn btn-outline-secondary" type="button" title="Close"><i class="fas fa-times"></i></button>
                                 </div>
+                                <!-- Said when the link is long: chat and email programs cut long links (main.js, LONG_LINK_CHARS) -->
+                                <div id="share-link-note" class="share-link-fallback share-link-note" role="status" hidden>
+                                    <span id="share-link-note-text" class="flex-grow-1 small"></span>
+                                    <button id="share-link-note-close" class="btn btn-sm btn-link py-0" type="button" title="Close" aria-label="Close"><i class="fas fa-times"></i></button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -151,7 +165,7 @@
                     <i class="fas fa-arrow-left" aria-hidden="true"></i>
                 </button>
                 <!-- records a click on the button or Ctrl+O made before the app has started (js/early-open.js) -->
-                <script src="{{ url_for('static', filename='js/early-open.js') }}"></script>
+                <script src="{{ static_url('js/early-open.js') }}"></script>
                 <button id="refresh-dataset" type="button" class="btn btn-sm btn-outline-secondary dataset-refresh" title="Refresh dataset" aria-label="Refresh dataset">
                     <i class="fas fa-sync-alt" aria-hidden="true"></i>
                 </button>
@@ -171,6 +185,8 @@
                 </span>
                 <span class="dataset-fact">Genes: <span id="gene-count">-</span></span>
                 <span id="dataset-format-fact" class="dataset-fact" hidden>Format: <span id="dataset-format">-</span></span>
+                <!-- what a link, panel set or switch is doing (utils/load-progress.js); never covers anything -->
+                <span id="load-progress" class="load-progress" role="status" aria-live="polite" hidden></span>
                 <!-- System / Light / Dark (static/js/utils/theme-toggle.js); here, not in the header, which has no room to spare -->
                 <span id="theme-toggle" class="theme-toggle"></span>
             </div>
@@ -374,24 +390,24 @@
 
     <!-- Local resources for offline use in Electron -->
     <!-- jQuery -->
-    <script src="{{ url_for('static', filename='vendor/js/jquery-3.6.4.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/jquery-3.6.4.min.js') }}"></script>
     
     <!-- Bootstrap (must be loaded before modules that depend on it) -->
-    <script src="{{ url_for('static', filename='vendor/js/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/bootstrap.bundle.min.js') }}"></script>
     
     <!-- Plotly -->
-    <script src="{{ url_for('static', filename='vendor/js/plotly-2.35.3-annzarro.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/plotly-2.35.3-annzarro.min.js') }}"></script>
     
     <!-- DataTables Core and Extensions with Bootstrap 5 Integration -->
-    <script src="{{ url_for('static', filename='vendor/js/jquery.dataTables.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/dataTables.bootstrap5.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/dataTables.buttons.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/buttons.bootstrap5.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/buttons.html5.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/dataTables.searchBuilder.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/searchBuilder.bootstrap5.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/dataTables.select.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/js/dataTables.fixedHeader.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/jquery.dataTables.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/dataTables.bootstrap5.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/dataTables.buttons.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/buttons.bootstrap5.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/buttons.html5.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/dataTables.searchBuilder.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/searchBuilder.bootstrap5.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/dataTables.select.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/dataTables.fixedHeader.min.js') }}"></script>
     
     <!-- DataTables initialization verification -->
     <script>
@@ -424,7 +440,7 @@
     </script>
     
     <!-- Other libraries -->
-    <script src="{{ url_for('static', filename='vendor/js/chroma.min.js') }}"></script>
+    <script src="{{ static_url('vendor/js/chroma.min.js') }}"></script>
     
     <!-- Make bootstrap globally available for script modules -->
     <script>
@@ -443,6 +459,10 @@
     <script type="module" src="{{ url_for('static', filename='js/panels/cell-table.js') }}"></script>
     <script type="module" src="{{ url_for('static', filename='js/panels/gene-table.js') }}"></script>
     <script type="module" src="{{ url_for('static', filename='js/panels/gene-set.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/panels/gene-signature.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/panels/cell-grouping.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/panels/cell-gene.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/panels/cell-count.js') }}"></script>
     <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
     
     <!-- Check dependencies are properly loaded -->

@@ -7,7 +7,7 @@ import { PanelManager } from '../panel-manager.js';
 import { Config } from '../config.js';
 import { DataManager } from '../data-manager.js';
 import { createTablePanelStructure, initializeTableUIState, checkDatasetLoadingStatus } from './table-utilities/table-ui-make.js';
-import { loadTableData, initializeDataTable, freezeTableState, applyLineToSettings, settleColumnChooser, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
+import { loadTableData, initializeDataTable, releaseTable, keptSelection, applyLineToSettings, settleColumnChooser, replaceRowsInPlace, updateTableOnFocusChange, exportTableToCsv, pinPanelFocusPlaceholders } from './table-utilities/table-data.js';
 import { Coverage, GAP } from '../utils/coverage.js';
 import { renderCoverageNotice, drawPlaceholder, showCancelled } from '../utils/panel-surface.js';
 import { beginLoad, endLoad, cancelLoads, wasCancelled } from '../utils/load-scope.js';
@@ -17,6 +17,18 @@ import { syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { assignKnownSettings, configOf } from '../utils/panel-settings.js';
 import { commit as commitMemory, forget as forgetMemory } from '../utils/memory-guard-ui.js';
 import { tableMayLoad } from './table-utilities/table-memory.js';
+import { TableResolver } from '../utils/table-resolver.js';
+import { TableScores } from './table-utilities/table-scores.js';
+import { bindScoreColumns } from './table-utilities/table-score-ui.js';
+import { sameScoreColumn } from '../utils/score-column.js';
+import { removeColumnFromChooser } from './table-utilities/table-ui-make.js';
+import './table-utilities/table-background.js';
+import { createTableUndo, changesTableState, giveBack } from './table-utilities/table-undo.js';
+import { makeDom } from './gene-set-utilities/dom.js';
+import { createScoreOptions } from './score-options/score-options.js';
+import { distributionSource } from './cell-count/controls-model.js';
+import { DEFAULT_INPUT, DEFAULT_METHOD, isDefaultParams, writableOptions } from '../utils/signature-options.js';
+import { sourceChanged, sourceRenamed, pinConsumersOf } from '../utils/score-source.js';
 
 const GeneTablePanel = (function() {
     /**
@@ -35,6 +47,8 @@ const GeneTablePanel = (function() {
         let _dataTable = null;
         let _tableListenersCleanup = null;
         let _isFirstLoad = true;
+        let _undo = null;                 // Undo of the table's settings (table-utilities/table-undo.js)
+        let _scoreOptions = null;         // Score methods ▾ and the layers' kinds (panels/score-options/score-options.js), shared with the gene signature
         
         // Initialize settings with default options
         const _settings = {
@@ -44,8 +58,15 @@ const GeneTablePanel = (function() {
             fixedHeader: true, // Always use fixed header
             searchBuilderConfig: { criteria: [] },
             searchText: '',
+            // the search box's toggles (regex, smart, case): saved with the panel
+            searchRegex: false,
+            searchSmart: true,
+            searchCaseInsensitive: true,
             currentEntries: [],
-            filteredGenes: null
+            filteredGenes: null,
+            // How this table's gene score is computed: the option fields of a signature's recipe (utils/signature-options.js),
+            // stored only when they are not the defaults. The genes are never stored: they are the rows that pass the filter.
+            scoreOptions: null
         };
         
         // Override with provided options
@@ -66,6 +87,8 @@ const GeneTablePanel = (function() {
                 // Store references for later use
                 _tableContainer = tableContainer;
                 _controlsContainer = controlsContainer;
+                mountScoreOptions(controlsContainer);
+                mountUndo();
                 
                 // Manually update the UI based on dataset loading status
                 const isDatasetLoaded = DataManager.isDatasetLoaded();
@@ -108,9 +131,11 @@ const GeneTablePanel = (function() {
                 
                 // Initialize UI state with the dataset
                 await initializeTableUIState(_id, _settings, datasetStructure, _plotType, _controlsContainer);
+                if (_scoreOptions) _scoreOptions.datasetChanged();
                 
                 // Always initialize the table, even if no columns are selected
                 await refreshTable();
+                if (_undo) _undo.rebase();             // what a dataset and its first build made of the settings is no step
                 
                 _isFirstLoad = false;
             } catch (error) {
@@ -155,14 +180,26 @@ const GeneTablePanel = (function() {
             // table, closing it and the Cancel button abort it. `signal` is
             // the one of the update that asks for it.
             signal = beginLoad(_tableContainer, 'table', signal);
+            // A table that is built from nothing (opened, or its first load) takes over the filter of
+            // any background build of it (utils/table-resolver.js): the build ends before it loads a
+            // second copy of the rows, and the plots wait for this table
+            let claimed = !inPlace && !_dataTable;
+            if (claimed) TableResolver.claim(_id);
+            const settle = (how, why) => {
+                if (!claimed) return;
+                claimed = false;
+                TableResolver.panelSettled(_id, how, why);
+            };
             try {
                 // will its rows fit next to the other panels? (utils/memory-guard-ui.js)
                 if (!tableMayLoad(_tableContainer, _id, 'gene-table', () => {
                     if (!_dataTable) return;
-                    freezeTableState(_settings);
-                    _dataTable.destroy();
+                    releaseTable(_dataTable, _settings);
                     _dataTable = null;
-                })) return;
+                })) {
+                    settle('refused', 'not enough browser memory');
+                    return;
+                }
                 // Other cells of the same table: the rows are swapped into
                 // the table shown, so it does not blank and keeps its state
                 let preloaded = null;
@@ -178,8 +215,11 @@ const GeneTablePanel = (function() {
                     if (signal.aborted) {
                         throw new DOMException('Table refresh aborted after loading data', 'AbortError');
                     }
+                    TableScores.prune(_id, _settings.columns);
                     if (replaceRowsInPlace(_dataTable, tableData)) {
                         renderCoverageNotice(_tableContainer, tableData.coverage, 'genes');
+                        // the columns of a provider (a group's statistic) say what they are for these genes
+                        bindScoreColumns(_dataTable, _settings, _tableContainer);
                         return;
                     }
                 }
@@ -208,18 +248,21 @@ const GeneTablePanel = (function() {
                     throw new DOMException('Table refresh aborted after loading data', 'AbortError');
                 }
                 
+                // a provider's column taken out of the table stops wanting its series
+                TableScores.prune(_id, _settings.columns);
+
                 // Destroy existing DataTable if it exists
                 if (_dataTable) {
                     // the filter, the search and the rows passing them as
                     // values: the next DataTable starts from them
-                    freezeTableState(_settings);
-                    _dataTable.destroy();
+                    releaseTable(_dataTable, _settings);
                     _dataTable = null;
                 }
                 
                 // Initialize DataTable
                 if (tableData.data.length > 0) {
                     _dataTable = initializeDataTable(_tableContainer, tableData, _settings, _plotType);
+                    claimed = false;       // initializeDataTable told the resolver and the plots
                     // its rows, in the browser memory guard's ledger (a subset change redraws them)
                     commitMemory(_id, { kind: 'gene-table', n: tableData.data.length });
                     // State what the table is NOT showing, and why. A table that
@@ -233,6 +276,7 @@ const GeneTablePanel = (function() {
                     // Set up event listeners after DataTable is initialized
                     _setupEventListeners();
                 } else {
+                    settle('empty');
                     drawPlaceholder(_tableContainer,
                         (tableData.coverage && !tableData.coverage.isComplete)
                             ? tableData.coverage
@@ -250,9 +294,11 @@ const GeneTablePanel = (function() {
                         console.debug(`Gene table refresh aborted for ${_id}`);
                     }
                     // the rows shown before stay (only a load into the table shown keeps them)
+                    if (wasCancelled(signal)) settle('cancelled');
                     if (wasCancelled(signal)) showCancelled(_tableContainer, 'genes', !!(inPlace && _dataTable));
                 } else {
                     // For actual errors, show error message
+                    settle('failed', error && error.message ? error.message : 'unknown error');
                     console.error('Error refreshing gene table:', error);
                     drawPlaceholder(_tableContainer,
                         error.coverage || Coverage.missing(GAP.FAILED,
@@ -263,8 +309,7 @@ const GeneTablePanel = (function() {
                     // the next update (a subset that makes the rows listable again) builds a table instead of
                     // swapping rows into this detached one and leaving the placeholder up.
                     if (_dataTable) {
-                        freezeTableState(_settings);
-                        _dataTable.destroy();
+                        releaseTable(_dataTable, _settings);
                         _dataTable = null;
                     }
                 }
@@ -284,14 +329,20 @@ const GeneTablePanel = (function() {
          */
         function cleanup() {
             cancelLoads(_tableContainer);
+            if (_scoreOptions) _scoreOptions.destroy();
+            _scoreOptions = null;
+            if (_undo) { _undo.dispose(); _undo = null; }
             if (_dataTable) {
                 // what other panels still read (a plot's table filter, the
                 // panel set) stays, as values; the DataTable's rows go
-                freezeTableState(_settings, { rowNames: DataManager.getGenes(), rows: _dataTable.rows().count() });
-                _dataTable.destroy();
+                releaseTable(_dataTable, _settings, { rowNames: DataManager.getGenes(), rows: _dataTable.rows().count() });
                 _dataTable = null;
             }
             forgetMemory(_id);
+            // a closed table wants no series
+            TableScores.release(_id);
+            // its filter is now its closed selection (set above); nothing is rebuilt
+            TableResolver.panelClosed(_id);
             
             _container.innerHTML = '';
         }
@@ -358,6 +409,8 @@ const GeneTablePanel = (function() {
                     _settings.columns = requested;
                     // rows swapped into the table shown when the columns match
                     await refreshTable(signal, { inPlace: true });
+                    // what another dataset (or the first one, for a panel made before it) made of the settings is no step of the user's
+                    if (_undo) _undo.rebase();
                     return;
                 } catch (error) {
                     // If this is an abort error, propagate it
@@ -399,9 +452,12 @@ const GeneTablePanel = (function() {
          * @param {string} title - New title
          */
         function setTitle(title) {
+            const renamed = title !== _title;
             _title = title;
             // Update title in settings to ensure it's included in getConfig()
             _settings.title = title;
+            // plots that show this table's score, and the source menus, name it by its title
+            if (renamed) sourceRenamed(_id);
         }
         
         /**
@@ -430,12 +486,125 @@ const GeneTablePanel = (function() {
             
             // Update title if provided
             if (config.title) {
+                const renamed = config.title !== _title;
                 _title = config.title;
+                if (renamed) sourceRenamed(_id);
             }
             
             // Update other settings; never the read-only views of the live
             // DataTable (searchBuilderConfig, currentEntries)
+            const before = JSON.stringify(_settings.scoreOptions);
+            if ('scoreOptions' in config) {
+                const was = getScoreOptions();
+                const next = writableOptions(config.scoreOptions);
+                if (next.input !== was.input) pinConsumersOf();
+            }
             assignKnownSettings(_settings, config);
+            if ('scoreOptions' in config && JSON.stringify(_settings.scoreOptions) !== before) {
+                // Back and Forward, a panel set: the options changed from outside; their readers follow
+                _settings.scoreOptions = storableOptions(_settings.scoreOptions);
+                if (_scoreOptions) _scoreOptions.changed();
+                sourceChanged(_id, ['input', 'method', 'clip', 'seed', 'bins', 'controls', 'detect_above']);
+            }
+            // a config from outside (a link, Back and Forward, a panel set's remap) is no step of the user's: the steps are forgotten
+            if (_undo && !_undo.restoring && changesTableState(config)) _undo.rebase();
+        }
+
+        // -------------------------------------------------------------------
+        // a source of a gene score: Score methods ▾ (shared with the Gene Signature, panels/score-options)
+
+        /** The option fields now: the defaults until the user sets a parameter. A stored offer (decision 31) is read for its pair only. */
+        function getScoreOptions() {
+            return writableOptions(_settings.scoreOptions);
+        }
+
+        /**
+         * The options as the config stores them: nothing while the parameters are the defaults and the legacy pair is
+         * z-score mean of X; never `offered` or `layers`.
+         */
+        function storableOptions(raw) {
+            const o = writableOptions(raw);
+            return isDefaultParams(o) && o.input === DEFAULT_INPUT && o.method === DEFAULT_METHOD && !o.methods ? null : o;
+        }
+
+        /** Store a patch of option fields; nothing is stored while they are the defaults. */
+        function storeScoreOptions(patch) {
+            const was = getScoreOptions();
+            const next = writableOptions({ ...was, ...patch });
+            // consumers with no layer take the input as it is now, before it changes: they never move with it
+            if (next.input !== was.input) pinConsumersOf();
+            _settings.scoreOptions = storableOptions(next);
+            // Score methods ▾ is a pop-over outside the tile: its edits are told to Undo here, not found by the tile's events
+            if (_undo) _undo.observe('change the score methods');
+        }
+
+        /**
+         * A change from outside the pop-over (a notice's one-click action, until SO-3 removes it): stored, and told to
+         * the readers, as an edit in the pop-over is.
+         */
+        function setScoreOptions(patch) {
+            storeScoreOptions(patch);
+            if (_scoreOptions) _scoreOptions.changed(Object.keys(patch));
+            sourceChanged(_id, Object.keys(patch));
+            if (window.sessionManager && typeof window.sessionManager.notifyPanelUpdate === 'function') window.sessionManager.notifyPanelUpdate();
+        }
+
+        /** What the layers look like and what was sampled of them: scoreChoices grades each method on each layer by it. */
+        function getGrading() {
+            return _scoreOptions ? _scoreOptions.getGrading() : {};
+        }
+
+        /**
+         * The table's gene score, beside the column chooser's buttons: Score methods ▾ (the settings of each method) and
+         * Distribution (a Count Plot of the score). The table stays a table first: two buttons, nothing that folds open.
+         */
+        /** Undo, in the control row: every change of the table's settings is one step (table-utilities/table-undo.js). */
+        function mountUndo() {
+            const host = _controlsContainer && _controlsContainer.querySelector('.action-buttons');
+            if (!host) return;
+            if (_undo) _undo.dispose();
+            _undo = createTableUndo({
+                root: _container, settings: () => _settings,
+                busy: () => !!(_tableContainer && _tableContainer.querySelector('.table-loading')),
+                restore: restoreSettings
+            });
+            host.insertBefore(_undo.button({ className: 'btn btn-sm btn-outline-secondary table-undo' }), host.firstChild);
+            _undo.rebase();
+        }
+
+        /** Undo: the settings before become the settings (the score methods too, whose readers follow), and the table is built again from them. */
+        async function restoreSettings(config) {
+            if (_dataTable) {
+                releaseTable(_dataTable, _settings);
+                _dataTable = null;
+            }
+            // fields the config lacks are taken out first (updateConfig only copies what is there)
+            giveBack(_settings, config, ['scoreOptions']);
+            updateConfig({ scoreOptions: config.scoreOptions === undefined ? null : config.scoreOptions });
+            if (_scoreOptions) _scoreOptions.paint();
+            const length = document.getElementById(`table-length-${_id}`);
+            if (length) length.value = String(_settings.pageLength || 25);
+            await refreshTable();
+            await settleColumnChooser(_settings, _plotType);
+        }
+
+        function mountScoreOptions(controlsContainer) {
+            if (_scoreOptions) _scoreOptions.destroy();
+            const D = makeDom(document);
+            _scoreOptions = createScoreOptions({ id: _id, D, getOptions: getScoreOptions, setOptions: storeScoreOptions, label: 'Score methods' });
+            const distribution = D.el('button', { type: 'button', class: 'btn btn-sm btn-outline-secondary gsig-distribution',
+                data: { distribution: '' }, title: 'Open a Cell Count Plot of this table\'s gene score (z-score mean of X) beside the table',
+                on: { click: openDistribution } }, 'Distribution');
+            const tools = D.el('div', { class: 'az-score-options', role: 'toolbar', aria: { label: 'Gene score' }, data: { scoreOptions: '' } },
+                D.el('span', { class: 'az-score-options__label', text: 'Gene score' }), _scoreOptions.methods.button, distribution);
+            const actions = controlsContainer.querySelector('.column-actions');
+            (actions || controlsContainer).append(tools);
+            _scoreOptions.paint();
+        }
+
+        /** Distribution: a Count Plot of the table's gene score beside it, on z-score mean of X. */
+        function openDistribution() {
+            return PanelManager.createPanelNextTo('cell-count', _id, { mode: 'histogram', x: { source: distributionSource(_id) } });
         }
         
         /**
@@ -449,12 +618,37 @@ const GeneTablePanel = (function() {
             const added = applyLineToSettings(_settings, line);
             await refreshTable();
             await settleColumnChooser(_settings, _plotType);
+            if (_undo) _undo.rebase();             // another panel's change
             return added;
+        }
+
+        /**
+         * Put the filter a background build made (utils/table-resolver.js) into this CLOSED table.
+         * Refused when the table is open: an open table is its own filter.
+         * @param {{passing, seen}|null} selection - utils/closed-table.js
+         * @returns {boolean} whether it was set
+         */
+        function setClosedSelection(selection) {
+            if (_dataTable) return false;
+            _settings.closedSelection = keptSelection(selection);
+            return true;
+        }
+
+        /**
+         * Take a column out of the table (a group statistic whose grouping is gone, or that could not be computed): the
+         * chooser is unticked and the table is built again without it.
+         * @param {Object} column
+         */
+        async function removeColumn(column) {
+            removeColumnFromChooser(_id, _settings, column, sameScoreColumn);
+            await refreshTable();
         }
 
         // Public API
         return {
             init,
+            removeColumn,
+            setClosedSelection,
             // whether its rows are read (its DataTable built, or its first
             // load over): "not loaded yet" is not "no gene passes", and a
             // gene set panel reading it tells them apart
@@ -471,7 +665,13 @@ const GeneTablePanel = (function() {
             setTitle,
             getType,
             getConfig,
-            updateConfig
+            updateConfig,
+            // as a source of a gene score (utils/score-source-panels.js): the option fields; the genes are the rows
+            // that pass the filter, read through the selection every reader of a table uses
+            getScoreOptions,
+            setScoreOptions,
+            getGrading,
+            openDistribution
         };
     }
     

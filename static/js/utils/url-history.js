@@ -16,8 +16,8 @@
  *   before, not to an empty page of ours.
  * - A different dataset pushes at once (Back returns to the previous dataset
  *   with the view it had).
- * - Pan and zoom are not in the address, so they never reach here: nothing
- *   to push, and the entry is not rewritten either.
+ * - Pan and zoom are part of a panel's settings (viewport2D, viewport3D) but not of what makes an entry: a step that
+ *   only moves a plot's view is drawn by a relayout (viewOf), never a rebuild of the panel.
  */
 
 import { collectTileIds } from './deeplink.js';

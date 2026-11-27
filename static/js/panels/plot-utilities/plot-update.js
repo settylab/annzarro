@@ -1,3 +1,4 @@
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { plotColour, constantColour } from '../../utils/plot-theme.js';
@@ -10,6 +11,7 @@ import {
   panelLoadCoverage,
   withSubsetCoverage,
   stableAxisRanges,
+  notePinned,
   applyHoverInfo,
   sortTracesByColor,
   unsortTraces,
@@ -20,7 +22,7 @@ import {
 } from '../plot-utilities/plot-make.js';
 import { updateColorControlsVisibility, updateColorSliderUI } from './panel-ui-update.js';
 import { unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
-import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
+import { processCategories, isLegendProxy, keepsOwnMarker, axisTitle, axisChangeRelayout, NOT_IN_TABLE, IN_TABLE, POINTS } from './plot-make-helper.js';
 import { greyMarker } from '../../utils/point-style.js';
 import { applyAllAestheticSettings } from './plot-aesthetics-menu.js';
 import { colourBar } from './colour-bar.js';
@@ -105,7 +107,33 @@ export function positionLookup(entities) {
  * @param {boolean} options.filter - Whether to update filtering (hide outliers).
  * @returns {Promise<void>} A promise that resolves when the update is complete.
  */
-export async function updatePlotElements(plotContainer, data, settings, refreshPlot, options = {}) {
+export function updatePlotElements(plotContainer, data, settings, refreshPlot, options = {}) {
+    // One update at a time per graph. Each one unsorts the traces, edits them and sorts them again by colour
+    // (sortTracesByColor), with awaits between: two at once (a colour slider dragged) unsorted each other's order and
+    // left the points drawn in another order than a fresh draw (render drift, decision 39). An update asked for
+    // while one runs waits; several waiting become one, with every part any of them asked for.
+    if (!plotContainer) return updateNow(plotContainer, data, settings, refreshPlot, options);
+    const q = plotContainer.__azUpdates || (plotContainer.__azUpdates = { running: null, waiting: null });
+    if (q.waiting) {
+        for (const [k, v] of Object.entries(options)) if (v) q.waiting.options[k] = true;
+        Object.assign(q.waiting, { data, settings, refreshPlot });
+        return q.waiting.done;
+    }
+    if (!q.running) {
+        q.running = updateNow(plotContainer, data, settings, refreshPlot, options).finally(() => { q.running = null; });
+        return q.running;
+    }
+    const next = { data, settings, refreshPlot, options: { ...options } };
+    next.done = q.running.catch(() => {}).then(() => {
+        q.waiting = null;
+        q.running = updateNow(plotContainer, next.data, next.settings, next.refreshPlot, next.options).finally(() => { q.running = null; });
+        return q.running;
+    });
+    q.waiting = next;
+    return next.done;
+}
+
+async function updateNow(plotContainer, data, settings, refreshPlot, options = {}) {
     const defaultOptions = {
         xAxis: false,
         yAxis: false,
@@ -118,8 +146,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         filter: false 
     };
     
-    // A large plot (large-plot.js) has no incremental updates: redraw it
-    if (data && data.large) {
+    // A large plot (large-plot.js) has no incremental updates: redraw it. So is a plot drawn with a filter
+    // that is not applied yet (no points), or that is not applied yet now
+    if (data && (data.large || data.tableFilterUnresolved || (plotContainer && plotContainer.__drawnUnresolved))) {
         refreshPlot();
         return;
     }
@@ -156,13 +185,6 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         removeHighlight(plotContainer); // One trace less to take care of
         // back to data order: the updates below write arrays in data order
         await unsortTraces(plotContainer);
-
-        // The axes as shown before this update, so hiding points can keep them
-        const fl = plotContainer._fullLayout;
-        const axesBefore = fl && fl.xaxis && fl.yaxis && Array.isArray(fl.xaxis.range) ? {
-            auto: fl.xaxis.autorange !== false && fl.yaxis.autorange !== false,
-            x: [...fl.xaxis.range], y: [...fl.yaxis.range]
-        } : null;
 
         const is3D = plotContainer.data[0].type === 'scatter3d';
         const shouldBe3D = settings.z !== null;
@@ -379,9 +401,16 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         
         // COLOR DATA UPDATES
         if (updateOptions.colors && data.color) {
-            
+            // From a number colour to none or one colour: drawn again. The restyle below kept the number colour's
+            // scale and colour bar on the trace, which a fresh draw of no colour does not have (render drift)
+            if (!isNumerical && !isCategorical && plotContainer.data.some(t => t && t.marker && t.marker.colorscale !== undefined
+                && (Array.isArray(t.marker.color) || ArrayBuffer.isView(t.marker.color)))) refreshPlot();
+
             // When switching from categorical (multiple traces) to numerical (single trace)
             if (!isCategorical && hasMultipleTraces && !hasTableMask) {
+                // To no colour (or one colour): drawn again. The trace below is a number colour's, and it drew the
+                // constant as numbers with a colour bar where a fresh draw has one plain colour (render drift)
+                if (!isNumerical) refreshPlot();
                 // Create a new single trace using the data object
                 const newTrace = {
                     type: settings.z ? 'scatter3d' : 'scattergl',
@@ -421,10 +450,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             } else if (isCategorical) {
                 // Get unique category values and prepare color data
                 const catValues = data.colorCategories || [...new Set(data.color)];
-                let customColors = null;
+                // a provider's colours are its own (a grouping's); a column's are stored in uns
+                let customColors = data.colorColours || null;
                 
                 // Try to load custom colors from uns if categoryPalette is set to "uns"
-                if (settings.categoryPalette === "uns") {
+                if (settings.categoryPalette === "uns" && !customColors) {
                     const colorKey = `${settings.color.key}_colors`;
                     const datasetPath = DataManager.getCurrentDataset();
                     try {
@@ -456,7 +486,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 
                 // Add new categorical traces
                 Plotly.addTraces(plotContainer, categoricalTraces);
-                if (settings.categoryPalette === "uns") {
+                if (settings.categoryPalette === "uns" && !data.colorColours) {
                     setStatusTag(plotContainer, UNS_PALETTE_TAG,
                         unsPaletteTag(settings.color.key, customColors, categoricalTraces.categoryCount));
                 }
@@ -469,7 +499,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     'legend.title.text': legendTitleText(settings),
                     'legend.title.font': { 
                         size: legendTitleFontSize(settings),
-                        family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+                        family: settings.fontFamily || DEFAULT_FONT,
                         color: plotColour(settings, 'textColor')
                     }
                 });
@@ -499,7 +529,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                 // else is rebuilt, an empty group included: restyling trace 0 handed the "Not in table" trace
                 // the colours of every point (and left the points that had just left the table out of the
                 // plot), and a filter that matches nothing must grey every point, not only the old rest
-                const drawnAsGroups = plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t.name === 'In table'));
+                const drawnAsGroups = plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t._azTable));
                 if (nonTableIndices.length === 0 && !settings.removeNonTableEntries && !drawnAsGroups) {
                   // Fall back to standard numerical update
                   const update = {};
@@ -590,7 +620,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     const tableTrace = {
                       type: settings.z ? 'scatter3d' : 'scattergl',
                       mode: 'markers',
-                      name: 'In table',
+                      // named as a fresh draw names it (plot-make.js IN_TABLE); told by _azTable
+                      name: IN_TABLE,
+                      _azTable: true,
                       text: DataManager.cellLabels(tableFilteredIndices.map(i => entities[i])),
                       customdata: tableFilteredIndices.map(i => entities[i]),
                       hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
@@ -629,7 +661,10 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                   Plotly.addTraces(plotContainer, traces);
                 }
               } else {
-                // Standard numerical update (no table filter or removing non-table entries)
+                // Standard numerical update (no table filter or removing non-table entries). A plot still drawn as
+                // "In table" and "Not in table" (the filter just went) is drawn again: restyling trace 0 kept the
+                // table's grouping and names, which a fresh draw of the same settings does not have (render drift)
+                if (plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t._azTable))) refreshPlot();
                 const update = {};
                 const applyMask = idx => !indexMask || indexMask[idx];
 
@@ -676,7 +711,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                     
                     // If one of the groups is empty, handle with standard approach
                     if (tableIndices.length === 0 || (nonTableIndices.length === 0 && !settings.removeNonTableEntries)) {
-                        // Fall back to standard constant color update
+                        // Fall back to standard constant color update; a plot drawn as the table's groups is drawn again
+                        if (plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t._azTable))) refreshPlot();
                         const update = {};
                         update['marker.color'] = constantColour(settings);
                         update['marker.showscale'] = false;
@@ -723,7 +759,8 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                             const tableTrace = {
                                 type: settings.z ? 'scatter3d' : 'scattergl',
                                 mode: 'markers',
-                                name: 'In table',
+                                name: IN_TABLE,               // as a fresh draw names it (plot-make.js)
+                                _azTable: true,
                                 text: DataManager.cellLabels(tableIndices.map(i => entities[i])),
                                 customdata: tableIndices.map(i => entities[i]),
                                 hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
@@ -757,7 +794,9 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         Plotly.addTraces(plotContainer, traces);
                     }
                 } else {
-                    // Standard constant color update (no table filter or removing non-table entries)
+                    // Standard constant color update (no table filter or removing non-table entries); a plot drawn
+                    // as the table's groups is drawn again, as for a number colour
+                    if (plotContainer.data.some(t => t && (t.name === NOT_IN_TABLE || t._azTable))) refreshPlot();
                     const update = {};
                     update['marker.color'] = constantColour(settings);
                     update['marker.showscale'] = false;
@@ -773,15 +812,11 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
             }
         }
 
-        // Filtering removed or restored points: keep the axes on all points
+        // Filtering removed or restored points: keep the axes on all points, with the ranges a fresh draw of the same
+        // settings pins (stableAxisRanges). Keeping Plotly's autorange of the moment instead (its padding is in px)
+        // left the plot wider than its own link drew it (render drift, decision 39)
         if (updateOptions.filter) {
             const pinned = stableAxisRanges(data, settings);
-            // Hiding switched on while the axes were auto-fitted to all points:
-            // keep exactly those ranges (no jump from a different padding)
-            if (pinned && pinned['xaxis.range'] && axesBefore && axesBefore.auto) {
-                pinned['xaxis.range'] = axesBefore.x;
-                pinned['yaxis.range'] = axesBefore.y;
-            }
             if (pinned) {
                 // awaited: the highlight below snapshots the layout and puts it
                 // back, which would otherwise undo this
@@ -868,7 +903,7 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
                         'legend.title.text': legendTitleText(settings),
                         'legend.title.font': { 
                             size: legendTitleFontSize(settings),
-                            family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+                            family: settings.fontFamily || DEFAULT_FONT,
                             color: plotColour(settings, 'textColor')
                         }
                     });
@@ -883,6 +918,12 @@ export async function updatePlotElements(plotContainer, data, settings, refreshP
         }
 
         applyAllAestheticSettings(plotContainer, settings);
+        // the log colour bar's ticks once more, after the aesthetics: they give the colour bar again without them,
+        // which left a score recoloured under Log with linear tick labels (a fresh draw labels it last, too)
+        await applyLogColorbar(plotContainer, data, settings);
+
+        // what Hide NaN / outliers pin now, for the relayout handler (plot-make.js notePinned)
+        notePinned(plotContainer, data, settings);
     };
 
     try {
@@ -965,7 +1006,7 @@ export async function loadColorDataAndUpdatePlot(
     try {
         // Load only color data using the imported loadAxisData, passing the plotContainer
         // to show loading indicators during color data loading
-        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour', panel: settings, signal });
+        const colorData = await loadAxisData(settings.color, data.entities, plotContainer, { role: 'colour', panel: settings, signal, axis: 'color' });
         if (signal.aborted) throw new DOMException('Recolour aborted', 'AbortError');
 
         if (colorData && colorData.values) {
@@ -974,9 +1015,13 @@ export async function loadColorDataAndUpdatePlot(
             data.colorType = colorData.type;
             applyLogColor(data, settings);
             data.colorCategories = colorData.categories;
+            // a provider's own colours, one per category (a grouping's); the dataset's are read from uns at the draw
+            data.colorColours = colorData.colours || null;
             data.colorRankOf = colorData.rankOf || null;
             data.colorRanked = !!colorData.ranked;
             data.colorGroupNames = colorData.groupNames || null;
+            // what the legend calls the points without a category: a provider's own words ('Not in any group'), else 'NA'
+            data.colorMissingLabel = colorData.missingLabel || null;
             // Colour DESCRIBES the points (see ROLE). Without this the panel
             // kept announcing the PREVIOUS colour column's coverage -- and, on
             // a refocus, said nothing about a varp/obsp/layer row that came back
@@ -1237,7 +1282,10 @@ export function highlightFocusedEntity(plotContainer, data, settings, entityType
     // trace, 450 ms at 1M points. Otherwise restyle touches only that trace;
     // the layout is unchanged, so it is not re-sent (re-sending a deep copy
     // of it is what made Plotly redo the axis scaling here).
-    if (!is3D && setGlPoint(plotContainer, existingIdx, xValue, yValue)) return Promise.resolve();
+    const from = glPointOf(plotContainer, existingIdx);
+    if (!is3D && setGlPoint(plotContainer, existingIdx, xValue, yValue)) {
+      return settle('refit', () => refitAfterMove(plotContainer, from, [xValue, yValue]));
+    }
     const update = { x: [highlightTrace.x], y: [highlightTrace.y] };
     if (is3D) update.z = [highlightTrace.z];
     return settle('update', () => Plotly.restyle(plotContainer, update, [existingIdx]));
@@ -1336,7 +1384,11 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
   // a ring already drawn moves to the new cell, in 2D straight in the regl scene (as the dot does)
   const drawn = plotContainer.__focusRing && Array.isArray(plotContainer.data)
     ? plotContainer.data.findIndex(t => isFocusTrace(t) && isRingTrace(t)) : -1;
-  if (!is3D && drawn >= 0 && setGlPoint(plotContainer, drawn, coords[0], coords[1])) return undefined;
+  const from = drawn >= 0 ? glPointOf(plotContainer, drawn) : null;
+  if (!is3D && drawn >= 0 && setGlPoint(plotContainer, drawn, coords[0], coords[1])) {
+    await refitAfterMove(plotContainer, from, [coords[0], coords[1]]);
+    return undefined;
+  }
   const currentLayout = plotContainer.layout ? JSON.parse(JSON.stringify(plotContainer.layout)) : null;
   clear();
   plotContainer.__focusRing = true;
@@ -1366,8 +1418,10 @@ export async function drawOutsideRing(plotContainer, data, settings, name) {
  */
 export async function restyleMarkers(plotContainer, settings) {
     // a large plot's highlight is a shape: its size follows the points, its colours the theme
-    if (plotContainer && plotContainer.__isLarge) await restyleLargeFocus(plotContainer, settings);
-    if (!plotContainer || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) return;
+    // the large plot's focus shape alongside, awaited at the end: the sizes go to the scene at once, before anything
+    // waits, so a resize fit that follows this call (plot-make.js __azPreFit) reads their padding
+    const largeFocus = plotContainer && plotContainer.__isLarge ? restyleLargeFocus(plotContainer, settings) : null;
+    if (!plotContainer || !Array.isArray(plotContainer.data) || plotContainer.data.length === 0) { await largeFocus; return; }
     const isHighlight = isFocusTrace;
     const dataIdx = [];
     const highlightIdx = [];
@@ -1393,6 +1447,8 @@ export async function restyleMarkers(plotContainer, settings) {
         }
         await restyleNoneColour(plotContainer, settings);
         await restyleFocusColours(plotContainer, settings);
+        refitAfterResize(plotContainer);
+        await largeFocus;
         return;
     }
     plotContainer.data.forEach((trace, i) => {
@@ -1412,6 +1468,7 @@ export async function restyleMarkers(plotContainer, settings) {
         await Plotly.restyle(plotContainer, { 'marker.size': m.size, 'marker.opacity': m.opacity, 'marker.color': m.color }, [i]);
     }
     await restyleNoneColour(plotContainer, settings);
+    await largeFocus;
 }
 
 /**
@@ -1601,7 +1658,7 @@ export async function refocusAxisOnEntity(
       // Pass the plotContainer to loadAxisData to enable loading indicators
       const signal = beginLoad(plotContainer, `axis:${axis}`);
       try {
-        const axisData = await loadAxisData(settings[axis], plotType, plotContainer, { signal });
+        const axisData = await loadAxisData(settings[axis], plotType, plotContainer, { signal, axis });
         if (signal.aborted) throw new DOMException('Axis load aborted', 'AbortError');
         if (!axisData || !axisData.values) {
           throw new Error(`Loading data for ${axis} generated no values.`);
@@ -1640,7 +1697,16 @@ export async function updatePlotOnTableChange(plotContainer, data, settings, ref
   }
   
   // Use the new updateTableEntities function to efficiently update table entities
+  const wasEmpty = plotContainer.__azTableEmpty != null;
   const tableEntitiesChanged = await updateTableEntities(data, settings, plotContainer);
+
+  // A filter no cell passes, or one that did not a moment ago, is drawn from
+  // the data again: the incremental restyles below keep the traces of the
+  // rows that passed (an "in table" colour on cells that do not) and cannot
+  // bring back a plot the empty state replaced by its placeholder
+  if (tableEntitiesChanged && (wasEmpty || data.tableFilterEmpty != null)) {
+    return refreshPlot();
+  }
   
   // If table entities didn't change, no need to update the plot
   if (!tableEntitiesChanged) {
@@ -1657,3 +1723,63 @@ export async function updatePlotOnTableChange(plotContainer, data, settings, ref
     colorRange: true, // Update color range if needed
   });
 }
+
+/** The (x, y) of the one point of trace `i`, or null. */
+function glPointOf(gd, i) {
+  const t = gd && Array.isArray(gd.data) ? gd.data[i] : null;
+  return t && t.x && t.y && t.x.length === 1 ? [t.x[0], t.y[0]] : null;
+}
+
+/**
+ * A focus marker moved in the regl scene (setGlPoint) leaves the axes as they were. Autoranged axes include the
+ * marker's padding (it is larger than a point), so a fresh draw of the same focus fitted them a little differently
+ * (render drift, decision 39). When the marker was or is near an edge, the axes are fitted again; far from the edges
+ * the move cannot change the fit and nothing more is drawn (a relayout draws the scene once more).
+ * @param {HTMLElement} gd
+ * @param {?Array} from - the marker's (x, y) before the move
+ * @param {Array} to - after it
+ * @returns {Promise<*>|undefined}
+ */
+export function refitAfterMove(gd, from, to) {
+  const fl = gd && gd._fullLayout;
+  if (!fl || !fl.xaxis || !fl.yaxis || fl.xaxis.autorange === false || fl.yaxis.autorange === false) return undefined;
+  const near = (ax, v) => {
+    if (!Array.isArray(ax.range) || typeof ax.d2l !== 'function') return true;
+    const l = ax.d2l(v);
+    if (!Number.isFinite(l)) return true;
+    const lo = Math.min(ax.range[0], ax.range[1]);
+    const hi = Math.max(ax.range[0], ax.range[1]);
+    const tol = (hi - lo) * REFIT_EDGE;
+    return l - lo < tol || hi - l < tol;
+  };
+  const atEdge = (p) => !!p && (near(fl.xaxis, p[0]) || near(fl.yaxis, p[1]));
+  if (!atEdge(from) && !atEdge(to)) return undefined;
+  return Plotly.relayout(gd, { 'xaxis.autorange': fl.xaxis.autorange, 'yaxis.autorange': fl.yaxis.autorange });
+}
+/** The share of an axis near each end where a marker's padding can decide its autorange (5% plus the marker). */
+const REFIT_EDGE = 0.15;
+
+/**
+ * After sizes set in the regl scene (setGlMarkers), autoranged axes are fitted again for the new marker padding, as
+ * a fresh draw of the same size fits them: they kept the padding of the old size (render drift, decision 39). Once the
+ * size settles (a slider dragged sets many), and only while nothing pins the axes; the relayout draws the scene once
+ * more and reruns no calc.
+ * @param {HTMLElement} gd
+ */
+export function refitAfterResize(gd) {
+  if (!gd) return;
+  clearTimeout(gd.__azRefitTimer);
+  gd.__azRefitTimer = setTimeout(() => {
+    // under a pixel of padding the fit is the same to the pixel: no relayout (and no second draw of the scene)
+    const moved = gd.__azPadMoved || 0;
+    gd.__azPadMoved = 0;
+    if (moved < REFIT_MIN_PX) return;
+    const fl = gd._fullLayout;
+    if (!fl || !fl.xaxis || !fl.yaxis || fl.xaxis.autorange === false || fl.yaxis.autorange === false || typeof Plotly === 'undefined') return;
+    Promise.resolve(Plotly.relayout(gd, { 'xaxis.autorange': fl.xaxis.autorange, 'yaxis.autorange': fl.yaxis.autorange })).catch(() => {});
+  }, REFIT_SETTLE_MS);
+}
+/** How long sizes must stay before the axes are fitted again (ms). */
+const REFIT_SETTLE_MS = 150;
+/** The padding change (px) from which the axes are fitted again. */
+const REFIT_MIN_PX = 1;

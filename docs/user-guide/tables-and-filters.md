@@ -17,38 +17,107 @@ log fold change above 0.05.
 
    ```{figure} ../_static/screens/user-guide/tables-columns.png
    :class: screenshot
-   :alt: Table controls on the varp tab (1) with "spearman_fold_change: H2-Q7 (focused)" ticked (2); Selected Columns (3) listing two var columns and the varp column; Apply Changes (4); Export CSV (5); Show entries.
+   :alt: Table controls of a gene table: the tabs var, varm, varp, layers and Cell groupings (1); on the varp tab the add row with "H2-Q7 (focused)", "spearman_fold_change" and Add column (2); Selected Columns (3) listing two var columns and the varp column; Apply Changes (4); Export CSV (5); Undo (6); Show entries; and the Gene score row with Score methods and Distribution.
 
    Table controls of a gene table.
    ```
 
-3. **Available Columns** (1) has one tab per source: `var`, `varm`, `varp` and `layers` for a gene
-   table; `obs`, `obsm`, `obsp` and `layers` for a cell table. Each tab has a search field.
+3. **Available Columns** (1) has one tab per source. A gene table has `var`, `varm`, `varp`, `layers` and
+   **Cell groupings**; a cell table has `obs`, `obsm`, `obsp`, `layers`, **Gene score** and **Cell groupings**.
+   The `obs`, `obsm`, `var` and `varm` tabs list their columns and have a search field.
    On the `var` tab, tick `kompot_de_Young_to_Old_mean_lfc` and
-   `kompot_de_Young_to_Old_mahalanobis`. On the `varp` tab, tick
-   `spearman_fold_change: H2-Q7 (focused)` (2): each gene's Spearman correlation with H2-Q7. The
+   `kompot_de_Young_to_Old_mahalanobis`. On the `varp` tab, add
+   In the add row (2) leave the item on `H2-Q7 (focused)`, choose the matrix `spearman_fold_change` and press **Add column**: each gene's Spearman correlation with H2-Q7. The
    choices appear under **Selected Columns** (3); the red **×** removes one (hover over a
    shortened name to read it in full).
 4. Click **Apply Changes** (4). The table reloads with the new columns.
 5. **Show entries** sets the number of rows per page (25 by default).
 
-The `obsp`, `varp` and `layers` tabs list one choice per matrix and cell or gene, labelled
-"*matrix*: *name* (*where it comes from*)":
+There are three kinds of tab.
 
-| Label ends in | Meaning |
-|---|---|
-| `(focused)` | the focused cell or gene |
-| `(fixed in *plot title*)` | a cell or gene some plot is locked to ({doc}`focus-and-lock`) |
-| `(in this table)` | a column the table already holds, so it can be removed |
+- **Annotation and matrix tabs** (`obs`, `obsm`, `var`, `varm`) list every column, with a search field.
+- **Single-item tabs** (`layers`, `obsp`, `varp`) list the columns the table already holds, then one **add row**:
+  `[item ▾] [layer or matrix ▾] [Add column]`. The item select lists the focused cell or gene first, then those locked
+  in plots ({doc}`focus-and-lock`), then those already in the table, each once:
 
-A cell table offers obsp rows and layer columns (genes); a gene table offers varp rows and layer
-rows (cells). A column keeps the cell or gene it was added for: picking `H2-Q7 (focused)` and then
-focusing Cd74 leaves the column `spearman_fold_change: H2-Q7`, and the table is not rebuilt. To
-add Cd74's row, pick it on the tab while Cd74 is focused. A link, panel set or session that names
-a column only as "the focused gene" (or cell) instead of by name gets that column pinned when it
-opens: to the gene or cell the view itself focuses, with the filter conditions on it kept. If the
-view focuses none, the column is removed with its conditions and a notice says so. No table
-column follows the focus.
+  | Item ends in | Meaning |
+  |---|---|
+  | `(focused)` | the focused cell or gene |
+  | `(fixed in *plot title*)` | a cell or gene some plot is locked to |
+  | `(in this table)` | a column the table already holds, so it can be removed |
+
+  A cell table offers obsp rows and layer columns (genes); a gene table offers varp rows and layer rows (cells).
+  A column keeps the cell or gene it was added for: adding `H2-Q7 (focused)` and then focusing Cd74 leaves the column
+  `spearman_fold_change: H2-Q7`, and the table is not rebuilt. To add Cd74's row, choose it in the add row while Cd74 is
+  focused. A link, panel set or session that names a column only as "the focused gene" (or cell) instead of by name gets
+  that column pinned when it opens: to the gene or cell the view itself focuses, with the filter conditions on it kept.
+  If the view focuses none, the column is removed with its conditions and a notice says so. No table column follows the
+  focus.
+- **Source tabs** (**Gene score**, **Cell groupings**) list every signature, gene table or grouping, open or closed, by
+  its title. Under each are the table's columns from it, then an add row with a layer, an **aggregation button** and
+  **Add column**. The button shows the aggregation's symbol and opens the list of aggregations with their names; one that
+  cannot be computed on the layer is greyed out, and its tooltip says why. A column from these tabs is shown with its
+  symbol before its name. There is one exception: a **Cell Table's** **Cell groupings** tab is one tick box per grouping, with
+  no add row and no symbol, because the column holds each cell's group.
+
+  The symbols differ by what is aggregated. Scores (the **Gene score** tab), in the order of the list:
+
+  | Symbol | Aggregation |
+  |---|---|
+  | z̄ | z-score mean |
+  | x̄ | mean |
+  | Σ | sum |
+  | Δ | control-adjusted |
+  | g⁺ | fraction of genes |
+  | % | % of total |
+
+  Statistics of the cells of a group (the **Cell groupings** tab of a Gene Table, and a Gene Plot's colour or axis), in the
+  order of the list:
+
+  | Symbol | Statistic |
+  |---|---|
+  | z̄ | z-score mean |
+  | x̄ | mean |
+  | c⁺ | fraction of cells |
+  | x̄⁺ | mean of expressing cells |
+  | Σ | sum |
+  | σ | SD |
+
+  A short key to all of them is under {ref}`interface-symbols`.
+
+  The tabs for layers, obsp, varp, Gene score and Cell groupings have no search field: they list only what the table holds.
+  An add row keeps your choices when the chooser is rebuilt, for example when a panel is renamed.
+
+### Cell groupings in a gene table
+
+On a gene table, the **Cell groupings** tab adds a column holding one number per gene: a statistic over the cells of one
+group of a Cell Grouping ({doc}`cell-grouping`). The add row is `[group ▾] [layer ▾] [aggregation] [Add column]`. The
+group list shows the groups by the names you gave them. The statistics are those of a Gene Plot coloured by a cell group,
+and each gene gets the same number. A column is named *group*: *statistic* · *layer*, for example
+`B cell: mean · logged`, and an export names the grouping too (`Cell types › B cell: mean · logged`).
+
+- The column follows the cells shown, so a change of the cell subset recomputes it, and its header says `(computing)`
+  until the numbers arrive. It can be sorted and exported like any other.
+- A second statistic of the same group and layer is read from the numbers already held and asks the server for nothing.
+  Z-score mean is a request of its own. It is available when the layer is stored by columns (CSC) and greyed out, with the
+  reason, otherwise.
+- Renaming the grouping updates the heading and the export name. If the group has changed since you added the column it
+  still draws, and a notice offers **Keep**; if the group or the grouping is gone the notice offers **Remove column**.
+- A grouping that is built from the table can be shown in it but not filtered on, and its heading says so.
+
+## Undo a change to the table
+
+**Undo** in the table's controls takes back the last change to the table's
+settings: the columns, the filter, the search and its options, the rows per page, **Methods ▾** (a Cell Table), and **Score
+methods ▾** (a Gene Table). A Cell Table's controls read **Methods ▾**, **Undo**, **Export CSV**, **Apply Changes**; a Gene Table's read **Undo**, **Export CSV**, **Apply Changes**, then a row labelled **Gene score** with **Score methods ▾** and **Distribution**. Its title says what it undoes ("Undo: change the filter"), and it is disabled when there is
+nothing to undo. Changes of one kind made close together, such as typing in the search box, are one step, and a table keeps
+its last 50 steps. The table is built again from the settings it had, as a link would build it.
+
+The sort order is not a step: it is not part of what a table saves (a link does not carry it either), so Undo leaves it as
+it is. Nor are the page shown and the scroll position. A change that comes from outside the table (a line drawn
+on a plot, a panel set, a link) starts the steps afresh, so Undo never goes back to a state unrelated to what is on screen.
+**Back** and **Forward** of the browser are separate and keep working: they rebuild the table from the view they step to,
+which also starts its steps afresh, and an undo is recorded in the address like any other change.
 
 ## Sort and search
 
@@ -191,6 +260,18 @@ diverging map, genes with a value near 0 and genes outside the table look alike.
 toggle, or a colour map without grey, when that matters ({doc}`colour-scales`).
 ```
 
+## Statistics over a table's cells
+
+A Cell Table has **Methods ▾** beside **Export CSV**. It sets how statistics over the table's cells (the rows that pass
+its filter) are computed, on every layer, as a Cell Grouping's **Methods ▾** does for its groups
+({doc}`cell-grouping`): it lists **Z-score mean**, **Mean**, **Fraction of cells**, **Mean of expressing cells**, **Sum** and **SD** with their
+definitions, and **Expressed above** (0 by default), the value above which a cell counts as expressing. Plots choose the
+statistic and the layer; nothing here limits what they can pick. The setting is kept with the table in panel sets and
+share links (only when it is not the default), **Reset to defaults** puts it back, and a dot on the button shows that
+it is changed. A Gene Plot reads a table's cells this way: it can colour or place genes by a statistic of the cells a Cell Table passes, with the
+table's **Expressed above** as the threshold ({doc}`cell-and-gene-plots`, "Colour or place a gene plot by a Cell Table's cells").
+Z-score mean is not offered for a table's cells.
+
 ## Export a table
 
 Click **Export CSV** in the table's controls. The file, named after the table title and the date
@@ -201,7 +282,9 @@ written at full precision (`15.22166232974675`), not as displayed (`15.2217`). W
 
 The whole filtered view, including the nested conditions, is kept in panel sets and share links;
 the view file is
-{download}`userguide-gene-table-filtered.json <../_tools/views/userguide-gene-table-filtered.json>`.
+{download}`userguide-gene-table-filtered.json <../_tools/views/userguide-gene-table-filtered.json>`. A gene table filtered
+the same way, with columns added and conditions in **Advanced Search**, is built step by step in
+{ref}`tut-gg-columns` and {ref}`tut-gg-filter`.
 
 ```{admonition} What happens on the server
 :class: note
@@ -211,3 +294,11 @@ Linking a plot sends nothing either: the plot already holds its vectors and only
 table's row set as a mask. A column from `obsp`, `varp` or `layers` is one row or column of that
 matrix, read once when it is added.
 ```
+
+## Score the genes a gene table passes
+
+A gene table can also be the **source of a score** for every cell: the rows that pass its filter are the genes, and
+each cell gets one number from them, to colour a plot by or to rank cells in a Cell Table. The table's controls
+have **Score methods ▾**, the settings of each score method in a pop-over, and **Distribution**, which opens a Cell Count
+Plot of the score. It works exactly as a Gene Signature
+does, with the filter in place of ticked genes: see {ref}`gene-table-score`.

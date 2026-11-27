@@ -78,6 +78,8 @@ DEFAULT_CONFIG = {
     "read_user_share_percent": 50,        # % of read_budget_mb one user (else one address) may hold at once; 0 = no share
     "subset_budget_mb": None,             # MB the cell subsets one worker computes at once may hold (55 B a cell); None = 15% of RAM
     "subset_wait_s": 30,                  # seconds a subset waits for that budget before a 503
+    "compute_budget_mb": 4608,            # MB all compute jobs (scores, groupings) in one worker may hold at once; they wait when it is full
+    "group_code_cache_mb": 512,           # MB of group codes one worker keeps; counted in compute_budget_mb, emptied first
     "max_requests": 20000,                # gunicorn: requests a worker serves before it is replaced (frees creeping memory); 0 = never
     "max_requests_jitter": 2000,          # gunicorn: up to this many extra requests, random per worker, so workers do not restart together
     "limit_request_line": 0,              # gunicorn: longest request line in bytes; 0 = unlimited (the proxy bounds it); gunicorn caps any other value at 8190
@@ -391,12 +393,17 @@ def create_app(config: Dict[str, Any] = None) -> Flask:
     panel_sets.log_startup(app.config)
     
     # A limit that is not a number would fail at its first request, not here
-    from annzarro.server.limits import deprecated_settings, validate_limits
+    from annzarro.server.limits import (configured_cost_limits, deprecated_settings, validate_cost_limits,
+                                        validate_limits)
     for warning in deprecated_settings(app.config):
         logger.warning(warning)
-    problems = validate_limits(app.config)
+    problems = validate_limits(app.config) + validate_cost_limits(configured_cost_limits(app.config))
     if problems:
         raise ValueError("; ".join(problems))
+
+    # static_url(): every static file a template names carries its version (static_versions.py)
+    from annzarro.server import static_versions
+    static_versions.install(app)
 
     # site.*: the legal texts, contact, robots and security.txt (site.py); a wrong value stops the start
     from annzarro.server import site as site_module
@@ -715,6 +722,9 @@ def register_routes(app: Flask) -> None:
     install_policy(app, api_version)
     from annzarro.server.admin.settings import wire_sources
     wire_sources(app)
+    # the cost limits and the admin's live server limits, resolved once per request (server/limits.py)
+    from annzarro.server import limits as server_limits
+    server_limits.install(app)
     # with the admin's overlay readable: a hosted server that publishes no imprint and no privacy notice
     from annzarro.server.site import warn_if_unpublished
     warn_if_unpublished(app)

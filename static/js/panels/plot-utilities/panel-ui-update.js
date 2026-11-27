@@ -4,8 +4,16 @@ import { updatePlotElements } from './plot-update.js';
 import { formatRangeValue, colorBoundToData, lockedColorRange } from '../../utils/array-stats.js';
 import { SLIDER_STEPS, pointSizeScale, opacityScale, quantileScale, mirroredScale, trackValue, valueAt } from '../../utils/slider-scales.js';
 import { layerKeys, keyExistsInStructure } from '../../utils/structure-keys.js';
+import { noteDatasetLayers } from '../../utils/score-source.js';
+import { refreshHoverGroups } from './hover-columns.js';
+import { fillChoiceSelect } from '../../utils/pair-selects.js';
+import { fillSections } from '../../utils/group-picker.js';
+import { aggregateProviders, setSections, isAggregate, displayType, heldSet, aggregateOf, membersOf } from '../../utils/axis-aggregate.js';
+import { VOCABULARY } from '../../utils/vocabulary.js';
+import { createAggregationButton } from '../../ui/aggregation-button.js';
+import { getSource, paletteLabelOf } from '../../utils/source-registry.js';
 import { Config } from '../../config.js';
-import { largeThreshold, textObsColumns, limitTextAxisOptions } from './large-plot-controls.js';
+import { largeThreshold, textObsColumns, limitTextAxisOptions, limitSetOptions } from './large-plot-controls.js';
 import { resolveColorscale } from '../../utils/panel-surface.js';
 import { scaleDirection, scaleGradient } from '../../utils/color-scales.js';
 
@@ -119,12 +127,26 @@ export function focusedOptionLabel(entity, name, locked = false) {
  * @param {Object} settings - Axis settings object (will be updated)
  * @param {HTMLSelectElement} keySelect - The key select dropdown
  * @param {Object} datasetStructure - Structure of the loaded dataset
+ * @param {{consumer: string, roles: string[]}|null} [use] - the panel type and roles the select serves: the obs list
+ *   ends with the entities of providers listed under obs for them (a grouping, UX 5)
  */
-export function populateKeySelector(settings, keySelect, datasetStructure) {
+export function populateKeySelector(settings, keySelect, datasetStructure, use = null) {
     const type = settings.type || 'layer';
     let keyOptions = [];
     const $keySelect = jQuery(keySelect);
     $keySelect.prop('disabled', false);
+    delete keySelect.dataset.reason;
+
+    // a set (a signature, a group) is read on a layer: its row lists the layers, the one it is read on chosen
+    if (use && use.aggregate && isAggregate(settings)) {
+      // every layer, graded for the aggregation the set holds: one it cannot be computed on is disabled, its reason the title
+      const menu = aggregateOf(settings).aggregate.layers(settings);
+      fillChoiceSelect(keySelect, menu.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '' })), menu.chosen);
+      // a set that reads no layer (a cell grouping) keeps the one the row had, and the select says why it cannot change
+      $keySelect.prop('disabled', !!menu.disabled);
+      if (menu.disabled && menu.title) { keySelect.dataset.reason = menu.title; keySelect.title = menu.title; }
+      return;
+    }
   
     // Initialize the settings history if it doesn't exist
     if (!settings.history) {
@@ -198,8 +220,12 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
         keyOptions = keys.map(key => ({ value: key, text: key }));
         break;
       }
-      default:
-        console.warn(`Unsupported type in populateKeySelector: ${type}`);
+      default: {
+        // a provider's source (utils/source-registry.js): its entities, open or closed, and what the setting holds
+        const provider = getSource(type);
+        if (provider) keyOptions = provider.keyEntries(provider.entities(), settings);
+        else console.warn(`Unsupported type in populateKeySelector: ${type}`);
+      }
     }
   
     // Use jQuery to populate the select element
@@ -224,7 +250,7 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     // Last resort: use first available key, but avoid _index if possible
     else {
       const wanted = settings.key;
-      if (wanted && !keyExistsInStructure(datasetStructure, wanted)) {
+      if (wanted && !getSource(type) && !keyExistsInStructure(datasetStructure, wanted)) {
         // A key the dataset does not have at all (a deep link or panel set
         // from another dataset) is KEPT, listed as missing: the select
         // and the loader state the gap ('not in this dataset') instead of the
@@ -243,6 +269,67 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
     
     // Set the select value using jQuery
     $.setSelectValue($keySelect, settings.key, false);
+    // a provider's list may hold no entity: that line is not a choice
+    if (getSource(type)) $keySelect.find('option[value=""]').prop('disabled', true);
+}
+
+/**
+ * The menus of every plot that read a provider's source, up to date: sources were added, removed or renamed, or what
+ * one offers changed. Each key list, third menu and Hover picker keeps its choice and has its options rebuilt.
+ */
+function refreshSourceMenus() {
+  if (typeof document === 'undefined') return;
+  setTimeout(() => syncSelectTitles(), 60);
+  // each provider's entities, asked once for every menu
+  const entities = new Map();
+  const entitiesOf = (provider) => {
+    if (!entities.has(provider)) entities.set(provider, provider.entities());
+    return entities.get(provider);
+  };
+  /** The provider an axis select reads, and the setting it holds: the plot's own, else what the select shows. */
+  const axisOf = (select) => {
+    const panel = select.closest('.plot-panel');
+    const type = panel && panel.querySelector(`select.axis-type-select[data-axis="${select.dataset.axis}"]`);
+    const provider = type ? getSource(type.value) : null;
+    if (!provider) return null;
+    const tile = select.closest('.tile');
+    const plot = tile && window.PanelManager ? window.PanelManager.getPanel(tile.dataset.tileId) : null;
+    const held = plot && plot.getConfig ? plot.getConfig()[select.dataset.axis] : null;
+    return { provider, setting: held && held.type === provider.type ? held : null };
+  };
+  for (const keySelect of document.querySelectorAll('select.axis-key-select')) {
+    const axis = axisOf(keySelect);
+    if (!axis) continue;
+    const current = keySelect.value;
+    const options = axis.provider.keyEntries(entitiesOf(axis.provider), axis.setting || { type: axis.provider.type, key: current });
+    const same = options.length === keySelect.options.length
+      && options.every((o, i) => keySelect.options[i].value === o.value && keySelect.options[i].textContent === o.text);
+    if (same) continue;
+    $.createSelect(options, jQuery(keySelect));
+    $.setSelectValue(jQuery(keySelect), current, false);
+    jQuery(keySelect).find('option[value=""]').prop('disabled', true);
+  }
+  // the item picker of every row on a layer lists the sets now (one was made, renamed or deleted), and the layer list is
+  // graded for the aggregation its set holds
+  for (const select of document.querySelectorAll('select.axis-column-select')) {
+    const row = select.__aggregate ? select.__row : null;
+    if (!row || !(row.settings.type === 'layer' || isAggregate(row.settings))) continue;
+    populateLayerItems(row.settings, select, row.plotType, row.use);
+    const key = select.closest('.axis-selector') && select.closest('.axis-selector').querySelector('.axis-key-select');
+    if (key && isAggregate(row.settings)) populateKeySelector(row.settings, key, row.structure, row.use);
+  }
+  // the method and layer selects of every provider axis follow its source's grading (an impossible pair held stays, labelled)
+  for (const select of document.querySelectorAll('select.axis-column-select')) {
+    const axis = axisOf(select);
+    if (axis && axis.setting && axis.provider.subKeyMenu) fillSubKeySelect(select, axis.provider.subKeyMenu(axis.setting));
+    if (axis && axis.setting && select.__statSelect) fillStatSelect(select.__statSelect, axis.provider, axis.setting);
+    if (axis && axis.setting && select.__layerSelect) fillLayerSelect(select.__layerSelect, axis.provider, axis.setting);
+  }
+  // the Hover pickers list what each provider offers, after the columns
+  for (const select of document.querySelectorAll('select.hover-columns-select')) {
+    const owner = select.closest('.tile');
+    refreshHoverGroups(select, owner && /^gene-plot/.test(owner.dataset.tileId || '') ? 'genes' : 'cells');
+  }
 }
   
 /**
@@ -253,7 +340,13 @@ export function populateKeySelector(settings, keySelect, datasetStructure) {
  * @param {string} plotType - Either 'cells' or 'genes'
  * @param {Object} datasetStructure - Structure of the loaded dataset
  */
-export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure) {
+export function populateColumnSelector(settings, columnSelect, axis, plotType, datasetStructure, use = null) {
+  noteDatasetLayers(layerKeys(datasetStructure));
+  // a layer belongs to a provider that has them (a gene score) only: another source has none
+  const provider = getSource(settings.type);
+  if (!(provider && provider.layered) && settings.layer) delete settings.layer;
+  // the choice of a statistic of a group belongs to the provider that has one: another source holds none of it
+  if (!(provider && (provider.statMenu || provider.aggregate))) for (const field of ['stat', 'groupWas', 'follow']) delete settings[field];
   // Initialize the settings history if it doesn't exist
   if (!settings.history) {
     settings.history = {};
@@ -275,6 +368,38 @@ export function populateColumnSelector(settings, columnSelect, axis, plotType, d
   let columnOptions = [];
   const $columnSelect = jQuery(columnSelect);
   $columnSelect.prop('disabled', false);
+
+  // the item picker of a layer lists the focused gene or cell and then the sets, in sections, with the aggregation button
+  // after it when a set is picked; any other source has neither
+  const sets = !!(use && use.aggregate);
+  if (sets && (settings.type === 'layer' || isAggregate(settings))) {
+    populateLayerItems(settings, columnSelect, plotType, use);
+    return;
+  }
+  ensureAggregationButton(columnSelect, null);
+
+  // a provider with layers (a gene score) has a fourth select, the layer, after the method; any other source has none
+  // a provider whose third select is a choice of cells (a group) has a statistic select too, between the column and the layer
+  const statSelect = statSelectFor(columnSelect, provider && provider.statMenu ? provider : null);
+  const layerSelect = layerSelectFor(columnSelect, provider && provider.layerMenu ? provider : null);
+  if (provider) {
+    // level 3 is the provider's own menu (a score's methods: the method in `column`), or none
+    const built = provider.subKeyMenu ? provider.subKeyMenu(settings) : null;
+    if (!built) {
+      $.createSelect([{ value: '', text: 'N/A' }], $columnSelect);
+      $columnSelect.prop('disabled', true);
+      settings.column = '';
+      return;
+    }
+    if (built.adopt) {
+      settings.column = built.adopt.column;
+      if (built.adopt.layer) settings.layer = built.adopt.layer; else delete settings.layer;
+    }
+    fillSubKeySelect($columnSelect[0], built);
+    if (statSelect) fillStatSelect(statSelect, provider, settings);
+    if (layerSelect) fillLayerSelect(layerSelect, provider, settings);
+    return;
+  }
 
   switch (type) {
     case 'obs':
@@ -454,15 +579,144 @@ export function showDropdownLoading(dropdown) {
 }
 
 /**
+ * The item picker of a row on a layer: the focused gene (Cell Plot) or cell (Gene Plot), then the sets in separate
+ * sections, each with its heading. The chosen entry is the set the setting holds, else the focused item; a long list has
+ * a filter field beside it that finds a set by every name it has (utils/group-picker.js).
+ */
+function populateLayerItems(settings, columnSelect, plotType, use) {
+  const asSet = isAggregate(settings);
+  const entity = plotType === 'cells' ? 'genes' : 'cells';
+  const focusedNow = () => (plotType === 'cells' ? DataManager.getFocusedGene() : DataManager.getFocusedCell());
+  let focused;
+  if (asSet) {
+    focused = focusedNow();
+  } else if (settings.column && settings.type === 'layer' && settings.locked) {
+    focused = settings.column;
+  } else if (settings.history?.layer?.columns?.[settings.key] && settings.history.layer.locked) {
+    settings.column = settings.history.layer.columns[settings.key];
+    focused = settings.column;
+  } else {
+    focused = focusedNow();
+    settings.column = focused;
+  }
+  const locked = !asSet && !!(settings.locked || settings.history?.layer?.locked);
+  const sections = [];
+  if (focused) sections.push({ heading: plotType === 'cells' ? VOCABULARY.aggregation.sections.genes : VOCABULARY.aggregation.sections.cells,
+    entries: [{ value: focused, text: focusedOptionLabel(entity, focused, locked) }] });
+  sections.push(...setSections(use.consumer, use.roles, !!use.numeric));
+  const loose = focused ? [] : [{ value: '', text: `Select a focused ${plotType === 'cells' ? 'gene' : 'cell'} first` }];
+  // a set that is gone stays where it was chosen, marked, so the plot keeps its setting and says why (the notice over it)
+  const held = asSet ? heldSet(settings) : '';
+  if (held && !sections.some(g => g.entries.some(e => e.value === held))) {
+    loose.push({ value: held, text: `${settings.label || settings.key} (deleted)` });
+  }
+  fillSections(columnSelect, { loose, sections, chosen: asSet ? heldSet(settings) : (focused || '') });
+  columnSelect.disabled = false;
+  ensureMemberSelect(columnSelect, asSet ? settings : null);
+  ensureAggregationButton(columnSelect, asSet ? settings : null);
+}
+
+/**
+ * The select of a set's members after the item picker (a grouping's groups, by their names, in the grouping's order): its
+ * own native select of the row's size, sharing the item column's width with it. None for a set with no members (a
+ * signature) or a single item. A choice is handed to the column select's listeners, like every change of the row.
+ */
+function ensureMemberSelect(columnSelect, settings) {
+  const menu = settings ? membersOf(settings) : null;
+  let select = columnSelect.__member || null;
+  if (!menu) {
+    if (select) { select.remove(); columnSelect.__member = null; }
+    return;
+  }
+  if (!select) {
+    select = document.createElement('select');
+    select.className = 'form-select form-select-sm axis-member-select';
+    select.dataset.axis = columnSelect.dataset.axis || '';
+    select.setAttribute('aria-label', 'Group');
+    select.addEventListener('change', () => {
+      columnSelect.__touched = 'member';
+      columnSelect.__memberValue = select.value;
+      columnSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    columnSelect.__member = select;
+  }
+  if (select.previousElementSibling !== columnSelect) columnSelect.after(select);
+  fillChoiceSelect(select, menu.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '' })), menu.chosen);
+}
+
+/**
+ * The aggregation button after a set's item picker (ui/aggregation-button.js): the aggregation's symbol, and the menu of every
+ * aggregation of the set held, each as a symbol and a name. None for a single item. A choice is handed to the column
+ * select's own listeners, like every change of the row.
+ */
+function ensureAggregationButton(columnSelect, settings) {
+  let made = columnSelect.__agg || null;
+  // no button for a set that is not an aggregate either: a grouping is the group each cell is in
+  const provider = settings && isAggregate(settings) ? aggregateOf(settings) : null;
+  if (!provider || !provider.aggregate.methods(settings)) {
+    if (made) { made.destroy(); columnSelect.__agg = null; }
+    return;
+  }
+  if (!made) {
+    made = createAggregationButton({
+      label: () => { const row = columnSelect.__row; return (row && row.use.aggLabel && row.use.aggLabel(row.settings)) || VOCABULARY.aggregation.label; },
+      axis: columnSelect.dataset.axis || '',
+      methods: () => {
+        const row = columnSelect.__row;
+        const provider = row && aggregateOf(row.settings);
+        return provider ? provider.aggregate.methods(row.settings) : null;
+      },
+      onPick: (value) => {
+        columnSelect.__touched = 'agg';
+        columnSelect.__aggValue = value;
+        columnSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+    columnSelect.__agg = made;
+  }
+  const anchor = columnSelect.__member || columnSelect;
+  if (made.button.previousElementSibling !== anchor) anchor.after(made.button);
+  made.update();
+}
+
+/** The built-in sources of a type menu, by the entity a value belongs to. */
+const BUILT_IN_TYPES = Object.freeze({ cells: ['obs', 'obsm', 'obsp', 'layer'], genes: ['var', 'varm', 'varp', 'layer'] });
+
+/**
+ * What a type menu lists: no source for a colour, the built-in sources of the consumer's entity, then the providers
+ * the consumer accepts for every one of its roles (utils/source-registry.js).
+ * @param {'cells'|'genes'} plotType - the entity a value belongs to
+ * @param {string} consumer - the panel type, e.g. 'cell-plot'
+ * @param {string[]} roles - e.g. ['x'], ['color']
+ * @returns {Array<{value: string, text: string}>}
+ */
+export function typeChoices(plotType, roles) {
+  return [
+    ...(roles.includes('color') ? [{ value: 'none', text: 'None (constant)' }] : []),
+    // a set (a signature, a gene table, a grouping) is no source of its own on a row: it is picked in the item list of a layer
+    ...BUILT_IN_TYPES[plotType === 'genes' ? 'genes' : 'cells'].map(type => ({ value: type, text: type }))
+  ];
+}
+
+/** Put a type menu's choices in its select, unless it lists them already (a provider may register late). */
+function fillTypeSelect(select, choices) {
+  if (select.options.length === choices.length && choices.every((c, i) => select.options[i].value === c.value)) return;
+  select.innerHTML = '';
+  for (const c of choices) select.appendChild(new Option(c.text, c.value));
+  select.disabled = false;
+}
+
+/**
  * Function to set up axis selector.
  * @param {HTMLElement} container - The root DOM element containing the selector elements.
  * @param {string} axis - Axis name (x, y, z, color)
  * @param {Object} settings - Axis settings (will be updated)
  * @param {string} plotType - Either 'cells' or 'genes'
  * @param {Object} datasetStructure - Dataset structure as returned from DataManager
- * @returns {Promise<void>}
+ * @param {{consumer: string, roles: string[], aggregate?: boolean, numeric?: boolean, aggLabel?: Function}} use - the panel type the
+ *   selects belong to and the roles the source fills (['x'], ['color']): the type menu lists what that consumer accepts for them
  */
-export function setupAxisSelector(container, axis, settings, plotType, datasetStructure) {
+export function setupAxisSelector(container, axis, settings, plotType, datasetStructure, { consumer, roles, aggregate = false, numeric = false, aggLabel = null }) {
     const $container = jQuery(container);
     const $typeSelect = $container.find(`.axis-type-select[data-axis="${axis}"]`);
     const $keySelect = $container.find(`.axis-key-select[data-axis="${axis}"]`);
@@ -472,6 +726,14 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
       console.error(`Missing select elements for ${axis} axis`);
       return;
     }
+    // an axis row of a plot picks sets in its item picker (utils/axis-aggregate.js): only where the consumer has some
+    const sets = aggregate && aggregateProviders(consumer, roles, numeric).length > 0;
+    // `numeric`: a row that takes a number per cell lists no grouping; `aggLabel(setting)`: what the aggregation button of the row's set is called
+    const use = { consumer, roles, aggregate: sets, numeric, aggLabel };
+    $keySelect[0].__aggregate = sets;
+    $columnSelect[0].__aggregate = sets;
+    $columnSelect[0].__row = { settings, axis, plotType, use, structure: datasetStructure };
+    fillTypeSelect($typeSelect[0], typeChoices(plotType, roles));
     
     // Show loading indicators while initializing
     showDropdownLoading($keySelect);
@@ -488,7 +750,7 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
     settings.column = settings.column || '';
     
     // Set the UI value
-    $.setSelectValue($typeSelect, settings.type, false);
+    $.setSelectValue($typeSelect, sets ? displayType(settings) : settings.type, false);
   
     // Populate dropdowns which will replace loading indicators
     // A Cell Plot above the large-plot threshold draws axes from numbers only: label columns
@@ -497,9 +759,11 @@ export function setupAxisSelector(container, axis, settings, plotType, datasetSt
       && (DataManager.getCells() || []).length > largeThreshold(Config.DEFAULTS);
     $keySelect[0].__blockedKeys = large && settings.type === 'obs' ? textObsColumns(datasetStructure) : null;
     $keySelect[0].dataset.keyType = settings.type;
-    populateKeySelector(settings, $keySelect[0], datasetStructure);
+    populateKeySelector(settings, $keySelect[0], datasetStructure, use);
     limitTextAxisOptions($keySelect[0], large, textObsColumns(datasetStructure));
-    populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure);
+    populateColumnSelector(settings, $columnSelect[0], axis, plotType, datasetStructure, use);
+    limitSetOptions($columnSelect[0], large || (plotType === 'cells' && axis === 'z' && (DataManager.getCells() || []).length > largeThreshold(Config.DEFAULTS)), axis);
+    setTimeout(() => syncSelectTitles(), 60);
     
     // Add or update the refocus and lock buttons for layer, obsp, and varp types
     const $axisSelector = $columnSelect.closest('.axis-selector');
@@ -623,6 +887,16 @@ function applyColorToolbar($container, colorType, id) {
   }
 }
 
+/** The first palette option's words: the colours stored in the dataset's uns (a provider may name its own). */
+export const UNS_PALETTE_LABEL = 'As stored in adata.uns';
+
+/** The source type a plot's colour reads now, or null. */
+function colourTypeOf(id) {
+  const plot = typeof window !== 'undefined' && window.PanelManager ? window.PanelManager.getPanel(id) : null;
+  const colour = plot && typeof plot.getConfig === 'function' ? plot.getConfig().color : null;
+  return colour && colour.type ? colour.type : null;
+}
+
 /**
  * Updates the visibility of color controls based on the current color type,
  * using elements within the provided container.
@@ -683,6 +957,10 @@ export function updateColorControlsVisibility(container, colorType, id) {
     $.showHide($container.find(`#color-scale-preview-${id}`), false);
     
     $.showHide($categoryPaletteSelect, true, '');
+    // the first option says where its colours come from: a source's own (a grouping's), else the dataset's uns
+    const unsOption = $categoryPaletteSelect.find('option[value="uns"]')[0];
+    const unsLabel = paletteLabelOf(colourTypeOf(id)) || UNS_PALETTE_LABEL;
+    if (unsOption && unsOption.textContent !== unsLabel) unsOption.textContent = unsLabel;
     
     $.showHide($colorMinInput, false);
     $.showHide($colorMaxInput, false);
@@ -1000,6 +1278,10 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
   // Get all table panels from PanelManager
   const tableType = entityType === 'cells' ? 'cell-table' : 'gene-table';
   const tablePanels = window.PanelManager ? window.PanelManager.getPanelsByType(tableType) : [];
+  // a gene signature filters genes like a gene table does: its genes are its recipe
+  if (entityType !== 'cells' && window.PanelManager) {
+    tablePanels.push(...window.PanelManager.getPanelsByType('gene-signature'));
+  }
   
   // Can't proceed if no dropdown and no table panels
   if (!$tableFilterSelect.length && (!tablePanels || !tablePanels.length)) {
@@ -1082,4 +1364,174 @@ export function updateTableFilterSelect(container, id, entityType, value = null)
       }
     }
   }
+}
+
+
+/** Fill a select with a provider's third menu (subKeyMenu): graded entries, an impossible one disabled with its reason. */
+function fillSubKeySelect(select, built) {
+  fillChoiceSelect(select, built.options.map(o => ({ value: o.value, text: o.text, disabled: !!o.disabled, title: o.title || '', alt: o.alt || '' })), built.chosen);
+}
+
+/** Fill a provider's layer select (layerMenu) for what the setting holds. */
+function fillLayerSelect(select, provider, settings) {
+  const built = provider.layerMenu(settings);
+  select.hidden = !built;
+  select.disabled = !built;
+  if (built) fillChoiceSelect(select, built.options, built.chosen);
+}
+
+/** Fill a provider's statistic select (statMenu) for what the setting holds. */
+function fillStatSelect(select, provider, settings) {
+  const built = provider.statMenu(settings);
+  select.hidden = !built;
+  select.disabled = !built;
+  if (built) fillChoiceSelect(select, built.options, built.chosen);
+}
+
+/**
+ * The statistic select after a column select, made when a provider has one (`statMenu`) and removed when not. As the
+ * layer select, a change of it is a change of the setting, handed to the column select's own listeners.
+ * @param {HTMLSelectElement} columnSelect
+ * @param {Object|null} provider
+ * @returns {HTMLSelectElement|null}
+ */
+function statSelectFor(columnSelect, provider) {
+  let select = columnSelect.__statSelect || null;
+  if (!provider) {
+    if (select) { select.remove(); columnSelect.__statSelect = null; }
+    return null;
+  }
+  if (!select) {
+    select = document.createElement('select');
+    select.className = 'form-select form-select-sm axis-stat-select';
+    select.dataset.axis = columnSelect.dataset.axis || '';
+    const named = columnSelect.getAttribute('aria-label');
+    select.setAttribute('aria-label', named ? named.replace(/column$/, 'statistic') : 'Statistic');
+    select.addEventListener('change', () => {
+      columnSelect.__touched = 'stat';
+      columnSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    columnSelect.__statSelect = select;
+  }
+  if (select.previousElementSibling !== columnSelect) columnSelect.after(select);
+  return select;
+}
+
+/**
+ * The layer select after a column select, made when a provider has layers (`layerMenu`) and removed when not. A
+ * change of it is a change of the pair: it is handed to the column select's own listeners (the plot's, the count
+ * plot's), which call takeSubKey, so every consumer of the axis selects takes it without a listener of its own.
+ * @param {HTMLSelectElement} columnSelect
+ * @param {Object|null} provider
+ * @returns {HTMLSelectElement|null}
+ */
+function layerSelectFor(columnSelect, provider) {
+  let select = columnSelect.__layerSelect || null;
+  if (!provider) {
+    if (select) { select.remove(); columnSelect.__layerSelect = null; }
+    return null;
+  }
+  if (!select) {
+    select = document.createElement('select');
+    select.className = 'form-select form-select-sm axis-layer-select';
+    select.dataset.axis = columnSelect.dataset.axis || '';
+    const named = columnSelect.getAttribute('aria-label');
+    select.setAttribute('aria-label', named ? named.replace(/column$/, 'layer') : 'Layer');
+    select.addEventListener('change', () => {
+      columnSelect.__touched = 'layer';
+      columnSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    columnSelect.__layerSelect = select;
+  }
+  // after the statistic select when there is one (a group's statistic: group, statistic, layer)
+  const anchor = columnSelect.__statSelect || columnSelect;
+  if (select.previousElementSibling !== anchor) anchor.after(select);
+  return select;
+}
+
+/** Say once, beside the selects, that the other select moved ("Layer changed to logged: ..."); '' clears it. */
+export function sayPair(columnSelect, text) {
+  const selector = columnSelect.closest('.axis-selector') || columnSelect.parentNode;
+  if (!selector) return;
+  let note = selector.nextElementSibling && selector.nextElementSibling.classList.contains('axis-pair-note') ? selector.nextElementSibling : null;
+  if (!text) { if (note) note.remove(); return; }
+  if (!note) {
+    note = document.createElement('div');
+    note.className = 'axis-pair-note form-text';
+    note.setAttribute('role', 'status');
+    selector.after(note);
+  }
+  note.textContent = text;
+}
+
+/**
+ * A choice in a provider's method or layer select, as the setting stores it: the method in `column`, the layer beside
+ * it. The select the user touched wins (the layer select marks itself, layerSelectFor); the other moves only when its
+ * value became impossible, and the move is said once beside the selects.
+ * @param {Object} settings - the axis setting, rewritten in place
+ * @param {HTMLSelectElement} select - its column (method) select
+ * @returns {boolean} whether the setting changed
+ */
+export function takeSubKey(settings, select) {
+  const provider = getSource(settings.type);
+  const touched = select.__touched === 'layer' || select.__touched === 'stat' ? select.__touched : 'method';
+  select.__touched = null;
+  if (!provider || !provider.subKeyMenu) return false;
+  const layerSelect = select.__layerSelect || null;
+  if (provider.settingAfter) {
+    // a provider whose selects are a cell choice, a statistic and a layer (a group's statistic): it says what each touch writes
+    const value = touched === 'layer' ? layerSelect.value : touched === 'stat' ? select.__statSelect.value : select.value;
+    const next = provider.settingAfter(settings, touched === 'method' ? 'column' : touched, value);
+    if (!next) return false;
+    const { say, ...fields } = next;
+    let changed = false;
+    for (const [field, to] of Object.entries(fields)) {          // undefined removes a field
+      if (JSON.stringify(settings[field]) === JSON.stringify(to)) continue;
+      changed = true;
+      if (to === undefined) delete settings[field]; else settings[field] = to;
+    }
+    fillSubKeySelect(select, provider.subKeyMenu(settings));
+    if (select.__statSelect) fillStatSelect(select.__statSelect, provider, settings);
+    if (layerSelect) fillLayerSelect(layerSelect, provider, settings);
+    sayPair(select, say || '');
+    return changed;
+  }
+  if (provider.pairAfter && layerSelect) {
+    const value = touched === 'layer' ? layerSelect.value : select.value;
+    const next = provider.pairAfter(settings, touched, value);
+    const changed = settings.column !== next.column || (settings.layer || '') !== (next.layer || '');
+    settings.column = next.column;
+    if (next.layer) settings.layer = next.layer; else delete settings.layer;
+    fillSubKeySelect(select, provider.subKeyMenu(settings));
+    fillLayerSelect(layerSelect, provider, settings);
+    sayPair(select, next.say);
+    return changed;
+  }
+  const built = provider.subKeyMenu(settings);
+  const picked = built && built.options.find(o => o.value === select.value);
+  if (!picked) return false;
+  settings.column = picked.column;
+  if (picked.layer) settings.layer = picked.layer; else delete settings.layer;
+  return true;
+}
+
+/** Every axis select says its full text when hovered: a narrow panel cuts the visible one. */
+function syncSelectTitles(root = document) {
+  for (const select of root.querySelectorAll('.axis-selector select')) {
+    const text = select.selectedOptions && select.selectedOptions[0] ? select.selectedOptions[0].textContent : '';
+    // a select that says why it cannot change keeps that (a cell grouping reads no layer)
+    if (select.dataset.reason) { if (select.title !== select.dataset.reason) select.title = select.dataset.reason; continue; }
+    if (text && select.title !== text) select.title = text;
+  }
+}
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  // sources were added, removed or renamed, or what one offers changed
+  document.addEventListener('annzarro:panels-changed', () => refreshSourceMenus());
+  document.addEventListener('change', (e) => {
+    const select = e.target && e.target.closest ? e.target.closest('.axis-selector select') : null;
+    // the row is found now: the select may be gone in 60 ms (a score's layer select, when the type changes)
+    const row = select ? select.closest('.axis-selector') : null;
+    const root = row ? row.parentNode : null;
+    if (root) setTimeout(() => syncSelectTitles(root), 60);
+  });
 }

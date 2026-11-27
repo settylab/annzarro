@@ -24,6 +24,7 @@ import urllib.parse
 import urllib.request
 
 import pytest
+from annzarro.tests.browser.test_cell_gene_plot_options import open_point_size  # noqa: E402  (the point size is in Plot Options since WP-5b)
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -96,7 +97,7 @@ STATE = """() => {
   return {
     drawn: !!sc && g._fullData.reduce((s, t) => s + ((t.x && t.x.length > 1) ? t.x.length : 0), 0) >= 150,
     busy,
-    size: document.getElementById('point-size-input-%s').value,
+    size: String(window.PanelManager.getPanel('%s').getConfig().pointSize),   // what the size box shows (it is in Plot Options, open or not)
     opacity: document.getElementById('point-opacity-input-%s').value,
     // the point traces: not legend entries, the colour bar's point or the focus highlight
     sceneSizes: sc ? sc.markerOptions.map((o, i) => (points(g.data[i]) && o ? o.size : null)).filter(v => v !== null) : [],
@@ -177,6 +178,7 @@ def test_automatic_style_follows_the_view(server, page, colour, controls):
     if not controls:
         return
     # a size the user sets stays; the opacity is still automatic
+    open_point_size(page, PID)
     box = page.locator(f"#point-size-input-{PID}")
     box.fill("3")
     box.dispatch_event("change")

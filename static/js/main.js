@@ -1,7 +1,9 @@
 /**
  * Main Application Module for AnnZarro
  */
+import { fontsReady } from './utils/fonts.js';
 import { copyText } from './utils/clipboard.js';
+import { askPolicy } from './utils/ask-policy.js';
 import { PanelManager } from './panel-manager.js';
 import { Config } from './config.js';
 import { Policy } from './policy.js';
@@ -9,7 +11,7 @@ import { DataManager } from './data-manager.js';
 import { SessionManager } from './session-manager.js';
 import {
     VIEW_SCHEMA_VERSION, encodeViewPayload, decodeViewPayload, normalizeView,
-    parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, remapPanelReferences, panelSetToView, closePlanPanels, panelsToAdd,
+    parseDeepLinkLocation, buildDeepLinkUrl, syncedLocation, collectTileIds, panelSetToView, closePlanPanels, panelsToAdd,
     sameDatasetPath
 } from './utils/deeplink.js';
 import { escapeHtml, canModify, lockReason, failureLine, authIndicator, refreshPlan, partialRefreshNotice, signOut } from './utils/session-permissions.js';
@@ -31,6 +33,12 @@ import { countNoun } from './utils/coverage.js';
 import { SubsetControl } from './subset-dialog.js';
 import { showSubsetLoading, hideSubsetLoading, handOverToPanels } from './utils/subset-loading.js';
 import { registerStatusActions, setStatusTag } from './utils/panel-surface.js';
+import './utils/score-source.js';
+import './utils/cell-group-source.js';
+import './utils/group-stat-source.js';
+import './utils/table-stat-source.js';
+import { actions as sourceActions } from './utils/source-actions.js';
+import { TableScores } from './panels/table-utilities/table-scores.js';
 import { canSnapshot, exportImage, exportImageData, setRecipeProvider } from './utils/plot-export.js';
 import { exportOptions } from './panels/plot-utilities/plot-aesthetics-menu.js';
 import { overrideOnce, maxSubsetCells, resetLearned } from './utils/memory-guard-ui.js';
@@ -56,12 +64,16 @@ import { loadPins, togglePin } from './utils/dataset-pins.js';
 import { mountDatasetButton, backOffer } from './utils/dataset-button.js';
 import { mountDatasetInfo } from './utils/dataset-info-dialog.js';
 import { defaultHierarchy } from './utils/deeplink.js';
+import * as LoadProgress from './utils/load-progress.js';
+import { closedPanelsOfView, mergeClosedPlans, reconcileClosed } from './utils/closed-restore.js';
+import { TableResolver } from './panels/table-utilities/table-background.js';
 import { createHistoryPolicy, diffViews, layoutStep, viewMismatch, unrecordedChange, viewDiffers } from './utils/url-history.js';
 import { installWheelHandover } from './utils/wheel-handover.js';
 import { installDatasetHeaderFit } from './utils/header-fit.js';
 import { datasetLabel } from './utils/dataset-label.js';
 import { pasteSettings, matchRules, resolveDataset, resolveDatasetPath, isTextTarget, storeBase } from './utils/paste-focus.js';
 import { mountThemeToggle } from './utils/theme-toggle.js';
+import { MODEBAR_REMOVE } from './utils/plot-theme.js';
 import { startDesktopFrame } from './utils/desktop-frame.js';
 import { keepLast } from './utils/site-footer.js';
 import { createLoadActions, createDatasetBadge, createStyleBadge, helpContent, clearTips } from './panelset-load-ui.js';
@@ -112,6 +124,10 @@ const App = (function() {
                 return;
             }
 
+            // A panel set loaded from now on (the Load button works once _initUI has run, and scripts see
+            // window.sessionManager) waits until setViewApplier below, never the closed-panels fallback
+            SessionManager.expectViewApplier();
+
             installHoverCopy(() => DataManager.getCurrentDataset());
             _panelUnderPointer = trackPointerPanel();
 
@@ -150,6 +166,11 @@ const App = (function() {
             if (themeHost) mountThemeToggle(themeHost);
             // Desktop app on Windows: the window controls take the header's colours
             startDesktopFrame();
+
+            // A link names its dataset and panels: say so now, before the policy, the listings and the
+            // store are read (that can take seconds on a slow disk), with each tile named where it will be
+            const earlyLink = await _parseDeepLink();
+            let linkLoad = earlyLink ? _beginLinkLoad(earlyLink) : null;
             
             // Check for autosave session before initializing panel manager.
             //
@@ -195,7 +216,7 @@ const App = (function() {
             // likely) left a marker: that session is not drawn by itself again
             SessionManager.initLastSessions();
             const autosave = SessionManager.getAutosaveSession();
-            let deepLink = await _parseDeepLink();
+            let deepLink = earlyLink;
             // nothing is opened by itself after a session that did not finish: the welcome screen offers it
             let holdBack = !!autosave && SessionManager.didNotFinish(autosave);
             if (deepLink && deepLink.view && SessionManager.linkDidNotFinishHere()) {
@@ -204,6 +225,7 @@ const App = (function() {
                 // offered first on the welcome screen instead (Restore)
                 console.warn('The view in the address did not finish loading last time; it is not drawn by itself.');
                 deepLink = null;
+                if (linkLoad !== null) { LoadProgress.end(linkLoad); linkLoad = null; }
                 try { history.replaceState(history.state, '', bareUrl(window.location)); } catch { /* sandboxed frame */ }
             }
             // ui.autosave.auto_restore (utils/last-sessions.js): by default only a
@@ -248,14 +270,18 @@ const App = (function() {
                 // Materialize the shared view. Guard against a throwing or empty
                 // apply: on ANY failure, or a deep-link that opens no panels, fall
                 // back to the Welcome screen rather than leaving a spinner up.
+                LoadProgress.setSkeletonStatus('Looking for the dataset…');
                 try {
                     await _applyDeepLink(deepLink);
                 } catch (error) {
                     console.error('Deep-link application failed:', error);
                     _showNotification('Shared link not opened', error.message || 'Could not open the shared view.', 'error');
+                } finally {
+                    if (linkLoad !== null) LoadProgress.end(linkLoad);
                 }
                 PanelManager.ensureWelcomeFallback();
             } else if (!hasAutosave && !holdBack) {
+                if (linkLoad !== null) LoadProgress.end(linkLoad);
                 // Nothing was asked for: the only dataset there is, else none (the welcome screen, with
                 // the last sessions and the recent datasets). Never an arbitrary store of several: on a
                 // shared server that can be a billion-cell one. A tab that had a dataset open names it
@@ -306,8 +332,23 @@ const App = (function() {
             console.error('Error initializing application:', error);
             _showNotification('AnnZarro did not start', error.message, 'error');
         } finally {
+            // a start-up that failed before the applier was set: the loads waiting for it go on (closed panels)
+            SessionManager.startupEnded();
             _bootDone();
         }
+    }
+
+    /**
+     * A link opens: the line in the dataset bar, and (for a link with panels) the named skeleton of its
+     * layout, until the real tiles are built. Returns the load's token.
+     * @private
+     */
+    function _beginLinkLoad(link) {
+        const layout = link.view && link.view.layout;
+        const ids = layout ? collectTileIds(layout.hierarchy) : [];
+        const token = LoadProgress.begin({ kind: 'link', name: storeName(link.datasetPath) || link.datasetPath, ids });
+        if (ids.length) LoadProgress.showSkeleton(document.getElementById('tile-container'), layout, 'Getting ready…');
+        return token;
     }
 
     // ── The current dataset (utils/dataset-state.js) ──────────────────────
@@ -366,6 +407,7 @@ const App = (function() {
 
     /** The tab title, the dataset button and the dataset bar follow the state. @private */
     function _followDatasetState(state, previous = null) {
+        if (state.status === 'opening') LoadProgress.setSkeletonStatus('Opening dataset…');
         const app = document.querySelector('.app-title');
         document.title = documentTitle(state, (app && app.textContent.trim()) || 'AnnZarro');
         if (_datasetButton) _datasetButton.update(state, previous);
@@ -523,6 +565,7 @@ const App = (function() {
             return;
         }
 
+        _noteLongLink(link.length);
         try {
             if (!await copyText(link)) throw new Error('copy not allowed');
             fallback.hidden = true;
@@ -539,6 +582,24 @@ const App = (function() {
         }
     }
     let _shareLabelTimer = null;
+
+    /**
+     * Links over this many characters get a note. Chat and email programs commonly cut links between 2,000 and
+     * 8,000 characters; measured, a view with one signature is about 3,400 characters at 500 gene symbols and 12,000
+     * at 2,000. The copy is never blocked.
+     */
+    const LONG_LINK_CHARS = 8000;
+
+    /** The note under Share Link: how long the link is, and the way to share a large gene list reliably. @private */
+    function _noteLongLink(length) {
+        const note = document.getElementById('share-link-note');
+        if (!note) return;
+        if (length <= LONG_LINK_CHARS) { note.hidden = true; return; }
+        document.getElementById('share-link-note-text').textContent =
+            `This link is long (${length.toLocaleString('en-US')} characters) and chat or email programs may cut it. `
+            + 'Save a panel set to share a large gene list reliably.';
+        note.hidden = false;
+    }
 
     /**
      * Said when a view is saved, or a link made, before the open store's cell
@@ -871,6 +932,8 @@ const App = (function() {
         try {
             _adoptViewStyle(target);
             await _applyFocusSteps(live.constants || {}, target.constants || {}, link.datasetPath);
+            // the closed panels the entry lists are on the page before any panel is built or rebuilt
+            _reconcileClosedPanels(target);
             const layout = target.layout;
             // animated only when it is the one step: not while another is queued or a motion still runs
             const step = diff.kind === 'layout' && !_historyAgain && !LayoutMotion.moving() ? layoutStep(live, target) : null;
@@ -963,8 +1026,10 @@ const App = (function() {
     async function _applyView(target, options = {}) {
         // the restore marker stands until every panel is drawn (session-manager.js)
         SessionManager.beginRestore('view');
+        // a newer view, or the user choosing a dataset, ends this one (see _viewSuperseded)
+        const epoch = ++_viewEpoch;
         try {
-            return await _applyViewNow(target, options);
+            return await _applyViewNow(target, { ...options, epoch });
         } finally {
             SessionManager.endRestore();
         }
@@ -1015,13 +1080,20 @@ const App = (function() {
                 { source: constants.taxonomySource === 'inferred' ? 'inferred' : 'explicit' });
         }
     }
-    async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false } = {}) {
+    // Counts the views being applied and the datasets the user chose. A view that finds the count moved
+    // on after an await was overtaken: it builds nothing more (no late panels on the wrong dataset).
+    let _viewEpoch = 0;
+    const _superseded = { status: 'cancelled', message: 'Another dataset or view was opened first.' };
+
+    async function _applyViewNow({ datasetPath, view }, { exact = false, located = null, trust = false, epoch = _viewEpoch, closedPanels = [] } = {}) {
+        const gone = () => epoch !== _viewEpoch;
         _adoptViewStyle(view);
         // Where the view's store is here: its path, the path relative to the
         // data directory, or a store in the data directory with the same
         // cells and genes (or, for a view without a fingerprint, the same
         // name). Not found: the layout opens without data.
         located = located || await _locateStore(datasetPath, view, { exact });
+        if (gone()) return _superseded;
         if (!located.path) {
             await _applyViewWithoutData(view, located);
             return { status: 'no-data', message: `${located.missing || datasetPath} was not found` };
@@ -1050,6 +1122,7 @@ const App = (function() {
         // path for it, or the path relative to the data directory
         // (rel_path, as a share link or saved set records it).
         datasetPath = await _listedPathFor(datasetPath, located.probe && located.probe.relPath);
+        if (gone()) return _superseded;
         _leaveNoDataMode();
 
         // 0. The cells the view shows. A view without `subset` keeps the
@@ -1068,10 +1141,12 @@ const App = (function() {
         // 1. Load the dataset through the normal (non-silent) path so selectors
         //    and dataset info populate exactly as a manual selection would.
         await DatasetState.open(datasetPath, { source: 'view' });
+        if (gone()) return _superseded;
 
         if (view) {
             // 2. Restore the focused gene (drives highlighting + the gene selector), the cell, the species.
             await _applyConstants(view.constants || {}, datasetPath);
+            if (gone()) return _superseded;
 
             // 3. Materialize the panels. Two shapes, one preferred:
             //
@@ -1093,6 +1168,9 @@ const App = (function() {
             //
             //    normalizeView (utils/deeplink.js) guarantees at most one of these
             //    is set, with layout winning when both were supplied.
+            //    The panels that were CLOSED come back first, from their saved settings alone
+            //    (utils/closed-restore.js): a plot filtered by a closed table finds it registered.
+            _restoreClosedOf(view, closedPanels);
             if (view.layout) {
                 await PanelManager.restoreLayout(view.layout);
             } else {
@@ -1107,6 +1185,32 @@ const App = (function() {
         }
         _afterViewOpened(view, located, cmp, trust && said ? { ...said, strong: false } : said);
         return { status: 'success' };
+    }
+
+    /**
+     * Back and Forward: the closed panels the entry lists, on the page. One that is missing is
+     * registered; one that is closed with other settings is replaced; one the page has and the entry
+     * does not list is kept (a step never throws a closed panel away). Nothing is built, so the
+     * address does not change and no history entry is added.
+     * @private
+     */
+    function _reconcileClosedPanels(view) {
+        const can = (type) => PanelManager.canRestoreClosed(type);
+        const { add, replace } = reconcileClosed(closedPanelsOfView(view, can).closed, PanelManager.panelStates());
+        return PanelManager.restoreClosedPanels([...add, ...replace]);
+    }
+
+    /**
+     * Register the closed panels a view lists (and those a caller lists beside it:
+     * a legacy panel set keeps them apart). Configuration only; nothing is built.
+     * @private
+     */
+    function _restoreClosedOf(view, extra = []) {
+        // a link or a panel set is loaded: whatever was being built is for another view
+        TableResolver.reset();
+        const can = (type) => PanelManager.canRestoreClosed(type);
+        const planned = mergeClosedPlans(closedPanelsOfView(view, can).closed, extra, can);
+        return PanelManager.restoreClosedPanels(planned);
     }
 
     // ── Where a view's store is, and a view without one ───────────────────
@@ -1555,7 +1659,20 @@ const App = (function() {
             return { status: 'error', message: `"${name}" names no dataset, and none is open.` };
         }
         const total = closePlanPanels(plan).closedPanels.length;
+        // From here the page says what is loading: its name, the named tiles, the line in the dataset bar
+        const layout = plan.view && plan.view.layout;
+        const ids = layout ? collectTileIds(layout.hierarchy) : [];
+        const progress = LoadProgress.begin({ kind: 'set', name, ids });
+        if (ids.length) LoadProgress.showSkeleton(document.getElementById('tile-container'), layout, 'Looking for the dataset…');
+        try {
+            return await _applyPanelSetOpen({ plan, name, current, located, target, listing, total, chosen });
+        } finally {
+            LoadProgress.end(progress);
+        }
+    }
 
+    /** The part of _applyPanelSet that opens the dataset and the panels. @private */
+    async function _applyPanelSetOpen({ plan, name, current, located, target, listing, total, chosen }) {
         // The set replaces the open view. Open panels are closed (they stay
         // available to reopen); a panel with an id the set brings is removed,
         // so the set's panel gets that id back unchanged.
@@ -1568,19 +1685,15 @@ const App = (function() {
 
         // keep the open store's own path when the set names it differently
         if (current && located.path && sameDatasetPath(located.path, current, listing)) located.path = current;
-        const applied = await _applyView({ datasetPath: target, view: plan.view }, { located, trust: !!chosen });
+        const applied = await _applyView({ datasetPath: target, view: plan.view }, { located, trust: !!chosen, closedPanels: plan.closedPanels });
+        // the user opened something else meanwhile: this set builds nothing more
+        if (applied && applied.status === 'cancelled') return applied;
         const datasetPath = located.path || target;
 
-        // Panels that were closed when the set was saved come back closed.
-        const idMap = new Map();
-        const closedConfigs = plan.closedPanels.map(p => {
-            const config = JSON.parse(JSON.stringify(p.config));
-            PanelManager.registerClosedPanel(p.type, config);
-            if (p.id && config.id !== p.id) idMap.set(p.id, config.id);
-            return config;
-        });
-        if (idMap.size) remapPanelReferences(closedConfigs, idMap);
-
+        // The panels that were closed when the set was saved came back closed before the open ones
+        // were built (_applyViewNow), so a plot filtered by one found it.
+        // A set opened without data (its store is not here) did not get that far: they are listed closed now
+        if (applied && applied.status === 'no-data') _restoreClosedOf(plan.view, plan.closedPanels);
         PanelManager.updateSourcePanelSelection();
         PanelManager.ensureWelcomeFallback();
         const listed = `${total} panel${total === 1 ? '' : 's'} listed closed`;
@@ -1874,7 +1987,9 @@ const App = (function() {
             case 'close-others': return _otherPlots(id).length > 0;
             case 'reopen-table': return !!document.querySelector(`.panel-closed-btn[data-id="${_tableFilterOf(id)}"]`);
             case 'table-filter-off': return !!_tableFilterSelect(id);
-            default: return false;
+            case 'build-filter': case 'retry-filter': case 'cancel-filter':
+            case 'table-score-compute': case 'table-score-cancel': case 'table-score-retry': return !!_tableFilterOf(id);
+            default: return sourceActions.available(action, host);
         }
     }
 
@@ -1964,6 +2079,29 @@ const App = (function() {
                 if (btn) btn.click();
                 break;
             }
+            case 'build-filter': {
+                // one click: the table's size is allowed for these cells (utils/table-resolver.js)
+                const table = _tableFilterOf(id);
+                if (table) TableResolver.accept(table);
+                break;
+            }
+            case 'cancel-filter': {
+                // stops the load phase of the build and returns to Build filter
+                const table = _tableFilterOf(id);
+                if (table) TableResolver.cancel(table);
+                break;
+            }
+            case 'retry-filter': {
+                const table = _tableFilterOf(id);
+                if (table) TableResolver.retry(table);
+                break;
+            }
+            case 'table-score-compute': case 'table-score-cancel': case 'table-score-retry': {
+                // the score a table's filter reads, asked of its own handles (panels/table-utilities/table-scores.js)
+                const table = _tableFilterOf(id);
+                if (table) TableScores[action === 'table-score-compute' ? 'compute' : action === 'table-score-cancel' ? 'cancel' : 'retry'](table);
+                break;
+            }
             case 'table-filter-off': {
                 const select = _tableFilterSelect(id);
                 if (select) {
@@ -1976,6 +2114,9 @@ const App = (function() {
                 exportImage(host, 'shown', { format: 'png', filename: 'plot_' + new Date().toISOString().replace(/[:.]/g, '-') })
                     .catch(error => console.error('Export as shown failed:', error));
                 break;
+            default:
+                // the notices of a gene-signature score: Compute, Cancel, Retry, Update score, Open signature, Choose another
+                sourceActions.run(action, host);
         }
     }
 
@@ -2026,17 +2167,23 @@ const App = (function() {
         };
         window.annzarroPlots = () => [...document.querySelectorAll('.tile-container .tile[data-tile-id]')]
             .filter(t => t.querySelector('.js-plotly-plot')).map(t => t.dataset.tileId);
-        window.annzarroPlotState = () => JSON.stringify({
-            loading: _isLoadingDataset,
-            noData: !!_noDataView,
-            plots: window.annzarroPlots().map(id => {
+        window.annzarroPlotState = () => {
+            let pending = 0;
+            const plots = window.annzarroPlots().map(id => {
                 const gd = plotOf(id);
                 const fl = gd && gd._fullLayout;
+                const panel = PanelManager.getPanel(id);
+                const cfg = (panel && panel.getConfig && panel.getConfig()) || {};
+                // an automatic size or opacity still to be settled: waiting out its delay, or being applied
+                if (gd && ((gd.__azFollowView && gd.__azFollowView.pending && gd.__azFollowView.pending())
+                    || gd.__azRestyling > 0)) pending += 1;
                 return [id, !!fl, ((gd && gd.data) || []).map(t => [t.type, (t.x || []).length,
                     t.marker && t.marker.color && t.marker.color.length]),
-                fl ? [fl.width, fl.height, JSON.stringify(fl.annotations || []).length] : null];
-            })
-        });
+                fl ? [fl.width, fl.height, JSON.stringify(fl.annotations || []).length] : null,
+                [cfg.pointSize, cfg.pointOpacity]];       // the resolved automatic values, which the figure carries
+            });
+            return JSON.stringify({ loading: _isLoadingDataset, noData: !!_noDataView, pending, plots });
+        };
         window.annzarroExport = async (id, format = 'svg') => {
             const gd = plotOf(id);
             if (!gd) throw new Error(`Panel ${id} has no plot`);
@@ -2179,7 +2326,7 @@ const App = (function() {
                 responsive: true,
                 displayModeBar: true,
                 displaylogo: false,
-                modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+                modeBarButtonsToRemove: [...MODEBAR_REMOVE],
                 toImageButtonOptions: {
                     format: 'png',
                     filename: 'annzarro_plot',
@@ -2272,22 +2419,23 @@ const App = (function() {
 
                 // Every user: the server checks the store against the disk
                 // and, if it changed, serves the change from every worker.
-                const refreshed = await DataManager.revalidateDataset(datasetPath);
-                let cleared = false;
+                const refreshed = await DataManager.revalidateDataset(datasetPath, {
+                    // a large dataset's Refresh waits for its interval: say when it runs
+                    onScheduled: (answer) => _showNotification('Refresh scheduled', answer.message, 'info')
+                });
                 // Clearing the server's whole cache for the dataset as well is
                 // for an admin of a hosted server (and the desktop); a refusal
                 // (403 admin_only) is expected, not an error.
                 if (_refreshPlan.resetServerCache) {
                     try {
-                        const reset = await DataManager.resetBackendCache(datasetPath);
-                        cleared = !!reset && reset.status !== 'forbidden' && reset.status !== 'error';
+                        await DataManager.resetBackendCache(datasetPath);
                     } catch (e) {
                         console.warn('Server cache not cleared:', e && e.message);
                     }
                 }
-                // A store too large to check within the budget: say what a
-                // chunk-only write needs (once per press, not per poll)
-                const partial = partialRefreshNotice(refreshed, { cleared });
+                // A store too large to check within the budget: the server cannot say
+                // what changed but read it all again; say that (once per press, not per poll)
+                const partial = partialRefreshNotice(refreshed);
                 if (partial) _showNotification(partial.title, partial.message, 'info');
                 
                 // Reload available datasets
@@ -2337,6 +2485,9 @@ const App = (function() {
                 document.getElementById('share-link-fallback').hidden = true;
             });
         }
+
+        const noteClose = document.getElementById('share-link-note-close');
+        if (noteClose) noteClose.addEventListener('click', () => { document.getElementById('share-link-note').hidden = true; });
 
         // Gene and cell pickers: typeaheads that ask the server for matches
         // (see utils/name-picker.js), plus history navigation
@@ -2599,7 +2750,7 @@ const App = (function() {
     function _openDataset(datasetPath, { source = 'user' } = {}) {
         if (!datasetPath) return Promise.resolve();
         const chosen = isUserSource(source);
-        if (chosen) _markUserChoice(datasetPath);
+        if (chosen) { _markUserChoice(datasetPath); _viewEpoch++; }
         // a view open without data opens on the chosen dataset
         if (chosen && _noDataView) {
             return _applyView({ datasetPath, view: _noDataView.view }, { exact: true })
@@ -2608,7 +2759,16 @@ const App = (function() {
         // a switch under open panels redraws them all: the restore marker stands until they are drawn
         if (PanelManager.getActivePanels().length) {
             SessionManager.beginRestore('switch');
-            const end = () => SessionManager.endRestore();
+            // The open panels stay usable, dimmed, with a pill saying what comes; clicking in them is fine
+            // (the switch is superseded cleanly, not blocked). The panels' own overlays take over as they redraw.
+            const name = _labelOf(datasetPath);
+            const progress = LoadProgress.begin({ kind: 'switch', name });
+            showSubsetLoading(`Switching to ${name}…`, null);
+            const end = () => {
+                SessionManager.endRestore();
+                if (LoadProgress.isCurrent(progress)) hideSubsetLoading();
+                LoadProgress.end(progress);
+            };
             return _openDatasetNow(datasetPath, chosen, source)
                 .then(value => { end(); return value; }, (error) => { end(); throw error; });
         }
@@ -2624,7 +2784,8 @@ const App = (function() {
         if ((chosen || source === 'default') && !(datasetPath === _lastLoadedDatasetPath && !_isLoadingDataset)) {
             _requestKeptSize();
         }
-        return _loadDataset(datasetPath);
+        // a Refresh re-reads the dataset that is open: the panels keep their views (refresh: true)
+        return _loadDataset(datasetPath, false, { refresh: source === 'refresh' && datasetPath === DataManager.getCurrentDataset() });
     }
 
     /** The next dataset load asks for the kept subset size (if one is kept). @private */
@@ -2676,7 +2837,7 @@ const App = (function() {
     let _currentLoadingAbortController = null;
     let _datasetLoadDone = null;   // settles when the dataset load running now ends
     
-    async function _loadDataset(datasetPath, silent = false) {
+    async function _loadDataset(datasetPath, silent = false, { refresh = false } = {}) {
         // This call's controller and its end. A load that a newer one aborted
         // must not reset the flag and the controller of the newer one (the
         // abort ends this call while the newer is running).
@@ -2766,11 +2927,14 @@ const App = (function() {
                 return;
             }
             
+            // "Don't ask again for this panel" is for this dataset (a Refresh keeps it)
+            if (!refresh) askPolicy.clearAll();
+
             // Only notify panels if not in silent mode
             if (!silent) {
                 // Notify panels of dataset change - this can cause UI resets
                 // Use await to ensure panels are updated (or update is aborted) before completing
-                await PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath });
+                await PanelManager.notifyPanels('datasetChanged', { dataset: datasetPath, refresh });
             }
             
             DatasetState.set({ path: datasetPath, label: _labelOf(datasetPath), status: 'open' });
@@ -3566,10 +3730,11 @@ const App = (function() {
         card.querySelector('.session-card-dataset').append(badge.el, styleBadge.el);
         const actions = createLoadActions({
             getCurrent: SessionManager.getCurrentDatasetInfo,
+            pageReady: () => (SessionManager.isReady() ? null : SessionManager.whenReady()),
             onLoad: async (mode) => {
                 actions.setBusy(true);
                 try {
-                    await _runLoad(() => SessionManager.loadSession(name, { mode }), card);
+                    await _runLoad(() => SessionManager.loadSession(name, { mode }), card, { close: mode !== 'add' });
                 } finally {
                     actions.setBusy(false);
                 }
@@ -3593,14 +3758,19 @@ const App = (function() {
      * @param {HTMLElement} [host]
      * @private
      */
-    async function _runLoad(load, host = null) {
+    async function _runLoad(load, host = null, { close = false } = {}) {
         _dialogNote(host, '');
+        // A load that opens panels leaves the dialog at once: the load shows in the page (the named tiles
+        // and the line in the dataset bar), and nothing stays covered while it runs
+        if (close) _hideSessionModal();
         const result = await load();
         if (result.status === 'success' || result.status === 'no-data') {
             _hideSessionModal();
         } else if (result.status !== 'cancelled') {
             // (a cancelled load is the user closing the dataset picker: nothing to report)
-            _dialogNote(host, failureLine(result, 'Loading this panel set'));
+            const said = failureLine(result, 'Loading this panel set');
+            if (close) _showNotification('Panel set not loaded', said, 'error');
+            else _dialogNote(host, said);
         }
         return result;
     }
@@ -3695,6 +3865,7 @@ const App = (function() {
         host.appendChild(dataset);
         const actions = createLoadActions({
             getCurrent: SessionManager.getCurrentDatasetInfo,
+            pageReady: () => (SessionManager.isReady() ? null : SessionManager.whenReady()),
             onLoad: async (mode) => {
                 actions.setBusy(true);
                 _dialogNote(host, '');
@@ -3704,7 +3875,7 @@ const App = (function() {
                         _dialogNote(host, failureLine(imported, 'Importing this file'));
                         return;
                     }
-                    await _runLoad(() => SessionManager.loadSession(imported.name, { mode }), host);
+                    await _runLoad(() => SessionManager.loadSession(imported.name, { mode }), host, { close: mode !== 'add' });
                 } catch (error) {
                     _dialogNote(host, `Importing this file failed: ${error.message}`);
                 } finally {
@@ -4789,8 +4960,10 @@ const App = (function() {
 })();
 
 // Initialize the application when DOM is ready and all scripts are loaded
-document.addEventListener('DOMContentLoaded', () => {
-    // Start initialization immediately since we're using modules
+document.addEventListener('DOMContentLoaded', async () => {
+    // The plots measure their text when they are drawn: the bundled font (static/css/fonts.css) is loaded first, so a plot drawn at
+    // once and one drawn from a link a moment later have the same layout (a local file of 45 KB; one that fails to load is the fallback's)
+    await fontsReady();
     App.init();
     // A panel's scroller hands the wheel to the page at its end (utils/wheel-handover.js)
     installWheelHandover(document.getElementById('tile-container'));

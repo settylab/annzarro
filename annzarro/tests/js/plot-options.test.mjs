@@ -15,6 +15,13 @@ import {
 
 const roundTrip = (o) => JSON.parse(JSON.stringify(o));
 
+test('a plot saved with the old default margins (top 80) follows the default; one the user chose keeps its own', () => {
+    assert.equal(DEFAULT_MARGINS.t, 30);
+    assert.deepEqual(normalizePlotOptions({ margins: { l: 80, r: 80, t: 80, b: 60, pad: 4 } }).margins, DEFAULT_MARGINS);
+    assert.equal(normalizePlotOptions({ margins: { l: 80, r: 80, t: 100, b: 60, pad: 4 } }).margins.t, 100);
+    assert.equal(normalizePlotOptions({ margins: { t: 80 } }).margins.t, 80, 'a top the user set alone is theirs');
+});
+
 test('a config from before these options gets the defaults', () => {
     const old = roundTrip({ showGrid: true, margins: { l: 80, r: 80, t: 80, b: 60, pad: 4 }, legendPosition: 'right' });
     const s = normalizePlotOptions(old);
@@ -269,7 +276,7 @@ test('Bare: only the points; Default undoes it, and the data and colours are not
     applyPreset(s, 'default');
     assert.equal(s.bare, false);
     assert.equal(s.showLegend, true);
-    assert.deepEqual(s.margins, { l: 80, r: 80, t: 80, b: 60, pad: 4 });
+    assert.deepEqual(s.margins, DEFAULT_MARGINS);
     assert.equal(tickKeys(s, ['xaxis'])['xaxis.visible'], true);
     assert.equal(normalizePlotOptions({ bare: 'yes' }).bare, false);
     assert.ok(STYLE_KEYS.includes('bare'));          // Apply to other panels copies it

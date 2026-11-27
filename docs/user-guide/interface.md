@@ -1,8 +1,8 @@
 # Interface
 
 AnnZarro has one window: a header with the two focus pickers and the panel set buttons, a dataset
-bar with the dataset and its size, and below it a canvas of tiles. Each tile holds one panel (a cell plot, gene plot, cell table or
-gene table). You add tiles, split them side by side or stacked, resize them by dragging, and
+bar with the dataset and its size, and below it a canvas of tiles. Each tile holds one panel, of one of nine types: **Cell Plot**, **Gene Plot**, **Cell Table**, **Gene Table**,
+**Gene Set Analysis**, **Gene Signature**, **Cell Grouping**, **Cell-Gene Plot** and **Cell Count Plot**. You add tiles, split them side by side or stacked, resize them by dragging, and
 close them. This page walks through every control on that screen with `bm_aging_annzarro.zarr`
 ({doc}`../data/demo-data`).
 
@@ -28,12 +28,13 @@ The header and the dataset bar under it. Numbers match the list below.
 2. **Refresh dataset**, the icon beside the button, reopens the current dataset. The server first
    re-checks the store against the disk and, if any file changed (an in-place write of values
    included), serves the change from then on, to every user; the panels then read the dataset
-   again, past this browser's copies. On your own machine, and for admins of a hosted server, it
-   also clears the server's cache for that dataset. Use it after the store on disk changed.
+   again, past this browser's copies, each plot keeping its zoom and 3D camera. On your own machine,
+   and for admins of a hosted server, it also clears the server's cache for that dataset. Use it
+   after the store on disk changed.
    A store with too many files to check within the server's 3 s budget cannot be fully checked: the
    app then says so ("Refresh may not show every change"), because a write that only overwrote
    data chunks may not show for a user other than an admin. An admin's Refresh dataset (or a server
-   restart) picks it up, and says so when it did. A panel's **Refresh** gives the same notice. (In
+   restart) picks it up, and says so when it did. (In
    the browser, **Ctrl+R** reloads the page as usual; the desktop app binds it to Refresh dataset.)
 3. **Previous gene / Next gene** step through the genes you focused in this session.
 4. **Focused Gene** is the gene every gene-dependent panel follows ({doc}`focus-and-lock`).
@@ -58,8 +59,8 @@ regular-expression switch (`.*`) and a case switch (`Aa`). What the dataset's ow
 A **Close all** button sits between Load Panel Set and Share Link (not numbered in the picture): it closes every open panel and can also clear the browser's stored data ({ref}`close all panels <close-all-panels>`).
 
 **Which version is this?** Hold the pointer over the app name at the top left: the tooltip reads
-"AnnZarro 0.6.0" (the version the server runs; a custom app name comes first, as "Lab Atlas ·
-AnnZarro 0.6.0"). On a server with login, the tooltip of your user name under the app name ends with the
+"AnnZarro 0.8.0" (the version the server runs; a custom app name comes first, as "Lab Atlas ·
+AnnZarro 0.8.0"). On a server with login, the tooltip of your user name under the app name ends with the
 same line. Say this version in a bug report. The desktop app shows its own, bundled version the
 same way.
 
@@ -164,7 +165,8 @@ loads the next ones. The server builds the index of descriptions by itself short
 fresh, so there is nothing to start. While it has not read every dataset yet, one line under the field says so
 ("Descriptions of 120 of 3,400 datasets searched so far"; a user limited to some folders is told that some datasets are not
 searched yet, without counts), and the next search shows the newer state. When all are read the line is not there.
-A dataset with neither a README nor an attribution is found by its name only. The button is not there when an
+The same search finds datasets by the names of their fields (columns, layers, embeddings and `uns` paths),
+which {doc}`search` describes. The button is not there when an
 administrator turned the search off ({doc}`../deployment/admin`). Remote datasets are not
 searched.
 
@@ -242,12 +244,13 @@ When a dataset is open and no panel exists, the canvas shows the Welcome tile.
 
 ```{figure} ../_static/screens/user-guide/ui-welcome.png
 :class: screenshot
-:alt: The Welcome tile with "Create New Panel" cards for Cell Plot, Gene Plot, Cell Table and Gene Table, and a "Load Saved Panel Set" section below.
+:alt: The Welcome tile with "Create New Panel" cards for the nine panel types (Cell Plot, Gene Plot, Cell Table, Gene Table, Gene Set Analysis, Gene Signature, Cell Grouping, Cell-Gene Plot and Cell Count Plot), and a "Load Saved Panel Set" section below.
 
 The Welcome tile.
 ```
 
-1. Under **Create New Panel**, click **Cell Plot**. The tile becomes a cell plot of
+1. Under **Create New Panel**, click **Cell Plot**. (The cards are the nine panel types; a server can show fewer of them, see
+   {doc}`../deployment/admin`.) The tile becomes a cell plot of
    `obsm/X_umap` columns 0 and 1, coloured by `obs/leiden` (the defaults are explained in
    {doc}`cell-and-gene-plots`).
 2. Below the new tile, the same set of cards appears again, so the next panel is always one click
@@ -262,6 +265,76 @@ The Welcome tile.
 The first cell plot, with its controls open.
 ```
 
+(interface-toolbar)=
+## The toolbar row, Undo and pop-overs
+
+Every plot, table and grouping panel keeps its actions in one **toolbar row**, in the same place: the panel's own buttons at
+the left, then a gap, then **Undo** and, in a plot, **Plot Options** at the right. The row is not the **modebar** (the zoom,
+pan and camera buttons at the top right of a plot, which show when the pointer is over it).
+
+| Panel | The toolbar row, left to right |
+|---|---|
+| Cell Plot | **3D**, **Equal aspect**, **Highlight Focused Cell** · **Undo**, **Plot Options** |
+| Gene Plot | **3D**, **Equal aspect**, **Highlight Focused Gene** · **Undo**, **Plot Options** |
+| Cell-Gene Plot | **3D**, **Swap axes**, **Cluster ▾**, **Color ▾** · **Undo**, **Plot Options** |
+| Cell Count Plot | **Save as grouping**, **3D**, **Display ▾** · **Undo**, **Plot Options**. Save is hidden where it cannot save, 3D outside the modes that have bars, and **Display ▾** when nothing applies |
+| Cell Grouping | **Add factor ▾**, **Methods ▾**, **Settings**, **Undo** |
+| Gene Signature | The status row has **Methods ▾** and **Distribution**; the search row has **Search genes**, **.\*** (regular expression), **Aa** (match case) and **Tick all**; the add row has **Add as** (**Up** or **Down**, with Up/Down on), **+ GENE (focused)**, **Paste or upload**, **Add from ▾** and **Up/Down**; the list bar has **All genes** and **Selected**, **Undo** and **Clear** |
+| Cell Table | **Methods ▾**, **Undo**, **Export CSV**, **Apply Changes** |
+| Gene Table | **Undo**, **Export CSV**, **Apply Changes**, then a row labelled **Gene score** with **Score methods ▾** and **Distribution** |
+
+None of them has a Refresh button: a panel draws what a panel opened with the same settings draws; to read values written to the
+store since, use **Refresh dataset** (above).
+
+**Undo** takes back the last change to the panel's own settings, one step at a time. Its title says what it undoes ("Undo:
+change the colour"), and it is disabled, with the title "Nothing to undo", when there is nothing to undo. Changes of one kind
+made close together, such as typing in a box, are one step; a panel keeps its last 50 steps; and the zoom and the camera are not
+steps. **Ctrl+Z** (**Cmd+Z**) does the same while the focus is in the panel and not in a text field. Undo is the panel's own: it
+does not undo another panel's change, and it is not Back and Forward of the browser ({doc}`share-links`).
+
+**Pop-overs.** The buttons marked ▾, **Plot Options**, **Settings**, **Methods ▾** and a factor's **Edit ▾** open a small window
+over the panel, a pop-over. It never changes the size of the panel or moves anything in it. A change in it applies at once and
+is one step of Undo. It closes with its button, its **×**, **Escape** (from anywhere on the page) or a click outside it, and
+**Escape** and **×** put the focus back on the button. One pop-over is open at a time, and each has the same look: sections with
+a heading, a label at the left and the control at the right, and one **Reset** at the foot of a section.
+
+(interface-symbols)=
+## Aggregation symbols
+
+A button with a symbol opens a list of aggregations (ways of combining many values into one), each shown as its symbol and its
+name. A symbol means the same in every panel that has the button: a Cell-Gene Plot's **Color** and **Size**, a Gene Plot's
+statistic of a cell group, a Cell Plot's gene score, a Cell Table's **Gene score** column and a Gene Table's **Cell groupings**
+column. There are two lists.
+
+**Scores**, the aggregations of a gene signature or a gene table over its genes, one number per cell:
+
+| Symbol | Name |
+|---|---|
+| z̄ | **Z-score mean** |
+| x̄ | **Mean** |
+| Σ | **Sum** |
+| Δ | **Control-adjusted** |
+| g⁺ | **Fraction of genes** |
+| % | **% of total** |
+
+**Statistics of a group of cells**, one number per gene over the cells of a group or a Cell Table's cells (a Cell-Gene Plot, a
+Gene Plot, a Cell Count Plot's measure and a Gene Table's **Cell groupings** column):
+
+| Symbol | Name |
+|---|---|
+| ≡ | **Same as Color** (in **Height** only: the first entry of its list) |
+| z̄ | **Z-score mean** (Color and Height; not Size, which cannot show a sign) |
+| x̄ | **Mean** |
+| c⁺ | **Fraction of cells** (the share of the cells above a threshold, 0 to 1) |
+| x̄⁺ | **Mean of expressing cells** |
+| Σ | **Sum** |
+| σ | **SD** |
+| n | **Cell count** (the cells in the group; reads no layer) |
+
+An aggregation that cannot be computed on the layer chosen is greyed out, with the reason under it. The threshold of **Fraction
+of cells** and **Mean of expressing cells** is **Expressed above** in a grouping's or table's **Methods ▾**, and in the lists
+that carry a box for it **above**; the full definitions are on {doc}`cell-gene-plot`, {doc}`cell-grouping` and {doc}`gene-signature`.
+
 (keyboard-shortcuts)=
 ## Keyboard shortcuts
 
@@ -273,6 +346,7 @@ shortcut says **Ctrl**, use **Cmd** on a Mac.
 | **Ctrl+S** | Save the panel set |
 | **Ctrl+Shift+L** | Load a panel set |
 | **Ctrl+O** | Open the dataset browser |
+| **Ctrl+Z** | Undo the last change of the panel that has the focus (plots, tables, Gene Signature, Cell Grouping), unless you are typing in a field; **Cmd+Z** on a Mac |
 | **Ctrl+R** | Refresh the dataset (the desktop app only; a web browser keeps it for reloading the page) |
 | **N** | Go to the empty panel selector, or add one |
 | **T** | Show or hide the controls of the panel under the mouse |
@@ -318,7 +392,7 @@ The keys for these buttons are in {ref}`keyboard-shortcuts`.
 
    ```{figure} ../_static/screens/user-guide/ui-split-selector.png
    :class: screenshot
-   :alt: The cell plot on the left half; the right half shows "Add New Panel" with Cell Plot, Gene Plot, Cell Table and Gene Table cards, and a Duplicate or Reopen Panel section.
+   :alt: The cell plot on the left half; the right half shows "Add New Panel" with the cards of the nine panel types, and a Duplicate or Reopen Panel section.
 
    After Split side by side: the new pane waits for a panel type.
    ```
@@ -351,8 +425,15 @@ links, so a shared layout opens with the same proportions on any screen.
 
 ## Loading, and stopping a load
 
-While a panel reads its data or builds its plot, a small box at the top left of the plot says
-"Loading axis data…". A table shows a spinner, or the same box when it keeps its rows while it
+A share link or a loaded panel set shows what it is opening from the start: each panel appears as a
+named tile ("Cell plot · UMAP · coloured by cell_type") with a status line, and the dataset bar
+carries one line ("Opening link: pbmc.zarr, 4 panels (2 ready)") until everything is drawn. Nothing is
+covered: the header, the dataset browser and the other panels stay usable while it loads, and
+choosing another dataset ends the load you no longer want. Only the controls that depend on data
+still being read (a panel's axis and colour pickers) are off until it arrives.
+
+While a panel reads its data or builds its plot, a small box at the top left of the plot says what
+it is doing ("Reading coordinates…", "Drawing…", "Recolouring…"). A table shows a spinner, or the same box when it keeps its rows while it
 loads other cells. A load that takes longer than about a second and a half adds a **Cancel**
 button to the box (a quick load never flashes it).
 
@@ -361,7 +442,7 @@ other panels go on loading.
 
 - A panel that already showed a plot keeps it, with a tag **Loading cancelled** at the right of
   its status line. The plot may not match the controls (you had changed the colour, say). Click
-  the tag and press **Load**, or press **Refresh**, to read the data again.
+  the tag and press **Load** to read the data again.
 - A panel with nothing shown yet, and a table whose rows were replaced by the spinner, shows
   "Loading cancelled" with a **Load** button.
 - A gene set analysis section has its own **Cancel**; it returns to what it showed before.
@@ -397,7 +478,10 @@ plot.
    with all its settings, in that pane.
 4. Click anywhere else on a card to open a **copy** of that panel (a duplicate with a new
    title). This works for open and closed panels.
-5. The small **×** on a closed card forgets that panel. **Clear closed panels** forgets all
+5. The small **×** on a closed card forgets that panel. A closed panel that other panels use (a signature a plot colours
+   by, a grouping a plot or table reads) asks first: the **×** turns into **Delete?** with the question under the card
+   ("Delete 'T cell score'? 2 plots and 1 table use it."), and a second press deletes it. Escape, moving the focus or a few
+   seconds put it back. A closed panel nothing uses is deleted at once. **Clear closed panels** forgets all
    closed panels: the first press turns the button into "Delete all N closed panels?", the second
    (within a few seconds) deletes them.
 

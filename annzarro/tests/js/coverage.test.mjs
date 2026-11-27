@@ -494,7 +494,7 @@ test('colour NaN is never suppressed', () => {
           hideNaNActive: true },
         'cells', { axisCoverage: { x: xLoaded } });
     assert.equal(filters.gaps.length, 1);
-    assert.match(filters.lines()[0], /colour/);
+    assert.match(filters.lines()[0], /color: filtered out .* points with no color value/);
 });
 
 
@@ -761,4 +761,17 @@ test('a count of one takes the singular noun', () => {
     const single = breakdown(Coverage.complete(1, 'cells'));
     assert.equal(single.headline, '1 cell');
     assert.equal(single.headlineExact, '1 cell');
+});
+
+test('a count of something other than what is drawn names it: a gene signature\'s banner says "selected"', () => {
+    const cov = new Coverage({ shown: 5, total: 3000, unit: 'genes',
+        gaps: [{ reason: GAP.FILTERED, kind: 'unselected', detail: 'not ticked in this signature', count: 2995 }] });
+    const b = breakdown(cov, { verb: 'selected' });
+    assert.equal(b.headlineExact, '5 of 3,000 genes selected');
+    assert.deepEqual(b.rows.map(r => [r.chip, r.count]), [['not selected', 2995]]);
+    assert.equal(b.unattributed, 0, 'every gene not selected is accounted for');
+    assert.equal(breakdown(Coverage.complete(3000, 'genes'), { verb: 'selected' }).headlineExact, 'All 3,000 genes selected');
+    // a plot's strip is unchanged
+    assert.equal(breakdown(Coverage.partial(28, 200, GAP.FILTERED, 'x', { unit: 'cells' })).headlineExact, '28 of 200 cells shown');
+    assert.equal(breakdown(Coverage.complete(200, 'cells')).headlineExact, '200 cells');
 });

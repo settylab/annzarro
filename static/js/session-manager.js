@@ -17,6 +17,7 @@ import { csrfFetch } from './utils/csrf.js';
 import { DatasetState } from './utils/dataset-state.js';
 import { storableSessionStyles, replaceSessionStyles, onSessionStyleChange, saveSessionStylesTo, cleanSessionStyles } from './utils/session-style.js';
 import { VIEW_SCHEMA_VERSION, panelSetToView, remapPanelReferences, serializableConfig } from './utils/deeplink.js';
+import { referencedFields } from './utils/panel-references.js';
 import { storeRecord, storeName } from './utils/view-store.js';
 import { modeOptions } from './utils/panelset-load.js';
 import { knownStore, settleStore, appVersion } from './utils/store-identity.js';
@@ -36,6 +37,9 @@ const SessionManager = (function() {
     // main.js registers how a view is applied (dataset switch, focus, layout);
     // see setViewApplier. Without one, loading falls back to closed panels.
     let _viewApplier = null;
+    // While the page starts (main.js), an applier is coming: every load waits for it rather than take the
+    // closed-panels fallback, which is only for a page that never installs one. {promise, resolve} until then.
+    let _applierComing = null;
     // main.js also says where a set's dataset is (its card's badge) and lets
     // the user pick a dataset for a set (setPanelSetHelpers)
     let _statusProvider = null;
@@ -137,6 +141,7 @@ const SessionManager = (function() {
      * @returns {Promise<Object|null>} null when it is not a panel set
      */
     async function getPanelSetStatus(source) {
+        await whenReady();          // main.js gives the status helpers as the page finishes starting
         const data = typeof source === 'string' ? await fetchPanelSet(source) : source;
         if (!data || !_statusProvider) return null;
         try { return await _statusProvider(data); } catch (error) {
@@ -147,6 +152,35 @@ const SessionManager = (function() {
 
     function setViewApplier(fn) {
         _viewApplier = typeof fn === 'function' ? fn : null;
+        if (_viewApplier) _startupEnded();
+    }
+
+    /**
+     * main.js, before it exposes this module or binds a Load button: an applier will be set (setViewApplier), and
+     * until then every load of a panel set waits (whenReady) instead of falling back to closed panels.
+     */
+    function expectViewApplier() {
+        if (_applierComing || _viewApplier) return;
+        let resolve;
+        const promise = new Promise((r) => { resolve = r; });
+        _applierComing = { promise, resolve };
+    }
+
+    /** The page has started: the applier is set, or the start-up failed and none will come. @private */
+    function _startupEnded() {
+        const coming = _applierComing;
+        _applierComing = null;
+        if (coming) coming.resolve();
+    }
+
+    /** Whether a panel set can be loaded now (false while the page is still starting). */
+    function isReady() {
+        return !_applierComing;
+    }
+
+    /** Resolves once a panel set can be loaded (at once when it can now). */
+    function whenReady() {
+        return _applierComing ? _applierComing.promise : Promise.resolve();
     }
 
     /**
@@ -214,6 +248,7 @@ const SessionManager = (function() {
     async function _applyPanelSet(sessionData, options) {
         const plan = panelSetToView(sessionData);
         if (!plan) throw new Error('Not a panel set');
+        await whenReady();          // during start-up the applier is coming: never the fallback then
         if (_viewApplier) {
             return await _viewApplier(plan, sessionData, options);
         }
@@ -407,6 +442,8 @@ const SessionManager = (function() {
             return { status: 'error', message: 'Panel set name is required' };
         }
         const options = modeOptions(mode);
+        // a load asked while the page starts waits until it can be applied (its dataset helpers too)
+        await whenReady();
         if (String(name).startsWith(LAST_PREFIX)) return restoreLastSession(String(name).slice(LAST_PREFIX.length));
         
         try {
@@ -638,7 +675,8 @@ const SessionManager = (function() {
             const panelConfigs = JSON.parse(JSON.stringify(sessionData.panelConfigs || {}));
 
             // registerClosedPanel gives a panel a new id when its id is taken;
-            // a plot's tableFilter must then follow its table to the new id.
+            // every reference to it (a plot's tableFilter, an axis on a signature's
+            // score, a table's score column) must then follow it to the new id.
             const panels = Object.values(panelConfigs).filter(panel => !panel.isSelectionTile && panel.config);
             const idMap = new Map();
             panels.forEach(panel => {
@@ -650,11 +688,13 @@ const SessionManager = (function() {
             });
             if (idMap.size) {
                 remapPanelReferences(panels.map(panel => panel.config), idMap);
+                // the registered panel is given again what holds its references (utils/panel-references.js): a
+                // plot by setConfig, a table, which has none, by updateConfig
                 panels.forEach(panel => {
                     const live = PanelManager.getPanel(panel.config.id);
-                    if (live && live.setConfig && panel.config.tableFilter !== undefined) {
-                        live.setConfig({ tableFilter: panel.config.tableFilter });
-                    }
+                    const give = live && (live.setConfig || live.updateConfig);
+                    const fields = give ? referencedFields(panel.config, panel.type) : [];
+                    if (fields.length) give.call(live, Object.fromEntries(fields.map(field => [field, panel.config[field]])));
                 });
             }
             
@@ -1013,6 +1053,7 @@ const SessionManager = (function() {
      * @returns {Promise<{status: string, message: string}>}
      */
     async function restoreLastSession(key, { defaultSubset = false } = {}) {
+        await whenReady();
         const entry = lastSessions().find(e => e.key === key);
         if (!entry) return { status: 'error', message: 'That session is no longer kept in this browser.' };
         const session = defaultSubset ? withDefaultSubset(entry.session) : entry.session;
@@ -1192,6 +1233,10 @@ const SessionManager = (function() {
         notifyPanelUpdate,
         onViewMayHaveChanged,
         setViewApplier,
+        expectViewApplier,
+        startupEnded: _startupEnded,
+        isReady,
+        whenReady,
         setPanelSetHelpers,
         fetchPanelSet,
         getPanelSetStatus,

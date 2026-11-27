@@ -1,0 +1,36 @@
+/* The entity cards (static/js/ui/entity-card.js): the Cell Grouping's factors and the Cell-Gene Plot's sections, one look.
+   A 1 px border, a 4 px radius, the surface; the title in bold, the summary and the preview muted. In a narrow list the preview
+   gives way first, then the summary, and the title last. Colours are the theme's tokens, so light and dark follow. */
+.az-cards { list-style: none; margin: 0; padding: 0 8px 6px; display: flex; flex-direction: column; gap: 4px; container: azcards / inline-size; }
+.az-card { border: 1px solid var(--az-border); border-radius: 4px; background: var(--az-surface); }
+.az-card.is-missing { border-color: var(--az-danger-text); }
+.az-card__bar { display: flex; align-items: center; background: var(--az-panel-header-bg); border-radius: 3px 3px 0 0; }
+.az-card__head {
+    flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 6px; padding: 4px 6px;
+    border: 0; background: none; text-align: left; color: var(--az-text);
+}
+.az-card__head[hidden] { display: none; }
+.az-card__head:focus-visible { outline: 2px solid var(--az-link); outline-offset: -2px; }
+.az-card__grip { cursor: grab; color: var(--az-muted); }
+.az-card__pos { color: var(--az-muted); font-variant-numeric: tabular-nums; }
+.az-card__title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; max-width: 100%; min-width: 0; }
+.az-card__summary { color: var(--az-muted); white-space: nowrap; flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.az-card__preview { color: var(--az-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 100000 auto; }
+.az-card__edit, .az-card__select { flex: 0 0 auto; margin: 0 2px; }
+.az-card__edit { padding: 0 8px; font-size: 0.75rem; }
+.az-card .form-select.az-card__select { width: auto; padding-top: 0; padding-bottom: 0; min-height: 0; height: 1.5rem; font-size: 0.75rem; padding-left: 0.4rem; padding-right: 1.4rem; background-size: 12px 9px; background-position: right 0.35rem center; }
+.az-card__menu-wrap { position: relative; }
+.az-card__more { padding: 0 6px; text-decoration: none; }
+.az-card__note { padding: 0 8px 4px; color: var(--az-danger-text); font-size: 0.75rem; }
+.az-card__rename { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 2px 6px; }
+.az-card__rename-input { flex: 1 1 auto; min-width: 5rem; font-weight: 600; }
+.az-card__rename-ok, .az-card__rename-cancel { padding: 0 6px; line-height: 1.4; }
+.az-card__op {
+    display: block; width: 100%; padding: 3px 10px; border: 0; background: none; text-align: left;
+    font-size: 0.8125rem; color: var(--az-text);
+}
+.az-card__op:hover, .az-card__op:focus { background: var(--az-surface-3); outline: none; }
+.az-card__op:disabled { color: var(--az-muted); }
+@container azcards (max-width: 420px) {
+    .az-card__preview { display: none; }
+}

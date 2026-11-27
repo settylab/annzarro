@@ -23,8 +23,9 @@ else:
 from annzarro.tests.browser.test_memory_guard import STORE, _serve  # noqa: E402
 
 A, B = "cell-plot-A", "cell-plot-B"
-GROUPS = ["Presets", "Background", "Axes and ticks", "Points", "Focused cell", "Legend and colour bar", "Text", "Margins", "Export",
-          "Apply to other panels"]
+# the shared order of Plot Options (WP-5b, options-ux-080 section 4): Text after Presets, the plot's own groups after Axes
+GROUPS = ["Presets", "Text", "Background", "Axes", "Points", "Focused cell", "Legend", "Margins", "Export",
+          "Apply"]
 
 
 @pytest.fixture(scope="module")
@@ -257,7 +258,8 @@ def test_scale_bar_round_length_size_unit_corner_and_zoom(page, server):
     page.wait_for_timeout(300)
     RANGE = "(id) => (%s)(id)._fullLayout.xaxis.range.slice()" % GD
     before = page.evaluate(RANGE, A)
-    page.set_viewport_size({"width": 700, "height": 1000})
+    # the plot is 50 px taller now (top margin 30), so 700 px wide no longer changes the range by 5%; 1000 does, and the bar follows
+    page.set_viewport_size({"width": 1000, "height": 1000})
     page.wait_for_timeout(1500)
     after = page.evaluate(RANGE, A)
     assert abs((after[1] - after[0]) - (before[1] - before[0])) > 0.05 * (before[1] - before[0]), (before, after)
@@ -282,7 +284,7 @@ def test_scale_bar_is_greyed_with_its_reason_without_equal_aspect(page, server):
     assert page.is_disabled(f"#show-scale-bar-{B}")
     assert page.is_disabled(f"#scale-bar-size-{B}")
     assert "Equal aspect" in page.inner_text(f"#scale-bar-note-{B}")
-    assert "Needs Equal aspect" in page.get_attribute(f"#scale-bar-options-{B} .form-check", "title")
+    assert "Needs Equal aspect" in page.get_attribute(f"#show-scale-bar-{B}", "title")
     assert page.evaluate(SB, B)["shapes"] == 0
 
 
@@ -400,7 +402,7 @@ def test_each_panel_has_its_own_margins(page, server):
     _menu(page, A, "margins")
     _change(page, f"#margin-all-input-{A}", 15)
     assert _settings(page, A)["margins"]["t"] == 15
-    assert _settings(page, B)["margins"]["t"] == 80
+    assert _settings(page, B)["margins"]["t"] == 30
 
 
 def test_grid_off_keeps_the_tick_labels_on_the_first_draw(page, server):

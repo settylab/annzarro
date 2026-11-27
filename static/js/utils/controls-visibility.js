@@ -39,13 +39,16 @@ export function syncControlsWithDataset(el, isDatasetLoaded) {
 /**
  * A panel's control bar inside its tile content: a plot's, a table's or
  * the Gene Set Analysis panel's. The tile's toggle, saveLayout and a
- * restored layout all find it here, so a new kind of panel is one line.
+ * restored layout all find it here. A panel marks its bar with `data-panel-controls` (Cell Grouping and the panels
+ * after it); the four older bars are found by their classes.
  * @param {HTMLElement|null} content - the tile's .tile-content
  * @returns {HTMLElement|null}
  */
 export function controlsElementOf(content) {
     if (!content || typeof content.querySelector !== 'function') return null;
-    return content.querySelector('.plot-controls')
+    return content.querySelector('[data-panel-controls]')
+        || content.querySelector('.plot-controls')
         || content.querySelector('.table-controls')
-        || content.querySelector('.gs-controls');
+        || content.querySelector('.gs-controls')
+        || content.querySelector('.gsig-controls');
 }

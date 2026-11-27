@@ -1,0 +1,121 @@
+/* Cell-Gene Plot panel (panels/cell-gene.js): its styles only (the shared ones are in styles.css).
+   Top to bottom (UX 3.1): the control grid (What, Values, Layout; they stack as the panel narrows), a status line,
+   the plot. Colours are the theme's tokens (theme.css), so light and dark follow. */
+
+.tile-content > .cgene-panel { flex: 1 1 auto; min-height: 0; }
+.cgene-panel {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    height: 100%;
+    min-height: 0;
+    font-size: 0.8125rem;
+}
+
+/* the control grid: three groups that wrap */
+.cgene-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px 14px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--az-border);
+    max-height: 45%;
+    overflow: auto;
+}
+.cgene-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cgene-group--head { flex: 1 1 100%; }
+.cgene-row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.cgene-field { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+.cgene-field[hidden] { display: none; }
+.cgene-field__label { color: var(--az-muted); font-size: 0.75rem; white-space: nowrap; }
+.cgene-field .form-select { width: auto; max-width: 16rem; }
+.cgene-axis { display: inline-flex; gap: 4px; }
+.cgene-field .form-select.cgene-scale { width: 7.5rem; }
+.cgene-radio { display: inline-flex; align-items: center; gap: 2px; margin: 0; white-space: nowrap; }
+.cgene-swap.active { background-color: var(--az-accent-bg); }
+.cgene-layout-slot { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cgene-layout-slot:empty { display: none; }
+.cgene-undo-wrap { align-self: flex-start; }
+
+/* the genes: Add genes and the section list (UX 3.2) */
+.cgene-genes { display: flex; flex-direction: column; gap: 4px; flex: 1 1 100%; min-width: 0; }
+.cgene-add-wrap { position: relative; }
+.cgene-add-menu, .cgene-group-menu {
+    position: absolute;
+    z-index: 30;
+    top: 100%;
+    left: 0;
+    min-width: 14rem;
+    max-height: 18rem;
+    overflow: auto;
+    padding: 4px 0;
+    background-color: var(--az-card-bg);
+    border: 1px solid var(--az-border-strong);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.cgene-add-heading, .cgene-group-menu__head { padding: 4px 10px 2px; color: var(--az-muted); font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.cgene-add-item, .cgene-group-menu__item {
+    display: block;
+    width: 100%;
+    padding: 3px 10px;
+    text-align: left;
+    color: inherit;
+    background: none;
+    border: 0;
+}
+.cgene-add-item:hover, .cgene-add-item:focus, .cgene-group-menu__item:hover, .cgene-group-menu__item:focus {
+    background-color: var(--az-accent-bg);
+    outline: none;
+}
+
+/* the sections are entity cards (css/cards.css); the list sits flush in the control grid */
+.cgene-sections.az-cards { padding: 0; }
+.cgene-lapsed { font-style: italic; }
+
+/* Cluster ▾, Color ▾ and Plot Options (X5; pop-overs since 0.8.0 WP-2, static/js/ui/popover.js): the buttons in the
+   Layout group with the clustering's sentences beside them; the controls live in a body-level pop-over surface, so
+   opening one never changes the panel's size */
+.cgene-swap, .cgene-cluster-btn, .cgene-color-btn, .cgene-options-btn { white-space: nowrap; }
+.cgene-opt { display: inline-flex; align-items: center; gap: 4px; margin: 0; white-space: nowrap; }
+.cgene-opt[hidden] { display: none; }
+.cgene-num { width: 5.5rem; }
+.cgene-title-input { width: 11rem; }
+.cgene-pop .cgene-dot-opacity input[type="range"] { flex: 1 1 0; min-width: 4rem; }
+.cgene-pop .cgene-dot-opacity .cgene-num { flex: 0 0 4.5rem; }
+.cgene-export { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.cgene-export > legend { flex: 1 1 100%; }
+.cgene-ward-note { display: flex; align-items: center; gap: 4px; }
+.cgene-ward-note[hidden] { display: none; }
+.cgene-ward-undo { padding: 0; font-size: 0.75rem; }
+
+/* status line and the plot */
+.cgene-message { padding: 0 8px; color: var(--az-muted); font-size: 0.75rem; min-height: 1.1em; }
+/* One cell per group (X3b, CXG-27): the suggestion of a heatmap, with its button */
+.cgene-hint { display: flex; align-items: center; gap: 6px; padding: 2px 8px; font-size: 0.75rem; }
+.cgene-hint[hidden] { display: none; }
+/* the plot fills the area; the status strip of utils/panel-surface.js follows it, below. The area takes what the tile
+   leaves and never sizes the tile: Plotly's figure is drawn in px to the plot, and with the strip it made the row grow
+   when the plot drew (operator: a panel must not resize or move the layout while working). `contain: size` leaves the
+   area's own content out of its size; its 240 px minimum stays. */
+.cgene-area { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 240px; contain: size; }
+.cgene-plot { position: relative; flex: 1 1 auto; min-height: 0; }
+.cgene-empty { display: none; }
+.cgene-area--empty .cgene-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    inset: 0;
+}
+.cgene-checklist { margin: 0; padding-left: 1.4rem; font-size: 0.875rem; }
+.cgene-checklist li { padding: 2px 0; color: var(--az-page-text); }
+.cgene-checklist li[data-done="true"] { color: var(--az-muted); }
+.cgene-checklist li[data-done="true"]::after { content: " \2713"; color: var(--az-ok-text); }
+
+/* narrow: the groups stack */
+
+/* each measure on one line, `Color [logged ▾] [x̄]` (the threshold is in the button's pop-over) */
+.cgene-measure__parts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.cgene-measure__parts > .cgene-agg { align-self: stretch; min-width: 2rem; padding: 0 0.5rem; font-size: 0.8125rem; line-height: 1; color: var(--az-text); border-color: var(--az-control-border); opacity: 1; }

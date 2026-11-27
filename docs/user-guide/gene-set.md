@@ -17,7 +17,7 @@ This page uses the volcano filter of {doc}`tables-and-filters` on `bm_aging_annz
 
 1. Filter a **Gene Table** to the genes you want.
 2. Add a **Gene Set Analysis** panel. It follows the first open gene table by itself; pick
-   another under **Source** if you have several (a closed table is listed as "(closed)"). With
+   another under **Source** if you have several (a closed table is listed as "(closed)"; a {doc}`gene signature <gene-signature>` is listed by its name). With
    no gene table at all, the panel says "No gene table yet": add one with **Create New Panel** →
    **Gene Table**, and the panel follows it as soon as it is made.
 3. Check **IDs** and **Species** (below), then press **Run · *n* genes**.

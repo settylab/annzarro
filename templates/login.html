@@ -6,11 +6,11 @@
     <title>{{ title|default((app_name or 'AnnZarro') ~ ' sign in') }}</title>
     
     <!-- Favicons -->
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
-    <script src="{{ url_for('static', filename='js/theme-init.js') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <link rel="icon" href="{{ static_url('favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ static_url('favicon.ico') }}" type="image/x-icon">
+    <link rel="icon" type="image/png" href="{{ static_url('favicon.png') }}">
+    <script src="{{ static_url('js/theme-init.js') }}"></script>
+    <link rel="stylesheet" href="{{ static_url('css/theme.css') }}">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;

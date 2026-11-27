@@ -155,10 +155,16 @@ def _toggle(page, mode):
 
 
 def _menu(page, pid, section="background"):
-    if not page.query_selector(f"details[data-panel='{pid}']"):
+    """Open the Plot Options popover of `pid` at `section`, and only ever work in a popover that is shown.
+
+    A click outside it (the theme toggle is one) closes it (the shared pop-over, ui/popover.js, since WP-5b; it
+    has no fade), so open the menu again whenever it is not there."""
+    shown = f"[data-popover='plot-options'] details[data-panel='{pid}']"
+    if not page.query_selector(shown):
+        page.wait_for_selector(f"details[data-panel='{pid}']", state="detached")      # a fading one is gone
         page.click(f"#aesthetics-menu-btn-{pid}")
-        page.wait_for_selector(f"details[data-panel='{pid}']", state="visible")
-    d = page.query_selector(f"details[data-panel='{pid}'][data-section='{section}']")
+        page.wait_for_selector(shown, state="visible")
+    d = page.query_selector(f"{shown}[data-section='{section}']")
     if not d.evaluate("e => e.open"):
         d.query_selector("summary").click()
     page.wait_for_function("(e) => e.open", arg=d)
@@ -265,7 +271,7 @@ def test_theme_is_set_once_before_the_first_paint(tab, server, scheme):
     # the script that sets it is the first thing in <head> that loads, before every stylesheet
     order = t.page.evaluate("""() => [...document.head.children].map(e => e.tagName === 'SCRIPT' ? 'script:' + (e.getAttribute('src') || '')
         : e.tagName === 'LINK' && e.rel === 'stylesheet' ? 'css' : null).filter(Boolean)""")
-    assert order[0].endswith("js/theme-init.js"), order
+    assert order[0].split("?")[0].endswith("js/theme-init.js"), order
     assert t.page.evaluate("document.head.querySelector('script[src*=\"theme-init\"]').async === false")
     assert t.page.evaluate("document.head.querySelector('script[src*=\"theme-init\"]').defer === false")
 
@@ -352,10 +358,12 @@ def test_a_set_colour_is_kept_and_follow_restores(tab, server):
     assert _rgb(s["font"]) == "#ff0000" and _rgb(s["tick"]) == "#ff0000"      # kept
     assert _rgb(s["paper"]) == DARK["bg"] and _rgb(s["grid"]) == DARK["grid"]   # the rest followed
     assert _rgb(_snap(page, B)["font"]) == DARK["text"]                         # another plot is untouched
-    # the menu shows what is drawn
-    assert page.input_value(f"#text-color-{A}") == "#ff0000"
-    assert page.input_value(f"#plot-bg-color-{A}") == DARK["bg"]
-    assert page.is_disabled(f"#reset-bg-color-{A}") and not page.is_disabled(f"#reset-text-color-{A}")
+    # the menu shows what is drawn (the theme click closed the menu: open it again)
+    _menu(page, A)                    # a freshly opened menu fills its controls a moment later: expect() waits for them
+    playwright.expect(page.locator(f"#text-color-{A}")).to_have_value("#ff0000")
+    playwright.expect(page.locator(f"#plot-bg-color-{A}")).to_have_value(DARK["bg"])
+    playwright.expect(page.locator("[data-popover='plot-options'] [data-auto='bgColor']")).to_have_attribute("aria-pressed", "true")   # Auto: it follows the theme
+    playwright.expect(page.locator("[data-popover='plot-options'] [data-auto='textColor']")).to_have_attribute("aria-pressed", "false")   # set: Auto is off
 
     _toggle(page, "light")
     _wait_plot(page, A, "paper", LIGHT["bg"])
@@ -363,7 +371,7 @@ def test_a_set_colour_is_kept_and_follow_restores(tab, server):
 
     _menu(page, A)
     _menu(page, A, "text")
-    page.click(f"#reset-text-color-{A}")                                        # Reset: the colour follows the theme again
+    page.click("[data-popover='plot-options'] [data-auto='textColor']")                                        # Auto: the colour follows the theme again
     _wait_plot(page, A, "font", LIGHT["text"])
     cfg = _cfg(page, A)
     assert all(k not in cfg for k in ("textColor", "bgColor", "gridColor", "axisColor"))
@@ -377,10 +385,10 @@ def test_a_colours_reset_follows_the_theme_again(tab, server):
     _menu(page, A)
     _set_colour(page, f"#plot-bg-color-{A}", "#223344")
     assert _rgb(_snap(page, A)["paper"]) == "#223344" and _cfg(page, A)["bgColor"] == "#223344"
-    page.click(f"#reset-bg-color-{A}")
+    page.click("[data-popover='plot-options'] [data-auto='bgColor']")
     _wait_plot(page, A, "paper", DARK["bg"])
     assert "bgColor" not in _cfg(page, A)
-    assert page.is_disabled(f"#reset-bg-color-{A}")
+    assert page.get_attribute("[data-popover='plot-options'] [data-auto='bgColor']", "aria-pressed") == "true"
 
 
 def test_the_theme_buttons_are_gone_and_a_pinned_palette_still_loads(tab, server):
@@ -400,8 +408,9 @@ def test_the_theme_buttons_are_gone_and_a_pinned_palette_still_loads(tab, server
     page.wait_for_timeout(600)
     assert _rgb(_snap(page, A)["paper"]) == DARK["bg"]                          # and kept across theme changes
     _menu(page, A)                                                              # a click on the toggle closed the menu
-    assert page.input_value(f"#plot-bg-color-{A}") == DARK["bg"] and not page.is_disabled(f"#reset-bg-color-{A}")
-    page.click(f"#reset-bg-color-{A}")                                          # each colour's own Reset follows the theme
+    playwright.expect(page.locator(f"#plot-bg-color-{A}")).to_have_value(DARK["bg"])
+    playwright.expect(page.locator("[data-popover='plot-options'] [data-auto='bgColor']")).to_have_attribute("aria-pressed", "false")
+    page.click("[data-popover='plot-options'] [data-auto='bgColor']")                                          # each colour's own Auto follows the theme
     _wait_plot(page, A, "paper", LIGHT["bg"])
     assert "bgColor" not in _cfg(page, A) and _cfg(page, A)["textColor"] == DARK["text"]
     _toggle(page, "dark")

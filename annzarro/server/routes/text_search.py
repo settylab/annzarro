@@ -1,13 +1,18 @@
 """Searching what the datasets say about themselves: ``GET /api/v1/datasets/text-search`` and the index behind it.
 
-The attribution fields and the first 64 KB of the README of every local store the server can list are
-crawled into one index (``server/text_index.py``), which the server builds and keeps fresh by itself; this
+The attribution fields, the first 64 KB of the README and the names of the fields (columns, layers,
+embeddings, ``uns`` paths) of every local store the server can list are crawled into one index (``server/text_index.py``), which the server builds and keeps fresh by itself; this
 route only searches it. A search never starts a crawl.
 
 * ``GET /datasets/text-search?q=&folder=&limit=&offset=&current=``: stores whose text holds every term of
   ``q``, best first, each with a snippet and the offsets to highlight; ``current`` (the path of the dataset the
   user has open) ranks that dataset first when it matches. ``more`` counts the matches after the page, and
-  ``offset`` asks for the next one. ``index`` says whether every dataset is searched.
+  ``offset`` asks for the next one. ``index`` says whether every dataset is searched. Per result, ``matched``
+  names the fields that held a term (the kinds of field name among them: ``obs``, ``var``, ``obsm``, ``varm``,
+  ``layers``, ``obsp``, ``varp``, ``uns``) and ``fields`` the names that matched, by kind, heaviest first:
+  ``[{kind, names (at most 5, best first), more, cut}]``. While a crawl runs, ``index.names`` is
+  ``{state: "building", read, total}`` (without the counts for a restricted requester); when none runs it is
+  left out.
 
 The index holds every store the crawl could list, so every answer is filtered for the requester after
 the lookup: a store they may not open is no hit, no snippet and no count. A restricted user is told the
@@ -31,15 +36,23 @@ MAX_LIMIT = 200
 def _summary(view):
     """``index`` of the reply: ``{complete}``; while datasets are not searched yet, ``{complete: false, capped}``
     and, for a requester who may know how many the server holds, ``searched`` and ``total``."""
+    restricted = access.is_restricted_requester()
     if text_index.complete(view):
-        return {"complete": True}
-    index = view["index"]
-    body = {"complete": False, "capped": bool(index is not None and index.stores_capped)}
-    if not access.is_restricted_requester():
-        counts = text_index.counts(view)
-        body["searched"] = counts["searchable"] + counts["unreadable"]
-        total = view["status"].get("total")
-        body["total"] = max(int(total), counts["stores"]) if isinstance(total, int) else (counts["stores"] or None)
+        body = {"complete": True}
+    else:
+        index = view["index"]
+        body = {"complete": False, "capped": bool(index is not None and index.stores_capped)}
+        if not restricted:
+            counts = text_index.counts(view)
+            body["searched"] = counts["searchable"] + counts["unreadable"]
+            total = view["status"].get("total")
+            body["total"] = max(int(total), counts["stores"]) if isinstance(total, int) else (counts["stores"] or None)
+    if view["state"] == "running":          # a crawl reads the names of every store again, once, after an upgrade
+        names = {"state": "building"}
+        if not restricted:
+            status = view["status"]
+            names.update(read=int(status.get("done") or 0), total=int(status.get("total") or 0))
+        body["names"] = names
     return body
 
 
@@ -56,7 +69,7 @@ def _row(hit, user):
     entry = hit["entry"]
     row = {"name": entry["name"], "path": entry["path"], "rel_path": entry["rel_path"],
            "title": (entry.get("about") or {}).get("title") or None, "score": round(hit["score"], 2),
-           "matched": hit["matched"], "snippet": hit["snippet"]}
+           "matched": hit["matched"], "fields": hit["fields"], "snippet": hit["snippet"]}
     if user:
         # the path of a store they may open, as their folder listings give it (it is what opens the row); the
         # directories above a grant are not told, so the name shown starts at the grant

@@ -153,14 +153,13 @@ test("a 403 from /cache/reset is an expected answer, not an error", async () => 
   }
 });
 
-test("partialRefreshNotice speaks only for a partial check, and says who can serve chunk writes", () => {
+test("partialRefreshNotice speaks only for a partial check, and never claims the data is unchanged", () => {
   assert.equal(partialRefreshNotice(null), null);
   for (const status of ["full", "remote", "scheduled"]) assert.equal(partialRefreshNotice({ status }), null);
-  const user = partialRefreshNotice({ status: "partial" });
-  assert.match(user.message, /inside its data chunks may not show/);
-  assert.match(user.message, /admin/);
-  assert.match(user.message, /Refresh dataset/);
-  const admin = partialRefreshNotice({ status: "partial" }, { cleared: true });
-  assert.match(admin.message, /cache/);
-  assert.doesNotMatch(admin.message, /may not show/);
+  const notice = partialRefreshNotice({ status: "partial" });
+  assert.equal(notice.title, "Large dataset refreshed");
+  assert.match(notice.message, /cannot tell whether it changed/);
+  assert.match(notice.message, /dropped everything it remembered/);
+  assert.doesNotMatch(notice.message, /no change|unchanged|may not show/i);
+  assert.deepEqual(partialRefreshNotice({ status: "partial" }, { cleared: true }), notice, "an admin's clear changes nothing");
 });

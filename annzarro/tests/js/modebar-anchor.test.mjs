@@ -51,7 +51,8 @@ function fakeGd(fullLayout) {
 test('sync writes the container\'s top and right; watch redoes it after a redraw', () => {
     const gd = fakeGd(layout());
     watchModebarAnchor(gd);
-    assert.deepEqual(gd.box.style, { top: '40px', left: '0px', right: 'auto', width: '660px' });
+    // the margin (40) has room for the toolbar: it sits above the axes, not over the data
+    assert.deepEqual(gd.box.style, { top: `${40 - TOOLBAR_HEIGHT}px`, left: '0px', right: 'auto', width: '660px' });
     gd._fullLayout = layout({ _size: { l: 60, t: 40, w: 300, h: 380 } });
     gd.handlers.plotly_afterplot();
     assert.equal(gd.box.style.width, '360px');
@@ -65,4 +66,17 @@ test('a graph with no container or no layout is left alone; watching twice leave
     watchModebarAnchor(gd);
     watchModebarAnchor(gd);
     assert.equal(Object.keys(gd.handlers).length, 1);
+});
+
+test('a margin thinner than the toolbar, or a legend on top of the axes, keeps the toolbar inside the corner', () => {
+    const thin = fakeGd(layout({ _size: { l: 60, t: 8, w: 600, h: 380 } }));
+    watchModebarAnchor(thin);
+    assert.equal(thin.box.style.top, '8px', 'no room above: in the corner');
+    const gd = fakeGd(layout());
+    const modebar = { getBoundingClientRect: () => ({ left: 400, right: 600, top: 13, bottom: 40 }) };
+    const legend = { getBoundingClientRect: () => ({ left: 300, right: 500, top: 5, bottom: 35, width: 200, height: 30 }) };
+    gd.querySelector = (sel) => (sel === '.modebar-container' ? gd.box : sel === '.modebar' ? modebar : null);
+    gd.querySelectorAll = (sel) => (sel === '.legend, .colorbar' ? [legend] : []);
+    watchModebarAnchor(gd);
+    assert.equal(gd.box.style.top, '40px', 'a legend on top of the axes takes the strip: the toolbar goes inside');
 });

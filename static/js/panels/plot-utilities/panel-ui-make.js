@@ -1,22 +1,26 @@
 import { listAvailableColormaps } from './colors.js';
-import { setupAxisSelector, updateTableFilterSelect, chooseDefaultAxes, showPointStyle, showScalePreview } from './panel-ui-update.js';
+import { setupAxisSelector, typeChoices, updateTableFilterSelect, chooseDefaultAxes, showPointStyle, showScalePreview, UNS_PALETTE_LABEL } from './panel-ui-update.js';
 import { scaleOptionLabel } from '../../utils/color-scales.js';
 import { colorBoundToData } from '../../utils/array-stats.js';
 import { Config } from '../../config.js';
 import { DataManager } from '../../data-manager.js';
 import { initializeAestheticsSettings } from './plot-aesthetics-menu.js';
+import { createPlotToolbar } from '../../ui/plot-toolbar.js';
+import { VOCABULARY } from '../../utils/vocabulary.js';
 import * as $ from '../../utils/jquery-helpers.js';
 import { syncControlsWithDataset } from '../../utils/controls-visibility.js';
 import { populateHoverSelect } from './hover-columns.js';
 import { noDatasetScreenHtml } from '../../utils/no-dataset-screen.js';
-import { SLIDER_STEPS, pointSizeScale, opacityScale, trackValue } from '../../utils/slider-scales.js';
+import { escapeHtml } from '../../utils/safe-markdown.js';
+import { SLIDER_STEPS, opacityScale, trackValue } from '../../utils/slider-scales.js';
 
 // Create array of discrete color scales
 const COLOR_SCALES = (Config && Config.DEFAULTS && Config.DEFAULTS.COLOR_SCALES) || ['Portland'];
 
 /**
  * Injects available colormaps into a <select> element with <optgroup> support.
- * The first element is set to "uns" with the text "As stored in adata.uns".
+ * The first element is set to "uns" with the text UNS_PALETTE_LABEL ("As stored in adata.uns"; a provider's colour names
+ * its own, panel-ui-update.js updateColorControlsVisibility).
  * @param {HTMLSelectElement|jQuery} selectElement - The <select> element to populate.
  * @param {Object} colormapGroups - Output of listAvailableColormaps()
  * @param {string} [selected] - Optional selected value.
@@ -28,7 +32,7 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
   $select.empty();
   
   // Insert the first menu option for "uns" colors
-  $select.append(new Option('As stored in adata.uns', 'uns', selected === 'uns', selected === 'uns'));
+  $select.append(new Option(UNS_PALETTE_LABEL, 'uns', selected === 'uns', selected === 'uns'));
 
   // Process the remaining colormaps grouped by category
   for (const [groupLabel, colormaps] of Object.entries(colormapGroups)) {
@@ -47,16 +51,25 @@ export function populateColormapSelectorGrouped(selectElement, colormapGroups, s
 
 /**
  * One axis row of the plot controls: its label and the type, key and column
- * selects (setupAxisSelector fills them and appends the lock/refocus buttons).
+ * selects. The type menu lists what `consumer` accepts for `roles`; setupAxisSelector
+ * fills the key and column selects and appends the lock/refocus buttons.
+ * @param {string} axis - 'x', 'y', 'z' or 'color'
+ * @param {string} label
+ * @param {string} id - the panel's id
+ * @param {{plotType: 'cells'|'genes', consumer: string, roles: string[]}} use - the entity a value belongs to,
+ *   the panel type, and the roles the row's source fills (['x'], ['color'])
+ * @param {string} [attrs]
  */
-function axisRow(axis, label, id, attrs = 'class="axis-selector-container ctl-row"') {
+function axisRow(axis, label, id, { plotType, roles }, attrs = 'class="axis-selector-container ctl-row"') {
   const rowAttrs = attrs.startsWith('class=') ? attrs : `class="axis-selector-container ctl-row" ${attrs}`;
+  const types = typeChoices(plotType, roles)
+    .map(c => `<option value="${escapeHtml(c.value)}">${escapeHtml(c.text)}</option>`).join('');
   return `
             <div ${rowAttrs}>
               <label class="axis-selector-label ctl-label" for="${axis}-type-select-${id}">${label}</label>
               <div class="axis-selector">
                 <select class="form-select form-select-sm axis-type-select" data-axis="${axis}" id="${axis}-type-select-${id}">
-                  <option value="">Loading...</option>
+                  ${types}
                 </select>
                 <select class="form-select form-select-sm axis-key-select" data-axis="${axis}" disabled>
                   <option value="">Loading...</option>
@@ -80,9 +93,11 @@ function axisRow(axis, label, id, attrs = 'class="axis-selector-container ctl-ro
  * @param {string} settings.categoryPalette - Default discrete palette name.
  * @param {number} [settings.colorMin=0] - Minimum value for color range.
  * @param {number} [settings.colorMax=100] - Maximum value for color range.
+ * @param {{plotType: 'cells'|'genes', consumer: string}} panel - the entity a point is and the panel type, which
+ *   the axis rows' type menus list sources for
  * @returns {{ plotContainer: HTMLElement, controlsContainer: HTMLElement, loadingScreen: HTMLElement }}
  */
-export function createPanelStructure(container, id, settings) {
+export function createPanelStructure(container, id, settings, { plotType, consumer }) {
   const $container = jQuery(container);
   
   $container.html(`
@@ -95,24 +110,9 @@ export function createPanelStructure(container, id, settings) {
         <div class="ctl-grid ctl-no-colour">
           <!-- What is plotted: the axes and the colour source -->
           <div class="ctl-group ctl-axes" role="group" aria-label="Axes and colour">
-            ${['x', 'y'].map(axis => axisRow(axis, axis.toUpperCase(), id)).join('')}
-            ${axisRow('z', 'Z', id, `id="z-axis-container-${id}" style="display:none;"`)}
-            <div class="color-selector-container ctl-row">
-              <label class="axis-selector-label ctl-label" for="color-type-select-${id}">Color</label>
-              <div class="axis-selector">
-                <select class="form-select form-select-sm axis-type-select" data-axis="color" id="color-type-select-${id}">
-                  <option value="">Loading...</option>
-                  <option value="none">None (constant)</option>
-                  <!-- Other options will be set based on plot type -->
-                </select>
-                <select class="form-select form-select-sm axis-key-select" data-axis="color" disabled>
-                  <option value="">Loading...</option>
-                </select>
-                <select class="form-select form-select-sm axis-column-select" data-axis="color" disabled>
-                  <option value="">Loading...</option>
-                </select>
-              </div>
-            </div>
+            ${['x', 'y'].map(axis => axisRow(axis, axis.toUpperCase(), id, { plotType, consumer, roles: [axis] })).join('')}
+            ${axisRow('z', 'Z', id, { plotType, consumer, roles: ['z'] }, `id="z-axis-container-${id}" style="display:none;"`)}
+            ${axisRow('color', 'Color', id, { plotType, consumer, roles: ['color'] }, 'class="color-selector-container ctl-row"')}
           </div>
 
           <!-- How the colour is drawn; hidden for a constant colour -->
@@ -171,14 +171,6 @@ export function createPanelStructure(container, id, settings) {
           <!-- How the points are drawn and labelled -->
           <div class="ctl-group ctl-points" role="group" aria-label="Points">
             <div class="point-controls">
-              <div class="point-size-control ctl-row ctl-slider">
-                <label class="ctl-label" for="point-size-input-${id}">Size</label>
-                <input type="range" class="form-range" min="0" max="${SLIDER_STEPS}" step="1" value="${trackValue(pointSizeScale, settings.pointSize)}" id="point-size-${id}"
-                       title="Marker size in px (log scale)" aria-label="Point size (log scale)">
-                <input type="number" class="form-control form-control-sm" min="0" step="any" value="${settings.pointSize}" id="point-size-input-${id}" title="Marker size in px">
-                <span class="point-auto"><button type="button" class="btn btn-sm btn-outline-secondary point-auto-btn" id="point-size-auto-${id}"
-                      title="Automatic size: follows the number of points drawn (in view when zoomed)">auto</button></span>
-              </div>
               <div class="point-opacity-control ctl-row ctl-slider">
                 <label class="ctl-label" for="point-opacity-input-${id}">Opacity</label>
                 <input type="range" class="form-range" min="0" max="${SLIDER_STEPS}" step="1" value="${trackValue(opacityScale, settings.pointOpacity)}" id="point-opacity-${id}"
@@ -213,13 +205,12 @@ export function createPanelStructure(container, id, settings) {
           <!-- Panel-wide toggles and actions -->
           <div class="color-options ctl-actions">
             <span class="ctl-actions-toggles" role="group" aria-label="View">
-              <button class="btn btn-sm btn-outline-secondary" id="z-axis-toggle-${id}" aria-pressed="false">3D Plot</button>
+              <button class="btn btn-sm btn-outline-secondary" id="z-axis-toggle-${id}" aria-pressed="false" title="${VOCABULARY.plotPanel.view3dHelp}">${VOCABULARY.plotPanel.view3d}</button>
               <button type="button" class="btn btn-sm btn-outline-secondary" id="equal-aspect-${id}" aria-pressed="false" title="Same scale on x and y (spatial coordinates)">Equal aspect</button>
               <button class="btn btn-sm active btn-primary" id="highlight-focused-cell-${id}" aria-pressed="true" style="display:none;">Highlight Focused Cell</button>
               <button class="btn btn-sm active btn-primary" id="highlight-focused-gene-${id}" aria-pressed="true" style="display:none;">Highlight Focused Gene</button>
             </span>
             <span class="ctl-actions-end" role="group" aria-label="Plot actions">
-              <button class="btn btn-sm btn-outline-secondary" id="refresh-plot-${id}" title="Read the data again (re-checked against the disk) and redraw the plot" aria-label="Refresh"><i class="fas fa-rotate-right"></i> <span class="ctl-btn-text">Refresh</span></button>
               <button class="btn btn-sm btn-outline-secondary" id="aesthetics-menu-btn-${id}" title="Plot options" aria-label="Plot options"><i class="fas fa-sliders-h"></i> <span class="ctl-btn-text">Plot Options</span></button>
             </span>
           </div>
@@ -236,6 +227,23 @@ export function createPanelStructure(container, id, settings) {
 
   // Check dataset loading status and show/hide UI elements accordingly
   checkDatasetLoadingStatus(id);
+
+  // The shared plot toolbar (ui/plot-toolbar.js; design note options-ux-080 section 4, WP-5b): the panel's actions
+  // first (the view toggles, Refresh last of them, so that it can go on its own), then Undo (plot-undo.js) and Plot
+  // Options at the row's right end, the same places as in every plot panel. The buttons are the ones drawn above (their
+  // ids and listeners stay); the row ends the control grid.
+  const actionsRow = $container.find('.ctl-actions')[0];
+  if (actionsRow) {
+    const q = (sel) => actionsRow.querySelector(sel);
+    const toolbar = createPlotToolbar({
+      className: 'ctl-toolbar',
+      actions: [q(`#z-axis-toggle-${id}`), q(`#equal-aspect-${id}`), q(`#highlight-focused-cell-${id}`), q(`#highlight-focused-gene-${id}`),
+        q(`#refresh-plot-${id}`)].filter(Boolean),
+      options: q(`#aesthetics-menu-btn-${id}`)
+    });
+    actionsRow.replaceWith(toolbar.element);
+  }
+  // The point size is Plot Options' (Points group, options-popover.js): it is not in this grid; its opacity stays here.
 
   return {
     plotContainer: document.getElementById(`plot-container-${id}`),
@@ -331,59 +339,16 @@ export function checkDatasetLoadingStatus(id) {
  * @param {Function} datasetStructure - The dataset structure object.
  * @param {string} plotType - Type of plot ('cells' or 'genes').
  * @param {HTMLElement} controlsContainer - The container for the plot controls.
+ * @param {string} consumer - the panel type ('cell-plot', 'gene-plot'): what its type menus list
  * @returns {Promise<void>} Resolves when UI state is initialized, or rejects with an error
  */
-export async function initializeUIState(id, settings, datasetStructure, plotType, controlsContainer) {
+export async function initializeUIState(id, settings, datasetStructure, plotType, controlsContainer, consumer) {
   console.log('Initializing UI state with settings:', settings);
 
   if (!datasetStructure) throw new Error('Failed to load dataset structure');
   
-  // Configure the axis type selectors based on plot type
   const isGenePlot = plotType === 'genes';
   const $container = jQuery(controlsContainer).closest('.plot-panel');
-  
-  // Set up the correct axis options based on plot type
-  for (const axis of ['x', 'y', 'z', 'color']) {
-    const $selector = $container.find(`#${axis}-type-select-${id}`);
-    if (!$selector.length) continue;
-    
-    // Clear existing options
-    $selector.empty();
-    
-    // Add 'none' option for color only
-    if (axis === 'color') {
-      $selector.append(new Option('None (constant)', 'none'));
-    }
-    
-    // Add appropriate options based on plot type
-    if (isGenePlot) {
-      // Gene plot: var, varm, varp, layer
-      const options = [
-        { value: 'var', text: 'var' },
-        { value: 'varm', text: 'varm', selected: true },
-        { value: 'varp', text: 'varp' },
-        { value: 'layer', text: 'layer' }
-      ];
-      
-      options.forEach(opt => {
-        $selector.append(new Option(opt.text, opt.value, opt.selected, opt.selected));
-      });
-    } else {
-      // Cell plot: obs, obsm, obsp, layer
-      const options = [
-        { value: 'obs', text: 'obs' },
-        { value: 'obsm', text: 'obsm', selected: true },
-        { value: 'obsp', text: 'obsp' },
-        { value: 'layer', text: 'layer' }
-      ];
-      
-      options.forEach(opt => {
-        $selector.append(new Option(opt.text, opt.value, opt.selected, opt.selected));
-      });
-    }
-    
-    $selector.prop('disabled', false); // Enable the selector
-  }
   
   // Show the appropriate highlight button
   const $highlightFocusedCellButton = $container.find(`#highlight-focused-cell-${id}`);
@@ -407,12 +372,24 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
     }
 
     // Only set default x and y if they're not already defined
-    if (!settings.x || !settings.x.type) {
+    const fillX = !settings.x || !settings.x.type;
+    const fillY = !settings.y || !settings.y.type;
+    if (fillX) {
       settings.x = defaults.x;
     }
 
-    if (!settings.y || !settings.y.type) {
+    if (fillY) {
       settings.y = defaults.y;
+    }
+
+    // Equal aspect starts on for a cell plot whose x AND y were both filled
+    // here from one embedding (UMAP, t-SNE, PCA, spatial): one unit is as long
+    // on both axes, whatever the tile's shape. Absent means "not chosen": a
+    // value the user, a link, a panel set or a session set (true or false) is
+    // never touched, and a link that fixes its own axes keeps opening as it did.
+    if (fillX && fillY && !isGenePlot && settings.equalAspect === undefined
+        && defaults.x.type === 'obsm' && defaults.x.key === defaults.y.key) {
+      settings.equalAspect = true;
     }
 
     // Only suggest z-axis if there's a third column available and z is undefined
@@ -477,6 +454,9 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   trySetDefaultAxes();
   trySetDefaultColor();
 
+  // the button follows the setting: the listeners may have been set up before the dataset came
+  $.updateButtonState($container.find(`#equal-aspect-${id}`), !!settings.equalAspect);
+
   // Ensure all settings objects are properly initialized
   settings.x = settings.x || {};
   settings.y = settings.y || {};
@@ -487,8 +467,8 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
   initializeAestheticsSettings(settings);
 
   // Axis selectors
-  setupAxisSelector(controlsContainer, 'x', settings.x, plotType, datasetStructure);
-  setupAxisSelector(controlsContainer, 'y', settings.y, plotType, datasetStructure);
+  setupAxisSelector(controlsContainer, 'x', settings.x, plotType, datasetStructure, { consumer, roles: ['x'], aggregate: true });
+  setupAxisSelector(controlsContainer, 'y', settings.y, plotType, datasetStructure, { consumer, roles: ['y'], aggregate: true });
 
   if (settings.z) {
     const $toggle = jQuery(`#z-axis-toggle-${id}`);
@@ -497,12 +477,12 @@ export async function initializeUIState(id, settings, datasetStructure, plotType
 
     const $zContainer = jQuery(`#z-axis-container-${id}`);
     $zContainer.show();
-    setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure);
+    setupAxisSelector(controlsContainer, 'z', settings.z, plotType, datasetStructure, { consumer, roles: ['z'], aggregate: true });
   } else if (settings.z === undefined) {
     settings.z = null; // ensure no legacy 3D state
   }
 
-  setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure);
+  setupAxisSelector(controlsContainer, 'color', settings.color, plotType, datasetStructure, { consumer, roles: ['color'], aggregate: true });
 
   // Point controls - ensure sliders reflect the panel's settings
   showPointStyle(id, settings);

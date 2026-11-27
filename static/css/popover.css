@@ -1,0 +1,114 @@
+/*
+ * Pop-over (static/js/ui/popover.js): one non-modal surface in a body-level layer, position: fixed, so it never
+ * changes the size or flow of a panel. Colours are the --az-* tokens of theme.css (light and dark); only the
+ * shadow is local, because a shadow needs more weight on a dark page.
+ * z-index 1040: above the tiles and the Plotly modebar (1001), below Bootstrap's modals (1055).
+ */
+:root { --az-popover-shadow: 0 6px 20px rgba(0, 0, 0, 0.16); }
+:root[data-theme="dark"] { --az-popover-shadow: 0 6px 24px rgba(0, 0, 0, 0.6); }
+
+#az-popover-layer { position: static; }
+
+.az-popover {
+    position: fixed; z-index: 1040; box-sizing: border-box; display: flex; flex-direction: column;
+    left: 0; top: 0; width: 320px; max-width: calc(100vw - 16px); overflow: hidden;
+    background: var(--az-surface); color: var(--az-text);
+    border: 1px solid var(--az-control-border); border-radius: 6px; box-shadow: var(--az-popover-shadow);
+    font-size: 0.875rem;
+}
+.az-popover:focus { outline: none; }
+.az-popover-wide { width: 440px; }
+.az-popover-sheet { width: calc(100vw - 16px); }
+
+.az-popover-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: 0 0 auto;
+    padding: 6px 6px 6px 12px; background: var(--az-surface-2); border-bottom: 1px solid var(--az-border);
+}
+.az-popover-title { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.az-popover-close {
+    flex: 0 0 auto; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 4px;
+    background: transparent; color: var(--az-text-2); font-size: 1.4rem; line-height: 1; cursor: pointer;
+}
+.az-popover-close:hover { background: var(--az-surface-3); color: var(--az-text); }
+.az-popover-close:focus-visible { outline: 2px solid var(--az-focus-border); outline-offset: 1px; }
+
+/* The body scrolls inside the surface; the header stays. */
+.az-popover-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 12px; }
+
+.az-popover-menu { min-width: 12rem; padding: 4px 0; overflow-y: auto; }
+.az-popover-menu [role="menuitem"] {
+    display: block; width: 100%; padding: 6px 12px; border: 0; background: transparent; color: inherit;
+    text-align: left; cursor: pointer;
+}
+.az-popover-menu [role="menuitem"]:hover,
+.az-popover-menu [role="menuitem"]:focus { background: var(--az-surface-3); outline: none; }
+.az-popover-menu [role="menuitem"]:focus-visible { outline: 2px solid var(--az-focus-border); outline-offset: -2px; }
+
+/* The anchor while its pop-over is open: a pressed look that works in both themes. */
+.az-popover-anchor-open { background: var(--az-accent-bg); border-color: var(--az-link); color: var(--az-link); }
+
+/* The range boxes (static/js/ui/range-boxes.js): the boxes of one scale and its reset; an auto box reads as a value */
+.az-range { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.az-range__box { display: flex; align-items: center; justify-content: space-between; gap: 4px 8px; margin: 0; }
+.az-range__label { color: var(--az-muted); font-size: 0.75rem; }
+.az-range__field { width: 5.5rem; }
+.az-range__field--auto::placeholder { color: var(--az-muted); opacity: 1; font-style: italic; }
+.az-range__reset { align-self: flex-end; padding: 0; border: 0; background: none; color: var(--az-link); font-size: 0.75rem; }
+.az-range__reset:hover:not(:disabled) { text-decoration: underline; }
+.az-range__reset:disabled { color: var(--az-muted); opacity: 0.6; }
+
+/*
+ * The pop-over body standard (U1, 0.8.0): the sections and fields every pop-over body uses, first rendered by the
+ * shared Plot Options (static/js/panels/plot-utilities/options-popover.js). Theme tokens only (theme.css), so light and
+ * dark both hold. The old po-* names stay as aliases for one release.
+ */
+.az-pop-options, .po-options { display: flex; flex-direction: column; gap: 2px; }
+
+.az-pop-section, .po-section { border-bottom: 1px solid var(--az-border); }
+.az-pop-section:last-child, .po-section:last-child { border-bottom: 0; }
+.az-pop-section[hidden], .po-section[hidden] { display: none; }
+.az-pop-section__title, .po-section__title {
+    padding: 6px 0; cursor: pointer; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--az-text-2); list-style-position: inside;
+}
+.az-pop-section__title:focus-visible, .po-section__title:focus-visible { outline: 2px solid var(--az-focus-border); outline-offset: 1px; border-radius: 2px; }
+.az-pop-section__body, .po-section__body { display: flex; flex-direction: column; gap: 6px; padding: 0 0 10px; }
+.az-pop-section__foot, .po-section__foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 12px; }
+.az-pop-reset, .po-reset { padding: 0; font-size: 0.75rem; }
+
+.az-pop-field, .po-field { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin: 0; }
+.az-pop-field[hidden], .po-field[hidden] { display: none; }
+.az-pop-field__label, .po-field__label { color: var(--az-muted); font-size: 0.75rem; margin: 0; }
+.az-pop-field__control, .po-field__control { display: inline-flex; align-items: center; gap: 4px; }
+.az-pop-field .form-select, .po-field .form-select { width: auto; max-width: 11rem; }
+.az-pop-num, .po-num { width: 5.5rem; }
+.az-pop-text, .po-text { width: 11rem; }
+.az-pop-field .form-control-color, .po-field .form-control-color { width: 2.5rem; padding: 2px; }
+.az-pop-color--auto, .po-color--auto { opacity: 0.45; }
+.az-pop-auto.active, .po-auto.active { background: var(--az-accent-bg); border-color: var(--az-link); color: var(--az-link); }
+.az-pop-field--check, .po-field--check { justify-content: flex-start; }
+.az-pop-check, .po-check { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.az-pop-check .form-check-input, .po-check .form-check-input { margin: 0; }
+/* under .az-popover: the dark theme's `small { color: inherit }` (theme.css) would otherwise win and draw help in the full text colour */
+.az-popover .az-pop-help, .az-popover .po-help { flex: 1 1 100%; margin: 0; color: var(--az-muted); font-size: 0.6875rem; line-height: 1.3; }
+
+.az-pop-buttons, .po-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+.az-pop-ask, .po-ask { display: flex; flex-direction: column; gap: 4px; }
+.az-pop-ask[hidden], .po-ask[hidden] { display: none; }
+.az-pop-ask__buttons, .po-ask__buttons { display: flex; gap: 4px; }
+
+/* U7: what the bespoke bodies (Grouping, Count, Cell-Gene, Methods) need beyond the shared Plot Options body */
+.az-pop-intro { margin: 0; padding: 6px 0 2px; color: var(--az-muted); font-size: 0.6875rem; line-height: 1.3; }
+.az-pop-error { flex: 1 1 100%; color: var(--az-danger-text); font-size: 0.6875rem; line-height: 1.3; }
+.az-pop-error:empty { display: none; }
+.az-pop-field__control--stack { flex-direction: column; align-items: flex-start; gap: 2px; }
+.az-pop-field--block { flex-direction: column; align-items: stretch; }
+.az-pop-field--block > .az-pop-field__control { width: 100%; }
+.az-pop-field .az-pop-select { width: auto; max-width: 11rem; }
+.az-pop-note { font-size: 0.75rem; padding: 3px 6px; border-left: 3px solid var(--az-border-strong); background: var(--az-surface-3); }
+.az-pop-note[hidden] { display: none; }
+
+/* A scaled field (the point size): the slider takes the room the label leaves, the box and Auto are as in every row */
+.az-pop-field--scaled .az-pop-field__control { flex: 1 1 12rem; justify-content: flex-end; min-width: 0; }
+.az-pop-field--scaled .form-range { flex: 1 1 4rem; min-width: 0; width: auto; }
+.az-pop-field--scaled .az-pop-num { flex: 0 0 auto; }

@@ -1,0 +1,2092 @@
+{
+ "comment": "Written by annzarro/tests/core/binning_vectors.py from core/binning.py; read by tests/js/binning-model.test.mjs. Do not edit by hand.",
+ "recipes": [
+  {
+   "raw": {
+    "method": "equal_count"
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_count",
+    "bins": 4,
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "bins": 7
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_count",
+    "bins": 7,
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "bins": 4,
+    "zero_bin": true
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_count",
+    "bins": 4,
+    "zero_bin": true,
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "edges_from": "all"
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_count",
+    "bins": 4,
+    "outside": "clamp",
+    "edges_from": "all"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_width"
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_width",
+    "bins": 10,
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_width",
+    "bins": 3,
+    "range": [
+     0,
+     6
+    ]
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_width",
+    "bins": 3,
+    "range": [
+     0.0,
+     6.0
+    ],
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_width",
+    "bins": 3,
+    "range": [
+     0,
+     6
+    ],
+    "outside": "exclude"
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_width",
+    "bins": 3,
+    "range": [
+     0.0,
+     6.0
+    ],
+    "outside": "exclude",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_width",
+    "bins": 1000,
+    "zero_bin": true,
+    "edges_from": "all"
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_width",
+    "bins": 1000,
+    "zero_bin": true,
+    "outside": "clamp",
+    "edges_from": "all"
+   }
+  },
+  {
+   "raw": {
+    "method": "log"
+   },
+   "ok": true,
+   "effective": {
+    "method": "log",
+    "bins": 10,
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "log",
+    "bins": 5,
+    "range": [
+     0.5,
+     500
+    ]
+   },
+   "ok": true,
+   "effective": {
+    "method": "log",
+    "bins": 5,
+    "range": [
+     0.5,
+     500.0
+    ],
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_width",
+    "bins": 4,
+    "range": [
+     null,
+     6
+    ]
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_width",
+    "bins": 4,
+    "range": [
+     null,
+     6.0
+    ],
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_width",
+    "bins": 4,
+    "range": [
+     1,
+     null
+    ]
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_width",
+    "bins": 4,
+    "range": [
+     1.0,
+     null
+    ],
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_width",
+    "bins": 4,
+    "range": [
+     null,
+     null
+    ]
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_width",
+    "bins": 4,
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "log",
+    "bins": 4,
+    "range": [
+     null,
+     100
+    ]
+   },
+   "ok": true,
+   "effective": {
+    "method": "log",
+    "bins": 4,
+    "range": [
+     null,
+     100.0
+    ],
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "log",
+    "bins": 4,
+    "range": [
+     2,
+     null
+    ],
+    "outside": "exclude"
+   },
+   "ok": true,
+   "effective": {
+    "method": "log",
+    "bins": 4,
+    "range": [
+     2.0,
+     null
+    ],
+    "outside": "exclude",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "manual",
+    "thresholds": [
+     2,
+     0.5,
+     1.75,
+     2
+    ]
+   },
+   "ok": true,
+   "effective": {
+    "method": "manual",
+    "thresholds": [
+     0.5,
+     1.75,
+     2.0
+    ]
+   }
+  },
+  {
+   "raw": {
+    "method": "manual",
+    "thresholds": [
+     1
+    ],
+    "zero_bin": true
+   },
+   "ok": true,
+   "effective": {
+    "method": "manual",
+    "thresholds": [
+     1.0
+    ],
+    "zero_bin": true
+   }
+  },
+  {
+   "raw": {
+    "method": "manual",
+    "thresholds": [
+     1
+    ],
+    "bins": 9,
+    "range": [
+     0,
+     5
+    ],
+    "edges_from": "all"
+   },
+   "ok": true,
+   "effective": {
+    "method": "manual",
+    "thresholds": [
+     1.0
+    ]
+   }
+  },
+  {
+   "raw": {
+    "method": "categories"
+   },
+   "ok": true,
+   "effective": {
+    "method": "categories",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "categories",
+    "zero_bin": true,
+    "outside": "exclude"
+   },
+   "ok": true,
+   "effective": {
+    "method": "categories",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "range": [
+     0,
+     1
+    ]
+   },
+   "ok": true,
+   "effective": {
+    "method": "equal_count",
+    "bins": 4,
+    "outside": "clamp",
+    "edges_from": "shown"
+   }
+  },
+  {
+   "raw": {
+    "method": "bogus"
+   },
+   "ok": false,
+   "reason": "bad_method"
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "bins": 1
+   },
+   "ok": false,
+   "reason": "bad_bins"
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "bins": 1001
+   },
+   "ok": false,
+   "reason": "bad_bins"
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "bins": 2.5
+   },
+   "ok": false,
+   "reason": "bad_bins"
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "bins": "4"
+   },
+   "ok": false,
+   "reason": "bad_bins"
+  },
+  {
+   "raw": {
+    "method": "equal_width",
+    "range": [
+     3,
+     3
+    ]
+   },
+   "ok": false,
+   "reason": "bad_range"
+  },
+  {
+   "raw": {
+    "method": "equal_width",
+    "range": [
+     4,
+     3
+    ]
+   },
+   "ok": false,
+   "reason": "bad_range"
+  },
+  {
+   "raw": {
+    "method": "log",
+    "range": [
+     0,
+     10
+    ]
+   },
+   "ok": false,
+   "reason": "bad_range"
+  },
+  {
+   "raw": {
+    "method": "log",
+    "range": [
+     -1,
+     10
+    ]
+   },
+   "ok": false,
+   "reason": "bad_range"
+  },
+  {
+   "raw": {
+    "method": "log",
+    "range": [
+     0,
+     null
+    ]
+   },
+   "ok": false,
+   "reason": "bad_range"
+  },
+  {
+   "raw": {
+    "method": "equal_width",
+    "range": [
+     5,
+     3
+    ]
+   },
+   "ok": false,
+   "reason": "bad_range"
+  },
+  {
+   "raw": {
+    "method": "manual"
+   },
+   "ok": false,
+   "reason": "bad_thresholds"
+  },
+  {
+   "raw": {
+    "method": "manual",
+    "thresholds": []
+   },
+   "ok": false,
+   "reason": "bad_thresholds"
+  },
+  {
+   "raw": {
+    "method": "manual",
+    "thresholds": [
+     1,
+     "x"
+    ]
+   },
+   "ok": false,
+   "reason": "bad_number"
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "outside": "drop"
+   },
+   "ok": false,
+   "reason": "bad_outside"
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "edges_from": "everything"
+   },
+   "ok": false,
+   "reason": "bad_edges_from"
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "zero_bin": "yes"
+   },
+   "ok": false,
+   "reason": "bad_zero_bin"
+  },
+  {
+   "raw": {
+    "method": "equal_count",
+    "mystery": 1
+   },
+   "ok": false,
+   "reason": "unknown_field"
+  }
+ ],
+ "edges": [
+  {
+   "binning": {
+    "method": "manual",
+    "thresholds": [
+     0.5,
+     1.75
+    ]
+   },
+   "reply": {
+    "edges": [
+     0.5,
+     1.75
+    ],
+    "edges_from": "shown",
+    "edges_n": 0,
+    "bins_asked": null,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp"
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "bounds": [
+    [
+     null,
+     0.5
+    ],
+    [
+     0.5,
+     1.75
+    ],
+    [
+     1.75,
+     null
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "manual",
+    "thresholds": [
+     3
+    ]
+   },
+   "reply": {
+    "edges": [
+     3.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 0,
+    "bins_asked": null,
+    "bins_made": 2,
+    "degenerate": false,
+    "outside": "clamp"
+   },
+   "ids": [
+    "bin:0",
+    "bin:1"
+   ],
+   "bounds": [
+    [
+     null,
+     3.0
+    ],
+    [
+     3.0,
+     null
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "manual",
+    "thresholds": [
+     0.5,
+     1.75
+    ],
+    "zero_bin": true
+   },
+   "reply": {
+    "edges": [
+     0.5,
+     1.75
+    ],
+    "edges_from": "shown",
+    "edges_n": 0,
+    "bins_asked": null,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp"
+   },
+   "ids": [
+    "@zero",
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "bounds": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     null,
+     0.5
+    ],
+    [
+     0.5,
+     1.75
+    ],
+    [
+     1.75,
+     null
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 3,
+    "range": [
+     0,
+     6
+    ]
+   },
+   "reply": {
+    "edges": [
+     0.0,
+     2.0,
+     4.0,
+     6.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 1,
+    "bins_asked": 3,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     0.0,
+     6.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "bounds": [
+    [
+     0.0,
+     2.0
+    ],
+    [
+     2.0,
+     4.0
+    ],
+    [
+     4.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 4,
+    "range": [
+     -2.5,
+     2.5
+    ]
+   },
+   "reply": {
+    "edges": [
+     -2.5,
+     -1.25,
+     0.0,
+     1.25,
+     2.5
+    ],
+    "edges_from": "shown",
+    "edges_n": 1,
+    "bins_asked": 4,
+    "bins_made": 4,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     -2.5,
+     2.5
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2",
+    "bin:3"
+   ],
+   "bounds": [
+    [
+     -2.5,
+     -1.25
+    ],
+    [
+     -1.25,
+     0.0
+    ],
+    [
+     0.0,
+     1.25
+    ],
+    [
+     1.25,
+     2.5
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 7,
+    "range": [
+     0.1,
+     0.9
+    ],
+    "zero_bin": true
+   },
+   "reply": {
+    "edges": [
+     0.1,
+     0.2142857142857143,
+     0.3285714285714286,
+     0.44285714285714284,
+     0.5571428571428572,
+     0.6714285714285715,
+     0.7857142857142857,
+     0.9
+    ],
+    "edges_from": "shown",
+    "edges_n": 1,
+    "bins_asked": 7,
+    "bins_made": 7,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     0.1,
+     0.9
+    ]
+   },
+   "ids": [
+    "@zero",
+    "bin:0",
+    "bin:1",
+    "bin:2",
+    "bin:3",
+    "bin:4",
+    "bin:5",
+    "bin:6"
+   ],
+   "bounds": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.1,
+     0.2142857142857143
+    ],
+    [
+     0.2142857142857143,
+     0.3285714285714286
+    ],
+    [
+     0.3285714285714286,
+     0.44285714285714284
+    ],
+    [
+     0.44285714285714284,
+     0.5571428571428572
+    ],
+    [
+     0.5571428571428572,
+     0.6714285714285715
+    ],
+    [
+     0.6714285714285715,
+     0.7857142857142857
+    ],
+    [
+     0.7857142857142857,
+     0.9
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 10,
+    "range": [
+     0,
+     1
+    ],
+    "outside": "exclude"
+   },
+   "reply": {
+    "edges": [
+     0.0,
+     0.1,
+     0.2,
+     0.30000000000000004,
+     0.4,
+     0.5,
+     0.6000000000000001,
+     0.7000000000000001,
+     0.8,
+     0.9,
+     1.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 1,
+    "bins_asked": 10,
+    "bins_made": 10,
+    "degenerate": false,
+    "outside": "exclude",
+    "range": [
+     0.0,
+     1.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2",
+    "bin:3",
+    "bin:4",
+    "bin:5",
+    "bin:6",
+    "bin:7",
+    "bin:8",
+    "bin:9"
+   ],
+   "bounds": [
+    [
+     0.0,
+     0.1
+    ],
+    [
+     0.1,
+     0.2
+    ],
+    [
+     0.2,
+     0.30000000000000004
+    ],
+    [
+     0.30000000000000004,
+     0.4
+    ],
+    [
+     0.4,
+     0.5
+    ],
+    [
+     0.5,
+     0.6000000000000001
+    ],
+    [
+     0.6000000000000001,
+     0.7000000000000001
+    ],
+    [
+     0.7000000000000001,
+     0.8
+    ],
+    [
+     0.8,
+     0.9
+    ],
+    [
+     0.9,
+     1.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "log",
+    "bins": 3,
+    "range": [
+     1,
+     1000
+    ]
+   },
+   "reply": {
+    "edges": [
+     1.0,
+     10.0,
+     100.0,
+     1000.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 1,
+    "bins_asked": 3,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     1.0,
+     1000.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "bounds": [
+    [
+     1.0,
+     10.0
+    ],
+    [
+     10.0,
+     100.0
+    ],
+    [
+     100.0,
+     1000.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "log",
+    "bins": 4,
+    "range": [
+     0.5,
+     500
+    ]
+   },
+   "reply": {
+    "edges": [
+     0.5,
+     2.8117066259517456,
+     15.811388300841896,
+     88.91397050194614,
+     500.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 1,
+    "bins_asked": 4,
+    "bins_made": 4,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     0.5,
+     500.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2",
+    "bin:3"
+   ],
+   "bounds": [
+    [
+     0.5,
+     2.8117066259517456
+    ],
+    [
+     2.8117066259517456,
+     15.811388300841896
+    ],
+    [
+     15.811388300841896,
+     88.91397050194614
+    ],
+    [
+     88.91397050194614,
+     500.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "log",
+    "bins": 6,
+    "range": [
+     0.001,
+     1000.0
+    ],
+    "zero_bin": true
+   },
+   "reply": {
+    "edges": [
+     0.001,
+     0.01,
+     0.1,
+     1.0,
+     10.0,
+     100.0,
+     1000.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 1,
+    "bins_asked": 6,
+    "bins_made": 6,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     0.001,
+     1000.0
+    ]
+   },
+   "ids": [
+    "@zero",
+    "bin:0",
+    "bin:1",
+    "bin:2",
+    "bin:3",
+    "bin:4",
+    "bin:5"
+   ],
+   "bounds": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.001,
+     0.01
+    ],
+    [
+     0.01,
+     0.1
+    ],
+    [
+     0.1,
+     1.0
+    ],
+    [
+     1.0,
+     10.0
+    ],
+    [
+     10.0,
+     100.0
+    ],
+    [
+     100.0,
+     1000.0
+    ]
+   ]
+  }
+ ],
+ "data": [
+  {
+   "binning": {
+    "method": "equal_count",
+    "bins": 4
+   },
+   "values": [
+    0.0,
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.8,
+    1.0,
+    1.2,
+    1.6,
+    2.0
+   ],
+   "reply": {
+    "edges": [
+     0.0,
+     0.275,
+     0.55,
+     1.05,
+     2.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 12,
+    "bins_asked": 4,
+    "bins_made": 4,
+    "degenerate": false,
+    "outside": "clamp"
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2",
+    "bin:3"
+   ],
+   "codes": [
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    2,
+    2,
+    2,
+    3,
+    3,
+    3
+   ],
+   "bounds": [
+    [
+     0.0,
+     0.275
+    ],
+    [
+     0.275,
+     0.55
+    ],
+    [
+     0.55,
+     1.05
+    ],
+    [
+     1.05,
+     2.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_count",
+    "bins": 4,
+    "zero_bin": true
+   },
+   "values": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.5,
+    0.9,
+    1.1,
+    1.6,
+    2.2,
+    3.1,
+    4.4,
+    5.0
+   ],
+   "reply": {
+    "edges": [
+     0.5,
+     1.05,
+     1.9000000000000001,
+     3.4250000000000003,
+     5.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 18,
+    "bins_asked": 4,
+    "bins_made": 4,
+    "degenerate": false,
+    "outside": "clamp"
+   },
+   "ids": [
+    "@zero",
+    "bin:0",
+    "bin:1",
+    "bin:2",
+    "bin:3"
+   ],
+   "codes": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    2,
+    2,
+    3,
+    3,
+    4,
+    4
+   ],
+   "bounds": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.5,
+     1.05
+    ],
+    [
+     1.05,
+     1.9000000000000001
+    ],
+    [
+     1.9000000000000001,
+     3.4250000000000003
+    ],
+    [
+     3.4250000000000003,
+     5.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 4
+   },
+   "values": [
+    0.0,
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    0.3,
+    0.6
+   ],
+   "reply": {
+    "edges": [
+     0.0,
+     0.25,
+     0.5,
+     0.75,
+     1.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 7,
+    "bins_asked": 4,
+    "bins_made": 4,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     0.0,
+     1.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2",
+    "bin:3"
+   ],
+   "codes": [
+    0,
+    1,
+    2,
+    3,
+    3,
+    1,
+    2
+   ],
+   "bounds": [
+    [
+     0.0,
+     0.25
+    ],
+    [
+     0.25,
+     0.5
+    ],
+    [
+     0.5,
+     0.75
+    ],
+    [
+     0.75,
+     1.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 4,
+    "zero_bin": true
+   },
+   "values": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0
+   ],
+   "reply": {
+    "edges": [
+     1.0,
+     2.0,
+     3.0,
+     4.0,
+     5.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 9,
+    "bins_asked": 4,
+    "bins_made": 4,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     1.0,
+     5.0
+    ]
+   },
+   "ids": [
+    "@zero",
+    "bin:0",
+    "bin:1",
+    "bin:2",
+    "bin:3"
+   ],
+   "codes": [
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    3,
+    4,
+    4
+   ],
+   "bounds": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     2.0
+    ],
+    [
+     2.0,
+     3.0
+    ],
+    [
+     3.0,
+     4.0
+    ],
+    [
+     4.0,
+     5.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 3,
+    "range": [
+     0,
+     6
+    ],
+    "outside": "clamp"
+   },
+   "values": [
+    -1.0,
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    9.0
+   ],
+   "reply": {
+    "edges": [
+     0.0,
+     2.0,
+     4.0,
+     6.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 9,
+    "bins_asked": 3,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     0.0,
+     6.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "codes": [
+    0,
+    0,
+    0,
+    1,
+    1,
+    2,
+    2,
+    2,
+    2
+   ],
+   "bounds": [
+    [
+     0.0,
+     2.0
+    ],
+    [
+     2.0,
+     4.0
+    ],
+    [
+     4.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 3,
+    "range": [
+     0,
+     6
+    ],
+    "outside": "exclude"
+   },
+   "values": [
+    -1.0,
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    9.0
+   ],
+   "reply": {
+    "edges": [
+     0.0,
+     2.0,
+     4.0,
+     6.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 9,
+    "bins_asked": 3,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "exclude",
+    "range": [
+     0.0,
+     6.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "codes": [
+    65535,
+    0,
+    0,
+    1,
+    1,
+    2,
+    2,
+    2,
+    65535
+   ],
+   "bounds": [
+    [
+     0.0,
+     2.0
+    ],
+    [
+     2.0,
+     4.0
+    ],
+    [
+     4.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "log",
+    "bins": 3
+   },
+   "values": [
+    1.0,
+    3.0,
+    10.0,
+    30.0,
+    100.0,
+    300.0,
+    1000.0
+   ],
+   "reply": {
+    "edges": [
+     1.0,
+     10.0,
+     100.0,
+     1000.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 7,
+    "bins_asked": 3,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     1.0,
+     1000.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "codes": [
+    0,
+    0,
+    1,
+    1,
+    2,
+    2,
+    2
+   ],
+   "bounds": [
+    [
+     1.0,
+     10.0
+    ],
+    [
+     10.0,
+     100.0
+    ],
+    [
+     100.0,
+     1000.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_count",
+    "bins": 4
+   },
+   "values": [
+    1.2,
+    1.2,
+    1.2
+   ],
+   "reply": {
+    "edges": [
+     1.2,
+     1.2
+    ],
+    "edges_from": "shown",
+    "edges_n": 3,
+    "bins_asked": 4,
+    "bins_made": 1,
+    "degenerate": true,
+    "outside": "clamp",
+    "value": 1.2
+   },
+   "ids": [
+    "bin:0"
+   ],
+   "codes": [
+    0,
+    0,
+    0
+   ],
+   "bounds": [
+    [
+     1.2,
+     1.2
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_count",
+    "bins": 4,
+    "zero_bin": true
+   },
+   "values": [
+    0.0,
+    0.0,
+    2.5,
+    2.5
+   ],
+   "reply": {
+    "edges": [
+     2.5,
+     2.5
+    ],
+    "edges_from": "shown",
+    "edges_n": 4,
+    "bins_asked": 4,
+    "bins_made": 1,
+    "degenerate": true,
+    "outside": "clamp",
+    "value": 2.5
+   },
+   "ids": [
+    "@zero",
+    "bin:0"
+   ],
+   "codes": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "bounds": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     2.5,
+     2.5
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_count",
+    "bins": 4
+   },
+   "values": [
+    null,
+    null
+   ],
+   "reply": {
+    "edges": [],
+    "edges_from": "shown",
+    "edges_n": 0,
+    "bins_asked": 4,
+    "bins_made": 1,
+    "degenerate": true,
+    "outside": "clamp",
+    "value": null
+   },
+   "ids": [
+    "bin:0"
+   ],
+   "codes": [
+    65535,
+    65535
+   ],
+   "bounds": [
+    [
+     null,
+     null
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_count",
+    "bins": 8
+   },
+   "values": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    2.0,
+    3.0
+   ],
+   "reply": {
+    "edges": [
+     1.0,
+     1.25,
+     2.125,
+     3.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 8,
+    "bins_asked": 8,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp"
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "codes": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2
+   ],
+   "bounds": [
+    [
+     1.0,
+     1.25
+    ],
+    [
+     1.25,
+     2.125
+    ],
+    [
+     2.125,
+     3.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "categories"
+   },
+   "values": [
+    3.0,
+    1.0,
+    2.0,
+    3.0,
+    12.0,
+    7.0
+   ],
+   "reply": {
+    "edges": [
+     1.0,
+     2.0,
+     3.0,
+     7.0,
+     12.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 6,
+    "bins_asked": null,
+    "bins_made": 5,
+    "degenerate": false,
+    "outside": "clamp"
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2",
+    "bin:3",
+    "bin:4"
+   ],
+   "codes": [
+    2,
+    0,
+    1,
+    2,
+    4,
+    3
+   ],
+   "bounds": [
+    [
+     1.0,
+     1.0
+    ],
+    [
+     2.0,
+     2.0
+    ],
+    [
+     3.0,
+     3.0
+    ],
+    [
+     7.0,
+     7.0
+    ],
+    [
+     12.0,
+     12.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 3,
+    "range": [
+     null,
+     6
+    ]
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    9.0
+   ],
+   "reply": {
+    "edges": [
+     0.0,
+     2.0,
+     4.0,
+     6.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 7,
+    "bins_asked": 3,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     0.0,
+     6.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "codes": [
+    0,
+    0,
+    1,
+    1,
+    2,
+    2,
+    2
+   ],
+   "bounds": [
+    [
+     0.0,
+     2.0
+    ],
+    [
+     2.0,
+     4.0
+    ],
+    [
+     4.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 3,
+    "range": [
+     2,
+     null
+    ]
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    8.0
+   ],
+   "reply": {
+    "edges": [
+     2.0,
+     4.0,
+     6.0,
+     8.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 7,
+    "bins_asked": 3,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     2.0,
+     8.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "codes": [
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    2
+   ],
+   "bounds": [
+    [
+     2.0,
+     4.0
+    ],
+    [
+     4.0,
+     6.0
+    ],
+    [
+     6.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "equal_width",
+    "bins": 3,
+    "range": [
+     null,
+     null
+    ]
+   },
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0
+   ],
+   "reply": {
+    "edges": [
+     0.0,
+     2.0,
+     4.0,
+     6.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 7,
+    "bins_asked": 3,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     0.0,
+     6.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "codes": [
+    0,
+    0,
+    1,
+    1,
+    2,
+    2,
+    2
+   ],
+   "bounds": [
+    [
+     0.0,
+     2.0
+    ],
+    [
+     2.0,
+     4.0
+    ],
+    [
+     4.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "binning": {
+    "method": "log",
+    "bins": 3,
+    "range": [
+     null,
+     100
+    ]
+   },
+   "values": [
+    1.0,
+    3.0,
+    10.0,
+    30.0,
+    100.0,
+    300.0
+   ],
+   "reply": {
+    "edges": [
+     1.0,
+     4.641588833612779,
+     21.544346900318835,
+     100.0
+    ],
+    "edges_from": "shown",
+    "edges_n": 6,
+    "bins_asked": 3,
+    "bins_made": 3,
+    "degenerate": false,
+    "outside": "clamp",
+    "range": [
+     1.0,
+     100.0
+    ]
+   },
+   "ids": [
+    "bin:0",
+    "bin:1",
+    "bin:2"
+   ],
+   "codes": [
+    0,
+    0,
+    1,
+    2,
+    2,
+    2
+   ],
+   "bounds": [
+    [
+     1.0,
+     4.641588833612779
+    ],
+    [
+     4.641588833612779,
+     21.544346900318835
+    ],
+    [
+     21.544346900318835,
+     100.0
+    ]
+   ]
+  }
+ ]
+}

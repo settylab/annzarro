@@ -11,7 +11,10 @@ number of the right kind. Raise a limit only when the host has what it protects:
 time, disk or threads.
 
 These limits bound what one request can cost. They do not bound how many requests arrive: AnnZarro
-rate-limits only admin changes (`server.admin_rate_per_minute`) and failed sign-ins ({doc}`authentication`), and gunicorn's `gthread` worker keeps a thread on a client that sends its
+rate-limits only admin changes (`server.admin_rate_per_minute`) and failed sign-ins ({doc}`authentication`), plus two
+things that cost the server a lot per request: Refresh of one dataset (`server.refresh_min_interval_s`, and
+`limits.refresh_min_interval_large_s` for a large dataset) and the one run a user may try with **Try anyway**
+(`429 try_busy`). Gunicorn's `gthread` worker keeps a thread on a client that sends its
 request slowly. The reverse proxy in front ({doc}`lab-server`) is the defence for both; see
 "What the proxy must do" below.
 
@@ -21,6 +24,7 @@ request slowly. The reverse proxy in front ({doc}`lab-server`) is the defence fo
 | `name_search_timeout_s`{#limit-name-search-timeout-s} | 10 | CPU: a regex name search over millions of names answers with the matches found so far when it runs out of time (`partial: true`, `timed_out: true`) | partial `200` | the host is slow and the dataset has more than about 10 million names; 0 turns it off |
 | `read_user_share_percent`{#limit-read-user-share-percent} | 50 | Fairness: the pairwise-read budget (`read_budget_mb`) and the subset budget (`subset_budget_mb`) are shared; one user (one address, with login off; one /64 for IPv6) may hold this share of each | `503 read_busy` | few users and one big matrix; 0 gives a user the whole of both budgets |
 | `subset_budget_mb`{#limit-subset-budget-mb}, `subset_wait_s`{#limit-subset-wait-s} | 15% of RAM, 30 | Memory and threads: a subset is a pass over a column of every cell, charged 55 bytes per cell, the worst measured at 95.6 million cells (5 GB for one subset read as a Python list; a numeric filter on the array holds about 19 bytes per cell, and six at once held 10.8 GB), and any request can name a new seed or filter. One user holds at most `read_user_share_percent` of the budget while another waits, and has at most one request waiting | `503 read_busy` after the wait | many users open the largest datasets at once and filters queue longer than 30 s; give the host more RAM or raise the budget |
+| `compute_budget_mb`{#limit-compute-budget-mb}, `group_code_cache_mb`{#limit-group-code-cache-mb} | 4608, 512 | Memory: gene scores and cell groupings read whole matrices, up to 2.3 GB for one job at 100 million cells; every job in flight in one worker is charged its estimate against `compute_budget_mb` (4.5 GB a worker, so 18 GB for 4 workers), and the code cache of `group_code_cache_mb` is emptied first to make room | the job waits; its progress shows its place in the queue | the host has more RAM and jobs queue behind each other, or less and a worker is killed; a value below the largest single job makes every job run alone ({ref}`compute-memory`) |
 | `max_read_mb`{#limit-max-read-mb}, `read_budget_mb`{#limit-read-budget-mb} | 5% of RAM (256 MB to 4 GB), twice `max_read_mb` | Memory: one read of an `obsp` or `varp` matrix is estimated from the store's metadata before any chunk is read, and all such reads in flight in one worker share the budget | `413 read_too_large`, `503 read_busy` | the host has the RAM and legitimate matrices are refused; 0 uses the default |
 | `read_wait_s`{#limit-read-wait-s} | 5 | Threads: how long a pairwise read waits for the budget before it is answered | `503 read_busy` | reads queue behind each other on a busy host |
 | `remote_request_timeout_s`{#limit-remote-request-timeout-s} | 120 on a shared server, 600 on a single-user one | Threads: one request's reads from a remote store (`s3://`, `gs://`, `https://`), however many chunks. A single wait is bounded by `remote_connect_timeout_s` and `remote_read_timeout_s`; this bounds the sum | `504 remote_deadline` | a store is slow and legitimate requests need longer; 0 turns it off |
@@ -34,7 +38,7 @@ request slowly. The reverse proxy in front ({doc}`lab-server`) is the defence fo
 | `dataset_search_max_depth`{#limit-dataset-search-max-depth}, `dataset_search_max_entries`{#limit-dataset-search-max-entries} | 6, 20,000 | Disk and CPU: the dataset browser's search walks the data directory tree for any user; it also stops after 3 s. A regex is refused as in the name search (`regex_too_long`, `regex_too_complex`) | partial `200` (`truncated`), `400` for a refused pattern | the tree is deeper than 6 folders or has more than 20,000 entries |
 | `dataset_details_check_budget_s`{#limit-dataset-details-check-budget-s} | 1.5 | CPU and file system reads: the details request (`GET /datasets/details`) runs the store check of one zarr store, which reads metadata only, never a chunk. The check stops between steps once the budget is spent; a remote store is checked only when the client asks (`check=1`). `0` turns the check off | partial `200` (`store_check.budget_reached: true`) | a store has so many arrays that the check does not finish in 1.5 s |
 | `dataset_scan_max_entries`{#limit-dataset-scan-max-entries} | 200,000 | Disk and threads: the legacy dataset listing and the store count in `/status` (and the directory browser) walk the data directory on every call, for any client | partial `200`, `truncated: true` | the data directory holds more than that many directory entries outside the stores |
-| `text_index_workers`{#limit-text-index-workers}, `text_index_store_timeout_s`{#limit-text-index-store-timeout-s}, `text_index_max_stores`{#limit-text-index-max-stores} | 2, 15, 20,000 | Disk, threads and file system reads: the crawl behind the description search (`GET /datasets/text-search`) opens the attribution and README of each local store that has either. One crawl runs at a time on the whole server, in a daemon thread of one worker, with 2 reader threads (they share the worker's CPU: opening a dataset in that worker was 34 ms idle and 62 ms during a crawl of 20,000 stores). The server starts it by itself and continues it until every store is read. A store with neither `uns/README` nor `uns/annzarro` is not opened: its stat signature says so, and it is indexed by name only. A store that has not changed costs only its signature, a few `stat` calls. Each store with text is read from the files under its `uns`, not through its consolidated metadata. A store that does not answer in 15 s keeps its thread (a read cannot be stopped) and a spare thread reads the next store; its answer is kept if it comes before the crawl ends, otherwise it is marked timed out and read again an hour later. Late reads that have not answered count against the spare threads of the server process across crawls: when there are as many as reader threads, the crawl stops (and a crawl that finds none left reads nothing until they answer), so a store that never answers cannot make the threads grow. A store is read again when `uns`, `uns/annzarro` or `uns/README` changes on disk; a value rewritten in place under an existing attribution field is picked up once the store is annotated or re-consolidated. 15 s is a chosen margin, not a measured need: over a network file system on a heavily loaded host one store took up to 5.6 s, and 0.8 s at most from a less loaded node. A crawl stops after 5 minutes (not a setting): the index it has built is kept, marked partial, and the keeper starts the next crawl, which reads only what is missing. At 20,000 stores the index is kept and marked `capped`: stores past the cap are not searched, name search is unaffected. On 20,000 stores the first crawl took 4 minutes (2 or 4 threads alike: the reads are CPU-bound) and a crawl with nothing changed 23 s | the dataset browser's line says some datasets are not searched yet | the datasets are on a slow network file system, or there are more than 20,000 stores |
+| `text_index_workers`{#limit-text-index-workers}, `text_index_store_timeout_s`{#limit-text-index-store-timeout-s}, `text_index_max_stores`{#limit-text-index-max-stores} | 2, 15, 20,000 | Disk, threads and file system reads: the crawl behind the description search (`GET /datasets/text-search`) opens the attribution and README of each local store that has either. One crawl runs at a time on the whole server, in a daemon thread of one worker, with 2 reader threads (they share the worker's CPU: opening a dataset in that worker was 34 ms idle and 62 ms during a crawl of 20,000 stores). The server starts it by itself and continues it until every store is read. A store with neither `uns/README` nor `uns/annzarro` has only the names of its fields read, from its consolidated listing; its stat signature, which includes the slot folders and the listing, says when it changed. A store that has not changed costs only its signature, a few `stat` calls. Each store with text is read from the files under its `uns`, not through its consolidated metadata. A store that does not answer in 15 s keeps its thread (a read cannot be stopped) and a spare thread reads the next store; its answer is kept if it comes before the crawl ends, otherwise it is marked timed out and read again an hour later. Late reads that have not answered count against the spare threads of the server process across crawls: when there are as many as reader threads, the crawl stops (and a crawl that finds none left reads nothing until they answer), so a store that never answers cannot make the threads grow. A store is read again when `uns`, `uns/annzarro` or `uns/README` changes on disk; a value rewritten in place under an existing attribution field is picked up once the store is annotated or re-consolidated. 15 s is a chosen margin, not a measured need: over a network file system on a heavily loaded host one store took up to 5.6 s, and 0.8 s at most from a less loaded node. A crawl stops after 5 minutes (not a setting): the index it has built is kept, marked partial, and the keeper starts the next crawl, which reads only what is missing. At 20,000 stores the index is kept and marked `capped`: stores past the cap are not searched, name search is unaffected. On 20,000 stores the first crawl took 4 minutes (2 or 4 threads alike: the reads are CPU-bound) and a crawl with nothing changed 23 s | the dataset browser's line says some datasets are not searched yet | the datasets are on a slow network file system, or there are more than 20,000 stores |
 | `text_index_readme_kb`{#limit-text-index-readme-kb}, `text_index_max_mb`{#limit-text-index-max-mb} | 64, 64 | Memory: every worker holds the whole index in memory. Each README is cut at 64 KB, and the index at 64 MB of text (READMEs are dropped from the largest down, `capped: true`). A worker holds the text once, as it is, plus the entries' names and paths: 64 MB of text (20,000 stores, the cap) took 98 MB per worker, and loading never holds more than that (the file is read one entry at a time), so four workers hold about 400 MB. A query on 20,000 stores took 70 to 140 ms (p95 up to 160 ms) | the longest READMEs are not searched past their first 64 KB | the READMEs are long and the memory is there |
 | `text_index_ttl_s`{#limit-text-index-ttl-s} | 1800 | Disk and CPU: every 30 minutes the keeper stats every store and reads only those that changed. No user can start a crawl: a search never does, and **Rebuild now** on the Server health page is for administrators | the index is up to 30 minutes behind a change | the datasets change more often than every 30 minutes |
 
@@ -48,6 +52,99 @@ shapes with `400 regex_too_complex` (a repeat inside a repeat such as `(a+)+`, a
 a repeat, more than four open-ended repeats) before any name is read. Plain text search, the
 default, is not affected. `regex` is a dependency of AnnZarro; if it is missing, regex search is
 refused with `400 regex_unavailable` instead of running unguarded.
+
+(compute-memory)=
+## Memory for scores, groupings and counts
+
+Gene scores, Cell Groupings, the Cell-Gene Plot and the Cell Count Plot all compute on the server, over every cell of
+a dataset. Each worker process keeps one ledger of what its computations hold, bounded by `compute_budget_mb`, and a
+computation is charged its estimate before it starts. One that does not fit waits, after the cache of group codes has
+been emptied to make room, and the panel that asked shows its place in the queue. The bound is enforced, not
+estimated: a worker never holds more than its ledger for these computations.
+
+What one worker holds at once at 100 million cells, with the default bound:
+
+| Held by one worker | Memory |
+|---|---|
+| The heavy slot: one gene job's read-ahead and the segments it works on, **or** one gene score (500 genes) | up to 2.3 GB |
+| One grouping being resolved: its codes, one source column and its working space. A second runs beside it only if both fit | up to 1.5 GB |
+| The cache of group codes (`group_code_cache_mb`), emptied first when room is needed | up to 0.5 GB |
+| Jobs that have given the heavy slot to another: their running sums only, their read-ahead freed | under 0.1 GB |
+| **The bound, `compute_budget_mb`** | **4.5 GB** |
+
+That is **4.5 GB per worker, so 18 GB for the 4 workers a server may run**, at 100 million cells. At 10 million cells
+the same work holds under 1 GB per worker. Size the host for the bound times the workers, plus what the rest of the
+server holds (the name index and the readers' caches, {doc}`../reference/configuration`). A lower `compute_budget_mb`
+is valid down to the largest single computation; requests then run one after another instead of side by side, which
+is slower but safe.
+
+Light requests, those estimated under 5 seconds that read no whole matrix (most groupings and counts), run two at a
+time per worker beside the heavy slot and never wait for it. A long heavy job gives the slot back between read batches
+when another job waits, so it delays a later one by one batch at most.
+
+Measured on a 95.6-million-cell dataset stored by gene, with one worker and the defaults: opening a panel set with one
+grouping and three plots that use it took 9.8 s with an empty cache and 5.0 s with the grouping's codes cached. One plot of genes over that grouping reserved 2.7 GB and used at most 1.4 GB. With 4
+workers the same panel set resolved the grouping once in each worker that served it (4 copies of 96 MB of codes).
+
+(cost-limits)=
+## Cost limits
+
+What one computation may cost is set under `limits:` in the configuration file
+({doc}`../reference/configuration`), and an administrator can change each value on the **Settings** page of the
+admin interface, under **Limits**, without a restart ({doc}`admin`). The server resolves them once per request, and
+the web client reads the same values from `GET /api/v1/policy/effective`, so a limit it checks before it asks (the
+Cell-Gene matrix, the groups of a grouping, the cells of a count grid) is the server's, never a copy of its own. A
+refusal names the limit in force in its `limit` field.
+
+A value set in the configuration file is a ceiling: the admin may lower it on the Settings page, never raise it. The one limit where higher is stricter, `refresh_min_interval_large_s`, has the file's value as a floor instead: the admin may raise it, never lower it.
+Leave a key out of the file and the admin may set anything within its bounds. `policy.locked` fixes a key to the
+file's value altogether. The time tiers keep their order, `live_update_s` ≤ `ask_first_s` ≤ `refuse_s` (and
+`partitionings` ≤ `request_partitionings`): a configuration file that breaks it does not start, the Settings page
+refuses such a change, and a value that comes out of order between the two layers is lowered to the next tier.
+
+**Try anyway.** Time is soft and size is hard. An estimate above `refuse_s` is a guess, so a request that carries
+`force: true` may run it, and the web client offers a **Try anyway** button for such a refusal. The server stays the
+authority: a tried run has a wall-clock deadline of `try_max_s`, a user may have one tried run going at a time
+(`429 try_busy`), and only an estimate within ten times `try_max_s` is offered. `force` never passes a size limit
+(`matrix_values`, `groups`, the grid caps, the memory ledger): those refuse as before. Set `try_max_s` to `0` to keep
+the behaviour of earlier versions, where nothing above `refuse_s` ever runs. The panel's "Don't ask again" tick lasts
+for the page session only and is never saved in a link or a panel set.
+
+The seconds are the server's estimates, from read rates measured on each matrix layout; the estimate itself is not a
+setting. The upper bounds are ten times the defaults for now, until each is measured at its maximum; the group,
+level and grid limits also stay below the 16-bit group codes, and `grid_sets` cannot rise above 16 (the sets of a
+cell are a 16-bit mask). A safety limit protects the server or the browser tab; raise one only when the host (or the
+users' computers) has the memory and time it protects.
+
+| Setting | Default | Bounds | Enforced by | Kind | Refusal |
+|---|---|---|---|---|---|
+| `ask_first_s`{#cost-ask-first-s} | 60 | 0 to 600 | server and browser | when to ask | `409 confirmation_required` until the request carries `confirm: true` (the panel asks) |
+| `refuse_s`{#cost-refuse-s} | 600 | 0 to 6000 | server | safety | `413 score_too_expensive`, `413 groups_too_expensive` |
+| `try_max_s`{#cost-try-max-s} | 1,800 | 0 to 18,000 | server | safety | the longest wall-clock a run started with **Try anyway** may hold a compute slot; the server stops it there with `try_time_exceeded`. `0` turns Try anyway off, and an estimate above ten times it is not offered |
+| `live_update_s`{#cost-live-update-s} | 5 | 0 to 50 | server and browser | safety | edits wait for **Update**; the job runs in the heavy lane |
+| `progress_bar_s`{#cost-progress-bar-s} | 10 | 0 to 100 | browser | when to ask | (a progress bar is shown) |
+| `refresh_min_interval_large_s`{#cost-refresh-min-interval-large-s} | 60 | 0 to 600 | server | safety | a non-admin's **Refresh** of a dataset above `refresh_large_cells` on a shared server is answered `scheduled` and runs at the end of the interval; the app says when |
+| `refresh_large_cells`{#cost-refresh-large-cells} | 10,000,000 | 1 to 100,000,000 | server | safety | (the cell count above which the interval above applies) |
+| `matrix_values`{#cost-matrix-values} | 400,000 | 1 to 4,000,000 | server and browser | safety | `too_many_values` in the result; the browser does not ask (`matrix_too_large`) |
+| `genes_per_section`{#cost-genes-per-section} | 2,000 | 1 to 20,000 | browser | when to ask | the browser does not ask (`too_many_genes`) |
+| `groups`{#cost-groups} | 2,000 | 2 to 20,000 | server and browser | safety | `too_many_groups`, `too_many_levels` in the result |
+| `partitionings`{#cost-partitionings} | 8 | 1 to 64 | server and browser | safety | `422 too_many_partitionings` |
+| `request_partitionings`{#cost-request-partitionings} | 64 | 1 to 640 | server | safety | `422 too_many_partitionings` |
+| `measures`{#cost-measures} | 16 | 1 to 160 | server | safety | `400 too_many_measures` |
+| `thresholds`{#cost-thresholds} | 4 | 1 to 40 | server | safety | `422 too_many_thresholds` |
+| `grid_cells`{#cost-grid-cells} | 2,097,152 | 1 to 20,971,520 | server and browser | safety | `422 grid_too_large` |
+| `grid_2d_bins`{#cost-grid-2d-bins} | 512 | 2 to 5,120 | server | safety | `422 too_many_bins` |
+| `grid_2d_split`{#cost-grid-2d-split} | 8 | 1 to 80 | server | safety | `422 too_many_levels` |
+| `grid_1d_bins`{#cost-grid-1d-bins} | 2,000 | 2 to 20,000 | server | safety | `422 too_many_bins` |
+| `grid_1d_split`{#cost-grid-1d-split} | 200 | 1 to 2,000 | server | safety | `422 too_many_levels` |
+| `grid_categorical_levels`{#cost-grid-categorical-levels} | 200 | 1 to 2,000 | server | safety | `422 too_many_levels` |
+| `grid_sets`{#cost-grid-sets} | 16 | 2 to 16 | server | safety | `422 too_many_sets` |
+| `obsp_source_max_cells`{#cost-obsp-source-max-cells} | 1,000,000 | 1 to 10,000,000 | server | safety | `422 obsp_too_large` |
+| `cell_export_max`{#cost-cell-export-max} | 1,000,000 | 1 to 10,000,000 | browser | safety | the export is disabled, with the reason |
+| `bars_3d_max`{#cost-bars-3d-max} | 40,000 | 1 to 400,000 | browser | safety | the 3D view is not drawn, with the reason |
+| `density_points_draw`{#cost-density-points-draw} | 1,000,000 | 1 to 10,000,000 | browser | safety | a seeded sample of this many cells is drawn, and the plot says so |
+| `density_points_load`{#cost-density-points-load} | 25,000,000 | 1 to 250,000,000 | browser | safety | the Cell points layer is refused, with the count and the limit |
+| `dendrogram_rows`{#cost-dendrogram-rows} | 2,000 | 2 to 20,000 | browser | safety | no dendrogram, with the reason |
 
 ## Other limits
 

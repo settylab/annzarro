@@ -34,6 +34,8 @@ import {
 import { createRunner } from './gene-set-utilities/runner.js';
 import { createConsent } from './gene-set-utilities/consent.js';
 import { Policy, geneSetPolicy } from '../policy.js';
+import { TableResolver, describeUnresolved } from '../utils/table-resolver.js';
+import './table-utilities/table-background.js';
 import { readRunPolicy, turnedOffNotice } from './gene-set-utilities/policy-gate.js';
 import { enabledAdapters, hostsOf } from './gene-set-utilities/registry.js';
 import { registerAll } from './gene-set-utilities/services/index.js';
@@ -428,6 +430,11 @@ const GeneSetPanel = (function() {
             });
         }
 
+        /** The panels that can be the source: gene tables, and gene signatures (their genes are the selection). */
+        function sourcePanels() {
+            return [...PanelManager.getPanelsByType('gene-table'), ...PanelManager.getPanelsByType('gene-signature')];
+        }
+
         /** Tables were added, closed, reopened or renamed. */
         function onPanelsChanged() {
             if (!_initialized) return;
@@ -438,7 +445,7 @@ const GeneSetPanel = (function() {
                 setSource(_settings.tableFilter);
                 return;
             }
-            if (!PanelManager.getPanelsByType('gene-table').length && before !== 'none') {
+            if (!sourcePanels().length && before !== 'none') {
                 setSource('none');
                 return;
             }
@@ -496,6 +503,11 @@ const GeneSetPanel = (function() {
             return speciesOf(taxonomyId()).name;
         }
 
+        const titleOf = (id) => {
+            const p = PanelManager.getPanel(id);
+            return (p && p.getTitle && p.getTitle()) || id;
+        };
+
         /** Re-read the source table (cheap: on every redraw of it). */
         function refreshSource() {
             const tf = _settings.tableFilter;
@@ -506,8 +518,17 @@ const GeneSetPanel = (function() {
             const table = PanelManager.getPanel(tf);
             const open = !!table && PanelManager.getActivePanels().includes(table);
             const sel = readTableSelection(table, { open, geneNames: _genes });
+            // A restored closed table has only its configuration: ask the resolver, as a plot does
+            // (utils/table-resolver.js); it builds the selection in the background when it may
+            let said = null;
+            if (sel.status === 'closed-unknown') {
+                const status = TableResolver.need(tf, _id);
+                if (status.state !== 'ready' && status.state !== 'idle' && status.state !== 'missing') {
+                    said = { state: status.state, ...describeUnresolved(status, sel.title, titleOf) };
+                }
+            }
             if (!sel.names) {
-                _source = { status: sel.status, title: sel.title, names: null, ids: [], hash: null, count: 0, missingIds: 0 };
+                _source = { status: sel.status, title: sel.title, names: null, ids: [], hash: null, count: 0, missingIds: 0, said };
                 return;
             }
             const picked = selectionIds(sel.names, { idColumn: 'mapped', idOf });
@@ -641,6 +662,7 @@ const GeneSetPanel = (function() {
             if (!_settings.tableFilter || _settings.tableFilter === 'none') return 'no-source';
             if (_source.status === 'missing') return 'no-source';
             if (_source.status === 'waiting') return 'waiting';
+            if (_source.said) return _source.said.state === 'building' || _source.said.state === 'waiting' ? 'waiting' : 'resolver';
             if (_source.status === 'closed-unknown') return 'closed-unknown';
             if (idCol() !== '_index' && _ids && _ids.error) return 'ids';
             return null;
@@ -886,7 +908,7 @@ const GeneSetPanel = (function() {
             if (!_dom) return false;
             const sel = _dom.source;
             D.clear(sel);
-            const tables = PanelManager.getPanelsByType('gene-table');
+            const tables = sourcePanels();
             const active = new Set(PanelManager.getActivePanels());
             if (!tables.length) {
                 sel.appendChild(D.el('option', { value: 'none', text: 'No gene table yet' }));
@@ -896,7 +918,8 @@ const GeneSetPanel = (function() {
             }
             sel.disabled = false;
             for (const t of tables) {
-                const label = `${t.getTitle()}${active.has(t) ? '' : ' (closed)'}`;
+                // a signature is its panel open or closed, so it carries no "(closed)"
+                const label = `${t.getTitle()}${active.has(t) || t.selectionIsLive ? '' : ' (closed)'}`;
                 sel.appendChild(D.el('option', { value: t.getId(), text: label }));
             }
             let changed = false;
@@ -1206,9 +1229,24 @@ const GeneSetPanel = (function() {
             const tag = _source.status === 'closed' ? ' (source table closed: its selection when it closed)' : '';
             if (g === 'no-dataset') text = 'No dataset loaded.';
             else if (g === 'no-source') {
-                text = PanelManager.getPanelsByType('gene-table').length ? 'Pick a gene table as the source.'
+                text = sourcePanels().length ? 'Pick a gene table as the source.'
                     : 'No gene table yet. Add one with Create New Panel (the panel chooser) → Gene Table; '
                         + 'this panel then analyses the genes passing its filter.';
+            }
+            else if (g === 'waiting' && _source.said) {
+                text = `${_source.said.text.replace(/ No cells are drawn[^.]*\./, '')}`;
+                for (const [action, label] of _source.said.actions) {
+                    if (action === 'cancel-filter') barActions.appendChild(barButton(label, () => TableResolver.cancel(_settings.tableFilter), 'btn-outline-secondary'));
+                }
+            }
+            else if (g === 'resolver') {
+                tone = 'stale';
+                text = _source.said.text.replace(/ No cells are drawn[^.]*\./, '');
+                for (const [action, label] of _source.said.actions) {
+                    if (action === 'build-filter') barActions.appendChild(barButton(label, () => TableResolver.accept(_settings.tableFilter)));
+                    else if (action === 'retry-filter') barActions.appendChild(barButton(label, () => TableResolver.retry(_settings.tableFilter)));
+                    else if (action === 'reopen-table') barActions.appendChild(barButton(label, reopenSource, 'btn-outline-secondary'));
+                }
             }
             else if (g === 'waiting') text = `Waiting for "${_source.title}" to load…`;
             else if (g === 'closed-unknown') {

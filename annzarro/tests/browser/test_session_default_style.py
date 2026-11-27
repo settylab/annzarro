@@ -81,6 +81,20 @@ def page(served):
             browser.close()
 
 
+SETTLED = """() => !window.localStorage.getItem('annzarro_restoring') && !window.sessionStorage.getItem('annzarro_restoring')"""
+
+
+def _settled_link(page, pid):
+    """Wait until the link in the address is drawn AND its restore marker is gone.
+
+    A page that ends while it draws a link leaves a marker, and a reload then does not draw that link by itself
+    (session-manager.js linkDidNotFinishHere: on purpose, against crash loops). The marker stands for SETTLE_MS after
+    the last panel is drawn, so a reload sent on the plots alone can land inside it, as it did under load.
+    """
+    page.wait_for_function(DRAWN, arg=pid, timeout=60000)
+    page.wait_for_function(SETTLED, timeout=60000)
+
+
 def _link(served):
     root, store = served
     x = {"type": "obsm", "key": "X_umap", "column": "0"}
@@ -310,7 +324,7 @@ def test_a_link_carries_the_default_and_renders_the_same_for_the_receiver(page, 
     _wait_look(page, n1, 18, 4)
     url = _share_url(page, served)
     view = page.evaluate("() => window.sessionManager.captureView()")
-    assert view["sessionStyles"]["cell-plot"] == {"fontSize": 18, "tickCount": 4}      # only what differs from built-in
+    assert view["sessionStyles"]["cell-plot"] == {"fontSize": 18, "tickCount": 4, "fontFamily": "Arial, Helvetica, sans-serif"}      # only what differs from built-in
     assert view["layout"]["panelConfigs"][n1]["styleDefault"] is True
 
     # a receiver with another default of their own gets the sender's, and the plots on Default look as sent
@@ -324,6 +338,7 @@ def test_a_link_carries_the_default_and_renders_the_same_for_the_receiver(page, 
     receiver.click(f"#session-style-set-{A}")
     _close_menu(receiver, A)
     receiver.goto(url)
+    _settled_link(receiver, n1)
     receiver.reload()
     receiver.wait_for_function(DRAWN, arg=n1, timeout=60000)
     receiver.wait_for_timeout(1500)
@@ -338,6 +353,7 @@ def test_a_link_carries_the_default_and_renders_the_same_for_the_receiver(page, 
     sender_url = _share_url(clear, served)
     assert "sessionStyles" not in clear.evaluate("() => window.sessionManager.captureView()")
     receiver.goto(sender_url)
+    _settled_link(receiver, n2)
     receiver.reload()
     receiver.wait_for_function(DRAWN, arg=n2, timeout=60000)
     receiver.wait_for_timeout(1500)
@@ -352,7 +368,7 @@ def test_a_panel_set_carries_it_and_applies_it_only_when_its_panels_open(page, s
     saved = page.evaluate("(n) => window.sessionManager.saveSession(n)", "with-style")
     assert saved["status"] == "success", saved
     stored = page.evaluate("""async () => (await (await fetch('/api/v1/sessions/load?name=with-style')).json()).view.sessionStyles""")
-    assert stored["cell-plot"] == {"fontSize": 18, "tickCount": 4}
+    assert stored["cell-plot"] == {"fontSize": 18, "tickCount": 4, "fontFamily": "Arial, Helvetica, sans-serif"}
 
     # a set saved with no default and a plot on Default clears the current one when opened
     _menu(page, A, "apply")
@@ -400,7 +416,7 @@ def test_a_set_with_no_panel_can_be_only_a_style(page, served):
     assert saved["status"] == "success", saved
     data = page.evaluate("""async () => await (await fetch('/api/v1/sessions/load?name=house-style')).json()""")
     assert data["styleOnly"] is True and data["dataset"] == "" and data["panelConfigs"] == {}
-    assert data["view"]["sessionStyles"]["cell-plot"] == {"fontSize": 18, "tickCount": 4}
+    assert data["view"]["sessionStyles"]["cell-plot"] == {"fontSize": 18, "tickCount": 4, "fontFamily": "Arial, Helvetica, sans-serif"}
     listed = page.evaluate("""async () => (await (await fetch('/api/v1/sessions/list')).json()).find(s => s.name === 'house-style')""")
     assert listed["styleOnly"] is True
 

@@ -22,6 +22,8 @@
  * always gives the same descriptor.
  */
 
+import { getSource, subKeyOf } from './source-registry.js';
+
 export const VIEW_SCHEMA = 'annzarro-view';
 export const VIEW_VERSION = 1;
 
@@ -38,7 +40,12 @@ export function coordinateId(field) {
     const col = field.column;
     let dim = null;
     if (col !== undefined && col !== null && col !== '') dim = /^\d+$/.test(String(col)) ? Number(col) : String(col);
-    return { key: `${field.type}:${field.key}`, dim };
+    const provider = getSource(field.type);
+    // a provider's sub-key (a score's aggregation): a link made before there was one means the default
+    if (provider && dim === null) dim = subKeyOf(field) || null;
+    // a score over a layer is another coordinate than the same score over the signature's input
+    const layer = provider && provider.layered && field.layer ? `@${field.layer}` : '';
+    return { key: `${field.type}:${field.key}${layer}`, dim };
 }
 
 const sameCoordinate = (a, b) => a.key === b.key && String(a.dim) === String(b.dim);

@@ -357,7 +357,7 @@ def test_the_sign_post_file_is_served(brand_server):
             page = _open(browser, brand_server)
             _show(page)
             src = page.evaluate("document.querySelector('.about-brand-logo').src")
-            assert src.endswith("/static/img/brand/fredhutch-annzarro-signpost.svg")
+            assert src.split("?")[0].endswith("/static/img/brand/fredhutch-annzarro-signpost.svg")
             assert urllib.request.urlopen(src, timeout=5).status == 200
         finally:
             browser.close()

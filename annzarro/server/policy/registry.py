@@ -71,6 +71,8 @@ class Key:
     label: str = ""
     #: the YAML path of a key whose setting is read through ``config_reader`` ("server.remote_stores")
     yaml_path: str = ""
+    #: a heading inside the area that the Settings page groups the key under ("When to ask and refuse"); "" for none
+    subgroup: str = ""
     client: bool = True             # included in /api/v1/policy/effective
     restart: bool = False           # takes effect only after a restart; implies scope "config"
 
@@ -104,7 +106,7 @@ class Key:
         return {"name": self.name, "type": self.type.describe(), "scope": self.scope, "area": self.area,
                 "description": self.description, "combine": self.combine, "restart": self.restart,
                 "routes": list(self.routes), "config_path": self.config_path, "section": self.section,
-                "guide": self.guide, "label": self.label, **self.config_file()}
+                "guide": self.guide, "label": self.label, "subgroup": self.subgroup, **self.config_file()}
 
 
 @dataclass

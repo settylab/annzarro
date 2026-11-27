@@ -545,17 +545,23 @@ def test_a_deadline_that_is_not_reached_changes_nothing(store):
 
 
 def test_a_deadline_midway_keeps_the_earlier_findings(store, monkeypatch):
-    import time
+    import types
     root = new_store(store, x="csr")
     for name in ("a_whole_gene", "b_whole_gene"):
         _array(root["layers"], name, (N_OBS, N_VARS), "float32", (N_OBS, 64))
     real = store_check._Checker.dense
+    # A fake clock that moves only inside the slow step: the deadline passes exactly
+    # while the first layer is read, however loaded the machine is.
+    now = [0.0]
+    monkeypatch.setattr(store_check, "time", types.SimpleNamespace(monotonic=lambda: now[0]))
 
     def slow(self, *a, **k):
-        time.sleep(0.2)
+        now[0] += 10.0
         return real(self, *a, **k)
     monkeypatch.setattr(store_check._Checker, "dense", slow)
-    report = store_check.check_store(str(store), deadline=time.monotonic() + 0.05)
+    report = store_check.check_store(str(store), deadline=5.0)
+    now[0] = 0.0
+    monkeypatch.setattr(store_check._Checker, "dense", real)
     whole = store_check.check_store(str(store))
     assert report["partial"] is True and not whole.get("partial")
     assert codes(report, "X") == codes(whole, "X") != set(), "the finding made before the deadline stays"

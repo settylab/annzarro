@@ -35,7 +35,7 @@ This section covers panels a to c; panel d has its own list below.
 |---|---|---|
 | **Log colour scale** for the walk (10⁻⁵ to 0.0126), cells below 10⁻⁵ in grey | Linear by default. Of the 956 cells the HSC's walk reaches above 10⁻⁵, 64% are below 5 × 10⁻⁴ (median 1.0 × 10⁻⁴), so on a linear scale they show as pale blue and the walks look narrower. | Click **Log** in the colour controls and type `1e-5` in the floor box beside it: the colour becomes log10 of the value, and values at or below the floor share the lowest colour. |
 | **Shared colour range** across the four panels of a | Each row scales itself. | **Lock Range** with the HSC focused keeps 0 to 0.0126, the largest value in the four rows. |
-| **Path line** through the 13 path cells | No line overlays. | The path table in the tutorial, or colour by `obs/trajectory_focus_cells` (raise **Size**). |
+| **Path line** through the 13 path cells | No line overlays. | The path table in the tutorial, or colour by `obs/trajectory_focus_cells` (raise **Point size (px)** under **Plot Options** ▸ **Points**). |
 | **n_eff = 1/Σp²** per panel (251, 517, 559, 289 cells) | Not computed. | Values in {repro}`figures/numbers/fig2.json`. |
 | **Spearman ρ = 0.62** and the 5% / 20% **threshold lines** in b | No statistics or reference lines on plots. | The thresholds' result is stored as `plasma_groups`; per-cell distances to the plasma cell also exist as obs columns (`umap_dist_to_plasma`, `diffusion_dist_to_plasma`). |
 | **Group labels and walk mass** in c (0.09% on orange, 59.2% on blue) | Not computed. | Table filters give the cell types of each group ({ref}`tut-cell-check`). |
@@ -68,7 +68,7 @@ Panel sets: {download}`cell-by-cell-walk.json <../_static/panelsets/paper/cell-b
 {download}`cell-by-cell-umap-vs-diffusion.json <../_static/panelsets/paper/cell-by-cell-umap-vs-diffusion.json>`.
 View JSON: {download}`cell-by-cell-walk.view.json <../_tools/views/cell-by-cell-walk.json>`,
 {download}`cell-by-cell-umap-vs-diffusion.view.json <../_tools/views/cell-by-cell-umap-vs-diffusion.json>`.
-Loading one restores the dataset, the focus and the split layout, like the links ({ref}`tut-tour-load-file`).
+Loading one restores the dataset, the focus and the split layout, like the links ({ref}`tut-tour-load-file`). To build these views yourself, follow the tutorial sections named in the table at the top of this page: {ref}`tut-cell-walk` for panel a, {ref}`tut-cell-distance-axes` and {ref}`tut-cell-groups-umap` for b and c.
 
 Screenshots and views are made by `docs/_tools/shoot_figs13.py`; the paper's numbers are in
 {repro}`figures/numbers/fig2.json` in the {ref}`companion repository <paper-companion>`.
@@ -153,9 +153,9 @@ The view is a Cell Plot with X and Y `obsm` `X_umap` 0 and 1, colour `obsp` `che
   receive nothing would share a colour with the three that receive one synapse (AVH, ADE, RIG). A
   floor of 0.5 keeps them apart: zeros take the lowest colour, a light grey in reversed `Blues`, and
   one synapse is already pale blue. The paper draws zeros in a separate grey and slightly smaller.
-- **Colour range.** Under **Log** the range is in log10 units. The view leaves it to the data
-  (0.5 to 82, that is −0.30 to 1.91). To pin the paper's 1 to 82, set **Min** 0 and **Max** 1.914,
-  with zeros then clipped to the lowest colour as well.
+- **Colour range.** Under **Log** **Min** and **Max** are in the data's units, as on a linear scale, and the
+  colour is the logarithm of the value. The view leaves the range to the data (0.5 to 82). To pin the paper's
+  1 to 82, set **Min** 1 and **Max** 82, with zeros then clipped to the lowest colour as well.
 - **Colour map.** Plotly's `Blues`, reversed, runs from light grey to a saturated royal blue; the
   paper's map runs from pale sky blue to navy. The colour bar is labelled at 1 and 10, the paper's
   at 1, 3, 10, 30 and 80.

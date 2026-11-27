@@ -7,7 +7,7 @@ panel-sets folder ({ref}`panel-sets-location`), so every user of the same server
 They are the way to keep views for later and to hand them to colleagues on a shared server; a
 share link sends one view as a URL instead. **Load** opens a panel set exactly as its share link
 would: its dataset, subset and focus, and the panels that were open when it was saved, in their
-saved layout. Two small icon buttons beside it do less of that: load on the dataset that is open, or
+saved layout (panels that were closed when it was saved come back closed, with their settings, in the list of closed panels). Two small icon buttons beside it do less of that: load on the dataset that is open, or
 only add the panels to the closed list. The differences are summarised at
 the end of this page.
 
@@ -38,6 +38,10 @@ is reported in the dialog, on the card it concerns.
 ## Load a panel set
 
 Click **Load Panel Set**. The dialog lists every panel set on the server, newest first.
+
+Pressing **Load** closes the dialog at once and the set opens in the page: its panels show as named
+tiles with a status line, and the dataset bar says what is loading, so nothing stays covered. A
+refusal (for example, no dataset to load onto) appears as a notice.
 
 ```{figure} ../_static/screens/user-guide/panelsets-load.png
 :class: screenshot

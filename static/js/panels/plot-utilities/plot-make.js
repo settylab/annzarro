@@ -1,7 +1,8 @@
+import { DEFAULT_FONT } from '../../utils/fonts.js';
 import { strongOnTopKey, plotlyColorscale } from '../../utils/color-scales.js';
 import { DataManager } from '../../data-manager.js';
 import { outsideDetail } from '../../utils/subset.js';
-import { createLayout, autorangeValue, orientRange, isFlipped, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport, NOT_IN_TABLE, POINTS } from './plot-make-helper.js';
+import { createLayout, autorangeValue, orientRange, isFlipped, processCategories, attachClickHandler, isMissingCategory, keptViewRanges, keepsOwnMarker, applyAxisKinds, adoptUnrecordedViewport, NOT_IN_TABLE, IN_TABLE, POINTS } from './plot-make-helper.js';
 import { autoPointCount, debounced, plotArea } from '../../utils/view-point-style.js';
 import { highlightFocusedEntity, noteFocusOutside, updatePlotElements, restyleMarkers } from './plot-update.js';
 import { updateColorSliderUI, updateColorControlsVisibility, showPointStyle, showColorSortControl } from './panel-ui-update.js';
@@ -10,14 +11,14 @@ export { pointStyleBase };
 import { getPositioningByLocation, applyAllAestheticSettings, initializeAestheticsSettings } from './plot-aesthetics-menu.js';
 import { colorbarPosition, tickKeys, axisPaths } from './plot-options.js';
 import { colourBar } from './colour-bar.js';
-import { plotColour, modebarColours, constantColour } from '../../utils/plot-theme.js';
+import { plotColour, modebarColours, constantColour, MODEBAR_REMOVE } from '../../utils/plot-theme.js';
 import { arrayMin, arrayMax, inferValueType, logColorValues, logColorbarTicks } from '../../utils/array-stats.js';
 import {
   Coverage, GAP, classifyColumn, classifyValues, classifyMatrixColumn,
   classifyError, classifyFilterStats, missingEntity, unreadableCell, classifyFocusRow
 } from '../../utils/coverage.js';
 import { unsPaletteTag, UNS_PALETTE_TAG } from '../../utils/uns-palette.js';
-import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag } from '../../utils/panel-surface.js';
+import { drawPlot, clearForDraw, drawPlaceholder, setStatusTag, setFilterNotice } from '../../utils/panel-surface.js';
 import { largePlotPoints, largePlotRefusal, createLargePlot, cancelIndexBuild, showProbeFailure } from './large-plot.js';
 import { recordLoad } from '../../utils/subset-presets.js';
 import { updateLargePlotControls } from './large-plot-controls.js';
@@ -25,9 +26,11 @@ import { Config } from '../../config.js';
 import { RemoteNames } from '../../utils/remote-names.js';
 import { colourKind, isOutOfMemory, isNetworkFailure, loadFailureText, MEMORY_ADVICE, DRAW_ANYWAY_RISK } from '../../utils/memory-guard.js';
 import { selectionOnCells, staleText } from '../../utils/closed-table.js';
+import { TableResolver, describeUnresolved } from '../../utils/table-resolver.js';
 import { colourTitle } from '../../utils/plot-titles.js';
 import { sourceKeyMissing } from '../../utils/structure-keys.js';
 import { NO_HOVER } from './hover-columns.js';
+import { getSource, hoverSources, plotSeries } from '../../utils/source-registry.js';
 import { categoryCount, grouped, GROUP_COLOURS, LEGEND_NAMES, groupLegendLabel, hoverOffFor, hoverIsOff } from '../../utils/categories.js';
 import { releasePlot } from '../../utils/release-plot.js';
 import { legendUirevision } from '../../utils/legend-entries.js';
@@ -38,6 +41,17 @@ import {
   takeTurn, bindTurn, releaseTurn, noteOutOfMemory, bindingLabel, otherPlotCount
 } from '../../utils/memory-guard-ui.js';
 
+const escapeHtmlText = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+/** What each loading overlay says: the step the panel is on (a status line per panel). */
+const OPERATION_TEXT = {
+  'axis-data': 'Reading coordinates…',
+  'names': 'Reading cell names…',
+  'full-plot': 'Drawing…',
+  'recolour': 'Recolouring…',
+  'refresh': 'Refreshing…',
+  'table-data': 'Reading table…'
+};
 // the loads of a panel that the Cancel button can stop (utils/load-scope.js)
 const CANCELLABLE = new Set(['full-plot', 'axis-data', 'recolour', 'table-data']);
 
@@ -117,8 +131,9 @@ class LoadingIndicator {
       overlay.dataset.containerId = containerId; // Store containerId for fallback cleanup
       // Cancel appears after a moment (css), so a quick load does not flash it
       const cancellable = CANCELLABLE.has(operation);
-      overlay.innerHTML = '<div class="spinner"></div> Loading axis data...' + (cancellable
+      overlay.innerHTML = '<div class="spinner"></div> ' + escapeHtmlText(OPERATION_TEXT[operation] || 'Loading…') + (cancellable
         ? '<button type="button" class="btn btn-sm btn-outline-secondary load-cancel" title="Stop loading and keep what is shown">Cancel</button>' : '');
+      overlay.setAttribute('role', 'status');
       if (cancellable) {
         overlay.onclick = (e) => {
           if (e.target.closest('.load-cancel')) cancelLoads(plotContainer, true);
@@ -342,7 +357,7 @@ export function showHoverChoice(plotContainer, panel) {
  *    - type: Data type ('numerical', 'categorical', 'constant', or 'string'),
  *    - categories: (optional) Category definitions.
  */
-export async function loadAxisData(settings, plotType = null, plotContainer = null, { role = null, panel = null, signal = null } = {}) {
+export async function loadAxisData(settings, plotType = null, plotContainer = null, { role = null, panel = null, signal = null, axis = null } = {}) {
   if (!settings) {
     throw new Error(`loadAxisData: settings is undefined`);
   }
@@ -753,8 +768,16 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
         }
         break;
       }
-      default:
-        throw new Error(`Unknown data type: ${type}`);
+      default: {
+        // a provider's source (a signature's score, a grouping; utils/source-registry.js), one value per entity
+        // shown. One that cannot be drawn yet throws SourceUnavailable, and the plot draws neutral points or the
+        // provider's placeholder with the notice over it
+        const provider = getSource(type);
+        if (!provider) throw new Error(`Unknown data type: ${type}`);
+        return plotSeries(await provider.load(settings, {
+          host: plotContainer, role: role === 'colour' ? 'color' : (axis || role || 'x'), axis, expected, unit, signal
+        }));
+      }
     }
 
     // Reconcile length against the entity count even on the success path: a
@@ -788,7 +811,7 @@ export async function loadAxisData(settings, plotType = null, plotContainer = nu
     return { values, type: dataType, categories, coverage, rankOf, ranked: false, groupNames };
   } catch (error) {
     // a load that was stopped is not a failed read
-    if (error && error.name === 'AbortError') throw error;
+    if (error && (error.name === 'AbortError' || error.name === 'SourceUnavailable')) throw error;
     console.error('Error loading data for settings', settings, 'error:', error);
     const wrapped = new Error(`Failed to load data for (${settings.type}.${settings.key}${settings.column ? '.' + settings.column : ''}) error: ${error.message}`);
     // Carry the classification with the error so the panel can state a REASON
@@ -918,9 +941,27 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
         pointStyleBase(), area);
       if (changed) showPointStyle(id, settings);
       if (changed || greysMoved) {
-        restyleMarkers(plotContainer, settings).catch(err => console.warn('Point size/opacity not updated:', err && err.message));
+        plotContainer.__azRestyling = (plotContainer.__azRestyling || 0) + 1;     // annzarroPlotState reads it
+        restyleMarkers(plotContainer, settings).catch(err => console.warn('Point size/opacity not updated:', err && err.message))
+          .finally(() => { plotContainer.__azRestyling -= 1; });
       }
     });
+    // Before a resize fits the axes (listeners.js setupResizeObserver, panel-surface.js fitToContainer): the
+    // automatic values for the plot area the graph is about to have, from its new size and its margins. Set
+    // afterwards, they changed the markers' axis padding once more and the axes were fitted a second time for one
+    // resize (plot-update.js refitAfterResize); set before, the resize's own fit is the fit for them.
+    plotContainer.__azPreFit = (width, height) => {
+      const s = plotContainer._fullLayout && plotContainer._fullLayout._size;
+      if (!s || settings.z || (!settings.autoPointSize && !settings.autoPointOpacity)) return;
+      const area = (width - s.l - s.r) * (height - s.t - s.b);
+      if (!(area > 0)) return;
+      if (!applyAutoPointStyle(settings, autoPointCount(plotContainer, settings, keepsOwnMarker), pointStyleBase(), area)) return;
+      showPointStyle(id, settings);
+      plotContainer.__azRestyling = (plotContainer.__azRestyling || 0) + 1;
+      // the regl scene takes the sizes at once (gl-markers.js); the fit that follows reads their padding
+      restyleMarkers(plotContainer, settings).catch(err => console.warn('Point size/opacity not updated:', err && err.message))
+        .finally(() => { plotContainer.__azRestyling -= 1; });
+    };
     // An image export at its own size: the automatic values for its plot
     // area, on the copy drawn for it (utils/plot-export.js fullImage)
     plotContainer.__azExportMarkers = async (copy) => {
@@ -1099,14 +1140,14 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           throw new DOMException('X axis data loading aborted', 'AbortError');
         }
         await axesTogether;
-        data.x = await loadAxisData(settings.x, plotType, plotContainer, { signal });
+        data.x = await loadAxisData(settings.x, plotType, plotContainer, { signal, axis: 'x' });
       })(),
       (async () => {
         if (signal && signal.aborted) {
           throw new DOMException('Y axis data loading aborted', 'AbortError');
         }
         await axesTogether;
-        data.y = await loadAxisData(settings.y, plotType, plotContainer, { signal });
+        data.y = await loadAxisData(settings.y, plotType, plotContainer, { signal, axis: 'y' });
       })()
     ];
 
@@ -1117,7 +1158,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
             throw new DOMException('Z axis data loading aborted', 'AbortError');
           }
           await axesTogether;
-          data.z = await loadAxisData(settings.z, plotType, plotContainer, { signal });
+          data.z = await loadAxisData(settings.z, plotType, plotContainer, { signal, axis: 'z' });
         })()
       );
     }
@@ -1155,7 +1196,7 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
               coverage: (colorError.coverage
                 || classifyError(colorError, {
                      unit: isGenePlot ? 'genes' : 'cells',
-                     source: 'colour', total: n
+                     source: 'color', total: n
                    })).asDescribing()
             };
           }
@@ -1163,9 +1204,13 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
           data.colorType = colorData.type;
           applyLogColor(data, settings);
           data.colorCategories = colorData.categories;
+          // a provider's own colours, one per category (a grouping's); the dataset's are read from uns at the draw
+          data.colorColours = colorData.colours || null;
           data.colorRankOf = colorData.rankOf || null;
           data.colorRanked = !!colorData.ranked;
           data.colorGroupNames = colorData.groupNames || null;
+          // what the legend calls the points without a category: a provider's own words ('Not in any group'), else 'NA'
+          data.colorMissingLabel = colorData.missingLabel || null;
           data.colorCoverage = colorData.coverage || null;
           // Update any color control UI in the container.
           updateColorControlsVisibility(container, data.colorType, id);
@@ -1264,6 +1309,9 @@ export async function loadDataAndCreatePlot(container, plotContainer, settings, 
       if (window.Config && window.Config.DEBUG_MODE) {
         console.debug('Plot loading was aborted:', error.message);
       }
+    } else if (error && error.name === 'SourceUnavailable' && error.notice && getSource(error.type)) {
+      // an axis from a provider (a gene score) that cannot be drawn yet: its placeholder says why, with the way out
+      getSource(error.type).placeholder(plotContainer, error.notice);
     } else {
       console.error('Error loading plot data:', error);
 
@@ -1504,6 +1552,8 @@ export function knownMissingSource(structure, series, { unit, total }) {
  * @param {{type: string, key: string, column?: string}} series
  */
 export function seriesSource(series) {
+  const provider = getSource(series.type);
+  if (provider) return provider.titleOf(series);
   return `${series.type}.${series.key}` + (series.column ? `.${series.column}` : '');
 }
 
@@ -1609,6 +1659,22 @@ export function stableAxisRanges(data, settings) {
 }
 
 /**
+ * The ranges Hide NaN / Hide Outliers pin, as given to Plotly, kept on the graph: Plotly widens one of them to keep
+ * Equal aspect, and when the plot area changes later (a margin made for the legend) it widened the widened range
+ * again; the graph's relayout handler gives these again instead (plot-make-helper.js attachViewportTracking).
+ * Null when nothing is pinned by hiding (autorange, a kept zoom, 3D).
+ * @param {HTMLElement} gd
+ * @param {Object} data
+ * @param {Object} settings
+ */
+export function notePinned(gd, data, settings) {
+  if (!gd) return;
+  const hiding = !settings.z && (settings.hideNaN || settings.hideOutliers) && !keptViewRanges(settings);
+  const pinned = hiding && data ? stableAxisRanges(data, settings) : null;
+  gd.__azPinned = pinned && pinned['xaxis.range'] && pinned['yaxis.range'] ? pinned : null;
+}
+
+/**
  * Hover labels: the configured hoverInfo columns, numbers to 4 significant
  * digits.
  *
@@ -1632,12 +1698,23 @@ export async function loadHoverColumns(settings, plotType, plotContainer = null,
     const count = (h.type === 'obs' || h.type === 'var') && !h.column ? categoryCount(structure, h.type, h.key) : null;
     if (count !== null && !(await hoverLabelsFit(datasetPath, h.type, h.key, count, points, plotContainer, signal))) continue;
     try {
+      const provider = getSource(h.type);
+      if (provider) {
+        // a provider's series beside the columns (a signature's score, a grouping), in a plot whose picker lists it;
+        // read only when ready (the plot draws again when it is)
+        if (!hoverSources(plotType === 'genes' ? 'gene-plot' : 'cell-plot').includes(provider)) continue;
+        const series = plotSeries(await provider.load(h, { host: plotContainer, role: `hover:${h.key}:${h.column || ''}:${h.layer || ''}`,
+          axis: null, expected: points, unit: plotType === 'genes' ? 'genes' : 'cells', signal }));
+        out.push({ label: provider.hover.label(h), values: series.values });
+        continue;
+      }
       const loaded = await loadAxisData({ type: h.type, key: h.key, column: h.column || '' }, plotType, null, { signal });
       if (loaded && Array.isArray(loaded.values)) {
         out.push({ label: h.column ? `${h.key}.${h.column}` : h.key, values: loaded.values });
       }
     } catch (err) {
       if (err && err.name === 'AbortError') throw err;
+      if (err && err.name === 'SourceUnavailable') continue;     // the plot draws again when the score is ready
       console.warn(`Hover column ${h.type}.${h.key} not loaded:`, err && err.message);
     }
   }
@@ -1874,7 +1951,9 @@ export async function unsortTraces(gd) {
  */
 export function applyLogColor(data, settings) {
   data.colorLog = null;
-  if (!settings.color || !settings.color.log || data.colorType !== 'numerical' || !Array.isArray(data.color)) return;
+  // a typed array too: a gene score's values (float32) came back linear under Log when recoloured into a plot
+  if (!settings.color || !settings.color.log || data.colorType !== 'numerical'
+      || !(Array.isArray(data.color) || ArrayBuffer.isView(data.color))) return;
   data.colorRaw = data.color;
   const { values, floor } = logColorValues(data.color, settings.color.logFloor ?? null);
   data.color = values;
@@ -1883,7 +1962,9 @@ export function applyLogColor(data, settings) {
 
 export async function applyLogColorbar(gd, data, settings) {
   if (!gd || !Array.isArray(gd.data) || typeof Plotly === 'undefined') return;
-  const idx = gd.data.findIndex(t => t && t.marker && Array.isArray(t.marker.color) && t.marker.colorscale !== undefined);
+  // a typed array too (a gene score's float32 values): the log ticks were left off a score recoloured into the plot
+  const idx = gd.data.findIndex(t => t && t.marker && (Array.isArray(t.marker.color) || ArrayBuffer.isView(t.marker.color))
+    && t.marker.colorscale !== undefined);
   if (idx < 0) return;
   const update = {};
   if (data.colorLog) {
@@ -1971,10 +2052,12 @@ export function createFilterMask(data, settings) {
   // Table filtering uses pre-populated tableEntities and tableFilterMask
   const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
   const tableEntities = data.tableEntities;
+  // A filter that is not applied yet draws no points, whatever "Remove" says (updateTableEntities)
+  const removesOthers = !!settings.removeNonTableEntries || !!data.tableFilterUnresolved;
   
   // Calculate table filtering statistics
   if (hasTableFilter && tableEntities) {
-    if (settings.removeNonTableEntries) {
+    if (removesOthers) {
       const entityType = data.entities; // 'cells' or 'genes'
       // Calculate how many entities are not in the table when we want to remove them
       const nonTableCount = data[entityType].filter(entity => !tableEntities.has(entity)).length;
@@ -2075,7 +2158,7 @@ export function createFilterMask(data, settings) {
   // Only apply these filters if the corresponding settings are enabled
   if (colorValidMask && settings.hideNaN) masks.push(colorValidMask);
   if (colorRangeMask && settings.hideOutliers) masks.push(colorRangeMask);
-  if (tableFilterMask && settings.removeNonTableEntries) masks.push(tableFilterMask);
+  if (tableFilterMask && removesOthers) masks.push(tableFilterMask);
 
   // 6. Build the final indexMask
   // (a point passes when every mask has it)
@@ -2099,7 +2182,7 @@ export function createFilterMask(data, settings) {
   // 8. Each hidden point once, under the first reason that applies, so the
   // reasons the panel names add up to `filtered` (classifyFilterStats)
   const only = { coords: 0, table: 0, nan: 0, outliers: 0 };
-  const table = tableFilterMask && settings.removeNonTableEntries ? tableFilterMask : null;
+  const table = tableFilterMask && removesOthers ? tableFilterMask : null;
   const nan = colorValidMask && settings.hideNaN ? colorValidMask : null;
   const outliers = colorRangeMask && settings.hideOutliers ? colorRangeMask : null;
   for (let i = 0; i < totalPts; i++) {
@@ -2130,17 +2213,50 @@ export function createFilterMask(data, settings) {
 export async function updateTableEntities(data, settings, plotContainer = null) {
   // Check if table filtering is active
   const hasTableFilter = settings.tableFilter && settings.tableFilter !== 'none';
-  const stale = (s) => {
+  const wasUnresolved = !!data.tableFilterUnresolved;
+  // the plot that asks for the table's filter (utils/table-resolver.js keeps who wants what)
+  const dependant = (settings.id || (plotContainer && plotContainer.id || '').replace(/^plot-container-/, '')) || null;
+  const stale = (s, resolver = null) => {
     data.tableFilterStale = s;
     if (plotContainer) {
-      setStatusTag(plotContainer, 'table-stale', s ? { text: 'Table filter out of date', severity: 'warning', title: s.text,
-        pop: { text: s.text, actions: [['reopen-table', 'Reopen table'], ['table-filter-off', 'Stop filtering']] } } : null);
+      // a closed table whose filter is for other cells is being built again (or cannot be: it says so)
+      const extra = resolver && resolver.state !== 'ready' && resolver.state !== 'idle' && resolver.state !== 'missing'
+        ? describeUnresolved(resolver, s ? s.name : '') : null;
+      const actions = [['reopen-table', 'Reopen table'], ['table-filter-off', 'Stop filtering']];
+      if (extra) for (const a of extra.actions) if (a[0] === 'build-filter' || a[0] === 'retry-filter') actions.unshift(a);
+      const text = s ? (extra && resolver.state !== 'building' && resolver.state !== 'waiting' ? `${s.text}. ${extra.text}` : s.text) : '';
+      setStatusTag(plotContainer, 'table-stale', s ? { text: 'Table filter out of date', severity: 'warning', title: text,
+        pop: { text, actions } } : null);
     }
   };
   
+  // A filter by a closed table whose rows are not known (restored from a link or a panel set: only its
+  // configuration came back) is NOT applied yet. It draws no points, and says so with a notice over the
+  // plot and a tag in its strip, never the grey of a filter that nothing passes. Not in large-plot mode,
+  // which applies no table filter at all.
+  const largeMode = () => !!data.large || (data.entities === 'cells' && (DataManager.getCells() || []).length > largePlotPoints());
+  const titleOf = (id) => {
+    const p = window.PanelManager && window.PanelManager.getPanel(id);
+    return (p && p.getTitle && p.getTitle()) || id;
+  };
+  const unresolved = (u) => {
+    data.tableFilterUnresolved = u && !largeMode() ? u : null;
+    const shown = data.tableFilterUnresolved;
+    if (!plotContainer) return;
+    // what the resolver says of the filter: waiting, building, Build filter, refused, failed, a cycle
+    const said = shown ? describeUnresolved(shown.status || { state: 'idle' }, shown.name, titleOf) : null;
+    setStatusTag(plotContainer, 'table-unresolved', said
+      ? { text: said.tag, severity: 'warning', title: said.text, pop: { text: said.text, actions: said.actions } } : null);
+    setFilterNotice(plotContainer, said
+      ? { state: 'unresolved', headline: said.headline, text: said.text, actions: said.actions } : null);
+  };
+
   // If no table filter is active, remove any existing tableEntities and tableFilterMask
   if (!hasTableFilter) {
     stale(null);
+    noCellPasses(plotContainer, data, settings, null);
+    unresolved(null);
+    TableResolver.reassess();        // a build only this plot wanted ends
     // Always treat switching to "none" as a change that needs visual update
     if (data.tableEntities || data.tableFilterMask) {
       delete data.tableEntities;
@@ -2158,6 +2274,7 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   const tablePanel = window.PanelManager && window.PanelManager.getPanel(settings.tableFilter);
   if (!tablePanel) {
     console.warn(`Table panel ${settings.tableFilter} not found`);
+    unresolved(null);
     return false;
   }
   
@@ -2172,8 +2289,14 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
   let newTableEntities = new Set();
   const entityType = data.entities; // 'cells' or 'genes'
   const entities = entityType === 'cells' ? DataManager.getCells() : DataManager.getGenes();
-  const closed = !!(window.PanelManager && window.PanelManager.getActivePanels
-    && !window.PanelManager.getActivePanels().includes(tablePanel));
+  // An OPEN table that has not published its rows yet (being opened, or it could not be) is read as a
+  // closed one: its closed selection, if it has one, serves until it publishes; else the plot waits
+  const gated = TableResolver.gate(settings.tableFilter);
+  // a gene signature has no rows to freeze: its genes are its recipe, so closed it filters as open.
+  // It is never queued in the table resolver (the host only knows Cell and Gene Tables).
+  const closed = !tablePanel.selectionIsLive && (!!(window.PanelManager && window.PanelManager.getActivePanels
+    && !window.PanelManager.getActivePanels().includes(tablePanel)) || !!gated);
+  let outOfDate = false;      // a closed table's filter that does not know these cells: unresolved, not "no cell"
 
   if (closed) {
     // by name, on the cells shown now. A plot holding tokens (names fetched
@@ -2182,7 +2305,19 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     const tokens = entityType === 'cells' && entities instanceof RemoteNames
       && RemoteNames.isToken((data[entityType] || [])[0]);
     let passing, unknown;
-    if (tokens) {
+    // a table that holds its rows for a score has no rows to apply, whatever it kept when it was closed
+    const noRows = !tableConfig.closedSelection || !!(gated && gated.reason === 'score');
+    const tableName = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
+    // Rows to apply: none (restored from a link, a panel set or a step, or never loaded). Ask the
+    // resolver, which builds them in the background when it may; a plot in large-plot mode applies
+    // no table filter and asks for nothing.
+    const asks = !largeMode() && !gated;
+    const resolved = noRows ? (gated || (asks ? TableResolver.need(settings.tableFilter, dependant) : { state: 'idle' })) : null;
+    unresolved(noRows ? { table: settings.tableFilter, name: tableName, status: resolved } : null);
+    if (noRows) {
+      passing = new Set();
+      unknown = 0;
+    } else if (tokens) {
       const selection = tableConfig.closedSelection || null;
       const names = selection ? await entities.all() : [];
       const found = selectionOnCells(selection, names);
@@ -2193,10 +2328,15 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
       ({ passing, unknown } = selectionOnCells(tableConfig.closedSelection || null, data[entityType] || []));
     }
     newTableEntities = passing;
-    const name = (tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter;
-    stale(unknown > 0 ? { table: settings.tableFilter, unknown, text: staleText(name, unknown, entityType) } : null);
+    const name = tableName;
+    outOfDate = unknown > 0;
+    // other cells than the table's rows were for: build the filter again for these (the old tag stays
+    // until it is, or says why it cannot be)
+    const rebuilt = unknown > 0 && !largeMode() && !gated ? TableResolver.need(settings.tableFilter, dependant) : null;
+    stale(unknown > 0 ? { table: settings.tableFilter, name, unknown, text: staleText(name, unknown, entityType) } : null, rebuilt);
   } else {
     stale(null);
+    unresolved(null);
     // Get entity names based on indices in the table; a plot holding tokens
     // (names fetched when needed) is filtered by the rows' tokens
     const byToken = entityType === 'cells' && RemoteNames.isToken((data[entityType] || [])[0]) &&
@@ -2211,6 +2351,12 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     });
   }
   
+  // A filter that resolves to no cells is its own state (not "Filter not applied yet"). A filter
+  // that is not applied yet (a closed table with no rows) or out of date has not resolved to
+  // anything: that state takes precedence.
+  noCellPasses(plotContainer, data, settings,
+    newTableEntities.size === 0 && !outOfDate && !data.tableFilterUnresolved ? ((tablePanel.getTitle && tablePanel.getTitle()) || settings.tableFilter) : null);
+
   // Compare with existing tableEntities to see if they've changed
   let changed = false;
   if (!currentTableEntities || tableSetsDiffer(currentTableEntities, newTableEntities)) {
@@ -2228,8 +2374,41 @@ export async function updateTableEntities(data, settings, plotContainer = null) 
     
     changed = true;
   }
+  // Filter not applied yet, or applied now: the plot is drawn again even when the cells that pass are the same (none)
+  if (wasUnresolved !== !!data.tableFilterUnresolved) changed = true;
   
   return changed;
+}
+
+/**
+ * What the plot says when the table that filters it passes no cell: the
+ * title of the table, or null when some cell passes (or there is no filter).
+ * With the excluded cells greyed, every cell is drawn grey and the strip
+ * carries a tag; with them removed nothing is drawn (createPlot draws the
+ * placeholder). Never "Filter not applied": the filter
+ * is resolved and says no cell.
+ * @param {HTMLElement|null} plotContainer
+ * @param {Object} data
+ * @param {Object} settings
+ * @param {string|null} title - the table's title when no cell passes, else null
+ */
+function noCellPasses(plotContainer, data, settings, title) {
+  data.tableFilterEmpty = title;
+  if (!plotContainer) return;
+  const unit = data.entities === 'genes' ? 'genes' : 'cells';
+  const text = title === null ? null : emptyFilterText(unit, title);
+  plotContainer.__azTableEmpty = text;
+  // greyed: every cell is drawn grey (as a hand-made filter that nothing passes always did) and
+  // the strip says why; removed: createPlot draws the placeholder instead
+  setStatusTag(plotContainer, 'table-empty', text && !settings.removeNonTableEntries
+    ? { text: 'No ' + unit + ' pass', severity: 'warning', title: text,
+        pop: { text, actions: [['reopen-table', 'Open table'], ['table-filter-off', 'Stop filtering']] } }
+    : null);
+}
+
+/** "No cells pass 'Table 1'": the state of a filter that no cell passes. */
+export function emptyFilterText(unit, title) {
+  return `No ${unit} pass '${title}'.`;
 }
 
 /**
@@ -2340,11 +2519,11 @@ export function buildPlotLayout(settings, data) {
   
   // Fonts and sizing
   settings.fontSize = settings.fontSize || defaults.FONT_SIZE || 12;
-  settings.fontFamily = settings.fontFamily || defaults.FONT_FAMILY || 'Arial, Helvetica, sans-serif';
+  settings.fontFamily = settings.fontFamily || defaults.FONT_FAMILY || DEFAULT_FONT;
   
   // Margins with fallbacks
   if (!settings.margins) {
-    settings.margins = defaults.MARGINS || { l: 80, r: 80, t: 80, b: 60, pad: 4 };
+    settings.margins = defaults.MARGINS || { l: 80, r: 80, t: 30, b: 60, pad: 4 };
   }
   
   // Export options
@@ -2706,6 +2885,17 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       `${unit} names`), unit);
     return;
   }
+  // The table that filters this plot passes no cell and the cells it excludes are
+  // removed: nothing to draw. Say so, with what undoes it.
+  if (settings.removeNonTableEntries && data.tableFilterEmpty != null
+      && settings.tableFilter && settings.tableFilter !== 'none') {
+    drawPlaceholder(plotContainer, null, unit, {
+      say: { severity: 'warning', headline: emptyFilterText(unit, data.tableFilterEmpty),
+             lines: [`0 of ${entities.length} ${unit} shown`] },
+      actions: [['reopen-table', 'Open table'], ['table-filter-off', 'Stop filtering']]
+    });
+    return;
+  }
   if (entities.length !== data.x.values.length) {
     console.warn(
       `${isGenePlot ? 'Gene' : 'Cell'} names count (${entities.length}) doesn't match data points count (${data.x.values.length})`
@@ -2744,9 +2934,11 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   
   // Apply the filter mask only if explicit filtering is enabled
   let filteredData = data;
-  if (settings.hideNaN || settings.hideOutliers) {
+  if (settings.hideNaN || settings.hideOutliers || data.tableFilterUnresolved) {
     filteredData = applyFilterMask(data, indexMask);
   }
+  // what this graph was drawn for: an incremental update would not undo a filter that was not applied
+  plotContainer.__drawnUnresolved = !!data.tableFilterUnresolved;
   
   // Prepare base trace (works for numerical and constant coloring)
   const baseTrace = {
@@ -2773,6 +2965,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
   }
 
   const layout = buildPlotLayout(settings, data);
+  notePinned(plotContainer, data, settings);
 
   // A graph already drawn stays, and the new points are drawn into it
   clearForDraw(plotContainer);
@@ -2788,13 +2981,12 @@ export async function createPlot(container, plotContainer, settings, data, id, i
     const datasetPath = DataManager.getCurrentDataset();
     
     try {
-      // Load custom colors from uns
-      const response = await DataManager.loadUns({
+      // a provider's colours are its own; a column's are stored in uns
+      let customColors = filteredData.colorColours || null;
+      const response = customColors ? null : await DataManager.loadUns({
         datasetPath: datasetPath,
         unsKey: colorKey
       });
-      
-      let customColors = null;
       if (response && response.data) {
         customColors = Array.isArray(response.data)
           ? response.data
@@ -2815,7 +3007,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           text: colourTitle(settings.color),
           font: { 
             size: legendTitleFontSize(settings),
-            family: settings.fontFamily || 'Arial, Helvetica, sans-serif',
+            family: settings.fontFamily || DEFAULT_FONT,
             color: plotColour(settings, 'textColor')
           }
         }
@@ -2841,12 +3033,12 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
       );
-      if (settings.categoryPalette === 'uns') {
+      if (settings.categoryPalette === 'uns' && !filteredData.colorColours) {
         setStatusTag(plotContainer, UNS_PALETTE_TAG,
           unsPaletteTag(settings.color.key, customColors, categoricalTraces.categoryCount));
       }
@@ -2871,7 +3063,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
@@ -2989,7 +3181,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         const tableTrace = {
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
-          name: settings.color.key || 'Value',
+          name: IN_TABLE,
+          _azTable: true,             // the points in the table (plot-update.js tells the grouping by it)
           text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
@@ -3004,6 +3197,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
             colorscale: plotlyColorscale(settings.colorScale),
             reversescale: settings.colorReversed,
             cmin: cmin,
+            cauto: false,   // as a restyle of cmin leaves it (plotly-batch.js implied edits): one value for both paths
             cmax: cmax,
             showscale: settings.showLegend !== false,     // Show Legend off hides the colour bar too
             colorbar: colorbarSettings
@@ -3027,7 +3221,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
@@ -3062,6 +3256,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
       }
       
       baseTrace.marker.cmin = cmin;
+      baseTrace.marker.cauto = false;   // as a restyle of cmin leaves it: an equal min and max drew otherwise
       baseTrace.marker.cmax = cmax;
       baseTrace.marker.colorbar = colourBar(settings, colourTitle(settings.color));
   
@@ -3073,7 +3268,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
@@ -3155,7 +3350,8 @@ export async function createPlot(container, plotContainer, settings, data, id, i
         const tableTrace = {
           type: settings.z ? 'scatter3d' : 'scattergl',
           mode: 'markers',
-          name: 'Data points',
+          name: IN_TABLE,
+          _azTable: true,
           text: DataManager.cellLabels(tableFilteredIndices.map(idx => filteredData[entityKey][idx])),
           customdata: tableFilteredIndices.map(idx => filteredData[entityKey][idx]),
           hovertemplate: `%{text}<br>x: %{x}<br>y: %{y}` + 
@@ -3187,7 +3383,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit
@@ -3210,7 +3406,7 @@ export async function createPlot(container, plotContainer, settings, data, id, i
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d']
+          modeBarButtonsToRemove: [...MODEBAR_REMOVE]
         },
         panelCoverage,
         unit

@@ -8,9 +8,16 @@ import { VALUE_LIST_MAX } from '../../utils/categories.js';
 import { isDerived, derivedValues, derivedColumn, sameExpr, sameColumn, numberCriterion, addCriterion, configDepth, referencedKeys, orphanedDerived } from '../../utils/line-select.js';
 import { DataManager } from '../../data-manager.js';
 import { RemoteNames } from '../../utils/remote-names.js';
-import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents, syncSelectedColumns } from './table-ui-make.js'
+import { populateColumnsCellTable, populateColumnsGeneTable, setupColumnSelectionEvents, syncSelectedColumns, cellTableSources, geneTableSources } from './table-ui-make.js'
 import { freezeSelection } from '../../utils/closed-table.js';
+import { getColumnKey } from '../../utils/column-key.js';
+import { TableResolver } from '../../utils/table-resolver.js';
 import { lineSelectButton } from './line-select-ui.js';
+import { isScoreColumn } from '../../utils/score-column.js';
+import { tableHalfOf, rowsOf } from '../../utils/table-source.js';
+import { getSource } from '../../utils/source-registry.js';
+import { TableScores } from './table-scores.js';
+import { bindScoreColumns, FILTER_COLUMNS } from './table-score-ui.js';
 import {
     Coverage, GAP, ROLE, classifyColumn, classifyValues, classifyMatrixColumn,
     classifyError, missingEntity, unreadableCell, classifyFocusRow
@@ -97,6 +104,17 @@ export async function loadTableData(settings, entityType, signal = null) {
                     throw new DOMException(`Table data loading aborted before loading column ${getColumnKey(column)}`, 'AbortError');
                 }
                 
+                // A source's column (a gene-signature score, a provider's series) is not loaded here: the table is
+                // built at once and the column fills in place when the series is there
+                // (panels/table-utilities/table-score-ui.js). Its cells are read from the series by row, so no row
+                // object gets a property for it.
+                if (isScoreColumn(column) && rowsOf(column) === entityType) {
+                    columnCoverages.push(Coverage.complete(entityIndex.length, entityType));
+                    columnDefinitions.push(scoreColumnDefinition(column, getColumnKey(column),
+                        TableScores.readerOf(settings.id || settings._tableId || '', column)));
+                    continue;
+                }
+
                 // Load data based on column type
                 const loaded = await loadColumnData(column, entityType, signal);
                 const columnData = loaded.values;
@@ -182,6 +200,7 @@ export async function loadTableData(settings, entityType, signal = null) {
         // typing: SearchBuilder's "Equals" dropdown would hold one option per
         // row. A numeric one keeps the number conditions (manyValuesType).
         columnDefinitions.forEach(def => {
+            if (def.searchBuilderType) return;       // a score column: numbers, filtered by typing
             const values = def.data === '_index' ? entityIndex : data.map(row => row[def.data]);
             const type = manyValuesType(values, VALUE_LIST_MAX);
             if (type) def.searchBuilderType = type;
@@ -209,6 +228,31 @@ export async function loadTableData(settings, entityType, signal = null) {
         }
         throw error;
     }
+}
+
+/**
+ * The DataTables column of a source (a gene-signature score, or a provider's series). Its `data` is a key no row
+ * has (the row objects stay as they are); the cell is the reader's: the value at the row's position, or the word
+ * for the state the source is in (utils/score-column.js). A numerical column is filtered and sorted by number, a
+ * categorical one by its label (typed, as the name of a cell is).
+ * @param {Object} column - `{type, key, column, label}`
+ * @param {string} columnKey
+ * @param {{render: Function}} reader - panels/table-utilities/table-scores.js
+ */
+function scoreColumnDefinition(column, columnKey, reader) {
+    const categorical = (getSource(column.type) || {}).valueType === 'categorical';
+    // a provider whose categories are few enough to list says so: its "Equals" lists them (a grouping's groups, CAT-6)
+    const half = tableHalfOf(column);
+    const listed = categorical && !!half && half.listsCategories === true;
+    return {
+        title: getColumnDisplayName(column),
+        data: columnKey,
+        defaultContent: '',
+        className: 'dt-center az-score-col',
+        type: categorical ? 'string' : 'num',
+        searchBuilderType: listed ? 'string' : categorical ? TEXT_ONLY_TYPE : TEXT_ONLY_NUM_TYPE,
+        render: (data, type, row, meta) => reader.render(type, meta.row)
+    };
 }
 
 /**
@@ -649,25 +693,7 @@ export function pinPanelFocusPlaceholders(settings, title = 'Table') {
     return r;
 }
 
-/**
- * Characters DataTables reads in a column's `data` string: "." nests, "[...]" indexes an
- * array, "()" calls a function, and "\\" escapes. A column named orig.ident was looked up as
- * row.obs_orig -> .ident_main and showed N/A (or a DataTables warning).
- */
-const DATATABLES_SPECIAL = /[.[\]()\\]/g;
-
-/**
- * Get a unique key for a column. It is the row property and the DataTables `data` of the
- * column, so it holds none of the characters DataTables reads as a path: each is replaced by
- * its code between two U+241E marks (the name shown for the column is not this key).
- * @param {Object} column - The column object
- * @returns {string} - The column key
- */
-export function getColumnKey(column) {
-    const { type, key, column: columnName } = column;
-    return `${type}_${key}_${columnName || 'main'}`.replace(/\s+/g, '_')
-        .replace(DATATABLES_SPECIAL, c => `\u241e${c.charCodeAt(0).toString(16)}\u241e`);
-}
+export { getColumnKey };
 
 /**
  * Get display name for a column
@@ -682,6 +708,8 @@ export function getColumnKey(column) {
 export function getColumnDisplayName(column) {
     if (isDerived(column)) {
         return column.key;
+    } else if (isScoreColumn(column)) {
+        return tableHalfOf(column).label(column);
     } else if (column.type === 'obs' || column.type === 'var') {
         return `${column.key}`;
     } else if (column.type === 'obsm' || column.type === 'varm') {
@@ -747,7 +775,123 @@ export function freezeTableState(settings, { rowNames = null, rows = 0 } = {}) {
     // (utils/closed-table.js); never copied into a config (toJSON)
     if (rowNames) {
         const selection = freezeSelection(settings.currentEntries, rowNames, rows);
-        settings.closedSelection = selection ? { ...selection, toJSON: () => undefined } : null;
+        settings.closedSelection = keptSelection(selection);
+    }
+}
+
+/**
+ * A closed table's selection as its settings hold it (utils/closed-table.js): the rows that passed, by name, for
+ * whoever filters by the table. Derived, so it is never copied into a config, a link or a panel set (toJSON).
+ * @param {{passing, seen}|null} selection
+ */
+export function keptSelection(selection) {
+    return selection ? { ...selection, toJSON: () => undefined } : null;
+}
+
+/**
+ * The SearchBuilder window handlers of each DataTable, by its settings object.
+ *
+ * Every condition row SearchBuilder builds adds a `resize.dtsb` handler on
+ * the window and never removes it, not even when the table is destroyed.
+ * The handler holds the condition, the condition holds the table's settings
+ * (`s.dt`), and the settings hold every row. jQuery gives no way to take off
+ * "this table's" handlers, so each is recorded for the table whose condition
+ * built it, as it is added (trackSearchBuilder).
+ */
+const ownedResize = new WeakMap();
+const claimedResize = new WeakSet();
+let tracking = false;
+
+/** The `resize.dtsb` handlers on the window, as jQuery keeps them. */
+function dtsbResizeHandlers() {
+    const events = $._data(window, 'events');
+    return ((events && events.resize) || []).filter(h => (h.namespace || '').split('.').includes('dtsb'));
+}
+
+/**
+ * Record, once, which table each new `resize.dtsb` handler belongs to.
+ * SearchBuilder adds one in the constructor of every Criteria and then calls
+ * `_buildCriteria`, which is the first place a patch can see it from outside
+ * (the constructor is reached through a private name, not the exported one).
+ */
+function trackSearchBuilder() {
+    const Criteria = $.fn.dataTable && $.fn.dataTable.Criteria;
+    if (tracking || !Criteria || typeof Criteria.prototype._buildCriteria !== 'function') return;
+    tracking = true;
+    const build = Criteria.prototype._buildCriteria;
+    Criteria.prototype._buildCriteria = function (...args) {
+        try {
+            const settings = this.s.dt.settings()[0];
+            for (const h of dtsbResizeHandlers()) {
+                if (claimedResize.has(h)) continue;
+                claimedResize.add(h);
+                if (!ownedResize.has(settings)) ownedResize.set(settings, new Set());
+                ownedResize.get(settings).add(h.handler);
+            }
+        } catch { /* the table is being built; an unclaimed handler is a small leak, never an error */ }
+        return build.apply(this, args);
+    };
+}
+
+/**
+ * Destroy a table and let go of every row it held.
+ *
+ * `DataTable.destroy()` takes the table out of the page but not out of
+ * memory: the rows stayed reachable from the settings object, and the
+ * settings from several places that outlive the table (measured: about 13 MB
+ * per table of 20,000 rows, one more with every open and close):
+ *
+ * 1. SearchBuilder's `resize.dtsb` window handlers, one per condition,
+ *    through the condition's `s.dt` (taken off here for this table only);
+ * 2. `oInit.data`, the array the table was given, and `oInit.columns`, whose
+ *    render functions close over the column arrays;
+ * 3. the column, row and display arrays of the settings;
+ * 4. the jQuery handlers and data on the table's own elements (`.remove()`
+ *    in jQuery, not `innerHTML`, which keeps them);
+ * The Select extension keeps the last table's settings in a closure it registers for
+ * ordering; the settings are hollowed (2, 3) rather than that closure replaced.
+ *
+ * The table's state other panels read (filter, search, passing rows) is kept
+ * as values first (freezeTableState).
+ * @param {Object} dataTable - DataTables API instance
+ * @param {Object} settings - the table panel's settings
+ * @param {Object} [opts] - freezeTableState's options
+ */
+export function releaseTable(dataTable, settings, opts = {}) {
+    freezeTableState(settings, opts);
+    let st = null;
+    let node = null;
+    let tableNode = null;
+    try {
+        st = dataTable.settings()[0];
+        node = dataTable.table().container();
+        tableNode = dataTable.table().node();
+    } catch { /* already destroyed */ }
+    try {
+        dataTable.destroy();
+    } finally {
+        if (st) {
+            for (const fn of ownedResize.get(st) || []) $(window).off('resize.dtsb', fn);
+            ownedResize.delete(st);
+            if (st._azOptions) for (const key of ['data', 'columns']) st._azOptions[key] = null;
+            if (st._azBox) $(st._azBox).off('.azDerived');
+            st._azOptions = st._azBox = st._azScoreSync = null;
+            for (const key of Object.keys(st)) {
+                if (/^ao.*Callback$/.test(key) && Array.isArray(st[key])) st[key].length = 0;
+            }
+            // the options as given, and the copies DataTables made of them
+            // (`aoColumns`, `aaData`): their render functions close over the rows
+            if (st.oInit) {
+                for (const key of ['data', 'aaData', 'columns', 'aoColumns']) st.oInit[key] = null;
+            }
+            for (const key of ['aoData', 'aoColumns', 'aiDisplay', 'aiDisplayMaster', 'aoHeader', 'aoFooter', 'aoPreSearchCols']) {
+                if (Array.isArray(st[key])) st[key].length = 0;
+            }
+            st._panelSettings = null;
+        }
+        // handlers and data of every element of the table, the original <table>
+        // (restored where it was, outside the wrapper) included
+        for (const el of [node, tableNode]) if (el) $(el).find('*').addBack().off().removeData();
     }
 }
 
@@ -801,15 +945,40 @@ export function searchSmart(regex, smart) {
     return !!smart && !regex;
 }
 
-export function initializeDataTable(tableContainer, tableData, settings, entityType) {
+/**
+ * Build a DataTable from loaded rows.
+ *
+ * `headless`: the detached table of a background build (utils/table-resolver.js,
+ * panels/table-utilities/table-background.js). It runs the same SearchBuilder and search code on the
+ * same options, so it selects the same rows as an open table, but it is not a panel: no search box
+ * or buttons, no sorting, no selection, no size watcher or timers, no event to other panels, and no
+ * getters on `settings` (the caller passes a copy of its own). The caller reads the rows with
+ * `dataTable.rows({search: 'applied'})` and lets it go with releaseTable.
+ * @param {HTMLElement} tableContainer
+ * @param {Object} tableData - from loadTableData
+ * @param {Object} settings - the table's settings (searchText and the toggles, searchBuilderConfig)
+ * @param {string} entityType - 'cells' or 'genes'
+ * @param {{headless?: boolean}} [options]
+ */
+export function initializeDataTable(tableContainer, tableData, settings, entityType, { headless = false } = {}) {
+    trackSearchBuilder();
     // Clear the container and add a table element
     tableContainer.innerHTML = '<table class="table table-sm table-striped" style="width:100%"></table>';
     const table = tableContainer.querySelector('table');
 
     // State‐holders for our toggles:
-    let useRegex          = false;
-    let useSmart          = true;
-    let useCaseInsensitive = true;
+    // (as saved with the panel, so a restored table selects the same rows)
+    let useRegex          = settings.searchRegex === true;
+    let useSmart          = settings.searchSmart !== false;
+    let useCaseInsensitive = settings.searchCaseInsensitive !== false;
+    // the settings hold the toggles as they stand: a link, a panel set and a reopened table read them there
+    const keepToggles = () => {
+        if (headless) return;
+        settings.searchRegex = useRegex;
+        settings.searchSmart = useSmart;
+        settings.searchCaseInsensitive = useCaseInsensitive;
+    };
+    keepToggles();
     
     // Configure DataTables options
     const tableOptions = {
@@ -877,7 +1046,8 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                     // Export the data, not the display: the display rounds
                     // numbers to 4 decimals and wraps ids in HTML. The column
                     // renders return the raw value for any type but 'display'.
-                    exportOptions: { orthogonal: 'export' },
+                    // a score column's header names its method and layer, always (the header cell carries it)
+                    exportOptions: { orthogonal: 'export', format: { header: (data, idx, node) => (node && node.dataset && node.dataset.exportTitle) || data } },
                     filename: function() {
                         // 'this' here refers to the DataTable API instance.
                         // Return the dynamically set property or fallback to a default name.
@@ -887,6 +1057,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
             ]
         },
         searchBuilder: {
+                // the columns a new condition can name: every one but those a provider keeps out of this table's
+                // filter (a loop, operator decision 15). A selector of header cells, asked when a condition is made
+                columns: FILTER_COLUMNS,
                 // criteria AND top-level logic (an OR came back as AND), with
                 // boolean conditions saved as num 'true' translated to Yes/No
                 preDefined: searchBuilderPreDefined(settings.searchBuilderConfig, tableData.booleanColumns || []),
@@ -976,8 +1149,8 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                             title="Regular Expression Mode">
                         .*
                     </button>
-                    <button id="${btnSmartId}" class="dt-search-option btn btn-sm${useSmart ? ' active' : ''}" 
-                            title="Smart Search (default)">
+                    <button id="${btnSmartId}" class="dt-search-option btn btn-sm${useSmart ? ' active' : ''}"${useRegex ? ' disabled' : ''}
+                            title="${useRegex ? 'Smart search does not apply to a regular expression' : 'Smart Search (default)'}">
                         <i class="fas fa-magic"></i>
                     </button>
                     <button id="${btnCaseId}" class="dt-search-option btn btn-sm${!useCaseInsensitive ? ' active' : ''}" 
@@ -1037,18 +1210,21 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
                 // 6) Wire up clicks
                 $(`#${btnRegexId}`).on('click', function() {
                     useRegex = !useRegex;
+                    keepToggles();
                     $(this).toggleClass('active', useRegex);
                     applySearch();
                 });
                 
                 $(`#${btnSmartId}`).on('click', function() {
                     useSmart = !useSmart;
+                    keepToggles();
                     $(this).toggleClass('active', useSmart);
                     applySearch();
                 });
                 
                 $(`#${btnCaseId}`).on('click', function() {
                     useCaseInsensitive = !useCaseInsensitive;
+                    keepToggles();
                     // Treating button as "Case Sensitive" - active when useCaseInsensitive is false
                     $(this).toggleClass('active', !useCaseInsensitive);
                     applySearch();
@@ -1062,6 +1238,22 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         }
     };
     
+    if (headless) {
+        // Only what the filter needs: SearchBuilder (Q) and the table (t). The search text, its toggles
+        // and the conditions are options, applied as the table is made, as for an open table.
+        tableOptions.dom = 'Qt';
+        tableOptions.ordering = false;
+        tableOptions.order = [];
+        tableOptions.info = false;
+        tableOptions.select = false;
+        tableOptions.scrollX = false;
+        tableOptions.scrollY = false;
+        tableOptions.scrollCollapse = false;
+        tableOptions.autoWidth = false;
+        delete tableOptions.buttons;
+        delete tableOptions.initComplete;
+    }
+
     // Initialize the DataTable with Bootstrap 5 styling
     let dataTable;
     try {
@@ -1100,9 +1292,13 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         dataTable = $(table).DataTable(tableOptions);
         // From here on, edits of the filter drop a line filter's derived column that nothing uses any
         // more. Attached after the table was built, so the conditions it was built from never purge.
-        watchDerivedColumns(tableContainer, dataTable, settings);
+        if (!headless) watchDerivedColumns(tableContainer, dataTable, settings);
+        // what releaseTable lets go of: the options object (its `data` and `columns` are
+        // captured by DataTables' own callbacks) and the box the derived-column handlers sit on
+        dataTable.settings()[0]._azOptions = tableOptions;
+        dataTable.settings()[0]._azBox = tableContainer;
         
-        setTimeout(() => {
+        if (!headless) setTimeout(() => {
             // Make logic buttons more visible by adding custom classes
             $(tableContainer).find('.dtsb-logicButton').each(function() {
                 const $button = $(this);
@@ -1118,6 +1314,9 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
         console.error('Error initializing DataTable with SearchBuilder criteria:', error);
         dataTable = $(table).DataTable();
     }
+
+    // a background build reads the rows from the DataTable itself and leaves the settings alone
+    if (headless) return dataTable;
 
     Object.defineProperty(settings, 'searchBuilderConfig', {
         configurable: true,
@@ -1210,6 +1409,13 @@ export function initializeDataTable(tableContainer, tableData, settings, entityT
     
     // Initialize previousEntries with a deep copy
     previousEntries = [...settings.currentEntries];
+
+    // The gene-signature score columns say what state they are in, and fill in place from here on
+    bindScoreColumns(dataTable, settings, tableContainer);
+
+    // The opened table has its rows and its filter: the plots that read it may stop waiting
+    // (utils/table-resolver.js), and are told next
+    if (settings.id) TableResolver.panelPublished(settings.id);
 
     // Notify panels that table selection changed
     window.PanelManager.notifyPanels('tableFiltered', { 
@@ -1442,40 +1648,36 @@ export async function refreshColumnChooser(panelSettings, tableRows) {
     const datasetStructure = await DataManager.getDatasetStructure(DataManager.getCurrentDataset());
     if (!datasetStructure) return;
     // Which tabs exist depends on the TABLE, not on the focus.
-    const sources = tableRows === 'cells' ? [
-        { id: 'obs', name: 'obs', label: 'obs' }, //Cell Annotations
-        { id: 'obsm', name: 'obsm', label: 'obsm' }, // Cell Matrices
-        { id: 'obsp', name: 'obsp', label: 'obsp' }, // Cell-Cell Relations
-        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
-    ] : [
-        { id: 'var', name: 'var', label: 'var' }, // Gene Annotations
-        { id: 'varm', name: 'varm', label: 'varm' }, // Gene Matrices
-        { id: 'varp', name: 'varp', label: 'varp' }, // Gene-Gene Relations
-        { id: 'layer', name: 'layer', label: 'layers' } // Expression Layers
-    ];
+    const sources = tableRows === 'cells' ? cellTableSources() : geneTableSources();
 
     //Make everything blank to start fresh
     for (const source of sources) {
         const contentContainer = document.getElementById(`${source.id}-content-${panelSettings.id}`);
         if (contentContainer == null) return;
+        // the add row's choice goes with the rebuild (table-ui-make.js buildEntityTab puts it back)
+        const addState = contentContainer.querySelector('.az-entity-add');
+        contentContainer.__keptAdd = addState && addState.__state ? addState.__state() : null;
         contentContainer.innerHTML = '';
 
-        const searchContainer = document.createElement('div');
-        searchContainer.className = 'input-group input-group-sm mb-2';
-        
-        const searchIcon = document.createElement('span');
-        searchIcon.className = 'input-group-text';
-        searchIcon.innerHTML = '<i class="fas fa-search"></i>';
-        
-        const searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.className = 'form-control column-search';
-        searchInput.placeholder = `Search ${source.label.toLowerCase()}...`;
-        searchInput.setAttribute('data-tab', source.id);
-        
-        searchContainer.appendChild(searchIcon);
-        searchContainer.appendChild(searchInput);
-        contentContainer.appendChild(searchContainer);
+        // a search field only on the long column lists (see createDataTabs)
+        if (['obs', 'obsm', 'var', 'varm'].includes(source.id)) {
+            const searchContainer = document.createElement('div');
+            searchContainer.className = 'input-group input-group-sm mb-2';
+
+            const searchIcon = document.createElement('span');
+            searchIcon.className = 'input-group-text';
+            searchIcon.innerHTML = '<i class="fas fa-search"></i>';
+
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'form-control column-search';
+            searchInput.placeholder = `Search ${source.label.toLowerCase()}...`;
+            searchInput.setAttribute('data-tab', source.id);
+
+            searchContainer.appendChild(searchIcon);
+            searchContainer.appendChild(searchInput);
+            contentContainer.appendChild(searchContainer);
+        }
 
         //Add back the checkboxList element
         const checkboxList = document.createElement('div');
@@ -1525,6 +1727,14 @@ export async function updateTableOnFocusChange(dataTable, entity, entityType, ta
  */
 export async function exportTableToCsv(dataTable, tableTitle) {
     try {
+        // a score column that is not ready has no values to write: say which, and write nothing
+        const live = typeof dataTable.api === 'function' ? dataTable.api() : dataTable;
+        const owner = live.settings()[0]._panelSettings;
+        const blocked = owner && owner.id ? TableScores.entries(owner.id).find(e => !e.reader.view.exportable) : null;
+        if (blocked) {
+            notify('CSV export is not available', blocked.reader.view.exportNote, 'warning');
+            return;
+        }
         // the file names every row: the names of cells fetched when needed
         // are loaded for it
         let table = dataTable;

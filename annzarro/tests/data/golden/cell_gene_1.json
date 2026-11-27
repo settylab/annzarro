@@ -1,0 +1,37 @@
+{
+ "version": 1,
+ "cellAxis": {
+  "type": "cell-group",
+  "key": "cell-grouping-1718000000001"
+ },
+ "mode": "dots",
+ "sections": [
+  {
+   "source": "signature-1718000000004",
+   "rows": "genes"
+  }
+ ],
+ "color": {
+  "stat": "mean",
+  "layer": "logged"
+ },
+ "size": {
+  "stat": "pct_expressing",
+  "layer": "logged"
+ },
+ "colorScale": "Viridis",
+ "limits": [
+  0,
+  null
+ ],
+ "dotRange": [
+  2,
+  14
+ ],
+ "legendPosition": "right",
+ "sortGenes": "stored",
+ "legend": true,
+ "totals": true,
+ "gap": 2,
+ "scale": "group"
+}

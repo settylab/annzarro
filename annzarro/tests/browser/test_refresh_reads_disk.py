@@ -1,4 +1,4 @@
-"""Values written to a served store appear after a Refresh, panel or header.
+"""Values written to a served store appear after the header's Refresh (Refresh dataset).
 
 The validation run on v0.3.1 (annzarro-paper notes/sources/
 annzarro_v0.3.1_refresh.py) wrote to a store from a second process with
@@ -113,7 +113,9 @@ def _drawn(page, value, timeout=20):
     return colours
 
 
-@pytest.mark.parametrize("how", ["panel", "header"])
+# The per-plot Refresh is gone (decision 39); its re-read is the header's, which this checks (and which
+# test_refresh_keeps_view.py holds to keeping each plot's view)
+@pytest.mark.parametrize("how", ["header"])
 def test_refresh_draws_values_written_to_the_store(served, how):
     root, store = served
     with playwright.sync_playwright() as p:
@@ -128,10 +130,7 @@ def test_refresh_draws_values_written_to_the_store(served, how):
             assert len(set(page.evaluate(COLOURS))) > 10
             # well within the browser cache's 60 s
             _write(store, 4321.0)
-            if how == "panel":
-                page.click(f"#refresh-plot-{PID}")
-            else:
-                page.click("#refresh-dataset")
+            page.click("#refresh-dataset")
             got = _drawn(page, 4321.0)
             assert got is True, f"after the {how} Refresh the plot still draws {sorted(set(got or []))[:5]}..."
             assert not errors, errors

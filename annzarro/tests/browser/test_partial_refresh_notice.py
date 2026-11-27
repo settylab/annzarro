@@ -1,10 +1,10 @@
 """A refresh of a store too large to fingerprint tells the user what that means.
 
 Issue #91: for a store with more files than the refresh check can stat in its
-budget, POST data/refresh answers status "partial" and does not bump the
-generation, so a write that only overwrote chunk files is not served until an
-admin's cache reset. The browser used to drop the answer, leaving a user who
-pressed Refresh with the old values and no hint why.
+budget, POST data/refresh answers status "partial". It used to leave the
+generation alone, so a write that only overwrote chunk files was not served;
+now every refresh starts a new generation, and the notice says the server
+cannot tell whether the data changed and read it all again.
 
 The refresh answer is route-mocked as "partial" (the server side is covered
 in tests/server/test_refresh_freshness.py); the page runs against a real
@@ -53,7 +53,8 @@ def _notices(page):
     return page.locator(NOTICE).all_inner_texts()
 
 
-@pytest.mark.parametrize("how", ["header", "panel"])
+# the header's Refresh is the one there is (the per-plot Refresh is gone, decision 39)
+@pytest.mark.parametrize("how", ["header"])
 def test_a_user_is_told_a_chunk_only_write_may_not_show(served, how):  # noqa: F811
     root, store = served
     with playwright.sync_playwright() as p:
@@ -61,13 +62,13 @@ def test_a_user_is_told_a_chunk_only_write_may_not_show(served, how):  # noqa: F
         try:
             page = _open(browser, root, store, as_user=True)
             assert not _notices(page)
-            page.click("#refresh-dataset" if how == "header" else f"#refresh-plot-{PID}")
+            page.click("#refresh-dataset")
             page.wait_for_selector(NOTICE, timeout=15000)
             page.wait_for_timeout(700)  # the toast fades in
             text = " ".join(_notices(page))
-            assert "Refresh may not show every change" in text, text
-            assert "inside its data chunks may not show" in text and "admin" in text, text
-            assert "Refresh dataset" in text, text
+            assert "Large dataset refreshed" in text, text
+            assert "cannot tell whether it changed" in text and "read it again" in text, text
+            assert "may not show" not in text, text
             assert len(_notices(page)) == 1
             shot = os.environ.get("ANNZARRO_SHOT")
             if shot and how == "header":
@@ -76,9 +77,9 @@ def test_a_user_is_told_a_chunk_only_write_may_not_show(served, how):  # noqa: F
             browser.close()
 
 
-def test_an_admin_is_told_the_cache_was_cleared(served):  # noqa: F811
+def test_an_admin_is_told_the_same(served):  # noqa: F811
     """Login off (the local server): Refresh dataset also clears the server's
-    cache, which serves chunk-only writes, and the notice says so."""
+    cache, and the notice is the user's: the server read the dataset again."""
     root, store = served
     with playwright.sync_playwright() as p:
         browser = p.chromium.launch()
@@ -89,7 +90,7 @@ def test_an_admin_is_told_the_cache_was_cleared(served):  # noqa: F811
             page.wait_for_selector(NOTICE, timeout=15000)
             page.wait_for_timeout(700)  # the toast fades in
             text = " ".join(_notices(page))
-            assert "Large dataset refreshed" in text and "cache" in text, text
+            assert "Large dataset refreshed" in text and "read it again" in text, text
             assert "may not show" not in text, text
             shot = os.environ.get("ANNZARRO_SHOT")
             if shot:
