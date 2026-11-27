@@ -432,14 +432,18 @@ def test_scale_bar_does_not_widen_the_axis_through_resizes(page, server):
     resize, so a narrow plot zoomed out with each one and the bar stopped matching the view."""
     _open(page, server, _cfgs(extra_a={"showScaleBar": True}))
     page.wait_for_function("(id) => (%s)(id).layout.shapes && (%s)(id).layout.shapes.some(s => s.name === 'az-scalebar')" % (GD, GD), arg=A)
-    fit = "async (id) => { const gd = (%s)(id); await Plotly.relayout(gd, {'xaxis.autorange': true, 'yaxis.autorange': true}); }" % GD
+    # a fit, and the bar drawn after it (the bar is taken off for the fit and drawn again: two shapes relayouts)
+    fit = """async (id) => { const gd = (%s)(id); let n = 0;
+        const done = new Promise(res => gd.on('plotly_relayout', function h(e) { if (e && e.shapes && ++n === 2) { gd.removeListener('plotly_relayout', h); res(); } }));
+        await Plotly.relayout(gd, {'xaxis.autorange': true, 'yaxis.autorange': true}); await done; }""" % GD
     for width in (500, 1500, 400, 1200, 400, 1500):
         page.set_viewport_size({"width": width, "height": 1000})
-        page.wait_for_timeout(1500)
+        page.wait_for_function("(id) => { const gd = (%s)(id); return Math.abs(gd._fullLayout.width - gd.clientWidth) < 1"
+                               " && gd.layout.shapes.some(s => s.name === 'az-scalebar'); }" % GD, arg=A)
+        page.evaluate(fit, A)
         first = _bar_is_true(page, A)
         for _ in range(3):                                                      # a fit again (Reset axes, a redraw) must not move it
             page.evaluate(fit, A)
-            page.wait_for_timeout(400)
             again = _bar_is_true(page, A)
             assert all(abs(a - b) < 1e-9 * first["width"] for a, b in zip(first["range"], again["range"])), (width, first, again)
 
