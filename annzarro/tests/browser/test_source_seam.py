@@ -154,8 +154,12 @@ def _legend(page, tile=C):
 
 
 def _wait_menus(page, tile):
+    """The menus are filled AND wired: a panel binds its change handlers only after its first draw (init awaits the dataset,
+    then sets the listeners up), so a choice made in between is dropped and leaves the select showing what the panel does not hold."""
     page.wait_for_function("""(tile) => { const s = document.querySelector(`${tile} select.axis-type-select[data-axis="color"]`);
-        return !!s && [...s.options].some(o => o.value === 'obs' || o.value === 'var'); }""", arg=tile, timeout=30000)
+        const ev = s && window.jQuery && window.jQuery._data(s, 'events');
+        return !!s && [...s.options].some(o => o.value === 'obs' || o.value === 'var') && !!(ev && ev.change && ev.change.length); }""",
+                           arg=tile, timeout=30000)
 
 
 MARK = "\x01"
