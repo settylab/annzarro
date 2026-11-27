@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import zarr
 
-from annzarro.tests.browser.test_memory_guard import _serve  # noqa: E402
+from annzarro.tests.e2e.dsb_servers import start  # noqa: E402
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -25,6 +25,7 @@ else:
     playwright = pytest.importorskip("playwright.sync_api")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 FIXTURE = os.path.join(HERE, "..", "data", "fixture_small.zarr")
 GENE = "gene-plot-A"
 VARM = lambda column: {"type": "varm", "key": "X_pca", "column": column}   # noqa: E731
@@ -47,11 +48,22 @@ def _add_varm(path):
 
 
 @pytest.fixture(scope="module")
-def server(tmp_path_factory):
-    store = tmp_path_factory.mktemp("data") / "pcs.zarr"
+def monkeypatch_module():
+    with pytest.MonkeyPatch.context() as mp:
+        yield mp
+
+
+@pytest.fixture(scope="module")
+def server(tmp_path_factory, monkeypatch_module):
+    tmp = tmp_path_factory.mktemp("gene2d")
+    data = tmp / "data"
+    data.mkdir()
+    store = data / "pcs.zarr"
     shutil.copytree(FIXTURE, store)
     _add_varm(store)
-    root, proc = _serve(tmp_path_factory)        # the suite's start-and-wait helper
+    # the server runs this checkout's code
+    monkeypatch_module.setenv("PYTHONPATH", REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    root, proc = start(tmp, data)
     yield {"root": root, "store": str(store)}
     proc.terminate()
     proc.wait(10)
