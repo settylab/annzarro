@@ -4,9 +4,9 @@ What we are building next, what comes after it, and what we have decided not to 
 shipped, see the [changelog](CHANGELOG.md). Plans change. This page is updated with every release, and an
 item is only promised once it is in a release.
 
-## In progress: 0.8.0
+## Released: 0.8.0
 
-0.8.0 ships five features together. None is released on its own.
+0.8.0 shipped five features together.
 
 | Feature | What it does |
 |---|---|

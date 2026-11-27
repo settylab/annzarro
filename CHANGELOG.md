@@ -8,6 +8,8 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+## 0.8.0 (2026-11-26)
+
 ### Added
 - **Wording.** The Distribution buttons say "Cell Count Plot" (not "Count Plot"), the threshold box in the Cell-Gene Plot's statistic menu is labelled "Expressed above" like the Methods pop-overs, and the two messages for Z-score mean that could not be offered now say what to do ("Z-score mean of a cell group needs this layer stored by gene (CSC).").
 - **The Venn / UpSet condition picks like the Count Plot's rows.** "Condition on a number" lists obs, obsm, obsp and layer in its first select; a gene signature or gene table is picked under **layer** with its score-method button. A cell grouping is not a number, so it is no longer listed there (use **Group of a grouping**), and the obs list lost the "Groupings" entry that did not work in this editor.
