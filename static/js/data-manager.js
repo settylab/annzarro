@@ -2474,15 +2474,29 @@ const DataManager = (function() {
      * @returns {Promise<Map<number, string>>} rank -> label
      */
     async function loadCategoryLabels(datasetPath, column, ranks, slot = 'obs', signal = null) {
-        const out = new Map();
+        return (await loadCategoryLevels(datasetPath, column, ranks, slot, signal)).labels;
+    }
+
+    /**
+     * Labels and level ids of a few ranks of a categorical column's whole-column ranking. The id is the server's
+     * (`c:` and the category's canonical text, made from the stored value): a label that is a number went through
+     * JSON, so a float32 or an integer past 2**53 is not the value stored, and an id built from it names no level.
+     * @returns {Promise<{labels: Map<number, string>, ids: Map<number, string|null>}>} rank -> label, rank -> id
+     */
+    async function loadCategoryLevels(datasetPath, column, ranks, slot = 'obs', signal = null) {
+        const labels = new Map();
+        const ids = new Map();
         const wanted = [...new Set(ranks)].sort((a, b) => a - b);
         for (let i = 0; i < wanted.length; i += 1000) {
             const part = wanted.slice(i, i + 1000);
             const body = await _fetchWithCache(slot === 'var' ? Config.API.VAR : Config.API.OBS,
                 { dataset_path: datasetPath, columns: columnsParam(column), category_ranks: part.join(',') }, signal);
-            (body.ranks || part).forEach((r, k) => out.set(Number(r), body.labels[k]));
+            (body.ranks || part).forEach((r, k) => {
+                labels.set(Number(r), body.labels[k]);
+                ids.set(Number(r), Array.isArray(body.ids) ? body.ids[k] : null);
+            });
         }
-        return out;
+        return { labels, ids };
     }
 
     /**
@@ -2602,6 +2616,7 @@ const DataManager = (function() {
         loadVector,
         loadCategoryCodes,
         loadCategoryLabels,
+        loadCategoryLevels,
         setFocusedCell,
         setFocusedGene,
         setTaxonomyId,

@@ -18,6 +18,7 @@ with the release after it. Older releases are listed on
 - **A score in a table below the fold now starts when you scroll to it.** A gene-score column of a cell table that was off screen when the page loaded stayed at "Computing" for good, with a Cancel button that did nothing: nothing started it when the table came into view (scrolling, or a panel above it closing). It starts at once now. Until then the notice says "'Gene Signature 1' starts when it is on screen." (it said "Computing"), and Cancel on a score that has not started ends the wait.
 - In a Cell Plot or Gene Plot that is still drawing for the first time, the axis and colour menus are held (greyed, "Loading…") until the plot is ready to take a choice, instead of showing a choice the plot then ignored.
 - In a 3D plot, the axis labels now keep following the scene while you hold the mouse button after turning it, rather than waiting for you to move again or let go.
+- **Venn and UpSet sets on numeric categories.** A "Levels of a column" set on a column whose categories are integers past 2^53 now picks and counts the right level; before, the level the page named could match another level or none.
 
 ## 0.8.0 (2026-11-26)
 

@@ -198,14 +198,25 @@ def clear_rankings(dataset_path: Optional[str] = None) -> None:
             del _rankings[key]
 
 
-def labels_of_ranks(ranking: ColumnRanking, ranks, read_categories) -> list:
-    """Labels of the categories at ``ranks`` (None for a rank past ``used``)."""
+def labels_of_ranks(ranking: ColumnRanking, ranks, read_categories, with_ids: bool = False):
+    """Labels of the categories at ``ranks`` (None for a rank past ``used``).
+
+    With ``with_ids`` the result is ``(labels, ids)``: ``ids`` are the level ids of the same categories as
+    ``cell_groups.canonical_label`` writes them for the categories as a reader lists them (what the engine's own ids
+    are made of: a float32 widened to float64, an integer by its exact digits), so a client never builds an id from a
+    label that went through JSON numbers (None for a rank past ``used`` and ``@na`` for a missing category).
+    """
     codes = ranking.codes_of(ranks)
     wanted = sorted({c for c in codes if c is not None})
     got = read_categories(np.asarray(wanted, dtype=np.int64)) if wanted else []
     got = got.tolist() if hasattr(got, "tolist") else list(got)
     by_code = dict(zip(wanted, got))
-    return [None if c is None else by_code[c] for c in codes]
+    labels = [None if c is None else by_code[c] for c in codes]
+    if not with_ids:
+        return labels
+    from .cell_groups import canonical_label       # late: cell_groups needs the readers, which need this module
+    id_of = dict(zip(wanted, (canonical_label(v) for v in got)))
+    return labels, [None if c is None else id_of[c] for c in codes]
 
 
 #: Most ranks one category_ranks request may name (the legend asks for ~192).

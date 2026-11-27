@@ -83,14 +83,19 @@ export function memberOnWire(set) {
  * The choices of a "Levels of a column" set from the obs route's category labels (core/categories.py
  * `labels_of_ranks`), which are the categories as JSON values: a string, a number or a boolean. Each id is the
  * category's canonical text (plan 1.6), as the engine writes it; a null category is no choice (it is out of every set).
+ * `serverIds` are the ids the route sends beside the labels (`ids`): each is the id the engine gives that level, which a
+ * JSON number cannot always give back (an integer past 2**53 arrives as another number). When given they are used as
+ * they are; without them (an old server, a test) the id is made from the value as before.
  * @param {Array<string|number|boolean|null>} values
+ * @param {Array<string|null>} [serverIds]
  * @returns {{ids: string[], labels: string[]}}
  */
-export function categoryChoices(values) {
+export function categoryChoices(values, serverIds) {
     const ids = [];
     const labels = [];
-    for (const v of values) {
-        const id = canonLabel(v);
+    for (const [i, v] of values.entries()) {
+        const given = Array.isArray(serverIds) ? serverIds[i] : undefined;
+        const id = typeof given === 'string' ? given : canonLabel(v);
         if (id === RESERVED.na) continue;
         ids.push(id);
         labels.push(levelText(id));

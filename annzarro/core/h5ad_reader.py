@@ -659,7 +659,7 @@ class h5adReader(CacheSettings):
             return np.asarray(codes), categories
 
     def get_category_labels(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
-                            column_name: Optional[str] = None, ranks=()):
+                            column_name: Optional[str] = None, ranks=(), with_ids: bool = False):
         """Labels at ``ranks`` of a column's whole-column ranking, as
         ZarrReader.get_category_labels."""
         with _open(dataset_path) as f:
@@ -678,7 +678,8 @@ class h5adReader(CacheSettings):
                 codes_ds, categories_ds = obj, f[ref]
             ranking = category_rules.column_ranking(dataset_path, entity, column_name,
                                                     int(categories_ds.shape[0]), lambda: codes_ds[()])
-            return category_rules.labels_of_ranks(ranking, ranks, lambda positions: _values(categories_ds, positions))
+            return category_rules.labels_of_ranks(ranking, ranks, lambda positions: _values(categories_ds, positions),
+                                                  with_ids)
 
     @cached_method
     def get_obs_var_numeric(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,

@@ -2289,10 +2289,10 @@ class ZarrReader(CacheSettings):
                                              int(group['categories'].shape[0]), lambda: group['codes'][:])
 
     def get_category_labels(self, entity: Literal["cells", "genes"], dataset_path: Optional[str] = None,
-                            column_name: Optional[str] = None, ranks=()):
+                            column_name: Optional[str] = None, ranks=(), with_ids: bool = False):
         """Labels of the categories at ``ranks`` of a categorical column's
         whole-column ranking (the legend's names), or None when the column is
-        not categorical."""
+        not categorical. With ``with_ids``: ``(labels, level ids)``."""
         root = self._get_root(dataset_path=dataset_path)
         obj = "obs" if entity == "cells" else "var"
         if root is None or obj not in root or column_name not in root[obj]:
@@ -2305,7 +2305,8 @@ class ZarrReader(CacheSettings):
             ranking = self._column_ranking(dataset_path, entity, column_name, group)
             member = group['categories']
             return category_rules.labels_of_ranks(ranking, ranks,
-                                                  lambda positions: self._read_member(member, positions))
+                                                  lambda positions: self._read_member(member, positions),
+                                                  with_ids)
         except Exception as e:
             raise_if_timeout(e)
             raise store_read_error(group, e) from e

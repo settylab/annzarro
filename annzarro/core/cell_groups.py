@@ -937,11 +937,11 @@ class _Levels:
             self.slots = ["@in", "@out"]
             want = set(member.get("levels") or ()) | ({"g:" + group_key_json(member["group"])}
                                                        if "group" in member else set())
+            have = set(ids)
             lut[:] = 1
             for i, cid in enumerate(ids):
                 if cid in want:
                     lut[i] = 0
-            have = set(ids)
             self.absent = [cid for cid in sorted(want) if cid not in have]
             self.categories = ids
             return lut
