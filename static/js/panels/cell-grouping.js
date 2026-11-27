@@ -35,7 +35,7 @@ import { makeDom } from './gene-set-utilities/dom.js';
 import { noDatasetScreenHtml } from '../utils/no-dataset-screen.js';
 import { setControlsVisible, syncControlsWithDataset } from '../utils/controls-visibility.js';
 import { UndoStack } from '../utils/gene-signature.js';
-import { normalizeGrouping, defaultLabelMaps, sourceName } from '../utils/cell-grouping.js';
+import { normalizeGrouping, defaultLabelMaps, sourceName, legacyIdMap } from '../utils/cell-grouping.js';
 import { sourceList as scoreSources, noteDatasetLayers, scorePairMenus, scorePairAfter, scoreStartPair } from '../utils/score-source.js';
 import { bindPairSelects } from '../utils/pair-selects.js';
 import {
@@ -619,7 +619,8 @@ function createFactors({ D, id, model, on }) {
     /** The labels a card shows: the user's renames over the defaults. */
     function mergedLabels(p, i) {
         const out = new Map(defaultsOf(i));
-        for (const [k, v] of Object.entries(p.labels || {})) out.set(k, v);
+        const legacy = legacyIdMap(model().infos[i]);
+        for (const [k, v] of Object.entries(p.labels || {})) out.set(legacy.get(k) || k, v);
         return out;
     }
 

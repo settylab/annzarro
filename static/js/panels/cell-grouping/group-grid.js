@@ -15,7 +15,7 @@ import { codesRefusal } from '../../utils/cell-group-source.js';
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { inlineRename } from '../../ui/inline-rename.js';
 import { cellExportEntry } from './cell-export.js';
-import { sourceName } from '../../utils/cell-grouping.js';
+import { sourceName, upgradeRecipe } from '../../utils/cell-grouping.js';
 import { toHex, withGroupColor, withGroupLabel, withoutGroupOverride, withoutInactiveOverrides } from './colours.js';
 import { groupOverrideState } from '../../utils/grouping-colours.js';
 import { noGroupReasons } from './status.js';
@@ -123,15 +123,16 @@ function mount(host, ctx) {
         const rows = groupRows({ reply, names, colors, small: smallOf(s.made) });
         // a group's own settings are keyed by its generated name (decision 38): every row knows it
         for (const r of rows) r.generated = got.generated[r.index];
+        const upgraded = upgradeRecipe(recipe, reply, sourceTitleOf);     // an old link's ids and names, as they are now
         const levelName = (j, id) => {
             const k = s.index.indexOf(j);
-            const live = k >= 0 ? recipe.partitionings[k] : null;
+            const live = k >= 0 ? upgraded.partitionings[k] : null;
             return (live && live.labels && live.labels[id]) || (s.defaults[j] && s.defaults[j].get(id)) || id;
         };
         const cross = crossTable({ reply, levelName });
         const factor = (i) => (s.made.partitionings[i] ? sourceName(s.made.partitionings[i].source, sourceTitleOf) : '');
         const reasons = () => reasonRows(noGroupReasons(s.made, reply, factor));
-        const overrides = new Map((Array.isArray(recipe.groupOverrides) ? recipe.groupOverrides : []).map((o) => [o.name, o]));
+        const overrides = new Map((Array.isArray(upgraded.groupOverrides) ? upgraded.groupOverrides : []).map((o) => [o.name, o]));
         return { recipe, reply, rows, cross, factor, reasons, total: rows.length, reasonList: null, generated: got.generated, overrides, namesRef: names, coloursRef: got };
     }
 

@@ -31,7 +31,7 @@
 import { VOCABULARY } from '../../utils/vocabulary.js';
 import { Config } from '../../config.js';
 import { scaleOptionLabel, plotlyColorscale, DIVERGING_SCALES } from '../../utils/color-scales.js';
-import { defaultLabelMaps, sourceName } from '../../utils/cell-grouping.js';
+import { defaultLabelMaps, sourceName, renameOf } from '../../utils/cell-grouping.js';
 import { RESERVED } from '../../utils/level-id.js';
 import { GAP_COLOUR } from '../../utils/plot-theme.js';
 import { limit } from '../../utils/limits.js';
@@ -265,7 +265,7 @@ function groupStrips(reply, recipe, groupOrder, titleOf, colors, groups = null, 
     return parts.map((p, i) => {
         const info = reply.partitionings[i] || {};
         const levels = Array.isArray(info.levels) ? info.levels : [];
-        const label = (id) => (p.labels && p.labels[id]) || maps[i].get(id) || id;
+        const label = (id) => renameOf(p.labels, id, info) || maps[i].get(id) || id;
         const colour = (id) => (factors[i] && factors[i].get(id)) || GAP_COLOUR;
         const colours = [];
         const names = [];

@@ -32,7 +32,7 @@
  */
 import { createDerivedSources } from './derived-sources.js';
 import { VOCABULARY } from './vocabulary.js';
-import { normalizeGrouping, groupingHasher, groupNames, generatedGroupNames, serverRequest, MAX_NESTING } from './cell-grouping.js';
+import { normalizeGrouping, groupingHasher, groupNames, generatedGroupNames, upgradeRecipe, serverRequest, MAX_NESTING } from './cell-grouping.js';
 import { groupNeed } from './group-store.js';
 import { genesRequest, memberRequest, momentsHash, thresholdOf, tableOfCells } from './group-stat-model.js';
 import { labelledGroups } from './group-reference.js';
@@ -525,8 +525,10 @@ export function createGroupSources({ store, host, context, genesStore = null, li
     function coloursOf(id, reply) {
         const r = readingOf(id, reply);
         if (!r.colours) {
-            const generated = generatedGroupNames(r.recipe, r.reading, host.sourceTitle);
-            const got = groupingColours(r.recipe, r.reading, generated);
+            // a link stored before 0.8.1 keys its level colours and group settings by ids and names a float32 level had
+            const recipe = upgradeRecipe(r.recipe, r.reading, host.sourceTitle);
+            const generated = generatedGroupNames(recipe, r.reading, host.sourceTitle);
+            const got = groupingColours(recipe, r.reading, generated);
             r.colours = { factors: got.factors, groups: got.groups.map((c) => c || NO_COLOUR), generated };
         }
         return r.colours;

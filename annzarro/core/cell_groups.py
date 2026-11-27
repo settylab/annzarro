@@ -739,6 +739,8 @@ class _Levels:
             out["categories"] = self.categories
         if self.absent:
             out["absent"] = self.absent
+        if self.legacy_ids:
+            out["legacy_ids"] = self.legacy_ids     # old id -> id: what a link stored before 0.8.1 names (clients map their own)
         return out
 
     # -- reading ----------------------------------------------------------------------------------------------
@@ -1035,6 +1037,13 @@ class _Levels:
             raise GroupError(422, "upstream_refused", "The grouping used as a factor cannot be computed.",
                              partitioning=self.index, upstream=sub.refused)
         ids = ["g:" + group_key_json(g["key"]) for g in sub.groups]
+        # a group of a grouping on a float32 column, stored before 0.8.1 by its factor's old level ids, is still that group
+        inverse = [{new: old for old, new in (p.get("legacy_ids") or {}).items()} for p in sub.partitionings]
+        if any(inverse):
+            for g in sub.groups:
+                old = [inverse[i].get(k, k) if i < len(inverse) else k for i, k in enumerate(g["key"])]
+                if old != list(g["key"]):
+                    self.legacy_ids["g:" + group_key_json(old)] = "g:" + group_key_json(g["key"])
         none = _none_of(sub.codes)
 
         def codes():                                # one span at a time: the upstream codes are not copied whole
