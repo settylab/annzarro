@@ -351,7 +351,10 @@ const CHOOSE = ['score-choose', 'Choose another'];
 test("computing, then asks first, in a grouping's words (SHR-35, UX 5)", async () => {
     const computing = (await attempt(setting('cell-grouping-13'), plotHost(), 'x')).notice;
     assert.ok(['estimating', 'computing'].includes(computing.state));
-    assert.equal(computing.tag.text, 'Grouping…');
+    // a grouping nothing on screen reads has no request out: it says so (it said "Computing 'Fresh'." with a Cancel)
+    assert.equal(computing.tag.text, 'Grouping not started');
+    assert.equal(computing.headline, "'Fresh' starts when it is on screen.");
+    assert.deepEqual(computing.actions, []);
     const ask = (await settle(setting('cell-grouping-8'), plotHost(), { state: 'awaiting' })).notice;
     assert.equal(ask.tag.text, 'Grouping not computed');
     assert.equal(ask.headline, "'Slow' will take about 2 minutes. This plot has no color.");

@@ -138,3 +138,12 @@ test('an input the dataset lacks is not "too large to compute here"', () => {
     assert.equal(note.headline, "'Grouping 1' was not computed.");
     assert.match(note.text, /midres_celltype is not in this dataset/);
 });
+
+test('a job that has not started says so, with no Cancel that would do nothing', () => {
+    const note = SN.describeSource({ state: 'estimating', notStarted: true, title: 'G1' }, {}, GROUPING);
+    assert.equal(note.headline, "'G1' starts when it is on screen. This plot has no color.");
+    assert.deepEqual(note.actions, []);
+    const running = SN.describeSource({ state: 'computing', title: 'G1' }, {}, GROUPING);
+    assert.equal(running.headline, "Computing 'G1'. This plot has no color.");
+    assert.ok(running.actions.some(([a]) => a === 'score-cancel'), 'a running one can be cancelled');
+});

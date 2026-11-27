@@ -107,20 +107,43 @@ def _offscreen_link(root, store):
     return f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}"
 
 
-def test_cancel_on_a_score_that_has_not_started_ends_the_wait(server):
+def _open_offscreen(pw, root, store):
+    browser = pw.chromium.launch()
+    page = browser.new_page(viewport={"width": 1400, "height": 800})
+    page.goto(_offscreen_link(root, store))
+    tile = page.locator(f'.tile[data-tile-id="{TABLE}"]')
+    tile.locator(".filter-notice").first.wait_for(state="attached", timeout=60_000)
+    page.wait_for_timeout(1500)
+    return browser, page, tile
+
+
+def _first_row(tile):
+    return tile.locator("tbody tr").first.inner_text()
+
+
+def test_a_score_off_screen_says_it_has_not_started_and_starts_when_scrolled_to(server):
     root, store = server
     with playwright.sync_playwright() as pw:
-        browser = pw.chromium.launch()
-        page = browser.new_page(viewport={"width": 1400, "height": 800})
-        page.goto(_offscreen_link(root, store))
-        tile = page.locator(f'.tile[data-tile-id="{TABLE}"]')
-        cancel = tile.get_by_role("button", name="Cancel")
-        cancel.first.wait_for(state="attached", timeout=60_000)
-        page.wait_for_timeout(1500)            # nothing may start for a table nobody can see
-        cancel.first.evaluate("el => el.click()")   # below the fold: clicked without scrolling to it
+        browser, page, tile = _open_offscreen(pw, root, store)
+        before = [e.inner_text() for e in tile.locator(".filter-notice").all()]
+        assert before == ["'Signature 1' starts when it is on screen."], before
+        assert "computing" in _first_row(tile)
+        tile.scroll_into_view_if_needed()
         page.wait_for_function(
-            "id => /cancelled/i.test((document.querySelector(`.tile[data-tile-id=\"${id}\"]`) || {}).innerText || '')",
-            arg=TABLE, timeout=15_000)
-        text = tile.inner_text()
+            "id => !document.querySelector(`.tile[data-tile-id=\"${id}\"] .filter-notice`)", arg=TABLE, timeout=30_000)
+        row = _first_row(tile)
         browser.close()
-    assert "cancelled" in text.lower(), text
+    assert "computing" not in row, row
+
+
+def test_a_score_starts_when_the_panel_above_it_closes(server):
+    root, store = server
+    with playwright.sync_playwright() as pw:
+        browser, page, tile = _open_offscreen(pw, root, store)
+        assert "computing" in _first_row(tile)
+        page.evaluate("id => window.PanelManager.closePanel(id)", SIG)
+        page.wait_for_function(
+            "id => !document.querySelector(`.tile[data-tile-id=\"${id}\"] .filter-notice`)", arg=TABLE, timeout=30_000)
+        row = _first_row(tile)
+        browser.close()
+    assert "computing" not in row, row

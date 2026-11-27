@@ -35,6 +35,49 @@ export function tileOnScreen(id) {
         && r.top < window.innerHeight && r.left < window.innerWidth;
 }
 
+/** tableId -> {observer, tile, tries, timer}: what tells the scores of a table that its tile came on screen. */
+const WATCHED = new Map();
+
+/**
+ * A score a table shows is computed only for a table on screen (`visible`), which is asked when the job is pumped:
+ * nothing started it when the table later came into view (scrolled to, a panel above it closed, the tile resized),
+ * so its column said "Computing" for good. One observer per table tile pokes the scores' stores when it comes or goes.
+ */
+function watchTile(tableId) {
+    if (WATCHED.has(tableId) || typeof IntersectionObserver === 'undefined') return;
+    const watch = { observer: null, tile: null, tries: 0, timer: null };
+    WATCHED.set(tableId, watch);
+    const attach = () => {
+        watch.timer = null;
+        if (WATCHED.get(tableId) !== watch) return;
+        const tile = document.querySelector(`.tile[data-tile-id="${CSS.escape(tableId)}"]`);
+        if (!tile) {
+            // the tile is not built yet (the panel is still being made): look again a few times
+            if (++watch.tries < 40) watch.timer = setTimeout(attach, 250);
+            return;
+        }
+        watch.tile = tile;
+        watch.observer = new IntersectionObserver(() => {
+            const map = TABLES.get(tableId);
+            if (!map) return;
+            for (const entry of map.values()) {
+                const half = tableHalfOf(entry.column);
+                if (half.visibilityChanged) half.visibilityChanged();
+            }
+        });
+        watch.observer.observe(tile);
+    };
+    attach();
+}
+
+function unwatchTile(tableId) {
+    const watch = WATCHED.get(tableId);
+    if (!watch) return;
+    WATCHED.delete(tableId);
+    if (watch.timer) clearTimeout(watch.timer);
+    if (watch.observer) watch.observer.disconnect();
+}
+
 /** A label as the text of a cell. */
 function escapeText(text) {
     return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -156,6 +199,7 @@ function ensure(tableId, column, visible = null) {
             reader: makeReader(), visible: visible || (() => tileOnScreen(tableId)) };
         entry.handle = tableHalfOf(column).watch(column, { host: tableId, visible: () => entry.visible(), onChange: (snap) => update(entry, snap) });
         map.set(key, entry);
+        if (!visible) watchTile(tableId);
         update(entry, entry.handle.read(), true);
     } else {
         entry.column = column;
@@ -176,7 +220,7 @@ function release(tableId, key) {
     if (!entry) return;
     entry.handle.release();
     map.delete(key);
-    if (!map.size) TABLES.delete(tableId);
+    if (!map.size) { TABLES.delete(tableId); unwatchTile(tableId); }
 }
 
 export const TableScores = {

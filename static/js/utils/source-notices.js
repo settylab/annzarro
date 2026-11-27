@@ -346,6 +346,11 @@ export function describeSource(snap, { role = 'colour', sharers = 1 } = {}, voca
                 [['score-cancel', cancelLabel]]);
         case 'estimating':
         case 'computing': {
+            // not started: nothing of it is on screen yet, so nothing is running and there is nothing to cancel
+            if (snap.notStarted) {
+                return out(snap.state, 'notice', tagOf('idle', `${Result} not started`),
+                    `${t} starts when it is on screen.${none}`, '', []);
+            }
             const queue = queueOf(snap.progress);
             const note = vocabulary.waitingNote || '';
             // waiting in the server's lane (SHR-47): the place in line, not a count that is not moving
