@@ -867,3 +867,19 @@ def test_search_stays_when_the_tiles_controls_are_hidden(page, served):
     page.click(f"{S} .gsig-toggle[title='Regular expression']")
     _search(page, "^cd3.*d$")
     assert [r["name"] for r in _rows(page)] == ["CD3D", "Cd3d"]
+
+
+def test_search_is_there_in_a_view_saved_with_the_signatures_controls_hidden(page, served):
+    """The operator's link: controlState false for the signature (hierarchy still says true). The search shows."""
+    root, store = served
+    view = {"v": 1, "layout": {"v": 1, "hierarchy": [{"type": "split", "direction": "horizontal",
+            "panes": [{"percentage": 50}, {"percentage": 50}],
+            "children": [{"type": "tile", "id": SIG, "controlsVisible": True}, {"type": "tile", "id": "gene-plot-P", "controlsVisible": True}]}],
+            "controlState": {SIG: False, "gene-plot-P": True},
+            "panelConfigs": {SIG: _sig_cfg(["KLF1", "ACTB"], controlsVisible=False), "gene-plot-P": _plot_cfg()}}}
+    enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+    page.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}")
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    assert page.evaluate("(s) => document.querySelector(s + ' .gsig-controls').style.display", S) == "none"
+    for sel in (".gsig-search", ".gsig-toggle[title='Regular expression']", ".gsig-toggle[title='Match case']"):
+        assert _usable(page, sel), sel
