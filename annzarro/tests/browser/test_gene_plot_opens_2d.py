@@ -11,16 +11,13 @@ import base64
 import json
 import os
 import shutil
-import socket
-import subprocess
-import sys
-import threading
 import urllib.parse
-import urllib.request
 
 import numpy as np
 import pytest
 import zarr
+
+from annzarro.tests.browser.test_memory_guard import _serve  # noqa: E402
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -28,17 +25,10 @@ else:
     playwright = pytest.importorskip("playwright.sync_api")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 FIXTURE = os.path.join(HERE, "..", "data", "fixture_small.zarr")
 GENE = "gene-plot-A"
 VARM = lambda column: {"type": "varm", "key": "X_pca", "column": column}   # noqa: E731
 GD = "document.querySelector('.tile .js-plotly-plot')"
-
-
-def _free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def _add_varm(path):
@@ -58,27 +48,11 @@ def _add_varm(path):
 
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
-    data = tmp_path_factory.mktemp("data")
-    shutil.copytree(FIXTURE, data / "pcs.zarr")
-    _add_varm(data / "pcs.zarr")
-    home = tmp_path_factory.mktemp("home")
-    port = _free_port()
-    env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
-               PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
-    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
-                             "--port", str(port), "--data-dir", str(data), "--no-browser", "--auth-disabled"],
-                            env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-    root = f"http://127.0.0.1:{port}"
-    for i in range(120):
-        try:
-            urllib.request.urlopen(root + "/api/v1/config", timeout=1)
-            break
-        except OSError:
-            threading.Event().wait(min(0.5, 0.1 * (i + 1)))   # backoff between connection attempts, not a test wait
-    else:
-        proc.kill()
-        pytest.fail("server did not start")
-    yield {"root": root, "store": str(data / "pcs.zarr")}
+    store = tmp_path_factory.mktemp("data") / "pcs.zarr"
+    shutil.copytree(FIXTURE, store)
+    _add_varm(store)
+    root, proc = _serve(tmp_path_factory)        # the suite's start-and-wait helper
+    yield {"root": root, "store": str(store)}
     proc.terminate()
     proc.wait(10)
 
