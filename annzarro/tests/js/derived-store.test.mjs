@@ -259,3 +259,15 @@ test('without a limiter the store makes its own of maxActive', async () => {
     await settle();
     assert.equal(fake.calls.compute.length, 1);
 });
+
+test('Cancel on a job that has not started (no dependant on screen) ends it: nothing stays waiting', async () => {
+    const fake = fakeApi();
+    const store = D.createDerivedStore({ api: fake.api });
+    const hidden = { visible: () => false };
+    store.attach('a', spec('a'), hidden);
+    await settle();
+    assert.equal(store.snapshot('a').state, 'idle', 'no request goes out for a job nobody can see');
+    assert.equal(fake.calls.estimate.length + fake.calls.compute.length, 0);
+    assert.equal(store.cancel('a'), true, 'Cancel finds something to cancel');
+    assert.equal(store.snapshot('a').state, 'cancelled');
+});

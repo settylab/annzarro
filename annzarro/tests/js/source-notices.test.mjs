@@ -130,3 +130,20 @@ test('plots and tables paint a notice through one painter, which mirrors the sta
         delete globalThis.document;
     }
 });
+
+test('an input the dataset lacks is not "too large to compute here"', () => {
+    const note = SN.describeSource({ state: 'refused', reason: 'not_in_dataset', title: 'Grouping 1',
+        message: 'midres_celltype is not in this dataset' }, {}, GROUPING);
+    assert.ok(!/too large/.test(note.headline + note.text), `${note.headline} ${note.text}`);
+    assert.equal(note.headline, "'Grouping 1' was not computed.");
+    assert.match(note.text, /midres_celltype is not in this dataset/);
+});
+
+test('a job that has not started says so, with no Cancel that would do nothing', () => {
+    const note = SN.describeSource({ state: 'estimating', notStarted: true, title: 'G1' }, {}, GROUPING);
+    assert.equal(note.headline, "'G1' starts when it is on screen. This plot has no color.");
+    assert.deepEqual(note.actions, []);
+    const running = SN.describeSource({ state: 'computing', title: 'G1' }, {}, GROUPING);
+    assert.equal(running.headline, "Computing 'G1'. This plot has no color.");
+    assert.ok(running.actions.some(([a]) => a === 'score-cancel'), 'a running one can be cancelled');
+});

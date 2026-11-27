@@ -282,7 +282,8 @@ export function createDerivedSources({ store, sources, context, variantOf, hashO
         }
         if (!working) setShown(handle, null);
         // a refusal for its size keeps the route's figures (header.refused: count, limit), which its notice names
-        return { ...base, held, state: snap.state === 'idle' ? 'estimating' : snap.state, progress: snap.progress,
+        // an idle job has no request out (nothing that reads it is on screen yet): its notice says so, not "Computing"
+        return { ...base, held, state: snap.state === 'idle' ? 'estimating' : snap.state, ...(snap.state === 'idle' ? { notStarted: true } : {}), progress: snap.progress,
             estimate: snap.estimate, message: snap.message, reason: snap.reason, owners: snap.owners,
             forced: snap.forced, unasked: snap.unasked, limitS: snap.limitS,
             ...(snap.state === 'refused' && snap.header ? { header: snap.header } : {}) };

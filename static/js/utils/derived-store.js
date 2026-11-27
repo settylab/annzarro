@@ -612,7 +612,8 @@ export function createDerivedStore({
         /** Stop the work for everyone who waits on it. */
         cancel(key) {
             const job = jobs.get(key);
-            if (!job || !WORKING.includes(job.state)) return false;
+            // an idle job has no request, but a dependant may show it as waiting: cancelling it ends the wait too
+            if (!job || !(WORKING.includes(job.state) || job.state === 'idle')) return false;
             stop(job);
             setState(job, 'cancelled', { progress: null });
             pump();
