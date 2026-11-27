@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixed
+- **The Gene Signature panel's search stays when you hide its controls.** The tile's **Hide Controls** chevron used to hide the search box (with its `.*` and `Aa` toggles) together with Add from, Paste and Up/Down, so the panel seemed to have no search. The search now sits in a band of its own and stays, as a gene table's does; the chevron hides only the add controls.
+
 ## 0.8.0 (2026-11-26)
 
 ### Added

@@ -836,3 +836,50 @@ def test_ticking_and_clearing_never_move_the_gene_list(page, served):
     msg = page.locator(f"{S} .gsig-message")
     assert msg.get_attribute("title") == msg.inner_text()
     same("a long message in a narrow panel")
+
+
+def _usable(page, selector):
+    """Non-zero box, inside the tile, and the element is what a click at its centre reaches."""
+    return page.evaluate("""([tile, sel]) => {
+        const e = document.querySelector(tile + ' ' + sel), t = document.querySelector(tile).getBoundingClientRect();
+        if (!e) return false;
+        const r = e.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return false;
+        if (r.left < t.left || r.right > t.right + 0.5 || r.top < t.top || r.bottom > t.bottom + 0.5) return false;
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return top === e || e.contains(top); }""", [S, selector])
+
+
+def test_search_stays_when_the_tiles_controls_are_hidden(page, served):
+    """Hide Controls hides the add row, never the search (a gene table's search stays too)."""
+    _open_signature(page, served)
+    page.evaluate(f"() => document.querySelector('{S} .gsig-search').scrollIntoView({{block: 'center'}})")
+    boxes = (".gsig-search", ".gsig-toggle[title='Regular expression']", ".gsig-toggle[title='Match case']")
+    for hidden in (False, True):
+        if hidden:
+            page.click(f"{S} .tile-toggle-controls")
+            until(page, "() => document.querySelector('%s .gsig-controls').style.display === 'none'" % S)
+            assert page.locator(f"{S} .gsig-addfrom").is_hidden(), "the add controls are the ones hidden"
+        page.evaluate(f"() => document.querySelector('{S} .gsig-search').scrollIntoView({{block: 'center'}})")
+        for sel in boxes:
+            assert _usable(page, sel), f"{sel} not visible and usable (controls hidden: {hidden})"
+    # and it still searches: a regular expression with .* on, Aa off
+    page.click(f"{S} .gsig-toggle[title='Regular expression']")
+    _search(page, "^cd3.*d$")
+    assert [r["name"] for r in _rows(page)] == ["CD3D", "Cd3d"]
+
+
+def test_search_is_there_in_a_view_saved_with_the_signatures_controls_hidden(page, served):
+    """The operator's link: controlState false for the signature (hierarchy still says true). The search shows."""
+    root, store = served
+    view = {"v": 1, "layout": {"v": 1, "hierarchy": [{"type": "split", "direction": "horizontal",
+            "panes": [{"percentage": 50}, {"percentage": 50}],
+            "children": [{"type": "tile", "id": SIG, "controlsVisible": True}, {"type": "tile", "id": "gene-plot-P", "controlsVisible": True}]}],
+            "controlState": {SIG: False, "gene-plot-P": True},
+            "panelConfigs": {SIG: _sig_cfg(["KLF1", "ACTB"], controlsVisible=False), "gene-plot-P": _plot_cfg()}}}
+    enc = base64.urlsafe_b64encode(json.dumps(view).encode()).decode().rstrip("=")
+    page.goto(f"{root}/?dataset_path={urllib.parse.quote(store, safe='/')}#view={enc}")
+    page.wait_for_selector(f"{S} .gsig-grid .gsig-row", timeout=30000)
+    assert page.evaluate("(s) => document.querySelector(s + ' .gsig-controls').style.display", S) == "none"
+    for sel in (".gsig-search", ".gsig-toggle[title='Regular expression']", ".gsig-toggle[title='Match case']"):
+        assert _usable(page, sel), sel

@@ -1546,9 +1546,17 @@ button.dtsb-button.dtsb-clear:hover {
     flex-direction: column;
     gap: 4px;
 }
+.gsig-searchbar {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--az-border);
+    background-color: var(--az-surface-2);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
 .gsig-search-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .gsig-search { flex: 1 1 10rem; min-width: 0; }
-.gsig-controls .form-control-sm, .gsig-controls .btn-sm, .gsig-listbar .btn-sm { font-size: 0.8125rem; }
+.gsig-searchbar .form-control-sm, .gsig-searchbar .btn-sm, .gsig-controls .form-control-sm, .gsig-controls .btn-sm, .gsig-listbar .btn-sm { font-size: 0.8125rem; }
 .gsig-toggle.active { background: var(--az-muted); color: var(--az-surface); }
 .gsig-search.is-invalid { border-color: var(--az-danger-text); }
 .gsig-searchnote { min-height: 0; font-size: 0.75rem; color: var(--az-muted); }
