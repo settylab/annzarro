@@ -476,16 +476,22 @@ def test_to_reply_and_level_bounds():
 
 
 def test_edges_time_grows_no_faster_than_the_data():
-    def best(n):
+    # The bound is 15x the time for 10x the data. Both samples are taken in the same cache regime: slabs of 512 KB (the
+    # engine works one slab at a time) and at most 4 MB of data, so the large case is not slower per value merely because
+    # 20 MB of float32 no longer fits the cache a busy two-core runner shares with the other test workers (that put the
+    # ratio at 15.5 on CI with 5M against 500K values; the work is the same). The small sample is a batch of ten runs, so
+    # it is several milliseconds and not a timer tick, and each is the quickest of seven.
+    def best(n, batch):
         x = np.random.default_rng(0).normal(size=n).astype(np.float32)
         t = []
-        for _ in range(3):
+        for _ in range(7):
             t0 = time.process_time()
-            binning.edges(slabs_of(x, 1 << 20), make("equal_count", bins=4))
-            t.append(time.process_time() - t0)
+            for _ in range(batch):
+                binning.edges(slabs_of(x, 1 << 17), make("equal_count", bins=4))
+            t.append((time.process_time() - t0) / batch)
         return min(t)
 
-    assert best(5_000_000) <= 15 * best(500_000)
+    assert best(1_000_000, 1) <= 15 * best(100_000, 10)
 
 
 # ---------------------------------------------------------------------------------------------------------------

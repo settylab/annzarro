@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from decimal import Decimal, localcontext
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import numpy as np
@@ -357,6 +358,19 @@ def _scan(slabs: Callable[[], Iterable[np.ndarray]], zero_bin: bool, positive: b
     return s
 
 
+def _log_edges(lo: float, hi: float, bins: int) -> np.ndarray:
+    """``lo * (hi / lo) ** (i / bins)`` for i = 0..bins, rounded once from a 40-digit value.
+
+    ``np.power`` on float64 is a vector routine whose last bit depends on the CPU and the numpy build (an AVX-512
+    runner and an ARM laptop disagree by an ulp), so the same recipe would give different edges, and the recipe vectors
+    the browser is tested against could not be one file. Decimal arithmetic is the same everywhere."""
+    with localcontext() as ctx:
+        ctx.prec = 40
+        lo_d, hi_d = Decimal(float(lo)), Decimal(float(hi))
+        span = (hi_d / lo_d).ln()
+        return np.array([float(lo_d * (span * i / bins).exp()) for i in range(bins + 1)], dtype=np.float64)
+
+
 def edges(slabs: Callable[[], Iterable[np.ndarray]], b: Binning) -> Edges:
     """The edges of ``b`` over the values ``slabs()`` gives. ``slabs`` is called once per pass.
 
@@ -402,7 +416,7 @@ def edges(slabs: Callable[[], Iterable[np.ndarray]], b: Binning) -> Edges:
             # np.linspace is what numpy.histogram_bin_edges builds, so the two agree to the bit.
             return Edges(edges=np.linspace(lo, hi, b.bins + 1, endpoint=True), n_bins=b.bins,
                          range_stored=stored, range_used=(lo, hi), **common)
-        ed = lo * (hi / lo) ** (np.arange(b.bins + 1, dtype=np.float64) / b.bins)
+        ed = _log_edges(lo, hi, b.bins)
         ed[0], ed[-1] = lo, hi
         ed = _merge(ed)
         if ed.size < 2:
