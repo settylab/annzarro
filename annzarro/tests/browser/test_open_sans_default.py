@@ -80,11 +80,12 @@ def test_a_new_plot_draws_in_open_sans(page, served, kind):
     _open(page, served, styleDefault=True)
     got = page.evaluate(FAMILY, TILES[kind])
     assert got["family"] == OPEN, got
-    # the glyphs are Open Sans's: a tick label is as wide as Open Sans sets it, not Verdana (which is wider)
+    # the glyphs are Open Sans's: a tick label is as long as Open Sans sets it, not Verdana (which is wider); its length along the text,
+    # since CI's narrower window turns the Cell-Gene Plot's gene labels, and a rotated label's box is its height wide
     wide = page.evaluate("""(id) => { const t = document.querySelector(`.tile[data-tile-id="${id}"] .js-plotly-plot .xtick text, .tile[data-tile-id="${id}"] .js-plotly-plot .legendtext`);
         const cs = getComputedStyle(t); const c = document.createElement('canvas').getContext('2d');
         const w = (f) => { c.font = `${cs.fontSize} ${f}`; return c.measureText(t.textContent).width; };
-        return { drawn: t.getBoundingClientRect().width, open: w('"Open Sans"'), verdana: w('Verdana'), text: t.textContent }; }""", TILES[kind])
+        return { drawn: t.getComputedTextLength(), open: w('"Open Sans"'), verdana: w('Verdana'), text: t.textContent }; }""", TILES[kind])
     assert abs(wide["drawn"] - wide["open"]) < abs(wide["drawn"] - wide["verdana"]) or abs(wide["open"] - wide["verdana"]) < 0.5, wide
 
 

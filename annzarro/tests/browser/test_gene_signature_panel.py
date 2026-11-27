@@ -30,6 +30,7 @@ ANNZARRO_REQUIRE_BROWSER=1 (set in CI), where a missing Playwright is an error.
 import base64
 import json
 import os
+import tempfile
 import time
 import urllib.parse
 
@@ -712,7 +713,7 @@ def test_add_from_popover_is_fully_visible_and_topmost_beside_a_plot(page, serve
     assert page.evaluate("() => !!document.querySelector('.split-container.split-horizontal')")
     m = page.evaluate("() => { const r = [...document.querySelectorAll('.gsig-menu')].find(e => !e.hidden).getBoundingClientRect(); return r.right; }")
     assert m > plot_box["x"] + 5, "the popover reaches over the neighbouring plot"
-    shot = os.path.join(os.environ.get("ANNZARRO_SHOT_DIR", "/private/tmp"), "gene-signature-add-from-beside-plot.png")
+    shot = os.path.join(os.environ.get("ANNZARRO_SHOT_DIR") or tempfile.gettempdir(), "gene-signature-add-from-beside-plot.png")
     page.screenshot(path=shot)
     print("SCREENSHOT", shot, "menu right edge", m, "plot left edge", plot_box["x"])
     assert box["inside"] and box["topmost"] and all(box["corners"]) and box["inBody"], box
