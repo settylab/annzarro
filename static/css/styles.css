@@ -4999,3 +4999,6 @@ body.az-skeleton-on #tile-container > *:not(#load-skeleton) { display: none !imp
 .plot-controls .axis-selector:has(> .axis-member-select) { flex-wrap: wrap; }
 .plot-controls .axis-selector:has(> .axis-type-select option[value="layer"]:checked):has(> .axis-member-select) > .axis-column-select,
 .plot-controls .axis-selector > .axis-member-select { flex: 1 1 4rem; min-width: 4rem; }
+
+/* a plot panel holds its axis rows until its handlers are bound (holdAxisControls) */
+.axis-selector[inert] { opacity: 0.6; }

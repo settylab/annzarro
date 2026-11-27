@@ -193,20 +193,42 @@ class Session:
     def csp(self):
         return self.page.evaluate("async () => (await fetch(location.href)).headers.get('content-security-policy')")
 
+    def settled(self, after_run):
+        """Wait until the panel has nothing in flight: every section it holds has answered (or been refused), none is
+        loading, and, after a Run, it has started (a Run first awaits the ids and the policy, so 'idle' right after the
+        click means 'not begun', not 'done')."""
+        until(self.page, """([after_run]) => { const p = window.PanelManager.getPanel('gene-set-G'); if (!p) return false;
+            if (typeof p._debugState !== 'function') return true;   // a disabled panel is a placeholder: nothing runs
+            const s = p._debugState(); const runs = Object.values(s.runs);
+            if (s.pendingConsent || s.policy === 'off') return true;   // asks first, or may send nothing: nothing will start
+            if (after_run && !s.armed) return false;
+            return runs.every(r => r.status !== 'loading' && (!after_run || r.status !== 'idle' || !r.visible)); }""", [after_run])
+
     def drive(self):
-        """Run, change the focus, type a species: everything that could send something."""
+        """Run, change the focus, type a species: everything that could send something. Each step is waited for on what it
+        does (the sections answered, the species options listed), never on the clock."""
         page = self.page
-        if page.locator(f"{GS} .gs-run").count():
+        ran = page.locator(f"{GS} .gs-run").count() > 0
+        if ran:
             page.click(f"{GS} .gs-run")
+            self.settled(True)
         page.click(f'{TABLE} .entity-index-value:has-text("GENE007")')
+        until(page, "() => { const p = window.PanelManager.getPanel('gene-set-G'); return !p || typeof p._debugState !== 'function' || !!p._debugState().focus.name; }")
+        if ran:
+            self.settled(False)
         if page.locator(SPECIES).count():
             page.click(SPECIES)
             page.fill(SPECIES, "zebraf")
             option = f'{GS} .name-picker-option:has-text("Search NCBI Taxonomy")'
-            page.wait_for_timeout(500)
+            try:
+                page.wait_for_selector(option, timeout=5000)
+            except playwright.TimeoutError:
+                pass   # no search offered (the species search is off): nothing to wait for
             if page.locator(option).count():
                 page.click(option)
-        page.wait_for_timeout(2500)
+        page.wait_for_load_state("networkidle")
+        if ran:
+            self.settled(False)
         return self
 
     def reach(self, hosts, timeout=20.0):

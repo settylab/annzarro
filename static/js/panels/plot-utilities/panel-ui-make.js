@@ -245,11 +245,33 @@ export function createPanelStructure(container, id, settings, { plotType, consum
   }
   // The point size is Plot Options' (Points group, options-popover.js): it is not in this grid; its opacity stays here.
 
+  const controlsContainer = $container.find('.plot-controls')[0];
+  // The axis selects' change handlers are bound only after the panel's first draw (the panel's init awaits the dataset, then
+  // sets its listeners up), but the selects are filled before: a choice made in between would show in the select and be
+  // ignored by the panel. The rows are inert until the panel says its handlers are bound (axisControlsReady).
+  holdAxisControls(controlsContainer, true);
+
   return {
     plotContainer: document.getElementById(`plot-container-${id}`),
-    controlsContainer: $container.find('.plot-controls')[0],
+    controlsContainer,
     loadingScreen: document.getElementById(`loading-screen-${id}`)
   };
+}
+
+/**
+ * Hold (`hold` true) or release the axis rows of a plot panel's controls. Held, no one can change an axis (inert: no mouse,
+ * no keyboard, not focusable) and the controls say they are `data-axis-controls="loading"`; released, `"ready"`. A panel
+ * releases them once its change handlers are bound, whether or not its first draw worked.
+ * @param {HTMLElement} controlsContainer
+ * @param {boolean} hold
+ */
+export function holdAxisControls(controlsContainer, hold) {
+  if (!controlsContainer) return;
+  controlsContainer.dataset.axisControls = hold ? 'loading' : 'ready';
+  for (const row of controlsContainer.querySelectorAll('.axis-selector')) {
+    row.inert = !!hold;
+    if (hold) row.title = 'Loading\u2026'; else row.removeAttribute('title');
+  }
 }
 
 /**

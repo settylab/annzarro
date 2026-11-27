@@ -66,6 +66,17 @@ def equals(pid, title, value):
     return {"logic": "AND", "criteria": [{"condition": "=", "data": title, "origData": key_of(pid), "type": "string", "value": [value]}]}
 
 
+# every cell_groups POST the page makes, in the page (the same list as page.calls, but readable by wait_for_function)
+PAGE_CALLS = """window.__cellGroupCalls = [];
+const __realFetch = window.fetch.bind(window);
+window.fetch = (url, init) => {
+  try {
+    if (String(url && url.url || url).includes('/data/cell_groups') && init && init.method === 'POST') window.__cellGroupCalls.push(JSON.parse(init.body || '{}'));
+  } catch (e) { /* not JSON: not a compute */ }
+  return __realFetch(url, init);
+};"""
+
+
 @pytest.fixture
 def page(served):
     with playwright.sync_playwright() as p:
@@ -74,6 +85,7 @@ def page(served):
             page = browser.new_page(viewport={"width": 1500, "height": 1100})
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
+            page.add_init_script(PAGE_CALLS)
             page.calls = []
             page.on("request", lambda r: page.calls.append(json.loads(r.post_data or "{}"))
                     if "/data/cell_groups" in r.url and r.method == "POST" else None)
@@ -189,12 +201,16 @@ def test_the_chooser_has_a_cell_group_tab_and_a_ticked_grouping_is_a_column_name
     # the grouping's own panel is open: its groups (and the focused gene's statistics, G9c) are asked without codes, in
     # requests whose order against the table's depends on timing alone, so the table's request is told by what it asks
     before = len(_computes(page))
+    before_page = page.evaluate("() => window.__cellGroupCalls.length")
     assert not any(c["want"]["codes"] for c in _computes(page)), "no one reads the codes before the table has the column"
     page.click(f"#apply-columns-{TA}")
     until(page, "([box]) => [...document.querySelectorAll(box + ' .dataTables_scrollHead th')].some(th => th.textContent.trim().startsWith('Grouping 1'))", [BOX])
     cols = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.map(c => [c.type, c.key, c.label || null])", TA)
     assert ["cell-group", GA, "Grouping 1"] in cols
     _filled(page, _index(page, "Grouping 1"))
+    # the requests as the page itself saw them (recorded by PAGE_CALLS): the wait is on the page, not on events that
+    # reach this side separately from what the page shows
+    page.wait_for_function("(n) => window.__cellGroupCalls.slice(n).some(c => c.want && c.want.codes === true)", arg=before_page, timeout=30000)
     assert any(c["want"]["codes"] is True for c in _computes(page)[before:]), "a table reads the codes"
 
 
