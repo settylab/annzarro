@@ -11,14 +11,12 @@ import base64
 import json
 import os
 import shutil
-import socket
-import subprocess
-import sys
-import time
 import urllib.parse
-import urllib.request
 
 import pytest
+
+from annzarro.tests.browser import waits
+from annzarro.tests.e2e.dsb_servers import start
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -31,36 +29,23 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 COUNT = "cell-count-A"
 
 
-def _free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 @pytest.fixture(scope="module")
-def server(tmp_path_factory):
+def server(tmp_path_factory, monkeypatch_module):
     data = tmp_path_factory.mktemp("data")
     shutil.copytree(os.path.join(DATA_DIR, "fixture_small.zarr"), data / "small.zarr")
     home = tmp_path_factory.mktemp("home")
-    port = _free_port()
-    env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
-               PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
-    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
-                             "--port", str(port), "--data-dir", str(data), "--no-browser", "--auth-disabled"],
-                            env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-    root = f"http://127.0.0.1:{port}"
-    for i in range(120):
-        try:
-            urllib.request.urlopen(root + "/api/v1/config", timeout=1)
-            break
-        except OSError:
-            time.sleep(min(0.5, 0.1 * (i + 1)))
-    else:
-        proc.kill()
-        pytest.fail("server did not start")
+    # the server runs this checkout's code
+    monkeypatch_module.setenv("PYTHONPATH", REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    root, proc = start(home, data)
     yield root, str(data / "small.zarr")
     proc.terminate()
     proc.wait(10)
+
+
+@pytest.fixture(scope="module")
+def monkeypatch_module():
+    with pytest.MonkeyPatch.context() as mp:
+        yield mp
 
 
 def _link(root, store, column):
@@ -113,7 +98,9 @@ def _open_offscreen(pw, root, store):
     page.goto(_offscreen_link(root, store))
     tile = page.locator(f'.tile[data-tile-id="{TABLE}"]')
     tile.locator(".filter-notice").first.wait_for(state="attached", timeout=60_000)
-    page.wait_for_timeout(1500)
+    waits.expect_stays(lambda: "computing" in _first_row(tile),
+                       "nothing may start for a table nobody can see, so there is no event to wait for",
+                       page=page, seconds=1.5)
     return browser, page, tile
 
 
