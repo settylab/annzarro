@@ -437,99 +437,12 @@ export function groupLabels(recipe, reply, titleOf, generated = false) {
 }
 
 /**
- * What a partitioning's reply says about ids a link stored before 0.8.1: `legacy_ids`, old id to the id it has now (a
- * float32 category 0.1 was `c:0.10000000149011612` and is `c:0.1`). Only an old id the reply does not itself list counts:
- * a kept level the link names is echoed as it was stored, so what is keyed by it is already right.
- * @returns {Map<string, string>} old id to current id; empty when the reply has none
- */
-export function legacyIdMap(info) {
-    const out = new Map();
-    const raw = info && info.legacy_ids;
-    if (!raw || typeof raw !== 'object') return out;
-    const listed = new Set([...(info.levels || []), ...(info.categories || [])]);
-    for (const [old, now] of Object.entries(raw)) if (!listed.has(old) && typeof now === 'string') out.set(old, now);
-    return out;
-}
-
-/** The rename of level `id` in a partitioning's `labels`, found under the id an old link stored it by when not under this one. */
-export function renameOf(labels, id, info) {
-    if (!labels) return undefined;
-    if (labels[id] !== undefined) return labels[id];
-    for (const [old, now] of legacyIdMap(info)) if (now === id && labels[old] !== undefined) return labels[old];
-    return undefined;
-}
-
-/** A map keyed by level id with the keys of an old link moved to the ids they have now (a current key is not replaced). */
-function rekeyed(map, legacy) {
-    if (!map || typeof map !== 'object' || !legacy.size) return map;
-    let out = map;
-    for (const [old, now] of legacy) {
-        if (Object.hasOwn(map, old) && !Object.hasOwn(map, now)) {
-            if (out === map) out = { ...map };
-            out[now] = map[old];
-            delete out[old];
-        }
-    }
-    return out;
-}
-
-/**
- * The recipe as a reply of the engine since 0.8.1 reads it: the renames (`labels`) and level colours
- * (`colors.overrides`) of an old link keyed by the ids they have now. Returns the recipe itself when nothing moves.
- */
-function upgradeLevelIds(recipe, reply) {
-    const infos = (reply && reply.partitionings) || [];
-    let out = recipe;
-    (recipe.partitionings || []).forEach((p, i) => {
-        const legacy = legacyIdMap(infos[i]);
-        if (!legacy.size) return;
-        const labels = rekeyed(p.labels, legacy);
-        const overrides = p.colors && rekeyed(p.colors.overrides, legacy);
-        if (labels === p.labels && (!p.colors || overrides === p.colors.overrides)) return;
-        if (out === recipe) out = { ...recipe, partitionings: [...recipe.partitionings] };
-        out.partitionings[i] = { ...p, ...(labels !== p.labels ? { labels } : {}),
-            ...(p.colors && overrides !== p.colors.overrides ? { colors: { ...p.colors, overrides } } : {}) };
-    });
-    return out;
-}
-
-/**
- * `upgradeLevelIds`, and the group settings (`groupOverrides`, keyed by the generated name, which is made of the labels)
- * of an old link moved to the generated names the groups have now: the name a group had is found by naming the groups with
- * the old ids.
- */
-export function upgradeRecipe(recipe, reply, titleOf) {
-    const levels = upgradeLevelIds(recipe, reply);
-    const infos = (reply && reply.partitionings) || [];
-    const maps = (recipe.partitionings || []).map((_, i) => legacyIdMap(infos[i]));
-    if (!maps.some((m) => m.size) || !Array.isArray(levels.groupOverrides) || !levels.groupOverrides.length) return levels;
-    const back = maps.map((m) => new Map([...m].map(([old, now]) => [now, old])));
-    const oldId = (i, id) => (back[i] && back[i].get(id)) || id;
-    const oldReply = {
-        ...reply,
-        partitionings: infos.map((info, i) => ({ ...info, levels: (info.levels || []).map((id) => oldId(i, id)),
-            categories: info.categories && info.categories.map((id) => oldId(i, id)), generatedNames: undefined, names: undefined })),
-        groups: (reply.groups || []).map((g) => ({ ...g, key: isCollected(g.key) ? g.key : g.key.map((id, i) => oldId(i, id)) }))
-    };
-    const now = generatedGroupNames(levels, reply, titleOf);
-    const was = generatedGroupNames(recipe, oldReply, titleOf);
-    const names = new Set(now);
-    const moved = new Map();
-    was.forEach((name, i) => { if (name !== now[i] && !names.has(name)) moved.set(name, now[i]); });
-    if (!moved.size) return levels;
-    const have = new Set(levels.groupOverrides.map((o) => o.name));
-    return { ...levels, groupOverrides: levels.groupOverrides.map((o) => (moved.has(o.name) && !have.has(moved.get(o.name))
-        ? { ...o, name: moved.get(o.name) } : o)) };
-}
-
-/**
  * The name of each group (SHR-9): its generated name (`generatedGroupNames`), or the label the user gave that group
  * (`groupOverrides`, decision 38, keyed by the generated name). A label that another group already has is qualified the way
  * level duplicates are, `name (2)`: the group that is called that keeps it.
  * @returns {string[]} one per group of the reply, in its order
  */
-export function groupNames(recipeIn, reply, titleOf) {
-    const recipe = upgradeRecipe(recipeIn, reply, titleOf);
+export function groupNames(recipe, reply, titleOf) {
     const generated = generatedGroupNames(recipe, reply, titleOf);
     // what an inner grouping's groups are CALLED shows; what overrides are keyed by does not move with it
     const shown = joinedNames(recipe, reply, titleOf, false);
@@ -558,8 +471,7 @@ export function generatedGroupNames(recipe, reply, titleOf) {
 }
 
 /** Each group's level labels joined by the separator, the same name twice qualified; `generated` keys inner groups by generated name. */
-function joinedNames(recipeIn, reply, titleOf, generated) {
-    const recipe = upgradeLevelIds(recipeIn, reply);
+function joinedNames(recipe, reply, titleOf, generated) {
     const separator = recipe.separator === undefined ? DEFAULT_SEPARATOR : recipe.separator;
     const seen = new Map();
     return groupLabels(recipe, reply, titleOf, generated).map(({ key, labels }) => {

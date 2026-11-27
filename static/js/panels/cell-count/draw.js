@@ -14,7 +14,7 @@
 import {
     arrangementShown, axisOrder, binSpacingOf, heightValues, shareValues, measureValues, levelLabelsOf, levelsAt, tableRows, tableCsv
 } from '../../utils/count-plot-model.js';
-import { defaultLabelMaps, legacyIdMap } from '../../utils/cell-grouping.js';
+import { defaultLabelMaps } from '../../utils/cell-grouping.js';
 import { formatFraction } from '../../utils/cell-gene-model.js';
 import { parseLevelId, RESERVED } from '../../utils/level-id.js';
 import { asHex, factorColours, tableLevelColour, plotPaletteOf } from '../../utils/grouping-colours.js';
@@ -311,7 +311,7 @@ function faded(colour, background, alpha) {
 function topLabels(config, table, opts) {
     const factor = config.value.factor;
     const [map] = defaultLabelMaps({ partitionings: [factor] }, { partitionings: [{ ...table.top.info, levels: table.top.levels }] }, opts.titleOf);
-    for (const [id, text] of Object.entries(factor.labels || {})) map.set(legacyIdMap(table.top.info).get(id) || id, text);
+    for (const [id, text] of Object.entries(factor.labels || {})) map.set(id, text);
     return map;
 }
 

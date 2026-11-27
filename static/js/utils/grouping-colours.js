@@ -87,13 +87,7 @@ export function factorColours(partitioning, info, levels) {
         plain.forEach((id, i) => out.set(id, usable && valid(dataset[id]) ? dataset[id] : at(colours, i)));
     }
     if (isObject(spec.overrides)) {
-        // a link stored before 0.8.1 keys a float32 level by its old id (the reply's `legacy_ids`, old id to id)
-        const old = new Map();
-        if (info && isObject(info.legacy_ids)) for (const [was, now] of Object.entries(info.legacy_ids)) old.set(now, was);
-        for (const id of plain) {
-            const own = valid(spec.overrides[id]) ? spec.overrides[id] : old.has(id) ? spec.overrides[old.get(id)] : undefined;
-            if (valid(own)) out.set(id, own);
-        }
+        for (const id of plain) if (valid(spec.overrides[id])) out.set(id, spec.overrides[id]);
     }
     return out;
 }
