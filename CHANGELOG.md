@@ -13,6 +13,7 @@ with the release after it. Older releases are listed on
 
 ### Fixed
 - **The Gene Signature panel's search stays when you hide its controls.** The tile's **Hide Controls** chevron used to hide the search box (with its `.*` and `Aa` toggles) together with Add from, Paste and Up/Down, so the panel seemed to have no search. The search now sits in a band of its own and stays, as a gene table's does; the chevron hides only the add controls.
+- **The scale bar no longer zooms the plot out as it is resized.** With the scale bar on, each fit of the axes after a resize widened the view a little more (the bar sat inside the padding and the fit grew to include it), so a plot resized narrow and back showed more margin each time and the bar no longer matched the view. The bar is now placed on the view without it.
 
 ## 0.8.0 (2026-11-26)
 

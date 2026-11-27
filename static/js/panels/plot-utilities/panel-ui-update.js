@@ -717,6 +717,8 @@ function fillTypeSelect(select, choices) {
  *   selects belong to and the roles the source fills (['x'], ['color']): the type menu lists what that consumer accepts for them
  */
 export function setupAxisSelector(container, axis, settings, plotType, datasetStructure, { consumer, roles, aggregate = false, numeric = false, aggLabel = null }) {
+    // A hidden z row (3D off) has no setting: nothing to fill. Turning 3D on makes the setting and fills the row then
+    if (!settings) return;
     const $container = jQuery(container);
     const $typeSelect = $container.find(`.axis-type-select[data-axis="${axis}"]`);
     const $keySelect = $container.find(`.axis-key-select[data-axis="${axis}"]`);
