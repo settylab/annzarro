@@ -8,6 +8,9 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+### Fixed
+- **The scale bar no longer zooms the plot out as it is resized.** With the scale bar on, each fit of the axes after a resize widened the view a little more (the bar sat inside the padding and the fit grew to include it), so a plot resized narrow and back showed more margin each time and the bar no longer matched the view. The bar is now placed on the view without it.
+
 ## 0.8.0 (2026-11-26)
 
 ### Added
