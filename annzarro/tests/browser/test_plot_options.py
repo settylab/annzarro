@@ -411,3 +411,34 @@ def test_grid_off_keeps_the_tick_labels_on_the_first_draw(page, server):
     assert _full(page, A, "xaxis.showgrid") is False
     assert _full(page, A, "xaxis.showticklabels") is True
     assert page.evaluate("(id) => (%s)(id).querySelectorAll('.xtick text').length > 0" % GD, A)
+
+
+def _bar_vs_axis(page, pid):
+    """The bar as drawn against the x range on screen: its length in coordinate units, its label, the width in view."""
+    return page.evaluate("""(id) => { const gd = (%s)(id); const r = gd._fullLayout.xaxis.range; const w = Math.abs(r[1] - r[0]);
+        const s = gd.layout.shapes.find(s => s.name === 'az-scalebar'); const a = gd.layout.annotations.find(a => a.name === 'az-scalebar');
+        return {len: Math.abs(s.x1 - s.x0), label: parseFloat(a.text), width: w, range: r.slice()}; }""" % GD, pid)
+
+
+def _bar_is_true(page, pid):
+    b = _bar_vs_axis(page, pid)
+    assert abs(b["len"] - b["label"]) < 1e-6 * max(1, b["len"]), b            # the label is the line's length
+    assert 0.5 * b["width"] / 5 <= b["len"] <= 2 * b["width"] / 5, b          # about a fifth of the width in view
+    return b
+
+
+def test_scale_bar_does_not_widen_the_axis_through_resizes(page, server):
+    """Plotly fits an autoranged axis around shapes: the bar, 4% in from the edge, widened the range at every fit after a
+    resize, so a narrow plot zoomed out with each one and the bar stopped matching the view."""
+    _open(page, server, _cfgs(extra_a={"showScaleBar": True}))
+    page.wait_for_function("(id) => (%s)(id).layout.shapes && (%s)(id).layout.shapes.some(s => s.name === 'az-scalebar')" % (GD, GD), arg=A)
+    fit = "async (id) => { const gd = (%s)(id); await Plotly.relayout(gd, {'xaxis.autorange': true, 'yaxis.autorange': true}); }" % GD
+    for width in (500, 1500, 400, 1200, 400, 1500):
+        page.set_viewport_size({"width": width, "height": 1000})
+        page.wait_for_timeout(1500)
+        first = _bar_is_true(page, A)
+        for _ in range(3):                                                      # a fit again (Reset axes, a redraw) must not move it
+            page.evaluate(fit, A)
+            page.wait_for_timeout(400)
+            again = _bar_is_true(page, A)
+            assert all(abs(a - b) < 1e-9 * first["width"] for a, b in zip(first["range"], again["range"])), (width, first, again)

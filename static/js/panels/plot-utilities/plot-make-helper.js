@@ -720,19 +720,31 @@ export function attachClickHandler(plotContainer, traces, data, settings) {
  * @param {Object} settings
  */
 export function refreshScaleBar(gd, settings) {
-  if (!gd || !gd._fullLayout || !gd.layout || typeof Plotly === 'undefined') return;
+  if (!gd || !gd._fullLayout || !gd.layout || typeof Plotly === 'undefined') return undefined;
   const ours = (items) => (items || []).filter(it => it && it.name === SCALE_BAR);
   const have = ours(gd.layout.shapes);
   const xaxis = gd._fullLayout.xaxis;
-  const bar = settings.z ? null : scaleBar(settings, xaxis && xaxis.range);
-  if (!bar && !have.length && !ours(gd.layout.annotations).length) return;
-  const drawn = JSON.stringify([have, ours(gd.layout.annotations)]);
-  const want = JSON.stringify(bar ? [bar.shapes, bar.annotations] : [[], []]);
-  if (drawn === want) return;
-  Plotly.relayout(gd, {
-    shapes: replaceScaleBar(gd.layout.shapes, bar ? bar.shapes : []),
-    annotations: replaceScaleBar(gd.layout.annotations, bar ? bar.annotations : [])
-  }).catch(() => {});
+  if (!scaleBar(settings, xaxis && xaxis.range) && !have.length && !ours(gd.layout.annotations).length) return undefined;
+  const draw = () => {
+    const ax = gd._fullLayout && gd._fullLayout.xaxis;
+    const bar = settings.z ? null : scaleBar(settings, ax && ax.range);
+    const drawn = JSON.stringify([ours(gd.layout.shapes), ours(gd.layout.annotations)]);
+    const want = JSON.stringify(bar ? [bar.shapes, bar.annotations] : [[], []]);
+    if (drawn === want) return undefined;
+    return Plotly.relayout(gd, {
+      shapes: replaceScaleBar(gd.layout.shapes, bar ? bar.shapes : []),
+      annotations: replaceScaleBar(gd.layout.annotations, bar ? bar.annotations : [])
+    }).catch(() => {});
+  };
+  // The bar is in coordinate units, and Plotly fits an autoranged axis around shapes and annotations too. The bar sits
+  // 4% in from the edge, in the padding, so it widened the axis; the wider range moved the bar out again, and each
+  // fit after a resize widened it more (the plot zoomed out as it was resized, and the bar no longer matched the view).
+  // So the bar is placed on the range without it: removed, the axis fitted, the bar drawn for that range.
+  if (have.length && !settings.z && isAutorange(xaxis && xaxis.autorange)) {
+    return Plotly.relayout(gd, { shapes: replaceScaleBar(gd.layout.shapes, []), annotations: replaceScaleBar(gd.layout.annotations, []) })
+      .then(draw).catch(() => {});
+  }
+  return draw();
 }
 
 /**
