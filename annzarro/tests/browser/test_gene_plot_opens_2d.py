@@ -14,7 +14,7 @@ import shutil
 import socket
 import subprocess
 import sys
-import time
+import threading
 import urllib.parse
 import urllib.request
 
@@ -74,7 +74,7 @@ def server(tmp_path_factory):
             urllib.request.urlopen(root + "/api/v1/config", timeout=1)
             break
         except OSError:
-            time.sleep(min(0.5, 0.1 * (i + 1)))
+            threading.Event().wait(min(0.5, 0.1 * (i + 1)))   # backoff between connection attempts, not a test wait
     else:
         proc.kill()
         pytest.fail("server did not start")
@@ -106,14 +106,13 @@ STATE = """() => {
 
 
 def _state(page, want3d=None, timeout=60):
-    end = time.time() + timeout
-    while time.time() < end:
-        s = page.evaluate(STATE)
-        if s and (want3d is None or s["three"] == want3d):
-            page.wait_for_timeout(800)
-            return page.evaluate(STATE)
-        page.wait_for_timeout(200)
-    pytest.fail(f"the plot never drew as wanted: {page.evaluate(STATE)}")
+    """The plot's state once it is drawn (in 3D or not, when said) and its figure has settled."""
+    cond = "(want) => { const gd = %s; return !!(gd && gd.data && gd.data.length && (want === null || gd.data.some(t => t.type === 'scatter3d') === want)); }" % GD
+    page.wait_for_function(cond, arg=want3d, timeout=timeout * 1000)
+    # the figure and the saved config are one state: wait until the config agrees with the drawing
+    page.wait_for_function("""(want) => { const c = Object.values(PanelManager.saveLayout().panelConfigs).find(c => c.id && c.id.startsWith('gene-plot'));
+        return !!c && (want === null || !!c.z === want); }""", arg=want3d, timeout=timeout * 1000)
+    return page.evaluate(STATE)
 
 
 def _run(body):
