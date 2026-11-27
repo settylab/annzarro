@@ -11,16 +11,13 @@ import base64
 import json
 import os
 import shutil
-import socket
-import subprocess
-import sys
-import time
 import urllib.parse
-import urllib.request
 
 import numpy as np
 import pytest
 import zarr
+
+from annzarro.tests.e2e.dsb_servers import start  # noqa: E402
 
 if os.environ.get("ANNZARRO_REQUIRE_BROWSER") == "1":
     import playwright.sync_api as playwright  # noqa: E402  (required: fail, do not skip)
@@ -33,12 +30,6 @@ FIXTURE = os.path.join(HERE, "..", "data", "fixture_small.zarr")
 GENE = "gene-plot-A"
 VARM = lambda column: {"type": "varm", "key": "X_pca", "column": column}   # noqa: E731
 GD = "document.querySelector('.tile .js-plotly-plot')"
-
-
-def _free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def _add_varm(path):
@@ -57,28 +48,23 @@ def _add_varm(path):
 
 
 @pytest.fixture(scope="module")
-def server(tmp_path_factory):
-    data = tmp_path_factory.mktemp("data")
-    shutil.copytree(FIXTURE, data / "pcs.zarr")
-    _add_varm(data / "pcs.zarr")
-    home = tmp_path_factory.mktemp("home")
-    port = _free_port()
-    env = dict(os.environ, ANNZARRO_HOME=str(home), ANNZARRO_HEADLESS="1",
-               PYTHONPATH=REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
-    proc = subprocess.Popen([sys.executable, "-m", "annzarro.cli", "start", "--host", "127.0.0.1",
-                             "--port", str(port), "--data-dir", str(data), "--no-browser", "--auth-disabled"],
-                            env=env, cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-    root = f"http://127.0.0.1:{port}"
-    for i in range(120):
-        try:
-            urllib.request.urlopen(root + "/api/v1/config", timeout=1)
-            break
-        except OSError:
-            time.sleep(min(0.5, 0.1 * (i + 1)))
-    else:
-        proc.kill()
-        pytest.fail("server did not start")
-    yield {"root": root, "store": str(data / "pcs.zarr")}
+def monkeypatch_module():
+    with pytest.MonkeyPatch.context() as mp:
+        yield mp
+
+
+@pytest.fixture(scope="module")
+def server(tmp_path_factory, monkeypatch_module):
+    tmp = tmp_path_factory.mktemp("gene2d")
+    data = tmp / "data"
+    data.mkdir()
+    store = data / "pcs.zarr"
+    shutil.copytree(FIXTURE, store)
+    _add_varm(store)
+    # the server runs this checkout's code
+    monkeypatch_module.setenv("PYTHONPATH", REPO + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    root, proc = start(tmp, data)
+    yield {"root": root, "store": str(store)}
     proc.terminate()
     proc.wait(10)
 
@@ -106,14 +92,13 @@ STATE = """() => {
 
 
 def _state(page, want3d=None, timeout=60):
-    end = time.time() + timeout
-    while time.time() < end:
-        s = page.evaluate(STATE)
-        if s and (want3d is None or s["three"] == want3d):
-            page.wait_for_timeout(800)
-            return page.evaluate(STATE)
-        page.wait_for_timeout(200)
-    pytest.fail(f"the plot never drew as wanted: {page.evaluate(STATE)}")
+    """The plot's state once it is drawn (in 3D or not, when said) and its figure has settled."""
+    cond = "(want) => { const gd = %s; return !!(gd && gd.data && gd.data.length && (want === null || gd.data.some(t => t.type === 'scatter3d') === want)); }" % GD
+    page.wait_for_function(cond, arg=want3d, timeout=timeout * 1000)
+    # the figure and the saved config are one state: wait until the config agrees with the drawing
+    page.wait_for_function("""(want) => { const c = Object.values(PanelManager.saveLayout().panelConfigs).find(c => c.id && c.id.startsWith('gene-plot'));
+        return !!c && (want === null || !!c.z === want); }""", arg=want3d, timeout=timeout * 1000)
+    return page.evaluate(STATE)
 
 
 def _run(body):
