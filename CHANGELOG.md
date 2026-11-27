@@ -8,6 +8,7 @@ with the release after it. Older releases are listed on
 
 ## Unreleased
 
+- In a Cell Plot or Gene Plot that is still drawing for the first time, the axis and colour menus are held (greyed, "Loading…") until the plot is ready to take a choice, instead of showing a choice the plot then ignored.
 - In a 3D plot, the axis labels now keep following the scene while you hold the mouse button after turning it, rather than waiting for you to move again or let go.
 
 ## 0.8.0 (2026-11-26)

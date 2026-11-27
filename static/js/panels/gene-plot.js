@@ -2,7 +2,7 @@ import { legacyFont } from '../utils/fonts.js';
 import { initAutoPointStyle } from '../utils/point-style.js';
 import { focusedOptionLabel } from './plot-utilities/panel-ui-update.js';
 import { attachPlotUndo } from './plot-utilities/plot-undo.js';
-import { createPanelStructure, initializeUIState, checkDatasetLoadingStatus } from './plot-utilities/panel-ui-make.js';
+import { createPanelStructure, initializeUIState, checkDatasetLoadingStatus, holdAxisControls } from './plot-utilities/panel-ui-make.js';
 import { loadDataAndCreatePlot } from './plot-utilities/plot-make.js';
 import { highlightFocusedEntity, updatePlotOnTableChange, refocusAxisOnEntity } from './plot-utilities/plot-update.js';
 import { followSessionDefault } from './plot-utilities/plot-aesthetics-menu.js';
@@ -116,8 +116,10 @@ const GenePlotPanel = (function() {
                 
                 // Set up event listeners (these work even when no dataset is loaded)
                 _setupEventListeners();
+                holdAxisControls(_controlsContainer, false);
                 if (_undo) _undo.settled();
             } catch (error) {
+                holdAxisControls(_controlsContainer, false);
                 console.error('Error initializing panel:', error);
                 console.error(error.stack);
                 if (_plotContainer) {

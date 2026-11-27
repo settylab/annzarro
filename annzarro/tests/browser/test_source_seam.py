@@ -154,11 +154,11 @@ def _legend(page, tile=C):
 
 
 def _wait_menus(page, tile):
-    """The menus are filled AND wired: a panel binds its change handlers only after its first draw (init awaits the dataset,
-    then sets the listeners up), so a choice made in between is dropped and leaves the select showing what the panel does not hold."""
+    """The menus are filled AND usable: the panel holds its axis rows (inert, data-axis-controls="loading") until its change
+    handlers are bound, which is after its first draw; a choice made before is not possible."""
     page.wait_for_function("""(tile) => { const s = document.querySelector(`${tile} select.axis-type-select[data-axis="color"]`);
-        const ev = s && window.jQuery && window.jQuery._data(s, 'events');
-        return !!s && [...s.options].some(o => o.value === 'obs' || o.value === 'var') && !!(ev && ev.change && ev.change.length); }""",
+        const c = document.querySelector(`${tile} .plot-controls`);
+        return !!s && [...s.options].some(o => o.value === 'obs' || o.value === 'var') && !!c && c.dataset.axisControls === 'ready'; }""",
                            arg=tile, timeout=30000)
 
 
@@ -288,3 +288,37 @@ def test_a_key_that_is_gone_is_kept_and_listed(page, served):
         .some(o => o.value === v)""", arg=[C, held], timeout=30000)
     assert [held, "Old grouping (deleted)"] in [o for _, group in _sections(page, C, "color") for o in group]
     assert page.eval_on_selector(f'{C} select.axis-column-select[data-axis="color"]', "s => s.value") == held
+
+
+def test_an_axis_cannot_be_changed_during_the_first_draw_and_the_choice_made_after_it_takes(page, served):
+    """The first draw is held (its data request waits): the axis rows are inert and say they are loading, so a click on the
+    colour type does nothing and the select cannot show a choice the panel ignores. Released, the rows are ready and the
+    choice made then is the panel's setting."""
+    held = []
+    page.route("**/api/v1/data/obsm/**", lambda route: held.append(route))
+    page.goto(_link(served, {"cell-plot-C": _cell()}, ["cell-plot-C"]))
+    type_select = f'{C} select.axis-type-select[data-axis="color"]'
+    page.wait_for_function("""(s) => { const e = document.querySelector(s); return !!e && [...e.options].some(o => o.value === 'layer'); }""",
+                           arg=type_select, timeout=30000)
+    for _ in range(100):
+        if held:
+            break
+        page.wait_for_timeout(100)
+    assert held, "the first draw asked for its data"
+    state = page.evaluate("""(tile) => ({ controls: document.querySelector(tile + ' .plot-controls').dataset.axisControls,
+        inert: [...document.querySelectorAll(tile + ' .axis-selector')]
+        .map(r => r.inert) })""", C)
+    assert state["controls"] == "loading" and len(state["inert"]) >= 4 and all(state["inert"]), state
+    # a pointer on the select reaches something else (an inert element takes no mouse), and the select cannot take focus
+    reaches = page.evaluate("""(s) => { const e = document.querySelector(s); const r = e.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); e.focus();
+        return { select: hit === e, focused: document.activeElement === e }; }""", type_select)
+    assert reaches == {"select": False, "focused": False}, reaches
+    assert page.input_value(type_select) != "layer"
+    for route in held:
+        route.continue_()
+    page.route("**/api/v1/data/obsm/**", lambda route: route.continue_())
+    _wait_menus(page, C)
+    page.select_option(type_select, "layer")
+    page.wait_for_function("""() => { const v = (window.SessionManager || window.sessionManager).captureView();
+        const c = v.layout.panelConfigs['cell-plot-C']; return !!c && c.color.type === 'layer'; }""", timeout=30000)
