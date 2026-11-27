@@ -124,7 +124,11 @@ def make_data(seed=11):
     dropout = rng.random((N_OBS, N_VAR)) < 0.35
     counts = np.where(dropout, 0, rng.poisson(rate)).astype(np.float32)
     counts[:, 3] = 0                                         # a gene nobody expresses
-    logged = np.log1p(counts / np.maximum(counts.sum(axis=1, keepdims=True), 1) * 1e4).astype(np.float32)
+    # log1p in float64, rounded once to float32: numpy's float32 log1p is a vector routine whose last bit depends on the CPU
+    # (AVX-512 on a CI runner, NEON or AVX2 elsewhere), so the fixture, its digest and the scanpy oracle files built from
+    # it would differ from machine to machine. The argument is float32 arithmetic (IEEE, exact on every CPU).
+    arg = counts / np.maximum(counts.sum(axis=1, keepdims=True), 1) * np.float32(1e4)
+    logged = np.log1p(arg.astype(np.float64)).astype(np.float32)
     sd = logged.std(axis=0)
     x = ((logged - logged.mean(axis=0)) / np.where(sd > 0, sd, 1.0)).astype(np.float32)
     x = np.clip(x, -10, 10)
