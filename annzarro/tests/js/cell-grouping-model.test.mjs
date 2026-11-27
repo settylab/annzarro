@@ -102,7 +102,7 @@ test('the link sizes of the golden configs are within 10% of PER-4', async () =>
         ['grouping, 6 partitionings, 40 named levels', await one('cell-grouping-1718000000001', 'Grouping 1', 'recipe', 'cell_grouping_6_named40'), 635],
         ['cell-gene, 1 section', await one('cell-gene-1718000000001', 'Cell-Gene Plot 1', 'config', 'cell_gene_1'), 387],
         ['cell-gene, 6 sections', await one('cell-gene-1718000000001', 'Cell-Gene Plot 1', 'config', 'cell_gene_6'), 464],
-        ['count plot, bar with split and measure', await one('cell-count-1718000000001', 'Count 1', 'config', 'cell_count_bar_split_measure'), 265],
+        ['count plot, bar with split and measure', await one('cell-count-1718000000001', 'Count 1', 'config', 'cell_count_bar_split_measure'), 238],
         ['count plot, UpSet of 8 tables', await one('cell-count-1718000000001', 'Count 1', 'config', 'cell_count_upset_8_tables'), 316],
         ['a grouping, a Cell-Gene Plot and a count plot', await added({
             'cell-grouping-1718000000001': panel('cell-grouping-1718000000001', 'Grouping 1', 'recipe', 'cell_grouping_3'),

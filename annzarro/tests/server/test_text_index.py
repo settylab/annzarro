@@ -953,8 +953,11 @@ def test_a_store_with_nothing_to_index_costs_only_its_signature_and_so_does_a_re
     # a store with no README and no attribution: its text is not read, but since 0.8.0 (SCH-5) its field names
     # are: that costs exactly 8 stats and 4 opens of metadata files, and lists nothing (measured); the re-check
     # below still costs the signature's 22 stats and opens nothing
-    names_cost = {"stat": 8, "list": 0, "open": 4}
-    assert first["plain.zarr"]["list"] == 0 and first["plain.zarr"]["open"] == names_cost["open"]
+    # (zarr 2 reads the names through its own hierarchy, which lists and opens more: measured 124 stats, 7 listings
+    # and 23 opens, so each major has its own pin)
+    from annzarro.tests.zarr_compat import ZARR_V3
+    names_cost = {"stat": 8, "list": 0, "open": 4} if ZARR_V3 else {"stat": 124, "list": 7, "open": 23}
+    assert first["plain.zarr"]["list"] == names_cost["list"] and first["plain.zarr"]["open"] == names_cost["open"]
     # re-checking an unchanged store costs the same signature stats whether it has text or not, and opens nothing
     assert second["plain.zarr"] == second["liver.zarr"]
     assert second["liver.zarr"]["list"] == 0 and second["liver.zarr"]["open"] == 0

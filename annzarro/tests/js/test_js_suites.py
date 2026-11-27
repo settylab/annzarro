@@ -31,8 +31,11 @@ def test_js_suite(suite):
         "node is not on PATH; the JS suites cannot run. Install Node.js 22+ "
         "(see package.json) rather than skipping them."
     )
+    # A 64 MB young generation, as in package.json: the scaling tests compare the CPU time of a 4,000-dot build with a
+    # 40,000-dot one, and Node 22 (CI) scavenges the larger build's live hover text more than Node 25 does, which is
+    # memory pressure and not the work growing (ratio 14 to 16 against the bound of 15; 9 to 10 with this flag).
     proc = subprocess.run(
-        [node, "--test", os.path.join(JS_TEST_DIR, suite)],
+        [node, "--max-semi-space-size=64", "--test", os.path.join(JS_TEST_DIR, suite)],
         cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
     )
     assert proc.returncode == 0, (

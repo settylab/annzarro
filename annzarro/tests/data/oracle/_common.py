@@ -65,7 +65,9 @@ def fixture_digest(data):
     for a in (data.x, data.logged, data.counts):
         h.update(np.ascontiguousarray(a, dtype=np.float32).tobytes())
     for col in ("pseudotime", "depth", "signed", "score"):
-        h.update(np.ascontiguousarray(data.obs[col].to_numpy(np.float64)).tobytes())
+        # to 6 decimals: numpy's gamma draw (`depth`) differs in its last bit between an ARM build (fused multiply-add) and an
+        # x86 one, and a digest of the raw bits would then differ between a Mac and a CI runner (found on CI, 0.8.0)
+        h.update(np.ascontiguousarray(np.round(data.obs[col].to_numpy(np.float64), 6)).tobytes())
     for col in ("cell_type", "condition"):
         h.update(np.ascontiguousarray(data.obs[col].cat.codes.to_numpy(np.int16)).tobytes())
     return h.hexdigest()

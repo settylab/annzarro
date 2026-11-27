@@ -25,6 +25,7 @@ from annzarro.server.core import create_app
 from annzarro.server.routes import cell_groups as groups_route
 from annzarro.tests.core import grouping_store as gstore
 from annzarro.tests.server.test_cell_groups_route import CELL_TYPE, grouping, parse
+from annzarro.tests.zarr_compat import ZARR_V3
 
 LAYER = "logged"
 GENE = 1
@@ -102,7 +103,7 @@ def overwrite_chunk_in_place(path):
     places = [layer, os.path.join(path, "layers"), path]
     places += [os.path.join(layer, name) for name in os.listdir(layer)]
     stamps = [(p, os.stat(p)) for p in places]
-    arr = zarr.open_group(path, mode="r+", use_consolidated=False)[f"layers/{LAYER}"]
+    arr = zarr.open_group(path, mode="r+", **({"use_consolidated": False} if ZARR_V3 else {}))[f"layers/{LAYER}"]
     rows = arr.chunks[0]
     arr[0:rows, :] = arr[0:rows, :] + 7.0
     for p, st in stamps:

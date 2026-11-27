@@ -4,7 +4,7 @@
   "description": "Development tooling only (lint and JS tests). The browser loads static/js directly; there is no build step.",
   "scripts": {
     "lint": "eslint static/js annzarro/tests/js",
-    "test": "node --test \"annzarro/tests/js/*.test.mjs\""
+    "test": "node --max-semi-space-size=64 --test \"annzarro/tests/js/*.test.mjs\""
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -18,6 +18,7 @@ from annzarro.core import store_details
 from annzarro.server import access, text_index
 from annzarro.server.core import create_app
 from annzarro.server.routes import data_routes
+from annzarro.tests.zarr_compat import consolidate, open_group, write_array
 from annzarro.tests.server.rich_store import FIXTURE, N_OBS, N_VAR
 from annzarro.tests.server.test_text_index import annotate, config_for, crawl, entries, make_world
 from annzarro.tests.server.test_text_search import SEARCH, client, make_app
@@ -36,24 +37,24 @@ def fresh_caches():
 
 def add_names(path, obs=(), var=(), obsm=(), layers=(), obsp=(), varm=(), varp=(), uns=()):
     """Add fields of the given names to the zarr store at ``path`` (arrays of zeros; ``uns`` entries may be paths)."""
-    root = zarr.open_group(str(path), mode="a")
+    root = open_group(path, mode="a")
     for axis, names, n in (("obs", obs, N_OBS), ("var", var, N_VAR)):
         if names:
             order = [str(c) for c in root[axis].attrs["column-order"]]
             for name in names:
-                root[axis].create_array(name, data=np.zeros(n, dtype="float32"))
+                write_array(root[axis], name, np.zeros(n, dtype="float32"))
                 order.append(name)
             root[axis].attrs["column-order"] = order
     for slot, names in (("obsm", obsm), ("layers", layers), ("obsp", obsp), ("varm", varm), ("varp", varp)):
         for name in names:
-            root.require_group(slot).create_array(name, data=np.zeros((2, 2), dtype="float32"))
+            write_array(root.require_group(slot), name, np.zeros((2, 2), dtype="float32"))
     for name in uns:
         parts = name.split("/")
         group = root.require_group("uns")
         for part in parts[:-1]:
             group = group.require_group(part)
-        group.create_array(parts[-1], data=np.zeros(1))
-    zarr.consolidate_metadata(str(path))
+        write_array(group, parts[-1], np.zeros(1))
+    consolidate(path)
 
 
 def new_store(data, name, **names):

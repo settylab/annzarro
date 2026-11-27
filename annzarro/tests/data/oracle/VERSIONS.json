@@ -7,7 +7,7 @@
     "pandas": "3.1.1"
   },
   "python": "3.12.12",
-  "fixture_digest": "b6e65291bb30ea8a615e4a0723300e8a43a2b5362019b8d0d2fe493a0f276b19",
+  "fixture_digest": "095dc9a9b222e22c6eece80bb87d2b5e222cff3dc99d8820f9c85ffc0941b130",
   "scripts": {
     "make_dotplot_matrixplot.py": "dotplot_matrixplot.npz",
     "make_num_categories.py": "num_categories.npz",
