@@ -238,7 +238,9 @@ def test_c_in_3d(page, server):
     page.evaluate("g => document.querySelector(g).emit('plotly_unhover', {})", GRAPH)
     page.evaluate("navigator.clipboard.writeText('sentinel')")
     page.keyboard.press("c")
-    page.wait_for_function("() => /View copied/.test((document.querySelector('.notification') || {}).textContent || '')")
+    # every notification is read: the "Copied hover info" one is still shown (it lasts 1.5 s) when this one is added, and
+    # querySelector answers the first, so a slow runner could poll only the old one and miss this one's 1.5 s
+    page.wait_for_function("() => [...document.querySelectorAll('.notification')].some(n => /View copied/.test(n.textContent || ''))")
     assert _clipboard(page).startswith("AnnZarro view of "), _clipboard(page)
 
 
