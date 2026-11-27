@@ -195,6 +195,12 @@ def test_the_chooser_has_a_cell_group_tab_and_a_ticked_grouping_is_a_column_name
     cols = page.evaluate("(id) => window.PanelManager.getPanel(id).getConfig().columns.map(c => [c.type, c.key, c.label || null])", TA)
     assert ["cell-group", GA, "Grouping 1"] in cols
     _filled(page, _index(page, "Grouping 1"))
+    # the request list is filled by Playwright's own events, which reach this side separately from what the page shows: poll it
+    # (page.wait_for_timeout pumps those events) instead of reading it once
+    for _ in range(100):
+        if any(c["want"]["codes"] is True for c in _computes(page)[before:]):
+            break
+        page.wait_for_timeout(100)
     assert any(c["want"]["codes"] is True for c in _computes(page)[before:]), "a table reads the codes"
 
 
