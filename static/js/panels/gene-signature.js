@@ -579,9 +579,12 @@ const GeneSignaturePanel = (function() {
                 data: { directions: '' }, aria: { pressed: 'false' }, on: { click: () => onDirectionSwitch(!_recipe.directions) } }, 'Up/Down');
             const dirAsk = el('div', { class: 'gsig-scoring__notice gsig-dirask', role: 'status', hidden: true, data: { directionAsk: '' } });
             const _flowHost = el('div', { class: 'gsig-flow', hidden: true });
-            const controls = el('div', { class: 'gsig-controls' },
+            // the search is not a control: the tile's Hide Controls hides the add row and Up/Down, never the search
+            // (a gene table's search stays too), so it sits in a band of its own above them
+            const searchBar = el('div', { class: 'gsig-searchbar' },
                 el('div', { class: 'gsig-search-row' }, search, regex, matchCase, tickAllBtn),
-                searchNote,
+                searchNote);
+            const controls = el('div', { class: 'gsig-controls' },
                 el('div', { class: 'gsig-add-row' }, addAsWrap, focusedBtn, ...inlineButtons(), addMenuHome, upDown),
                 dirAsk,
                 _flowHost);
@@ -623,10 +626,10 @@ const GeneSignaturePanel = (function() {
             root.addEventListener('keydown', onPanelKey);
             root.addEventListener('dragover', onPanelDragOver);
             root.addEventListener('drop', onPanelDrop);
-            root.append(status, controls, listbar, dirBar, message, note, empty, _grid.element);
+            root.append(status, searchBar, controls, listbar, dirBar, message, note, empty, _grid.element);
             _container.innerHTML = '';
             _container.appendChild(root);
-            _dom = { root, controls, flowHost: _flowHost, status, summary, definition, usedBy, scoreLine, search, regex, matchCase, tickAllBtn, searchNote,
+            _dom = { root, searchBar, controls, flowHost: _flowHost, status, summary, definition, usedBy, scoreLine, search, regex, matchCase, tickAllBtn, searchNote,
                 addFrom, addMenu, addMenuHome, focusedBtn, allBtn, selBtn, undoBtn, clearBtn, listbar, message, note, empty,
                 addAsWrap, addAsSel, addAsUp, addAsDown, dirBar, filterSel, setUpBtn, setDownBtn, upDown, dirAsk, distributionBtn,
                 noData: root.querySelector(`#loading-screen-${_id}`) };

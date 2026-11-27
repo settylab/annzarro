@@ -836,3 +836,34 @@ def test_ticking_and_clearing_never_move_the_gene_list(page, served):
     msg = page.locator(f"{S} .gsig-message")
     assert msg.get_attribute("title") == msg.inner_text()
     same("a long message in a narrow panel")
+
+
+def _usable(page, selector):
+    """Non-zero box, inside the tile, and the element is what a click at its centre reaches."""
+    return page.evaluate("""([tile, sel]) => {
+        const e = document.querySelector(tile + ' ' + sel), t = document.querySelector(tile).getBoundingClientRect();
+        if (!e) return false;
+        const r = e.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return false;
+        if (r.left < t.left || r.right > t.right + 0.5 || r.top < t.top || r.bottom > t.bottom + 0.5) return false;
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return top === e || e.contains(top); }""", [S, selector])
+
+
+def test_search_stays_when_the_tiles_controls_are_hidden(page, served):
+    """Hide Controls hides the add row, never the search (a gene table's search stays too)."""
+    _open_signature(page, served)
+    page.evaluate(f"() => document.querySelector('{S} .gsig-search').scrollIntoView({{block: 'center'}})")
+    boxes = (".gsig-search", ".gsig-toggle[title='Regular expression']", ".gsig-toggle[title='Match case']")
+    for hidden in (False, True):
+        if hidden:
+            page.click(f"{S} .tile-toggle-controls")
+            until(page, "() => document.querySelector('%s .gsig-controls').style.display === 'none'" % S)
+            assert page.locator(f"{S} .gsig-addfrom").is_hidden(), "the add controls are the ones hidden"
+        page.evaluate(f"() => document.querySelector('{S} .gsig-search').scrollIntoView({{block: 'center'}})")
+        for sel in boxes:
+            assert _usable(page, sel), f"{sel} not visible and usable (controls hidden: {hidden})"
+    # and it still searches: a regular expression with .* on, Aa off
+    page.click(f"{S} .gsig-toggle[title='Regular expression']")
+    _search(page, "^cd3.*d$")
+    assert [r["name"] for r in _rows(page)] == ["CD3D", "Cd3d"]
