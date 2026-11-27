@@ -131,7 +131,7 @@ The app version is the Python package version: `bump_version.py` writes
 `pyproject.toml`'s version into `electron/package.json`, a test and the
 workflow fail if they differ, and a release tag must be `v<version>`.
 
-`.github/workflows/build.yml` builds macOS arm64 (macos-14), macOS x64
+`.github/workflows/build.yml` builds macOS arm64 (macos-15), macOS x64
 (macos-15-intel), Windows x64 and Linux x64 (ubuntu-22.04, for an old enough
 glibc). Each job freezes the server, smoke-tests it on the v2 and v3 test
 fixtures, packages the app and launches it in self-test mode. A `v*` tag then
