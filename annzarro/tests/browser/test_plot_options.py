@@ -442,3 +442,23 @@ def test_scale_bar_does_not_widen_the_axis_through_resizes(page, server):
             page.wait_for_timeout(400)
             again = _bar_is_true(page, A)
             assert all(abs(a - b) < 1e-9 * first["width"] for a, b in zip(first["range"], again["range"])), (width, first, again)
+
+
+def test_hidden_z_row_is_left_alone_and_filled_when_3d_turns_on(page, server):
+    """With 3D off the z row is hidden and its setting is null: filling its selectors is a no-op, not a throw, and turning
+    3D on afterwards builds the row (a source, an item list)."""
+    _open(page, server)
+    assert page.evaluate("""async (id) => {
+        const UI = await import('/static/js/panels/plot-utilities/panel-ui-update.js');
+        const { DataManager } = await import('/static/js/data-manager.js');
+        const root = document.querySelector(`.tile[data-tile-id="${id}"]`);
+        const structure = await DataManager.getDatasetStructure();
+        UI.setupAxisSelector(root, 'z', null, 'cells', structure, { consumer: 'cell-plot', roles: ['z'], aggregate: true });
+        document.dispatchEvent(new Event('annzarro:panels-changed'));
+        return true; }""", A)
+    toggle = f"#z-axis-toggle-{A}"
+    page.click(toggle)
+    page.wait_for_function("(id) => { const z = document.querySelector(`#z-axis-container-${id}`);"
+                           " const c = z && z.querySelector('.axis-column-select');"
+                           " return z && z.offsetParent !== null && c && c.options.length > 1 && !!z.querySelector('.axis-key-select').value; }", arg=A)
+    page.wait_for_function("(id) => { const gd = (%s)(id); return gd.data.some(t => t.type === 'scatter3d'); }" % GD, arg=A)
