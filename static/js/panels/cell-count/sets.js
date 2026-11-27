@@ -95,8 +95,9 @@ function categoriesOf(structure, column, onLoaded) {
         return out;
     }
     const ranks = Array.from({ length: n }, (_, i) => i);
-    const loading = DataManager.loadCategoryLabels(dataset, column, ranks).then((labels) => {
-        categoryCache.set(key, categoryChoices(ranks.map((r) => labels.get(r))));
+    const loading = DataManager.loadCategoryLevels(dataset, column, ranks).then(({ labels, ids }) => {
+        // the server's ids, not ones made from the labels (JSON numbers: a float32 or a 2**53+1 is not what is stored)
+        categoryCache.set(key, categoryChoices(ranks.map((r) => labels.get(r)), ranks.map((r) => ids.get(r))));
         onLoaded();
     }, (error) => {
         categoryCache.delete(key);

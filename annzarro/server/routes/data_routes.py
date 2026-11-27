@@ -132,11 +132,14 @@ def _category_labels_response(reader, dataset_path, entity, column_names):
         raise DataRequestError(400, "cap_exceeded",
                                f"at most {category_rules.MAX_RANK_LABELS} category_ranks per request")
     get_labels = getattr(reader, "get_category_labels", None)
-    labels = get_labels(entity=entity, dataset_path=dataset_path, column_name=column_names[0],
-                        ranks=ranks) if get_labels else None
-    if labels is None:
+    got = get_labels(entity=entity, dataset_path=dataset_path, column_name=column_names[0],
+                     ranks=ranks, with_ids=True) if get_labels else None
+    if got is None:
         raise DataRequestError(400, "not_categorical", f"'{column_names[0]}' is not a categorical column")
-    return jsonify({"column": column_names[0], "ranks": ranks, "labels": labels})
+    labels, ids = got
+    # ids: each category's level id from its stored value (what a set's member names); a label is for display only,
+    # and a number beyond 2**53 or a float32 does not survive JSON into JavaScript as the value it was
+    return jsonify({"column": column_names[0], "ranks": ranks, "labels": labels, "ids": ids})
 
 
 def _axis_rows(reader, dataset_path, indices, axis):
