@@ -174,10 +174,30 @@ export function watchSceneCamera(gd, { labelsFor, store, key = '__azCameraWatch'
         next.forEach((a, i) => { for (const f of LABEL_FIELDS) full[i][f] = a[f] !== undefined ? a[f] : 0; });
         gd[movedKey] = true;
     };
+    // Plotly sends plotly_relayouting per mouse move, but the scene's camera is damped and goes on turning for some frames
+    // after the last one. So the labels follow the scene's own camera, frame by frame, until it has rested.
+    const shownCamera = () => {
+        const fl = gd._fullLayout;
+        const scene = fl && fl.scene && fl.scene._scene;
+        return scene && typeof scene.getCamera === 'function' ? scene.getCamera() : null;
+    };
+    const REST_FRAMES = 3;
+    let previous = null;
+    let still = 0;
+    const tick = () => {
+        frame = null;
+        const camera = shownCamera() || latest;
+        if (!camera) return;
+        moveInPlace(camera);
+        still = previous && sameCamera(previous, camera) ? still + 1 : 0;
+        previous = { eye: { ...camera.eye }, center: { ...camera.center }, up: { ...camera.up } };
+        if (still < REST_FRAMES) frame = requestAnimationFrame(tick);
+    };
     gd[liveKey] = (ev) => {
         latest = ev && ev['scene.camera'];
-        if (!latest || frame !== null) return;
-        frame = requestAnimationFrame(() => { frame = null; if (latest) moveInPlace(latest); });
+        if (!latest) return;
+        still = 0;
+        if (frame === null) frame = requestAnimationFrame(tick);
     };
     gd.on('plotly_relayouting', gd[liveKey]);
 }
