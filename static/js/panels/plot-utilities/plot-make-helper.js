@@ -736,13 +736,29 @@ export function refreshScaleBar(gd, settings) {
       annotations: replaceScaleBar(gd.layout.annotations, bar ? bar.annotations : [])
     }).catch(() => {});
   };
-  // The bar is in coordinate units, and Plotly fits an autoranged axis around shapes and annotations too. The bar sits
-  // 4% in from the edge, in the padding, so it widened the axis; the wider range moved the bar out again, and each
-  // fit after a resize widened it more (the plot zoomed out as it was resized, and the bar no longer matched the view).
-  // So the bar is placed on the range without it: removed, the axis fitted, the bar drawn for that range.
+  // The bar is in coordinate units (so it stays true in an export at another size), and Plotly fits an autoranged axis
+  // around shapes and annotations too. The bar sits 4% in from the edge, inside the padding, so a fit with the bar drawn
+  // came out wider than one without, and the next fit wider again (the plot zoomed out as it was resized, and the bar no
+  // longer matched the view). So the fit is made without the bar, and the bar is drawn on that range: drawing it
+  // (a shapes edit) does not fit again, and the same view comes back at every fit. Our own fit is no change of view.
   if (have.length && !settings.z && isAutorange(xaxis && xaxis.autorange)) {
-    return Plotly.relayout(gd, { shapes: replaceScaleBar(gd.layout.shapes, []), annotations: replaceScaleBar(gd.layout.annotations, []) })
-      .then(draw).catch(() => {});
+    // what the bar depends on besides the fit: the plot's size and the bar's own options
+    const key = () => JSON.stringify([gd._fullLayout.width, gd._fullLayout.height, settings.scaleBarSize, settings.scaleBarCorner,
+      settings.scaleBarUnit, settings.equalAspect]);
+    // a change that comes while the bar is being refitted is not dropped: it is done once more when that finishes.
+    // Our own fit announces itself like any relayout and changes none of this, so it does not ask for another
+    if (gd.__azBarFitting) { if (key() !== gd.__azBarKey) gd.__azBarAgain = true; return gd.__azBarFitting; }
+    gd.__azBarAgain = false;
+    gd.__azBarKey = key();
+    const fitted = Promise.resolve(Plotly.relayout(gd, {
+      shapes: replaceScaleBar(gd.layout.shapes, []), annotations: replaceScaleBar(gd.layout.annotations, []),
+      'xaxis.autorange': autorangeValue(settings, 'x'), 'yaxis.autorange': autorangeValue(settings, 'y')
+    })).then(draw).catch(() => {}).then(() => {
+      gd.__azBarFitting = null;                                        // cleared however the relayout ended
+      return gd.__azBarAgain ? refreshScaleBar(gd, settings) : undefined;
+    });
+    gd.__azBarFitting = fitted;
+    return fitted;
   }
   return draw();
 }

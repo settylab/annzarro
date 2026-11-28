@@ -432,10 +432,19 @@ def test_scale_bar_does_not_widen_the_axis_through_resizes(page, server):
     resize, so a narrow plot zoomed out with each one and the bar stopped matching the view."""
     _open(page, server, _cfgs(extra_a={"showScaleBar": True}))
     page.wait_for_function("(id) => (%s)(id).layout.shapes && (%s)(id).layout.shapes.some(s => s.name === 'az-scalebar')" % (GD, GD), arg=A)
-    # a fit, and the bar drawn after it (the bar is taken off for the fit and drawn again: two shapes relayouts)
-    fit = """async (id) => { const gd = (%s)(id); let n = 0;
-        const done = new Promise(res => gd.on('plotly_relayout', function h(e) { if (e && e.shapes && ++n === 2) { gd.removeListener('plotly_relayout', h); res(); } }));
-        await Plotly.relayout(gd, {'xaxis.autorange': true, 'yaxis.autorange': true}); await done; }""" % GD
+    # a fit, then the plot as it settles: the x range and the bar unchanged over 10 animation frames in a row. It does not
+    # depend on which relayouts the bar's own redraw makes, so old code that widens the range shows it in the range itself
+    fit = """async (id) => { const gd = (%s)(id);
+        await Plotly.relayout(gd, {'xaxis.autorange': true, 'yaxis.autorange': true});
+        const view = () => JSON.stringify([gd._fullLayout.xaxis.range, (gd.layout.shapes || []).map(s => [s.x0, s.x1])]);
+        let last = view(), same = 0;
+        while (same < 10) { await new Promise(r => requestAnimationFrame(r)); const now = view(); same = now === last ? same + 1 : 0; last = now; } }""" % GD
+    # a zoom, then Reset axes: the resizes below come after both
+    page.evaluate("""async (id) => { const gd = (%s)(id); const r = gd._fullLayout.xaxis.range, y = gd._fullLayout.yaxis.range;
+        await Plotly.relayout(gd, {'xaxis.range': [r[0] + 0.3 * (r[1] - r[0]), r[0] + 0.6 * (r[1] - r[0])],
+            'yaxis.range': [y[0] + 0.3 * (y[1] - y[0]), y[0] + 0.6 * (y[1] - y[0])]}); }""" % GD, A)
+    page.evaluate(fit, A)
+    _bar_is_true(page, A)
     for width in (500, 1500, 400, 1200, 400, 1500):
         page.set_viewport_size({"width": width, "height": 1000})
         page.wait_for_function("(id) => { const gd = (%s)(id); return Math.abs(gd._fullLayout.width - gd.clientWidth) < 1"
